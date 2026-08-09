@@ -30,3 +30,14 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# gsd-core (local ZCode install — managed by `npx @opengsd/gsd-core`)
+.zcode/
+gsd-file-manifest.json
+gsd-install-state.json
+
+# spikes/ throwaway module build artifacts (D-05: go.sum + built binaries are
+# NOT committed; spike .go source + go.mod + findings ARE committed)
+spikes/go.sum
+spikes/bin/
+/spikes/**/bin/
