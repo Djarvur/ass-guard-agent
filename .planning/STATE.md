@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-last_updated: "2026-08-09T18:20:42.612Z"
+status: verifying
+last_updated: "2026-08-09T21:17:34.758Z"
 progress:
   total_phases: 7
   completed_phases: 1
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-08-09)
 **Phase:** 0 — Spike + Re-verification (COMPLETE)
 **Status:** Complete (5/5 plans; Wave 1 + Wave 2 + Wave 3 all done). VERIFIED-FACTS.md is the post-spike source of truth; STACK.md is the unchanged pre-spike recommendation (D-01); the one Tier-B finding (#1 zcode JSONL path) is resolved.
 **Next action:** Plan Phase 1 (Mimicry MVP — north-star proof). Carry-forward: (1) correct MIMC-02 path wording to `~/.zcode/cli/rollout/model-io-sess_<id>.jsonl` during Phase 1 planning (option-a consequence; munged-cwd obsolete for zcode); (2) operator provisions `MINIMAX_API_KEY`/`GROQ_API_KEY` to flip item #2 PARTIAL → VERIFIED (schema VERIFIED offline already).
-**Last session:** Plan 00-05 complete — authored `.planning/research/VERIFIED-FACTS.md` (post-spike source of truth) by folding the four Wave-1 evidence files into 5 D-02 sections (#1 FAILED/Tier-B-resolved, #2 PARTIAL, #3 VERIFIED, #4 STRUCTURALLY-MOOT, #5 VERIFIED). D-03 sanitized across the whole file (zero sk-/Bearer/*_API_KEY=/raw UUID//Users/ matches — threat T-00-10 mitigated). STACK.md byte-identical to pre-phase (md5 preserved; D-01 honored). Gate `check-verified-facts.sh` exits 0; `<verify>` chain prints PHASE0_GATE_PASS. Tier-B resolution recorded HONESTLY: research-predicted default option-a (revise-and-continue) applied by default after the user declined to override the checkpoint — NOT 'user chose'. Phase 0 closes 5/5 STACK items. See `.planning/phases/00-spike-re-verification/00-05-SUMMARY.md`
+**Last session:** 2026-08-09T21:17:34.732Z
 
 ## Phase Status
 
