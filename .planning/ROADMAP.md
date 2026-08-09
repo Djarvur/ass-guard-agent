@@ -27,7 +27,7 @@ The six deltas (mimicry, multi-tier scheduling, configurable backends, learning 
 **Goal:** The team can trust every load-bearing inherited fact before building on it — closing the 5 Phase-0 research flags raised in STACK.md, so that no stale predecessor fact (5 weeks old as of 2026-08-09) silently corrupts the build.
 **Mode:** mvp
 **Requirements:** — (verification phase; closes the Phase-0 spike checklist from research, not REQ-IDs)
-**Plans:** 2/5 plans executed (4 in Wave 1 run in parallel — each owns its own `spikes/0N-*/` subdir; Plan 05 in Wave 2 is the single writer of VERIFIED-FACTS.md)
+**Plans:** 3/5 plans executed (4 in Wave 1 run in parallel — each owns its own `spikes/0N-*/` subdir; Plan 05 in Wave 2 is the single writer of VERIFIED-FACTS.md)
 Plans:
 **Wave 1**
 
@@ -36,7 +36,7 @@ Plans:
 **Wave 2** *(blocked on Wave 1 completion)*
 
 - [x] 00-02-PLAN.md — #2 go-openai tool-calling schema spike (MiniMax M3 + Groq)
-- [ ] 00-03-PLAN.md — #3 ACP v1 handshake spike (initialize → session/new → session/prompt)
+- [x] 00-03-PLAN.md — #3 ACP v1 handshake spike (initialize → session/new → session/prompt)
 - [ ] 00-04-PLAN.md — #5 go-telegram/bot + ACP stdout-collision integration spike
 
 **Wave 3** *(blocked on Wave 2 completion)*
