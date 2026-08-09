@@ -126,6 +126,8 @@
 
 # #4. whisper.cpp / STT cross-compile (structurally moot)
 
+**Status: STRUCTURALLY-MOOT** (D-06 — STT is always an external utility; closed structurally, no spike). Full D-02 field block below.
+
 - **Fact:** STACK.md §"Open Verification Items" item #4 (line 491) verbatim: *"whisper.cpp cross-compile impact — if local STT is in scope, confirm the subprocess approach (`whisper-cli`) preserves goreleaser's clean macOS+Linux amd64+arm64 matrix (it should, since it is out-of-process, but verify)."* The supporting `ggml-org/whisper.cpp/bindings/go` row (~line 74) is the LOW-confidence row: *"Optional — only if the configured STT backend is `whisper-cpp-local`. Adds a C dependency to the build (breaks pure-Go static binary claim — verify goreleaser cross-compile impact before committing). The OpenAI Whisper API default avoids this entirely."*
 
 - **Source:** STACK.md §"Open Verification Items" item #4 (line 491); STACK.md supporting-library row `github.com/ggml-org/whisper.cpp/bindings/go` (~line 74, LOW confidence); STACK.md "What NOT to Use" whisper.cpp-via-cgo row; STACK.md Focus 3 §B (STT backends).
