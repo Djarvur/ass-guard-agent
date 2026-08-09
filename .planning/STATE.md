@@ -6,10 +6,10 @@ status: executing
 last_updated: "2026-08-09T18:20:42.612Z"
 progress:
   total_phases: 7
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 5
-  completed_plans: 4
-  percent: 0
+  completed_plans: 5
+  percent: 14
 ---
 
 # State: ass-guard-agent (working name)
@@ -18,20 +18,20 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-08-09)
 **Core value:** Outgoing requests to the model provider must be structurally indistinguishable from the mimicked agent's (zcode first)
-**Current focus:** Phase 0 (in progress — Plans 00-01, 00-02, 00-03, 00-04 complete; 4/5 plans)
+**Current focus:** Phase 0 COMPLETE (5/5 plans); Phase 1 (Mimicry MVP) ready to plan
 
 ## Current Phase
 
-**Phase:** 0 — Spike + Re-verification
-**Status:** Executing (Wave 1 done; Wave 2 done: Plans 00-02 + 00-03 + 00-04 complete; only Wave 3 Plan 00-05 remains)
-**Next action:** Execute Wave 3 Plan 00-05 (authors VERIFIED-FACTS.md from the 4 evidence files + §3 Tier-B decision checkpoint + completeness gate)
-**Last session:** Plan 00-04 complete — #5 go-telegram/bot + ACP stdout-collision integration spike: go-telegram/bot@v1.23.0 (long-poll loop) + ACP stdio coexist in ONE PROCESS with zero stdout collision VERIFIED via captured-os.Stdout byte-equality assertion (415==415 bytes, 0 extra) + deterministic handler-routing probe (synthetic marker in stderr sink, absent from stdout). Library silent-by-default confirmed by direct source inspection (zero os.Stdout writes in package; all output via 3 log.Printf→stderr handlers; no WithLogger/io.Writer option). Tier-A handler-signature refinement recorded (actual sig is func(err error)/func(format, args...any), simpler than RESEARCH.md §5). Wave 2 complete (4/4 spike plans). See `.planning/phases/00-spike-re-verification/00-04-SUMMARY.md`
+**Phase:** 0 — Spike + Re-verification (COMPLETE)
+**Status:** Complete (5/5 plans; Wave 1 + Wave 2 + Wave 3 all done). VERIFIED-FACTS.md is the post-spike source of truth; STACK.md is the unchanged pre-spike recommendation (D-01); the one Tier-B finding (#1 zcode JSONL path) is resolved.
+**Next action:** Plan Phase 1 (Mimicry MVP — north-star proof). Carry-forward: (1) correct MIMC-02 path wording to `~/.zcode/cli/rollout/model-io-sess_<id>.jsonl` during Phase 1 planning (option-a consequence; munged-cwd obsolete for zcode); (2) operator provisions `MINIMAX_API_KEY`/`GROQ_API_KEY` to flip item #2 PARTIAL → VERIFIED (schema VERIFIED offline already).
+**Last session:** Plan 00-05 complete — authored `.planning/research/VERIFIED-FACTS.md` (post-spike source of truth) by folding the four Wave-1 evidence files into 5 D-02 sections (#1 FAILED/Tier-B-resolved, #2 PARTIAL, #3 VERIFIED, #4 STRUCTURALLY-MOOT, #5 VERIFIED). D-03 sanitized across the whole file (zero sk-/Bearer/*_API_KEY=/raw UUID//Users/ matches — threat T-00-10 mitigated). STACK.md byte-identical to pre-phase (md5 preserved; D-01 honored). Gate `check-verified-facts.sh` exits 0; `<verify>` chain prints PHASE0_GATE_PASS. Tier-B resolution recorded HONESTLY: research-predicted default option-a (revise-and-continue) applied by default after the user declined to override the checkpoint — NOT 'user chose'. Phase 0 closes 5/5 STACK items. See `.planning/phases/00-spike-re-verification/00-05-SUMMARY.md`
 
 ## Phase Status
 
 | Phase | Status | Notes |
 |-------|--------|-------|
-| 0 — Spike + Re-verification | Executing (4/5 plans) | Plans 00-01 + 00-02 + 00-03 + 00-04 done: spikes module + #1 JSONL capture + #4 STT closure + #2 go-openai tool-schema spike (schema VERIFIED offline, live round-trip PARTIAL pending keys) + #3 ACP v1 handshake spike (wire shape VERIFIED, Tier-A session/new correction recorded) + #5 go-telegram/bot stdout-collision spike (transport discipline VERIFIED, Tier-A handler-signature refinement recorded). Wave 2 complete. Next: Wave 3 Plan 00-05 (authors VERIFIED-FACTS.md). |
+| 0 — Spike + Re-verification | **COMPLETE (5/5 plans)** | All 5 plans done. VERIFIED-FACTS.md authored (post-spike source of truth): #1 zcode JSONL FAILED→revise-and-continue [Tier-B resolved], #2 go-openai PARTIAL [schema VERIFIED offline; live round-trip deferred pending operator keys], #3 ACP v1 VERIFIED [Tier-A session/new correction], #4 whisper.cpp STRUCTURALLY-MOOT [D-06], #5 go-telegram stdout VERIFIED [Tier-A handler-signature refinement]. STACK.md unchanged (D-01). Gate exits 0 (PHASE0_GATE_PASS). D-03 sanitized. Phase 0 closes 5/5 STACK items. Next: Phase 1 planning (carries the MIMC-02 path correction + the operator-key unblock for #2). |
 | 1 — Mimicry MVP (north-star proof) | Not started | Gates everything; A/B parity test must pass before Phase 2. 16 REQ-IDs. Highest research depth. |
 | 2 — Session Core + ACP Interface | Not started | 18 REQ-IDs. Needs Phase 1. |
 | 3 — Model Scheduling | Not started | 6 REQ-IDs. Needs Phases 1-2. |
@@ -41,6 +41,8 @@ See: .planning/PROJECT.md (updated 2026-08-09)
 
 ## Decisions Log
 
+- **Plan 00-05 (2026-08-09):** D-07 Tier-B resolution for item #1 (zcode JSONL path) — research-predicted default **option-a (revise-and-continue) APPLIED BY DEFAULT** after the user declined to override the checkpoint across multiple prompts (NOT 'user chose option-a' — honest audit-trail attribution). Confirmed by on-disk evidence from plans 00-01..00-04 and documented as the prediction in 00-05-PLAN.md Task 2. Consequence (option-a, verbatim): Phase 1 MIMC-02 path wording to be corrected to `~/.zcode/cli/rollout/model-io-sess_<id>.jsonl` during Phase 1 planning; munged-cwd convention obsolete for zcode. Reversible at Phase 1 planning. Recorded in VERIFIED-FACTS.md item #1 Notes.
+- **Plan 00-05 (2026-08-09):** Phase 0 COMPLETE (5/5 plans, 5/5 STACK items closed). VERIFIED-FACTS.md is the post-spike source of truth (STACK.md unchanged, D-01 — md5 `5e4eecc8418f9ff61272702044da0f54` preserved). The completeness gate `check-verified-facts.sh` exits 0 (6/6 checks); the plan `<verify>` chain prints PHASE0_GATE_PASS. D-03 sanitization is the phase's final secret-leak barrier (threat T-00-10, high) — zero sk-/Bearer/*_API_KEY=/raw UUID//Users/ matches across the merged file. Item #2 carries forward as PARTIAL: schema VERIFIED offline, live round-trip deferred pending operator key provisioning (single carry-forward operator action). Phase 1 (Mimicry MVP) is ready to plan.
 - **Plan 00-01 (2026-08-09):** STACK item #1 (zcode JSONL path) is Tier-B-favorable → D-07 (a) revise-and-continue, confirmed on disk. Corrected path: `~/.zcode/cli/rollout/model-io-sess_<session-id>.jsonl` (STACK's `~/.claude/projects/<munged-cwd>/...` is a different product, Claude Code, `queue-operation` schema). Schema richer than STACK claimed (full wire-level capture; no MITM needed for request body). Explicit user sign-off on MIMC-02 wording correction lands in Plan 00-05.
 - **Plan 00-01 (2026-08-09):** STACK item #4 (whisper.cpp cross-compile) closed STRUCTURALLY-MOOT per D-06 — STT always external (HTTPS or out-of-process `whisper-cli` subprocess), zero cgo, goreleaser matrix unaffected. No spike produced.
 - **Plan 00-04 (2026-08-09):** STACK item #5 (go-telegram/bot + ACP stdout collision) VERIFIED — go-telegram/bot@v1.23.0 is silent-by-default (zero os.Stdout writes in package source; all output via 3 log.Printf→os.Stderr handlers; debug path gated behind WithDebug; no WithLogger/io.Writer option), confirmed by direct source inspection + the integration spike's captured-os.Stdout byte-equality assertion (415==415 bytes, 0 extra) + deterministic handler-routing probe. Transport discipline (stdout = ACP only) holds for the multi-frontend case. Tier-A refinement: actual callback signatures (ErrorsHandler func(err error), DebugHandler func(format, args...any)) are simpler than RESEARCH.md §5 documented — Phase 5 must use the real signatures. Mitigation recipe for v2 Telegram frontend recorded (WithErrorsHandler→slog→stderr, NO WithDebug, log.SetOutput(os.Stderr), go b.Start(ctx) goroutine).
@@ -62,6 +64,7 @@ See: .planning/PROJECT.md (updated 2026-08-09)
 | Phase 00 P02 | 6min | 2 tasks | 3 files |
 | Phase 00 P03 | 8min | 2 tasks | 3 files |
 | Phase 00 P04 | 10min | 2 tasks | 3 files |
+| Phase 00 P05 | 8min | 1 task | 4 files |
 
 ## Decisions
 

@@ -12,7 +12,7 @@ The six deltas (mimicry, multi-tier scheduling, configurable backends, learning 
 
 | # | Phase | Goal | Requirements | Success Criteria |
 |---|-------|------|--------------|------------------|
-| 0 | Spike + Re-verification | The team can trust every inherited fact (5 weeks old) before building on it | — (no REQ-IDs; closes 5 Phase-0 research flags) | 3 |
+| 0 | Spike + Re-verification ✅ **COMPLETE 2026-08-09** (5/5 plans; VERIFIED-FACTS.md authored + gated + sanitized; STACK.md unchanged) | The team can trust every inherited fact (5 weeks old) before building on it | — (no REQ-IDs; closes 5 Phase-0 research flags) | 3 |
 | 1 | Mimicry MVP (north-star proof) | The team can send a prompt through ass-guard-with-zcode-profile and the model behaves identically to live zcode — the mimicry thesis is proven | MIMC-01, MIMC-02, MIMC-03, MIMC-04, PROF-01, PROF-02, PROF-03, PROF-04, PROF-05, TOOL-01, TOOL-02, TOOL-03, PROV-01, PROV-02, PROV-03, LOG-01 | 5 |
 | 2 | Session Core + ACP Interface | A developer can spawn ass-guard from Zed via ACP, send a prompt, watch streamed output, restart and replay the session, and trust that the model saw a clean context window | SESS-01, SESS-02, SESS-03, SESS-04, SESS-05, SESS-06, ACP-01, ACP-02, ACP-03, ACP-04, ACP-05, LOG-02, LOG-03, LOG-04, PARA-01, PARA-02, PARA-03, PARA-04 | 4 |
 | 3 | Model Scheduling | An operator can configure heavy/good/light tiers with time-windowed model substitution, per-project overrides, and fallback chains, and ass-guard picks the right model at request time without the developer noticing | SCHED-01, SCHED-02, SCHED-03, SCHED-04, SCHED-05, SCHED-06 | 4 |
@@ -27,7 +27,7 @@ The six deltas (mimicry, multi-tier scheduling, configurable backends, learning 
 **Goal:** The team can trust every load-bearing inherited fact before building on it — closing the 5 Phase-0 research flags raised in STACK.md, so that no stale predecessor fact (5 weeks old as of 2026-08-09) silently corrupts the build.
 **Mode:** mvp
 **Requirements:** — (verification phase; closes the Phase-0 spike checklist from research, not REQ-IDs)
-**Plans:** 4/5 plans executed (4 in Wave 1 run in parallel — each owns its own `spikes/0N-*/` subdir; Plan 05 in Wave 2 is the single writer of VERIFIED-FACTS.md)
+**Plans:** 5/5 plans executed (4 in Wave 1+2 run in parallel — each owns its own `spikes/0N-*/` subdir; Plan 05 in Wave 3 is the single writer of VERIFIED-FACTS.md). **Phase 0 COMPLETE 2026-08-09.**
 Plans:
 **Wave 1**
 
@@ -41,7 +41,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 00-05-PLAN.md — author VERIFIED-FACTS.md from the 4 evidence files + §3 Tier-B decision checkpoint + completeness gate
+- [x] 00-05-PLAN.md — author VERIFIED-FACTS.md from the 4 evidence files + §3 Tier-B decision checkpoint + completeness gate
 
 **Success Criteria:**
 
