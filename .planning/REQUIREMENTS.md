@@ -165,16 +165,83 @@ Explicitly excluded. Documented to prevent scope creep.
 
 ## Traceability
 
-Which phases cover which requirements. Updated during roadmap creation.
+Which phases cover which requirements. Updated during roadmap creation (2026-08-09). See ROADMAP.md for phase goals and success criteria.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| *(populated by gsd-roadmapper — see ROADMAP.md)* | | |
+| MIMC-01 | 1 — Mimicry MVP | Pending |
+| MIMC-02 | 1 — Mimicry MVP | Pending |
+| MIMC-03 | 1 — Mimicry MVP | Pending |
+| MIMC-04 | 1 — Mimicry MVP | Pending |
+| PROF-01 | 1 — Mimicry MVP | Pending |
+| PROF-02 | 1 — Mimicry MVP | Pending |
+| PROF-03 | 1 — Mimicry MVP | Pending |
+| PROF-04 | 1 — Mimicry MVP | Pending |
+| PROF-05 | 1 — Mimicry MVP | Pending |
+| TOOL-01 | 1 — Mimicry MVP | Pending |
+| TOOL-02 | 1 — Mimicry MVP | Pending |
+| TOOL-03 | 1 — Mimicry MVP | Pending |
+| PROV-01 | 1 — Mimicry MVP | Pending |
+| PROV-02 | 1 — Mimicry MVP | Pending |
+| PROV-03 | 1 — Mimicry MVP | Pending |
+| LOG-01 | 1 — Mimicry MVP | Pending |
+| SESS-01 | 2 — Session Core + ACP | Pending |
+| SESS-02 | 2 — Session Core + ACP | Pending |
+| SESS-03 | 2 — Session Core + ACP | Pending |
+| SESS-04 | 2 — Session Core + ACP | Pending |
+| SESS-05 | 2 — Session Core + ACP | Pending |
+| SESS-06 | 2 — Session Core + ACP | Pending |
+| ACP-01 | 2 — Session Core + ACP | Pending |
+| ACP-02 | 2 — Session Core + ACP | Pending |
+| ACP-03 | 2 — Session Core + ACP | Pending |
+| ACP-04 | 2 — Session Core + ACP | Pending |
+| ACP-05 | 2 — Session Core + ACP | Pending |
+| LOG-02 | 2 — Session Core + ACP | Pending |
+| LOG-03 | 2 — Session Core + ACP | Pending |
+| LOG-04 | 2 — Session Core + ACP | Pending |
+| PARA-01 | 2 — Session Core + ACP | Pending |
+| PARA-02 | 2 — Session Core + ACP | Pending |
+| PARA-03 | 2 — Session Core + ACP | Pending |
+| PARA-04 | 2 — Session Core + ACP | Pending |
+| SCHED-01 | 3 — Model Scheduling | Pending |
+| SCHED-02 | 3 — Model Scheduling | Pending |
+| SCHED-03 | 3 — Model Scheduling | Pending |
+| SCHED-04 | 3 — Model Scheduling | Pending |
+| SCHED-05 | 3 — Model Scheduling | Pending |
+| SCHED-06 | 3 — Model Scheduling | Pending |
+| ENG-01 | 4 — Unified Engine + Hooks + OpenSpec + Learning | Pending |
+| ENG-02 | 4 — Unified Engine + Hooks + OpenSpec + Learning | Pending |
+| ENG-03 | 4 — Unified Engine + Hooks + OpenSpec + Learning | Pending |
+| ENG-04 | 4 — Unified Engine + Hooks + OpenSpec + Learning | Pending |
+| ENG-05 | 4 — Unified Engine + Hooks + OpenSpec + Learning | Pending |
+| HOOK-01 | 4 — Unified Engine + Hooks + OpenSpec + Learning | Pending |
+| HOOK-02 | 4 — Unified Engine + Hooks + OpenSpec + Learning | Pending |
+| HOOK-03 | 4 — Unified Engine + Hooks + OpenSpec + Learning | Pending |
+| HOOK-04 | 4 — Unified Engine + Hooks + OpenSpec + Learning | Pending |
+| HOOK-05 | 4 — Unified Engine + Hooks + OpenSpec + Learning | Pending |
+| LRN-01 | 4 — Unified Engine + Hooks + OpenSpec + Learning | Pending |
+| LRN-02 | 4 — Unified Engine + Hooks + OpenSpec + Learning | Pending |
+| LRN-03 | 4 — Unified Engine + Hooks + OpenSpec + Learning | Pending |
+| LRN-04 | 4 — Unified Engine + Hooks + OpenSpec + Learning | Pending |
+| OPEN-01 | 4 — Unified Engine + Hooks + OpenSpec + Learning | Pending |
+| OPEN-02 | 4 — Unified Engine + Hooks + OpenSpec + Learning | Pending |
+| OPEN-03 | 4 — Unified Engine + Hooks + OpenSpec + Learning | Pending |
+| TOOL-04 | 4 — Unified Engine + Hooks + OpenSpec + Learning | Pending |
+| TOOL-05 | 4 — Unified Engine + Hooks + OpenSpec + Learning | Pending |
+| ECOS-01 | 5 — Ecosystem Compatibility | Pending |
+| ECOS-02 | 5 — Ecosystem Compatibility | Pending |
+| ECOS-03 | 5 — Ecosystem Compatibility | Pending |
+| ECOS-04 | 5 — Ecosystem Compatibility | Pending |
+| ECOS-05 | 5 — Ecosystem Compatibility | Pending |
+| DIST-01 | 6 — Distribution + Polish | Pending |
+| DIST-02 | 6 — Distribution + Polish | Pending |
+| DIST-03 | 6 — Distribution + Polish | Pending |
 
 **Coverage:**
-- v1 requirements: 56 total
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 56 ⚠️
+- v1 requirements: 67 total
+- Mapped to phases: 67 (100%)
+- Unmapped: 0 ✓
+- Phase distribution: Phase 0 = 0 (spike); Phase 1 = 16; Phase 2 = 18; Phase 3 = 6; Phase 4 = 19; Phase 5 = 5; Phase 6 = 3
 
 ---
 *Requirements defined: 2026-08-09*
