@@ -24,8 +24,8 @@ See: .planning/PROJECT.md (updated 2026-08-09)
 
 **Phase:** 0 — Spike + Re-verification
 **Status:** Ready to execute
-**Next action:** /gsd:plan-phase 0
-**Last session:** Phase 0 context gathered — see `.planning/phases/00-spike-re-verification/00-CONTEXT.md`
+**Next action:** /gsd:execute-phase 0
+**Last session:** Phase 0 planned (5 plans, 3 waves) — see `.planning/phases/00-spike-re-verification/00-0[1-5]-PLAN.md`
 
 ## Phase Status
 
