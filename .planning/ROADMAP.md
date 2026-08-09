@@ -27,11 +27,11 @@ The six deltas (mimicry, multi-tier scheduling, configurable backends, learning 
 **Goal:** The team can trust every load-bearing inherited fact before building on it — closing the 5 Phase-0 research flags raised in STACK.md, so that no stale predecessor fact (5 weeks old as of 2026-08-09) silently corrupts the build.
 **Mode:** mvp
 **Requirements:** — (verification phase; closes the Phase-0 spike checklist from research, not REQ-IDs)
-**Plans:** 5 plans (4 in Wave 1 run in parallel — each owns its own `spikes/0N-*/` subdir; Plan 05 in Wave 2 is the single writer of VERIFIED-FACTS.md)
+**Plans:** 1/5 plans executed (4 in Wave 1 run in parallel — each owns its own `spikes/0N-*/` subdir; Plan 05 in Wave 2 is the single writer of VERIFIED-FACTS.md)
 Plans:
 **Wave 1**
 
-- [ ] 00-01-PLAN.md — spikes module skeleton + #1 zcode JSONL capture + #4 STT structural closure
+- [x] 00-01-PLAN.md — spikes module skeleton + #1 zcode JSONL capture + #4 STT structural closure
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
