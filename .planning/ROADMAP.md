@@ -26,6 +26,13 @@ The six deltas (mimicry, multi-tier scheduling, configurable backends, learning 
 **Goal:** The team can trust every load-bearing inherited fact before building on it — closing the 5 Phase-0 research flags raised in STACK.md, so that no stale predecessor fact (5 weeks old as of 2026-08-09) silently corrupts the build.
 **Mode:** mvp
 **Requirements:** — (verification phase; closes the Phase-0 spike checklist from research, not REQ-IDs)
+**Plans:** 5 plans (4 in Wave 1 run in parallel — each owns its own `spikes/0N-*/` subdir; Plan 05 in Wave 2 is the single writer of VERIFIED-FACTS.md)
+Plans:
+- [ ] 00-01-PLAN.md — spikes module skeleton + #1 zcode JSONL capture + #4 STT structural closure
+- [ ] 00-02-PLAN.md — #2 go-openai tool-calling schema spike (MiniMax M3 + Groq)
+- [ ] 00-03-PLAN.md — #3 ACP v1 handshake spike (initialize → session/new → session/prompt)
+- [ ] 00-04-PLAN.md — #5 go-telegram/bot + ACP stdout-collision integration spike
+- [ ] 00-05-PLAN.md — author VERIFIED-FACTS.md from the 4 evidence files + §3 Tier-B decision checkpoint + completeness gate
 **Success Criteria:**
 1. The exact on-disk path and JSONL line schema of zcode's transcripts is located, documented, and a sample log captured (closes STACK Phase-0 item #1; MIMC-02's ground truth)
 2. The latest pinned tag of `sashabaranov/go-openai` is confirmed and its tool-calling schema fidelity verified per OpenAI-shape provider (MiniMax M3, Groq) (closes STACK Phase-0 item #2)
