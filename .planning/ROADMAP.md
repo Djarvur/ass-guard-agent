@@ -23,27 +23,40 @@ The six deltas (mimicry, multi-tier scheduling, configurable backends, learning 
 ## Phase Details
 
 ### Phase 0: Spike + Re-verification
+
 **Goal:** The team can trust every load-bearing inherited fact before building on it — closing the 5 Phase-0 research flags raised in STACK.md, so that no stale predecessor fact (5 weeks old as of 2026-08-09) silently corrupts the build.
 **Mode:** mvp
 **Requirements:** — (verification phase; closes the Phase-0 spike checklist from research, not REQ-IDs)
 **Plans:** 5 plans (4 in Wave 1 run in parallel — each owns its own `spikes/0N-*/` subdir; Plan 05 in Wave 2 is the single writer of VERIFIED-FACTS.md)
 Plans:
+**Wave 1**
+
 - [ ] 00-01-PLAN.md — spikes module skeleton + #1 zcode JSONL capture + #4 STT structural closure
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 00-02-PLAN.md — #2 go-openai tool-calling schema spike (MiniMax M3 + Groq)
 - [ ] 00-03-PLAN.md — #3 ACP v1 handshake spike (initialize → session/new → session/prompt)
 - [ ] 00-04-PLAN.md — #5 go-telegram/bot + ACP stdout-collision integration spike
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 00-05-PLAN.md — author VERIFIED-FACTS.md from the 4 evidence files + §3 Tier-B decision checkpoint + completeness gate
+
 **Success Criteria:**
+
 1. The exact on-disk path and JSONL line schema of zcode's transcripts is located, documented, and a sample log captured (closes STACK Phase-0 item #1; MIMC-02's ground truth)
 2. The latest pinned tag of `sashabaranov/go-openai` is confirmed and its tool-calling schema fidelity verified per OpenAI-shape provider (MiniMax M3, Groq) (closes STACK Phase-0 item #2)
 3. The ACP v1 method names and wire shape are confirmed against the canonical spec, and the `go-telegram/bot` + ACP stdout-collision integration test demonstrates the two transports don't fight over stdout (closes STACK Phase-0 items #3 and #5; confirms the LSP-style stdout discipline)
 4. Every re-verified fact is recorded as `{fact, source, verified_date, verified_against_version}` so Phase 1 builds on grounded, dated evidence (PITFALLS N18 mitigation)
 
 ### Phase 1: Mimicry MVP (north-star proof)
+
 **Goal:** The team can send a fixed prompt suite through ass-guard (with the zcode profile loaded) and the model produces tool-call sequences statistically indistinguishable from live zcode — the mimicry thesis is empirically proven before anything downstream is built. If the A/B parity test fails, the project stops and re-plans.
 **Mode:** mvp
 **Requirements:** MIMC-01, MIMC-02, MIMC-03, MIMC-04, PROF-01, PROF-02, PROF-03, PROF-04, PROF-05, TOOL-01, TOOL-02, TOOL-03, PROV-01, PROV-02, PROV-03, LOG-01
 **Success Criteria:**
+
 1. A user can select the zcode profile by name and send a prompt through ass-guard; the outgoing model request carries zcode's system-prompt composition, tool-catalog declaration, message-block shape, and identity fields (MIMC-01, PROF-01, PROF-02 — single mimicry chokepoint at the Profile Shaper, no zcode-specific code paths)
 2. The zcode profile is extracted from zcode's real on-disk JSONL transcripts (Phase 0's verified path), not hand-written, and carries a `target_capture_ref` and coverage manifest so drift and incomplete capture are visible, not silent (MIMC-02, PROF-03, PROF-05)
 3. A user can run `ass-guard profile check zcode` and the drift detector reports whether the target agent's observed requests still match the captured profile (PROF-04 — north-star killer N1 engineered out from day one)
@@ -51,30 +64,36 @@ Plans:
 5. A developer can inspect the audit log and see the verbatim shaped outgoing request for every turn — the mimicry evidence source is recorded from day one (LOG-01; foundation that Phase 2 completes)
 
 ### Phase 2: Session Core + ACP Interface
+
 **Goal:** A developer can spawn ass-guard from Zed via ACP, send a prompt, watch the model's output stream token-by-token, restart Zed, and have the session replay correctly — all while the model sees a clean, lean context window at each command boundary. ass-guard becomes usable as a daily coding agent inside the IDE.
 **Mode:** mvp
 **Requirements:** SESS-01, SESS-02, SESS-03, SESS-04, SESS-05, SESS-06, ACP-01, ACP-02, ACP-03, ACP-04, ACP-05, LOG-02, LOG-03, LOG-04, PARA-01, PARA-02, PARA-03, PARA-04
 **Success Criteria:**
+
 1. A developer can spawn ass-guard from Zed via the ACP registry, send a prompt, and receive streamed `session/update` notifications end-to-end (provider SSE → event bus → ACP), with no full-turn buffering before display (ACP-01, ACP-02, ACP-04, ACP-05)
 2. After restarting Zed, the developer sees the prior session replayed correctly — the durable transcript rehydrates and the projector resets the model-visible window at the most recent pre-rehydration boundary (ACP-03, SESS-01, SESS-05, SESS-06)
 3. A mutating toolkit command (Bash, Write, Edit) always resets the model's context window to a lean seed, regardless of config — the developer never has to manage context hygiene manually, and the structural mutability rule (more-mutating wins) is the single source of truth (SESS-02, SESS-03, SESS-04)
 4. A developer can dispatch a `Task`/`Agent` subagent that runs as an isolated goroutine turn-loop with a restricted tool subset; if it panics, the parent gets a tool-error result (not a crash), and the audit log records the full sequence with secrets redacted and rotation preventing volume explosion (PARA-01, PARA-02, PARA-03, PARA-04, LOG-02, LOG-03, LOG-04)
 
 ### Phase 3: Model Scheduling
+
 **Goal:** An operator can configure ass-guard to use cheap models off-peak and heavy models at peak hours, override the tier→model table per project, and trust that a provider outage degrades gracefully instead of cascading — while the developer never thinks about which concrete model is running.
 **Mode:** mvp
 **Requirements:** SCHED-01, SCHED-02, SCHED-03, SCHED-04, SCHED-05, SCHED-06
 **Success Criteria:**
+
 1. A command, skill, or subagent selects a tier (heavy/good/light), not a concrete model; the Model Scheduler resolves the tier to a concrete provider+model at request time (SCHED-01)
 2. An operator can configure time-windowed tier→model substitution (e.g. heavy = glm-5.2 normally, minimax-m3 in peak) with timezone-explicit IANA zones, and a per-project override that falls back to the config default when unset (SCHED-02, SCHED-03)
 3. On a transient provider failure (429/5xx/network), ass-guard walks a configured fallback chain (degrade tier OR walk the chain); on a structural failure (401/403), it reports instead of silently retrying (SCHED-04 — N5 engineered out)
 4. Circuit breakers and cost ceilings stop fallback-chain cascading failures and cost surprises, and each (provider, tier) pair has a documented capability profile so tier mismatch across providers is explicit (SCHED-05, SCHED-06)
 
 ### Phase 4: Unified Engine + Hook-DAG + OpenSpec + Learning
+
 **Goal:** A developer can run an unmodified OpenSpec workflow (the v1 toolkit) end-to-end through ass-guard with zero manual "continue" taps, while the forgotten routine runs automatically after each stage — and when the agent encounters an unfamiliar launch situation, it asks the user once, remembers the answer, and never asks the same question again. This is the project's reason to exist for the author's SDD practice.
 **Mode:** mvp
 **Requirements:** ENG-01, ENG-02, ENG-03, ENG-04, ENG-05, HOOK-01, HOOK-02, HOOK-03, HOOK-04, HOOK-05, LRN-01, LRN-02, LRN-03, LRN-04, OPEN-01, OPEN-02, OPEN-03, TOOL-04, TOOL-05
 **Success Criteria:**
+
 1. A developer runs an unmodified OpenSpec scenario through ass-guard; it advances stage-to-stage with zero "continue" taps (dual-signal: text-pattern OR known handoff tool-call), and unmatched output triggers nothing — the structural safety property holds, with manual cancellation draining queued injections (ENG-01, ENG-02, ENG-03, ENG-05, OPEN-01, OPEN-02, OPEN-03)
 2. After the implement stage, the seeded hook set runs automatically — tests, lint, review, and memory — and after a phase, improvement proposals are generated; if the engine fails, the turn still completes and the agent degrades to manual-continue (HOOK-01, HOOK-02, HOOK-05, ENG-04)
 3. A hook failure never silently blocks the workflow — every hook declares `on-failure: halt|continue|ask` — and provenance tagging structurally prevents hook-DAG infinite loops (a hook can't re-trigger its own stage) (HOOK-03, HOOK-04)
@@ -82,20 +101,24 @@ Plans:
 5. Read-only tools (Glob, Grep, Read) execute concurrently within a turn while mutating tools serialize relative to each other, and complex tools (WebSearch, WebFetch) use a swappable backend configured without code changes (TOOL-04, TOOL-05)
 
 ### Phase 5: Ecosystem Compatibility
+
 **Goal:** A Claude Code user can take their existing `.claude/` setup — installed MCP servers, skills, slash-commands, and plugins — and have it work unchanged inside ass-guard, with ass-guard's own additions namespaced cleanly alongside. The full Claude-Code ecosystem is drop-in.
 **Mode:** mvp
 **Requirements:** ECOS-01, ECOS-02, ECOS-03, ECOS-04, ECOS-05
 **Success Criteria:**
+
 1. A Claude-Code-installed MCP server runs in ass-guard: spawned as a subprocess via `StdioMCPClient`, its tools bridged into the catalog and callable by the model (ECOS-01)
 2. MCP server subprocesses are lifecycle-robust — process-group spawn, group-signal shutdown, reaper goroutine prevent zombies; and `tools/list` is re-fetched on every connection so schema drift can't accumulate (ECOS-02, ECOS-03 — N13 and N14 engineered out)
 3. A Claude Code user's skills, slash-commands, and plugins load from the `.claude/` layout and work unchanged in ass-guard (ECOS-04)
 4. ass-guard's own additions namespace under `.claude/` cleanly with user→project precedence respected, never clobbering a Claude Code user's files (ECOS-05)
 
 ### Phase 6: Distribution + Polish
+
 **Goal:** A team can install ass-guard via the ACP registry with a single command and, on first launch, have a working zero-config setup — default model, pre-seeded zcode profile, pre-seeded openspec.toml — ready to run an OpenSpec workflow with no further configuration.
 **Mode:** mvp
 **Requirements:** DIST-01, DIST-02, DIST-03
 **Success Criteria:**
+
 1. A team downloads a single static Go binary (no runtime deps) for macOS or Linux, amd64 or arm64, produced by goreleaser (DIST-01)
 2. A team adds ass-guard to Zed via `zed: acp registry`; the `agent.json` manifest declares `command`/`command_args`/`cwd` so Zed spawns the agent correctly (DIST-02)
 3. On first launch after registry install, ass-guard runs with sensible defaults — a default model, a pre-seeded zcode profile, and a pre-seeded openspec.toml — and a developer can immediately run an OpenSpec workflow with zero configuration (DIST-03)

@@ -19,21 +19,21 @@ created: 2026-08-09
 
 | Property | Value |
 |----------|-------|
-| **Framework** | `go test` (spikes/ is an isolated Go module — `github.com/djarvur/ass-guard-spikes`; each spike is a `main` package that runs its assertion and exits non-zero on FAIL) |
-| **Config file** | `spikes/go.mod` (Wave 0 creates it; pins `sashabaranov/go-openai@v1.42.0`, `go-telegram/bot@v1.23.0`) |
-| **Quick run command** | `(cd spikes && go run ./01-jsonl-capture/ && go run ./02-openai-toolschema/ && go run ./03-acp-handshake/ && go run ./05-stdout-collision/)` |
-| **Full suite command** | `(cd spikes && go vet ./... && go run ./01-jsonl-capture/ && go run ./02-openai-toolschema/ && go run ./03-acp-handshake/ && go run ./05-stdout-collision/) && bash .planning/phases/00-spike-re-verification/check-verified-facts.sh` |
+| **Framework** | `go run` for the Go spikes + shell/jq for the filesystem capture (spikes/ is an isolated Go module — `github.com/djarvur/ass-guard-spikes`; spikes #2/#3/#5 are `main` packages that run their assertion and exit non-zero on FAIL; spike #1 is a filesystem capture using `jq`/`python3 -m json.tool`, not a Go program — see CONTEXT.md D-04 "filesystem capture, not Go code") |
+| **Config file** | `spikes/go.mod` (Plan 01 Task 1 creates it; pins `sashabaranov/go-openai@v1.42.0`, `go-telegram/bot@v1.23.0`) |
+| **Quick run command** | `bash spikes/01-jsonl-capture/capture.sh && (cd spikes && go run ./02-openai-toolschema/ && go run ./03-acp-handshake/ && go run ./05-stdout-collision/)` |
+| **Full suite command** | `bash spikes/01-jsonl-capture/capture.sh && (cd spikes && go vet ./... && go run ./02-openai-toolschema/ && go run ./03-acp-handshake/ && go run ./05-stdout-collision/) && bash .planning/phases/00-spike-re-verification/check-verified-facts.sh` |
 | **Estimated runtime** | ~30-60 seconds (dominated by the #2 provider round-trip and #3 ACP handshake; #1 and #5 are sub-second) |
 
-**Note on the "framework":** these are not unit tests in the `go test` sense. Each spike is a `main` program whose process exit code IS the assertion result (0 = PASS, non-zero = FAIL), and whose stderr footer is the structured evidence the executor captures into `VERIFIED-FACTS.md`. This shape was chosen in CONTEXT.md D-04 ("throwaway spike code… exists only to produce evidence") and RESEARCH.md §7.
+**Note on the "framework":** these are not unit tests in the `go test` sense. Spikes #2/#3/#5 are `main` programs whose process exit code IS the assertion result (0 = PASS, non-zero = FAIL), and whose stderr footer is the structured evidence the executor captures into `VERIFIED-FACTS.md`. Spike #1 is a filesystem capture (per D-04) — it locates the zcode rollout directory, parses one `model_io` line with `jq`, and writes a redacted schema excerpt to `spikes/01-jsonl-capture/FINDING.md`; its "assertion" is the exit code of the capture step + the presence of the FINDING.md. This shape was chosen in CONTEXT.md D-04 ("throwaway spike code… exists only to produce evidence") and RESEARCH.md §7.
 
 ---
 
 ## Sampling Rate
 
-- **After every task commit:** Run the specific spike the task produced (e.g., after the #2 spike task, run `go run ./spikes/02-openai-toolschema/`). This is the fastest meaningful feedback.
-- **After every plan wave:** Run the full suite command (all built spikes + the VERIFIED-FACTS.md completeness check).
-- **Before `/gsd:verify-work`:** All 4 spikes PASS + `VERIFIED-FACTS.md` has 5 complete sections (5 × `Status:`, 5 × `Evidence:`, no `TBD`/`TODO`).
+- **After every task commit:** Run the specific spike the task produced (e.g., after the #2 spike task, run `(cd spikes && go run ./02-openai-toolschema/)`; after the #1 capture task, run `bash spikes/01-jsonl-capture/capture.sh`). This is the fastest meaningful feedback.
+- **After every plan wave:** Run the spikes built so far. Wave 1 = the #1 capture script + #4 structural note (Plan 01). Wave 2 = add the #2/#3/#5 spikes (Plans 02/03/04, which run in parallel once Plan 01's `spikes/go.mod` exists). Wave 3 = the VERIFIED-FACTS.md completeness gate (Plan 05).
+- **Before `/gsd:verify-work`:** All spikes PASS (#2 may be `PARTIAL` if no API key — Tier A) + `VERIFIED-FACTS.md` has 5 complete sections (5 × `Status:`, 5 × `Evidence:`, no `TBD`/`TODO`) + the §3 Tier-B checkpoint resolved.
 - **Max feedback latency:** ~60 seconds (the #2 provider round-trip is the long pole; everything else is sub-second).
 
 ---
@@ -44,27 +44,27 @@ Task IDs are provisional (the planner assigns final IDs). This map lists the val
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 00-01-0x | 01 | 1 | (no REQ-ID; closes STACK item #1) | — | N/A — read-only filesystem capture | spike-program | `(cd spikes && go run ./01-jsonl-capture/)` → exit 0; output: redacted JSONL schema excerpt on stderr | ❌ W0 | ⬜ pending |
-| 00-02-0x | 02 | 1 | (no REQ-ID; closes STACK item #2) | — | **API keys never logged to stdout** (transport discipline); redacted before VERIFIED-FACTS.md commit (D-03) | spike-program | `(cd spikes && go run ./02-openai-toolschema/)` → exit 0; output: redacted request/response JSON on stderr | ❌ W0 | ⬜ pending |
-| 00-03-0x | 03 | 1 | (no REQ-ID; closes STACK item #3) | — | N/A — local ACP handshake (no secrets) | spike-program | `(cd spikes && go run ./03-acp-handshake/)` → exit 0; output: redacted ACP frame dump on stderr | ❌ W0 | ⬜ pending |
-| 00-04-0x | 04 | 1 | (no REQ-ID; closes STACK item #4) | — | N/A — structural reasoning, no code | doc-only | `grep -F 'STRUCTURALLY-MOOT' .planning/research/VERIFIED-FACTS.md` → match found | ❌ W0 | ⬜ pending |
-| 00-05-0x | 05 | 1 | (no REQ-ID; closes STACK item #5) | — | **Telegram bot logging routed to stderr, never stdout** (transport discipline — load-bearing, this is the spike's whole point) | spike-program | `(cd spikes && go run ./05-stdout-collision/)` → exit 0; output: byte-diff count (0 = clean) on stderr | ❌ W0 | ⬜ pending |
-| 00-VERIF | 01 | 1 | (completeness gate) | — | All samples sanitized per D-03 checklist | shell-check | `bash .planning/phases/00-spike-re-verification/check-verified-facts.sh` → exit 0 | ❌ W0 | ⬜ pending |
+| 00-01-0x | 01 | 1 | (no REQ-ID; closes STACK item #1) | — | N/A — read-only filesystem capture | capture-script | `bash spikes/01-jsonl-capture/capture.sh` → exit 0; output: redacted JSONL schema excerpt in `spikes/01-jsonl-capture/FINDING.md` | ❌ W0 | ⬜ pending |
+| 00-02-0x | 02 | 2 | (no REQ-ID; closes STACK item #2) | — | **API keys never logged to stdout** (transport discipline); redacted before VERIFIED-FACTS.md commit (D-03) | spike-program | `(cd spikes && go run ./02-openai-toolschema/)` → exit 0; output: redacted request/response JSON on stderr | ❌ W0 | ⬜ pending |
+| 00-03-0x | 03 | 2 | (no REQ-ID; closes STACK item #3) | — | N/A — local ACP handshake (no secrets) | spike-program | `(cd spikes && go run ./03-acp-handshake/)` → exit 0; output: redacted ACP frame dump on stderr | ❌ W0 | ⬜ pending |
+| 00-04-0x | 04 | 2 | (no REQ-ID; closes STACK item #4) | — | N/A — structural reasoning, no code | doc-only | `grep -F 'STRUCTURALLY-MOOT' .planning/research/VERIFIED-FACTS.md` → match found | ❌ W0 | ⬜ pending |
+| 00-05-0x | 05 | 2 | (no REQ-ID; closes STACK item #5) | — | **Telegram bot logging routed to stderr, never stdout** (transport discipline — load-bearing, this is the spike's whole point) | spike-program | `(cd spikes && go run ./05-stdout-collision/)` → exit 0; output: byte-diff count (0 = clean) on stderr | ❌ W0 | ⬜ pending |
+| 00-VERIF | 05 | 3 | (completeness gate + §3 Tier-B checkpoint) | — | All samples sanitized per D-03 checklist | shell-check | `bash .planning/phases/00-spike-re-verification/check-verified-facts.sh` → exit 0 | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
-**"Wave 0" caveat for this phase:** Wave 0 in a normal phase means "stub test files before implementation." In Phase 0, the spikes ARE the tests; there is no separate test layer to stub. The `❌ W0` markers above indicate "the spike program does not exist yet" — creating it IS the task, and the spike's own exit code is its verification. The `spikes/go.mod` + `spikes/README.md` task (the module skeleton) is the closest analog to a Wave 0 task.
+**"Wave 0" caveat for this phase:** Wave 0 in a normal phase means "stub test files before implementation." In Phase 0, the spikes ARE the tests; there is no separate test layer to stub. The `❌ W0` markers above indicate "the spike program does not exist yet" — creating it IS the task, and the spike's own exit code is its verification. The `spikes/go.mod` + `spikes/README.md` task (Plan 01 Task 1, the module skeleton) is the closest analog to a Wave 0 task — it lands in Wave 1 and is a hard dependency for Plans 02/03/04 (which need the module to compile).
 
 ---
 
 ## Wave 0 Requirements
 
-- [ ] `spikes/go.mod` — isolated module `github.com/djarvur/ass-guard-spikes`, Go 1.25, pins `sashabaranov/go-openai@v1.42.0` + `go-telegram/bot@v1.23.0`
-- [ ] `spikes/README.md` — how to run each spike (committed; per D-05)
-- [ ] `.gitignore` — adds `spikes/go.sum` and `spikes/bin/` (built binaries gitignored; source committed; per D-05)
-- [ ] `.planning/phases/00-spike-re-verification/check-verified-facts.sh` — the completeness gate (5 sections, 5 Status, 5 Evidence, no TBD/TODO)
+- [ ] `spikes/go.mod` — isolated module `github.com/djarvur/ass-guard-spikes`, Go 1.25, pins `sashabaranov/go-openai@v1.42.0` + `go-telegram/bot@v1.23.0` (Plan 01 Task 1, Wave 1)
+- [ ] `spikes/README.md` — how to run each spike (committed; per D-05) (Plan 01 Task 1)
+- [ ] `.gitignore` — adds `spikes/go.sum` and `spikes/bin/` (built binaries gitignored; source committed; per D-05) (Plan 01 Task 1)
+- [ ] `.planning/phases/00-spike-re-verification/check-verified-facts.sh` — the completeness gate (5 sections, 5 Status, 5 Evidence, no TBD/TODO) (Plan 05 Task 1, Wave 3)
 
-**No `go test` stubs are needed** — the spikes are `main` programs, not test suites. The "framework" is `go run`.
+**No `go test` stubs are needed** — the spikes are `main` programs (or, for #1, a shell capture script), not test suites. The "framework" is `go run` for Go spikes and `bash`/`jq` for the #1 capture.
 
 ---
 
