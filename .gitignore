@@ -41,3 +41,7 @@ gsd-install-state.json
 spikes/go.sum
 spikes/bin/
 /spikes/**/bin/
+
+# Phase 1 build artifacts (Plan 01-01 T1)
+/ass-guard
+*.log
