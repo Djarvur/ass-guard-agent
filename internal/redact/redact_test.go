@@ -41,9 +41,9 @@ func TestRedact(t *testing.T) {
 			want: `{"max_tokens":128,"model":"GLM-5.2"}`,
 		},
 		{
-			name: "array of secrets all redacted",
-			in:   `{"keys": ["sk-a", "sk-b"]}`,
-			want: `{"keys":["[REDACTED]","[REDACTED]"]}`,
+			name: "secret key holding an array is replaced wholesale",
+			in:   `{"token": ["sk-a", "sk-b"]}`,
+			want: `{"token":"[REDACTED]"}`,
 		},
 		{
 			name: "deeply nested secret in array of objects",
