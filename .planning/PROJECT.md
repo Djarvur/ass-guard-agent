@@ -128,6 +128,7 @@ Outgoing requests to the model provider must be structurally indistinguishable f
 - **Distribution**: Static binary via goreleaser; ACP registry manifest; no daemon, no network port (the editor owns process lifecycle)
 - **Platform**: macOS + Linux, amd64 + arm64 — Windows deferred
 - **Safety model**: No tool-execution confirmation tier; the pattern/hook table (no match → nothing runs) plus manual cancellation is the only safety mechanism
+- **Investigate-and-fix-ready logging (must-have)**: ass-guard must log every problem it encounters — errors, panics, failed tool calls, provider failures, engine misfires, unexpected states — in a form detailed enough that a developer reading the transcript can diagnose the root cause and fix it. Not just "an error occurred" but the context, the inputs, the failure point, and the recoverable/non-recoverable classification. The transcript is the primary diagnostic surface (corollary of Phase 2 D-03/D-20: transcript = human-investigation artifact); every problem must be investigate-able from the transcript alone.
 
 ## Key Decisions
 
