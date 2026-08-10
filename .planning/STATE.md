@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-08-10T14:40:26.666Z"
+last_updated: "2026-08-10T14:55:27.921Z"
 progress:
   total_phases: 7
   completed_phases: 1
@@ -18,14 +18,14 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-08-09)
 **Core value:** Outgoing requests to the model provider must be structurally indistinguishable from the mimicked agent's (zcode first)
-**Current focus:** Phase 0 COMPLETE (5/5 plans); Phase 1 (Mimicry MVP) ready to plan
+**Current focus:** Phase 01 — mimicry-mvp-north-star-proof
 
 ## Current Phase
 
 **Phase:** 0 — Spike + Re-verification (COMPLETE)
-**Status:** Ready to execute
+**Status:** Executing Phase 01
 **Next action:** Plan Phase 1 (Mimicry MVP — north-star proof). Carry-forward: (1) correct MIMC-02 path wording to `~/.zcode/cli/rollout/model-io-sess_<id>.jsonl` during Phase 1 planning (option-a consequence; munged-cwd obsolete for zcode); (2) operator provisions `MINIMAX_API_KEY`/`GROQ_API_KEY` to flip item #2 PARTIAL → VERIFIED (schema VERIFIED offline already).
-**Last session:** 2026-08-10T14:40:26.627Z
+**Last session:** 2026-08-10T14:55:27.885Z
 
 ## Phase Status
 
@@ -50,11 +50,64 @@ See: .planning/PROJECT.md (updated 2026-08-09)
 
 ## Blockers
 
-(none)
+()
 
 ---
 
 *State initialized: 2026-08-09 after roadmap creation*
+
+- BLOCKER (Phase 1, Plan 01-01 T3 — JSONL extraction-source drift; not the ZAI_API_KEY gate). The on-disk zcode rollout data the Phase-1 plans were authored against has drifted, invalidating the data foundation of 5 of 6 plans. Cannot proceed past T3 autonomously; this needs a replan of the data-source strategy (a decision genuinely the operator's/planner's, not auto-fixable).
+
+== What was being executed ==
+Plan 01-01 T3: extract the zcode profile (3 system blocks, 77 tools, 12 identity headers, thinking, tool_choice) from the pinned rollout session `eea3dc48-9c8b-4162-a466-cee58181b741` into profiles/zcode/, and build internal/profile loader+types. Acceptance criterion: `jq 'length' profiles/zcode/tools.json` == 77.
+
+== Root cause (investigate-and-fix-ready) ==
+(1) The pinned model-io capture file does NOT exist:
+    `~/.zcode/cli/rollout/model-io-sess_eea3dc48-9c8b-4162-a466-cee58181b741.jsonl` is ABSENT.
+    `find ~/.zcode -name "*eea3dc48*"` returns only:
+
+      - ~/.zcode/cli/artifacts/sess_eea3dc48.../  (tool-result JSON fragments, NOT wire-level requests)
+      - ~/.zcode/cli/exec/sess_eea3dc48.../       (EMPTY directory)
+      - ~/.zcode/cli/exec/bash-startup/sess_eea3dc48.../  (one shell script)
+    None of these carry request.body.{system,tools,thinking,tool_choice} or request.headers.
+    So `eea3dc48` is UNRECOVERABLE as a model-io extraction source.
+
+(2) The ONLY main session now in rollout/ is `016eee8a-f2f0-44c3-abf9-9d57a2cf04a1.jsonl` (120 lines, 32MB). Its schema matches VERIFIED-FACTS.md item #1 (model_io lines, the exact 12 identity header names, GLM-5.2 / builtin:zai-coding-plan) — BUT:
+
+    - It carries 103 tool declarations per full line, NOT 77 (catalog drifted +26 tools since the plans were authored ~Aug 10 14:31; this is the PROF-04 drift scenario materializing during capture).
+    - It has only 1 response with a non-empty toolCalls array (a single `AskUserQuestion` call). It is therefore NOT a viable parity-reference session: it cannot supply the 5-15 divergence-prone tool-calling turns Plan 01-06 T3 requires.
+    - `thinking` = {type:"enabled", budget_tokens:32000} and `tool_choice` = {type:"auto"} are present on full lines (good — those fields extract fine).
+
+(3) RESEARCH-FLAG-01's held-out split (Plan 01-02/01-06 design: `eea3dc48` = parity-reference, `016eee8a` = surprise-check) is BROKEN: the parity-reference session is gone and the surprise-check session has no tool-call turns.
+
+== Downstream blast radius (all UNBLOCKED-on-replan only) ==
+
+- Plan 01-01 T3 (profile extract): BLOCKED now — 77-tool criterion fails (103 on disk) and pinned session gone.
+- Plan 01-01 T7 (tracer live round-trip): the ZAI_API_KEY gate the runtime predicted — still applies, but moot until T3 resolves (no profile to load).
+- Plan 01-02 (formal extractor): verify command hardcodes `-sessions eea3dc48-...,016eee8a-...` and `jq 'length' == 77`; the cross-session stability test asserts eea3dc48 + 016eee8a both have 3 system blocks + identical built-in tool-name sets — eea3dc48 absent makes this unrunnable.
+- Plan 01-05 (drift detector PROF-04): the tiered coverage.yaml baseline must be re-grounded on the 103-tool catalog; the drift thresholds likely need recalibration.
+- Plan 01-06 (the parity GATE — project make-or-break): T2 replay reader reads `model-io-sess_eea3dc48...jsonl` ("69 lines, 88 tool-calls" per the plan — GONE); T3 curates 5-15 divergence turns from eea3dc48 (no tool-call turns available in either session). T6 is autonomous:false (ZAI_API_KEY) AND now also data-blocked.
+
+== What CAN run autonomously (already done; preserved) ==
+
+- 01-01 T1 (module init): DONE, committed (adaf8af, 7544ad8 chain). go.mod `module github.com/djarvur/ass-guard-agent` + `go 1.25`; deps pinned (anthropic-sdk-go@v1.62.0, go-openai@v1.42.0, cobra, viper, testify, yaml.v3); package skeleton; CGO_ENABLED=0 build clean; no go-telegram/go-sdk. Unaffected by this blocker.
+- 01-01 T2 (internal/redact): DONE RED+GREEN, committed (test commit + feat commit). Redact/IsSecretKey/ScrubError; all tests pass -race; the 12 identity header NAMES preserved (fingerprint). Unaffected by this blocker — it has no profile dependency.
+
+== Decisions the operator/planner must make (blocking) ==
+A. DATA SOURCE: Do we (i) re-capture a fresh zcode session that produces divergence-prone tool-call turns (the operator runs a short coding task in zcode now to generate a new rollout with 5-15+ tool-calling turns), OR (ii) accept 016eee8a as the sole source and re-scope the parity gate to single-session (drops the held-out surprise-check), OR (iii) something else?
+B. CATALOG DRIFT: Accept 103 tools as the new ground truth and update all `== 77` criteria to `== 103` (or to a range / "built-in core set" per RESEARCH §1.2 — the core ~20 stable, MCP/plugin tail variable)? This is itself PROF-04 drift evidence and may belong in the profile's meta.
+C. RESEARCH-FLAG-01 HELD-OUT SPLIT: With eea3dc48 gone, is the split still viable, or does the parity design collapse to single-session + synthetic-perturbation? This changes Plan 01-06's structure.
+
+== Why I stopped instead of auto-fixing ==
+Per the critical rules + PROJECT.md investigate-and-fix-ready principle: silently extracting 103 tools and fudging the `== 77` criterion would violate Plan 01-01 T3 acceptance, corrupt Plan 01-06's parity reference (it would replay against a different session than it was designed for), and mask a real PROF-04 drift event. The ZAI_API_KEY gate (01-01 T7, 01-06 T6) was predicted; this data-source gate was not, and it is the operator's call how to re-ground the mimicry source of truth.
+
+== Diagnostic evidence (re-runnable) ==
+
+- `find ~/.zcode -name "*eea3dc48*"` → no model-io file (proves (1))
+- `ls ~/.zcode/cli/rollout/` → only 016eee8a + 2 subagent files (proves session set changed)
+- `jq 'select((.request.body.system|length)==3 and (.request.body.tools|length)>0) | (.request.body.tools|length)' 016eee8a...jsonl | sort -n | uniq -c` → 118 lines of 103, 0 lines of 77 (proves (2) catalog drift)
+- `jq 'select((.response.toolCalls//[])|length>0)' 016eee8a...jsonl | wc -l` → 1 (proves (2) no parity turns)
+- Schema of 016eee8a confirmed identical to VERIFIED-FACTS #1 (12 header names, GLM-5.2, builtin:zai-coding-plan) — so the extractor design is sound; only the input session inventory changed.
 
 ## Performance Metrics
 
