@@ -62,6 +62,24 @@ Plans:
 3. A user can run `ass-guard profile check zcode` and the drift detector reports whether the target agent's observed requests still match the captured profile (PROF-04 — north-star killer N1 engineered out from day one)
 4. The behavioral mimicry A/B parity test passes: a fixed prompt suite run through both ass-guard-with-zcode-profile and live zcode produces statistically indistinguishable tool-call sequences, with the byte-identical bar explicitly documented as out of scope (MIMC-03, MIMC-04 — the gate)
 5. A developer can inspect the audit log and see the verbatim shaped outgoing request for every turn — the mimicry evidence source is recorded from day one (LOG-01; foundation that Phase 2 completes)
+Plans:
+**Wave 1**
+
+- [ ] 01-01-PLAN.md — tracer: profile → shaper → Anthropic adapter → Z.ai → tool-call (the seam)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 01-02-PLAN.md — profile fidelity: extractor, coverage manifest, tier assignment, target_capture_ref
+- [ ] 01-03-PLAN.md — built-in tool catalog + schema-adapter layer + catalog-consistency CI
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 01-04-PLAN.md — Shaper completeness, PROF-02 enforcement, OpenAI-shape adapter, provider conformance
+- [ ] 01-05-PLAN.md — audit log + event bus + drift detector + `ass-guard profile check zcode`
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 01-06-PLAN.md — the A/B parity test: curated divergence suite + two-layer metric + the gate
 
 ### Phase 2: Session Core + ACP Interface
 

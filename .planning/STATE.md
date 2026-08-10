@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: verifying
-last_updated: "2026-08-09T21:17:34.758Z"
+status: executing
+last_updated: "2026-08-10T11:34:04.891Z"
 progress:
   total_phases: 7
   completed_phases: 1
-  total_plans: 5
+  total_plans: 11
   completed_plans: 5
   percent: 14
 ---
@@ -23,7 +23,7 @@ See: .planning/PROJECT.md (updated 2026-08-09)
 ## Current Phase
 
 **Phase:** 0 — Spike + Re-verification (COMPLETE)
-**Status:** Complete (5/5 plans; Wave 1 + Wave 2 + Wave 3 all done). VERIFIED-FACTS.md is the post-spike source of truth; STACK.md is the unchanged pre-spike recommendation (D-01); the one Tier-B finding (#1 zcode JSONL path) is resolved.
+**Status:** Ready to execute
 **Next action:** Plan Phase 1 (Mimicry MVP — north-star proof). Carry-forward: (1) correct MIMC-02 path wording to `~/.zcode/cli/rollout/model-io-sess_<id>.jsonl` during Phase 1 planning (option-a consequence; munged-cwd obsolete for zcode); (2) operator provisions `MINIMAX_API_KEY`/`GROQ_API_KEY` to flip item #2 PARTIAL → VERIFIED (schema VERIFIED offline already).
 **Last session:** 2026-08-09T21:17:34.732Z
 
