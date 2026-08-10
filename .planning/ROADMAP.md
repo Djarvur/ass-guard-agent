@@ -93,6 +93,18 @@ Plans:
 3. A mutating toolkit command (Bash, Write, Edit) always resets the model's context window to a lean seed, regardless of config — the developer never has to manage context hygiene manually, and the structural mutability rule (more-mutating wins) is the single source of truth (SESS-02, SESS-03, SESS-04)
 4. A developer can dispatch a `Task`/`Agent` subagent that runs as an isolated goroutine turn-loop with a restricted tool subset; if it panics, the parent gets a tool-error result (not a crash), and the audit log records the full sequence with secrets redacted and rotation preventing volume explosion (PARA-01, PARA-02, PARA-03, PARA-04, LOG-02, LOG-03, LOG-04)
 
+> **Note on criterion #2 + ACP-03 (D-09 v1 cut-line):** per Phase-2 CONTEXT.md D-09, session/load REPLAY is DROPPED from v1. The transcript's primary purpose is human investigation (D-03/D-20), not editor replay. `session/load` is a no-op/error (`loadSession: false` advertised). Criterion #2's replay portion is therefore out of v1 scope; the transcript persistence for human investigation + boundary-marker durability for live projection (SESS-05) remain in scope.
+
+**Plans:** 7 plans across 5 waves (tracer-first: ACP transport seam in Wave 1, then Session Core + streaming infrastructure in Wave 2, integration in Wave 3, subagents in Wave 4, reconstruction gate in Wave 5).
+Plans:
+- [ ] 02-01-PLAN.md — Tracer: ACP v1 stdio server (initialize → session/new → session/prompt → streamed session/update) with hand-rolled framing (ACP-01/02/04/05)
+- [ ] 02-02-PLAN.md — Session Core: transcript (one artifact) + projector (lean window) + turn loop (SESS-01/04/05/06, LOG-02/03)
+- [ ] 02-03-PLAN.md — Mutability declaration interface (per-tool field + SESS-03 formula) + runtime tool restriction (SESS-02/03, PARA-01)
+- [ ] 02-04-PLAN.md — Streaming infrastructure: expanded event bus (typed channels) + Provider.Stream + semaphore (ACP-04, PARA-04, LOG-02)
+- [ ] 02-05-PLAN.md — Integration: real Session Core in ACP + streaming wired + session/load no-op (D-09) + cancel end-to-end (D-16) + boundaries (ACP-03, ACP-04, PARA-04)
+- [ ] 02-06-PLAN.md — Subagent dispatch: isolated goroutine turn-loops, streamed progress, panic recovery (PARA-01/02/03)
+- [ ] 02-07-PLAN.md — Reconstruction-sufficiency test (LOG-04) + transcript-writer audit fold + end-to-end session gate (LOG-04, LOG-02)
+
 ### Phase 3: Model Scheduling
 
 **Goal:** An operator can configure ass-guard to use cheap models off-peak and heavy models at peak hours, override the tier→model table per project, and trust that a provider outage degrades gracefully instead of cascading — while the developer never thinks about which concrete model is running.
