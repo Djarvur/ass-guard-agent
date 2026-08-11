@@ -14,7 +14,7 @@ import (
 
 // newSubagentSession builds a Session whose provider returns the given response
 // sequence, with a real catalog + bus for subagent dispatch.
-func newSubagentSession(t *testing.T, responses []provider.Response) (*Session, *event.Bus, chan event.Event) {
+func newSubagentSession(t *testing.T, responses []provider.Response) (*Session, *event.Bus, <-chan event.Event) {
 	t.Helper()
 	bus := event.NewBus()
 	subResults := bus.Subscribe("SubagentResult", event.BufSubagentResult)
@@ -170,4 +170,12 @@ func TestSubagentPanicRecovery(t *testing.T) {
 	if !hasSubagentResult {
 		t.Error("no subagent_result line with the panic error message")
 	}
+}
+
+// panickingSubagentRunner is a subagentRunner that always panics, to verify
+// goroutine-boundary recovery (PARA-03, D-13).
+type panickingSubagentRunner struct{}
+
+func (panickingSubagentRunner) Run(ctx context.Context, s *Session, subagentTurnID, parentTurnID, prompt string, restricted []string) (string, error) {
+	panic("panickingSubagentRunner: injected panic")
 }

@@ -48,6 +48,10 @@ type Session struct {
 	// RestrictedExecutor for subagents.
 	toolExec toolcat.ToolExecutor
 
+	// subagentRunner is the seam for Task/Agent dispatch (Plan 02-06). Nil →
+	// defaultSubagentRunner (real nested loop). Tests inject a fake.
+	subagentRunner subagentRunner
+
 	turnCounter int64
 }
 
@@ -115,14 +119,27 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 			s.appendError(turnID, "provider", streamErr, false)
 			return "", fmt.Errorf("session turn stream: %w", streamErr)
 		}
-		// Step 5: tool_calls → stub execute + boundary + loop.
+		// Step 5: tool_calls → execute + boundary + loop. Task/Agent tool calls
+		// dispatch an isolated goroutine subagent (PARA-01); other tools are
+		// stub-executed (Phase-2 D-15; real execution is Phase 4).
 		if len(resp.ToolCalls) > 0 {
 			for _, tc := range resp.ToolCalls {
 				_ = s.Manager.AppendToolCall(turnID, tc.Name, tc.Name, tc.Input)
-				out, _ := s.executeStub(ctx, tc)
-				_ = s.Manager.AppendToolResult(turnID, tc.Name, out, false)
+				if isSubagentTool(tc.Name) {
+					result, derr := s.DispatchSubagent(ctx, turnID, tc.Name, extractSubagentPrompt(tc.Input), nil)
+					if derr != nil {
+						errJSON, _ := json.Marshal(map[string]string{"error": derr.Error()})
+						_ = s.Manager.AppendToolResult(turnID, tc.Name, errJSON, true)
+					} else {
+						_ = s.Manager.AppendToolResult(turnID, tc.Name, json.RawMessage(`"`+result+`"`), false)
+					}
+				} else {
+					out, _ := s.executeStub(ctx, tc)
+					_ = s.Manager.AppendToolResult(turnID, tc.Name, out, false)
+				}
 				// SESS-02/03: a mutating/config-added tool is a boundary. The
-				// next projection resets the lean window.
+				// next projection resets the lean window. Task/Agent are read-only
+				// (no boundary).
 				_ = s.MaybeAppendBoundary(tc.Name, tc.Name, turnID)
 			}
 			continue // loop to project again with the stub results
