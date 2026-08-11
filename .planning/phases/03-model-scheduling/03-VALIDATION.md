@@ -45,14 +45,14 @@ created: 2026-08-09
 | 03-01-T1 | 01 | 1 | SCHED-02 | T-03-01 | `time/tzdata` bundled → no host zoneinfo dep (single-binary) | unit | `go test ./internal/scheduler -run TestTzdataBundled -race` | ❌ W0 | ⬜ pending |
 | 03-01-T2 | 01 | 1 | SCHED-06 | T-03-02 | D-10 reject-on-load: inconsistent configs NEVER start the server | unit | `go test ./internal/scheduler -run TestValidate -race -v` | ❌ W0 | ⬜ pending |
 | 03-01-T3 | 01 | 1 | SCHED-01, SCHED-02, SCHED-03 | T-03-03 | D-02 window-wins-outright enforced (project cannot override structural window) | unit | `go test ./internal/scheduler -run TestResolve -race -v` | ❌ W0 | ⬜ pending |
-| 03-02-T1 | 02 | 2 | SCHED-04 | T-03-04 | Exhausted kind NEVER produced by `ClassifyHTTP` (only cost tracker emits it) | unit | `go test ./internal/provider -run TestClassify -race -v` | ❌ W0 | ⬜ pending |
-| 03-02-T2 | 02 | 2 | SCHED-04, SCHED-05 | T-03-05 | fallback/cost events published to stderr-routed bus, never stdout | unit | `go test ./internal/scheduler -run TestEvents -race -v` | ❌ W0 | ⬜ pending |
-| 03-02-T3 | 02 | 2 | SCHED-04 | T-03-06 | Structural error stops the walk (no silent retry); Transient walks the chain | unit | `go test ./internal/scheduler -run TestDispatch -race -v` | ❌ W0 | ⬜ pending |
-| 03-03-T1 | 03 | 3 | SCHED-05 | T-03-07 | breaker mutex held only across state R/W, not the provider call (no concurrency bottleneck); Structural errors don't feed the breaker | unit | `go test ./internal/scheduler -run 'TestBreaker' -race -v` | ❌ W0 | ⬜ pending |
-| 03-03-T2 | 03 | 3 | SCHED-05 | T-03-08 | cost ceiling degrade-then-stop (not hard-stop on first breach); window rollover resets budget | unit | `go test ./internal/scheduler -run TestCost -race -v` | ❌ W0 | ⬜ pending |
-| 03-03-T3 | 03 | 3 | SCHED-05 | T-03-09 | breaker+cost wired into Dispatch; HardStop returns `KindExhausted` | integration | `go test ./internal/scheduler -run TestDispatchSafety -race -v` | ❌ W0 | ⬜ pending |
-| 03-04-T1 | 04 | 3 | SCHED-06 | T-03-10 | runtime capability gate never routes a tool-using turn to a tool-less model | unit+integration | `go test ./internal/scheduler -run TestCapabilityGate -race -v` | ❌ W0 | ⬜ pending |
-| 03-04-T2 | 04 | 3 | SCHED-01, SCHED-06 | T-03-11 | CLI diagnostic output to stderr only; `--json` machine output to stdout only on explicit request (transport discipline) | unit | `go test ./cmd/ass-guard -run TestSchedulingCmds -race -v` | ❌ W0 | ⬜ pending |
+| 03-02-T1 | 02 | 2 | SCHED-04 | T-03-05 | Exhausted kind NEVER produced by `ClassifyHTTP` (only cost tracker emits it) | unit | `go test ./internal/provider -run TestClassify -race -v` | ❌ W0 | ⬜ pending |
+| 03-02-T2 | 02 | 2 | SCHED-04, SCHED-05 | T-03-06 | fallback/cost events published to stderr-routed bus, never stdout | unit | `go test ./internal/scheduler -run TestEvents -race -v` | ❌ W0 | ⬜ pending |
+| 03-02-T3 | 02 | 2 | SCHED-04 | T-03-07 | Structural error stops the walk (no silent retry); Transient walks the chain | unit | `go test ./internal/scheduler -run TestDispatch -race -v` | ❌ W0 | ⬜ pending |
+| 03-03-T1 | 03 | 3 | SCHED-05 | T-03-09 | breaker mutex held only across state R/W, not the provider call (no concurrency bottleneck); Structural errors don't feed the breaker | unit | `go test ./internal/scheduler -run 'TestBreaker' -race -v` | ❌ W0 | ⬜ pending |
+| 03-03-T2 | 03 | 3 | SCHED-05 | T-03-10 | cost ceiling degrade-then-stop (not hard-stop on first breach); window rollover resets budget | unit | `go test ./internal/scheduler -run TestCost -race -v` | ❌ W0 | ⬜ pending |
+| 03-03-T3 | 03 | 3 | SCHED-05 | T-03-11 | breaker+cost wired into Dispatch; HardStop returns `KindExhausted` | integration | `go test ./internal/scheduler -run TestDispatchSafety -race -v` | ❌ W0 | ⬜ pending |
+| 03-04-T1 | 04 | 3 | SCHED-06 | T-03-13 | runtime capability gate never routes a tool-using turn to a tool-less model | unit+integration | `go test ./internal/scheduler -run TestCapabilityGate -race -v` | ❌ W0 | ⬜ pending |
+| 03-04-T2 | 04 | 3 | SCHED-01, SCHED-06 | T-03-14 | CLI diagnostic output to stderr only; `--json` machine output to stdout only on explicit request (transport discipline) | unit | `go test ./cmd/ass-guard -run TestSchedulingCmds -race -v` | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
