@@ -2,6 +2,7 @@ package loop_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -22,6 +23,10 @@ func (f *fakeProvider) Send(ctx context.Context, _ profile.Profile, _ []provider
 		return provider.Response{}, f.err
 	}
 	return provider.Response{ToolCalls: f.calls, FinishReason: "tool_use"}, nil
+}
+
+func (f *fakeProvider) ToolResultMessage(toolCallID string, result json.RawMessage) (json.RawMessage, error) {
+	return json.RawMessage(`{"role":"user","content":"stub"}`), nil
 }
 
 func TestRun_ReturnsProviderToolCalls(t *testing.T) {

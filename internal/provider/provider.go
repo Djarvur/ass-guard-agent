@@ -29,6 +29,11 @@ type Provider interface {
 	// the provider, and returns the parsed tool-calls. The shaped outgoing
 	// request is observable via the RequestCapturer hook when set (LOG-01).
 	Send(ctx context.Context, prof profile.Profile, messages []Message) (Response, error)
+	// ToolResultMessage builds the provider-native follow-up message that closes
+	// a tool-call loop (PROV-02 TranslateFromInternal). The returned bytes are
+	// the marshaled native message — each protocol's shape (Anthropic user+
+	// tool_result; OpenAI role:tool + tool_call_id).
+	ToolResultMessage(toolCallID string, result json.RawMessage) (json.RawMessage, error)
 }
 
 // Response is the zcode-normalized model response.

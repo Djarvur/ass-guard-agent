@@ -106,6 +106,22 @@ func (p *AnthropicProvider) Send(ctx context.Context, prof profile.Profile, mess
 	return parseAnthropicResponse(resp)
 }
 
+// ToolResultMessage builds the Anthropic-shape follow-up: a user-role message
+// whose content is a tool_result block referencing the tool-call id (PROV-02
+// TranslateFromInternal). The result bytes are JSON the SDK would accept as a
+// user MessageParam content block.
+func (p *AnthropicProvider) ToolResultMessage(toolCallID string, result json.RawMessage) (json.RawMessage, error) {
+	msg := map[string]any{
+		"role": "user",
+		"content": []map[string]any{{
+			"type":        "tool_result",
+			"tool_use_id": toolCallID,
+			"content":     json.RawMessage(orEmpty(result)),
+		}},
+	}
+	return json.Marshal(msg)
+}
+
 // parseAnthropicResponse turns an *anthropic.Message into the zcode-normalized
 // Response: tool_use blocks become ToolCall{Name, Input json.RawMessage}; the
 // stop reason is preserved; the raw response is re-marshaled for the audit log.
@@ -140,6 +156,15 @@ func parseAnthropicResponse(resp *anthropic.Message) (Response, error) {
 // capture is wired in Plan 01-05).
 func headersFromOpts(_ []option.RequestOption) map[string]string {
 	return map[string]string{}
+}
+
+// orEmpty returns b as-is, or a single space if empty, so JSON object fields
+// never carry a null where a string is expected.
+func orEmpty(b json.RawMessage) json.RawMessage {
+	if len(b) == 0 {
+		return json.RawMessage(`""`)
+	}
+	return b
 }
 
 // compile-time interface check.
