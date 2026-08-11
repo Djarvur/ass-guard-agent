@@ -1,0 +1,3 @@
+name: minimal
+model: synth-model
+max_tokens: 1024
