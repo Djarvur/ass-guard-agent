@@ -6,5 +6,9 @@
 // Plan 01-01 T5 delivers the Anthropic adapter at tracer fidelity; Plan 01-04
 // adds the OpenAI adapter and round-trip conformance.
 //
-// Phase-1 placeholder.
+// Phase 3 (D-04) adds the typed ProviderError + ClassifyHTTP classifier to this
+// package: every adapter implementation returns a *ProviderError from Send/
+// Stream (the adapter owns HTTP-status classification; the scheduler pattern-
+// matches on Kind). Phase 3 defines the type + classifier; the Phase-1 adapters
+// call it when they ship.
 package provider
