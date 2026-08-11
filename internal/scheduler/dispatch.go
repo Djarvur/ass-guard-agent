@@ -139,7 +139,9 @@ func (s *Scheduler) breakerFor(cand Target) Breaker {
 // cost), calling the provider through the semaphore. On a Transient failure it
 // emits a ProviderFallback event and tries the next candidate; on Structural it
 // stops immediately and reports (D-04 — N5's silent retry-storm engineered
-// out); on Exhausted (cost HardStop) it hard-stops.
+// out); on a cost HardStop it returns KindExhausted; on the first cost Degrade
+// signal it re-resolves to the configured degrade_to tier (one re-resolution,
+// guarded by a local flag so the degraded-tier walk does not loop — Plan 03-03).
 //
 // The resolved Target's Model is stamped onto a copy of prof before the call —
 // the real Provider.Send takes a profile.Profile (the model lives in the
@@ -151,52 +153,67 @@ func (s *Scheduler) breakerFor(cand Target) Breaker {
 func (s *Scheduler) Dispatch(ctx context.Context, tier, project string, capReq CapabilityReq,
 	prof profile.Profile, messages []provider.Message) (provider.Response, error) {
 
-	primary, fallbacks, err := s.resolver.Resolve(tier, project, s.now(), capReq)
-	if err != nil {
-		return provider.Response{}, err
-	}
-	candidates := append([]Target{primary}, fallbacks...)
-
+	degradeTo := s.resolver.cfg.CostCeiling.DegradeTo
+	turnID := turnIDFromCtx(ctx)
+	currentTier := tier
+	degraded := false // local: has Dispatch already performed the tier switch?
 	var lastPerr *provider.ProviderError
 	anyConsidered := false
-	turnID := turnIDFromCtx(ctx)
 
-	for i, cand := range candidates {
-		// Capability gate (D-09 runtime seam). A zero-valued capReq (no specific
-		// needs) skips the filter so the tracer behaves as in Plan 03-01.
-		if !capReq.isZero() && !satisfies(cand.Capabilities, capReq) {
-			s.log.Info("scheduler: skip candidate (capability mismatch)",
-				"provider", cand.Provider, "model", cand.Model, "tier", tier)
-			continue
+	// Outer loop runs once for the requested tier, and one extra time if a cost
+	// Degrade triggers a switch to the degrade_to tier (Plan 03-03).
+	for {
+		primary, fallbacks, err := s.resolver.Resolve(currentTier, project, s.now(), capReq)
+		if err != nil {
+			return provider.Response{}, err
 		}
-		anyConsidered = true
+		candidates := append([]Target{primary}, fallbacks...)
+		switchedTier := false
 
-		// Breaker (D-07).
-		b := s.breakerFor(cand)
-		if !b.Allow(s.now()) {
-			s.log.Info("scheduler: skip candidate (breaker open)",
-				"provider", cand.Provider, "model", cand.Model)
-			continue
-		}
-
-		// Cost (D-08). HardStop short-circuits with KindExhausted.
-		switch s.cost.Check(s.now()) {
-		case CostHardStop:
-			perr := &provider.ProviderError{
-				Kind: provider.KindExhausted, Provider: cand.Provider, Model: cand.Model,
-				Reason: "cost ceiling exhausted",
+	candidateLoop:
+		for i, cand := range candidates {
+			// Capability gate (D-09 runtime seam). A zero-valued capReq (no
+			// specific needs) skips the filter so the tracer behaves as 03-01.
+			if !capReq.isZero() && !satisfies(cand.Capabilities, capReq) {
+				s.log.Info("scheduler: skip candidate (capability mismatch)",
+					"provider", cand.Provider, "model", cand.Model, "tier", currentTier)
+				continue
 			}
-			s.log.Warn("scheduler: cost ceiling exhausted (hard stop)",
-				"provider", cand.Provider, "model", cand.Model)
-			return provider.Response{}, perr
-		case CostDegrade:
-			// Full re-resolve to degrade_to lands in Plan 03-03; here we log the
-			// seam and continue the candidate loop.
-			s.log.Info("scheduler: cost degrade signal (seam — full degrade in 03-03)",
-				"provider", cand.Provider, "model", cand.Model)
-		}
+			anyConsidered = true
 
-		// Semaphore + provider call.
+			// Breaker (D-07).
+			b := s.breakerFor(cand)
+			if !b.Allow(s.now()) {
+				s.log.Info("scheduler: skip candidate (breaker open)",
+					"provider", cand.Provider, "model", cand.Model)
+				continue
+			}
+
+			// Cost (D-08). HardStop short-circuits with KindExhausted; the first
+			// Degrade switches to the degrade_to tier (one re-resolution).
+			switch s.cost.Check(s.now()) {
+			case CostHardStop:
+				perr := &provider.ProviderError{
+					Kind: provider.KindExhausted, Provider: cand.Provider, Model: cand.Model,
+					Reason: "cost ceiling exhausted",
+				}
+				s.log.Warn("scheduler: cost ceiling exhausted (hard stop)",
+					"provider", cand.Provider, "model", cand.Model)
+				return provider.Response{}, perr
+			case CostDegrade:
+				if !degraded && degradeTo != "" && degradeTo != currentTier {
+					degraded = true
+					currentTier = degradeTo
+					switchedTier = true
+					s.log.Warn("scheduler: cost ceiling breached — degrading tier",
+						"from_tier", tier, "to_tier", degradeTo, "provider", cand.Provider, "model", cand.Model)
+					break candidateLoop
+				}
+				// Already degraded (or no degrade target): fall through and attempt
+				// this candidate on the degraded tier.
+			}
+
+			// Semaphore + provider call.
 		if err := s.sem.Acquire(ctx); err != nil {
 			return provider.Response{}, fmt.Errorf("scheduler: acquire semaphore: %w", err)
 		}
@@ -240,7 +257,15 @@ func (s *Scheduler) Dispatch(ctx context.Context, tier, project string, capReq C
 				"to_provider", next.Provider, "to_model", next.Model,
 				"reason", perr.Reason, "attempt", i+1)
 		}
-	}
+	} // end candidateLoop
+
+		// If a cost Degrade triggered a tier switch, re-resolve with the
+		// degrade_to tier and walk again; otherwise the dispatch is done.
+		if switchedTier {
+			continue
+		}
+		break
+	} // end outer resolution loop
 
 	if lastPerr != nil {
 		return provider.Response{}, lastPerr
