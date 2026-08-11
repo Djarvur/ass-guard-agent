@@ -23,13 +23,24 @@ type AuditLogger struct {
 }
 
 // NewAuditLogger subscribes l to RequestShaped on bus and returns it. It panics
-// if sink is os.Stdout (stdout is reserved for ACP frames — transport discipline).
+// if sink is os.Stdout (stdout is reserved for ACP frames — transport
+// discipline). The subscriber drains its channel in a background goroutine; the
+// goroutine exits when the bus is closed (bus.Close) or the process exits.
+//
+// NOTE: Plan 02-07 folds this AuditLogger into the unified TranscriptWriter
+// (D-20 — one artifact). Until then this keeps the Phase-1 LOG-01 path working
+// against the Phase-2 typed-channel bus.
 func NewAuditLogger(bus *event.Bus, sink io.Writer) *AuditLogger {
 	if sink == os.Stdout {
 		panic("audit: sink must not be os.Stdout (transport discipline — stdout is reserved for ACP frames)")
 	}
 	l := &AuditLogger{sink: sink}
-	bus.Subscribe("RequestShaped", l.handle)
+	ch := bus.Subscribe("RequestShaped", event.BufRequestShaped)
+	go func() {
+		for e := range ch {
+			l.handle(e)
+		}
+	}()
 	return l
 }
 

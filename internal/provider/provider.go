@@ -29,11 +29,40 @@ type Provider interface {
 	// the provider, and returns the parsed tool-calls. The shaped outgoing
 	// request is observable via the RequestCapturer hook when set (LOG-01).
 	Send(ctx context.Context, prof profile.Profile, messages []Message) (Response, error)
+	// Stream shapes the profile + messages, opens a streaming SSE request, and
+	// returns a channel of StreamChunks (ACP-04 — provider SSE → bus →
+	// session/update, NO full-turn buffering). The channel emits text/tool_use/
+	// usage chunks as they arrive, then a single "done" chunk carrying the
+	// FinishReason, then closes. ctx cancellation aborts the request and closes
+	// the channel promptly.
+	Stream(ctx context.Context, prof profile.Profile, messages []Message) (<-chan StreamChunk, error)
 	// ToolResultMessage builds the provider-native follow-up message that closes
 	// a tool-call loop (PROV-02 TranslateFromInternal). The returned bytes are
 	// the marshaled native message — each protocol's shape (Anthropic user+
 	// tool_result; OpenAI role:tool + tool_call_id).
 	ToolResultMessage(toolCallID string, result json.RawMessage) (json.RawMessage, error)
+}
+
+// StreamChunk is one streamed fragment of a model response. Type discriminates:
+//   - "text": a text delta (Text is the fragment)
+//   - "tool_use": a tool invocation (ToolCall is set)
+//   - "usage": a token-usage update (Usage is set)
+//   - "done": the terminal chunk; FinishReason carries the provider's stop reason
+//     and Raw carries the assembled raw response bytes for the audit log.
+type StreamChunk struct {
+	Type         string
+	Text         string
+	ToolCall     *ToolCall
+	ToolCallID   string // set on tool_use chunks (the provider's tool-call id)
+	Usage        *Usage
+	FinishReason string
+	Raw          json.RawMessage
+}
+
+// Usage is the token accounting for a turn (or partial).
+type Usage struct {
+	InputTokens  int64
+	OutputTokens int64
 }
 
 // Response is the zcode-normalized model response.

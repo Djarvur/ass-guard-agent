@@ -15,7 +15,11 @@ func TestTypedChannels(t *testing.T) {
 	ch := b.Subscribe("AgentMessageChunk", event.BufAgentMessageChunk)
 	b.Publish(event.AgentMessageChunk{TurnID: "t1", MessageID: "m1", Content: "hi"})
 	select {
-	case got := <-ch:
+	case e := <-ch:
+		got, ok := e.(event.AgentMessageChunk)
+		if !ok {
+			t.Fatalf("received %T; want AgentMessageChunk", e)
+		}
 		if got.Content != "hi" || got.TurnID != "t1" {
 			t.Errorf("got = %+v; want Content=hi TurnID=t1", got)
 		}

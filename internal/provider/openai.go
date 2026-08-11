@@ -185,5 +185,18 @@ func (p *OpenAIProvider) ToolResultMessage(toolCallID string, result json.RawMes
 	return json.Marshal(msg)
 }
 
+// Stream is not implemented for the OpenAI-shape adapter in Phase 2 (the
+// streaming path is Anthropic-shape only — ACP-04 is exercised against the Z.ai
+// GLM Anthropic endpoint). It returns a clear error so callers do not silently
+// fall back to a non-streaming shape. OpenAI-shape streaming lands in a later
+// phase if a non-Anthropic streaming provider becomes a target.
+func (p *OpenAIProvider) Stream(ctx context.Context, prof profile.Profile, messages []Message) (<-chan StreamChunk, error) {
+	return nil, errOpenAIStreamNotImplemented
+}
+
+// errOpenAIStreamNotImplemented is the sentinel returned by the OpenAI adapter's
+// Stream (Phase 2 scope: Anthropic-shape streaming only).
+var errOpenAIStreamNotImplemented = errors.New("openai provider: streaming not implemented in Phase 2 (ACP-04 is Anthropic-shape only)")
+
 // compile-time interface check.
 var _ Provider = (*OpenAIProvider)(nil)
