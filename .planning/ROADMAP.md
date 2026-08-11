@@ -14,7 +14,7 @@ The six deltas (mimicry, multi-tier scheduling, configurable backends, learning 
 |---|-------|------|--------------|------------------|
 | 0 | Spike + Re-verification ✅ **COMPLETE 2026-08-09** (5/5 plans; VERIFIED-FACTS.md authored + gated + sanitized; STACK.md unchanged) | The team can trust every inherited fact (5 weeks old) before building on it | — (no REQ-IDs; closes 5 Phase-0 research flags) | 3 |
 | 1 | Mimicry MVP (north-star proof) | 0/6 | Planned    |  |
-| 2 | Session Core + ACP Interface | A developer can spawn ass-guard from Zed via ACP, send a prompt, watch streamed output, restart and replay the session, and trust that the model saw a clean context window | SESS-01, SESS-02, SESS-03, SESS-04, SESS-05, SESS-06, ACP-01, ACP-02, ACP-03, ACP-04, ACP-05, LOG-02, LOG-03, LOG-04, PARA-01, PARA-02, PARA-03, PARA-04 | 4 |
+| 2 | Session Core + ACP Interface | 7/7 | Complete   | 2026-08-11 |
 | 3 | Model Scheduling | An operator can configure heavy/good/light tiers with time-windowed model substitution, per-project overrides, and fallback chains, and ass-guard picks the right model at request time without the developer noticing | SCHED-01, SCHED-02, SCHED-03, SCHED-04, SCHED-05, SCHED-06 | 4 |
 | 4 | Unified Engine + Hook-DAG + OpenSpec + Learning | A developer can run an unmodified OpenSpec scenario end-to-end through ass-guard with zero manual "continue" taps, while the forgotten routine (tests, lint, review, memory, improvement proposals) runs automatically after each stage | ENG-01, ENG-02, ENG-03, ENG-04, ENG-05, HOOK-01, HOOK-02, HOOK-03, HOOK-04, HOOK-05, LRN-01, LRN-02, LRN-03, LRN-04, OPEN-01, OPEN-02, OPEN-03, TOOL-04, TOOL-05 | 5 |
 | 5 | Ecosystem Compatibility | A Claude Code user can drop their existing `.claude/` setup (MCP servers, skills, slash-commands, plugins) into ass-guard and have it work unchanged, alongside ass-guard's own additions | ECOS-01, ECOS-02, ECOS-03, ECOS-04, ECOS-05 | 4 |
@@ -95,15 +95,15 @@ Plans:
 
 > **Note on criterion #2 + ACP-03 (D-09 v1 cut-line):** per Phase-2 CONTEXT.md D-09, session/load REPLAY is DROPPED from v1. The transcript's primary purpose is human investigation (D-03/D-20), not editor replay. `session/load` is a no-op/error (`loadSession: false` advertised). Criterion #2's replay portion is therefore out of v1 scope; the transcript persistence for human investigation + boundary-marker durability for live projection (SESS-05) remain in scope.
 
-**Plans:** 7 plans across 5 waves (tracer-first: ACP transport seam in Wave 1, then Session Core + streaming infrastructure in Wave 2, integration in Wave 3, subagents in Wave 4, reconstruction gate in Wave 5).
+**Plans:** 7/7 plans complete
 Plans:
-- [ ] 02-01-PLAN.md — Tracer: ACP v1 stdio server (initialize → session/new → session/prompt → streamed session/update) with hand-rolled framing (ACP-01/02/04/05)
-- [ ] 02-02-PLAN.md — Session Core: transcript (one artifact) + projector (lean window) + turn loop (SESS-01/04/05/06, LOG-02/03)
-- [ ] 02-03-PLAN.md — Mutability declaration interface (per-tool field + SESS-03 formula) + runtime tool restriction (SESS-02/03, PARA-01)
-- [ ] 02-04-PLAN.md — Streaming infrastructure: expanded event bus (typed channels) + Provider.Stream + semaphore (ACP-04, PARA-04, LOG-02)
-- [ ] 02-05-PLAN.md — Integration: real Session Core in ACP + streaming wired + session/load no-op (D-09) + cancel end-to-end (D-16) + boundaries (ACP-03, ACP-04, PARA-04)
-- [ ] 02-06-PLAN.md — Subagent dispatch: isolated goroutine turn-loops, streamed progress, panic recovery (PARA-01/02/03)
-- [ ] 02-07-PLAN.md — Reconstruction-sufficiency test (LOG-04) + transcript-writer audit fold + end-to-end session gate (LOG-04, LOG-02)
+- [x] 02-01-PLAN.md — Tracer: ACP v1 stdio server (initialize → session/new → session/prompt → streamed session/update) with hand-rolled framing (ACP-01/02/04/05)
+- [x] 02-02-PLAN.md — Session Core: transcript (one artifact) + projector (lean window) + turn loop (SESS-01/04/05/06, LOG-02/03)
+- [x] 02-03-PLAN.md — Mutability declaration interface (per-tool field + SESS-03 formula) + runtime tool restriction (SESS-02/03, PARA-01)
+- [x] 02-04-PLAN.md — Streaming infrastructure: expanded event bus (typed channels) + Provider.Stream + semaphore (ACP-04, PARA-04, LOG-02)
+- [x] 02-05-PLAN.md — Integration: real Session Core in ACP + streaming wired + session/load no-op (D-09) + cancel end-to-end (D-16) + boundaries (ACP-03, ACP-04, PARA-04)
+- [x] 02-06-PLAN.md — Subagent dispatch: isolated goroutine turn-loops, streamed progress, panic recovery (PARA-01/02/03)
+- [x] 02-07-PLAN.md — Reconstruction-sufficiency test (LOG-04) + transcript-writer audit fold + end-to-end session gate (LOG-04, LOG-02)
 
 ### Phase 3: Model Scheduling
 

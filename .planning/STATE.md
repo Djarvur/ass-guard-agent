@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-last_updated: "2026-08-11T19:35:05.971Z"
+status: completed
+last_updated: "2026-08-11T20:52:02.950Z"
 progress:
   total_phases: 7
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 22
-  completed_plans: 5
-  percent: 14
+  completed_plans: 12
+  percent: 29
 ---
 
 # State: ass-guard-agent (working name)
@@ -18,12 +18,12 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-08-09)
 **Core value:** Outgoing requests to the model provider must be structurally indistinguishable from the mimicked agent's (zcode first)
-**Current focus:** Phase 01 — mimicry-mvp-north-star-proof
+**Current focus:** Phase 02 — session-core-acp-interface
 
 ## Current Phase
 
 **Phase:** 0 — Spike + Re-verification (COMPLETE)
-**Status:** Ready to execute
+**Status:** Phase 02 complete
 **Next action:** Plan Phase 1 (Mimicry MVP — north-star proof). Carry-forward: (1) correct MIMC-02 path wording to `~/.zcode/cli/rollout/model-io-sess_<id>.jsonl` during Phase 1 planning (option-a consequence; munged-cwd obsolete for zcode); (2) operator provisions `MINIMAX_API_KEY`/`GROQ_API_KEY` to flip item #2 PARTIAL → VERIFIED (schema VERIFIED offline already).
 **Last session:** 2026-08-11T18:29:15.264Z
 
