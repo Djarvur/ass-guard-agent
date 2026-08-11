@@ -58,6 +58,7 @@ func newRootCmd() *cobra.Command {
 	root.PersistentFlags().StringVar(&auditLog, "audit-log", "", "write the redacted verbatim shaped request to this file (LOG-01); empty = stderr")
 
 	root.AddCommand(newProfileCmd())
+	root.AddCommand(newParityCmd())
 	return root
 }
 

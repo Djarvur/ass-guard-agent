@@ -1,0 +1,74 @@
+[
+  {
+    "turn_id": "div-01-multi-read-parallel",
+    "prompt": "Read the files go.mod, README.md, and AGENTS.md and report the module path, the project's one-line description, and the transport-discipline rule.",
+    "expected_tool_calls": [
+      {"name": "Read", "input": {"file_path": "go.mod"}},
+      {"name": "Read", "input": {"file_path": "README.md"}},
+      {"name": "Read", "input": {"file_path": "AGENTS.md"}}
+    ],
+    "divergence_rationale": "multi-tool parallel reads — a weaker shaper might batch into one Read or pick a different read order; zcode emits three parallel Read calls (observed in the disjoint 5b30d6eb session: [Read,Read,Read])"
+  },
+  {
+    "turn_id": "div-02-read-then-bash",
+    "prompt": "Read go.mod, then run the tests and report whether they pass.",
+    "expected_tool_calls": [
+      {"name": "Read", "input": {"file_path": "go.mod"}},
+      {"name": "Read", "input": {"file_path": "<test-file>"}},
+      {"name": "Bash", "input": {"command": "go test"}}
+    ],
+    "divergence_rationale": "mixed read+mutating sequencing — observed shape [Read,Read,Bash] in 5b30d6eb; a shaper that conflates inspection with execution would misorder or collapse the sequence"
+  },
+  {
+    "turn_id": "div-03-plan-plus-reads-plus-build",
+    "prompt": "Plan the work, read the two planning context files, then build the project to confirm it compiles.",
+    "expected_tool_calls": [
+      {"name": "TodoWrite", "input": {"todos": []}},
+      {"name": "Read", "input": {"file_path": "<ctx-1>"}},
+      {"name": "Read", "input": {"file_path": "<ctx-2>"}},
+      {"name": "Bash", "input": {"command": "go build"}}
+    ],
+    "divergence_rationale": "4-tool mixed sequence (planning + parallel reads + mutating build) — observed [TodoWrite,Read,Read,Bash] in 5b30d6eb; the longest divergence-prone sequence, probes tool ordering fidelity"
+  },
+  {
+    "turn_id": "div-04-ambiguous-read-vs-grep",
+    "prompt": "Find where the redaction secret-key allowlist is defined in the codebase.",
+    "expected_tool_calls": [
+      {"name": "Grep", "input": {"pattern": "IsSecretKey"}}
+    ],
+    "divergence_rationale": "ambiguous tool selection — a search-for-definition task could pick Grep (right) or Read-guessing (wrong); probes the catalog's search-tool selection fidelity"
+  },
+  {
+    "turn_id": "div-05-single-bash-mutating",
+    "prompt": "Build the project for all platforms with CGO disabled.",
+    "expected_tool_calls": [
+      {"name": "Bash", "input": {"command": "CGO_ENABLED=0 go build ./..."}}
+    ],
+    "divergence_rationale": "single mutating tool — the simplest non-trivial selection; a baseline that must pass before complex sequences are meaningful"
+  },
+  {
+    "turn_id": "div-06-skill-dispatch",
+    "prompt": "Use the go-ultimate skill to scaffold a new internal package called internal/example.",
+    "expected_tool_calls": [
+      {"name": "Skill", "input": {"skill": "go-ultimate"}},
+      {"name": "Read", "input": {"file_path": "<skill-md>"}}
+    ],
+    "divergence_rationale": "Skill-tool dispatch + follow-up read — observed [Skill,Read] in 5b30d6eb; a shaper that doesn't faithfully declare the Skill tool would diverge to a plain Read"
+  },
+  {
+    "turn_id": "div-07-zero-tool-direct-answer",
+    "prompt": "What is the module path declared in go.mod? Answer from memory without reading any file.",
+    "expected_tool_calls": [],
+    "divergence_rationale": "zero-tool direct answer — the model must NOT call a tool; a weaker shaper that over-declares tools would spuriously call Read. Valid empty-sequence match (RESEARCH §3.2)"
+  },
+  {
+    "turn_id": "div-08-bash-reads-inspection",
+    "prompt": "List the internal packages, then read the two largest source files to inspect them.",
+    "expected_tool_calls": [
+      {"name": "Bash", "input": {"command": "ls internal/"}},
+      {"name": "Read", "input": {"file_path": "<large-1>"}},
+      {"name": "Read", "input": {"file_path": "<large-2>"}}
+    ],
+    "divergence_rationale": "Bash-then-parallel-Reads — observed [Bash,Read,Read] in 5b30d6eb; probes the read/inspection sequencing after a discovery step"
+  }
+]
