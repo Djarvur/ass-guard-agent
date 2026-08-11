@@ -1,6 +1,10 @@
 package profile
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+	"time"
+)
 
 // Profile is a configurable bundle of system prompts, tool catalog, message
 // shape, and identity that ass-guard shapes every outgoing model-provider
@@ -47,4 +51,104 @@ type Decl struct {
 type Header struct {
 	Name          string `yaml:"name" json:"name"`
 	ValueTemplate string `yaml:"value_template" json:"value_template"`
+}
+
+// Tier labels a captured field's fidelity band (D-06):
+//   - Tier1ByteFaithful: model-visible content the mimicry thesis depends on
+//     (system-prompt text, tool name+input_schema, tool_choice). Drift = hard fail.
+//   - Tier2Structural: presence + shape matter, exact values don't (the 12
+//     identity header NAMES; the system/tools array shape). Structural drift is
+//     flagged; per-session value variance (e.g. an x-request-id value) is not.
+//   - Tier3Informational: timestamps, token counts, request ids. Audit-logged
+//     only; NEVER drift-flagged.
+type Tier int
+
+const (
+	// Tier1ByteFaithful is the byte-exact band.
+	Tier1ByteFaithful Tier = 1
+	// Tier2Structural is the presence-and-shape band.
+	Tier2Structural Tier = 2
+	// Tier3Informational is the audit-only band.
+	Tier3Informational Tier = 3
+)
+
+// String returns the canonical tier name for logging/manifests.
+func (t Tier) String() string {
+	switch t {
+	case Tier1ByteFaithful:
+		return "TIER-1"
+	case Tier2Structural:
+		return "TIER-2"
+	case Tier3Informational:
+		return "TIER-3"
+	default:
+		return fmt.Sprintf("TIER-?%d", int(t))
+	}
+}
+
+// DriftFlagged reports whether the drift detector should flag a change in this
+// field's value. TIER-1 and TIER-2 are flagged; TIER-3 (per-request ephemera) is
+// audit-only and never flagged (D-06).
+func (t Tier) DriftFlagged() bool { return t == Tier1ByteFaithful || t == Tier2Structural }
+
+// CoverageEntry is one row of the machine-readable coverage manifest (PROF-05,
+// D-07). It ties a captured field to its tier, type, observed count, and the
+// source location the value was extracted from.
+type CoverageEntry struct {
+	Path          string `yaml:"path" json:"path"`
+	Tier          Tier   `yaml:"tier" json:"tier"`
+	Type          string `yaml:"type" json:"type"`
+	ObservedCount int    `yaml:"observed_count" json:"observed_count"`
+	Source        string `yaml:"source" json:"source"`
+}
+
+// SessionRef is one extraction-source session inside a TargetCaptureRef.
+type SessionRef struct {
+	ID   string `yaml:"id" json:"id"`
+	Path string `yaml:"path" json:"path"`
+	Role string `yaml:"role" json:"role"`
+}
+
+// TargetCaptureRef records the provenance of a profile extraction (PROF-03):
+// the session(s) and corrected on-disk path the profile fields were read from.
+type TargetCaptureRef struct {
+	Sessions         []SessionRef `yaml:"sessions" json:"sessions"`
+	ExtractedAt      time.Time    `yaml:"extracted_at" json:"extracted_at"`
+	ExtractorVersion string       `yaml:"extractor_version" json:"extractor_version"`
+}
+
+// CoverageManifest is the machine-readable coverage manifest shipped with the
+// profile (PROF-05, D-07). It makes "incomplete capture" a loud failure and
+// feeds the TOOL-03 catalog-consistency check.
+type CoverageManifest struct {
+	Profile                         string           `yaml:"profile" json:"profile"`
+	TargetCaptureRef                TargetCaptureRef `yaml:"target_capture_ref" json:"target_capture_ref"`
+	ExtractedAt                     time.Time        `yaml:"extracted_at" json:"extracted_at"`
+	ExtractorVersion                string           `yaml:"extractor_version" json:"extractor_version"`
+	Fields                          []CoverageEntry  `yaml:"fields" json:"fields"`
+	RequiredToolsSatisfiedByCatalog bool             `yaml:"required_tools_satisfied_by_catalog" json:"required_tools_satisfied_by_catalog"`
+}
+
+// Validate returns an error naming any TIER-1/2 manifest field whose observed
+// count in a fresh capture differs from the manifest's declared ObservedCount
+// (the PROF-05 incomplete-capture gate). TIER-3 fields are not validated.
+func (m CoverageManifest) Validate(captured map[string]int) error {
+	var mismatches []string
+	for _, f := range m.Fields {
+		if !f.Tier.DriftFlagged() {
+			continue
+		}
+		got, ok := captured[f.Path]
+		if !ok {
+			mismatches = append(mismatches, fmt.Sprintf("%s: missing from capture", f.Path))
+			continue
+		}
+		if got != f.ObservedCount {
+			mismatches = append(mismatches, fmt.Sprintf("%s: observed %d, manifest declares %d (%s)", f.Path, got, f.ObservedCount, f.Tier))
+		}
+	}
+	if len(mismatches) > 0 {
+		return fmt.Errorf("coverage check failed: %v", mismatches)
+	}
+	return nil
 }
