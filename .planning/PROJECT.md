@@ -19,7 +19,7 @@ Outgoing requests to the model provider must be structurally indistinguishable f
 
 ### Validated
 
-(None yet — ship to validate)
+- Model scheduling layer (Phase 3 — Model Scheduling): tier abstraction (heavy/good/light → concrete provider+model), time-windowed substitution with IANA-zone support + bundled tzdata, per-project override (D-02 precedence: time-window → project → global), typed ProviderError classification (Transient/Structural) driving an explicit fallback chain, circuit breakers (consecutive + error-rate, D-07) and a dollars-per-window cost ceiling with degrade-then-stop (D-08), and structured capability profiles with load-time + request-time mismatch enforcement (D-09/D-10). Validated by `internal/scheduler` (config/resolver/dispatch/breaker/cost/capability) + `internal/provider/errors.go` + the `ass-guard scheduling validate|resolve` CLI.
 
 ### Active
 
@@ -32,10 +32,10 @@ Outgoing requests to the model provider must be structurally indistinguishable f
 **Model provider layer**
 
 - [ ] Supports both Anthropic-shape and OpenAI-shape protocols, with any compatible provider via configurable base URL
-- [ ] Model tiers (heavy/good/light ≈ opus/sonnet/haiku) abstract the concrete model; command/skill/subagent selects a tier
-- [ ] Tier→model mapping is time-scheduled (e.g. heavy is glm-5.2 normally, minimax-m3 in peak hours)
-- [ ] Per-project override of the tier→model table (falls back to config default if unset)
-- [ ] Fallback chains on provider error/limit (degrade tier, or walk a configured chain — not just a single default)
+- [x] Model tiers (heavy/good/light ≈ opus/sonnet/haiku) abstract the concrete model; command/skill/subagent selects a tier — *Validated in Phase 3 (SCHED-01)*
+- [x] Tier→model mapping is time-scheduled (e.g. heavy is glm-5.2 normally, minimax-m3 in peak hours) — *Validated in Phase 3 (SCHED-02)*
+- [x] Per-project override of the tier→model table (falls back to config default if unset) — *Validated in Phase 3 (SCHED-03)*
+- [x] Fallback chains on provider error/limit (degrade tier, or walk a configured chain — not just a single default) — *Validated in Phase 3 (SCHED-04/05)*
 
 **Agent ecosystem compatibility**
 
@@ -160,4 +160,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-09 after initialization*
+*Last updated: 2026-08-11 after Phase 3 (Model Scheduling) completion*
