@@ -14,7 +14,10 @@
 // session/update notification carries a `sessionUpdate` discriminator.
 package acp
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 // Message is the JSON-RPC 2.0 envelope. A request carries an id + method +
 // params; a notification carries method + params with NO id; a response carries
@@ -33,12 +36,18 @@ type Message struct {
 	Error   *RPCError       `json:"error,omitempty"`    // response failure
 }
 
-// RPCError is the JSON-RPC 2.0 error object.
+// RPCError is the JSON-RPC 2.0 error object. It implements the error interface
+// so handlers can return a specific JSON-RPC code (e.g. -32601 method-not-found
+// for session/load's D-09 no-op) and handleRequest surfaces it verbatim instead
+// of wrapping it as a generic -32603.
 type RPCError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 	Data    any    `json:"data,omitempty"`
 }
+
+// Error implements the error interface.
+func (e *RPCError) Error() string { return fmt.Sprintf("jsonrpc %d: %s", e.Code, e.Message) }
 
 // ContentBlock is one entry of an ACP prompt/content array (PROMPT-TURN.md). In
 // Phase 2 only the text block is exercised; the shape is forward-compatible with

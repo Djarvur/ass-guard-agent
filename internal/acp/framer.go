@@ -105,21 +105,68 @@ func readFrame(r *bufio.Reader) (*Message, error) {
 	return &msg, nil
 }
 
-// Writer is the concurrency-safe stdout emitter. ACP servers may have the reader
-// goroutine, per-prompt turn goroutines, and the event-bus adapter all writing
-// session/update notifications + responses to the same stdout; the mutex
-// serializes frame writes so no line is interleaved.
+// Writer is the concurrency-safe, asynchronous stdout emitter. ACP servers have
+// a reader goroutine, per-prompt turn goroutines, and the event-bus adapter all
+// writing session/update notifications + responses to the same stdout. Writer
+// serializes frame writes (no interleaved lines) AND decouples producers from a
+// slow client: Write enqueues onto a bounded channel and a single drain goroutine
+// writes the frames to the underlying io.Writer in order.
+//
+// This is load-bearing for the reader goroutine: a parse-error response written
+// from the reader must NOT block on a slow client (io.Pipe writes block until
+// read), or the reader could not read the next frame. The bounded channel is the
+// D-05 backpressure boundary — a full buffer blocks the producer (natural
+// slow-down), but the common case (a responsive client) never blocks.
 type Writer struct {
-	mu sync.Mutex
-	w  io.Writer
+	w   io.Writer
+	ch  chan Message
+	wg  sync.WaitGroup
+	mu  sync.Mutex // guards Close once
+	closed bool
 }
 
-// newWriter wraps an io.Writer (production: os.Stdout; tests: a bytes.Buffer).
-func newWriter(w io.Writer) *Writer { return &Writer{w: w} }
+// newWriter wraps an io.Writer (production: os.Stdout; tests: a bytes.Buffer or
+// pipe) and starts the drain goroutine.
+func newWriter(w io.Writer) *Writer {
+	wtr := &Writer{w: w, ch: make(chan Message, writeBuffer)}
+	wtr.wg.Add(1)
+	go wtr.drain()
+	return wtr
+}
 
-// Write writes one Message as a single newline-delimited frame under the mutex.
+// writeBuffer is the bounded async buffer (D-05). 256 is generous for ACP's
+// small frames; a full buffer blocks producers (backpressure).
+const writeBuffer = 256
+
+// Write enqueues one Message for the drain goroutine. It blocks if the buffer is
+// full (D-05 backpressure — a stuck client stalls the turn rather than growing
+// memory unbounded).
 func (w *Writer) Write(msg Message) error {
+	w.ch <- msg
+	return nil
+}
+
+// drain writes enqueued frames to the underlying writer in order, one at a time.
+// A write error (e.g. closed pipe on shutdown) is swallowed — best-effort.
+func (w *Writer) drain() {
+	defer w.wg.Done()
+	for msg := range w.ch {
+		_ = writeFrame(w.w, msg)
+	}
+}
+
+// Close shuts down the drain goroutine, flushing any buffered frames. It is
+// idempotent. After Close, Write will block forever (do not call Write after
+// Close). Tests that inspect a captured stdout MUST Close before reading the
+// buffer so all frames are flushed.
+func (w *Writer) Close() {
 	w.mu.Lock()
-	defer w.mu.Unlock()
-	return writeFrame(w.w, msg)
+	if w.closed {
+		w.mu.Unlock()
+		return
+	}
+	w.closed = true
+	w.mu.Unlock()
+	close(w.ch)
+	w.wg.Wait()
 }

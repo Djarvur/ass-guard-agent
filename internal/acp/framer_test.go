@@ -123,6 +123,8 @@ func TestWriterConcurrentSafety(t *testing.T) {
 		}(i)
 	}
 	wg.Wait()
+	// Close flushes the drain goroutine (all frames written) before we inspect.
+	w.Close()
 
 	lines := bytes.Split(buf.Bytes(), []byte{'\n'})
 	// Last element is an empty trailing string after the final newline.
