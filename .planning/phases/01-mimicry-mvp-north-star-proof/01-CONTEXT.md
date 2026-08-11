@@ -76,6 +76,10 @@ Also at Claude's discretion (the researcher/planner resolves):
 - The exact tier assignment of each captured field (D-06) — the three-tier *framework* is locked; which field goes in which tier is the researcher's call based on the captured evidence.
 - The exact format of the machine-readable coverage manifest (D-07) — YAML vs JSON vs embedded block is the planner's call.
 
+### Data-source strategy (D-16 — blocker resolution, added 2026-08-11)
+
+- **D-16:** The profile extractor and parity test read from zcode's **continuously-written rollout logs at execution time** — they do NOT hardcode specific session IDs or tool counts. zcode writes rollout JSONL continuously as the user works (`~/.zcode/cli/rollout/model-io-sess_<id>.jsonl`); the extractor scans the directory, picks the session(s) with the richest request-body capture (full system blocks + tools + headers), and extracts from those. The tool count is **whatever the source session declares** (observed: 97–103 depending on session; the stable built-in core is ~20, the rest are MCP/plugin tools that vary per session — this variability is itself PROF-04 drift evidence). Acceptance criteria must NOT hardcode a specific count (the original plans' `== 77` was wrong — it pinned a snapshot that drifted within hours). **RESEARCH-FLAG-01 resolved:** use DIFFERENT sessions for extraction vs parity reference (natural held-out split — e.g. extract the profile from the richest main session; draw parity-reference tool-call sequences from a different session with divergence-prone multi-tool turns). The coupling concern (same data for extraction + parity) is removed by using disjoint sessions.
+
 </decisions>
 
 <canonical_refs>

@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-08-11T18:29:15.295Z"
+last_updated: "2026-08-11T18:35:47.300Z"
 progress:
   total_phases: 7
   completed_phases: 1
@@ -55,8 +55,6 @@ See: .planning/PROJECT.md (updated 2026-08-09)
 ---
 
 *State initialized: 2026-08-09 after roadmap creation*
-
-- BLOCKER (Phase 1, Plan 01-01 T3 — JSONL extraction-source drift; not the ZAI_API_KEY gate). The on-disk zcode rollout data the Phase-1 plans were authored against has drifted, invalidating the data foundation of 5 of 6 plans. Cannot proceed past T3 autonomously; this needs a replan of the data-source strategy (a decision genuinely the operator's/planner's, not auto-fixable).
 
 == What was being executed ==
 Plan 01-01 T3: extract the zcode profile (3 system blocks, 77 tools, 12 identity headers, thinking, tool_choice) from the pinned rollout session `eea3dc48-9c8b-4162-a466-cee58181b741` into profiles/zcode/, and build internal/profile loader+types. Acceptance criterion: `jq 'length' profiles/zcode/tools.json` == 77.
