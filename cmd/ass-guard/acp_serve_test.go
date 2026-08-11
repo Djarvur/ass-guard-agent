@@ -111,7 +111,7 @@ func TestACPServeDoesNotRegressProfileCheck(t *testing.T) {
 	}
 	hasCheck := false
 	for _, c := range profileCmd.Commands() {
-		if c.Use == "check" {
+		if strings.HasPrefix(c.Use, "check") {
 			hasCheck = true
 			break
 		}
