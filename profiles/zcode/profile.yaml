@@ -1,0 +1,3 @@
+name: zcode
+model: GLM-5.2
+max_tokens: 32001
