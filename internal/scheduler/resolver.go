@@ -52,10 +52,14 @@ func (r *Resolver) Resolve(tier, project string, now time.Time, capReq Capabilit
 		}
 		fallbacks = append(fallbacks, ft)
 	}
-	// capReq intentionally not applied here (Plan 03-01 tracer); Plan 03-04
-	// wires applyCapabilityGate over (primary, fallbacks).
-	_ = capReq
-	return primary, fallbacks, nil
+	// Apply the request-time capability gate (D-09): when capReq is non-zero,
+	// skip incapable candidates and return the first capable one + the remaining
+	// chain. A zero capReq leaves the chain unchanged (Plan 03-01 behavior).
+	chosen, remaining, err := applyCapabilityGate(primary, fallbacks, capReq)
+	if err != nil {
+		return Target{}, nil, fmt.Errorf("resolve tier %q: %w", tier, err)
+	}
+	return chosen, remaining, nil
 }
 
 // resolveBinding is the 4-line D-02 algorithm (RESEARCH §4.1).
@@ -201,21 +205,4 @@ func parseHHMM(s string, day time.Time) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("parse HH:MM %q: out of range", s)
 	}
 	return time.Date(day.Year(), day.Month(), day.Day(), h, m, 0, 0, day.Location()), nil
-}
-
-// satisfies reports whether a capability profile meets a capability requirement
-// (D-09). Defined + unit-tested here; Plan 03-04 relocates it to capability.go
-// and applies it as the request-time gate. A zero-valued CapabilityReq (no
-// specific needs) is always satisfied.
-func satisfies(cap CapabilityProfile, req CapabilityReq) bool {
-	if req.NeedsTools && !cap.ToolCalling {
-		return false
-	}
-	if req.NeedsStreaming && !cap.Streaming {
-		return false
-	}
-	if req.NeedsThinking && !cap.ExtendedThinking {
-		return false
-	}
-	return true
 }
