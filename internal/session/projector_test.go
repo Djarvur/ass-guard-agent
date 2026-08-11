@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/djarvur/ass-guard-agent/internal/profile"
-	"github.com/djarvur/ass-guard-agent/internal/provider"
 )
 
 // fakeProfile builds a minimal profile with one system block for projector tests.
