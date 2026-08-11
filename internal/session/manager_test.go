@@ -2,6 +2,7 @@ package session
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -184,4 +185,43 @@ func TestSelfGitignore(t *testing.T) {
 	if raw != "*\n!.gitignore\n" {
 		t.Errorf(".gitignore content = %q; want exactly \"*\\n!.gitignore\\n\"", raw)
 	}
+}
+
+// readTranscriptLines parses the transcript file into a slice of generic maps
+// (for asserting on raw field values).
+func readTranscriptLines(t *testing.T, path string) []map[string]any {
+	t.Helper()
+	raw := readTranscriptRaw(t, path)
+	var out []map[string]any
+	for _, line := range strings.Split(strings.TrimRight(raw, "\n"), "\n") {
+		if line == "" {
+			continue
+		}
+		var m map[string]any
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Fatalf("malformed transcript line: %v (line=%q)", err, line)
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
+// readTranscriptRaw returns the raw transcript bytes.
+func readTranscriptRaw(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read transcript %s: %v", path, err)
+	}
+	return string(b)
+}
+
+// readFile returns a file's content, failing the test on error.
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(b)
 }

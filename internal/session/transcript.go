@@ -1,0 +1,107 @@
+package session
+
+import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"time"
+)
+
+// Line-type discriminators for the append-only JSONL transcript (D-03/D-20).
+// Each line is one structured JSON object with a `type` discriminator. The 15
+// types cover every event the Session Core, the turn loop, and the engine emit.
+const (
+	TypeSessionStart      = "session_start"
+	TypeUserMessage       = "user_message"
+	TypeRequestShaped     = "request_shaped"
+	TypeAgentMessageChunk = "agent_message_chunk"
+	TypeAssistantMessage  = "assistant_message"
+	TypeToolCall          = "tool_call"
+	TypeToolResult        = "tool_result"
+	TypeBoundary          = "boundary"
+	TypeSubagentDispatch  = "subagent_dispatch"
+	TypeSubagentResult    = "subagent_result"
+	TypeUsage             = "usage"
+	TypeCanceled          = "canceled"
+	TypeEngineDecision    = "engine_decision"
+	TypeError             = "error"
+	TypeSessionEnd        = "session_end"
+)
+
+// ContentBlock is one entry of a user/assistant message's content (mirrors the
+// ACP content block shape). Phase 2 exercises text blocks.
+type ContentBlock struct {
+	Type string `json:"type"`
+	Text string `json:"text,omitempty"`
+}
+
+// Line is one JSONL transcript entry. It is a flat struct: every type uses the
+// subset of fields it needs (the rest are omitted). This keeps the on-disk
+// format one-line-per-event, human-greppable, and forward-compatible.
+type Line struct {
+	Type      string    `json:"type"`
+	TurnID    string    `json:"turnID,omitempty"`
+	Timestamp time.Time `json:"timestamp"`
+
+	// user_message / assistant_message / agent_message_chunk
+	Content   json.RawMessage `json:"content,omitempty"`
+	Text      string          `json:"text,omitempty"`
+	MessageID string          `json:"messageID,omitempty"`
+
+	// request_shaped (the verbatim outgoing request, LOG-01 mimicry evidence)
+	VerbatimRequest json.RawMessage `json:"verbatimRequest,omitempty"`
+	Profile         string          `json:"profile,omitempty"`
+
+	// tool_call / tool_result
+	ToolCallID string          `json:"toolCallID,omitempty"`
+	Name       string          `json:"name,omitempty"`
+	Input      json.RawMessage `json:"input,omitempty"`
+	Output     json.RawMessage `json:"output,omitempty"`
+	IsError    bool            `json:"isError,omitempty"`
+
+	// boundary
+	Cause      string `json:"cause,omitempty"`
+	CommandRef string `json:"commandRef,omitempty"`
+
+	// error
+	Component   string `json:"component,omitempty"`
+	Message     string `json:"message,omitempty"`
+	Recoverable bool   `json:"recoverable,omitempty"`
+	Stack       string `json:"stack,omitempty"`
+
+	// subagent
+	ParentTurnID    string   `json:"parentTurnID,omitempty"`
+	SubagentTurnID  string   `json:"subagentTurnID,omitempty"`
+	RestrictedTools []string `json:"restrictedTools,omitempty"`
+	Result          string   `json:"result,omitempty"`
+
+	// usage
+	InputTokens  int64 `json:"inputTokens,omitempty"`
+	OutputTokens int64 `json:"outputTokens,omitempty"`
+}
+
+// selfGitignoreContent is the .ass-guard/.gitignore body (D-07): ignore
+// everything except .gitignore itself.
+const selfGitignoreContent = "*\n!.gitignore\n"
+
+// openTranscript ensures dir/.ass-guard exists (with a self-gitignore), then
+// opens the per-session JSONL file O_APPEND|O_CREATE|O_WRONLY mode 0600.
+func openTranscript(dir, sessionID string) (*os.File, string, error) {
+	storeDir := filepath.Join(dir, ".ass-guard")
+	if err := os.MkdirAll(storeDir, 0o755); err != nil {
+		return nil, "", err
+	}
+	giPath := filepath.Join(storeDir, ".gitignore")
+	if _, err := os.Stat(giPath); os.IsNotExist(err) {
+		if err := os.WriteFile(giPath, []byte(selfGitignoreContent), 0o644); err != nil {
+			return nil, "", err
+		}
+	}
+	fname := "transcript_" + sessionID + ".jsonl"
+	path := filepath.Join(storeDir, fname)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return nil, "", err
+	}
+	return f, path, nil
+}
