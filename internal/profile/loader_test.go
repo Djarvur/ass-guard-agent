@@ -73,7 +73,7 @@ func TestLoader_MissingProfile(t *testing.T) {
 // zcode profile loads and carries the captured shape. Skipped if the artifact
 // is not present (e.g. before extraction runs).
 func TestLoader_ZcodeProfile(t *testing.T) {
-	root, _ := filepath.Abs(filepath.Join("..", "..", "..", "profiles"))
+	root, _ := filepath.Abs(filepath.Join("..", "..", "profiles"))
 	l := profile.NewLoader(root)
 	p, err := l.Load("zcode")
 	if err != nil {
