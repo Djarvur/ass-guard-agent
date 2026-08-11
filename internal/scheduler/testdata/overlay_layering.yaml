@@ -1,0 +1,10 @@
+# overlay_layering.yaml — the per-project overlay layer for TestLoadLayering.
+# Merged on top of base_layering.yaml: overrides timezone (→Asia/Tokyo) and
+# tiers.heavy.model (→minimax-m3). Everything else persists from the base layer
+# (heavy.fallback stays [minimax-m3]; good stays glm-4.6; providers/models carry
+# over). Validates that viper merges deeply: overlay wins shared keys, base
+# persists base-only keys.
+timezone: "Asia/Tokyo"
+tiers:
+  heavy:
+    model: minimax-m3

@@ -1,0 +1,45 @@
+# invalid_multiple.yaml — TWO distinct violations for the collect-all test
+# (pitfall 10: Validate reports every problem in one pass, not fail-fast):
+#   (1) tiers.heavy.fallback references "ghost-fallback" — a dangling slug.
+#   (2) tiers.good primary "glm-4.6" has tool_calling but fallback "haiku-cheap"
+#       lacks it — a D-10 capability mismatch.
+# Validate must name BOTH violations in the returned *ConfigError.
+timezone: "America/New_York"
+
+providers:
+  anthropic:
+    base_url: "https://api.z.ai/api/anthropic"
+    shape: anthropic
+  groq:
+    base_url: "https://api.groq.com/openai/v1"
+    shape: openai
+
+models:
+  glm-4.6:
+    provider: anthropic
+    pricing: { input_per_mtoken: 0.15, output_per_mtoken: 0.60 }
+    capabilities: { context_window: 128000, max_output_tokens: 16000, tool_calling: true, streaming: true, extended_thinking: false }
+  haiku-cheap:
+    provider: groq
+    pricing: { input_per_mtoken: 0.05, output_per_mtoken: 0.10 }
+    capabilities: { context_window: 64000, max_output_tokens: 8000, tool_calling: false, streaming: true, extended_thinking: false }
+
+tiers:
+  heavy:
+    model: glm-4.6
+    fallback: [ghost-fallback]   # violation 1: dangling slug
+  good:
+    model: glm-4.6
+    fallback: [haiku-cheap]      # violation 2: capability mismatch (tool_calling)
+
+circuit_breaker:
+  consecutive_failures: 5
+  error_rate_window: 20
+  error_rate_threshold: 0.50
+  cooldown: 60s
+  half_open_probes: 1
+
+cost_ceiling:
+  amount_usd: 50.0
+  window: 24h
+  degrade_to: good

@@ -1,0 +1,27 @@
+# minimal.yaml — a valid config with NO circuit_breaker block and NO cost_ceiling
+# block, for TestLoadDefaults (applyDefaults fills the documented D-07 breaker
+# values + the 24h cost window when the fields are zero).
+timezone: "America/New_York"
+
+providers:
+  anthropic:
+    base_url: "https://api.z.ai/api/anthropic"
+    shape: anthropic
+
+models:
+  glm-5.2:
+    provider: anthropic
+    pricing: { input_per_mtoken: 0.60, output_per_mtoken: 2.20 }
+    capabilities: { context_window: 200000, max_output_tokens: 32000, tool_calling: true, streaming: true, extended_thinking: true }
+  glm-4.6:
+    provider: anthropic
+    pricing: { input_per_mtoken: 0.15, output_per_mtoken: 0.60 }
+    capabilities: { context_window: 128000, max_output_tokens: 16000, tool_calling: true, streaming: true, extended_thinking: false }
+
+tiers:
+  heavy:
+    model: glm-5.2
+    fallback: []   # empty: isolates the defaults test from capability-consistency
+  good:
+    model: glm-4.6
+    fallback: []
