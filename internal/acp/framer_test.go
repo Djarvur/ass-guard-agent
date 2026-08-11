@@ -41,9 +41,11 @@ func TestWriteFrameRejectsDecodedNewline(t *testing.T) {
 	}{
 		{"map string field with newline", map[string]any{"text": "line1\nline2"}},
 		{"nested slice string with newline", map[string]any{"items": []any{"a\nb"}}},
-		{"RawMessage param carrying a raw newline", Message{
+		{"RawMessage param whose decoded string carries a newline", Message{
 			JSONRPC: "2.0", Method: "session/prompt",
-			Params: json.RawMessage("{\"prompt\":[{\"type\":\"text\",\"text\":\"x\ny\"}]}"),
+			// Valid JSON (the \n is the two-char escape); the decoded text value
+			// is "x<newline>y" — the decoded-newline check must catch it.
+			Params: json.RawMessage(`{"prompt":[{"type":"text","text":"x\ny"}]}`),
 		}},
 	}
 	for _, c := range cases {
