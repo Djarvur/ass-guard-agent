@@ -60,6 +60,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newProfileCmd())
 	root.AddCommand(newParityCmd())
 	root.AddCommand(newACPCmd())
+	root.AddCommand(newSchedulingCmd())
 	return root
 }
 
