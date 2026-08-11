@@ -11,11 +11,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/djarvur/ass-guard-agent/internal/audit"
+	"github.com/djarvur/ass-guard-agent/internal/event"
 	"github.com/djarvur/ass-guard-agent/internal/loop"
 	"github.com/djarvur/ass-guard-agent/internal/profile"
 	"github.com/djarvur/ass-guard-agent/internal/provider"
@@ -34,6 +38,7 @@ func newRootCmd() *cobra.Command {
 		prompt      string
 		profileName string
 		profilesDir string
+		auditLog    string
 	)
 	root := &cobra.Command{
 		Use:   "ass-guard",
@@ -44,19 +49,22 @@ func newRootCmd() *cobra.Command {
 			"(reserved for ACP frames). Needs ZAI_API_KEY in the environment.",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runTrace(cmd.Context(), prompt, profileName, profilesDir)
+			return runTrace(cmd.Context(), prompt, profileName, profilesDir, auditLog)
 		},
 	}
 	root.PersistentFlags().StringVar(&prompt, "prompt", "", "prompt to send through the loop (required for the tracer)")
 	root.PersistentFlags().StringVar(&profileName, "profile", "zcode", "profile name to load")
 	root.PersistentFlags().StringVar(&profilesDir, "profiles-dir", defaultProfilesDir(), "directory containing profile bundles")
+	root.PersistentFlags().StringVar(&auditLog, "audit-log", "", "write the redacted verbatim shaped request to this file (LOG-01); empty = stderr")
 
 	return root
 }
 
 // runTrace loads the profile, runs one turn, and writes the tool-calls as JSON
-// to stderr. All diagnostics go to stderr too; stdout is never touched.
-func runTrace(ctx context.Context, prompt, name, dir string) error {
+// to stderr. All diagnostics go to stderr too; stdout is never touched. When
+// --audit-log is set (or defaults to stderr), the redacted verbatim shaped
+// request is captured via the event bus (LOG-01, D-13).
+func runTrace(ctx context.Context, prompt, name, dir, auditLogPath string) error {
 	if prompt == "" {
 		return fmt.Errorf("--prompt is required")
 	}
@@ -64,7 +72,29 @@ func runTrace(ctx context.Context, prompt, name, dir string) error {
 	if err != nil {
 		return fmt.Errorf("load profile %q from %q: %w", name, dir, err)
 	}
-	p := provider.NewAnthropicProvider(shaper.New())
+
+	// LOG-01 audit foundation: bus + AuditLogger + provider capturer. The
+	// capturer is the seam that publishes the verbatim shaped body.
+	bus := event.NewBus()
+	sink, sinkClose, err := openAuditSink(auditLogPath)
+	if err != nil {
+		return err
+	}
+	if sinkClose != nil {
+		defer sinkClose()
+	}
+	audit.NewAuditLogger(bus, sink)
+	capturer := func(body []byte, _ map[string]string) {
+		bus.Publish(event.RequestShaped{
+			VerbatimRequest: body,
+			Profile:         prof.Name,
+			Timestamp:       time.Now(),
+		})
+	}
+
+	p := provider.NewAnthropicProvider(shaper.New(),
+		provider.WithAnthropicRequestCapture(capturer),
+	)
 
 	calls, err := loop.Run(ctx, prof, p, prompt)
 	if err != nil {
@@ -77,6 +107,19 @@ func runTrace(ctx context.Context, prompt, name, dir string) error {
 	// Transport discipline: tool-call JSON goes to STDERR, never stdout.
 	fmt.Fprintln(os.Stderr, string(out))
 	return nil
+}
+
+// openAuditSink resolves the audit sink. Empty path → stderr (default). stdout
+// is rejected (transport discipline).
+func openAuditSink(path string) (sink io.Writer, close func(), err error) {
+	if path == "" || path == "-" {
+		return os.Stderr, nil, nil
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open audit-log: %w", err)
+	}
+	return f, func() { _ = f.Close() }, nil
 }
 
 // defaultProfilesDir resolves the profiles directory relative to the working
