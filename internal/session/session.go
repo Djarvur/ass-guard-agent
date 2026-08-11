@@ -91,42 +91,44 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 			s.appendError(turnID, "projector", err, false)
 			return "", fmt.Errorf("session turn project: %w", err)
 		}
-		// Step 2+3: shape + send. The provider's RequestCapturer publishes
+		// Step 2+3: shape + Stream. The provider's RequestCapturer publishes
 		// RequestShaped to the bus (LOG-01); the async TranscriptWriter appends
 		// request_shaped. The semaphore bounds outbound concurrency (PARA-04).
+		// Plan 02-05 replaced Send with Stream: chunks are read from the stream
+		// channel, emitted to the bus as AgentMessageChunk/ToolCall, and assembled
+		// into the final Response (ACP-04 — NO full-turn buffering).
 		if s.Semaphore != nil {
 			if err := s.Semaphore.Acquire(ctx); err != nil {
 				s.recordCanceled(turnID, "semaphore acquire cancelled")
 				return "cancelled", nil
 			}
 		}
-		resp, err := s.Provider.Send(ctx, s.Profile, messages)
+		resp, textBuf, streamErr := s.streamAndEmit(ctx, turnID, messages)
 		if s.Semaphore != nil {
 			s.Semaphore.Release()
 		}
-		if err != nil {
+		if streamErr != nil {
 			if ctx.Err() != nil {
-				s.recordCanceled(turnID, "context cancelled during send")
+				s.recordCanceled(turnID, "context cancelled during stream")
 				return "cancelled", nil
 			}
-			s.appendError(turnID, "provider", err, false)
-			return "", fmt.Errorf("session turn send: %w", err)
+			s.appendError(turnID, "provider", streamErr, false)
+			return "", fmt.Errorf("session turn stream: %w", streamErr)
 		}
-		// Step 4: emit tool_calls / usage to the bus (non-streaming in 02-02 —
-		// the full response is one logical chunk; Plan 02-05 wires Stream).
-		s.emitResponseEvents(turnID, resp)
-		// Step 5: tool_calls → stub execute + loop.
+		// Step 5: tool_calls → stub execute + boundary + loop.
 		if len(resp.ToolCalls) > 0 {
 			for _, tc := range resp.ToolCalls {
 				_ = s.Manager.AppendToolCall(turnID, tc.Name, tc.Name, tc.Input)
-				s.publishToolCall(turnID, tc)
 				out, _ := s.executeStub(ctx, tc)
 				_ = s.Manager.AppendToolResult(turnID, tc.Name, out, false)
+				// SESS-02/03: a mutating/config-added tool is a boundary. The
+				// next projection resets the lean window.
+				_ = s.MaybeAppendBoundary(tc.Name, tc.Name, turnID)
 			}
 			continue // loop to project again with the stub results
 		}
-		// Step 6: end_turn — append the assistant message + return stopReason.
-		assistantText := extractAssistantText(resp)
+		// Step 6: end_turn — append the assembled assistant message + stopReason.
+		assistantText := textBuf
 		_ = s.Manager.AppendAssistantMessage(turnID, assistantText)
 		return mapStopReason(resp.FinishReason), nil
 	}
@@ -146,26 +148,52 @@ func (s *Session) executeStub(ctx context.Context, tc provider.ToolCall) (json.R
 	return stubToolResult, nil
 }
 
-// emitResponseEvents publishes ToolCall + a single AgentMessageChunk for the
-// non-streaming response (02-02). Plan 02-05 replaces this with per-chunk
-// streaming events from Provider.Stream.
-func (s *Session) emitResponseEvents(turnID string, resp provider.Response) {
-	if s.Bus == nil {
-		return
+// streamAndEmit opens Provider.Stream, reads chunks until the channel closes,
+// and emits each to the bus as AgentMessageChunk / ToolCall / UsageUpdate (D-18
+// step 4 — ACP-04 streaming, NO full-turn buffering). It returns the assembled
+// Response (tool_calls + FinishReason) + the concatenated assistant text. ctx
+// cancellation closes the stream (the provider aborts the in-flight request).
+func (s *Session) streamAndEmit(ctx context.Context, turnID string, messages []provider.Message) (provider.Response, string, error) {
+	ch, err := s.Provider.Stream(ctx, s.Profile, messages)
+	if err != nil {
+		return provider.Response{}, "", err
 	}
-	text := extractAssistantText(resp)
-	if text != "" {
-		s.Bus.Publish(event.AgentMessageChunk{TurnID: turnID, MessageID: turnID, Content: text})
+	var resp provider.Response
+	var sb strings.Builder
+	for chunk := range ch {
+		if err := ctx.Err(); err != nil {
+			return resp, sb.String(), nil // cancelled — caller records canceled line
+		}
+		switch chunk.Type {
+		case "text":
+			sb.WriteString(chunk.Text)
+			if s.Bus != nil && chunk.Text != "" {
+				s.Bus.Publish(event.AgentMessageChunk{TurnID: turnID, MessageID: turnID, Content: chunk.Text})
+			}
+		case "tool_use":
+			if chunk.ToolCall != nil {
+				tc := *chunk.ToolCall
+				resp.ToolCalls = append(resp.ToolCalls, tc)
+				if s.Bus != nil {
+					s.Bus.Publish(event.ToolCall{TurnID: turnID, ToolCallID: chunk.ToolCallID, Name: tc.Name, Input: tc.Input})
+				}
+			}
+		case "usage":
+			if chunk.Usage != nil && s.Bus != nil {
+				s.Bus.Publish(event.UsageUpdate{TurnID: turnID, InputTokens: chunk.Usage.InputTokens, OutputTokens: chunk.Usage.OutputTokens})
+			}
+		case "done":
+			resp.FinishReason = chunk.FinishReason
+			resp.Raw = chunk.Raw
+		}
 	}
-}
-
-// publishToolCall publishes a ToolCall event for visibility (the ACP adapter
-// forwards it to session/update in Plan 02-05).
-func (s *Session) publishToolCall(turnID string, tc provider.ToolCall) {
-	if s.Bus == nil {
-		return
+	// If ctx was cancelled mid-stream, surface that so the caller records a
+	// canceled line + returns "cancelled" (D-16). The provider's goroutine has
+	// already closed the channel (the HTTP request was aborted by ctx).
+	if err := ctx.Err(); err != nil {
+		return resp, sb.String(), err
 	}
-	s.Bus.Publish(event.ToolCall{TurnID: turnID, Name: tc.Name, Input: tc.Input})
+	return resp, sb.String(), nil
 }
 
 // recordCanceled appends a canceled line (D-16).

@@ -3,7 +3,6 @@ package session
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -66,8 +65,68 @@ func (f *fakeProvider) Send(ctx context.Context, prof profile.Profile, msgs []pr
 	return resp, nil
 }
 
+// Stream implements the Phase-2 streaming path for the fake provider: it
+// simulates the RequestCapturer (publishes RequestShaped), honors delay/cancel,
+// and delivers the queued response as chunks (tool_use chunks for ToolCalls, a
+// text chunk otherwise) + a terminal "done" chunk carrying FinishReason.
 func (f *fakeProvider) Stream(ctx context.Context, prof profile.Profile, msgs []provider.Message) (<-chan provider.StreamChunk, error) {
-	return nil, errors.New("fakeProvider: Stream not used in 02-02")
+	f.mu.Lock()
+	f.callN++
+	n := f.callN
+	resp := provider.Response{}
+	if len(f.responses) > 0 {
+		resp = f.responses[0]
+		f.responses = f.responses[1:]
+	}
+	bus := f.bus
+	panicOn := f.panicOn
+	delay := f.delay
+	f.mu.Unlock()
+
+	if bus != nil {
+		body, _ := json.Marshal(map[string]any{"model": prof.Model, "n": n})
+		bus.Publish(event.RequestShaped{
+			TurnID: turnIDFromMessages(msgs), VerbatimRequest: body,
+			Profile: prof.Name, Timestamp: time.Now(),
+		})
+	}
+	// A panic in the SYNCHRONOUS part of Stream (here) is recovered by
+	// Session.Prompt's deferred recover (the goroutine below is NOT covered, so
+	// we panic before spawning it).
+	if panicOn > 0 && n == panicOn {
+		panic("fakeProvider: injected panic")
+	}
+	ch := make(chan provider.StreamChunk, 8)
+	go func() {
+		defer close(ch)
+		if delay > 0 {
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
+				return
+			}
+		}
+		for _, tc := range resp.ToolCalls {
+			tcCopy := tc
+			select {
+			case ch <- provider.StreamChunk{Type: "tool_use", ToolCall: &tcCopy, ToolCallID: tc.Name}:
+			case <-ctx.Done():
+				return
+			}
+		}
+		if len(resp.ToolCalls) == 0 {
+			select {
+			case ch <- provider.StreamChunk{Type: "text", Text: "assistant response"}:
+			case <-ctx.Done():
+				return
+			}
+		}
+		select {
+		case ch <- provider.StreamChunk{Type: "done", FinishReason: resp.FinishReason}:
+		case <-ctx.Done():
+		}
+	}()
+	return ch, nil
 }
 
 func (f *fakeProvider) ToolResultMessage(toolCallID string, result json.RawMessage) (json.RawMessage, error) {
