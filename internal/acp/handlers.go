@@ -108,7 +108,7 @@ func (s *Server) handleSessionPrompt(ctx context.Context, params json.RawMessage
 	defer st.setCancel(nil)
 
 	emit := &adapter{out: s.out, sessionID: p.SessionID}
-	stopReason, err := s.turnRunner.Run(turnCtx, emit, p.Prompt)
+	stopReason, err := s.turnRunner.Run(turnCtx, p.SessionID, emit, p.Prompt)
 	if err != nil {
 		// D-16: if the turn was cancelled, report stopReason "cancelled" rather
 		// than a hard error (the client expects a stopReason after cancel).

@@ -26,8 +26,10 @@ type ChunkEmitter interface {
 // returns the ACP stopReason ("end_turn", "cancelled", ...). The tracer
 // provides a stub; Plan 02-05 provides the real Session.Prompt-backed runner.
 // Run MUST honor ctx cancellation (D-16 — session/cancel aborts the turn).
+// sessionID identifies the ACP session (the runner creates/looks up the
+// underlying Session Core by id).
 type TurnRunner interface {
-	Run(ctx context.Context, emit ChunkEmitter, prompt []ContentBlock) (stopReason string, err error)
+	Run(ctx context.Context, sessionID string, emit ChunkEmitter, prompt []ContentBlock) (stopReason string, err error)
 }
 
 // Handler is one ACP method's handler. params is the raw JSON params; msg is the
@@ -114,7 +116,7 @@ func NewServer(in io.Reader, out io.Writer, stderrSink io.Writer, opts ...Server
 // chunks. Replaced by WithTurnRunner in real wiring.
 type stubNoChunkRunner struct{}
 
-func (stubNoChunkRunner) Run(ctx context.Context, emit ChunkEmitter, prompt []ContentBlock) (string, error) {
+func (stubNoChunkRunner) Run(ctx context.Context, _ string, emit ChunkEmitter, prompt []ContentBlock) (string, error) {
 	return "end_turn", nil
 }
 

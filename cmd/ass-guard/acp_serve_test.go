@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -58,7 +59,7 @@ func TestACPServeWiresStdoutClean(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	err := runACPServe(ctx, in, &stdout, &stderr, serveOptions{Profile: "zcode", MaxConcurrent: 6})
+	err := runACPServe(ctx, in, &stdout, &stderr, serveOptions{Profile: "zcode", MaxConcurrent: 6, ProfilesDir: repoProfilesDir(t), WorkDir: t.TempDir()})
 	if err != nil && err != io.EOF {
 		t.Logf("runACPServe returned %v (acceptable)", err)
 	}
@@ -89,7 +90,7 @@ func TestACPServeNoStdoutPollutionFromLogs(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	_ = runACPServe(ctx, in, &stdout, &stderr, serveOptions{Profile: "zcode", MaxConcurrent: 6})
+	_ = runACPServe(ctx, in, &stdout, &stderr, serveOptions{Profile: "zcode", MaxConcurrent: 6, ProfilesDir: repoProfilesDir(t), WorkDir: t.TempDir()})
 	if strings.Contains(stdout.String(), "ass-guard/acp") {
 		t.Errorf("stdout contains a log prefix (transport discipline violation): %s", stdout.String())
 	}
@@ -119,4 +120,16 @@ func TestACPServeDoesNotRegressProfileCheck(t *testing.T) {
 	if !hasCheck {
 		t.Fatal("Phase-1 `profile check` subcommand is missing (regression)")
 	}
+}
+
+
+// repoProfilesDir returns the repo-root profiles/ directory (the test runs from
+// cmd/ass-guard/, so the repo root is two levels up).
+func repoProfilesDir(t *testing.T) string {
+	t.Helper()
+	abs, err := filepath.Abs("../../profiles")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return abs
 }

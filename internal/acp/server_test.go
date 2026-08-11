@@ -17,47 +17,48 @@ import (
 // spikes/03-acp-handshake/. The harness is the load-bearing test substrate for
 // the whole ACP package: initialize → session/new → session/prompt round-trips.
 type pipeHarness struct {
-	srvStdin  *io.PipeReader // server reads frames here
-	srvStdout *io.PipeReader // client reads frames here
-	cliW      *io.PipeWriter // client writes frames here (→ server stdin)
-	srv       *Server
-	cancel    context.CancelFunc
+	srv   *Server
+	cliW  *io.PipeWriter // client writes frames here (→ server stdin)
+	cliR  *io.PipeReader // client reads frames here (← server stdout)
+	cbr   *bufio.Reader  // one shared client bufio.Reader over cliR
+	cliMu sync.Mutex     // serializes client reads (one reader at a time)
+	cancel context.CancelFunc
 }
 
 func newPipeHarness(t *testing.T, opts ...ServerOption) *pipeHarness {
 	t.Helper()
-	srvInR, cliW := io.Pipe() // client writes → server stdin
-	srvOutW, cliR := io.Pipe() // server stdout → client reads
+	srvInR, cliW := io.Pipe() // cliW writes → srvInR reads (server stdin)
+	cliR, srvOutW := io.Pipe() // srvOutW writes (server stdout) → cliR reads
 
 	stderr := &strings.Builder{}
 	srv := NewServer(srvInR, srvOutW, stderr, opts...)
 	ctx, cancel := context.WithCancel(context.Background())
 	h := &pipeHarness{
-		srvStdin:  srvInR,
-		srvStdout: cliR,
-		cliW:      cliW,
-		srv:       srv,
-		cancel:    cancel,
+		cliW:   cliW,
+		cliR:   cliR,
+		cbr:    bufio.NewReader(cliR),
+		srv:    srv,
+		cancel: cancel,
 	}
 	done := make(chan struct{})
 	go func() {
 		_ = srv.Serve(ctx)
 		close(done)
 	}()
-	// Close the writer side when the test ends so Serve's reader sees EOF.
+	// Close both pipe ends when the test ends so Serve's reader sees EOF and the
+	// client reader unblocks.
 	t.Cleanup(func() {
 		cancel()
 		_ = cliW.Close()
 		_ = srvOutW.Close()
 		_ = srvInR.Close()
+		_ = cliR.Close()
 		select {
 		case <-done:
 		case <-time.After(2 * time.Second):
 			t.Errorf("server.Serve did not exit within 2s of shutdown")
 		}
 	})
-	// Expose the client reader via the harness (read by helper below).
-	h.srvStdout = cliR
 	return h
 }
 
@@ -69,43 +70,27 @@ func (h *pipeHarness) send(t *testing.T, msg Message) {
 	}
 }
 
-// readFrame reads one frame from the server stdout (client side).
+// readFrame reads one frame from the shared client bufio.Reader (server stdout).
 func (h *pipeHarness) readFrame(t *testing.T) *Message {
 	t.Helper()
-	br := bufio.NewReader(h.srvStdout)
-	msg, err := readFrame(br)
+	h.cliMu.Lock()
+	defer h.cliMu.Unlock()
+	msg, err := readFrame(h.cbr)
 	if err != nil {
 		t.Fatalf("client readFrame: %v", err)
 	}
 	return msg
 }
 
-// readFrameOrTimeout reads one frame, failing the test if none arrives within
-// the timeout (used to assert NO response is sent for a notification).
-func (h *pipeHarness) readFrameOrTimeout(t *testing.T, d time.Duration) (*Message, bool) {
+// readFrameFromBR reads one frame from the shared client reader without the
+// mu (used when the caller already holds cliMu).
+func (h *pipeHarness) readFrameLocked(t *testing.T) *Message {
 	t.Helper()
-	type res struct {
-		m   *Message
-		err error
+	msg, err := readFrame(h.cbr)
+	if err != nil {
+		t.Fatalf("client readFrame: %v", err)
 	}
-	ch := make(chan res, 1)
-	go func() {
-		br := bufio.NewReader(h.srvStdout)
-		// bufio.Reader blocks on the pipe; we rely on the pipe closing on
-		// shutdown to unblock. For the no-response assertion we instead probe
-		// via a small sleep + non-blocking check below.
-		msg, err := readFrame(br)
-		ch <- res{msg, err}
-	}()
-	select {
-	case r := <-ch:
-		if r.err != nil {
-			return nil, false
-		}
-		return r.m, true
-	case <-time.After(d):
-		return nil, false
-	}
+	return msg
 }
 
 // stubTurn is the tracer's TurnRunner: it emits 1-2 agent_message_chunk events
@@ -117,7 +102,7 @@ type stubTurn struct {
 	ran    bool
 }
 
-func (s *stubTurn) Run(ctx context.Context, emit ChunkEmitter, prompt []ContentBlock) (string, error) {
+func (s *stubTurn) Run(ctx context.Context, _ string, emit ChunkEmitter, prompt []ContentBlock) (string, error) {
 	s.mu.Lock()
 	s.ran = true
 	s.mu.Unlock()
@@ -250,11 +235,10 @@ func TestSessionPromptStreamsUpdate(t *testing.T) {
 
 	// Collect frames until the session/prompt response (id=2) arrives. At least
 	// one must be a session/update notification.
-	br := bufio.NewReader(h.srvStdout)
 	gotUpdate := false
 	var promptResp *Message
 	for i := 0; i < 8; i++ {
-		msg, err := readFrame(br)
+		msg, err := readFrame(h.cbr)
 		if err != nil {
 			t.Fatalf("client readFrame[%d]: %v", i, err)
 		}
@@ -321,11 +305,10 @@ func TestSessionCancelProducesNoResponse(t *testing.T) {
 	// The cancel notification must produce NO response frame. We expect either
 	// the chunk(s) + the prompt response (cancelled), and crucially no frame
 	// whose id points at a cancel response (cancel has no id).
-	br := bufio.NewReader(h.srvStdout)
 	cancelResponseSeen := false
 	promptDone := false
 	for i := 0; i < 8 && !promptDone; i++ {
-		msg, err := readFrame(br)
+		msg, err := readFrame(h.cbr)
 		if err != nil {
 			break
 		}
@@ -424,11 +407,10 @@ func TestMalformedFrameContinues(t *testing.T) {
 	// Then a well-formed initialize.
 	h.send(t, newRequest(0, "initialize", map[string]any{"protocolVersion": 1}))
 
-	br := bufio.NewReader(h.srvStdout)
 	gotParseError := false
 	gotInit := false
 	for i := 0; i < 6 && !(gotParseError && gotInit); i++ {
-		msg, err := readFrame(br)
+		msg, err := readFrame(h.cbr)
 		if err != nil {
 			t.Fatalf("client readFrame[%d]: %v", i, err)
 		}
@@ -451,7 +433,7 @@ func TestMalformedFrameContinues(t *testing.T) {
 // scrubbed message and the right envelope.
 type errTurn struct{ err error }
 
-func (e *errTurn) Run(ctx context.Context, emit ChunkEmitter, prompt []ContentBlock) (string, error) {
+func (e *errTurn) Run(ctx context.Context, _ string, emit ChunkEmitter, prompt []ContentBlock) (string, error) {
 	return "", e.err
 }
 
@@ -465,10 +447,9 @@ func TestErrorResponseShape(t *testing.T) {
 	h.readFrame(t)
 	// session/load must be a -32601 method-not-supported error (D-09 no-op).
 	h.send(t, newRequest(2, "session/load", map[string]any{"sessionId": "x"}))
-	br := bufio.NewReader(h.srvStdout)
 	var loadResp *Message
 	for i := 0; i < 6; i++ {
-		msg, err := readFrame(br)
+		msg, err := readFrame(h.cbr)
 		if err != nil {
 			t.Fatalf("readFrame[%d]: %v", i, err)
 		}
