@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-08-11T18:51:44.940Z"
+last_updated: "2026-08-11T19:35:05.971Z"
 progress:
   total_phases: 7
   completed_phases: 1
@@ -67,7 +67,7 @@ Plan 01-01 T3: extract the zcode profile (3 system blocks, 77 tools, 12 identity
       - ~/.zcode/cli/artifacts/sess_eea3dc48.../  (tool-result JSON fragments, NOT wire-level requests)
       - ~/.zcode/cli/exec/sess_eea3dc48.../       (EMPTY directory)
       - ~/.zcode/cli/exec/bash-startup/sess_eea3dc48.../  (one shell script)
-    None of these carry request.body.{system,tools,thinking,tool_choice} or request.headers.
+    of these carry request.body.{system,tools,thinking,tool_choice} or request.headers.
     So `eea3dc48` is UNRECOVERABLE as a model-io extraction source.
 
 (2) The ONLY main session now in rollout/ is `016eee8a-f2f0-44c3-abf9-9d57a2cf04a1.jsonl` (120 lines, 32MB). Its schema matches VERIFIED-FACTS.md item #1 (model_io lines, the exact 12 identity header names, GLM-5.2 / builtin:zai-coding-plan) — BUT:
@@ -106,6 +106,7 @@ Per the critical rules + PROJECT.md investigate-and-fix-ready principle: silentl
 - `jq 'select((.request.body.system|length)==3 and (.request.body.tools|length)>0) | (.request.body.tools|length)' 016eee8a...jsonl | sort -n | uniq -c` → 118 lines of 103, 0 lines of 77 (proves (2) catalog drift)
 - `jq 'select((.response.toolCalls//[])|length>0)' 016eee8a...jsonl | wc -l` → 1 (proves (2) no parity turns)
 - Schema of 016eee8a confirmed identical to VERIFIED-FACTS #1 (12 header names, GLM-5.2, builtin:zai-coding-plan) — so the extractor design is sound; only the input session inventory changed.
+- Phase-1 live gates (01-01 T7 tracer round-trip; 01-06 T6 the parity gate) need ZAI_API_KEY, which is UNSET here. All autonomous substrate is built + race-clean (11 packages, plans 01-02..01-05 complete; 01-01/01-06 autonomous parts done). To unblock: export ZAI_API_KEY and run 01-01 T7 ('go run ./cmd/ass-guard --profile zcode --prompt "<tool-triggering prompt>"') then 01-06 T6 ('go run ./cmd/ass-guard parity --results /tmp/parity-results.json'). FAIL on 01-06 T6 = stop-and-replan (PROJECT.md Anti-Pattern 5).
 
 ## Performance Metrics
 
@@ -125,3 +126,4 @@ Per the critical rules + PROJECT.md investigate-and-fix-ready principle: silentl
 - [Phase ?]: Plan 00-03 (2026-08-09): ACP v1 wire shape (hand-rolled newline-delimited JSON-RPC, spec-pinned envelope builders) is copy-paste-safe starting point for Phase 2's ACP adapter. The in-process mock peer proved the wire shape deterministically without an external ACP server or model call (D-04 throwaway; critical_constraint #3/#7).
 - [Phase ?]: Plan 00-04 (2026-08-09): STACK item #5 (go-telegram/bot + ACP stdout collision) — VERIFIED via the integration spike at spikes/05-stdout-collision/. go-telegram/bot@v1.23.0 is silent-by-default (zero os.Stdout writes in package source — only the examples/ samples write to stdout, not the library; all library output via 3 default handlers in bot.go all log.Printf→os.Stderr; debug path gated behind WithDebug; no WithLogger/io.Writer option). Captured real os.Stdout (os.Pipe) byte-equal to 3 canned ACP frames (415==415, 0 extra) while the bot goroutine ran concurrently; deterministic handler-routing probe (synthetic marker in stderr sink, absent from stdout). Transport discipline (stdout = ACP only) holds for the multi-frontend case.
 - [Phase ?]: Plan 00-04 (2026-08-09): Tier-A refinement vs RESEARCH.md §5 — go-telegram/bot@v1.23.0 callback signatures are ErrorsHandler func(err error) and DebugHandler func(format string, args ...any) (SIMPLER than RESEARCH.md documented; no context.Context params). The load-bearing "callbacks, no stdout, no io.Writer" claim is unchanged. Phase 5's v2 Telegram frontend must use the real signatures + the 4-step mitigation recipe (WithErrorsHandler→slog→stderr, NO WithDebug, log.SetOutput(os.Stderr) belt-and-suspenders, go b.Start(ctx) goroutine; cancel telegramCtx on editor-initiated shutdown to drain the loop).
+- [Phase ?]: Phase 1 re-dispatch: autonomous substrate complete (01-02..01-05 + 01-01/01-06 T1-T5); D-16 session assignment documented; 2 live gates blocked on ZAI_API_KEY
