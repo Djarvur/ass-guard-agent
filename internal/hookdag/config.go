@@ -78,9 +78,9 @@ var embeddedSeeded []byte
 // Load decodes the embedded default, then each path in order (layered: later
 // paths overlay earlier ones — operator over default — D-06 mirrors
 // internal/scheduler's scheduling.yaml convention, using gopkg.in/yaml.v3
-// directly rather than viper so dotted keys are preserved). The merged config is
-// re-decoded into typed Hooks + validated. A *ConfigError (collect-all) is
-// returned if any violation is found; the config is NOT executed.
+// directly so dotted keys are preserved). The merged config is re-decoded into
+// typed Hooks + validated. A *ConfigError (collect-all) is returned if any
+// violation is found; the config is NOT executed.
 func Load(paths ...string) ([]Hook, error) {
 	merged := make(map[string]any)
 	if err := yaml.Unmarshal(embeddedSeeded, &merged); err != nil {
