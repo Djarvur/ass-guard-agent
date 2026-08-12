@@ -17,6 +17,7 @@ import (
 func newParityCmd() *cobra.Command {
 	var (
 		suitePath     string
+		fromRollout   string
 		profileName   string
 		profilesDir   string
 		resultsPath   string
@@ -27,10 +28,11 @@ func newParityCmd() *cobra.Command {
 		Short:        "run the behavioral mimicry A/B parity gate (MIMC-03, the north-star gate)",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runParity(suitePath, profileName, profilesDir, resultsPath, surpriseCheck)
+			return runParity(suitePath, fromRollout, profileName, profilesDir, resultsPath, surpriseCheck)
 		},
 	}
-	cmd.Flags().StringVar(&suitePath, "suite", defaultSuitePath(), "curated divergence suite JSON")
+	cmd.Flags().StringVar(&suitePath, "suite", defaultSuitePath(), "curated divergence suite JSON (ignored if --from-rollout is set)")
+	cmd.Flags().StringVar(&fromRollout, "from-rollout", "", "generate the suite from a zcode rollout JSONL (same-session = matching system prompt + tools)")
 	cmd.Flags().StringVar(&profileName, "profile", "zcode", "profile to load for the ass-guard arm")
 	cmd.Flags().StringVar(&profilesDir, "profiles-dir", defaultProfilesDir(), "directory containing profile bundles")
 	cmd.Flags().StringVar(&resultsPath, "results", "parity-results.json", "results JSON output path")
@@ -49,10 +51,20 @@ func defaultSuitePath() string {
 // runParity loads the suite + profile, constructs the live Anthropic arm, runs
 // the harness, and emits the structured footer + results JSON. Exit code reflects
 // the gate (0 iff OverallPass). Needs ZAI_API_KEY (operator-gated).
-func runParity(suitePath, name, dir, results, surprise string) error {
-	suite, err := parity.LoadReplaySession(suitePath)
-	if err != nil {
-		return fmt.Errorf("load suite %q: %w", suitePath, err)
+func runParity(suitePath, rollout, name, dir, results, surprise string) error {
+	var suite []parity.CapturedTurn
+	var err error
+	if rollout != "" {
+		suite, err = parity.ExtractTurnsFromRollout(rollout)
+		if err != nil {
+			return fmt.Errorf("extract turns from rollout %q: %w", rollout, err)
+		}
+		fmt.Fprintf(os.Stderr, "parity: generated suite of %d turns from rollout %s\n", len(suite), filepath.Base(rollout))
+	} else {
+		suite, err = parity.LoadReplaySession(suitePath)
+		if err != nil {
+			return fmt.Errorf("load suite %q: %w", suitePath, err)
+		}
 	}
 	prof, err := profile.NewLoader(dir).Load(name)
 	if err != nil {
