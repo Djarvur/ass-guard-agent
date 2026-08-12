@@ -11,6 +11,8 @@ import (
 
 // TestProviderFallbackKind asserts the discriminator string.
 func TestProviderFallbackKind(t *testing.T) {
+	t.Parallel()
+
 	pf := ProviderFallback{
 		TurnID: "t1", FromProvider: "anthropic", FromModel: "glm-5.2",
 		ToProvider: "openai", ToModel: "minimax-m3",
@@ -21,6 +23,8 @@ func TestProviderFallbackKind(t *testing.T) {
 
 // TestCostCeilingWarnKind asserts the discriminator string.
 func TestCostCeilingWarnKind(t *testing.T) {
+	t.Parallel()
+
 	cc := CostCeilingWarn{
 		TurnID: "t1", Window: "24h ending 2026-08-09T00:00:00Z",
 		Spent: 50.0, Ceiling: 50.0, DegradedTo: "light", HardStop: false,
@@ -33,6 +37,8 @@ func TestCostCeilingWarnKind(t *testing.T) {
 // of "ProviderFallback" and type-asserts back to the original struct with all
 // fields intact (D-06 → ACP session/update path).
 func TestEventsBusRoundTrip(t *testing.T) {
+	t.Parallel()
+
 	bus := event.NewBus()
 	defer bus.Close()
 
@@ -58,6 +64,8 @@ func TestEventsBusRoundTrip(t *testing.T) {
 
 // TestEventsBusCostCeilingRoundTrip is the warn event's bus round-trip.
 func TestEventsBusCostCeilingRoundTrip(t *testing.T) {
+	t.Parallel()
+
 	bus := event.NewBus()
 	defer bus.Close()
 

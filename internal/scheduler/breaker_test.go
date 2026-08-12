@@ -36,6 +36,7 @@ func newCapturingLogger(buf *bytes.Buffer) *slog.Logger {
 // TestBreakerTripViaConsecutive: N=5 consecutive Transient failures trip Closed
 // → Open; Allow returns false; a Warn line is emitted.
 func TestBreakerTripViaConsecutive(t *testing.T) {
+	t.Parallel()
 	b, buf := newTestBreaker(t, providerModelKey{"anthropic", "glm-5.2"}, defaultBreaker)
 
 	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
@@ -58,6 +59,8 @@ func TestBreakerTripViaConsecutive(t *testing.T) {
 // before it is consulted" guard (a near-empty window cannot trip on rate alone,
 // RESEARCH §6.1 "over the last M requests").
 func TestBreakerTripViaErrorRate(t *testing.T) {
+	t.Parallel()
+
 	cfg := CircuitBreakerConfig{ConsecutiveFailures: 5, ErrorRateWindow: 20, ErrorRateThreshold: 0.50, Cooldown: 60 * time.Second, HalfOpenProbes: 1}
 	b, _ := newTestBreaker(t, providerModelKey{"p", "m"}, cfg)
 	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
@@ -82,6 +85,7 @@ func TestBreakerTripViaErrorRate(t *testing.T) {
 // TestBreakerSuccessResetsConsecutive: 3 consecutive failures (below N=5) then a
 // RecordSuccess resets consecutive; breaker stays Closed.
 func TestBreakerSuccessResetsConsecutive(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBreaker(t, providerModelKey{"p", "m"}, defaultBreaker)
 
 	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
@@ -103,6 +107,7 @@ func TestBreakerSuccessResetsConsecutive(t *testing.T) {
 // TestBreakerOpenToHalfOpenAfterCooldown: trip at t0; Allow(t0+30s) still false
 // (cooldown 60s not elapsed); Allow(t0+61s) → HalfOpen and returns true.
 func TestBreakerOpenToHalfOpenAfterCooldown(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBreaker(t, providerModelKey{"p", "m"}, defaultBreaker)
 
 	t0 := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
@@ -122,6 +127,7 @@ func TestBreakerOpenToHalfOpenAfterCooldown(t *testing.T) {
 
 // TestBreakerHalfOpenToClosedOnSuccess: after HalfOpen, RecordSuccess → Closed.
 func TestBreakerHalfOpenToClosedOnSuccess(t *testing.T) {
+	t.Parallel()
 	b, buf := newTestBreaker(t, providerModelKey{"p", "m"}, defaultBreaker)
 
 	t0 := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
@@ -142,6 +148,7 @@ func TestBreakerHalfOpenToClosedOnSuccess(t *testing.T) {
 // TestBreakerHalfOpenToOpenOnFailure: after HalfOpen, RecordTransient → Open
 // with openedAt reset (cooldown restarts).
 func TestBreakerHalfOpenToOpenOnFailure(t *testing.T) {
+	t.Parallel()
 	b, buf := newTestBreaker(t, providerModelKey{"p", "m"}, defaultBreaker)
 
 	t0 := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
@@ -166,6 +173,7 @@ func TestBreakerHalfOpenToOpenOnFailure(t *testing.T) {
 // method — only Transient feeds the breaker (pitfall 4). A breaker that never
 // sees RecordTransient stays Closed forever.
 func TestBreakerNoRecordStructural(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBreaker(t, providerModelKey{"p", "m"}, defaultBreaker)
 	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
 	// Simulate 100 structural failures — Dispatch never calls Record* for them,
@@ -182,6 +190,7 @@ func TestBreakerNoRecordStructural(t *testing.T) {
 // final state is consistent (one of the three states; window length bounded by
 // M). This is the load-bearing concurrency guarantee (pitfall 6).
 func TestBreakerConcurrency(t *testing.T) {
+	t.Parallel()
 	b, _ := newTestBreaker(t, providerModelKey{"p", "m"}, defaultBreaker)
 	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
 
@@ -215,6 +224,7 @@ func TestBreakerConcurrency(t *testing.T) {
 // TestBreakerPerKeyIsolation: tripping breaker A does not affect breaker B's
 // Allow (per-(provider,model) isolation, D-07).
 func TestBreakerPerKeyIsolation(t *testing.T) {
+	t.Parallel()
 	a, _ := newTestBreaker(t, providerModelKey{"anthropic", "glm-5.2"}, defaultBreaker)
 	b, _ := newTestBreaker(t, providerModelKey{"openai", "minimax-m3"}, defaultBreaker)
 
@@ -230,6 +240,8 @@ func TestBreakerPerKeyIsolation(t *testing.T) {
 
 // TestRingBufferBounds checks the ring's capacity + error-rate math.
 func TestRingBufferBounds(t *testing.T) {
+	t.Parallel()
+
 	r := newRingBuffer(3)
 	require.Equal(t, 0.0, r.errorRate())
 	r.push(false)

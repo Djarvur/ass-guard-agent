@@ -25,6 +25,8 @@ func newTestSessionWithCatalog(t *testing.T, responses []provider.Response) *Ses
 // TestMaybeAppendBoundary_OnMutatingTool verifies that after a mutating tool
 // (Bash) the turn loop appends a boundary line (SESS-02/03).
 func TestMaybeAppendBoundary_OnMutatingTool(t *testing.T) {
+	t.Parallel()
+
 	s := newTestSessionWithCatalog(t, []provider.Response{
 		{FinishReason: "tool_use", ToolCalls: []provider.ToolCall{{Name: "Bash", Input: json.RawMessage(`{"command":"ls"}`)}}},
 		{FinishReason: "end_turn"},
@@ -49,6 +51,8 @@ func TestMaybeAppendBoundary_OnMutatingTool(t *testing.T) {
 // TestMaybeAppendBoundary_ReadOnlyNoBoundary verifies a read-only tool does NOT
 // trigger a boundary.
 func TestMaybeAppendBoundary_ReadOnlyNoBoundary(t *testing.T) {
+	t.Parallel()
+
 	s := newTestSessionWithCatalog(t, []provider.Response{
 		{FinishReason: "tool_use", ToolCalls: []provider.ToolCall{{Name: "Read", Input: json.RawMessage(`{"file_path":"x"}`)}}},
 		{FinishReason: "end_turn"},
@@ -67,6 +71,7 @@ func TestMaybeAppendBoundary_ReadOnlyNoBoundary(t *testing.T) {
 // TestMaybeAppendBoundary_ConfigAddsBoundary verifies config-added boundaries
 // trigger a boundary line for a read-only tool (SESS-02 adds-only).
 func TestMaybeAppendBoundary_ConfigAddsBoundary(t *testing.T) {
+	t.Parallel()
 	s := newTestSessionWithCatalog(t, []provider.Response{
 		{FinishReason: "tool_use", ToolCalls: []provider.ToolCall{{Name: "WebFetch", Input: json.RawMessage(`{}`)}}},
 		{FinishReason: "end_turn"},
@@ -95,6 +100,8 @@ func TestMaybeAppendBoundary_ConfigAddsBoundary(t *testing.T) {
 // publishes AgentMessageChunk events to the bus (D-18 step 4). The fakeProvider
 // delivers the response via Stream.
 func TestStreamWired(t *testing.T) {
+	t.Parallel()
+
 	bus := event.NewBus()
 	chunks := bus.Subscribe("AgentMessageChunk", event.BufAgentMessageChunk)
 	s, _, _ := newTestSession(t, bus, []provider.Response{

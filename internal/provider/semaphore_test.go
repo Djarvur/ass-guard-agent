@@ -12,6 +12,8 @@ import (
 // TestSemaphore_AllowsMaxConcurrent verifies a Semaphore(max) lets max Acquires
 // succeed and blocks the (max+1)th until a Release (PARA-04).
 func TestSemaphore_AllowsMaxConcurrent(t *testing.T) {
+	t.Parallel()
+
 	sem := provider.NewSemaphore(2)
 
 	ctx := context.Background()
@@ -53,6 +55,8 @@ func TestSemaphore_AllowsMaxConcurrent(t *testing.T) {
 // TestSemaphore_Cancel verifies Acquire on a full semaphore returns ctx.Err()
 // when ctx is cancelled (D-16 — cancellation aborts waiting dispatches).
 func TestSemaphore_Cancel(t *testing.T) {
+	t.Parallel()
+
 	sem := provider.NewSemaphore(1)
 
 	ctx := context.Background()
@@ -99,6 +103,8 @@ func TestSemaphore_Cancel(t *testing.T) {
 // TestSemaphore_DefaultMax verifies the default constructor matches the
 // configured default (6 — PARA-04 / RESEARCH §11.1).
 func TestSemaphore_DefaultMax(t *testing.T) {
+	t.Parallel()
+
 	sem := provider.NewDefaultSemaphore()
 
 	ctx := context.Background()

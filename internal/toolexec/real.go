@@ -75,6 +75,7 @@ func (r *RealExecutor) Execute(ctx context.Context, name string, input json.RawM
 // unparseable input yields the empty string (the backend reports the error).
 func extractQuery(input json.RawMessage) string {
 	var q queryArgs
+
 	err := json.Unmarshal(input, &q)
 	if err != nil {
 		return ""
@@ -86,6 +87,7 @@ func extractQuery(input json.RawMessage) string {
 // extractURL best-effort parses a WebFetch input's `url` field.
 func extractURL(input json.RawMessage) string {
 	var u urlArgs
+
 	err := json.Unmarshal(input, &u)
 	if err != nil {
 		return ""

@@ -51,7 +51,7 @@ func putStubOnPATH(t *testing.T) {
 
 // TestAdapter_Exit0StdoutSurfaced verifies exit 0 returns the stdout as the tool
 // result with no stderr + no error.
-func TestAdapter_Exit0StdoutSurfaced(t *testing.T) {
+func TestAdapter_Exit0StdoutSurfaced(t *testing.T) { //nolint:paralleltest // putStubOnPATH mutates PATH via t.Setenv
 	putStubOnPATH(t)
 
 	a := &openspec.Adapter{}
@@ -96,7 +96,7 @@ func TestAdapter_NonZeroStderrCaptured(t *testing.T) {
 
 // TestAdapter_CtxCancelKillsProcess verifies ctx cancellation kills the child
 // within ~200ms (no orphan — T-04-06).
-func TestAdapter_CtxCancelKillsProcess(t *testing.T) {
+func TestAdapter_CtxCancelKillsProcess(t *testing.T) { //nolint:paralleltest // putStubOnPATH mutates PATH; pgrep could match sibling stubs
 	putStubOnPATH(t)
 
 	a := &openspec.Adapter{}
@@ -134,6 +134,8 @@ func TestAdapter_CtxCancelKillsProcess(t *testing.T) {
 // TestAdapter_BinaryNotOnPATH verifies a missing binary yields ErrOpenSpecNotFound
 // (typed — the engine routes it to learning ask).
 func TestAdapter_BinaryNotOnPATH(t *testing.T) {
+	t.Parallel()
+
 	a := &openspec.Adapter{Binary: "definitely-not-a-real-binary-xyz-12345"}
 
 	_, _, err := a.Run(context.Background(), "list")
@@ -143,7 +145,7 @@ func TestAdapter_BinaryNotOnPATH(t *testing.T) {
 }
 
 // TestAdapter_ArgsForwarded verifies the args are forwarded verbatim.
-func TestAdapter_ArgsForwarded(t *testing.T) {
+func TestAdapter_ArgsForwarded(t *testing.T) { //nolint:paralleltest // putStubOnPATH mutates PATH via t.Setenv
 	putStubOnPATH(t)
 
 	a := &openspec.Adapter{}
@@ -163,6 +165,8 @@ func TestAdapter_ArgsForwarded(t *testing.T) {
 // TestAdapter_RealOpenspecGated verifies the real openspec binary runs when
 // ASSGUARD_OPENSPEC_BIN=1 (skipped otherwise — CI never depends on the binary).
 func TestAdapter_RealOpenspecGated(t *testing.T) {
+	t.Parallel()
+
 	if os.Getenv("ASSGUARD_OPENSPEC_BIN") != "1" {
 		t.Skip("set ASSGUARD_OPENSPEC_BIN=1 to run against the real openspec binary")
 	}

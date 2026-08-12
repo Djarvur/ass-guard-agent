@@ -20,6 +20,8 @@ func wl(turn string, tools ...string) []learning.WorklogEntry {
 // TestProposeHooks_RepeatedSequence verifies a 3-step sequence appearing 3
 // times yields a Proposal with Occurrences=3 + the sequence's steps.
 func TestProposeHooks_RepeatedSequence(t *testing.T) {
+	t.Parallel()
+
 	worklog := append(wl("t1", "Read", "Grep", "Bash"), wl("t2", "Read", "Grep", "Bash")...)
 	worklog = append(worklog, wl("t3", "Read", "Grep", "Bash")...)
 
@@ -57,6 +59,8 @@ func catWL(parts ...[]learning.WorklogEntry) []learning.WorklogEntry {
 // TestProposeHooks_BelowThreshold verifies a sequence appearing only 2 times
 // yields no Proposal.
 func TestProposeHooks_BelowThreshold(t *testing.T) {
+	t.Parallel()
+
 	worklog := catWL(wl("t1", "Read", "Grep"), wl("t2", "Read", "Grep"))
 	if proposals := learning.ProposeHooks(worklog); len(proposals) != 0 {
 		t.Errorf("got %d proposals; want 0 (< 3 occurrences)", len(proposals))
@@ -66,6 +70,8 @@ func TestProposeHooks_BelowThreshold(t *testing.T) {
 // TestProposeHooks_DistinctSequences verifies two distinct repeated sequences
 // each yield a Proposal.
 func TestProposeHooks_DistinctSequences(t *testing.T) {
+	t.Parallel()
+
 	worklog := catWL(
 		wl("t1", "Read", "Grep"), wl("t2", "Read", "Grep"), wl("t3", "Read", "Grep"),
 		wl("t4", "Write", "Edit"), wl("t5", "Write", "Edit"), wl("t6", "Write", "Edit"),
@@ -80,6 +86,8 @@ func TestProposeHooks_DistinctSequences(t *testing.T) {
 // TestProposeHooks_Deterministic asserts determinism: the same input yields the
 // same output across calls (propose.go is a pure function).
 func TestProposeHooks_Deterministic(t *testing.T) {
+	t.Parallel()
+
 	worklog := catWL(wl("t1", "Read", "Grep"), wl("t2", "Read", "Grep"), wl("t3", "Read", "Grep"))
 	first := learning.ProposeHooks(worklog)
 

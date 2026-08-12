@@ -11,6 +11,8 @@ import (
 // TestRegisterTools_Mutability verifies RegisterTools registers each command
 // under "openspec:<name>" with its declared mutability.
 func TestRegisterTools_Mutability(t *testing.T) {
+	t.Parallel()
+
 	cfg := &openspec.OpenSpecConfig{
 		Commands: map[string]openspec.CommandShape{
 			"list":  {Mutability: "read-only"},
@@ -19,6 +21,7 @@ func TestRegisterTools_Mutability(t *testing.T) {
 	}
 
 	cat := toolcat.NewCatalog()
+
 	err := openspec.RegisterTools(cat, cfg)
 	if err != nil {
 		t.Fatalf("RegisterTools: %v", err)
@@ -46,6 +49,8 @@ func TestRegisterTools_Mutability(t *testing.T) {
 // TestRegisterTools_DrivesIsBoundary verifies the registered mutability drives
 // toolcat.IsBoundary with NO boundary-engine change (OPEN-03).
 func TestRegisterTools_DrivesIsBoundary(t *testing.T) {
+	t.Parallel()
+
 	cfg := &openspec.OpenSpecConfig{
 		Commands: map[string]openspec.CommandShape{
 			"list":  {Mutability: "read-only"},
@@ -69,6 +74,8 @@ func TestRegisterTools_DrivesIsBoundary(t *testing.T) {
 // TestPatternTable_MatchTextFirstWins verifies MatchText scans in declared order
 // + the first match wins; unmatched ⇒ ActionNothing.
 func TestPatternTable_MatchTextFirstWins(t *testing.T) {
+	t.Parallel()
+
 	cfg := &openspec.OpenSpecConfig{
 		Patterns: []openspec.PatternEntry{
 			{ID: "impl-complete", Regex: "Implementation Complete.*ready for review", Action: "continue"},
@@ -97,6 +104,8 @@ func TestPatternTable_MatchTextFirstWins(t *testing.T) {
 // TestPatternTable_MatchTool verifies MatchTool does an exact-name match +
 // unknown ⇒ ActionNothing.
 func TestPatternTable_MatchTool(t *testing.T) {
+	t.Parallel()
+
 	cfg := &openspec.OpenSpecConfig{
 		HandoffTools: []openspec.HandoffToolEntry{
 			{ID: "os-handoff", Tool: "openspec_handoff", Action: "continue"},
@@ -120,6 +129,8 @@ func TestPatternTable_MatchTool(t *testing.T) {
 // TestPatternTable_SatisfiesEngineInterface is the bridge assertion — the
 // OpenSpecPatternTable is a valid engine.PatternTable (D-02).
 func TestPatternTable_SatisfiesEngineInterface(t *testing.T) {
+	t.Parallel()
+
 	pt, err := openspec.FromConfig(&openspec.OpenSpecConfig{})
 	if err != nil {
 		t.Fatalf("FromConfig: %v", err)
@@ -131,6 +142,8 @@ func TestPatternTable_SatisfiesEngineInterface(t *testing.T) {
 // TestPatternTable_ActionMapping verifies the TOML action strings map to the
 // engine.Action values (continue/hook/ask/wait).
 func TestPatternTable_ActionMapping(t *testing.T) {
+	t.Parallel()
+
 	cfg := &openspec.OpenSpecConfig{
 		Patterns: []openspec.PatternEntry{
 			{ID: "c", Regex: "x", Action: "continue"},
@@ -161,6 +174,8 @@ func TestPatternTable_ActionMapping(t *testing.T) {
 // TestRegisterTools_NilArgs verifies nil catalog/config yields a structured error
 // (never a panic).
 func TestRegisterTools_NilArgs(t *testing.T) {
+	t.Parallel()
+
 	err := openspec.RegisterTools(nil, &openspec.OpenSpecConfig{})
 	if err == nil {
 		t.Error("RegisterTools(nil catalog) = nil; want error")

@@ -12,6 +12,8 @@ import (
 // TestClassifyTransientStatuses asserts every retryable HTTP status classifies
 // as KindTransient (RESEARCH §3.2).
 func TestClassifyTransientStatuses(t *testing.T) {
+	t.Parallel()
+
 	for _, status := range []int{408, 425, 429, 500, 502, 503, 504} {
 		perr := ClassifyHTTP("anthropic", "glm-5.2", status, nil)
 		require.Equal(t, KindTransient, perr.Kind, "status %d", status)
@@ -24,6 +26,8 @@ func TestClassifyTransientStatuses(t *testing.T) {
 // TestClassifyStructuralStatuses asserts every non-retryable HTTP status
 // classifies as KindStructural (RESEARCH §3.2).
 func TestClassifyStructuralStatuses(t *testing.T) {
+	t.Parallel()
+
 	for _, status := range []int{400, 401, 403, 404, 405, 411, 413, 422} {
 		perr := ClassifyHTTP("openai", "minimax-m3", status, nil)
 		require.Equal(t, KindStructural, perr.Kind, "status %d", status)
@@ -33,6 +37,8 @@ func TestClassifyStructuralStatuses(t *testing.T) {
 // TestClassifyNetErrorsTransient asserts transport/context errors classify as
 // Transient regardless of status (status is typically 0).
 func TestClassifyNetErrorsTransient(t *testing.T) {
+	t.Parallel()
+
 	cases := []error{
 		context.DeadlineExceeded,
 		context.Canceled,
@@ -50,6 +56,8 @@ func TestClassifyNetErrorsTransient(t *testing.T) {
 // tracker constructs Exhausted. A spurious Exhausted from the adapter would
 // trigger a false hard-stop.
 func TestClassifyExhaustedInvariant(t *testing.T) {
+	t.Parallel()
+
 	for status := 100; status <= 599; status++ {
 		perr := ClassifyHTTP("anthropic", "glm-5.2", status, nil)
 		require.NotEqual(t, KindExhausted, perr.Kind, "status %d must never classify as Exhausted", status)
@@ -61,6 +69,8 @@ func TestClassifyExhaustedInvariant(t *testing.T) {
 // TestProviderErrorMessage asserts the Error() string is investigate-and-fix-
 // ready (C5): it names the provider, model, kind, status, and reason.
 func TestProviderErrorMessage(t *testing.T) {
+	t.Parallel()
+
 	perr := &ProviderError{
 		Kind: KindTransient, Provider: "anthropic", Model: "glm-5.2",
 		StatusCode: 429, Reason: "rate limited",
@@ -74,6 +84,8 @@ func TestProviderErrorMessage(t *testing.T) {
 
 // TestProviderErrorUnwrap asserts errors.Is/As traverse the Cause.
 func TestProviderErrorUnwrap(t *testing.T) {
+	t.Parallel()
+
 	wrapped := errors.New("upstream sdk failure")
 	perr := &ProviderError{Kind: KindTransient, Cause: wrapped}
 	require.ErrorIs(t, perr, wrapped, "errors.Is must traverse Cause")
@@ -87,6 +99,8 @@ func TestProviderErrorUnwrap(t *testing.T) {
 // string is routed through redact.ScrubError so the credential never appears in
 // Error() output (C2).
 func TestProviderErrorRedactsCause(t *testing.T) {
+	t.Parallel()
+
 	perr := &ProviderError{
 		Kind: KindTransient, Provider: "anthropic", Model: "glm-5.2",
 		StatusCode: 500,
@@ -100,6 +114,7 @@ func TestProviderErrorRedactsCause(t *testing.T) {
 
 // TestClassifyReason checks the reason text for a few representative statuses.
 func TestClassifyReason(t *testing.T) {
+	t.Parallel()
 	require.Contains(t, ClassifyHTTP("p", "m", 429, nil).Reason, "rate")
 	require.Contains(t, ClassifyHTTP("p", "m", 401, nil).Reason, "unauth")
 	require.Contains(t, ClassifyHTTP("p", "m", 0, context.DeadlineExceeded).Reason, "deadline")

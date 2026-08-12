@@ -182,6 +182,8 @@ func newTestSession(t *testing.T, bus *event.Bus, responses []provider.Response)
 // user_message, publishes RequestShaped, calls Provider, appends assistant_message,
 // returns the stopReason. Tool execution stays stubbed.
 func TestPromptRunsTurnLoop(t *testing.T) {
+	t.Parallel()
+
 	bus := event.NewBus()
 	s, m, _ := newTestSession(t, bus, []provider.Response{
 		{FinishReason: "end_turn"},
@@ -221,6 +223,8 @@ func TestPromptRunsTurnLoop(t *testing.T) {
 // TestRequestShapedPublished verifies the turn loop publishes RequestShaped to
 // the bus (the capturer fires before the response returns).
 func TestRequestShapedPublished(t *testing.T) {
+	t.Parallel()
+
 	bus := event.NewBus()
 	ch := bus.Subscribe("RequestShaped", event.BufRequestShaped)
 
@@ -239,7 +243,7 @@ func TestRequestShapedPublished(t *testing.T) {
 // TestTranscriptWriterAsync verifies the transcript writer subscribes to
 // RequestShaped and appends request_shaped to the transcript WITHOUT blocking
 // the turn loop (LOG-02 — a slow writer does not delay the provider call).
-func TestTranscriptWriterAsync(t *testing.T) {
+func TestTranscriptWriterAsync(t *testing.T) { //nolint:paralleltest // timing-sensitive: 1s async-flush deadline flakes under parallel/-race load
 	bus := event.NewBus()
 	s, m, fp := newTestSession(t, bus, []provider.Response{{FinishReason: "end_turn"}})
 	fp.delay = 30 * time.Millisecond // baseline Send latency
@@ -279,6 +283,8 @@ func TestTranscriptWriterAsync(t *testing.T) {
 // TestCancelTurn verifies cancelling ctx aborts the turn, appends a canceled
 // line, and returns stopReason "cancelled" (D-16).
 func TestCancelTurn(t *testing.T) {
+	t.Parallel()
+
 	bus := event.NewBus()
 	s, m, _ := newTestSession(t, bus, []provider.Response{{FinishReason: "end_turn"}})
 	// Make Send block until ctx cancel.
@@ -318,6 +324,8 @@ func TestCancelTurn(t *testing.T) {
 // turn loop appends a tool_call line + a STUB tool_result and loops to project
 // again (real execution is Phase 4; D-15 stubs survive).
 func TestStubToolExecution(t *testing.T) {
+	t.Parallel()
+
 	bus := event.NewBus()
 
 	s, m, _ := newTestSession(t, bus, []provider.Response{
@@ -357,6 +365,8 @@ func TestStubToolExecution(t *testing.T) {
 // TestParentPanicRecovery verifies a panicking provider is recovered: the panic
 // produces an error transcript line, and Prompt returns an error (no crash).
 func TestParentPanicRecovery(t *testing.T) {
+	t.Parallel()
+
 	bus := event.NewBus()
 	s, m, fp := newTestSession(t, bus, []provider.Response{{FinishReason: "end_turn"}})
 	fp.panicOn = 1
@@ -424,6 +434,8 @@ var testStartTool = time.Now()
 // tool_result lines in ARRIVAL ORDER, and fires a boundary ONLY for the mutating
 // Bash tool. A real (recording) executor is injected via SetToolExecutor.
 func TestPromptDispatchBatchLoop(t *testing.T) {
+	t.Parallel()
+
 	bus := event.NewBus()
 	s, m, _ := newTestSession(t, bus, []provider.Response{
 		{ToolCalls: []provider.ToolCall{{Name: "Read"}, {Name: "Bash"}}, FinishReason: "tool_use"},
@@ -483,6 +495,8 @@ func TestPromptDispatchBatchLoop(t *testing.T) {
 // WITHOUT SetToolExecutor returns the canned stub result for every non-subagent
 // tool (Phase-2 D-15 behavior unchanged).
 func TestPromptNilToolExecutorStubs(t *testing.T) {
+	t.Parallel()
+
 	bus := event.NewBus()
 	s, m, _ := newTestSession(t, bus, []provider.Response{
 		{ToolCalls: []provider.ToolCall{{Name: "Read"}}, FinishReason: "tool_use"},

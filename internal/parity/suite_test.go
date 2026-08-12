@@ -10,6 +10,8 @@ import (
 // TestSuite_CuratedLoads confirms the shipped curated_suite.json parses and
 // meets D-01's 5-15 bound with at least one zero-tool entry.
 func TestSuite_CuratedLoads(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(".", "suite", "curated_suite.json")
 
 	turns, err := parity.LoadReplaySession(path)

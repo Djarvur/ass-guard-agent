@@ -11,6 +11,8 @@ import (
 // TestLoadValid loads the canonical valid fixture and asserts the populated
 // shape: models carry capabilities, tiers carry primary + fallback lists.
 func TestLoadValid(t *testing.T) {
+	t.Parallel()
+
 	cfg, err := Load("testdata/valid.yaml")
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
@@ -24,6 +26,8 @@ func TestLoadValid(t *testing.T) {
 // capability (tool_calling) a fallback lacks. The error names BOTH models AND
 // the capability — investigate-and-fix-ready.
 func TestLoadInvalidCapMismatch(t *testing.T) {
+	t.Parallel()
+
 	_, err := Load("testdata/invalid_cap_mismatch.yaml")
 	require.Error(t, err)
 
@@ -39,6 +43,8 @@ func TestLoadInvalidCapMismatch(t *testing.T) {
 // TestLoadInvalidDanglingSlug asserts a tier whose model references an undeclared
 // slug is rejected with the slug named.
 func TestLoadInvalidDanglingSlug(t *testing.T) {
+	t.Parallel()
+
 	_, err := Load("testdata/invalid_dangling_slug.yaml")
 	require.Error(t, err)
 
@@ -52,6 +58,8 @@ func TestLoadInvalidDanglingSlug(t *testing.T) {
 // (pitfall 10), not fail-fast-on-first. The fixture has two distinct violations
 // (a dangling slug + a capability mismatch); both must appear in the message.
 func TestLoadCollectAll(t *testing.T) {
+	t.Parallel()
+
 	_, err := Load("testdata/invalid_multiple.yaml")
 	require.Error(t, err)
 
@@ -68,6 +76,8 @@ func TestLoadCollectAll(t *testing.T) {
 // TestLoadDefaults asserts the documented D-07 breaker defaults + the 24h cost
 // window are applied when the config omits those blocks (zero-valued fields).
 func TestLoadDefaults(t *testing.T) {
+	t.Parallel()
+
 	cfg, err := Load("testdata/minimal.yaml")
 	require.NoError(t, err)
 
@@ -84,6 +94,8 @@ func TestLoadDefaults(t *testing.T) {
 // keys present in both, base values persist for base-only keys. The embedded
 // default sits below both as the floor (RESEARCH §1.1, pitfall 1).
 func TestLoadLayering(t *testing.T) {
+	t.Parallel()
+
 	cfg, err := Load("testdata/base_layering.yaml", "testdata/overlay_layering.yaml")
 	require.NoError(t, err)
 	// Overlay wins for shared keys.
@@ -98,6 +110,8 @@ func TestLoadLayering(t *testing.T) {
 // TestLoadEmbeddedDefault asserts Load() with no paths returns the embedded
 // zero-config floor (DIST-03) — a valid config that resolves heavy.
 func TestLoadEmbeddedDefault(t *testing.T) {
+	t.Parallel()
+
 	cfg, err := Load()
 	require.NoError(t, err)
 	require.Equal(t, "glm-5.2", cfg.Tiers["heavy"].Model)

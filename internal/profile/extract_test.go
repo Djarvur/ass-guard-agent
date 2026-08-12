@@ -11,6 +11,8 @@ import (
 // stable full-request lines and confirms the extracted shape + within-session
 // stability check.
 func TestExtractFromRollout_GoodSession(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(".", "testdata", "sample-sessions", "good.jsonl")
 
 	res, err := profile.ExtractFromRollout(path)
@@ -48,6 +50,8 @@ func TestExtractFromRollout_GoodSession(t *testing.T) {
 // TestExtractFromRollout_DriftFails confirms the within-session stability check
 // fires when two full-request lines disagree on the tool count.
 func TestExtractFromRollout_DriftFails(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(".", "testdata", "sample-sessions", "drift.jsonl")
 
 	_, err := profile.ExtractFromRollout(path)
@@ -59,6 +63,8 @@ func TestExtractFromRollout_DriftFails(t *testing.T) {
 // TestExtractFromRollout_NoFullRequests confirms a session with no full-request
 // lines surfaces a clear error.
 func TestExtractFromRollout_NoFullRequests(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(".", "testdata", "sample-sessions", "no-full.jsonl")
 
 	_, err := profile.ExtractFromRollout(path)

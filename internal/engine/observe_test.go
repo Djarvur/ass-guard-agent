@@ -133,6 +133,8 @@ func captureEvents(t *testing.T, bus *event.Bus) (collect func() []event.EngineD
 // first turn, end_turn (unmatched) on the second → runner.Run called TWICE (the
 // user prompt + one continue-injection) and ("end_turn", nil) returned.
 func TestObserve_ZeroContinueHappyPath(t *testing.T) {
+	t.Parallel()
+
 	table := seededTable()
 	runner := &scriptedRunner{outputs: []engine.TurnOutput{
 		{TurnID: "turn-001", Text: "## Implementation Complete — ready for review"},
@@ -181,6 +183,8 @@ func TestObserve_ZeroContinueHappyPath(t *testing.T) {
 // the first turn is unmatched → runner.Run called ONCE, no continue-injection,
 // one EngineDecision{nothing} event.
 func TestObserve_UnmatchedZeroInjections(t *testing.T) {
+	t.Parallel()
+
 	table := seededTable()
 	runner := &scriptedRunner{outputs: []engine.TurnOutput{
 		{TurnID: "turn-001", Text: "totally unrelated output"},
@@ -208,6 +212,8 @@ func TestObserve_UnmatchedZeroInjections(t *testing.T) {
 // ⇒ the ORIGINAL (stop, err) from the first Run are returned (graceful
 // degradation, D-04 — the turn already completed).
 func TestObserve_LastTurnOutputPanicDegradation(t *testing.T) {
+	t.Parallel()
+
 	table := seededTable()
 	runner := &scriptedRunner{
 		outputs: []engine.TurnOutput{
@@ -234,6 +240,8 @@ func TestObserve_LastTurnOutputPanicDegradation(t *testing.T) {
 // TestObserve_DecidePanicDegradation verifies a panicking PatternTable ⇒ the
 // original (stop, err) are returned, no crash.
 func TestObserve_DecidePanicDegradation(t *testing.T) {
+	t.Parallel()
+
 	panickingTable := panickingTable{}
 	runner := &scriptedRunner{outputs: []engine.TurnOutput{{TurnID: "turn-001", Text: "anything"}}}
 	eng := &engine.Engine{}
@@ -257,6 +265,8 @@ func (panickingTable) MatchTool(string) (string, engine.Action) { return "", eng
 // MaxContinueInjections+1 Run calls, then stops with a budget Reason (not an
 // error — the budget is a safety stop). This is the second infinite-loop bar.
 func TestObserve_ReFireBudget(t *testing.T) {
+	t.Parallel()
+
 	table := seededTable()
 	// Every scripted turn matches the handoff → the loop would run forever
 	// without the budget.
@@ -296,6 +306,8 @@ func TestObserve_ReFireBudget(t *testing.T) {
 // ("cancelled", nil) + NO further runner.Run calls (ENG-03 — the only
 // off-switch drains queued injections).
 func TestObserve_CancelDrain(t *testing.T) {
+	t.Parallel()
+
 	table := seededTable()
 	runner := &scriptedRunner{outputs: []engine.TurnOutput{
 		{TurnID: "turn-001", Text: "## Implementation Complete — ready for review"},
@@ -339,6 +351,8 @@ func (c *cancelAfterFirst) LastTurnOutput() engine.TurnOutput { return c.inner.L
 // engine_decision transcript line via the EngineDecisionWriter (D-20 — the
 // audit log proves unmatched-output-triggers-nothing).
 func TestObserve_EmitsPerTurnWithManager(t *testing.T) {
+	t.Parallel()
+
 	table := seededTable()
 	runner := &scriptedRunner{outputs: []engine.TurnOutput{
 		{TurnID: "turn-001", Text: "## Implementation Complete — ready for review"},
@@ -370,6 +384,8 @@ func TestObserve_EmitsPerTurnWithManager(t *testing.T) {
 // TestObserve_RealErrorStopsLoop verifies a Run returning a real error stops the
 // loop (the error is surfaced, not swallowed).
 func TestObserve_RealErrorStopsLoop(t *testing.T) {
+	t.Parallel()
+
 	table := seededTable()
 	runner := &errorRunner{err: errors.New("provider down")}
 	eng := &engine.Engine{}

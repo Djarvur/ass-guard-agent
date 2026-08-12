@@ -9,6 +9,8 @@ import (
 // TestCatalog_GetCoreTools confirms the built-in catalog carries the core tools
 // with faithful schemas + correct mutability classification.
 func TestCatalog_GetCoreTools(t *testing.T) {
+	t.Parallel()
+
 	c := toolcat.NewCatalog()
 	for _, name := range []string{"Read", "Bash", "Write", "Edit", "TodoWrite", "WebSearch"} {
 		tl, ok := c.Get(name)
@@ -26,6 +28,8 @@ func TestCatalog_GetCoreTools(t *testing.T) {
 
 // TestCatalog_Mutability pins the mutability classification (Phase-2/4 record).
 func TestCatalog_Mutability(t *testing.T) {
+	t.Parallel()
+
 	c := toolcat.NewCatalog()
 
 	readTool, _ := c.Get("Read")
@@ -43,6 +47,8 @@ func TestCatalog_Mutability(t *testing.T) {
 
 // TestCatalog_Nonexistent returns ok=false for an unknown tool.
 func TestCatalog_Nonexistent(t *testing.T) {
+	t.Parallel()
+
 	c := toolcat.NewCatalog()
 	if _, ok := c.Get("DoesNotExist"); ok {
 		t.Error("Get(DoesNotExist) returned ok=true; want false")
@@ -54,6 +60,8 @@ func TestCatalog_Nonexistent(t *testing.T) {
 // mutability floor (no boundary-engine change — OPEN-03/Plan 04-02 relies on
 // this), and a read-only registration stays read-only.
 func TestCatalog_Register(t *testing.T) {
+	t.Parallel()
+
 	c := toolcat.NewCatalog()
 	// Register a mutating OpenSpec command.
 	c.Register(toolcat.Tool{Name: "openspec:apply", Mutability: toolcat.MutabilityMutating})
@@ -88,6 +96,8 @@ func TestCatalog_Register(t *testing.T) {
 
 // TestCatalog_Names covers the full built-in core set.
 func TestCatalog_Names(t *testing.T) {
+	t.Parallel()
+
 	c := toolcat.NewCatalog()
 	names := c.Names()
 

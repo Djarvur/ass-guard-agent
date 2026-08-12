@@ -10,6 +10,7 @@ import (
 // TestCapabilityZeroReqNoFiltering: a zero capReq leaves the primary unchanged
 // regardless of its capabilities (Plan 03-01 behavior, no regression).
 func TestCapabilityZeroReqNoFiltering(t *testing.T) {
+	t.Parallel()
 	r := NewResolver(loadValid(t))
 	now := ny(2026, time.August, 16, 12, 0) // Sunday noon → global table
 	primary, fallbacks, err := r.Resolve("heavy", "myproj", now, CapabilityReq{})
@@ -22,6 +23,8 @@ func TestCapabilityZeroReqNoFiltering(t *testing.T) {
 // tool_calling but whose first fallback has it → Resolve with NeedsTools returns
 // the fallback (the tool-capable one).
 func TestCapabilityNeedsToolsSkipsToolLessPrimary(t *testing.T) {
+	t.Parallel()
+
 	cfg := &Config{
 		Providers: map[string]ProviderConfig{"p": {BaseURL: "x", Shape: "anthropic"}},
 		Models: map[string]ModelConfig{
@@ -38,6 +41,8 @@ func TestCapabilityNeedsToolsSkipsToolLessPrimary(t *testing.T) {
 
 // TestCapabilityNeedsStreamingAndThinking: analogous skips for streaming + thinking.
 func TestCapabilityNeedsStreamingAndThinking(t *testing.T) {
+	t.Parallel()
+
 	cfg := &Config{
 		Providers: map[string]ProviderConfig{"p": {BaseURL: "x", Shape: "anthropic"}},
 		Models: map[string]ModelConfig{
@@ -65,6 +70,8 @@ func TestCapabilityNeedsStreamingAndThinking(t *testing.T) {
 // lack the required capability → *CapabilityError naming the requirement + the
 // candidates checked.
 func TestCapabilityNoCandidateReturnsError(t *testing.T) {
+	t.Parallel()
+
 	cfg := &Config{
 		Providers: map[string]ProviderConfig{"p": {BaseURL: "x", Shape: "anthropic"}},
 		Models: map[string]ModelConfig{
@@ -89,6 +96,8 @@ func TestCapabilityNoCandidateReturnsError(t *testing.T) {
 // returns the FIRST capable fallback in declared order (D-05 ordered semantics
 // carry through the filter), plus the remaining chain after it.
 func TestCapabilityPreservesFallbackOrder(t *testing.T) {
+	t.Parallel()
+
 	cfg := &Config{
 		Providers: map[string]ProviderConfig{"p": {BaseURL: "x", Shape: "anthropic"}},
 		Models: map[string]ModelConfig{
@@ -107,6 +116,7 @@ func TestCapabilityPreservesFallbackOrder(t *testing.T) {
 
 // TestCapabilityDescribeReq covers the requirement-string helper.
 func TestCapabilityDescribeReq(t *testing.T) {
+	t.Parallel()
 	require.Equal(t, "(none)", describeReq(CapabilityReq{}))
 	require.Equal(t, "tool_calling", describeReq(CapabilityReq{NeedsTools: true}))
 	require.Equal(t, "tool_calling+streaming", describeReq(CapabilityReq{NeedsTools: true, NeedsStreaming: true}))

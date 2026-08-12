@@ -16,6 +16,8 @@ import (
 // subcommand with the expected flags (transport discipline: stdout is framer-
 // only; --profile default zcode; --max-concurrent default 6).
 func TestACPServeCommandRegistered(t *testing.T) {
+	t.Parallel()
+
 	root := newRootCmd()
 
 	var acpCmd *cobra.Command
@@ -63,6 +65,8 @@ func TestACPServeCommandRegistered(t *testing.T) {
 // canned initialize frame produces the initialize response on stdout and sends
 // all diagnostics to stderr — transport discipline (stdout = ACP frames only).
 func TestACPServeWiresStdoutClean(t *testing.T) {
+	t.Parallel()
+
 	in := strings.NewReader(`{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{},"clientInfo":{"name":"test","version":"0"}}}
 `)
 
@@ -104,6 +108,8 @@ func TestACPServeWiresStdoutClean(t *testing.T) {
 // TestACPServeNoStdoutPollutionFromLogs verifies stderr gets diagnostics and
 // stdout NEVER receives log bytes (Pitfall 1).
 func TestACPServeNoStdoutPollutionFromLogs(t *testing.T) {
+	t.Parallel()
+
 	in := strings.NewReader(`{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1}}
 `)
 
@@ -120,6 +126,8 @@ func TestACPServeNoStdoutPollutionFromLogs(t *testing.T) {
 // TestACPServeDoesNotRegressProfileCheck verifies the Phase-1 `profile check`
 // subcommand still exists alongside the new `acp serve` subcommand.
 func TestACPServeDoesNotRegressProfileCheck(t *testing.T) {
+	t.Parallel()
+
 	root := newRootCmd()
 
 	var profileCmd *cobra.Command

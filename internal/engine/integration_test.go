@@ -39,6 +39,8 @@ func newIntegrationManager(t *testing.T, sessionID string) *session.Manager {
 // prompt is the continue-injection, ("end_turn", nil) returned, 2 EngineDecision
 // events (continue then nothing), and 2 REAL engine_decision transcript lines.
 func TestIntegration_TextSignalZeroContinue(t *testing.T) {
+	t.Parallel()
+
 	table := seededTable()
 	runner := &scriptedRunner{outputs: []engine.TurnOutput{
 		{TurnID: "int-text-1", Text: "done. ## Implementation Complete — ready for review"},
@@ -102,6 +104,8 @@ func TestIntegration_TextSignalZeroContinue(t *testing.T) {
 // ONE Run call, ZERO continue-injections, ONE EngineDecision{nothing} event, and
 // ("end_turn", nil) returned. End-to-end structural safety.
 func TestIntegration_UnmatchedStructuralSafety(t *testing.T) {
+	t.Parallel()
+
 	table := seededTable()
 	runner := &scriptedRunner{outputs: []engine.TurnOutput{
 		{TurnID: "int-none-1", Text: "the agent did something with no handoff signal"},
@@ -130,6 +134,8 @@ func TestIntegration_UnmatchedStructuralSafety(t *testing.T) {
 // TOOL-call (not text) → the engine continues on the tool signal (D-02 second
 // signal). Asserts 2 Run calls + a continue-then-nothing event pair.
 func TestIntegration_ToolSignalContinue(t *testing.T) {
+	t.Parallel()
+
 	table := seededTable()
 	runner := &scriptedRunner{outputs: []engine.TurnOutput{
 		{TurnID: "int-tool-1", Text: "advancing via tool", ToolCalls: []string{"Read", "OpenSpecHandoff"}},

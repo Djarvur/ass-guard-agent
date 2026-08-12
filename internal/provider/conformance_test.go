@@ -29,6 +29,7 @@ type conformanceCase struct {
 // the same scenario: Send → ToolCalls, and ToolResultMessage builds the
 // provider-correct follow-up.
 func TestConformance_BothAdapters(t *testing.T) {
+	t.Parallel()
 	prof := loadProfile(t, "minimal")
 	msgs := []shaper.Message{{Role: "user", Content: "do the thing"}}
 
@@ -60,7 +61,7 @@ func TestConformance_BothAdapters(t *testing.T) {
 		{name: "anthropic", provider: ant, wantName: "synth_tool_a", wantArgs: map[string]any{"path": "go.mod"}},
 		{name: "openai", provider: oai, wantName: "synth_tool_a", wantArgs: map[string]any{"path": "go.mod"}},
 	}
-	for _, c := range cases {
+	for _, c := range cases { //nolint:paralleltest // subtests share parent-scoped httptest servers closed on parent return
 		t.Run(c.name, func(t *testing.T) {
 			resp, err := c.provider.Send(context.Background(), prof, msgs)
 			if err != nil {
@@ -108,6 +109,8 @@ func TestConformance_BothAdapters(t *testing.T) {
 // adapters implement the Provider interface (the test fails to compile otherwise,
 // but this makes the intent explicit and greppable).
 func TestConformance_InterfaceSatisfied(t *testing.T) {
+	t.Parallel()
+
 	var (
 		_ provider.Provider = (*provider.AnthropicProvider)(nil)
 		_ provider.Provider = (*provider.OpenAIProvider)(nil)

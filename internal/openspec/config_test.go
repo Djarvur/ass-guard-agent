@@ -11,6 +11,8 @@ import (
 // TestDefaultConfig verifies the embedded seeded.toml parses + validates with
 // the documented shape (>=2 patterns, >=1 handoff tool, >=4 commands — OPEN-02).
 func TestDefaultConfig(t *testing.T) {
+	t.Parallel()
+
 	cfg, err := openspec.DefaultConfig()
 	if err != nil {
 		t.Fatalf("DefaultConfig: %v", err)
@@ -51,6 +53,7 @@ func TestDefaultConfig(t *testing.T) {
 
 // TestLoadConfig_File verifies LoadConfig reads + validates a real file path.
 func TestLoadConfig_File(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "openspec.toml")
 
@@ -85,6 +88,7 @@ mutability = "read-only"
 // TestLoadConfig_InvalidRegex verifies a bogus regex yields a ConfigError
 // naming the offender.
 func TestLoadConfig_InvalidRegex(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "bad.toml")
 
@@ -110,6 +114,7 @@ action = "continue"
 
 // TestLoadConfig_InvalidAction verifies an unknown action yields a ConfigError.
 func TestLoadConfig_InvalidAction(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "badaction.toml")
 
@@ -136,6 +141,7 @@ action = "explode"
 // TestLoadConfig_InvalidMutability verifies an unknown mutability yields a
 // ConfigError naming the command.
 func TestLoadConfig_InvalidMutability(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "badmut.toml")
 
@@ -161,6 +167,7 @@ mutability = "maybe"
 // directly via BurntSushi/toml). A grep-level guarantee is in acceptance; this
 // test pins the config's structural correctness end-to-end.
 func TestLoadConfig_CollectAll(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "multi.toml")
 	// Two violations: a bad action AND a bad mutability.

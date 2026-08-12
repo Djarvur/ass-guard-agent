@@ -64,6 +64,8 @@ func (askTable) MatchTool(string) (string, engine.Action) { return "", engine.Ac
 // TestDispatch_HookCallsDispatcher verifies ActionHook dispatches through
 // Dispatcher.Hook + the EngineDecision carries the hook status (T1).
 func TestDispatch_HookCallsDispatcher(t *testing.T) {
+	t.Parallel()
+
 	runner := &scriptedRunner{outputs: []engine.TurnOutput{{TurnID: "h1", Text: "trigger"}}}
 	bus := event.NewBus()
 	d := &fakeDispatcher{hookStatus: "completed"}
@@ -95,6 +97,7 @@ func TestDispatch_HookCallsDispatcher(t *testing.T) {
 // TestDispatch_AskWithStoredAnswerContinues verifies ActionAsk with a stored
 // "continue" answer ⇒ the engine continues (re-enters the runner).
 func TestDispatch_AskWithStoredAnswerContinues(t *testing.T) {
+	t.Parallel()
 	// Turn 1 matches the ask signal; the dispatcher returns "continue" so the
 	// engine re-enters the runner. Turn 2's text does NOT match askTable...
 	// except askTable.MatchText ALWAYS returns ActionAsk. So we'd loop to the
@@ -152,6 +155,8 @@ func (a *askOnceTable) MatchTool(string) (string, engine.Action) { return "", en
 // (ErrAskPending) ⇒ an ask EngineDecision is emitted + the loop breaks (Run
 // called once, no continue-injection).
 func TestDispatch_AskPendingBreaksLoop(t *testing.T) {
+	t.Parallel()
+
 	runner := &scriptedRunner{outputs: []engine.TurnOutput{{TurnID: "a1", Text: "first"}}}
 	bus := event.NewBus()
 	d := &fakeDispatcher{askErr: engine.ErrAskPending}
@@ -182,6 +187,8 @@ func TestDispatch_AskPendingBreaksLoop(t *testing.T) {
 // TestDispatch_NilDispatcherDegradesToNothing verifies a nil Dispatcher makes
 // hook/ask degrade to nothing (the tracer / 04-01 contract preserved).
 func TestDispatch_NilDispatcherDegradesToNothing(t *testing.T) {
+	t.Parallel()
+
 	runner := &scriptedRunner{outputs: []engine.TurnOutput{{TurnID: "h1", Text: "trigger"}}}
 	bus := event.NewBus()
 	eng := &engine.Engine{Bus: bus} // no Dispatcher

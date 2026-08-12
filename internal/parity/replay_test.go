@@ -10,6 +10,8 @@ import (
 // TestExtractTurnsFromRollout parses a fixture rollout and confirms prompt→tool-
 // call pairing. A turn with zero tool-calls produces an empty ExpectedToolCalls.
 func TestExtractTurnsFromRollout(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(".", "testdata", "sample-rollout.jsonl")
 
 	turns, err := parity.ExtractTurnsFromRollout(path)
@@ -51,6 +53,8 @@ func TestExtractTurnsFromRollout(t *testing.T) {
 
 // TestExtractTurnsFromRollout_EmptyToolCalls confirms a zero-tool turn is valid.
 func TestExtractTurnsFromRollout_EmptyToolCalls(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(".", "testdata", "sample-rollout.jsonl")
 
 	turns, _ := parity.ExtractTurnsFromRollout(path)

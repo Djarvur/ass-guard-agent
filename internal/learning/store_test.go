@@ -26,6 +26,7 @@ func newStore(t *testing.T) *learning.Store {
 // TestStore_OpenCreatesEmpty verifies Open creates an empty-valid file when
 // absent (the zero-config floor — D-16).
 func TestStore_OpenCreatesEmpty(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "nested", "learned.yaml")
 
@@ -46,7 +47,9 @@ func TestStore_OpenCreatesEmpty(t *testing.T) {
 // TestStore_RecordCandidateConfidence0 verifies RecordCandidate creates a
 // candidate (confidence 0) entry that Lookup returns (LRN-01).
 func TestStore_RecordCandidateConfidence0(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
+
 	err := s.RecordCandidate("unmatched:launch", "fresh-context", "turn-001")
 	if err != nil {
 		t.Fatalf("RecordCandidate: %v", err)
@@ -73,6 +76,7 @@ func TestStore_RecordCandidateConfidence0(t *testing.T) {
 // TestStore_RecordCandidateIdempotent verifies a second RecordCandidate with a
 // DIFFERENT answer does NOT overwrite (the operator must Revert to change it).
 func TestStore_RecordCandidateIdempotent(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	_ = s.RecordCandidate("x", "A", "t1")
 	_ = s.RecordCandidate("x", "B", "t2")
@@ -90,6 +94,7 @@ func TestStore_RecordCandidateIdempotent(t *testing.T) {
 // TestStore_ConfirmThresholdActive verifies 3 Confirm calls with the SAME answer
 // flip Status to active (LRN-03 — the confidence threshold).
 func TestStore_ConfirmThresholdActive(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 
 	_ = s.RecordCandidate("feature", "continue", "t1")
@@ -116,6 +121,7 @@ func TestStore_ConfirmThresholdActive(t *testing.T) {
 // TestStore_ConfirmBelowThresholdCandidate verifies 2 Confirms keep Status
 // candidate (provisional — still used, but flagged).
 func TestStore_ConfirmBelowThresholdCandidate(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	_ = s.RecordCandidate("feature", "continue", "t1")
 	_, _ = s.Confirm("feature", "continue", "t1")
@@ -130,6 +136,7 @@ func TestStore_ConfirmBelowThresholdCandidate(t *testing.T) {
 // TestStore_ConfirmConflict verifies Confirm with a DIFFERENT answer yields
 // ErrConflict + Status=conflict + Confidence NOT incremented (T-04-07).
 func TestStore_ConfirmConflict(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	_ = s.RecordCandidate("c", "A", "t1")
 
@@ -151,6 +158,7 @@ func TestStore_ConfirmConflict(t *testing.T) {
 // TestStore_ConflictBlocksUse verifies a conflicted entry is NOT returned by
 // Lookup (the engine would re-ask).
 func TestStore_ConflictBlocksUse(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	_ = s.RecordCandidate("c", "A", "t1")
 
@@ -163,6 +171,7 @@ func TestStore_ConflictBlocksUse(t *testing.T) {
 // TestStore_ExpiredIgnoredNotDeleted verifies an expired entry is skipped by
 // Lookup but STILL present in List (so the operator can renew/purge — D-19).
 func TestStore_ExpiredIgnoredNotDeleted(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	_ = s.RecordCandidate("old", "wait", "t1")
 	// Force the entry into the past by re-confirming once then rewriting its
@@ -205,6 +214,7 @@ func TestStore_ExpiredIgnoredNotDeleted(t *testing.T) {
 // [t1,t2,t3] yield an active entry whose SourceTurns contains all three
 // (deduped — Test 8).
 func TestStore_SourceTurnProvenanceDeduped(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 
 	_ = s.RecordCandidate("p", "continue", "t1")
@@ -228,11 +238,13 @@ func TestStore_SourceTurnProvenanceDeduped(t *testing.T) {
 // TestStore_RevertRemovesEntry verifies Revert removes the named entry + a
 // re-Revert of the same id is a no-op (LRN-04 / D-20).
 func TestStore_RevertRemovesEntry(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	_ = s.RecordCandidate("a", "x", "t1")
 	_ = s.RecordCandidate("b", "y", "t1")
 
 	_ = s.RecordCandidate("c", "z", "t1")
+
 	err := s.Revert(learning.Slug("b"))
 	if err != nil {
 		t.Fatalf("Revert: %v", err)
@@ -252,6 +264,7 @@ func TestStore_RevertRemovesEntry(t *testing.T) {
 // TestStore_ListDeterministicOrder verifies entries written A,B,C come back in
 // that order.
 func TestStore_ListDeterministicOrder(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	_ = s.RecordCandidate("alpha", "x", "t1")
 	_ = s.RecordCandidate("beta", "y", "t1")
@@ -270,6 +283,7 @@ func TestStore_ListDeterministicOrder(t *testing.T) {
 // TestStore_RevertAtomicReadOnlyDir verifies a failed rename leaves the file
 // unchanged (Revert is atomic — T-04-09).
 func TestStore_RevertAtomicReadOnlyDir(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	fp := filepath.Join(dir, "learned.yaml")
 
@@ -300,6 +314,8 @@ func TestStore_RevertAtomicReadOnlyDir(t *testing.T) {
 
 // TestSlug_Deterministic verifies Slug produces a stable id for a situation.
 func TestSlug_Deterministic(t *testing.T) {
+	t.Parallel()
+
 	a := learning.Slug("unmatched:launch:webfetch")
 
 	b := learning.Slug("Unmatched:Launch:WebFetch")

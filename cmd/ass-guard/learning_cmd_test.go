@@ -12,10 +12,12 @@ import (
 // TestLearningList_Empty verifies an empty store prints the header + an stderr
 // note + exit 0.
 func TestLearningList_Empty(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "learned.yaml")
 
 	var stdout, stderr bytes.Buffer
+
 	err := runLearningList(&stdout, &stderr, path)
 	if err != nil {
 		t.Fatalf("runLearningList: %v", err)
@@ -36,6 +38,7 @@ func TestLearningList_Empty(t *testing.T) {
 
 // TestLearningList_Populated verifies a store with 3 entries prints 3 rows.
 func TestLearningList_Populated(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "learned.yaml")
 
@@ -67,6 +70,7 @@ func TestLearningList_Populated(t *testing.T) {
 // TestLearningRevert_Existing verifies reverting an existing id prints
 // confirmation + the entry is gone.
 func TestLearningRevert_Existing(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "learned.yaml")
 
@@ -96,6 +100,7 @@ func TestLearningRevert_Existing(t *testing.T) {
 // TestLearningRevert_Missing verifies reverting a missing id warns to stderr +
 // still exits 0 (Revert is a no-op there per T3 Test 4).
 func TestLearningRevert_Missing(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "learned.yaml")
 

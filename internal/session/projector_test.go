@@ -21,6 +21,7 @@ func fakeProfile(systemText string) profile.Profile {
 // A truncated excerpt of the last assistant may appear in the summary text
 // (D-02), but no prior assistant/turn is carried as a separate message.
 func TestProjector_LeanSeedAfterBoundary(t *testing.T) {
+	t.Parallel()
 	m := newTestManager(t, "s1")
 	p := NewProjector(fakeProfile("you are a test agent"), m)
 
@@ -64,6 +65,7 @@ func TestProjector_LeanSeedAfterBoundary(t *testing.T) {
 // extracted (D-02): last user message text (truncated) + files touched + last
 // assistant message (truncated).
 func TestProjector_SummaryExtraction(t *testing.T) {
+	t.Parallel()
 	m := newTestManager(t, "s1")
 	p := NewProjector(fakeProfile("sys"), m)
 	_ = m.AppendUserMessage("turn_040", []ContentBlock{{Type: "text", Text: "edit the file"}})
@@ -103,6 +105,7 @@ func TestProjector_SummaryExtraction(t *testing.T) {
 // TestProjector_FirstTurn verifies on a fresh session (no boundary) the window
 // is the system context + first user message (no summary).
 func TestProjector_FirstTurn(t *testing.T) {
+	t.Parallel()
 	m := newTestManager(t, "s1")
 	p := NewProjector(fakeProfile("sys"), m)
 	_ = m.AppendUserMessage("turn_001", []ContentBlock{{Type: "text", Text: "hello"}})
@@ -133,6 +136,7 @@ func TestProjector_FirstTurn(t *testing.T) {
 // TestProjector_Truncation verifies long user messages are truncated to the
 // N-char limit (D-02, RESEARCH §4.3).
 func TestProjector_Truncation(t *testing.T) {
+	t.Parallel()
 	m := newTestManager(t, "s1")
 	p := NewProjector(fakeProfile("sys"), m)
 	long := strings.Repeat("a", 1000)
@@ -164,6 +168,7 @@ func TestProjector_Truncation(t *testing.T) {
 // field (the lint `grep ".Send\|.Stream" projector.go` runs in the plan verify
 // step; here we assert the type carries no provider dependency).
 func TestProjector_NoModelCall(t *testing.T) {
+	t.Parallel()
 	p := NewProjector(fakeProfile("sys"), newTestManager(t, "s1"))
 	// The Projector must not expose a provider-typed field — it builds the lean
 	// window by reading the transcript, not by calling the model.

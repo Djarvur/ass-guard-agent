@@ -11,6 +11,8 @@ import (
 // TestCheckConsistency_OnlyBuiltinsSatisfied confirms a profile declaring only
 // built-in core tools passes with empty Unsatisfied.
 func TestCheckConsistency_OnlyBuiltinsSatisfied(t *testing.T) {
+	t.Parallel()
+
 	c := toolcat.NewCatalog()
 	// Pull the catalog's own Read schema so the required-field set matches exactly.
 	readTool, _ := c.Get("Read")
@@ -33,6 +35,8 @@ func TestCheckConsistency_OnlyBuiltinsSatisfied(t *testing.T) {
 // TestCheckConsistency_DriftedSchemaIsHardFailure confirms a built-in tool whose
 // profile-declared required-field set differs is Unsatisfied (TOOL-03 hard fail).
 func TestCheckConsistency_DriftedSchemaIsHardFailure(t *testing.T) {
+	t.Parallel()
+
 	c := toolcat.NewCatalog()
 	readTool, _ := c.Get("Read")
 	// Mutate the required-field set to force a structural mismatch.
@@ -52,6 +56,8 @@ func TestCheckConsistency_DriftedSchemaIsHardFailure(t *testing.T) {
 // TestCheckConsistency_MCPIsInformational confirms an MCP tool is reported in
 // MCPOrPlugin (informational), NOT Unsatisfied.
 func TestCheckConsistency_MCPIsInformational(t *testing.T) {
+	t.Parallel()
+
 	c := toolcat.NewCatalog()
 	decls := []profile.Decl{
 		{Name: "mcp__firecrawl__search", InputSchema: json.RawMessage(`{"type":"object"}`)},

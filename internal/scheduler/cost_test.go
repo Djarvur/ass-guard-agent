@@ -24,6 +24,8 @@ func newCostTracker(t *testing.T, cfg CostCeilingConfig, pricing map[string]Pric
 // TestCostArithmetic: Account applies the per-model pricing correctly.
 // glm-5.2 @ {0.60 in, 2.20 out} for 1M in + 0.5M out = $1.70.
 func TestCostArithmetic(t *testing.T) {
+	t.Parallel()
+
 	cfg := CostCeilingConfig{AmountUSD: 50.0, Window: 24 * time.Hour, DegradeTo: "light"}
 	tr, _ := newCostTracker(t, cfg, map[string]Pricing{
 		"glm-5.2": {InputPerMToken: 0.60, OutputPerMToken: 2.20},
@@ -40,6 +42,8 @@ func TestCostArithmetic(t *testing.T) {
 // exactly ONE CostCeilingWarn (HardStop=false). Subsequent Checks are
 // idempotently CostDegrade.
 func TestCostFirstBreachDegrade(t *testing.T) {
+	t.Parallel()
+
 	cfg := CostCeilingConfig{AmountUSD: 50.0, Window: 24 * time.Hour, DegradeTo: "light"}
 	tr, bus := newCostTracker(t, cfg, map[string]Pricing{
 		"glm-5.2": {InputPerMToken: 60.0, OutputPerMToken: 0}, // $60 per 1M in
@@ -80,6 +84,8 @@ drain:
 // TestCostSecondBreachHardStop: once degraded, accumulating past the (same)
 // ceiling on the degraded budget returns CostHardStop + a warn(HardStop=true).
 func TestCostSecondBreachHardStop(t *testing.T) {
+	t.Parallel()
+
 	cfg := CostCeilingConfig{AmountUSD: 50.0, Window: 24 * time.Hour, DegradeTo: "light"}
 	tr, bus := newCostTracker(t, cfg, map[string]Pricing{
 		"minimax-m3": {InputPerMToken: 60.0, OutputPerMToken: 0},
@@ -129,6 +135,8 @@ drain2:
 // TestCostWindowRollover: crossing the calendar boundary freezes the prior
 // window + resets spent/degraded; Check returns CostAllow again.
 func TestCostWindowRollover(t *testing.T) {
+	t.Parallel()
+
 	cfg := CostCeilingConfig{AmountUSD: 50.0, Window: 24 * time.Hour, DegradeTo: "light"}
 	tr, _ := newCostTracker(t, cfg, map[string]Pricing{
 		"glm-5.2": {InputPerMToken: 60.0, OutputPerMToken: 0},
@@ -150,6 +158,8 @@ func TestCostWindowRollover(t *testing.T) {
 // Send path carries no token counts, pitfall 5) — the ceiling cannot trip
 // without tokens.
 func TestCostNoTokenCountsGraceful(t *testing.T) {
+	t.Parallel()
+
 	cfg := CostCeilingConfig{AmountUSD: 50.0, Window: 24 * time.Hour, DegradeTo: "light"}
 	tr, _ := newCostTracker(t, cfg, map[string]Pricing{
 		"glm-5.2": {InputPerMToken: 60.0, OutputPerMToken: 0},
@@ -169,6 +179,8 @@ func TestCostNoTokenCountsGraceful(t *testing.T) {
 // TestCostConcurrentAccount: 100 goroutines calling Account concurrently under
 // -race → consistent window total (no lost updates).
 func TestCostConcurrentAccount(t *testing.T) {
+	t.Parallel()
+
 	cfg := CostCeilingConfig{AmountUSD: 1e9, Window: 24 * time.Hour, DegradeTo: "light"} // huge ceiling, no trip
 	tr, _ := newCostTracker(t, cfg, map[string]Pricing{
 		"glm-5.2": {InputPerMToken: 1.0, OutputPerMToken: 0},
@@ -192,6 +204,7 @@ func TestCostConcurrentAccount(t *testing.T) {
 
 // TestCostDisabled: AmountUSD=0 disables the ceiling (always CostAllow).
 func TestCostDisabled(t *testing.T) {
+	t.Parallel()
 	tr, _ := newCostTracker(t, CostCeilingConfig{AmountUSD: 0, Window: 24 * time.Hour}, map[string]Pricing{
 		"m": {InputPerMToken: 1e6, OutputPerMToken: 0},
 	})

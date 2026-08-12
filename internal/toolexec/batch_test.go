@@ -77,6 +77,8 @@ func newCatalog(tools map[string]toolcat.Mutability) *toolcat.Catalog {
 // sleeping 30ms) finish in < 80ms — parallelism observed (sequential would be
 // ~120ms). D-21.
 func TestDispatchBatch_ReadOnlyParallelism(t *testing.T) {
+	t.Parallel()
+
 	exec := &recordingExec{sleep: 30 * time.Millisecond}
 	catalog := newCatalog(map[string]toolcat.Mutability{
 		"Read": toolcat.MutabilityReadOnly, "Grep": toolcat.MutabilityReadOnly,
@@ -115,6 +117,8 @@ func TestDispatchBatch_ReadOnlyParallelism(t *testing.T) {
 // (T-04-03 — the state-corruption threat). Three mutating calls, each sleeping
 // 30ms; assert no two overlap.
 func TestDispatchBatch_MutatingSerialization(t *testing.T) {
+	t.Parallel()
+
 	exec := &recordingExec{sleep: 30 * time.Millisecond}
 	catalog := newCatalog(map[string]toolcat.Mutability{
 		"Bash": toolcat.MutabilityMutating, "Write": toolcat.MutabilityMutating, "Edit": toolcat.MutabilityMutating,
@@ -143,6 +147,8 @@ func TestDispatchBatch_MutatingSerialization(t *testing.T) {
 // TestDispatchBatch_ArrivalOrderMixed verifies a mixed batch returns results in
 // arrival order regardless of completion.
 func TestDispatchBatch_ArrivalOrderMixed(t *testing.T) {
+	t.Parallel()
+
 	exec := &recordingExec{sleep: 20 * time.Millisecond}
 	catalog := newCatalog(map[string]toolcat.Mutability{
 		"Read": toolcat.MutabilityReadOnly, "Grep": toolcat.MutabilityReadOnly,
@@ -175,6 +181,8 @@ func TestDispatchBatch_ArrivalOrderMixed(t *testing.T) {
 // (read-only or mutating) — the strongest form of D-21. In [Read, Bash, Grep],
 // the mutating Bash overlaps neither Read nor Grep.
 func TestDispatchBatch_MutatingAlone(t *testing.T) {
+	t.Parallel()
+
 	exec := &recordingExec{sleep: 30 * time.Millisecond}
 	catalog := newCatalog(map[string]toolcat.Mutability{
 		"Read": toolcat.MutabilityReadOnly, "Grep": toolcat.MutabilityReadOnly,
@@ -217,6 +225,8 @@ func TestDispatchBatch_MutatingAlone(t *testing.T) {
 // TestDispatchBatch_UnknownToolReadOnly verifies an unknown tool is treated as
 // read-only + dispatched; the executor's error is surfaced (IsError=true).
 func TestDispatchBatch_UnknownToolReadOnly(t *testing.T) {
+	t.Parallel()
+
 	exec := &recordingExec{sleep: 1 * time.Millisecond}
 	catalog := toolcat.NewCatalog() // empty — no tools declared
 	calls := []provider.ToolCall{{Name: "Mystery"}}
@@ -240,6 +250,8 @@ func TestDispatchBatch_UnknownToolReadOnly(t *testing.T) {
 // read-only parallelism: 6 read-only calls each sleeping 30ms with
 // MaxConcurrent=2 must take >= 3*30ms - epsilon (at most 2 run at once).
 func TestDispatchBatch_MaxConcurrentBound(t *testing.T) {
+	t.Parallel()
+
 	exec := &recordingExec{sleep: 30 * time.Millisecond}
 	catalog := newCatalog(map[string]toolcat.Mutability{
 		"R1": toolcat.MutabilityReadOnly, "R2": toolcat.MutabilityReadOnly,
@@ -263,6 +275,8 @@ func TestDispatchBatch_MaxConcurrentBound(t *testing.T) {
 // TestDispatchBatch_CtxCancel verifies ctx cancellation mid-batch surfaces
 // without deadlock + without panicking.
 func TestDispatchBatch_CtxCancel(t *testing.T) {
+	t.Parallel()
+
 	exec := &recordingExec{sleep: 200 * time.Millisecond}
 	catalog := newCatalog(map[string]toolcat.Mutability{
 		"R1": toolcat.MutabilityReadOnly, "R2": toolcat.MutabilityReadOnly,
@@ -290,6 +304,8 @@ func TestDispatchBatch_CtxCancel(t *testing.T) {
 // (the Session must route nil through its stub path, but DispatchBatch is
 // defensive).
 func TestDispatchBatch_NilExecutor(t *testing.T) {
+	t.Parallel()
+
 	catalog := newCatalog(map[string]toolcat.Mutability{"Read": toolcat.MutabilityReadOnly})
 	calls := []provider.ToolCall{{Name: "Read"}}
 

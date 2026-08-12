@@ -34,6 +34,7 @@ func (redactorAdapter) ScrubError(err error) string     { return redact.ScrubErr
 // TestAppendUserMessageWritesJSONLine verifies AppendUserMessage writes one
 // well-formed JSON line with the type discriminator + turnID + content.
 func TestAppendUserMessageWritesJSONLine(t *testing.T) {
+	t.Parallel()
 	m := newTestManager(t, "sess-1")
 
 	err := m.AppendUserMessage("turn_1", []ContentBlock{{Type: "text", Text: "hello"}})
@@ -61,6 +62,8 @@ func TestAppendUserMessageWritesJSONLine(t *testing.T) {
 // the type discriminator, the action in `name`, the signal in `input`, and the
 // reason in `text` (ENG-02 — the single provenance-tagged stream).
 func TestAppendEngineDecision(t *testing.T) {
+	t.Parallel()
+
 	m := newTestManager(t, "sess-1")
 	if err := m.AppendEngineDecision("turn_7", "continue", "text:impl-complete", "text-pattern matched"); err != nil {
 		t.Fatalf("AppendEngineDecision: %v", err)
@@ -101,6 +104,8 @@ func TestAppendEngineDecision(t *testing.T) {
 // an ActionNothing decision (unmatched output triggers nothing — D-03); the
 // audit log must prove it so a human investigating can confirm nothing fired.
 func TestAppendEngineDecisionNothing(t *testing.T) {
+	t.Parallel()
+
 	m := newTestManager(t, "sess-1")
 	if err := m.AppendEngineDecision("turn_1", "nothing", "unmatched", "no pattern or handoff tool matched"); err != nil {
 		t.Fatalf("AppendEngineDecision: %v", err)
@@ -117,6 +122,7 @@ func TestAppendEngineDecisionNothing(t *testing.T) {
 }
 
 func TestAppendBoundary(t *testing.T) {
+	t.Parallel()
 	m := newTestManager(t, "sess-1")
 
 	err := m.AppendBoundary("mutating-command:Bash", "toolCallId_abc", "turn_042")
@@ -145,6 +151,7 @@ func TestAppendBoundary(t *testing.T) {
 // TestAppendErrorScrubsMessage verifies the error line's message is scrubbed
 // (LOG-03) but the component + recoverable flag are preserved.
 func TestAppendErrorScrubsMessage(t *testing.T) {
+	t.Parallel()
 	m := newTestManager(t, "sess-1")
 
 	err := m.AppendError("turn_1", "provider", "send failed: sk-live-xxx", nil, false, "")
@@ -171,6 +178,7 @@ func TestAppendErrorScrubsMessage(t *testing.T) {
 // request carries an auth token is redacted on disk (LOG-03) — auth value
 // becomes [REDACTED], the field NAME + structure preserved.
 func TestRedactionOnRequestShaped(t *testing.T) {
+	t.Parallel()
 	m := newTestManager(t, "sess-1")
 
 	body := json.RawMessage(`{"authorization":"Bearer sk-test","headers":{"x-request-id":"abc"}}`)
@@ -197,6 +205,7 @@ func TestRedactionOnRequestShaped(t *testing.T) {
 // TestConcurrency verifies 100 goroutines appending to one Manager produce 100
 // well-formed JSONL lines (no interleaving, no truncation) — SESS-06 sole-owner.
 func TestConcurrency(t *testing.T) {
+	t.Parallel()
 	m := newTestManager(t, "sess-1")
 
 	const n = 100
@@ -222,6 +231,7 @@ func TestConcurrency(t *testing.T) {
 
 // TestReadAllOrder verifies ReadAll returns lines in append order.
 func TestReadAllOrder(t *testing.T) {
+	t.Parallel()
 	m := newTestManager(t, "sess-1")
 	_ = m.AppendUserMessage("t1", []ContentBlock{{Type: "text", Text: "first"}})
 	_ = m.AppendAssistantMessage("t1", "second")
@@ -249,6 +259,8 @@ func TestReadAllOrder(t *testing.T) {
 // TestReadLastBoundary verifies ReadLastBoundary returns the most recent
 // boundary line (or nil if none).
 func TestReadLastBoundary(t *testing.T) {
+	t.Parallel()
+
 	m := newTestManager(t, "sess-1")
 	if b, _ := m.ReadLastBoundary(); b != nil {
 		t.Errorf("ReadLastBoundary on empty transcript = %v; want nil", b)
@@ -270,6 +282,7 @@ func TestReadLastBoundary(t *testing.T) {
 // TestSelfGitignore verifies .ass-guard/ is self-gitignoring: on first run it
 // creates .ass-guard/.gitignore with exactly `*\n!.gitignore\n` (D-07).
 func TestSelfGitignore(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	m, err := NewManager(dir, "sess-1", redactorAdapter{})

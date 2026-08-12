@@ -18,6 +18,8 @@ import (
 // cancel → logout), and the transcript captures the full sequence with stdout
 // clean and no events dropped. Run with -race.
 func TestEndToEndSession(t *testing.T) {
+	t.Parallel()
+
 	bus := event.NewBus()
 	m := newTestManager(t, "sess-e2e")
 	script := []provider.Response{

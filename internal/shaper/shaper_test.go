@@ -33,6 +33,7 @@ func loadFixture(t *testing.T, name string) profile.Profile {
 // through the same code path (PROF-02 structural enforcement seed). The shaped
 // request must carry the SYNTHETIC fields, not any profile-specific defaults.
 func TestShape_SyntheticFixture(t *testing.T) {
+	t.Parallel()
 	p := loadFixture(t, "minimal")
 	s := shaper.New()
 
@@ -91,6 +92,7 @@ func TestShape_SyntheticFixture(t *testing.T) {
 // non-empty rendered value per header (the value is TIER-3 per-session, but it
 // must be present so drift detection sees the field populated — TIER-2 presence).
 func TestShape_RenderedHeadersNonEmpty(t *testing.T) {
+	t.Parallel()
 	p := loadFixture(t, "minimal")
 	// Render each header template and assert non-empty.
 	for _, h := range p.Headers {
@@ -104,6 +106,8 @@ func TestShape_RenderedHeadersNonEmpty(t *testing.T) {
 // TestShape_ZcodeProfile is the integration check against the real extracted
 // artifact. Skipped if the profile is absent.
 func TestShape_ZcodeProfile(t *testing.T) {
+	t.Parallel()
+
 	root, _ := filepath.Abs(filepath.Join("..", "..", "profiles"))
 	l := profile.NewLoader(root)
 

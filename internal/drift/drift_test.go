@@ -15,6 +15,8 @@ func manifest(fields ...profile.CoverageEntry) profile.CoverageManifest {
 
 // TestDetect_NoDrift: a captured request matching the manifest → no drifts.
 func TestDetect_NoDrift(t *testing.T) {
+	t.Parallel()
+
 	m := manifest(
 		profile.CoverageEntry{Path: "request.body.system", Tier: profile.Tier1ByteFaithful, ObservedCount: 3},
 		profile.CoverageEntry{Path: "request.headers", Tier: profile.Tier2Structural, ObservedCount: 12},
@@ -36,6 +38,8 @@ func TestDetect_NoDrift(t *testing.T) {
 // TestDetect_MissingTier2Header: a captured request missing a declared header
 // set → one TIER-2 drift.
 func TestDetect_MissingTier2Header(t *testing.T) {
+	t.Parallel()
+
 	m := manifest(
 		profile.CoverageEntry{Path: "request.headers", Tier: profile.Tier2Structural, ObservedCount: 12},
 	)
@@ -55,6 +59,8 @@ func TestDetect_MissingTier2Header(t *testing.T) {
 
 // TestDetect_Tier3Ignored: token-count variance must NOT surface (D-06).
 func TestDetect_Tier3Ignored(t *testing.T) {
+	t.Parallel()
+
 	m := manifest(
 		profile.CoverageEntry{Path: "response.usage.totalTokens", Tier: profile.Tier3Informational, ObservedCount: 5000},
 	)
@@ -72,6 +78,8 @@ func TestDetect_Tier3Ignored(t *testing.T) {
 // header name present) must NOT be a drift — per-session value variance is
 // expected (TIER-2 structural, not byte-value).
 func TestDetect_Tier2ValueVarianceNotFlagged(t *testing.T) {
+	t.Parallel()
+
 	m := manifest(
 		profile.CoverageEntry{Path: "request.headers", Tier: profile.Tier2Structural, ObservedCount: 12},
 	)
@@ -93,6 +101,8 @@ func TestDetect_Tier2ValueVarianceNotFlagged(t *testing.T) {
 
 // TestDetect_ChangedTier1SystemBlock: a different system-block COUNT is a TIER-1 drift.
 func TestDetect_ChangedTier1SystemBlock(t *testing.T) {
+	t.Parallel()
+
 	m := manifest(
 		profile.CoverageEntry{Path: "request.body.system", Tier: profile.Tier1ByteFaithful, ObservedCount: 3},
 	)

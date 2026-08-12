@@ -159,6 +159,8 @@ func prov(name string) hookdag.Provenance {
 // TestExecute_HappyPath verifies a 3-step all-passing hook completes + emits a
 // start+finish event per step.
 func TestExecute_HappyPath(t *testing.T) {
+	t.Parallel()
+
 	bus := event.NewBus()
 	e := &hookdag.Executor{
 		Bus:        bus,
@@ -194,6 +196,8 @@ func TestExecute_HappyPath(t *testing.T) {
 // TestExecute_RunCommandHalt verifies a run-command exit 1 + on_failure:halt
 // stops the chain at the failing step (the 3rd step NOT executed).
 func TestExecute_RunCommandHalt(t *testing.T) {
+	t.Parallel()
+
 	fc := &fakeCommands{scripted: map[int]commandResult{
 		0: {exit: 0},
 		1: {exit: 1, stderr: "boom"},
@@ -231,6 +235,8 @@ func TestExecute_RunCommandHalt(t *testing.T) {
 // TestExecute_OnFailureContinue verifies on_failure:continue logs the failure +
 // proceeds (the chain completes; the failure is in the events stream).
 func TestExecute_OnFailureContinue(t *testing.T) {
+	t.Parallel()
+
 	bus := event.NewBus()
 	fc := &fakeCommands{scripted: map[int]commandResult{
 		0: {exit: 0},
@@ -271,6 +277,8 @@ func TestExecute_OnFailureContinue(t *testing.T) {
 // TestExecute_OnFailureAsk verifies on_failure:ask suspends the chain (the next
 // step is NOT run) + emits an ask event.
 func TestExecute_OnFailureAsk(t *testing.T) {
+	t.Parallel()
+
 	bus := event.NewBus()
 	fc := &fakeCommands{scripted: map[int]commandResult{
 		0: {exit: 1, stderr: "needs input"},
@@ -308,6 +316,8 @@ func TestExecute_OnFailureAsk(t *testing.T) {
 // TestExecute_StepInheritsHookDefault verifies a step with empty OnFailure
 // inherits the hook's policy (halt) — exit 1 ⇒ halt.
 func TestExecute_StepInheritsHookDefault(t *testing.T) {
+	t.Parallel()
+
 	fc := &fakeCommands{scripted: map[int]commandResult{0: {exit: 1, stderr: "x"}}}
 	e := &hookdag.Executor{Commands: fc}
 	hook := hookdag.Hook{Name: "h", Trigger: "post-implement", OnFailure: hookdag.OnFailureHalt,
@@ -322,6 +332,8 @@ func TestExecute_StepInheritsHookDefault(t *testing.T) {
 // TestExecute_SendPromptIsATurn verifies the send-prompt step calls the
 // TurnRunner exactly once with the step's Prompt as a text content block.
 func TestExecute_SendPromptIsATurn(t *testing.T) {
+	t.Parallel()
+
 	ft := &fakeTurns{}
 	e := &hookdag.Executor{Turns: ft}
 	hook := hookdag.Hook{Name: "h", Trigger: "post-implement",
@@ -347,6 +359,8 @@ func TestExecute_SendPromptIsATurn(t *testing.T) {
 // TestExecute_SendPromptStopIsNotError verifies stop=end_turn is NOT treated as
 // an error (HOOK-05 — the turn completed normally).
 func TestExecute_SendPromptStopIsNotError(t *testing.T) {
+	t.Parallel()
+
 	ft := &fakeTurns{stop: "end_turn"}
 	e := &hookdag.Executor{Turns: ft}
 	hook := hookdag.Hook{Name: "h", Trigger: "post-implement",
@@ -361,6 +375,8 @@ func TestExecute_SendPromptStopIsNotError(t *testing.T) {
 // TestExecute_FreshContextIsABoundary verifies the fresh-context step calls
 // BoundaryOpener.OpenBoundary once with a cause containing the step/hook name.
 func TestExecute_FreshContextIsABoundary(t *testing.T) {
+	t.Parallel()
+
 	fb := &fakeBoundaries{}
 	e := &hookdag.Executor{Boundaries: fb}
 	hook := hookdag.Hook{Name: "h", Trigger: "post-implement",
@@ -379,6 +395,8 @@ func TestExecute_FreshContextIsABoundary(t *testing.T) {
 // TestExecute_Wait verifies the wait step sleeps the parsed Duration (1ms) and
 // does not call any other seam.
 func TestExecute_Wait(t *testing.T) {
+	t.Parallel()
+
 	fc := &fakeCommands{}
 	ft := &fakeTurns{}
 	fb := &fakeBoundaries{}
@@ -404,6 +422,7 @@ func TestExecute_Wait(t *testing.T) {
 // TestReentrant_Refused verifies two CONCURRENT Execute calls with the same
 // (Hook.Name, Trigger) + allow_reentrant:false ⇒ exactly one skipped-reentrant.
 func TestReentrant_Refused(t *testing.T) {
+	t.Parallel()
 	// A 50ms sleep on the first command call forces overlap between two
 	// concurrent Execute calls.
 	fc := &fakeCommands{
@@ -420,7 +439,6 @@ func TestReentrant_Refused(t *testing.T) {
 
 	for range 2 {
 		wg.Go(func() {
-
 			results <- e.Execute(context.Background(), hook, prov("rh"))
 		})
 	}
@@ -449,6 +467,8 @@ func TestReentrant_Refused(t *testing.T) {
 // TestReentrant_AllowReentrant verifies allow_reentrant:true permits overlap —
 // neither call is skipped.
 func TestReentrant_AllowReentrant(t *testing.T) {
+	t.Parallel()
+
 	fc := &fakeCommands{sleep: 30 * time.Millisecond, scripted: map[int]commandResult{0: {exit: 0}}}
 	e := &hookdag.Executor{Commands: fc}
 	hook := hookdag.Hook{Name: "rh2", Trigger: "post-implement", AllowReentrant: true,
@@ -460,7 +480,6 @@ func TestReentrant_AllowReentrant(t *testing.T) {
 
 	for range 2 {
 		wg.Go(func() {
-
 			results <- e.Execute(context.Background(), hook, prov("rh2"))
 		})
 	}
@@ -479,6 +498,8 @@ func TestReentrant_AllowReentrant(t *testing.T) {
 // Execute with the same provenance is NOT skipped (the in-flight entry was
 // cleared by the defer).
 func TestReentrant_InFlightClearedAfterCompletion(t *testing.T) {
+	t.Parallel()
+
 	fc := &fakeCommands{}
 	e := &hookdag.Executor{Commands: fc}
 	hook := hookdag.Hook{Name: "seq", Trigger: "post-implement",
@@ -494,7 +515,10 @@ func TestReentrant_InFlightClearedAfterCompletion(t *testing.T) {
 // TestRunCommand_ExitCodeContract verifies the run-command exit-code contract
 // directly (0 ⇒ no error; non-zero ⇒ error carrying stderr) — D-08.
 func TestRunCommand_ExitCodeContract(t *testing.T) {
+	t.Parallel()
 	t.Run("zero no error", func(t *testing.T) {
+		t.Parallel()
+
 		fc := &fakeCommands{scripted: map[int]commandResult{0: {exit: 0, stdout: "out"}}}
 		e := &hookdag.Executor{Commands: fc}
 
@@ -505,6 +529,8 @@ func TestRunCommand_ExitCodeContract(t *testing.T) {
 		}
 	})
 	t.Run("nonzero carries stderr", func(t *testing.T) {
+		t.Parallel()
+
 		fc := &fakeCommands{scripted: map[int]commandResult{0: {exit: 2, stderr: "the stderr"}}}
 		e := &hookdag.Executor{Commands: fc}
 		hook := hookdag.Hook{Name: "h", Trigger: "t",

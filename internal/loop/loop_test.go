@@ -38,6 +38,8 @@ func (f *fakeProvider) Stream(ctx context.Context, _ profile.Profile, _ []provid
 }
 
 func TestRun_ReturnsProviderToolCalls(t *testing.T) {
+	t.Parallel()
+
 	want := []provider.ToolCall{{Name: "Read", Input: []byte(`{"file_path":"go.mod"}`)}}
 	p := &fakeProvider{calls: want}
 
@@ -52,6 +54,8 @@ func TestRun_ReturnsProviderToolCalls(t *testing.T) {
 }
 
 func TestRun_PropagatesProviderError(t *testing.T) {
+	t.Parallel()
+
 	p := &fakeProvider{err: errors.New("boom")}
 	if _, err := loop.Run(context.Background(), profile.Profile{}, p, "x"); err == nil {
 		t.Fatal("Run returned nil error; want the provider error propagated")

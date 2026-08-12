@@ -15,6 +15,8 @@ import (
 // json.Marshal(v) followed by a single '\n' (ACP v1 newline-delimited framing,
 // VERIFIED-FACTS #3 / transports.md). No raw newline may appear in the body.
 func TestWriteFrameProducesMarshalPlusNewline(t *testing.T) {
+	t.Parallel()
+
 	var buf bytes.Buffer
 
 	msg := Message{JSONRPC: "2.0", ID: intPtr(1), Method: "initialize"}
@@ -42,6 +44,8 @@ func TestWriteFrameProducesMarshalPlusNewline(t *testing.T) {
 // ACP spec forbids embedded newlines (transports.md); a peer using a naive line
 // scanner would otherwise split the frame. The error must mention the spec rule.
 func TestWriteFrameRejectsDecodedNewline(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		name string
 		v    any
@@ -57,6 +61,8 @@ func TestWriteFrameRejectsDecodedNewline(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+
 			var buf bytes.Buffer
 
 			err := writeFrame(&buf, c.v)
@@ -79,6 +85,8 @@ func TestWriteFrameRejectsDecodedNewline(t *testing.T) {
 // delimited JSON object and returns the parsed *Message. At clean end-of-input
 // it returns io.EOF with no partial frame.
 func TestReadFrameParsesOneLine(t *testing.T) {
+	t.Parallel()
+
 	frame := []byte(`{"jsonrpc":"2.0","id":3,"method":"session/new"}` + "\n")
 	r := bufio.NewReader(bytes.NewReader(frame))
 
@@ -104,6 +112,8 @@ func TestReadFrameParsesOneLine(t *testing.T) {
 // frame WITHOUT crashing the reader (a subsequent well-formed frame can still be
 // read on the next call — the server keeps reading, Pitfall/transport rule).
 func TestReadFrameMalformedJSON(t *testing.T) {
+	t.Parallel()
+
 	in := []byte("{\"jsonrpc\":\"2.0\",TRUNCATED\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}\n")
 
 	r := bufio.NewReader(bytes.NewReader(in))
@@ -125,6 +135,8 @@ func TestReadFrameMalformedJSON(t *testing.T) {
 // 100 goroutines each writing a distinct frame produce 100 well-formed newline-
 // delimited lines in the output. Run with -race (load-bearing).
 func TestWriterConcurrentSafety(t *testing.T) {
+	t.Parallel()
+
 	var buf bytes.Buffer
 
 	w := newWriter(&buf)
@@ -190,6 +202,8 @@ func TestWriterConcurrentSafety(t *testing.T) {
 // non-nil (a request/response carries an id). This is the JSON-RPC notification-
 // vs-request distinction (VERIFIED-FACTS #3 Note 5: session/update has no id).
 func TestMessageIDNilIsNotification(t *testing.T) {
+	t.Parallel()
+
 	notif := Message{JSONRPC: "2.0", Method: "session/update"}
 
 	raw, err := json.Marshal(notif)

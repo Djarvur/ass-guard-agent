@@ -36,6 +36,7 @@ func runSchedulingCmd(t *testing.T, args ...string) (stdout, stderr string, err 
 // TestSchedulingValidateValid: validate on a valid config exits 0 + prints
 // "scheduling config valid" to STDERR.
 func TestSchedulingValidateValid(t *testing.T) {
+	t.Parallel()
 	stdout, stderr, err := runSchedulingCmd(t, "validate", "--config", validSchedulingCfg)
 	require.NoError(t, err)
 	require.Empty(t, stdout, "validate must not write to stdout (transport discipline)")
@@ -45,6 +46,7 @@ func TestSchedulingValidateValid(t *testing.T) {
 // TestSchedulingValidateInvalid: validate on an inconsistent config returns a
 // non-nil error + the ConfigError report on STDERR (D-10 operator surface).
 func TestSchedulingValidateInvalid(t *testing.T) {
+	t.Parallel()
 	stdout, stderr, err := runSchedulingCmd(t, "validate", "--config", invalidSchedulingCfg)
 	require.Error(t, err, "inconsistent config must exit non-zero")
 	require.Empty(t, stdout, "validate must not write to stdout even on failure")
@@ -55,6 +57,7 @@ func TestSchedulingValidateInvalid(t *testing.T) {
 // TestSchedulingResolveJSON: resolve --json writes a JSON object to STDOUT with
 // the resolved model.
 func TestSchedulingResolveJSON(t *testing.T) {
+	t.Parallel()
 	stdout, stderr, err := runSchedulingCmd(t, "resolve", "--tier", "heavy",
 		"--config", validSchedulingCfg,
 		"--at", "2026-08-16T12:00:00-04:00", // Sunday noon NY → global table → glm-5.2
@@ -80,6 +83,7 @@ func TestSchedulingResolveJSON(t *testing.T) {
 // TestSchedulingResolveHumanGoesToStderr: resolve WITHOUT --json writes NOTHING
 // to stdout (the human form goes to stderr — transport discipline, pitfall 9).
 func TestSchedulingResolveHumanGoesToStderr(t *testing.T) {
+	t.Parallel()
 	stdout, stderr, err := runSchedulingCmd(t, "resolve", "--tier", "heavy",
 		"--config", validSchedulingCfg,
 		"--at", "2026-08-16T12:00:00-04:00")
@@ -94,6 +98,7 @@ func TestSchedulingResolveHumanGoesToStderr(t *testing.T) {
 // returns the window's heavy pick (minimax-m3), proving the D-02 precedence is
 // honored through the CLI.
 func TestSchedulingResolvePeakWindow(t *testing.T) {
+	t.Parallel()
 	stdout, _, err := runSchedulingCmd(t, "resolve", "--tier", "heavy",
 		"--config", validSchedulingCfg,
 		"--at", "2026-08-10T10:00:00-04:00", // Monday 10:00 NY → peak → minimax-m3

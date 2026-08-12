@@ -97,6 +97,7 @@ func writeCoverageFixture(t *testing.T, name string, sysCount, toolCount, header
 
 // TestProfileCheck_NoDrift: capture matches manifest → no drift, nil error.
 func TestProfileCheck_NoDrift(t *testing.T) {
+	t.Parallel()
 	profilesDir := writeCoverageFixture(t, "zcode", 3, 103, 12)
 	capture := writeCaptureFixture(t, 3, 103, 12)
 
@@ -107,7 +108,7 @@ func TestProfileCheck_NoDrift(t *testing.T) {
 }
 
 // TestProfileCheck_DriftDetected: capture's tool count differs → error + drift.
-func TestProfileCheck_DriftDetected(t *testing.T) {
+func TestProfileCheck_DriftDetected(t *testing.T) { //nolint:paralleltest // swaps process-global os.Stderr
 	profilesDir := writeCoverageFixture(t, "zcode", 3, 103, 12)
 	capture := writeCaptureFixture(t, 3, 90, 12) // tools drifted
 
@@ -142,7 +143,7 @@ func TestProfileCheck_DriftDetected(t *testing.T) {
 }
 
 // TestProfileCheck_ReportContainsStructuredFooter confirms the C6 footer shape.
-func TestProfileCheck_ReportContainsStructuredFooter(t *testing.T) {
+func TestProfileCheck_ReportContainsStructuredFooter(t *testing.T) { //nolint:paralleltest // swaps process-global os.Stderr
 	profilesDir := writeCoverageFixture(t, "zcode", 3, 103, 12)
 	capture := writeCaptureFixture(t, 3, 103, 12)
 

@@ -9,6 +9,8 @@ import (
 
 // TestCompareSequence covers Layer 1 (ordered tool-name sequence equality).
 func TestCompareSequence(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		name               string
 		expected, observed []string
@@ -32,6 +34,8 @@ func TestCompareSequence(t *testing.T) {
 
 // TestCompareArgs covers Layer 2 (per-tool argument structural equality).
 func TestCompareArgs(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		name               string
 		expected, observed string
@@ -59,6 +63,8 @@ func TestCompareArgs(t *testing.T) {
 
 // TestCompare covers the combined two-layer result.
 func TestCompare(t *testing.T) {
+	t.Parallel()
+
 	expected := []parity.ToolCall{
 		{Name: "Read", Input: json.RawMessage(`{"file_path":"src/x.go"}`)},
 		{Name: "Bash", Input: json.RawMessage(`{"command":"go test"}`)},

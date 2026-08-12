@@ -35,6 +35,8 @@ func (f *fakeBackend) Fetch(_ context.Context, u string) (json.RawMessage, error
 // TestRealExecutor_CatalogLookup verifies a catalog tool's Execute is invoked +
 // its output returned; an unknown tool errors.
 func TestRealExecutor_CatalogLookup(t *testing.T) {
+	t.Parallel()
+
 	cat := toolcat.NewCatalog()
 	cat.Register(toolcat.Tool{
 		Name:       "Read",
@@ -62,6 +64,8 @@ func TestRealExecutor_CatalogLookup(t *testing.T) {
 // TestRealExecutor_WebSearchDelegates verifies WebSearch routes to the
 // configured Backend + forwards the parsed query.
 func TestRealExecutor_WebSearchDelegates(t *testing.T) {
+	t.Parallel()
+
 	be := &fakeBackend{name: "fake", searchOut: json.RawMessage(`{"hits":["x"]}`)}
 	re := &toolexec.RealExecutor{Backends: map[string]toolexec.Backend{"WebSearch": be}}
 
@@ -82,6 +86,8 @@ func TestRealExecutor_WebSearchDelegates(t *testing.T) {
 // TestRealExecutor_WebFetchDelegates verifies WebFetch routes to the Backend +
 // forwards the parsed URL.
 func TestRealExecutor_WebFetchDelegates(t *testing.T) {
+	t.Parallel()
+
 	be := &fakeBackend{name: "fake", fetchOut: json.RawMessage(`{"page":true}`)}
 	re := &toolexec.RealExecutor{Backends: map[string]toolexec.Backend{"WebFetch": be}}
 
@@ -101,6 +107,8 @@ func TestRealExecutor_WebFetchDelegates(t *testing.T) {
 
 // TestRealExecutor_BackendErrorPropagates verifies a backend error surfaces.
 func TestRealExecutor_BackendErrorPropagates(t *testing.T) {
+	t.Parallel()
+
 	be := &fakeBackend{name: "fake", searchErr: errors.New("backend down")}
 
 	re := &toolexec.RealExecutor{Backends: map[string]toolexec.Backend{"WebSearch": be}}
@@ -112,6 +120,8 @@ func TestRealExecutor_BackendErrorPropagates(t *testing.T) {
 // TestRealExecutor_NilCatalogUnknownErrors verifies a RealExecutor with no
 // catalog + a non-backend tool returns a structured error (never a panic).
 func TestRealExecutor_NilCatalogUnknownErrors(t *testing.T) {
+	t.Parallel()
+
 	re := &toolexec.RealExecutor{}
 	if _, err := re.Execute(context.Background(), "Anything", json.RawMessage(`{}`)); err == nil {
 		t.Error("err = nil; want structured no-catalog error")
@@ -120,6 +130,8 @@ func TestRealExecutor_NilCatalogUnknownErrors(t *testing.T) {
 
 // TestRealExecutor_NilExecutor verifies a nil RealExecutor surfaces ErrNoExecutor.
 func TestRealExecutor_NilExecutor(t *testing.T) {
+	t.Parallel()
+
 	var re *toolexec.RealExecutor
 
 	_, err := re.Execute(context.Background(), "Read", json.RawMessage(`{}`))

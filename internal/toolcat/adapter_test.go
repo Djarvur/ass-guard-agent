@@ -12,6 +12,8 @@ import (
 // schemas, not the catalog's. A synthetic profile with a custom Read schema must
 // yield the synthetic schema (TOOL-02 — profile is authoritative).
 func TestAdapter_ProfileAuthoritative(t *testing.T) {
+	t.Parallel()
+
 	a := toolcat.NewAdapter()
 	customSchema := json.RawMessage(`{"type":"object","properties":{"custom":{"type":"string"}},"required":["custom"]}`)
 	decls := []profile.Decl{
@@ -31,6 +33,8 @@ func TestAdapter_ProfileAuthoritative(t *testing.T) {
 // TestAdapter_ResolveCallParsesInput confirms ResolveCall accepts valid JSON
 // input for a declared tool and rejects undeclared/invalid inputs.
 func TestAdapter_ResolveCallParsesInput(t *testing.T) {
+	t.Parallel()
+
 	a := toolcat.NewAdapter()
 	decls := []profile.Decl{
 		{Name: "Read", InputSchema: json.RawMessage(`{"type":"object","required":["file_path"]}`)},

@@ -45,6 +45,8 @@ func (s *safeBuffer) Len() int {
 // is written to the sink with the secret value redacted (LOG-03) but the field
 // NAME and the 12 identity header names preserved.
 func TestAuditLogger_RedactsSecrets(t *testing.T) {
+	t.Parallel()
+
 	b := event.NewBus()
 	sink := &safeBuffer{}
 	audit.NewAuditLogger(b, sink)
@@ -76,6 +78,8 @@ func TestAuditLogger_RedactsSecrets(t *testing.T) {
 // TestAuditLogger_RejectsStdout confirms the transport-discipline guard: the
 // audit sink must never be stdout.
 func TestAuditLogger_RejectsStdout(t *testing.T) {
+	t.Parallel()
+
 	b := event.NewBus()
 
 	defer func() {

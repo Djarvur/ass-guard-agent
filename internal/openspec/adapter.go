@@ -46,6 +46,7 @@ func (a *Adapter) Run(ctx context.Context, command string, args ...string) (stdo
 	cmd.Stdout = &stdoutBuf
 
 	cmd.Stderr = &stderrBuf
+
 	startErr := cmd.Start()
 	if startErr != nil {
 		// exec.ErrNotFound covers a missing binary (LookPath fails inside Start);

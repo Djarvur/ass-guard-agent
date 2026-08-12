@@ -172,6 +172,7 @@ func newNotification(method string, params map[string]any) Message {
 // the exact field name `agentCapabilities` (NOT capabilities/serverInfo), an
 // integer protocolVersion: 1, and loadSession:false (D-09 — NO replay in v1).
 func TestInitializeReturnsAgentCapabilities(t *testing.T) {
+	t.Parallel()
 	h := newPipeHarness(t)
 	h.send(t, newRequest(0, "initialize", map[string]any{"protocolVersion": 1}))
 
@@ -225,6 +226,7 @@ func TestInitializeReturnsAgentCapabilities(t *testing.T) {
 // TestSessionNewReturnsSessionID verifies session/new returns a non-empty
 // sessionId the client threads into session/prompt.
 func TestSessionNewReturnsSessionID(t *testing.T) {
+	t.Parallel()
 	h := newPipeHarness(t)
 	h.send(t, newRequest(0, "initialize", map[string]any{"protocolVersion": 1}))
 	h.readFrame(t)
@@ -250,6 +252,8 @@ func TestSessionNewReturnsSessionID(t *testing.T) {
 // session/prompt response carrying stopReason (ACP-04 streaming — NO full-turn
 // buffering).
 func TestSessionPromptStreamsUpdate(t *testing.T) {
+	t.Parallel()
+
 	stub := &stubTurn{chunks: []string{"Hello", " world"}}
 	h := newPipeHarness(t, WithTurnRunner(stub))
 	h.send(t, newRequest(0, "initialize", map[string]any{"protocolVersion": 1}))
@@ -331,6 +335,8 @@ func TestSessionPromptStreamsUpdate(t *testing.T) {
 // it carries no id, produces NO response frame, and cancels the active turn's
 // context (D-16 mechanism).
 func TestSessionCancelProducesNoResponse(t *testing.T) {
+	t.Parallel()
+
 	stub := &stubTurn{chunks: []string{"x"}}
 	h := newPipeHarness(t, WithTurnRunner(stub))
 	h.send(t, newRequest(0, "initialize", map[string]any{"protocolVersion": 1}))
@@ -391,6 +397,8 @@ func TestSessionCancelProducesNoResponse(t *testing.T) {
 // captured stdout contains ONLY valid newline-delimited JSON frames (every line
 // parses as a Message). No log/diagnostic bytes leak to stdout (Pitfall 1).
 func TestStdoutClean(t *testing.T) {
+	t.Parallel()
+
 	stub := &stubTurn{chunks: []string{"hi"}}
 	// Capture the server's stdout into a buffer instead of a pipe so we can
 	// inspect every byte after the round-trip.
@@ -475,6 +483,7 @@ func mustFrame(t *testing.T, msg Message) []byte {
 // -32700 parse-error response AND the server keeps reading subsequent frames
 // (does not exit on a single bad frame).
 func TestMalformedFrameContinues(t *testing.T) {
+	t.Parallel()
 	h := newPipeHarness(t)
 	// Write a malformed frame directly.
 	_, _ = h.cliW.Write([]byte("{\"jsonrpc\":\"2.0\",BROKEN\n"))
@@ -520,6 +529,7 @@ func (e *errTurn) Run(ctx context.Context, _ string, emit ChunkEmitter, prompt [
 // TestErrorResponseShape verifies a handler error surfaces as a JSON-RPC error
 // response with the request's id (never a crash).
 func TestErrorResponseShape(t *testing.T) {
+	t.Parallel()
 	h := newPipeHarness(t, WithTurnRunner(&errTurn{err: errors.New("boom session/prompt failed")}))
 	h.send(t, newRequest(0, "initialize", map[string]any{"protocolVersion": 1}))
 	h.readFrame(t)

@@ -212,6 +212,8 @@ func transientErr(model string, status int) *provider.ProviderError {
 // TestDispatchPrimarySuccess: primary returns success — no fallback event;
 // breaker/cost stubs called (RecordSuccess, Account).
 func TestDispatchPrimarySuccess(t *testing.T) {
+	t.Parallel()
+
 	fp := newFakeProvider().set("glm-5.2", fakeOutcome{resp: provider.Response{FinishReason: "stop"}})
 	s, bus, _ := newTestScheduler(t, fp)
 	s.SetNow(func() time.Time { return ny(2026, time.August, 16, 12, 0) }) // Sunday noon → global heavy = glm-5.2
@@ -233,6 +235,8 @@ func TestDispatchPrimarySuccess(t *testing.T) {
 // TestDispatchTransientWalkSuccess: primary Transient → walker tries fallback-1
 // → success. Exactly ONE ProviderFallback event (FromModel=primary, ToModel=fallback-1).
 func TestDispatchTransientWalkSuccess(t *testing.T) {
+	t.Parallel()
+
 	fp := newFakeProvider().
 		set("glm-5.2", fakeOutcome{err: transientErr("glm-5.2", 429)}).
 		set("minimax-m3", fakeOutcome{resp: provider.Response{FinishReason: "stop"}})
@@ -254,6 +258,8 @@ func TestDispatchTransientWalkSuccess(t *testing.T) {
 // TestDispatchChainTwoFailuresThenSuccess: primary + fallback-1 Transient,
 // fallback-2 success → TWO events; response from fallback-2.
 func TestDispatchChainTwoFailuresThenSuccess(t *testing.T) {
+	t.Parallel()
+
 	fp := newFakeProvider().
 		set("glm-5.2", fakeOutcome{err: transientErr("glm-5.2", 429)}).
 		set("minimax-m3", fakeOutcome{err: transientErr("minimax-m3", 503)}).
@@ -273,6 +279,8 @@ func TestDispatchChainTwoFailuresThenSuccess(t *testing.T) {
 // TestDispatchChainExhausted: primary + all fallbacks Transient → returns the
 // LAST Transient *ProviderError; events == len(fallbacks).
 func TestDispatchChainExhausted(t *testing.T) {
+	t.Parallel()
+
 	fp := newFakeProvider().
 		set("glm-5.2", fakeOutcome{err: transientErr("glm-5.2", 429)}).
 		set("minimax-m3", fakeOutcome{err: transientErr("minimax-m3", 503)}).
@@ -295,6 +303,8 @@ func TestDispatchChainExhausted(t *testing.T) {
 // TestDispatchStructuralStopsWalk: primary Structural (401) → returns the
 // structural error IMMEDIATELY; ZERO events, ZERO fallback attempts (D-04/N5).
 func TestDispatchStructuralStopsWalk(t *testing.T) {
+	t.Parallel()
+
 	fp := newFakeProvider().set("glm-5.2", fakeOutcome{err: &provider.ProviderError{
 		Kind: provider.KindStructural, Provider: "anthropic", Model: "glm-5.2",
 		StatusCode: 401, Reason: "unauthenticated",
@@ -316,6 +326,8 @@ func TestDispatchStructuralStopsWalk(t *testing.T) {
 // TestDispatchSemaphorePerCandidate: every candidate attempt Acquires+Releases
 // the semaphore (a fallback does not bypass the concurrency bound).
 func TestDispatchSemaphorePerCandidate(t *testing.T) {
+	t.Parallel()
+
 	fp := newFakeProvider().
 		set("glm-5.2", fakeOutcome{err: transientErr("glm-5.2", 429)}).
 		set("minimax-m3", fakeOutcome{resp: provider.Response{FinishReason: "stop"}})
@@ -339,6 +351,8 @@ func TestDispatchSemaphorePerCandidate(t *testing.T) {
 // capable candidate, NOT the incapable primary). If no candidate satisfies,
 // Dispatch returns a structured error.
 func TestDispatchCapabilitySeam(t *testing.T) {
+	t.Parallel()
+
 	cfg := &Config{
 		Providers: map[string]ProviderConfig{"p": {BaseURL: "x", Shape: "anthropic"}},
 		Models: map[string]ModelConfig{
@@ -364,6 +378,8 @@ func TestDispatchCapabilitySeam(t *testing.T) {
 // the required capability → Dispatch returns a structured "no candidate"
 // error and never calls the provider.
 func TestDispatchCapabilityNoCandidate(t *testing.T) {
+	t.Parallel()
+
 	cfg := &Config{
 		Providers: map[string]ProviderConfig{"p": {BaseURL: "x", Shape: "anthropic"}},
 		Models: map[string]ModelConfig{
@@ -389,6 +405,8 @@ func TestDispatchCapabilityNoCandidate(t *testing.T) {
 // TestDispatchBreakerCostOrder: on a success, the breaker/cost stubs are called
 // in the right sequence — Allow before the call, RecordSuccess + Account after.
 func TestDispatchBreakerCostOrder(t *testing.T) {
+	t.Parallel()
+
 	fp := newFakeProvider().set("glm-5.2", fakeOutcome{resp: provider.Response{FinishReason: "stop"}})
 	s, bus, _ := newTestScheduler(t, fp)
 	rb := &recordingBreaker{}
@@ -419,6 +437,8 @@ func indexOf(s []string, want string) int {
 // wrapped via ClassifyHTTP (status 0) so Dispatch always pattern-matches a
 // typed Kind.
 func TestAsProviderErrorWrapsNonTyped(t *testing.T) {
+	t.Parallel()
+
 	cand := Target{Provider: "openai", Model: "minimax-m3"}
 	perr := asProviderError(errors.New("raw transport boom"), cand)
 	require.Equal(t, provider.KindTransient, perr.Kind, "unknown error defaults Transient (safe-side)")

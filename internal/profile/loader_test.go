@@ -11,6 +11,8 @@ import (
 // profile faithfully. This also seeds PROF-02 enforcement: the loader must be
 // profile-agnostic (the same code loads the zcode and the synthetic profile).
 func TestLoader_MinimalFixture(t *testing.T) {
+	t.Parallel()
+
 	l := profile.NewLoader(filepath.Join(".", "testdata"))
 
 	p, err := l.Load("minimal")
@@ -77,6 +79,8 @@ func TestLoader_MinimalFixture(t *testing.T) {
 
 // TestLoader_MissingProfile returns a non-nil error for an unknown profile.
 func TestLoader_MissingProfile(t *testing.T) {
+	t.Parallel()
+
 	l := profile.NewLoader(filepath.Join(".", "testdata"))
 	if _, err := l.Load("does-not-exist"); err == nil {
 		t.Fatal("Load(nonexistent) returned nil error, want non-nil")
@@ -87,6 +91,8 @@ func TestLoader_MissingProfile(t *testing.T) {
 // zcode profile loads and carries the captured shape. Skipped if the artifact
 // is not present (e.g. before extraction runs).
 func TestLoader_ZcodeProfile(t *testing.T) {
+	t.Parallel()
+
 	root, _ := filepath.Abs(filepath.Join("..", "..", "profiles"))
 	l := profile.NewLoader(root)
 

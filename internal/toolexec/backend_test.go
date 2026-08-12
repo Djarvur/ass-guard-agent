@@ -15,6 +15,8 @@ import (
 // TestHTTPBackend_ImplementsInterface is the compile-time assertion that the
 // default impl satisfies Backend (T-04-05).
 func TestHTTPBackend_ImplementsInterface(t *testing.T) {
+	t.Parallel()
+
 	var (
 		_ toolexec.Backend = (*toolexec.HTTPBackend)(nil)
 		_ toolexec.Backend = toolexec.FirecrawlBackend{}
@@ -24,6 +26,8 @@ func TestHTTPBackend_ImplementsInterface(t *testing.T) {
 // TestHTTPBackend_Search verifies Search GETs the URL template with the
 // {query} substituted (httptest-backed — no live network).
 func TestHTTPBackend_Search(t *testing.T) {
+	t.Parallel()
+
 	var gotPath, gotQuery string
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -59,7 +63,10 @@ func TestHTTPBackend_Search(t *testing.T) {
 // TestHTTPBackend_Fetch verifies Fetch GETs the URL template with {url}
 // substituted, or the URL directly when no template is set.
 func TestHTTPBackend_Fetch(t *testing.T) {
+	t.Parallel()
 	t.Run("template", func(t *testing.T) {
+		t.Parallel()
+
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write([]byte(`{"fetched":true}`))
 		}))
@@ -77,6 +84,8 @@ func TestHTTPBackend_Fetch(t *testing.T) {
 		}
 	})
 	t.Run("direct", func(t *testing.T) {
+		t.Parallel()
+
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write([]byte(`{"direct":true}`))
 		}))
@@ -98,7 +107,10 @@ func TestHTTPBackend_Fetch(t *testing.T) {
 // TestBackendsFromConfig_Select verifies the map selects the right concrete
 // backend per tool; an unknown backend name yields a ConfigError (T-04-03b).
 func TestBackendsFromConfig_Select(t *testing.T) {
+	t.Parallel()
 	t.Run("both http", func(t *testing.T) {
+		t.Parallel()
+
 		got, err := toolexec.BackendsFromConfig(map[string]string{"websearch": "http", "webfetch": "http"})
 		if err != nil {
 			t.Fatalf("err = %v", err)
@@ -109,6 +121,8 @@ func TestBackendsFromConfig_Select(t *testing.T) {
 		}
 	})
 	t.Run("firecrawl websearch", func(t *testing.T) {
+		t.Parallel()
+
 		got, err := toolexec.BackendsFromConfig(map[string]string{"websearch": "firecrawl"})
 		if err != nil {
 			t.Fatalf("err = %v", err)
@@ -123,6 +137,8 @@ func TestBackendsFromConfig_Select(t *testing.T) {
 		}
 	})
 	t.Run("unknown backend", func(t *testing.T) {
+		t.Parallel()
+
 		_, err := toolexec.BackendsFromConfig(map[string]string{"websearch": "exfiltrate-evil"})
 		if err == nil {
 			t.Fatal("err = nil; want ConfigError for unknown backend")
@@ -143,6 +159,8 @@ func TestBackendsFromConfig_Select(t *testing.T) {
 // by config alone (no edit to HTTPBackend/FirecrawlBackend) returns a different
 // concrete type — the swap seam (D-22 / TOOL-05).
 func TestBackend_SwappableWithoutCodeChange(t *testing.T) {
+	t.Parallel()
+
 	httpMap, _ := toolexec.BackendsFromConfig(map[string]string{"websearch": "http"})
 	fireMap, _ := toolexec.BackendsFromConfig(map[string]string{"websearch": "firecrawl"})
 	httpName := httpMap["WebSearch"].Name()
@@ -157,6 +175,8 @@ func TestBackend_SwappableWithoutCodeChange(t *testing.T) {
 // "not configured" error when the API key is empty (the swap seam is exercised;
 // no firecrawl dependency added).
 func TestFirecrawlBackend_NotConfigured(t *testing.T) {
+	t.Parallel()
+
 	f := toolexec.FirecrawlBackend{}
 	if _, err := f.Search(context.Background(), "x"); err == nil {
 		t.Error("Search with empty API key = nil; want not-configured error")

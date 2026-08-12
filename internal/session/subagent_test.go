@@ -28,6 +28,8 @@ func newSubagentSession(t *testing.T, responses []provider.Response) (*Session, 
 // TestDispatchSubagent_AppendsDispatchLine verifies a Task tool_call triggers
 // DispatchSubagent + a subagent_dispatch transcript line (PARA-01).
 func TestDispatchSubagent_AppendsDispatchLine(t *testing.T) {
+	t.Parallel()
+
 	s, _, _ := newSubagentSession(t, []provider.Response{
 		{FinishReason: "tool_use", ToolCalls: []provider.ToolCall{{Name: "Task", Input: json.RawMessage(`{"prompt":"do research"}`)}}},
 		{FinishReason: "end_turn"},
@@ -56,6 +58,7 @@ func TestDispatchSubagent_AppendsDispatchLine(t *testing.T) {
 // TestSubagent_StreamsProgressWithParentTurnID verifies the subagent's chunks
 // are published to the bus (PARA-02 — streamed progress tagged for the parent).
 func TestSubagent_StreamsProgressWithParentTurnID(t *testing.T) {
+	t.Parallel()
 	s, bus, _ := newSubagentSession(t, []provider.Response{
 		{FinishReason: "tool_use", ToolCalls: []provider.ToolCall{{Name: "Task", Input: json.RawMessage(`{"prompt":"x"}`)}}},
 		{FinishReason: "end_turn"},
@@ -93,6 +96,8 @@ func TestSubagent_StreamsProgressWithParentTurnID(t *testing.T) {
 // TestSubagent_FinalResultToParent verifies the parent's tool_result for the Task
 // call carries the subagent's final result, and a subagent_result line exists.
 func TestSubagent_FinalResultToParent(t *testing.T) {
+	t.Parallel()
+
 	s, _, _ := newSubagentSession(t, []provider.Response{
 		{FinishReason: "tool_use", ToolCalls: []provider.ToolCall{{Name: "Task", Input: json.RawMessage(`{"prompt":"x"}`)}}},
 		{FinishReason: "end_turn"},
@@ -118,6 +123,7 @@ func TestSubagent_FinalResultToParent(t *testing.T) {
 // a RestrictedExecutor (D-10): a disallowed tool gets a "not available" error.
 // We verify by checking the tool_result for a disallowed tool carries the error.
 func TestSubagent_RestrictedExecutor(t *testing.T) {
+	t.Parallel()
 	// Subagent returns a Bash tool_call; the subagent's RestrictedExecutor
 	// (allowed: Read/Grep) blocks Bash → "not available" tool_result.
 	s, _, _ := newSubagentSession(t, []provider.Response{
@@ -156,6 +162,7 @@ func (f *fakeToolExec) Execute(ctx context.Context, name string, input json.RawM
 // parent receives a SubagentResult with an error, an investigate-and-fix-ready
 // error line is written, and the process does NOT crash (PARA-03, D-13).
 func TestSubagentPanicRecovery(t *testing.T) {
+	t.Parallel()
 	// Provider: parent returns a Task call; subagent call panics.
 	s, _, _ := newSubagentSession(t, []provider.Response{
 		{FinishReason: "tool_use", ToolCalls: []provider.ToolCall{{Name: "Task", Input: json.RawMessage(`{"prompt":"x"}`)}}},

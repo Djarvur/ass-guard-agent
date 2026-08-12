@@ -10,6 +10,8 @@ import (
 // PATTERNS C2): decode JSON, walk the tree replacing secret-carrier VALUES
 // while preserving field NAMES, re-encode.
 func TestRedact(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		in   string
@@ -53,6 +55,8 @@ func TestRedact(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			got, err := Redact([]byte(tt.in))
 			if err != nil {
 				t.Fatalf("Redact(%q) unexpected error: %v", tt.in, err)
@@ -71,6 +75,7 @@ func TestRedact(t *testing.T) {
 // VALUES are redacted when secret-like. User-Agent is explicitly NOT a secret
 // key (T2 acceptance: IsSecretKey("User-Agent") == false).
 func TestRedact_PreservesIdentityHeaderNames(t *testing.T) {
+	t.Parallel()
 	// The 12 identity header names from VERIFIED-FACTS.md item #1 (lowercased
 	// for JSON-key matching). None of these are in the secret-key allowlist.
 	identityNames := []string{
@@ -107,6 +112,8 @@ func TestRedact_PreservesIdentityHeaderNames(t *testing.T) {
 // page) with a Bearer token must be regex-scrubbed (the belt-and-suspenders
 // fallback, PATTERNS C2).
 func TestRedact_NonJSONBearerRegexScrubbed(t *testing.T) {
+	t.Parallel()
+
 	in := `<html><body>Unauthorized: Bearer sk-deadbeef-1234</body></html>`
 
 	got, err := Redact([]byte(in))
@@ -125,6 +132,8 @@ func TestRedact_NonJSONBearerRegexScrubbed(t *testing.T) {
 
 // TestRedact_NonJSONSkTokenScrubbed: a bare sk- token outside JSON is scrubbed.
 func TestRedact_NonJSONSkTokenScrubbed(t *testing.T) {
+	t.Parallel()
+
 	in := `error: invalid key sk-abcdef1234567890`
 
 	got, err := Redact([]byte(in))
@@ -139,6 +148,8 @@ func TestRedact_NonJSONSkTokenScrubbed(t *testing.T) {
 
 // TestIsSecretKey: the canonical allowlist (case-insensitive).
 func TestIsSecretKey(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		in   string
 		want bool
@@ -165,6 +176,8 @@ func TestIsSecretKey(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.in, func(t *testing.T) {
+			t.Parallel()
+
 			if got := IsSecretKey(c.in); got != c.want {
 				t.Errorf("IsSecretKey(%q) = %v, want %v", c.in, got, c.want)
 			}
@@ -174,6 +187,8 @@ func TestIsSecretKey(t *testing.T) {
 
 // TestScrubError: token-bearing error strings are scrubbed.
 func TestScrubError(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		name string
 		err  error
@@ -197,6 +212,8 @@ func TestScrubError(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+
 			got := ScrubError(c.err)
 			if strings.Contains(got, c.want) {
 				t.Errorf("ScrubError leaked %q:\n got %s", c.want, got)
@@ -208,6 +225,8 @@ func TestScrubError(t *testing.T) {
 // TestScrubError_NilReturnsEmpty: a nil error scrubs to an empty string
 // (avoids "<nil>" artifacts in logs).
 func TestScrubError_NilReturnsEmpty(t *testing.T) {
+	t.Parallel()
+
 	if got := ScrubError(nil); got != "" {
 		t.Errorf("ScrubError(nil) = %q, want empty", got)
 	}

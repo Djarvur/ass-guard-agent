@@ -38,6 +38,7 @@ func profilesRoot(t *testing.T) string {
 // TestFidelity_SystemBlocksByteEqual asserts the shaped request's serialized
 // system blocks are byte-equal to the profile's block-N.txt files (TIER-1).
 func TestFidelity_SystemBlocksByteEqual(t *testing.T) {
+	t.Parallel()
 	prof := loadProfileFromRoot(t, profilesRoot(t), "zcode")
 	s := shaper.New()
 
@@ -81,6 +82,7 @@ func TestFidelity_SystemBlocksByteEqual(t *testing.T) {
 // TestFidelity_ToolCountAndThinking asserts the shaped request carries the full
 // captured catalog + the thinking config.
 func TestFidelity_ToolCountAndThinking(t *testing.T) {
+	t.Parallel()
 	prof := loadProfileFromRoot(t, profilesRoot(t), "zcode")
 	s := shaper.New()
 
@@ -110,6 +112,7 @@ func TestFidelity_ToolCountAndThinking(t *testing.T) {
 // non-zcode profile loads through the SAME Shaper code path and shapes to its
 // own fields (not any zcode defaults). D-11.
 func TestPROF02_SyntheticProfileShapes(t *testing.T) {
+	t.Parallel()
 	prof := loadProfileFromRoot(t, profilesRoot(t), "synthetic")
 	s := shaper.New()
 
@@ -139,6 +142,8 @@ func TestPROF02_SyntheticProfileShapes(t *testing.T) {
 // package contains no profile-name literals (e.g. "zcode") outside test files.
 // PROF-02 is a structural guarantee, not a code-review hope.
 func TestPROF02_NoProfileNameLiteralsInShaper(t *testing.T) {
+	t.Parallel()
+
 	root, err := filepath.Abs(filepath.Join(".."))
 	if err != nil {
 		t.Fatal(err)

@@ -164,6 +164,8 @@ func readFrames(t *testing.T, cliR io.Reader, n int) []*acp.Message {
 // agent_message_chunk session/update notifications (one per chunk) before the
 // stopReason response. NO full-turn buffering (ACP-04).
 func TestIntegration_RealStreamingThroughACP(t *testing.T) {
+	t.Parallel()
+
 	mp := &mockStreamProvider{chunks: []string{"Hello", " ", "world"}, finish: "end_turn"}
 
 	cliW, cliR, stop := driveACP(t, mp)
@@ -243,6 +245,8 @@ func TestIntegration_RealStreamingThroughACP(t *testing.T) {
 // TestIntegration_SessionLoadNoOp verifies session/load returns a -32601 error
 // (D-09 — NO replay in v1).
 func TestIntegration_SessionLoadNoOp(t *testing.T) {
+	t.Parallel()
+
 	mp := &mockStreamProvider{finish: "end_turn"}
 
 	cliW, cliR, stop := driveACP(t, mp)

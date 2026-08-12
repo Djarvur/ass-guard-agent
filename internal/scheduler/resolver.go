@@ -175,6 +175,7 @@ func dayMatches(days []string, wd time.Weekday) bool {
 	}
 
 	abbr := weekdayAbbr(wd)
+
 	return slices.Contains(days, abbr)
 }
 

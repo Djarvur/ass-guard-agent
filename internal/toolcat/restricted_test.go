@@ -33,6 +33,8 @@ func (f *fakeExecutor) Execute(ctx context.Context, name string, input json.RawM
 // subset delegates to the inner executor and returns its result (D-10 — the
 // subagent's restricted subset still runs the allowed tools).
 func TestRestrictedExecutorAllowedToolDelegates(t *testing.T) {
+	t.Parallel()
+
 	inner := &fakeExecutor{result: json.RawMessage(`{"v":"ran"}`)}
 	r := NewRestrictedExecutor(inner, []string{"Read", "Grep"})
 
@@ -54,6 +56,8 @@ func TestRestrictedExecutorAllowedToolDelegates(t *testing.T) {
 // allowed subset returns a "not available" error and does NOT call the inner
 // executor (D-10 — the model adapts to the restriction).
 func TestRestrictedExecutorDisallowedToolErrors(t *testing.T) {
+	t.Parallel()
+
 	inner := &fakeExecutor{}
 	r := NewRestrictedExecutor(inner, []string{"Read", "Grep"})
 
@@ -74,6 +78,8 @@ func TestRestrictedExecutorDisallowedToolErrors(t *testing.T) {
 // TestRestrictedExecutorEmptyAllowedSet verifies that an empty allowed subset
 // blocks every tool (the maximally-restricted subagent).
 func TestRestrictedExecutorEmptyAllowedSet(t *testing.T) {
+	t.Parallel()
+
 	inner := &fakeExecutor{}
 	r := NewRestrictedExecutor(inner, nil)
 
@@ -93,6 +99,8 @@ func TestRestrictedExecutorEmptyAllowedSet(t *testing.T) {
 // executor (for allowed tools) propagate unchanged — restriction does not mask
 // real tool failures.
 func TestRestrictedExecutorPropagatesInnerError(t *testing.T) {
+	t.Parallel()
+
 	innerErr := errors.New("tool internal failure")
 	inner := &fakeExecutor{execErr: innerErr}
 	r := NewRestrictedExecutor(inner, []string{"Read"})
@@ -107,6 +115,8 @@ func TestRestrictedExecutorPropagatesInnerError(t *testing.T) {
 // RestrictedExecutor type has no reference to a Catalog — restriction is at the
 // executor boundary only, the model-facing catalog shape is unchanged (D-10).
 func TestRestrictedExecutorDoesNotMutateCatalog(t *testing.T) {
+	t.Parallel()
+
 	var r any = &RestrictedExecutor{}
 	// The wrapper type must not embed or carry a *Catalog (restriction is
 	// runtime-only; the catalog stays the parent's full declared set).

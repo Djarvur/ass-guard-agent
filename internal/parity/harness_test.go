@@ -21,6 +21,8 @@ func turnsOf(calls ...[2]string) []parity.ToolCall {
 
 // TestHarness_AllMatch confirms OverallPass when the arm reproduces every turn.
 func TestHarness_AllMatch(t *testing.T) {
+	t.Parallel()
+
 	suite := []parity.CapturedTurn{
 		{TurnID: "t1", Prompt: "p1", ExpectedToolCalls: turnsOf([2]string{"Read", `{"file_path":"a"}`})},
 		{TurnID: "t2", Prompt: "p2", ExpectedToolCalls: turnsOf([2]string{"Bash", `{"command":"go test"}`})},
@@ -44,6 +46,8 @@ func TestHarness_AllMatch(t *testing.T) {
 
 // TestHarness_Mismatch fails the gate when one turn diverges.
 func TestHarness_Mismatch(t *testing.T) {
+	t.Parallel()
+
 	suite := []parity.CapturedTurn{
 		{TurnID: "t1", Prompt: "p1", ExpectedToolCalls: turnsOf([2]string{"Read", `{"file_path":"a"}`})},
 		{TurnID: "t2", Prompt: "p2", ExpectedToolCalls: turnsOf([2]string{"Bash", `{"command":"go test"}`})},

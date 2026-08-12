@@ -11,6 +11,8 @@ import (
 // TestLoadSeeded verifies the embedded zero-config floor returns the two seeded
 // hooks (HOOK-02) with the documented shape.
 func TestLoadSeeded(t *testing.T) {
+	t.Parallel()
+
 	hooks, err := hookdag.DefaultHooks()
 	if err != nil {
 		t.Fatalf("DefaultHooks: %v", err)
@@ -54,6 +56,8 @@ func TestLoadSeeded(t *testing.T) {
 // TestValidateRejectsUnknownKind verifies an unknown step kind yields a
 // ConfigError naming the offender (collect-all).
 func TestValidateRejectsUnknownKind(t *testing.T) {
+	t.Parallel()
+
 	hooks := []hookdag.Hook{{
 		Name: "h", Trigger: "post-implement",
 		Steps: []hookdag.Step{{Name: "s", Kind: "teleport"}},
@@ -72,10 +76,13 @@ func TestValidateRejectsUnknownKind(t *testing.T) {
 // TestValidateRejectsBadOnFailure verifies an unknown on_failure yields a
 // ConfigError naming the offender.
 func TestValidateRejectsBadOnFailure(t *testing.T) {
+	t.Parallel()
+
 	hooks := []hookdag.Hook{{
 		Name: "h", Trigger: "post-implement", OnFailure: "explode",
 		Steps: []hookdag.Step{{Name: "s", Kind: hookdag.StepSendPrompt, Prompt: "x"}},
 	}}
+
 	err := hookdag.Validate(hooks)
 	if err == nil {
 		t.Fatal("Validate returned nil; want ConfigError for unknown on_failure")
@@ -85,6 +92,8 @@ func TestValidateRejectsBadOnFailure(t *testing.T) {
 // TestValidateRejectsMissingFields verifies run-command without a command +
 // send-prompt without a prompt + wait without a duration each yield violations.
 func TestValidateRejectsMissingFields(t *testing.T) {
+	t.Parallel()
+
 	hooks := []hookdag.Hook{{
 		Name: "h", Trigger: "post-implement",
 		Steps: []hookdag.Step{
@@ -111,6 +120,8 @@ func TestValidateRejectsMissingFields(t *testing.T) {
 // TestLoadLayering verifies an operator overlay adds a step to the embedded
 // default (D-06 — layered embedded-default → operator-overlay).
 func TestLoadLayering(t *testing.T) {
+	t.Parallel()
+
 	overlay := `hooks:
   - name: custom-extra
     trigger: custom-stage
@@ -153,6 +164,8 @@ func TestLoadLayering(t *testing.T) {
 // TestLoadRejectsBadOverlay verifies a layered overlay with an invalid hook
 // yields a ConfigError.
 func TestLoadRejectsBadOverlay(t *testing.T) {
+	t.Parallel()
+
 	overlay := `hooks:
   - name: bad
     trigger: post-implement
@@ -163,6 +176,7 @@ func TestLoadRejectsBadOverlay(t *testing.T) {
 	dir := t.TempDir()
 
 	path := filepath.Join(dir, "bad.yaml")
+
 	err := os.WriteFile(path, []byte(overlay), 0o644)
 	if err != nil {
 		t.Fatalf("WriteFile: %v", err)

@@ -10,6 +10,8 @@ import (
 // declared Mutability OR the adapter-class argument is Mutating. This is the
 // load-bearing rule for boundary detection (D-19).
 func TestEffectiveMutabilityFormula(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		name         string
 		tool         Mutability
@@ -23,6 +25,8 @@ func TestEffectiveMutabilityFormula(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+
 			tool := Tool{Name: "X", Mutability: c.tool}
 
 			got := EffectiveMutability(tool, c.adapterClass)
@@ -41,12 +45,16 @@ func TestEffectiveMutabilityFormula(t *testing.T) {
 // captured zcode tool set (TOOL-01); these defaults are the structural floor
 // (SESS-02 — config cannot downgrade them).
 func TestBuiltinCatalogMutabilityDefaults(t *testing.T) {
+	t.Parallel()
+
 	c := NewCatalog()
 	mutating := []string{"Bash", "Write", "Edit"}
 	readOnly := []string{"Read", "Glob", "Grep", "Agent", "TodoRead"}
 
 	for _, name := range mutating {
 		t.Run("mutating/"+name, func(t *testing.T) {
+			t.Parallel()
+
 			tool, ok := c.Get(name)
 			if !ok {
 				t.Skipf("catalog does not include %q (catalog drift); skipping default check", name)
@@ -60,6 +68,8 @@ func TestBuiltinCatalogMutabilityDefaults(t *testing.T) {
 
 	for _, name := range readOnly {
 		t.Run("read-only/"+name, func(t *testing.T) {
+			t.Parallel()
+
 			tool, ok := c.Get(name)
 			if !ok {
 				t.Skipf("catalog does not include %q (catalog drift); skipping default check", name)
@@ -78,24 +88,33 @@ func TestBuiltinCatalogMutabilityDefaults(t *testing.T) {
 // catalog-mutating tool is ALWAYS a boundary even when configAdded is empty —
 // config cannot downgrade a declared-mutating tool to read-only.
 func TestIsBoundaryStructuralFloor(t *testing.T) {
+	t.Parallel()
+
 	c := NewCatalog()
 
 	t.Run("catalog mutating tool is boundary with empty config", func(t *testing.T) {
+		t.Parallel()
+
 		if !IsBoundary("Bash", c, nil) {
 			t.Errorf("IsBoundary(Bash, catalog, nil) = false; want true (structural floor — config cannot downgrade)")
 		}
 	})
 	t.Run("catalog read-only tool is not a boundary by default", func(t *testing.T) {
+		t.Parallel()
+
 		if IsBoundary("Read", c, nil) {
 			t.Errorf("IsBoundary(Read, catalog, nil) = true; want false")
 		}
 	})
 	t.Run("config adds a boundary for a read-only tool", func(t *testing.T) {
+		t.Parallel()
+
 		if !IsBoundary("WebFetch", c, []string{"WebFetch"}) {
 			t.Errorf("IsBoundary(WebFetch, catalog, [WebFetch]) = false; want true (config adds)")
 		}
 	})
 	t.Run("config cannot downgrade a mutating tool", func(t *testing.T) {
+		t.Parallel()
 		// Even with an empty configAdded, Bash (mutating) stays a boundary.
 		// There is no API path to make IsBoundary(Bash,...) return false.
 		if !IsBoundary("Bash", c, nil) {
@@ -103,11 +122,15 @@ func TestIsBoundaryStructuralFloor(t *testing.T) {
 		}
 	})
 	t.Run("unknown tool without config is not a boundary", func(t *testing.T) {
+		t.Parallel()
+
 		if IsBoundary("TotallyUnknownTool", c, nil) {
 			t.Errorf("IsBoundary(unknown, nil) = true; want false")
 		}
 	})
 	t.Run("unknown tool can be config-added boundary", func(t *testing.T) {
+		t.Parallel()
+
 		if !IsBoundary("CustomSpec", c, []string{"CustomSpec"}) {
 			t.Errorf("IsBoundary(CustomSpec, [CustomSpec]) = false; want true (config-added boundary for OpenSpec-style commands)")
 		}
@@ -118,6 +141,8 @@ func TestIsBoundaryStructuralFloor(t *testing.T) {
 // labels are stable (Phase 4's OpenSpec adapter compares against them when
 // registering command mutability — D-19 forward-design).
 func TestEffectiveMutabilityStringStability(t *testing.T) {
+	t.Parallel()
+
 	if MutabilityMutating.String() != "mutating" {
 		t.Errorf(`MutabilityMutating.String() = %q; want "mutating"`, MutabilityMutating.String())
 	}

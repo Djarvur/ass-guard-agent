@@ -9,6 +9,8 @@ import (
 // TestCheckCoverage_Tier1Drift confirms a TIER-1 count mismatch surfaces as a
 // diff with ok=false (PROF-05 incomplete-capture gate).
 func TestCheckCoverage_Tier1Drift(t *testing.T) {
+	t.Parallel()
+
 	manifest := profile.CoverageManifest{
 		Fields: []profile.CoverageEntry{
 			{Path: "request.body.tools", Tier: profile.Tier1ByteFaithful, ObservedCount: 103},
@@ -37,6 +39,8 @@ func TestCheckCoverage_Tier1Drift(t *testing.T) {
 // TestCheckCoverage_Tier3Ignored confirms TIER-3 variance does NOT surface as a
 // drift (timestamps/token counts are audit-only — D-06).
 func TestCheckCoverage_Tier3Ignored(t *testing.T) {
+	t.Parallel()
+
 	manifest := profile.CoverageManifest{
 		Fields: []profile.CoverageEntry{
 			{Path: "request.body.tools", Tier: profile.Tier1ByteFaithful, ObservedCount: 103},
@@ -61,6 +65,8 @@ func TestCheckCoverage_Tier3Ignored(t *testing.T) {
 // TestCheckCoverage_MissingField confirms a manifest field absent from the
 // capture surfaces as a diff with Missing=true.
 func TestCheckCoverage_MissingField(t *testing.T) {
+	t.Parallel()
+
 	manifest := profile.CoverageManifest{
 		Fields: []profile.CoverageEntry{
 			{Path: "request.headers", Tier: profile.Tier2Structural, ObservedCount: 12},
@@ -79,6 +85,8 @@ func TestCheckCoverage_MissingField(t *testing.T) {
 
 // TestTier_DriftFlagged pins the D-06 tier-to-flag mapping.
 func TestTier_DriftFlagged(t *testing.T) {
+	t.Parallel()
+
 	if !profile.Tier1ByteFaithful.DriftFlagged() {
 		t.Error("Tier1 should be drift-flagged")
 	}
@@ -94,6 +102,8 @@ func TestTier_DriftFlagged(t *testing.T) {
 
 // TestCoverageManifest_Validate is the PROF-05 gate used by the extractor.
 func TestCoverageManifest_Validate(t *testing.T) {
+	t.Parallel()
+
 	m := profile.CoverageManifest{
 		Fields: []profile.CoverageEntry{
 			{Path: "request.body.tools", Tier: profile.Tier1ByteFaithful, ObservedCount: 103},

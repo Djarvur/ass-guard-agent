@@ -50,6 +50,8 @@ func jsonQuote(s string) string {
 // mock Chat Completions endpoint and asserts the tools[].function wrapper is
 // sent and the tool_calls parse to one ToolCall with a parsed JSON Input.
 func TestOpenAIProvider_SendParsesToolCalls(t *testing.T) {
+	t.Parallel()
+
 	var capturedBody []byte
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -101,6 +103,8 @@ func TestOpenAIProvider_SendParsesToolCalls(t *testing.T) {
 // TestOpenAIProvider_ToolResultMessageShape confirms the follow-up is role:tool
 // with tool_call_id + JSON-string content (VERIFIED-FACTS.md item #2).
 func TestOpenAIProvider_ToolResultMessageShape(t *testing.T) {
+	t.Parallel()
+
 	p := provider.NewOpenAIProvider(provider.WithOpenAIAPIKey("k"))
 
 	raw, err := p.ToolResultMessage("call_01", json.RawMessage(`{"ok":true}`))

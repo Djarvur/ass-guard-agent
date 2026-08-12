@@ -18,6 +18,7 @@ import (
 // advancing for the failed primary. This is the phase-goal promise: the
 // developer selects a tier; the operator manages everything via config.
 func TestSchedulerEndToEnd(t *testing.T) {
+	t.Parallel()
 	cfg := loadValid(t)
 	bus := event.NewBus()
 

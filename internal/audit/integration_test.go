@@ -23,6 +23,8 @@ import (
 // to the bus, and the AuditLogger writes the REDACTED verbatim request to the
 // sink. The capturer is the LOG-01 seam (it has the verbatim shaped body).
 func TestAudit_IntegrationViaProviderCapturer(t *testing.T) {
+	t.Parallel()
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Echo back a tool_use so the round-trip completes; the canned body is
 		// not the focus — the capturer is.

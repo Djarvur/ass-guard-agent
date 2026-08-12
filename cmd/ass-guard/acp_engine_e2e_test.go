@@ -138,6 +138,7 @@ func newEngineRunner(t *testing.T, script ...scriptedResp) (*sessionTurnRunner, 
 		maxConc:      4,
 		makeProvider: func() provider.Provider { return prov },
 	}
+
 	err := r.setupEngine()
 	if err != nil {
 		t.Fatalf("setupEngine: %v", err)
@@ -152,6 +153,7 @@ func newEngineRunner(t *testing.T, script ...scriptedResp) (*sessionTurnRunner, 
 // the engine continues → stage 2 is unmatched → the loop exits. Asserts the
 // expected number of provider Stream calls + engine_decision transcript lines.
 func TestEndToEnd_ZeroContinue(t *testing.T) {
+	t.Parallel()
 	r, prov, dir := newEngineRunner(t,
 		scriptedResp{text: "done. ## Implementation Complete — ready for review", finish: "end_turn"},
 		scriptedResp{text: "the work is finished, no further handoff signal", finish: "end_turn"},
@@ -193,6 +195,7 @@ func TestEndToEnd_ZeroContinue(t *testing.T) {
 // single unmatched user turn yields ONE provider call + zero continue-injections
 // (the structural-safety property end-to-end — D-03).
 func TestEndToEnd_StructuralSafety(t *testing.T) {
+	t.Parallel()
 	r, prov, _ := newEngineRunner(t,
 		scriptedResp{text: "the agent did something with no handoff signal at all", finish: "end_turn"},
 	)
@@ -214,6 +217,7 @@ func TestEndToEnd_StructuralSafety(t *testing.T) {
 // TestEndToEnd_ToolSignalContinue verifies the engine continues on a handoff
 // tool-call (D-02 second signal) — the seeded "openspec_handoff" tool.
 func TestEndToEnd_ToolSignalContinue(t *testing.T) {
+	t.Parallel()
 	r, prov, _ := newEngineRunner(t,
 		scriptedResp{
 			text:      "advancing the workflow via the handoff tool",
@@ -247,6 +251,8 @@ func TestEndToEnd_ToolSignalContinue(t *testing.T) {
 // (engineEnabled=false) falls back to the unwrapped sess.Prompt path — the
 // Phase-2 behavior unchanged (Plan 04-05 backward-compat).
 func TestEndToEnd_EngineDisabledBackwardCompat(t *testing.T) {
+	t.Parallel()
+
 	bus := event.NewBus()
 	prov := &scriptedACPProvider{}
 	prov.queue(scriptedResp{text: "unmatched text that the engine WOULD have ignored anyway", finish: "end_turn"})
@@ -286,6 +292,7 @@ func TestEndToEnd_EngineDisabledBackwardCompat(t *testing.T) {
 // TestRunACPServe_NoEngineFlag verifies runACPServe honors the EngineEnabled
 // option (the --no-engine flag's effect): disabled ⇒ no engine setup.
 func TestRunACPServe_NoEngineFlag(t *testing.T) {
+	t.Parallel()
 	// We can't easily run the full server (it reads stdin); instead verify the
 	// serveOptions plumbing by checking that EngineEnabled=false produces a
 	// runner with engineEnabled=false. This is a structural check; the e2e test
@@ -306,6 +313,7 @@ func TestRunACPServe_NoEngineFlag(t *testing.T) {
 // drained (none run). The ctx here stands in for the ACP turnCtx that
 // handleSessionCancel cancels.
 func TestCancelDrainsInjections(t *testing.T) {
+	t.Parallel()
 	// Always-matching: every turn emits the impl-complete pattern (would loop to
 	// the budget). We cancel after the first turn.
 	r, prov, _ := newEngineRunner(t,
@@ -352,7 +360,9 @@ func (c *cancelAfterChunkEmitter) AgentMessageChunk(_, text string) error {
 // Delegates to the dedicated TestEndToEnd_ZeroContinue + _StructuralSafety (this
 // is a t.Run router so the criterion is grep-able from VERIFICATION-PREP).
 func TestE2E_Criterion1_ZeroContinueAndSafety(t *testing.T) {
+	t.Parallel()
 	t.Run("zeroContinue", func(t *testing.T) {
+		t.Parallel()
 		r, prov, _ := newEngineRunner(t,
 			scriptedResp{text: "## Implementation Complete — ready for review", finish: "end_turn"},
 			scriptedResp{text: "final, no signal", finish: "end_turn"},
@@ -368,6 +378,7 @@ func TestE2E_Criterion1_ZeroContinueAndSafety(t *testing.T) {
 		}
 	})
 	t.Run("structuralSafety", func(t *testing.T) {
+		t.Parallel()
 		r, prov, _ := newEngineRunner(t,
 			scriptedResp{text: "unmatched output", finish: "end_turn"},
 		)
@@ -389,6 +400,7 @@ func TestE2E_Criterion1_ZeroContinueAndSafety(t *testing.T) {
 // breaks (the user must reply). After RecordCandidate + 3 Confirms the entry is
 // active + Lookup returns it.
 func TestE2E_Criterion4_LearningAskOnce(t *testing.T) {
+	t.Parallel()
 	r, prov, _ := newEngineRunner(t,
 		scriptedResp{text: "unmatched launch situation: webfetch needed", finish: "end_turn"},
 	)

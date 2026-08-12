@@ -14,6 +14,8 @@ import (
 // may be absent or stale on minimal Linux deploys. The test catches a removed
 // blank import before deploy.
 func TestTzdataBundled(t *testing.T) {
+	t.Parallel()
+
 	loc, err := time.LoadLocation("America/New_York")
 	require.NoError(t, err, "LoadLocation should succeed via bundled tzdata")
 	require.NotEqual(t, time.UTC, loc, "the loaded zone must not collapse to UTC")
@@ -52,6 +54,7 @@ func loadValid(t *testing.T) *Config {
 // maps heavy→minimax-m3, so a Monday 10:00 NY resolution returns minimax-m3,
 // NOT myproj's or the global glm-5.2.
 func TestResolveWindowWinsOutright(t *testing.T) {
+	t.Parallel()
 	r := NewResolver(loadValid(t))
 	// 2026-08-10 is a Monday.
 	now := ny(2026, time.August, 10, 10, 0)
@@ -68,6 +71,7 @@ func TestResolveWindowWinsOutright(t *testing.T) {
 // override wins over the global default. myproj maps good→minimax-m3; the global
 // good is glm-4.6.
 func TestResolveProjectNarrowsTheGap(t *testing.T) {
+	t.Parallel()
 	r := NewResolver(loadValid(t))
 	now := ny(2026, time.August, 10, 10, 0) // Monday 10:00 — peak active but peak doesn't map good
 	primary, _, err := r.Resolve("good", "myproj", now, CapabilityReq{})
@@ -78,6 +82,7 @@ func TestResolveProjectNarrowsTheGap(t *testing.T) {
 // TestResolveGlobalFallback: when neither window nor project maps the tier, the
 // global tier table is used.
 func TestResolveGlobalFallback(t *testing.T) {
+	t.Parallel()
 	r := NewResolver(loadValid(t))
 	now := ny(2026, time.August, 10, 10, 0)
 	primary, _, err := r.Resolve("light", "myproj", now, CapabilityReq{})
@@ -88,6 +93,7 @@ func TestResolveGlobalFallback(t *testing.T) {
 // TestResolveOffPeakOvernight: outside the peak window, the overnight window
 // (22:00→06:00, every day) maps heavy→glm-5.2.
 func TestResolveOffPeakOvernight(t *testing.T) {
+	t.Parallel()
 	r := NewResolver(loadValid(t))
 	// Sunday 03:00 NY — peak inactive (weekend + outside 09-17), overnight active.
 	now := ny(2026, time.August, 16, 3, 0)
@@ -100,6 +106,7 @@ func TestResolveOffPeakOvernight(t *testing.T) {
 // (pitfall 3): the window 22:00→06:00 is active at 23:59 and 01:00, INACTIVE at
 // 06:00 exactly (to-exclusive) and 21:59.
 func TestActiveWindowOvernightBoundary(t *testing.T) {
+	t.Parallel()
 	cfg := loadValid(t)
 	// Find the overnight window directly to assert its boundary semantics.
 	var overnight *TimeWindow
@@ -125,6 +132,7 @@ func TestActiveWindowOvernightBoundary(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			// Sunday Aug 16 2026 — overnight is every-day, so weekday is irrelevant.
 			now := ny(2026, time.August, 16, tc.h, tc.m)
 			got := overnight.contains(now, "America/New_York")
@@ -137,6 +145,7 @@ func TestActiveWindowOvernightBoundary(t *testing.T) {
 // Saturday, so a Saturday noon heavy resolution falls through to the global
 // table (glm-5.2), not the peak pick.
 func TestActiveWindowWeekdayFilter(t *testing.T) {
+	t.Parallel()
 	r := NewResolver(loadValid(t))
 	// Saturday Aug 15 2026 12:00 NY — peak inactive (weekend), overnight
 	// inactive (12:00 not in 22:00-06:00). Falls through to global heavy.
@@ -149,6 +158,7 @@ func TestActiveWindowWeekdayFilter(t *testing.T) {
 // TestResolveFallbackChainEnriched: Resolve returns the declared fallback chain
 // in order, each element carrying its capabilities + pricing.
 func TestResolveFallbackChainEnriched(t *testing.T) {
+	t.Parallel()
 	r := NewResolver(loadValid(t))
 	// Sunday 12:00 NY — global heavy table is active (no window). Global heavy
 	// = glm-5.2, fallback [minimax-m3, glm-4.6].
@@ -167,6 +177,8 @@ func TestResolveFallbackChainEnriched(t *testing.T) {
 // 09:00-17:00 must be active at 09:30 London (which is a different UTC instant
 // than 09:30 top-level NY).
 func TestResolveWindowZoneOverride(t *testing.T) {
+	t.Parallel()
+
 	cfg := &Config{
 		Timezone: "America/New_York",
 		TimeWindows: []TimeWindow{{
@@ -201,6 +213,7 @@ func TestResolveWindowZoneOverride(t *testing.T) {
 // TestResolveCapabilityProfileAttached: every resolved Target carries a
 // populated CapabilityProfile + Pricing (D-09).
 func TestResolveCapabilityProfileAttached(t *testing.T) {
+	t.Parallel()
 	r := NewResolver(loadValid(t))
 
 	now := ny(2026, time.August, 16, 12, 0) // Sunday noon → global table
@@ -220,6 +233,7 @@ func TestResolveCapabilityProfileAttached(t *testing.T) {
 // TestResolveUnknownTier: a tier absent from the config returns a structured
 // error (the turn loop surfaces it).
 func TestResolveUnknownTier(t *testing.T) {
+	t.Parallel()
 	r := NewResolver(loadValid(t))
 	_, _, err := r.Resolve("ultra", "myproj", ny(2026, time.August, 16, 12, 0), CapabilityReq{})
 	require.Error(t, err)
@@ -229,6 +243,8 @@ func TestResolveUnknownTier(t *testing.T) {
 // TestSatisfies unit-tests the capability-match helper (defined here; Plan
 // 03-04 relocates it to capability.go and applies it).
 func TestSatisfies(t *testing.T) {
+	t.Parallel()
+
 	cap := CapabilityProfile{ToolCalling: true, Streaming: true, ExtendedThinking: false}
 	require.True(t, satisfies(cap, CapabilityReq{}), "zero req is always satisfied")
 	require.True(t, satisfies(cap, CapabilityReq{NeedsTools: true}))

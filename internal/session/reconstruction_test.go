@@ -18,6 +18,8 @@ import (
 // transcript + profile answer every investigation question (RESEARCH §9 a-h),
 // every line is well-formed JSON, and NO secret value leaks.
 func TestTranscriptReconstructsSession(t *testing.T) {
+	t.Parallel()
+
 	bus := event.NewBus()
 	m := newTestManager(t, "sess-recon")
 

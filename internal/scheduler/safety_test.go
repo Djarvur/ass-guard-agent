@@ -36,6 +36,8 @@ func newSafetyScheduler(t *testing.T, fp *fakeProvider) (*Scheduler, *event.Bus,
 // (5 consecutive Transients), a Dispatch SKIPS the primary (Allow=false, logged)
 // and goes straight to a fallback candidate that succeeds.
 func TestSafetyBreakerSkipsOpenCandidate(t *testing.T) {
+	t.Parallel()
+
 	fp := newFakeProvider().
 		set("glm-5.2", fakeOutcome{err: transientErr("glm-5.2", 429)}).
 		set("minimax-m3", fakeOutcome{resp: provider.Response{FinishReason: "stop"}})
@@ -79,6 +81,8 @@ func TestSafetyBreakerSkipsOpenCandidate(t *testing.T) {
 // TestSafetyCostHardStop: with the cost tracker pre-loaded to HardStop, Dispatch
 // returns KindExhausted WITHOUT calling the provider (fake call count == 0).
 func TestSafetyCostHardStop(t *testing.T) {
+	t.Parallel()
+
 	fp := newFakeProvider().set("glm-5.2", fakeOutcome{resp: provider.Response{FinishReason: "stop"}})
 	s, _, _ := newSafetyScheduler(t, fp)
 	// Pre-load a tracker into the HardStop state (degraded + the degraded-tier
@@ -109,6 +113,8 @@ func TestSafetyCostHardStop(t *testing.T) {
 // re-resolves to the degrade_to tier's model and calls it (one re-resolution,
 // no infinite loop). valid.yaml: cost_ceiling.degrade_to = light → minimax-m3.
 func TestSafetyCostDegradeReResolves(t *testing.T) {
+	t.Parallel()
+
 	fp := newFakeProvider().
 		set("glm-5.2", fakeOutcome{resp: provider.Response{FinishReason: "stop"}}).
 		set("minimax-m3", fakeOutcome{resp: provider.Response{FinishReason: "stop"}})
@@ -140,6 +146,8 @@ func TestSafetyCostDegradeReResolves(t *testing.T) {
 // TestSafetyStatePersistsAcrossDispatch: breaker + cost state is shared across
 // Dispatch calls (a breaker tripped in call 1 stays tripped in call 2).
 func TestSafetyStatePersistsAcrossDispatch(t *testing.T) {
+	t.Parallel()
+
 	fp := newFakeProvider().
 		set("glm-5.2", fakeOutcome{err: transientErr("glm-5.2", 429)}).
 		set("minimax-m3", fakeOutcome{resp: provider.Response{FinishReason: "stop"}})
@@ -175,6 +183,7 @@ func consecutiveOf(cb *CircuitBreaker) int {
 // per distinct (provider, model) referenced in tiers + fallbacks + windows +
 // projects; NewCostTrackerFromConfig carries the config's ceiling.
 func TestSafetyNewBreakersMapConstructsPerKey(t *testing.T) {
+	t.Parallel()
 	cfg := loadValid(t)
 	bm := NewBreakersMap(cfg, nil)
 	// Global heavy: glm-5.2 [anthropic], fallbacks minimax-m3 [openai], glm-4.6 [anthropic].

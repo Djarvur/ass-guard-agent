@@ -59,6 +59,8 @@ func readAllChunks(t *testing.T, ch <-chan provider.StreamChunk) []provider.Stre
 // TestStream_EmitsTextChunks verifies Stream reads SSE text deltas and emits
 // them as text chunks, then a done chunk carrying the FinishReason (ACP-04).
 func TestStream_EmitsTextChunks(t *testing.T) {
+	t.Parallel()
+
 	srv := httptest.NewServer(sseHandler(
 		`{"type":"message_start","message":{"usage":{"input_tokens":5}}}`,
 		`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}`,
@@ -114,6 +116,8 @@ func TestStream_EmitsTextChunks(t *testing.T) {
 // TestStream_ToolUse verifies a tool_use content block delivers a tool_use chunk
 // with a populated ToolCall.
 func TestStream_ToolUse(t *testing.T) {
+	t.Parallel()
+
 	srv := httptest.NewServer(sseHandler(
 		`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_1","name":"Bash","input":{}}}`,
 		`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"command\":\"ls\"}"}}`,
@@ -167,6 +171,7 @@ func TestStream_ToolUse(t *testing.T) {
 // TestStream_RespectsCancel verifies cancelling ctx mid-stream closes the channel
 // and aborts the in-flight HTTP request.
 func TestStream_RespectsCancel(t *testing.T) {
+	t.Parallel()
 	// A server that writes one chunk then blocks forever (until the request is
 	// cancelled by the ctx propagation).
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

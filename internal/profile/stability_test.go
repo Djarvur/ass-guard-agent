@@ -50,6 +50,7 @@ func sessionPath(t *testing.T, idPrefix string) string {
 // — the profile is extracted from this session, so its shape must be stable
 // across the session's turns. Skips cleanly when the rollout dir is absent.
 func TestStability_WithinSessionExtractionSource(t *testing.T) {
+	t.Parallel()
 	// D-16: the extraction source is whatever main session the extractor picks.
 	stats, err := profile.ScanRolloutDir(rolloutDir(t))
 	if err != nil {
@@ -77,6 +78,8 @@ func TestStability_WithinSessionExtractionSource(t *testing.T) {
 // variance, NOT drift — the cross-session test asserts ONLY the header-name
 // invariant (the part that is stable across roles).
 func TestStability_CrossSessionHeaderNames(t *testing.T) {
+	t.Parallel()
+
 	dir := rolloutDir(t)
 	if dir == "" {
 		t.Skip("rollout dir unavailable")

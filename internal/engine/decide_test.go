@@ -48,6 +48,8 @@ func seededTable() fakeTable {
 // TestDecide_TextSignal verifies a text-pattern match ⇒ ActionContinue with
 // Signal "text:<id>" (D-02 first signal).
 func TestDecide_TextSignal(t *testing.T) {
+	t.Parallel()
+
 	out := engine.TurnOutput{TurnID: "t1", Text: "done. ## Implementation Complete — ready for review"}
 
 	dec := engine.Decide(out, seededTable())
@@ -67,6 +69,8 @@ func TestDecide_TextSignal(t *testing.T) {
 // TestDecide_ToolSignal verifies a handoff tool-call ⇒ ActionContinue with
 // Signal "tool:<id>" when no text matches (D-02 second signal).
 func TestDecide_ToolSignal(t *testing.T) {
+	t.Parallel()
+
 	out := engine.TurnOutput{TurnID: "t2", Text: "advancing now", ToolCalls: []string{"Read", "OpenSpecHandoff"}}
 
 	dec := engine.Decide(out, seededTable())
@@ -83,6 +87,8 @@ func TestDecide_ToolSignal(t *testing.T) {
 // ActionContinue with Signal "text:<id>" (text wins attribution; the tool is
 // noted in Reason — D-02).
 func TestDecide_DualSignalTextWins(t *testing.T) {
+	t.Parallel()
+
 	out := engine.TurnOutput{
 		TurnID:    "t3",
 		Text:      "## Implementation Complete — ready for review",
@@ -106,6 +112,8 @@ func TestDecide_DualSignalTextWins(t *testing.T) {
 // TestDecide_UnmatchedIsNothing is the structural-safety cell (D-03): no text
 // match + no tool match ⇒ ActionNothing with Signal "unmatched".
 func TestDecide_UnmatchedIsNothing(t *testing.T) {
+	t.Parallel()
+
 	out := engine.TurnOutput{TurnID: "t4", Text: "random unrelated text", ToolCalls: []string{"Read", "Grep"}}
 
 	dec := engine.Decide(out, seededTable())
@@ -122,6 +130,8 @@ func TestDecide_UnmatchedIsNothing(t *testing.T) {
 // output whose Text + ToolCalls are random strings/names NOT in the table,
 // Decide returns ActionNothing (testing/quick — D-03 as a property).
 func TestDecide_QuickUnmatchedIsNothing(t *testing.T) {
+	t.Parallel()
+
 	table := seededTable()
 	gen := rand.New(rand.NewSource(1))
 	// randomTurnOutput generates a Text over [a-z ] (length 0-40) + 0-2 tool
@@ -171,6 +181,8 @@ func TestDecide_QuickUnmatchedIsNothing(t *testing.T) {
 // TestDecide_QuickProperty runs the structural-safety property through
 // testing/quick on a value generator (the canonical Go property-test harness).
 func TestDecide_QuickProperty(t *testing.T) {
+	t.Parallel()
+
 	table := seededTable()
 
 	property := func(text string, toolA, toolB string) bool {
@@ -208,6 +220,8 @@ func TestDecide_QuickProperty(t *testing.T) {
 // panic and return ActionNothing (defensive — the engine may observe a turn
 // that produced no assistant text).
 func TestDecide_EmptyOutputIsNothing(t *testing.T) {
+	t.Parallel()
+
 	out := engine.TurnOutput{TurnID: "empty"}
 
 	dec := engine.Decide(out, seededTable())
@@ -219,6 +233,8 @@ func TestDecide_EmptyOutputIsNothing(t *testing.T) {
 // TestDecide_ProvenanceCarried verifies Decision.TurnID == out.TurnID for every
 // branch (D-05 provenance — the chain is auditable).
 func TestDecide_ProvenanceCarried(t *testing.T) {
+	t.Parallel()
+
 	cases := []engine.TurnOutput{
 		{TurnID: "text-turn", Text: "## Implementation Complete — ready for review"},
 		{TurnID: "tool-turn", ToolCalls: []string{"OpenSpecHandoff"}},

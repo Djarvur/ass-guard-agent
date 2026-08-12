@@ -11,6 +11,8 @@ import (
 // TestTypedChannels verifies Subscribe returns a typed receive channel and
 // publishing an event of that kind delivers it (D-04).
 func TestTypedChannels(t *testing.T) {
+	t.Parallel()
+
 	b := event.NewBus()
 	ch := b.Subscribe("AgentMessageChunk", event.BufAgentMessageChunk)
 	b.Publish(event.AgentMessageChunk{TurnID: "t1", MessageID: "m1", Content: "hi"})
@@ -33,6 +35,8 @@ func TestTypedChannels(t *testing.T) {
 // TestFanOut verifies two subscribers of the same kind both receive a published
 // event (each its own channel copy).
 func TestFanOut(t *testing.T) {
+	t.Parallel()
+
 	b := event.NewBus()
 	ch1 := b.Subscribe("RequestShaped", event.BufRequestShaped)
 	ch2 := b.Subscribe("RequestShaped", event.BufRequestShaped)
@@ -51,6 +55,8 @@ func TestFanOut(t *testing.T) {
 // causes Publish to BLOCK once the buffer fills (D-05 — bounded buffer + block).
 // A Publish that should block does not return within 50ms; draining unblocks it.
 func TestBackpressure(t *testing.T) {
+	t.Parallel()
+
 	b := event.NewBus()
 	ch := b.Subscribe("Boundary", 2)        // buffer 2, never drained
 	b.Publish(event.Boundary{TurnID: "t1"}) // fills slot 1
@@ -83,6 +89,8 @@ func TestBackpressure(t *testing.T) {
 // TestNoSubscriber verifies publishing an event with no subscribers does not
 // panic (dropped + logged).
 func TestNoSubscriber(t *testing.T) {
+	t.Parallel()
+
 	b := event.NewBus()
 	// Must not panic, must not block.
 	done := make(chan struct{})
@@ -102,6 +110,8 @@ func TestNoSubscriber(t *testing.T) {
 // TestConcurrent verifies 100 publishers + 1 subscriber all deliver with no
 // lost events and no races (-race).
 func TestConcurrent(t *testing.T) {
+	t.Parallel()
+
 	b := event.NewBus()
 	ch := b.Subscribe("AgentMessageChunk", event.BufAgentMessageChunk)
 
@@ -136,6 +146,8 @@ func TestConcurrent(t *testing.T) {
 // TestEventCatalog verifies each of the 7 event types reports the correct Kind
 // discriminator and carries its payload fields (RESEARCH §2.2).
 func TestEventCatalog(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		kind string
 		e    event.Event
@@ -158,6 +170,8 @@ func TestEventCatalog(t *testing.T) {
 // TestRequestShapedAdditiveTurnID verifies RequestShaped carries a TurnID (added
 // in Phase 2 — additive over the Phase-1 struct).
 func TestRequestShapedAdditiveTurnID(t *testing.T) {
+	t.Parallel()
+
 	rs := event.RequestShaped{TurnID: "turn_042", Profile: "zcode"}
 	if rs.TurnID != "turn_042" {
 		t.Errorf("TurnID = %q; want turn_042", rs.TurnID)
