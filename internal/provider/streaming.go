@@ -91,7 +91,7 @@ func (p *AnthropicProvider) Stream(ctx context.Context, prof profile.Profile, me
 		_ = o
 	}
 
-	resp, err := httpClient.Do(req)
+	resp, err := httpClient.Do(req) //nolint:bodyclose // body is closed via defer in the drain goroutine below (must stay open for SSE streaming); bodyclose cannot track closes inside goroutines
 	if err != nil {
 		return nil, fmt.Errorf("anthropic provider stream send: %w", err)
 	}
@@ -242,7 +242,7 @@ func flushToolUse(name, id *string, input *strings.Builder, inUse *bool, ch chan
 
 	*inUse = false
 
-	in := json.RawMessage(tuInputBytes(input))
+	in := tuInputBytes(input)
 	if len(in) == 0 {
 		in = json.RawMessage("{}")
 	}

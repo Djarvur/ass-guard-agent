@@ -13,8 +13,8 @@ import (
 // Redactor is the per-line redaction interface the Manager calls before writing
 // each transcript line (LOG-03). internal/redact satisfies it.
 type Redactor interface {
-	Redact([]byte) ([]byte, error)
-	ScrubError(error) string
+	Redact(line []byte) ([]byte, error)
+	ScrubError(err error) string
 }
 
 // Manager is the SOLE owner of the transcript file (SESS-06). Every append goes
@@ -220,7 +220,7 @@ func (m *Manager) ReadLastBoundary() (*Line, error) {
 		}
 	}
 
-	return nil, nil
+	return nil, nil //nolint:nilnil // nil result signals "no boundary line found"; caller checks for nil
 }
 
 // ReadSince returns the lines appended AFTER the last line carrying the given

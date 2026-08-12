@@ -84,7 +84,7 @@ func TestLoadDefaults(t *testing.T) {
 	cb := cfg.CircuitBreaker
 	require.Equal(t, 5, cb.ConsecutiveFailures)
 	require.Equal(t, 20, cb.ErrorRateWindow)
-	require.Equal(t, 0.50, cb.ErrorRateThreshold)
+	require.InDelta(t, 0.50, cb.ErrorRateThreshold, 1e-9)
 	require.Equal(t, 60*time.Second, cb.Cooldown)
 	require.Equal(t, 1, cb.HalfOpenProbes)
 	require.Equal(t, 24*time.Hour, cfg.CostCeiling.Window)

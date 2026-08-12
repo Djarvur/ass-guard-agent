@@ -28,7 +28,7 @@ func newProfileCheckCmd() *cobra.Command {
 		SilenceUsage: true,
 		Args:         cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runProfileCheck(args[0], profilesDir, captureFile, zcodeBin)
+			return runProfileCheck(args[0], profilesDir, captureFile)
 		},
 	}
 	cmd.Flags().StringVar(&captureFile, "capture-file", "", "fixture JSON capture (a model_io line) — bypasses the live path")
@@ -52,7 +52,7 @@ func newProfileCmd() *cobra.Command {
 // runProfileCheck loads the profile's coverage manifest, builds a captured
 // request snapshot (from --capture-file or the freshest main rollout line), and
 // runs drift.Detect, reporting TIER-1/2 drifts + a structured footer to stderr.
-func runProfileCheck(name, profilesDir, captureFile, zcodeBin string) error {
+func runProfileCheck(name, profilesDir, captureFile string) error {
 	manifestPath := filepath.Join(profilesDir, name, "coverage.yaml")
 
 	manifest, err := profile.LoadCoverage(manifestPath)

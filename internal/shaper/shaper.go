@@ -62,7 +62,7 @@ func (s *Shaper) Shape(p profile.Profile, messages []Message) (anthropic.Message
 	}
 
 	params := anthropic.MessageNewParams{
-		Model:      anthropic.Model(p.Model),
+		Model:      p.Model,
 		MaxTokens:  int64(p.MaxTokens),
 		System:     systemBlocks,
 		Messages:   msgParams,

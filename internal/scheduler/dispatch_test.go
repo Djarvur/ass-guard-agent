@@ -176,9 +176,9 @@ func newTestScheduler(t *testing.T, fp *fakeProvider) (*Scheduler, *event.Bus, *
 	return s, bus, cfg
 }
 
-// dispatchAndCollect runs a Dispatch and returns (response, error, events).
+// dispatchAndCollect runs a Dispatch and returns (response, events, error).
 func dispatchAndCollect(t *testing.T, s *Scheduler, bus *event.Bus, ctx context.Context,
-	tier, project string, capReq CapabilityReq) (provider.Response, error, []ProviderFallback) {
+	tier, project string, capReq CapabilityReq) (provider.Response, []ProviderFallback, error) {
 	t.Helper()
 
 	ch := bus.Subscribe("ProviderFallback", 16)
@@ -198,7 +198,7 @@ loop:
 		}
 	}
 
-	return resp, err, events
+	return resp, events, err
 }
 
 // transientErr builds a canned Transient ProviderError.
@@ -224,7 +224,7 @@ func TestDispatchPrimarySuccess(t *testing.T) {
 	s.SetBreakers(map[providerModelKey]Breaker{{providerAnthropic, modelGLM52}: rb})
 	s.SetCostTracker(rc)
 
-	resp, err, events := dispatchAndCollect(t, s, bus, context.Background(), tierHeavy, "myproj", CapabilityReq{})
+	resp, events, err := dispatchAndCollect(t, s, bus, context.Background(), tierHeavy, "myproj", CapabilityReq{})
 	require.NoError(t, err)
 	require.Equal(t, stopReasonStop, resp.FinishReason)
 	require.Empty(t, events, "no ProviderFallback event on primary success")
@@ -245,7 +245,7 @@ func TestDispatchTransientWalkSuccess(t *testing.T) {
 	s, bus, _ := newTestScheduler(t, fp)
 	s.SetNow(func() time.Time { return ny(2026, time.August, 16, 12, 0) })
 
-	resp, err, events := dispatchAndCollect(t, s, bus, context.Background(), tierHeavy, "myproj", CapabilityReq{})
+	resp, events, err := dispatchAndCollect(t, s, bus, context.Background(), tierHeavy, "myproj", CapabilityReq{})
 	require.NoError(t, err)
 	require.Equal(t, stopReasonStop, resp.FinishReason)
 	require.Len(t, events, 1, "exactly one ProviderFallback event")
@@ -267,7 +267,7 @@ func TestDispatchChainTwoFailuresThenSuccess(t *testing.T) {
 	s, bus, _ := newTestScheduler(t, fp)
 	s.SetNow(func() time.Time { return ny(2026, time.August, 16, 12, 0) })
 
-	resp, err, events := dispatchAndCollect(t, s, bus, context.Background(), tierHeavy, "myproj", CapabilityReq{})
+	resp, events, err := dispatchAndCollect(t, s, bus, context.Background(), tierHeavy, "myproj", CapabilityReq{})
 	require.NoError(t, err)
 	require.Equal(t, stopReasonStop, resp.FinishReason)
 	require.Len(t, events, 2)
@@ -288,7 +288,7 @@ func TestDispatchChainExhausted(t *testing.T) {
 	s, bus, _ := newTestScheduler(t, fp)
 	s.SetNow(func() time.Time { return ny(2026, time.August, 16, 12, 0) })
 
-	_, err, events := dispatchAndCollect(t, s, bus, context.Background(), tierHeavy, "myproj", CapabilityReq{})
+	_, events, err := dispatchAndCollect(t, s, bus, context.Background(), tierHeavy, "myproj", CapabilityReq{})
 	require.Error(t, err)
 
 	var perr *provider.ProviderError
@@ -312,7 +312,7 @@ func TestDispatchStructuralStopsWalk(t *testing.T) {
 	s, bus, _ := newTestScheduler(t, fp)
 	s.SetNow(func() time.Time { return ny(2026, time.August, 16, 12, 0) })
 
-	_, err, events := dispatchAndCollect(t, s, bus, context.Background(), tierHeavy, "myproj", CapabilityReq{})
+	_, events, err := dispatchAndCollect(t, s, bus, context.Background(), tierHeavy, "myproj", CapabilityReq{})
 	require.Error(t, err)
 
 	var perr *provider.ProviderError
@@ -340,7 +340,7 @@ func TestDispatchSemaphorePerCandidate(t *testing.T) {
 	s := NewScheduler(cfg, bus, rs, map[string]provider.Provider{providerAnthropic: fp, providerOpenAI: fp, providerGroq: fp}, nil)
 	s.SetNow(func() time.Time { return ny(2026, time.August, 16, 12, 0) })
 
-	_, err, _ := dispatchAndCollect(t, s, bus, context.Background(), tierHeavy, "myproj", CapabilityReq{})
+	_, _, err := dispatchAndCollect(t, s, bus, context.Background(), tierHeavy, "myproj", CapabilityReq{})
 	require.NoError(t, err)
 	// primary + 1 fallback attempted = 2 acquire/release pairs.
 	require.Equal(t, 2, rs.pairs(), "semaphore acquired+released once per candidate")
@@ -368,7 +368,7 @@ func TestDispatchCapabilitySeam(t *testing.T) {
 	fp := newFakeProvider().set(tierToolFull, fakeOutcome{resp: provider.Response{FinishReason: stopReasonStop}})
 	s := NewScheduler(cfg, bus, nil, map[string]provider.Provider{"p": fp}, nil)
 
-	resp, err, _ := dispatchAndCollect(t, s, bus, context.Background(), tierHeavy, "", CapabilityReq{NeedsTools: true})
+	resp, _, err := dispatchAndCollect(t, s, bus, context.Background(), tierHeavy, "", CapabilityReq{NeedsTools: true})
 	require.NoError(t, err)
 	require.Equal(t, stopReasonStop, resp.FinishReason)
 	require.Equal(t, []string{tierToolFull}, fp.calledModels(), "the tool-less primary must be SKIPPED, only the capable fallback called")
@@ -395,7 +395,7 @@ func TestDispatchCapabilityNoCandidate(t *testing.T) {
 	fp := newFakeProvider()
 	s := NewScheduler(cfg, bus, nil, map[string]provider.Provider{"p": fp}, nil)
 
-	_, err, _ := dispatchAndCollect(t, s, bus, context.Background(), tierHeavy, "", CapabilityReq{NeedsTools: true})
+	_, _, err := dispatchAndCollect(t, s, bus, context.Background(), tierHeavy, "", CapabilityReq{NeedsTools: true})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "no candidate")
 	require.Contains(t, err.Error(), tierHeavy)
@@ -415,7 +415,7 @@ func TestDispatchBreakerCostOrder(t *testing.T) {
 	s.SetBreakers(map[providerModelKey]Breaker{{providerAnthropic, modelGLM52}: rb})
 	s.SetCostTracker(rc)
 
-	_, err, _ := dispatchAndCollect(t, s, bus, context.Background(), tierHeavy, "myproj", CapabilityReq{})
+	_, _, err := dispatchAndCollect(t, s, bus, context.Background(), tierHeavy, "myproj", CapabilityReq{})
 	require.NoError(t, err)
 	// Sequence: check (cost) ... actually the order in Dispatch is capability → breaker.Allow → cost.Check → acquire → send → release → RecordSuccess → Account.
 	require.GreaterOrEqual(t, indexOf(rb.logs, "allow"), 0, "Allow called")

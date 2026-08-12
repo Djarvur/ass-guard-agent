@@ -108,7 +108,7 @@ func (e *Executor) Execute(ctx context.Context, hook Hook, prov Provenance) Resu
 				res.Detail = err.Error()
 
 				return res
-			default: // OnFailureContinue
+			case OnFailureContinue:
 				e.emit(prov.SourceTurnID, hook.Name, i, step.Kind, StatusError, err.Error()+" (on_failure:continue)")
 				// log + proceed to the next step
 			}

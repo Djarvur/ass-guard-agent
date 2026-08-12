@@ -124,7 +124,7 @@ func TestAdapter_CtxCancelKillsProcess(t *testing.T) { //nolint:paralleltest // 
 		// Give the OS a moment to reap.
 		time.Sleep(100 * time.Millisecond)
 
-		out, _ := exec.Command("pgrep", "-f", "openspec-stub").Output()
+		out, _ := exec.CommandContext(context.Background(), "pgrep", "-f", "openspec-stub").Output()
 		if strings.TrimSpace(string(out)) != "" {
 			t.Errorf("orphaned openspec-stub process detected after cancel: %s", out)
 		}

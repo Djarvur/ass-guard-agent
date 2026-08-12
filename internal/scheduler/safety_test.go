@@ -199,7 +199,7 @@ func TestSafetyNewBreakersMapConstructsPerKey(t *testing.T) {
 	require.Len(t, seen, len(bm), "one distinct breaker per key")
 
 	ctr := NewCostTrackerFromConfig(cfg, nil, nil)
-	require.Equal(t, 50.0, ctr.cfg.AmountUSD)
+	require.InDelta(t, 50.0, ctr.cfg.AmountUSD, 1e-9)
 	require.Equal(t, tierLight, ctr.cfg.DegradeTo)
 	require.Equal(t, 24*time.Hour, ctr.cfg.Window)
 	require.Contains(t, ctr.pricing, modelGLM52)

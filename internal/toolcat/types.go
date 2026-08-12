@@ -15,7 +15,7 @@ import (
 
 // Mutability classifies a tool's execution side-effect (a Phase-2/4 concern).
 // Recorded in Phase 1 even though execution is stubbed.
-type Mutability int
+type Mutability int //nolint:recvcheck // String() stays value-receiver so Mutability values satisfy fmt.Stringer (used via %s on struct fields); UnmarshalJSON must be pointer-receiver to mutate.
 
 const (
 	// MutabilityReadOnly is the default for tools with no side effects.
@@ -29,6 +29,8 @@ func (m Mutability) String() string {
 	switch m {
 	case MutabilityMutating:
 		return classMutating
+	case MutabilityReadOnly:
+		return "read-only"
 	default:
 		return "read-only"
 	}

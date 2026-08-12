@@ -151,7 +151,7 @@ func (s *Server) handleSessionCancel(ctx context.Context, params json.RawMessage
 
 	if p.SessionID == "" {
 		// No id to respond to anyway (notification); log and return.
-		return nil, nil
+		return nil, nil //nolint:nilnil // nil result signals "no JSON-RPC response" (notification / unknown session)
 	}
 
 	s.mu.Lock()
@@ -159,12 +159,12 @@ func (s *Server) handleSessionCancel(ctx context.Context, params json.RawMessage
 	s.mu.Unlock()
 
 	if !ok {
-		return nil, nil
+		return nil, nil //nolint:nilnil // nil result signals "no JSON-RPC response" (notification / unknown session)
 	}
 
 	st.cancelTurn()
 
-	return nil, nil
+	return nil, nil //nolint:nilnil // nil result signals "no JSON-RPC response" (notification / unknown session)
 }
 
 // handleSessionLoad is a NO-OP per D-09 (NO replay in v1). It returns a -32601

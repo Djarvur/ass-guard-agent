@@ -146,9 +146,9 @@ func TestDecide_QuickUnmatchedIsNothing(t *testing.T) {
 			sb.WriteByte(byte('a' + gen.Intn(27))) // 'a'..'z' + space
 		}
 
-		var calls []string
-
 		nCalls := gen.Intn(3)
+		calls := make([]string, 0, nCalls)
+
 		for range nCalls {
 			nameLen := 3 + gen.Intn(6)
 

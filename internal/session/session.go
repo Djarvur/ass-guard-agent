@@ -253,7 +253,7 @@ func (s *Session) streamAndEmit(ctx context.Context, turnID string, messages []p
 	for chunk := range ch {
 		err := ctx.Err()
 		if err != nil {
-			return resp, sb.String(), nil // cancelled — caller records canceled line
+			return resp, sb.String(), nil //nolint:nilerr // intentional: cancellation is recorded as a "canceled" transcript line by the caller, not as a propagated error
 		}
 
 		switch chunk.Type {

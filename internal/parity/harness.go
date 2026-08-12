@@ -24,11 +24,11 @@ type TurnResult struct {
 
 // Summary is the aggregate gate result across a suite.
 type Summary struct {
-	SuiteSize      int
-	Layer1PassRate float64
-	Layer2PassRate float64
+	SuiteSize      int     `json:"suite_size"`
+	Layer1PassRate float64 `json:"layer1_pass_rate"`
+	Layer2PassRate float64 `json:"layer2_pass_rate"`
 	// OverallPass is true iff every turn matched on BOTH layers (D-03 100% gate).
-	OverallPass bool
+	OverallPass bool `json:"overall_pass"`
 }
 
 // Harness runs the parity A/B comparison.

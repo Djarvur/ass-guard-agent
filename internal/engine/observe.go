@@ -110,7 +110,7 @@ func (e *Engine) Observe(ctx context.Context, runner TurnRunner, table PatternTa
 		if ctx.Err() != nil {
 			// ENG-03: the only off-switch. A cancelled ctx drains queued
 			// injections (none are launched) and the wrapper returns.
-			return "cancelled", nil
+			return "cancelled", nil //nolint:nilerr // intentional: cancellation is surfaced via the stop reason, not as an error
 		}
 		// Step 2: read the just-finished turn + decide.
 		out, perr := e.lastTurnAndRecover(runner)
@@ -261,6 +261,8 @@ func (e *Engine) applyDispatcher(ctx context.Context, dec Decision) Decision {
 			dec.Reason = "learned answer: " + ans
 			dec.Action = ActionNothing
 		}
+	case ActionNothing, ActionContinue, ActionWait:
+		// no dispatcher action — these decisions flow through the turn loop unchanged.
 	}
 
 	return dec
@@ -310,5 +312,5 @@ func NextStagePrompt(dec Decision) []session.ContentBlock {
 
 // compile-time interface check: *Engine has Observe with the documented shape.
 var _ interface {
-	Observe(context.Context, TurnRunner, PatternTable, []session.ContentBlock) (string, error)
+	Observe(ctx context.Context, runner TurnRunner, table PatternTable, userPrompt []session.ContentBlock) (string, error)
 } = (*Engine)(nil)

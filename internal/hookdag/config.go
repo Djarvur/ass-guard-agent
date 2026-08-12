@@ -212,6 +212,8 @@ func Validate(hooks []Hook) error {
 				} else if _, derr := time.ParseDuration(s.Duration); derr != nil {
 					v = append(v, fmt.Sprintf("hook %q step %q: unparseable duration %q: %v", h.Name, s.Name, s.Duration, derr))
 				}
+			case StepFreshContext:
+				// no user-supplied fields to validate.
 			}
 		}
 	}

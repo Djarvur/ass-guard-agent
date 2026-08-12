@@ -42,7 +42,7 @@ func TestShape_SyntheticFixture(t *testing.T) {
 		t.Fatalf("Shape: %v", err)
 	}
 
-	if got := string(params.Model); got != "synth-model" {
+	if got := params.Model; got != "synth-model" {
 		t.Errorf("Model = %q, want synth-model", got)
 	}
 
@@ -143,7 +143,7 @@ func TestShape_ZcodeProfile(t *testing.T) {
 		t.Errorf("len(opts) = %d, want 12 identity headers", len(opts))
 	}
 
-	if !strings.EqualFold(string(params.Model), "GLM-5.2") {
+	if !strings.EqualFold(params.Model, "GLM-5.2") {
 		t.Errorf("Model = %q, want GLM-5.2", params.Model)
 	}
 }

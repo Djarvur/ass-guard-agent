@@ -288,7 +288,8 @@ func TestCancelTurn(t *testing.T) {
 	bus := event.NewBus()
 	s, m, _ := newTestSession(t, bus, []provider.Response{{FinishReason: stopEndTurn}})
 	// Make Send block until ctx cancel.
-	s.Provider.(*fakeProvider).delay = 5 * time.Second
+	fp, _ := s.Provider.(*fakeProvider)
+	fp.delay = 5 * time.Second
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {

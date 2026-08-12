@@ -103,7 +103,7 @@ func TestFidelity_ToolCountAndThinking(t *testing.T) {
 		t.Errorf("opts = %d header options, want 12", len(opts))
 	}
 
-	if !strings.EqualFold(string(params.Model), "GLM-5.2") {
+	if !strings.EqualFold(params.Model, "GLM-5.2") {
 		t.Errorf("Model = %q", params.Model)
 	}
 }
@@ -121,7 +121,7 @@ func TestPROF02_SyntheticProfileShapes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if string(params.Model) != "synth-model" {
+	if params.Model != "synth-model" {
 		t.Errorf("Model = %q, want synth-model (PROF-02: synthetic fields, not zcode)", params.Model)
 	}
 

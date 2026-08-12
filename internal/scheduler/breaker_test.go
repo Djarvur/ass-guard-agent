@@ -243,7 +243,7 @@ func TestRingBufferBounds(t *testing.T) {
 	t.Parallel()
 
 	r := newRingBuffer(3)
-	require.Equal(t, 0.0, r.errorRate())
+	require.InDelta(t, 0.0, r.errorRate(), 1e-9)
 	r.push(false)
 	r.push(true)
 	r.push(false) // full: [F,T,F] → 2/3

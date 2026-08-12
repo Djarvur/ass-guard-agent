@@ -203,6 +203,8 @@ func (s *Scheduler) Dispatch(ctx context.Context, tier, project string, capReq C
 			// Cost (D-08). HardStop short-circuits with KindExhausted; the first
 			// Degrade switches to the degrade_to tier (one re-resolution).
 			switch s.cost.Check(s.now()) {
+			case CostAllow:
+				// within budget — proceed to acquire the semaphore and call.
 			case CostHardStop:
 				perr := &provider.ProviderError{
 					Kind: provider.KindExhausted, Provider: cand.Provider, Model: cand.Model,

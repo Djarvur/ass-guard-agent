@@ -79,8 +79,8 @@ type Response struct {
 // the response.toolCalls[] shape is {name, input}, independent of provider wire
 // format). Input is the raw JSON arguments.
 type ToolCall struct {
-	Name  string
-	Input json.RawMessage
+	Name  string          `json:"name"`
+	Input json.RawMessage `json:"input"`
 }
 
 // RequestCapturer is invoked by an adapter with the verbatim outgoing request

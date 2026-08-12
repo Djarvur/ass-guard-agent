@@ -40,8 +40,8 @@ type ModelConfig struct {
 // Pricing is the per-model USD-per-1M-tokens rate (D-08). The cost tracker
 // estimates per-request cost as (inTokens×Input + outTokens×Output)/1e6.
 type Pricing struct {
-	InputPerMToken  float64 `yaml:"input_per_mtoken"`
-	OutputPerMToken float64 `yaml:"output_per_mtoken"`
+	InputPerMToken  float64 `yaml:"input_per_mtoken" json:"input_per_mtoken"`
+	OutputPerMToken float64 `yaml:"output_per_mtoken" json:"output_per_mtoken"`
 }
 
 // CapabilityProfile is the structured D-09 declaration. This is what makes the
@@ -50,12 +50,12 @@ type Pricing struct {
 // load-time validator (D-10) rejects configs where a primary has a capability a
 // fallback lacks.
 type CapabilityProfile struct {
-	ContextWindow    int      `yaml:"context_window"`
-	MaxOutputTokens  int      `yaml:"max_output_tokens"`
-	ToolCalling      bool     `yaml:"tool_calling"`
-	Streaming        bool     `yaml:"streaming"`
-	ExtendedThinking bool     `yaml:"extended_thinking"`
-	Limitations      []string `yaml:"limitations"`
+	ContextWindow    int      `yaml:"context_window" json:"context_window"`
+	MaxOutputTokens  int      `yaml:"max_output_tokens" json:"max_output_tokens"`
+	ToolCalling      bool     `yaml:"tool_calling" json:"tool_calling"`
+	Streaming        bool     `yaml:"streaming" json:"streaming"`
+	ExtendedThinking bool     `yaml:"extended_thinking" json:"extended_thinking"`
+	Limitations      []string `yaml:"limitations" json:"limitations"`
 }
 
 // TierBinding is the primary (model + ordered fallback list) for one tier. The

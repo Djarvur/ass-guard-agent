@@ -15,6 +15,7 @@ import (
 // newTestSessionWithCatalog returns a Session with a real toolcat.Catalog so
 // boundary detection (toolcat.IsBoundary) works.
 func newTestSessionWithCatalog(t *testing.T, responses []provider.Response) *Session {
+	t.Helper()
 	bus := event.NewBus()
 	s, _, _ := newTestSession(t, bus, responses)
 	s.Catalog = toolcat.NewCatalog()

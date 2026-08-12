@@ -40,7 +40,7 @@ type HTTPBackend struct {
 }
 
 // Name returns the backend identifier.
-func (HTTPBackend) Name() string { return "http" }
+func (*HTTPBackend) Name() string { return "http" }
 
 // Search issues an HTTP GET to the configured search URL template with the
 // query substituted, returning the raw body.

@@ -108,7 +108,7 @@ func (p *AnthropicProvider) ToolResultMessage(toolCallID string, result json.Raw
 		"content": []map[string]any{{
 			keyType:       "tool_result",
 			"tool_use_id": toolCallID,
-			"content":     json.RawMessage(orEmpty(result)),
+			"content":     orEmpty(result),
 		}},
 	}
 
