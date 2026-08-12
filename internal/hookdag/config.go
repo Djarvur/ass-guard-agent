@@ -29,10 +29,14 @@ const (
 type StepKind string
 
 const (
-	StepRunCommand   StepKind = "run-command"
-	StepSendPrompt   StepKind = "send-prompt"
+	// StepRunCommand runs a shell command and checks its exit code.
+	StepRunCommand StepKind = "run-command"
+	// StepSendPrompt injects a prompt as a nested turn.
+	StepSendPrompt StepKind = "send-prompt"
+	// StepFreshContext opens a fresh-context boundary.
 	StepFreshContext StepKind = "fresh-context"
-	StepWait         StepKind = "wait"
+	// StepWait sleeps for the configured duration.
+	StepWait StepKind = "wait"
 )
 
 // Step is one node of a hook's DAG (declared order — D-07 walks-as-declared;

@@ -19,7 +19,7 @@ const (
 
 // fileBearingTools is the set of tools whose inputs carry a file_path/path we
 // extract for the task summary. Other tools' inputs are not file-bearing.
-var fileBearingTools = map[string]bool{
+var fileBearingTools = map[string]bool{ //nolint:gochecknoglobals // immutable lookup table / default (cannot be a const)
 	toolRead: true, "Write": true, "Edit": true,
 	"Glob": true, "Grep": true, toolBash: true,
 }

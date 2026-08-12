@@ -16,7 +16,7 @@ import (
 // subagentRestrictedDefault is the default tool subset a Task/Agent subagent may
 // use (D-10). The model sees the FULL catalog (parent mimicry); the
 // RestrictedExecutor enforces this subset at runtime.
-var subagentRestrictedDefault = []string{toolRead, "Glob", "Grep", toolWebFetch, "WebSearch"}
+var subagentRestrictedDefault = []string{toolRead, "Glob", "Grep", toolWebFetch, "WebSearch"} //nolint:gochecknoglobals // immutable lookup table / default (cannot be a const)
 
 // subagentRunner is the seam that runs the nested turn loop. Production uses the
 // real nested loop; tests inject a fake to simulate panics / canned results.

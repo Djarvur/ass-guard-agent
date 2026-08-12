@@ -43,12 +43,12 @@ type CostTracker interface {
 type CostAction int
 
 const (
-	// CostAllow: within budget — proceed.
+	// CostAllow means within budget — proceed.
 	CostAllow CostAction = iota
-	// CostDegrade: ceiling breached — degrade to the cheaper tier (D-08 first
+	// CostDegrade means ceiling breached — degrade to the cheaper tier (D-08 first
 	// breach). Plan 03-02 logs the seam; Plan 03-03 re-resolves to degrade_to.
 	CostDegrade
-	// CostHardStop: the degraded tier also hit its ceiling — Dispatch returns
+	// CostHardStop means the degraded tier also hit its ceiling — Dispatch returns
 	// KindExhausted (D-08 second breach).
 	CostHardStop
 )

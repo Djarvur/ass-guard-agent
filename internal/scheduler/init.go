@@ -16,7 +16,7 @@ import (
 // a loaded config has a zero-valued circuit_breaker block (RESEARCH §1.3). These
 // are the tunable parameters with documented defaults; operators override via
 // scheduling.yaml.
-var defaultBreaker = CircuitBreakerConfig{
+var defaultBreaker = CircuitBreakerConfig{ //nolint:gochecknoglobals // process-wide default singleton
 	ConsecutiveFailures: 5,
 	ErrorRateWindow:     20,
 	ErrorRateThreshold:  0.50,
@@ -25,6 +25,6 @@ var defaultBreaker = CircuitBreakerConfig{
 }
 
 // defaultCost holds the documented D-08 cost-ceiling defaults (RESEARCH §1.3).
-var defaultCost = CostCeilingConfig{
+var defaultCost = CostCeilingConfig{ //nolint:gochecknoglobals // process-wide default singleton
 	Window: 24 * time.Hour,
 }

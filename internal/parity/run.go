@@ -53,6 +53,7 @@ type RunResult struct {
 	Turns   []turnEvidence `json:"turns"`
 }
 
+// RunConfig is the parity run configuration recorded alongside results.
 type RunConfig struct {
 	Model     string    `json:"model"`
 	Temp      float64   `json:"temp"`

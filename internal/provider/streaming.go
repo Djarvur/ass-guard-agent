@@ -19,7 +19,7 @@ import (
 // httpClient is the streaming-path HTTP client. A shared default client is fine
 // (Go's http.Transport pools connections). Tests override the endpoint via
 // WithAnthropicBaseURL against an httptest server.
-var httpClient = &http.Client{}
+var httpClient = &http.Client{} //nolint:gochecknoglobals // shared HTTP client (connection pooling)
 
 // anthropicVersion is the Anthropic API version header the streaming path sends
 // (matches the SDK's default). The non-streaming Send path uses the SDK, which
@@ -143,13 +143,13 @@ func (p *AnthropicProvider) drainSSE(ctx context.Context, body io.Reader, ch cha
 		line, err := br.ReadString('\n')
 		if err != nil {
 			if err == io.EOF {
-				flushToolUse(&tuName, &tuID, &tuInput, &inToolUse, ch, ctx)
+				flushToolUse(ctx, &tuName, &tuID, &tuInput, &inToolUse, ch)
 				sendDone(ch, finishReason, finalizeAssembled(&assembled))
 
 				return
 			}
 
-			flushToolUse(&tuName, &tuID, &tuInput, &inToolUse, ch, ctx)
+			flushToolUse(ctx, &tuName, &tuID, &tuInput, &inToolUse, ch)
 			sendDone(ch, finishReason, finalizeAssembled(&assembled))
 
 			return
@@ -162,7 +162,7 @@ func (p *AnthropicProvider) drainSSE(ctx context.Context, body io.Reader, ch cha
 
 		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
 		if payload == "[DONE]" {
-			flushToolUse(&tuName, &tuID, &tuInput, &inToolUse, ch, ctx)
+			flushToolUse(ctx, &tuName, &tuID, &tuInput, &inToolUse, ch)
 			sendDone(ch, finishReason, finalizeAssembled(&assembled))
 
 			return
@@ -188,7 +188,7 @@ func (p *AnthropicProvider) drainSSE(ctx context.Context, body io.Reader, ch cha
 			cb, _ := ev["content_block"].(map[string]any)
 			if cb != nil {
 				if t, _ := cb[keyType].(string); t == blockToolUse {
-					flushToolUse(&tuName, &tuID, &tuInput, &inToolUse, ch, ctx) // flush previous if unclosed
+					flushToolUse(ctx, &tuName, &tuID, &tuInput, &inToolUse, ch) // flush previous if unclosed
 					tuName, _ = cb["name"].(string)
 					tuID, _ = cb["id"].(string)
 
@@ -210,7 +210,7 @@ func (p *AnthropicProvider) drainSSE(ctx context.Context, body io.Reader, ch cha
 			}
 		case "content_block_stop":
 			if inToolUse {
-				flushToolUse(&tuName, &tuID, &tuInput, &inToolUse, ch, ctx)
+				flushToolUse(ctx, &tuName, &tuID, &tuInput, &inToolUse, ch)
 
 				continue
 			}
@@ -235,7 +235,7 @@ func (p *AnthropicProvider) drainSSE(ctx context.Context, body io.Reader, ch cha
 
 // flushToolUse emits the accumulated tool-use chunk if one is active, then
 // resets the state. Called on content_block_stop, EOF, error, and [DONE].
-func flushToolUse(name, id *string, input *strings.Builder, inUse *bool, ch chan<- StreamChunk, ctx context.Context) {
+func flushToolUse(ctx context.Context, name, id *string, input *strings.Builder, inUse *bool, ch chan<- StreamChunk) {
 	if !*inUse {
 		return
 	}

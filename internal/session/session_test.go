@@ -428,7 +428,7 @@ func (r *recordingToolExec) Execute(ctx context.Context, name string, _ json.Raw
 	return json.RawMessage(`{"echo":"` + name + `"}`), nil
 }
 
-var testStartTool = time.Now()
+var testStartTool = time.Now() //nolint:gochecknoglobals // test fixture
 
 // TestPromptDispatchBatchLoop verifies the Phase-4 tool loop: a turn with [Read,
 // Bash] tool calls drives both through toolexec.DispatchBatch, appends BOTH

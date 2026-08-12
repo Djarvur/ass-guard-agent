@@ -26,7 +26,7 @@ const (
 	// scheduler reports it to the turn loop immediately (D-04 — N5's silent
 	// retry-storm failure mode engineered out by the typed Kind).
 	KindStructural ErrorKind = "Structural"
-	// The cost-ceiling hard-stop kind (D-08). NEVER produced by ClassifyHTTP —
+	// KindExhausted is the cost-ceiling hard-stop kind (D-08). NEVER produced by ClassifyHTTP —
 	// only the scheduler's cost tracker constructs it (the adapter cannot see
 	// the budget). ClassifyHTTP references only the two kinds above; this
 	// invariant is unit-tested (pitfall 7, TestClassifyExhaustedInvariant).
@@ -134,7 +134,7 @@ func isNetOrContextError(err error) bool {
 	return errors.As(err, &urlErr)
 }
 
-var transientStatuses = map[int]struct{}{
+var transientStatuses = map[int]struct{}{ //nolint:gochecknoglobals // immutable lookup table / default (cannot be a const)
 	408: {}, 425: {}, 429: {},
 	500: {}, 502: {}, 503: {}, 504: {},
 }
@@ -145,7 +145,7 @@ func isTransientStatus(status int) bool {
 	return ok
 }
 
-var structuralStatuses = map[int]struct{}{
+var structuralStatuses = map[int]struct{}{ //nolint:gochecknoglobals // immutable lookup table / default (cannot be a const)
 	400: {}, 401: {}, 403: {}, 404: {}, 405: {},
 	411: {}, 413: {}, 422: {},
 }
@@ -186,7 +186,7 @@ func reasonFor(status int, err error) string {
 	return "unknown"
 }
 
-var statusReasons = map[int]string{
+var statusReasons = map[int]string{ //nolint:gochecknoglobals // immutable lookup table / default (cannot be a const)
 	400: "bad request",
 	401: "unauthenticated",
 	403: "forbidden",

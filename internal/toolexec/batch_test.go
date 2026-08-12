@@ -28,7 +28,7 @@ type execEvent struct {
 	end   int64
 }
 
-var testStart = time.Now()
+var testStart = time.Now() //nolint:gochecknoglobals // test fixture
 
 func nowMono() int64 { return int64(time.Since(testStart)) }
 

@@ -20,7 +20,7 @@ import (
 // stubToolResult is the canned Phase-2 tool result (D-15 — execution stays
 // stubbed; real execution lands in Phase 4). The transcript records it so the
 // reconstruction is faithful even before tools are real.
-var stubToolResult = json.RawMessage(`{"output":"stubbed in Phase 2 (real execution in Phase 4)"}`)
+var stubToolResult = json.RawMessage(`{"output":"stubbed in Phase 2 (real execution in Phase 4)"}`) //nolint:gochecknoglobals // immutable lookup table / default (cannot be a const)
 
 // Session is the Session Core (D-17): it owns the transcript Manager, the
 // lean-window Projector, and the turn loop (D-18). It is the sole writer of
