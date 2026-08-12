@@ -41,7 +41,10 @@ func cannedOpenAIToolCallsResponse(name, argsJSON string) string {
 // jsonQuote returns the JSON-string-encoded form of s (the OpenAI Arguments
 // field is a JSON-encoded string, so an object becomes "{\"path\":\"go.mod\"}").
 func jsonQuote(s string) string {
-	b, _ := json.Marshal(s)
+	b, marshalErr := json.Marshal(s)
+	if marshalErr != nil {
+		panic(marshalErr)
+	}
 
 	return string(b)
 }

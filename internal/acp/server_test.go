@@ -143,14 +143,20 @@ func itoa(n int) string {
 
 // newRequest builds a request Message with the given integer id.
 func newRequest(id int, method string, params map[string]any) Message {
-	pmsg, _ := json.Marshal(params)
+	pmsg, marshalErr := json.Marshal(params)
+	if marshalErr != nil {
+		panic(marshalErr)
+	}
 
 	return Message{JSONRPC: protocolVersion20, ID: &id, Method: method, Params: pmsg}
 }
 
 // newNotification builds a notification Message (no id).
 func newNotification(method string, params map[string]any) Message {
-	pmsg, _ := json.Marshal(params)
+	pmsg, marshalErr := json.Marshal(params)
+	if marshalErr != nil {
+		panic(marshalErr)
+	}
 
 	return Message{JSONRPC: protocolVersion20, Method: method, Params: pmsg}
 }

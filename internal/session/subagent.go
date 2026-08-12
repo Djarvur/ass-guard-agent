@@ -146,7 +146,10 @@ func (defaultSubagentRunner) Run(ctx context.Context, s *Session, subagentTurnID
 				_ = s.Manager.AppendToolCall(subagentTurnID, tc.Name, tc.Name, tc.Input)
 
 				if execErr != nil {
-					errJSON, _ := json.Marshal(map[string]string{"error": execErr.Error()})
+					errJSON, mErr := json.Marshal(map[string]string{"error": execErr.Error()})
+					if mErr != nil {
+						errJSON = []byte(`{"error":"marshal error failed"}`)
+					}
 					_ = s.Manager.AppendToolResult(subagentTurnID, tc.Name, errJSON, true)
 				} else {
 					_ = s.Manager.AppendToolResult(subagentTurnID, tc.Name, out, false)

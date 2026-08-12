@@ -36,9 +36,15 @@ func loadProfile(t *testing.T, name string) profile.Profile {
 // delegates to Stream, so tests must return SSE-formatted data: lines that
 // drainSSE can parse (VERIFIED-FACTS.md item #1: stop_reason "tool_use").
 func cannedAnthropicToolUseResponse(name string, input map[string]any) string {
-	inputJSON, _ := json.Marshal(input)
+	inputJSON, marshalErr := json.Marshal(input)
+	if marshalErr != nil {
+		panic(marshalErr)
+	}
 	// partial_json is a STRING in the real Anthropic SSE protocol (JSON fragments)
-	partialJSONStr, _ := json.Marshal(string(inputJSON)) // produces a quoted+escaped string
+	partialJSONStr, marshalErr := json.Marshal(string(inputJSON)) // produces a quoted+escaped string
+	if marshalErr != nil {
+		panic(marshalErr)
+	}
 
 	var b strings.Builder
 

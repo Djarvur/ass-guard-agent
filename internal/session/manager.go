@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"slices"
 	"sync"
@@ -103,7 +104,10 @@ func (m *Manager) AppendSessionEnd() error {
 
 // AppendUserMessage records a user message (the prompt content blocks).
 func (m *Manager) AppendUserMessage(turnID string, content []ContentBlock) error {
-	raw, _ := json.Marshal(content)
+	raw, err := json.Marshal(content)
+	if err != nil {
+		return fmt.Errorf("marshal user content: %w", err)
+	}
 
 	return m.appendLine(Line{Type: TypeUserMessage, TurnID: turnID, Timestamp: now(), Content: raw})
 }

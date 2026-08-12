@@ -169,7 +169,11 @@ func parseOpenAIResponse(resp openai.ChatCompletionResponse) (Response, error) {
 		} else {
 			// The spec says Arguments is a JSON-encoded string; defensively wrap
 			// a non-JSON value as a JSON string so the consumer always sees valid JSON.
-			wrapped, _ := json.Marshal(tc.Function.Arguments)
+			wrapped, mErr := json.Marshal(tc.Function.Arguments)
+			if mErr != nil {
+				return Response{}, fmt.Errorf("openai: marshal tool arguments: %w", mErr)
+			}
+
 			input = json.RawMessage(wrapped)
 		}
 

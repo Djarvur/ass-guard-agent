@@ -45,7 +45,10 @@ func writeCaptureFixture(t *testing.T, sysCount, toolCount, headerCount int) str
 		},
 	}
 
-	raw, _ := json.Marshal(line)
+	raw, marshalErr := json.Marshal(line)
+	if marshalErr != nil {
+		panic(marshalErr)
+	}
 
 	err := os.WriteFile(path, raw, 0o600)
 	if err != nil {

@@ -150,7 +150,10 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 				if isSubagentTool(tc.Name) {
 					result, derr := s.DispatchSubagent(ctx, turnID, tc.Name, extractSubagentPrompt(tc.Input), nil)
 					if derr != nil {
-						errJSON, _ := json.Marshal(map[string]string{"error": derr.Error()})
+						errJSON, mErr := json.Marshal(map[string]string{"error": derr.Error()})
+						if mErr != nil {
+							errJSON = []byte(`{"error":"marshal error failed"}`)
+						}
 						_ = s.Manager.AppendToolResult(turnID, tc.Name, errJSON, true)
 					} else {
 						_ = s.Manager.AppendToolResult(turnID, tc.Name, json.RawMessage(`"`+result+`"`), false)

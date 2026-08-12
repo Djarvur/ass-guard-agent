@@ -162,7 +162,10 @@ func (r *reconProvider) Send(ctx context.Context, _ profile.Profile, _ []provide
 }
 
 func (r *reconProvider) Stream(ctx context.Context, prof profile.Profile, _ []provider.Message) (<-chan provider.StreamChunk, error) {
-	body, _ := json.Marshal(map[string]any{keyModel: prof.Model})
+	body, marshalErr := json.Marshal(map[string]any{keyModel: prof.Model})
+	if marshalErr != nil {
+		panic(marshalErr)
+	}
 	r.bus.Publish(event.RequestShaped{VerbatimRequest: body, Profile: prof.Name, Timestamp: time.Now()})
 
 	ch := make(chan provider.StreamChunk, 8)

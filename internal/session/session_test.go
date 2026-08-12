@@ -46,7 +46,10 @@ func (f *fakeProvider) Send(ctx context.Context, prof profile.Profile, msgs []pr
 
 	// Simulate the capturer firing after shaping, before sending (LOG-01).
 	if bus != nil {
-		body, _ := json.Marshal(map[string]any{keyModel: prof.Model, "n": n})
+		body, marshalErr := json.Marshal(map[string]any{keyModel: prof.Model, "n": n})
+		if marshalErr != nil {
+			panic(marshalErr)
+		}
 		bus.Publish(event.RequestShaped{
 			TurnID:          turnIDFromMessages(msgs),
 			VerbatimRequest: body,
@@ -91,7 +94,10 @@ func (f *fakeProvider) Stream(ctx context.Context, prof profile.Profile, msgs []
 	f.mu.Unlock()
 
 	if bus != nil {
-		body, _ := json.Marshal(map[string]any{keyModel: prof.Model, "n": n})
+		body, marshalErr := json.Marshal(map[string]any{keyModel: prof.Model, "n": n})
+		if marshalErr != nil {
+			panic(marshalErr)
+		}
 		bus.Publish(event.RequestShaped{
 			TurnID: turnIDFromMessages(msgs), VerbatimRequest: body,
 			Profile: prof.Name, Timestamp: time.Now(),

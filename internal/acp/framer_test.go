@@ -26,7 +26,10 @@ func TestWriteFrameProducesMarshalPlusNewline(t *testing.T) {
 		t.Fatalf("writeFrame: %v", err)
 	}
 
-	want, _ := json.Marshal(msg)
+	want, marshalErr := json.Marshal(msg)
+	if marshalErr != nil {
+		panic(marshalErr)
+	}
 
 	want = append(want, '\n')
 
@@ -218,7 +221,11 @@ func TestMessageIDNilIsNotification(t *testing.T) {
 	id := 7
 	req := Message{JSONRPC: protocolVersion20, ID: &id, Method: methodInitialize}
 
-	raw, _ = json.Marshal(req)
+	raw, err = json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
 	if !bytes.Contains(raw, []byte(`"id":7`)) {
 		t.Errorf("request did not marshal id=7: %s", string(raw))
 	}
@@ -226,7 +233,10 @@ func TestMessageIDNilIsNotification(t *testing.T) {
 	zero := 0
 	zeroReq := Message{JSONRPC: protocolVersion20, ID: &zero, Method: methodInitialize}
 
-	raw, _ = json.Marshal(zeroReq)
+	raw, err = json.Marshal(zeroReq)
+	if err != nil {
+		t.Fatalf("marshal zero-id request: %v", err)
+	}
 	if !bytes.Contains(raw, []byte(`"id":0`)) {
 		t.Errorf("id=0 request did not marshal id field: %s (0 is a valid id)", string(raw))
 	}

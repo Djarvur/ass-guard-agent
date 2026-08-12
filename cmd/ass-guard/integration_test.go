@@ -268,7 +268,10 @@ func TestIntegration_SessionLoadNoOp(t *testing.T) {
 
 // rawJSON marshals m to json.RawMessage.
 func rawJSON(m map[string]any) json.RawMessage {
-	b, _ := json.Marshal(m)
+	b, marshalErr := json.Marshal(m)
+	if marshalErr != nil {
+		panic(marshalErr)
+	}
 
 	return b
 }
