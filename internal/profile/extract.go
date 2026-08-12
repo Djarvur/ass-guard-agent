@@ -245,7 +245,7 @@ func inferRole(path string) string {
 		return "subagent"
 	}
 
-	return "main"
+	return sessionKindMain
 }
 
 // ScanRolloutDir lists model-io-sess_*.jsonl files under dir and summarizes each
@@ -272,7 +272,7 @@ func ScanRolloutDir(dir string) ([]SessionStat, error) {
 	sort.Slice(stats, func(i, j int) bool {
 		// Prefer main sessions with the most full-request lines.
 		if stats[i].Role != stats[j].Role {
-			return stats[i].Role == "main"
+			return stats[i].Role == sessionKindMain
 		}
 
 		return stats[i].FullRequestLines > stats[j].FullRequestLines
@@ -327,7 +327,7 @@ func PickRichestMain(stats []SessionStat) (SessionStat, error) {
 	}
 
 	for _, s := range stats {
-		if s.Role == "main" && s.FullRequestLines > 0 {
+		if s.Role == sessionKindMain && s.FullRequestLines > 0 {
 			return s, nil
 		}
 	}

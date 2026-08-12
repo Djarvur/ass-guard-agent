@@ -167,9 +167,9 @@ func newTestScheduler(t *testing.T, fp *fakeProvider) (*Scheduler, *event.Bus, *
 	t.Cleanup(func() { bus.Close() })
 
 	providers := map[string]provider.Provider{
-		"anthropic": fp,
-		"openai":    fp,
-		"groq":      fp,
+		providerAnthropic: fp,
+		providerOpenAI:    fp,
+		providerGroq:      fp,
 	}
 	s := NewScheduler(cfg, bus, nil, providers, nil)
 
@@ -204,7 +204,7 @@ loop:
 // transientErr builds a canned Transient ProviderError.
 func transientErr(model string, status int) *provider.ProviderError {
 	return &provider.ProviderError{
-		Kind: provider.KindTransient, Provider: "anthropic", Model: model,
+		Kind: provider.KindTransient, Provider: providerAnthropic, Model: model,
 		StatusCode: status, Reason: "rate limited",
 	}
 }
@@ -214,19 +214,19 @@ func transientErr(model string, status int) *provider.ProviderError {
 func TestDispatchPrimarySuccess(t *testing.T) {
 	t.Parallel()
 
-	fp := newFakeProvider().set("glm-5.2", fakeOutcome{resp: provider.Response{FinishReason: "stop"}})
+	fp := newFakeProvider().set(modelGLM52, fakeOutcome{resp: provider.Response{FinishReason: stopReasonStop}})
 	s, bus, _ := newTestScheduler(t, fp)
 	s.SetNow(func() time.Time { return ny(2026, time.August, 16, 12, 0) }) // Sunday noon → global heavy = glm-5.2
 
 	rb := &recordingBreaker{}
 	rc := &recordingCost{}
 
-	s.SetBreakers(map[providerModelKey]Breaker{{"anthropic", "glm-5.2"}: rb})
+	s.SetBreakers(map[providerModelKey]Breaker{{providerAnthropic, modelGLM52}: rb})
 	s.SetCostTracker(rc)
 
-	resp, err, events := dispatchAndCollect(t, s, bus, context.Background(), "heavy", "myproj", CapabilityReq{})
+	resp, err, events := dispatchAndCollect(t, s, bus, context.Background(), tierHeavy, "myproj", CapabilityReq{})
 	require.NoError(t, err)
-	require.Equal(t, "stop", resp.FinishReason)
+	require.Equal(t, stopReasonStop, resp.FinishReason)
 	require.Empty(t, events, "no ProviderFallback event on primary success")
 	require.Contains(t, rb.logs, "record-success", "RecordSuccess called on success")
 	require.Contains(t, rc.logs, "account:glm-5.2", "Account called with the resolved model")
@@ -238,19 +238,19 @@ func TestDispatchTransientWalkSuccess(t *testing.T) {
 	t.Parallel()
 
 	fp := newFakeProvider().
-		set("glm-5.2", fakeOutcome{err: transientErr("glm-5.2", 429)}).
-		set("minimax-m3", fakeOutcome{resp: provider.Response{FinishReason: "stop"}})
+		set(modelGLM52, fakeOutcome{err: transientErr(modelGLM52, 429)}).
+		set(modelMinimaxM3, fakeOutcome{resp: provider.Response{FinishReason: stopReasonStop}})
 	// Use a Sunday noon so the GLOBAL heavy table applies (glm-5.2 → [minimax-m3, glm-4.6]),
 	// not the peak window's heavy binding (which has a different fallback chain).
 	s, bus, _ := newTestScheduler(t, fp)
 	s.SetNow(func() time.Time { return ny(2026, time.August, 16, 12, 0) })
 
-	resp, err, events := dispatchAndCollect(t, s, bus, context.Background(), "heavy", "myproj", CapabilityReq{})
+	resp, err, events := dispatchAndCollect(t, s, bus, context.Background(), tierHeavy, "myproj", CapabilityReq{})
 	require.NoError(t, err)
-	require.Equal(t, "stop", resp.FinishReason)
+	require.Equal(t, stopReasonStop, resp.FinishReason)
 	require.Len(t, events, 1, "exactly one ProviderFallback event")
-	require.Equal(t, "glm-5.2", events[0].FromModel)
-	require.Equal(t, "minimax-m3", events[0].ToModel)
+	require.Equal(t, modelGLM52, events[0].FromModel)
+	require.Equal(t, modelMinimaxM3, events[0].ToModel)
 	require.Equal(t, 1, events[0].Attempt)
 	require.Equal(t, provider.KindTransient, events[0].ErrorKind)
 }
@@ -261,19 +261,19 @@ func TestDispatchChainTwoFailuresThenSuccess(t *testing.T) {
 	t.Parallel()
 
 	fp := newFakeProvider().
-		set("glm-5.2", fakeOutcome{err: transientErr("glm-5.2", 429)}).
-		set("minimax-m3", fakeOutcome{err: transientErr("minimax-m3", 503)}).
-		set("glm-4.6", fakeOutcome{resp: provider.Response{FinishReason: "stop"}})
+		set(modelGLM52, fakeOutcome{err: transientErr(modelGLM52, 429)}).
+		set(modelMinimaxM3, fakeOutcome{err: transientErr(modelMinimaxM3, 503)}).
+		set(modelGLM46, fakeOutcome{resp: provider.Response{FinishReason: stopReasonStop}})
 	s, bus, _ := newTestScheduler(t, fp)
 	s.SetNow(func() time.Time { return ny(2026, time.August, 16, 12, 0) })
 
-	resp, err, events := dispatchAndCollect(t, s, bus, context.Background(), "heavy", "myproj", CapabilityReq{})
+	resp, err, events := dispatchAndCollect(t, s, bus, context.Background(), tierHeavy, "myproj", CapabilityReq{})
 	require.NoError(t, err)
-	require.Equal(t, "stop", resp.FinishReason)
+	require.Equal(t, stopReasonStop, resp.FinishReason)
 	require.Len(t, events, 2)
-	require.Equal(t, []string{"glm-5.2", "minimax-m3"}, []string{events[0].FromModel, events[0].ToModel})
-	require.Equal(t, []string{"minimax-m3", "glm-4.6"}, []string{events[1].FromModel, events[1].ToModel})
-	require.Equal(t, []string{"glm-5.2", "minimax-m3", "glm-4.6"}, fp.calledModels())
+	require.Equal(t, []string{modelGLM52, modelMinimaxM3}, []string{events[0].FromModel, events[0].ToModel})
+	require.Equal(t, []string{modelMinimaxM3, modelGLM46}, []string{events[1].FromModel, events[1].ToModel})
+	require.Equal(t, []string{modelGLM52, modelMinimaxM3, modelGLM46}, fp.calledModels())
 }
 
 // TestDispatchChainExhausted: primary + all fallbacks Transient → returns the
@@ -282,20 +282,20 @@ func TestDispatchChainExhausted(t *testing.T) {
 	t.Parallel()
 
 	fp := newFakeProvider().
-		set("glm-5.2", fakeOutcome{err: transientErr("glm-5.2", 429)}).
-		set("minimax-m3", fakeOutcome{err: transientErr("minimax-m3", 503)}).
-		set("glm-4.6", fakeOutcome{err: transientErr("glm-4.6", 500)})
+		set(modelGLM52, fakeOutcome{err: transientErr(modelGLM52, 429)}).
+		set(modelMinimaxM3, fakeOutcome{err: transientErr(modelMinimaxM3, 503)}).
+		set(modelGLM46, fakeOutcome{err: transientErr(modelGLM46, 500)})
 	s, bus, _ := newTestScheduler(t, fp)
 	s.SetNow(func() time.Time { return ny(2026, time.August, 16, 12, 0) })
 
-	_, err, events := dispatchAndCollect(t, s, bus, context.Background(), "heavy", "myproj", CapabilityReq{})
+	_, err, events := dispatchAndCollect(t, s, bus, context.Background(), tierHeavy, "myproj", CapabilityReq{})
 	require.Error(t, err)
 
 	var perr *provider.ProviderError
 
 	require.ErrorAs(t, err, &perr)
 	require.Equal(t, provider.KindTransient, perr.Kind, "last Transient error surfaced")
-	require.Equal(t, "glm-4.6", perr.Model, "last-attempted candidate's error")
+	require.Equal(t, modelGLM46, perr.Model, "last-attempted candidate's error")
 	// heavy's global fallback chain has 2 entries; one event per transition.
 	require.Len(t, events, 2)
 }
@@ -305,14 +305,14 @@ func TestDispatchChainExhausted(t *testing.T) {
 func TestDispatchStructuralStopsWalk(t *testing.T) {
 	t.Parallel()
 
-	fp := newFakeProvider().set("glm-5.2", fakeOutcome{err: &provider.ProviderError{
-		Kind: provider.KindStructural, Provider: "anthropic", Model: "glm-5.2",
+	fp := newFakeProvider().set(modelGLM52, fakeOutcome{err: &provider.ProviderError{
+		Kind: provider.KindStructural, Provider: providerAnthropic, Model: modelGLM52,
 		StatusCode: 401, Reason: "unauthenticated",
 	}})
 	s, bus, _ := newTestScheduler(t, fp)
 	s.SetNow(func() time.Time { return ny(2026, time.August, 16, 12, 0) })
 
-	_, err, events := dispatchAndCollect(t, s, bus, context.Background(), "heavy", "myproj", CapabilityReq{})
+	_, err, events := dispatchAndCollect(t, s, bus, context.Background(), tierHeavy, "myproj", CapabilityReq{})
 	require.Error(t, err)
 
 	var perr *provider.ProviderError
@@ -320,7 +320,7 @@ func TestDispatchStructuralStopsWalk(t *testing.T) {
 	require.ErrorAs(t, err, &perr)
 	require.Equal(t, provider.KindStructural, perr.Kind)
 	require.Empty(t, events, "ZERO events on Structural (walk never starts)")
-	require.Equal(t, []string{"glm-5.2"}, fp.calledModels(), "only the primary was attempted")
+	require.Equal(t, []string{modelGLM52}, fp.calledModels(), "only the primary was attempted")
 }
 
 // TestDispatchSemaphorePerCandidate: every candidate attempt Acquires+Releases
@@ -329,18 +329,18 @@ func TestDispatchSemaphorePerCandidate(t *testing.T) {
 	t.Parallel()
 
 	fp := newFakeProvider().
-		set("glm-5.2", fakeOutcome{err: transientErr("glm-5.2", 429)}).
-		set("minimax-m3", fakeOutcome{resp: provider.Response{FinishReason: "stop"}})
+		set(modelGLM52, fakeOutcome{err: transientErr(modelGLM52, 429)}).
+		set(modelMinimaxM3, fakeOutcome{resp: provider.Response{FinishReason: stopReasonStop}})
 	cfg := loadValid(t)
 	bus := event.NewBus()
 
 	t.Cleanup(func() { bus.Close() })
 
 	rs := &recordingSem{}
-	s := NewScheduler(cfg, bus, rs, map[string]provider.Provider{"anthropic": fp, "openai": fp, "groq": fp}, nil)
+	s := NewScheduler(cfg, bus, rs, map[string]provider.Provider{providerAnthropic: fp, providerOpenAI: fp, providerGroq: fp}, nil)
 	s.SetNow(func() time.Time { return ny(2026, time.August, 16, 12, 0) })
 
-	_, err, _ := dispatchAndCollect(t, s, bus, context.Background(), "heavy", "myproj", CapabilityReq{})
+	_, err, _ := dispatchAndCollect(t, s, bus, context.Background(), tierHeavy, "myproj", CapabilityReq{})
 	require.NoError(t, err)
 	// primary + 1 fallback attempted = 2 acquire/release pairs.
 	require.Equal(t, 2, rs.pairs(), "semaphore acquired+released once per candidate")
@@ -354,24 +354,24 @@ func TestDispatchCapabilitySeam(t *testing.T) {
 	t.Parallel()
 
 	cfg := &Config{
-		Providers: map[string]ProviderConfig{"p": {BaseURL: "x", Shape: "anthropic"}},
+		Providers: map[string]ProviderConfig{"p": {BaseURL: "x", Shape: providerAnthropic}},
 		Models: map[string]ModelConfig{
-			"tool-less": {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, Streaming: true, ToolCalling: false}},
-			"tool-full": {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, Streaming: true, ToolCalling: true}},
+			tierToolLess: {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, Streaming: true, ToolCalling: false}},
+			tierToolFull: {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, Streaming: true, ToolCalling: true}},
 		},
-		Tiers: map[string]TierBinding{"heavy": {Model: "tool-less", Fallback: []string{"tool-full"}}},
+		Tiers: map[string]TierBinding{tierHeavy: {Model: tierToolLess, Fallback: []string{tierToolFull}}},
 	}
 	bus := event.NewBus()
 
 	t.Cleanup(func() { bus.Close() })
 
-	fp := newFakeProvider().set("tool-full", fakeOutcome{resp: provider.Response{FinishReason: "stop"}})
+	fp := newFakeProvider().set(tierToolFull, fakeOutcome{resp: provider.Response{FinishReason: stopReasonStop}})
 	s := NewScheduler(cfg, bus, nil, map[string]provider.Provider{"p": fp}, nil)
 
-	resp, err, _ := dispatchAndCollect(t, s, bus, context.Background(), "heavy", "", CapabilityReq{NeedsTools: true})
+	resp, err, _ := dispatchAndCollect(t, s, bus, context.Background(), tierHeavy, "", CapabilityReq{NeedsTools: true})
 	require.NoError(t, err)
-	require.Equal(t, "stop", resp.FinishReason)
-	require.Equal(t, []string{"tool-full"}, fp.calledModels(), "the tool-less primary must be SKIPPED, only the capable fallback called")
+	require.Equal(t, stopReasonStop, resp.FinishReason)
+	require.Equal(t, []string{tierToolFull}, fp.calledModels(), "the tool-less primary must be SKIPPED, only the capable fallback called")
 }
 
 // TestDispatchCapabilityNoCandidate: a tier whose primary AND fallback all lack
@@ -381,12 +381,12 @@ func TestDispatchCapabilityNoCandidate(t *testing.T) {
 	t.Parallel()
 
 	cfg := &Config{
-		Providers: map[string]ProviderConfig{"p": {BaseURL: "x", Shape: "anthropic"}},
+		Providers: map[string]ProviderConfig{"p": {BaseURL: "x", Shape: providerAnthropic}},
 		Models: map[string]ModelConfig{
 			"a": {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, ToolCalling: false}},
 			"b": {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, ToolCalling: false}},
 		},
-		Tiers: map[string]TierBinding{"heavy": {Model: "a", Fallback: []string{"b"}}},
+		Tiers: map[string]TierBinding{tierHeavy: {Model: "a", Fallback: []string{"b"}}},
 	}
 	bus := event.NewBus()
 
@@ -395,10 +395,10 @@ func TestDispatchCapabilityNoCandidate(t *testing.T) {
 	fp := newFakeProvider()
 	s := NewScheduler(cfg, bus, nil, map[string]provider.Provider{"p": fp}, nil)
 
-	_, err, _ := dispatchAndCollect(t, s, bus, context.Background(), "heavy", "", CapabilityReq{NeedsTools: true})
+	_, err, _ := dispatchAndCollect(t, s, bus, context.Background(), tierHeavy, "", CapabilityReq{NeedsTools: true})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "no candidate")
-	require.Contains(t, err.Error(), "heavy")
+	require.Contains(t, err.Error(), tierHeavy)
 	require.Equal(t, 0, fp.callCount(), "provider must NOT be called when no candidate satisfies capReq")
 }
 
@@ -407,15 +407,15 @@ func TestDispatchCapabilityNoCandidate(t *testing.T) {
 func TestDispatchBreakerCostOrder(t *testing.T) {
 	t.Parallel()
 
-	fp := newFakeProvider().set("glm-5.2", fakeOutcome{resp: provider.Response{FinishReason: "stop"}})
+	fp := newFakeProvider().set(modelGLM52, fakeOutcome{resp: provider.Response{FinishReason: stopReasonStop}})
 	s, bus, _ := newTestScheduler(t, fp)
 	rb := &recordingBreaker{}
 	rc := &recordingCost{}
 
-	s.SetBreakers(map[providerModelKey]Breaker{{"anthropic", "glm-5.2"}: rb})
+	s.SetBreakers(map[providerModelKey]Breaker{{providerAnthropic, modelGLM52}: rb})
 	s.SetCostTracker(rc)
 
-	_, err, _ := dispatchAndCollect(t, s, bus, context.Background(), "heavy", "myproj", CapabilityReq{})
+	_, err, _ := dispatchAndCollect(t, s, bus, context.Background(), tierHeavy, "myproj", CapabilityReq{})
 	require.NoError(t, err)
 	// Sequence: check (cost) ... actually the order in Dispatch is capability → breaker.Allow → cost.Check → acquire → send → release → RecordSuccess → Account.
 	require.GreaterOrEqual(t, indexOf(rb.logs, "allow"), 0, "Allow called")
@@ -439,9 +439,9 @@ func indexOf(s []string, want string) int {
 func TestAsProviderErrorWrapsNonTyped(t *testing.T) {
 	t.Parallel()
 
-	cand := Target{Provider: "openai", Model: "minimax-m3"}
+	cand := Target{Provider: providerOpenAI, Model: modelMinimaxM3}
 	perr := asProviderError(errors.New("raw transport boom"), cand)
 	require.Equal(t, provider.KindTransient, perr.Kind, "unknown error defaults Transient (safe-side)")
-	require.Equal(t, "openai", perr.Provider)
-	require.Equal(t, "minimax-m3", perr.Model)
+	require.Equal(t, providerOpenAI, perr.Provider)
+	require.Equal(t, modelMinimaxM3, perr.Model)
 }

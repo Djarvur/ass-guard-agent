@@ -47,7 +47,7 @@ func (f *fakeProvider) Send(ctx context.Context, prof profile.Profile, msgs []pr
 
 	// Simulate the capturer firing after shaping, before sending (LOG-01).
 	if bus != nil {
-		body, _ := json.Marshal(map[string]any{"model": prof.Model, "n": n})
+		body, _ := json.Marshal(map[string]any{keyModel: prof.Model, "n": n})
 		bus.Publish(event.RequestShaped{
 			TurnID:          turnIDFromMessages(msgs),
 			VerbatimRequest: body,
@@ -92,7 +92,7 @@ func (f *fakeProvider) Stream(ctx context.Context, prof profile.Profile, msgs []
 	f.mu.Unlock()
 
 	if bus != nil {
-		body, _ := json.Marshal(map[string]any{"model": prof.Model, "n": n})
+		body, _ := json.Marshal(map[string]any{keyModel: prof.Model, "n": n})
 		bus.Publish(event.RequestShaped{
 			TurnID: turnIDFromMessages(msgs), VerbatimRequest: body,
 			Profile: prof.Name, Timestamp: time.Now(),
@@ -121,7 +121,7 @@ func (f *fakeProvider) Stream(ctx context.Context, prof profile.Profile, msgs []
 		for _, tc := range resp.ToolCalls {
 			tcCopy := tc
 			select {
-			case ch <- provider.StreamChunk{Type: "tool_use", ToolCall: &tcCopy, ToolCallID: tc.Name}:
+			case ch <- provider.StreamChunk{Type: blockToolUse, ToolCall: &tcCopy, ToolCallID: tc.Name}:
 			case <-ctx.Done():
 				return
 			}
@@ -129,14 +129,14 @@ func (f *fakeProvider) Stream(ctx context.Context, prof profile.Profile, msgs []
 
 		if len(resp.ToolCalls) == 0 {
 			select {
-			case ch <- provider.StreamChunk{Type: "text", Text: "assistant response"}:
+			case ch <- provider.StreamChunk{Type: blockText, Text: "assistant response"}:
 			case <-ctx.Done():
 				return
 			}
 		}
 
 		select {
-		case ch <- provider.StreamChunk{Type: "done", FinishReason: resp.FinishReason}:
+		case ch <- provider.StreamChunk{Type: stopDone, FinishReason: resp.FinishReason}:
 		case <-ctx.Done():
 		}
 	}()
@@ -186,15 +186,15 @@ func TestPromptRunsTurnLoop(t *testing.T) {
 
 	bus := event.NewBus()
 	s, m, _ := newTestSession(t, bus, []provider.Response{
-		{FinishReason: "end_turn"},
+		{FinishReason: stopEndTurn},
 	})
 
-	stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "hi"}})
+	stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "hi"}})
 	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 
-	if stop != "end_turn" {
+	if stop != stopEndTurn {
 		t.Errorf("stopReason = %q; want end_turn", stop)
 	}
 
@@ -228,8 +228,8 @@ func TestRequestShapedPublished(t *testing.T) {
 	bus := event.NewBus()
 	ch := bus.Subscribe("RequestShaped", event.BufRequestShaped)
 
-	s, _, _ := newTestSession(t, bus, []provider.Response{{FinishReason: "end_turn"}})
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "hi"}}); err != nil {
+	s, _, _ := newTestSession(t, bus, []provider.Response{{FinishReason: stopEndTurn}})
+	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "hi"}}); err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 
@@ -245,7 +245,7 @@ func TestRequestShapedPublished(t *testing.T) {
 // the turn loop (LOG-02 — a slow writer does not delay the provider call).
 func TestTranscriptWriterAsync(t *testing.T) { //nolint:paralleltest // timing-sensitive: 1s async-flush deadline flakes under parallel/-race load
 	bus := event.NewBus()
-	s, m, fp := newTestSession(t, bus, []provider.Response{{FinishReason: "end_turn"}})
+	s, m, fp := newTestSession(t, bus, []provider.Response{{FinishReason: stopEndTurn}})
 	fp.delay = 30 * time.Millisecond // baseline Send latency
 	tw := NewTranscriptWriter(m, bus)
 
@@ -255,7 +255,7 @@ func TestTranscriptWriterAsync(t *testing.T) { //nolint:paralleltest // timing-s
 
 	start := time.Now()
 
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "hi"}}); err != nil {
+	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "hi"}}); err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 
@@ -286,7 +286,7 @@ func TestCancelTurn(t *testing.T) {
 	t.Parallel()
 
 	bus := event.NewBus()
-	s, m, _ := newTestSession(t, bus, []provider.Response{{FinishReason: "end_turn"}})
+	s, m, _ := newTestSession(t, bus, []provider.Response{{FinishReason: stopEndTurn}})
 	// Make Send block until ctx cancel.
 	s.Provider.(*fakeProvider).delay = 5 * time.Second
 	ctx, cancel := context.WithCancel(context.Background())
@@ -296,13 +296,13 @@ func TestCancelTurn(t *testing.T) {
 		cancel()
 	}()
 
-	stop, err := s.Prompt(ctx, []ContentBlock{{Type: "text", Text: "hi"}})
+	stop, err := s.Prompt(ctx, []ContentBlock{{Type: blockText, Text: "hi"}})
 	// The turn returns "cancelled" (not a hard error) on ctx cancel.
 	if err != nil {
 		t.Logf("Prompt returned err=%v (acceptable if ctx cancelled)", err)
 	}
 
-	if stop != "cancelled" {
+	if stop != stopCancelled {
 		t.Errorf("stopReason = %q; want cancelled", stop)
 	}
 
@@ -329,10 +329,10 @@ func TestStubToolExecution(t *testing.T) {
 	bus := event.NewBus()
 
 	s, m, _ := newTestSession(t, bus, []provider.Response{
-		{FinishReason: "tool_use", ToolCalls: []provider.ToolCall{{Name: "Read", Input: json.RawMessage(`{"file_path":"x"}`)}}},
-		{FinishReason: "end_turn"},
+		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{{Name: toolRead, Input: json.RawMessage(`{"file_path":"x"}`)}}},
+		{FinishReason: stopEndTurn},
 	})
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "read x"}}); err != nil {
+	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "read x"}}); err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 
@@ -368,10 +368,10 @@ func TestParentPanicRecovery(t *testing.T) {
 	t.Parallel()
 
 	bus := event.NewBus()
-	s, m, fp := newTestSession(t, bus, []provider.Response{{FinishReason: "end_turn"}})
+	s, m, fp := newTestSession(t, bus, []provider.Response{{FinishReason: stopEndTurn}})
 	fp.panicOn = 1
 
-	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "hi"}})
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "hi"}})
 	if err == nil {
 		t.Fatal("Prompt returned nil error after a provider panic; want a recovered error")
 	}
@@ -438,19 +438,19 @@ func TestPromptDispatchBatchLoop(t *testing.T) {
 
 	bus := event.NewBus()
 	s, m, _ := newTestSession(t, bus, []provider.Response{
-		{ToolCalls: []provider.ToolCall{{Name: "Read"}, {Name: "Bash"}}, FinishReason: "tool_use"},
-		{FinishReason: "end_turn"},
+		{ToolCalls: []provider.ToolCall{{Name: toolRead}, {Name: toolBash}}, FinishReason: blockToolUse},
+		{FinishReason: stopEndTurn},
 	})
 	// Catalog marks Read read-only + Bash mutating (so the boundary fires for
 	// Bash only — SESS-02).
 	s.Catalog = toolcat.NewCatalog()
-	s.Catalog.Register(toolcat.Tool{Name: "Read", Mutability: toolcat.MutabilityReadOnly})
-	s.Catalog.Register(toolcat.Tool{Name: "Bash", Mutability: toolcat.MutabilityMutating})
+	s.Catalog.Register(toolcat.Tool{Name: toolRead, Mutability: toolcat.MutabilityReadOnly})
+	s.Catalog.Register(toolcat.Tool{Name: toolBash, Mutability: toolcat.MutabilityMutating})
 
 	rec := &recordingToolExec{sleep: 10 * time.Millisecond}
 	s.SetToolExecutor(rec)
 
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "do it"}}); err != nil {
+	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "do it"}}); err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 	// Both tools executed via the injected (recording) executor — DispatchBatch
@@ -474,7 +474,7 @@ func TestPromptDispatchBatchLoop(t *testing.T) {
 		}
 	}
 
-	if len(results) != 2 || results[0] != "Read" || results[1] != "Bash" {
+	if len(results) != 2 || results[0] != toolRead || results[1] != toolBash {
 		t.Errorf("tool_result order = %v; want [Read Bash] (arrival order)", results)
 	}
 	// Boundary fires for Bash (mutating) only — SESS-02 invariant.
@@ -486,7 +486,7 @@ func TestPromptDispatchBatchLoop(t *testing.T) {
 		}
 	}
 
-	if len(boundaries) != 1 || !strings.Contains(boundaries[0], "Bash") {
+	if len(boundaries) != 1 || !strings.Contains(boundaries[0], toolBash) {
 		t.Errorf("boundaries = %v; want exactly one Bash boundary", boundaries)
 	}
 }
@@ -499,14 +499,14 @@ func TestPromptNilToolExecutorStubs(t *testing.T) {
 
 	bus := event.NewBus()
 	s, m, _ := newTestSession(t, bus, []provider.Response{
-		{ToolCalls: []provider.ToolCall{{Name: "Read"}}, FinishReason: "tool_use"},
-		{FinishReason: "end_turn"},
+		{ToolCalls: []provider.ToolCall{{Name: toolRead}}, FinishReason: blockToolUse},
+		{FinishReason: stopEndTurn},
 	})
 	s.Catalog = toolcat.NewCatalog()
-	s.Catalog.Register(toolcat.Tool{Name: "Read", Mutability: toolcat.MutabilityReadOnly})
+	s.Catalog.Register(toolcat.Tool{Name: toolRead, Mutability: toolcat.MutabilityReadOnly})
 	// SetToolExecutor NOT called — toolExec is nil.
 
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "hi"}}); err != nil {
+	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "hi"}}); err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 

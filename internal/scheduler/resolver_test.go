@@ -58,13 +58,13 @@ func TestResolveWindowWinsOutright(t *testing.T) {
 	r := NewResolver(loadValid(t))
 	// 2026-08-10 is a Monday.
 	now := ny(2026, time.August, 10, 10, 0)
-	primary, fallbacks, err := r.Resolve("heavy", "myproj", now, CapabilityReq{})
+	primary, fallbacks, err := r.Resolve(tierHeavy, "myproj", now, CapabilityReq{})
 	require.NoError(t, err)
-	require.Equal(t, "minimax-m3", primary.Model, "peak window heavy pick must win (D-02 reversal)")
-	require.Equal(t, "openai", primary.Provider)
+	require.Equal(t, modelMinimaxM3, primary.Model, "peak window heavy pick must win (D-02 reversal)")
+	require.Equal(t, providerOpenAI, primary.Provider)
 	// Window's heavy binding declares fallback [glm-5.2].
 	require.Len(t, fallbacks, 1)
-	require.Equal(t, "glm-5.2", fallbacks[0].Model)
+	require.Equal(t, modelGLM52, fallbacks[0].Model)
 }
 
 // TestResolveProjectNarrowsTheGap: when no window maps the tier, the per-project
@@ -76,7 +76,7 @@ func TestResolveProjectNarrowsTheGap(t *testing.T) {
 	now := ny(2026, time.August, 10, 10, 0) // Monday 10:00 — peak active but peak doesn't map good
 	primary, _, err := r.Resolve("good", "myproj", now, CapabilityReq{})
 	require.NoError(t, err)
-	require.Equal(t, "minimax-m3", primary.Model, "myproj good override must win over global glm-4.6")
+	require.Equal(t, modelMinimaxM3, primary.Model, "myproj good override must win over global glm-4.6")
 }
 
 // TestResolveGlobalFallback: when neither window nor project maps the tier, the
@@ -85,9 +85,9 @@ func TestResolveGlobalFallback(t *testing.T) {
 	t.Parallel()
 	r := NewResolver(loadValid(t))
 	now := ny(2026, time.August, 10, 10, 0)
-	primary, _, err := r.Resolve("light", "myproj", now, CapabilityReq{})
+	primary, _, err := r.Resolve(tierLight, "myproj", now, CapabilityReq{})
 	require.NoError(t, err)
-	require.Equal(t, "minimax-m3", primary.Model, "global light must resolve when no window/project maps light")
+	require.Equal(t, modelMinimaxM3, primary.Model, "global light must resolve when no window/project maps light")
 }
 
 // TestResolveOffPeakOvernight: outside the peak window, the overnight window
@@ -97,9 +97,9 @@ func TestResolveOffPeakOvernight(t *testing.T) {
 	r := NewResolver(loadValid(t))
 	// Sunday 03:00 NY — peak inactive (weekend + outside 09-17), overnight active.
 	now := ny(2026, time.August, 16, 3, 0)
-	primary, _, err := r.Resolve("heavy", "myproj", now, CapabilityReq{})
+	primary, _, err := r.Resolve(tierHeavy, "myproj", now, CapabilityReq{})
 	require.NoError(t, err)
-	require.Equal(t, "glm-5.2", primary.Model, "overnight window heavy pick must win off-peak")
+	require.Equal(t, modelGLM52, primary.Model, "overnight window heavy pick must win off-peak")
 }
 
 // TestActiveWindowOvernightBoundary table-tests the overnight-wrap edge
@@ -150,9 +150,9 @@ func TestActiveWindowWeekdayFilter(t *testing.T) {
 	// Saturday Aug 15 2026 12:00 NY — peak inactive (weekend), overnight
 	// inactive (12:00 not in 22:00-06:00). Falls through to global heavy.
 	now := ny(2026, time.August, 15, 12, 0)
-	primary, _, err := r.Resolve("heavy", "myproj", now, CapabilityReq{})
+	primary, _, err := r.Resolve(tierHeavy, "myproj", now, CapabilityReq{})
 	require.NoError(t, err)
-	require.Equal(t, "glm-5.2", primary.Model, "Saturday noon must skip peak (weekday filter) and resolve global heavy")
+	require.Equal(t, modelGLM52, primary.Model, "Saturday noon must skip peak (weekday filter) and resolve global heavy")
 }
 
 // TestResolveFallbackChainEnriched: Resolve returns the declared fallback chain
@@ -163,10 +163,10 @@ func TestResolveFallbackChainEnriched(t *testing.T) {
 	// Sunday 12:00 NY — global heavy table is active (no window). Global heavy
 	// = glm-5.2, fallback [minimax-m3, glm-4.6].
 	now := ny(2026, time.August, 16, 12, 0)
-	primary, fallbacks, err := r.Resolve("heavy", "myproj", now, CapabilityReq{})
+	primary, fallbacks, err := r.Resolve(tierHeavy, "myproj", now, CapabilityReq{})
 	require.NoError(t, err)
-	require.Equal(t, "glm-5.2", primary.Model)
-	require.Equal(t, []string{"minimax-m3", "glm-4.6"}, []string{fallbacks[0].Model, fallbacks[1].Model},
+	require.Equal(t, modelGLM52, primary.Model)
+	require.Equal(t, []string{modelMinimaxM3, modelGLM46}, []string{fallbacks[0].Model, fallbacks[1].Model},
 		"fallback chain must be the declared order")
 	require.True(t, fallbacks[0].Capabilities.ToolCalling, "fallback must carry its capability profile")
 	require.Greater(t, fallbacks[0].Pricing.InputPerMToken, 0.0, "fallback must carry pricing")
@@ -185,27 +185,27 @@ func TestResolveWindowZoneOverride(t *testing.T) {
 			Name:     "london-morning",
 			Zone:     "Europe/London",
 			Schedule: Schedule{From: "09:00", To: "17:00", Days: []string{"Mon", "Tue", "Wed", "Thu", "Fri"}},
-			Tiers:    map[string]TierBinding{"heavy": {Model: "override-model"}},
+			Tiers:    map[string]TierBinding{tierHeavy: {Model: "override-model"}},
 		}},
-		Providers: map[string]ProviderConfig{"anthropic": {BaseURL: "x", Shape: "anthropic"}},
+		Providers: map[string]ProviderConfig{providerAnthropic: {BaseURL: "x", Shape: providerAnthropic}},
 		Models: map[string]ModelConfig{
-			"override-model": {Provider: "anthropic"},
-			"global-model":   {Provider: "anthropic"},
+			"override-model": {Provider: providerAnthropic},
+			"global-model":   {Provider: providerAnthropic},
 		},
-		Tiers: map[string]TierBinding{"heavy": {Model: "global-model"}},
+		Tiers: map[string]TierBinding{tierHeavy: {Model: "global-model"}},
 	}
 	r := NewResolver(cfg)
 	lon, err := time.LoadLocation("Europe/London")
 	require.NoError(t, err)
 	// Monday 09:30 London — inside the window.
 	monLondon := time.Date(2026, time.August, 10, 9, 30, 0, 0, lon)
-	primary, _, err := r.Resolve("heavy", "", monLondon, CapabilityReq{})
+	primary, _, err := r.Resolve(tierHeavy, "", monLondon, CapabilityReq{})
 	require.NoError(t, err)
 	require.Equal(t, "override-model", primary.Model, "London-zone window must activate at 09:30 London")
 
 	// Monday 08:30 London — before the window → global fallback.
 	beforeLondon := time.Date(2026, time.August, 10, 8, 30, 0, 0, lon)
-	primary, _, err = r.Resolve("heavy", "", beforeLondon, CapabilityReq{})
+	primary, _, err = r.Resolve(tierHeavy, "", beforeLondon, CapabilityReq{})
 	require.NoError(t, err)
 	require.Equal(t, "global-model", primary.Model, "08:30 London must skip the 09:00 window")
 }
@@ -218,7 +218,7 @@ func TestResolveCapabilityProfileAttached(t *testing.T) {
 
 	now := ny(2026, time.August, 16, 12, 0) // Sunday noon → global table
 
-	for _, tier := range []string{"heavy", "good", "light"} {
+	for _, tier := range []string{tierHeavy, "good", tierLight} {
 		primary, fallbacks, err := r.Resolve(tier, "myproj", now, CapabilityReq{})
 		require.NoError(t, err)
 

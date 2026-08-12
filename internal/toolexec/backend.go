@@ -160,7 +160,7 @@ func BackendsFromConfig(cfg map[string]string) (map[string]Backend, error) {
 				return nil, err
 			}
 
-			out["WebFetch"] = b
+			out[toolWebFetch] = b
 		default:
 			// Ignore unrelated keys (the config map may carry other entries).
 		}

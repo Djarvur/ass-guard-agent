@@ -18,12 +18,12 @@ func TestDetect_NoDrift(t *testing.T) {
 	t.Parallel()
 
 	m := manifest(
-		profile.CoverageEntry{Path: "request.body.system", Tier: profile.Tier1ByteFaithful, ObservedCount: 3},
-		profile.CoverageEntry{Path: "request.headers", Tier: profile.Tier2Structural, ObservedCount: 12},
+		profile.CoverageEntry{Path: covRequestBodySystem, Tier: profile.Tier1ByteFaithful, ObservedCount: 3},
+		profile.CoverageEntry{Path: covRequestHeaders, Tier: profile.Tier2Structural, ObservedCount: 12},
 	)
 	captured := map[string]any{
-		"request.body.system": []any{map[string]any{"type": "text"}, map[string]any{}, map[string]any{}}, // length 3
-		"request.headers": map[string]any{ // 12 names
+		covRequestBodySystem: []any{map[string]any{"type": "text"}, map[string]any{}, map[string]any{}}, // length 3
+		covRequestHeaders: map[string]any{ // 12 names
 			"h1": "x", "h2": "x", "h3": "x", "h4": "x", "h5": "x", "h6": "x",
 			"h7": "x", "h8": "x", "h9": "x", "h10": "x", "h11": "x", "h12": "x",
 		},
@@ -41,10 +41,10 @@ func TestDetect_MissingTier2Header(t *testing.T) {
 	t.Parallel()
 
 	m := manifest(
-		profile.CoverageEntry{Path: "request.headers", Tier: profile.Tier2Structural, ObservedCount: 12},
+		profile.CoverageEntry{Path: covRequestHeaders, Tier: profile.Tier2Structural, ObservedCount: 12},
 	)
 	captured := map[string]any{
-		"request.headers": map[string]any{"User-Agent": "x"}, // 1, not 12
+		covRequestHeaders: map[string]any{"User-Agent": "x"}, // 1, not 12
 	}
 
 	got := drift.Detect(m, captured)
@@ -81,7 +81,7 @@ func TestDetect_Tier2ValueVarianceNotFlagged(t *testing.T) {
 	t.Parallel()
 
 	m := manifest(
-		profile.CoverageEntry{Path: "request.headers", Tier: profile.Tier2Structural, ObservedCount: 12},
+		profile.CoverageEntry{Path: covRequestHeaders, Tier: profile.Tier2Structural, ObservedCount: 12},
 	)
 	// 12 header NAMES present (values differ from the manifest's snapshot — fine).
 	headers := map[string]any{}
@@ -91,7 +91,7 @@ func TestDetect_Tier2ValueVarianceNotFlagged(t *testing.T) {
 		headers[n] = "different-value-per-session"
 	}
 
-	captured := map[string]any{"request.headers": headers}
+	captured := map[string]any{covRequestHeaders: headers}
 
 	got := drift.Detect(m, captured)
 	if len(got) != 0 {
@@ -104,10 +104,10 @@ func TestDetect_ChangedTier1SystemBlock(t *testing.T) {
 	t.Parallel()
 
 	m := manifest(
-		profile.CoverageEntry{Path: "request.body.system", Tier: profile.Tier1ByteFaithful, ObservedCount: 3},
+		profile.CoverageEntry{Path: covRequestBodySystem, Tier: profile.Tier1ByteFaithful, ObservedCount: 3},
 	)
 	captured := map[string]any{
-		"request.body.system": []any{map[string]any{"type": "text"}}, // 1, not 3
+		covRequestBodySystem: []any{map[string]any{"type": "text"}}, // 1, not 3
 	}
 
 	got := drift.Detect(m, captured)

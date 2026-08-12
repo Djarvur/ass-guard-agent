@@ -62,7 +62,7 @@ func (p *scriptedACPProvider) Stream(ctx context.Context, _ profile.Profile, _ [
 
 		if resp.text != "" {
 			select {
-			case ch <- provider.StreamChunk{Type: "text", Text: resp.text}:
+			case ch <- provider.StreamChunk{Type: blockText, Text: resp.text}:
 			case <-ctx.Done():
 				return
 			}
@@ -79,7 +79,7 @@ func (p *scriptedACPProvider) Stream(ctx context.Context, _ profile.Profile, _ [
 
 		fin := resp.finish
 		if fin == "" {
-			fin = "end_turn"
+			fin = stopEndTurn
 		}
 
 		select {
@@ -115,7 +115,7 @@ func (n *noopEmitter) AgentMessageChunk(_, text string) error {
 func fakeProfileACP() profile.Profile {
 	return profile.Profile{
 		Name:   "test",
-		System: []profile.TextBlock{{Type: "text", Text: "you are a test agent"}},
+		System: []profile.TextBlock{{Type: blockText, Text: "you are a test agent"}},
 	}
 }
 
@@ -155,16 +155,16 @@ func newEngineRunner(t *testing.T, script ...scriptedResp) (*sessionTurnRunner, 
 func TestEndToEnd_ZeroContinue(t *testing.T) {
 	t.Parallel()
 	r, prov, dir := newEngineRunner(t,
-		scriptedResp{text: "done. ## Implementation Complete — ready for review", finish: "end_turn"},
-		scriptedResp{text: "the work is finished, no further handoff signal", finish: "end_turn"},
+		scriptedResp{text: "done. ## Implementation Complete — ready for review", finish: stopEndTurn},
+		scriptedResp{text: "the work is finished, no further handoff signal", finish: stopEndTurn},
 	)
 
-	stop, err := r.Run(context.Background(), "sess-e2e-1", &noopEmitter{}, []acp.ContentBlock{{Type: "text", Text: "implement the spec"}})
+	stop, err := r.Run(context.Background(), "sess-e2e-1", &noopEmitter{}, []acp.ContentBlock{{Type: blockText, Text: "implement the spec"}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
 	}
 
-	if stop != "end_turn" {
+	if stop != stopEndTurn {
 		t.Errorf("stop = %q; want end_turn", stop)
 	}
 	// The engine continued once: 2 provider Stream calls (the user turn + one
@@ -197,15 +197,15 @@ func TestEndToEnd_ZeroContinue(t *testing.T) {
 func TestEndToEnd_StructuralSafety(t *testing.T) {
 	t.Parallel()
 	r, prov, _ := newEngineRunner(t,
-		scriptedResp{text: "the agent did something with no handoff signal at all", finish: "end_turn"},
+		scriptedResp{text: "the agent did something with no handoff signal at all", finish: stopEndTurn},
 	)
 
-	stop, err := r.Run(context.Background(), "sess-e2e-2", &noopEmitter{}, []acp.ContentBlock{{Type: "text", Text: "hi"}})
+	stop, err := r.Run(context.Background(), "sess-e2e-2", &noopEmitter{}, []acp.ContentBlock{{Type: blockText, Text: "hi"}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
 	}
 
-	if stop != "end_turn" {
+	if stop != stopEndTurn {
 		t.Errorf("stop = %q; want end_turn", stop)
 	}
 
@@ -227,13 +227,13 @@ func TestEndToEnd_ToolSignalContinue(t *testing.T) {
 		// The tool_use turn loops inside sess.Prompt (stub execution) then the
 		// next stream call emits end_turn with the handoff tool recorded. Provide
 		// a final end_turn so the inner tool loop exits.
-		scriptedResp{text: "stage complete, no more signals", finish: "end_turn"},
+		scriptedResp{text: "stage complete, no more signals", finish: stopEndTurn},
 	)
 	// Cap the turn so a runaway doesn't hang the test.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	stop, err := r.Run(ctx, "sess-e2e-3", &noopEmitter{}, []acp.ContentBlock{{Type: "text", Text: "go"}})
+	stop, err := r.Run(ctx, "sess-e2e-3", &noopEmitter{}, []acp.ContentBlock{{Type: blockText, Text: "go"}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
 	}
@@ -255,7 +255,7 @@ func TestEndToEnd_EngineDisabledBackwardCompat(t *testing.T) {
 
 	bus := event.NewBus()
 	prov := &scriptedACPProvider{}
-	prov.queue(scriptedResp{text: "unmatched text that the engine WOULD have ignored anyway", finish: "end_turn"})
+	prov.queue(scriptedResp{text: "unmatched text that the engine WOULD have ignored anyway", finish: stopEndTurn})
 
 	r := &sessionTurnRunner{
 		bus:          bus,
@@ -266,12 +266,12 @@ func TestEndToEnd_EngineDisabledBackwardCompat(t *testing.T) {
 		// engineEnabled stays false — no setupEngine call.
 	}
 
-	stop, err := r.Run(context.Background(), "sess-noeng", &noopEmitter{}, []acp.ContentBlock{{Type: "text", Text: "hi"}})
+	stop, err := r.Run(context.Background(), "sess-noeng", &noopEmitter{}, []acp.ContentBlock{{Type: blockText, Text: "hi"}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
 	}
 
-	if stop != "end_turn" {
+	if stop != stopEndTurn {
 		t.Errorf("stop = %q; want end_turn", stop)
 	}
 
@@ -312,18 +312,17 @@ func TestRunACPServe_NoEngineFlag(t *testing.T) {
 // engine after exactly ONE provider turn — the queued continue-injections are
 // drained (none run). The ctx here stands in for the ACP turnCtx that
 // handleSessionCancel cancels.
-func TestCancelDrainsInjections(t *testing.T) {
-	t.Parallel()
+func TestCancelDrainsInjections(t *testing.T) { //nolint:paralleltest // timing-sensitive cancel-drain flakes under parallel/-race load
 	// Always-matching: every turn emits the impl-complete pattern (would loop to
 	// the budget). We cancel after the first turn.
 	r, prov, _ := newEngineRunner(t,
-		scriptedResp{text: "## Implementation Complete — ready for review", finish: "end_turn"},
-		scriptedResp{text: "## Implementation Complete — ready for review", finish: "end_turn"},
+		scriptedResp{text: implementationCompleteMsg, finish: stopEndTurn},
+		scriptedResp{text: implementationCompleteMsg, finish: stopEndTurn},
 	)
 	ctx, cancel := context.WithCancel(context.Background())
 	emitter := &cancelAfterChunkEmitter{cancelAfter: 1, cancel: cancel}
 
-	stop, err := r.Run(ctx, "sess-cancel", emitter, []acp.ContentBlock{{Type: "text", Text: "go"}})
+	stop, err := r.Run(ctx, "sess-cancel", emitter, []acp.ContentBlock{{Type: blockText, Text: "go"}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
 	}
@@ -332,7 +331,7 @@ func TestCancelDrainsInjections(t *testing.T) {
 		t.Errorf("provider Stream calls = %d; want 1 (queued injection drained on cancel)", got)
 	}
 
-	if stop != "cancelled" && stop != "end_turn" {
+	if stop != "cancelled" && stop != stopEndTurn {
 		t.Errorf("stop = %q; want cancelled or end_turn", stop)
 	}
 }
@@ -364,12 +363,12 @@ func TestE2E_Criterion1_ZeroContinueAndSafety(t *testing.T) {
 	t.Run("zeroContinue", func(t *testing.T) {
 		t.Parallel()
 		r, prov, _ := newEngineRunner(t,
-			scriptedResp{text: "## Implementation Complete — ready for review", finish: "end_turn"},
-			scriptedResp{text: "final, no signal", finish: "end_turn"},
+			scriptedResp{text: implementationCompleteMsg, finish: stopEndTurn},
+			scriptedResp{text: "final, no signal", finish: stopEndTurn},
 		)
 
-		stop, err := r.Run(context.Background(), "c1a", &noopEmitter{}, []acp.ContentBlock{{Type: "text", Text: "go"}})
-		if err != nil || stop != "end_turn" {
+		stop, err := r.Run(context.Background(), "c1a", &noopEmitter{}, []acp.ContentBlock{{Type: blockText, Text: "go"}})
+		if err != nil || stop != stopEndTurn {
 			t.Fatalf("Run = (%q,%v)", stop, err)
 		}
 
@@ -380,10 +379,10 @@ func TestE2E_Criterion1_ZeroContinueAndSafety(t *testing.T) {
 	t.Run("structuralSafety", func(t *testing.T) {
 		t.Parallel()
 		r, prov, _ := newEngineRunner(t,
-			scriptedResp{text: "unmatched output", finish: "end_turn"},
+			scriptedResp{text: "unmatched output", finish: stopEndTurn},
 		)
 
-		_, err := r.Run(context.Background(), "c1b", &noopEmitter{}, []acp.ContentBlock{{Type: "text", Text: "hi"}})
+		_, err := r.Run(context.Background(), "c1b", &noopEmitter{}, []acp.ContentBlock{{Type: blockText, Text: "hi"}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -402,7 +401,7 @@ func TestE2E_Criterion1_ZeroContinueAndSafety(t *testing.T) {
 func TestE2E_Criterion4_LearningAskOnce(t *testing.T) {
 	t.Parallel()
 	r, prov, _ := newEngineRunner(t,
-		scriptedResp{text: "unmatched launch situation: webfetch needed", finish: "end_turn"},
+		scriptedResp{text: "unmatched launch situation: webfetch needed", finish: stopEndTurn},
 	)
 	// The seeded pattern table does NOT match this text, so Decide returns
 	// ActionNothing (not ask) — the learning ask path fires only when the engine
@@ -433,8 +432,8 @@ func TestE2E_Criterion4_LearningAskOnce(t *testing.T) {
 		t.Errorf("after 3 confirms Lookup = %+v ok=%v; want active", e, ok)
 	}
 	// Sanity: the scenario still completes structurally safely (no ask loop).
-	stop, err := r.Run(context.Background(), "c4", &noopEmitter{}, []acp.ContentBlock{{Type: "text", Text: "go"}})
-	if err != nil || stop != "end_turn" {
+	stop, err := r.Run(context.Background(), "c4", &noopEmitter{}, []acp.ContentBlock{{Type: blockText, Text: "go"}})
+	if err != nil || stop != stopEndTurn {
 		t.Fatalf("Run = (%q,%v)", stop, err)
 	}
 

@@ -179,7 +179,7 @@ func (b *CircuitBreaker) transition(to breakerState, now time.Time, reason strin
 
 	b.log.Warn("scheduler: circuit breaker transition",
 		"provider", b.key.Provider,
-		"model", b.key.Model,
+		keyModel, b.key.Model,
 		"from", from.String(),
 		"to", to.String(),
 		"reason", reason,

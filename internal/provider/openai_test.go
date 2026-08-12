@@ -63,7 +63,7 @@ func TestOpenAIProvider_SendParsesToolCalls(t *testing.T) {
 		capturedBody = body
 
 		w.Header().Set("content-type", "application/json")
-		_, _ = io.WriteString(w, cannedOpenAIToolCallsResponse("synth_tool_a", `{"path":"go.mod"}`))
+		_, _ = io.WriteString(w, cannedOpenAIToolCallsResponse(synthToolA, `{"path":"go.mod"}`))
 	}))
 	defer srv.Close()
 
@@ -73,7 +73,7 @@ func TestOpenAIProvider_SendParsesToolCalls(t *testing.T) {
 		provider.WithOpenAIBaseURL(srv.URL+"/v1"),
 	)
 
-	resp, err := p.Send(context.Background(), prof, []shaper.Message{{Role: "user", Content: "x"}})
+	resp, err := p.Send(context.Background(), prof, []shaper.Message{{Role: roleUser, Content: "x"}})
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestOpenAIProvider_SendParsesToolCalls(t *testing.T) {
 		t.Fatalf("ToolCalls = %d, want 1", len(resp.ToolCalls))
 	}
 
-	if resp.ToolCalls[0].Name != "synth_tool_a" {
+	if resp.ToolCalls[0].Name != synthToolA {
 		t.Errorf("Name = %q", resp.ToolCalls[0].Name)
 	}
 
@@ -91,8 +91,8 @@ func TestOpenAIProvider_SendParsesToolCalls(t *testing.T) {
 		t.Fatalf("Input not valid JSON: %v", err)
 	}
 
-	if in["path"] != "go.mod" {
-		t.Errorf("Input.path = %v", in["path"])
+	if in[keyPath] != goModFile {
+		t.Errorf("Input.path = %v", in[keyPath])
 	}
 	// The Chat Completions tools[].function wrapper must be in the request body.
 	if !strings.Contains(string(capturedBody), `"function":{`) {
@@ -132,7 +132,7 @@ func TestOpenAIProvider_NoAPIKeyErrors(t *testing.T) {
 
 	p := provider.NewOpenAIProvider(provider.WithOpenAIBaseURL("http://must-not-be-called.invalid"))
 
-	_, err := p.Send(context.Background(), loadProfile(t, "minimal"), []shaper.Message{{Role: "user", Content: "x"}})
+	_, err := p.Send(context.Background(), loadProfile(t, "minimal"), []shaper.Message{{Role: roleUser, Content: "x"}})
 	if err == nil {
 		t.Fatal("nil error with no API key; want non-nil")
 	}

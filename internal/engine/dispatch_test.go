@@ -72,7 +72,7 @@ func TestDispatch_HookCallsDispatcher(t *testing.T) {
 	eng := &engine.Engine{Bus: bus, Dispatcher: d}
 	collect := captureEvents(t, bus)
 
-	stop, err := eng.Observe(context.Background(), runner, hookTable{}, []session.ContentBlock{{Type: "text", Text: "go"}})
+	stop, err := eng.Observe(context.Background(), runner, hookTable{}, []session.ContentBlock{{Type: blockText, Text: "go"}})
 	if err != nil {
 		t.Fatalf("Observe err = %v", err)
 	}
@@ -109,11 +109,11 @@ func TestDispatch_AskWithStoredAnswerContinues(t *testing.T) {
 		{TurnID: "a2", Text: "second"},
 	}}
 	bus := event.NewBus()
-	d := &fakeDispatcher{askAnswer: "continue"}
+	d := &fakeDispatcher{askAnswer: stopContinue}
 	eng := &engine.Engine{Bus: bus, Dispatcher: d}
 	collect := captureEvents(t, bus)
 
-	stop, err := eng.Observe(context.Background(), runner, table, []session.ContentBlock{{Type: "text", Text: "go"}})
+	stop, err := eng.Observe(context.Background(), runner, table, []session.ContentBlock{{Type: blockText, Text: "go"}})
 	if err != nil {
 		t.Fatalf("Observe err = %v", err)
 	}
@@ -163,7 +163,7 @@ func TestDispatch_AskPendingBreaksLoop(t *testing.T) {
 	eng := &engine.Engine{Bus: bus, Dispatcher: d}
 	collect := captureEvents(t, bus)
 
-	stop, err := eng.Observe(context.Background(), runner, askTable{}, []session.ContentBlock{{Type: "text", Text: "go"}})
+	stop, err := eng.Observe(context.Background(), runner, askTable{}, []session.ContentBlock{{Type: blockText, Text: "go"}})
 	if err != nil {
 		t.Fatalf("Observe err = %v", err)
 	}
@@ -193,14 +193,14 @@ func TestDispatch_NilDispatcherDegradesToNothing(t *testing.T) {
 	bus := event.NewBus()
 	eng := &engine.Engine{Bus: bus} // no Dispatcher
 	collect := captureEvents(t, bus)
-	_, _ = eng.Observe(context.Background(), runner, hookTable{}, []session.ContentBlock{{Type: "text", Text: "go"}})
+	_, _ = eng.Observe(context.Background(), runner, hookTable{}, []session.ContentBlock{{Type: blockText, Text: "go"}})
 
 	events := collect()
 	if len(events) == 0 {
 		t.Fatal("no events")
 	}
 
-	if events[0].Action != "nothing" {
+	if events[0].Action != fixtureNothing {
 		t.Errorf("nil-dispatcher hook degraded to %q; want nothing", events[0].Action)
 	}
 }

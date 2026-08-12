@@ -200,7 +200,7 @@ var statusReasons = map[int]string{
 	413: "payload too large",
 	422: "unprocessable request",
 	425: "too early",
-	429: "rate limited",
+	429: rateLimited,
 	500: "server error",
 	502: "bad gateway",
 	503: "service unavailable",

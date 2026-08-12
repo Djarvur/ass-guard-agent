@@ -58,7 +58,7 @@ func TestSchedulingValidateInvalid(t *testing.T) {
 // the resolved model.
 func TestSchedulingResolveJSON(t *testing.T) {
 	t.Parallel()
-	stdout, stderr, err := runSchedulingCmd(t, "resolve", "--tier", "heavy",
+	stdout, stderr, err := runSchedulingCmd(t, "resolve", "--tier", tierHeavy,
 		"--config", validSchedulingCfg,
 		"--at", "2026-08-16T12:00:00-04:00", // Sunday noon NY → global table → glm-5.2
 		"--json")
@@ -74,7 +74,7 @@ func TestSchedulingResolveJSON(t *testing.T) {
 	}
 
 	require.NoError(t, json.Unmarshal([]byte(stdout), &got))
-	require.Equal(t, "heavy", got.Tier)
+	require.Equal(t, tierHeavy, got.Tier)
 	require.Equal(t, "glm-5.2", got.Model, "Sunday noon resolves the global heavy primary")
 	require.Equal(t, "anthropic", got.Provider)
 	require.Equal(t, "anthropic", got.Shape)
@@ -84,13 +84,13 @@ func TestSchedulingResolveJSON(t *testing.T) {
 // to stdout (the human form goes to stderr — transport discipline, pitfall 9).
 func TestSchedulingResolveHumanGoesToStderr(t *testing.T) {
 	t.Parallel()
-	stdout, stderr, err := runSchedulingCmd(t, "resolve", "--tier", "heavy",
+	stdout, stderr, err := runSchedulingCmd(t, "resolve", "--tier", tierHeavy,
 		"--config", validSchedulingCfg,
 		"--at", "2026-08-16T12:00:00-04:00")
 	require.NoError(t, err)
 	require.Empty(t, stdout, "human-readable resolve must NOT write to stdout (transport discipline)")
 	require.NotEmpty(t, stderr, "human-readable form goes to stderr")
-	require.Contains(t, stderr, "heavy", "stderr shows the tier")
+	require.Contains(t, stderr, tierHeavy, "stderr shows the tier")
 	require.Contains(t, stderr, "glm-5.2", "stderr shows the resolved model")
 }
 
@@ -99,7 +99,7 @@ func TestSchedulingResolveHumanGoesToStderr(t *testing.T) {
 // honored through the CLI.
 func TestSchedulingResolvePeakWindow(t *testing.T) {
 	t.Parallel()
-	stdout, _, err := runSchedulingCmd(t, "resolve", "--tier", "heavy",
+	stdout, _, err := runSchedulingCmd(t, "resolve", "--tier", tierHeavy,
 		"--config", validSchedulingCfg,
 		"--at", "2026-08-10T10:00:00-04:00", // Monday 10:00 NY → peak → minimax-m3
 		"--json")

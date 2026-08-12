@@ -31,12 +31,12 @@ type conformanceCase struct {
 func TestConformance_BothAdapters(t *testing.T) {
 	t.Parallel()
 	prof := loadProfile(t, "minimal")
-	msgs := []shaper.Message{{Role: "user", Content: "do the thing"}}
+	msgs := []shaper.Message{{Role: roleUser, Content: "do the thing"}}
 
 	// Anthropic arm.
 	antSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "text/event-stream")
-		_, _ = io.WriteString(w, cannedAnthropicToolUseResponse("synth_tool_a", map[string]any{"path": "go.mod"}))
+		_, _ = io.WriteString(w, cannedAnthropicToolUseResponse(synthToolA, map[string]any{keyPath: goModFile}))
 	}))
 	defer antSrv.Close()
 
@@ -48,7 +48,7 @@ func TestConformance_BothAdapters(t *testing.T) {
 	// OpenAI arm.
 	oaiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "application/json")
-		_, _ = io.WriteString(w, cannedOpenAIToolCallsResponse("synth_tool_a", `{"path":"go.mod"}`))
+		_, _ = io.WriteString(w, cannedOpenAIToolCallsResponse(synthToolA, `{"path":"go.mod"}`))
 	}))
 	defer oaiSrv.Close()
 
@@ -58,8 +58,8 @@ func TestConformance_BothAdapters(t *testing.T) {
 	)
 
 	cases := []conformanceCase{
-		{name: "anthropic", provider: ant, wantName: "synth_tool_a", wantArgs: map[string]any{"path": "go.mod"}},
-		{name: "openai", provider: oai, wantName: "synth_tool_a", wantArgs: map[string]any{"path": "go.mod"}},
+		{name: "anthropic", provider: ant, wantName: synthToolA, wantArgs: map[string]any{keyPath: goModFile}},
+		{name: "openai", provider: oai, wantName: synthToolA, wantArgs: map[string]any{keyPath: goModFile}},
 	}
 	for _, c := range cases { //nolint:paralleltest // subtests share parent-scoped httptest servers closed on parent return
 		t.Run(c.name, func(t *testing.T) {
@@ -81,8 +81,8 @@ func TestConformance_BothAdapters(t *testing.T) {
 				t.Fatalf("Input not valid JSON: %v", err)
 			}
 
-			if in["path"] != "go.mod" {
-				t.Errorf("Input.path = %v, want go.mod", in["path"])
+			if in[keyPath] != goModFile {
+				t.Errorf("Input.path = %v, want go.mod", in[keyPath])
 			}
 
 			if len(resp.Raw) == 0 {

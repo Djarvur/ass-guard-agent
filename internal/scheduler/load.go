@@ -300,7 +300,7 @@ func Validate(cfg *Config) error {
 
 	for _, slug := range sortedKeys(cfg.Providers) {
 		p := cfg.Providers[slug]
-		if p.Shape != "anthropic" && p.Shape != "openai" {
+		if p.Shape != providerAnthropic && p.Shape != providerOpenAI {
 			v = append(v, fmt.Sprintf("provider %q: unknown shape %q (want \"anthropic\" or \"openai\")", slug, p.Shape))
 		}
 	}

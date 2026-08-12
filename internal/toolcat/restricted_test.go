@@ -36,9 +36,9 @@ func TestRestrictedExecutorAllowedToolDelegates(t *testing.T) {
 	t.Parallel()
 
 	inner := &fakeExecutor{result: json.RawMessage(`{"v":"ran"}`)}
-	r := NewRestrictedExecutor(inner, []string{"Read", "Grep"})
+	r := NewRestrictedExecutor(inner, []string{toolRead, toolGrep})
 
-	out, err := r.Execute(context.Background(), "Read", json.RawMessage(`{}`))
+	out, err := r.Execute(context.Background(), toolRead, json.RawMessage(`{}`))
 	if err != nil {
 		t.Fatalf("allowed Read returned error: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestRestrictedExecutorAllowedToolDelegates(t *testing.T) {
 		t.Errorf("allowed Read output = %s; want {\"v\":\"ran\"}", string(out))
 	}
 
-	if len(inner.called) != 1 || inner.called[0] != "Read" {
+	if len(inner.called) != 1 || inner.called[0] != toolRead {
 		t.Errorf("inner executor called = %v; want [Read]", inner.called)
 	}
 }
@@ -59,9 +59,9 @@ func TestRestrictedExecutorDisallowedToolErrors(t *testing.T) {
 	t.Parallel()
 
 	inner := &fakeExecutor{}
-	r := NewRestrictedExecutor(inner, []string{"Read", "Grep"})
+	r := NewRestrictedExecutor(inner, []string{toolRead, toolGrep})
 
-	_, err := r.Execute(context.Background(), "Bash", json.RawMessage(`{}`))
+	_, err := r.Execute(context.Background(), toolBash, json.RawMessage(`{}`))
 	if err == nil {
 		t.Fatal("disallowed Bash returned nil error; want not-available error")
 	}
@@ -83,7 +83,7 @@ func TestRestrictedExecutorEmptyAllowedSet(t *testing.T) {
 	inner := &fakeExecutor{}
 	r := NewRestrictedExecutor(inner, nil)
 
-	for _, name := range []string{"Read", "Bash", "Write"} {
+	for _, name := range []string{toolRead, toolBash, "Write"} {
 		_, err := r.Execute(context.Background(), name, json.RawMessage(`{}`))
 		if err == nil {
 			t.Errorf("tool %q with empty allowed set returned nil error; want not-available", name)
@@ -103,9 +103,9 @@ func TestRestrictedExecutorPropagatesInnerError(t *testing.T) {
 
 	innerErr := errors.New("tool internal failure")
 	inner := &fakeExecutor{execErr: innerErr}
-	r := NewRestrictedExecutor(inner, []string{"Read"})
+	r := NewRestrictedExecutor(inner, []string{toolRead})
 
-	_, err := r.Execute(context.Background(), "Read", json.RawMessage(`{}`))
+	_, err := r.Execute(context.Background(), toolRead, json.RawMessage(`{}`))
 	if !errors.Is(err, innerErr) {
 		t.Errorf("allowed Read error = %v; want it to wrap/propagate %v", err, innerErr)
 	}

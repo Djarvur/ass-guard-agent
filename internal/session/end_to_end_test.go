@@ -23,8 +23,8 @@ func TestEndToEndSession(t *testing.T) {
 	bus := event.NewBus()
 	m := newTestManager(t, "sess-e2e")
 	script := []provider.Response{
-		{FinishReason: "tool_use", ToolCalls: []provider.ToolCall{{Name: "Task", Input: json.RawMessage(`{"prompt":"research"}`)}}},
-		{FinishReason: "end_turn"},
+		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{{Name: toolTask, Input: json.RawMessage(`{"prompt":"research"}`)}}},
+		{FinishReason: stopEndTurn},
 	}
 	fp := &reconProvider{script: script, bus: bus}
 	s := &Session{
@@ -44,13 +44,13 @@ func TestEndToEndSession(t *testing.T) {
 	stopCh := make(chan string, 1)
 
 	go func() {
-		st, _ := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "do research"}})
+		st, _ := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "do research"}})
 		stopCh <- st
 	}()
 
 	select {
 	case stop := <-stopCh:
-		if stop != "end_turn" {
+		if stop != stopEndTurn {
 			t.Errorf("stopReason = %q; want end_turn", stop)
 		}
 	case <-time.After(5 * time.Second):

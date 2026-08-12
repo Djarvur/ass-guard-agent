@@ -111,35 +111,35 @@ func TestBackendsFromConfig_Select(t *testing.T) {
 	t.Run("both http", func(t *testing.T) {
 		t.Parallel()
 
-		got, err := toolexec.BackendsFromConfig(map[string]string{"websearch": "http", "webfetch": "http"})
+		got, err := toolexec.BackendsFromConfig(map[string]string{toolWebsearch: schemeHTTP, "webfetch": schemeHTTP})
 		if err != nil {
 			t.Fatalf("err = %v", err)
 		}
 
-		if got["WebSearch"].Name() != "http" || got["WebFetch"].Name() != "http" {
-			t.Errorf("names = %q,%q; want http,http", got["WebSearch"].Name(), got["WebFetch"].Name())
+		if got["WebSearch"].Name() != schemeHTTP || got[toolWebFetch].Name() != schemeHTTP {
+			t.Errorf("names = %q,%q; want http,http", got["WebSearch"].Name(), got[toolWebFetch].Name())
 		}
 	})
 	t.Run("firecrawl websearch", func(t *testing.T) {
 		t.Parallel()
 
-		got, err := toolexec.BackendsFromConfig(map[string]string{"websearch": "firecrawl"})
+		got, err := toolexec.BackendsFromConfig(map[string]string{toolWebsearch: toolFirecrawl})
 		if err != nil {
 			t.Fatalf("err = %v", err)
 		}
 
-		if got["WebSearch"].Name() != "firecrawl" {
+		if got["WebSearch"].Name() != toolFirecrawl {
 			t.Errorf("WebSearch = %q; want firecrawl", got["WebSearch"].Name())
 		}
 
-		if _, ok := got["WebFetch"]; ok {
+		if _, ok := got[toolWebFetch]; ok {
 			t.Errorf("WebFetch unexpectedly set; want absent (not in config)")
 		}
 	})
 	t.Run("unknown backend", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := toolexec.BackendsFromConfig(map[string]string{"websearch": "exfiltrate-evil"})
+		_, err := toolexec.BackendsFromConfig(map[string]string{toolWebsearch: "exfiltrate-evil"})
 		if err == nil {
 			t.Fatal("err = nil; want ConfigError for unknown backend")
 		}
@@ -161,8 +161,8 @@ func TestBackendsFromConfig_Select(t *testing.T) {
 func TestBackend_SwappableWithoutCodeChange(t *testing.T) {
 	t.Parallel()
 
-	httpMap, _ := toolexec.BackendsFromConfig(map[string]string{"websearch": "http"})
-	fireMap, _ := toolexec.BackendsFromConfig(map[string]string{"websearch": "firecrawl"})
+	httpMap, _ := toolexec.BackendsFromConfig(map[string]string{toolWebsearch: schemeHTTP})
+	fireMap, _ := toolexec.BackendsFromConfig(map[string]string{toolWebsearch: toolFirecrawl})
 	httpName := httpMap["WebSearch"].Name()
 
 	fireName := fireMap["WebSearch"].Name()

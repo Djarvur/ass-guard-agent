@@ -17,9 +17,9 @@ func TestLoadValid(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 
-	require.True(t, cfg.Models["glm-5.2"].Capabilities.ToolCalling, "glm-5.2 should have tool_calling")
-	require.Equal(t, "glm-5.2", cfg.Tiers["heavy"].Model)
-	require.Equal(t, []string{"minimax-m3", "glm-4.6"}, cfg.Tiers["heavy"].Fallback)
+	require.True(t, cfg.Models[modelGLM52].Capabilities.ToolCalling, "glm-5.2 should have tool_calling")
+	require.Equal(t, modelGLM52, cfg.Tiers[tierHeavy].Model)
+	require.Equal(t, []string{modelMinimaxM3, modelGLM46}, cfg.Tiers[tierHeavy].Fallback)
 }
 
 // TestLoadInvalidCapMismatch asserts D-10 rejects a config where a primary has a
@@ -35,7 +35,7 @@ func TestLoadInvalidCapMismatch(t *testing.T) {
 
 	require.ErrorAs(t, err, &cerr, "should be a *ConfigError")
 	msg := err.Error()
-	require.Contains(t, msg, "glm-5.2", "error must name the primary model")
+	require.Contains(t, msg, modelGLM52, "error must name the primary model")
 	require.Contains(t, msg, "haiku-cheap", "error must name the incompatible fallback")
 	require.Contains(t, msg, "tool_calling", "error must name the unmet capability")
 }
@@ -100,11 +100,11 @@ func TestLoadLayering(t *testing.T) {
 	require.NoError(t, err)
 	// Overlay wins for shared keys.
 	require.Equal(t, "Asia/Tokyo", cfg.Timezone, "overlay timezone should win")
-	require.Equal(t, "minimax-m3", cfg.Tiers["heavy"].Model, "overlay heavy.model should win")
+	require.Equal(t, modelMinimaxM3, cfg.Tiers[tierHeavy].Model, "overlay heavy.model should win")
 	// Base persists for base-only keys.
-	require.Equal(t, "glm-4.6", cfg.Tiers["good"].Model, "base good.model should persist")
+	require.Equal(t, modelGLM46, cfg.Tiers["good"].Model, "base good.model should persist")
 	// Deep merge: base's heavy.fallback survives the overlay's heavy.model change.
-	require.Equal(t, []string{"minimax-m3"}, cfg.Tiers["heavy"].Fallback, "base heavy.fallback should persist (deep merge)")
+	require.Equal(t, []string{modelMinimaxM3}, cfg.Tiers[tierHeavy].Fallback, "base heavy.fallback should persist (deep merge)")
 }
 
 // TestLoadEmbeddedDefault asserts Load() with no paths returns the embedded
@@ -114,6 +114,6 @@ func TestLoadEmbeddedDefault(t *testing.T) {
 
 	cfg, err := Load()
 	require.NoError(t, err)
-	require.Equal(t, "glm-5.2", cfg.Tiers["heavy"].Model)
-	require.Equal(t, "anthropic", cfg.Models["glm-5.2"].Provider)
+	require.Equal(t, modelGLM52, cfg.Tiers[tierHeavy].Model)
+	require.Equal(t, providerAnthropic, cfg.Models[modelGLM52].Provider)
 }

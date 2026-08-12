@@ -34,7 +34,7 @@ func newParityCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&suitePath, "suite", defaultSuitePath(), "curated divergence suite JSON (ignored if --from-rollout is set)")
 	cmd.Flags().StringVar(&fromRollout, "from-rollout", "", "generate the suite from a zcode rollout JSONL (same-session = matching system prompt + tools)")
-	cmd.Flags().StringVar(&profileName, "profile", "zcode", "profile to load for the ass-guard arm")
+	cmd.Flags().StringVar(&profileName, "profile", profileZcode, "profile to load for the ass-guard arm")
 	cmd.Flags().StringVar(&profilesDir, "profiles-dir", defaultProfilesDir(), "directory containing profile bundles")
 	cmd.Flags().StringVar(&resultsPath, "results", "parity-results.json", "results JSON output path")
 	cmd.Flags().StringVar(&surpriseCheck, "surprise-check", "", "optional second suite JSON to run after the curated suite passes")

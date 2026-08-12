@@ -13,9 +13,9 @@ func TestCapabilityZeroReqNoFiltering(t *testing.T) {
 	t.Parallel()
 	r := NewResolver(loadValid(t))
 	now := ny(2026, time.August, 16, 12, 0) // Sunday noon → global table
-	primary, fallbacks, err := r.Resolve("heavy", "myproj", now, CapabilityReq{})
+	primary, fallbacks, err := r.Resolve(tierHeavy, "myproj", now, CapabilityReq{})
 	require.NoError(t, err)
-	require.Equal(t, "glm-5.2", primary.Model, "zero capReq returns the primary")
+	require.Equal(t, modelGLM52, primary.Model, "zero capReq returns the primary")
 	require.Len(t, fallbacks, 2)
 }
 
@@ -26,17 +26,17 @@ func TestCapabilityNeedsToolsSkipsToolLessPrimary(t *testing.T) {
 	t.Parallel()
 
 	cfg := &Config{
-		Providers: map[string]ProviderConfig{"p": {BaseURL: "x", Shape: "anthropic"}},
+		Providers: map[string]ProviderConfig{"p": {BaseURL: "x", Shape: providerAnthropic}},
 		Models: map[string]ModelConfig{
-			"tool-less": {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, Streaming: true, ToolCalling: false}},
-			"tool-full": {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, Streaming: true, ToolCalling: true}},
+			tierToolLess: {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, Streaming: true, ToolCalling: false}},
+			tierToolFull: {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, Streaming: true, ToolCalling: true}},
 		},
-		Tiers: map[string]TierBinding{"heavy": {Model: "tool-less", Fallback: []string{"tool-full"}}},
+		Tiers: map[string]TierBinding{tierHeavy: {Model: tierToolLess, Fallback: []string{tierToolFull}}},
 	}
 	r := NewResolver(cfg)
-	primary, _, err := r.Resolve("heavy", "", time.Now(), CapabilityReq{NeedsTools: true})
+	primary, _, err := r.Resolve(tierHeavy, "", time.Now(), CapabilityReq{NeedsTools: true})
 	require.NoError(t, err)
-	require.Equal(t, "tool-full", primary.Model, "tool-less primary skipped → tool-full fallback chosen")
+	require.Equal(t, tierToolFull, primary.Model, "tool-less primary skipped → tool-full fallback chosen")
 }
 
 // TestCapabilityNeedsStreamingAndThinking: analogous skips for streaming + thinking.
@@ -44,7 +44,7 @@ func TestCapabilityNeedsStreamingAndThinking(t *testing.T) {
 	t.Parallel()
 
 	cfg := &Config{
-		Providers: map[string]ProviderConfig{"p": {BaseURL: "x", Shape: "anthropic"}},
+		Providers: map[string]ProviderConfig{"p": {BaseURL: "x", Shape: providerAnthropic}},
 		Models: map[string]ModelConfig{
 			"no-stream": {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, ToolCalling: true, Streaming: false, ExtendedThinking: true}},
 			"stream":    {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, ToolCalling: true, Streaming: true, ExtendedThinking: true}},
@@ -73,15 +73,15 @@ func TestCapabilityNoCandidateReturnsError(t *testing.T) {
 	t.Parallel()
 
 	cfg := &Config{
-		Providers: map[string]ProviderConfig{"p": {BaseURL: "x", Shape: "anthropic"}},
+		Providers: map[string]ProviderConfig{"p": {BaseURL: "x", Shape: providerAnthropic}},
 		Models: map[string]ModelConfig{
 			"a": {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, ToolCalling: false}},
 			"b": {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, ToolCalling: false}},
 		},
-		Tiers: map[string]TierBinding{"heavy": {Model: "a", Fallback: []string{"b"}}},
+		Tiers: map[string]TierBinding{tierHeavy: {Model: "a", Fallback: []string{"b"}}},
 	}
 	r := NewResolver(cfg)
-	_, _, err := r.Resolve("heavy", "", time.Now(), CapabilityReq{NeedsTools: true})
+	_, _, err := r.Resolve(tierHeavy, "", time.Now(), CapabilityReq{NeedsTools: true})
 	require.Error(t, err)
 
 	var cerr *CapabilityError
@@ -99,19 +99,19 @@ func TestCapabilityPreservesFallbackOrder(t *testing.T) {
 	t.Parallel()
 
 	cfg := &Config{
-		Providers: map[string]ProviderConfig{"p": {BaseURL: "x", Shape: "anthropic"}},
+		Providers: map[string]ProviderConfig{"p": {BaseURL: "x", Shape: providerAnthropic}},
 		Models: map[string]ModelConfig{
-			"nope1":      {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, ToolCalling: false}},
-			"yes-first":  {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, ToolCalling: true}},
-			"yes-second": {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, ToolCalling: true}},
+			"nope1":     {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, ToolCalling: false}},
+			"yes-first": {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, ToolCalling: true}},
+			yesSecond:   {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, ToolCalling: true}},
 		},
-		Tiers: map[string]TierBinding{"heavy": {Model: "nope1", Fallback: []string{"yes-first", "yes-second"}}},
+		Tiers: map[string]TierBinding{tierHeavy: {Model: "nope1", Fallback: []string{"yes-first", yesSecond}}},
 	}
 	r := NewResolver(cfg)
-	primary, remaining, err := r.Resolve("heavy", "", time.Now(), CapabilityReq{NeedsTools: true})
+	primary, remaining, err := r.Resolve(tierHeavy, "", time.Now(), CapabilityReq{NeedsTools: true})
 	require.NoError(t, err)
 	require.Equal(t, "yes-first", primary.Model, "first capable fallback wins (ordered)")
-	require.Equal(t, []string{"yes-second"}, []string{remaining[0].Model}, "remaining chain is the candidates after the chosen one")
+	require.Equal(t, []string{yesSecond}, []string{remaining[0].Model}, "remaining chain is the candidates after the chosen one")
 }
 
 // TestCapabilityDescribeReq covers the requirement-string helper.

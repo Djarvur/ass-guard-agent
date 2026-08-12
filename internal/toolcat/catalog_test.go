@@ -12,7 +12,7 @@ func TestCatalog_GetCoreTools(t *testing.T) {
 	t.Parallel()
 
 	c := toolcat.NewCatalog()
-	for _, name := range []string{"Read", "Bash", "Write", "Edit", "TodoWrite", "WebSearch"} {
+	for _, name := range []string{toolRead, toolBash, toolWrite, toolEdit, "TodoWrite", "WebSearch"} {
 		tl, ok := c.Get(name)
 		if !ok {
 			t.Errorf("Get(%q) returned ok=false; want a built-in entry", name)
@@ -32,12 +32,12 @@ func TestCatalog_Mutability(t *testing.T) {
 
 	c := toolcat.NewCatalog()
 
-	readTool, _ := c.Get("Read")
+	readTool, _ := c.Get(toolRead)
 	if readTool.IsMutating() {
 		t.Error("Read classified mutating; want read-only")
 	}
 
-	for _, name := range []string{"Bash", "Write", "Edit"} {
+	for _, name := range []string{toolBash, toolWrite, toolEdit} {
 		tl, _ := c.Get(name)
 		if !tl.IsMutating() {
 			t.Errorf("%s classified read-only; want mutating", name)
@@ -102,7 +102,7 @@ func TestCatalog_Names(t *testing.T) {
 	names := c.Names()
 
 	want := map[string]bool{
-		"Read": false, "Bash": false, "Edit": false, "Write": false,
+		toolRead: false, toolBash: false, toolEdit: false, toolWrite: false,
 		"TodoWrite": false, "TodoRead": false, "WebSearch": false, "WebFetch": false,
 		"Skill": false, "Agent": false, "AskUserQuestion": false,
 	}

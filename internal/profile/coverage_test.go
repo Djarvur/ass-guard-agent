@@ -13,12 +13,12 @@ func TestCheckCoverage_Tier1Drift(t *testing.T) {
 
 	manifest := profile.CoverageManifest{
 		Fields: []profile.CoverageEntry{
-			{Path: "request.body.tools", Tier: profile.Tier1ByteFaithful, ObservedCount: 103},
+			{Path: covRequestBodyTools, Tier: profile.Tier1ByteFaithful, ObservedCount: 103},
 			{Path: "request.body.system", Tier: profile.Tier1ByteFaithful, ObservedCount: 3},
 		},
 	}
 	fresh := map[string]int{
-		"request.body.tools":  102, // drifted
+		covRequestBodyTools:   102, // drifted
 		"request.body.system": 3,
 	}
 
@@ -31,7 +31,7 @@ func TestCheckCoverage_Tier1Drift(t *testing.T) {
 		t.Fatalf("len(diffs) = %d, want 1", len(diffs))
 	}
 
-	if diffs[0].Path != "request.body.tools" {
+	if diffs[0].Path != covRequestBodyTools {
 		t.Errorf("diff path = %q, want request.body.tools", diffs[0].Path)
 	}
 }
@@ -43,12 +43,12 @@ func TestCheckCoverage_Tier3Ignored(t *testing.T) {
 
 	manifest := profile.CoverageManifest{
 		Fields: []profile.CoverageEntry{
-			{Path: "request.body.tools", Tier: profile.Tier1ByteFaithful, ObservedCount: 103},
+			{Path: covRequestBodyTools, Tier: profile.Tier1ByteFaithful, ObservedCount: 103},
 			{Path: "response.usage.totalTokens", Tier: profile.Tier3Informational, ObservedCount: 5000},
 		},
 	}
 	fresh := map[string]int{
-		"request.body.tools":         103,
+		covRequestBodyTools:          103,
 		"response.usage.totalTokens": 9999, // TIER-3 variance — must NOT count
 	}
 
@@ -106,16 +106,16 @@ func TestCoverageManifest_Validate(t *testing.T) {
 
 	m := profile.CoverageManifest{
 		Fields: []profile.CoverageEntry{
-			{Path: "request.body.tools", Tier: profile.Tier1ByteFaithful, ObservedCount: 103},
+			{Path: covRequestBodyTools, Tier: profile.Tier1ByteFaithful, ObservedCount: 103},
 		},
 	}
 
-	err := m.Validate(map[string]int{"request.body.tools": 103})
+	err := m.Validate(map[string]int{covRequestBodyTools: 103})
 	if err != nil {
 		t.Errorf("matching capture failed Validate: %v", err)
 	}
 
-	err = m.Validate(map[string]int{"request.body.tools": 50})
+	err = m.Validate(map[string]int{covRequestBodyTools: 50})
 	if err == nil {
 		t.Error("drifted capture passed Validate; want error")
 	}

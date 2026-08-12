@@ -90,7 +90,7 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 		if err := ctx.Err(); err != nil {
 			s.recordCanceled(turnID, "context cancelled before turn step")
 
-			return "cancelled", nil
+			return stopCancelled, nil
 		}
 		// Step 1: project the lean window (D-01/D-02).
 		messages, err := s.Projector.Project(turnID)
@@ -110,7 +110,7 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 			if err != nil {
 				s.recordCanceled(turnID, "semaphore acquire cancelled")
 
-				return "cancelled", nil
+				return stopCancelled, nil
 			}
 		}
 
@@ -123,7 +123,7 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 			if ctx.Err() != nil {
 				s.recordCanceled(turnID, "context cancelled during stream")
 
-				return "cancelled", nil
+				return stopCancelled, nil
 			}
 
 			s.appendError(turnID, "provider", streamErr, false)
@@ -257,13 +257,13 @@ func (s *Session) streamAndEmit(ctx context.Context, turnID string, messages []p
 		}
 
 		switch chunk.Type {
-		case "text":
+		case blockText:
 			sb.WriteString(chunk.Text)
 
 			if s.Bus != nil && chunk.Text != "" {
 				s.Bus.Publish(event.AgentMessageChunk{TurnID: turnID, MessageID: turnID, Content: chunk.Text})
 			}
-		case "tool_use":
+		case blockToolUse:
 			if chunk.ToolCall != nil {
 				tc := *chunk.ToolCall
 
@@ -276,7 +276,7 @@ func (s *Session) streamAndEmit(ctx context.Context, turnID string, messages []p
 			if chunk.Usage != nil && s.Bus != nil {
 				s.Bus.Publish(event.UsageUpdate{TurnID: turnID, InputTokens: chunk.Usage.InputTokens, OutputTokens: chunk.Usage.OutputTokens})
 			}
-		case "done":
+		case stopDone:
 			resp.FinishReason = chunk.FinishReason
 			resp.Raw = chunk.Raw
 		}
@@ -310,14 +310,14 @@ func (s *Session) appendError(turnID, component string, err error, recoverable b
 // reasons default to "end_turn".
 func mapStopReason(finish string) string {
 	switch strings.ToLower(finish) {
-	case "end_turn", "stop":
-		return "end_turn"
-	case "tool_use":
-		return "tool_use"
+	case stopEndTurn, "stop":
+		return stopEndTurn
+	case blockToolUse:
+		return blockToolUse
 	case "max_tokens":
 		return "max_tokens"
 	case "":
-		return "end_turn"
+		return stopEndTurn
 	default:
 		return finish
 	}
@@ -346,7 +346,7 @@ func extractAssistantText(resp provider.Response) string {
 	var sb strings.Builder
 
 	for _, b := range msg.Content {
-		if b.Type == "text" {
+		if b.Type == blockText {
 			sb.WriteString(b.Text)
 		}
 	}

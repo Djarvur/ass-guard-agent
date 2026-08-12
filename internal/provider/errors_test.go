@@ -15,10 +15,10 @@ func TestClassifyTransientStatuses(t *testing.T) {
 	t.Parallel()
 
 	for _, status := range []int{408, 425, 429, 500, 502, 503, 504} {
-		perr := ClassifyHTTP("anthropic", "glm-5.2", status, nil)
+		perr := ClassifyHTTP(providerAnthropic, modelGLM52, status, nil)
 		require.Equal(t, KindTransient, perr.Kind, "status %d", status)
-		require.Equal(t, "anthropic", perr.Provider)
-		require.Equal(t, "glm-5.2", perr.Model)
+		require.Equal(t, providerAnthropic, perr.Provider)
+		require.Equal(t, modelGLM52, perr.Model)
 		require.Equal(t, status, perr.StatusCode)
 	}
 }
@@ -59,7 +59,7 @@ func TestClassifyExhaustedInvariant(t *testing.T) {
 	t.Parallel()
 
 	for status := 100; status <= 599; status++ {
-		perr := ClassifyHTTP("anthropic", "glm-5.2", status, nil)
+		perr := ClassifyHTTP(providerAnthropic, modelGLM52, status, nil)
 		require.NotEqual(t, KindExhausted, perr.Kind, "status %d must never classify as Exhausted", status)
 	}
 	// Status 0 with no recognized error must also not be Exhausted.
@@ -72,12 +72,12 @@ func TestProviderErrorMessage(t *testing.T) {
 	t.Parallel()
 
 	perr := &ProviderError{
-		Kind: KindTransient, Provider: "anthropic", Model: "glm-5.2",
-		StatusCode: 429, Reason: "rate limited",
+		Kind: KindTransient, Provider: providerAnthropic, Model: modelGLM52,
+		StatusCode: 429, Reason: rateLimited,
 	}
 
 	msg := perr.Error()
-	for _, want := range []string{"anthropic", "glm-5.2", "Transient", "429", "rate limited"} {
+	for _, want := range []string{providerAnthropic, modelGLM52, "Transient", "429", rateLimited} {
 		require.Contains(t, msg, want, "Error() %q must contain %q", msg, want)
 	}
 }
@@ -102,7 +102,7 @@ func TestProviderErrorRedactsCause(t *testing.T) {
 	t.Parallel()
 
 	perr := &ProviderError{
-		Kind: KindTransient, Provider: "anthropic", Model: "glm-5.2",
+		Kind: KindTransient, Provider: providerAnthropic, Model: modelGLM52,
 		StatusCode: 500,
 		Cause:      errors.New("upstream returned: Authorization: Bearer sk-leaked-token-123456"),
 	}

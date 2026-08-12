@@ -14,8 +14,8 @@ func TestProviderFallbackKind(t *testing.T) {
 	t.Parallel()
 
 	pf := ProviderFallback{
-		TurnID: "t1", FromProvider: "anthropic", FromModel: "glm-5.2",
-		ToProvider: "openai", ToModel: "minimax-m3",
+		TurnID: "t1", FromProvider: providerAnthropic, FromModel: modelGLM52,
+		ToProvider: providerOpenAI, ToModel: modelMinimaxM3,
 		Reason: "Transient: HTTP 429", ErrorKind: provider.KindTransient, Attempt: 1,
 	}
 	require.Equal(t, "ProviderFallback", pf.Kind())
@@ -27,7 +27,7 @@ func TestCostCeilingWarnKind(t *testing.T) {
 
 	cc := CostCeilingWarn{
 		TurnID: "t1", Window: "24h ending 2026-08-09T00:00:00Z",
-		Spent: 50.0, Ceiling: 50.0, DegradedTo: "light", HardStop: false,
+		Spent: 50.0, Ceiling: 50.0, DegradedTo: tierLight, HardStop: false,
 	}
 	require.Equal(t, "CostCeilingWarn", cc.Kind())
 }
@@ -45,8 +45,8 @@ func TestEventsBusRoundTrip(t *testing.T) {
 	ch := bus.Subscribe("ProviderFallback", 4)
 
 	pf := ProviderFallback{
-		TurnID: "turn-42", FromProvider: "anthropic", FromModel: "glm-5.2",
-		ToProvider: "openai", ToModel: "minimax-m3",
+		TurnID: "turn-42", FromProvider: providerAnthropic, FromModel: modelGLM52,
+		ToProvider: providerOpenAI, ToModel: modelMinimaxM3,
 		Reason: "Transient: HTTP 429", ErrorKind: provider.KindTransient, Attempt: 1,
 	}
 	bus.Publish(pf)
@@ -73,7 +73,7 @@ func TestEventsBusCostCeilingRoundTrip(t *testing.T) {
 
 	cc := CostCeilingWarn{
 		TurnID: "turn-7", Window: "24h",
-		Spent: 51.0, Ceiling: 50.0, DegradedTo: "light", HardStop: false,
+		Spent: 51.0, Ceiling: 50.0, DegradedTo: tierLight, HardStop: false,
 	}
 	bus.Publish(cc)
 

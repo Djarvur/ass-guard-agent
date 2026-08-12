@@ -16,7 +16,7 @@ func TestRegisterTools_Mutability(t *testing.T) {
 	cfg := &openspec.OpenSpecConfig{
 		Commands: map[string]openspec.CommandShape{
 			"list":  {Mutability: "read-only"},
-			"apply": {Mutability: "mutating"},
+			"apply": {Mutability: classMutating},
 		},
 	}
 
@@ -54,7 +54,7 @@ func TestRegisterTools_DrivesIsBoundary(t *testing.T) {
 	cfg := &openspec.OpenSpecConfig{
 		Commands: map[string]openspec.CommandShape{
 			"list":  {Mutability: "read-only"},
-			"apply": {Mutability: "mutating"},
+			"apply": {Mutability: classMutating},
 		},
 	}
 	cat := toolcat.NewCatalog()
@@ -78,8 +78,8 @@ func TestPatternTable_MatchTextFirstWins(t *testing.T) {
 
 	cfg := &openspec.OpenSpecConfig{
 		Patterns: []openspec.PatternEntry{
-			{ID: "impl-complete", Regex: "Implementation Complete.*ready for review", Action: "continue"},
-			{ID: "spec-done", Regex: "(?i)specification.*finalized", Action: "continue"},
+			{ID: statusImplComplete, Regex: "Implementation Complete.*ready for review", Action: stopContinue},
+			{ID: "spec-done", Regex: "(?i)specification.*finalized", Action: stopContinue},
 		},
 	}
 
@@ -88,7 +88,7 @@ func TestPatternTable_MatchTextFirstWins(t *testing.T) {
 		t.Fatalf("FromConfig: %v", err)
 	}
 
-	if id, act := pt.MatchText("... Implementation Complete — ready for review ..."); id != "impl-complete" || act != engine.ActionContinue {
+	if id, act := pt.MatchText("... Implementation Complete — ready for review ..."); id != statusImplComplete || act != engine.ActionContinue {
 		t.Errorf("MatchText(impl) = (%q,%v); want (impl-complete, continue)", id, act)
 	}
 
@@ -108,7 +108,7 @@ func TestPatternTable_MatchTool(t *testing.T) {
 
 	cfg := &openspec.OpenSpecConfig{
 		HandoffTools: []openspec.HandoffToolEntry{
-			{ID: "os-handoff", Tool: "openspec_handoff", Action: "continue"},
+			{ID: "os-handoff", Tool: "openspec_handoff", Action: stopContinue},
 		},
 	}
 
@@ -146,7 +146,7 @@ func TestPatternTable_ActionMapping(t *testing.T) {
 
 	cfg := &openspec.OpenSpecConfig{
 		Patterns: []openspec.PatternEntry{
-			{ID: "c", Regex: "x", Action: "continue"},
+			{ID: "c", Regex: "x", Action: stopContinue},
 			{ID: "h", Regex: "y", Action: "hook"},
 			{ID: "a", Regex: "z", Action: "ask"},
 			{ID: "w", Regex: "q", Action: "wait"},

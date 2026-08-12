@@ -22,8 +22,8 @@ func wl(turn string, tools ...string) []learning.WorklogEntry {
 func TestProposeHooks_RepeatedSequence(t *testing.T) {
 	t.Parallel()
 
-	worklog := append(wl("t1", "Read", "Grep", "Bash"), wl("t2", "Read", "Grep", "Bash")...)
-	worklog = append(worklog, wl("t3", "Read", "Grep", "Bash")...)
+	worklog := append(wl("t1", toolRead, toolGrep, toolBash), wl("t2", toolRead, toolGrep, toolBash)...)
+	worklog = append(worklog, wl("t3", toolRead, toolGrep, toolBash)...)
 
 	proposals := learning.ProposeHooks(worklog)
 	if len(proposals) == 0 {
@@ -41,7 +41,7 @@ func TestProposeHooks_RepeatedSequence(t *testing.T) {
 		t.Errorf("best Occurrences = %d; want >= 3", best.Occurrences)
 	}
 
-	if !reflect.DeepEqual(best.Steps, []string{"Read", "Grep", "Bash"}) {
+	if !reflect.DeepEqual(best.Steps, []string{toolRead, toolGrep, toolBash}) {
 		t.Errorf("best Steps = %v; want [Read Grep Bash]", best.Steps)
 	}
 }
@@ -61,7 +61,7 @@ func catWL(parts ...[]learning.WorklogEntry) []learning.WorklogEntry {
 func TestProposeHooks_BelowThreshold(t *testing.T) {
 	t.Parallel()
 
-	worklog := catWL(wl("t1", "Read", "Grep"), wl("t2", "Read", "Grep"))
+	worklog := catWL(wl("t1", toolRead, toolGrep), wl("t2", toolRead, toolGrep))
 	if proposals := learning.ProposeHooks(worklog); len(proposals) != 0 {
 		t.Errorf("got %d proposals; want 0 (< 3 occurrences)", len(proposals))
 	}
@@ -73,8 +73,8 @@ func TestProposeHooks_DistinctSequences(t *testing.T) {
 	t.Parallel()
 
 	worklog := catWL(
-		wl("t1", "Read", "Grep"), wl("t2", "Read", "Grep"), wl("t3", "Read", "Grep"),
-		wl("t4", "Write", "Edit"), wl("t5", "Write", "Edit"), wl("t6", "Write", "Edit"),
+		wl("t1", toolRead, toolGrep), wl("t2", toolRead, toolGrep), wl("t3", toolRead, toolGrep),
+		wl("t4", toolWrite, toolEdit), wl("t5", toolWrite, toolEdit), wl("t6", toolWrite, toolEdit),
 	)
 
 	proposals := learning.ProposeHooks(worklog)
@@ -88,7 +88,7 @@ func TestProposeHooks_DistinctSequences(t *testing.T) {
 func TestProposeHooks_Deterministic(t *testing.T) {
 	t.Parallel()
 
-	worklog := catWL(wl("t1", "Read", "Grep"), wl("t2", "Read", "Grep"), wl("t3", "Read", "Grep"))
+	worklog := catWL(wl("t1", toolRead, toolGrep), wl("t2", toolRead, toolGrep), wl("t3", toolRead, toolGrep))
 	first := learning.ProposeHooks(worklog)
 
 	second := learning.ProposeHooks(worklog)

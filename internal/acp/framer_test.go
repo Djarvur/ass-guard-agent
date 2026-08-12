@@ -19,7 +19,7 @@ func TestWriteFrameProducesMarshalPlusNewline(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	msg := Message{JSONRPC: "2.0", ID: intPtr(1), Method: "initialize"}
+	msg := Message{JSONRPC: protocolVersion20, ID: intPtr(1), Method: methodInitialize}
 
 	err := writeFrame(&buf, msg)
 	if err != nil {
@@ -50,10 +50,10 @@ func TestWriteFrameRejectsDecodedNewline(t *testing.T) {
 		name string
 		v    any
 	}{
-		{"map string field with newline", map[string]any{"text": "line1\nline2"}},
+		{"map string field with newline", map[string]any{blockText: "line1\nline2"}},
 		{"nested slice string with newline", map[string]any{"items": []any{"a\nb"}}},
 		{"RawMessage param whose decoded string carries a newline", Message{
-			JSONRPC: "2.0", Method: "session/prompt",
+			JSONRPC: protocolVersion20, Method: "session/prompt",
 			// Valid JSON (the \n is the two-char escape); the decoded text value
 			// is "x<newline>y" — the decoded-newline check must catch it.
 			Params: json.RawMessage(`{"prompt":[{"type":"text","text":"x\ny"}]}`),
@@ -126,7 +126,7 @@ func TestReadFrameMalformedJSON(t *testing.T) {
 		t.Fatalf("second readFrame: %v", err)
 	}
 
-	if msg.Method != "initialize" {
+	if msg.Method != methodInitialize {
 		t.Errorf("second frame method = %q; want initialize", msg.Method)
 	}
 }
@@ -151,7 +151,7 @@ func TestWriterConcurrentSafety(t *testing.T) {
 			defer wg.Done()
 
 			id := i
-			_ = w.Write(Message{JSONRPC: "2.0", ID: &id, Method: "session/update"})
+			_ = w.Write(Message{JSONRPC: protocolVersion20, ID: &id, Method: methodSessionUpdate})
 		}(i)
 	}
 
@@ -204,7 +204,7 @@ func TestWriterConcurrentSafety(t *testing.T) {
 func TestMessageIDNilIsNotification(t *testing.T) {
 	t.Parallel()
 
-	notif := Message{JSONRPC: "2.0", Method: "session/update"}
+	notif := Message{JSONRPC: protocolVersion20, Method: methodSessionUpdate}
 
 	raw, err := json.Marshal(notif)
 	if err != nil {
@@ -216,7 +216,7 @@ func TestMessageIDNilIsNotification(t *testing.T) {
 	}
 
 	id := 7
-	req := Message{JSONRPC: "2.0", ID: &id, Method: "initialize"}
+	req := Message{JSONRPC: protocolVersion20, ID: &id, Method: methodInitialize}
 
 	raw, _ = json.Marshal(req)
 	if !bytes.Contains(raw, []byte(`"id":7`)) {
@@ -224,7 +224,7 @@ func TestMessageIDNilIsNotification(t *testing.T) {
 	}
 	// id:0 must round-trip (0 is a valid JSON-RPC id; omitempty on *int keeps it).
 	zero := 0
-	zeroReq := Message{JSONRPC: "2.0", ID: &zero, Method: "initialize"}
+	zeroReq := Message{JSONRPC: protocolVersion20, ID: &zero, Method: methodInitialize}
 
 	raw, _ = json.Marshal(zeroReq)
 	if !bytes.Contains(raw, []byte(`"id":0`)) {

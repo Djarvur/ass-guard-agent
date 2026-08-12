@@ -81,10 +81,10 @@ func TestDispatchBatch_ReadOnlyParallelism(t *testing.T) {
 
 	exec := &recordingExec{sleep: 30 * time.Millisecond}
 	catalog := newCatalog(map[string]toolcat.Mutability{
-		"Read": toolcat.MutabilityReadOnly, "Grep": toolcat.MutabilityReadOnly,
+		toolRead: toolcat.MutabilityReadOnly, toolGrep: toolcat.MutabilityReadOnly,
 		"Glob": toolcat.MutabilityReadOnly, "LS": toolcat.MutabilityReadOnly,
 	})
-	calls := []provider.ToolCall{{Name: "Read"}, {Name: "Grep"}, {Name: "Glob"}, {Name: "LS"}}
+	calls := []provider.ToolCall{{Name: toolRead}, {Name: toolGrep}, {Name: "Glob"}, {Name: "LS"}}
 
 	t0 := time.Now()
 	results, err := toolexec.DispatchBatch(context.Background(), exec, catalog, calls)
@@ -121,9 +121,9 @@ func TestDispatchBatch_MutatingSerialization(t *testing.T) {
 
 	exec := &recordingExec{sleep: 30 * time.Millisecond}
 	catalog := newCatalog(map[string]toolcat.Mutability{
-		"Bash": toolcat.MutabilityMutating, "Write": toolcat.MutabilityMutating, "Edit": toolcat.MutabilityMutating,
+		toolBash: toolcat.MutabilityMutating, toolWrite: toolcat.MutabilityMutating, "Edit": toolcat.MutabilityMutating,
 	})
-	calls := []provider.ToolCall{{Name: "Bash"}, {Name: "Write"}, {Name: "Edit"}}
+	calls := []provider.ToolCall{{Name: toolBash}, {Name: toolWrite}, {Name: "Edit"}}
 
 	if _, err := toolexec.DispatchBatch(context.Background(), exec, catalog, calls); err != nil {
 		t.Fatalf("DispatchBatch err = %v", err)
@@ -151,14 +151,14 @@ func TestDispatchBatch_ArrivalOrderMixed(t *testing.T) {
 
 	exec := &recordingExec{sleep: 20 * time.Millisecond}
 	catalog := newCatalog(map[string]toolcat.Mutability{
-		"Read": toolcat.MutabilityReadOnly, "Grep": toolcat.MutabilityReadOnly,
-		"Bash": toolcat.MutabilityMutating, "Write": toolcat.MutabilityMutating,
+		toolRead: toolcat.MutabilityReadOnly, toolGrep: toolcat.MutabilityReadOnly,
+		toolBash: toolcat.MutabilityMutating, toolWrite: toolcat.MutabilityMutating,
 	})
 	calls := []provider.ToolCall{
-		{Name: "Read"},  // idx 0, read-only
-		{Name: "Bash"},  // idx 1, mutating
-		{Name: "Grep"},  // idx 2, read-only
-		{Name: "Write"}, // idx 3, mutating
+		{Name: toolRead},  // idx 0, read-only
+		{Name: toolBash},  // idx 1, mutating
+		{Name: toolGrep},  // idx 2, read-only
+		{Name: toolWrite}, // idx 3, mutating
 	}
 
 	results, err := toolexec.DispatchBatch(context.Background(), exec, catalog, calls)
@@ -185,11 +185,11 @@ func TestDispatchBatch_MutatingAlone(t *testing.T) {
 
 	exec := &recordingExec{sleep: 30 * time.Millisecond}
 	catalog := newCatalog(map[string]toolcat.Mutability{
-		"Read": toolcat.MutabilityReadOnly, "Grep": toolcat.MutabilityReadOnly,
-		"Bash": toolcat.MutabilityMutating,
+		toolRead: toolcat.MutabilityReadOnly, toolGrep: toolcat.MutabilityReadOnly,
+		toolBash: toolcat.MutabilityMutating,
 	})
 
-	calls := []provider.ToolCall{{Name: "Read"}, {Name: "Bash"}, {Name: "Grep"}}
+	calls := []provider.ToolCall{{Name: toolRead}, {Name: toolBash}, {Name: toolGrep}}
 	if _, err := toolexec.DispatchBatch(context.Background(), exec, catalog, calls); err != nil {
 		t.Fatalf("DispatchBatch err = %v", err)
 	}
@@ -200,11 +200,11 @@ func TestDispatchBatch_MutatingAlone(t *testing.T) {
 
 	for i := range events {
 		switch events[i].name {
-		case "Bash":
+		case toolBash:
 			bash = &events[i]
-		case "Read":
+		case toolRead:
 			read = &events[i]
-		case "Grep":
+		case toolGrep:
 			grep = &events[i]
 		}
 	}
@@ -306,8 +306,8 @@ func TestDispatchBatch_CtxCancel(t *testing.T) {
 func TestDispatchBatch_NilExecutor(t *testing.T) {
 	t.Parallel()
 
-	catalog := newCatalog(map[string]toolcat.Mutability{"Read": toolcat.MutabilityReadOnly})
-	calls := []provider.ToolCall{{Name: "Read"}}
+	catalog := newCatalog(map[string]toolcat.Mutability{toolRead: toolcat.MutabilityReadOnly})
+	calls := []provider.ToolCall{{Name: toolRead}}
 
 	results, err := toolexec.DispatchBatch(context.Background(), nil, catalog, calls)
 	if err != nil {

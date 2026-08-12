@@ -26,13 +26,13 @@ func newCostTracker(t *testing.T, cfg CostCeilingConfig, pricing map[string]Pric
 func TestCostArithmetic(t *testing.T) {
 	t.Parallel()
 
-	cfg := CostCeilingConfig{AmountUSD: 50.0, Window: 24 * time.Hour, DegradeTo: "light"}
+	cfg := CostCeilingConfig{AmountUSD: 50.0, Window: 24 * time.Hour, DegradeTo: tierLight}
 	tr, _ := newCostTracker(t, cfg, map[string]Pricing{
-		"glm-5.2": {InputPerMToken: 0.60, OutputPerMToken: 2.20},
+		modelGLM52: {InputPerMToken: 0.60, OutputPerMToken: 2.20},
 	})
 	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
 
-	tr.Account("glm-5.2", 1_000_000, 500_000)
+	tr.Account(modelGLM52, 1_000_000, 500_000)
 	require.InDelta(t, 1.70, tr.Spent(), 1e-9, "(1M*0.60 + 0.5M*2.20)/1e6 = $1.70")
 	// Check initializes the window but does not trip (1.70 < 50).
 	require.Equal(t, CostAllow, tr.Check(now))
@@ -44,15 +44,15 @@ func TestCostArithmetic(t *testing.T) {
 func TestCostFirstBreachDegrade(t *testing.T) {
 	t.Parallel()
 
-	cfg := CostCeilingConfig{AmountUSD: 50.0, Window: 24 * time.Hour, DegradeTo: "light"}
+	cfg := CostCeilingConfig{AmountUSD: 50.0, Window: 24 * time.Hour, DegradeTo: tierLight}
 	tr, bus := newCostTracker(t, cfg, map[string]Pricing{
-		"glm-5.2": {InputPerMToken: 60.0, OutputPerMToken: 0}, // $60 per 1M in
+		modelGLM52: {InputPerMToken: 60.0, OutputPerMToken: 0}, // $60 per 1M in
 	})
 	ch := bus.Subscribe("CostCeilingWarn", 4)
 	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
 	require.Equal(t, CostAllow, tr.Check(now))
 	// 1M input tokens × $60/MTok = $60 >= $50 → first breach on the NEXT Check.
-	tr.Account("glm-5.2", 1_000_000, 0)
+	tr.Account(modelGLM52, 1_000_000, 0)
 
 	got := tr.Check(now)
 	require.Equal(t, CostDegrade, got, "first breach returns CostDegrade")
@@ -77,7 +77,7 @@ drain:
 
 	require.Len(t, warns, 1, "exactly ONE CostCeilingWarn on first breach (idempotent thereafter)")
 	require.False(t, warns[0].HardStop)
-	require.Equal(t, "light", warns[0].DegradedTo)
+	require.Equal(t, tierLight, warns[0].DegradedTo)
 	require.InDelta(t, 60.0, warns[0].Spent, 1e-9)
 }
 
@@ -86,15 +86,15 @@ drain:
 func TestCostSecondBreachHardStop(t *testing.T) {
 	t.Parallel()
 
-	cfg := CostCeilingConfig{AmountUSD: 50.0, Window: 24 * time.Hour, DegradeTo: "light"}
+	cfg := CostCeilingConfig{AmountUSD: 50.0, Window: 24 * time.Hour, DegradeTo: tierLight}
 	tr, bus := newCostTracker(t, cfg, map[string]Pricing{
-		"minimax-m3": {InputPerMToken: 60.0, OutputPerMToken: 0},
+		modelMinimaxM3: {InputPerMToken: 60.0, OutputPerMToken: 0},
 	})
 	ch := bus.Subscribe("CostCeilingWarn", 4)
 	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
 	tr.Check(now) // initialize window
 	// First breach.
-	tr.Account("minimax-m3", 1_000_000, 0) // $60 on primary budget
+	tr.Account(modelMinimaxM3, 1_000_000, 0) // $60 on primary budget
 	require.Equal(t, CostDegrade, tr.Check(now))
 	require.True(t, tr.IsDegraded())
 	// Drain the first warn so we can isolate the hard-stop warn.
@@ -107,7 +107,7 @@ drain1:
 		}
 	}
 	// Second breach: accumulate against the degraded budget past the ceiling.
-	tr.Account("minimax-m3", 1_000_000, 0) // another $60 on degraded budget
+	tr.Account(modelMinimaxM3, 1_000_000, 0) // another $60 on degraded budget
 	got := tr.Check(now)
 	require.Equal(t, CostHardStop, got, "second breach returns CostHardStop")
 
@@ -137,13 +137,13 @@ drain2:
 func TestCostWindowRollover(t *testing.T) {
 	t.Parallel()
 
-	cfg := CostCeilingConfig{AmountUSD: 50.0, Window: 24 * time.Hour, DegradeTo: "light"}
+	cfg := CostCeilingConfig{AmountUSD: 50.0, Window: 24 * time.Hour, DegradeTo: tierLight}
 	tr, _ := newCostTracker(t, cfg, map[string]Pricing{
-		"glm-5.2": {InputPerMToken: 60.0, OutputPerMToken: 0},
+		modelGLM52: {InputPerMToken: 60.0, OutputPerMToken: 0},
 	})
 	t0 := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
 	tr.Check(t0)
-	tr.Account("glm-5.2", 1_000_000, 0) // $60
+	tr.Account(modelGLM52, 1_000_000, 0) // $60
 	require.Equal(t, CostDegrade, tr.Check(t0))
 	require.True(t, tr.IsDegraded())
 
@@ -160,15 +160,15 @@ func TestCostWindowRollover(t *testing.T) {
 func TestCostNoTokenCountsGraceful(t *testing.T) {
 	t.Parallel()
 
-	cfg := CostCeilingConfig{AmountUSD: 50.0, Window: 24 * time.Hour, DegradeTo: "light"}
+	cfg := CostCeilingConfig{AmountUSD: 50.0, Window: 24 * time.Hour, DegradeTo: tierLight}
 	tr, _ := newCostTracker(t, cfg, map[string]Pricing{
-		"glm-5.2": {InputPerMToken: 60.0, OutputPerMToken: 0},
+		modelGLM52: {InputPerMToken: 60.0, OutputPerMToken: 0},
 	})
 	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
 	tr.Check(now)
 
 	for range 100 {
-		tr.Account("glm-5.2", 0, 0)
+		tr.Account(modelGLM52, 0, 0)
 	}
 
 	require.InDelta(t, 0.0, tr.Spent(), 1e-9, "no token counts → $0 accounted")
@@ -181,9 +181,9 @@ func TestCostNoTokenCountsGraceful(t *testing.T) {
 func TestCostConcurrentAccount(t *testing.T) {
 	t.Parallel()
 
-	cfg := CostCeilingConfig{AmountUSD: 1e9, Window: 24 * time.Hour, DegradeTo: "light"} // huge ceiling, no trip
+	cfg := CostCeilingConfig{AmountUSD: 1e9, Window: 24 * time.Hour, DegradeTo: tierLight} // huge ceiling, no trip
 	tr, _ := newCostTracker(t, cfg, map[string]Pricing{
-		"glm-5.2": {InputPerMToken: 1.0, OutputPerMToken: 0},
+		modelGLM52: {InputPerMToken: 1.0, OutputPerMToken: 0},
 	})
 	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
 	tr.Check(now)
@@ -192,7 +192,7 @@ func TestCostConcurrentAccount(t *testing.T) {
 	for range 100 {
 		wg.Go(func() {
 			for range 100 {
-				tr.Account("glm-5.2", 1_000_000, 0) // $1 each
+				tr.Account(modelGLM52, 1_000_000, 0) // $1 each
 			}
 		})
 	}

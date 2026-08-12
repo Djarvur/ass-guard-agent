@@ -51,7 +51,7 @@ func TestACPServeCommandRegistered(t *testing.T) {
 	pf := serve.Flags()
 
 	prof, _ := pf.GetString("profile")
-	if prof != "zcode" {
+	if prof != profileZcode {
 		t.Errorf("serve --profile default = %q; want zcode", prof)
 	}
 
@@ -77,7 +77,7 @@ func TestACPServeWiresStdoutClean(t *testing.T) {
 
 	ctx := t.Context()
 
-	err := runACPServe(ctx, in, &stdout, &stderr, serveOptions{Profile: "zcode", MaxConcurrent: 6, ProfilesDir: repoProfilesDir(t), WorkDir: t.TempDir()})
+	err := runACPServe(ctx, in, &stdout, &stderr, serveOptions{Profile: profileZcode, MaxConcurrent: 6, ProfilesDir: repoProfilesDir(t), WorkDir: t.TempDir()})
 	if err != nil && !errors.Is(err, io.EOF) {
 		t.Logf("runACPServe returned %v (acceptable)", err)
 	}
@@ -117,7 +117,7 @@ func TestACPServeNoStdoutPollutionFromLogs(t *testing.T) {
 
 	ctx := t.Context()
 
-	_ = runACPServe(ctx, in, &stdout, &stderr, serveOptions{Profile: "zcode", MaxConcurrent: 6, ProfilesDir: repoProfilesDir(t), WorkDir: t.TempDir()})
+	_ = runACPServe(ctx, in, &stdout, &stderr, serveOptions{Profile: profileZcode, MaxConcurrent: 6, ProfilesDir: repoProfilesDir(t), WorkDir: t.TempDir()})
 	if strings.Contains(stdout.String(), "ass-guard/acp") {
 		t.Errorf("stdout contains a log prefix (transport discipline violation): %s", stdout.String())
 	}

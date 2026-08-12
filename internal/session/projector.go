@@ -20,8 +20,8 @@ const (
 // fileBearingTools is the set of tools whose inputs carry a file_path/path we
 // extract for the task summary. Other tools' inputs are not file-bearing.
 var fileBearingTools = map[string]bool{
-	"Read": true, "Write": true, "Edit": true,
-	"Glob": true, "Grep": true, "Bash": true,
+	toolRead: true, "Write": true, "Edit": true,
+	"Glob": true, "Grep": true, toolBash: true,
 }
 
 // Projector builds the lean model-visible window (D-01) by mechanical extraction

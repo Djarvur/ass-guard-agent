@@ -184,7 +184,7 @@ func (s *Scheduler) Dispatch(ctx context.Context, tier, project string, capReq C
 			// specific needs) skips the filter so the tracer behaves as 03-01.
 			if !capReq.isZero() && !satisfies(cand.Capabilities, capReq) {
 				s.log.Info("scheduler: skip candidate (capability mismatch)",
-					"provider", cand.Provider, "model", cand.Model, "tier", currentTier)
+					"provider", cand.Provider, keyModel, cand.Model, "tier", currentTier)
 
 				continue
 			}
@@ -195,7 +195,7 @@ func (s *Scheduler) Dispatch(ctx context.Context, tier, project string, capReq C
 			b := s.breakerFor(cand)
 			if !b.Allow(s.now()) {
 				s.log.Info("scheduler: skip candidate (breaker open)",
-					"provider", cand.Provider, "model", cand.Model)
+					"provider", cand.Provider, keyModel, cand.Model)
 
 				continue
 			}
@@ -209,7 +209,7 @@ func (s *Scheduler) Dispatch(ctx context.Context, tier, project string, capReq C
 					Reason: "cost ceiling exhausted",
 				}
 				s.log.Warn("scheduler: cost ceiling exhausted (hard stop)",
-					"provider", cand.Provider, "model", cand.Model)
+					"provider", cand.Provider, keyModel, cand.Model)
 
 				return provider.Response{}, perr
 			case CostDegrade:
@@ -219,7 +219,7 @@ func (s *Scheduler) Dispatch(ctx context.Context, tier, project string, capReq C
 					switchedTier = true
 
 					s.log.Warn("scheduler: cost ceiling breached — degrading tier",
-						"from_tier", tier, "to_tier", degradeTo, "provider", cand.Provider, "model", cand.Model)
+						"from_tier", tier, "to_tier", degradeTo, "provider", cand.Provider, keyModel, cand.Model)
 
 					break candidateLoop
 				}

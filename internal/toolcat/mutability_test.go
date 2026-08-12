@@ -48,8 +48,8 @@ func TestBuiltinCatalogMutabilityDefaults(t *testing.T) {
 	t.Parallel()
 
 	c := NewCatalog()
-	mutating := []string{"Bash", "Write", "Edit"}
-	readOnly := []string{"Read", "Glob", "Grep", "Agent", "TodoRead"}
+	mutating := []string{toolBash, "Write", "Edit"}
+	readOnly := []string{toolRead, "Glob", toolGrep, "Agent", "TodoRead"}
 
 	for _, name := range mutating {
 		t.Run("mutating/"+name, func(t *testing.T) {
@@ -95,14 +95,14 @@ func TestIsBoundaryStructuralFloor(t *testing.T) {
 	t.Run("catalog mutating tool is boundary with empty config", func(t *testing.T) {
 		t.Parallel()
 
-		if !IsBoundary("Bash", c, nil) {
+		if !IsBoundary(toolBash, c, nil) {
 			t.Errorf("IsBoundary(Bash, catalog, nil) = false; want true (structural floor — config cannot downgrade)")
 		}
 	})
 	t.Run("catalog read-only tool is not a boundary by default", func(t *testing.T) {
 		t.Parallel()
 
-		if IsBoundary("Read", c, nil) {
+		if IsBoundary(toolRead, c, nil) {
 			t.Errorf("IsBoundary(Read, catalog, nil) = true; want false")
 		}
 	})
@@ -117,7 +117,7 @@ func TestIsBoundaryStructuralFloor(t *testing.T) {
 		t.Parallel()
 		// Even with an empty configAdded, Bash (mutating) stays a boundary.
 		// There is no API path to make IsBoundary(Bash,...) return false.
-		if !IsBoundary("Bash", c, nil) {
+		if !IsBoundary(toolBash, c, nil) {
 			t.Errorf("IsBoundary(Bash) = false; structural floor violated — config downgrade must be impossible")
 		}
 	})
@@ -143,7 +143,7 @@ func TestIsBoundaryStructuralFloor(t *testing.T) {
 func TestEffectiveMutabilityStringStability(t *testing.T) {
 	t.Parallel()
 
-	if MutabilityMutating.String() != "mutating" {
+	if MutabilityMutating.String() != classMutating {
 		t.Errorf(`MutabilityMutating.String() = %q; want "mutating"`, MutabilityMutating.String())
 	}
 
@@ -152,5 +152,5 @@ func TestEffectiveMutabilityStringStability(t *testing.T) {
 	}
 	// Ensure the test file references the mutating label at least once so the
 	// stability contract is grep-visible.
-	_ = strings.Contains("mutating", "mutating")
+	_ = strings.Contains(classMutating, classMutating)
 }

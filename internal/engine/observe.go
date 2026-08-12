@@ -254,7 +254,7 @@ func (e *Engine) applyDispatcher(ctx context.Context, dec Decision) Decision {
 		// A learned answer maps onto an action. The tracer only knows
 		// "continue"; richer answers land in 04-05's real dispatcher.
 		switch ans {
-		case "continue":
+		case stopContinue:
 			dec.Action = ActionContinue
 			dec.Reason = "learned answer: continue"
 		default:
@@ -305,7 +305,7 @@ func (e *Engine) logFailure(msg string, r any) {
 // carrying the literal "continue". Plan 04-05's real wiring replaces this with
 // the OpenSpec config's per-pattern next-stage prompt template.
 func NextStagePrompt(dec Decision) []session.ContentBlock {
-	return []session.ContentBlock{{Type: "text", Text: "continue"}}
+	return []session.ContentBlock{{Type: "text", Text: stopContinue}}
 }
 
 // compile-time interface check: *Engine has Observe with the documented shape.

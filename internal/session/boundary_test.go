@@ -28,17 +28,17 @@ func TestMaybeAppendBoundary_OnMutatingTool(t *testing.T) {
 	t.Parallel()
 
 	s := newTestSessionWithCatalog(t, []provider.Response{
-		{FinishReason: "tool_use", ToolCalls: []provider.ToolCall{{Name: "Bash", Input: json.RawMessage(`{"command":"ls"}`)}}},
-		{FinishReason: "end_turn"},
+		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{{Name: toolBash, Input: json.RawMessage(`{"command":"ls"}`)}}},
+		{FinishReason: stopEndTurn},
 	})
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "run ls"}}); err != nil {
+	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "run ls"}}); err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 
 	found := false
 
 	for _, l := range linesOf(s) {
-		if l.Type == TypeBoundary && l.Cause == "mutating-command:Bash" {
+		if l.Type == TypeBoundary && l.Cause == mutatingCommandBash {
 			found = true
 		}
 	}
@@ -54,10 +54,10 @@ func TestMaybeAppendBoundary_ReadOnlyNoBoundary(t *testing.T) {
 	t.Parallel()
 
 	s := newTestSessionWithCatalog(t, []provider.Response{
-		{FinishReason: "tool_use", ToolCalls: []provider.ToolCall{{Name: "Read", Input: json.RawMessage(`{"file_path":"x"}`)}}},
-		{FinishReason: "end_turn"},
+		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{{Name: toolRead, Input: json.RawMessage(`{"file_path":"x"}`)}}},
+		{FinishReason: stopEndTurn},
 	})
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "read"}}); err != nil {
+	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "read"}}); err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 
@@ -73,13 +73,13 @@ func TestMaybeAppendBoundary_ReadOnlyNoBoundary(t *testing.T) {
 func TestMaybeAppendBoundary_ConfigAddsBoundary(t *testing.T) {
 	t.Parallel()
 	s := newTestSessionWithCatalog(t, []provider.Response{
-		{FinishReason: "tool_use", ToolCalls: []provider.ToolCall{{Name: "WebFetch", Input: json.RawMessage(`{}`)}}},
-		{FinishReason: "end_turn"},
+		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{{Name: toolWebFetch, Input: json.RawMessage(`{}`)}}},
+		{FinishReason: stopEndTurn},
 	})
 
-	s.ConfigAdded = []string{"WebFetch"}
+	s.ConfigAdded = []string{toolWebFetch}
 
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "fetch"}}); err != nil {
+	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "fetch"}}); err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 
@@ -105,12 +105,12 @@ func TestStreamWired(t *testing.T) {
 	bus := event.NewBus()
 	chunks := bus.Subscribe("AgentMessageChunk", event.BufAgentMessageChunk)
 	s, _, _ := newTestSession(t, bus, []provider.Response{
-		{FinishReason: "end_turn"},
+		{FinishReason: stopEndTurn},
 	})
 
 	s.Catalog = toolcat.NewCatalog()
 
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "hi"}}); err != nil {
+	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "hi"}}); err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 	// At least one AgentMessageChunk must have been published via Stream.

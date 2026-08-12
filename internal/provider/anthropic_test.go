@@ -68,7 +68,7 @@ func TestAnthropicProvider_SendParsesToolUse(t *testing.T) {
 		capturedBody = body
 
 		w.Header().Set("content-type", "text/event-stream")
-		_, _ = io.WriteString(w, cannedAnthropicToolUseResponse("synth_tool_a", map[string]any{"path": "go.mod"}))
+		_, _ = io.WriteString(w, cannedAnthropicToolUseResponse(synthToolA, map[string]any{keyPath: goModFile}))
 	}))
 	defer srv.Close()
 
@@ -78,12 +78,12 @@ func TestAnthropicProvider_SendParsesToolUse(t *testing.T) {
 		provider.WithAnthropicBaseURL(srv.URL),
 	)
 
-	resp, err := p.Send(context.Background(), prof, []shaper.Message{{Role: "user", Content: "read go.mod"}})
+	resp, err := p.Send(context.Background(), prof, []shaper.Message{{Role: roleUser, Content: "read go.mod"}})
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 
-	if resp.FinishReason != "tool_use" {
+	if resp.FinishReason != blockToolUse {
 		t.Errorf("FinishReason = %q, want tool_use", resp.FinishReason)
 	}
 
@@ -91,7 +91,7 @@ func TestAnthropicProvider_SendParsesToolUse(t *testing.T) {
 		t.Fatalf("len(ToolCalls) = %d, want 1", len(resp.ToolCalls))
 	}
 
-	if resp.ToolCalls[0].Name != "synth_tool_a" {
+	if resp.ToolCalls[0].Name != synthToolA {
 		t.Errorf("ToolCalls[0].Name = %q, want synth_tool_a", resp.ToolCalls[0].Name)
 	}
 
@@ -100,8 +100,8 @@ func TestAnthropicProvider_SendParsesToolUse(t *testing.T) {
 		t.Fatalf("unmarshal Input: %v", err)
 	}
 
-	if in["path"] != "go.mod" {
-		t.Errorf("Input.path = %v, want go.mod", in["path"])
+	if in[keyPath] != goModFile {
+		t.Errorf("Input.path = %v, want go.mod", in[keyPath])
 	}
 
 	if len(resp.Raw) == 0 {
@@ -118,7 +118,7 @@ func TestAnthropicProvider_SendParsesToolUse(t *testing.T) {
 		t.Error("shaped request body missing the synthetic system block")
 	}
 
-	if !strings.Contains(string(capturedBody), "synth_tool_a") {
+	if !strings.Contains(string(capturedBody), synthToolA) {
 		t.Error("shaped request body missing the tool declaration")
 	}
 }
@@ -132,7 +132,7 @@ func TestAnthropicProvider_NoAPIKeyErrors(t *testing.T) {
 		provider.WithAnthropicBaseURL("http://must-not-be-called.invalid"),
 	)
 
-	_, err := p.Send(context.Background(), prof, []shaper.Message{{Role: "user", Content: "x"}})
+	_, err := p.Send(context.Background(), prof, []shaper.Message{{Role: roleUser, Content: "x"}})
 	if err == nil {
 		t.Fatal("Send returned nil error with no API key; want non-nil")
 	}

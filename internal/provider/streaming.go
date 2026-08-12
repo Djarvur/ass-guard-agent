@@ -182,12 +182,12 @@ func (p *AnthropicProvider) drainSSE(ctx context.Context, body io.Reader, ch cha
 		assembled.WriteString(payload)
 
 		// Handle tool-use lifecycle events (multi-event state machine).
-		evType, _ := ev["type"].(string)
+		evType, _ := ev[keyType].(string)
 		switch evType {
 		case "content_block_start":
 			cb, _ := ev["content_block"].(map[string]any)
 			if cb != nil {
-				if t, _ := cb["type"].(string); t == "tool_use" {
+				if t, _ := cb[keyType].(string); t == blockToolUse {
 					flushToolUse(&tuName, &tuID, &tuInput, &inToolUse, ch, ctx) // flush previous if unclosed
 					tuName, _ = cb["name"].(string)
 					tuID, _ = cb["id"].(string)
@@ -202,7 +202,7 @@ func (p *AnthropicProvider) drainSSE(ctx context.Context, body io.Reader, ch cha
 		case "content_block_delta":
 			delta, _ := ev["delta"].(map[string]any)
 			if delta != nil && inToolUse {
-				if dt, _ := delta["type"].(string); dt == "input_json_delta" {
+				if dt, _ := delta[keyType].(string); dt == "input_json_delta" {
 					if pj, _ := delta["partial_json"].(string); pj != "" {
 						tuInput.WriteString(pj)
 					}
@@ -247,7 +247,7 @@ func flushToolUse(name, id *string, input *strings.Builder, inUse *bool, ch chan
 		in = json.RawMessage("{}")
 	}
 
-	chunk := StreamChunk{Type: "tool_use", ToolCall: &ToolCall{Name: *name, Input: in}, ToolCallID: *id}
+	chunk := StreamChunk{Type: blockToolUse, ToolCall: &ToolCall{Name: *name, Input: in}, ToolCallID: *id}
 	select {
 	case ch <- chunk:
 	case <-ctx.Done():
@@ -274,7 +274,7 @@ func tuInputBytes(b *strings.Builder) json.RawMessage {
 // machine in drainSSE (content_block_start → input_json_delta → content_block_stop);
 // this function handles only the simple single-event types.
 func parseAnthropicSSEEvent(ev map[string]any) (*StreamChunk, string) {
-	typ, _ := ev["type"].(string)
+	typ, _ := ev[keyType].(string)
 	switch typ {
 	case "message_start":
 		if msg, ok := ev["message"].(map[string]any); ok {
@@ -285,7 +285,7 @@ func parseAnthropicSSEEvent(ev map[string]any) (*StreamChunk, string) {
 	case "content_block_delta":
 		delta, _ := ev["delta"].(map[string]any)
 		if delta != nil {
-			if dt, _ := delta["type"].(string); dt == "text_delta" {
+			if dt, _ := delta[keyType].(string); dt == "text_delta" {
 				if text, _ := delta["text"].(string); text != "" {
 					return &StreamChunk{Type: "text", Text: text}, ""
 				}

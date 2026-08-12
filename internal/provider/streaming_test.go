@@ -76,7 +76,7 @@ func TestStream_EmitsTextChunks(t *testing.T) {
 		provider.WithAnthropicBaseURL(srv.URL),
 	)
 
-	ch, err := p.Stream(context.Background(), prof, []shaper.Message{{Role: "user", Content: "hi"}})
+	ch, err := p.Stream(context.Background(), prof, []shaper.Message{{Role: roleUser, Content: "hi"}})
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestStream_ToolUse(t *testing.T) {
 		provider.WithAnthropicBaseURL(srv.URL),
 	)
 
-	ch, err := p.Stream(context.Background(), prof, []shaper.Message{{Role: "user", Content: "run ls"}})
+	ch, err := p.Stream(context.Background(), prof, []shaper.Message{{Role: roleUser, Content: "run ls"}})
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestStream_ToolUse(t *testing.T) {
 	)
 
 	for _, c := range chunks {
-		if c.Type == "tool_use" && c.ToolCall != nil {
+		if c.Type == blockToolUse && c.ToolCall != nil {
 			toolCall = c.ToolCall
 		}
 
@@ -163,7 +163,7 @@ func TestStream_ToolUse(t *testing.T) {
 		t.Errorf("ToolCall.Name = %q; want Bash", toolCall.Name)
 	}
 
-	if finish != "tool_use" {
+	if finish != blockToolUse {
 		t.Errorf("FinishReason = %q; want tool_use", finish)
 	}
 }
@@ -193,7 +193,7 @@ func TestStream_RespectsCancel(t *testing.T) {
 	)
 	ctx, cancel := context.WithCancel(context.Background())
 
-	ch, err := p.Stream(ctx, prof, []shaper.Message{{Role: "user", Content: "hi"}})
+	ch, err := p.Stream(ctx, prof, []shaper.Message{{Role: roleUser, Content: "hi"}})
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
@@ -229,7 +229,7 @@ func TestStream_NoAPIKey(t *testing.T) {
 		provider.WithAnthropicBaseURL("http://must-not-be-called.invalid"),
 	)
 
-	_, err := p.Stream(context.Background(), prof, []shaper.Message{{Role: "user", Content: "x"}})
+	_, err := p.Stream(context.Background(), prof, []shaper.Message{{Role: roleUser, Content: "x"}})
 	if err == nil {
 		t.Fatal("Stream returned nil error with no API key; want non-nil")
 	}

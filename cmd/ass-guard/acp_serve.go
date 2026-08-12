@@ -102,7 +102,7 @@ func newACPServeCmd() *cobra.Command {
 			})
 		},
 	}
-	c.Flags().StringVar(&profile, "profile", "zcode", "profile name to load (PROF-01)")
+	c.Flags().StringVar(&profile, "profile", profileZcode, "profile name to load (PROF-01)")
 	c.Flags().IntVar(&maxConcurrent, "max-concurrent", 6, "max concurrent outbound provider calls across parent + subagents (PARA-04)")
 	c.Flags().StringVar(&profilesDir, "profiles-dir", defaultProfilesDir(), "directory containing profile bundles")
 	c.Flags().StringVar(&workDir, "work-dir", "", "working directory for .ass-guard/ transcripts (default: cwd)")
@@ -329,7 +329,7 @@ func (r *sessionTurnRunner) runOneTurn(ctx context.Context, sess *session.Sessio
 	// the first Run — pass blocks explicitly.
 	stop, err := r.eng.Observe(ctx, adapter, r.patternTable, blocks)
 	if err == nil && stop == "" {
-		stop = "end_turn"
+		stop = stopEndTurn
 	}
 
 	return stop, err

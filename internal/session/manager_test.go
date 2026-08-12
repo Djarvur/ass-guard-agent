@@ -37,7 +37,7 @@ func TestAppendUserMessageWritesJSONLine(t *testing.T) {
 	t.Parallel()
 	m := newTestManager(t, "sess-1")
 
-	err := m.AppendUserMessage("turn_1", []ContentBlock{{Type: "text", Text: "hello"}})
+	err := m.AppendUserMessage("turn_1", []ContentBlock{{Type: blockText, Text: "hello"}})
 	if err != nil {
 		t.Fatalf("AppendUserMessage: %v", err)
 	}
@@ -47,8 +47,8 @@ func TestAppendUserMessageWritesJSONLine(t *testing.T) {
 		t.Fatalf("got %d lines; want 1", len(lines))
 	}
 
-	if lines[0]["type"] != "user_message" {
-		t.Errorf("type = %v; want user_message", lines[0]["type"])
+	if lines[0][keyType] != userMessageType {
+		t.Errorf("type = %v; want user_message", lines[0][keyType])
 	}
 
 	if lines[0]["turnID"] != "turn_1" {
@@ -125,7 +125,7 @@ func TestAppendBoundary(t *testing.T) {
 	t.Parallel()
 	m := newTestManager(t, "sess-1")
 
-	err := m.AppendBoundary("mutating-command:Bash", "toolCallId_abc", "turn_042")
+	err := m.AppendBoundary(mutatingCommandBash, "toolCallId_abc", "turn_042")
 	if err != nil {
 		t.Fatalf("AppendBoundary: %v", err)
 	}
@@ -135,11 +135,11 @@ func TestAppendBoundary(t *testing.T) {
 		t.Fatalf("got %d lines; want 1", len(lines))
 	}
 
-	if lines[0]["type"] != "boundary" {
-		t.Errorf("type = %v; want boundary", lines[0]["type"])
+	if lines[0][keyType] != kindBoundary {
+		t.Errorf("type = %v; want boundary", lines[0][keyType])
 	}
 
-	if lines[0]["cause"] != "mutating-command:Bash" {
+	if lines[0]["cause"] != mutatingCommandBash {
 		t.Errorf("cause = %v; want mutating-command:Bash", lines[0]["cause"])
 	}
 
@@ -217,7 +217,7 @@ func TestConcurrency(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 
-			_ = m.AppendUserMessage("turn_x", []ContentBlock{{Type: "text", Text: "msg"}})
+			_ = m.AppendUserMessage("turn_x", []ContentBlock{{Type: blockText, Text: "msg"}})
 		}(i)
 	}
 
@@ -233,10 +233,10 @@ func TestConcurrency(t *testing.T) {
 func TestReadAllOrder(t *testing.T) {
 	t.Parallel()
 	m := newTestManager(t, "sess-1")
-	_ = m.AppendUserMessage("t1", []ContentBlock{{Type: "text", Text: "first"}})
+	_ = m.AppendUserMessage("t1", []ContentBlock{{Type: blockText, Text: "first"}})
 	_ = m.AppendAssistantMessage("t1", "second")
-	_ = m.AppendBoundary("mutating-command:Bash", "tc1", "t1")
-	_ = m.AppendUserMessage("t2", []ContentBlock{{Type: "text", Text: "third"}})
+	_ = m.AppendBoundary(mutatingCommandBash, "tc1", "t1")
+	_ = m.AppendUserMessage("t2", []ContentBlock{{Type: blockText, Text: "third"}})
 
 	lines, err := m.ReadAll()
 	if err != nil {
@@ -247,11 +247,11 @@ func TestReadAllOrder(t *testing.T) {
 		t.Fatalf("got %d lines; want 4", len(lines))
 	}
 
-	if lines[0].Type != "user_message" || lines[1].Type != "assistant_message" {
+	if lines[0].Type != userMessageType || lines[1].Type != "assistant_message" {
 		t.Errorf("order wrong: %s, %s", lines[0].Type, lines[1].Type)
 	}
 
-	if lines[2].Type != "boundary" {
+	if lines[2].Type != kindBoundary {
 		t.Errorf("line 2 type = %s; want boundary", lines[2].Type)
 	}
 }
@@ -266,7 +266,7 @@ func TestReadLastBoundary(t *testing.T) {
 		t.Errorf("ReadLastBoundary on empty transcript = %v; want nil", b)
 	}
 
-	_ = m.AppendBoundary("mutating-command:Bash", "tc1", "t1")
+	_ = m.AppendBoundary(mutatingCommandBash, "tc1", "t1")
 	_ = m.AppendBoundary("mutating-command:Write", "tc2", "t2")
 
 	b, err := m.ReadLastBoundary()

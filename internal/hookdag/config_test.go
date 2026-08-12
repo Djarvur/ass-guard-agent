@@ -27,7 +27,7 @@ func TestLoadSeeded(t *testing.T) {
 		byName[h.Name] = h
 	}
 
-	pi, ok := byName["post-implement"]
+	pi, ok := byName[stagePostImplement]
 	if !ok {
 		t.Fatal("post-implement hook missing from seed")
 	}
@@ -59,7 +59,7 @@ func TestValidateRejectsUnknownKind(t *testing.T) {
 	t.Parallel()
 
 	hooks := []hookdag.Hook{{
-		Name: "h", Trigger: "post-implement",
+		Name: "h", Trigger: stagePostImplement,
 		Steps: []hookdag.Step{{Name: "s", Kind: "teleport"}},
 	}}
 
@@ -79,7 +79,7 @@ func TestValidateRejectsBadOnFailure(t *testing.T) {
 	t.Parallel()
 
 	hooks := []hookdag.Hook{{
-		Name: "h", Trigger: "post-implement", OnFailure: "explode",
+		Name: "h", Trigger: stagePostImplement, OnFailure: "explode",
 		Steps: []hookdag.Step{{Name: "s", Kind: hookdag.StepSendPrompt, Prompt: "x"}},
 	}}
 
@@ -95,7 +95,7 @@ func TestValidateRejectsMissingFields(t *testing.T) {
 	t.Parallel()
 
 	hooks := []hookdag.Hook{{
-		Name: "h", Trigger: "post-implement",
+		Name: "h", Trigger: stagePostImplement,
 		Steps: []hookdag.Step{
 			{Name: "rc", Kind: hookdag.StepRunCommand},                         // missing command
 			{Name: "sp", Kind: hookdag.StepSendPrompt},                         // missing prompt

@@ -63,7 +63,7 @@ func (c *CostCeilingTracker) Account(model string, inTokens, outTokens int) {
 	defer c.mu.Unlock()
 
 	if inTokens == 0 && outTokens == 0 {
-		c.log.Warn("scheduler: cost tracking disabled — no token counts from provider", "model", model)
+		c.log.Warn("scheduler: cost tracking disabled — no token counts from provider", keyModel, model)
 
 		return
 	}

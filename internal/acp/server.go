@@ -121,7 +121,7 @@ func NewServer(in io.Reader, out io.Writer, stderrSink io.Writer, opts ...Server
 type stubNoChunkRunner struct{}
 
 func (stubNoChunkRunner) Run(ctx context.Context, _ string, emit ChunkEmitter, prompt []ContentBlock) (string, error) {
-	return "end_turn", nil
+	return stopEndTurn, nil
 }
 
 // Serve runs the reader loop until ctx is cancelled or stdin reaches EOF. Each
@@ -250,7 +250,7 @@ func (s *Server) recoverDispatch(msg Message) {
 func (s *Server) handleParseError(err error) {
 	s.log.Printf("frame parse error: %v", err)
 	_ = s.out.Write(Message{
-		JSONRPC: "2.0",
+		JSONRPC: protocolVersion20,
 		ID:      nil,
 		Error:   &RPCError{Code: CodeParseError, Message: "parse error"},
 	})
@@ -258,12 +258,12 @@ func (s *Server) handleParseError(err error) {
 
 // writeResult writes a success response with the given id.
 func (s *Server) writeResult(id *int, result json.RawMessage) {
-	_ = s.out.Write(Message{JSONRPC: "2.0", ID: id, Result: result})
+	_ = s.out.Write(Message{JSONRPC: protocolVersion20, ID: id, Result: result})
 }
 
 // writeError writes an error response with the given id.
 func (s *Server) writeError(id *int, e *RPCError) {
-	_ = s.out.Write(Message{JSONRPC: "2.0", ID: id, Error: e})
+	_ = s.out.Write(Message{JSONRPC: protocolVersion20, ID: id, Error: e})
 }
 
 // adapter is the default ChunkEmitter: it writes session/update notifications
@@ -280,14 +280,14 @@ func (a *adapter) AgentMessageChunk(messageID, text string) error {
 	update := map[string]any{
 		"sessionUpdate": "agent_message_chunk",
 		"messageId":     messageID,
-		"content":       ContentBlock{Type: "text", Text: text},
+		"content":       ContentBlock{Type: blockText, Text: text},
 	}
-	params := map[string]any{"sessionId": a.sessionID, "update": update}
+	params := map[string]any{keySessionID: a.sessionID, "update": update}
 
 	raw, err := json.Marshal(params)
 	if err != nil {
 		return err
 	}
 
-	return a.out.Write(Message{JSONRPC: "2.0", Method: "session/update", Params: raw})
+	return a.out.Write(Message{JSONRPC: protocolVersion20, Method: methodSessionUpdate, Params: raw})
 }

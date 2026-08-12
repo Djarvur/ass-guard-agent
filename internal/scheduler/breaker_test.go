@@ -37,7 +37,7 @@ func newCapturingLogger(buf *bytes.Buffer) *slog.Logger {
 // → Open; Allow returns false; a Warn line is emitted.
 func TestBreakerTripViaConsecutive(t *testing.T) {
 	t.Parallel()
-	b, buf := newTestBreaker(t, providerModelKey{"anthropic", "glm-5.2"}, defaultBreaker)
+	b, buf := newTestBreaker(t, providerModelKey{providerAnthropic, modelGLM52}, defaultBreaker)
 
 	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
 
@@ -225,8 +225,8 @@ func TestBreakerConcurrency(t *testing.T) {
 // Allow (per-(provider,model) isolation, D-07).
 func TestBreakerPerKeyIsolation(t *testing.T) {
 	t.Parallel()
-	a, _ := newTestBreaker(t, providerModelKey{"anthropic", "glm-5.2"}, defaultBreaker)
-	b, _ := newTestBreaker(t, providerModelKey{"openai", "minimax-m3"}, defaultBreaker)
+	a, _ := newTestBreaker(t, providerModelKey{providerAnthropic, modelGLM52}, defaultBreaker)
+	b, _ := newTestBreaker(t, providerModelKey{providerOpenAI, modelMinimaxM3}, defaultBreaker)
 
 	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
 	for range 5 {

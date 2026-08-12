@@ -26,9 +26,9 @@ func TestTranscriptReconstructsSession(t *testing.T) {
 	// A provider script: turn 1 = Bash tool_use (mutating → boundary); turn 2 =
 	// Task tool_use (subagent dispatch); turn 3 = end_turn text; then a cancelled turn.
 	script := []provider.Response{
-		{FinishReason: "tool_use", ToolCalls: []provider.ToolCall{{Name: "Bash", Input: json.RawMessage(`{"command":"ls -la"}`)}}},
-		{FinishReason: "tool_use", ToolCalls: []provider.ToolCall{{Name: "Task", Input: json.RawMessage(`{"prompt":"research the layout"}`)}}},
-		{FinishReason: "end_turn"},
+		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{{Name: toolBash, Input: json.RawMessage(`{"command":"ls -la"}`)}}},
+		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{{Name: toolTask, Input: json.RawMessage(`{"prompt":"research the layout"}`)}}},
+		{FinishReason: stopEndTurn},
 	}
 	fp := &reconProvider{script: script, bus: bus}
 	s := &Session{
@@ -48,15 +48,15 @@ func TestTranscriptReconstructsSession(t *testing.T) {
 	_ = m.AppendSessionStart("sess-recon")
 
 	// Prompt 1: triggers Bash boundary.
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "list files"}}); err != nil {
+	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "list files"}}); err != nil {
 		t.Fatalf("prompt 1: %v", err)
 	}
 	// Prompt 2: triggers Task subagent.
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "research"}}); err != nil {
+	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "research"}}); err != nil {
 		t.Fatalf("prompt 2: %v", err)
 	}
 	// Prompt 3: end_turn text.
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "summarize"}}); err != nil {
+	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "summarize"}}); err != nil {
 		t.Fatalf("prompt 3: %v", err)
 	}
 	// Inject a canceled line directly (cancel mid-turn is exercised separately by
@@ -103,11 +103,11 @@ func TestTranscriptReconstructsSession(t *testing.T) {
 	// (g) errors (none injected here; subagent may add)
 	// (h) cancel state (canceled line)
 	checks := map[string]bool{
-		"user_message":      false,
+		userMessageType:     false,
 		"assistant_message": false,
 		"tool_call":         false,
 		"tool_result":       false,
-		"boundary":          false,
+		kindBoundary:        false,
 		"request_shaped":    false,
 		"canceled":          false,
 		"subagent_dispatch": false,
@@ -127,7 +127,7 @@ func TestTranscriptReconstructsSession(t *testing.T) {
 	bashBoundary := false
 
 	for _, l := range lines {
-		if l.Type == "boundary" && l.Cause == "mutating-command:Bash" {
+		if l.Type == kindBoundary && l.Cause == mutatingCommandBash {
 			bashBoundary = true
 		}
 	}
@@ -162,7 +162,7 @@ func (r *reconProvider) Send(ctx context.Context, _ profile.Profile, _ []provide
 }
 
 func (r *reconProvider) Stream(ctx context.Context, prof profile.Profile, _ []provider.Message) (<-chan provider.StreamChunk, error) {
-	body, _ := json.Marshal(map[string]any{"model": prof.Model})
+	body, _ := json.Marshal(map[string]any{keyModel: prof.Model})
 	r.bus.Publish(event.RequestShaped{VerbatimRequest: body, Profile: prof.Name, Timestamp: time.Now()})
 
 	ch := make(chan provider.StreamChunk, 8)
@@ -178,19 +178,19 @@ func (r *reconProvider) Stream(ctx context.Context, prof profile.Profile, _ []pr
 		} else {
 			// Beyond the script: return a canned end_turn (covers the subagent's
 			// nested call and any extra prompts).
-			resp = provider.Response{FinishReason: "end_turn"}
+			resp = provider.Response{FinishReason: stopEndTurn}
 		}
 
 		for _, tc := range resp.ToolCalls {
 			tcCopy := tc
-			ch <- provider.StreamChunk{Type: "tool_use", ToolCall: &tcCopy, ToolCallID: tc.Name}
+			ch <- provider.StreamChunk{Type: blockToolUse, ToolCall: &tcCopy, ToolCallID: tc.Name}
 		}
 
 		if len(resp.ToolCalls) == 0 {
-			ch <- provider.StreamChunk{Type: "text", Text: "summary of findings"}
+			ch <- provider.StreamChunk{Type: blockText, Text: "summary of findings"}
 		}
 
-		ch <- provider.StreamChunk{Type: "done", FinishReason: resp.FinishReason}
+		ch <- provider.StreamChunk{Type: stopDone, FinishReason: resp.FinishReason}
 	}()
 
 	return ch, nil

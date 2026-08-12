@@ -17,11 +17,11 @@ func TestAdapter_ProfileAuthoritative(t *testing.T) {
 	a := toolcat.NewAdapter()
 	customSchema := json.RawMessage(`{"type":"object","properties":{"custom":{"type":"string"}},"required":["custom"]}`)
 	decls := []profile.Decl{
-		{Name: "Read", Description: "synthetic read", InputSchema: customSchema},
+		{Name: toolRead, Description: "synthetic read", InputSchema: customSchema},
 	}
 
 	out := a.ModelFacingSchemas(decls)
-	if len(out) != 1 || out[0].Name != "Read" {
+	if len(out) != 1 || out[0].Name != toolRead {
 		t.Fatalf("got %+v", out)
 	}
 	// The returned schema must be the PROFILE's (synthetic), byte-identical.
@@ -37,11 +37,11 @@ func TestAdapter_ResolveCallParsesInput(t *testing.T) {
 
 	a := toolcat.NewAdapter()
 	decls := []profile.Decl{
-		{Name: "Read", InputSchema: json.RawMessage(`{"type":"object","required":["file_path"]}`)},
+		{Name: toolRead, InputSchema: json.RawMessage(`{"type":"object","required":["file_path"]}`)},
 	}
 	in := json.RawMessage(`{"file_path":"go.mod"}`)
 
-	out, err := a.ResolveCall("Read", in, decls)
+	out, err := a.ResolveCall(toolRead, in, decls)
 	if err != nil {
 		t.Fatalf("ResolveCall Read: %v", err)
 	}
@@ -50,11 +50,11 @@ func TestAdapter_ResolveCallParsesInput(t *testing.T) {
 		t.Errorf("ResolveCall returned %s, want the input unchanged", out)
 	}
 
-	if _, err := a.ResolveCall("Write", in, decls); err == nil {
+	if _, err := a.ResolveCall(toolWrite, in, decls); err == nil {
 		t.Error("ResolveCall Write (undeclared) returned nil error; want non-nil")
 	}
 
-	if _, err := a.ResolveCall("Read", json.RawMessage(`{bad`), decls); err == nil {
+	if _, err := a.ResolveCall(toolRead, json.RawMessage(`{bad`), decls); err == nil {
 		t.Error("ResolveCall accepted malformed JSON; want non-nil error")
 	}
 }

@@ -16,7 +16,7 @@ import (
 // subagentRestrictedDefault is the default tool subset a Task/Agent subagent may
 // use (D-10). The model sees the FULL catalog (parent mimicry); the
 // RestrictedExecutor enforces this subset at runtime.
-var subagentRestrictedDefault = []string{"Read", "Glob", "Grep", "WebFetch", "WebSearch"}
+var subagentRestrictedDefault = []string{toolRead, "Glob", "Grep", toolWebFetch, "WebSearch"}
 
 // subagentRunner is the seam that runs the nested turn loop. Production uses the
 // real nested loop; tests inject a fake to simulate panics / canned results.
@@ -103,7 +103,7 @@ type defaultSubagentRunner struct{}
 
 func (defaultSubagentRunner) Run(ctx context.Context, s *Session, subagentTurnID, parentTurnID, prompt string, restricted []string) (string, error) {
 	// Append the subagent's user message (subagent-tagged).
-	_ = s.Manager.AppendUserMessage(subagentTurnID, []ContentBlock{{Type: "text", Text: prompt}})
+	_ = s.Manager.AppendUserMessage(subagentTurnID, []ContentBlock{{Type: blockText, Text: prompt}})
 
 	// One nested provider call (Phase-2 stubs tool execution; a full subagent
 	// tool-loop is Phase 4). The RestrictedExecutor wraps the session toolExec.
@@ -182,17 +182,17 @@ func (s *Session) streamAndEmitTagged(ctx context.Context, subagentTurnID, paren
 		}
 
 		switch chunk.Type {
-		case "text":
+		case blockText:
 			sb.WriteString(chunk.Text)
 
 			if s.Bus != nil && chunk.Text != "" {
 				s.Bus.Publish(event.AgentMessageChunk{TurnID: subagentTurnID, MessageID: subagentTurnID, Content: chunk.Text})
 			}
-		case "tool_use":
+		case blockToolUse:
 			if chunk.ToolCall != nil {
 				resp.ToolCalls = append(resp.ToolCalls, *chunk.ToolCall)
 			}
-		case "done":
+		case stopDone:
 			resp.FinishReason = chunk.FinishReason
 		}
 	}
@@ -216,21 +216,21 @@ func (s *Session) executeRestricted(ctx context.Context, tc provider.ToolCall, r
 
 // isSubagentTool reports whether the tool name dispatches a subagent (PARA-01).
 func isSubagentTool(name string) bool {
-	return name == "Task" || name == "Agent"
+	return name == toolTask || name == "Agent"
 }
 
 // extractSubagentPrompt pulls the prompt field from a Task/Agent tool-call input
 // (best-effort; returns a default if absent).
 func extractSubagentPrompt(input json.RawMessage) string {
 	if len(input) == 0 {
-		return "subagent task"
+		return subagentTaskPrompt
 	}
 
 	var m map[string]any
 
 	err := json.Unmarshal(input, &m)
 	if err != nil {
-		return "subagent task"
+		return subagentTaskPrompt
 	}
 
 	if p, ok := m["prompt"].(string); ok && p != "" {
@@ -241,5 +241,5 @@ func extractSubagentPrompt(input json.RawMessage) string {
 		return d
 	}
 
-	return "subagent task"
+	return subagentTaskPrompt
 }

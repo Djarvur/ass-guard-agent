@@ -51,12 +51,12 @@ func TestIntegration_TextSignalZeroContinue(t *testing.T) {
 	eng := &engine.Engine{Bus: bus, Manager: mgr}
 	collect := captureEvents(t, bus)
 
-	stop, err := eng.Observe(context.Background(), runner, table, []session.ContentBlock{{Type: "text", Text: "implement the spec"}})
+	stop, err := eng.Observe(context.Background(), runner, table, []session.ContentBlock{{Type: blockText, Text: "implement the spec"}})
 	if err != nil {
 		t.Fatalf("Observe err = %v; want nil", err)
 	}
 
-	if stop != "end_turn" {
+	if stop != stopEndTurn {
 		t.Errorf("stop = %q; want end_turn", stop)
 	}
 
@@ -68,7 +68,7 @@ func TestIntegration_TextSignalZeroContinue(t *testing.T) {
 	secondPrompt := runner.prompts[1]
 	runner.mu.Unlock()
 
-	if len(secondPrompt) != 1 || secondPrompt[0].Text != "continue" {
+	if len(secondPrompt) != 1 || secondPrompt[0].Text != stopContinue {
 		t.Errorf("2nd prompt = %+v; want the continue-injection", secondPrompt)
 	}
 
@@ -77,7 +77,7 @@ func TestIntegration_TextSignalZeroContinue(t *testing.T) {
 		t.Fatalf("events = %d; want 2 (continue then nothing)", len(events))
 	}
 
-	if events[0].Action != "continue" || events[1].Action != "nothing" {
+	if events[0].Action != stopContinue || events[1].Action != fixtureNothing {
 		t.Errorf("event actions = %q,%q; want continue,nothing", events[0].Action, events[1].Action)
 	}
 	// REAL audit-log assertion: the transcript carries the two engine_decision
@@ -115,8 +115,8 @@ func TestIntegration_UnmatchedStructuralSafety(t *testing.T) {
 	eng := &engine.Engine{Bus: bus, Manager: mgr}
 	collect := captureEvents(t, bus)
 
-	stop, err := eng.Observe(context.Background(), runner, table, []session.ContentBlock{{Type: "text", Text: "hello"}})
-	if err != nil || stop != "end_turn" {
+	stop, err := eng.Observe(context.Background(), runner, table, []session.ContentBlock{{Type: blockText, Text: "hello"}})
+	if err != nil || stop != stopEndTurn {
 		t.Fatalf("Observe = (%q, %v); want (end_turn, nil)", stop, err)
 	}
 
@@ -125,7 +125,7 @@ func TestIntegration_UnmatchedStructuralSafety(t *testing.T) {
 	}
 
 	events := collect()
-	if len(events) != 1 || events[0].Action != "nothing" {
+	if len(events) != 1 || events[0].Action != fixtureNothing {
 		t.Fatalf("events = %+v; want exactly one {nothing}", events)
 	}
 }
@@ -138,7 +138,7 @@ func TestIntegration_ToolSignalContinue(t *testing.T) {
 
 	table := seededTable()
 	runner := &scriptedRunner{outputs: []engine.TurnOutput{
-		{TurnID: "int-tool-1", Text: "advancing via tool", ToolCalls: []string{"Read", "OpenSpecHandoff"}},
+		{TurnID: "int-tool-1", Text: "advancing via tool", ToolCalls: []string{toolRead, openSpecHandoffKind}},
 		{TurnID: "int-tool-2", Text: "completed, no further signal"},
 	}}
 	mgr := newIntegrationManager(t, "sess-int-tool")
@@ -146,8 +146,8 @@ func TestIntegration_ToolSignalContinue(t *testing.T) {
 	eng := &engine.Engine{Bus: bus, Manager: mgr}
 	collect := captureEvents(t, bus)
 
-	stop, err := eng.Observe(context.Background(), runner, table, []session.ContentBlock{{Type: "text", Text: "go"}})
-	if err != nil || stop != "end_turn" {
+	stop, err := eng.Observe(context.Background(), runner, table, []session.ContentBlock{{Type: blockText, Text: "go"}})
+	if err != nil || stop != stopEndTurn {
 		t.Fatalf("Observe = (%q, %v); want (end_turn, nil)", stop, err)
 	}
 
@@ -160,7 +160,7 @@ func TestIntegration_ToolSignalContinue(t *testing.T) {
 		t.Fatalf("events = %d; want 2", len(events))
 	}
 
-	if events[0].Action != "continue" || !startsWith(events[0].Signal, "tool:") {
+	if events[0].Action != stopContinue || !startsWith(events[0].Signal, "tool:") {
 		t.Errorf("event[0] = %+v; want continue with tool:* signal", events[0])
 	}
 }

@@ -39,7 +39,7 @@ func TestRealExecutor_CatalogLookup(t *testing.T) {
 
 	cat := toolcat.NewCatalog()
 	cat.Register(toolcat.Tool{
-		Name:       "Read",
+		Name:       toolRead,
 		Mutability: toolcat.MutabilityReadOnly,
 		Execute: func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
 			return json.RawMessage(`{"read":"ok"}`), nil
@@ -47,7 +47,7 @@ func TestRealExecutor_CatalogLookup(t *testing.T) {
 	})
 	re := &toolexec.RealExecutor{Catalog: cat}
 
-	out, err := re.Execute(context.Background(), "Read", json.RawMessage(`{}`))
+	out, err := re.Execute(context.Background(), toolRead, json.RawMessage(`{}`))
 	if err != nil {
 		t.Fatalf("Read: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestRealExecutor_CatalogLookup(t *testing.T) {
 func TestRealExecutor_WebSearchDelegates(t *testing.T) {
 	t.Parallel()
 
-	be := &fakeBackend{name: "fake", searchOut: json.RawMessage(`{"hits":["x"]}`)}
+	be := &fakeBackend{name: backendFake, searchOut: json.RawMessage(`{"hits":["x"]}`)}
 	re := &toolexec.RealExecutor{Backends: map[string]toolexec.Backend{"WebSearch": be}}
 
 	out, err := re.Execute(context.Background(), "WebSearch", json.RawMessage(`{"query":"glms"}`))
@@ -88,10 +88,10 @@ func TestRealExecutor_WebSearchDelegates(t *testing.T) {
 func TestRealExecutor_WebFetchDelegates(t *testing.T) {
 	t.Parallel()
 
-	be := &fakeBackend{name: "fake", fetchOut: json.RawMessage(`{"page":true}`)}
-	re := &toolexec.RealExecutor{Backends: map[string]toolexec.Backend{"WebFetch": be}}
+	be := &fakeBackend{name: backendFake, fetchOut: json.RawMessage(`{"page":true}`)}
+	re := &toolexec.RealExecutor{Backends: map[string]toolexec.Backend{toolWebFetch: be}}
 
-	out, err := re.Execute(context.Background(), "WebFetch", json.RawMessage(`{"url":"https://example.com"}`))
+	out, err := re.Execute(context.Background(), toolWebFetch, json.RawMessage(`{"url":"https://example.com"}`))
 	if err != nil {
 		t.Fatalf("WebFetch: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestRealExecutor_WebFetchDelegates(t *testing.T) {
 func TestRealExecutor_BackendErrorPropagates(t *testing.T) {
 	t.Parallel()
 
-	be := &fakeBackend{name: "fake", searchErr: errors.New("backend down")}
+	be := &fakeBackend{name: backendFake, searchErr: errors.New("backend down")}
 
 	re := &toolexec.RealExecutor{Backends: map[string]toolexec.Backend{"WebSearch": be}}
 	if _, err := re.Execute(context.Background(), "WebSearch", json.RawMessage(`{"query":"x"}`)); err == nil {
@@ -134,7 +134,7 @@ func TestRealExecutor_NilExecutor(t *testing.T) {
 
 	var re *toolexec.RealExecutor
 
-	_, err := re.Execute(context.Background(), "Read", json.RawMessage(`{}`))
+	_, err := re.Execute(context.Background(), toolRead, json.RawMessage(`{}`))
 	if !errors.Is(err, toolexec.ErrNoExecutor) {
 		t.Errorf("err = %v; want ErrNoExecutor", err)
 	}

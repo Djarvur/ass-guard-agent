@@ -12,13 +12,13 @@ import (
 // types cover every event the Session Core, the turn loop, and the engine emit.
 const (
 	TypeSessionStart      = "session_start"
-	TypeUserMessage       = "user_message"
+	TypeUserMessage       = userMessageType
 	TypeRequestShaped     = "request_shaped"
 	TypeAgentMessageChunk = "agent_message_chunk"
 	TypeAssistantMessage  = "assistant_message"
 	TypeToolCall          = "tool_call"
 	TypeToolResult        = "tool_result"
-	TypeBoundary          = "boundary"
+	TypeBoundary          = kindBoundary
 	TypeSubagentDispatch  = "subagent_dispatch"
 	TypeSubagentResult    = "subagent_result"
 	TypeUsage             = "usage"

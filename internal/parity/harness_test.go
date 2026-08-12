@@ -24,12 +24,12 @@ func TestHarness_AllMatch(t *testing.T) {
 	t.Parallel()
 
 	suite := []parity.CapturedTurn{
-		{TurnID: "t1", Prompt: "p1", ExpectedToolCalls: turnsOf([2]string{"Read", `{"file_path":"a"}`})},
-		{TurnID: "t2", Prompt: "p2", ExpectedToolCalls: turnsOf([2]string{"Bash", `{"command":"go test"}`})},
+		{TurnID: "t1", Prompt: "p1", ExpectedToolCalls: turnsOf([2]string{toolRead, filePathAJSON})},
+		{TurnID: "t2", Prompt: "p2", ExpectedToolCalls: turnsOf([2]string{toolBash, commandGoTestJSON})},
 	}
 	arm := &tableArm{byPrompt: map[string][]parity.ToolCall{
-		"p1": turnsOf([2]string{"Read", `{"file_path":"a"}`}),
-		"p2": turnsOf([2]string{"Bash", `{"command":"go test"}`}),
+		"p1": turnsOf([2]string{toolRead, filePathAJSON}),
+		"p2": turnsOf([2]string{toolBash, commandGoTestJSON}),
 	}}
 	h := parity.NewHarness()
 
@@ -49,12 +49,12 @@ func TestHarness_Mismatch(t *testing.T) {
 	t.Parallel()
 
 	suite := []parity.CapturedTurn{
-		{TurnID: "t1", Prompt: "p1", ExpectedToolCalls: turnsOf([2]string{"Read", `{"file_path":"a"}`})},
-		{TurnID: "t2", Prompt: "p2", ExpectedToolCalls: turnsOf([2]string{"Bash", `{"command":"go test"}`})},
+		{TurnID: "t1", Prompt: "p1", ExpectedToolCalls: turnsOf([2]string{toolRead, filePathAJSON})},
+		{TurnID: "t2", Prompt: "p2", ExpectedToolCalls: turnsOf([2]string{toolBash, commandGoTestJSON})},
 	}
 	arm := &tableArm{byPrompt: map[string][]parity.ToolCall{
-		"p1": turnsOf([2]string{"Read", `{"file_path":"a"}`}),
-		"p2": turnsOf([2]string{"Grep", `{"pattern":"x"}`}), // wrong tool
+		"p1": turnsOf([2]string{toolRead, filePathAJSON}),
+		"p2": turnsOf([2]string{toolGrep, `{"pattern":"x"}`}), // wrong tool
 	}}
 	h := parity.NewHarness()
 	results, _ := h.Run(context.Background(), suite, arm)

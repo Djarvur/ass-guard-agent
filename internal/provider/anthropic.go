@@ -81,7 +81,7 @@ func (p *AnthropicProvider) Send(ctx context.Context, prof profile.Profile, mess
 
 	for chunk := range ch {
 		switch chunk.Type {
-		case "tool_use":
+		case blockToolUse:
 			if chunk.ToolCall != nil {
 				out.ToolCalls = append(out.ToolCalls, *chunk.ToolCall)
 			}
@@ -106,7 +106,7 @@ func (p *AnthropicProvider) ToolResultMessage(toolCallID string, result json.Raw
 	msg := map[string]any{
 		"role": "user",
 		"content": []map[string]any{{
-			"type":        "tool_result",
+			keyType:       "tool_result",
 			"tool_use_id": toolCallID,
 			"content":     json.RawMessage(orEmpty(result)),
 		}},

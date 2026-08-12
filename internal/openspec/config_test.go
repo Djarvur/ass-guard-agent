@@ -33,10 +33,10 @@ func TestDefaultConfig(t *testing.T) {
 	var sawImpl bool
 
 	for _, p := range cfg.Patterns {
-		if p.ID == "impl-complete" {
+		if p.ID == statusImplComplete {
 			sawImpl = true
 
-			if p.Action != "continue" {
+			if p.Action != stopContinue {
 				t.Errorf("impl-complete action = %q; want continue", p.Action)
 			}
 		}
@@ -46,7 +46,7 @@ func TestDefaultConfig(t *testing.T) {
 		t.Error("seeded impl-complete pattern missing")
 	}
 	// apply is mutating (the canonical boundary command — OPEN-03).
-	if apply, ok := cfg.Commands["apply"]; !ok || apply.Mutability != "mutating" {
+	if apply, ok := cfg.Commands["apply"]; !ok || apply.Mutability != classMutating {
 		t.Errorf("commands.apply = %+v ok=%v; want mutating", apply, ok)
 	}
 }

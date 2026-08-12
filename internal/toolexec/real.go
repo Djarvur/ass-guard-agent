@@ -48,8 +48,8 @@ func (r *RealExecutor) Execute(ctx context.Context, name string, input json.RawM
 		}
 	}
 
-	if name == "WebFetch" {
-		if be, ok := r.Backends["WebFetch"]; ok {
+	if name == toolWebFetch {
+		if be, ok := r.Backends[toolWebFetch]; ok {
 			return be.Fetch(ctx, extractURL(input))
 		}
 	}

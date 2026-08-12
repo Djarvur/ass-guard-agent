@@ -31,10 +31,10 @@ func TestDispatchSubagent_AppendsDispatchLine(t *testing.T) {
 	t.Parallel()
 
 	s, _, _ := newSubagentSession(t, []provider.Response{
-		{FinishReason: "tool_use", ToolCalls: []provider.ToolCall{{Name: "Task", Input: json.RawMessage(`{"prompt":"do research"}`)}}},
-		{FinishReason: "end_turn"},
+		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{{Name: toolTask, Input: json.RawMessage(`{"prompt":"do research"}`)}}},
+		{FinishReason: stopEndTurn},
 	})
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "dispatch"}}); err != nil {
+	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "dispatch"}}); err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 
@@ -60,12 +60,12 @@ func TestDispatchSubagent_AppendsDispatchLine(t *testing.T) {
 func TestSubagent_StreamsProgressWithParentTurnID(t *testing.T) {
 	t.Parallel()
 	s, bus, _ := newSubagentSession(t, []provider.Response{
-		{FinishReason: "tool_use", ToolCalls: []provider.ToolCall{{Name: "Task", Input: json.RawMessage(`{"prompt":"x"}`)}}},
-		{FinishReason: "end_turn"},
+		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{{Name: toolTask, Input: json.RawMessage(`{"prompt":"x"}`)}}},
+		{FinishReason: stopEndTurn},
 	})
 	chunks := bus.Subscribe("AgentMessageChunk", event.BufAgentMessageChunk)
 
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "go"}}); err != nil {
+	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "go"}}); err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 	// Drain a beat; at least one chunk should arrive (the subagent streams).
@@ -99,10 +99,10 @@ func TestSubagent_FinalResultToParent(t *testing.T) {
 	t.Parallel()
 
 	s, _, _ := newSubagentSession(t, []provider.Response{
-		{FinishReason: "tool_use", ToolCalls: []provider.ToolCall{{Name: "Task", Input: json.RawMessage(`{"prompt":"x"}`)}}},
-		{FinishReason: "end_turn"},
+		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{{Name: toolTask, Input: json.RawMessage(`{"prompt":"x"}`)}}},
+		{FinishReason: stopEndTurn},
 	})
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "go"}}); err != nil {
+	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "go"}}); err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 
@@ -127,14 +127,14 @@ func TestSubagent_RestrictedExecutor(t *testing.T) {
 	// Subagent returns a Bash tool_call; the subagent's RestrictedExecutor
 	// (allowed: Read/Grep) blocks Bash → "not available" tool_result.
 	s, _, _ := newSubagentSession(t, []provider.Response{
-		{FinishReason: "tool_use", ToolCalls: []provider.ToolCall{{Name: "Task", Input: json.RawMessage(`{"prompt":"x"}`)}}},
-		{FinishReason: "end_turn"},
+		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{{Name: toolTask, Input: json.RawMessage(`{"prompt":"x"}`)}}},
+		{FinishReason: stopEndTurn},
 	})
 	// Override the subagent's restricted set + toolExec via a fake executor.
 	fake := &fakeToolExec{}
 
 	s.toolExec = fake
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "go"}}); err != nil {
+	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "go"}}); err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 	// The fake executor records calls; assertion is structural (the subagent
@@ -165,13 +165,13 @@ func TestSubagentPanicRecovery(t *testing.T) {
 	t.Parallel()
 	// Provider: parent returns a Task call; subagent call panics.
 	s, _, _ := newSubagentSession(t, []provider.Response{
-		{FinishReason: "tool_use", ToolCalls: []provider.ToolCall{{Name: "Task", Input: json.RawMessage(`{"prompt":"x"}`)}}},
-		{FinishReason: "end_turn"},
+		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{{Name: toolTask, Input: json.RawMessage(`{"prompt":"x"}`)}}},
+		{FinishReason: stopEndTurn},
 	})
 	// Inject a panicking subagent runner.
 	s.subagentRunner = panickingSubagentRunner{}
 
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "go"}}); err != nil {
+	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "go"}}); err != nil {
 		// The parent may return an error from the subagent result, or continue.
 		t.Logf("parent returned err=%v (acceptable)", err)
 	}

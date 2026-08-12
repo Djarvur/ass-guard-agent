@@ -37,10 +37,10 @@ func (f fakeTable) MatchTool(name string) (string, engine.Action) {
 func seededTable() fakeTable {
 	return fakeTable{
 		textPatterns: map[string]engine.Action{
-			"## Implementation Complete — ready for review": engine.ActionContinue,
+			implementationCompleteMsg: engine.ActionContinue,
 		},
 		handoffTools: map[string]engine.Action{
-			"OpenSpecHandoff": engine.ActionContinue,
+			openSpecHandoffKind: engine.ActionContinue,
 		},
 	}
 }
@@ -71,7 +71,7 @@ func TestDecide_TextSignal(t *testing.T) {
 func TestDecide_ToolSignal(t *testing.T) {
 	t.Parallel()
 
-	out := engine.TurnOutput{TurnID: "t2", Text: "advancing now", ToolCalls: []string{"Read", "OpenSpecHandoff"}}
+	out := engine.TurnOutput{TurnID: "t2", Text: "advancing now", ToolCalls: []string{toolRead, openSpecHandoffKind}}
 
 	dec := engine.Decide(out, seededTable())
 	if dec.Action != engine.ActionContinue {
@@ -91,8 +91,8 @@ func TestDecide_DualSignalTextWins(t *testing.T) {
 
 	out := engine.TurnOutput{
 		TurnID:    "t3",
-		Text:      "## Implementation Complete — ready for review",
-		ToolCalls: []string{"OpenSpecHandoff"},
+		Text:      implementationCompleteMsg,
+		ToolCalls: []string{openSpecHandoffKind},
 	}
 
 	dec := engine.Decide(out, seededTable())
@@ -104,7 +104,7 @@ func TestDecide_DualSignalTextWins(t *testing.T) {
 		t.Errorf("Signal = %q; want text:* (text wins)", dec.Signal)
 	}
 
-	if !strings.Contains(dec.Reason, "OpenSpecHandoff") {
+	if !strings.Contains(dec.Reason, openSpecHandoffKind) {
 		t.Errorf("Reason = %q; want it to note the also-present handoff tool", dec.Reason)
 	}
 }
@@ -114,14 +114,14 @@ func TestDecide_DualSignalTextWins(t *testing.T) {
 func TestDecide_UnmatchedIsNothing(t *testing.T) {
 	t.Parallel()
 
-	out := engine.TurnOutput{TurnID: "t4", Text: "random unrelated text", ToolCalls: []string{"Read", "Grep"}}
+	out := engine.TurnOutput{TurnID: "t4", Text: "random unrelated text", ToolCalls: []string{toolRead, "Grep"}}
 
 	dec := engine.Decide(out, seededTable())
 	if dec.Action != engine.ActionNothing {
 		t.Errorf("Action = %v; want ActionNothing (structural safety)", dec.Action)
 	}
 
-	if dec.Signal != "unmatched" {
+	if dec.Signal != resultUnmatched {
 		t.Errorf("Signal = %q; want unmatched", dec.Signal)
 	}
 }
@@ -199,11 +199,11 @@ func TestDecide_QuickProperty(t *testing.T) {
 		// Either it matched a known signal (extremely unlikely from random
 		// strings) or it returned Nothing. The load-bearing assertion: every
 		// non-match is Nothing, never an ungrounded Continue.
-		if dec.Action == engine.ActionContinue && dec.Signal == "unmatched" {
+		if dec.Action == engine.ActionContinue && dec.Signal == resultUnmatched {
 			return false
 		}
 
-		if dec.Action == engine.ActionNothing && dec.Signal != "unmatched" {
+		if dec.Action == engine.ActionNothing && dec.Signal != resultUnmatched {
 			return false
 		}
 
@@ -236,8 +236,8 @@ func TestDecide_ProvenanceCarried(t *testing.T) {
 	t.Parallel()
 
 	cases := []engine.TurnOutput{
-		{TurnID: "text-turn", Text: "## Implementation Complete — ready for review"},
-		{TurnID: "tool-turn", ToolCalls: []string{"OpenSpecHandoff"}},
+		{TurnID: "text-turn", Text: implementationCompleteMsg},
+		{TurnID: "tool-turn", ToolCalls: []string{openSpecHandoffKind}},
 		{TurnID: "none-turn", Text: "nothing here"},
 		{TurnID: "empty-turn"},
 	}

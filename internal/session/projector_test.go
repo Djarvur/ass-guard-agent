@@ -11,7 +11,7 @@ import (
 func fakeProfile(systemText string) profile.Profile {
 	return profile.Profile{
 		Name:   "test",
-		System: []profile.TextBlock{{Type: "text", Text: systemText}},
+		System: []profile.TextBlock{{Type: blockText, Text: systemText}},
 	}
 }
 
@@ -25,12 +25,12 @@ func TestProjector_LeanSeedAfterBoundary(t *testing.T) {
 	m := newTestManager(t, "s1")
 	p := NewProjector(fakeProfile("you are a test agent"), m)
 
-	_ = m.AppendUserMessage("turn_040", []ContentBlock{{Type: "text", Text: "do something"}})
+	_ = m.AppendUserMessage("turn_040", []ContentBlock{{Type: blockText, Text: "do something"}})
 	_ = m.AppendAssistantMessage("turn_040", "old assistant response that must NOT carry forward")
-	_ = m.AppendToolCall("turn_040", "tc1", "Bash", []byte(`{"command":"ls"}`))
+	_ = m.AppendToolCall("turn_040", "tc1", toolBash, []byte(`{"command":"ls"}`))
 	_ = m.AppendToolResult("turn_040", "tc1", []byte(`{"out":"files"}`), false)
-	_ = m.AppendBoundary("mutating-command:Bash", "tc1", "turn_040")
-	_ = m.AppendUserMessage("turn_041", []ContentBlock{{Type: "text", Text: "what now"}})
+	_ = m.AppendBoundary(mutatingCommandBash, "tc1", "turn_040")
+	_ = m.AppendUserMessage("turn_041", []ContentBlock{{Type: blockText, Text: "what now"}})
 
 	msgs, err := p.Project("turn_041")
 	if err != nil {
@@ -68,12 +68,12 @@ func TestProjector_SummaryExtraction(t *testing.T) {
 	t.Parallel()
 	m := newTestManager(t, "s1")
 	p := NewProjector(fakeProfile("sys"), m)
-	_ = m.AppendUserMessage("turn_040", []ContentBlock{{Type: "text", Text: "edit the file"}})
-	_ = m.AppendToolCall("turn_040", "tc1", "Read", []byte(`{"file_path":"/a/go.mod"}`))
+	_ = m.AppendUserMessage("turn_040", []ContentBlock{{Type: blockText, Text: "edit the file"}})
+	_ = m.AppendToolCall("turn_040", "tc1", toolRead, []byte(`{"file_path":"/a/go.mod"}`))
 	_ = m.AppendToolResult("turn_040", "tc1", []byte(`{"out":"module x"}`), false)
 	_ = m.AppendAssistantMessage("turn_040", "done editing")
 	_ = m.AppendBoundary("mutating-command:Edit", "tc1", "turn_040")
-	_ = m.AppendUserMessage("turn_041", []ContentBlock{{Type: "text", Text: "next step"}})
+	_ = m.AppendUserMessage("turn_041", []ContentBlock{{Type: blockText, Text: "next step"}})
 
 	msgs, err := p.Project("turn_041")
 	if err != nil {
@@ -108,7 +108,7 @@ func TestProjector_FirstTurn(t *testing.T) {
 	t.Parallel()
 	m := newTestManager(t, "s1")
 	p := NewProjector(fakeProfile("sys"), m)
-	_ = m.AppendUserMessage("turn_001", []ContentBlock{{Type: "text", Text: "hello"}})
+	_ = m.AppendUserMessage("turn_001", []ContentBlock{{Type: blockText, Text: "hello"}})
 
 	msgs, err := p.Project("turn_001")
 	if err != nil {
@@ -140,9 +140,9 @@ func TestProjector_Truncation(t *testing.T) {
 	m := newTestManager(t, "s1")
 	p := NewProjector(fakeProfile("sys"), m)
 	long := strings.Repeat("a", 1000)
-	_ = m.AppendUserMessage("turn_040", []ContentBlock{{Type: "text", Text: long}})
-	_ = m.AppendBoundary("mutating-command:Bash", "tc1", "turn_040")
-	_ = m.AppendUserMessage("turn_041", []ContentBlock{{Type: "text", Text: "go"}})
+	_ = m.AppendUserMessage("turn_040", []ContentBlock{{Type: blockText, Text: long}})
+	_ = m.AppendBoundary(mutatingCommandBash, "tc1", "turn_040")
+	_ = m.AppendUserMessage("turn_041", []ContentBlock{{Type: blockText, Text: "go"}})
 
 	msgs, err := p.Project("turn_041")
 	if err != nil {

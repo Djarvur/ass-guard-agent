@@ -32,7 +32,7 @@ func newProfileCheckCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&captureFile, "capture-file", "", "fixture JSON capture (a model_io line) — bypasses the live path")
-	cmd.Flags().StringVar(&zcodeBin, "zcode-bin", "zcode", "zcode binary (live path; operator-gated)")
+	cmd.Flags().StringVar(&zcodeBin, "zcode-bin", profileZcode, "zcode binary (live path; operator-gated)")
 	cmd.Flags().StringVar(&profilesDir, "profiles-dir", defaultProfilesDir(), "directory containing profile bundles")
 
 	return cmd

@@ -39,10 +39,10 @@ func profilesRoot(t *testing.T) string {
 // system blocks are byte-equal to the profile's block-N.txt files (TIER-1).
 func TestFidelity_SystemBlocksByteEqual(t *testing.T) {
 	t.Parallel()
-	prof := loadProfileFromRoot(t, profilesRoot(t), "zcode")
+	prof := loadProfileFromRoot(t, profilesRoot(t), profileZcode)
 	s := shaper.New()
 
-	params, _, err := s.Shape(prof, []shaper.Message{{Role: "user", Content: "x"}})
+	params, _, err := s.Shape(prof, []shaper.Message{{Role: roleUser, Content: "x"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestFidelity_SystemBlocksByteEqual(t *testing.T) {
 // captured catalog + the thinking config.
 func TestFidelity_ToolCountAndThinking(t *testing.T) {
 	t.Parallel()
-	prof := loadProfileFromRoot(t, profilesRoot(t), "zcode")
+	prof := loadProfileFromRoot(t, profilesRoot(t), profileZcode)
 	s := shaper.New()
 
 	params, opts, err := s.Shape(prof, nil)
@@ -116,7 +116,7 @@ func TestPROF02_SyntheticProfileShapes(t *testing.T) {
 	prof := loadProfileFromRoot(t, profilesRoot(t), "synthetic")
 	s := shaper.New()
 
-	params, opts, err := s.Shape(prof, []shaper.Message{{Role: "user", Content: "x"}})
+	params, opts, err := s.Shape(prof, []shaper.Message{{Role: roleUser, Content: "x"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +169,7 @@ func TestPROF02_NoProfileNameLiteralsInShaper(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if strings.Contains(string(raw), "zcode") {
+		if strings.Contains(string(raw), profileZcode) {
 			t.Errorf("shaper source file %s contains the literal \"zcode\" (D-11 / PROF-02 violation)", name)
 		}
 	}

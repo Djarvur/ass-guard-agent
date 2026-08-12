@@ -28,7 +28,7 @@ const (
 func (m Mutability) String() string {
 	switch m {
 	case MutabilityMutating:
-		return "mutating"
+		return classMutating
 	default:
 		return "read-only"
 	}

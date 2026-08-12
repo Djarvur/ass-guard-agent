@@ -35,7 +35,7 @@ func (a Action) String() string {
 	case ActionNothing:
 		return "nothing"
 	case ActionContinue:
-		return "continue"
+		return stopContinue
 	case ActionHook:
 		return "hook"
 	case ActionAsk:

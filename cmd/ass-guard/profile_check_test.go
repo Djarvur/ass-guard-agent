@@ -17,12 +17,12 @@ func writeCaptureFixture(t *testing.T, sysCount, toolCount, headerCount int) str
 
 	sys := make([]map[string]any, sysCount)
 	for i := range sys {
-		sys[i] = map[string]any{"type": "text", "text": "x"}
+		sys[i] = map[string]any{keyType: blockText, blockText: "x"}
 	}
 
 	tools := make([]map[string]any, toolCount)
 	for i := range tools {
-		tools[i] = map[string]any{"name": "t", "input_schema": map[string]any{"type": "object"}}
+		tools[i] = map[string]any{"name": "t", "input_schema": map[string]any{keyType: "object"}}
 	}
 
 	headers := map[string]any{}
@@ -31,15 +31,15 @@ func writeCaptureFixture(t *testing.T, sysCount, toolCount, headerCount int) str
 	}
 
 	line := map[string]any{
-		"type":      "model_io",
-		"sessionId": "s",
+		keyType:      "model_io",
+		keySessionID: "s",
 		"request": map[string]any{
 			"body": map[string]any{
 				"model":       "GLM-5.2",
 				"system":      sys,
 				"tools":       tools,
-				"thinking":    map[string]any{"type": "enabled"},
-				"tool_choice": map[string]any{"type": "auto"},
+				"thinking":    map[string]any{keyType: "enabled"},
+				"tool_choice": map[string]any{keyType: "auto"},
 			},
 			"headers": headers,
 		},
@@ -98,10 +98,10 @@ func writeCoverageFixture(t *testing.T, name string, sysCount, toolCount, header
 // TestProfileCheck_NoDrift: capture matches manifest → no drift, nil error.
 func TestProfileCheck_NoDrift(t *testing.T) {
 	t.Parallel()
-	profilesDir := writeCoverageFixture(t, "zcode", 3, 103, 12)
+	profilesDir := writeCoverageFixture(t, profileZcode, 3, 103, 12)
 	capture := writeCaptureFixture(t, 3, 103, 12)
 
-	err := runProfileCheck("zcode", profilesDir, capture, "zcode")
+	err := runProfileCheck(profileZcode, profilesDir, capture, profileZcode)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -109,7 +109,7 @@ func TestProfileCheck_NoDrift(t *testing.T) {
 
 // TestProfileCheck_DriftDetected: capture's tool count differs → error + drift.
 func TestProfileCheck_DriftDetected(t *testing.T) { //nolint:paralleltest // swaps process-global os.Stderr
-	profilesDir := writeCoverageFixture(t, "zcode", 3, 103, 12)
+	profilesDir := writeCoverageFixture(t, profileZcode, 3, 103, 12)
 	capture := writeCaptureFixture(t, 3, 90, 12) // tools drifted
 
 	var stderr bytes.Buffer
@@ -121,7 +121,7 @@ func TestProfileCheck_DriftDetected(t *testing.T) { //nolint:paralleltest // swa
 
 	go func() { stderr.ReadFrom(r); close(done) }()
 
-	err := runProfileCheck("zcode", profilesDir, capture, "zcode")
+	err := runProfileCheck(profileZcode, profilesDir, capture, profileZcode)
 
 	w.Close()
 
@@ -144,7 +144,7 @@ func TestProfileCheck_DriftDetected(t *testing.T) { //nolint:paralleltest // swa
 
 // TestProfileCheck_ReportContainsStructuredFooter confirms the C6 footer shape.
 func TestProfileCheck_ReportContainsStructuredFooter(t *testing.T) { //nolint:paralleltest // swaps process-global os.Stderr
-	profilesDir := writeCoverageFixture(t, "zcode", 3, 103, 12)
+	profilesDir := writeCoverageFixture(t, profileZcode, 3, 103, 12)
 	capture := writeCaptureFixture(t, 3, 103, 12)
 
 	var stderr bytes.Buffer
@@ -156,7 +156,7 @@ func TestProfileCheck_ReportContainsStructuredFooter(t *testing.T) { //nolint:pa
 
 	go func() { stderr.ReadFrom(r); close(done) }()
 
-	_ = runProfileCheck("zcode", profilesDir, capture, "zcode")
+	_ = runProfileCheck(profileZcode, profilesDir, capture, profileZcode)
 
 	w.Close()
 

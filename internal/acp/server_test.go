@@ -122,7 +122,7 @@ func (s *stubTurn) Run(ctx context.Context, _ string, emit ChunkEmitter, prompt 
 	for i, c := range s.chunks {
 		select {
 		case <-ctx.Done():
-			return "cancelled", nil
+			return stopCancelled, nil
 		default:
 		}
 
@@ -132,7 +132,7 @@ func (s *stubTurn) Run(ctx context.Context, _ string, emit ChunkEmitter, prompt 
 		}
 	}
 
-	return "end_turn", nil
+	return stopEndTurn, nil
 }
 
 func messageID(n int) string {
@@ -158,14 +158,14 @@ func itoa(n int) string {
 func newRequest(id int, method string, params map[string]any) Message {
 	pmsg, _ := json.Marshal(params)
 
-	return Message{JSONRPC: "2.0", ID: &id, Method: method, Params: pmsg}
+	return Message{JSONRPC: protocolVersion20, ID: &id, Method: method, Params: pmsg}
 }
 
 // newNotification builds a notification Message (no id).
 func newNotification(method string, params map[string]any) Message {
 	pmsg, _ := json.Marshal(params)
 
-	return Message{JSONRPC: "2.0", Method: method, Params: pmsg}
+	return Message{JSONRPC: protocolVersion20, Method: method, Params: pmsg}
 }
 
 // TestInitializeReturnsAgentCapabilities verifies the initialize response uses
@@ -174,7 +174,7 @@ func newNotification(method string, params map[string]any) Message {
 func TestInitializeReturnsAgentCapabilities(t *testing.T) {
 	t.Parallel()
 	h := newPipeHarness(t)
-	h.send(t, newRequest(0, "initialize", map[string]any{"protocolVersion": 1}))
+	h.send(t, newRequest(0, methodInitialize, map[string]any{keyProtocolVersion: 1}))
 
 	msg := h.readFrame(t)
 	if msg.ID == nil || *msg.ID != 0 {
@@ -228,9 +228,9 @@ func TestInitializeReturnsAgentCapabilities(t *testing.T) {
 func TestSessionNewReturnsSessionID(t *testing.T) {
 	t.Parallel()
 	h := newPipeHarness(t)
-	h.send(t, newRequest(0, "initialize", map[string]any{"protocolVersion": 1}))
+	h.send(t, newRequest(0, methodInitialize, map[string]any{keyProtocolVersion: 1}))
 	h.readFrame(t)
-	h.send(t, newRequest(1, "session/new", map[string]any{"cwd": "/tmp", "mcpServers": []any{}}))
+	h.send(t, newRequest(1, "session/new", map[string]any{keyCwd: testCwdTmp, keyMcpServers: []any{}}))
 	msg := h.readFrame(t)
 
 	var res struct {
@@ -256,9 +256,9 @@ func TestSessionPromptStreamsUpdate(t *testing.T) {
 
 	stub := &stubTurn{chunks: []string{"Hello", " world"}}
 	h := newPipeHarness(t, WithTurnRunner(stub))
-	h.send(t, newRequest(0, "initialize", map[string]any{"protocolVersion": 1}))
+	h.send(t, newRequest(0, methodInitialize, map[string]any{keyProtocolVersion: 1}))
 	h.readFrame(t)
-	h.send(t, newRequest(1, "session/new", map[string]any{"cwd": "/tmp", "mcpServers": []any{}}))
+	h.send(t, newRequest(1, "session/new", map[string]any{keyCwd: testCwdTmp, keyMcpServers: []any{}}))
 	snew := h.readFrame(t)
 
 	var sres struct {
@@ -268,8 +268,8 @@ func TestSessionPromptStreamsUpdate(t *testing.T) {
 	_ = json.Unmarshal(snew.Result, &sres)
 
 	h.send(t, newRequest(2, "session/prompt", map[string]any{
-		"sessionId": sres.SessionID,
-		"prompt":    []map[string]any{{"type": "text", "text": "hi"}},
+		keySessionID: sres.SessionID,
+		"prompt":     []map[string]any{{"type": blockText, blockText: "hi"}},
 	}))
 
 	// Collect frames until the session/prompt response (id=2) arrives. At least
@@ -284,7 +284,7 @@ func TestSessionPromptStreamsUpdate(t *testing.T) {
 			t.Fatalf("client readFrame[%d]: %v", i, err)
 		}
 
-		if msg.Method == "session/update" {
+		if msg.Method == methodSessionUpdate {
 			if msg.ID != nil {
 				t.Errorf("session/update carried an id (%v); notifications carry no id", *msg.ID)
 			}
@@ -326,7 +326,7 @@ func TestSessionPromptStreamsUpdate(t *testing.T) {
 
 	_ = json.Unmarshal(promptResp.Result, &pres)
 
-	if pres.StopReason != "end_turn" {
+	if pres.StopReason != stopEndTurn {
 		t.Errorf("stopReason = %q; want end_turn", pres.StopReason)
 	}
 }
@@ -339,9 +339,9 @@ func TestSessionCancelProducesNoResponse(t *testing.T) {
 
 	stub := &stubTurn{chunks: []string{"x"}}
 	h := newPipeHarness(t, WithTurnRunner(stub))
-	h.send(t, newRequest(0, "initialize", map[string]any{"protocolVersion": 1}))
+	h.send(t, newRequest(0, methodInitialize, map[string]any{keyProtocolVersion: 1}))
 	h.readFrame(t)
-	h.send(t, newRequest(1, "session/new", map[string]any{"cwd": "/tmp", "mcpServers": []any{}}))
+	h.send(t, newRequest(1, "session/new", map[string]any{keyCwd: testCwdTmp, keyMcpServers: []any{}}))
 	snew := h.readFrame(t)
 
 	var sres struct {
@@ -354,10 +354,10 @@ func TestSessionCancelProducesNoResponse(t *testing.T) {
 	// can deterministically assert no response frame for the cancel itself.
 	// First kick a prompt, then immediately cancel.
 	h.send(t, newRequest(2, "session/prompt", map[string]any{
-		"sessionId": sres.SessionID,
-		"prompt":    []map[string]any{{"type": "text", "text": "hi"}},
+		keySessionID: sres.SessionID,
+		"prompt":     []map[string]any{{"type": blockText, blockText: "hi"}},
 	}))
-	h.send(t, newNotification("session/cancel", map[string]any{"sessionId": sres.SessionID}))
+	h.send(t, newNotification("session/cancel", map[string]any{keySessionID: sres.SessionID}))
 
 	// The cancel notification must produce NO response frame. We expect either
 	// the chunk(s) + the prompt response (cancelled), and crucially no frame
@@ -382,7 +382,7 @@ func TestSessionCancelProducesNoResponse(t *testing.T) {
 
 			_ = json.Unmarshal(msg.Result, &pres)
 
-			if pres.StopReason == "cancelled" || pres.StopReason == "end_turn" {
+			if pres.StopReason == stopCancelled || pres.StopReason == stopEndTurn {
 				promptDone = true
 			}
 		}
@@ -420,7 +420,7 @@ func TestStdoutClean(t *testing.T) {
 		<-done
 	}()
 
-	cliW.Write(mustFrame(t, newRequest(0, "initialize", map[string]any{"protocolVersion": 1})))
+	cliW.Write(mustFrame(t, newRequest(0, methodInitialize, map[string]any{keyProtocolVersion: 1})))
 	time.Sleep(100 * time.Millisecond)
 	cancel()
 
@@ -488,7 +488,7 @@ func TestMalformedFrameContinues(t *testing.T) {
 	// Write a malformed frame directly.
 	_, _ = h.cliW.Write([]byte("{\"jsonrpc\":\"2.0\",BROKEN\n"))
 	// Then a well-formed initialize.
-	h.send(t, newRequest(0, "initialize", map[string]any{"protocolVersion": 1}))
+	h.send(t, newRequest(0, methodInitialize, map[string]any{keyProtocolVersion: 1}))
 
 	gotParseError := false
 
@@ -531,12 +531,12 @@ func (e *errTurn) Run(ctx context.Context, _ string, emit ChunkEmitter, prompt [
 func TestErrorResponseShape(t *testing.T) {
 	t.Parallel()
 	h := newPipeHarness(t, WithTurnRunner(&errTurn{err: errors.New("boom session/prompt failed")}))
-	h.send(t, newRequest(0, "initialize", map[string]any{"protocolVersion": 1}))
+	h.send(t, newRequest(0, methodInitialize, map[string]any{keyProtocolVersion: 1}))
 	h.readFrame(t)
-	h.send(t, newRequest(1, "session/new", map[string]any{"cwd": "/tmp", "mcpServers": []any{}}))
+	h.send(t, newRequest(1, "session/new", map[string]any{keyCwd: testCwdTmp, keyMcpServers: []any{}}))
 	h.readFrame(t)
 	// session/load must be a -32601 method-not-supported error (D-09 no-op).
-	h.send(t, newRequest(2, "session/load", map[string]any{"sessionId": "x"}))
+	h.send(t, newRequest(2, "session/load", map[string]any{keySessionID: "x"}))
 
 	var loadResp *Message
 

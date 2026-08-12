@@ -14,7 +14,7 @@ import (
 // method set (VERIFIED-FACTS #3): initialize, session/new, session/prompt,
 // session/cancel, session/load (no-op per D-09), logout, session/set_mode.
 func (s *Server) registerHandlers() {
-	s.handlers["initialize"] = s.handleInitialize
+	s.handlers[methodInitialize] = s.handleInitialize
 	s.handlers["session/new"] = s.handleSessionNew
 	s.handlers["session/prompt"] = s.handleSessionPrompt
 	s.handlers["session/cancel"] = s.handleSessionCancel
@@ -123,14 +123,14 @@ func (s *Server) handleSessionPrompt(ctx context.Context, params json.RawMessage
 		// D-16: if the turn was cancelled, report stopReason "cancelled" rather
 		// than a hard error (the client expects a stopReason after cancel).
 		if errors.Is(turnCtx.Err(), context.Canceled) {
-			return sessionPromptResult{StopReason: "cancelled"}, nil
+			return sessionPromptResult{StopReason: stopCancelled}, nil
 		}
 
 		return nil, err
 	}
 
 	if stopReason == "" {
-		stopReason = "end_turn"
+		stopReason = stopEndTurn
 	}
 
 	return sessionPromptResult{StopReason: stopReason}, nil

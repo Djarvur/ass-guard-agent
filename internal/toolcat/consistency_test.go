@@ -15,11 +15,11 @@ func TestCheckConsistency_OnlyBuiltinsSatisfied(t *testing.T) {
 
 	c := toolcat.NewCatalog()
 	// Pull the catalog's own Read schema so the required-field set matches exactly.
-	readTool, _ := c.Get("Read")
-	bashTool, _ := c.Get("Bash")
+	readTool, _ := c.Get(toolRead)
+	bashTool, _ := c.Get(toolBash)
 	decls := []profile.Decl{
-		{Name: "Read", InputSchema: readTool.InputSchema},
-		{Name: "Bash", InputSchema: bashTool.InputSchema},
+		{Name: toolRead, InputSchema: readTool.InputSchema},
+		{Name: toolBash, InputSchema: bashTool.InputSchema},
 	}
 
 	res, err := toolcat.CheckConsistency(c, decls)
@@ -38,17 +38,17 @@ func TestCheckConsistency_DriftedSchemaIsHardFailure(t *testing.T) {
 	t.Parallel()
 
 	c := toolcat.NewCatalog()
-	readTool, _ := c.Get("Read")
+	readTool, _ := c.Get(toolRead)
 	// Mutate the required-field set to force a structural mismatch.
 	drifted := mutateRequired(t, readTool.InputSchema, []string{"totally_different_field"})
-	decls := []profile.Decl{{Name: "Read", InputSchema: drifted}}
+	decls := []profile.Decl{{Name: toolRead, InputSchema: drifted}}
 
 	res, _ := toolcat.CheckConsistency(c, decls)
 	if res.Ok() {
 		t.Fatal("expected Read with drifted required fields to be Unsatisfied; got Ok")
 	}
 
-	if len(res.Unsatisfied) != 1 || res.Unsatisfied[0] != "Read" {
+	if len(res.Unsatisfied) != 1 || res.Unsatisfied[0] != toolRead {
 		t.Errorf("Unsatisfied = %v, want [Read]", res.Unsatisfied)
 	}
 }

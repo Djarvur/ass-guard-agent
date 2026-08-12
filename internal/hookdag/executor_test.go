@@ -153,7 +153,7 @@ func captureHooks(t *testing.T, bus *event.Bus) func() []event.HookProgress {
 }
 
 func prov(name string) hookdag.Provenance {
-	return hookdag.Provenance{HookName: name, TriggerStage: "post-implement", SourceTurnID: "turn-1"}
+	return hookdag.Provenance{HookName: name, TriggerStage: stagePostImplement, SourceTurnID: "turn-1"}
 }
 
 // TestExecute_HappyPath verifies a 3-step all-passing hook completes + emits a
@@ -169,10 +169,10 @@ func TestExecute_HappyPath(t *testing.T) {
 		Boundaries: &fakeBoundaries{},
 	}
 	hook := hookdag.Hook{
-		Name: "h", Trigger: "post-implement", OnFailure: hookdag.OnFailureHalt,
+		Name: "h", Trigger: stagePostImplement, OnFailure: hookdag.OnFailureHalt,
 		Steps: []hookdag.Step{
 			{Name: "rc", Kind: hookdag.StepRunCommand, Command: "go", Args: []string{"test"}},
-			{Name: "sp", Kind: hookdag.StepSendPrompt, Prompt: "review me"},
+			{Name: "sp", Kind: hookdag.StepSendPrompt, Prompt: reviewPrompt},
 			{Name: "w", Kind: hookdag.StepWait, Duration: "1ms"},
 		},
 	}
@@ -203,7 +203,7 @@ func TestExecute_RunCommandHalt(t *testing.T) {
 		1: {exit: 1, stderr: "boom"},
 	}}
 	e := &hookdag.Executor{Bus: event.NewBus(), Commands: fc}
-	hook := hookdag.Hook{Name: "h", Trigger: "post-implement",
+	hook := hookdag.Hook{Name: "h", Trigger: stagePostImplement,
 		Steps: []hookdag.Step{
 			{Name: "s0", Kind: hookdag.StepRunCommand, Command: "a"},
 			{Name: "s1", Kind: hookdag.StepRunCommand, Command: "b", OnFailure: hookdag.OnFailureHalt},
@@ -244,7 +244,7 @@ func TestExecute_OnFailureContinue(t *testing.T) {
 		2: {exit: 0},
 	}}
 	e := &hookdag.Executor{Bus: bus, Commands: fc}
-	hook := hookdag.Hook{Name: "h", Trigger: "post-implement",
+	hook := hookdag.Hook{Name: "h", Trigger: stagePostImplement,
 		Steps: []hookdag.Step{
 			{Name: "s0", Kind: hookdag.StepRunCommand, Command: "a"},
 			{Name: "s1", Kind: hookdag.StepRunCommand, Command: "b", OnFailure: hookdag.OnFailureContinue},
@@ -284,7 +284,7 @@ func TestExecute_OnFailureAsk(t *testing.T) {
 		0: {exit: 1, stderr: "needs input"},
 	}}
 	e := &hookdag.Executor{Bus: bus, Commands: fc}
-	hook := hookdag.Hook{Name: "h", Trigger: "post-implement",
+	hook := hookdag.Hook{Name: "h", Trigger: stagePostImplement,
 		Steps: []hookdag.Step{
 			{Name: "s0", Kind: hookdag.StepRunCommand, Command: "a", OnFailure: hookdag.OnFailureAsk},
 			{Name: "s1", Kind: hookdag.StepRunCommand, Command: "b"},
@@ -320,7 +320,7 @@ func TestExecute_StepInheritsHookDefault(t *testing.T) {
 
 	fc := &fakeCommands{scripted: map[int]commandResult{0: {exit: 1, stderr: "x"}}}
 	e := &hookdag.Executor{Commands: fc}
-	hook := hookdag.Hook{Name: "h", Trigger: "post-implement", OnFailure: hookdag.OnFailureHalt,
+	hook := hookdag.Hook{Name: "h", Trigger: stagePostImplement, OnFailure: hookdag.OnFailureHalt,
 		Steps: []hookdag.Step{{Name: "s0", Kind: hookdag.StepRunCommand, Command: "a"}}}
 
 	res := e.Execute(context.Background(), hook, prov("h"))
@@ -336,8 +336,8 @@ func TestExecute_SendPromptIsATurn(t *testing.T) {
 
 	ft := &fakeTurns{}
 	e := &hookdag.Executor{Turns: ft}
-	hook := hookdag.Hook{Name: "h", Trigger: "post-implement",
-		Steps: []hookdag.Step{{Name: "sp", Kind: hookdag.StepSendPrompt, Prompt: "review me"}}}
+	hook := hookdag.Hook{Name: "h", Trigger: stagePostImplement,
+		Steps: []hookdag.Step{{Name: "sp", Kind: hookdag.StepSendPrompt, Prompt: reviewPrompt}}}
 
 	res := e.Execute(context.Background(), hook, prov("h"))
 	if res.Status != hookdag.StatusCompleted {
@@ -351,7 +351,7 @@ func TestExecute_SendPromptIsATurn(t *testing.T) {
 	ft.mu.Lock()
 	defer ft.mu.Unlock()
 
-	if ft.prompts[0] != "review me" {
+	if ft.prompts[0] != reviewPrompt {
 		t.Errorf("prompt = %q; want review me", ft.prompts[0])
 	}
 }
@@ -363,7 +363,7 @@ func TestExecute_SendPromptStopIsNotError(t *testing.T) {
 
 	ft := &fakeTurns{stop: "end_turn"}
 	e := &hookdag.Executor{Turns: ft}
-	hook := hookdag.Hook{Name: "h", Trigger: "post-implement",
+	hook := hookdag.Hook{Name: "h", Trigger: stagePostImplement,
 		Steps: []hookdag.Step{{Name: "sp", Kind: hookdag.StepSendPrompt, Prompt: "x", OnFailure: hookdag.OnFailureHalt}}}
 
 	res := e.Execute(context.Background(), hook, prov("h"))
@@ -379,7 +379,7 @@ func TestExecute_FreshContextIsABoundary(t *testing.T) {
 
 	fb := &fakeBoundaries{}
 	e := &hookdag.Executor{Boundaries: fb}
-	hook := hookdag.Hook{Name: "h", Trigger: "post-implement",
+	hook := hookdag.Hook{Name: "h", Trigger: stagePostImplement,
 		Steps: []hookdag.Step{{Name: "fc", Kind: hookdag.StepFreshContext}}}
 
 	res := e.Execute(context.Background(), hook, prov("h"))
@@ -401,7 +401,7 @@ func TestExecute_Wait(t *testing.T) {
 	ft := &fakeTurns{}
 	fb := &fakeBoundaries{}
 	e := &hookdag.Executor{Commands: fc, Turns: ft, Boundaries: fb}
-	hook := hookdag.Hook{Name: "h", Trigger: "post-implement",
+	hook := hookdag.Hook{Name: "h", Trigger: stagePostImplement,
 		Steps: []hookdag.Step{{Name: "w", Kind: hookdag.StepWait, Duration: "1ms"}}}
 	t0 := time.Now()
 
@@ -430,7 +430,7 @@ func TestReentrant_Refused(t *testing.T) {
 		scripted: map[int]commandResult{0: {exit: 0}},
 	}
 	e := &hookdag.Executor{Commands: fc}
-	hook := hookdag.Hook{Name: "rh", Trigger: "post-implement",
+	hook := hookdag.Hook{Name: "rh", Trigger: stagePostImplement,
 		Steps: []hookdag.Step{{Name: "s", Kind: hookdag.StepRunCommand, Command: "x"}}}
 
 	var wg sync.WaitGroup
@@ -471,7 +471,7 @@ func TestReentrant_AllowReentrant(t *testing.T) {
 
 	fc := &fakeCommands{sleep: 30 * time.Millisecond, scripted: map[int]commandResult{0: {exit: 0}}}
 	e := &hookdag.Executor{Commands: fc}
-	hook := hookdag.Hook{Name: "rh2", Trigger: "post-implement", AllowReentrant: true,
+	hook := hookdag.Hook{Name: "rh2", Trigger: stagePostImplement, AllowReentrant: true,
 		Steps: []hookdag.Step{{Name: "s", Kind: hookdag.StepRunCommand, Command: "x"}}}
 
 	var wg sync.WaitGroup
@@ -502,7 +502,7 @@ func TestReentrant_InFlightClearedAfterCompletion(t *testing.T) {
 
 	fc := &fakeCommands{}
 	e := &hookdag.Executor{Commands: fc}
-	hook := hookdag.Hook{Name: "seq", Trigger: "post-implement",
+	hook := hookdag.Hook{Name: "seq", Trigger: stagePostImplement,
 		Steps: []hookdag.Step{{Name: "s", Kind: hookdag.StepRunCommand, Command: "x"}}}
 	r1 := e.Execute(context.Background(), hook, prov("seq"))
 

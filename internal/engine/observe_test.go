@@ -45,7 +45,7 @@ func (s *scriptedRunner) Run(ctx context.Context, prompt []session.ContentBlock)
 
 	_ = out // stop reason is always end_turn for the tracer fakes
 
-	return "end_turn", nil
+	return stopEndTurn, nil
 }
 
 func (s *scriptedRunner) LastTurnOutput() engine.TurnOutput {
@@ -137,19 +137,19 @@ func TestObserve_ZeroContinueHappyPath(t *testing.T) {
 
 	table := seededTable()
 	runner := &scriptedRunner{outputs: []engine.TurnOutput{
-		{TurnID: "turn-001", Text: "## Implementation Complete — ready for review"},
-		{TurnID: "turn-002", Text: "final answer, nothing more"}, // unmatched
+		{TurnID: turn001, Text: implementationCompleteMsg},
+		{TurnID: turn002, Text: "final answer, nothing more"}, // unmatched
 	}}
 	bus := event.NewBus()
 	eng := &engine.Engine{Bus: bus}
 	collect := captureEvents(t, bus)
 
-	stop, err := eng.Observe(context.Background(), runner, table, []session.ContentBlock{{Type: "text", Text: "go"}})
+	stop, err := eng.Observe(context.Background(), runner, table, []session.ContentBlock{{Type: blockText, Text: "go"}})
 	if err != nil {
 		t.Fatalf("Observe err = %v; want nil", err)
 	}
 
-	if stop != "end_turn" {
+	if stop != stopEndTurn {
 		t.Errorf("stop = %q; want end_turn", stop)
 	}
 
@@ -161,7 +161,7 @@ func TestObserve_ZeroContinueHappyPath(t *testing.T) {
 	secondPrompt := runner.prompts[1]
 	runner.mu.Unlock()
 
-	if len(secondPrompt) != 1 || secondPrompt[0].Text != "continue" {
+	if len(secondPrompt) != 1 || secondPrompt[0].Text != stopContinue {
 		t.Errorf("2nd Run prompt = %+v; want the continue-injection [{text continue}]", secondPrompt)
 	}
 	// Provenance stream: exactly two EngineDecision events (continue, then nothing).
@@ -170,11 +170,11 @@ func TestObserve_ZeroContinueHappyPath(t *testing.T) {
 		t.Fatalf("got %d EngineDecision events; want 2", len(events))
 	}
 
-	if events[0].Action != "continue" || events[0].TurnID != "turn-001" {
+	if events[0].Action != stopContinue || events[0].TurnID != turn001 {
 		t.Errorf("event[0] = %+v; want continue/turn-001", events[0])
 	}
 
-	if events[1].Action != "nothing" || events[1].TurnID != "turn-002" {
+	if events[1].Action != fixtureNothing || events[1].TurnID != turn002 {
 		t.Errorf("event[1] = %+v; want nothing/turn-002 (provenance advances)", events[1])
 	}
 }
@@ -187,14 +187,14 @@ func TestObserve_UnmatchedZeroInjections(t *testing.T) {
 
 	table := seededTable()
 	runner := &scriptedRunner{outputs: []engine.TurnOutput{
-		{TurnID: "turn-001", Text: "totally unrelated output"},
+		{TurnID: turn001, Text: "totally unrelated output"},
 	}}
 	bus := event.NewBus()
 	eng := &engine.Engine{Bus: bus}
 	collect := captureEvents(t, bus)
 
-	stop, err := eng.Observe(context.Background(), runner, table, []session.ContentBlock{{Type: "text", Text: "go"}})
-	if err != nil || stop != "end_turn" {
+	stop, err := eng.Observe(context.Background(), runner, table, []session.ContentBlock{{Type: blockText, Text: "go"}})
+	if err != nil || stop != stopEndTurn {
 		t.Fatalf("Observe = (%q, %v); want (end_turn, nil)", stop, err)
 	}
 
@@ -203,7 +203,7 @@ func TestObserve_UnmatchedZeroInjections(t *testing.T) {
 	}
 
 	events := collect()
-	if len(events) != 1 || events[0].Action != "nothing" {
+	if len(events) != 1 || events[0].Action != fixtureNothing {
 		t.Fatalf("events = %+v; want exactly one {nothing}", events)
 	}
 }
@@ -217,18 +217,18 @@ func TestObserve_LastTurnOutputPanicDegradation(t *testing.T) {
 	table := seededTable()
 	runner := &scriptedRunner{
 		outputs: []engine.TurnOutput{
-			{TurnID: "turn-001", Text: "## Implementation Complete — ready for review"},
+			{TurnID: turn001, Text: implementationCompleteMsg},
 		},
 		lastPanicOn: 1, // the first LastTurnOutput call panics
 	}
 	eng := &engine.Engine{}
 
-	stop, err := eng.Observe(context.Background(), runner, table, []session.ContentBlock{{Type: "text", Text: "go"}})
+	stop, err := eng.Observe(context.Background(), runner, table, []session.ContentBlock{{Type: blockText, Text: "go"}})
 	if err != nil {
 		t.Fatalf("Observe err = %v; want nil (panic recovered)", err)
 	}
 
-	if stop != "end_turn" {
+	if stop != stopEndTurn {
 		t.Errorf("stop = %q; want end_turn (original first-turn result)", stop)
 	}
 
@@ -243,15 +243,15 @@ func TestObserve_DecidePanicDegradation(t *testing.T) {
 	t.Parallel()
 
 	panickingTable := panickingTable{}
-	runner := &scriptedRunner{outputs: []engine.TurnOutput{{TurnID: "turn-001", Text: "anything"}}}
+	runner := &scriptedRunner{outputs: []engine.TurnOutput{{TurnID: turn001, Text: "anything"}}}
 	eng := &engine.Engine{}
 
-	stop, err := eng.Observe(context.Background(), runner, panickingTable, []session.ContentBlock{{Type: "text", Text: "go"}})
+	stop, err := eng.Observe(context.Background(), runner, panickingTable, []session.ContentBlock{{Type: blockText, Text: "go"}})
 	if err != nil {
 		t.Fatalf("Observe err = %v; want nil (panic recovered)", err)
 	}
 
-	if stop != "end_turn" {
+	if stop != stopEndTurn {
 		t.Errorf("stop = %q; want end_turn (original)", stop)
 	}
 }
@@ -271,13 +271,13 @@ func TestObserve_ReFireBudget(t *testing.T) {
 	// Every scripted turn matches the handoff → the loop would run forever
 	// without the budget.
 	runner := &scriptedRunner{outputs: []engine.TurnOutput{
-		{TurnID: "turn-001", Text: "## Implementation Complete — ready for review"},
+		{TurnID: turn001, Text: implementationCompleteMsg},
 	}}
 	bus := event.NewBus()
 	eng := &engine.Engine{Bus: bus}
 	collect := captureEvents(t, bus)
 
-	stop, err := eng.Observe(context.Background(), runner, table, []session.ContentBlock{{Type: "text", Text: "go"}})
+	stop, err := eng.Observe(context.Background(), runner, table, []session.ContentBlock{{Type: blockText, Text: "go"}})
 	if err != nil {
 		t.Fatalf("Observe err = %v; want nil (budget is not an error)", err)
 	}
@@ -287,7 +287,7 @@ func TestObserve_ReFireBudget(t *testing.T) {
 		t.Errorf("runner.Run called %d times; want %d (user prompt + %d injections)", got, wantCalls, engine.MaxContinueInjections)
 	}
 
-	if stop != "end_turn" {
+	if stop != stopEndTurn {
 		t.Errorf("stop = %q; want end_turn", stop)
 	}
 	// The last event is the budget-cap Nothing with a "budget" signal.
@@ -310,7 +310,7 @@ func TestObserve_CancelDrain(t *testing.T) {
 
 	table := seededTable()
 	runner := &scriptedRunner{outputs: []engine.TurnOutput{
-		{TurnID: "turn-001", Text: "## Implementation Complete — ready for review"},
+		{TurnID: turn001, Text: implementationCompleteMsg},
 	}}
 	eng := &engine.Engine{}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -318,7 +318,7 @@ func TestObserve_CancelDrain(t *testing.T) {
 	// the first call.
 	wrapped := &cancelAfterFirst{inner: runner, cancel: cancel}
 
-	stop, err := eng.Observe(ctx, wrapped, table, []session.ContentBlock{{Type: "text", Text: "go"}})
+	stop, err := eng.Observe(ctx, wrapped, table, []session.ContentBlock{{Type: blockText, Text: "go"}})
 	if err != nil {
 		t.Fatalf("Observe err = %v; want nil", err)
 	}
@@ -355,13 +355,13 @@ func TestObserve_EmitsPerTurnWithManager(t *testing.T) {
 
 	table := seededTable()
 	runner := &scriptedRunner{outputs: []engine.TurnOutput{
-		{TurnID: "turn-001", Text: "## Implementation Complete — ready for review"},
-		{TurnID: "turn-002", Text: "unmatched"},
+		{TurnID: turn001, Text: implementationCompleteMsg},
+		{TurnID: turn002, Text: resultUnmatched},
 	}}
 	mgr := &capturingManager{}
 
 	eng := &engine.Engine{Manager: mgr}
-	if _, err := eng.Observe(context.Background(), runner, table, []session.ContentBlock{{Type: "text", Text: "go"}}); err != nil {
+	if _, err := eng.Observe(context.Background(), runner, table, []session.ContentBlock{{Type: blockText, Text: "go"}}); err != nil {
 		t.Fatalf("Observe err = %v", err)
 	}
 
@@ -372,11 +372,11 @@ func TestObserve_EmitsPerTurnWithManager(t *testing.T) {
 		t.Fatalf("wrote %d decisions; want 2 (one per turn)", len(mgr.decisions))
 	}
 
-	if mgr.decisions[0].Action != engine.ActionContinue || mgr.decisions[0].TurnID != "turn-001" {
+	if mgr.decisions[0].Action != engine.ActionContinue || mgr.decisions[0].TurnID != turn001 {
 		t.Errorf("decision[0] = %+v; want continue/turn-001", mgr.decisions[0])
 	}
 
-	if mgr.decisions[1].Action != engine.ActionNothing || mgr.decisions[1].TurnID != "turn-002" {
+	if mgr.decisions[1].Action != engine.ActionNothing || mgr.decisions[1].TurnID != turn002 {
 		t.Errorf("decision[1] = %+v; want nothing/turn-002", mgr.decisions[1])
 	}
 }
@@ -390,7 +390,7 @@ func TestObserve_RealErrorStopsLoop(t *testing.T) {
 	runner := &errorRunner{err: errors.New("provider down")}
 	eng := &engine.Engine{}
 
-	_, err := eng.Observe(context.Background(), runner, table, []session.ContentBlock{{Type: "text", Text: "go"}})
+	_, err := eng.Observe(context.Background(), runner, table, []session.ContentBlock{{Type: blockText, Text: "go"}})
 	if err == nil || err.Error() != "provider down" {
 		t.Fatalf("Observe err = %v; want provider down (surfaced)", err)
 	}

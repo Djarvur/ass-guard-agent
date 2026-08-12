@@ -27,7 +27,7 @@ func TestExtractTurnsFromRollout(t *testing.T) {
 		t.Error("turn 0 prompt is empty")
 	}
 
-	if len(turns[0].ExpectedToolCalls) != 1 || turns[0].ExpectedToolCalls[0].Name != "Read" {
+	if len(turns[0].ExpectedToolCalls) != 1 || turns[0].ExpectedToolCalls[0].Name != toolRead {
 		t.Errorf("turn 0 calls = %+v, want [Read]", turns[0].ExpectedToolCalls)
 	}
 	// Find the multi-tool turn ([Read, Read, Bash]).
@@ -46,7 +46,7 @@ func TestExtractTurnsFromRollout(t *testing.T) {
 	}
 
 	names := []string{multi.ExpectedToolCalls[0].Name, multi.ExpectedToolCalls[1].Name, multi.ExpectedToolCalls[2].Name}
-	if names[0] != "Read" || names[1] != "Read" || names[2] != "Bash" {
+	if names[0] != toolRead || names[1] != toolRead || names[2] != toolBash {
 		t.Errorf("multi-tool turn names = %v, want [Read Read Bash]", names)
 	}
 }

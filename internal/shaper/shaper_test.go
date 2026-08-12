@@ -37,7 +37,7 @@ func TestShape_SyntheticFixture(t *testing.T) {
 	p := loadFixture(t, "minimal")
 	s := shaper.New()
 
-	params, opts, err := s.Shape(p, []shaper.Message{{Role: "user", Content: "hello"}})
+	params, opts, err := s.Shape(p, []shaper.Message{{Role: roleUser, Content: "hello"}})
 	if err != nil {
 		t.Fatalf("Shape: %v", err)
 	}
@@ -111,14 +111,14 @@ func TestShape_ZcodeProfile(t *testing.T) {
 	root, _ := filepath.Abs(filepath.Join("..", "..", "profiles"))
 	l := profile.NewLoader(root)
 
-	p, err := l.Load("zcode")
+	p, err := l.Load(profileZcode)
 	if err != nil {
 		t.Skipf("zcode profile not available: %v", err)
 	}
 
 	s := shaper.New()
 
-	params, opts, err := s.Shape(p, []shaper.Message{{Role: "user", Content: "read go.mod"}})
+	params, opts, err := s.Shape(p, []shaper.Message{{Role: roleUser, Content: "read go.mod"}})
 	if err != nil {
 		t.Fatalf("Shape: %v", err)
 	}

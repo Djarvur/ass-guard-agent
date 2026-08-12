@@ -97,9 +97,9 @@ func TestStore_ConfirmThresholdActive(t *testing.T) {
 	t.Parallel()
 	s := newStore(t)
 
-	_ = s.RecordCandidate("feature", "continue", "t1")
+	_ = s.RecordCandidate("feature", stopContinue, "t1")
 	for _, tid := range []string{"t1", "t2", "t3"} {
-		if _, err := s.Confirm("feature", "continue", tid); err != nil {
+		if _, err := s.Confirm("feature", stopContinue, tid); err != nil {
 			t.Fatalf("Confirm(%s): %v", tid, err)
 		}
 	}
@@ -123,9 +123,9 @@ func TestStore_ConfirmThresholdActive(t *testing.T) {
 func TestStore_ConfirmBelowThresholdCandidate(t *testing.T) {
 	t.Parallel()
 	s := newStore(t)
-	_ = s.RecordCandidate("feature", "continue", "t1")
-	_, _ = s.Confirm("feature", "continue", "t1")
-	_, _ = s.Confirm("feature", "continue", "t2")
+	_ = s.RecordCandidate("feature", stopContinue, "t1")
+	_, _ = s.Confirm("feature", stopContinue, "t1")
+	_, _ = s.Confirm("feature", stopContinue, "t2")
 
 	e, _ := s.Lookup("feature")
 	if e.Status != learning.StatusCandidate {
@@ -217,9 +217,9 @@ func TestStore_SourceTurnProvenanceDeduped(t *testing.T) {
 	t.Parallel()
 	s := newStore(t)
 
-	_ = s.RecordCandidate("p", "continue", "t1")
+	_ = s.RecordCandidate("p", stopContinue, "t1")
 	for _, tid := range []string{"t1", "t2", "t3", "t1"} { // t1 repeated
-		_, _ = s.Confirm("p", "continue", tid)
+		_, _ = s.Confirm("p", stopContinue, tid)
 	}
 
 	e, _ := s.Lookup("p")
