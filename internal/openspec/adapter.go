@@ -32,7 +32,7 @@ type Adapter struct {
 //   - binary not on PATH => ErrOpenSpecNotFound (typed, errors.Is);
 //   - ctx cancelled => the process is killed (no orphan) + the ctx error is
 //     returned within ~200ms.
-func (a *Adapter) Run(ctx context.Context, command string, args ...string) (stdout, stderr string, err error) {
+func (a *Adapter) Run(ctx context.Context, command string, args ...string) (string, string, error) {
 	binary := a.Binary
 	if binary == "" {
 		binary = "openspec"
@@ -60,7 +60,7 @@ func (a *Adapter) Run(ctx context.Context, command string, args ...string) (stdo
 
 	waitErr := cmd.Wait()
 
-	stdout, stderr = stdoutBuf.String(), stderrBuf.String()
+	stdout, stderr := stdoutBuf.String(), stderrBuf.String()
 	if waitErr == nil {
 		return stdout, stderr, nil
 	}

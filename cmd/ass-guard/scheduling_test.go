@@ -17,7 +17,7 @@ const (
 
 // runSchedulingCmd executes the scheduling command tree with the given args,
 // capturing stdout + stderr. Returns the cobra error (nil on success).
-func runSchedulingCmd(t *testing.T, args ...string) (stdout, stderr string, err error) {
+func runSchedulingCmd(t *testing.T, args ...string) (string, string, error) {
 	t.Helper()
 
 	root := &cobra.Command{Use: "ass-guard", SilenceUsage: true}
@@ -28,7 +28,7 @@ func runSchedulingCmd(t *testing.T, args ...string) (stdout, stderr string, err 
 
 	root.SetOut(&out)
 	root.SetErr(&errs)
-	err = root.Execute()
+	err := root.Execute()
 
 	return out.String(), errs.String(), err
 }

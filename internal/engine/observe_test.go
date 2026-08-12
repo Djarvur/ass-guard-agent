@@ -102,7 +102,7 @@ func parseAction(s string) engine.Action {
 // and Observe runs in the caller's goroutine, by the time Observe returns every
 // event is already in the channel buffer. collect() drains the buffer
 // non-blocking — no reader goroutine, so there is no done-channel race.
-func captureEvents(t *testing.T, bus *event.Bus) (collect func() []event.EngineDecision) {
+func captureEvents(t *testing.T, bus *event.Bus) func() []event.EngineDecision {
 	t.Helper()
 	// Buffer generously (>= the re-fire budget + budget-cap event) so Publish
 	// never blocks mid-Observe.

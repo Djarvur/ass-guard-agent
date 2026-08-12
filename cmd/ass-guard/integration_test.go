@@ -56,7 +56,7 @@ func (m *mockStreamProvider) ToolResultMessage(string, json.RawMessage) (json.Ra
 
 // driveACP starts runACPServe with a mock provider and returns the client pipe
 // ends. The test writes client frames to cliW and reads from cliR.
-func driveACP(t *testing.T, mp provider.Provider) (cliW *io.PipeWriter, cliR io.Reader, stop func()) {
+func driveACP(t *testing.T, mp provider.Provider) (cliW *io.PipeWriter, cliR io.Reader, stop func()) { //nolint:nonamedreturns // names document the pipe/stdout/stop teardown triple returned to callers
 	t.Helper()
 
 	bus := event.NewBus()

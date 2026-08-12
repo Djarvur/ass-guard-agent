@@ -166,7 +166,7 @@ func (e *Engine) Observe(ctx context.Context, runner TurnRunner, table PatternTa
 
 // safeLastTurnID reads runner.LastTurnOutput under a recover so the budget
 // message never panics even if the fake is misconfigured.
-func safeLastTurnID(runner TurnRunner) (turnID string) {
+func safeLastTurnID(runner TurnRunner) string {
 	defer func() { _ = recover() }()
 
 	out := runner.LastTurnOutput()
@@ -193,7 +193,7 @@ func (e *Engine) runAndRecover(ctx context.Context, runner TurnRunner, prompt []
 
 // lastTurnAndRecover reads LastTurnOutput under a recover so a panicking fake
 // (the T3 graceful-degradation test) is contained.
-func (e *Engine) lastTurnAndRecover(runner TurnRunner) (out TurnOutput, err error) {
+func (e *Engine) lastTurnAndRecover(runner TurnRunner) (out TurnOutput, err error) { //nolint:nonamedreturns // named err is assigned by the panic-recovery defer
 	defer func() {
 		if r := recover(); r != nil {
 			e.logFailure("engine LastTurnOutput panic recovered", r)
@@ -210,7 +210,7 @@ func (e *Engine) lastTurnAndRecover(runner TurnRunner) (out TurnOutput, err erro
 // PatternTable (MatchText/MatchTool) is contained — graceful degradation (D-04,
 // T3 Test 4). On panic the original (stop, err) are preserved by the caller
 // (Observe returns them unchanged); Decide itself never panics on valid input.
-func (e *Engine) decideAndRecover(out TurnOutput, table PatternTable) (dec Decision, err error) {
+func (e *Engine) decideAndRecover(out TurnOutput, table PatternTable) (dec Decision, err error) { //nolint:nonamedreturns // named err is assigned by the panic-recovery defer
 	defer func() {
 		if r := recover(); r != nil {
 			e.logFailure("engine Decide panic recovered", r)
