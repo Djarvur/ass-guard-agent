@@ -70,7 +70,11 @@ type Executor struct {
 // event (investigate-and-fix-ready).
 func (e *Executor) Execute(ctx context.Context, hook Hook, prov Provenance) Result {
 	if !e.begin(hook, prov) {
-		return Result{Status: StatusSkippedReentrant, FailedStep: -1, Detail: fmt.Sprintf("hook %q on trigger %q already in-flight (allow_reentrant not set)", hook.Name, prov.TriggerStage)}
+		detail := fmt.Sprintf(
+			"hook %q on trigger %q already in-flight (allow_reentrant not set)",
+			hook.Name, prov.TriggerStage)
+
+		return Result{Status: StatusSkippedReentrant, FailedStep: -1, Detail: detail}
 	}
 	defer e.end(hook, prov)
 

@@ -28,8 +28,12 @@ func TestCapabilityNeedsToolsSkipsToolLessPrimary(t *testing.T) {
 	cfg := &Config{
 		Providers: map[string]ProviderConfig{"p": {BaseURL: "x", Shape: providerAnthropic}},
 		Models: map[string]ModelConfig{
-			tierToolLess: {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, Streaming: true, ToolCalling: false}},
-			tierToolFull: {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, Streaming: true, ToolCalling: true}},
+			tierToolLess: {Provider: "p", Capabilities: CapabilityProfile{
+				ContextWindow: 100, Streaming: true, ToolCalling: false,
+			}},
+			tierToolFull: {Provider: "p", Capabilities: CapabilityProfile{
+				ContextWindow: 100, Streaming: true, ToolCalling: true,
+			}},
 		},
 		Tiers: map[string]TierBinding{tierHeavy: {Model: tierToolLess, Fallback: []string{tierToolFull}}},
 	}
@@ -46,10 +50,18 @@ func TestCapabilityNeedsStreamingAndThinking(t *testing.T) {
 	cfg := &Config{
 		Providers: map[string]ProviderConfig{"p": {BaseURL: "x", Shape: providerAnthropic}},
 		Models: map[string]ModelConfig{
-			"no-stream": {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, ToolCalling: true, Streaming: false, ExtendedThinking: true}},
-			"stream":    {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, ToolCalling: true, Streaming: true, ExtendedThinking: true}},
-			"no-think":  {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, ToolCalling: true, Streaming: true, ExtendedThinking: false}},
-			"think":     {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, ToolCalling: true, Streaming: true, ExtendedThinking: true}},
+			"no-stream": {Provider: "p", Capabilities: CapabilityProfile{
+				ContextWindow: 100, ToolCalling: true, Streaming: false, ExtendedThinking: true,
+			}},
+			"stream": {Provider: "p", Capabilities: CapabilityProfile{
+				ContextWindow: 100, ToolCalling: true, Streaming: true, ExtendedThinking: true,
+			}},
+			"no-think": {Provider: "p", Capabilities: CapabilityProfile{
+				ContextWindow: 100, ToolCalling: true, Streaming: true, ExtendedThinking: false,
+			}},
+			"think": {Provider: "p", Capabilities: CapabilityProfile{
+				ContextWindow: 100, ToolCalling: true, Streaming: true, ExtendedThinking: true,
+			}},
 		},
 		Tiers: map[string]TierBinding{
 			"a": {Model: "no-stream", Fallback: []string{"stream"}},
@@ -111,7 +123,8 @@ func TestCapabilityPreservesFallbackOrder(t *testing.T) {
 	primary, remaining, err := r.Resolve(tierHeavy, "", time.Now(), CapabilityReq{NeedsTools: true})
 	require.NoError(t, err)
 	require.Equal(t, "yes-first", primary.Model, "first capable fallback wins (ordered)")
-	require.Equal(t, []string{yesSecond}, []string{remaining[0].Model}, "remaining chain is the candidates after the chosen one")
+	require.Equal(t, []string{yesSecond}, []string{remaining[0].Model},
+		"remaining chain is the candidates after the chosen one")
 }
 
 // TestCapabilityDescribeReq covers the requirement-string helper.
@@ -120,5 +133,6 @@ func TestCapabilityDescribeReq(t *testing.T) {
 	require.Equal(t, "(none)", describeReq(CapabilityReq{}))
 	require.Equal(t, "tool_calling", describeReq(CapabilityReq{NeedsTools: true}))
 	require.Equal(t, "tool_calling+streaming", describeReq(CapabilityReq{NeedsTools: true, NeedsStreaming: true}))
-	require.Equal(t, "tool_calling+streaming+extended_thinking", describeReq(CapabilityReq{NeedsTools: true, NeedsStreaming: true, NeedsThinking: true}))
+	require.Equal(t, "tool_calling+streaming+extended_thinking",
+		describeReq(CapabilityReq{NeedsTools: true, NeedsStreaming: true, NeedsThinking: true}))
 }

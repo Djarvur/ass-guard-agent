@@ -31,7 +31,8 @@ func newProfileCheckCmd() *cobra.Command {
 			return runProfileCheck(args[0], profilesDir, captureFile)
 		},
 	}
-	cmd.Flags().StringVar(&captureFile, "capture-file", "", "fixture JSON capture (a model_io line) — bypasses the live path")
+	cmd.Flags().StringVar(&captureFile, "capture-file", "",
+		"fixture JSON capture (a model_io line) — bypasses the live path")
 	cmd.Flags().StringVar(&zcodeBin, "zcode-bin", profileZcode, "zcode binary (live path; operator-gated)")
 	cmd.Flags().StringVar(&profilesDir, "profiles-dir", defaultProfilesDir(), "directory containing profile bundles")
 
@@ -105,7 +106,8 @@ func loadCaptureLine(captureFile string) (json.RawMessage, error) {
 
 	chosen, err := profile.PickRichestMain(stats)
 	if err != nil {
-		return nil, fmt.Errorf("no fresh capture available; pass --capture-file or run zcode to produce a rollout: %w", err)
+		return nil, fmt.Errorf("no fresh capture available; pass --capture-file "+
+			"or run zcode to produce a rollout: %w", err)
 	}
 
 	return readFirstLine(chosen.Path)

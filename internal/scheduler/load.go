@@ -301,14 +301,17 @@ func Validate(cfg *Config) error {
 	for _, slug := range sortedKeys(cfg.Providers) {
 		p := cfg.Providers[slug]
 		if p.Shape != providerAnthropic && p.Shape != providerOpenAI {
-			v = append(v, fmt.Sprintf("provider %q: unknown shape %q (want \"anthropic\" or \"openai\")", slug, p.Shape))
+			v = append(v, fmt.Sprintf(
+				"provider %q: unknown shape %q (want \"anthropic\" or \"openai\")", slug, p.Shape))
 		}
 	}
 
 	// cost_ceiling.degrade_to references a declared tier (only when set).
 	if cfg.CostCeiling.DegradeTo != "" {
 		if _, ok := cfg.Tiers[cfg.CostCeiling.DegradeTo]; !ok {
-			v = append(v, fmt.Sprintf("cost_ceiling.degrade_to: tier %q is not declared in tiers", cfg.CostCeiling.DegradeTo))
+			v = append(v, fmt.Sprintf(
+				"cost_ceiling.degrade_to: tier %q is not declared in tiers",
+				cfg.CostCeiling.DegradeTo))
 		}
 	}
 

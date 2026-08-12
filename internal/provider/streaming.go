@@ -91,7 +91,9 @@ func (p *AnthropicProvider) Stream(ctx context.Context, prof profile.Profile, me
 		_ = o
 	}
 
-	resp, err := httpClient.Do(req) //nolint:bodyclose // body is closed via defer in the drain goroutine below (must stay open for SSE streaming); bodyclose cannot track closes inside goroutines
+	// bodyclose cannot track closes inside goroutines; the body is closed via
+	// defer in the drain goroutine below (must stay open for SSE streaming).
+	resp, err := httpClient.Do(req) //nolint:bodyclose // closed in drain goroutine
 	if err != nil {
 		return nil, fmt.Errorf("anthropic provider stream send: %w", err)
 	}

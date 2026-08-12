@@ -119,8 +119,10 @@ func TestStream_ToolUse(t *testing.T) {
 	t.Parallel()
 
 	srv := httptest.NewServer(sseHandler(
-		`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_1","name":"Bash","input":{}}}`,
-		`{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"command\":\"ls\"}"}}`,
+		`{"type":"content_block_start","index":0,`+
+			`"content_block":{"type":"tool_use","id":"call_1","name":"Bash","input":{}}}`,
+		`{"type":"content_block_delta","index":0,`+
+			`"delta":{"type":"input_json_delta","partial_json":"{\"command\":\"ls\"}"}}`,
 		`{"type":"content_block_stop","index":0}`,
 		`{"type":"message_delta","delta":{"stop_reason":"tool_use"}}`,
 		`{"type":"message_stop"}`,
@@ -176,7 +178,8 @@ func TestStream_RespectsCancel(t *testing.T) {
 	// cancelled by the ctx propagation).
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		flusher, _ := w.(http.Flusher)
-		fmt.Fprintf(w, "data: %s\n\n", `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"first"}}`)
+		fmt.Fprintf(w, "data: %s\n\n",
+			`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"first"}}`)
 
 		if flusher != nil {
 			flusher.Flush()

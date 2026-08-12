@@ -26,8 +26,16 @@ func TestTranscriptReconstructsSession(t *testing.T) {
 	// A provider script: turn 1 = Bash tool_use (mutating → boundary); turn 2 =
 	// Task tool_use (subagent dispatch); turn 3 = end_turn text; then a cancelled turn.
 	script := []provider.Response{
-		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{{Name: toolBash, Input: json.RawMessage(`{"command":"ls -la"}`)}}},
-		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{{Name: toolTask, Input: json.RawMessage(`{"prompt":"research the layout"}`)}}},
+		{
+			FinishReason: blockToolUse,
+			ToolCalls:    []provider.ToolCall{{Name: toolBash, Input: json.RawMessage(`{"command":"ls -la"}`)}},
+		},
+		{
+			FinishReason: blockToolUse,
+			ToolCalls: []provider.ToolCall{{
+				Name: toolTask, Input: json.RawMessage(`{"prompt":"research the layout"}`),
+			}},
+		},
 		{FinishReason: stopEndTurn},
 	}
 	fp := &reconProvider{script: script, bus: bus}
@@ -65,7 +73,8 @@ func TestTranscriptReconstructsSession(t *testing.T) {
 
 	// Inject a secret-bearing request_shaped line to verify LOG-03 redaction on
 	// disk (the reconProvider publishes RequestShaped too, but this is explicit).
-	_ = m.AppendRequestShaped("turn-x", json.RawMessage(`{"authorization":"Bearer sk-recon-secret"}`), "test", time.Now())
+	secret := json.RawMessage(`{"authorization":"Bearer sk-recon-secret"}`)
+	_ = m.AppendRequestShaped("turn-x", secret, "test", time.Now())
 
 	// Let the async writer flush.
 	flushDeadline := time.Now().Add(1 * time.Second)

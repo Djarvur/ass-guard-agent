@@ -29,7 +29,7 @@ const redacted = "[REDACTED]"
 
 // secretKeys is the case-insensitive set of field names whose VALUES are
 // always secret. Mirrors spikes/02-openai-toolschema/main.go isSecretKey.
-var secretKeys = map[string]struct{}{ //nolint:gochecknoglobals // immutable lookup table / default (cannot be a const)
+var secretKeys = map[string]struct{}{ //nolint:gochecknoglobals // immutable table
 	"authorization": {},
 	"api_key":       {},
 	"api-key":       {},

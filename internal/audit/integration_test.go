@@ -29,7 +29,10 @@ func TestAudit_IntegrationViaProviderCapturer(t *testing.T) {
 		// Echo back a tool_use so the round-trip completes; the canned body is
 		// not the focus — the capturer is.
 		w.Header().Set("content-type", "application/json")
-		_, _ = io.WriteString(w, `{"id":"m","type":"message","role":"assistant","model":"synth-model","stop_reason":"tool_use","content":[{"type":"tool_use","id":"c1","name":"synth_tool_a","input":{"path":"x"}}]}`)
+		_, _ = io.WriteString(w,
+			`{"id":"m","type":"message","role":"assistant","model":"synth-model",`+
+				`"stop_reason":"tool_use",`+
+				`"content":[{"type":"tool_use","id":"c1","name":"synth_tool_a","input":{"path":"x"}}]}`)
 	}))
 	defer srv.Close()
 

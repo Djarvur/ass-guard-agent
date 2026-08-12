@@ -82,7 +82,9 @@ func (c *capturingManager) AppendEngineDecision(turnID, action, signal, reason s
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	c.decisions = append(c.decisions, engine.Decision{TurnID: turnID, Action: parseAction(action), Signal: signal, Reason: reason})
+	c.decisions = append(c.decisions, engine.Decision{
+		TurnID: turnID, Action: parseAction(action), Signal: signal, Reason: reason,
+	})
 
 	return nil
 }
@@ -245,7 +247,8 @@ func TestObserve_DecidePanicDegradation(t *testing.T) {
 	runner := &scriptedRunner{outputs: []engine.TurnOutput{{TurnID: turn001, Text: "anything"}}}
 	eng := &engine.Engine{}
 
-	stop, err := eng.Observe(context.Background(), runner, panickingTable, []session.ContentBlock{{Type: blockText, Text: "go"}})
+	stop, err := eng.Observe(context.Background(), runner, panickingTable,
+		[]session.ContentBlock{{Type: blockText, Text: "go"}})
 	if err != nil {
 		t.Fatalf("Observe err = %v; want nil (panic recovered)", err)
 	}
@@ -283,7 +286,8 @@ func TestObserve_ReFireBudget(t *testing.T) {
 
 	wantCalls := engine.MaxContinueInjections + 1
 	if got := runner.runCalls(); got != wantCalls {
-		t.Errorf("runner.Run called %d times; want %d (user prompt + %d injections)", got, wantCalls, engine.MaxContinueInjections)
+		t.Errorf("runner.Run called %d times; want %d (user prompt + %d injections)",
+			got, wantCalls, engine.MaxContinueInjections)
 	}
 
 	if stop != stopEndTurn {
@@ -360,7 +364,8 @@ func TestObserve_EmitsPerTurnWithManager(t *testing.T) {
 	mgr := &capturingManager{}
 
 	eng := &engine.Engine{Manager: mgr}
-	if _, err := eng.Observe(context.Background(), runner, table, []session.ContentBlock{{Type: blockText, Text: "go"}}); err != nil {
+	if _, err := eng.Observe(context.Background(), runner, table,
+		[]session.ContentBlock{{Type: blockText, Text: "go"}}); err != nil {
 		t.Fatalf("Observe err = %v", err)
 	}
 

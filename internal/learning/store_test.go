@@ -198,7 +198,10 @@ func TestStore_ExpiredIgnoredNotDeleted(t *testing.T) {
 	entries := s2.List()
 	// Overwrite the file with a back-dated expiry.
 	past := time.Now().Add(-1 * time.Hour)
-	_ = os.WriteFile(fp, []byte("entries:\n  - id: old2\n    situation: old2\n    answer: wait\n    confidence: 3\n    expiry: "+past.Format(time.RFC3339)+"\n    source_turns: [t1]\n    status: active\n"), 0o600)
+	yaml := "entries:\n  - id: old2\n    situation: old2\n    answer: wait\n" +
+		"    confidence: 3\n    expiry: " + past.Format(time.RFC3339) + "\n" +
+		"    source_turns: [t1]\n    status: active\n"
+	_ = os.WriteFile(fp, []byte(yaml), 0o600)
 	_ = entries
 
 	if _, ok := s2.Lookup("old2"); ok {
@@ -276,7 +279,8 @@ func TestStore_ListDeterministicOrder(t *testing.T) {
 	}
 	// File order = append order; situations are alpha/beta/gamma.
 	if list[0].Situation != "alpha" || list[2].Situation != "gamma" {
-		t.Errorf("List order = %v %v %v; want alpha, beta, gamma", list[0].Situation, list[1].Situation, list[2].Situation)
+		t.Errorf("List order = %v %v %v; want alpha, beta, gamma",
+			list[0].Situation, list[1].Situation, list[2].Situation)
 	}
 }
 

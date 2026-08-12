@@ -48,9 +48,13 @@ func cannedAnthropicToolUseResponse(name string, input map[string]any) string {
 
 	var b strings.Builder
 
-	b.WriteString("data: " + `{"type":"message_start","message":{"usage":{"input_tokens":10,"output_tokens":0}}}` + "\n\n")
-	b.WriteString("data: " + `{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_01","name":"` + name + `"}}` + "\n\n")
-	b.WriteString(`data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":` + string(partialJSONStr) + `}}` + "\n\n")
+	b.WriteString("data: " +
+		`{"type":"message_start","message":{"usage":{"input_tokens":10,"output_tokens":0}}}` + "\n\n")
+	b.WriteString("data: " +
+		`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_01","name":"` +
+		name + `}}` + "\n\n")
+	b.WriteString(`data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":` +
+		string(partialJSONStr) + `}}` + "\n\n")
 	b.WriteString("data: " + `{"type":"content_block_stop","index":0}` + "\n\n")
 	b.WriteString("data: " + `{"type":"message_delta","delta":{"stop_reason":"tool_use"}}` + "\n\n")
 	b.WriteString("data: [DONE]\n\n")
@@ -143,7 +147,8 @@ func TestAnthropicProvider_NoAPIKeyErrors(t *testing.T) {
 		t.Fatal("Send returned nil error with no API key; want non-nil")
 	}
 
-	if !strings.Contains(strings.ToLower(err.Error()), "api key") && !strings.Contains(strings.ToLower(err.Error()), "apikey") {
+	if !strings.Contains(strings.ToLower(err.Error()), "api key") &&
+		!strings.Contains(strings.ToLower(err.Error()), "apikey") {
 		t.Errorf("error message %q does not mention the missing API key", err.Error())
 	}
 }

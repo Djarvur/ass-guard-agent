@@ -159,7 +159,8 @@ func TestEndToEnd_ZeroContinue(t *testing.T) {
 		scriptedResp{text: "the work is finished, no further handoff signal", finish: stopEndTurn},
 	)
 
-	stop, err := r.Run(context.Background(), "sess-e2e-1", &noopEmitter{}, []acp.ContentBlock{{Type: blockText, Text: "implement the spec"}})
+	stop, err := r.Run(context.Background(), "sess-e2e-1", &noopEmitter{},
+		[]acp.ContentBlock{{Type: blockText, Text: "implement the spec"}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
 	}
@@ -200,7 +201,8 @@ func TestEndToEnd_StructuralSafety(t *testing.T) {
 		scriptedResp{text: "the agent did something with no handoff signal at all", finish: stopEndTurn},
 	)
 
-	stop, err := r.Run(context.Background(), "sess-e2e-2", &noopEmitter{}, []acp.ContentBlock{{Type: blockText, Text: "hi"}})
+	stop, err := r.Run(context.Background(), "sess-e2e-2", &noopEmitter{},
+		[]acp.ContentBlock{{Type: blockText, Text: "hi"}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
 	}
@@ -266,7 +268,8 @@ func TestEndToEnd_EngineDisabledBackwardCompat(t *testing.T) {
 		// engineEnabled stays false — no setupEngine call.
 	}
 
-	stop, err := r.Run(context.Background(), "sess-noeng", &noopEmitter{}, []acp.ContentBlock{{Type: blockText, Text: "hi"}})
+	stop, err := r.Run(context.Background(), "sess-noeng", &noopEmitter{},
+		[]acp.ContentBlock{{Type: blockText, Text: "hi"}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
 	}
@@ -312,7 +315,7 @@ func TestRunACPServe_NoEngineFlag(t *testing.T) {
 // engine after exactly ONE provider turn — the queued continue-injections are
 // drained (none run). The ctx here stands in for the ACP turnCtx that
 // handleSessionCancel cancels.
-func TestCancelDrainsInjections(t *testing.T) { //nolint:paralleltest // timing-sensitive cancel-drain flakes under parallel/-race load
+func TestCancelDrainsInjections(t *testing.T) { //nolint:paralleltest // timing-sensitive cancel-drain
 	// Always-matching: every turn emits the impl-complete pattern (would loop to
 	// the budget). We cancel after the first turn.
 	r, prov, _ := newEngineRunner(t,
@@ -367,7 +370,8 @@ func TestE2E_Criterion1_ZeroContinueAndSafety(t *testing.T) {
 			scriptedResp{text: "final, no signal", finish: stopEndTurn},
 		)
 
-		stop, err := r.Run(context.Background(), "c1a", &noopEmitter{}, []acp.ContentBlock{{Type: blockText, Text: "go"}})
+		stop, err := r.Run(context.Background(), "c1a", &noopEmitter{},
+			[]acp.ContentBlock{{Type: blockText, Text: "go"}})
 		if err != nil || stop != stopEndTurn {
 			t.Fatalf("Run = (%q,%v)", stop, err)
 		}

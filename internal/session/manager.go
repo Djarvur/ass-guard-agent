@@ -119,29 +119,44 @@ func (m *Manager) AppendAssistantMessage(turnID, text string) error {
 
 // AppendAgentMessageChunk records one streamed chunk (for reconstruction).
 func (m *Manager) AppendAgentMessageChunk(turnID, messageID, text string) error {
-	return m.appendLine(Line{Type: TypeAgentMessageChunk, TurnID: turnID, Timestamp: now(), MessageID: messageID, Text: text})
+	return m.appendLine(Line{
+		Type: TypeAgentMessageChunk, TurnID: turnID, Timestamp: now(),
+		MessageID: messageID, Text: text,
+	})
 }
 
 // AppendRequestShaped records the verbatim shaped outgoing request (LOG-01),
 // redacted per-line (LOG-03).
 func (m *Manager) AppendRequestShaped(turnID string, verbatim json.RawMessage, profileName string, ts time.Time) error {
-	return m.appendLine(Line{Type: TypeRequestShaped, TurnID: turnID, Timestamp: ts, VerbatimRequest: verbatim, Profile: profileName})
+	return m.appendLine(Line{
+		Type: TypeRequestShaped, TurnID: turnID, Timestamp: ts,
+		VerbatimRequest: verbatim, Profile: profileName,
+	})
 }
 
 // AppendToolCall records a model-selected tool invocation.
 func (m *Manager) AppendToolCall(turnID, toolCallID, name string, input json.RawMessage) error {
-	return m.appendLine(Line{Type: TypeToolCall, TurnID: turnID, Timestamp: now(), ToolCallID: toolCallID, Name: name, Input: input})
+	return m.appendLine(Line{
+		Type: TypeToolCall, TurnID: turnID, Timestamp: now(),
+		ToolCallID: toolCallID, Name: name, Input: input,
+	})
 }
 
 // AppendToolResult records a tool's result (stubbed in Phase 2; real in Phase 4).
 func (m *Manager) AppendToolResult(turnID, toolCallID string, output json.RawMessage, isError bool) error {
-	return m.appendLine(Line{Type: TypeToolResult, TurnID: turnID, Timestamp: now(), ToolCallID: toolCallID, Output: output, IsError: isError})
+	return m.appendLine(Line{
+		Type: TypeToolResult, TurnID: turnID, Timestamp: now(),
+		ToolCallID: toolCallID, Output: output, IsError: isError,
+	})
 }
 
 // AppendBoundary records a context-boundary (a mutating command completed,
 // D-08). The next projection resets the lean window.
 func (m *Manager) AppendBoundary(cause, commandRef, turnID string) error {
-	return m.appendLine(Line{Type: TypeBoundary, TurnID: turnID, Timestamp: now(), Cause: cause, CommandRef: commandRef})
+	return m.appendLine(Line{
+		Type: TypeBoundary, TurnID: turnID, Timestamp: now(),
+		Cause: cause, CommandRef: commandRef,
+	})
 }
 
 // AppendCanceled records that a turn was cancelled (D-16).
@@ -151,7 +166,10 @@ func (m *Manager) AppendCanceled(turnID string, ts time.Time, reason string) err
 
 // AppendError records an investigate-and-fix-ready error line (PROJECT.md). The
 // message is scrubbed (LOG-03); component + recoverable + stack are preserved.
-func (m *Manager) AppendError(turnID, component, message string, inputs json.RawMessage, recoverable bool, stack string) error {
+func (m *Manager) AppendError(
+	turnID, component, message string,
+	inputs json.RawMessage, recoverable bool, stack string,
+) error {
 	scrubbed := m.redactor.ScrubError(errors.New(message))
 
 	return m.appendLine(Line{
@@ -181,7 +199,10 @@ func (m *Manager) AppendSubagentResult(parentTurnID, subagentTurnID, result, err
 
 // AppendUsage records a token-usage update.
 func (m *Manager) AppendUsage(turnID string, input, output int64) error {
-	return m.appendLine(Line{Type: TypeUsage, TurnID: turnID, Timestamp: now(), InputTokens: input, OutputTokens: output})
+	return m.appendLine(Line{
+		Type: TypeUsage, TurnID: turnID, Timestamp: now(),
+		InputTokens: input, OutputTokens: output,
+	})
 }
 
 // AppendEngineDecision records the unified engine's verdict for one turn

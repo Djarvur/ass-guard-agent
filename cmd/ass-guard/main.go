@@ -57,8 +57,10 @@ func newRootCmd() *cobra.Command {
 	}
 	root.PersistentFlags().StringVar(&prompt, "prompt", "", "prompt to send through the loop (required for the tracer)")
 	root.PersistentFlags().StringVar(&profileName, "profile", profileZcode, "profile name to load")
-	root.PersistentFlags().StringVar(&profilesDir, "profiles-dir", defaultProfilesDir(), "directory containing profile bundles")
-	root.PersistentFlags().StringVar(&auditLog, "audit-log", "", "write the redacted verbatim shaped request to this file (LOG-01); empty = stderr")
+	root.PersistentFlags().StringVar(&profilesDir, "profiles-dir", defaultProfilesDir(),
+		"directory containing profile bundles")
+	root.PersistentFlags().StringVar(&auditLog, "audit-log", "",
+		"write the redacted verbatim shaped request to this file (LOG-01); empty = stderr")
 
 	root.AddCommand(newProfileCmd())
 	root.AddCommand(newParityCmd())

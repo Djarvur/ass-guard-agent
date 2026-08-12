@@ -88,11 +88,13 @@ func TestPatternTable_MatchTextFirstWins(t *testing.T) {
 		t.Fatalf("FromConfig: %v", err)
 	}
 
-	if id, act := pt.MatchText("... Implementation Complete — ready for review ..."); id != statusImplComplete || act != engine.ActionContinue {
+	if id, act := pt.MatchText("... Implementation Complete — ready for review ..."); id != statusImplComplete ||
+		act != engine.ActionContinue {
 		t.Errorf("MatchText(impl) = (%q,%v); want (impl-complete, continue)", id, act)
 	}
 
-	if id, act := pt.MatchText("the Specification is now finalized"); id != "spec-done" || act != engine.ActionContinue {
+	if id, act := pt.MatchText("the Specification is now finalized"); id != "spec-done" ||
+		act != engine.ActionContinue {
 		t.Errorf("MatchText(spec) = (%q,%v); want (spec-done, continue)", id, act)
 	}
 

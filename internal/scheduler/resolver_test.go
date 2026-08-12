@@ -152,7 +152,8 @@ func TestActiveWindowWeekdayFilter(t *testing.T) {
 	now := ny(2026, time.August, 15, 12, 0)
 	primary, _, err := r.Resolve(tierHeavy, "myproj", now, CapabilityReq{})
 	require.NoError(t, err)
-	require.Equal(t, modelGLM52, primary.Model, "Saturday noon must skip peak (weekday filter) and resolve global heavy")
+	require.Equal(t, modelGLM52, primary.Model,
+		"Saturday noon must skip peak (weekday filter) and resolve global heavy")
 }
 
 // TestResolveFallbackChainEnriched: Resolve returns the declared fallback chain

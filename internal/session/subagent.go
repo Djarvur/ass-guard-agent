@@ -16,12 +16,15 @@ import (
 // subagentRestrictedDefault is the default tool subset a Task/Agent subagent may
 // use (D-10). The model sees the FULL catalog (parent mimicry); the
 // RestrictedExecutor enforces this subset at runtime.
-var subagentRestrictedDefault = []string{toolRead, "Glob", "Grep", toolWebFetch, "WebSearch"} //nolint:gochecknoglobals // immutable lookup table / default (cannot be a const)
+var subagentRestrictedDefault = []string{ //nolint:gochecknoglobals // immutable table
+	toolRead, "Glob", "Grep", toolWebFetch, "WebSearch",
+}
 
 // subagentRunner is the seam that runs the nested turn loop. Production uses the
 // real nested loop; tests inject a fake to simulate panics / canned results.
 type subagentRunner interface {
-	Run(ctx context.Context, s *Session, subagentTurnID, parentTurnID, prompt string, restricted []string) (string, error)
+	Run(ctx context.Context, s *Session, subagentTurnID, parentTurnID, prompt string,
+		restricted []string) (string, error)
 }
 
 // DispatchSubagent spawns an isolated goroutine running a nested turn loop with
@@ -59,7 +62,10 @@ func (s *Session) DispatchSubagent(ctx context.Context, parentTurnID, toolCallID
 				_ = s.Manager.AppendError(subagentTurnID, "subagent", err.Error(), nil, false, string(stack))
 
 				if s.Bus != nil {
-					s.Bus.Publish(event.SubagentResult{ParentTurnID: parentTurnID, ToolCallID: toolCallID, SubagentTurnID: subagentTurnID, Err: err})
+					s.Bus.Publish(event.SubagentResult{
+						ParentTurnID: parentTurnID, ToolCallID: toolCallID,
+						SubagentTurnID: subagentTurnID, Err: err,
+					})
 				}
 
 				resCh <- outcome{err: err}
@@ -76,7 +82,10 @@ func (s *Session) DispatchSubagent(ctx context.Context, parentTurnID, toolCallID
 
 		_ = s.Manager.AppendSubagentResult(parentTurnID, subagentTurnID, "", err.Error())
 		if s.Bus != nil {
-			s.Bus.Publish(event.SubagentResult{ParentTurnID: parentTurnID, ToolCallID: toolCallID, SubagentTurnID: subagentTurnID, Err: err})
+			s.Bus.Publish(event.SubagentResult{
+				ParentTurnID: parentTurnID, ToolCallID: toolCallID,
+				SubagentTurnID: subagentTurnID, Err: err,
+			})
 		}
 
 		return "", err
@@ -88,7 +97,10 @@ func (s *Session) DispatchSubagent(ctx context.Context, parentTurnID, toolCallID
 
 		_ = s.Manager.AppendSubagentResult(parentTurnID, subagentTurnID, o.result, errMsg)
 		if s.Bus != nil {
-			s.Bus.Publish(event.SubagentResult{ParentTurnID: parentTurnID, ToolCallID: toolCallID, SubagentTurnID: subagentTurnID, Result: o.result, Err: o.err})
+			s.Bus.Publish(event.SubagentResult{
+				ParentTurnID: parentTurnID, ToolCallID: toolCallID,
+				SubagentTurnID: subagentTurnID, Result: o.result, Err: o.err,
+			})
 		}
 
 		return o.result, o.err
@@ -101,7 +113,10 @@ func (s *Session) DispatchSubagent(ctx context.Context, parentTurnID, toolCallID
 // are published with ParentTurnID set (PARA-02).
 type defaultSubagentRunner struct{}
 
-func (defaultSubagentRunner) Run(ctx context.Context, s *Session, subagentTurnID, parentTurnID, prompt string, restricted []string) (string, error) {
+func (defaultSubagentRunner) Run(
+	ctx context.Context, s *Session,
+	subagentTurnID, parentTurnID, prompt string, restricted []string,
+) (string, error) {
 	// Append the subagent's user message (subagent-tagged).
 	_ = s.Manager.AppendUserMessage(subagentTurnID, []ContentBlock{{Type: blockText, Text: prompt}})
 
@@ -168,7 +183,10 @@ func (defaultSubagentRunner) Run(ctx context.Context, s *Session, subagentTurnID
 
 // streamAndEmitTagged is the subagent's streaming variant: it publishes events
 // tagged with ParentTurnID (PARA-02 — streamed progress for parent visibility).
-func (s *Session) streamAndEmitTagged(ctx context.Context, subagentTurnID, parentTurnID string, messages []provider.Message) (provider.Response, string, error) {
+func (s *Session) streamAndEmitTagged(
+	ctx context.Context, subagentTurnID, parentTurnID string,
+	messages []provider.Message,
+) (provider.Response, string, error) {
 	ch, err := s.Provider.Stream(ctx, s.Profile, messages)
 	if err != nil {
 		return provider.Response{}, "", err
@@ -190,7 +208,9 @@ func (s *Session) streamAndEmitTagged(ctx context.Context, subagentTurnID, paren
 			sb.WriteString(chunk.Text)
 
 			if s.Bus != nil && chunk.Text != "" {
-				s.Bus.Publish(event.AgentMessageChunk{TurnID: subagentTurnID, MessageID: subagentTurnID, Content: chunk.Text})
+				s.Bus.Publish(event.AgentMessageChunk{
+					TurnID: subagentTurnID, MessageID: subagentTurnID, Content: chunk.Text,
+				})
 			}
 		case blockToolUse:
 			if chunk.ToolCall != nil {
@@ -208,7 +228,9 @@ func (s *Session) streamAndEmitTagged(ctx context.Context, subagentTurnID, paren
 
 // executeRestricted runs a tool via the restricted executor (D-10). If no
 // toolExec is wired, returns the canned stub.
-func (s *Session) executeRestricted(ctx context.Context, tc provider.ToolCall, restricted []string) (json.RawMessage, error) {
+func (s *Session) executeRestricted(
+	ctx context.Context, tc provider.ToolCall, restricted []string,
+) (json.RawMessage, error) {
 	if s.toolExec == nil {
 		return stubToolResult, nil
 	}

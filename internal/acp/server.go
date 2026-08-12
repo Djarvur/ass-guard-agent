@@ -182,7 +182,10 @@ func (s *Server) Serve(ctx context.Context) error {
 func (s *Server) handleRequest(ctx context.Context, msg Message) {
 	handler, ok := s.handlers[msg.Method]
 	if !ok {
-		s.writeError(msg.ID, &RPCError{Code: CodeMethodNotFound, Message: fmt.Sprintf("method %q not found", msg.Method)})
+		s.writeError(msg.ID, &RPCError{
+			Code:    CodeMethodNotFound,
+			Message: fmt.Sprintf("method %q not found", msg.Method),
+		})
 
 		return
 	}

@@ -200,7 +200,10 @@ func stringEquiv(a, b string) bool {
 }
 
 func looksLikePath(s string) bool {
-	return strings.Contains(s, "/") || strings.HasSuffix(s, ".go") || strings.HasSuffix(s, ".json") || strings.HasSuffix(s, ".md")
+	return strings.Contains(s, "/") ||
+		strings.HasSuffix(s, ".go") ||
+		strings.HasSuffix(s, ".json") ||
+		strings.HasSuffix(s, ".md")
 }
 
 func normalizePath(s string) string {

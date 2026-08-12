@@ -19,7 +19,7 @@ import (
 // proxy is needed for the request body.
 type ModelIO struct {
 	Type      string `json:"type"`
-	SessionID string `json:"sessionId"` //nolint:tagliatelle // external model_io rollout format (camelCase source) — cannot rename
+	SessionID string `json:"sessionId"` //nolint:tagliatelle // model_io rollout format
 	Request   struct {
 		Body struct {
 			Model      json.RawMessage `json:"model"`
@@ -229,7 +229,8 @@ func buildResult(m ModelIO, path string) ExtractResult {
 	sort.Strings(names)
 
 	for _, n := range names {
-		res.Headers = append(res.Headers, Header{Name: n, ValueTemplate: "<" + strings.ToLower(strings.ReplaceAll(n, "-", "_")) + ">"})
+		underscored := strings.ToLower(strings.ReplaceAll(n, "-", "_"))
+		res.Headers = append(res.Headers, Header{Name: n, ValueTemplate: "<" + underscored + ">"})
 	}
 
 	return res

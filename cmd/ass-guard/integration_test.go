@@ -56,7 +56,9 @@ func (m *mockStreamProvider) ToolResultMessage(string, json.RawMessage) (json.Ra
 
 // driveACP starts runACPServe with a mock provider and returns the client pipe
 // ends. The test writes client frames to cliW and reads from cliR.
-func driveACP(t *testing.T, mp provider.Provider) (cliW *io.PipeWriter, cliR io.Reader, stop func()) { //nolint:nonamedreturns // names document the pipe/stdout/stop teardown triple returned to callers
+func driveACP(t *testing.T, mp provider.Provider) ( //nolint:nonamedreturns // names document the teardown triple
+	cliW *io.PipeWriter, cliR io.Reader, stop func(),
+) {
 	t.Helper()
 
 	bus := event.NewBus()
@@ -171,18 +173,24 @@ func TestIntegration_RealStreamingThroughACP(t *testing.T) {
 	cliW, cliR, stop := driveACP(t, mp)
 	defer stop()
 
-	sendFrame(t, cliW, acp.Message{JSONRPC: protocolVersion20, ID: intPtrACP(0), Method: "initialize", Params: rawJSON(map[string]any{"protocolVersion": 1})})
+	sendFrame(t, cliW, acp.Message{
+		JSONRPC: protocolVersion20, ID: intPtrACP(0), Method: "initialize",
+		Params: rawJSON(map[string]any{"protocolVersion": 1}),
+	})
 
 	frames := readFrames(t, cliR, 1)
 	if len(frames) == 0 || !strings.Contains(string(frames[0].Result), "agentCapabilities") {
 		t.Fatalf("no initialize response with agentCapabilities: %+v", frames)
 	}
 
-	sendFrame(t, cliW, acp.Message{JSONRPC: protocolVersion20, ID: intPtrACP(1), Method: "session/new", Params: rawJSON(map[string]any{"cwd": "/tmp", "mcpServers": []any{}})})
+	sendFrame(t, cliW, acp.Message{
+		JSONRPC: protocolVersion20, ID: intPtrACP(1), Method: "session/new",
+		Params: rawJSON(map[string]any{"cwd": "/tmp", "mcpServers": []any{}}),
+	})
 	frames = readFrames(t, cliR, 1)
 
 	var snew struct {
-		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP protocol wire field (camelCase per spec) — cannot rename
+		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
 	}
 
 	_ = json.Unmarshal(frames[0].Result, &snew)
@@ -191,10 +199,12 @@ func TestIntegration_RealStreamingThroughACP(t *testing.T) {
 		t.Fatalf("no sessionId in session/new response: %+v", frames)
 	}
 
-	sendFrame(t, cliW, acp.Message{JSONRPC: protocolVersion20, ID: intPtrACP(2), Method: "session/prompt", Params: rawJSON(map[string]any{
-		keySessionID: snew.SessionID,
-		"prompt":     []map[string]any{{keyType: blockText, blockText: "hi"}},
-	})})
+	sendFrame(t, cliW, acp.Message{
+		JSONRPC: protocolVersion20, ID: intPtrACP(2), Method: "session/prompt",
+		Params: rawJSON(map[string]any{
+			keySessionID: snew.SessionID,
+			"prompt":     []map[string]any{{keyType: blockText, blockText: "hi"}},
+		})})
 
 	// Collect frames: expect ≥1 session/update (agent_message_chunk) + the prompt response.
 	br := bufio.NewReader(cliR)
@@ -222,7 +232,7 @@ func TestIntegration_RealStreamingThroughACP(t *testing.T) {
 
 		if m.ID != nil && *m.ID == 2 {
 			var pres struct {
-				StopReason string `json:"stopReason"` //nolint:tagliatelle // ACP protocol wire field (camelCase per spec) — cannot rename
+				StopReason string `json:"stopReason"` //nolint:tagliatelle // ACP wire field
 			}
 
 			_ = json.Unmarshal(m.Result, &pres)
@@ -252,9 +262,15 @@ func TestIntegration_SessionLoadNoOp(t *testing.T) {
 	cliW, cliR, stop := driveACP(t, mp)
 	defer stop()
 
-	sendFrame(t, cliW, acp.Message{JSONRPC: protocolVersion20, ID: intPtrACP(0), Method: "initialize", Params: rawJSON(map[string]any{"protocolVersion": 1})})
+	sendFrame(t, cliW, acp.Message{
+		JSONRPC: protocolVersion20, ID: intPtrACP(0), Method: "initialize",
+		Params: rawJSON(map[string]any{"protocolVersion": 1}),
+	})
 	readFrames(t, cliR, 1)
-	sendFrame(t, cliW, acp.Message{JSONRPC: protocolVersion20, ID: intPtrACP(1), Method: "session/load", Params: rawJSON(map[string]any{keySessionID: "x"})})
+	sendFrame(t, cliW, acp.Message{
+		JSONRPC: protocolVersion20, ID: intPtrACP(1), Method: "session/load",
+		Params: rawJSON(map[string]any{keySessionID: "x"}),
+	})
 
 	frames := readFrames(t, cliR, 1)
 	if len(frames) == 0 || frames[0].Error == nil {

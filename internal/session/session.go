@@ -20,7 +20,10 @@ import (
 // stubToolResult is the canned Phase-2 tool result (D-15 — execution stays
 // stubbed; real execution lands in Phase 4). The transcript records it so the
 // reconstruction is faithful even before tools are real.
-var stubToolResult = json.RawMessage(`{"output":"stubbed in Phase 2 (real execution in Phase 4)"}`) //nolint:gochecknoglobals // immutable lookup table / default (cannot be a const)
+// stubResultMsg is the canned Phase-2 tool-result message (D-15).
+const stubResultMsg = `{"output":"stubbed in Phase 2 (real execution in Phase 4)"}`
+
+var stubToolResult = json.RawMessage(stubResultMsg) //nolint:gochecknoglobals // immutable table
 
 // Session is the Session Core (D-17): it owns the transcript Manager, the
 // lean-window Projector, and the turn loop (D-18). It is the sole writer of
@@ -217,7 +220,7 @@ func (stubExecutor) Execute(_ context.Context, _ string, _ json.RawMessage) (jso
 // toolExecOrStub returns the real tool executor if set, else a stub executor
 // that returns stubToolResult (Phase-2 backward-compat). DispatchBatch consumes
 // this; a nil never reaches it.
-func (s *Session) toolExecOrStub() toolcat.ToolExecutor { //nolint:ireturn // returns the ToolExecutor abstraction (injected exec or stub fallback)
+func (s *Session) toolExecOrStub() toolcat.ToolExecutor { //nolint:ireturn // ToolExecutor abstraction
 	if s.toolExec != nil {
 		return s.toolExec
 	}
@@ -231,7 +234,9 @@ func (s *Session) toolExecOrStub() toolcat.ToolExecutor { //nolint:ireturn // re
 // step 4 — ACP-04 streaming, NO full-turn buffering). It returns the assembled
 // Response (tool_calls + FinishReason) + the concatenated assistant text. ctx
 // cancellation closes the stream (the provider aborts the in-flight request).
-func (s *Session) streamAndEmit(ctx context.Context, turnID string, messages []provider.Message) (provider.Response, string, error) {
+func (s *Session) streamAndEmit(
+	ctx context.Context, turnID string, messages []provider.Message,
+) (provider.Response, string, error) {
 	ch, err := s.Provider.Stream(ctx, s.Profile, messages)
 	if err != nil {
 		return provider.Response{}, "", err
@@ -245,7 +250,7 @@ func (s *Session) streamAndEmit(ctx context.Context, turnID string, messages []p
 	for chunk := range ch {
 		err := ctx.Err()
 		if err != nil {
-			return resp, sb.String(), nil //nolint:nilerr // intentional: cancellation is recorded as a "canceled" transcript line by the caller, not as a propagated error
+			return resp, sb.String(), nil //nolint:nilerr // cancellation recorded as a transcript line
 		}
 
 		switch chunk.Type {
@@ -253,7 +258,9 @@ func (s *Session) streamAndEmit(ctx context.Context, turnID string, messages []p
 			sb.WriteString(chunk.Text)
 
 			if s.Bus != nil && chunk.Text != "" {
-				s.Bus.Publish(event.AgentMessageChunk{TurnID: turnID, MessageID: turnID, Content: chunk.Text})
+				s.Bus.Publish(event.AgentMessageChunk{
+					TurnID: turnID, MessageID: turnID, Content: chunk.Text,
+				})
 			}
 		case blockToolUse:
 			if chunk.ToolCall != nil {
@@ -261,12 +268,18 @@ func (s *Session) streamAndEmit(ctx context.Context, turnID string, messages []p
 
 				resp.ToolCalls = append(resp.ToolCalls, tc)
 				if s.Bus != nil {
-					s.Bus.Publish(event.ToolCall{TurnID: turnID, ToolCallID: chunk.ToolCallID, Name: tc.Name, Input: tc.Input})
+					s.Bus.Publish(event.ToolCall{
+						TurnID: turnID, ToolCallID: chunk.ToolCallID,
+						Name: tc.Name, Input: tc.Input,
+					})
 				}
 			}
 		case "usage":
 			if chunk.Usage != nil && s.Bus != nil {
-				s.Bus.Publish(event.UsageUpdate{TurnID: turnID, InputTokens: chunk.Usage.InputTokens, OutputTokens: chunk.Usage.OutputTokens})
+				s.Bus.Publish(event.UsageUpdate{
+					TurnID:      turnID,
+					InputTokens: chunk.Usage.InputTokens, OutputTokens: chunk.Usage.OutputTokens,
+				})
 			}
 		case stopDone:
 			resp.FinishReason = chunk.FinishReason

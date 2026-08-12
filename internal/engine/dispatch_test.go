@@ -72,7 +72,8 @@ func TestDispatch_HookCallsDispatcher(t *testing.T) {
 	eng := &engine.Engine{Bus: bus, Dispatcher: d}
 	collect := captureEvents(t, bus)
 
-	stop, err := eng.Observe(context.Background(), runner, hookTable{}, []session.ContentBlock{{Type: blockText, Text: "go"}})
+	stop, err := eng.Observe(context.Background(), runner, hookTable{},
+		[]session.ContentBlock{{Type: blockText, Text: "go"}})
 	if err != nil {
 		t.Fatalf("Observe err = %v", err)
 	}
@@ -163,7 +164,8 @@ func TestDispatch_AskPendingBreaksLoop(t *testing.T) {
 	eng := &engine.Engine{Bus: bus, Dispatcher: d}
 	collect := captureEvents(t, bus)
 
-	stop, err := eng.Observe(context.Background(), runner, askTable{}, []session.ContentBlock{{Type: blockText, Text: "go"}})
+	stop, err := eng.Observe(context.Background(), runner, askTable{},
+		[]session.ContentBlock{{Type: blockText, Text: "go"}})
 	if err != nil {
 		t.Fatalf("Observe err = %v", err)
 	}

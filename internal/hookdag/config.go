@@ -190,11 +190,15 @@ func Validate(hooks []Hook) error {
 		for j := range h.Steps {
 			s := &h.Steps[j]
 			if !validKinds[s.Kind] {
-				v = append(v, fmt.Sprintf("hook %q step %q: unknown kind %q (want run-command/send-prompt/fresh-context/wait)", h.Name, s.Name, s.Kind))
+				v = append(v, fmt.Sprintf(
+					"hook %q step %q: unknown kind %q (want run-command/send-prompt/fresh-context/wait)",
+					h.Name, s.Name, s.Kind))
 			}
 
 			if s.OnFailure != "" && !validOnFailure(s.OnFailure) {
-				v = append(v, fmt.Sprintf("hook %q step %q: unknown on_failure %q (want halt/continue/ask)", h.Name, s.Name, s.OnFailure))
+				v = append(v, fmt.Sprintf(
+					"hook %q step %q: unknown on_failure %q (want halt/continue/ask)",
+					h.Name, s.Name, s.OnFailure))
 			}
 
 			if s.Name == "" {
@@ -204,17 +208,23 @@ func Validate(hooks []Hook) error {
 			switch s.Kind {
 			case StepRunCommand:
 				if s.Command == "" {
-					v = append(v, fmt.Sprintf("hook %q step %q: run-command requires a non-empty command", h.Name, s.Name))
+					v = append(v, fmt.Sprintf(
+						"hook %q step %q: run-command requires a non-empty command",
+						h.Name, s.Name))
 				}
 			case StepSendPrompt:
 				if s.Prompt == "" {
-					v = append(v, fmt.Sprintf("hook %q step %q: send-prompt requires a non-empty prompt", h.Name, s.Name))
+					v = append(v, fmt.Sprintf(
+						"hook %q step %q: send-prompt requires a non-empty prompt",
+						h.Name, s.Name))
 				}
 			case StepWait:
 				if s.Duration == "" {
 					v = append(v, fmt.Sprintf("hook %q step %q: wait requires a duration", h.Name, s.Name))
 				} else if _, derr := time.ParseDuration(s.Duration); derr != nil {
-					v = append(v, fmt.Sprintf("hook %q step %q: unparseable duration %q: %v", h.Name, s.Name, s.Duration, derr))
+					v = append(v, fmt.Sprintf(
+						"hook %q step %q: unparseable duration %q: %v",
+						h.Name, s.Name, s.Duration, derr))
 				}
 			case StepFreshContext:
 				// no user-supplied fields to validate.

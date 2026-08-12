@@ -90,7 +90,10 @@ func TestRedact_PreservesIdentityHeaderNames(t *testing.T) {
 	}
 	// A request-headers object carrying all 12 names with non-secret values:
 	// every value is preserved verbatim, every key preserved.
-	in := `{"http-referer":"ref","user-agent":"ua/1.0","x-os-category":"darwin","x-os-version":"25.5.0","x-platform":"x64","x-title":"agent","x-zcode-agent":"1","x-zcode-app-version":"0.1","x-query-id":"q1","x-request-id":"r1","x-session-id":"s1","x-zcode-trace-id":"t1"}`
+	in := `{"http-referer":"ref","user-agent":"ua/1.0","x-os-category":"darwin",` +
+		`"x-os-version":"25.5.0","x-platform":"x64","x-title":"agent",` +
+		`"x-zcode-agent":"1","x-zcode-app-version":"0.1","x-query-id":"q1",` +
+		`"x-request-id":"r1","x-session-id":"s1","x-zcode-trace-id":"t1"}`
 
 	got, err := Redact([]byte(in))
 	if err != nil {

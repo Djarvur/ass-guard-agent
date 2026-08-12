@@ -32,12 +32,15 @@ func newParityCmd() *cobra.Command {
 			return runParity(suitePath, fromRollout, profileName, profilesDir, resultsPath, surpriseCheck)
 		},
 	}
-	cmd.Flags().StringVar(&suitePath, "suite", defaultSuitePath(), "curated divergence suite JSON (ignored if --from-rollout is set)")
-	cmd.Flags().StringVar(&fromRollout, "from-rollout", "", "generate the suite from a zcode rollout JSONL (same-session = matching system prompt + tools)")
+	cmd.Flags().StringVar(&suitePath, "suite", defaultSuitePath(),
+		"curated divergence suite JSON (ignored if --from-rollout is set)")
+	cmd.Flags().StringVar(&fromRollout, "from-rollout", "",
+		"generate the suite from a zcode rollout JSONL (same-session = matching system prompt + tools)")
 	cmd.Flags().StringVar(&profileName, "profile", profileZcode, "profile to load for the ass-guard arm")
 	cmd.Flags().StringVar(&profilesDir, "profiles-dir", defaultProfilesDir(), "directory containing profile bundles")
 	cmd.Flags().StringVar(&resultsPath, "results", "parity-results.json", "results JSON output path")
-	cmd.Flags().StringVar(&surpriseCheck, "surprise-check", "", "optional second suite JSON to run after the curated suite passes")
+	cmd.Flags().StringVar(&surpriseCheck, "surprise-check", "",
+		"optional second suite JSON to run after the curated suite passes")
 
 	return cmd
 }
@@ -65,7 +68,8 @@ func runParity(suitePath, rollout, name, dir, results, surprise string) error {
 			return fmt.Errorf("extract turns from rollout %q: %w", rollout, err)
 		}
 
-		fmt.Fprintf(os.Stderr, "parity: generated suite of %d turns from rollout %s\n", len(suite), filepath.Base(rollout))
+		fmt.Fprintf(os.Stderr, "parity: generated suite of %d turns from rollout %s\n",
+			len(suite), filepath.Base(rollout))
 	} else {
 		suite, err = parity.LoadReplaySession(suitePath)
 		if err != nil {

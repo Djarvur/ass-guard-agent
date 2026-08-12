@@ -51,7 +51,8 @@ func TestIntegration_TextSignalZeroContinue(t *testing.T) {
 	eng := &engine.Engine{Bus: bus, Manager: mgr}
 	collect := captureEvents(t, bus)
 
-	stop, err := eng.Observe(context.Background(), runner, table, []session.ContentBlock{{Type: blockText, Text: "implement the spec"}})
+	stop, err := eng.Observe(context.Background(), runner, table,
+		[]session.ContentBlock{{Type: blockText, Text: "implement the spec"}})
 	if err != nil {
 		t.Fatalf("Observe err = %v; want nil", err)
 	}
@@ -115,7 +116,8 @@ func TestIntegration_UnmatchedStructuralSafety(t *testing.T) {
 	eng := &engine.Engine{Bus: bus, Manager: mgr}
 	collect := captureEvents(t, bus)
 
-	stop, err := eng.Observe(context.Background(), runner, table, []session.ContentBlock{{Type: blockText, Text: "hello"}})
+	stop, err := eng.Observe(context.Background(), runner, table,
+		[]session.ContentBlock{{Type: blockText, Text: "hello"}})
 	if err != nil || stop != stopEndTurn {
 		t.Fatalf("Observe = (%q, %v); want (end_turn, nil)", stop, err)
 	}

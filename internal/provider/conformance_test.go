@@ -59,7 +59,7 @@ func TestConformance_BothAdapters(t *testing.T) {
 		{name: "anthropic", provider: ant, wantName: synthToolA, wantArgs: map[string]any{keyPath: goModFile}},
 		{name: "openai", provider: oai, wantName: synthToolA, wantArgs: map[string]any{keyPath: goModFile}},
 	}
-	for _, c := range cases { //nolint:paralleltest // subtests share parent-scoped httptest servers closed on parent return
+	for _, c := range cases { //nolint:paralleltest // shared httptest servers
 		t.Run(c.name, func(t *testing.T) {
 			resp, err := c.provider.Send(context.Background(), prof, msgs)
 			if err != nil {

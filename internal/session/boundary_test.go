@@ -30,7 +30,10 @@ func TestMaybeAppendBoundary_OnMutatingTool(t *testing.T) {
 	t.Parallel()
 
 	s := newTestSessionWithCatalog(t, []provider.Response{
-		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{{Name: toolBash, Input: json.RawMessage(`{"command":"ls"}`)}}},
+		{
+			FinishReason: blockToolUse,
+			ToolCalls:    []provider.ToolCall{{Name: toolBash, Input: json.RawMessage(`{"command":"ls"}`)}},
+		},
 		{FinishReason: stopEndTurn},
 	})
 	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "run ls"}}); err != nil {
@@ -56,7 +59,10 @@ func TestMaybeAppendBoundary_ReadOnlyNoBoundary(t *testing.T) {
 	t.Parallel()
 
 	s := newTestSessionWithCatalog(t, []provider.Response{
-		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{{Name: toolRead, Input: json.RawMessage(`{"file_path":"x"}`)}}},
+		{
+			FinishReason: blockToolUse,
+			ToolCalls:    []provider.ToolCall{{Name: toolRead, Input: json.RawMessage(`{"file_path":"x"}`)}},
+		},
 		{FinishReason: stopEndTurn},
 	})
 	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "read"}}); err != nil {
@@ -75,7 +81,10 @@ func TestMaybeAppendBoundary_ReadOnlyNoBoundary(t *testing.T) {
 func TestMaybeAppendBoundary_ConfigAddsBoundary(t *testing.T) {
 	t.Parallel()
 	s := newTestSessionWithCatalog(t, []provider.Response{
-		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{{Name: toolWebFetch, Input: json.RawMessage(`{}`)}}},
+		{
+			FinishReason: blockToolUse,
+			ToolCalls:    []provider.ToolCall{{Name: toolWebFetch, Input: json.RawMessage(`{}`)}},
+		},
 		{FinishReason: stopEndTurn},
 	})
 

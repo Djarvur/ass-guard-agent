@@ -104,7 +104,8 @@ func TestLoadLayering(t *testing.T) {
 	// Base persists for base-only keys.
 	require.Equal(t, modelGLM46, cfg.Tiers["good"].Model, "base good.model should persist")
 	// Deep merge: base's heavy.fallback survives the overlay's heavy.model change.
-	require.Equal(t, []string{modelMinimaxM3}, cfg.Tiers[tierHeavy].Fallback, "base heavy.fallback should persist (deep merge)")
+	require.Equal(t, []string{modelMinimaxM3}, cfg.Tiers[tierHeavy].Fallback,
+		"base heavy.fallback should persist (deep merge)")
 }
 
 // TestLoadEmbeddedDefault asserts Load() with no paths returns the embedded

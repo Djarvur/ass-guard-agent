@@ -132,7 +132,8 @@ func TestIsBoundaryStructuralFloor(t *testing.T) {
 		t.Parallel()
 
 		if !IsBoundary("CustomSpec", c, []string{"CustomSpec"}) {
-			t.Errorf("IsBoundary(CustomSpec, [CustomSpec]) = false; want true (config-added boundary for OpenSpec-style commands)")
+			t.Errorf("IsBoundary(CustomSpec, [CustomSpec]) = false; want true " +
+				"(config-added boundary for OpenSpec-style commands)")
 		}
 	})
 }

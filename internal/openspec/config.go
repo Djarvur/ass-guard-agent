@@ -114,7 +114,9 @@ func validate(cfg *OpenSpecConfig) error {
 	for i := range cfg.Patterns {
 		p := &cfg.Patterns[i]
 		if !validAction(p.Action) {
-			v = append(v, fmt.Sprintf("patterns[%d] %q: unknown action %q (want continue/hook/ask/wait)", i, p.ID, p.Action))
+			v = append(v, fmt.Sprintf(
+				"patterns[%d] %q: unknown action %q (want continue/hook/ask/wait)",
+				i, p.ID, p.Action))
 		}
 
 		if p.Regex == "" {
@@ -131,7 +133,9 @@ func validate(cfg *OpenSpecConfig) error {
 	for i := range cfg.HandoffTools {
 		h := &cfg.HandoffTools[i]
 		if !validAction(h.Action) {
-			v = append(v, fmt.Sprintf("handoff_tools[%d] %q: unknown action %q (want continue/hook/ask/wait)", i, h.ID, h.Action))
+			v = append(v, fmt.Sprintf(
+				"handoff_tools[%d] %q: unknown action %q (want continue/hook/ask/wait)",
+				i, h.ID, h.Action))
 		}
 
 		if h.Tool == "" {
@@ -141,7 +145,9 @@ func validate(cfg *OpenSpecConfig) error {
 
 	for name, shape := range cfg.Commands {
 		if shape.Mutability != "mutating" && shape.Mutability != "read-only" {
-			v = append(v, fmt.Sprintf("commands.%s: unknown mutability %q (want mutating|read-only)", name, shape.Mutability))
+			v = append(v, fmt.Sprintf(
+				"commands.%s: unknown mutability %q (want mutating|read-only)",
+				name, shape.Mutability))
 		}
 	}
 

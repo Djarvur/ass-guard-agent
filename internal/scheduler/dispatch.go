@@ -78,7 +78,10 @@ type Scheduler struct {
 // map defaults to empty (BreakerFor returns a no-op when a key is absent) and
 // the cost tracker defaults to a no-op — Plan 03-03's safety.go swaps in real
 // implementations. sem may be nil (a default Phase-2 semaphore is installed).
-func NewScheduler(cfg *Config, bus *event.Bus, sem Sem, providers map[string]provider.Provider, log *slog.Logger) *Scheduler {
+func NewScheduler(
+	cfg *Config, bus *event.Bus, sem Sem,
+	providers map[string]provider.Provider, log *slog.Logger,
+) *Scheduler {
 	if log == nil {
 		log = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	}
@@ -343,7 +346,7 @@ func (noopCostTracker) Account(string, int, int)   {}
 // nil (kept lazy so the scheduler package does not import provider's concrete
 // constructor at load time — it does, but the indirection makes test injection
 // of a fake Sem clean).
-func asDefaultSem() Sem { //nolint:ireturn // returns the Sem interface so callers depend on the abstraction, not the provider concrete type
+func asDefaultSem() Sem { //nolint:ireturn // Sem abstraction over concrete type
 	return provider.NewDefaultSemaphore()
 }
 

@@ -110,7 +110,9 @@ func TestStability_CrossSessionHeaderNames(t *testing.T) {
 		}
 
 		if len(names) != len(want) {
-			t.Errorf("session %s: %d header names, expected %d (role-driven variance is informational, but the identity set must be the 12)", s.ID, len(names), len(want))
+			t.Errorf("session %s: %d header names, expected %d (role-driven variance is "+
+				"informational, but the identity set must be the 12)",
+				s.ID, len(names), len(want))
 		}
 	}
 }

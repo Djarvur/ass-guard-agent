@@ -250,7 +250,7 @@ func TestRequestShapedPublished(t *testing.T) {
 // TestTranscriptWriterAsync verifies the transcript writer subscribes to
 // RequestShaped and appends request_shaped to the transcript WITHOUT blocking
 // the turn loop (LOG-02 — a slow writer does not delay the provider call).
-func TestTranscriptWriterAsync(t *testing.T) { //nolint:paralleltest // timing-sensitive: 1s async-flush deadline flakes under parallel/-race load
+func TestTranscriptWriterAsync(t *testing.T) { //nolint:paralleltest // timing-sensitive: 1s async deadline
 	bus := event.NewBus()
 	s, m, fp := newTestSession(t, bus, []provider.Response{{FinishReason: stopEndTurn}})
 	fp.delay = 30 * time.Millisecond // baseline Send latency
@@ -337,7 +337,10 @@ func TestStubToolExecution(t *testing.T) {
 	bus := event.NewBus()
 
 	s, m, _ := newTestSession(t, bus, []provider.Response{
-		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{{Name: toolRead, Input: json.RawMessage(`{"file_path":"x"}`)}}},
+		{
+			FinishReason: blockToolUse,
+			ToolCalls:    []provider.ToolCall{{Name: toolRead, Input: json.RawMessage(`{"file_path":"x"}`)}},
+		},
 		{FinishReason: stopEndTurn},
 	})
 	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "read x"}}); err != nil {

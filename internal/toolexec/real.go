@@ -65,7 +65,8 @@ func (r *RealExecutor) Execute(ctx context.Context, name string, input json.RawM
 
 	if tool.Execute == nil {
 		// Forward-compat: the schema is authoritative even before the impl.
-		return json.RawMessage(`{"error":"tool ` + name + ` has no implementation yet (catalog schema authoritative)"}`), nil
+		return json.RawMessage(`{"error":"tool ` + name +
+			` has no implementation yet (catalog schema authoritative)"}`), nil
 	}
 
 	return tool.Execute(ctx, input)

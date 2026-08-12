@@ -62,7 +62,10 @@ func TestDetect_Tier3Ignored(t *testing.T) {
 	t.Parallel()
 
 	m := manifest(
-		profile.CoverageEntry{Path: "response.usage.totalTokens", Tier: profile.Tier3Informational, ObservedCount: 5000},
+		profile.CoverageEntry{
+			Path: "response.usage.totalTokens",
+			Tier: profile.Tier3Informational, ObservedCount: 5000,
+		},
 	)
 	captured := map[string]any{
 		"response.usage.totalTokens": 9999,

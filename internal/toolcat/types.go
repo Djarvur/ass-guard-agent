@@ -15,7 +15,9 @@ import (
 
 // Mutability classifies a tool's execution side-effect (a Phase-2/4 concern).
 // Recorded in Phase 1 even though execution is stubbed.
-type Mutability int //nolint:recvcheck // String() stays value-receiver so Mutability values satisfy fmt.Stringer (used via %s on struct fields); UnmarshalJSON must be pointer-receiver to mutate.
+// String stays value-receiver (fmt.Stringer via %s on struct fields);
+// UnmarshalJSON must be pointer-receiver to mutate.
+type Mutability int //nolint:recvcheck // mixed receivers are intentional
 
 const (
 	// MutabilityReadOnly is the default for tools with no side effects.

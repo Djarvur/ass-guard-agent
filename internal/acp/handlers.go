@@ -27,10 +27,10 @@ func (s *Server) registerHandlers() {
 // FACTS #3). The field name is `agentCapabilities` (NOT capabilities/serverInfo),
 // protocolVersion is integer 1, and loadSession is false (D-09 — NO replay).
 type initializeResponse struct {
-	ProtocolVersion   int            `json:"protocolVersion"`   //nolint:tagliatelle // ACP protocol wire field (camelCase per spec) — cannot rename
-	AgentCapabilities map[string]any `json:"agentCapabilities"` //nolint:tagliatelle // ACP protocol wire field (camelCase per spec) — cannot rename
-	AgentInfo         map[string]any `json:"agentInfo"`         //nolint:tagliatelle // ACP protocol wire field (camelCase per spec) — cannot rename
-	AuthMethods       []any          `json:"authMethods"`       //nolint:tagliatelle // ACP protocol wire field (camelCase per spec) — cannot rename
+	ProtocolVersion   int            `json:"protocolVersion"`   //nolint:tagliatelle // ACP wire field
+	AgentCapabilities map[string]any `json:"agentCapabilities"` //nolint:tagliatelle // ACP wire field
+	AgentInfo         map[string]any `json:"agentInfo"`         //nolint:tagliatelle // ACP wire field
+	AuthMethods       []any          `json:"authMethods"`       //nolint:tagliatelle // ACP wire field
 }
 
 // handleInitialize echoes the protocol version and advertises loadSession:false.
@@ -52,14 +52,14 @@ func (s *Server) handleInitialize(ctx context.Context, params json.RawMessage, m
 
 // sessionNewResult carries the sessionId the client threads into session/prompt.
 type sessionNewResult struct {
-	SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP protocol wire field (camelCase per spec) — cannot rename
+	SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
 }
 
 // handleSessionNew creates a sessionState and returns its id.
 func (s *Server) handleSessionNew(ctx context.Context, params json.RawMessage, msg Message) (any, error) {
 	var p struct {
 		Cwd        string `json:"cwd"`
-		McpServers []any  `json:"mcpServers"` //nolint:tagliatelle // ACP protocol wire field (camelCase per spec) — cannot rename
+		McpServers []any  `json:"mcpServers"` //nolint:tagliatelle // ACP wire field
 	}
 
 	if len(params) > 0 {
@@ -79,13 +79,13 @@ func (s *Server) handleSessionNew(ctx context.Context, params json.RawMessage, m
 // sessionPromptParams is the session/prompt payload (PROMPT-TURN.md): a
 // sessionId + a prompt content array.
 type sessionPromptParams struct {
-	SessionID string         `json:"sessionId"` //nolint:tagliatelle // ACP protocol wire field (camelCase per spec) — cannot rename
+	SessionID string         `json:"sessionId"` //nolint:tagliatelle // ACP wire field
 	Prompt    []ContentBlock `json:"prompt"`
 }
 
 // sessionPromptResult carries the stopReason ("end_turn", "cancelled", ...).
 type sessionPromptResult struct {
-	StopReason string `json:"stopReason"` //nolint:tagliatelle // ACP protocol wire field (camelCase per spec) — cannot rename
+	StopReason string `json:"stopReason"` //nolint:tagliatelle // ACP wire field
 }
 
 // handleSessionPrompt runs the turn: it looks up the session, derives a
@@ -142,7 +142,7 @@ func (s *Server) handleSessionPrompt(ctx context.Context, params json.RawMessage
 // aborts the turn, drains queued events, and returns stopReason "cancelled".
 func (s *Server) handleSessionCancel(ctx context.Context, params json.RawMessage, msg Message) (any, error) {
 	var p struct {
-		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP protocol wire field (camelCase per spec) — cannot rename
+		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
 	}
 
 	if len(params) > 0 {
@@ -180,7 +180,7 @@ func (s *Server) handleSessionLoad(ctx context.Context, params json.RawMessage, 
 // handleLogout drops the session. It accepts an optional sessionId param.
 func (s *Server) handleLogout(ctx context.Context, params json.RawMessage, msg Message) (any, error) {
 	var p struct {
-		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP protocol wire field (camelCase per spec) — cannot rename
+		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
 	}
 
 	if len(params) > 0 {

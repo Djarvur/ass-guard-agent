@@ -61,7 +61,10 @@ func TestBreakerTripViaConsecutive(t *testing.T) {
 func TestBreakerTripViaErrorRate(t *testing.T) {
 	t.Parallel()
 
-	cfg := CircuitBreakerConfig{ConsecutiveFailures: 5, ErrorRateWindow: 20, ErrorRateThreshold: 0.50, Cooldown: 60 * time.Second, HalfOpenProbes: 1}
+	cfg := CircuitBreakerConfig{
+		ConsecutiveFailures: 5, ErrorRateWindow: 20,
+		ErrorRateThreshold: 0.50, Cooldown: 60 * time.Second, HalfOpenProbes: 1,
+	}
 	b, _ := newTestBreaker(t, providerModelKey{"p", "m"}, cfg)
 	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
 

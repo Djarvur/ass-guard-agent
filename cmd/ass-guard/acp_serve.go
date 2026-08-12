@@ -103,10 +103,12 @@ func newACPServeCmd() *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&profile, "profile", profileZcode, "profile name to load (PROF-01)")
-	c.Flags().IntVar(&maxConcurrent, "max-concurrent", 6, "max concurrent outbound provider calls across parent + subagents (PARA-04)")
+	c.Flags().IntVar(&maxConcurrent, "max-concurrent", 6,
+		"max concurrent outbound provider calls across parent + subagents (PARA-04)")
 	c.Flags().StringVar(&profilesDir, "profiles-dir", defaultProfilesDir(), "directory containing profile bundles")
 	c.Flags().StringVar(&workDir, "work-dir", "", "working directory for .ass-guard/ transcripts (default: cwd)")
-	c.Flags().BoolVar(&noEngine, "no-engine", false, "disable the Phase-4 unified engine (fall back to manual continue — D-04 backward-compat)")
+	c.Flags().BoolVar(&noEngine, "no-engine", false,
+		"disable the Phase-4 unified engine (fall back to manual continue — D-04)")
 
 	return c
 }
@@ -250,7 +252,10 @@ type sessionTurnRunner struct {
 }
 
 // Run drives one session/prompt through the real Session Core.
-func (r *sessionTurnRunner) Run(ctx context.Context, sessionID string, emit acp.ChunkEmitter, prompt []acp.ContentBlock) (string, error) {
+func (r *sessionTurnRunner) Run(
+	ctx context.Context, sessionID string,
+	emit acp.ChunkEmitter, prompt []acp.ContentBlock,
+) (string, error) {
 	sess := r.sessionFor(sessionID)
 	// Subscribe a chunk-forwarder so streamed AgentMessageChunk events become
 	// session/update notifications. The forwarder runs until the turn completes.
@@ -306,7 +311,9 @@ func (r *sessionTurnRunner) Run(ctx context.Context, sessionID string, emit acp.
 // The engine + the continue-injections all run under the SAME ctx derived from
 // the ACP turnCtx (ENG-03 — session/cancel reaches the engine + drains queued
 // injections).
-func (r *sessionTurnRunner) runOneTurn(ctx context.Context, sess *session.Session, blocks []session.ContentBlock) (string, error) {
+func (r *sessionTurnRunner) runOneTurn(
+	ctx context.Context, sess *session.Session, blocks []session.ContentBlock,
+) (string, error) {
 	if !r.engineEnabled || r.eng == nil || r.patternTable == nil {
 		// Backward-compatible path: no engine wrap.
 		return sess.Prompt(ctx, blocks)

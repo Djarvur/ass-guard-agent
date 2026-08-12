@@ -99,18 +99,23 @@ type Engine struct {
 // (handleSessionCancel → sessionState.cancelTurn → cancel()) reaches this loop
 // and drains every queued injection. See TestObserve_CancelDrain (unit) +
 // cmd/ass-guard TestCancelDrainsInjections (ACP-level).
-func (e *Engine) Observe(ctx context.Context, runner TurnRunner, table PatternTable, userPrompt []session.ContentBlock) (stop string, err error) {
+func (e *Engine) Observe(
+	ctx context.Context,
+	runner TurnRunner,
+	table PatternTable,
+	userPrompt []session.ContentBlock,
+) (string, error) {
 	// Step 1: run the user's prompt. A panic here or anywhere below is
 	// recovered and the ORIGINAL (stop, err) are returned — graceful
-	// degradation. Named returns let the defer preserve them.
-	stop, err = e.runAndRecover(ctx, runner, userPrompt)
+	// degradation.
+	stop, err := e.runAndRecover(ctx, runner, userPrompt)
 
 	injections := 0
 	for injections < MaxContinueInjections {
 		if ctx.Err() != nil {
 			// ENG-03: the only off-switch. A cancelled ctx drains queued
 			// injections (none are launched) and the wrapper returns.
-			return "cancelled", nil //nolint:nilerr // intentional: cancellation is surfaced via the stop reason, not as an error
+			return "cancelled", nil //nolint:nilerr // cancellation surfaced via stop reason
 		}
 		// Step 2: read the just-finished turn + decide.
 		out, perr := e.lastTurnAndRecover(runner)
@@ -157,7 +162,8 @@ func (e *Engine) Observe(ctx context.Context, runner TurnRunner, table PatternTa
 			TurnID: safeLastTurnID(runner),
 			Action: ActionNothing,
 			Signal: "budget",
-			Reason: fmt.Sprintf("re-fire budget cap reached (%d continue-injections); stopping to prevent an infinite loop", MaxContinueInjections),
+			Reason: fmt.Sprintf("re-fire budget cap reached (%d continue-injections); "+
+				"stopping to prevent an infinite loop", MaxContinueInjections),
 		})
 	}
 
@@ -178,13 +184,14 @@ func safeLastTurnID(runner TurnRunner) string {
 // ORIGINAL (stop, err) so graceful degradation holds (D-04 — the turn has
 // already completed by the time Decide runs; a wrapper/Decide panic must never
 // surface as a crash or a different stop reason).
-func (e *Engine) runAndRecover(ctx context.Context, runner TurnRunner, prompt []session.ContentBlock) (stop string, err error) {
+func (e *Engine) runAndRecover(
+	ctx context.Context,
+	runner TurnRunner,
+	prompt []session.ContentBlock,
+) (string, error) {
 	defer func() {
 		if r := recover(); r != nil {
 			e.logFailure("engine runner.Run panic recovered", r)
-			// Leave stop/err as whatever Run already set (named returns). If the
-			// panic happened before Run assigned them, they are the zero values
-			// ("", nil) — the caller treats that as a no-op, never a crash.
 		}
 	}()
 
@@ -193,7 +200,9 @@ func (e *Engine) runAndRecover(ctx context.Context, runner TurnRunner, prompt []
 
 // lastTurnAndRecover reads LastTurnOutput under a recover so a panicking fake
 // (the T3 graceful-degradation test) is contained.
-func (e *Engine) lastTurnAndRecover(runner TurnRunner) (out TurnOutput, err error) { //nolint:nonamedreturns // named err is assigned by the panic-recovery defer
+func (e *Engine) lastTurnAndRecover( //nolint:nonamedreturns // err assigned by panic-recovery defer
+	runner TurnRunner,
+) (out TurnOutput, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			e.logFailure("engine LastTurnOutput panic recovered", r)
@@ -210,7 +219,10 @@ func (e *Engine) lastTurnAndRecover(runner TurnRunner) (out TurnOutput, err erro
 // PatternTable (MatchText/MatchTool) is contained — graceful degradation (D-04,
 // T3 Test 4). On panic the original (stop, err) are preserved by the caller
 // (Observe returns them unchanged); Decide itself never panics on valid input.
-func (e *Engine) decideAndRecover(out TurnOutput, table PatternTable) (dec Decision, err error) { //nolint:nonamedreturns // named err is assigned by the panic-recovery defer
+func (e *Engine) decideAndRecover( //nolint:nonamedreturns // err assigned by panic-recovery defer
+	out TurnOutput,
+	table PatternTable,
+) (dec Decision, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			e.logFailure("engine Decide panic recovered", r)
@@ -312,5 +324,10 @@ func NextStagePrompt(dec Decision) []session.ContentBlock {
 
 // compile-time interface check: *Engine has Observe with the documented shape.
 var _ interface {
-	Observe(ctx context.Context, runner TurnRunner, table PatternTable, userPrompt []session.ContentBlock) (string, error)
+	Observe(
+		ctx context.Context,
+		runner TurnRunner,
+		table PatternTable,
+		userPrompt []session.ContentBlock,
+	) (string, error)
 } = (*Engine)(nil)

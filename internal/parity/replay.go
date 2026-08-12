@@ -21,7 +21,7 @@ type CapturedTurn struct {
 // rolloutLine is the subset of a model_io line the replay reader consumes.
 type rolloutLine struct {
 	Type    string `json:"type"`
-	TurnID  string `json:"turnId"` //nolint:tagliatelle // external model_io rollout format (camelCase source) — cannot rename
+	TurnID  string `json:"turnId"` //nolint:tagliatelle // model_io rollout format
 	Request struct {
 		Messages []struct {
 			Role    string          `json:"role"`
@@ -32,7 +32,7 @@ type rolloutLine struct {
 		ToolCalls []struct {
 			Name  string          `json:"name"`
 			Input json.RawMessage `json:"input"`
-		} `json:"toolCalls"` //nolint:tagliatelle // external model_io rollout format (camelCase source) — cannot rename
+		} `json:"toolCalls"` //nolint:tagliatelle // model_io rollout format
 	} `json:"response"`
 }
 

@@ -51,9 +51,11 @@ func TestAuditLogger_RedactsSecrets(t *testing.T) {
 	sink := &safeBuffer{}
 	audit.NewAuditLogger(b, sink)
 	b.Publish(event.RequestShaped{
-		Profile:         "zcode",
-		Timestamp:       time.Now(),
-		VerbatimRequest: json.RawMessage(`{"headers":{"authorization":"Bearer sk-secret-xyz","x-request-id":"abc"},"body":{"system":[{"type":"text","text":"hi"}]}}`),
+		Profile:   "zcode",
+		Timestamp: time.Now(),
+		VerbatimRequest: json.RawMessage(
+			`{"headers":{"authorization":"Bearer sk-secret-xyz","x-request-id":"abc"},` +
+				`"body":{"system":[{"type":"text","text":"hi"}]}}`),
 	})
 	// Allow the async subscriber goroutine to run.
 	deadline := time.Now().Add(500 * time.Millisecond)

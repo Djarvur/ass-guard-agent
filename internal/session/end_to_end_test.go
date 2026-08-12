@@ -23,7 +23,10 @@ func TestEndToEndSession(t *testing.T) {
 	bus := event.NewBus()
 	m := newTestManager(t, "sess-e2e")
 	script := []provider.Response{
-		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{{Name: toolTask, Input: json.RawMessage(`{"prompt":"research"}`)}}},
+		{
+			FinishReason: blockToolUse,
+			ToolCalls:    []provider.ToolCall{{Name: toolTask, Input: json.RawMessage(`{"prompt":"research"}`)}},
+		},
 		{FinishReason: stopEndTurn},
 	}
 	fp := &reconProvider{script: script, bus: bus}

@@ -134,7 +134,7 @@ func isNetOrContextError(err error) bool {
 	return errors.As(err, &urlErr)
 }
 
-var transientStatuses = map[int]struct{}{ //nolint:gochecknoglobals // immutable lookup table / default (cannot be a const)
+var transientStatuses = map[int]struct{}{ //nolint:gochecknoglobals // immutable table
 	408: {}, 425: {}, 429: {},
 	500: {}, 502: {}, 503: {}, 504: {},
 }
@@ -145,7 +145,7 @@ func isTransientStatus(status int) bool {
 	return ok
 }
 
-var structuralStatuses = map[int]struct{}{ //nolint:gochecknoglobals // immutable lookup table / default (cannot be a const)
+var structuralStatuses = map[int]struct{}{ //nolint:gochecknoglobals // immutable table
 	400: {}, 401: {}, 403: {}, 404: {}, 405: {},
 	411: {}, 413: {}, 422: {},
 }
@@ -186,7 +186,7 @@ func reasonFor(status int, err error) string {
 	return "unknown"
 }
 
-var statusReasons = map[int]string{ //nolint:gochecknoglobals // immutable lookup table / default (cannot be a const)
+var statusReasons = map[int]string{ //nolint:gochecknoglobals // immutable table
 	400: "bad request",
 	401: "unauthenticated",
 	403: "forbidden",

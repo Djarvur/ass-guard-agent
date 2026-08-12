@@ -96,7 +96,7 @@ func TestAdapter_NonZeroStderrCaptured(t *testing.T) {
 
 // TestAdapter_CtxCancelKillsProcess verifies ctx cancellation kills the child
 // within ~200ms (no orphan — T-04-06).
-func TestAdapter_CtxCancelKillsProcess(t *testing.T) { //nolint:paralleltest // putStubOnPATH mutates PATH; pgrep could match sibling stubs
+func TestAdapter_CtxCancelKillsProcess(t *testing.T) { //nolint:paralleltest // putStubOnPATH mutates PATH
 	putStubOnPATH(t)
 
 	a := &openspec.Adapter{}

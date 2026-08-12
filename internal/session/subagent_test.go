@@ -31,7 +31,10 @@ func TestDispatchSubagent_AppendsDispatchLine(t *testing.T) {
 	t.Parallel()
 
 	s, _, _ := newSubagentSession(t, []provider.Response{
-		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{{Name: toolTask, Input: json.RawMessage(`{"prompt":"do research"}`)}}},
+		{
+			FinishReason: blockToolUse,
+			ToolCalls:    []provider.ToolCall{{Name: toolTask, Input: json.RawMessage(`{"prompt":"do research"}`)}},
+		},
 		{FinishReason: stopEndTurn},
 	})
 	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "dispatch"}}); err != nil {
@@ -60,7 +63,10 @@ func TestDispatchSubagent_AppendsDispatchLine(t *testing.T) {
 func TestSubagent_StreamsProgressWithParentTurnID(t *testing.T) {
 	t.Parallel()
 	s, bus, _ := newSubagentSession(t, []provider.Response{
-		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{{Name: toolTask, Input: json.RawMessage(`{"prompt":"x"}`)}}},
+		{
+			FinishReason: blockToolUse,
+			ToolCalls:    []provider.ToolCall{{Name: toolTask, Input: json.RawMessage(`{"prompt":"x"}`)}},
+		},
 		{FinishReason: stopEndTurn},
 	})
 	chunks := bus.Subscribe("AgentMessageChunk", event.BufAgentMessageChunk)
@@ -99,7 +105,10 @@ func TestSubagent_FinalResultToParent(t *testing.T) {
 	t.Parallel()
 
 	s, _, _ := newSubagentSession(t, []provider.Response{
-		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{{Name: toolTask, Input: json.RawMessage(`{"prompt":"x"}`)}}},
+		{
+			FinishReason: blockToolUse,
+			ToolCalls:    []provider.ToolCall{{Name: toolTask, Input: json.RawMessage(`{"prompt":"x"}`)}},
+		},
 		{FinishReason: stopEndTurn},
 	})
 	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "go"}}); err != nil {
@@ -127,7 +136,10 @@ func TestSubagent_RestrictedExecutor(t *testing.T) {
 	// Subagent returns a Bash tool_call; the subagent's RestrictedExecutor
 	// (allowed: Read/Grep) blocks Bash → "not available" tool_result.
 	s, _, _ := newSubagentSession(t, []provider.Response{
-		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{{Name: toolTask, Input: json.RawMessage(`{"prompt":"x"}`)}}},
+		{
+			FinishReason: blockToolUse,
+			ToolCalls:    []provider.ToolCall{{Name: toolTask, Input: json.RawMessage(`{"prompt":"x"}`)}},
+		},
 		{FinishReason: stopEndTurn},
 	})
 	// Override the subagent's restricted set + toolExec via a fake executor.
@@ -165,7 +177,10 @@ func TestSubagentPanicRecovery(t *testing.T) {
 	t.Parallel()
 	// Provider: parent returns a Task call; subagent call panics.
 	s, _, _ := newSubagentSession(t, []provider.Response{
-		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{{Name: toolTask, Input: json.RawMessage(`{"prompt":"x"}`)}}},
+		{
+			FinishReason: blockToolUse,
+			ToolCalls:    []provider.ToolCall{{Name: toolTask, Input: json.RawMessage(`{"prompt":"x"}`)}},
+		},
 		{FinishReason: stopEndTurn},
 	})
 	// Inject a panicking subagent runner.
@@ -183,8 +198,9 @@ func TestSubagentPanicRecovery(t *testing.T) {
 		if l.Type == TypeError {
 			hasError = true
 
-			if !strings.Contains(strings.ToLower(l.Message), "panic") && !strings.Contains(strings.ToLower(l.Component), "subagent") {
-				// Component or message should reference the subagent/panic.
+			if !strings.Contains(strings.ToLower(l.Message), "panic") &&
+				!strings.Contains(strings.ToLower(l.Component), "subagent") {
+				t.Errorf("error line does not reference subagent/panic: %+v", l)
 			}
 		}
 
@@ -206,6 +222,9 @@ func TestSubagentPanicRecovery(t *testing.T) {
 // goroutine-boundary recovery (PARA-03, D-13).
 type panickingSubagentRunner struct{}
 
-func (panickingSubagentRunner) Run(ctx context.Context, s *Session, subagentTurnID, parentTurnID, prompt string, restricted []string) (string, error) {
+func (panickingSubagentRunner) Run(
+	ctx context.Context, s *Session,
+	subagentTurnID, parentTurnID, prompt string, restricted []string,
+) (string, error) {
 	panic("panickingSubagentRunner: injected panic")
 }

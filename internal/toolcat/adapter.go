@@ -34,7 +34,9 @@ func (a *Adapter) ModelFacingSchemas(profileDecls []profile.Decl) []Decl {
 // On successful parse it returns the input unchanged. A missing declaration or a
 // malformed JSON input returns an error; structural schema validation fires in
 // Phase 2/4.
-func (a *Adapter) ResolveCall(name string, input json.RawMessage, profileDecls []profile.Decl) (json.RawMessage, error) {
+func (a *Adapter) ResolveCall(
+	name string, input json.RawMessage, profileDecls []profile.Decl,
+) (json.RawMessage, error) {
 	decl := findDecl(profileDecls, name)
 	if decl == nil {
 		return nil, fmt.Errorf("adapter: tool %q not declared in the profile", name)

@@ -237,7 +237,9 @@ func toThinking(raw json.RawMessage) anthropic.ThinkingConfigParamUnion {
 
 	switch strings.ToLower(t.Type) {
 	case "enabled":
-		return anthropic.ThinkingConfigParamUnion{OfEnabled: &anthropic.ThinkingConfigEnabledParam{BudgetTokens: t.BudgetTokens}}
+		return anthropic.ThinkingConfigParamUnion{
+			OfEnabled: &anthropic.ThinkingConfigEnabledParam{BudgetTokens: t.BudgetTokens},
+		}
 	case "disabled":
 		d := anthropic.NewThinkingConfigDisabledParam()
 

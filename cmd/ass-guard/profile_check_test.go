@@ -146,7 +146,7 @@ func TestProfileCheck_DriftDetected(t *testing.T) { //nolint:paralleltest // swa
 }
 
 // TestProfileCheck_ReportContainsStructuredFooter confirms the C6 footer shape.
-func TestProfileCheck_ReportContainsStructuredFooter(t *testing.T) { //nolint:paralleltest // swaps process-global os.Stderr
+func TestProfileCheck_ReportContainsStructuredFooter(t *testing.T) { //nolint:paralleltest // swaps global os.Stderr
 	profilesDir := writeCoverageFixture(t, profileZcode, 3, 103, 12)
 	capture := writeCaptureFixture(t, 3, 103, 12)
 

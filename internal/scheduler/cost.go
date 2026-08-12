@@ -37,7 +37,10 @@ type CostCeilingTracker struct {
 // NewCostCeilingTracker constructs a tracker over the given ceiling config +
 // pricing map. The pricing map (model slug → Pricing) is built by safety.go
 // from Config.Models. A nil bus is tolerated (warnings are skipped).
-func NewCostCeilingTracker(cfg CostCeilingConfig, pricing map[string]Pricing, bus *event.Bus, log *slog.Logger) *CostCeilingTracker {
+func NewCostCeilingTracker(
+	cfg CostCeilingConfig, pricing map[string]Pricing,
+	bus *event.Bus, log *slog.Logger,
+) *CostCeilingTracker {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
@@ -94,7 +97,9 @@ func (c *CostCeilingTracker) Check(now time.Time) CostAction {
 	if c.windowStart.IsZero() {
 		c.windowStart = now.Truncate(c.cfg.Window)
 	} else if now.Sub(c.windowStart) >= c.cfg.Window {
-		c.log.Info("scheduler: cost window froze", "window_start", c.windowStart, "spent", c.spent, "degraded_spent", c.degradedSpent)
+		c.log.Info("scheduler: cost window froze",
+			"window_start", c.windowStart,
+			"spent", c.spent, "degraded_spent", c.degradedSpent)
 		c.windowStart = now.Truncate(c.cfg.Window)
 		c.spent = 0
 		c.degradedSpent = 0

@@ -88,9 +88,11 @@ func TestSafetyCostHardStop(t *testing.T) {
 	// Pre-load a tracker into the HardStop state (degraded + the degraded-tier
 	// budget also breached), so the very first Check() in Dispatch returns
 	// CostHardStop.
-	hard := NewCostCeilingTracker(CostCeilingConfig{AmountUSD: 1.0, Window: 24 * time.Hour, DegradeTo: tierLight}, map[string]Pricing{
-		modelMinimaxM3: {InputPerMToken: 100.0, OutputPerMToken: 0},
-	}, nil, nil)
+	hard := NewCostCeilingTracker(
+		CostCeilingConfig{AmountUSD: 1.0, Window: 24 * time.Hour, DegradeTo: tierLight},
+		map[string]Pricing{
+			modelMinimaxM3: {InputPerMToken: 100.0, OutputPerMToken: 0},
+		}, nil, nil)
 	now := s.now()
 	hard.Check(now)                            // init window
 	hard.Account(modelMinimaxM3, 1_000_000, 0) // $100 on primary budget → degrade
@@ -122,10 +124,12 @@ func TestSafetyCostDegradeReResolves(t *testing.T) {
 
 	// Pre-load the tracker into the degraded state (so the first Check in
 	// Dispatch returns CostDegrade and triggers the tier switch to "light").
-	degrading := NewCostCeilingTracker(CostCeilingConfig{AmountUSD: 1.0, Window: 24 * time.Hour, DegradeTo: tierLight}, map[string]Pricing{
-		modelGLM52:     {InputPerMToken: 100.0, OutputPerMToken: 0},
-		modelMinimaxM3: {InputPerMToken: 0.0, OutputPerMToken: 0},
-	}, nil, nil)
+	degrading := NewCostCeilingTracker(
+		CostCeilingConfig{AmountUSD: 1.0, Window: 24 * time.Hour, DegradeTo: tierLight},
+		map[string]Pricing{
+			modelGLM52:     {InputPerMToken: 100.0, OutputPerMToken: 0},
+			modelMinimaxM3: {InputPerMToken: 0.0, OutputPerMToken: 0},
+		}, nil, nil)
 	now := s.now()
 	degrading.Check(now)
 	degrading.Account(modelGLM52, 1_000_000, 0) // $100 >= $1 ceiling → degrade
@@ -137,7 +141,8 @@ func TestSafetyCostDegradeReResolves(t *testing.T) {
 	require.Equal(t, stopReasonStop, resp.FinishReason)
 
 	called := fp.calledModels()
-	require.NotContains(t, called, modelGLM52, "the original heavy primary must NOT be called (tier switched before any send)")
+	require.NotContains(t, called, modelGLM52,
+		"the original heavy primary must NOT be called (tier switched before any send)")
 	require.Contains(t, called, modelMinimaxM3, "the degrade_to (light) tier's model must be called")
 	// Exactly one re-resolution (no infinite loop): minimax-m3 called once.
 	require.Len(t, called, 1, "one candidate call — no loop")

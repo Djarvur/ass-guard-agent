@@ -121,12 +121,16 @@ type TargetCaptureRef struct {
 // profile (PROF-05, D-07). It makes "incomplete capture" a loud failure and
 // feeds the TOOL-03 catalog-consistency check.
 type CoverageManifest struct {
-	Profile                         string           `json:"profile"                             yaml:"profile"`
-	TargetCaptureRef                TargetCaptureRef `json:"target_capture_ref"                  yaml:"target_capture_ref"`
-	ExtractedAt                     time.Time        `json:"extracted_at"                        yaml:"extracted_at"`
-	ExtractorVersion                string           `json:"extractor_version"                   yaml:"extractor_version"`
-	Fields                          []CoverageEntry  `json:"fields"                              yaml:"fields"`
-	RequiredToolsSatisfiedByCatalog bool             `json:"required_tools_satisfied_by_catalog" yaml:"required_tools_satisfied_by_catalog"`
+	Profile          string           `json:"profile"            yaml:"profile"`
+	TargetCaptureRef TargetCaptureRef `json:"target_capture_ref" yaml:"target_capture_ref"`
+	ExtractedAt      time.Time        `json:"extracted_at"       yaml:"extracted_at"`
+	ExtractorVersion string           `json:"extractor_version"  yaml:"extractor_version"`
+	Fields           []CoverageEntry  `json:"fields"             yaml:"fields"`
+
+	// RequiredToolsSatisfiedByCatalog has dual json/yaml tags whose key name
+	// matches the serialized manifest format and cannot be shortened.
+	//nolint:lll // long field name + required json/yaml keys
+	RequiredToolsSatisfiedByCatalog bool `json:"required_tools_satisfied_by_catalog" yaml:"required_tools_satisfied_by_catalog"`
 }
 
 // Validate returns an error naming any TIER-1/2 manifest field whose observed
@@ -148,7 +152,9 @@ func (m CoverageManifest) Validate(captured map[string]int) error {
 		}
 
 		if got != f.ObservedCount {
-			mismatches = append(mismatches, fmt.Sprintf("%s: observed %d, manifest declares %d (%s)", f.Path, got, f.ObservedCount, f.Tier))
+			mismatches = append(mismatches,
+				fmt.Sprintf("%s: observed %d, manifest declares %d (%s)",
+					f.Path, got, f.ObservedCount, f.Tier))
 		}
 	}
 

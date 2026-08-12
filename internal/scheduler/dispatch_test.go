@@ -58,7 +58,9 @@ func (f *fakeProvider) Send(_ context.Context, prof profile.Profile, _ []provide
 	return oc.resp, nil
 }
 
-func (f *fakeProvider) Stream(context.Context, profile.Profile, []provider.Message) (<-chan provider.StreamChunk, error) {
+func (f *fakeProvider) Stream(
+	context.Context, profile.Profile, []provider.Message,
+) (<-chan provider.StreamChunk, error) {
 	return nil, errors.New("fake: Stream not implemented in dispatch tests")
 }
 
@@ -337,7 +339,9 @@ func TestDispatchSemaphorePerCandidate(t *testing.T) {
 	t.Cleanup(func() { bus.Close() })
 
 	rs := &recordingSem{}
-	s := NewScheduler(cfg, bus, rs, map[string]provider.Provider{providerAnthropic: fp, providerOpenAI: fp, providerGroq: fp}, nil)
+	s := NewScheduler(cfg, bus, rs, map[string]provider.Provider{
+		providerAnthropic: fp, providerOpenAI: fp, providerGroq: fp,
+	}, nil)
 	s.SetNow(func() time.Time { return ny(2026, time.August, 16, 12, 0) })
 
 	_, _, err := dispatchAndCollect(context.Background(), t, s, bus, tierHeavy, "myproj", CapabilityReq{})
@@ -356,8 +360,12 @@ func TestDispatchCapabilitySeam(t *testing.T) {
 	cfg := &Config{
 		Providers: map[string]ProviderConfig{"p": {BaseURL: "x", Shape: providerAnthropic}},
 		Models: map[string]ModelConfig{
-			tierToolLess: {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, Streaming: true, ToolCalling: false}},
-			tierToolFull: {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, Streaming: true, ToolCalling: true}},
+			tierToolLess: {Provider: "p", Capabilities: CapabilityProfile{
+				ContextWindow: 100, Streaming: true, ToolCalling: false,
+			}},
+			tierToolFull: {Provider: "p", Capabilities: CapabilityProfile{
+				ContextWindow: 100, Streaming: true, ToolCalling: true,
+			}},
 		},
 		Tiers: map[string]TierBinding{tierHeavy: {Model: tierToolLess, Fallback: []string{tierToolFull}}},
 	}
@@ -371,7 +379,8 @@ func TestDispatchCapabilitySeam(t *testing.T) {
 	resp, _, err := dispatchAndCollect(context.Background(), t, s, bus, tierHeavy, "", CapabilityReq{NeedsTools: true})
 	require.NoError(t, err)
 	require.Equal(t, stopReasonStop, resp.FinishReason)
-	require.Equal(t, []string{tierToolFull}, fp.calledModels(), "the tool-less primary must be SKIPPED, only the capable fallback called")
+	require.Equal(t, []string{tierToolFull}, fp.calledModels(),
+		"the tool-less primary must be SKIPPED, only the capable fallback called")
 }
 
 // TestDispatchCapabilityNoCandidate: a tier whose primary AND fallback all lack
@@ -417,7 +426,8 @@ func TestDispatchBreakerCostOrder(t *testing.T) {
 
 	_, _, err := dispatchAndCollect(context.Background(), t, s, bus, tierHeavy, "myproj", CapabilityReq{})
 	require.NoError(t, err)
-	// Sequence: check (cost) ... actually the order in Dispatch is capability → breaker.Allow → cost.Check → acquire → send → release → RecordSuccess → Account.
+	// Sequence: the order in Dispatch is capability → breaker.Allow → cost.Check →
+	// acquire → send → release → RecordSuccess → Account.
 	require.GreaterOrEqual(t, indexOf(rb.logs, "allow"), 0, "Allow called")
 	require.Greater(t, indexOf(rb.logs, "record-success"), indexOf(rb.logs, "allow"), "RecordSuccess after Allow")
 	require.Greater(t, indexOf(rc.logs, "account:glm-5.2"), indexOf(rc.logs, "check"), "Account after Check")

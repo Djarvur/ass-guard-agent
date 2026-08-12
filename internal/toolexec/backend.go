@@ -170,14 +170,16 @@ func BackendsFromConfig(cfg map[string]string) (map[string]Backend, error) {
 }
 
 // selectBackend maps a single backend name to its concrete impl.
-func selectBackend(name, tool string) (Backend, error) { //nolint:ireturn // returns one of several Backend implementations selected by name
+func selectBackend(name, tool string) (Backend, error) { //nolint:ireturn // one of several Backend impls
 	switch strings.ToLower(name) {
 	case "http", "":
 		return &HTTPBackend{}, nil
 	case "firecrawl":
 		return FirecrawlBackend{}, nil
 	default:
-		return nil, &ConfigError{Violations: []string{fmt.Sprintf("%s: unknown backend %q (want http or firecrawl)", tool, name)}}
+		msg := fmt.Sprintf("%s: unknown backend %q (want http or firecrawl)", tool, name)
+
+		return nil, &ConfigError{Violations: []string{msg}}
 	}
 }
 

@@ -159,7 +159,8 @@ func TestProjector_Truncation(t *testing.T) {
 	combined += combinedSb125.String()
 	// The 1000-char message must be truncated to <= MaxSummaryUserChars + ellipsis.
 	if strings.Contains(combined, strings.Repeat("a", MaxSummaryUserChars+10)) {
-		t.Errorf("summary did not truncate the long user message (limit=%d):\n%d chars", MaxSummaryUserChars, len(combined))
+		t.Errorf("summary did not truncate the long user message (limit=%d):\n%d chars",
+			MaxSummaryUserChars, len(combined))
 	}
 }
 

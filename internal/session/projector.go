@@ -19,7 +19,7 @@ const (
 
 // fileBearingTools is the set of tools whose inputs carry a file_path/path we
 // extract for the task summary. Other tools' inputs are not file-bearing.
-var fileBearingTools = map[string]bool{ //nolint:gochecknoglobals // immutable lookup table / default (cannot be a const)
+var fileBearingTools = map[string]bool{ //nolint:gochecknoglobals // immutable table
 	toolRead: true, "Write": true, "Edit": true,
 	"Glob": true, "Grep": true, toolBash: true,
 }
@@ -78,7 +78,8 @@ func (p *Projector) Project(turnID string) ([]provider.Message, error) {
 	// (The Shaper adds the system prompt separately from p.prof.System.)
 	var content string
 	if summary != "" {
-		content = "Task summary (mechanical, post-boundary):\n" + summary + "\n\n--- Current request ---\n" + currentIntent
+		content = "Task summary (mechanical, post-boundary):\n" + summary +
+			"\n\n--- Current request ---\n" + currentIntent
 	} else {
 		// First turn: no summary, just the intent.
 		content = currentIntent

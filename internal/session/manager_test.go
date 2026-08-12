@@ -107,7 +107,8 @@ func TestAppendEngineDecisionNothing(t *testing.T) {
 	t.Parallel()
 
 	m := newTestManager(t, "sess-1")
-	if err := m.AppendEngineDecision("turn_1", "nothing", "unmatched", "no pattern or handoff tool matched"); err != nil {
+	if err := m.AppendEngineDecision("turn_1", "nothing", "unmatched",
+		"no pattern or handoff tool matched"); err != nil {
 		t.Fatalf("AppendEngineDecision: %v", err)
 	}
 

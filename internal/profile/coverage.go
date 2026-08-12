@@ -47,7 +47,10 @@ func CheckCoverage(manifest CoverageManifest, freshCapture map[string]int) ([]Fi
 
 		got, ok := freshCapture[f.Path]
 		if !ok {
-			diffs = append(diffs, FieldDiff{Path: f.Path, Declared: f.ObservedCount, Observed: 0, Tier: f.Tier, Missing: true})
+			diffs = append(diffs, FieldDiff{
+				Path: f.Path, Declared: f.ObservedCount,
+				Observed: 0, Tier: f.Tier, Missing: true,
+			})
 
 			continue
 		}

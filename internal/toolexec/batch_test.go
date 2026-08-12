@@ -99,7 +99,8 @@ func TestDispatchBatch_ReadOnlyParallelism(t *testing.T) {
 	}
 
 	if elapsed >= 80*time.Millisecond {
-		t.Errorf("4 read-only calls took %v; want < 80ms (sequential would be ~120ms) — parallelism not observed", elapsed)
+		t.Errorf("4 read-only calls took %v; want < 80ms "+
+			"(sequential would be ~120ms) — parallelism not observed", elapsed)
 	}
 	// Arrival order preserved.
 	for i, r := range results {
@@ -268,7 +269,8 @@ func TestDispatchBatch_MaxConcurrentBound(t *testing.T) {
 	}
 	// At most 2 concurrent ⇒ 6 calls ⇒ >= 3 batches of 2 ⇒ >= 3*30ms - slack.
 	if elapsed < 80*time.Millisecond {
-		t.Errorf("6 read-only calls with MaxConcurrent=2 took %v; want >= ~90ms (3 batches) — bound not respected", elapsed)
+		t.Errorf("6 read-only calls with MaxConcurrent=2 took %v; "+
+			"want >= ~90ms (3 batches) — bound not respected", elapsed)
 	}
 }
 

@@ -29,7 +29,8 @@ func cannedOpenAIToolCallsResponse(name, argsJSON string) string {
         "role": "assistant",
         "content": null,
         "tool_calls": [
-          {"id": "call_01", "type": "function", "function": {"name": "` + name + `", "arguments": ` + jsonQuote(argsJSON) + `}}
+          {"id": "call_01", "type": "function",
+           "function": {"name": "` + name + `", "arguments": ` + jsonQuote(argsJSON) + `}}
         ]
       }
     }

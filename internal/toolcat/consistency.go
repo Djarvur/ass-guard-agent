@@ -28,7 +28,9 @@ type ConsistencyResult struct {
 // schema's required-field set must structurally match the catalog's; a mismatch
 // is a hard failure (Unsatisfied). MCP/plugin tools are reported in
 // MCPOrPlugin (informational). ok is true iff Unsatisfied is empty.
-func CheckConsistency(catalog *Catalog, profileDecls []profile.Decl) (result ConsistencyResult, err error) { //nolint:nonamedreturns // result is built incrementally via field appends across the scan
+func CheckConsistency( //nolint:nonamedreturns // result built incrementally across the scan
+	catalog *Catalog, profileDecls []profile.Decl,
+) (result ConsistencyResult, err error) {
 	for _, d := range profileDecls {
 		if isMCPOrPlugin(d.Name) {
 			result.MCPOrPlugin = append(result.MCPOrPlugin, d.Name)

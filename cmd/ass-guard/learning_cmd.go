@@ -80,7 +80,8 @@ func runLearningList(stdout io.Writer, stderr io.Writer, path string) error {
 			expiry = e.Expiry.UTC().Format("2006-01-02")
 		}
 
-		_, _ = fmt.Fprintf(stdout, "%s\t%s\t%s\t%d\t%s\t%s\n", e.ID, e.Situation, e.Answer, e.Confidence, e.Status, expiry)
+		_, _ = fmt.Fprintf(stdout, "%s\t%s\t%s\t%d\t%s\t%s\n",
+			e.ID, e.Situation, e.Answer, e.Confidence, e.Status, expiry)
 	}
 
 	if len(entries) == 0 {

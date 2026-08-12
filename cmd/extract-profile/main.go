@@ -25,10 +25,17 @@ import (
 const extractorVersion = "extract-profile/01-02"
 
 func main() {
-	sessions := flag.String("sessions", "", "comma-separated session IDs to extract from (default: auto-pick the richest main session)")
-	rolloutDir := flag.String("rollout-dir", defaultRolloutDir(), "directory containing model-io-sess_*.jsonl files")
+	sessions := flag.String(
+		"sessions", "",
+		"comma-separated session IDs to extract from (default: auto-pick the richest main session)",
+	)
+	rolloutDir := flag.String("rollout-dir", defaultRolloutDir(),
+		"directory containing model-io-sess_*.jsonl files")
 	out := flag.String("out", "profiles/zcode", "output profile directory")
-	paritySession := flag.String("parity-session", "", "optional disjoint session id recorded as the held-out parity reference (D-16)")
+	paritySession := flag.String(
+		"parity-session", "",
+		"optional disjoint session id recorded as the held-out parity reference (D-16)",
+	)
 	profileName := flag.String("name", "zcode", "profile name")
 
 	flag.Parse()
@@ -65,7 +72,8 @@ func run(sessions, rolloutDir, out, name, paritySession string) error {
 		return err
 	}
 
-	fmt.Fprintf(os.Stderr, "extract-profile: extracting from %s session %s (%s)\n", chosen.Role, chosen.ID, short(chosen.Path))
+	fmt.Fprintf(os.Stderr, "extract-profile: extracting from %s session %s (%s)\n",
+		chosen.Role, chosen.ID, short(chosen.Path))
 
 	res, err := profile.ExtractFromRollout(chosen.Path)
 	if err != nil {
@@ -76,9 +84,12 @@ func run(sessions, rolloutDir, out, name, paritySession string) error {
 		return fmt.Errorf("write artifact: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "extract-profile: wrote %s — %d system blocks, %d tools (%d after null-filter), %d identity headers, model %s\n",
+	fmt.Fprintf(os.Stderr,
+		"extract-profile: wrote %s — %d system blocks, %d tools (%d after null-filter), "+
+			"%d identity headers, model %s\n",
 		out, len(res.System), res.ToolCount, res.ToolCount, len(res.Headers), res.Model)
-	fmt.Fprintf(os.Stderr, "extract-profile: coverage.yaml + meta.yaml written (PROF-03 target_capture_ref, PROF-05 manifest)\n")
+	fmt.Fprintf(os.Stderr,
+		"extract-profile: coverage.yaml + meta.yaml written (PROF-03 target_capture_ref, PROF-05 manifest)\n")
 
 	return nil
 }
@@ -182,13 +193,18 @@ func headersToYAML(hs []profile.Header) []map[string]string {
 }
 
 func buildManifest(name string, res profile.ExtractResult, paritySession string) profile.CoverageManifest {
+	src := res.SourcePath
+	t1 := profile.Tier1ByteFaithful
 	fields := []profile.CoverageEntry{
-		{Path: "request.body.system", Tier: profile.Tier1ByteFaithful, Type: "[]TextBlock", ObservedCount: len(res.System), Source: res.SourcePath},
-		{Path: "request.body.tools", Tier: profile.Tier1ByteFaithful, Type: "[]Decl", ObservedCount: res.ToolCount, Source: res.SourcePath},
-		{Path: "request.body.thinking", Tier: profile.Tier1ByteFaithful, Type: "json", ObservedCount: 1, Source: res.SourcePath},
-		{Path: "request.body.tool_choice", Tier: profile.Tier1ByteFaithful, Type: "json", ObservedCount: 1, Source: res.SourcePath},
-		{Path: "request.headers", Tier: profile.Tier2Structural, Type: "[]Header (names)", ObservedCount: len(res.Headers), Source: res.SourcePath},
-		{Path: "request.body.model", Tier: profile.Tier1ByteFaithful, Type: "string", ObservedCount: 1, Source: res.SourcePath},
+		{Path: "request.body.system", Tier: t1, Type: "[]TextBlock", ObservedCount: len(res.System), Source: src},
+		{Path: "request.body.tools", Tier: t1, Type: "[]Decl", ObservedCount: res.ToolCount, Source: src},
+		{Path: "request.body.thinking", Tier: t1, Type: "json", ObservedCount: 1, Source: src},
+		{Path: "request.body.tool_choice", Tier: t1, Type: "json", ObservedCount: 1, Source: src},
+		{
+			Path: "request.headers", Tier: profile.Tier2Structural,
+			Type: "[]Header (names)", ObservedCount: len(res.Headers), Source: src,
+		},
+		{Path: "request.body.model", Tier: t1, Type: "string", ObservedCount: 1, Source: src},
 	}
 
 	return profile.CoverageManifest{
@@ -204,15 +220,17 @@ func buildManifest(name string, res profile.ExtractResult, paritySession string)
 
 func buildMeta(name string, res profile.ExtractResult, paritySession string) map[string]any {
 	m := map[string]any{
-		"profile":              name,
-		"extractor_version":    extractorVersion,
-		"extracted_at":         time.Now().UTC().Format(time.RFC3339),
-		"target_capture_ref":   buildTargetCaptureRef(res, paritySession),
-		"data_source_strategy": "D-16: scan rollout dir at extraction time; tool count = source-declared (not hardcoded)",
+		"profile":            name,
+		"extractor_version":  extractorVersion,
+		"extracted_at":       time.Now().UTC().Format(time.RFC3339),
+		"target_capture_ref": buildTargetCaptureRef(res, paritySession),
+		"data_source_strategy": "D-16: scan rollout dir at extraction time; " +
+			"tool count = source-declared (not hardcoded)",
 	}
 	if paritySession != "" {
 		m["parity_reference_session_id"] = paritySession
-		m["parity_note"] = "disjoint session supplying divergence-prone multi-tool turns (RESEARCH-FLAG-01 held-out split)"
+		m["parity_note"] = "disjoint session supplying divergence-prone multi-tool turns " +
+			"(RESEARCH-FLAG-01 held-out split)"
 	}
 
 	return m
@@ -236,7 +254,8 @@ func printStats(stats []profile.SessionStat) {
 	fmt.Fprintf(os.Stderr, "extract-profile: rollout sessions found (D-16 live scan):\n")
 
 	for _, s := range stats {
-		fmt.Fprintf(os.Stderr, "  %s  role=%s fullReqLines=%d firstToolCount=%d\n", s.ID, s.Role, s.FullRequestLines, s.FirstToolCount)
+		fmt.Fprintf(os.Stderr, "  %s  role=%s fullReqLines=%d firstToolCount=%d\n",
+			s.ID, s.Role, s.FullRequestLines, s.FirstToolCount)
 	}
 }
 

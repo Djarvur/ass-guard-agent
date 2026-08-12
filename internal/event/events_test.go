@@ -22,7 +22,10 @@ func TestEngineDecisionKind(t *testing.T) {
 func TestHookProgressKind(t *testing.T) {
 	t.Parallel()
 
-	e := event.HookProgress{TurnID: "t1", HookName: "post-implement", StepIndex: 0, StepKind: "run-command", Status: "start"}
+	e := event.HookProgress{
+		TurnID: "t1", HookName: "post-implement",
+		StepIndex: 0, StepKind: "run-command", Status: "start",
+	}
 	if got := e.Kind(); got != "HookProgress" {
 		t.Errorf("HookProgress.Kind() = %q; want HookProgress", got)
 	}

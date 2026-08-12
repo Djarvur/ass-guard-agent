@@ -219,7 +219,8 @@ func (p *OpenAIProvider) Stream(ctx context.Context, prof profile.Profile, messa
 
 // errOpenAIStreamNotImplemented is the sentinel returned by the OpenAI adapter's
 // Stream (Phase 2 scope: Anthropic-shape streaming only).
-var errOpenAIStreamNotImplemented = errors.New("openai provider: streaming not implemented in Phase 2 (ACP-04 is Anthropic-shape only)")
+var errOpenAIStreamNotImplemented = errors.New(
+	"openai provider: streaming not implemented in Phase 2 (ACP-04 is Anthropic-shape only)")
 
 // compile-time interface check.
 var _ Provider = (*OpenAIProvider)(nil)

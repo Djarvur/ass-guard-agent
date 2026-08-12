@@ -364,7 +364,10 @@ func TestExecute_SendPromptStopIsNotError(t *testing.T) {
 	ft := &fakeTurns{stop: "end_turn"}
 	e := &hookdag.Executor{Turns: ft}
 	hook := hookdag.Hook{Name: "h", Trigger: stagePostImplement,
-		Steps: []hookdag.Step{{Name: "sp", Kind: hookdag.StepSendPrompt, Prompt: "x", OnFailure: hookdag.OnFailureHalt}}}
+		Steps: []hookdag.Step{{
+			Name: "sp", Kind: hookdag.StepSendPrompt,
+			Prompt: "x", OnFailure: hookdag.OnFailureHalt,
+		}}}
 
 	res := e.Execute(context.Background(), hook, prov("h"))
 	if res.Status != hookdag.StatusCompleted {
@@ -523,7 +526,10 @@ func TestRunCommand_ExitCodeContract(t *testing.T) {
 		e := &hookdag.Executor{Commands: fc}
 
 		hook := hookdag.Hook{Name: "h", Trigger: "t",
-			Steps: []hookdag.Step{{Name: "s", Kind: hookdag.StepRunCommand, Command: "x", OnFailure: hookdag.OnFailureHalt}}}
+			Steps: []hookdag.Step{{
+				Name: "s", Kind: hookdag.StepRunCommand,
+				Command: "x", OnFailure: hookdag.OnFailureHalt,
+			}}}
 		if res := e.Execute(context.Background(), hook, prov("h")); res.Status != hookdag.StatusCompleted {
 			t.Errorf("exit-0 Status = %q; want completed", res.Status)
 		}
@@ -534,7 +540,10 @@ func TestRunCommand_ExitCodeContract(t *testing.T) {
 		fc := &fakeCommands{scripted: map[int]commandResult{0: {exit: 2, stderr: "the stderr"}}}
 		e := &hookdag.Executor{Commands: fc}
 		hook := hookdag.Hook{Name: "h", Trigger: "t",
-			Steps: []hookdag.Step{{Name: "s", Kind: hookdag.StepRunCommand, Command: "x", OnFailure: hookdag.OnFailureHalt}}}
+			Steps: []hookdag.Step{{
+				Name: "s", Kind: hookdag.StepRunCommand,
+				Command: "x", OnFailure: hookdag.OnFailureHalt,
+			}}}
 
 		res := e.Execute(context.Background(), hook, prov("h"))
 		if res.Status != hookdag.StatusHalted {
