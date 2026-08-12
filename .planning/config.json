@@ -1,0 +1,43 @@
+{
+  "model_profile": "adaptive",
+  "commit_docs": true,
+  "workflow": {
+    "plan_check": true,
+    "verifier": true,
+    "auto_advance": true,
+    "research_before_questions": true,
+    "skip_discuss": false,
+    "use_worktrees": true,
+    "research": true,
+    "nyquist_validation": true,
+    "pattern_mapper": true,
+    "ui_phase": true,
+    "ui_safety_gate": true,
+    "ai_integration_phase": true,
+    "tdd_mode": true,
+    "code_review": true,
+    "ui_review": true,
+    "code_review_depth": "deep",
+    "_auto_chain_active": false
+  },
+  "git": {
+    "branching_strategy": "milestone",
+    "create_tag": true
+  },
+  "hooks": {
+    "context_warnings": false
+  },
+  "intel": {
+    "enabled": false
+  },
+  "graphify": {
+    "enabled": false
+  },
+  "plan_review": {
+    "source_grounding": true
+  },
+  "runtime": "zcode",
+  "model_profile_overrides": {
+    "zcode": {}
+  }
+}

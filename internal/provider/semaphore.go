@@ -23,6 +23,7 @@ func NewSemaphore(max int) *Semaphore {
 	if max < 1 {
 		max = 1
 	}
+
 	return &Semaphore{tokens: make(chan struct{}, max)}
 }
 

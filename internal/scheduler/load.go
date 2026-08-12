@@ -38,15 +38,18 @@ func Load(paths ...string) (*Config, error) {
 	if err := yaml.Unmarshal(embeddedDefault, &merged); err != nil {
 		return nil, fmt.Errorf("decode embedded scheduling default: %w", err)
 	}
+
 	for _, p := range paths {
 		raw, err := os.ReadFile(p)
 		if err != nil {
 			return nil, fmt.Errorf("read scheduling config %q: %w", p, err)
 		}
+
 		overlay := make(map[string]any)
 		if err := yaml.Unmarshal(raw, &overlay); err != nil {
 			return nil, fmt.Errorf("decode scheduling config %q: %w", p, err)
 		}
+
 		deepMerge(merged, overlay)
 	}
 
@@ -56,6 +59,7 @@ func Load(paths ...string) (*Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("re-encode merged scheduling config: %w", err)
 	}
+
 	var cfg Config
 	if err := yaml.Unmarshal(out, &cfg); err != nil {
 		return nil, fmt.Errorf("decode scheduling config: %w", err)
@@ -66,6 +70,7 @@ func Load(paths ...string) (*Config, error) {
 	if err := Validate(&cfg); err != nil {
 		return nil, err
 	}
+
 	return &cfg, nil
 }
 
@@ -78,10 +83,12 @@ func deepMerge(dst, src map[string]any) {
 			if dv, ok := dst[k]; ok {
 				if dm, ok := dv.(map[string]any); ok {
 					deepMerge(dm, sm)
+
 					continue
 				}
 			}
 		}
+
 		dst[k] = sv
 	}
 }
@@ -92,22 +99,28 @@ func applyDefaults(cfg *Config) {
 	if cfg.Timezone == "" {
 		cfg.Timezone = "UTC"
 	}
+
 	cb := &cfg.CircuitBreaker
 	if cb.ConsecutiveFailures == 0 {
 		cb.ConsecutiveFailures = defaultBreaker.ConsecutiveFailures
 	}
+
 	if cb.ErrorRateWindow == 0 {
 		cb.ErrorRateWindow = defaultBreaker.ErrorRateWindow
 	}
+
 	if cb.ErrorRateThreshold == 0 {
 		cb.ErrorRateThreshold = defaultBreaker.ErrorRateThreshold
 	}
+
 	if cb.Cooldown == 0 {
 		cb.Cooldown = defaultBreaker.Cooldown
 	}
+
 	if cb.HalfOpenProbes == 0 {
 		cb.HalfOpenProbes = defaultBreaker.HalfOpenProbes
 	}
+
 	if cfg.CostCeiling.Window == 0 {
 		cfg.CostCeiling.Window = defaultCost.Window
 	}
@@ -124,21 +137,28 @@ func (c *CircuitBreakerConfig) UnmarshalYAML(value *yaml.Node) error {
 		Cooldown            string  `yaml:"cooldown"`
 		HalfOpenProbes      int     `yaml:"half_open_probes"`
 	}
+
 	var r raw
-	if err := value.Decode(&r); err != nil {
+	err := value.Decode(&r)
+	if err != nil {
 		return err
 	}
+
 	c.ConsecutiveFailures = r.ConsecutiveFailures
 	c.ErrorRateWindow = r.ErrorRateWindow
 	c.ErrorRateThreshold = r.ErrorRateThreshold
+
 	c.HalfOpenProbes = r.HalfOpenProbes
+
 	if r.Cooldown != "" {
 		d, err := time.ParseDuration(r.Cooldown)
 		if err != nil {
 			return fmt.Errorf("circuit_breaker.cooldown %q: %w", r.Cooldown, err)
 		}
+
 		c.Cooldown = d
 	}
+
 	return nil
 }
 
@@ -150,19 +170,26 @@ func (c *CostCeilingConfig) UnmarshalYAML(value *yaml.Node) error {
 		Window    string  `yaml:"window"`
 		DegradeTo string  `yaml:"degrade_to"`
 	}
+
 	var r raw
-	if err := value.Decode(&r); err != nil {
+	err := value.Decode(&r)
+	if err != nil {
 		return err
 	}
+
 	c.AmountUSD = r.AmountUSD
+
 	c.DegradeTo = r.DegradeTo
+
 	if r.Window != "" {
 		d, err := time.ParseDuration(r.Window)
 		if err != nil {
 			return fmt.Errorf("cost_ceiling.window %q: %w", r.Window, err)
 		}
+
 		c.Window = d
 	}
+
 	return nil
 }
 
@@ -178,8 +205,10 @@ func (e *ConfigError) Error() string {
 	if len(e.Violations) == 0 {
 		return "scheduling config invalid"
 	}
+
 	cp := append([]string(nil), e.Violations...)
 	sort.Strings(cp)
+
 	return strings.Join(cp, "; ")
 }
 
@@ -205,26 +234,32 @@ func Validate(cfg *Config) error {
 		if !pok {
 			v = append(v, fmt.Sprintf("%s: model %q is not declared in models", label, b.Model))
 		}
+
 		for _, fb := range b.Fallback {
 			fbModel, ok := cfg.Models[fb]
 			if !ok {
 				v = append(v, fmt.Sprintf("%s: fallback %q is not declared in models", label, fb))
+
 				continue
 			}
+
 			if !pok {
 				continue
 			}
+
 			pcap, fcap := primary.Capabilities, fbModel.Capabilities
 			if pcap.ToolCalling && !fcap.ToolCalling {
 				v = append(v, fmt.Sprintf(
 					"%s: primary %s supports tool_calling but fallback %s does not — incompatible chain",
 					label, b.Model, fb))
 			}
+
 			if pcap.Streaming && !fcap.Streaming {
 				v = append(v, fmt.Sprintf(
 					"%s: primary %s supports streaming but fallback %s does not — incompatible chain",
 					label, b.Model, fb))
 			}
+
 			if pcap.ExtendedThinking && !fcap.ExtendedThinking {
 				v = append(v, fmt.Sprintf(
 					"%s: primary %s supports extended_thinking but fallback %s does not — incompatible chain",
@@ -238,12 +273,14 @@ func Validate(cfg *Config) error {
 	for _, tier := range sortedKeys(cfg.Tiers) {
 		checkBinding(fmt.Sprintf("tier %q", tier), cfg.Tiers[tier])
 	}
+
 	for _, name := range sortedWindowNames(cfg.TimeWindows) {
 		w := windowByName(cfg.TimeWindows, name)
 		for _, tier := range sortedKeys(w.Tiers) {
 			checkBinding(fmt.Sprintf("time_window %q tier %q", name, tier), w.Tiers[tier])
 		}
 	}
+
 	for _, proj := range sortedKeys(cfg.Projects) {
 		po := cfg.Projects[proj]
 		for _, tier := range sortedKeys(po.Tiers) {
@@ -258,6 +295,7 @@ func Validate(cfg *Config) error {
 			v = append(v, fmt.Sprintf("model %q: provider %q is not declared in providers", slug, m.Provider))
 		}
 	}
+
 	for _, slug := range sortedKeys(cfg.Providers) {
 		p := cfg.Providers[slug]
 		if p.Shape != "anthropic" && p.Shape != "openai" {
@@ -275,6 +313,7 @@ func Validate(cfg *Config) error {
 	if len(v) > 0 {
 		return &ConfigError{Violations: v}
 	}
+
 	return nil
 }
 
@@ -283,7 +322,9 @@ func sortedKeys[V any](m map[string]V) []string {
 	for k := range m {
 		keys = append(keys, k)
 	}
+
 	sort.Strings(keys)
+
 	return keys
 }
 
@@ -292,7 +333,9 @@ func sortedWindowNames(windows []TimeWindow) []string {
 	for _, w := range windows {
 		names = append(names, w.Name)
 	}
+
 	sort.Strings(names)
+
 	return names
 }
 
@@ -302,5 +345,6 @@ func windowByName(windows []TimeWindow, name string) TimeWindow {
 			return w
 		}
 	}
+
 	return TimeWindow{}
 }

@@ -35,6 +35,7 @@ func NewRestrictedExecutor(inner ToolExecutor, allowed []string) *RestrictedExec
 	for _, name := range allowed {
 		m[name] = struct{}{}
 	}
+
 	return &RestrictedExecutor{inner: inner, allowed: m}
 }
 
@@ -44,6 +45,7 @@ func (r *RestrictedExecutor) Execute(ctx context.Context, name string, input jso
 	if _, ok := r.allowed[name]; !ok {
 		return nil, fmt.Errorf("tool %q is not available in this subagent context", name)
 	}
+
 	return r.inner.Execute(ctx, name, input)
 }
 

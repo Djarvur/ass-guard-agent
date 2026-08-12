@@ -33,6 +33,7 @@ func NewTranscriptWriter(manager *Manager, bus *event.Bus) *TranscriptWriter {
 // is appended to the transcript via the matching Manager.Append*.
 func (w *TranscriptWriter) Run(ctx context.Context) {
 	subs := w.subscribeAll()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -41,6 +42,7 @@ func (w *TranscriptWriter) Run(ctx context.Context) {
 			if !ok {
 				return
 			}
+
 			if rs, ok := e.(event.RequestShaped); ok {
 				_ = w.manager.AppendRequestShaped(rs.TurnID, rs.VerbatimRequest, rs.Profile, rs.Timestamp)
 			}
@@ -48,6 +50,7 @@ func (w *TranscriptWriter) Run(ctx context.Context) {
 			if !ok {
 				return
 			}
+
 			if c, ok := e.(event.AgentMessageChunk); ok {
 				_ = w.manager.AppendAgentMessageChunk(c.TurnID, c.MessageID, c.Content)
 			}
@@ -55,6 +58,7 @@ func (w *TranscriptWriter) Run(ctx context.Context) {
 			if !ok {
 				return
 			}
+
 			if tc, ok := e.(event.ToolCall); ok {
 				_ = w.manager.AppendToolCall(tc.TurnID, tc.ToolCallID, tc.Name, tc.Input)
 			}
@@ -62,6 +66,7 @@ func (w *TranscriptWriter) Run(ctx context.Context) {
 			if !ok {
 				return
 			}
+
 			if u, ok := e.(event.UsageUpdate); ok {
 				_ = w.manager.AppendUsage(u.TurnID, u.InputTokens, u.OutputTokens)
 			}
@@ -69,6 +74,7 @@ func (w *TranscriptWriter) Run(ctx context.Context) {
 			if !ok {
 				return
 			}
+
 			if b, ok := e.(event.Boundary); ok {
 				_ = w.manager.AppendBoundary(b.Cause, b.CommandRef, b.TurnID)
 			}
@@ -76,11 +82,13 @@ func (w *TranscriptWriter) Run(ctx context.Context) {
 			if !ok {
 				return
 			}
+
 			if sr, ok := e.(event.SubagentResult); ok {
 				msg := ""
 				if sr.Err != nil {
 					msg = sr.Err.Error()
 				}
+
 				_ = w.manager.AppendSubagentResult(sr.ParentTurnID, sr.SubagentTurnID, sr.Result, msg)
 			}
 		}

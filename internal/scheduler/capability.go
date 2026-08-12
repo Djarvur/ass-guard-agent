@@ -32,16 +32,19 @@ func applyCapabilityGate(primary Target, fallback []Target, capReq CapabilityReq
 	if capReq == (CapabilityReq{}) {
 		return primary, fallback, nil
 	}
+
 	candidates := append([]Target{primary}, fallback...)
 	for i, cand := range candidates {
 		if satisfies(cand.Capabilities, capReq) {
 			return cand, candidates[i+1:], nil
 		}
 	}
+
 	slugs := make([]string, len(candidates))
 	for i, c := range candidates {
 		slugs[i] = c.Model
 	}
+
 	return Target{}, nil, &CapabilityError{Requirement: describeReq(capReq), Candidates: slugs}
 }
 
@@ -52,15 +55,19 @@ func describeReq(req CapabilityReq) string {
 	if req.NeedsTools {
 		parts = append(parts, "tool_calling")
 	}
+
 	if req.NeedsStreaming {
 		parts = append(parts, "streaming")
 	}
+
 	if req.NeedsThinking {
 		parts = append(parts, "extended_thinking")
 	}
+
 	if len(parts) == 0 {
 		return "(none)"
 	}
+
 	return strings.Join(parts, "+")
 }
 
@@ -71,11 +78,14 @@ func satisfies(cap CapabilityProfile, req CapabilityReq) bool {
 	if req.NeedsTools && !cap.ToolCalling {
 		return false
 	}
+
 	if req.NeedsStreaming && !cap.Streaming {
 		return false
 	}
+
 	if req.NeedsThinking && !cap.ExtendedThinking {
 		return false
 	}
+
 	return true
 }

@@ -21,9 +21,11 @@ func (f *fakeExecutor) Execute(ctx context.Context, name string, input json.RawM
 	if f.execErr != nil {
 		return nil, f.execErr
 	}
+
 	if len(f.result) > 0 {
 		return f.result, nil
 	}
+
 	return json.RawMessage(`{"ok":true}`), nil
 }
 
@@ -38,9 +40,11 @@ func TestRestrictedExecutorAllowedToolDelegates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("allowed Read returned error: %v", err)
 	}
+
 	if string(out) != `{"v":"ran"}` {
 		t.Errorf("allowed Read output = %s; want {\"v\":\"ran\"}", string(out))
 	}
+
 	if len(inner.called) != 1 || inner.called[0] != "Read" {
 		t.Errorf("inner executor called = %v; want [Read]", inner.called)
 	}
@@ -57,9 +61,11 @@ func TestRestrictedExecutorDisallowedToolErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("disallowed Bash returned nil error; want not-available error")
 	}
+
 	if !strings.Contains(err.Error(), "not available") {
 		t.Errorf("disallowed Bash error = %q; want it to contain 'not available'", err.Error())
 	}
+
 	if len(inner.called) != 0 {
 		t.Errorf("inner executor was called for a disallowed tool: %v (must not call inner)", inner.called)
 	}
@@ -77,6 +83,7 @@ func TestRestrictedExecutorEmptyAllowedSet(t *testing.T) {
 			t.Errorf("tool %q with empty allowed set returned nil error; want not-available", name)
 		}
 	}
+
 	if len(inner.called) != 0 {
 		t.Errorf("inner executor called with empty allowed set: %v", inner.called)
 	}

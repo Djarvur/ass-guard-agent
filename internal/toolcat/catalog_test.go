@@ -14,8 +14,10 @@ func TestCatalog_GetCoreTools(t *testing.T) {
 		tl, ok := c.Get(name)
 		if !ok {
 			t.Errorf("Get(%q) returned ok=false; want a built-in entry", name)
+
 			continue
 		}
+
 		if len(tl.InputSchema) == 0 {
 			t.Errorf("tool %q has empty InputSchema", name)
 		}
@@ -25,10 +27,12 @@ func TestCatalog_GetCoreTools(t *testing.T) {
 // TestCatalog_Mutability pins the mutability classification (Phase-2/4 record).
 func TestCatalog_Mutability(t *testing.T) {
 	c := toolcat.NewCatalog()
+
 	readTool, _ := c.Get("Read")
 	if readTool.IsMutating() {
 		t.Error("Read classified mutating; want read-only")
 	}
+
 	for _, name := range []string{"Bash", "Write", "Edit"} {
 		tl, _ := c.Get(name)
 		if !tl.IsMutating() {
@@ -49,16 +53,19 @@ func TestCatalog_Nonexistent(t *testing.T) {
 func TestCatalog_Names(t *testing.T) {
 	c := toolcat.NewCatalog()
 	names := c.Names()
+
 	want := map[string]bool{
 		"Read": false, "Bash": false, "Edit": false, "Write": false,
 		"TodoWrite": false, "TodoRead": false, "WebSearch": false, "WebFetch": false,
 		"Skill": false, "Agent": false, "AskUserQuestion": false,
 	}
+
 	for _, n := range names {
 		if _, ok := want[n]; ok {
 			want[n] = true
 		}
 	}
+
 	for name, found := range want {
 		if !found {
 			t.Errorf("core tool %q missing from catalog Names()", name)

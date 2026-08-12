@@ -20,7 +20,7 @@ import (
 )
 
 // Event is a value emitted on the bus. Each concrete event reports its Kind.
-type Event interface { Kind() string }
+type Event interface{ Kind() string }
 
 // Bus is the typed-channel pub/sub. A zero Bus is unusable; use NewBus.
 type Bus struct {
@@ -39,10 +39,13 @@ func (b *Bus) Subscribe(kind string, buffer int) <-chan Event {
 	if buffer < 0 {
 		buffer = 0
 	}
+
 	ch := make(chan Event, buffer)
+
 	b.mu.Lock()
 	b.subs[kind] = append(b.subs[kind], ch)
 	b.mu.Unlock()
+
 	return ch
 }
 
@@ -54,13 +57,17 @@ func (b *Bus) Publish(e Event) {
 	if e == nil {
 		return
 	}
+
 	b.mu.RLock()
 	subs := append([]chan Event(nil), b.subs[e.Kind()]...)
 	b.mu.RUnlock()
+
 	if len(subs) == 0 {
 		log.Printf("event bus: no subscriber for %s (event dropped)", e.Kind())
+
 		return
 	}
+
 	for _, ch := range subs {
 		ch <- e // blocks on full (D-05 backpressure)
 	}
@@ -72,10 +79,12 @@ func (b *Bus) Publish(e Event) {
 func (b *Bus) Close() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
 	for kind, subs := range b.subs {
 		for _, ch := range subs {
 			close(ch)
 		}
+
 		delete(b.subs, kind)
 	}
 }

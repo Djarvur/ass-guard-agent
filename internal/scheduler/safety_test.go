@@ -19,13 +19,16 @@ func newSafetyScheduler(t *testing.T, fp *fakeProvider) (*Scheduler, *event.Bus,
 	t.Helper()
 	cfg := loadValid(t)
 	bus := event.NewBus()
+
 	t.Cleanup(func() { bus.Close() })
+
 	providers := map[string]provider.Provider{
 		"anthropic": fp, "openai": fp, "groq": fp,
 	}
 	s := NewScheduler(cfg, bus, nil, providers, nil)
 	s.InstallSafety(cfg, bus)
 	s.SetNow(func() time.Time { return ny(2026, time.August, 16, 12, 0) }) // Sunday noon → global table
+
 	return s, bus, cfg
 }
 
@@ -42,10 +45,12 @@ func TestSafetyBreakerSkipsOpenCandidate(t *testing.T) {
 	// Trip the (anthropic, glm-5.2) breaker directly via 5 transient records.
 	cb := s.Breaker("anthropic", "glm-5.2")
 	require.NotNil(t, cb, "heavy primary breaker must be registered")
+
 	now := s.now()
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		cb.RecordTransient(now, &provider.ProviderError{Kind: provider.KindTransient})
 	}
+
 	require.Equal(t, breakerOpen, cb.State(), "breaker tripped")
 
 	// Reset the fake call log so we observe only this Dispatch's calls.
@@ -83,16 +88,18 @@ func TestSafetyCostHardStop(t *testing.T) {
 		"minimax-m3": {InputPerMToken: 100.0, OutputPerMToken: 0},
 	}, nil, nil)
 	now := s.now()
-	hard.Check(now)                               // init window
-	hard.Account("minimax-m3", 1_000_000, 0)      // $100 on primary budget → degrade
+	hard.Check(now)                          // init window
+	hard.Account("minimax-m3", 1_000_000, 0) // $100 on primary budget → degrade
 	require.Equal(t, CostDegrade, hard.Check(now))
-	hard.Account("minimax-m3", 1_000_000, 0)      // $100 on degraded budget → hard-stop
+	hard.Account("minimax-m3", 1_000_000, 0) // $100 on degraded budget → hard-stop
 	require.Equal(t, CostHardStop, hard.Check(now), "precondition: tracker in HardStop state")
 	s.SetCostTracker(hard)
 
 	_, err := s.Dispatch(context.Background(), "heavy", "myproj", CapabilityReq{}, profile.Profile{}, nil)
 	require.Error(t, err)
+
 	var perr *provider.ProviderError
+
 	require.ErrorAs(t, err, &perr)
 	require.Equal(t, provider.KindExhausted, perr.Kind, "HardStop surfaces as KindExhausted")
 	require.Equal(t, 0, fp.callCount(), "provider must NOT be called on HardStop")
@@ -122,6 +129,7 @@ func TestSafetyCostDegradeReResolves(t *testing.T) {
 	resp, err := s.Dispatch(context.Background(), "heavy", "myproj", CapabilityReq{}, profile.Profile{}, nil)
 	require.NoError(t, err)
 	require.Equal(t, "stop", resp.FinishReason)
+
 	called := fp.calledModels()
 	require.NotContains(t, called, "glm-5.2", "the original heavy primary must NOT be called (tier switched before any send)")
 	require.Contains(t, called, "minimax-m3", "the degrade_to (light) tier's model must be called")
@@ -140,6 +148,7 @@ func TestSafetyStatePersistsAcrossDispatch(t *testing.T) {
 	// Dispatch 1: glm-5.2 transient → fallback minimax-m3 success.
 	_, err := s.Dispatch(context.Background(), "heavy", "myproj", CapabilityReq{}, profile.Profile{}, nil)
 	require.NoError(t, err)
+
 	cb := s.Breaker("anthropic", "glm-5.2")
 	require.NotNil(t, cb)
 	consecAfter1 := consecutiveOf(cb)
@@ -149,6 +158,7 @@ func TestSafetyStatePersistsAcrossDispatch(t *testing.T) {
 	fp.mu.Lock()
 	fp.calls = nil
 	fp.mu.Unlock()
+
 	_, err = s.Dispatch(context.Background(), "heavy", "myproj", CapabilityReq{}, profile.Profile{}, nil)
 	require.NoError(t, err)
 	require.Equal(t, 2, consecutiveOf(cb), "breaker state persists — counter advanced on call 2")
@@ -157,6 +167,7 @@ func TestSafetyStatePersistsAcrossDispatch(t *testing.T) {
 func consecutiveOf(cb *CircuitBreaker) int {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
+
 	return cb.consecutive
 }
 
@@ -175,7 +186,8 @@ func TestSafetyNewBreakersMapConstructsPerKey(t *testing.T) {
 	for _, cb := range bm {
 		seen[cb] = struct{}{}
 	}
-	require.Equal(t, len(bm), len(seen), "one distinct breaker per key")
+
+	require.Len(t, seen, len(bm), "one distinct breaker per key")
 
 	ctr := NewCostTrackerFromConfig(cfg, nil, nil)
 	require.Equal(t, 50.0, ctr.cfg.AmountUSD)

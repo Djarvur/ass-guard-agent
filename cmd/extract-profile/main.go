@@ -30,9 +30,11 @@ func main() {
 	out := flag.String("out", "profiles/zcode", "output profile directory")
 	paritySession := flag.String("parity-session", "", "optional disjoint session id recorded as the held-out parity reference (D-16)")
 	profileName := flag.String("name", "zcode", "profile name")
+
 	flag.Parse()
 
-	if err := run(*sessions, *rolloutDir, *out, *profileName, *paritySession); err != nil {
+	err := run(*sessions, *rolloutDir, *out, *profileName, *paritySession)
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "extract-profile: %v\n", err)
 		os.Exit(1)
 	}
@@ -42,6 +44,7 @@ func defaultRolloutDir() string {
 	if home, err := os.UserHomeDir(); err == nil {
 		return filepath.Join(home, ".zcode", "cli", "rollout")
 	}
+
 	return ".zcode/cli/rollout"
 }
 
@@ -50,21 +53,25 @@ func run(sessions, rolloutDir, out, name, paritySession string) error {
 	if err != nil {
 		return fmt.Errorf("scan %q: %w", rolloutDir, err)
 	}
+
 	if len(stats) == 0 {
 		return fmt.Errorf("no model-io-sess_*.jsonl files in %q", rolloutDir)
 	}
+
 	printStats(stats)
 
 	chosen, err := chooseSession(stats, sessions)
 	if err != nil {
 		return err
 	}
+
 	fmt.Fprintf(os.Stderr, "extract-profile: extracting from %s session %s (%s)\n", chosen.Role, chosen.ID, short(chosen.Path))
 
 	res, err := profile.ExtractFromRollout(chosen.Path)
 	if err != nil {
 		return fmt.Errorf("extract: %w", err)
 	}
+
 	if err := writeArtifact(out, name, res, paritySession); err != nil {
 		return fmt.Errorf("write artifact: %w", err)
 	}
@@ -72,6 +79,7 @@ func run(sessions, rolloutDir, out, name, paritySession string) error {
 	fmt.Fprintf(os.Stderr, "extract-profile: wrote %s — %d system blocks, %d tools (%d after null-filter), %d identity headers, model %s\n",
 		out, len(res.System), res.ToolCount, res.ToolCount, len(res.Headers), res.Model)
 	fmt.Fprintf(os.Stderr, "extract-profile: coverage.yaml + meta.yaml written (PROF-03 target_capture_ref, PROF-05 manifest)\n")
+
 	return nil
 }
 
@@ -79,6 +87,7 @@ func chooseSession(stats []profile.SessionStat, sessions string) (profile.Sessio
 	if sessions == "" {
 		return profile.PickRichestMain(stats)
 	}
+
 	want := strings.Split(sessions, ",")
 	for _, s := range stats {
 		for _, w := range want {
@@ -87,6 +96,7 @@ func chooseSession(stats []profile.SessionStat, sessions string) (profile.Sessio
 			}
 		}
 	}
+
 	return profile.SessionStat{}, fmt.Errorf("requested session(s) %q not found in rollout dir", sessions)
 }
 
@@ -96,7 +106,8 @@ func writeArtifact(out, name string, res profile.ExtractResult, paritySession st
 	}
 	// system blocks
 	for i, b := range res.System {
-		if err := os.WriteFile(filepath.Join(out, "system", fmt.Sprintf("block-%d.txt", i)), []byte(b.Text), 0o644); err != nil {
+		err := os.WriteFile(filepath.Join(out, "system", fmt.Sprintf("block-%d.txt", i)), []byte(b.Text), 0o644)
+		if err != nil {
 			return err
 		}
 	}
@@ -105,6 +116,7 @@ func writeArtifact(out, name string, res profile.ExtractResult, paritySession st
 	if err != nil {
 		return err
 	}
+
 	if err := os.WriteFile(filepath.Join(out, "tools.json"), toolsJSON, 0o644); err != nil {
 		return err
 	}
@@ -112,6 +124,7 @@ func writeArtifact(out, name string, res profile.ExtractResult, paritySession st
 	if err := os.WriteFile(filepath.Join(out, "thinking.json"), res.Thinking, 0o644); err != nil {
 		return err
 	}
+
 	if err := os.WriteFile(filepath.Join(out, "tool_choice.json"), res.ToolChoice, 0o644); err != nil {
 		return err
 	}
@@ -124,24 +137,29 @@ func writeArtifact(out, name string, res profile.ExtractResult, paritySession st
 	if err != nil {
 		return err
 	}
+
 	if err := os.WriteFile(filepath.Join(out, "profile.yaml"), profileYAML, 0o644); err != nil {
 		return err
 	}
 	// identity.yaml (header names byte-faithful, values templated)
 	idMap := map[string]any{"headers": headersToYAML(res.Headers)}
+
 	idYAML, err := yaml.Marshal(idMap)
 	if err != nil {
 		return err
 	}
+
 	if err := os.WriteFile(filepath.Join(out, "identity.yaml"), idYAML, 0o644); err != nil {
 		return err
 	}
 	// coverage.yaml (PROF-05 manifest)
 	manifest := buildManifest(name, res, paritySession)
+
 	covYAML, err := yaml.Marshal(manifest)
 	if err != nil {
 		return err
 	}
+
 	if err := os.WriteFile(filepath.Join(out, "coverage.yaml"), covYAML, 0o644); err != nil {
 		return err
 	}
@@ -150,6 +168,7 @@ func writeArtifact(out, name string, res profile.ExtractResult, paritySession st
 	if err != nil {
 		return err
 	}
+
 	return os.WriteFile(filepath.Join(out, "meta.yaml"), meta, 0o644)
 }
 
@@ -158,6 +177,7 @@ func headersToYAML(hs []profile.Header) []map[string]string {
 	for _, h := range hs {
 		out = append(out, map[string]string{"name": h.Name, "value_template": h.ValueTemplate})
 	}
+
 	return out
 }
 
@@ -170,6 +190,7 @@ func buildManifest(name string, res profile.ExtractResult, paritySession string)
 		{Path: "request.headers", Tier: profile.Tier2Structural, Type: "[]Header (names)", ObservedCount: len(res.Headers), Source: res.SourcePath},
 		{Path: "request.body.model", Tier: profile.Tier1ByteFaithful, Type: "string", ObservedCount: 1, Source: res.SourcePath},
 	}
+
 	return profile.CoverageManifest{
 		Profile:          name,
 		TargetCaptureRef: buildTargetCaptureRef(res, paritySession),
@@ -193,6 +214,7 @@ func buildMeta(name string, res profile.ExtractResult, paritySession string) map
 		m["parity_reference_session_id"] = paritySession
 		m["parity_note"] = "disjoint session supplying divergence-prone multi-tool turns (RESEARCH-FLAG-01 held-out split)"
 	}
+
 	return m
 }
 
@@ -206,11 +228,13 @@ func buildTargetCaptureRef(res profile.ExtractResult, paritySession string) prof
 			Role: res.SessionRole,
 		}},
 	}
+
 	return ref
 }
 
 func printStats(stats []profile.SessionStat) {
 	fmt.Fprintf(os.Stderr, "extract-profile: rollout sessions found (D-16 live scan):\n")
+
 	for _, s := range stats {
 		fmt.Fprintf(os.Stderr, "  %s  role=%s fullReqLines=%d firstToolCount=%d\n", s.ID, s.Role, s.FullRequestLines, s.FirstToolCount)
 	}
@@ -220,5 +244,6 @@ func short(p string) string {
 	if len(p) > 60 {
 		return "..." + p[len(p)-57:]
 	}
+
 	return p
 }

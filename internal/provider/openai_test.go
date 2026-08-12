@@ -42,6 +42,7 @@ func cannedOpenAIToolCallsResponse(name, argsJSON string) string {
 // field is a JSON-encoded string, so an object becomes "{\"path\":\"go.mod\"}").
 func jsonQuote(s string) string {
 	b, _ := json.Marshal(s)
+
 	return string(b)
 }
 
@@ -50,12 +51,15 @@ func jsonQuote(s string) string {
 // sent and the tool_calls parse to one ToolCall with a parsed JSON Input.
 func TestOpenAIProvider_SendParsesToolCalls(t *testing.T) {
 	var capturedBody []byte
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasSuffix(r.URL.Path, "/chat/completions") {
 			t.Errorf("unexpected path %q (want .../chat/completions)", r.URL.Path)
 		}
+
 		body, _ := io.ReadAll(r.Body)
 		capturedBody = body
+
 		w.Header().Set("content-type", "application/json")
 		_, _ = io.WriteString(w, cannedOpenAIToolCallsResponse("synth_tool_a", `{"path":"go.mod"}`))
 	}))
@@ -66,20 +70,25 @@ func TestOpenAIProvider_SendParsesToolCalls(t *testing.T) {
 		provider.WithOpenAIAPIKey("test-key"),
 		provider.WithOpenAIBaseURL(srv.URL+"/v1"),
 	)
+
 	resp, err := p.Send(context.Background(), prof, []shaper.Message{{Role: "user", Content: "x"}})
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
+
 	if len(resp.ToolCalls) != 1 {
 		t.Fatalf("ToolCalls = %d, want 1", len(resp.ToolCalls))
 	}
+
 	if resp.ToolCalls[0].Name != "synth_tool_a" {
 		t.Errorf("Name = %q", resp.ToolCalls[0].Name)
 	}
+
 	var in map[string]any
 	if err := json.Unmarshal(resp.ToolCalls[0].Input, &in); err != nil {
 		t.Fatalf("Input not valid JSON: %v", err)
 	}
+
 	if in["path"] != "go.mod" {
 		t.Errorf("Input.path = %v", in["path"])
 	}
@@ -93,17 +102,21 @@ func TestOpenAIProvider_SendParsesToolCalls(t *testing.T) {
 // with tool_call_id + JSON-string content (VERIFIED-FACTS.md item #2).
 func TestOpenAIProvider_ToolResultMessageShape(t *testing.T) {
 	p := provider.NewOpenAIProvider(provider.WithOpenAIAPIKey("k"))
+
 	raw, err := p.ToolResultMessage("call_01", json.RawMessage(`{"ok":true}`))
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	var msg map[string]any
 	if err := json.Unmarshal(raw, &msg); err != nil {
 		t.Fatal(err)
 	}
+
 	if msg["role"] != "tool" {
 		t.Errorf("role = %v, want tool", msg["role"])
 	}
+
 	if msg["tool_call_id"] != "call_01" {
 		t.Errorf("tool_call_id = %v", msg["tool_call_id"])
 	}
@@ -112,7 +125,9 @@ func TestOpenAIProvider_ToolResultMessageShape(t *testing.T) {
 // TestOpenAIProvider_NoAPIKeyErrors confirms the Tier-A fallback.
 func TestOpenAIProvider_NoAPIKeyErrors(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "")
+
 	p := provider.NewOpenAIProvider(provider.WithOpenAIBaseURL("http://must-not-be-called.invalid"))
+
 	_, err := p.Send(context.Background(), loadProfile(t, "minimal"), []shaper.Message{{Role: "user", Content: "x"}})
 	if err == nil {
 		t.Fatal("nil error with no API key; want non-nil")

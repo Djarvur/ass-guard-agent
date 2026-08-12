@@ -82,6 +82,7 @@ func NewScheduler(cfg *Config, bus *event.Bus, sem Sem, providers map[string]pro
 	if log == nil {
 		log = slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	}
+
 	s := &Scheduler{
 		resolver:  NewResolver(cfg),
 		bus:       bus,
@@ -96,6 +97,7 @@ func NewScheduler(cfg *Config, bus *event.Bus, sem Sem, providers map[string]pro
 	} else {
 		s.sem = asDefaultSem()
 	}
+
 	return s
 }
 
@@ -105,8 +107,10 @@ func NewScheduler(cfg *Config, bus *event.Bus, sem Sem, providers map[string]pro
 func (s *Scheduler) SetBreakers(b map[providerModelKey]Breaker) {
 	if b == nil {
 		s.breakers = map[providerModelKey]Breaker{}
+
 		return
 	}
+
 	s.breakers = b
 }
 
@@ -115,6 +119,7 @@ func (s *Scheduler) SetCostTracker(c CostTracker) {
 	if c == nil {
 		c = noopCostTracker{}
 	}
+
 	s.cost = c
 }
 
@@ -131,6 +136,7 @@ func (s *Scheduler) breakerFor(cand Target) Breaker {
 	if b, ok := s.breakers[providerModelKey{cand.Provider, cand.Model}]; ok {
 		return b
 	}
+
 	return noopBreaker{}
 }
 
@@ -152,12 +158,13 @@ func (s *Scheduler) breakerFor(cand Target) Breaker {
 // (Phase 4) where StreamChunk.Usage supplies the counts.
 func (s *Scheduler) Dispatch(ctx context.Context, tier, project string, capReq CapabilityReq,
 	prof profile.Profile, messages []provider.Message) (provider.Response, error) {
-
 	degradeTo := s.resolver.cfg.CostCeiling.DegradeTo
 	turnID := turnIDFromCtx(ctx)
 	currentTier := tier
 	degraded := false // local: has Dispatch already performed the tier switch?
+
 	var lastPerr *provider.ProviderError
+
 	anyConsidered := false
 
 	// Outer loop runs once for the requested tier, and one extra time if a cost
@@ -167,6 +174,7 @@ func (s *Scheduler) Dispatch(ctx context.Context, tier, project string, capReq C
 		if err != nil {
 			return provider.Response{}, err
 		}
+
 		candidates := append([]Target{primary}, fallbacks...)
 		switchedTier := false
 
@@ -177,8 +185,10 @@ func (s *Scheduler) Dispatch(ctx context.Context, tier, project string, capReq C
 			if !capReq.isZero() && !satisfies(cand.Capabilities, capReq) {
 				s.log.Info("scheduler: skip candidate (capability mismatch)",
 					"provider", cand.Provider, "model", cand.Model, "tier", currentTier)
+
 				continue
 			}
+
 			anyConsidered = true
 
 			// Breaker (D-07).
@@ -186,6 +196,7 @@ func (s *Scheduler) Dispatch(ctx context.Context, tier, project string, capReq C
 			if !b.Allow(s.now()) {
 				s.log.Info("scheduler: skip candidate (breaker open)",
 					"provider", cand.Provider, "model", cand.Model)
+
 				continue
 			}
 
@@ -199,14 +210,17 @@ func (s *Scheduler) Dispatch(ctx context.Context, tier, project string, capReq C
 				}
 				s.log.Warn("scheduler: cost ceiling exhausted (hard stop)",
 					"provider", cand.Provider, "model", cand.Model)
+
 				return provider.Response{}, perr
 			case CostDegrade:
 				if !degraded && degradeTo != "" && degradeTo != currentTier {
 					degraded = true
 					currentTier = degradeTo
 					switchedTier = true
+
 					s.log.Warn("scheduler: cost ceiling breached — degrading tier",
 						"from_tier", tier, "to_tier", degradeTo, "provider", cand.Provider, "model", cand.Model)
+
 					break candidateLoop
 				}
 				// Already degraded (or no degrade target): fall through and attempt
@@ -214,62 +228,68 @@ func (s *Scheduler) Dispatch(ctx context.Context, tier, project string, capReq C
 			}
 
 			// Semaphore + provider call.
-		if err := s.sem.Acquire(ctx); err != nil {
-			return provider.Response{}, fmt.Errorf("scheduler: acquire semaphore: %w", err)
-		}
-		callProf := prof
-		callProf.Model = cand.Model
-		resp, err := s.providers[cand.Provider].Send(ctx, callProf, messages)
-		s.sem.Release()
+			if err := s.sem.Acquire(ctx); err != nil {
+				return provider.Response{}, fmt.Errorf("scheduler: acquire semaphore: %w", err)
+			}
 
-		if err == nil {
-			b.RecordSuccess()
-			s.cost.Account(cand.Model, 0, 0) // Response has no token fields on the Send path
-			return resp, nil
-		}
+			callProf := prof
+			callProf.Model = cand.Model
+			resp, err := s.providers[cand.Provider].Send(ctx, callProf, messages)
+			s.sem.Release()
 
-		perr := asProviderError(err, cand)
-		if perr.Kind == provider.KindStructural {
-			// Report, no retry (D-04). Structural errors do not feed the breaker
-			// (pitfall 4: a 401 is a config bug, not an outage).
-			return provider.Response{}, perr
-		}
-		if perr.Kind == provider.KindExhausted {
-			return provider.Response{}, perr
-		}
+			if err == nil {
+				b.RecordSuccess()
+				s.cost.Account(cand.Model, 0, 0) // Response has no token fields on the Send path
 
-		// Transient: feed the breaker, emit fallback event, walk on.
-		b.RecordTransient(s.now(), perr)
-		s.cost.Account(cand.Model, 0, 0)
-		lastPerr = perr
+				return resp, nil
+			}
 
-		if i < len(candidates)-1 {
-			next := candidates[i+1]
-			s.bus.Publish(ProviderFallback{
-				TurnID:       turnID,
-				FromProvider: cand.Provider, FromModel: cand.Model,
-				ToProvider: next.Provider, ToModel: next.Model,
-				Reason:    fmt.Sprintf("%s: HTTP %d: %s", perr.Kind, perr.StatusCode, perr.Reason),
-				ErrorKind: perr.Kind, Attempt: i + 1,
-			})
-			s.log.Info("scheduler: transient failure — falling back",
-				"from_provider", cand.Provider, "from_model", cand.Model,
-				"to_provider", next.Provider, "to_model", next.Model,
-				"reason", perr.Reason, "attempt", i+1)
-		}
-	} // end candidateLoop
+			perr := asProviderError(err, cand)
+			if perr.Kind == provider.KindStructural {
+				// Report, no retry (D-04). Structural errors do not feed the breaker
+				// (pitfall 4: a 401 is a config bug, not an outage).
+				return provider.Response{}, perr
+			}
+
+			if perr.Kind == provider.KindExhausted {
+				return provider.Response{}, perr
+			}
+
+			// Transient: feed the breaker, emit fallback event, walk on.
+			b.RecordTransient(s.now(), perr)
+			s.cost.Account(cand.Model, 0, 0)
+
+			lastPerr = perr
+
+			if i < len(candidates)-1 {
+				next := candidates[i+1]
+				s.bus.Publish(ProviderFallback{
+					TurnID:       turnID,
+					FromProvider: cand.Provider, FromModel: cand.Model,
+					ToProvider: next.Provider, ToModel: next.Model,
+					Reason:    fmt.Sprintf("%s: HTTP %d: %s", perr.Kind, perr.StatusCode, perr.Reason),
+					ErrorKind: perr.Kind, Attempt: i + 1,
+				})
+				s.log.Info("scheduler: transient failure — falling back",
+					"from_provider", cand.Provider, "from_model", cand.Model,
+					"to_provider", next.Provider, "to_model", next.Model,
+					"reason", perr.Reason, "attempt", i+1)
+			}
+		} // end candidateLoop
 
 		// If a cost Degrade triggered a tier switch, re-resolve with the
 		// degrade_to tier and walk again; otherwise the dispatch is done.
 		if switchedTier {
 			continue
 		}
+
 		break
 	} // end outer resolution loop
 
 	if lastPerr != nil {
 		return provider.Response{}, lastPerr
 	}
+
 	if !anyConsidered {
 		// Every candidate was filtered by the capability gate.
 		return provider.Response{}, fmt.Errorf(
@@ -289,11 +309,14 @@ func asProviderError(err error, cand Target) *provider.ProviderError {
 		if perr.Provider == "" {
 			perr.Provider = cand.Provider
 		}
+
 		if perr.Model == "" {
 			perr.Model = cand.Model
 		}
+
 		return perr
 	}
+
 	return provider.ClassifyHTTP(cand.Provider, cand.Model, 0, err)
 }
 
@@ -304,15 +327,15 @@ func (r CapabilityReq) isZero() bool { return r == CapabilityReq{} }
 // noopBreaker admits every candidate and records nothing (Plan 03-02 default).
 type noopBreaker struct{}
 
-func (noopBreaker) Allow(time.Time) bool                                  { return true }
-func (noopBreaker) RecordSuccess()                                        {}
-func (noopBreaker) RecordTransient(time.Time, *provider.ProviderError)     {}
+func (noopBreaker) Allow(time.Time) bool                               { return true }
+func (noopBreaker) RecordSuccess()                                     {}
+func (noopBreaker) RecordTransient(time.Time, *provider.ProviderError) {}
 
 // noopCostTracker always allows and accounts nothing (Plan 03-02 default).
 type noopCostTracker struct{}
 
-func (noopCostTracker) Check(time.Time) CostAction          { return CostAllow }
-func (noopCostTracker) Account(string, int, int)            {}
+func (noopCostTracker) Check(time.Time) CostAction { return CostAllow }
+func (noopCostTracker) Account(string, int, int)   {}
 
 // asDefaultSem installs a default Phase-2 semaphore when NewScheduler is given
 // nil (kept lazy so the scheduler package does not import provider's concrete
@@ -334,5 +357,6 @@ func turnIDFromCtx(ctx context.Context) string {
 	if v, ok := ctx.Value(turnIDKey{}).(string); ok {
 		return v
 	}
+
 	return ""
 }

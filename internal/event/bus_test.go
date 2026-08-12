@@ -14,12 +14,14 @@ func TestTypedChannels(t *testing.T) {
 	b := event.NewBus()
 	ch := b.Subscribe("AgentMessageChunk", event.BufAgentMessageChunk)
 	b.Publish(event.AgentMessageChunk{TurnID: "t1", MessageID: "m1", Content: "hi"})
+
 	select {
 	case e := <-ch:
 		got, ok := e.(event.AgentMessageChunk)
 		if !ok {
 			t.Fatalf("received %T; want AgentMessageChunk", e)
 		}
+
 		if got.Content != "hi" || got.TurnID != "t1" {
 			t.Errorf("got = %+v; want Content=hi TurnID=t1", got)
 		}
@@ -35,6 +37,7 @@ func TestFanOut(t *testing.T) {
 	ch1 := b.Subscribe("RequestShaped", event.BufRequestShaped)
 	ch2 := b.Subscribe("RequestShaped", event.BufRequestShaped)
 	b.Publish(event.RequestShaped{Profile: "zcode"})
+
 	for i, ch := range []<-chan event.Event{ch1, ch2} {
 		select {
 		case <-ch:
@@ -49,16 +52,18 @@ func TestFanOut(t *testing.T) {
 // A Publish that should block does not return within 50ms; draining unblocks it.
 func TestBackpressure(t *testing.T) {
 	b := event.NewBus()
-	ch := b.Subscribe("Boundary", 2) // buffer 2, never drained
+	ch := b.Subscribe("Boundary", 2)        // buffer 2, never drained
 	b.Publish(event.Boundary{TurnID: "t1"}) // fills slot 1
 	b.Publish(event.Boundary{TurnID: "t2"}) // fills slot 2
 
 	// A third Publish must block (buffer full, no drain).
 	done := make(chan struct{})
+
 	go func() {
 		b.Publish(event.Boundary{TurnID: "t3"})
 		close(done)
 	}()
+
 	select {
 	case <-done:
 		t.Fatal("Publish returned while buffer was full and undrained; want it to block (D-05)")
@@ -67,6 +72,7 @@ func TestBackpressure(t *testing.T) {
 	}
 	// Drain one slot; the blocked Publish should now complete.
 	<-ch
+
 	select {
 	case <-done:
 	case <-time.After(500 * time.Millisecond):
@@ -80,10 +86,12 @@ func TestNoSubscriber(t *testing.T) {
 	b := event.NewBus()
 	// Must not panic, must not block.
 	done := make(chan struct{})
+
 	go func() {
 		b.Publish(event.AgentMessageChunk{Content: "orphan"})
 		close(done)
 	}()
+
 	select {
 	case <-done:
 	case <-time.After(200 * time.Millisecond):
@@ -96,18 +104,21 @@ func TestNoSubscriber(t *testing.T) {
 func TestConcurrent(t *testing.T) {
 	b := event.NewBus()
 	ch := b.Subscribe("AgentMessageChunk", event.BufAgentMessageChunk)
+
 	const n = 100
+
 	var wg sync.WaitGroup
-	for i := 0; i < n; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range n {
+
+		wg.Go(func() {
+
 			b.Publish(event.AgentMessageChunk{Content: "c"})
-		}()
+		})
 	}
 	// Drain n events.
 	got := 0
 	deadline := time.After(2 * time.Second)
+
 	for got < n {
 		select {
 		case <-ch:
@@ -116,7 +127,9 @@ func TestConcurrent(t *testing.T) {
 			t.Fatalf("received %d/%d events before timeout", got, n)
 		}
 	}
+
 	wg.Wait()
+
 	if got != n {
 		t.Errorf("received %d events; want %d", got, n)
 	}

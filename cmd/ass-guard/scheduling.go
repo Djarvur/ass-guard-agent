@@ -24,6 +24,7 @@ func newSchedulingCmd() *cobra.Command {
 	}
 	cmd.AddCommand(newSchedulingValidateCmd())
 	cmd.AddCommand(newSchedulingResolveCmd())
+
 	return cmd
 }
 
@@ -33,6 +34,7 @@ func newSchedulingCmd() *cobra.Command {
 // "scheduling config valid" to STDERR + exit 0.
 func newSchedulingValidateCmd() *cobra.Command {
 	var configPath string
+
 	cmd := &cobra.Command{
 		Use:          "validate",
 		Short:        "load + validate a scheduling config (D-10 load-time guarantee)",
@@ -42,18 +44,22 @@ func newSchedulingValidateCmd() *cobra.Command {
 			if configPath != "" {
 				paths = append(paths, configPath)
 			}
+
 			_, err := scheduler.Load(paths...)
 			if err != nil {
 				// Validation failures are reported to stderr (cobra's RunE
 				// return surfaces them via SetErr); the operator sees the full
 				// *ConfigError report.
-				return fmt.Errorf("scheduling config invalid:\n%v", err)
+				return fmt.Errorf("scheduling config invalid: %w", err)
 			}
+
 			fmt.Fprintln(cmd.ErrOrStderr(), "scheduling config valid")
+
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&configPath, "config", "", "path to scheduling.yaml (default: embedded zero-config floor)")
+
 	return cmd
 }
 
@@ -70,6 +76,7 @@ func newSchedulingResolveCmd() *cobra.Command {
 		atStr      string
 		asJSON     bool
 	)
+
 	cmd := &cobra.Command{
 		Use:          "resolve",
 		Short:        "resolve a tier to a concrete (provider, model) at a given time",
@@ -79,26 +86,34 @@ func newSchedulingResolveCmd() *cobra.Command {
 			if configPath != "" {
 				paths = append(paths, configPath)
 			}
+
 			cfg, err := scheduler.Load(paths...)
 			if err != nil {
-				return fmt.Errorf("scheduling config invalid:\n%v", err)
+				return fmt.Errorf("scheduling config invalid: %w", err)
 			}
+
 			now := time.Now()
+
 			if atStr != "" {
 				parsed, err := time.Parse(time.RFC3339, atStr)
 				if err != nil {
 					return fmt.Errorf("--at %q: %w", atStr, err)
 				}
+
 				now = parsed
 			}
+
 			primary, fallbacks, err := scheduler.NewResolver(cfg).Resolve(tier, project, now, scheduler.CapabilityReq{})
 			if err != nil {
 				return err
 			}
+
 			if asJSON {
 				return emitResolveJSON(cmd.OutOrStdout(), tier, project, primary, fallbacks)
 			}
+
 			emitResolveHuman(cmd.ErrOrStderr(), tier, project, primary, fallbacks)
+
 			return nil
 		},
 	}
@@ -108,6 +123,7 @@ func newSchedulingResolveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&atStr, "at", "", "RFC3339 time to resolve at (default: now)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit machine-readable JSON to stdout (default: human form to stderr)")
 	_ = cmd.MarkFlagRequired("tier")
+
 	return cmd
 }
 
@@ -119,17 +135,20 @@ func emitResolveHuman(w io.Writer, tier, project string, primary scheduler.Targe
 	if proj == "" {
 		proj = "(global)"
 	}
+
 	fmt.Fprintf(w, "%s [%s] -> %s/%s\n", tier, proj, primary.Provider, primary.Model)
 	fmt.Fprintf(w, "  base_url: %s\n", primary.BaseURL)
 	fmt.Fprintf(w, "  shape: %s\n", primary.Shape)
 	fmt.Fprintf(w, "  capabilities: %s\n", describeCapabilities(primary.Capabilities))
 	fmt.Fprintf(w, "  pricing: $%.4f/Mtok in, $%.4f/Mtok out\n",
 		primary.Pricing.InputPerMToken, primary.Pricing.OutputPerMToken)
+
 	if len(fallbacks) > 0 {
 		names := make([]string, 0, len(fallbacks))
 		for _, f := range fallbacks {
 			names = append(names, f.Provider+"/"+f.Model)
 		}
+
 		fmt.Fprintf(w, "  fallback: %s\n", strings.Join(names, ", "))
 	} else {
 		fmt.Fprintf(w, "  fallback: (none)\n")
@@ -145,6 +164,7 @@ func emitResolveJSON(w io.Writer, tier, project string, primary scheduler.Target
 		Provider string `json:"provider"`
 		Model    string `json:"model"`
 	}
+
 	out := struct {
 		Tier         string                      `json:"tier"`
 		Project      string                      `json:"project"`
@@ -164,8 +184,10 @@ func emitResolveJSON(w io.Writer, tier, project string, primary scheduler.Target
 	for _, f := range fallbacks {
 		out.Fallback = append(out.Fallback, fb{Provider: f.Provider, Model: f.Model})
 	}
+
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
+
 	return enc.Encode(out)
 }
 
@@ -175,12 +197,16 @@ func describeCapabilities(c scheduler.CapabilityProfile) string {
 	if c.ToolCalling {
 		parts = append(parts, "tool_calling")
 	}
+
 	if c.Streaming {
 		parts = append(parts, "streaming")
 	}
+
 	if c.ExtendedThinking {
 		parts = append(parts, "extended_thinking")
 	}
+
 	parts = append(parts, fmt.Sprintf("ctx=%d", c.ContextWindow))
+
 	return strings.Join(parts, " ")
 }

@@ -39,11 +39,13 @@ func CompareSequence(expected, observed []string) bool {
 	if len(expected) != len(observed) {
 		return false
 	}
+
 	for i := range expected {
 		if expected[i] != observed[i] {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -63,20 +65,26 @@ func CompareSequence(expected, observed []string) bool {
 // heuristically trimmed to a relative tail when they contain a repo-root-like segment).
 func CompareArgs(expected, observed json.RawMessage) ([]ArgMismatch, bool) {
 	var e, o any
-	if err := json.Unmarshal(expected, &e); err != nil {
+	err := json.Unmarshal(expected, &e)
+	if err != nil {
 		return []ArgMismatch{{Reason: "expected input is not valid JSON"}}, false
 	}
-	if err := json.Unmarshal(observed, &o); err != nil {
+
+	err = json.Unmarshal(observed, &o)
+	if err != nil {
 		return []ArgMismatch{{Reason: "observed input is not valid JSON"}}, false
 	}
+
 	m := compareValues("", e, o)
 	if len(m) == 0 {
 		return nil, true
 	}
+
 	out := make([]ArgMismatch, 0, len(m))
 	for _, reason := range m {
 		out = append(out, ArgMismatch{Reason: reason})
 	}
+
 	return out, false
 }
 
@@ -88,13 +96,17 @@ func compareValues(path string, expected, observed any) []string {
 	}
 	// Objects: compare key sets + recurse.
 	eo, eOK := expected.(map[string]any)
+
 	oo, oOK := observed.(map[string]any)
+
 	if eOK && oOK {
 		return compareObject(path, eo, oo)
 	}
 	// Arrays: order-sensitive per-element structural.
 	ea, eOK := expected.([]any)
+
 	oa, oOK := observed.([]any)
+
 	if eOK && oOK {
 		return compareArray(path, ea, oa)
 	}
@@ -102,20 +114,27 @@ func compareValues(path string, expected, observed any) []string {
 	if scalarEquiv(expected, observed) {
 		return nil
 	}
+
 	return []string{path + ": value mismatch"}
 }
 
 func compareObject(path string, expected, observed map[string]any) []string {
 	var mismatches []string
+
 	ek := keys(expected)
+
 	ok := keys(observed)
+
 	if !sameSet(ek, ok) {
 		mismatches = append(mismatches, path+": key set differs")
+
 		return mismatches // a key-set difference is enough; deeper recursion is noise
 	}
+
 	for _, k := range ek {
 		mismatches = append(mismatches, compareValues(joinPath(path, k), expected[k], observed[k])...)
 	}
+
 	return mismatches
 }
 
@@ -123,10 +142,12 @@ func compareArray(path string, expected, observed []any) []string {
 	if len(expected) != len(observed) {
 		return []string{path + ": array length differs"}
 	}
+
 	var mismatches []string
 	for i := range expected {
 		mismatches = append(mismatches, compareValues(joinPath(path, ""), expected[i], observed[i])...)
 	}
+
 	return mismatches
 }
 
@@ -140,7 +161,9 @@ func equiv(expected, observed any) bool {
 // path normalization.
 func scalarEquiv(expected, observed any) bool {
 	es, eStr := expected.(string)
+
 	os, oStr := observed.(string)
+
 	if eStr && oStr {
 		return stringEquiv(es, os)
 	}
@@ -167,6 +190,7 @@ func stringEquiv(a, b string) bool {
 	if looksLikePath(a) || looksLikePath(b) {
 		return normalizePath(a) == normalizePath(b)
 	}
+
 	if looksLikeEnum(a) && looksLikeEnum(b) {
 		return a == b
 	}
@@ -186,6 +210,7 @@ func normalizePath(s string) string {
 			return strings.TrimPrefix(s[i+1:], "/")
 		}
 	}
+
 	return s
 }
 
@@ -195,9 +220,11 @@ func looksLikeEnum(s string) bool {
 	if len(s) == 0 || len(s) > 24 {
 		return false
 	}
+
 	if strings.ContainsAny(s, " \t\n.,;:") {
 		return false
 	}
+
 	return true
 }
 
@@ -206,6 +233,7 @@ func isNumber(v any) bool {
 	case float64, int, int64, float32, int32:
 		return true
 	}
+
 	return false
 }
 
@@ -214,7 +242,9 @@ func keys(m map[string]any) []string {
 	for k := range m {
 		out = append(out, k)
 	}
+
 	sort.Strings(out)
+
 	return out
 }
 
@@ -222,11 +252,13 @@ func sameSet(a, b []string) bool {
 	if len(a) != len(b) {
 		return false
 	}
+
 	for i := range a {
 		if a[i] != b[i] {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -234,6 +266,7 @@ func joinPath(base, leaf string) string {
 	if base == "" {
 		return leaf
 	}
+
 	return base + "." + leaf
 }
 
@@ -242,22 +275,28 @@ func Compare(expected, observed []ToolCall) Comparison {
 	c := Comparison{}
 	expNames := make([]string, len(expected))
 	obsNames := make([]string, len(observed))
+
 	for i, t := range expected {
 		expNames[i] = t.Name
 	}
+
 	for i, t := range observed {
 		obsNames[i] = t.Name
 	}
+
 	c.Layer1SequenceMatch = CompareSequence(expNames, obsNames)
 	if !c.Layer1SequenceMatch {
 		// Layer-2 per-index comparison is meaningless when sequences differ.
 		return c
 	}
+
 	for i := range expected {
 		if _, ok := CompareArgs(expected[i].Input, observed[i].Input); !ok {
 			c.Layer2ArgMismatches = append(c.Layer2ArgMismatches, ArgMismatch{ToolIndex: i})
 		}
 	}
+
 	c.Match = c.Layer1SequenceMatch && len(c.Layer2ArgMismatches) == 0
+
 	return c
 }

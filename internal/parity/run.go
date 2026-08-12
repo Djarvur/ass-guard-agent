@@ -3,6 +3,7 @@ package parity
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -27,10 +28,12 @@ func (a *LiveArm) RunTurn(ctx context.Context, prompt string) ([]ToolCall, error
 	if err != nil {
 		return nil, err
 	}
+
 	out := make([]ToolCall, 0, len(calls))
 	for _, c := range calls {
 		out = append(out, ToolCall{Name: c.Name, Input: c.Input})
 	}
+
 	return out, nil
 }
 
@@ -70,15 +73,19 @@ type turnEvidence struct {
 // Temp is fixed at 0 (D-04 determinism).
 func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 	if opts.Provider == nil {
-		return RunResult{}, fmt.Errorf("parity run: nil provider")
+		return RunResult{}, errors.New("parity run: nil provider")
 	}
+
 	arm := &LiveArm{Profile: opts.Profile, Provider: opts.Provider}
 	h := NewHarness()
+
 	results, err := h.Run(ctx, opts.Suite, arm)
 	if err != nil {
 		return RunResult{}, err
 	}
+
 	summary := Summarize(results)
+
 	res := RunResult{
 		Summary: summary,
 		Config: RunConfig{
@@ -92,11 +99,14 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 			Layer1Match: r.Comparison.Layer1SequenceMatch, Layer2Mismatch: len(r.Comparison.Layer2ArgMismatches),
 		})
 	}
+
 	if opts.ResultsPath != "" {
-		if err := writeResults(opts.ResultsPath, res); err != nil {
+		err := writeResults(opts.ResultsPath, res)
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "parity: could not write results: %v\n", err)
 		}
 	}
+
 	return res, nil
 }
 
@@ -105,5 +115,6 @@ func writeResults(path string, res RunResult) error {
 	if err != nil {
 		return err
 	}
+
 	return os.WriteFile(path, raw, 0o600)
 }

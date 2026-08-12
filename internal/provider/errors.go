@@ -56,10 +56,12 @@ func (e *ProviderError) Error() string {
 	if e.Cause != nil {
 		cause = redact.ScrubError(e.Cause)
 	}
+
 	if e.StatusCode != 0 {
 		return fmt.Sprintf("provider %s model %s: %s (HTTP %d): %s: %s",
 			e.Provider, e.Model, e.Kind, e.StatusCode, e.Reason, cause)
 	}
+
 	return fmt.Sprintf("provider %s model %s: %s: %s: %s",
 		e.Provider, e.Model, e.Kind, e.Reason, cause)
 }
@@ -93,6 +95,7 @@ func ClassifyHTTP(providerSlug, model string, status int, err error) *ProviderEr
 	// Net / context errors are transient regardless of status (often status==0).
 	if isNetOrContextError(err) {
 		perr.Kind = KindTransient
+
 		return perr
 	}
 
@@ -106,6 +109,7 @@ func ClassifyHTTP(providerSlug, model string, status int, err error) *ProviderEr
 		// no recognized net error): default Transient — safe-side.
 		perr.Kind = KindTransient
 	}
+
 	return perr
 }
 
@@ -115,17 +119,21 @@ func isNetOrContextError(err error) bool {
 	if err == nil {
 		return false
 	}
+
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 		return true
 	}
+
 	var opErr *net.OpError
 	if errors.As(err, &opErr) {
 		return true
 	}
+
 	var urlErr *url.Error
 	if errors.As(err, &urlErr) {
 		return true
 	}
+
 	return false
 }
 
@@ -136,6 +144,7 @@ var transientStatuses = map[int]struct{}{
 
 func isTransientStatus(status int) bool {
 	_, ok := transientStatuses[status]
+
 	return ok
 }
 
@@ -146,6 +155,7 @@ var structuralStatuses = map[int]struct{}{
 
 func isStructuralStatus(status int) bool {
 	_, ok := structuralStatuses[status]
+
 	return ok
 }
 
@@ -156,11 +166,14 @@ func reasonFor(status int, err error) string {
 		if r, ok := statusReasons[status]; ok {
 			return r
 		}
+
 		if txt := http.StatusText(status); txt != "" {
 			return strings.ToLower(txt)
 		}
+
 		return fmt.Sprintf("http %d", status)
 	}
+
 	if err != nil {
 		// Transport / context error with no HTTP status.
 		switch {
@@ -169,8 +182,10 @@ func reasonFor(status int, err error) string {
 		case errors.Is(err, context.Canceled):
 			return "context canceled"
 		}
+
 		return "transport error"
 	}
+
 	return "unknown"
 }
 

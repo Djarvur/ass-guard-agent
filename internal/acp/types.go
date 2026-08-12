@@ -28,12 +28,12 @@ import (
 // (a valid request id). This is the JSON-RPC notification-vs-request distinction
 // (VERIFIED-FACTS #3 Note 5).
 type Message struct {
-	JSONRPC string          `json:"jsonrpc"`           // always "2.0"
-	ID      *int            `json:"id,omitempty"`       // nil for notifications
-	Method  string          `json:"method,omitempty"`   // present on request/notification
-	Params  json.RawMessage `json:"params,omitempty"`   // request/notification payload
-	Result  json.RawMessage `json:"result,omitempty"`   // response success
-	Error   *RPCError       `json:"error,omitempty"`    // response failure
+	JSONRPC string          `json:"jsonrpc"`          // always "2.0"
+	ID      *int            `json:"id,omitempty"`     // nil for notifications
+	Method  string          `json:"method,omitempty"` // present on request/notification
+	Params  json.RawMessage `json:"params,omitempty"` // request/notification payload
+	Result  json.RawMessage `json:"result,omitempty"` // response success
+	Error   *RPCError       `json:"error,omitempty"`  // response failure
 }
 
 // RPCError is the JSON-RPC 2.0 error object. It implements the error interface

@@ -32,21 +32,28 @@ func CheckConsistency(catalog *Catalog, profileDecls []profile.Decl) (result Con
 	for _, d := range profileDecls {
 		if isMCPOrPlugin(d.Name) {
 			result.MCPOrPlugin = append(result.MCPOrPlugin, d.Name)
+
 			continue
 		}
+
 		cat, ok := catalog.Get(d.Name)
 		if !ok {
 			// A non-MCP/plugin tool not in the catalog: report as unsatisfied
 			// (could be a newly-added built-in the catalog hasn't picked up).
 			result.Unsatisfied = append(result.Unsatisfied, d.Name)
+
 			continue
 		}
+
 		if !structurallyCompatible(d.InputSchema, cat.InputSchema) {
 			result.Unsatisfied = append(result.Unsatisfied, d.Name)
+
 			continue
 		}
+
 		result.Satisfied = append(result.Satisfied, d.Name)
 	}
+
 	return result, nil
 }
 
@@ -66,19 +73,24 @@ func isMCPOrPlugin(name string) bool {
 // (which constrain what the model emits) must agree.
 func structurallyCompatible(a, b json.RawMessage) bool {
 	ra := requiredFields(a)
+
 	rb := requiredFields(b)
+
 	if len(ra) != len(rb) {
 		return false
 	}
+
 	set := make(map[string]struct{}, len(ra))
 	for _, f := range ra {
 		set[f] = struct{}{}
 	}
+
 	for _, f := range rb {
 		if _, ok := set[f]; !ok {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -86,8 +98,11 @@ func requiredFields(raw json.RawMessage) []string {
 	var s struct {
 		Required []string `json:"required"`
 	}
-	if err := json.Unmarshal(raw, &s); err != nil {
+	err := json.Unmarshal(raw, &s)
+
+	if err != nil {
 		return nil
 	}
+
 	return s.Required
 }

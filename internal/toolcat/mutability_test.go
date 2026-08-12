@@ -24,7 +24,9 @@ func TestEffectiveMutabilityFormula(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			tool := Tool{Name: "X", Mutability: c.tool}
+
 			got := EffectiveMutability(tool, c.adapterClass)
+
 			if got != c.want {
 				t.Fatalf("EffectiveMutability(tool=%s, adapter=%s) = %s; want %s",
 					c.tool, c.adapterClass, got, c.want)
@@ -49,17 +51,20 @@ func TestBuiltinCatalogMutabilityDefaults(t *testing.T) {
 			if !ok {
 				t.Skipf("catalog does not include %q (catalog drift); skipping default check", name)
 			}
+
 			if tool.Mutability != MutabilityMutating {
 				t.Errorf("catalog tool %q Mutability = %s; want Mutating", name, tool.Mutability)
 			}
 		})
 	}
+
 	for _, name := range readOnly {
 		t.Run("read-only/"+name, func(t *testing.T) {
 			tool, ok := c.Get(name)
 			if !ok {
 				t.Skipf("catalog does not include %q (catalog drift); skipping default check", name)
 			}
+
 			if tool.Mutability != MutabilityReadOnly {
 				t.Errorf("catalog tool %q Mutability = %s; want ReadOnly", name, tool.Mutability)
 			}
@@ -74,6 +79,7 @@ func TestBuiltinCatalogMutabilityDefaults(t *testing.T) {
 // config cannot downgrade a declared-mutating tool to read-only.
 func TestIsBoundaryStructuralFloor(t *testing.T) {
 	c := NewCatalog()
+
 	t.Run("catalog mutating tool is boundary with empty config", func(t *testing.T) {
 		if !IsBoundary("Bash", c, nil) {
 			t.Errorf("IsBoundary(Bash, catalog, nil) = false; want true (structural floor — config cannot downgrade)")
@@ -115,6 +121,7 @@ func TestEffectiveMutabilityStringStability(t *testing.T) {
 	if MutabilityMutating.String() != "mutating" {
 		t.Errorf(`MutabilityMutating.String() = %q; want "mutating"`, MutabilityMutating.String())
 	}
+
 	if MutabilityReadOnly.String() != "read-only" {
 		t.Errorf(`MutabilityReadOnly.String() = %q; want "read-only"`, MutabilityReadOnly.String())
 	}

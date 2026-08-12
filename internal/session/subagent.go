@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"runtime/debug"
 	"strings"
@@ -33,6 +34,7 @@ func (s *Session) DispatchSubagent(ctx context.Context, parentTurnID, toolCallID
 	if restricted == nil {
 		restricted = subagentRestrictedDefault
 	}
+
 	subagentTurnID := s.nextTurnID()
 	_ = s.Manager.AppendSubagentDispatch(parentTurnID, subagentTurnID, toolCallID, restricted)
 
@@ -45,7 +47,9 @@ func (s *Session) DispatchSubagent(ctx context.Context, parentTurnID, toolCallID
 		result string
 		err    error
 	}
+
 	resCh := make(chan outcome, 1)
+
 	go func() {
 		defer func() {
 			r := recover()
@@ -53,12 +57,15 @@ func (s *Session) DispatchSubagent(ctx context.Context, parentTurnID, toolCallID
 				stack := debug.Stack()
 				err := fmt.Errorf("subagent panic: %v", r)
 				s.Manager.AppendError(subagentTurnID, "subagent", err.Error(), nil, false, string(stack))
+
 				if s.Bus != nil {
 					s.Bus.Publish(event.SubagentResult{ParentTurnID: parentTurnID, ToolCallID: toolCallID, SubagentTurnID: subagentTurnID, Err: err})
 				}
+
 				resCh <- outcome{err: err}
 			}
 		}()
+
 		result, err := runner.Run(ctx, s, subagentTurnID, parentTurnID, prompt, restricted)
 		resCh <- outcome{result: result, err: err}
 	}()
@@ -66,20 +73,24 @@ func (s *Session) DispatchSubagent(ctx context.Context, parentTurnID, toolCallID
 	select {
 	case <-ctx.Done():
 		err := ctx.Err()
+
 		_ = s.Manager.AppendSubagentResult(parentTurnID, subagentTurnID, "", err.Error())
 		if s.Bus != nil {
 			s.Bus.Publish(event.SubagentResult{ParentTurnID: parentTurnID, ToolCallID: toolCallID, SubagentTurnID: subagentTurnID, Err: err})
 		}
+
 		return "", err
 	case o := <-resCh:
 		errMsg := ""
 		if o.err != nil {
 			errMsg = o.err.Error()
 		}
+
 		_ = s.Manager.AppendSubagentResult(parentTurnID, subagentTurnID, o.result, errMsg)
 		if s.Bus != nil {
 			s.Bus.Publish(event.SubagentResult{ParentTurnID: parentTurnID, ToolCallID: toolCallID, SubagentTurnID: subagentTurnID, Result: o.result, Err: o.err})
 		}
+
 		return o.result, o.err
 	}
 }
@@ -96,27 +107,35 @@ func (defaultSubagentRunner) Run(ctx context.Context, s *Session, subagentTurnID
 
 	// One nested provider call (Phase-2 stubs tool execution; a full subagent
 	// tool-loop is Phase 4). The RestrictedExecutor wraps the session toolExec.
-	var inner toolcat.ToolExecutor = s.toolExec
+	var inner = s.toolExec
 	if s.toolExec != nil {
 		inner = toolcat.NewRestrictedExecutor(s.toolExec, restricted)
 	}
+
 	_ = inner // restricted executor is wired; real subagent tool-loop is Phase 4
 
 	const maxIter = 8
+
 	messages := []provider.Message{{Role: "user", Content: prompt}}
-	for iter := 0; iter < maxIter; iter++ {
-		if err := ctx.Err(); err != nil {
+
+	for range maxIter {
+		err := ctx.Err()
+		if err != nil {
 			return "", err
 		}
+
 		if s.Semaphore != nil {
-			if err := s.Semaphore.Acquire(ctx); err != nil {
+			err := s.Semaphore.Acquire(ctx)
+			if err != nil {
 				return "", err
 			}
 		}
+
 		resp, textBuf, streamErr := s.streamAndEmitTagged(ctx, subagentTurnID, parentTurnID, messages)
 		if s.Semaphore != nil {
 			s.Semaphore.Release()
 		}
+
 		if streamErr != nil {
 			return textBuf, streamErr
 		}
@@ -125,6 +144,7 @@ func (defaultSubagentRunner) Run(ctx context.Context, s *Session, subagentTurnID
 			for _, tc := range resp.ToolCalls {
 				out, execErr := s.executeRestricted(ctx, tc, restricted)
 				_ = s.Manager.AppendToolCall(subagentTurnID, tc.Name, tc.Name, tc.Input)
+
 				if execErr != nil {
 					errJSON, _ := json.Marshal(map[string]string{"error": execErr.Error()})
 					_ = s.Manager.AppendToolResult(subagentTurnID, tc.Name, errJSON, true)
@@ -135,9 +155,11 @@ func (defaultSubagentRunner) Run(ctx context.Context, s *Session, subagentTurnID
 			// Loop with the assistant turn included (simplified: re-send prompt).
 			continue
 		}
+
 		return textBuf, nil
 	}
-	return "", fmt.Errorf("subagent: tool loop exceeded max iterations")
+
+	return "", errors.New("subagent: tool loop exceeded max iterations")
 }
 
 // streamAndEmitTagged is the subagent's streaming variant: it publishes events
@@ -147,15 +169,22 @@ func (s *Session) streamAndEmitTagged(ctx context.Context, subagentTurnID, paren
 	if err != nil {
 		return provider.Response{}, "", err
 	}
-	var resp provider.Response
-	var sb strings.Builder
+
+	var (
+		resp provider.Response
+		sb   strings.Builder
+	)
+
 	for chunk := range ch {
-		if err := ctx.Err(); err != nil {
+		err := ctx.Err()
+		if err != nil {
 			return resp, sb.String(), err
 		}
+
 		switch chunk.Type {
 		case "text":
 			sb.WriteString(chunk.Text)
+
 			if s.Bus != nil && chunk.Text != "" {
 				s.Bus.Publish(event.AgentMessageChunk{TurnID: subagentTurnID, MessageID: subagentTurnID, Content: chunk.Text})
 			}
@@ -167,7 +196,9 @@ func (s *Session) streamAndEmitTagged(ctx context.Context, subagentTurnID, paren
 			resp.FinishReason = chunk.FinishReason
 		}
 	}
+
 	_ = parentTurnID // events are tagged via the SubagentResult; chunks use TurnID
+
 	return resp, sb.String(), nil
 }
 
@@ -177,7 +208,9 @@ func (s *Session) executeRestricted(ctx context.Context, tc provider.ToolCall, r
 	if s.toolExec == nil {
 		return stubToolResult, nil
 	}
+
 	re := toolcat.NewRestrictedExecutor(s.toolExec, restricted)
+
 	return re.Execute(ctx, tc.Name, tc.Input)
 }
 
@@ -192,15 +225,20 @@ func extractSubagentPrompt(input json.RawMessage) string {
 	if len(input) == 0 {
 		return "subagent task"
 	}
+
 	var m map[string]any
-	if err := json.Unmarshal(input, &m); err != nil {
+	err := json.Unmarshal(input, &m)
+	if err != nil {
 		return "subagent task"
 	}
+
 	if p, ok := m["prompt"].(string); ok && p != "" {
 		return p
 	}
+
 	if d, ok := m["description"].(string); ok && d != "" {
 		return d
 	}
+
 	return "subagent task"
 }

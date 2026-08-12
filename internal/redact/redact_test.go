@@ -57,6 +57,7 @@ func TestRedact(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Redact(%q) unexpected error: %v", tt.in, err)
 			}
+
 			if string(got) != tt.want {
 				t.Errorf("Redact(%q)\n got  %s\n want %s", tt.in, got, tt.want)
 			}
@@ -85,6 +86,7 @@ func TestRedact_PreservesIdentityHeaderNames(t *testing.T) {
 	// A request-headers object carrying all 12 names with non-secret values:
 	// every value is preserved verbatim, every key preserved.
 	in := `{"http-referer":"ref","user-agent":"ua/1.0","x-os-category":"darwin","x-os-version":"25.5.0","x-platform":"x64","x-title":"agent","x-zcode-agent":"1","x-zcode-app-version":"0.1","x-query-id":"q1","x-request-id":"r1","x-session-id":"s1","x-zcode-trace-id":"t1"}`
+
 	got, err := Redact([]byte(in))
 	if err != nil {
 		t.Fatalf("Redact unexpected error: %v", err)
@@ -106,13 +108,16 @@ func TestRedact_PreservesIdentityHeaderNames(t *testing.T) {
 // fallback, PATTERNS C2).
 func TestRedact_NonJSONBearerRegexScrubbed(t *testing.T) {
 	in := `<html><body>Unauthorized: Bearer sk-deadbeef-1234</body></html>`
+
 	got, err := Redact([]byte(in))
 	if err != nil {
 		t.Fatalf("Redact non-JSON unexpected error: %v", err)
 	}
+
 	if strings.Contains(string(got), "sk-deadbeef-1234") {
 		t.Errorf("Redact leaked Bearer token in non-JSON input:\n got %s", got)
 	}
+
 	if !strings.Contains(string(got), "<html>") {
 		t.Errorf("Redact mangled non-JSON body structure:\n got %s", got)
 	}
@@ -121,10 +126,12 @@ func TestRedact_NonJSONBearerRegexScrubbed(t *testing.T) {
 // TestRedact_NonJSONSkTokenScrubbed: a bare sk- token outside JSON is scrubbed.
 func TestRedact_NonJSONSkTokenScrubbed(t *testing.T) {
 	in := `error: invalid key sk-abcdef1234567890`
+
 	got, err := Redact([]byte(in))
 	if err != nil {
 		t.Fatalf("Redact unexpected error: %v", err)
 	}
+
 	if strings.Contains(string(got), "sk-abcdef1234567890") {
 		t.Errorf("Redact leaked sk- token:\n got %s", got)
 	}

@@ -16,13 +16,16 @@ func (s *Session) MaybeAppendBoundary(toolName, toolCallID, turnID string) error
 	if s.Catalog == nil {
 		return nil // boundary detection not configured (tracer mode)
 	}
+
 	if !toolcat.IsBoundary(toolName, s.Catalog, s.ConfigAdded) {
 		return nil
 	}
+
 	cause := "config-added:" + toolName
 	if isCatalogMutating(s.Catalog, toolName) {
 		cause = "mutating-command:" + toolName
 	}
+
 	return s.Manager.AppendBoundary(cause, toolCallID, turnID)
 }
 
@@ -32,6 +35,8 @@ func isCatalogMutating(c *toolcat.Catalog, name string) bool {
 	if c == nil {
 		return false
 	}
+
 	t, ok := c.Get(name)
+
 	return ok && t.IsMutating()
 }

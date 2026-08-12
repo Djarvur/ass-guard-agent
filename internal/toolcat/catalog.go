@@ -21,20 +21,37 @@ type Catalog struct {
 // in the binary, sourced faithfully from the captured zcode catalog).
 func NewCatalog() *Catalog {
 	c := &Catalog{tools: map[string]Tool{}}
+
 	var entries []Tool
-	if err := json.Unmarshal(coreToolsJSON, &entries); err != nil {
+	err := json.Unmarshal(coreToolsJSON, &entries)
+	if err != nil {
 		panic(fmt.Sprintf("toolcat: embedded coretools.json failed to parse: %v", err))
 	}
+
 	for _, e := range entries {
 		c.tools[e.Name] = e
 	}
+
 	return c
 }
 
 // Get returns the catalog entry for name and ok=false if not present.
 func (c *Catalog) Get(name string) (Tool, bool) {
 	t, ok := c.tools[name]
+
 	return t, ok
+}
+
+// Register adds (or overwrites) a tool entry in the catalog. Phase-4 uses this
+// to register dynamically-discovered tools — OpenSpec commands (Plan 04-02
+// D-15), swappable backends, and learning-mode proposed tools — without
+// rebuilding the embedded core. A registered mutating tool is reflected by
+// IsBoundary via the existing mutability floor (no boundary-engine change).
+func (c *Catalog) Register(t Tool) {
+	if c.tools == nil {
+		c.tools = map[string]Tool{}
+	}
+	c.tools[t.Name] = t
 }
 
 // Names returns the sorted catalog tool names.
@@ -43,16 +60,20 @@ func (c *Catalog) Names() []string {
 	for n := range c.tools {
 		out = append(out, n)
 	}
+
 	sort.Strings(out)
+
 	return out
 }
 
 // Decls returns the catalog entries as model-facing Decl values.
 func (c *Catalog) Decls() []Decl {
 	out := make([]Decl, 0, len(c.tools))
+
 	for _, n := range c.Names() {
 		t := c.tools[n]
 		out = append(out, Decl{Name: t.Name, Description: t.Description, InputSchema: t.InputSchema})
 	}
+
 	return out
 }

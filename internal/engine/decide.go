@@ -35,16 +35,19 @@ func Decide(out TurnOutput, table PatternTable) Decision {
 		for _, name := range out.ToolCalls {
 			if tid, tAct := table.MatchTool(name); tAct != ActionNothing {
 				reason = "text-pattern matched (handoff tool " + tid + " also present; text wins attribution)"
+
 				break
 			}
 		}
+
 		return Decision{
-			TurnID:  out.TurnID,
-			Action:  pAct,
-			Signal:  "text:" + pid,
-			Reason:  reason,
+			TurnID: out.TurnID,
+			Action: pAct,
+			Signal: "text:" + pid,
+			Reason: reason,
 		}
 	}
+
 	for _, name := range out.ToolCalls {
 		if tid, tAct := table.MatchTool(name); tAct != ActionNothing {
 			return Decision{
@@ -55,6 +58,7 @@ func Decide(out TurnOutput, table PatternTable) Decision {
 			}
 		}
 	}
+
 	return Decision{
 		TurnID: out.TurnID,
 		Action: ActionNothing,

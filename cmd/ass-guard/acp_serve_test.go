@@ -2,8 +2,8 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"path/filepath"
 	"strings"
@@ -17,31 +17,42 @@ import (
 // only; --profile default zcode; --max-concurrent default 6).
 func TestACPServeCommandRegistered(t *testing.T) {
 	root := newRootCmd()
+
 	var acpCmd *cobra.Command
+
 	for _, c := range root.Commands() {
 		if c.Use == "acp" {
 			acpCmd = c
+
 			break
 		}
 	}
+
 	if acpCmd == nil {
 		t.Fatal("no `acp` parent command registered on root")
 	}
+
 	var serve *cobra.Command
+
 	for _, c := range acpCmd.Commands() {
 		if c.Use == "serve" {
 			serve = c
+
 			break
 		}
 	}
+
 	if serve == nil {
 		t.Fatal("no `serve` subcommand under `acp`")
 	}
+
 	pf := serve.Flags()
+
 	prof, _ := pf.GetString("profile")
 	if prof != "zcode" {
 		t.Errorf("serve --profile default = %q; want zcode", prof)
 	}
+
 	mc, _ := pf.GetInt("max-concurrent")
 	if mc != 6 {
 		t.Errorf("serve --max-concurrent default = %d; want 6 (RESEARCH §11.1)", mc)
@@ -54,13 +65,16 @@ func TestACPServeCommandRegistered(t *testing.T) {
 func TestACPServeWiresStdoutClean(t *testing.T) {
 	in := strings.NewReader(`{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{},"clientInfo":{"name":"test","version":"0"}}}
 `)
-	var stdout bytes.Buffer
-	var stderr bytes.Buffer
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	var (
+		stdout bytes.Buffer
+		stderr bytes.Buffer
+	)
+
+	ctx := t.Context()
+
 	err := runACPServe(ctx, in, &stdout, &stderr, serveOptions{Profile: "zcode", MaxConcurrent: 6, ProfilesDir: repoProfilesDir(t), WorkDir: t.TempDir()})
-	if err != nil && err != io.EOF {
+	if err != nil && !errors.Is(err, io.EOF) {
 		t.Logf("runACPServe returned %v (acceptable)", err)
 	}
 
@@ -68,15 +82,19 @@ func TestACPServeWiresStdoutClean(t *testing.T) {
 	if !strings.Contains(out, `"agentCapabilities"`) {
 		t.Errorf("stdout missing agentCapabilities in initialize response: %s", out)
 	}
+
 	if !strings.Contains(out, `"loadSession":false`) {
 		t.Errorf("stdout missing loadSession:false: %s", out)
 	}
+
 	for i, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
 		if len(line) == 0 {
 			continue
 		}
+
 		var m map[string]any
-		if err := json.Unmarshal([]byte(line), &m); err != nil {
+		err := json.Unmarshal([]byte(line), &m)
+		if err != nil {
 			t.Errorf("stdout line %d is not valid JSON (transport discipline): %v (line=%q)", i, err, line)
 		}
 	}
@@ -87,9 +105,11 @@ func TestACPServeWiresStdoutClean(t *testing.T) {
 func TestACPServeNoStdoutPollutionFromLogs(t *testing.T) {
 	in := strings.NewReader(`{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1}}
 `)
+
 	var stdout, stderr bytes.Buffer
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+
+	ctx := t.Context()
+
 	_ = runACPServe(ctx, in, &stdout, &stderr, serveOptions{Profile: "zcode", MaxConcurrent: 6, ProfilesDir: repoProfilesDir(t), WorkDir: t.TempDir()})
 	if strings.Contains(stdout.String(), "ass-guard/acp") {
 		t.Errorf("stdout contains a log prefix (transport discipline violation): %s", stdout.String())
@@ -100,36 +120,45 @@ func TestACPServeNoStdoutPollutionFromLogs(t *testing.T) {
 // subcommand still exists alongside the new `acp serve` subcommand.
 func TestACPServeDoesNotRegressProfileCheck(t *testing.T) {
 	root := newRootCmd()
+
 	var profileCmd *cobra.Command
+
 	for _, c := range root.Commands() {
 		if c.Use == "profile" {
 			profileCmd = c
+
 			break
 		}
 	}
+
 	if profileCmd == nil {
 		t.Fatal("Phase-1 `profile` parent command is missing (regression)")
 	}
+
 	hasCheck := false
+
 	for _, c := range profileCmd.Commands() {
 		if strings.HasPrefix(c.Use, "check") {
 			hasCheck = true
+
 			break
 		}
 	}
+
 	if !hasCheck {
 		t.Fatal("Phase-1 `profile check` subcommand is missing (regression)")
 	}
 }
 
-
 // repoProfilesDir returns the repo-root profiles/ directory (the test runs from
 // cmd/ass-guard/, so the repo root is two levels up).
 func repoProfilesDir(t *testing.T) string {
 	t.Helper()
+
 	abs, err := filepath.Abs("../../profiles")
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	return abs
 }

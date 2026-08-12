@@ -46,6 +46,7 @@ func (m *Mutability) UnmarshalJSON(b []byte) error {
 	default:
 		return fmt.Errorf("toolcat: unknown mutability %s", b)
 	}
+
 	return nil
 }
 

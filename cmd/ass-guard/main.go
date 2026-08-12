@@ -10,6 +10,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -27,7 +28,8 @@ import (
 )
 
 func main() {
-	if err := newRootCmd().Execute(); err != nil {
+	err := newRootCmd().Execute()
+	if err != nil {
 		// cobra already prints the error; exit non-zero. Diagnostics go to stderr.
 		os.Exit(1)
 	}
@@ -40,6 +42,7 @@ func newRootCmd() *cobra.Command {
 		profilesDir string
 		auditLog    string
 	)
+
 	root := &cobra.Command{
 		Use:   "ass-guard",
 		Short: "ass-guard tracer — shape a profile, send one prompt, print tool-calls (stderr)",
@@ -61,6 +64,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newParityCmd())
 	root.AddCommand(newACPCmd())
 	root.AddCommand(newSchedulingCmd())
+
 	return root
 }
 
@@ -70,8 +74,9 @@ func newRootCmd() *cobra.Command {
 // request is captured via the event bus (LOG-01, D-13).
 func runTrace(ctx context.Context, prompt, name, dir, auditLogPath string) error {
 	if prompt == "" {
-		return fmt.Errorf("--prompt is required")
+		return errors.New("--prompt is required")
 	}
+
 	prof, err := profile.NewLoader(dir).Load(name)
 	if err != nil {
 		return fmt.Errorf("load profile %q from %q: %w", name, dir, err)
@@ -80,14 +85,18 @@ func runTrace(ctx context.Context, prompt, name, dir, auditLogPath string) error
 	// LOG-01 audit foundation: bus + AuditLogger + provider capturer. The
 	// capturer is the seam that publishes the verbatim shaped body.
 	bus := event.NewBus()
+
 	sink, sinkClose, err := openAuditSink(auditLogPath)
 	if err != nil {
 		return err
 	}
+
 	if sinkClose != nil {
 		defer sinkClose()
 	}
+
 	audit.NewAuditLogger(bus, sink)
+
 	capturer := func(body []byte, _ map[string]string) {
 		bus.Publish(event.RequestShaped{
 			VerbatimRequest: body,
@@ -104,12 +113,14 @@ func runTrace(ctx context.Context, prompt, name, dir, auditLogPath string) error
 	if err != nil {
 		return err
 	}
+
 	out, err := json.MarshalIndent(calls, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal tool-calls: %w", err)
 	}
 	// Transport discipline: tool-call JSON goes to STDERR, never stdout.
 	fmt.Fprintln(os.Stderr, string(out))
+
 	return nil
 }
 
@@ -119,10 +130,12 @@ func openAuditSink(path string) (sink io.Writer, close func(), err error) {
 	if path == "" || path == "-" {
 		return os.Stderr, nil, nil
 	}
+
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open audit-log: %w", err)
 	}
+
 	return f, func() { _ = f.Close() }, nil
 }
 
@@ -132,5 +145,6 @@ func defaultProfilesDir() string {
 	if abs, err := filepath.Abs("profiles"); err == nil {
 		return abs
 	}
+
 	return "profiles"
 }

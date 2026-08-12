@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -66,9 +65,10 @@ func TestProviderErrorMessage(t *testing.T) {
 		Kind: KindTransient, Provider: "anthropic", Model: "glm-5.2",
 		StatusCode: 429, Reason: "rate limited",
 	}
+
 	msg := perr.Error()
 	for _, want := range []string{"anthropic", "glm-5.2", "Transient", "429", "rate limited"} {
-		require.True(t, strings.Contains(msg, want), "Error() %q must contain %q", msg, want)
+		require.Contains(t, msg, want, "Error() %q must contain %q", msg, want)
 	}
 }
 
@@ -76,9 +76,11 @@ func TestProviderErrorMessage(t *testing.T) {
 func TestProviderErrorUnwrap(t *testing.T) {
 	wrapped := errors.New("upstream sdk failure")
 	perr := &ProviderError{Kind: KindTransient, Cause: wrapped}
-	require.True(t, errors.Is(perr, wrapped), "errors.Is must traverse Cause")
+	require.ErrorIs(t, perr, wrapped, "errors.Is must traverse Cause")
+
 	var target *ProviderError
-	require.True(t, errors.As(perr, &target), "errors.As must match *ProviderError")
+
+	require.ErrorAs(t, perr, &target, "errors.As must match *ProviderError")
 }
 
 // TestProviderErrorRedactsCause asserts a Cause wrapping a secret-bearing

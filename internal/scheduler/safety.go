@@ -17,12 +17,14 @@ func NewBreakersMap(cfg *Config, log *slog.Logger) map[providerModelKey]*Circuit
 	if log == nil {
 		log = slog.New(slog.NewTextHandler(os.Stderr, nil))
 	}
+
 	out := map[providerModelKey]*CircuitBreaker{}
 	add := func(modelSlug string) {
 		m, ok := cfg.Models[modelSlug]
 		if !ok {
 			return
 		}
+
 		key := providerModelKey{Provider: m.Provider, Model: modelSlug}
 		if _, exists := out[key]; !exists {
 			out[key] = NewCircuitBreaker(key, cfg.CircuitBreaker, log)
@@ -30,6 +32,7 @@ func NewBreakersMap(cfg *Config, log *slog.Logger) map[providerModelKey]*Circuit
 	}
 	addBinding := func(b TierBinding) {
 		add(b.Model)
+
 		for _, fb := range b.Fallback {
 			add(fb)
 		}
@@ -38,16 +41,19 @@ func NewBreakersMap(cfg *Config, log *slog.Logger) map[providerModelKey]*Circuit
 	for _, b := range cfg.Tiers {
 		addBinding(b)
 	}
+
 	for _, w := range cfg.TimeWindows {
 		for _, b := range w.Tiers {
 			addBinding(b)
 		}
 	}
+
 	for _, po := range cfg.Projects {
 		for _, b := range po.Tiers {
 			addBinding(b)
 		}
 	}
+
 	return out
 }
 
@@ -58,6 +64,7 @@ func NewCostTrackerFromConfig(cfg *Config, bus *event.Bus, log *slog.Logger) *Co
 	for slug, m := range cfg.Models {
 		pricing[slug] = m.Pricing
 	}
+
 	return NewCostCeilingTracker(cfg.CostCeiling, pricing, bus, log)
 }
 
@@ -66,10 +73,13 @@ func NewCostTrackerFromConfig(cfg *Config, bus *event.Bus, log *slog.Logger) *Co
 // call site that turns Dispatch from "structure only" into "actually enforced".
 func (s *Scheduler) InstallSafety(cfg *Config, bus *event.Bus) {
 	concrete := NewBreakersMap(cfg, s.log)
+
 	iface := make(map[providerModelKey]Breaker, len(concrete))
+
 	for k, v := range concrete {
 		iface[k] = v
 	}
+
 	s.breakers = iface
 	s.cost = NewCostTrackerFromConfig(cfg, bus, s.log)
 }
@@ -81,8 +91,10 @@ func (s *Scheduler) Breaker(providerSlug, model string) *CircuitBreaker {
 	if !ok {
 		return nil
 	}
+
 	if cb, ok := b.(*CircuitBreaker); ok {
 		return cb
 	}
+
 	return nil
 }

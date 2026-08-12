@@ -32,6 +32,7 @@ func TestAudit_IntegrationViaProviderCapturer(t *testing.T) {
 	defer srv.Close()
 
 	root, _ := filepath.Abs(filepath.Join("..", "profile", "testdata"))
+
 	prof, err := profile.NewLoader(root).Load("minimal")
 	if err != nil {
 		t.Fatal(err)
@@ -49,6 +50,7 @@ func TestAudit_IntegrationViaProviderCapturer(t *testing.T) {
 			Timestamp:       time.Now(),
 		})
 	}
+
 	p := provider.NewAnthropicProvider(shaper.New(),
 		provider.WithAnthropicAPIKey("test-key"),
 		provider.WithAnthropicBaseURL(srv.URL),
@@ -63,10 +65,12 @@ func TestAudit_IntegrationViaProviderCapturer(t *testing.T) {
 	for time.Now().Before(deadline) && sink.Len() == 0 {
 		time.Sleep(5 * time.Millisecond)
 	}
+
 	out := sink.String()
 	if !strings.Contains(out, `"profile":"minimal"`) {
 		t.Errorf("audit line missing profile field:\n%s", out)
 	}
+
 	if !strings.Contains(out, "synth_tool_a") {
 		t.Errorf("audit line missing the shaped tool declaration (TIER-1 verbatim body):\n%s", out)
 	}

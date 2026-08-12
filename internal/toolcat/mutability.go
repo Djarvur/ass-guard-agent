@@ -23,6 +23,7 @@ func EffectiveMutability(tool Tool, adapterClass Mutability) Mutability {
 	if tool.Mutability == MutabilityMutating || adapterClass == MutabilityMutating {
 		return MutabilityMutating
 	}
+
 	return MutabilityReadOnly
 }
 
@@ -43,10 +44,12 @@ func IsBoundary(toolName string, catalog *Catalog, configAdded []string) bool {
 			}
 		}
 	}
+
 	for _, name := range configAdded {
 		if name == toolName {
 			return true
 		}
 	}
+
 	return false
 }

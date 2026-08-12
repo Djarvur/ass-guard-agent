@@ -91,17 +91,22 @@ func openTranscript(dir, sessionID string) (*os.File, string, error) {
 	if err := os.MkdirAll(storeDir, 0o755); err != nil {
 		return nil, "", err
 	}
+
 	giPath := filepath.Join(storeDir, ".gitignore")
 	if _, err := os.Stat(giPath); os.IsNotExist(err) {
-		if err := os.WriteFile(giPath, []byte(selfGitignoreContent), 0o644); err != nil {
+		err := os.WriteFile(giPath, []byte(selfGitignoreContent), 0o644)
+		if err != nil {
 			return nil, "", err
 		}
 	}
+
 	fname := "transcript_" + sessionID + ".jsonl"
 	path := filepath.Join(storeDir, fname)
+
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return nil, "", err
 	}
+
 	return f, path, nil
 }

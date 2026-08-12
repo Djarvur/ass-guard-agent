@@ -32,16 +32,20 @@ func TestEndToEndSession(t *testing.T) {
 		Catalog: toolcat.NewCatalog(),
 	}
 	tw := NewTranscriptWriter(m, bus)
+
 	twCtx, twCancel := context.WithCancel(context.Background())
 	defer twCancel()
+
 	go tw.Run(twCtx)
 
 	_ = m.AppendSessionStart("sess-e2e")
 	stopCh := make(chan string, 1)
+
 	go func() {
 		st, _ := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "do research"}})
 		stopCh <- st
 	}()
+
 	select {
 	case stop := <-stopCh:
 		if stop != "end_turn" {
@@ -50,6 +54,7 @@ func TestEndToEndSession(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Prompt did not complete within 5s (full-stack deadlock?)")
 	}
+
 	_ = m.AppendSessionEnd()
 
 	// Flush the async writer.
@@ -63,18 +68,19 @@ func TestEndToEndSession(t *testing.T) {
 	}
 	// Verify the full sequence is captured.
 	wantTypes := map[string]bool{
-		TypeSessionStart:     false,
-		TypeUserMessage:      false,
-		TypeRequestShaped:    false,
+		TypeSessionStart:      false,
+		TypeUserMessage:       false,
+		TypeRequestShaped:     false,
 		TypeAgentMessageChunk: false,
-		TypeToolCall:         false,
-		TypeSubagentDispatch: false,
-		TypeSubagentResult:   false,
-		TypeSessionEnd:       false,
+		TypeToolCall:          false,
+		TypeSubagentDispatch:  false,
+		TypeSubagentResult:    false,
+		TypeSessionEnd:        false,
 	}
 	for _, l := range lines {
 		wantTypes[l.Type] = true
 	}
+
 	for k, got := range wantTypes {
 		if !got {
 			t.Errorf("end-to-end transcript missing a %q line", k)

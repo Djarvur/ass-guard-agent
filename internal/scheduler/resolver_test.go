@@ -32,14 +32,17 @@ func ny(year int, month time.Month, day, hour, min int) time.Time {
 	if err != nil {
 		panic("America/New_York must load via bundled tzdata: " + err.Error())
 	}
+
 	return time.Date(year, month, day, hour, min, 0, 0, loc)
 }
 
 // loadValid is the shared fixture loader for resolver tests.
 func loadValid(t *testing.T) *Config {
 	t.Helper()
+
 	cfg, err := Load("testdata/valid.yaml")
 	require.NoError(t, err)
+
 	return cfg
 }
 
@@ -100,12 +103,15 @@ func TestActiveWindowOvernightBoundary(t *testing.T) {
 	cfg := loadValid(t)
 	// Find the overnight window directly to assert its boundary semantics.
 	var overnight *TimeWindow
+
 	for i := range cfg.TimeWindows {
 		if cfg.TimeWindows[i].Name == "overnight" {
 			overnight = &cfg.TimeWindows[i]
 		}
 	}
+
 	require.NotNil(t, overnight, "valid.yaml must declare the overnight window")
+
 	cases := []struct {
 		name string
 		h, m int
@@ -164,10 +170,10 @@ func TestResolveWindowZoneOverride(t *testing.T) {
 	cfg := &Config{
 		Timezone: "America/New_York",
 		TimeWindows: []TimeWindow{{
-			Name: "london-morning",
-			Zone: "Europe/London",
+			Name:     "london-morning",
+			Zone:     "Europe/London",
 			Schedule: Schedule{From: "09:00", To: "17:00", Days: []string{"Mon", "Tue", "Wed", "Thu", "Fri"}},
-			Tiers: map[string]TierBinding{"heavy": {Model: "override-model"}},
+			Tiers:    map[string]TierBinding{"heavy": {Model: "override-model"}},
 		}},
 		Providers: map[string]ProviderConfig{"anthropic": {BaseURL: "x", Shape: "anthropic"}},
 		Models: map[string]ModelConfig{
@@ -196,12 +202,15 @@ func TestResolveWindowZoneOverride(t *testing.T) {
 // populated CapabilityProfile + Pricing (D-09).
 func TestResolveCapabilityProfileAttached(t *testing.T) {
 	r := NewResolver(loadValid(t))
+
 	now := ny(2026, time.August, 16, 12, 0) // Sunday noon → global table
+
 	for _, tier := range []string{"heavy", "good", "light"} {
 		primary, fallbacks, err := r.Resolve(tier, "myproj", now, CapabilityReq{})
 		require.NoError(t, err)
+
 		for _, tgt := range append([]Target{primary}, fallbacks...) {
-			require.Greater(t, tgt.Capabilities.ContextWindow, 0, "target %s must carry a context_window", tgt.Model)
+			require.Positive(t, tgt.Capabilities.ContextWindow, "target %s must carry a context_window", tgt.Model)
 			require.True(t, tgt.Capabilities.Streaming, "target %s must declare streaming", tgt.Model)
 			require.GreaterOrEqual(t, tgt.Pricing.InputPerMToken, 0.0, "target %s must carry pricing", tgt.Model)
 		}
@@ -226,4 +235,3 @@ func TestSatisfies(t *testing.T) {
 	require.False(t, satisfies(cap, CapabilityReq{NeedsThinking: true}), "cap lacks thinking")
 	require.False(t, satisfies(cap, CapabilityReq{NeedsStreaming: false, NeedsThinking: true}))
 }
-

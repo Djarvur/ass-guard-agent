@@ -75,6 +75,7 @@ func (s *Shaper) Shape(p profile.Profile, messages []Message) (anthropic.Message
 	for _, h := range p.Headers {
 		opts = append(opts, option.WithHeader(h.Name, RenderHeaderValue(h.ValueTemplate)))
 	}
+
 	return params, opts, nil
 }
 
@@ -87,12 +88,15 @@ func RenderHeaderValue(template string) string {
 	if template == "" {
 		return ""
 	}
+
 	low := strings.ToLower(template)
+
 	switch {
 	case strings.Contains(low, "auth"):
 		if key := os.Getenv("ZAI_API_KEY"); key != "" {
 			return "Bearer " + key
 		}
+
 		return ""
 	case strings.Contains(low, "id"):
 		return uuidV4()
@@ -103,16 +107,19 @@ func RenderHeaderValue(template string) string {
 
 func toMessageParams(messages []Message) ([]anthropic.MessageParam, error) {
 	out := make([]anthropic.MessageParam, 0, len(messages))
+
 	for _, m := range messages {
 		role, err := toMessageParamRole(m.Role)
 		if err != nil {
 			return nil, err
 		}
+
 		out = append(out, anthropic.MessageParam{
 			Role:    role,
 			Content: []anthropic.ContentBlockParamUnion{anthropic.NewTextBlock(m.Content)},
 		})
 	}
+
 	return out, nil
 }
 
@@ -129,11 +136,13 @@ func toMessageParamRole(role string) (anthropic.MessageParamRole, error) {
 
 func toToolUnions(decls []profile.Decl) ([]anthropic.ToolUnionParam, error) {
 	out := make([]anthropic.ToolUnionParam, 0, len(decls))
+
 	for _, d := range decls {
 		schema, err := toToolInputSchema(d.InputSchema)
 		if err != nil {
 			return nil, fmt.Errorf("tool %q input_schema: %w", d.Name, err)
 		}
+
 		tp := &anthropic.ToolParam{
 			Name:        d.Name,
 			InputSchema: schema,
@@ -141,8 +150,10 @@ func toToolUnions(decls []profile.Decl) ([]anthropic.ToolUnionParam, error) {
 		if d.Description != "" {
 			tp.Description = param.NewOpt(d.Description)
 		}
+
 		out = append(out, anthropic.ToolUnionParam{OfTool: tp})
 	}
+
 	return out, nil
 }
 
@@ -156,16 +167,22 @@ func toToolInputSchema(raw json.RawMessage) (anthropic.ToolInputSchemaParam, err
 		Properties json.RawMessage `json:"properties"`
 		Required   []string        `json:"required"`
 	}
-	if err := json.Unmarshal(raw, &s); err != nil {
+	err := json.Unmarshal(raw, &s)
+
+	if err != nil {
 		return anthropic.ToolInputSchemaParam{}, err
 	}
+
 	var props any
 	if len(s.Properties) > 0 {
-		if err := json.Unmarshal(s.Properties, &props); err != nil {
+		err := json.Unmarshal(s.Properties, &props)
+		if err != nil {
 			return anthropic.ToolInputSchemaParam{}, err
 		}
 	}
+
 	extras := schemaExtras(raw)
+
 	return anthropic.ToolInputSchemaParam{
 		Properties:  props,
 		Required:    s.Required,
@@ -177,21 +194,28 @@ func toToolInputSchema(raw json.RawMessage) (anthropic.ToolInputSchemaParam, err
 // schema so the SDK request carries them verbatim.
 func schemaExtras(raw json.RawMessage) map[string]any {
 	var m map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &m); err != nil {
+	err := json.Unmarshal(raw, &m)
+	if err != nil {
 		return nil
 	}
+
 	extras := make(map[string]any, len(m))
+
 	for k, v := range m {
 		if k == "type" || k == "properties" || k == "required" {
 			continue
 		}
+
 		var val any
+
 		_ = json.Unmarshal(v, &val)
 		extras[k] = val
 	}
+
 	if len(extras) == 0 {
 		return nil
 	}
+
 	return extras
 }
 
@@ -199,18 +223,23 @@ func toThinking(raw json.RawMessage) anthropic.ThinkingConfigParamUnion {
 	if len(raw) == 0 {
 		return anthropic.ThinkingConfigParamUnion{}
 	}
+
 	var t struct {
 		Type         string `json:"type"`
 		BudgetTokens int64  `json:"budget_tokens"`
 	}
-	if err := json.Unmarshal(raw, &t); err != nil {
+	err := json.Unmarshal(raw, &t)
+
+	if err != nil {
 		return anthropic.ThinkingConfigParamUnion{}
 	}
+
 	switch strings.ToLower(t.Type) {
 	case "enabled":
 		return anthropic.ThinkingConfigParamUnion{OfEnabled: &anthropic.ThinkingConfigEnabledParam{BudgetTokens: t.BudgetTokens}}
 	case "disabled":
 		d := anthropic.NewThinkingConfigDisabledParam()
+
 		return anthropic.ThinkingConfigParamUnion{OfDisabled: &d}
 	default:
 		return anthropic.ThinkingConfigParamUnion{}
@@ -221,12 +250,16 @@ func toToolChoice(raw json.RawMessage) anthropic.ToolChoiceUnionParam {
 	if len(raw) == 0 {
 		return anthropic.ToolChoiceUnionParam{}
 	}
+
 	var tc struct {
 		Type string `json:"type"`
 	}
-	if err := json.Unmarshal(raw, &tc); err != nil {
+	err := json.Unmarshal(raw, &tc)
+
+	if err != nil {
 		return anthropic.ToolChoiceUnionParam{}
 	}
+
 	switch strings.ToLower(tc.Type) {
 	case "auto":
 		return anthropic.ToolChoiceUnionParam{OfAuto: &anthropic.ToolChoiceAutoParam{}}
@@ -247,7 +280,9 @@ func uuidV4() string {
 	if _, err := rand.Read(b[:]); err != nil {
 		panic("crypto/rand failed: " + err.Error())
 	}
+
 	b[6] = (b[6] & 0x0f) | 0x40
 	b[8] = (b[8] & 0x3f) | 0x80
+
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }

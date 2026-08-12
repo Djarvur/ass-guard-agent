@@ -16,10 +16,12 @@ import (
 // sequence, with a real catalog + bus for subagent dispatch.
 func newSubagentSession(t *testing.T, responses []provider.Response) (*Session, *event.Bus, <-chan event.Event) {
 	t.Helper()
+
 	bus := event.NewBus()
 	subResults := bus.Subscribe("SubagentResult", event.BufSubagentResult)
 	s, _, _ := newTestSession(t, bus, responses)
 	s.Catalog = toolcat.NewCatalog()
+
 	return s, bus, subResults
 }
 
@@ -33,15 +35,19 @@ func TestDispatchSubagent_AppendsDispatchLine(t *testing.T) {
 	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "dispatch"}}); err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
+
 	found := false
+
 	for _, l := range linesOf(s) {
 		if l.Type == TypeSubagentDispatch {
 			found = true
+
 			if l.ParentTurnID == "" {
 				t.Error("subagent_dispatch missing parentTurnID")
 			}
 		}
 	}
+
 	if !found {
 		t.Error("no subagent_dispatch line for a Task tool call (PARA-01)")
 	}
@@ -55,25 +61,29 @@ func TestSubagent_StreamsProgressWithParentTurnID(t *testing.T) {
 		{FinishReason: "end_turn"},
 	})
 	chunks := bus.Subscribe("AgentMessageChunk", event.BufAgentMessageChunk)
+
 	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "go"}}); err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 	// Drain a beat; at least one chunk should arrive (the subagent streams).
-	got := ""
+	var got strings.Builder
 	deadline := time.After(1 * time.Second)
+
 	for {
 		select {
 		case e := <-chunks:
 			if c, ok := e.(event.AgentMessageChunk); ok {
-				got += c.Content
+				got.WriteString(c.Content)
 			}
 		case <-deadline:
-			if got == "" {
+			if got.String() == "" {
 				t.Error("no AgentMessageChunk published during subagent dispatch (PARA-02)")
 			}
+
 			return
 		}
-		if got != "" {
+
+		if got.String() != "" {
 			return
 		}
 	}
@@ -89,12 +99,15 @@ func TestSubagent_FinalResultToParent(t *testing.T) {
 	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "go"}}); err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
+
 	hasResult := false
+
 	for _, l := range linesOf(s) {
 		if l.Type == TypeSubagentResult {
 			hasResult = true
 		}
 	}
+
 	if !hasResult {
 		t.Error("no subagent_result line (PARA-02 final result)")
 	}
@@ -112,6 +125,7 @@ func TestSubagent_RestrictedExecutor(t *testing.T) {
 	})
 	// Override the subagent's restricted set + toolExec via a fake executor.
 	fake := &fakeToolExec{}
+
 	s.toolExec = fake
 	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "go"}}); err != nil {
 		t.Fatalf("Prompt: %v", err)
@@ -124,6 +138,7 @@ func TestSubagent_RestrictedExecutor(t *testing.T) {
 			return // good: restricted set recorded
 		}
 	}
+
 	t.Error("subagent_dispatch did not record a restricted tool set (D-10)")
 }
 
@@ -132,6 +147,7 @@ type fakeToolExec struct{ calls []string }
 
 func (f *fakeToolExec) Execute(ctx context.Context, name string, input json.RawMessage) (json.RawMessage, error) {
 	f.calls = append(f.calls, name)
+
 	return json.RawMessage(`{"ok":true}`), nil
 }
 
@@ -151,22 +167,28 @@ func TestSubagentPanicRecovery(t *testing.T) {
 		// The parent may return an error from the subagent result, or continue.
 		t.Logf("parent returned err=%v (acceptable)", err)
 	}
+
 	hasError := false
 	hasSubagentResult := false
+
 	for _, l := range linesOf(s) {
 		if l.Type == TypeError {
 			hasError = true
+
 			if !strings.Contains(strings.ToLower(l.Message), "panic") && !strings.Contains(strings.ToLower(l.Component), "subagent") {
 				// Component or message should reference the subagent/panic.
 			}
 		}
+
 		if l.Type == TypeSubagentResult && l.Message != "" {
 			hasSubagentResult = true
 		}
 	}
+
 	if !hasError {
 		t.Error("no investigate-and-fix-ready error line after subagent panic (PARA-03, D-13)")
 	}
+
 	if !hasSubagentResult {
 		t.Error("no subagent_result line with the panic error message")
 	}

@@ -57,6 +57,7 @@ func NewOpenAIProvider(opts ...OpenAIOption) *OpenAIProvider {
 	for _, o := range opts {
 		o(p)
 	}
+
 	return p
 }
 
@@ -67,6 +68,7 @@ func (p *OpenAIProvider) Send(ctx context.Context, prof profile.Profile, message
 	if key == "" {
 		key = os.Getenv("OPENAI_API_KEY")
 	}
+
 	if key == "" {
 		return Response{}, errors.New("openai provider: no API key (set OPENAI_API_KEY or pass WithOpenAIAPIKey)")
 	}
@@ -83,12 +85,14 @@ func (p *OpenAIProvider) Send(ctx context.Context, prof profile.Profile, message
 	if p.baseURL != "" {
 		cfg.BaseURL = p.baseURL
 	}
+
 	client := openai.NewClientWithConfig(cfg)
 
 	resp, err := client.CreateChatCompletion(ctx, req)
 	if err != nil {
 		return Response{}, fmt.Errorf("openai provider send: %w", err)
 	}
+
 	return parseOpenAIResponse(resp)
 }
 
@@ -100,16 +104,20 @@ func (p *OpenAIProvider) buildRequest(prof profile.Profile, messages []Message) 
 	if model == "" {
 		model = prof.Model
 	}
+
 	msgs := make([]openai.ChatCompletionMessage, 0, len(messages))
 	for _, m := range messages {
 		msgs = append(msgs, openai.ChatCompletionMessage{Role: m.Role, Content: m.Content})
 	}
+
 	tools := make([]openai.Tool, 0, len(prof.Tools))
+
 	for _, d := range prof.Tools {
 		params := d.InputSchema
 		if len(params) == 0 {
 			params = json.RawMessage(`{"type":"object"}`)
 		}
+
 		tools = append(tools, openai.Tool{
 			Type: openai.ToolTypeFunction,
 			Function: &openai.FunctionDefinition{
@@ -119,6 +127,7 @@ func (p *OpenAIProvider) buildRequest(prof profile.Profile, messages []Message) 
 			},
 		})
 	}
+
 	req := openai.ChatCompletionRequest{
 		Model:    model,
 		Messages: msgs,
@@ -130,10 +139,12 @@ func (p *OpenAIProvider) buildRequest(prof profile.Profile, messages []Message) 
 		var tc struct {
 			Type string `json:"type"`
 		}
+
 		if json.Unmarshal(prof.ToolChoice, &tc) == nil {
 			req.ToolChoice = tc.Type
 		}
 	}
+
 	return req
 }
 
@@ -146,8 +157,10 @@ func parseOpenAIResponse(resp openai.ChatCompletionResponse) (Response, error) {
 	if len(resp.Choices) == 0 {
 		return out, errors.New("openai provider: response has no choices")
 	}
+
 	for _, tc := range resp.Choices[0].Message.ToolCalls {
 		var input json.RawMessage
+
 		args := []byte(tc.Function.Arguments)
 		if len(args) == 0 {
 			input = json.RawMessage("{}")
@@ -159,13 +172,17 @@ func parseOpenAIResponse(resp openai.ChatCompletionResponse) (Response, error) {
 			wrapped, _ := json.Marshal(tc.Function.Arguments)
 			input = json.RawMessage(wrapped)
 		}
+
 		out.ToolCalls = append(out.ToolCalls, ToolCall{Name: tc.Function.Name, Input: input})
 	}
+
 	raw, err := json.Marshal(resp)
 	if err != nil {
 		return out, fmt.Errorf("openai provider marshal response: %w", err)
 	}
+
 	out.Raw = raw
+
 	return out, nil
 }
 
@@ -177,11 +194,13 @@ func (p *OpenAIProvider) ToolResultMessage(toolCallID string, result json.RawMes
 	if content == `""` {
 		content = ""
 	}
+
 	msg := openai.ChatCompletionMessage{
 		Role:       "tool",
 		Content:    content,
 		ToolCallID: toolCallID,
 	}
+
 	return json.Marshal(msg)
 }
 

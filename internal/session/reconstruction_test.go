@@ -37,8 +37,10 @@ func TestTranscriptReconstructsSession(t *testing.T) {
 	}
 	// Start the async TranscriptWriter (the one session-path audit writer, D-20).
 	tw := NewTranscriptWriter(m, bus)
+
 	twCtx, twCancel := context.WithCancel(context.Background())
 	defer twCancel()
+
 	go tw.Run(twCtx)
 
 	_ = m.AppendSessionStart("sess-recon")
@@ -70,8 +72,10 @@ func TestTranscriptReconstructsSession(t *testing.T) {
 		if len(lines) >= 8 {
 			break
 		}
+
 		time.Sleep(10 * time.Millisecond)
 	}
+
 	twCancel()
 	time.Sleep(50 * time.Millisecond)
 
@@ -79,6 +83,7 @@ func TestTranscriptReconstructsSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadAll: %v", err)
 	}
+
 	if len(lines) == 0 {
 		t.Fatal("no transcript lines")
 	}
@@ -96,19 +101,20 @@ func TestTranscriptReconstructsSession(t *testing.T) {
 	// (g) errors (none injected here; subagent may add)
 	// (h) cancel state (canceled line)
 	checks := map[string]bool{
-		"user_message":       false,
-		"assistant_message":  false,
-		"tool_call":          false,
-		"tool_result":        false,
-		"boundary":           false,
-		"request_shaped":     false,
-		"canceled":           false,
-		"subagent_dispatch":  false,
-		"subagent_result":    false,
+		"user_message":      false,
+		"assistant_message": false,
+		"tool_call":         false,
+		"tool_result":       false,
+		"boundary":          false,
+		"request_shaped":    false,
+		"canceled":          false,
+		"subagent_dispatch": false,
+		"subagent_result":   false,
 	}
 	for _, l := range lines {
 		checks[l.Type] = true
 	}
+
 	for want, got := range checks {
 		if !got {
 			t.Errorf("transcript missing a %q line (reconstruction incomplete)", want)
@@ -117,11 +123,13 @@ func TestTranscriptReconstructsSession(t *testing.T) {
 
 	// Boundary must reference the mutating Bash command.
 	bashBoundary := false
+
 	for _, l := range lines {
 		if l.Type == "boundary" && l.Cause == "mutating-command:Bash" {
 			bashBoundary = true
 		}
 	}
+
 	if !bashBoundary {
 		t.Error("no mutating-command:Bash boundary line (SESS-02/03)")
 	}
@@ -130,9 +138,11 @@ func TestTranscriptReconstructsSession(t *testing.T) {
 	if strings.Contains(raw, "sk-recon-secret") {
 		t.Error("transcript leaked the secret token on disk (LOG-03)")
 	}
+
 	if !strings.Contains(raw, "[REDACTED]") {
 		t.Error("transcript did not redact the auth value (LOG-03)")
 	}
+
 	if !strings.Contains(raw, "authorization") {
 		t.Error("transcript dropped the field name (must preserve names)")
 	}
@@ -152,10 +162,14 @@ func (r *reconProvider) Send(ctx context.Context, _ profile.Profile, _ []provide
 func (r *reconProvider) Stream(ctx context.Context, prof profile.Profile, _ []provider.Message) (<-chan provider.StreamChunk, error) {
 	body, _ := json.Marshal(map[string]any{"model": prof.Model})
 	r.bus.Publish(event.RequestShaped{VerbatimRequest: body, Profile: prof.Name, Timestamp: time.Now()})
+
 	ch := make(chan provider.StreamChunk, 8)
+
 	go func() {
 		defer close(ch)
+
 		r.n++
+
 		var resp provider.Response
 		if r.n <= len(r.script) {
 			resp = r.script[r.n-1]
@@ -164,15 +178,19 @@ func (r *reconProvider) Stream(ctx context.Context, prof profile.Profile, _ []pr
 			// nested call and any extra prompts).
 			resp = provider.Response{FinishReason: "end_turn"}
 		}
+
 		for _, tc := range resp.ToolCalls {
 			tcCopy := tc
 			ch <- provider.StreamChunk{Type: "tool_use", ToolCall: &tcCopy, ToolCallID: tc.Name}
 		}
+
 		if len(resp.ToolCalls) == 0 {
 			ch <- provider.StreamChunk{Type: "text", Text: "summary of findings"}
 		}
+
 		ch <- provider.StreamChunk{Type: "done", FinishReason: resp.FinishReason}
 	}()
+
 	return ch, nil
 }
 

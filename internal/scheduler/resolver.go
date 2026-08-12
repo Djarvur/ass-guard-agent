@@ -40,16 +40,20 @@ func (r *Resolver) Resolve(tier, project string, now time.Time, capReq Capabilit
 	if !ok {
 		return Target{}, nil, fmt.Errorf("scheduler: tier %q is not configured (no window/project/global binding)", tier)
 	}
+
 	primary, err := r.buildTarget(binding.Model)
 	if err != nil {
 		return Target{}, nil, fmt.Errorf("resolve tier %q primary: %w", tier, err)
 	}
+
 	fallbacks := make([]Target, 0, len(binding.Fallback))
+
 	for _, slug := range binding.Fallback {
 		ft, err := r.buildTarget(slug)
 		if err != nil {
 			return Target{}, nil, fmt.Errorf("resolve tier %q fallback %q: %w", tier, slug, err)
 		}
+
 		fallbacks = append(fallbacks, ft)
 	}
 	// Apply the request-time capability gate (D-09): when capReq is non-zero,
@@ -59,6 +63,7 @@ func (r *Resolver) Resolve(tier, project string, now time.Time, capReq Capabilit
 	if err != nil {
 		return Target{}, nil, fmt.Errorf("resolve tier %q: %w", tier, err)
 	}
+
 	return chosen, remaining, nil
 }
 
@@ -69,6 +74,7 @@ func (r *Resolver) resolveBinding(tier, project string, now time.Time) (TierBind
 			return b, true // STRUCTURAL: window wins outright (D-02 reversal)
 		}
 	}
+
 	if project != "" {
 		if po, ok := r.cfg.Projects[project]; ok {
 			if b, ok := po.Tiers[tier]; ok {
@@ -76,9 +82,11 @@ func (r *Resolver) resolveBinding(tier, project string, now time.Time) (TierBind
 			}
 		}
 	}
+
 	if b, ok := r.cfg.Tiers[tier]; ok {
 		return b, true // GLOBAL: the default table
 	}
+
 	return TierBinding{}, false
 }
 
@@ -89,10 +97,12 @@ func (r *Resolver) buildTarget(modelSlug string) (Target, error) {
 	if !ok {
 		return Target{}, fmt.Errorf("model %q is not declared in models", modelSlug)
 	}
+
 	p, ok := r.cfg.Providers[m.Provider]
 	if !ok {
 		return Target{}, fmt.Errorf("provider %q (for model %q) is not declared in providers", m.Provider, modelSlug)
 	}
+
 	return Target{
 		Provider:     m.Provider,
 		Model:        modelSlug,
@@ -114,6 +124,7 @@ func (r *Resolver) activeWindow(now time.Time) *TimeWindow {
 			return w
 		}
 	}
+
 	return nil
 }
 
@@ -126,22 +137,27 @@ func (w TimeWindow) contains(t time.Time, fallbackZone string) bool {
 	if zone == "" {
 		zone = fallbackZone
 	}
+
 	loc, err := time.LoadLocation(zone)
 	if err != nil || loc == nil {
 		loc = time.UTC // safe fallback; the bundled tzdata makes LoadLocation succeed for valid IANA names
 	}
+
 	lt := t.In(loc)
 	if !dayMatches(w.Schedule.Days, lt.Weekday()) {
 		return false
 	}
+
 	from, err1 := parseHHMM(w.Schedule.From, lt)
 	if err1 != nil {
 		return false
 	}
+
 	to, err2 := parseHHMM(w.Schedule.To, lt)
 	if err2 != nil {
 		return false
 	}
+
 	if !from.After(to) {
 		// same-day window (from <= to): [from, to) — to-exclusive (pitfall 3)
 		return !lt.Before(from) && lt.Before(to)
@@ -156,12 +172,14 @@ func dayMatches(days []string, wd time.Weekday) bool {
 	if len(days) == 0 {
 		return true
 	}
+
 	abbr := weekdayAbbr(wd)
 	for _, d := range days {
 		if d == abbr {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -182,6 +200,7 @@ func weekdayAbbr(wd time.Weekday) string {
 	case time.Saturday:
 		return "Sat"
 	}
+
 	return ""
 }
 
@@ -193,16 +212,20 @@ func parseHHMM(s string, day time.Time) (time.Time, error) {
 	if len(parts) != 2 {
 		return time.Time{}, fmt.Errorf("parse HH:MM %q: want exactly one ':'", s)
 	}
+
 	h, err := strconv.Atoi(parts[0])
 	if err != nil {
 		return time.Time{}, fmt.Errorf("parse HH:MM %q: hour: %w", s, err)
 	}
+
 	m, err := strconv.Atoi(parts[1])
 	if err != nil {
 		return time.Time{}, fmt.Errorf("parse HH:MM %q: minute: %w", s, err)
 	}
+
 	if h < 0 || h > 23 || m < 0 || m > 59 {
 		return time.Time{}, fmt.Errorf("parse HH:MM %q: out of range", s)
 	}
+
 	return time.Date(day.Year(), day.Month(), day.Day(), h, m, 0, 0, day.Location()), nil
 }

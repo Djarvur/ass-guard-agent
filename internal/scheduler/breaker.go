@@ -1,7 +1,6 @@
 package scheduler
 
 import (
-	"io"
 	"log/slog"
 	"sync"
 	"time"
@@ -28,6 +27,7 @@ func (s breakerState) String() string {
 	case breakerHalfOpen:
 		return "HalfOpen"
 	}
+
 	return "Unknown"
 }
 
@@ -46,34 +46,39 @@ func (s breakerState) String() string {
 // R/W) — NEVER across the provider call (pitfall 6); parent + subagents hit the
 // same breaker concurrently.
 type CircuitBreaker struct {
-	key        providerModelKey
-	mu         sync.Mutex
-	state      breakerState
+	key         providerModelKey
+	mu          sync.Mutex
+	state       breakerState
 	consecutive int
-	window     *ringBuffer
-	openedAt   time.Time
-	cfg        CircuitBreakerConfig
-	log        *slog.Logger
+	window      *ringBuffer
+	openedAt    time.Time
+	cfg         CircuitBreakerConfig
+	log         *slog.Logger
 }
 
 // NewCircuitBreaker constructs a Closed breaker for one (provider, model). The
 // cfg carries the D-07 thresholds (applied defaults are already filled by Load).
 func NewCircuitBreaker(key providerModelKey, cfg CircuitBreakerConfig, log *slog.Logger) *CircuitBreaker {
 	if log == nil {
-		log = slog.New(slog.NewTextHandler(io.Discard, nil))
+		log = slog.New(slog.DiscardHandler)
 	}
+
 	if cfg.ConsecutiveFailures < 1 {
 		cfg.ConsecutiveFailures = defaultBreaker.ConsecutiveFailures
 	}
+
 	if cfg.ErrorRateWindow < 1 {
 		cfg.ErrorRateWindow = defaultBreaker.ErrorRateWindow
 	}
+
 	if cfg.ErrorRateThreshold <= 0 {
 		cfg.ErrorRateThreshold = defaultBreaker.ErrorRateThreshold
 	}
+
 	if cfg.Cooldown <= 0 {
 		cfg.Cooldown = defaultBreaker.Cooldown
 	}
+
 	return &CircuitBreaker{
 		key:    key,
 		state:  breakerClosed,
@@ -89,6 +94,7 @@ func NewCircuitBreaker(key providerModelKey, cfg CircuitBreakerConfig, log *slog
 func (b *CircuitBreaker) Allow(now time.Time) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
 	switch b.state {
 	case breakerClosed:
 		return true
@@ -97,10 +103,13 @@ func (b *CircuitBreaker) Allow(now time.Time) bool {
 	case breakerOpen:
 		if now.Sub(b.openedAt) >= b.cfg.Cooldown {
 			b.transition(breakerHalfOpen, now, "cooldown elapsed — probe")
+
 			return true
 		}
+
 		return false
 	}
+
 	return true
 }
 
@@ -109,8 +118,10 @@ func (b *CircuitBreaker) Allow(now time.Time) bool {
 func (b *CircuitBreaker) RecordSuccess() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
 	b.consecutive = 0
 	b.window.push(true)
+
 	if b.state == breakerHalfOpen {
 		b.transition(breakerClosed, time.Time{}, "probe succeeded — recovered")
 	}
@@ -126,22 +137,27 @@ func (b *CircuitBreaker) RecordSuccess() {
 func (b *CircuitBreaker) RecordTransient(now time.Time, err *provider.ProviderError) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
 	b.consecutive++
 	b.window.push(false)
 
 	if b.state == breakerHalfOpen {
 		b.openedAt = now
 		b.transition(breakerOpen, now, "probe failed — re-opened")
+
 		return
 	}
+
 	if b.state == breakerClosed {
 		rateTrips := false
 		if b.window.len() >= b.cfg.ErrorRateWindow && b.window.errorRate() > b.cfg.ErrorRateThreshold {
 			rateTrips = true
 		}
+
 		if b.consecutive >= b.cfg.ConsecutiveFailures || rateTrips {
 			b.openedAt = now
 			b.transition(breakerOpen, now, "trip")
+
 			return
 		}
 	}
@@ -152,15 +168,15 @@ func (b *CircuitBreaker) RecordTransient(now time.Time, err *provider.ProviderEr
 func (b *CircuitBreaker) transition(to breakerState, now time.Time, reason string) {
 	from := b.state
 	b.state = to
+
 	cooldownRemaining := time.Duration(0)
+
 	if to == breakerOpen {
 		cooldownRemaining = b.cfg.Cooldown
 	} else if from == breakerOpen && now.After(b.openedAt) {
-		cooldownRemaining = b.cfg.Cooldown - now.Sub(b.openedAt)
-		if cooldownRemaining < 0 {
-			cooldownRemaining = 0
-		}
+		cooldownRemaining = max(b.cfg.Cooldown-now.Sub(b.openedAt), 0)
 	}
+
 	b.log.Warn("scheduler: circuit breaker transition",
 		"provider", b.key.Provider,
 		"model", b.key.Model,
@@ -177,6 +193,7 @@ func (b *CircuitBreaker) transition(to breakerState, now time.Time, reason strin
 func (b *CircuitBreaker) State() breakerState {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
 	return b.state
 }
 
@@ -193,14 +210,17 @@ func newRingBuffer(capacity int) *ringBuffer {
 	if capacity < 1 {
 		capacity = 1
 	}
+
 	return &ringBuffer{cap: capacity, buf: make([]bool, 0, capacity)}
 }
 
 func (r *ringBuffer) push(v bool) {
 	if len(r.buf) < r.cap {
 		r.buf = append(r.buf, v)
+
 		return
 	}
+
 	r.buf[r.idx] = v
 	r.idx = (r.idx + 1) % r.cap
 }
@@ -209,12 +229,15 @@ func (r *ringBuffer) errorRate() float64 {
 	if len(r.buf) == 0 {
 		return 0
 	}
+
 	failures := 0
+
 	for _, b := range r.buf {
 		if !b {
 			failures++
 		}
 	}
+
 	return float64(failures) / float64(len(r.buf))
 }
 

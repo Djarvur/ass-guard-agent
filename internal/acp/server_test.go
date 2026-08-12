@@ -17,17 +17,18 @@ import (
 // spikes/03-acp-handshake/. The harness is the load-bearing test substrate for
 // the whole ACP package: initialize → session/new → session/prompt round-trips.
 type pipeHarness struct {
-	srv   *Server
-	cliW  *io.PipeWriter // client writes frames here (→ server stdin)
-	cliR  *io.PipeReader // client reads frames here (← server stdout)
-	cbr   *bufio.Reader  // one shared client bufio.Reader over cliR
-	cliMu sync.Mutex     // serializes client reads (one reader at a time)
+	srv    *Server
+	cliW   *io.PipeWriter // client writes frames here (→ server stdin)
+	cliR   *io.PipeReader // client reads frames here (← server stdout)
+	cbr    *bufio.Reader  // one shared client bufio.Reader over cliR
+	cliMu  sync.Mutex     // serializes client reads (one reader at a time)
 	cancel context.CancelFunc
 }
 
 func newPipeHarness(t *testing.T, opts ...ServerOption) *pipeHarness {
 	t.Helper()
-	srvInR, cliW := io.Pipe() // cliW writes → srvInR reads (server stdin)
+
+	srvInR, cliW := io.Pipe()  // cliW writes → srvInR reads (server stdin)
 	cliR, srvOutW := io.Pipe() // srvOutW writes (server stdout) → cliR reads
 
 	stderr := &strings.Builder{}
@@ -41,31 +42,38 @@ func newPipeHarness(t *testing.T, opts ...ServerOption) *pipeHarness {
 		cancel: cancel,
 	}
 	done := make(chan struct{})
+
 	go func() {
 		_ = srv.Serve(ctx)
+
 		close(done)
 	}()
 	// Close both pipe ends when the test ends so Serve's reader sees EOF and the
 	// client reader unblocks.
 	t.Cleanup(func() {
 		cancel()
+
 		_ = cliW.Close()
 		_ = srvOutW.Close()
 		_ = srvInR.Close()
 		_ = cliR.Close()
+
 		select {
 		case <-done:
 		case <-time.After(2 * time.Second):
 			t.Errorf("server.Serve did not exit within 2s of shutdown")
 		}
 	})
+
 	return h
 }
 
 // send writes one client frame (request or notification) to the server stdin.
 func (h *pipeHarness) send(t *testing.T, msg Message) {
 	t.Helper()
-	if err := writeFrame(h.cliW, msg); err != nil {
+
+	err := writeFrame(h.cliW, msg)
+	if err != nil {
 		t.Fatalf("client writeFrame: %v", err)
 	}
 }
@@ -75,10 +83,12 @@ func (h *pipeHarness) readFrame(t *testing.T) *Message {
 	t.Helper()
 	h.cliMu.Lock()
 	defer h.cliMu.Unlock()
+
 	msg, err := readFrame(h.cbr)
 	if err != nil {
 		t.Fatalf("client readFrame: %v", err)
 	}
+
 	return msg
 }
 
@@ -86,10 +96,12 @@ func (h *pipeHarness) readFrame(t *testing.T) *Message {
 // mu (used when the caller already holds cliMu).
 func (h *pipeHarness) readFrameLocked(t *testing.T) *Message {
 	t.Helper()
+
 	msg, err := readFrame(h.cbr)
 	if err != nil {
 		t.Fatalf("client readFrame: %v", err)
 	}
+
 	return msg
 }
 
@@ -106,16 +118,20 @@ func (s *stubTurn) Run(ctx context.Context, _ string, emit ChunkEmitter, prompt 
 	s.mu.Lock()
 	s.ran = true
 	s.mu.Unlock()
+
 	for i, c := range s.chunks {
 		select {
 		case <-ctx.Done():
 			return "cancelled", nil
 		default:
 		}
-		if err := emit.AgentMessageChunk(messageID(i+1), c); err != nil {
+
+		err := emit.AgentMessageChunk(messageID(i+1), c)
+		if err != nil {
 			return "", err
 		}
 	}
+
 	return "end_turn", nil
 }
 
@@ -128,23 +144,27 @@ func itoa(n int) string {
 	if n == 0 {
 		return "0"
 	}
+
 	var b []byte
 	for n > 0 {
 		b = append([]byte{byte('0' + n%10)}, b...)
 		n /= 10
 	}
+
 	return string(b)
 }
 
 // newRequest builds a request Message with the given integer id.
 func newRequest(id int, method string, params map[string]any) Message {
 	pmsg, _ := json.Marshal(params)
+
 	return Message{JSONRPC: "2.0", ID: &id, Method: method, Params: pmsg}
 }
 
 // newNotification builds a notification Message (no id).
 func newNotification(method string, params map[string]any) Message {
 	pmsg, _ := json.Marshal(params)
+
 	return Message{JSONRPC: "2.0", Method: method, Params: pmsg}
 }
 
@@ -154,10 +174,12 @@ func newNotification(method string, params map[string]any) Message {
 func TestInitializeReturnsAgentCapabilities(t *testing.T) {
 	h := newPipeHarness(t)
 	h.send(t, newRequest(0, "initialize", map[string]any{"protocolVersion": 1}))
+
 	msg := h.readFrame(t)
 	if msg.ID == nil || *msg.ID != 0 {
 		t.Fatalf("response id = %v; want 0", msg.ID)
 	}
+
 	var res struct {
 		ProtocolVersion   int            `json:"protocolVersion"`
 		AgentCapabilities map[string]any `json:"agentCapabilities"`
@@ -167,15 +189,20 @@ func TestInitializeReturnsAgentCapabilities(t *testing.T) {
 		Capabilities map[string]any `json:"capabilities,omitempty"`
 		ServerInfo   map[string]any `json:"serverInfo,omitempty"`
 	}
-	if err := json.Unmarshal(msg.Result, &res); err != nil {
+
+	err := json.Unmarshal(msg.Result, &res)
+	if err != nil {
 		t.Fatalf("unmarshal initialize result: %v (raw=%s)", err, string(msg.Result))
 	}
+
 	if res.ProtocolVersion != 1 {
 		t.Errorf("protocolVersion = %v; want integer 1", res.ProtocolVersion)
 	}
+
 	if res.AgentCapabilities == nil {
 		t.Fatal("agentCapabilities field missing (must be the exact field name per VERIFIED-FACTS #3)")
 	}
+
 	if ls, _ := res.AgentCapabilities["loadSession"].(bool); !ls {
 		// loadSession:false is correct (D-09 — NO replay); we assert the field
 		// is PRESENT and FALSE.
@@ -185,9 +212,11 @@ func TestInitializeReturnsAgentCapabilities(t *testing.T) {
 	} else {
 		t.Errorf("agentCapabilities.loadSession = true; want false (D-09 — NO replay in v1)")
 	}
+
 	if res.Capabilities != nil {
 		t.Errorf("response has a 'capabilities' field; must be 'agentCapabilities' (VERIFIED-FACTS #3)")
 	}
+
 	if res.ServerInfo != nil {
 		t.Errorf("response has a 'serverInfo' field; must be 'agentInfo' (VERIFIED-FACTS #3)")
 	}
@@ -201,12 +230,16 @@ func TestSessionNewReturnsSessionID(t *testing.T) {
 	h.readFrame(t)
 	h.send(t, newRequest(1, "session/new", map[string]any{"cwd": "/tmp", "mcpServers": []any{}}))
 	msg := h.readFrame(t)
+
 	var res struct {
 		SessionID string `json:"sessionId"`
 	}
-	if err := json.Unmarshal(msg.Result, &res); err != nil {
+
+	err := json.Unmarshal(msg.Result, &res)
+	if err != nil {
 		t.Fatalf("unmarshal session/new result: %v", err)
 	}
+
 	if res.SessionID == "" {
 		t.Errorf("sessionId empty; want a non-empty session id")
 	}
@@ -223,9 +256,11 @@ func TestSessionPromptStreamsUpdate(t *testing.T) {
 	h.readFrame(t)
 	h.send(t, newRequest(1, "session/new", map[string]any{"cwd": "/tmp", "mcpServers": []any{}}))
 	snew := h.readFrame(t)
+
 	var sres struct {
 		SessionID string `json:"sessionId"`
 	}
+
 	_ = json.Unmarshal(snew.Result, &sres)
 
 	h.send(t, newRequest(2, "session/prompt", map[string]any{
@@ -236,43 +271,57 @@ func TestSessionPromptStreamsUpdate(t *testing.T) {
 	// Collect frames until the session/prompt response (id=2) arrives. At least
 	// one must be a session/update notification.
 	gotUpdate := false
+
 	var promptResp *Message
-	for i := 0; i < 8; i++ {
+
+	for i := range 8 {
 		msg, err := readFrame(h.cbr)
 		if err != nil {
 			t.Fatalf("client readFrame[%d]: %v", i, err)
 		}
+
 		if msg.Method == "session/update" {
 			if msg.ID != nil {
 				t.Errorf("session/update carried an id (%v); notifications carry no id", *msg.ID)
 			}
+
 			var params struct {
 				Update struct {
-					SessionUpdate string                 `json:"sessionUpdate"`
-					Content       map[string]any         `json:"content,omitempty"`
+					SessionUpdate string         `json:"sessionUpdate"`
+					Content       map[string]any `json:"content,omitempty"`
 				} `json:"update"`
 			}
+
 			_ = json.Unmarshal(msg.Params, &params)
+
 			if params.Update.SessionUpdate != "agent_message_chunk" {
 				t.Errorf("first sessionUpdate = %q; want agent_message_chunk", params.Update.SessionUpdate)
 			}
+
 			gotUpdate = true
 		}
+
 		if msg.ID != nil && *msg.ID == 2 {
 			promptResp = msg
+
 			break
 		}
 	}
+
 	if !gotUpdate {
 		t.Error("no session/update notification observed before the session/prompt response (ACP-04)")
 	}
+
 	if promptResp == nil {
 		t.Fatal("session/prompt response (id=2) never arrived")
 	}
+
 	var pres struct {
 		StopReason string `json:"stopReason"`
 	}
+
 	_ = json.Unmarshal(promptResp.Result, &pres)
+
 	if pres.StopReason != "end_turn" {
 		t.Errorf("stopReason = %q; want end_turn", pres.StopReason)
 	}
@@ -288,9 +337,11 @@ func TestSessionCancelProducesNoResponse(t *testing.T) {
 	h.readFrame(t)
 	h.send(t, newRequest(1, "session/new", map[string]any{"cwd": "/tmp", "mcpServers": []any{}}))
 	snew := h.readFrame(t)
+
 	var sres struct {
 		SessionID string `json:"sessionId"`
 	}
+
 	_ = json.Unmarshal(snew.Result, &sres)
 
 	// Send cancel BEFORE prompt so the turn has a cancel func registered but we
@@ -306,25 +357,31 @@ func TestSessionCancelProducesNoResponse(t *testing.T) {
 	// the chunk(s) + the prompt response (cancelled), and crucially no frame
 	// whose id points at a cancel response (cancel has no id).
 	cancelResponseSeen := false
+
 	promptDone := false
 	for i := 0; i < 8 && !promptDone; i++ {
 		msg, err := readFrame(h.cbr)
 		if err != nil {
 			break
 		}
+
 		if msg.Method == "session/cancel" && msg.ID != nil {
 			cancelResponseSeen = true
 		}
+
 		if msg.ID != nil && *msg.ID == 2 {
 			var pres struct {
 				StopReason string `json:"stopReason"`
 			}
+
 			_ = json.Unmarshal(msg.Result, &pres)
+
 			if pres.StopReason == "cancelled" || pres.StopReason == "end_turn" {
 				promptDone = true
 			}
 		}
 	}
+
 	if cancelResponseSeen {
 		t.Error("session/cancel produced a response frame; notifications get no response")
 	}
@@ -338,31 +395,40 @@ func TestStdoutClean(t *testing.T) {
 	// Capture the server's stdout into a buffer instead of a pipe so we can
 	// inspect every byte after the round-trip.
 	var stdout bytesAccumulator
+
 	srvInR, cliW := io.Pipe()
 	stderr := &strings.Builder{}
 	srv := NewServer(srvInR, &stdout, stderr, WithTurnRunner(stub))
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
+
 	go func() { _ = srv.Serve(ctx); close(done) }()
+
 	defer func() {
 		cancel()
+
 		_ = cliW.Close()
+
 		<-done
 	}()
 
 	cliW.Write(mustFrame(t, newRequest(0, "initialize", map[string]any{"protocolVersion": 1})))
 	time.Sleep(100 * time.Millisecond)
 	cancel()
+
 	_ = cliW.Close()
+
 	<-done
 
 	out := stdout.String()
 	if len(out) == 0 {
 		t.Fatal("no bytes on stdout; expected the initialize response frame")
 	}
+
 	for i, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
 		var m Message
-		if err := json.Unmarshal([]byte(line), &m); err != nil {
+		err := json.Unmarshal([]byte(line), &m)
+		if err != nil {
 			t.Errorf("stdout line %d is not a valid JSON frame: %v (line=%q)", i, err, line)
 		}
 	}
@@ -378,22 +444,28 @@ type bytesAccumulator struct {
 func (b *bytesAccumulator) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
 	b.buf = append(b.buf, p...)
+
 	return len(p), nil
 }
 
 func (b *bytesAccumulator) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
 	return string(b.buf)
 }
 
 func mustFrame(t *testing.T, msg Message) []byte {
 	t.Helper()
+
 	var sb strings.Builder
-	if err := writeFrame(&sb, msg); err != nil {
+	err := writeFrame(&sb, msg)
+	if err != nil {
 		t.Fatalf("writeFrame: %v", err)
 	}
+
 	return []byte(sb.String())
 }
 
@@ -408,22 +480,28 @@ func TestMalformedFrameContinues(t *testing.T) {
 	h.send(t, newRequest(0, "initialize", map[string]any{"protocolVersion": 1}))
 
 	gotParseError := false
+
 	gotInit := false
-	for i := 0; i < 6 && !(gotParseError && gotInit); i++ {
+
+	for i := 0; i < 6 && (!gotParseError || !gotInit); i++ {
 		msg, err := readFrame(h.cbr)
 		if err != nil {
 			t.Fatalf("client readFrame[%d]: %v", i, err)
 		}
+
 		if msg.Error != nil && msg.Error.Code == CodeParseError {
 			gotParseError = true
 		}
+
 		if msg.ID != nil && *msg.ID == 0 && msg.Result != nil {
 			gotInit = true
 		}
 	}
+
 	if !gotParseError {
 		t.Error("no -32700 parse-error response for the malformed frame")
 	}
+
 	if !gotInit {
 		t.Error("server did not keep reading after the malformed frame (initialize response missing)")
 	}
@@ -447,23 +525,30 @@ func TestErrorResponseShape(t *testing.T) {
 	h.readFrame(t)
 	// session/load must be a -32601 method-not-supported error (D-09 no-op).
 	h.send(t, newRequest(2, "session/load", map[string]any{"sessionId": "x"}))
+
 	var loadResp *Message
-	for i := 0; i < 6; i++ {
+
+	for i := range 6 {
 		msg, err := readFrame(h.cbr)
 		if err != nil {
 			t.Fatalf("readFrame[%d]: %v", i, err)
 		}
+
 		if msg.ID != nil && *msg.ID == 2 {
 			loadResp = msg
+
 			break
 		}
 	}
+
 	if loadResp == nil {
 		t.Fatal("session/load response never arrived")
 	}
+
 	if loadResp.Error == nil {
 		t.Fatal("session/load returned a result; want a -32601 error (D-09 no-op)")
 	}
+
 	if loadResp.Error.Code != CodeMethodNotFound {
 		t.Errorf("session/load error code = %d; want -32601 (method not found)", loadResp.Error.Code)
 	}

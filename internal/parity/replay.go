@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 )
 
@@ -47,43 +48,56 @@ func ExtractTurnsFromRollout(path string) ([]CapturedTurn, error) {
 	defer f.Close()
 
 	var turns []CapturedTurn
+
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
+
 	lineIdx := 0
 	for scanner.Scan() {
 		lineIdx++
+
 		raw := scanner.Bytes()
 		if len(strings.TrimSpace(string(raw))) == 0 {
 			continue
 		}
+
 		var rl rolloutLine
-		if err := json.Unmarshal(raw, &rl); err != nil {
+		err := json.Unmarshal(raw, &rl)
+		if err != nil {
 			continue // skip non-model_io / unparseable lines
 		}
+
 		if rl.Type != "model_io" {
 			continue
 		}
+
 		prompt := lastUserPrompt(rl.Request.Messages)
 		if prompt == "" {
 			continue // no user prompt to replay against
 		}
+
 		tc := make([]ToolCall, 0, len(rl.Response.ToolCalls))
+
 		for _, c := range rl.Response.ToolCalls {
 			input := c.Input
 			if len(input) == 0 {
 				input = json.RawMessage("{}")
 			}
+
 			tc = append(tc, ToolCall{Name: c.Name, Input: input})
 		}
+
 		turns = append(turns, CapturedTurn{
 			TurnID:            orDefault(rl.TurnID, fmt.Sprintf("line-%d", lineIdx)),
 			Prompt:            prompt,
 			ExpectedToolCalls: tc,
 		})
 	}
+
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("scan rollout: %w", err)
 	}
+
 	return turns, nil
 }
 
@@ -93,10 +107,12 @@ func LoadReplaySession(jsonPath string) ([]CapturedTurn, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	var turns []CapturedTurn
 	if err := json.Unmarshal(raw, &turns); err != nil {
 		return nil, fmt.Errorf("parse replay session: %w", err)
 	}
+
 	return turns, nil
 }
 
@@ -106,12 +122,14 @@ func lastUserPrompt(msgs []struct {
 	Role    string          `json:"role"`
 	Content json.RawMessage `json:"content"`
 }) string {
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if msgs[i].Role != "user" {
+	for _, v := range slices.Backward(msgs) {
+		if v.Role != "user" {
 			continue
 		}
-		return contentToString(msgs[i].Content)
+
+		return contentToString(v.Content)
 	}
+
 	return ""
 }
 
@@ -126,15 +144,19 @@ func contentToString(raw json.RawMessage) string {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	}
+
 	if json.Unmarshal(raw, &blocks) == nil {
 		var b strings.Builder
+
 		for _, blk := range blocks {
 			if blk.Type == "text" || blk.Type == "" {
 				b.WriteString(blk.Text)
 			}
 		}
+
 		return b.String()
 	}
+
 	return ""
 }
 
@@ -142,5 +164,6 @@ func orDefault(s, def string) string {
 	if s == "" {
 		return def
 	}
+
 	return s
 }

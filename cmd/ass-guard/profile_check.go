@@ -21,6 +21,7 @@ func newProfileCheckCmd() *cobra.Command {
 		zcodeBin    string
 		profilesDir string
 	)
+
 	cmd := &cobra.Command{
 		Use:          "check <name>",
 		Short:        "diff a fresh capture against the profile's tiered manifest (PROF-04 drift detector)",
@@ -33,6 +34,7 @@ func newProfileCheckCmd() *cobra.Command {
 	cmd.Flags().StringVar(&captureFile, "capture-file", "", "fixture JSON capture (a model_io line) — bypasses the live path")
 	cmd.Flags().StringVar(&zcodeBin, "zcode-bin", "zcode", "zcode binary (live path; operator-gated)")
 	cmd.Flags().StringVar(&profilesDir, "profiles-dir", defaultProfilesDir(), "directory containing profile bundles")
+
 	return cmd
 }
 
@@ -43,6 +45,7 @@ func newProfileCmd() *cobra.Command {
 		Short: "profile operations (drift detection, inspection)",
 	}
 	cmd.AddCommand(newProfileCheckCmd())
+
 	return cmd
 }
 
@@ -51,7 +54,9 @@ func newProfileCmd() *cobra.Command {
 // runs drift.Detect, reporting TIER-1/2 drifts + a structured footer to stderr.
 func runProfileCheck(name, profilesDir, captureFile, zcodeBin string) error {
 	manifestPath := filepath.Join(profilesDir, name, "coverage.yaml")
+
 	manifest, err := profile.LoadCoverage(manifestPath)
+
 	if err != nil {
 		return fmt.Errorf("load coverage manifest %q: %w", manifestPath, err)
 	}
@@ -60,13 +65,16 @@ func runProfileCheck(name, profilesDir, captureFile, zcodeBin string) error {
 	if err != nil {
 		return err
 	}
+
 	captured := extractCaptureCounts(raw)
 
 	drifts := drift.Detect(manifest, captured)
 	reportProfileCheck(name, drifts, len(manifest.Fields))
+
 	if len(drifts) > 0 {
 		return fmt.Errorf("drift detected: %d TIER-1/2 field(s) changed", len(drifts))
 	}
+
 	return nil
 }
 
@@ -78,6 +86,7 @@ func loadCaptureLine(captureFile string) (json.RawMessage, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read capture file: %w", err)
 		}
+
 		return json.RawMessage(raw), nil
 	}
 	// Live path (D-08): a full implementation spawns the zcode binary to produce
@@ -87,15 +96,19 @@ func loadCaptureLine(captureFile string) (json.RawMessage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve home for rollout dir: %w", err)
 	}
+
 	dir := filepath.Join(home, ".zcode", "cli", "rollout")
+
 	stats, err := profile.ScanRolloutDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("scan rollout dir (live path): %w", err)
 	}
+
 	chosen, err := profile.PickRichestMain(stats)
 	if err != nil {
 		return nil, fmt.Errorf("no fresh capture available; pass --capture-file or run zcode to produce a rollout: %w", err)
 	}
+
 	return readFirstLine(chosen.Path)
 }
 
@@ -104,40 +117,52 @@ func loadCaptureLine(captureFile string) (json.RawMessage, error) {
 // header-name sets) pulled out of a model_io JSON line.
 func extractCaptureCounts(raw json.RawMessage) map[string]any {
 	var mio profile.ModelIO
-	if err := json.Unmarshal(raw, &mio); err != nil {
+	err := json.Unmarshal(raw, &mio)
+	if err != nil {
 		return map[string]any{}
 	}
+
 	out := map[string]any{}
+
 	if len(mio.Request.Body.System) > 0 {
 		s := make([]any, len(mio.Request.Body.System))
 		for i, b := range mio.Request.Body.System {
 			s[i] = b
 		}
+
 		out["request.body.system"] = s
 	}
+
 	if len(mio.Request.Body.Tools) > 0 {
 		t := make([]any, len(mio.Request.Body.Tools))
 		for i, d := range mio.Request.Body.Tools {
 			t[i] = d
 		}
+
 		out["request.body.tools"] = t
 	}
+
 	if len(mio.Request.Body.Thinking) > 0 {
 		out["request.body.thinking"] = "present"
 	}
+
 	if len(mio.Request.Body.ToolChoice) > 0 {
 		out["request.body.tool_choice"] = "present"
 	}
+
 	if len(mio.Request.Headers) > 0 {
 		hdrs := map[string]any{}
 		for k, v := range mio.Request.Headers {
 			hdrs[k] = v
 		}
+
 		out["request.headers"] = hdrs
 	}
+
 	if len(mio.Request.Body.Model) > 0 {
 		out["request.body.model"] = string(mio.Request.Body.Model)
 	}
+
 	return out
 }
 
@@ -147,13 +172,16 @@ func reportProfileCheck(profileName string, drifts []drift.Drift, manifestFields
 	fmt.Fprintf(os.Stderr, "profile: %s\n", profileName)
 	fmt.Fprintf(os.Stderr, "manifest_fields: %d\n", manifestFields)
 	fmt.Fprintf(os.Stderr, "drifts: %d\n", len(drifts))
+
 	for _, d := range drifts {
 		fmt.Fprintf(os.Stderr, "  [%s] %s — %s\n", d.Tier, d.FieldPath, d.Reason)
 	}
+
 	status := "no drift"
 	if len(drifts) > 0 {
 		status = "DRIFT"
 	}
+
 	fmt.Fprintf(os.Stderr, "overall_status: %s\n", status)
 }
 
@@ -166,18 +194,23 @@ func readFirstLine(path string) (json.RawMessage, error) {
 	defer f.Close()
 	// Read the whole first line (rollout lines can be large).
 	buf := make([]byte, 0, 4096)
+
 	chunk := make([]byte, 4096)
+
 	for {
 		n, err := f.Read(chunk)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			if chunk[i] == '\n' {
 				return json.RawMessage(buf), nil
 			}
+
 			buf = append(buf, chunk[i])
 		}
+
 		if err != nil {
 			break
 		}
 	}
+
 	return json.RawMessage(buf), nil
 }

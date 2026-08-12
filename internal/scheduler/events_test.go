@@ -35,6 +35,7 @@ func TestCostCeilingWarnKind(t *testing.T) {
 func TestEventsBusRoundTrip(t *testing.T) {
 	bus := event.NewBus()
 	defer bus.Close()
+
 	ch := bus.Subscribe("ProviderFallback", 4)
 
 	pf := ProviderFallback{
@@ -59,6 +60,7 @@ func TestEventsBusRoundTrip(t *testing.T) {
 func TestEventsBusCostCeilingRoundTrip(t *testing.T) {
 	bus := event.NewBus()
 	defer bus.Close()
+
 	ch := bus.Subscribe("CostCeilingWarn", 4)
 
 	cc := CostCeilingWarn{

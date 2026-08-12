@@ -19,9 +19,11 @@ import (
 func sseHandler(frames ...string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "text/event-stream")
+
 		flusher, _ := w.(http.Flusher)
 		for _, f := range frames {
 			fmt.Fprintf(w, "data: %s\n\n", f)
+
 			if flusher != nil {
 				flusher.Flush()
 			}
@@ -33,17 +35,22 @@ func sseHandler(frames ...string) http.HandlerFunc {
 // the channel doesn't close within the timeout.
 func readAllChunks(t *testing.T, ch <-chan provider.StreamChunk) []provider.StreamChunk {
 	t.Helper()
+
 	var out []provider.StreamChunk
+
 	deadline := time.After(3 * time.Second)
+
 	for {
 		select {
 		case c, ok := <-ch:
 			if !ok {
 				return out
 			}
+
 			out = append(out, c)
 		case <-deadline:
 			t.Fatalf("stream channel did not close within 3s; got %d chunks", len(out))
+
 			return out
 		}
 	}
@@ -66,15 +73,20 @@ func TestStream_EmitsTextChunks(t *testing.T) {
 		provider.WithAnthropicAPIKey("test-key"),
 		provider.WithAnthropicBaseURL(srv.URL),
 	)
+
 	ch, err := p.Stream(context.Background(), prof, []shaper.Message{{Role: "user", Content: "hi"}})
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
+
 	chunks := readAllChunks(t, ch)
 
-	var text string
-	var finish string
-	var sawUsage bool
+	var (
+		text     string
+		finish   string
+		sawUsage bool
+	)
+
 	for _, c := range chunks {
 		switch c.Type {
 		case "text":
@@ -85,12 +97,15 @@ func TestStream_EmitsTextChunks(t *testing.T) {
 			finish = c.FinishReason
 		}
 	}
+
 	if text != "Hello world" {
 		t.Errorf("streamed text = %q; want %q", text, "Hello world")
 	}
+
 	if finish != "end_turn" {
 		t.Errorf("FinishReason = %q; want end_turn", finish)
 	}
+
 	if !sawUsage {
 		t.Error("no usage chunk observed")
 	}
@@ -113,28 +128,37 @@ func TestStream_ToolUse(t *testing.T) {
 		provider.WithAnthropicAPIKey("test-key"),
 		provider.WithAnthropicBaseURL(srv.URL),
 	)
+
 	ch, err := p.Stream(context.Background(), prof, []shaper.Message{{Role: "user", Content: "run ls"}})
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
+
 	chunks := readAllChunks(t, ch)
 
-	var finish string
-	var toolCall *provider.ToolCall
+	var (
+		finish   string
+		toolCall *provider.ToolCall
+	)
+
 	for _, c := range chunks {
 		if c.Type == "tool_use" && c.ToolCall != nil {
 			toolCall = c.ToolCall
 		}
+
 		if c.Type == "done" {
 			finish = c.FinishReason
 		}
 	}
+
 	if toolCall == nil {
 		t.Fatal("no tool_use chunk with a populated ToolCall")
 	}
+
 	if toolCall.Name != "Bash" {
 		t.Errorf("ToolCall.Name = %q; want Bash", toolCall.Name)
 	}
+
 	if finish != "tool_use" {
 		t.Errorf("FinishReason = %q; want tool_use", finish)
 	}
@@ -148,6 +172,7 @@ func TestStream_RespectsCancel(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		flusher, _ := w.(http.Flusher)
 		fmt.Fprintf(w, "data: %s\n\n", `{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"first"}}`)
+
 		if flusher != nil {
 			flusher.Flush()
 		}
@@ -162,6 +187,7 @@ func TestStream_RespectsCancel(t *testing.T) {
 		provider.WithAnthropicBaseURL(srv.URL),
 	)
 	ctx, cancel := context.WithCancel(context.Background())
+
 	ch, err := p.Stream(ctx, prof, []shaper.Message{{Role: "user", Content: "hi"}})
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
@@ -176,6 +202,7 @@ func TestStream_RespectsCancel(t *testing.T) {
 	}
 	// Channel must close promptly after cancel.
 	deadline := time.After(2 * time.Second)
+
 	for {
 		select {
 		case _, ok := <-ch:
@@ -196,6 +223,7 @@ func TestStream_NoAPIKey(t *testing.T) {
 	p := provider.NewAnthropicProvider(shaper.New(),
 		provider.WithAnthropicBaseURL("http://must-not-be-called.invalid"),
 	)
+
 	_, err := p.Stream(context.Background(), prof, []shaper.Message{{Role: "user", Content: "x"}})
 	if err == nil {
 		t.Fatal("Stream returned nil error with no API key; want non-nil")

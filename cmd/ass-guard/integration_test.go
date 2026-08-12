@@ -32,6 +32,7 @@ func (m *mockStreamProvider) Stream(ctx context.Context, _ profile.Profile, _ []
 	ch := make(chan provider.StreamChunk, 8)
 	go func() {
 		defer close(ch)
+
 		for _, c := range m.chunks {
 			select {
 			case ch <- provider.StreamChunk{Type: "text", Text: c}:
@@ -39,11 +40,13 @@ func (m *mockStreamProvider) Stream(ctx context.Context, _ profile.Profile, _ []
 				return
 			}
 		}
+
 		select {
 		case ch <- provider.StreamChunk{Type: "done", FinishReason: m.finish}:
 		case <-ctx.Done():
 		}
 	}()
+
 	return ch, nil
 }
 
@@ -55,13 +58,14 @@ func (m *mockStreamProvider) ToolResultMessage(string, json.RawMessage) (json.Ra
 // ends. The test writes client frames to cliW and reads from cliR.
 func driveACP(t *testing.T, mp provider.Provider) (cliW *io.PipeWriter, cliR io.Reader, stop func()) {
 	t.Helper()
+
 	bus := event.NewBus()
 	prof := profile.Profile{Name: "test", System: []profile.TextBlock{{Type: "text", Text: "test agent"}}}
 	runner := &sessionTurnRunner{
-		bus:      bus,
-		profile:  prof,
-		workDir:  t.TempDir(),
-		maxConc:  2,
+		bus:          bus,
+		profile:      prof,
+		workDir:      t.TempDir(),
+		maxConc:      2,
 		makeProvider: func() provider.Provider { return mp },
 	}
 	srvInR, cliW := io.Pipe()
@@ -69,28 +73,36 @@ func driveACP(t *testing.T, mp provider.Provider) (cliW *io.PipeWriter, cliR io.
 	srv := acp.NewServer(srvInR, srvOutW, &bytes.Buffer{}, acp.WithTurnRunner(runner))
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
+
 	go func() { _ = srv.Serve(ctx); close(done) }()
+
 	stop = func() {
 		cancel()
+
 		_ = cliW.Close()
 		_ = srvOutW.Close()
 		_ = srvInR.Close()
+
 		select {
 		case <-done:
 		case <-time.After(2 * time.Second):
 			t.Errorf("server did not exit")
 		}
 	}
+
 	return cliW, cliR, stop
 }
 
 // sendFrame writes one ACP frame to w.
 func sendFrame(t *testing.T, w io.Writer, m acp.Message) {
 	t.Helper()
+
 	var buf bytes.Buffer
-	if err := writeFrameDirect(&buf, m); err != nil {
+	err := writeFrameDirect(&buf, m)
+	if err != nil {
 		t.Fatalf("writeFrame: %v", err)
 	}
+
 	_, _ = w.Write(buf.Bytes())
 }
 
@@ -101,36 +113,47 @@ func writeFrameDirect(buf *bytes.Buffer, m acp.Message) error {
 	if err != nil {
 		return err
 	}
+
 	buf.Write(raw)
 	buf.WriteByte('\n')
+
 	return nil
 }
 
 // readFrames reads up to n frames from cliR, returning them.
 func readFrames(t *testing.T, cliR io.Reader, n int) []*acp.Message {
 	t.Helper()
+
 	br := bufio.NewReader(cliR)
+
 	var out []*acp.Message
+
 	deadline := time.After(3 * time.Second)
+
 	for len(out) < n {
 		select {
 		default:
 		case <-deadline:
 			return out
 		}
+
 		line, err := br.ReadBytes('\n')
 		if len(line) == 0 && err != nil {
 			return out
 		}
+
 		line = bytes.TrimRight(line, "\n")
 		if len(line) == 0 {
 			continue
 		}
+
 		var m acp.Message
-		if jerr := json.Unmarshal(line, &m); jerr == nil {
+		jerr := json.Unmarshal(line, &m)
+		if jerr == nil {
 			out = append(out, &m)
 		}
 	}
+
 	return out
 }
 
@@ -140,23 +163,30 @@ func readFrames(t *testing.T, cliR io.Reader, n int) []*acp.Message {
 // stopReason response. NO full-turn buffering (ACP-04).
 func TestIntegration_RealStreamingThroughACP(t *testing.T) {
 	mp := &mockStreamProvider{chunks: []string{"Hello", " ", "world"}, finish: "end_turn"}
+
 	cliW, cliR, stop := driveACP(t, mp)
 	defer stop()
 
 	sendFrame(t, cliW, acp.Message{JSONRPC: "2.0", ID: intPtrACP(0), Method: "initialize", Params: rawJSON(map[string]any{"protocolVersion": 1})})
+
 	frames := readFrames(t, cliR, 1)
 	if len(frames) == 0 || !strings.Contains(string(frames[0].Result), "agentCapabilities") {
 		t.Fatalf("no initialize response with agentCapabilities: %+v", frames)
 	}
+
 	sendFrame(t, cliW, acp.Message{JSONRPC: "2.0", ID: intPtrACP(1), Method: "session/new", Params: rawJSON(map[string]any{"cwd": "/tmp", "mcpServers": []any{}})})
 	frames = readFrames(t, cliR, 1)
+
 	var snew struct {
 		SessionID string `json:"sessionId"`
 	}
+
 	_ = json.Unmarshal(frames[0].Result, &snew)
+
 	if snew.SessionID == "" {
 		t.Fatalf("no sessionId in session/new response: %+v", frames)
 	}
+
 	sendFrame(t, cliW, acp.Message{JSONRPC: "2.0", ID: intPtrACP(2), Method: "session/prompt", Params: rawJSON(map[string]any{
 		"sessionId": snew.SessionID,
 		"prompt":    []map[string]any{{"type": "text", "text": "hi"}},
@@ -165,6 +195,7 @@ func TestIntegration_RealStreamingThroughACP(t *testing.T) {
 	// Collect frames: expect ≥1 session/update (agent_message_chunk) + the prompt response.
 	br := bufio.NewReader(cliR)
 	chunks := 0
+
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		line, err := br.ReadBytes('\n')
@@ -172,29 +203,38 @@ func TestIntegration_RealStreamingThroughACP(t *testing.T) {
 			if err != nil {
 				break
 			}
+
 			continue
 		}
+
 		var m acp.Message
 		if json.Unmarshal(bytes.TrimRight(line, "\n"), &m) != nil {
 			continue
 		}
+
 		if m.Method == "session/update" {
 			chunks++
 		}
+
 		if m.ID != nil && *m.ID == 2 {
 			var pres struct {
 				StopReason string `json:"stopReason"`
 			}
+
 			_ = json.Unmarshal(m.Result, &pres)
+
 			if pres.StopReason != "end_turn" {
 				t.Errorf("stopReason = %q; want end_turn", pres.StopReason)
 			}
+
 			if chunks == 0 {
 				t.Error("session/prompt response arrived with NO preceding session/update (ACP-04 streaming)")
 			}
+
 			return
 		}
 	}
+
 	t.Fatalf("never saw the session/prompt response (chunks=%d)", chunks)
 }
 
@@ -202,15 +242,19 @@ func TestIntegration_RealStreamingThroughACP(t *testing.T) {
 // (D-09 — NO replay in v1).
 func TestIntegration_SessionLoadNoOp(t *testing.T) {
 	mp := &mockStreamProvider{finish: "end_turn"}
+
 	cliW, cliR, stop := driveACP(t, mp)
 	defer stop()
+
 	sendFrame(t, cliW, acp.Message{JSONRPC: "2.0", ID: intPtrACP(0), Method: "initialize", Params: rawJSON(map[string]any{"protocolVersion": 1})})
 	readFrames(t, cliR, 1)
 	sendFrame(t, cliW, acp.Message{JSONRPC: "2.0", ID: intPtrACP(1), Method: "session/load", Params: rawJSON(map[string]any{"sessionId": "x"})})
+
 	frames := readFrames(t, cliR, 1)
 	if len(frames) == 0 || frames[0].Error == nil {
 		t.Fatalf("session/load did not return an error: %+v", frames)
 	}
+
 	if frames[0].Error.Code != -32601 {
 		t.Errorf("session/load error code = %d; want -32601 (D-09)", frames[0].Error.Code)
 	}
@@ -219,6 +263,7 @@ func TestIntegration_SessionLoadNoOp(t *testing.T) {
 // rawJSON marshals m to json.RawMessage.
 func rawJSON(m map[string]any) json.RawMessage {
 	b, _ := json.Marshal(m)
+
 	return b
 }
 

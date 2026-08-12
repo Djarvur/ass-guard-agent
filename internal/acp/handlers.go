@@ -61,14 +61,18 @@ func (s *Server) handleSessionNew(ctx context.Context, params json.RawMessage, m
 		Cwd        string `json:"cwd"`
 		McpServers []any  `json:"mcpServers"`
 	}
+
 	if len(params) > 0 {
 		_ = json.Unmarshal(params, &p)
 	}
+
 	id := newSessionID()
 	st := &sessionState{id: id}
+
 	s.mu.Lock()
 	s.sessions[id] = st
 	s.mu.Unlock()
+
 	return sessionNewResult{SessionID: id}, nil
 }
 
@@ -93,21 +97,27 @@ func (s *Server) handleSessionPrompt(ctx context.Context, params json.RawMessage
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, fmt.Errorf("session/prompt params: %w", err)
 	}
+
 	if p.SessionID == "" {
 		return nil, errors.New("session/prompt: missing sessionId")
 	}
+
 	s.mu.Lock()
 	st, ok := s.sessions[p.SessionID]
 	s.mu.Unlock()
+
 	if !ok {
 		return nil, fmt.Errorf("session/prompt: unknown sessionId %q", p.SessionID)
 	}
 
 	turnCtx, cancel := context.WithCancel(ctx)
+
 	st.setCancel(cancel)
+
 	defer st.setCancel(nil)
 
 	emit := &adapter{out: s.out, sessionID: p.SessionID}
+
 	stopReason, err := s.turnRunner.Run(turnCtx, p.SessionID, emit, p.Prompt)
 	if err != nil {
 		// D-16: if the turn was cancelled, report stopReason "cancelled" rather
@@ -115,11 +125,14 @@ func (s *Server) handleSessionPrompt(ctx context.Context, params json.RawMessage
 		if errors.Is(turnCtx.Err(), context.Canceled) {
 			return sessionPromptResult{StopReason: "cancelled"}, nil
 		}
+
 		return nil, err
 	}
+
 	if stopReason == "" {
 		stopReason = "end_turn"
 	}
+
 	return sessionPromptResult{StopReason: stopReason}, nil
 }
 
@@ -131,20 +144,26 @@ func (s *Server) handleSessionCancel(ctx context.Context, params json.RawMessage
 	var p struct {
 		SessionID string `json:"sessionId"`
 	}
+
 	if len(params) > 0 {
 		_ = json.Unmarshal(params, &p)
 	}
+
 	if p.SessionID == "" {
 		// No id to respond to anyway (notification); log and return.
 		return nil, nil
 	}
+
 	s.mu.Lock()
 	st, ok := s.sessions[p.SessionID]
 	s.mu.Unlock()
+
 	if !ok {
 		return nil, nil
 	}
+
 	st.cancelTurn()
+
 	return nil, nil
 }
 
@@ -163,14 +182,17 @@ func (s *Server) handleLogout(ctx context.Context, params json.RawMessage, msg M
 	var p struct {
 		SessionID string `json:"sessionId"`
 	}
+
 	if len(params) > 0 {
 		_ = json.Unmarshal(params, &p)
 	}
+
 	if p.SessionID != "" {
 		s.mu.Lock()
 		delete(s.sessions, p.SessionID)
 		s.mu.Unlock()
 	}
+
 	return map[string]any{}, nil
 }
 
@@ -179,6 +201,7 @@ func (s *Server) handleLogout(ctx context.Context, params json.RawMessage, msg M
 // future plan-mode / act-mode split).
 func (s *Server) handleSessionSetMode(ctx context.Context, params json.RawMessage, msg Message) (any, error) {
 	_ = redact.ScrubError(nil) // keep redact import live for future scrubbing here
+
 	return map[string]any{}, nil
 }
 
@@ -190,7 +213,9 @@ func newSessionID() string {
 	if _, err := rand.Read(b[:]); err != nil {
 		panic("crypto/rand failed: " + err.Error())
 	}
+
 	b[6] = (b[6] & 0x0f) | 0x40
 	b[8] = (b[8] & 0x3f) | 0x80
+
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }

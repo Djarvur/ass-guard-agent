@@ -23,18 +23,21 @@ type safeBuffer struct {
 func (s *safeBuffer) Write(p []byte) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	return s.buf.Write(p)
 }
 
 func (s *safeBuffer) String() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	return s.buf.String()
 }
 
 func (s *safeBuffer) Len() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	return s.buf.Len()
 }
 
@@ -55,13 +58,16 @@ func TestAuditLogger_RedactsSecrets(t *testing.T) {
 	for time.Now().Before(deadline) && sink.Len() == 0 {
 		time.Sleep(5 * time.Millisecond)
 	}
+
 	out := sink.String()
 	if !strings.Contains(out, `[REDACTED]`) {
 		t.Errorf("audit line did not redact the auth token:\n%s", out)
 	}
+
 	if strings.Contains(out, "sk-secret-xyz") {
 		t.Errorf("audit line leaked the secret token:\n%s", out)
 	}
+
 	if !strings.Contains(out, "authorization") {
 		t.Error("audit line dropped the field NAME (must preserve names)")
 	}
@@ -71,10 +77,12 @@ func TestAuditLogger_RedactsSecrets(t *testing.T) {
 // audit sink must never be stdout.
 func TestAuditLogger_RejectsStdout(t *testing.T) {
 	b := event.NewBus()
+
 	defer func() {
 		if r := recover(); r == nil {
 			t.Error("NewAuditLogger with os.Stdout did not panic; want transport-discipline panic")
 		}
 	}()
+
 	audit.NewAuditLogger(b, os.Stdout)
 }

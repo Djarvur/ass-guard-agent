@@ -76,7 +76,9 @@ func TestCapabilityNoCandidateReturnsError(t *testing.T) {
 	r := NewResolver(cfg)
 	_, _, err := r.Resolve("heavy", "", time.Now(), CapabilityReq{NeedsTools: true})
 	require.Error(t, err)
+
 	var cerr *CapabilityError
+
 	require.ErrorAs(t, err, &cerr)
 	require.Contains(t, cerr.Requirement, "tool_calling")
 	require.ElementsMatch(t, []string{"a", "b"}, cerr.Candidates)
@@ -90,8 +92,8 @@ func TestCapabilityPreservesFallbackOrder(t *testing.T) {
 	cfg := &Config{
 		Providers: map[string]ProviderConfig{"p": {BaseURL: "x", Shape: "anthropic"}},
 		Models: map[string]ModelConfig{
-			"nope1":    {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, ToolCalling: false}},
-			"yes-first": {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, ToolCalling: true}},
+			"nope1":      {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, ToolCalling: false}},
+			"yes-first":  {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, ToolCalling: true}},
 			"yes-second": {Provider: "p", Capabilities: CapabilityProfile{ContextWindow: 100, ToolCalling: true}},
 		},
 		Tiers: map[string]TierBinding{"heavy": {Model: "nope1", Fallback: []string{"yes-first", "yes-second"}}},

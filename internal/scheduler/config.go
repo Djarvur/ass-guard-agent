@@ -32,9 +32,9 @@ type ProviderConfig struct {
 // (D-09) + pricing (D-08). The map key in Config.Models is the model slug
 // referenced by tiers/windows/projects/fallbacks.
 type ModelConfig struct {
-	Provider     string             `yaml:"provider"`
-	Pricing      Pricing            `yaml:"pricing"`
-	Capabilities CapabilityProfile  `yaml:"capabilities"`
+	Provider     string            `yaml:"provider"`
+	Pricing      Pricing           `yaml:"pricing"`
+	Capabilities CapabilityProfile `yaml:"capabilities"`
 }
 
 // Pricing is the per-model USD-per-1M-tokens rate (D-08). The cost tracker
@@ -128,6 +128,6 @@ type Target struct {
 // primary regardless of its capabilities (the gate is opt-in per turn).
 type CapabilityReq struct {
 	NeedsTools     bool
-	NeedsStreaming  bool
+	NeedsStreaming bool
 	NeedsThinking  bool
 }

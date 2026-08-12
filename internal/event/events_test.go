@@ -27,15 +27,19 @@ func TestHookProgressKind(t *testing.T) {
 // TestPhase4EventsImplementInterface is a compile-time assertion that both new
 // Phase-4 event types satisfy the event.Event interface (Kind() string).
 func TestPhase4EventsImplementInterface(t *testing.T) {
-	var _ event.Event = event.EngineDecision{}
-	var _ event.Event = event.HookProgress{}
+	var (
+		_ event.Event = event.EngineDecision{}
+		_ event.Event = event.HookProgress{}
+	)
 	// Value-receiver kinds: a zero value reports its kind (guards against an
 	// accidental pointer-receiver change that would break the bus fan-out).
 	dec := event.EngineDecision{}
 	hook := event.HookProgress{}
+
 	if dec.Kind() != "EngineDecision" {
 		t.Fatalf("zero EngineDecision.Kind() = %q; want EngineDecision", dec.Kind())
 	}
+
 	if hook.Kind() != "HookProgress" {
 		t.Fatalf("zero HookProgress.Kind() = %q; want HookProgress", hook.Kind())
 	}
@@ -48,6 +52,7 @@ func TestPhase4BufferConstsPositive(t *testing.T) {
 	if event.BufEngineDecision <= 0 {
 		t.Errorf("BufEngineDecision = %d; want > 0", event.BufEngineDecision)
 	}
+
 	if event.BufHookProgress <= 0 {
 		t.Errorf("BufHookProgress = %d; want > 0", event.BufHookProgress)
 	}

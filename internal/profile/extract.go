@@ -3,6 +3,7 @@ package profile
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -82,8 +83,10 @@ func ExtractFromRollout(path string) (ExtractResult, error) {
 	}
 	defer f.Close()
 
-	var firstFull *ModelIO
-	var firstFile string
+	var (
+		firstFull *ModelIO
+		firstFile string
+	)
 	// Stability signatures built from the first full line; later lines must agree.
 	firstSysCount := -1
 	firstToolNames := map[string]struct{}{}
@@ -92,17 +95,22 @@ func ExtractFromRollout(path string) (ExtractResult, error) {
 	scanner := bufio.NewScanner(f)
 	// Rollout lines can be large (system prompts + tool schemas per line); raise the buffer.
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
+
 	lineIdx := 0
 	for scanner.Scan() {
 		lineIdx++
+
 		raw := scanner.Bytes()
 		if len(strings.TrimSpace(string(raw))) == 0 {
 			continue
 		}
+
 		var mio ModelIO
-		if err := json.Unmarshal(raw, &mio); err != nil {
+		err := json.Unmarshal(raw, &mio)
+		if err != nil {
 			return ExtractResult{}, fmt.Errorf("line %d: parse: %w", lineIdx, err)
 		}
+
 		if !isFullRequest(mio) {
 			continue
 		}
@@ -110,25 +118,31 @@ func ExtractFromRollout(path string) (ExtractResult, error) {
 		if firstFull == nil {
 			firstFull = &mio
 			firstFile = path
+
 			firstSysCount = len(mio.Request.Body.System)
 			for _, t := range mio.Request.Body.Tools {
 				if t.Name != "" {
 					firstToolNames[t.Name] = struct{}{}
 				}
 			}
+
 			for k := range mio.Request.Headers {
 				firstHeaderNames = append(firstHeaderNames, k)
 			}
+
 			sort.Strings(firstHeaderNames)
 		} else {
-			if err := assertStable(firstSysCount, firstToolNames, firstHeaderNames, mio); err != nil {
+			err := assertStable(firstSysCount, firstToolNames, firstHeaderNames, mio)
+			if err != nil {
 				return ExtractResult{}, fmt.Errorf("line %d: within-session stability: %w", lineIdx, err)
 			}
 		}
 	}
+
 	if err := scanner.Err(); err != nil {
 		return ExtractResult{}, fmt.Errorf("scan rollout: %w", err)
 	}
+
 	if firstFull == nil {
 		return ExtractResult{}, fmt.Errorf("no full-request lines (system+tools) found in %s", firstFile)
 	}
@@ -144,29 +158,38 @@ func assertStable(sysCount int, toolNames map[string]struct{}, headerNames []str
 	if len(m.Request.Body.System) != sysCount {
 		return fmt.Errorf("system block count drift: %d -> %d", sysCount, len(m.Request.Body.System))
 	}
+
 	seen := map[string]struct{}{}
+
 	for _, t := range m.Request.Body.Tools {
 		if t.Name == "" {
 			continue
 		}
+
 		seen[t.Name] = struct{}{}
 	}
+
 	if len(seen) != len(toolNames) {
 		return fmt.Errorf("tool-name set drift: %d -> %d", len(toolNames), len(seen))
 	}
+
 	for n := range seen {
 		if _, ok := toolNames[n]; !ok {
 			return fmt.Errorf("tool-name set drift: %q not in first-line set", n)
 		}
 	}
+
 	curHeaders := make([]string, 0, len(m.Request.Headers))
 	for k := range m.Request.Headers {
 		curHeaders = append(curHeaders, k)
 	}
+
 	sort.Strings(curHeaders)
+
 	if strings.Join(curHeaders, ",") != strings.Join(headerNames, ",") {
 		return fmt.Errorf("header-name set drift: %v -> %v", headerNames, curHeaders)
 	}
+
 	return nil
 }
 
@@ -181,26 +204,33 @@ func buildResult(m ModelIO, path string) ExtractResult {
 	res.SessionRole = inferRole(path)
 	// Model may be a JSON string or an object; normalize to a bare string.
 	res.Model = string(m.Request.Body.Model)
+
 	res.Model = strings.Trim(res.Model, `"`)
 	for _, b := range m.Request.Body.System {
-		res.System = append(res.System, TextBlock{Type: b.Type, Text: b.Text})
+		res.System = append(res.System, TextBlock(b))
 	}
+
 	for _, t := range m.Request.Body.Tools {
 		if t.Name == "" {
 			continue // filter the null/empty-named edge case
 		}
-		res.Tools = append(res.Tools, Decl{Name: t.Name, Description: t.Description, InputSchema: t.InputSchema})
+
+		res.Tools = append(res.Tools, Decl(t))
 	}
+
 	res.ToolCount = len(res.Tools)
 	// Headers: byte-faithful NAMES, templated VALUES (never stored verbatim — T-01-02).
 	names := make([]string, 0, len(m.Request.Headers))
 	for k := range m.Request.Headers {
 		names = append(names, k)
 	}
+
 	sort.Strings(names)
+
 	for _, n := range names {
 		res.Headers = append(res.Headers, Header{Name: n, ValueTemplate: "<" + strings.ToLower(strings.ReplaceAll(n, "-", "_")) + ">"})
 	}
+
 	return res
 }
 
@@ -213,6 +243,7 @@ func inferRole(path string) string {
 	if strings.Contains(base, "subagent") {
 		return "subagent"
 	}
+
 	return "main"
 }
 
@@ -223,28 +254,35 @@ func ScanRolloutDir(dir string) ([]SessionStat, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read rollout dir: %w", err)
 	}
+
 	var stats []SessionStat
+
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasPrefix(e.Name(), "model-io-sess_") || !strings.HasSuffix(e.Name(), ".jsonl") {
 			continue
 		}
+
 		full := filepath.Join(dir, e.Name())
 		st := SessionStat{Path: full, ID: sessionIDFromName(e.Name()), Role: inferRole(full)}
 		st.FullRequestLines, st.FirstToolCount = countFullRequests(full)
 		stats = append(stats, st)
 	}
+
 	sort.Slice(stats, func(i, j int) bool {
 		// Prefer main sessions with the most full-request lines.
 		if stats[i].Role != stats[j].Role {
 			return stats[i].Role == "main"
 		}
+
 		return stats[i].FullRequestLines > stats[j].FullRequestLines
 	})
+
 	return stats, nil
 }
 
 func sessionIDFromName(name string) string {
 	n := strings.TrimPrefix(name, "model-io-sess_")
+
 	return strings.TrimSuffix(n, ".jsonl")
 }
 
@@ -255,22 +293,28 @@ func countFullRequests(path string) (int, int) {
 		return 0, 0
 	}
 	defer f.Close()
+
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
+
 	full, firstTools := 0, 0
+
 	for scanner.Scan() {
 		var m ModelIO
 		if json.Unmarshal(scanner.Bytes(), &m) != nil {
 			continue
 		}
+
 		if !isFullRequest(m) {
 			continue
 		}
+
 		full++
 		if full == 1 {
 			firstTools = len(m.Request.Body.Tools)
 		}
 	}
+
 	return full, firstTools
 }
 
@@ -278,8 +322,9 @@ func countFullRequests(path string) (int, int) {
 // richest overall if no main session exists. Returns an error if stats is empty.
 func PickRichestMain(stats []SessionStat) (SessionStat, error) {
 	if len(stats) == 0 {
-		return SessionStat{}, fmt.Errorf("no rollout sessions found")
+		return SessionStat{}, errors.New("no rollout sessions found")
 	}
+
 	for _, s := range stats {
 		if s.Role == "main" && s.FullRequestLines > 0 {
 			return s, nil
@@ -291,7 +336,8 @@ func PickRichestMain(stats []SessionStat) (SessionStat, error) {
 			return s, nil
 		}
 	}
-	return SessionStat{}, fmt.Errorf("no session with full-request lines found")
+
+	return SessionStat{}, errors.New("no session with full-request lines found")
 }
 
 // ExtractedAtNow is a tiny helper for timestamping manifests in tests/prod.

@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
@@ -12,7 +11,7 @@ import (
 
 // testdata paths (tests run with cwd = cmd/ass-guard/).
 const (
-	validSchedulingCfg  = "../../internal/scheduler/testdata/valid.yaml"
+	validSchedulingCfg   = "../../internal/scheduler/testdata/valid.yaml"
 	invalidSchedulingCfg = "../../internal/scheduler/testdata/invalid_cap_mismatch.yaml"
 )
 
@@ -20,13 +19,17 @@ const (
 // capturing stdout + stderr. Returns the cobra error (nil on success).
 func runSchedulingCmd(t *testing.T, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
+
 	root := &cobra.Command{Use: "ass-guard", SilenceUsage: true}
 	root.AddCommand(newSchedulingCmd())
 	root.SetArgs(append([]string{"scheduling"}, args...))
+
 	var out, errs bytes.Buffer
+
 	root.SetOut(&out)
 	root.SetErr(&errs)
 	err = root.Execute()
+
 	return out.String(), errs.String(), err
 }
 
@@ -66,6 +69,7 @@ func TestSchedulingResolveJSON(t *testing.T) {
 		Model    string `json:"model"`
 		Shape    string `json:"shape"`
 	}
+
 	require.NoError(t, json.Unmarshal([]byte(stdout), &got))
 	require.Equal(t, "heavy", got.Tier)
 	require.Equal(t, "glm-5.2", got.Model, "Sunday noon resolves the global heavy primary")
@@ -82,8 +86,8 @@ func TestSchedulingResolveHumanGoesToStderr(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, stdout, "human-readable resolve must NOT write to stdout (transport discipline)")
 	require.NotEmpty(t, stderr, "human-readable form goes to stderr")
-	require.True(t, strings.Contains(stderr, "heavy"), "stderr shows the tier")
-	require.True(t, strings.Contains(stderr, "glm-5.2"), "stderr shows the resolved model")
+	require.Contains(t, stderr, "heavy", "stderr shows the tier")
+	require.Contains(t, stderr, "glm-5.2", "stderr shows the resolved model")
 }
 
 // TestSchedulingResolvePeakWindow: resolve at peak time (Monday 10:00 NY)
@@ -95,9 +99,11 @@ func TestSchedulingResolvePeakWindow(t *testing.T) {
 		"--at", "2026-08-10T10:00:00-04:00", // Monday 10:00 NY → peak → minimax-m3
 		"--json")
 	require.NoError(t, err)
+
 	var got struct {
 		Model string `json:"model"`
 	}
+
 	require.NoError(t, json.Unmarshal([]byte(stdout), &got))
 	require.Equal(t, "minimax-m3", got.Model, "peak window heavy pick wins (D-02)")
 }

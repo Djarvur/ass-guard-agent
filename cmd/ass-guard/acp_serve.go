@@ -35,7 +35,7 @@ type serveOptions struct {
 
 // Redact satisfies session.Redactor.
 func (redactorAdapter) Redact(b []byte) ([]byte, error) { return redact.Redact(b) }
-func (redactorAdapter) ScrubError(err error) string      { return redact.ScrubError(err) }
+func (redactorAdapter) ScrubError(err error) string     { return redact.ScrubError(err) }
 
 // newACPCmd builds the `acp` parent command. Today it carries the `serve`
 // subcommand (the IDE entrypoint); future ACP-facing subcommands nest here.
@@ -45,6 +45,7 @@ func newACPCmd() *cobra.Command {
 		Short: "ACP (IDE-native) interface",
 	}
 	cmd.AddCommand(newACPServeCmd())
+
 	return cmd
 }
 
@@ -59,6 +60,7 @@ func newACPServeCmd() *cobra.Command {
 		profilesDir   string
 		workDir       string
 	)
+
 	c := &cobra.Command{
 		Use:   "serve",
 		Short: "Run the ACP v1 server over stdio (the entrypoint Zed spawns)",
@@ -73,8 +75,10 @@ func newACPServeCmd() *cobra.Command {
 			// Transport discipline (Pitfall 1): stdout is reserved EXCLUSIVELY for
 			// ACP frames. All log/diagnostic output goes to stderr.
 			log.SetOutput(os.Stderr)
+
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
+
 			return runACPServe(ctx, os.Stdin, os.Stdout, os.Stderr, serveOptions{
 				Profile:       profile,
 				MaxConcurrent: maxConcurrent,
@@ -87,6 +91,7 @@ func newACPServeCmd() *cobra.Command {
 	c.Flags().IntVar(&maxConcurrent, "max-concurrent", 6, "max concurrent outbound provider calls across parent + subagents (PARA-04)")
 	c.Flags().StringVar(&profilesDir, "profiles-dir", defaultProfilesDir(), "directory containing profile bundles")
 	c.Flags().StringVar(&workDir, "work-dir", "", "working directory for .ass-guard/ transcripts (default: cwd)")
+
 	return c
 }
 
@@ -97,21 +102,24 @@ func newACPServeCmd() *cobra.Command {
 // the ACP adapter as session/update notifications.
 func runACPServe(ctx context.Context, in io.Reader, out, stderr io.Writer, opts serveOptions) error {
 	bus := event.NewBus()
+
 	prof, err := profile.NewLoader(opts.ProfilesDir).Load(opts.Profile)
 	if err != nil {
 		return err
 	}
+
 	runner := &sessionTurnRunner{
-		bus:        bus,
-		profile:    prof,
-		workDir:    opts.WorkDir,
-		maxConc:    opts.MaxConcurrent,
+		bus:         bus,
+		profile:     prof,
+		workDir:     opts.WorkDir,
+		maxConc:     opts.MaxConcurrent,
 		configAdded: opts.ConfigAddedBoundaries,
 		makeProvider: func() provider.Provider {
 			return provider.NewAnthropicProvider(shaper.New())
 		},
 	}
 	srv := acp.NewServer(in, out, stderr, acp.WithTurnRunner(runner))
+
 	return srv.Serve(ctx)
 }
 
@@ -121,11 +129,11 @@ func runACPServe(ctx context.Context, in io.Reader, out, stderr io.Writer, opts 
 // emit → session/update), and calls Session.Prompt. ctx cancellation (from
 // session/cancel) aborts the turn end-to-end (D-16).
 type sessionTurnRunner struct {
-	bus         *event.Bus
-	profile     profile.Profile
-	workDir     string
-	maxConc     int
-	configAdded []string
+	bus          *event.Bus
+	profile      profile.Profile
+	workDir      string
+	maxConc      int
+	configAdded  []string
 	makeProvider func() provider.Provider
 
 	sessions map[string]*session.Session
@@ -139,14 +147,17 @@ func (r *sessionTurnRunner) Run(ctx context.Context, sessionID string, emit acp.
 	ch := r.bus.Subscribe("AgentMessageChunk", event.BufAgentMessageChunk)
 	done := make(chan struct{})
 	promptDone := make(chan struct{})
+
 	go func() {
 		defer func() { done <- struct{}{} }()
+
 		for {
 			select {
 			case e, ok := <-ch:
 				if !ok {
 					return
 				}
+
 				if c, ok := e.(event.AgentMessageChunk); ok {
 					_ = emit.AgentMessageChunk(c.MessageID, c.Content)
 				}
@@ -167,10 +178,13 @@ func (r *sessionTurnRunner) Run(ctx context.Context, sessionID string, emit acp.
 			}
 		}
 	}()
+
 	blocks := toContentBlocks(prompt)
 	stop, err := sess.Prompt(ctx, blocks)
+
 	close(promptDone)
 	<-done
+
 	return stop, err
 }
 
@@ -179,35 +193,41 @@ func (r *sessionTurnRunner) sessionFor(sessionID string) *session.Session {
 	if r.sessions == nil {
 		r.sessions = map[string]*session.Session{}
 	}
+
 	if s, ok := r.sessions[sessionID]; ok {
 		return s
 	}
+
 	dir := r.workDir
 	if dir == "" {
 		dir, _ = os.Getwd()
 	}
+
 	mgr, err := session.NewManager(dir, sessionID, redactorAdapter{})
 	if err != nil {
 		// Fall back to a no-op manager path; the error is surfaced via Prompt.
 		mgr, _ = session.NewManager(filepath.Join(os.TempDir(), "ass-guard"), sessionID, redactorAdapter{})
 	}
+
 	maxConc := r.maxConc
 	if maxConc < 1 {
 		maxConc = provider.DefaultMaxConcurrent
 	}
+
 	s := &session.Session{
-		Manager:   mgr,
-		Projector: session.NewProjector(r.profile, mgr),
-		Provider:  r.makeProvider(),
-		Bus:       r.bus,
-		Semaphore: provider.NewSemaphore(maxConc),
-		Profile:   r.profile,
-		WorkDir:   dir,
-		SessionID: sessionID,
-		Catalog:   toolcat.NewCatalog(),
+		Manager:     mgr,
+		Projector:   session.NewProjector(r.profile, mgr),
+		Provider:    r.makeProvider(),
+		Bus:         r.bus,
+		Semaphore:   provider.NewSemaphore(maxConc),
+		Profile:     r.profile,
+		WorkDir:     dir,
+		SessionID:   sessionID,
+		Catalog:     toolcat.NewCatalog(),
 		ConfigAdded: r.configAdded,
 	}
 	r.sessions[sessionID] = s
+
 	return s
 }
 
@@ -217,6 +237,7 @@ func toContentBlocks(in []acp.ContentBlock) []session.ContentBlock {
 	for i, b := range in {
 		out[i] = session.ContentBlock{Type: b.Type, Text: b.Text}
 	}
+
 	return out
 }
 

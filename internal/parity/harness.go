@@ -42,11 +42,13 @@ func NewHarness() *Harness { return &Harness{} }
 // replay), and records the result.
 func (h *Harness) Run(ctx context.Context, suite []CapturedTurn, arm AssGuardArm) ([]TurnResult, error) {
 	results := make([]TurnResult, 0, len(suite))
+
 	for _, turn := range suite {
 		observed, err := arm.RunTurn(ctx, turn.Prompt)
 		if err != nil {
 			return nil, fmt.Errorf("turn %q: ass-guard arm: %w", turn.TurnID, err)
 		}
+
 		results = append(results, TurnResult{
 			TurnID:        turn.TurnID,
 			Prompt:        turn.Prompt,
@@ -55,6 +57,7 @@ func (h *Harness) Run(ctx context.Context, suite []CapturedTurn, arm AssGuardArm
 			Comparison:    Compare(turn.ExpectedToolCalls, observed),
 		})
 	}
+
 	return results, nil
 }
 
@@ -65,9 +68,12 @@ func Summarize(results []TurnResult) Summary {
 	s := Summary{SuiteSize: len(results)}
 	if len(results) == 0 {
 		s.OverallPass = true
+
 		return s
 	}
+
 	layer1Pass, layer2Pass := 0, 0
+
 	for _, r := range results {
 		if r.Comparison.Layer1SequenceMatch {
 			layer1Pass++
@@ -77,8 +83,10 @@ func Summarize(results []TurnResult) Summary {
 			layer2Pass++
 		}
 	}
+
 	s.Layer1PassRate = float64(layer1Pass) / float64(len(results))
 	s.Layer2PassRate = float64(layer2Pass) / float64(len(results))
 	s.OverallPass = layer1Pass == len(results) && layer2Pass == len(results)
+
 	return s
 }

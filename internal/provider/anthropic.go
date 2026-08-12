@@ -60,6 +60,7 @@ func NewAnthropicProvider(s *shaper.Shaper, opts ...AnthropicOption) *AnthropicP
 	for _, o := range opts {
 		o(p)
 	}
+
 	return p
 }
 
@@ -77,6 +78,7 @@ func (p *AnthropicProvider) Send(ctx context.Context, prof profile.Profile, mess
 	}
 
 	var out Response
+
 	for chunk := range ch {
 		switch chunk.Type {
 		case "tool_use":
@@ -88,9 +90,11 @@ func (p *AnthropicProvider) Send(ctx context.Context, prof profile.Profile, mess
 			out.Raw = chunk.Raw
 		}
 	}
+
 	if out.FinishReason == "" {
 		out.FinishReason = "end_turn"
 	}
+
 	return out, nil
 }
 
@@ -107,6 +111,7 @@ func (p *AnthropicProvider) ToolResultMessage(toolCallID string, result json.Raw
 			"content":     json.RawMessage(orEmpty(result)),
 		}},
 	}
+
 	return json.Marshal(msg)
 }
 
@@ -116,6 +121,7 @@ func orEmpty(b json.RawMessage) json.RawMessage {
 	if len(b) == 0 {
 		return json.RawMessage(`""`)
 	}
+
 	return b
 }
 

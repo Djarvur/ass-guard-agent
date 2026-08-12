@@ -2,6 +2,7 @@ package session
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
@@ -52,6 +53,7 @@ func (p *Projector) Project(turnID string) ([]provider.Message, error) {
 
 	// Find the last boundary — the reset point.
 	boundaryIdx := -1
+
 	for i, l := range lines {
 		if l.Type == TypeBoundary {
 			boundaryIdx = i
@@ -81,6 +83,7 @@ func (p *Projector) Project(turnID string) ([]provider.Message, error) {
 		// First turn: no summary, just the intent.
 		content = currentIntent
 	}
+
 	return []provider.Message{{Role: "user", Content: content}}, nil
 }
 
@@ -91,9 +94,12 @@ func (p *Projector) extractSummary(before []Line) string {
 	if len(before) == 0 {
 		return ""
 	}
+
 	var lastUser, lastAssistant string
+
 	files := []string{}
 	seen := map[string]bool{}
+
 	for _, l := range before {
 		switch l.Type {
 		case TypeUserMessage:
@@ -104,29 +110,35 @@ func (p *Projector) extractSummary(before []Line) string {
 			for _, f := range extractFilePaths(l.Name, l.Input) {
 				if !seen[f] {
 					seen[f] = true
+
 					files = append(files, f)
 				}
 			}
 		}
 	}
+
 	if len(files) > MaxFilesTouched {
 		files = files[:MaxFilesTouched]
 	}
+
 	var sb strings.Builder
 	if lastUser != "" {
 		sb.WriteString("last_user=")
 		sb.WriteString(lastUser)
 		sb.WriteString("\n")
 	}
+
 	if lastAssistant != "" {
 		sb.WriteString("last_assistant=")
 		sb.WriteString(lastAssistant)
 		sb.WriteString("\n")
 	}
+
 	if len(files) > 0 {
 		sb.WriteString("files_touched=")
 		sb.WriteString(strings.Join(files, ","))
 	}
+
 	return strings.TrimRight(sb.String(), "\n")
 }
 
@@ -134,21 +146,24 @@ func (p *Projector) extractSummary(before []Line) string {
 // the boundary, or (no boundary) the last user_message overall.
 func (p *Projector) findCurrentIntent(after, before []Line, turnID string) string {
 	// Prefer the user message matching turnID; fall back to the last user_message.
-	for i := len(after) - 1; i >= 0; i-- {
-		if after[i].Type == TypeUserMessage && (turnID == "" || after[i].TurnID == turnID) {
-			return extractText(after[i])
+	for _, v := range slices.Backward(after) {
+		if v.Type == TypeUserMessage && (turnID == "" || v.TurnID == turnID) {
+			return extractText(v)
 		}
 	}
-	for i := len(after) - 1; i >= 0; i-- {
-		if after[i].Type == TypeUserMessage {
-			return extractText(after[i])
+
+	for _, v := range slices.Backward(after) {
+		if v.Type == TypeUserMessage {
+			return extractText(v)
 		}
 	}
-	for i := len(before) - 1; i >= 0; i-- {
-		if before[i].Type == TypeUserMessage {
-			return extractText(before[i])
+
+	for _, v := range slices.Backward(before) {
+		if v.Type == TypeUserMessage {
+			return extractText(v)
 		}
 	}
+
 	return ""
 }
 
@@ -157,16 +172,20 @@ func (p *Projector) findCurrentIntent(after, before []Line, turnID string) strin
 func extractText(l Line) string {
 	if len(l.Content) > 0 {
 		var blocks []ContentBlock
-		if err := json.Unmarshal(l.Content, &blocks); err == nil {
+		err := json.Unmarshal(l.Content, &blocks)
+		if err == nil {
 			var sb strings.Builder
+
 			for _, b := range blocks {
 				if b.Text != "" {
 					sb.WriteString(b.Text)
 				}
 			}
+
 			return sb.String()
 		}
 	}
+
 	return l.Text
 }
 
@@ -176,16 +195,21 @@ func extractFilePaths(toolName string, input json.RawMessage) []string {
 	if !fileBearingTools[toolName] || len(input) == 0 {
 		return nil
 	}
+
 	var m map[string]any
-	if err := json.Unmarshal(input, &m); err != nil {
+	err := json.Unmarshal(input, &m)
+	if err != nil {
 		return nil
 	}
+
 	var out []string
+
 	for _, k := range []string{"file_path", "path"} {
 		if v, ok := m[k].(string); ok && v != "" {
 			out = append(out, v)
 		}
 	}
+
 	return out
 }
 
@@ -194,9 +218,11 @@ func truncate(s string, n int) string {
 	if n <= 0 {
 		return ""
 	}
+
 	r := []rune(s)
 	if len(r) <= n {
 		return s
 	}
+
 	return string(r[:n]) + "..."
 }

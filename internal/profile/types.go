@@ -20,37 +20,37 @@ import (
 //   - TIER-3 informational: Model/MaxTokens/Name are metadata; logged for audit
 //     but not drift-flagged on value variance.
 type Profile struct {
-	Name       string          `yaml:"name" json:"name"`
-	Model      string          `yaml:"model" json:"model"`
-	MaxTokens  int             `yaml:"max_tokens" json:"max_tokens"`
-	System     []TextBlock     `yaml:"system" json:"system"`
-	Tools      []Decl          `yaml:"tools" json:"tools"`
-	Headers    []Header        `yaml:"headers" json:"headers"`
-	Thinking   json.RawMessage `yaml:"thinking" json:"thinking"`
-	ToolChoice json.RawMessage `yaml:"tool_choice" json:"tool_choice"`
+	Name       string          `json:"name"        yaml:"name"`
+	Model      string          `json:"model"       yaml:"model"`
+	MaxTokens  int             `json:"max_tokens"  yaml:"max_tokens"`
+	System     []TextBlock     `json:"system"      yaml:"system"`
+	Tools      []Decl          `json:"tools"       yaml:"tools"`
+	Headers    []Header        `json:"headers"     yaml:"headers"`
+	Thinking   json.RawMessage `json:"thinking"    yaml:"thinking"`
+	ToolChoice json.RawMessage `json:"tool_choice" yaml:"tool_choice"`
 }
 
 // TextBlock is one entry of the Anthropic-shape system[] array. The Text is
 // stored byte-faithful from the capture (TIER-1).
 type TextBlock struct {
-	Type string `yaml:"type" json:"type"`
-	Text string `yaml:"text" json:"text"`
+	Type string `json:"type" yaml:"type"`
+	Text string `json:"text" yaml:"text"`
 }
 
 // Decl is a model-facing tool declaration. InputSchema is the verbatim captured
 // JSON schema; the profile-declared schema is authoritative at runtime (TOOL-02).
 type Decl struct {
-	Name        string          `yaml:"name" json:"name"`
-	Description string          `yaml:"description" json:"description"`
-	InputSchema json.RawMessage `yaml:"input_schema" json:"input_schema"`
+	Name        string          `json:"name"         yaml:"name"`
+	Description string          `json:"description"  yaml:"description"`
+	InputSchema json.RawMessage `json:"input_schema" yaml:"input_schema"`
 }
 
 // Header is one identity header. Name is byte-faithful (TIER-2 structural);
 // ValueTemplate carries a placeholder rendered per-request (real values are
 // per-session ephemera and never stored verbatim — T-01-02).
 type Header struct {
-	Name          string `yaml:"name" json:"name"`
-	ValueTemplate string `yaml:"value_template" json:"value_template"`
+	Name          string `json:"name"           yaml:"name"`
+	ValueTemplate string `json:"value_template" yaml:"value_template"`
 }
 
 // Tier labels a captured field's fidelity band (D-06):
@@ -95,38 +95,38 @@ func (t Tier) DriftFlagged() bool { return t == Tier1ByteFaithful || t == Tier2S
 // D-07). It ties a captured field to its tier, type, observed count, and the
 // source location the value was extracted from.
 type CoverageEntry struct {
-	Path          string `yaml:"path" json:"path"`
-	Tier          Tier   `yaml:"tier" json:"tier"`
-	Type          string `yaml:"type" json:"type"`
-	ObservedCount int    `yaml:"observed_count" json:"observed_count"`
-	Source        string `yaml:"source" json:"source"`
+	Path          string `json:"path"           yaml:"path"`
+	Tier          Tier   `json:"tier"           yaml:"tier"`
+	Type          string `json:"type"           yaml:"type"`
+	ObservedCount int    `json:"observed_count" yaml:"observed_count"`
+	Source        string `json:"source"         yaml:"source"`
 }
 
 // SessionRef is one extraction-source session inside a TargetCaptureRef.
 type SessionRef struct {
-	ID   string `yaml:"id" json:"id"`
-	Path string `yaml:"path" json:"path"`
-	Role string `yaml:"role" json:"role"`
+	ID   string `json:"id"   yaml:"id"`
+	Path string `json:"path" yaml:"path"`
+	Role string `json:"role" yaml:"role"`
 }
 
 // TargetCaptureRef records the provenance of a profile extraction (PROF-03):
 // the session(s) and corrected on-disk path the profile fields were read from.
 type TargetCaptureRef struct {
-	Sessions         []SessionRef `yaml:"sessions" json:"sessions"`
-	ExtractedAt      time.Time    `yaml:"extracted_at" json:"extracted_at"`
-	ExtractorVersion string       `yaml:"extractor_version" json:"extractor_version"`
+	Sessions         []SessionRef `json:"sessions"          yaml:"sessions"`
+	ExtractedAt      time.Time    `json:"extracted_at"      yaml:"extracted_at"`
+	ExtractorVersion string       `json:"extractor_version" yaml:"extractor_version"`
 }
 
 // CoverageManifest is the machine-readable coverage manifest shipped with the
 // profile (PROF-05, D-07). It makes "incomplete capture" a loud failure and
 // feeds the TOOL-03 catalog-consistency check.
 type CoverageManifest struct {
-	Profile                         string           `yaml:"profile" json:"profile"`
-	TargetCaptureRef                TargetCaptureRef `yaml:"target_capture_ref" json:"target_capture_ref"`
-	ExtractedAt                     time.Time        `yaml:"extracted_at" json:"extracted_at"`
-	ExtractorVersion                string           `yaml:"extractor_version" json:"extractor_version"`
-	Fields                          []CoverageEntry  `yaml:"fields" json:"fields"`
-	RequiredToolsSatisfiedByCatalog bool             `yaml:"required_tools_satisfied_by_catalog" json:"required_tools_satisfied_by_catalog"`
+	Profile                         string           `json:"profile"                             yaml:"profile"`
+	TargetCaptureRef                TargetCaptureRef `json:"target_capture_ref"                  yaml:"target_capture_ref"`
+	ExtractedAt                     time.Time        `json:"extracted_at"                        yaml:"extracted_at"`
+	ExtractorVersion                string           `json:"extractor_version"                   yaml:"extractor_version"`
+	Fields                          []CoverageEntry  `json:"fields"                              yaml:"fields"`
+	RequiredToolsSatisfiedByCatalog bool             `json:"required_tools_satisfied_by_catalog" yaml:"required_tools_satisfied_by_catalog"`
 }
 
 // Validate returns an error naming any TIER-1/2 manifest field whose observed
@@ -134,21 +134,27 @@ type CoverageManifest struct {
 // (the PROF-05 incomplete-capture gate). TIER-3 fields are not validated.
 func (m CoverageManifest) Validate(captured map[string]int) error {
 	var mismatches []string
+
 	for _, f := range m.Fields {
 		if !f.Tier.DriftFlagged() {
 			continue
 		}
+
 		got, ok := captured[f.Path]
 		if !ok {
-			mismatches = append(mismatches, fmt.Sprintf("%s: missing from capture", f.Path))
+			mismatches = append(mismatches, f.Path+": missing from capture")
+
 			continue
 		}
+
 		if got != f.ObservedCount {
 			mismatches = append(mismatches, fmt.Sprintf("%s: observed %d, manifest declares %d (%s)", f.Path, got, f.ObservedCount, f.Tier))
 		}
 	}
+
 	if len(mismatches) > 0 {
 		return fmt.Errorf("coverage check failed: %v", mismatches)
 	}
+
 	return nil
 }

@@ -13,9 +13,9 @@ import (
 // Drift is one TIER-1/2 field whose captured value differs from the manifest's
 // declared expectation in a way the drift detector flags.
 type Drift struct {
-	FieldPath string `yaml:"field_path" json:"field_path"`
+	FieldPath string `json:"field_path" yaml:"field_path"`
 	Tier      profile.Tier
-	Reason    string `yaml:"reason" json:"reason"`
+	Reason    string `json:"reason" yaml:"reason"`
 }
 
 // Detect compares a freshly-captured request (as a map[string]any decoded from
@@ -32,15 +32,19 @@ type Drift struct {
 //     drift; only the NAME set / count matters.
 func Detect(manifest profile.CoverageManifest, captured map[string]any) []Drift {
 	var d []Drift
+
 	for _, f := range manifest.Fields {
 		if !f.Tier.DriftFlagged() {
 			continue
 		}
+
 		got, ok := captured[f.Path]
 		if !ok {
 			d = append(d, Drift{FieldPath: f.Path, Tier: f.Tier, Reason: "missing from capture"})
+
 			continue
 		}
+
 		n := countOf(got)
 		if n != f.ObservedCount {
 			d = append(d, Drift{
@@ -50,6 +54,7 @@ func Detect(manifest profile.CoverageManifest, captured map[string]any) []Drift 
 			})
 		}
 	}
+
 	return d
 }
 

@@ -1,7 +1,6 @@
 package scheduler
 
 import (
-	"io"
 	"log/slog"
 	"sync"
 	"time"
@@ -40,14 +39,17 @@ type CostCeilingTracker struct {
 // from Config.Models. A nil bus is tolerated (warnings are skipped).
 func NewCostCeilingTracker(cfg CostCeilingConfig, pricing map[string]Pricing, bus *event.Bus, log *slog.Logger) *CostCeilingTracker {
 	if log == nil {
-		log = slog.New(slog.NewTextHandler(io.Discard, nil))
+		log = slog.New(slog.DiscardHandler)
 	}
+
 	if cfg.Window <= 0 {
 		cfg.Window = defaultCost.Window
 	}
+
 	if pricing == nil {
 		pricing = map[string]Pricing{}
 	}
+
 	return &CostCeilingTracker{cfg: cfg, pricing: pricing, bus: bus, log: log}
 }
 
@@ -59,16 +61,20 @@ func NewCostCeilingTracker(cfg CostCeilingConfig, pricing map[string]Pricing, bu
 func (c *CostCeilingTracker) Account(model string, inTokens, outTokens int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
 	if inTokens == 0 && outTokens == 0 {
 		c.log.Warn("scheduler: cost tracking disabled — no token counts from provider", "model", model)
+
 		return
 	}
+
 	p, ok := c.pricing[model]
 	if !ok {
 		// Unknown model — cannot price; skip silently (the resolver should have
 		// rejected dangling slugs at load time, so this is defense-in-depth).
 		return
 	}
+
 	cost := (float64(inTokens)*p.InputPerMToken + float64(outTokens)*p.OutputPerMToken) / 1e6
 	if c.degraded {
 		c.degradedSpent += cost
@@ -109,12 +115,16 @@ func (c *CostCeilingTracker) Check(now time.Time) CostAction {
 					Window: c.windowLabel(), Spent: c.spent, Ceiling: c.cfg.AmountUSD,
 					DegradedTo: c.cfg.DegradeTo, HardStop: false,
 				})
+
 				c.degradeWarned = true
 			}
+
 			c.log.Warn("scheduler: cost ceiling hit — degrading",
 				"spent", c.spent, "ceiling", c.cfg.AmountUSD, "degrade_to", c.cfg.DegradeTo)
+
 			return CostDegrade
 		}
+
 		return CostAllow
 	}
 
@@ -126,12 +136,16 @@ func (c *CostCeilingTracker) Check(now time.Time) CostAction {
 				Window: c.windowLabel(), Spent: c.degradedSpent, Ceiling: c.cfg.AmountUSD,
 				HardStop: true,
 			})
+
 			c.hardStopWarned = true
 		}
+
 		c.log.Warn("scheduler: cost ceiling exhausted (hard stop)",
 			"degraded_spent", c.degradedSpent, "ceiling", c.cfg.AmountUSD)
+
 		return CostHardStop
 	}
+
 	return CostDegrade
 }
 
@@ -141,12 +155,14 @@ func (c *CostCeilingTracker) publish(e CostCeilingWarn) {
 	if c.bus == nil {
 		return
 	}
+
 	c.bus.Publish(e)
 }
 
 // windowLabel formats the current window's [start, end) range for the warn event.
 func (c *CostCeilingTracker) windowLabel() string {
 	end := c.windowStart.Add(c.cfg.Window)
+
 	return c.cfg.Window.String() + " ending " + end.Format(time.RFC3339)
 }
 
@@ -156,6 +172,7 @@ func (c *CostCeilingTracker) windowLabel() string {
 func (c *CostCeilingTracker) Spent() float64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
 	return c.spent + c.degradedSpent
 }
 
@@ -163,5 +180,6 @@ func (c *CostCeilingTracker) Spent() float64 {
 func (c *CostCeilingTracker) IsDegraded() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
 	return c.degraded
 }

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -27,6 +28,7 @@ func writeFrame(w io.Writer, v any) error {
 	if containsDecodedNewline(v) {
 		return errors.New("frame value contains an embedded newline — ACP spec forbids it (transports.md: messages MUST NOT contain embedded newlines)")
 	}
+
 	raw, err := json.Marshal(v)
 	if err != nil {
 		return fmt.Errorf("marshal frame: %w", err)
@@ -37,12 +39,15 @@ func writeFrame(w io.Writer, v any) error {
 	if bytes.ContainsRune(raw, '\n') {
 		return errors.New("marshaled frame contains a raw newline byte — internal invariant violated")
 	}
+
 	if _, err := w.Write(raw); err != nil {
 		return fmt.Errorf("write frame: %w", err)
 	}
+
 	if _, err := w.Write([]byte("\n")); err != nil {
 		return fmt.Errorf("write frame newline: %w", err)
 	}
+
 	return nil
 }
 
@@ -54,10 +59,12 @@ func containsDecodedNewline(v any) bool {
 		// Let writeFrame surface the marshal error.
 		return false
 	}
+
 	var node any
 	if err := json.Unmarshal(raw, &node); err != nil {
 		return false
 	}
+
 	return walkDecodedNewline(node)
 }
 
@@ -74,12 +81,11 @@ func walkDecodedNewline(node any) bool {
 			}
 		}
 	case []any:
-		for _, item := range v {
-			if walkDecodedNewline(item) {
-				return true
-			}
+		if slices.ContainsFunc(v, walkDecodedNewline) {
+			return true
 		}
 	}
+
 	return false
 }
 
@@ -94,14 +100,17 @@ func readFrame(r *bufio.Reader) (*Message, error) {
 		// io.EOF is a truncated frame and surfaces as an error.
 		return nil, err
 	}
+
 	line = bytes.TrimRight(line, "\n")
 	if len(line) == 0 {
 		return nil, errors.New("empty frame line")
 	}
+
 	var msg Message
 	if err := json.Unmarshal(line, &msg); err != nil {
 		return nil, fmt.Errorf("unmarshal frame: %w (line=%q)", err, string(line))
 	}
+
 	return &msg, nil
 }
 
@@ -118,10 +127,10 @@ func readFrame(r *bufio.Reader) (*Message, error) {
 // D-05 backpressure boundary — a full buffer blocks the producer (natural
 // slow-down), but the common case (a responsive client) never blocks.
 type Writer struct {
-	w   io.Writer
-	ch  chan Message
-	wg  sync.WaitGroup
-	mu  sync.Mutex // guards Close once
+	w      io.Writer
+	ch     chan Message
+	wg     sync.WaitGroup
+	mu     sync.Mutex // guards Close once
 	closed bool
 }
 
@@ -129,8 +138,11 @@ type Writer struct {
 // pipe) and starts the drain goroutine.
 func newWriter(w io.Writer) *Writer {
 	wtr := &Writer{w: w, ch: make(chan Message, writeBuffer)}
+
 	wtr.wg.Add(1)
+
 	go wtr.drain()
+
 	return wtr
 }
 
@@ -143,6 +155,7 @@ const writeBuffer = 256
 // memory unbounded).
 func (w *Writer) Write(msg Message) error {
 	w.ch <- msg
+
 	return nil
 }
 
@@ -150,6 +163,7 @@ func (w *Writer) Write(msg Message) error {
 // A write error (e.g. closed pipe on shutdown) is swallowed — best-effort.
 func (w *Writer) drain() {
 	defer w.wg.Done()
+
 	for msg := range w.ch {
 		_ = writeFrame(w.w, msg)
 	}
@@ -163,8 +177,10 @@ func (w *Writer) Close() {
 	w.mu.Lock()
 	if w.closed {
 		w.mu.Unlock()
+
 		return
 	}
+
 	w.closed = true
 	w.mu.Unlock()
 	close(w.ch)

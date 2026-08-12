@@ -17,6 +17,7 @@ func TestAdapter_ProfileAuthoritative(t *testing.T) {
 	decls := []profile.Decl{
 		{Name: "Read", Description: "synthetic read", InputSchema: customSchema},
 	}
+
 	out := a.ModelFacingSchemas(decls)
 	if len(out) != 1 || out[0].Name != "Read" {
 		t.Fatalf("got %+v", out)
@@ -35,16 +36,20 @@ func TestAdapter_ResolveCallParsesInput(t *testing.T) {
 		{Name: "Read", InputSchema: json.RawMessage(`{"type":"object","required":["file_path"]}`)},
 	}
 	in := json.RawMessage(`{"file_path":"go.mod"}`)
+
 	out, err := a.ResolveCall("Read", in, decls)
 	if err != nil {
 		t.Fatalf("ResolveCall Read: %v", err)
 	}
+
 	if string(out) != string(in) {
 		t.Errorf("ResolveCall returned %s, want the input unchanged", out)
 	}
+
 	if _, err := a.ResolveCall("Write", in, decls); err == nil {
 		t.Error("ResolveCall Write (undeclared) returned nil error; want non-nil")
 	}
+
 	if _, err := a.ResolveCall("Read", json.RawMessage(`{bad`), decls); err == nil {
 		t.Error("ResolveCall accepted malformed JSON; want non-nil error")
 	}

@@ -22,6 +22,7 @@ func (f *fakeProvider) Send(ctx context.Context, _ profile.Profile, _ []provider
 	if f.err != nil {
 		return provider.Response{}, f.err
 	}
+
 	return provider.Response{ToolCalls: f.calls, FinishReason: "tool_use"}, nil
 }
 
@@ -39,10 +40,12 @@ func (f *fakeProvider) Stream(ctx context.Context, _ profile.Profile, _ []provid
 func TestRun_ReturnsProviderToolCalls(t *testing.T) {
 	want := []provider.ToolCall{{Name: "Read", Input: []byte(`{"file_path":"go.mod"}`)}}
 	p := &fakeProvider{calls: want}
+
 	got, err := loop.Run(context.Background(), profile.Profile{}, p, "read go.mod")
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
+
 	if len(got) != 1 || got[0].Name != "Read" {
 		t.Errorf("got %+v, want %+v", got, want)
 	}

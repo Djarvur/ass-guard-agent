@@ -14,18 +14,22 @@ func writeCaptureFixture(t *testing.T, sysCount, toolCount, headerCount int) str
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "capture.json")
+
 	sys := make([]map[string]any, sysCount)
 	for i := range sys {
 		sys[i] = map[string]any{"type": "text", "text": "x"}
 	}
+
 	tools := make([]map[string]any, toolCount)
 	for i := range tools {
 		tools[i] = map[string]any{"name": "t", "input_schema": map[string]any{"type": "object"}}
 	}
+
 	headers := map[string]any{}
-	for i := 0; i < headerCount; i++ {
+	for i := range headerCount {
 		headers["h"+itoa(i)] = "x"
 	}
+
 	line := map[string]any{
 		"type":      "model_io",
 		"sessionId": "s",
@@ -40,10 +44,13 @@ func writeCaptureFixture(t *testing.T, sysCount, toolCount, headerCount int) str
 			"headers": headers,
 		},
 	}
+
 	raw, _ := json.Marshal(line)
-	if err := os.WriteFile(path, raw, 0o600); err != nil {
+	err := os.WriteFile(path, raw, 0o600)
+	if err != nil {
 		t.Fatal(err)
 	}
+
 	return path
 }
 
@@ -51,11 +58,13 @@ func itoa(n int) string {
 	if n == 0 {
 		return "0"
 	}
+
 	out := ""
 	for n > 0 {
 		out = string(rune('0'+n%10)) + out
 		n /= 10
 	}
+
 	return out
 }
 
@@ -64,17 +73,22 @@ func itoa(n int) string {
 func writeCoverageFixture(t *testing.T, name string, sysCount, toolCount, headerCount int) string {
 	t.Helper()
 	root := t.TempDir()
+
 	pdir := filepath.Join(root, name)
-	if err := os.MkdirAll(pdir, 0o755); err != nil {
+	err := os.MkdirAll(pdir, 0o755)
+	if err != nil {
 		t.Fatal(err)
 	}
+
 	manifest := []byte("profile: " + name + "\nfields:\n" +
 		"  - path: request.body.system\n    tier: 1\n    observed_count: " + itoa(sysCount) + "\n" +
 		"  - path: request.body.tools\n    tier: 1\n    observed_count: " + itoa(toolCount) + "\n" +
 		"  - path: request.headers\n    tier: 2\n    observed_count: " + itoa(headerCount) + "\n")
-	if err := os.WriteFile(filepath.Join(pdir, "coverage.yaml"), manifest, 0o600); err != nil {
+	err = os.WriteFile(filepath.Join(pdir, "coverage.yaml"), manifest, 0o600)
+	if err != nil {
 		t.Fatal(err)
 	}
+
 	return root
 }
 
@@ -82,6 +96,7 @@ func writeCoverageFixture(t *testing.T, name string, sysCount, toolCount, header
 func TestProfileCheck_NoDrift(t *testing.T) {
 	profilesDir := writeCoverageFixture(t, "zcode", 3, 103, 12)
 	capture := writeCaptureFixture(t, 3, 103, 12)
+
 	err := runProfileCheck("zcode", profilesDir, capture, "zcode")
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
@@ -92,22 +107,32 @@ func TestProfileCheck_NoDrift(t *testing.T) {
 func TestProfileCheck_DriftDetected(t *testing.T) {
 	profilesDir := writeCoverageFixture(t, "zcode", 3, 103, 12)
 	capture := writeCaptureFixture(t, 3, 90, 12) // tools drifted
+
 	var stderr bytes.Buffer
+
 	oldStderr := os.Stderr
 	r, w, _ := os.Pipe()
 	os.Stderr = w
 	done := make(chan struct{})
+
 	go func() { stderr.ReadFrom(r); close(done) }()
+
 	err := runProfileCheck("zcode", profilesDir, capture, "zcode")
+
 	w.Close()
+
 	os.Stderr = oldStderr
+
 	<-done
+
 	if err == nil {
 		t.Fatal("expected a drift error, got nil")
 	}
+
 	if !bytes.Contains(stderr.Bytes(), []byte("DRIFT")) {
 		t.Errorf("stderr missing DRIFT footer:\n%s", stderr.String())
 	}
+
 	if !bytes.Contains(stderr.Bytes(), []byte("request.body.tools")) {
 		t.Errorf("stderr missing the drifted field:\n%s", stderr.String())
 	}
@@ -117,16 +142,24 @@ func TestProfileCheck_DriftDetected(t *testing.T) {
 func TestProfileCheck_ReportContainsStructuredFooter(t *testing.T) {
 	profilesDir := writeCoverageFixture(t, "zcode", 3, 103, 12)
 	capture := writeCaptureFixture(t, 3, 103, 12)
+
 	var stderr bytes.Buffer
+
 	oldStderr := os.Stderr
 	r, w, _ := os.Pipe()
 	os.Stderr = w
 	done := make(chan struct{})
+
 	go func() { stderr.ReadFrom(r); close(done) }()
+
 	_ = runProfileCheck("zcode", profilesDir, capture, "zcode")
+
 	w.Close()
+
 	os.Stderr = oldStderr
+
 	<-done
+
 	for _, want := range []string{"=== PROFILE CHECK", "overall_status:", "drifts:"} {
 		if !bytes.Contains(stderr.Bytes(), []byte(want)) {
 			t.Errorf("stderr missing %q:\n%s", want, stderr.String())

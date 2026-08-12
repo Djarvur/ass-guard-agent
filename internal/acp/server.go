@@ -47,14 +47,14 @@ type Handler func(ctx context.Context, params json.RawMessage, msg Message) (res
 // a race. All frame writes go through the mutex-guarded Writer so concurrent
 // goroutines never interleave a line on stdout.
 type Server struct {
-	in        io.Reader
-	out       *Writer
-	log       *log.Logger
-	handlers  map[string]Handler
-	mu        sync.Mutex
-	sessions  map[string]*sessionState
+	in         io.Reader
+	out        *Writer
+	log        *log.Logger
+	handlers   map[string]Handler
+	mu         sync.Mutex
+	sessions   map[string]*sessionState
 	turnRunner TurnRunner
-	handlerWG sync.WaitGroup // tracks in-flight request goroutines so Close is safe
+	handlerWG  sync.WaitGroup // tracks in-flight request goroutines so Close is safe
 }
 
 // sessionState is one live session (created by session/new). It carries the
@@ -68,12 +68,14 @@ type sessionState struct {
 func (s *sessionState) setCancel(c context.CancelFunc) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	s.cancel = c
 }
 
 func (s *sessionState) cancelTurn() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	if s.cancel != nil {
 		s.cancel()
 	}
@@ -98,17 +100,19 @@ func WithLogger(l *log.Logger) ServerOption {
 // diagnostics to stderrSink (must NEVER be stdout — transport discipline).
 func NewServer(in io.Reader, out io.Writer, stderrSink io.Writer, opts ...ServerOption) *Server {
 	s := &Server{
-		in:        in,
-		out:       newWriter(out),
-		log:       log.New(stderrSink, "ass-guard/acp: ", log.LstdFlags|log.Lshortfile),
-		handlers:  map[string]Handler{},
-		sessions:  map[string]*sessionState{},
+		in:         in,
+		out:        newWriter(out),
+		log:        log.New(stderrSink, "ass-guard/acp: ", log.LstdFlags|log.Lshortfile),
+		handlers:   map[string]Handler{},
+		sessions:   map[string]*sessionState{},
 		turnRunner: stubNoChunkRunner{},
 	}
 	for _, o := range opts {
 		o(s)
 	}
+
 	s.registerHandlers()
+
 	return s
 }
 
@@ -131,13 +135,16 @@ func (s *Server) Serve(ctx context.Context) error {
 		s.handlerWG.Wait()
 		s.out.Close()
 	}()
+
 	br := bufio.NewReader(s.in)
+
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
 		}
+
 		msg, err := readFrame(br)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
@@ -146,21 +153,27 @@ func (s *Server) Serve(ctx context.Context) error {
 			// Parse error: surface -32700 and keep reading. Only respond when we
 			// can recover an id; otherwise log and continue.
 			s.handleParseError(err)
+
 			continue
 		}
+
 		if msg.ID == nil {
 			// Notification: dispatch inline (session/cancel must cancel the
 			// active turn synchronously). Recover per-dispatch so a panicking
 			// notification handler never crashes the reader (Pitfall 7).
 			s.safeDispatchInline(ctx, *msg)
+
 			continue
 		}
 		// Request: dispatch in a goroutine so the reader keeps reading.
 		m := *msg // capture the envelope value
+
 		s.handlerWG.Add(1)
+
 		go func() {
 			defer s.handlerWG.Done()
 			defer s.recoverDispatch(m)
+
 			s.handleRequest(ctx, m)
 		}()
 	}
@@ -173,25 +186,34 @@ func (s *Server) handleRequest(ctx context.Context, msg Message) {
 	handler, ok := s.handlers[msg.Method]
 	if !ok {
 		s.writeError(msg.ID, &RPCError{Code: CodeMethodNotFound, Message: fmt.Sprintf("method %q not found", msg.Method)})
+
 		return
 	}
+
 	result, err := handler(ctx, msg.Params, msg)
 	if err != nil {
 		// A handler may return a *RPCError to surface a specific JSON-RPC code
 		// (e.g. session/load's -32601 no-op, D-09). Any other error is scrubbed
 		// and wrapped as a generic -32603 internal error (T-02-03).
-		if rpcErr, ok := err.(*RPCError); ok {
+		rpcErr := &RPCError{}
+		if errors.As(err, &rpcErr) {
 			s.writeError(msg.ID, rpcErr)
+
 			return
 		}
+
 		s.writeError(msg.ID, &RPCError{Code: CodeInternalError, Message: redact.ScrubError(err)})
+
 		return
 	}
+
 	raw, err := json.Marshal(result)
 	if err != nil {
 		s.writeError(msg.ID, &RPCError{Code: CodeInternalError, Message: redact.ScrubError(err)})
+
 		return
 	}
+
 	s.writeResult(msg.ID, raw)
 }
 
@@ -199,11 +221,13 @@ func (s *Server) handleRequest(ctx context.Context, msg Message) {
 // panicking handler never crashes the reader.
 func (s *Server) safeDispatchInline(ctx context.Context, msg Message) {
 	defer s.recoverDispatch(msg)
+
 	handler, ok := s.handlers[msg.Method]
 	if !ok {
 		// Unknown notification: ignore (notifications get no response).
 		return
 	}
+
 	_, _ = handler(ctx, msg.Params, msg)
 }
 
@@ -215,7 +239,9 @@ func (s *Server) recoverDispatch(msg Message) {
 	if r == nil {
 		return
 	}
+
 	s.log.Printf("panic dispatching method=%q id=%v: %v", msg.Method, msg.ID, r)
+
 	if msg.ID != nil {
 		s.writeError(msg.ID, &RPCError{Code: CodeInternalError, Message: "internal error (recovered)"})
 	}
@@ -260,9 +286,11 @@ func (a *adapter) AgentMessageChunk(messageID, text string) error {
 		"content":       ContentBlock{Type: "text", Text: text},
 	}
 	params := map[string]any{"sessionId": a.sessionID, "update": update}
+
 	raw, err := json.Marshal(params)
 	if err != nil {
 		return err
 	}
+
 	return a.out.Write(Message{JSONRPC: "2.0", Method: "session/update", Params: raw})
 }

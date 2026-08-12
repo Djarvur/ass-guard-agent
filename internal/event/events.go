@@ -71,9 +71,9 @@ func (ToolCallUpdate) Kind() string { return "ToolCallUpdate" }
 
 // UsageUpdate carries token-usage accounting for a turn.
 type UsageUpdate struct {
-	TurnID        string
-	InputTokens   int64
-	OutputTokens  int64
+	TurnID          string
+	InputTokens     int64
+	OutputTokens    int64
 	CacheReadTokens int64
 }
 
@@ -84,11 +84,11 @@ func (UsageUpdate) Kind() string { return "UsageUpdate" }
 // ParentTurnID tags the result for the parent's turn; the parent's lean window
 // receives only this final result (D-11 — intermediates are excluded).
 type SubagentResult struct {
-	ParentTurnID    string
-	ToolCallID      string
-	SubagentTurnID  string
-	Result          string
-	Err             error
+	ParentTurnID   string
+	ToolCallID     string
+	SubagentTurnID string
+	Result         string
+	Err            error
 }
 
 // Kind returns the event discriminator.
@@ -99,9 +99,9 @@ func (SubagentResult) Kind() string { return "SubagentResult" }
 // turn loop after a mutating tool_result; the transcript writer appends a
 // `boundary` line.
 type Boundary struct {
-	TurnID      string
-	Cause       string // "mutating-command:<Tool>" or "config-added:<Tool>"
-	CommandRef  string // the tool-call id that triggered the boundary
+	TurnID     string
+	Cause      string // "mutating-command:<Tool>" or "config-added:<Tool>"
+	CommandRef string // the tool-call id that triggered the boundary
 }
 
 // Kind returns the event discriminator.

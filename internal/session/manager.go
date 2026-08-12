@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"slices"
 	"sync"
 	"time"
 )
@@ -34,10 +35,12 @@ func NewManager(dir, sessionID string, red Redactor) (*Manager, error) {
 	if red == nil {
 		return nil, errors.New("session: NewManager requires a non-nil Redactor")
 	}
+
 	f, path, err := openTranscript(dir, sessionID)
 	if err != nil {
 		return nil, err
 	}
+
 	return &Manager{f: f, path: path, redactor: red}, nil
 }
 
@@ -48,11 +51,14 @@ func (m *Manager) Path() string { return m.path }
 func (m *Manager) Close() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
 	if m.f == nil {
 		return nil
 	}
+
 	err := m.f.Close()
 	m.f = nil
+
 	return err
 }
 
@@ -63,17 +69,23 @@ func (m *Manager) appendLine(line Line) error {
 	if err != nil {
 		return err
 	}
+
 	red, err := m.redactor.Redact(raw)
 	if err != nil {
 		red = []byte(m.redactor.ScrubError(errors.New(string(raw))))
 	}
+
 	red = append(red, '\n')
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
 	if m.f == nil {
 		return errors.New("session: manager closed")
 	}
+
 	_, err = m.f.Write(red)
+
 	return err
 }
 
@@ -92,6 +104,7 @@ func (m *Manager) AppendSessionEnd() error {
 // AppendUserMessage records a user message (the prompt content blocks).
 func (m *Manager) AppendUserMessage(turnID string, content []ContentBlock) error {
 	raw, _ := json.Marshal(content)
+
 	return m.appendLine(Line{Type: TypeUserMessage, TurnID: turnID, Timestamp: now(), Content: raw})
 }
 
@@ -136,6 +149,7 @@ func (m *Manager) AppendCanceled(turnID string, ts time.Time, reason string) err
 // message is scrubbed (LOG-03); component + recoverable + stack are preserved.
 func (m *Manager) AppendError(turnID, component, message string, inputs json.RawMessage, recoverable bool, stack string) error {
 	scrubbed := m.redactor.ScrubError(errors.New(message))
+
 	return m.appendLine(Line{
 		Type: TypeError, TurnID: turnID, Timestamp: now(),
 		Component: component, Message: scrubbed, Recoverable: recoverable,
@@ -189,6 +203,7 @@ func (m *Manager) ReadAll() ([]Line, error) {
 	m.mu.Lock()
 	fname := m.path
 	m.mu.Unlock()
+
 	return readTranscriptFile(fname)
 }
 
@@ -198,11 +213,13 @@ func (m *Manager) ReadLastBoundary() (*Line, error) {
 	if err != nil {
 		return nil, err
 	}
-	for i := len(lines) - 1; i >= 0; i-- {
-		if lines[i].Type == TypeBoundary {
-			return &lines[i], nil
+
+	for _, v := range slices.Backward(lines) {
+		if v.Type == TypeBoundary {
+			return &v, nil
 		}
 	}
+
 	return nil, nil
 }
 
@@ -213,18 +230,23 @@ func (m *Manager) ReadSince(turnID string) ([]Line, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	if turnID == "" {
 		return lines, nil
 	}
+
 	lastIdx := -1
+
 	for i, l := range lines {
 		if l.TurnID == turnID {
 			lastIdx = i
 		}
 	}
+
 	if lastIdx < 0 {
 		return lines, nil
 	}
+
 	return lines[lastIdx+1:], nil
 }
 
@@ -234,31 +256,43 @@ func readTranscriptFile(path string) ([]Line, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	defer f.Close()
+
 	var out []Line
+
 	br := bufio.NewReader(f)
+
 	for {
 		line, rerr := br.ReadBytes('\n')
 		if len(line) == 0 && rerr != nil {
 			break
 		}
+
 		for len(line) > 0 && (line[len(line)-1] == '\n' || line[len(line)-1] == '\r') {
 			line = line[:len(line)-1]
 		}
+
 		if len(line) == 0 {
 			if rerr != nil {
 				break
 			}
+
 			continue
 		}
+
 		var l Line
-		if jerr := json.Unmarshal(line, &l); jerr != nil {
+		jerr := json.Unmarshal(line, &l)
+		if jerr != nil {
 			continue
 		}
+
 		out = append(out, l)
+
 		if rerr != nil {
 			break
 		}
 	}
+
 	return out, nil
 }

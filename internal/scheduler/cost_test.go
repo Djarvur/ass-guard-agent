@@ -13,8 +13,11 @@ import (
 // newCostTracker builds a tracker with a fresh bus + the given pricing.
 func newCostTracker(t *testing.T, cfg CostCeilingConfig, pricing map[string]Pricing) (*CostCeilingTracker, *event.Bus) {
 	t.Helper()
+
 	bus := event.NewBus()
+
 	t.Cleanup(func() { bus.Close() })
+
 	return NewCostCeilingTracker(cfg, pricing, bus, nil), bus
 }
 
@@ -26,6 +29,7 @@ func TestCostArithmetic(t *testing.T) {
 		"glm-5.2": {InputPerMToken: 0.60, OutputPerMToken: 2.20},
 	})
 	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
+
 	tr.Account("glm-5.2", 1_000_000, 500_000)
 	require.InDelta(t, 1.70, tr.Spent(), 1e-9, "(1M*0.60 + 0.5M*2.20)/1e6 = $1.70")
 	// Check initializes the window but does not trip (1.70 < 50).
@@ -54,6 +58,7 @@ func TestCostFirstBreachDegrade(t *testing.T) {
 
 	// Exactly one warn event with HardStop=false + DegradedTo set.
 	var warns []CostCeilingWarn
+
 drain:
 	for {
 		select {
@@ -65,6 +70,7 @@ drain:
 			break drain
 		}
 	}
+
 	require.Len(t, warns, 1, "exactly ONE CostCeilingWarn on first breach (idempotent thereafter)")
 	require.False(t, warns[0].HardStop)
 	require.Equal(t, "light", warns[0].DegradedTo)
@@ -101,18 +107,21 @@ drain1:
 
 	// The hard-stop warn arrived.
 	var hs *CostCeilingWarn
+
 drain2:
 	for {
 		select {
 		case e := <-ch:
 			if w, ok := e.(CostCeilingWarn); ok {
 				hs = &w
+
 				break drain2
 			}
 		default:
 			break drain2
 		}
 	}
+
 	require.NotNil(t, hs, "hard-stop warn must be published")
 	require.True(t, hs.HardStop)
 }
@@ -147,9 +156,11 @@ func TestCostNoTokenCountsGraceful(t *testing.T) {
 	})
 	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
 	tr.Check(now)
-	for i := 0; i < 100; i++ {
+
+	for range 100 {
 		tr.Account("glm-5.2", 0, 0)
 	}
+
 	require.InDelta(t, 0.0, tr.Spent(), 1e-9, "no token counts → $0 accounted")
 	require.False(t, tr.IsDegraded(), "ceiling cannot trip without tokens")
 	require.Equal(t, CostAllow, tr.Check(now))
@@ -164,16 +175,18 @@ func TestCostConcurrentAccount(t *testing.T) {
 	})
 	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
 	tr.Check(now)
+
 	var wg sync.WaitGroup
-	for g := 0; g < 100; g++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := 0; i < 100; i++ {
+	for range 100 {
+
+		wg.Go(func() {
+
+			for range 100 {
 				tr.Account("glm-5.2", 1_000_000, 0) // $1 each
 			}
-		}()
+		})
 	}
+
 	wg.Wait()
 	// 100 goroutines × 100 calls × $1 = $10000.
 	require.InDelta(t, 10000.0, tr.Spent(), 1e-6, "no lost updates under concurrency")

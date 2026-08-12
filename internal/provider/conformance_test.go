@@ -38,6 +38,7 @@ func TestConformance_BothAdapters(t *testing.T) {
 		_, _ = io.WriteString(w, cannedAnthropicToolUseResponse("synth_tool_a", map[string]any{"path": "go.mod"}))
 	}))
 	defer antSrv.Close()
+
 	ant := provider.NewAnthropicProvider(shaper.New(),
 		provider.WithAnthropicAPIKey("test-key"),
 		provider.WithAnthropicBaseURL(antSrv.URL),
@@ -49,6 +50,7 @@ func TestConformance_BothAdapters(t *testing.T) {
 		_, _ = io.WriteString(w, cannedOpenAIToolCallsResponse("synth_tool_a", `{"path":"go.mod"}`))
 	}))
 	defer oaiSrv.Close()
+
 	oai := provider.NewOpenAIProvider(
 		provider.WithOpenAIAPIKey("test-key"),
 		provider.WithOpenAIBaseURL(oaiSrv.URL+"/v1"),
@@ -59,25 +61,29 @@ func TestConformance_BothAdapters(t *testing.T) {
 		{name: "openai", provider: oai, wantName: "synth_tool_a", wantArgs: map[string]any{"path": "go.mod"}},
 	}
 	for _, c := range cases {
-		c := c
 		t.Run(c.name, func(t *testing.T) {
 			resp, err := c.provider.Send(context.Background(), prof, msgs)
 			if err != nil {
 				t.Fatalf("Send: %v", err)
 			}
+
 			if len(resp.ToolCalls) != 1 {
 				t.Fatalf("ToolCalls = %d, want 1", len(resp.ToolCalls))
 			}
+
 			if resp.ToolCalls[0].Name != c.wantName {
 				t.Errorf("Name = %q, want %q", resp.ToolCalls[0].Name, c.wantName)
 			}
+
 			var in map[string]any
 			if err := json.Unmarshal(resp.ToolCalls[0].Input, &in); err != nil {
 				t.Fatalf("Input not valid JSON: %v", err)
 			}
+
 			if in["path"] != "go.mod" {
 				t.Errorf("Input.path = %v, want go.mod", in["path"])
 			}
+
 			if len(resp.Raw) == 0 {
 				t.Error("Raw empty; want captured response bytes")
 			}
@@ -89,6 +95,7 @@ func TestConformance_BothAdapters(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ToolResultMessage: %v", err)
 			}
+
 			var msg map[string]any
 			if err := json.Unmarshal(raw, &msg); err != nil {
 				t.Fatalf("ToolResultMessage output not valid JSON: %v", err)
@@ -101,11 +108,14 @@ func TestConformance_BothAdapters(t *testing.T) {
 // adapters implement the Provider interface (the test fails to compile otherwise,
 // but this makes the intent explicit and greppable).
 func TestConformance_InterfaceSatisfied(t *testing.T) {
-	var _ provider.Provider = (*provider.AnthropicProvider)(nil)
-	var _ provider.Provider = (*provider.OpenAIProvider)(nil)
+	var (
+		_ provider.Provider = (*provider.AnthropicProvider)(nil)
+		_ provider.Provider = (*provider.OpenAIProvider)(nil)
+	)
 	// sanity: the test profile loads
 	if loadProfile(t, "minimal").Name != "minimal" {
 		t.Fatal("minimal fixture did not load")
 	}
+
 	_ = profile.Profile{}
 }

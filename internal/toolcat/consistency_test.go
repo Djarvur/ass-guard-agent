@@ -19,10 +19,12 @@ func TestCheckConsistency_OnlyBuiltinsSatisfied(t *testing.T) {
 		{Name: "Read", InputSchema: readTool.InputSchema},
 		{Name: "Bash", InputSchema: bashTool.InputSchema},
 	}
+
 	res, err := toolcat.CheckConsistency(c, decls)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if !res.Ok() {
 		t.Errorf("expected Ok, got Unsatisfied=%v", res.Unsatisfied)
 	}
@@ -36,10 +38,12 @@ func TestCheckConsistency_DriftedSchemaIsHardFailure(t *testing.T) {
 	// Mutate the required-field set to force a structural mismatch.
 	drifted := mutateRequired(t, readTool.InputSchema, []string{"totally_different_field"})
 	decls := []profile.Decl{{Name: "Read", InputSchema: drifted}}
+
 	res, _ := toolcat.CheckConsistency(c, decls)
 	if res.Ok() {
 		t.Fatal("expected Read with drifted required fields to be Unsatisfied; got Ok")
 	}
+
 	if len(res.Unsatisfied) != 1 || res.Unsatisfied[0] != "Read" {
 		t.Errorf("Unsatisfied = %v, want [Read]", res.Unsatisfied)
 	}
@@ -52,10 +56,12 @@ func TestCheckConsistency_MCPIsInformational(t *testing.T) {
 	decls := []profile.Decl{
 		{Name: "mcp__firecrawl__search", InputSchema: json.RawMessage(`{"type":"object"}`)},
 	}
+
 	res, _ := toolcat.CheckConsistency(c, decls)
 	if len(res.MCPOrPlugin) != 1 {
 		t.Errorf("MCPOrPlugin = %v, want [mcp__firecrawl__search]", res.MCPOrPlugin)
 	}
+
 	if !res.Ok() {
 		t.Errorf("MCP-only profile should be Ok (informational), got Unsatisfied=%v", res.Unsatisfied)
 	}
@@ -65,14 +71,18 @@ func TestCheckConsistency_MCPIsInformational(t *testing.T) {
 // drift test).
 func mutateRequired(t *testing.T, schema json.RawMessage, required []string) json.RawMessage {
 	t.Helper()
+
 	var m map[string]any
 	if err := json.Unmarshal(schema, &m); err != nil {
 		t.Fatal(err)
 	}
+
 	m["required"] = required
+
 	out, err := json.Marshal(m)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	return out
 }

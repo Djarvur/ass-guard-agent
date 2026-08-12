@@ -28,6 +28,7 @@ func TestLoadInvalidCapMismatch(t *testing.T) {
 	require.Error(t, err)
 
 	var cerr *ConfigError
+
 	require.ErrorAs(t, err, &cerr, "should be a *ConfigError")
 	msg := err.Error()
 	require.Contains(t, msg, "glm-5.2", "error must name the primary model")
@@ -40,7 +41,9 @@ func TestLoadInvalidCapMismatch(t *testing.T) {
 func TestLoadInvalidDanglingSlug(t *testing.T) {
 	_, err := Load("testdata/invalid_dangling_slug.yaml")
 	require.Error(t, err)
+
 	var cerr *ConfigError
+
 	require.ErrorAs(t, err, &cerr)
 	require.Contains(t, err.Error(), "nonexistent-model", "error must name the dangling slug")
 }
@@ -51,7 +54,9 @@ func TestLoadInvalidDanglingSlug(t *testing.T) {
 func TestLoadCollectAll(t *testing.T) {
 	_, err := Load("testdata/invalid_multiple.yaml")
 	require.Error(t, err)
+
 	var cerr *ConfigError
+
 	require.ErrorAs(t, err, &cerr)
 	msg := err.Error()
 	require.Contains(t, msg, "ghost-fallback", "must name violation 1 (dangling slug)")
@@ -65,6 +70,7 @@ func TestLoadCollectAll(t *testing.T) {
 func TestLoadDefaults(t *testing.T) {
 	cfg, err := Load("testdata/minimal.yaml")
 	require.NoError(t, err)
+
 	cb := cfg.CircuitBreaker
 	require.Equal(t, 5, cb.ConsecutiveFailures)
 	require.Equal(t, 20, cb.ErrorRateWindow)

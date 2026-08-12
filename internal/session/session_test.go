@@ -12,6 +12,7 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/event"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
+	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 )
 
 // fakeProvider is a controllable Provider for Session tests. It queues
@@ -32,11 +33,13 @@ func (f *fakeProvider) Send(ctx context.Context, prof profile.Profile, msgs []pr
 	f.mu.Lock()
 	f.callN++
 	n := f.callN
+
 	resp := provider.Response{}
 	if len(f.responses) > 0 {
 		resp = f.responses[0]
 		f.responses = f.responses[1:]
 	}
+
 	bus := f.bus
 	panicOn := f.panicOn
 	delay := f.delay
@@ -52,6 +55,7 @@ func (f *fakeProvider) Send(ctx context.Context, prof profile.Profile, msgs []pr
 			Timestamp:       time.Now(),
 		})
 	}
+
 	if delay > 0 {
 		select {
 		case <-time.After(delay):
@@ -59,9 +63,11 @@ func (f *fakeProvider) Send(ctx context.Context, prof profile.Profile, msgs []pr
 			return provider.Response{}, ctx.Err()
 		}
 	}
+
 	if panicOn > 0 && n == panicOn {
 		panic("fakeProvider: injected panic")
 	}
+
 	return resp, nil
 }
 
@@ -73,11 +79,13 @@ func (f *fakeProvider) Stream(ctx context.Context, prof profile.Profile, msgs []
 	f.mu.Lock()
 	f.callN++
 	n := f.callN
+
 	resp := provider.Response{}
 	if len(f.responses) > 0 {
 		resp = f.responses[0]
 		f.responses = f.responses[1:]
 	}
+
 	bus := f.bus
 	panicOn := f.panicOn
 	delay := f.delay
@@ -96,9 +104,12 @@ func (f *fakeProvider) Stream(ctx context.Context, prof profile.Profile, msgs []
 	if panicOn > 0 && n == panicOn {
 		panic("fakeProvider: injected panic")
 	}
+
 	ch := make(chan provider.StreamChunk, 8)
+
 	go func() {
 		defer close(ch)
+
 		if delay > 0 {
 			select {
 			case <-time.After(delay):
@@ -106,6 +117,7 @@ func (f *fakeProvider) Stream(ctx context.Context, prof profile.Profile, msgs []
 				return
 			}
 		}
+
 		for _, tc := range resp.ToolCalls {
 			tcCopy := tc
 			select {
@@ -114,6 +126,7 @@ func (f *fakeProvider) Stream(ctx context.Context, prof profile.Profile, msgs []
 				return
 			}
 		}
+
 		if len(resp.ToolCalls) == 0 {
 			select {
 			case ch <- provider.StreamChunk{Type: "text", Text: "assistant response"}:
@@ -121,11 +134,13 @@ func (f *fakeProvider) Stream(ctx context.Context, prof profile.Profile, msgs []
 				return
 			}
 		}
+
 		select {
 		case ch <- provider.StreamChunk{Type: "done", FinishReason: resp.FinishReason}:
 		case <-ctx.Done():
 		}
 	}()
+
 	return ch, nil
 }
 
@@ -140,9 +155,11 @@ func turnIDFromMessages(_ []provider.Message) string { return "" }
 // newTestSession builds a Session with a fake provider over a temp-dir Manager.
 func newTestSession(t *testing.T, bus *event.Bus, responses []provider.Response) (*Session, *Manager, *fakeProvider) {
 	t.Helper()
+
 	if bus == nil {
 		bus = event.NewBus()
 	}
+
 	m := newTestManager(t, "sess-test")
 	fp := &fakeProvider{responses: responses, bus: bus}
 	pj := NewProjector(fakeProfile("test agent"), m)
@@ -157,6 +174,7 @@ func newTestSession(t *testing.T, bus *event.Bus, responses []provider.Response)
 		WorkDir:   t.TempDir(),
 		SessionID: "sess-test",
 	}
+
 	return s, m, fp
 }
 
@@ -168,26 +186,33 @@ func TestPromptRunsTurnLoop(t *testing.T) {
 	s, m, _ := newTestSession(t, bus, []provider.Response{
 		{FinishReason: "end_turn"},
 	})
+
 	stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "hi"}})
 	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
+
 	if stop != "end_turn" {
 		t.Errorf("stopReason = %q; want end_turn", stop)
 	}
+
 	lines, _ := m.ReadAll()
 	hasUser, hasAssistant := false, false
+
 	for _, l := range lines {
 		if l.Type == TypeUserMessage {
 			hasUser = true
 		}
+
 		if l.Type == TypeAssistantMessage {
 			hasAssistant = true
 		}
 	}
+
 	if !hasUser {
 		t.Error("transcript missing user_message line")
 	}
+
 	if !hasAssistant {
 		t.Error("transcript missing assistant_message line")
 	}
@@ -198,10 +223,12 @@ func TestPromptRunsTurnLoop(t *testing.T) {
 func TestRequestShapedPublished(t *testing.T) {
 	bus := event.NewBus()
 	ch := bus.Subscribe("RequestShaped", event.BufRequestShaped)
+
 	s, _, _ := newTestSession(t, bus, []provider.Response{{FinishReason: "end_turn"}})
 	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "hi"}}); err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
+
 	select {
 	case <-ch:
 	case <-time.After(500 * time.Millisecond):
@@ -217,14 +244,17 @@ func TestTranscriptWriterAsync(t *testing.T) {
 	s, m, fp := newTestSession(t, bus, []provider.Response{{FinishReason: "end_turn"}})
 	fp.delay = 30 * time.Millisecond // baseline Send latency
 	tw := NewTranscriptWriter(m, bus)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+
+	ctx := t.Context()
+
 	go tw.Run(ctx)
 
 	start := time.Now()
+
 	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "hi"}}); err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
+
 	elapsed := time.Since(start)
 	// The writer should not block the turn; elapsed is roughly the Send delay.
 	if elapsed > 500*time.Millisecond {
@@ -239,8 +269,10 @@ func TestTranscriptWriterAsync(t *testing.T) {
 				return // good
 			}
 		}
+
 		time.Sleep(10 * time.Millisecond)
 	}
+
 	t.Fatal("transcript writer did not append request_shaped within 1s")
 }
 
@@ -252,25 +284,31 @@ func TestCancelTurn(t *testing.T) {
 	// Make Send block until ctx cancel.
 	s.Provider.(*fakeProvider).delay = 5 * time.Second
 	ctx, cancel := context.WithCancel(context.Background())
+
 	go func() {
 		time.Sleep(80 * time.Millisecond)
 		cancel()
 	}()
+
 	stop, err := s.Prompt(ctx, []ContentBlock{{Type: "text", Text: "hi"}})
 	// The turn returns "cancelled" (not a hard error) on ctx cancel.
 	if err != nil {
 		t.Logf("Prompt returned err=%v (acceptable if ctx cancelled)", err)
 	}
+
 	if stop != "cancelled" {
 		t.Errorf("stopReason = %q; want cancelled", stop)
 	}
+
 	hasCanceled := false
+
 	lines, _ := m.ReadAll()
 	for _, l := range lines {
 		if l.Type == TypeCanceled {
 			hasCanceled = true
 		}
 	}
+
 	if !hasCanceled {
 		t.Error("transcript missing a canceled line after ctx cancel (D-16)")
 	}
@@ -281,6 +319,7 @@ func TestCancelTurn(t *testing.T) {
 // again (real execution is Phase 4; D-15 stubs survive).
 func TestStubToolExecution(t *testing.T) {
 	bus := event.NewBus()
+
 	s, m, _ := newTestSession(t, bus, []provider.Response{
 		{FinishReason: "tool_use", ToolCalls: []provider.ToolCall{{Name: "Read", Input: json.RawMessage(`{"file_path":"x"}`)}}},
 		{FinishReason: "end_turn"},
@@ -288,22 +327,28 @@ func TestStubToolExecution(t *testing.T) {
 	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "read x"}}); err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
+
 	lines, _ := m.ReadAll()
 	haveToolCall, haveStubResult := false, false
+
 	for _, l := range lines {
 		if l.Type == TypeToolCall {
 			haveToolCall = true
 		}
+
 		if l.Type == TypeToolResult {
 			haveStubResult = true
+
 			if !strings.Contains(strings.ToLower(string(l.Output)), "stub") {
 				t.Errorf("tool_result output = %s; want a stub marker (Phase 2)", string(l.Output))
 			}
 		}
 	}
+
 	if !haveToolCall {
 		t.Error("transcript missing tool_call line")
 	}
+
 	if !haveStubResult {
 		t.Error("transcript missing stub tool_result line")
 	}
@@ -315,26 +360,140 @@ func TestParentPanicRecovery(t *testing.T) {
 	bus := event.NewBus()
 	s, m, fp := newTestSession(t, bus, []provider.Response{{FinishReason: "end_turn"}})
 	fp.panicOn = 1
+
 	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "hi"}})
 	if err == nil {
 		t.Fatal("Prompt returned nil error after a provider panic; want a recovered error")
 	}
+
 	hasError := false
+
 	lines, _ := m.ReadAll()
 	for _, l := range lines {
 		if l.Type == TypeError {
 			hasError = true
+
 			if l.Component != "session" && l.Component != "turn" && l.Component != "provider" {
 				t.Errorf("error line component = %q; want a known component", l.Component)
 			}
+
 			if l.Stack == "" {
 				t.Error("error line missing a stack trace (investigate-and-fix-ready)")
 			}
 		}
 	}
+
 	if !hasError {
 		t.Error("transcript missing an error line after parent panic (investigate-and-fix-ready)")
 	}
+}
+
+// recordingToolExec is a toolcat.ToolExecutor that records call names + sleeps
+// per call so the DispatchBatch loop's parallelism/serialization is observable.
+type recordingToolExec struct {
+	mu       sync.Mutex
+	calls    []string
+	starts   []int64
+	sleep    time.Duration
+}
+
+func (r *recordingToolExec) Execute(ctx context.Context, name string, _ json.RawMessage) (json.RawMessage, error) {
+	r.mu.Lock()
+	r.calls = append(r.calls, name)
+	r.mu.Unlock()
+	start := time.Since(testStartTool).Nanoseconds()
+	select {
+	case <-time.After(r.sleep):
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	r.mu.Lock()
+	r.starts = append(r.starts, start)
+	r.mu.Unlock()
+	return json.RawMessage(`{"echo":"` + name + `"}`), nil
+}
+
+var testStartTool = time.Now()
+
+// TestPromptDispatchBatchLoop verifies the Phase-4 tool loop: a turn with [Read,
+// Bash] tool calls drives both through toolexec.DispatchBatch, appends BOTH
+// tool_result lines in ARRIVAL ORDER, and fires a boundary ONLY for the mutating
+// Bash tool. A real (recording) executor is injected via SetToolExecutor.
+func TestPromptDispatchBatchLoop(t *testing.T) {
+	bus := event.NewBus()
+	s, m, _ := newTestSession(t, bus, []provider.Response{
+		{ToolCalls: []provider.ToolCall{{Name: "Read"}, {Name: "Bash"}}, FinishReason: "tool_use"},
+		{FinishReason: "end_turn"},
+	})
+	// Catalog marks Read read-only + Bash mutating (so the boundary fires for
+	// Bash only — SESS-02).
+	s.Catalog = toolcat.NewCatalog()
+	s.Catalog.Register(toolcat.Tool{Name: "Read", Mutability: toolcat.MutabilityReadOnly})
+	s.Catalog.Register(toolcat.Tool{Name: "Bash", Mutability: toolcat.MutabilityMutating})
+	rec := &recordingToolExec{sleep: 10 * time.Millisecond}
+	s.SetToolExecutor(rec)
+
+	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "do it"}}); err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	// Both tools executed via the injected (recording) executor — DispatchBatch
+	// routed them, NOT the stub path.
+	rec.mu.Lock()
+	gotCalls := append([]string(nil), rec.calls...)
+	rec.mu.Unlock()
+	if len(gotCalls) != 2 {
+		t.Fatalf("executor calls = %v; want [Read Bash]", gotCalls)
+	}
+	// Arrival order preserved in the transcript: tool_result lines in [Read, Bash].
+	lines, _ := m.ReadAll()
+	var results []string
+	for _, l := range lines {
+		if l.Type == TypeToolResult {
+			// AppendToolResult stores the tool-call id (the name) in ToolCallID.
+			results = append(results, l.ToolCallID)
+		}
+	}
+	if len(results) != 2 || results[0] != "Read" || results[1] != "Bash" {
+		t.Errorf("tool_result order = %v; want [Read Bash] (arrival order)", results)
+	}
+	// Boundary fires for Bash (mutating) only — SESS-02 invariant.
+	var boundaries []string
+	for _, l := range lines {
+		if l.Type == TypeBoundary {
+			boundaries = append(boundaries, l.Cause)
+		}
+	}
+	if len(boundaries) != 1 || !strings.Contains(boundaries[0], "Bash") {
+		t.Errorf("boundaries = %v; want exactly one Bash boundary", boundaries)
+	}
+}
+
+// TestPromptNilToolExecutorStubs verifies backward compatibility: a Session
+// WITHOUT SetToolExecutor returns the canned stub result for every non-subagent
+// tool (Phase-2 D-15 behavior unchanged).
+func TestPromptNilToolExecutorStubs(t *testing.T) {
+	bus := event.NewBus()
+	s, m, _ := newTestSession(t, bus, []provider.Response{
+		{ToolCalls: []provider.ToolCall{{Name: "Read"}}, FinishReason: "tool_use"},
+		{FinishReason: "end_turn"},
+	})
+	s.Catalog = toolcat.NewCatalog()
+	s.Catalog.Register(toolcat.Tool{Name: "Read", Mutability: toolcat.MutabilityReadOnly})
+	// SetToolExecutor NOT called — toolExec is nil.
+
+	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "hi"}}); err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+	lines, _ := m.ReadAll()
+	for _, l := range lines {
+		if l.Type == TypeToolResult {
+			if !strings.Contains(string(l.Output), "stubbed in Phase 2") {
+				t.Errorf("nil-exec tool_result = %s; want the Phase-2 stub", l.Output)
+			}
+			return
+		}
+	}
+	t.Fatal("no tool_result line written (nil-exec stub path broken)")
 }
 
 // guard against unused fmt import if tests evolve.

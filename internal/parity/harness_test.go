@@ -15,6 +15,7 @@ func turnsOf(calls ...[2]string) []parity.ToolCall {
 	for _, c := range calls {
 		out = append(out, parity.ToolCall{Name: c[0], Input: json.RawMessage(c[1])})
 	}
+
 	return out
 }
 
@@ -29,10 +30,12 @@ func TestHarness_AllMatch(t *testing.T) {
 		"p2": turnsOf([2]string{"Bash", `{"command":"go test"}`}),
 	}}
 	h := parity.NewHarness()
+
 	results, err := h.Run(context.Background(), suite, arm)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	s := parity.Summarize(results)
 	if !s.OverallPass {
 		t.Errorf("OverallPass=false, want true (Layer1=%.2f Layer2=%.2f)", s.Layer1PassRate, s.Layer2PassRate)
@@ -51,10 +54,12 @@ func TestHarness_Mismatch(t *testing.T) {
 	}}
 	h := parity.NewHarness()
 	results, _ := h.Run(context.Background(), suite, arm)
+
 	s := parity.Summarize(results)
 	if s.OverallPass {
 		t.Error("OverallPass=true; want false (turn t2 diverged)")
 	}
+
 	if s.Layer1PassRate != 0.5 {
 		t.Errorf("Layer1PassRate = %.2f, want 0.50", s.Layer1PassRate)
 	}

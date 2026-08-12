@@ -26,6 +26,7 @@ func TestDetect_NoDrift(t *testing.T) {
 			"h7": "x", "h8": "x", "h9": "x", "h10": "x", "h11": "x", "h12": "x",
 		},
 	}
+
 	got := drift.Detect(m, captured)
 	if len(got) != 0 {
 		t.Errorf("expected no drift, got %+v", got)
@@ -41,10 +42,12 @@ func TestDetect_MissingTier2Header(t *testing.T) {
 	captured := map[string]any{
 		"request.headers": map[string]any{"User-Agent": "x"}, // 1, not 12
 	}
+
 	got := drift.Detect(m, captured)
 	if len(got) != 1 {
 		t.Fatalf("expected 1 drift, got %d", len(got))
 	}
+
 	if got[0].Tier != profile.Tier2Structural {
 		t.Errorf("drift tier = %v, want TIER-2", got[0].Tier)
 	}
@@ -58,6 +61,7 @@ func TestDetect_Tier3Ignored(t *testing.T) {
 	captured := map[string]any{
 		"response.usage.totalTokens": 9999,
 	}
+
 	got := drift.Detect(m, captured)
 	if len(got) != 0 {
 		t.Errorf("TIER-3 variance surfaced as drift: %+v (must be audit-only)", got)
@@ -78,7 +82,9 @@ func TestDetect_Tier2ValueVarianceNotFlagged(t *testing.T) {
 		"x-query-id", "x-request-id", "x-session-id", "x-zcode-trace-id"} {
 		headers[n] = "different-value-per-session"
 	}
+
 	captured := map[string]any{"request.headers": headers}
+
 	got := drift.Detect(m, captured)
 	if len(got) != 0 {
 		t.Errorf("TIER-2 value variance flagged as drift (only structure/presence matters): %+v", got)
@@ -93,6 +99,7 @@ func TestDetect_ChangedTier1SystemBlock(t *testing.T) {
 	captured := map[string]any{
 		"request.body.system": []any{map[string]any{"type": "text"}}, // 1, not 3
 	}
+
 	got := drift.Detect(m, captured)
 	if len(got) != 1 || got[0].Tier != profile.Tier1ByteFaithful {
 		t.Errorf("expected 1 TIER-1 drift, got %+v", got)

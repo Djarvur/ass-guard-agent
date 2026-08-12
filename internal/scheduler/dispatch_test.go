@@ -36,20 +36,25 @@ func newFakeProvider() *fakeProvider {
 
 func (f *fakeProvider) set(model string, oc fakeOutcome) *fakeProvider {
 	f.outcomes[model] = oc
+
 	return f
 }
 
 func (f *fakeProvider) Send(_ context.Context, prof profile.Profile, _ []provider.Message) (provider.Response, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
 	f.calls = append(f.calls, prof.Model)
+
 	oc, ok := f.outcomes[prof.Model]
 	if !ok {
 		return provider.Response{}, errors.New("fake: no outcome registered for model " + prof.Model)
 	}
+
 	if oc.err != nil {
 		return provider.Response{}, oc.err
 	}
+
 	return oc.resp, nil
 }
 
@@ -64,13 +69,16 @@ func (f *fakeProvider) ToolResultMessage(string, json.RawMessage) (json.RawMessa
 func (f *fakeProvider) callCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
 	return len(f.calls)
 }
 
 func (f *fakeProvider) calledModels() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
 	cp := append([]string(nil), f.calls...)
+
 	return cp
 }
 
@@ -83,17 +91,21 @@ type recordingSem struct {
 func (r *recordingSem) Acquire(context.Context) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
 	r.logs = append(r.logs, "acquire")
+
 	return nil
 }
 func (r *recordingSem) Release() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
 	r.logs = append(r.logs, "release")
 }
 func (r *recordingSem) pairs() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
 	return len(r.logs) / 2
 }
 
@@ -106,17 +118,21 @@ type recordingBreaker struct {
 func (b *recordingBreaker) Allow(time.Time) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
 	b.logs = append(b.logs, "allow")
+
 	return true
 }
 func (b *recordingBreaker) RecordSuccess() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
 	b.logs = append(b.logs, "record-success")
 }
 func (b *recordingBreaker) RecordTransient(time.Time, *provider.ProviderError) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
 	b.logs = append(b.logs, "record-transient")
 }
 
@@ -129,12 +145,15 @@ type recordingCost struct {
 func (c *recordingCost) Check(time.Time) CostAction {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
 	c.logs = append(c.logs, "check")
+
 	return CostAllow
 }
 func (c *recordingCost) Account(model string, _, _ int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
 	c.logs = append(c.logs, "account:"+model)
 }
 
@@ -144,13 +163,16 @@ func newTestScheduler(t *testing.T, fp *fakeProvider) (*Scheduler, *event.Bus, *
 	t.Helper()
 	cfg := loadValid(t)
 	bus := event.NewBus()
+
 	t.Cleanup(func() { bus.Close() })
+
 	providers := map[string]provider.Provider{
 		"anthropic": fp,
 		"openai":    fp,
 		"groq":      fp,
 	}
 	s := NewScheduler(cfg, bus, nil, providers, nil)
+
 	return s, bus, cfg
 }
 
@@ -158,9 +180,12 @@ func newTestScheduler(t *testing.T, fp *fakeProvider) (*Scheduler, *event.Bus, *
 func dispatchAndCollect(t *testing.T, s *Scheduler, bus *event.Bus, ctx context.Context,
 	tier, project string, capReq CapabilityReq) (provider.Response, error, []ProviderFallback) {
 	t.Helper()
+
 	ch := bus.Subscribe("ProviderFallback", 16)
 	resp, err := s.Dispatch(ctx, tier, project, capReq, profile.Profile{}, nil)
+
 	var events []ProviderFallback
+
 loop:
 	for {
 		select {
@@ -172,6 +197,7 @@ loop:
 			break loop
 		}
 	}
+
 	return resp, err, events
 }
 
@@ -189,8 +215,10 @@ func TestDispatchPrimarySuccess(t *testing.T) {
 	fp := newFakeProvider().set("glm-5.2", fakeOutcome{resp: provider.Response{FinishReason: "stop"}})
 	s, bus, _ := newTestScheduler(t, fp)
 	s.SetNow(func() time.Time { return ny(2026, time.August, 16, 12, 0) }) // Sunday noon → global heavy = glm-5.2
+
 	rb := &recordingBreaker{}
 	rc := &recordingCost{}
+
 	s.SetBreakers(map[providerModelKey]Breaker{{"anthropic", "glm-5.2"}: rb})
 	s.SetCostTracker(rc)
 
@@ -254,7 +282,9 @@ func TestDispatchChainExhausted(t *testing.T) {
 
 	_, err, events := dispatchAndCollect(t, s, bus, context.Background(), "heavy", "myproj", CapabilityReq{})
 	require.Error(t, err)
+
 	var perr *provider.ProviderError
+
 	require.ErrorAs(t, err, &perr)
 	require.Equal(t, provider.KindTransient, perr.Kind, "last Transient error surfaced")
 	require.Equal(t, "glm-4.6", perr.Model, "last-attempted candidate's error")
@@ -274,7 +304,9 @@ func TestDispatchStructuralStopsWalk(t *testing.T) {
 
 	_, err, events := dispatchAndCollect(t, s, bus, context.Background(), "heavy", "myproj", CapabilityReq{})
 	require.Error(t, err)
+
 	var perr *provider.ProviderError
+
 	require.ErrorAs(t, err, &perr)
 	require.Equal(t, provider.KindStructural, perr.Kind)
 	require.Empty(t, events, "ZERO events on Structural (walk never starts)")
@@ -289,7 +321,9 @@ func TestDispatchSemaphorePerCandidate(t *testing.T) {
 		set("minimax-m3", fakeOutcome{resp: provider.Response{FinishReason: "stop"}})
 	cfg := loadValid(t)
 	bus := event.NewBus()
+
 	t.Cleanup(func() { bus.Close() })
+
 	rs := &recordingSem{}
 	s := NewScheduler(cfg, bus, rs, map[string]provider.Provider{"anthropic": fp, "openai": fp, "groq": fp}, nil)
 	s.SetNow(func() time.Time { return ny(2026, time.August, 16, 12, 0) })
@@ -314,7 +348,9 @@ func TestDispatchCapabilitySeam(t *testing.T) {
 		Tiers: map[string]TierBinding{"heavy": {Model: "tool-less", Fallback: []string{"tool-full"}}},
 	}
 	bus := event.NewBus()
+
 	t.Cleanup(func() { bus.Close() })
+
 	fp := newFakeProvider().set("tool-full", fakeOutcome{resp: provider.Response{FinishReason: "stop"}})
 	s := NewScheduler(cfg, bus, nil, map[string]provider.Provider{"p": fp}, nil)
 
@@ -337,7 +373,9 @@ func TestDispatchCapabilityNoCandidate(t *testing.T) {
 		Tiers: map[string]TierBinding{"heavy": {Model: "a", Fallback: []string{"b"}}},
 	}
 	bus := event.NewBus()
+
 	t.Cleanup(func() { bus.Close() })
+
 	fp := newFakeProvider()
 	s := NewScheduler(cfg, bus, nil, map[string]provider.Provider{"p": fp}, nil)
 
@@ -355,6 +393,7 @@ func TestDispatchBreakerCostOrder(t *testing.T) {
 	s, bus, _ := newTestScheduler(t, fp)
 	rb := &recordingBreaker{}
 	rc := &recordingCost{}
+
 	s.SetBreakers(map[providerModelKey]Breaker{{"anthropic", "glm-5.2"}: rb})
 	s.SetCostTracker(rc)
 
@@ -372,6 +411,7 @@ func indexOf(s []string, want string) int {
 			return i
 		}
 	}
+
 	return -1
 }
 

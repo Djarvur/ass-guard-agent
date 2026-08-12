@@ -20,6 +20,7 @@ import (
 func TestSchedulerEndToEnd(t *testing.T) {
 	cfg := loadValid(t)
 	bus := event.NewBus()
+
 	t.Cleanup(func() { bus.Close() })
 
 	fp := newFakeProvider().

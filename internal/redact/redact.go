@@ -45,6 +45,7 @@ var secretKeys = map[string]struct{}{
 // return false — they are the mimicry fingerprint, not secrets.
 func IsSecretKey(k string) bool {
 	_, ok := secretKeys[strings.ToLower(strings.TrimSpace(k))]
+
 	return ok
 }
 
@@ -71,12 +72,15 @@ func Redact(raw []byte) ([]byte, error) {
 	}
 	// Fast path: valid JSON. Walk the tree, replace secret values, re-encode.
 	var node any
-	if err := json.Unmarshal(raw, &node); err == nil {
+	err := json.Unmarshal(raw, &node)
+	if err == nil {
 		walkRedact(node)
+
 		out, err := json.Marshal(node)
 		if err != nil {
 			return nil, err
 		}
+
 		return out, nil
 	}
 	// Fallback: non-JSON (HTML error pages, plain text). Regex-scrub tokens
@@ -92,8 +96,10 @@ func walkRedact(node any) {
 		for k, val := range v {
 			if IsSecretKey(k) {
 				v[k] = redacted
+
 				continue
 			}
+
 			walkRedact(val)
 		}
 	case []any:
@@ -108,6 +114,7 @@ func scrubBytes(raw []byte) []byte {
 	s := string(raw)
 	s = bearerRe.ReplaceAllString(s, "Bearer "+redacted)
 	s = skRe.ReplaceAllString(s, redacted)
+
 	return []byte(s)
 }
 
@@ -119,5 +126,6 @@ func ScrubError(err error) string {
 	if err == nil {
 		return ""
 	}
+
 	return string(scrubBytes([]byte(err.Error())))
 }

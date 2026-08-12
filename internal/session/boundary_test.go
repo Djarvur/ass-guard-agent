@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ func newTestSessionWithCatalog(t *testing.T, responses []provider.Response) *Ses
 	bus := event.NewBus()
 	s, _, _ := newTestSession(t, bus, responses)
 	s.Catalog = toolcat.NewCatalog()
+
 	return s
 }
 
@@ -30,12 +32,15 @@ func TestMaybeAppendBoundary_OnMutatingTool(t *testing.T) {
 	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "run ls"}}); err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
+
 	found := false
+
 	for _, l := range linesOf(s) {
 		if l.Type == TypeBoundary && l.Cause == "mutating-command:Bash" {
 			found = true
 		}
 	}
+
 	if !found {
 		t.Error("no boundary line after a mutating Bash tool call (SESS-02/03)")
 	}
@@ -51,6 +56,7 @@ func TestMaybeAppendBoundary_ReadOnlyNoBoundary(t *testing.T) {
 	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "read"}}); err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
+
 	for _, l := range linesOf(s) {
 		if l.Type == TypeBoundary {
 			t.Errorf("unexpected boundary for a read-only Read tool: %+v", l)
@@ -65,16 +71,21 @@ func TestMaybeAppendBoundary_ConfigAddsBoundary(t *testing.T) {
 		{FinishReason: "tool_use", ToolCalls: []provider.ToolCall{{Name: "WebFetch", Input: json.RawMessage(`{}`)}}},
 		{FinishReason: "end_turn"},
 	})
+
 	s.ConfigAdded = []string{"WebFetch"}
+
 	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "fetch"}}); err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
+
 	found := false
+
 	for _, l := range linesOf(s) {
 		if l.Type == TypeBoundary && l.Cause == "config-added:WebFetch" {
 			found = true
 		}
 	}
+
 	if !found {
 		t.Error("no config-added boundary for WebFetch (SESS-02)")
 	}
@@ -89,25 +100,29 @@ func TestStreamWired(t *testing.T) {
 	s, _, _ := newTestSession(t, bus, []provider.Response{
 		{FinishReason: "end_turn"},
 	})
+
 	s.Catalog = toolcat.NewCatalog()
+
 	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "hi"}}); err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 	// At least one AgentMessageChunk must have been published via Stream.
-	got := ""
+	var got strings.Builder
 	deadline := time.After(1 * time.Second)
+
 	for {
 		select {
 		case e := <-chunks:
 			if c, ok := e.(event.AgentMessageChunk); ok {
-				got += c.Content
+				got.WriteString(c.Content)
 			}
 		case <-deadline:
-			if got == "" {
+			if got.String() == "" {
 				t.Fatal("no AgentMessageChunk published; the turn loop may not be using Stream")
 			}
 		}
-		if got != "" {
+
+		if got.String() != "" {
 			break
 		}
 	}
@@ -115,5 +130,6 @@ func TestStreamWired(t *testing.T) {
 
 func linesOf(s *Session) []Line {
 	l, _ := s.Manager.ReadAll()
+
 	return l
 }

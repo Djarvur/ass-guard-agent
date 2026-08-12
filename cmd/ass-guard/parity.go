@@ -23,6 +23,7 @@ func newParityCmd() *cobra.Command {
 		resultsPath   string
 		surpriseCheck string
 	)
+
 	cmd := &cobra.Command{
 		Use:          "parity",
 		Short:        "run the behavioral mimicry A/B parity gate (MIMC-03, the north-star gate)",
@@ -37,6 +38,7 @@ func newParityCmd() *cobra.Command {
 	cmd.Flags().StringVar(&profilesDir, "profiles-dir", defaultProfilesDir(), "directory containing profile bundles")
 	cmd.Flags().StringVar(&resultsPath, "results", "parity-results.json", "results JSON output path")
 	cmd.Flags().StringVar(&surpriseCheck, "surprise-check", "", "optional second suite JSON to run after the curated suite passes")
+
 	return cmd
 }
 
@@ -45,6 +47,7 @@ func defaultSuitePath() string {
 	if err != nil {
 		return "internal/parity/suite/curated_suite.json"
 	}
+
 	return abs
 }
 
@@ -52,13 +55,16 @@ func defaultSuitePath() string {
 // the harness, and emits the structured footer + results JSON. Exit code reflects
 // the gate (0 iff OverallPass). Needs ZAI_API_KEY (operator-gated).
 func runParity(suitePath, rollout, name, dir, results, surprise string) error {
-	var suite []parity.CapturedTurn
-	var err error
+	var (
+		suite []parity.CapturedTurn
+		err   error
+	)
 	if rollout != "" {
 		suite, err = parity.ExtractTurnsFromRollout(rollout)
 		if err != nil {
 			return fmt.Errorf("extract turns from rollout %q: %w", rollout, err)
 		}
+
 		fmt.Fprintf(os.Stderr, "parity: generated suite of %d turns from rollout %s\n", len(suite), filepath.Base(rollout))
 	} else {
 		suite, err = parity.LoadReplaySession(suitePath)
@@ -66,6 +72,7 @@ func runParity(suitePath, rollout, name, dir, results, surprise string) error {
 			return fmt.Errorf("load suite %q: %w", suitePath, err)
 		}
 	}
+
 	prof, err := profile.NewLoader(dir).Load(name)
 	if err != nil {
 		return fmt.Errorf("load profile %q: %w", name, err)
@@ -83,6 +90,7 @@ func runParity(suitePath, rollout, name, dir, results, surprise string) error {
 	if err != nil {
 		return err
 	}
+
 	emitParityFooter("curated", res)
 
 	if res.Summary.OverallPass && surprise != "" {
@@ -97,14 +105,17 @@ func runParity(suitePath, rollout, name, dir, results, surprise string) error {
 			if err != nil {
 				return err
 			}
+
 			emitParityFooter("surprise-check", sres)
 		}
 	}
+
 	if !res.Summary.OverallPass {
 		// Non-zero exit signals the gate failed (PROJECT.md Anti-Pattern 5: stop-and-replan).
 		return fmt.Errorf("PARITY GATE FAIL: %d/%d turns matched on both layers (Layer1=%.2f Layer2=%.2f)",
 			countBothLayerPass(res), res.Summary.SuiteSize, res.Summary.Layer1PassRate, res.Summary.Layer2PassRate)
 	}
+
 	return nil
 }
 
@@ -113,26 +124,31 @@ func emitParityFooter(label string, res parity.RunResult) {
 	if !res.Summary.OverallPass {
 		status = "FAIL"
 	}
+
 	fmt.Fprintf(os.Stderr, "=== PARITY RESULT (%s) ===\n", label)
 	fmt.Fprintf(os.Stderr, "suite_size: %d\n", res.Summary.SuiteSize)
 	fmt.Fprintf(os.Stderr, "layer1_pass_rate: %.4f\n", res.Summary.Layer1PassRate)
 	fmt.Fprintf(os.Stderr, "layer2_pass_rate: %.4f\n", res.Summary.Layer2PassRate)
 	fmt.Fprintf(os.Stderr, "overall_status: %s\n", status)
+
 	for _, t := range res.Turns {
 		match := "match"
 		if !t.Layer1Match || t.Layer2Mismatch > 0 {
 			match = fmt.Sprintf("MISMATCH (layer1=%v layer2_mismatch=%d)", t.Layer1Match, t.Layer2Mismatch)
 		}
+
 		fmt.Fprintf(os.Stderr, "  %s — %s\n", t.TurnID, match)
 	}
 }
 
 func countBothLayerPass(res parity.RunResult) int {
 	n := 0
+
 	for _, t := range res.Turns {
 		if t.Layer1Match && t.Layer2Mismatch == 0 {
 			n++
 		}
 	}
+
 	return n
 }
