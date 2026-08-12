@@ -108,10 +108,15 @@ func (p *AnthropicProvider) drainSSE(ctx context.Context, body io.Reader, ch cha
 	var assembled bytes.Buffer
 	assembled.WriteByte('[')
 	first := true
+	// Tool-use lifecycle state: content_block_start → content_block_delta
+	// (input_json_delta fragments) → content_block_stop. We accumulate the
+	// input JSON across deltas and emit the complete chunk on block stop.
+	var tuName, tuID string
+	var tuInput strings.Builder
+	var inToolUse bool
 	for {
 		select {
 		case <-ctx.Done():
-			// Best-effort: emit a done chunk with whatever finish reason we have.
 			sendDone(ch, finishReason, assembled.Bytes())
 			return
 		default:
@@ -119,10 +124,11 @@ func (p *AnthropicProvider) drainSSE(ctx context.Context, body io.Reader, ch cha
 		line, err := br.ReadString('\n')
 		if err != nil {
 			if err == io.EOF {
+				flushToolUse(&tuName, &tuID, &tuInput, &inToolUse, ch, ctx)
 				sendDone(ch, finishReason, finalizeAssembled(&assembled))
 				return
 			}
-			// Network error mid-stream (often ctx abort): emit done + return.
+			flushToolUse(&tuName, &tuID, &tuInput, &inToolUse, ch, ctx)
 			sendDone(ch, finishReason, finalizeAssembled(&assembled))
 			return
 		}
@@ -132,18 +138,51 @@ func (p *AnthropicProvider) drainSSE(ctx context.Context, body io.Reader, ch cha
 		}
 		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
 		if payload == "[DONE]" {
+			flushToolUse(&tuName, &tuID, &tuInput, &inToolUse, ch, ctx)
 			sendDone(ch, finishReason, finalizeAssembled(&assembled))
 			return
 		}
 		var ev map[string]any
 		if err := json.Unmarshal([]byte(payload), &ev); err != nil {
-			continue // skip malformed frame
+			continue
 		}
 		if !first {
 			assembled.WriteByte(',')
 		}
 		first = false
 		assembled.WriteString(payload)
+
+		// Handle tool-use lifecycle events (multi-event state machine).
+		evType, _ := ev["type"].(string)
+		switch evType {
+		case "content_block_start":
+			cb, _ := ev["content_block"].(map[string]any)
+			if cb != nil {
+				if t, _ := cb["type"].(string); t == "tool_use" {
+					flushToolUse(&tuName, &tuID, &tuInput, &inToolUse, ch, ctx) // flush previous if unclosed
+					tuName, _ = cb["name"].(string)
+					tuID, _ = cb["id"].(string)
+					tuInput.Reset()
+					inToolUse = true
+					continue // don't emit yet — wait for deltas
+				}
+			}
+		case "content_block_delta":
+			delta, _ := ev["delta"].(map[string]any)
+			if delta != nil && inToolUse {
+				if dt, _ := delta["type"].(string); dt == "input_json_delta" {
+					if pj, _ := delta["partial_json"].(string); pj != "" {
+						tuInput.WriteString(pj)
+					}
+				}
+			}
+		case "content_block_stop":
+			if inToolUse {
+				flushToolUse(&tuName, &tuID, &tuInput, &inToolUse, ch, ctx)
+				continue
+			}
+		}
+
 		chunk, fr := parseAnthropicSSEEvent(ev)
 		if fr != "" {
 			finishReason = fr
@@ -159,9 +198,40 @@ func (p *AnthropicProvider) drainSSE(ctx context.Context, body io.Reader, ch cha
 	}
 }
 
+// flushToolUse emits the accumulated tool-use chunk if one is active, then
+// resets the state. Called on content_block_stop, EOF, error, and [DONE].
+func flushToolUse(name, id *string, input *strings.Builder, inUse *bool, ch chan<- StreamChunk, ctx context.Context) {
+	if !*inUse {
+		return
+	}
+	*inUse = false
+	in := json.RawMessage(tuInputBytes(input))
+	if len(in) == 0 {
+		in = json.RawMessage("{}")
+	}
+	chunk := StreamChunk{Type: "tool_use", ToolCall: &ToolCall{Name: *name, Input: in}, ToolCallID: *id}
+	select {
+	case ch <- chunk:
+	case <-ctx.Done():
+	}
+	*name = ""
+	*id = ""
+	input.Reset()
+}
+
+// tuInputBytes returns the accumulated input JSON, or nil if empty.
+func tuInputBytes(b *strings.Builder) json.RawMessage {
+	s := b.String()
+	if s == "" {
+		return nil
+	}
+	return json.RawMessage(s)
+}
+
 // parseAnthropicSSEEvent turns one decoded SSE event into a StreamChunk (and/or
-// captures the stop reason). Returns nil chunk if the event carries no chunk
-// payload (e.g. content_block_start for text, content_block_stop, etc.).
+// captures the stop reason). Tool-use events are handled by the lifecycle state
+// machine in drainSSE (content_block_start → input_json_delta → content_block_stop);
+// this function handles only the simple single-event types.
 func parseAnthropicSSEEvent(ev map[string]any) (*StreamChunk, string) {
 	typ, _ := ev["type"].(string)
 	switch typ {
@@ -178,26 +248,6 @@ func parseAnthropicSSEEvent(ev map[string]any) (*StreamChunk, string) {
 				if text, _ := delta["text"].(string); text != "" {
 					return &StreamChunk{Type: "text", Text: text}, ""
 				}
-			}
-		}
-	case "content_block_start":
-		if cb, _ := ev["content_block"].(map[string]any); cb != nil {
-			if t, _ := cb["type"].(string); t == "tool_use" {
-				name, _ := cb["name"].(string)
-				id, _ := cb["id"].(string)
-				// Input can arrive as json.RawMessage (if the JSON decoder kept
-				// it raw) or as map[string]any (fully decoded). Handle both.
-				var in json.RawMessage
-				switch v := cb["input"].(type) {
-				case json.RawMessage:
-					in = v
-				case nil:
-					in = json.RawMessage("{}")
-				default:
-					b, _ := json.Marshal(v)
-					in = b
-				}
-				return &StreamChunk{Type: "tool_use", ToolCall: &ToolCall{Name: name, Input: in}, ToolCallID: id}, ""
 			}
 		}
 	case "message_delta":

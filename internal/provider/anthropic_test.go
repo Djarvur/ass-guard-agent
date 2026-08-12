@@ -34,9 +34,13 @@ func loadProfile(t *testing.T, name string) profile.Profile {
 // drainSSE can parse (VERIFIED-FACTS.md item #1: stop_reason "tool_use").
 func cannedAnthropicToolUseResponse(name string, input map[string]any) string {
 	inputJSON, _ := json.Marshal(input)
+	// partial_json is a STRING in the real Anthropic SSE protocol (JSON fragments)
+	partialJSONStr, _ := json.Marshal(string(inputJSON)) // produces a quoted+escaped string
 	var b strings.Builder
 	b.WriteString("data: " + `{"type":"message_start","message":{"usage":{"input_tokens":10,"output_tokens":0}}}` + "\n\n")
-	b.WriteString("data: " + `{"type":"content_block_start","content_block":{"type":"tool_use","id":"call_01","name":"` + name + `","input":` + string(inputJSON) + `}}` + "\n\n")
+	b.WriteString("data: " + `{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_01","name":"` + name + `"}}` + "\n\n")
+	b.WriteString(`data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":` + string(partialJSONStr) + `}}` + "\n\n")
+	b.WriteString("data: " + `{"type":"content_block_stop","index":0}` + "\n\n")
 	b.WriteString("data: " + `{"type":"message_delta","delta":{"stop_reason":"tool_use"}}` + "\n\n")
 	b.WriteString("data: [DONE]\n\n")
 	return b.String()
