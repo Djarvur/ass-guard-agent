@@ -3,11 +3,11 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-last_updated: "2026-08-12T18:56:21.062Z"
+last_updated: "2026-08-12T19:03:26.094Z"
 progress:
   total_phases: 7
   completed_phases: 3
-  total_plans: 22
+  total_plans: 23
   completed_plans: 16
   percent: 43
 ---
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-08-09)
 **Phase:** 4
 **Status:** Ready to plan
 **Next action:** Plan Phase 1 (Mimicry MVP — north-star proof). Carry-forward: (1) correct MIMC-02 path wording to `~/.zcode/cli/rollout/model-io-sess_<id>.jsonl` during Phase 1 planning (option-a consequence; munged-cwd obsolete for zcode); (2) operator provisions `MINIMAX_API_KEY`/`GROQ_API_KEY` to flip item #2 PARTIAL → VERIFIED (schema VERIFIED offline already).
-**Last session:** 2026-08-12T18:56:21.011Z
+**Last session:** 2026-08-12T19:03:26.061Z
 
 ## Phase Status
 
