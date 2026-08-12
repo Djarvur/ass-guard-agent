@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/djarvur/ass-guard-agent/internal/event"
-	"github.com/djarvur/ass-guard-agent/internal/redact"
+	"github.com/Djarvur/ass-guard-agent/internal/event"
+	"github.com/Djarvur/ass-guard-agent/internal/redact"
 )
 
 // AuditLogger subscribes to RequestShaped and writes one JSON line per event to

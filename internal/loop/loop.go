@@ -8,8 +8,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/djarvur/ass-guard-agent/internal/profile"
-	"github.com/djarvur/ass-guard-agent/internal/provider"
+	"github.com/Djarvur/ass-guard-agent/internal/profile"
+	"github.com/Djarvur/ass-guard-agent/internal/provider"
 )
 
 // Run executes one turn: it wraps the prompt as a single user message, sends it

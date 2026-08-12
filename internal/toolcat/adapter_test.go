@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/djarvur/ass-guard-agent/internal/profile"
-	"github.com/djarvur/ass-guard-agent/internal/toolcat"
+	"github.com/Djarvur/ass-guard-agent/internal/profile"
+	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 )
 
 // TestAdapter_ProfileAuthoritative proves the adapter returns the PROFILE's

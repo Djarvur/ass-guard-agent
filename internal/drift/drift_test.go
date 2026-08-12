@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/djarvur/ass-guard-agent/internal/drift"
-	"github.com/djarvur/ass-guard-agent/internal/profile"
+	"github.com/Djarvur/ass-guard-agent/internal/drift"
+	"github.com/Djarvur/ass-guard-agent/internal/profile"
 )
 
 // manifest builds a small CoverageManifest for the test cases.

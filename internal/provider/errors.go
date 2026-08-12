@@ -9,7 +9,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/djarvur/ass-guard-agent/internal/redact"
+	"github.com/Djarvur/ass-guard-agent/internal/redact"
 )
 
 // ErrorKind classifies a provider failure so the scheduler can pattern-match on

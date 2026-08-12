@@ -7,9 +7,9 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"github.com/djarvur/ass-guard-agent/internal/event"
-	"github.com/djarvur/ass-guard-agent/internal/provider"
-	"github.com/djarvur/ass-guard-agent/internal/toolcat"
+	"github.com/Djarvur/ass-guard-agent/internal/event"
+	"github.com/Djarvur/ass-guard-agent/internal/provider"
+	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 )
 
 // subagentRestrictedDefault is the default tool subset a Task/Agent subagent may

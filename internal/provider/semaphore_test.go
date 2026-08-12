@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/djarvur/ass-guard-agent/internal/provider"
+	"github.com/Djarvur/ass-guard-agent/internal/provider"
 )
 
 // TestSemaphore_AllowsMaxConcurrent verifies a Semaphore(max) lets max Acquires

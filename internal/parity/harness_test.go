@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/djarvur/ass-guard-agent/internal/parity"
+	"github.com/Djarvur/ass-guard-agent/internal/parity"
 )
 
 // fakeArm is reserved for tests that need a single canned response (unused here;

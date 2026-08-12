@@ -12,8 +12,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/djarvur/ass-guard-agent/internal/profile"
-	"github.com/djarvur/ass-guard-agent/internal/shaper"
+	"github.com/Djarvur/ass-guard-agent/internal/profile"
+	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 )
 
 // httpClient is the streaming-path HTTP client. A shared default client is fine

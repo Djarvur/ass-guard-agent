@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/djarvur/ass-guard-agent/internal/event"
+	"github.com/Djarvur/ass-guard-agent/internal/event"
 )
 
 // CostCeilingTracker implements CostTracker (D-08): dollars-per-fixed-window

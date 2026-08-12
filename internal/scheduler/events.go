@@ -1,8 +1,8 @@
 package scheduler
 
 import (
-	"github.com/djarvur/ass-guard-agent/internal/event"
-	"github.com/djarvur/ass-guard-agent/internal/provider"
+	"github.com/Djarvur/ass-guard-agent/internal/event"
+	"github.com/Djarvur/ass-guard-agent/internal/provider"
 )
 
 // ProviderFallback is emitted when a transient failure causes the scheduler to

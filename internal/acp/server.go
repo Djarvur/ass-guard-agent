@@ -10,7 +10,7 @@ import (
 	"log"
 	"sync"
 
-	"github.com/djarvur/ass-guard-agent/internal/redact"
+	"github.com/Djarvur/ass-guard-agent/internal/redact"
 )
 
 // ChunkEmitter streams session/update notifications to the client during a turn.

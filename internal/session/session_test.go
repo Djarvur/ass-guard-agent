@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/djarvur/ass-guard-agent/internal/event"
-	"github.com/djarvur/ass-guard-agent/internal/profile"
-	"github.com/djarvur/ass-guard-agent/internal/provider"
+	"github.com/Djarvur/ass-guard-agent/internal/event"
+	"github.com/Djarvur/ass-guard-agent/internal/profile"
+	"github.com/Djarvur/ass-guard-agent/internal/provider"
 )
 
 // fakeProvider is a controllable Provider for Session tests. It queues

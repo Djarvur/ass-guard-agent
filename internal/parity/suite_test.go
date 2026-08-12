@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/djarvur/ass-guard-agent/internal/parity"
+	"github.com/Djarvur/ass-guard-agent/internal/parity"
 )
 
 // TestSuite_CuratedLoads confirms the shipped curated_suite.json parses and

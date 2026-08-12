@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/djarvur/ass-guard-agent/internal/acp"
-	"github.com/djarvur/ass-guard-agent/internal/event"
-	"github.com/djarvur/ass-guard-agent/internal/profile"
-	"github.com/djarvur/ass-guard-agent/internal/provider"
+	"github.com/Djarvur/ass-guard-agent/internal/acp"
+	"github.com/Djarvur/ass-guard-agent/internal/event"
+	"github.com/Djarvur/ass-guard-agent/internal/profile"
+	"github.com/Djarvur/ass-guard-agent/internal/provider"
 )
 
 // mockStreamProvider is a Provider whose Stream emits canned text chunks then a

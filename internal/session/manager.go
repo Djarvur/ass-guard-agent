@@ -166,6 +166,24 @@ func (m *Manager) AppendUsage(turnID string, input, output int64) error {
 	return m.appendLine(Line{Type: TypeUsage, TurnID: turnID, Timestamp: now(), InputTokens: input, OutputTokens: output})
 }
 
+// AppendEngineDecision records the unified engine's verdict for one turn
+// (Phase-4 ENG-02 — the single provenance-tagged stream). The line type constant
+// TypeEngineDecision is already reserved in transcript.go. action is the
+// engine's decision vocabulary (nothing/continue/hook/ask/wait); signal is the
+// matched signal ("text:<id>", "tool:<id>", or "unmatched"); reason is the
+// investigate-and-fix-ready human note (PROJECT.md). The audit log therefore
+// proves the structural-safety property: unmatched output triggers nothing.
+func (m *Manager) AppendEngineDecision(turnID, action, signal, reason string) error {
+	return m.appendLine(Line{
+		Type:      TypeEngineDecision,
+		TurnID:    turnID,
+		Timestamp: now(),
+		Name:      action,
+		Input:     json.RawMessage(`"` + signal + `"`),
+		Text:      reason,
+	})
+}
+
 // ReadAll reads every line from the transcript in append order.
 func (m *Manager) ReadAll() ([]Line, error) {
 	m.mu.Lock()

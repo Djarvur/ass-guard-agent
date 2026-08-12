@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/djarvur/ass-guard-agent/internal/profile"
-	"github.com/djarvur/ass-guard-agent/internal/shaper"
+	"github.com/Djarvur/ass-guard-agent/internal/profile"
+	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 )
 
 // loadFixture loads a profile from the internal/profile testdata (the synthetic

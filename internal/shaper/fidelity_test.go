@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/djarvur/ass-guard-agent/internal/profile"
-	"github.com/djarvur/ass-guard-agent/internal/shaper"
+	"github.com/Djarvur/ass-guard-agent/internal/profile"
+	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 )
 
 // loadProfileFromRoot loads a profile from a profiles root directory.

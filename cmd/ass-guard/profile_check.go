@@ -8,8 +8,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/djarvur/ass-guard-agent/internal/drift"
-	"github.com/djarvur/ass-guard-agent/internal/profile"
+	"github.com/Djarvur/ass-guard-agent/internal/drift"
+	"github.com/Djarvur/ass-guard-agent/internal/profile"
 )
 
 // newProfileCheckCmd builds the `ass-guard profile check <name>` subcommand

@@ -3,7 +3,7 @@ package profile_test
 import (
 	"testing"
 
-	"github.com/djarvur/ass-guard-agent/internal/profile"
+	"github.com/Djarvur/ass-guard-agent/internal/profile"
 )
 
 // TestCheckCoverage_Tier1Drift confirms a TIER-1 count mismatch surfaces as a

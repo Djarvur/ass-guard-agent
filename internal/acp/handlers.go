@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/djarvur/ass-guard-agent/internal/redact"
+	"github.com/Djarvur/ass-guard-agent/internal/redact"
 )
 
 // registerHandlers populates the method→handler map with the canonical ACP v1

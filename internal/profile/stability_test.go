@@ -6,7 +6,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/djarvur/ass-guard-agent/internal/profile"
+	"github.com/Djarvur/ass-guard-agent/internal/profile"
 )
 
 // rolloutDir resolves the zcode rollout directory; empty if absent.

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/djarvur/ass-guard-agent/internal/event"
+	"github.com/Djarvur/ass-guard-agent/internal/event"
 )
 
 // TestTypedChannels verifies Subscribe returns a typed receive channel and

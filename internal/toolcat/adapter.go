@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/djarvur/ass-guard-agent/internal/profile"
+	"github.com/Djarvur/ass-guard-agent/internal/profile"
 )
 
 // Adapter is the schema-adapter layer (TOOL-02). It enforces the invariant that

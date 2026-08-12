@@ -7,7 +7,7 @@ package drift
 import (
 	"fmt"
 
-	"github.com/djarvur/ass-guard-agent/internal/profile"
+	"github.com/Djarvur/ass-guard-agent/internal/profile"
 )
 
 // Drift is one TIER-1/2 field whose captured value differs from the manifest's

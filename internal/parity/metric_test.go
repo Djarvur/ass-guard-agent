@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/djarvur/ass-guard-agent/internal/parity"
+	"github.com/Djarvur/ass-guard-agent/internal/parity"
 )
 
 // TestCompareSequence covers Layer 1 (ordered tool-name sequence equality).

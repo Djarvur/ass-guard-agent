@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/djarvur/ass-guard-agent/internal/provider"
+	"github.com/Djarvur/ass-guard-agent/internal/provider"
 )
 
 // breakerState is the internal state of a CircuitBreaker (sony/gobreaker

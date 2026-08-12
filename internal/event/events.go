@@ -16,6 +16,8 @@ const (
 	BufRequestShaped     = 16
 	BufSubagentResult    = 8
 	BufBoundary          = 4
+	BufEngineDecision    = 8  // Phase-4: one engine verdict per turn (ENG-02 provenance stream)
+	BufHookProgress      = 16 // Phase-4: one event per hook step boundary (HOOK-01..05)
 )
 
 // RequestShaped carries the verbatim shaped outgoing request (LOG-01 evidence).
@@ -104,3 +106,37 @@ type Boundary struct {
 
 // Kind returns the event discriminator.
 func (Boundary) Kind() string { return "Boundary" }
+
+// EngineDecision is the unified engine's verdict for one turn (Phase-4 ENG-02 —
+// the single provenance-tagged stream). The engine emits one EngineDecision per
+// turn AFTER the turn completes (D-01 post-turn observer), including
+// ActionNothing so the audit log proves the structural-safety property
+// (unmatched output triggers nothing — D-03). The ACP adapter surfaces ask
+// decisions as a session/update; the transcript writer appends an
+// engine_decision line (D-20).
+type EngineDecision struct {
+	TurnID string
+	Action string // "nothing" | "continue" | "hook" | "ask" | "wait"
+	Signal string // "text:<patternID>" | "tool:<toolID>" | "unmatched"
+	Reason string // human-readable, investigate-and-fix-ready (PROJECT.md)
+}
+
+// Kind returns the event discriminator.
+func (EngineDecision) Kind() string { return "EngineDecision" }
+
+// HookProgress is one event at a hook-step boundary (Phase-4 HOOK-01..05). The
+// hook-DAG executor emits a start/finish/error/ask event per step so the
+// forgotten routine is fully auditable (investigate-and-fix-ready). Defined here
+// (consumed by internal/hookdag in Plan 04-03) so the bus has a single
+// definition point and avoids a later merge conflict.
+type HookProgress struct {
+	TurnID    string
+	HookName  string
+	StepIndex int
+	StepKind  string // "run-command" | "send-prompt" | "fresh-context" | "wait"
+	Status    string // "start" | "finish" | "error" | "ask"
+	Err       string // populated when Status == "error" or "ask"
+}
+
+// Kind returns the event discriminator.
+func (HookProgress) Kind() string { return "HookProgress" }

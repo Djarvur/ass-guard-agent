@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/djarvur/ass-guard-agent/internal/profile"
+	"github.com/Djarvur/ass-guard-agent/internal/profile"
 )
 
 // ConsistencyResult is the TOOL-03 catalog-consistency outcome. Built-in tools

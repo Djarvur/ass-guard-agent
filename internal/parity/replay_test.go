@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/djarvur/ass-guard-agent/internal/parity"
+	"github.com/Djarvur/ass-guard-agent/internal/parity"
 )
 
 // TestExtractTurnsFromRollout parses a fixture rollout and confirms prompt→tool-

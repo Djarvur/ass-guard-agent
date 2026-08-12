@@ -3,7 +3,7 @@ package session
 import (
 	"context"
 
-	"github.com/djarvur/ass-guard-agent/internal/event"
+	"github.com/Djarvur/ass-guard-agent/internal/event"
 )
 
 // TranscriptWriter is the async bus consumer (LOG-02) and the ONE writer for the

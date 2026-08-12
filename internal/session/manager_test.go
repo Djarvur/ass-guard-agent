@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/djarvur/ass-guard-agent/internal/redact"
+	"github.com/Djarvur/ass-guard-agent/internal/redact"
 )
 
 // newTestManager opens a Manager in a temp dir with the real redactor.
@@ -49,6 +49,56 @@ func TestAppendUserMessageWritesJSONLine(t *testing.T) {
 
 // TestAppendBoundary verifies the boundary line carries cause + commandRef +
 // turnID (D-08 — boundary markers are explicit transcript lines).
+// TestAppendEngineDecision verifies the Phase-4 engine_decision line carries
+// the type discriminator, the action in `name`, the signal in `input`, and the
+// reason in `text` (ENG-02 — the single provenance-tagged stream).
+func TestAppendEngineDecision(t *testing.T) {
+	m := newTestManager(t, "sess-1")
+	if err := m.AppendEngineDecision("turn_7", "continue", "text:impl-complete", "text-pattern matched"); err != nil {
+		t.Fatalf("AppendEngineDecision: %v", err)
+	}
+	lines, err := m.ReadAll()
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if len(lines) != 1 {
+		t.Fatalf("got %d lines; want 1", len(lines))
+	}
+	l := lines[0]
+	if l.Type != TypeEngineDecision {
+		t.Errorf("Type = %q; want %q", l.Type, TypeEngineDecision)
+	}
+	if l.TurnID != "turn_7" {
+		t.Errorf("TurnID = %q; want turn_7", l.TurnID)
+	}
+	if l.Name != "continue" {
+		t.Errorf("Name(action) = %q; want continue", l.Name)
+	}
+	if string(l.Input) != `"text:impl-complete"` {
+		t.Errorf("Input(signal) = %s; want \"text:impl-complete\"", l.Input)
+	}
+	if l.Text != "text-pattern matched" {
+		t.Errorf("Text(reason) = %q; want text-pattern matched", l.Text)
+	}
+}
+
+// TestAppendEngineDecisionNothing verifies the structural-safety cell records
+// an ActionNothing decision (unmatched output triggers nothing — D-03); the
+// audit log must prove it so a human investigating can confirm nothing fired.
+func TestAppendEngineDecisionNothing(t *testing.T) {
+	m := newTestManager(t, "sess-1")
+	if err := m.AppendEngineDecision("turn_1", "nothing", "unmatched", "no pattern or handoff tool matched"); err != nil {
+		t.Fatalf("AppendEngineDecision: %v", err)
+	}
+	lines, err := m.ReadAll()
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if lines[0].Name != "nothing" || lines[0].Text == "" {
+		t.Errorf("engine_decision nothing line not recorded faithfully: %+v", lines[0])
+	}
+}
+
 func TestAppendBoundary(t *testing.T) {
 	m := newTestManager(t, "sess-1")
 	if err := m.AppendBoundary("mutating-command:Bash", "toolCallId_abc", "turn_042"); err != nil {

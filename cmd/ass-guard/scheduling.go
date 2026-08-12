@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/djarvur/ass-guard-agent/internal/scheduler"
+	"github.com/Djarvur/ass-guard-agent/internal/scheduler"
 )
 
 // newSchedulingCmd builds the `ass-guard scheduling` command group: operator

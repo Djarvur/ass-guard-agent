@@ -1,0 +1,35 @@
+[tools]
+go = "1.26"
+golangci-lint = "2"
+
+[env]
+# Ensure Go test/build output is deterministic
+GOFLAGS = "-trimpath"
+
+[tasks.build]
+description = "Build all packages (CGO disabled for static binary)"
+run = "CGO_ENABLED=0 go build ./..."
+
+[tasks.test]
+description = "Run all tests with race detector"
+run = "go test -race -count=1 ./..."
+
+[tasks.lint]
+description = "Run golangci-lint v2 with strict config"
+run = "golangci-lint run"
+
+[tasks.vet]
+description = "Run go vet"
+run = "go vet ./..."
+
+[tasks.ci]
+description = "Run the full CI gate: vet + lint + build + test"
+depends = ["vet", "lint", "build", "test"]
+
+[tasks.tidy]
+description = "Run go mod tidy"
+run = "go mod tidy"
+
+[tasks.fmt]
+description = "Format all Go files"
+run = "gofmt -w ."

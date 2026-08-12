@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/djarvur/ass-guard-agent/internal/provider"
+	"github.com/Djarvur/ass-guard-agent/internal/provider"
 )
 
 // newTestBreaker builds a Closed breaker with the documented D-07 defaults and a

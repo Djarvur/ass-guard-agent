@@ -1,4 +1,4 @@
-module github.com/djarvur/ass-guard-agent
+module github.com/Djarvur/ass-guard-agent
 
 go 1.25
 

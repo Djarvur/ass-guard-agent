@@ -9,7 +9,7 @@ import (
 
 	"github.com/sashabaranov/go-openai"
 
-	"github.com/djarvur/ass-guard-agent/internal/profile"
+	"github.com/Djarvur/ass-guard-agent/internal/profile"
 )
 
 // OpenAIDefaultBaseURL is the canonical OpenAI Chat Completions endpoint. Z.ai,

@@ -3,7 +3,7 @@ package toolcat_test
 import (
 	"testing"
 
-	"github.com/djarvur/ass-guard-agent/internal/toolcat"
+	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 )
 
 // TestCatalog_GetCoreTools confirms the built-in catalog carries the core tools
