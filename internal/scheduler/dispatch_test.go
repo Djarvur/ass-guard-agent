@@ -188,6 +188,7 @@ func transientErr(model string, status int) *provider.ProviderError {
 func TestDispatchPrimarySuccess(t *testing.T) {
 	fp := newFakeProvider().set("glm-5.2", fakeOutcome{resp: provider.Response{FinishReason: "stop"}})
 	s, bus, _ := newTestScheduler(t, fp)
+	s.SetNow(func() time.Time { return ny(2026, time.August, 16, 12, 0) }) // Sunday noon → global heavy = glm-5.2
 	rb := &recordingBreaker{}
 	rc := &recordingCost{}
 	s.SetBreakers(map[providerModelKey]Breaker{{"anthropic", "glm-5.2"}: rb})

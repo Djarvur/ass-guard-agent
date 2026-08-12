@@ -34,7 +34,7 @@ func TestConformance_BothAdapters(t *testing.T) {
 
 	// Anthropic arm.
 	antSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("content-type", "application/json")
+		w.Header().Set("content-type", "text/event-stream")
 		_, _ = io.WriteString(w, cannedAnthropicToolUseResponse("synth_tool_a", map[string]any{"path": "go.mod"}))
 	}))
 	defer antSrv.Close()

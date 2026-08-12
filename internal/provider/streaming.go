@@ -185,9 +185,17 @@ func parseAnthropicSSEEvent(ev map[string]any) (*StreamChunk, string) {
 			if t, _ := cb["type"].(string); t == "tool_use" {
 				name, _ := cb["name"].(string)
 				id, _ := cb["id"].(string)
-				in, _ := cb["input"].(json.RawMessage)
-				if in == nil {
+				// Input can arrive as json.RawMessage (if the JSON decoder kept
+				// it raw) or as map[string]any (fully decoded). Handle both.
+				var in json.RawMessage
+				switch v := cb["input"].(type) {
+				case json.RawMessage:
+					in = v
+				case nil:
 					in = json.RawMessage("{}")
+				default:
+					b, _ := json.Marshal(v)
+					in = b
 				}
 				return &StreamChunk{Type: "tool_use", ToolCall: &ToolCall{Name: name, Input: in}, ToolCallID: id}, ""
 			}

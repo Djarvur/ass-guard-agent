@@ -3,11 +3,7 @@ package provider
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
-	"os"
 
-	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
 
 	"github.com/djarvur/ass-guard-agent/internal/profile"
@@ -69,41 +65,33 @@ func NewAnthropicProvider(s *shaper.Shaper, opts ...AnthropicOption) *AnthropicP
 
 // Send shapes the profile + messages, posts to the Anthropic endpoint, and
 // parses tool_use blocks. Returns a clear error if no API key is configured.
+//
+// Implementation note: Send delegates to Stream (SSE) because Z.ai requires
+// streaming for operations that may take longer than 10 minutes. The SSE
+// response is drained synchronously and accumulated into a Response — callers
+// see the same interface as a non-streaming call, but the wire uses stream:true.
 func (p *AnthropicProvider) Send(ctx context.Context, prof profile.Profile, messages []Message) (Response, error) {
-	key := p.apiKey
-	if key == "" {
-		key = os.Getenv("ZAI_API_KEY")
-	}
-	if key == "" {
-		return Response{}, errors.New("anthropic provider: no API key (set ZAI_API_KEY or pass WithAnthropicAPIKey)")
-	}
-	if p.shaper == nil {
-		return Response{}, errors.New("anthropic provider: nil Shaper")
-	}
-
-	params, headerOpts, err := p.shaper.Shape(prof, messages)
+	ch, err := p.Stream(ctx, prof, messages)
 	if err != nil {
-		return Response{}, fmt.Errorf("anthropic provider shape: %w", err)
+		return Response{}, err
 	}
 
-	clientOpts := []option.RequestOption{
-		option.WithAPIKey(key),
-		option.WithBaseURL(p.baseURL),
+	var out Response
+	for chunk := range ch {
+		switch chunk.Type {
+		case "tool_use":
+			if chunk.ToolCall != nil {
+				out.ToolCalls = append(out.ToolCalls, *chunk.ToolCall)
+			}
+		case "done":
+			out.FinishReason = chunk.FinishReason
+			out.Raw = chunk.Raw
+		}
 	}
-	clientOpts = append(clientOpts, p.extraOpts...)
-	clientOpts = append(clientOpts, headerOpts...)
-
-	if p.capture != nil {
-		body, _ := json.Marshal(params)
-		p.capture(body, headersFromOpts(headerOpts))
+	if out.FinishReason == "" {
+		out.FinishReason = "end_turn"
 	}
-
-	client := anthropic.NewClient(clientOpts...)
-	resp, err := client.Messages.New(ctx, params)
-	if err != nil {
-		return Response{}, fmt.Errorf("anthropic provider send: %w", err)
-	}
-	return parseAnthropicResponse(resp)
+	return out, nil
 }
 
 // ToolResultMessage builds the Anthropic-shape follow-up: a user-role message
@@ -120,42 +108,6 @@ func (p *AnthropicProvider) ToolResultMessage(toolCallID string, result json.Raw
 		}},
 	}
 	return json.Marshal(msg)
-}
-
-// parseAnthropicResponse turns an *anthropic.Message into the zcode-normalized
-// Response: tool_use blocks become ToolCall{Name, Input json.RawMessage}; the
-// stop reason is preserved; the raw response is re-marshaled for the audit log.
-func parseAnthropicResponse(resp *anthropic.Message) (Response, error) {
-	out := Response{
-		FinishReason: string(resp.StopReason),
-	}
-	for _, block := range resp.Content {
-		if block.Type != "tool_use" {
-			continue
-		}
-		tc := ToolCall{Name: block.Name, Input: block.Input}
-		if len(tc.Input) == 0 {
-			tc.Input = json.RawMessage("{}")
-		}
-		out.ToolCalls = append(out.ToolCalls, tc)
-	}
-	raw, err := json.Marshal(resp)
-	if err != nil {
-		return out, fmt.Errorf("anthropic provider marshal response: %w", err)
-	}
-	out.Raw = raw
-	return out, nil
-}
-
-// headersFromOpts is a best-effort extraction of header name→value pairs from
-// the Shaper's option slice for the RequestCapturer hook. option.RequestOption
-// is an opaque func; the Shaper emits exactly one WithHeader per profile header
-// in profile.Headers order, so we surface the names from a parallel capture in
-// production code paths that need them. For now the hook receives the body plus
-// an empty header map (the audit log redacts/persists the body; full header
-// capture is wired in Plan 01-05).
-func headersFromOpts(_ []option.RequestOption) map[string]string {
-	return map[string]string{}
 }
 
 // orEmpty returns b as-is, or a single space if empty, so JSON object fields

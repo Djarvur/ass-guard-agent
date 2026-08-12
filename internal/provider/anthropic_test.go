@@ -28,23 +28,18 @@ func loadProfile(t *testing.T, name string) profile.Profile {
 	return p
 }
 
-// cannedAnthropicToolUseResponse is a minimal Anthropic Messages response
-// carrying one tool_use block. This is the shape Z.ai/GLM returns over the
-// Anthropic protocol (VERIFIED-FACTS.md item #1: stop_reason "tool_use",
-// content[].type "tool_use").
+// cannedAnthropicToolUseResponse is a minimal Anthropic Messages SSE response
+// carrying one tool_use block. Z.ai requires streaming (stream:true); Send
+// delegates to Stream, so tests must return SSE-formatted data: lines that
+// drainSSE can parse (VERIFIED-FACTS.md item #1: stop_reason "tool_use").
 func cannedAnthropicToolUseResponse(name string, input map[string]any) string {
 	inputJSON, _ := json.Marshal(input)
-	return `{
-  "id": "msg_test_01",
-  "type": "message",
-  "role": "assistant",
-  "model": "GLM-5.2",
-  "stop_reason": "tool_use",
-  "content": [
-    {"type": "text", "text": "thinking..."},
-    {"type": "tool_use", "id": "call_01", "name": "` + name + `", "input": ` + string(inputJSON) + `}
-  ]
-}`
+	var b strings.Builder
+	b.WriteString("data: " + `{"type":"message_start","message":{"usage":{"input_tokens":10,"output_tokens":0}}}` + "\n\n")
+	b.WriteString("data: " + `{"type":"content_block_start","content_block":{"type":"tool_use","id":"call_01","name":"` + name + `","input":` + string(inputJSON) + `}}` + "\n\n")
+	b.WriteString("data: " + `{"type":"message_delta","delta":{"stop_reason":"tool_use"}}` + "\n\n")
+	b.WriteString("data: [DONE]\n\n")
+	return b.String()
 }
 
 // TestAnthropicProvider_SendParsesToolUse drives the adapter through a mock
@@ -57,7 +52,7 @@ func TestAnthropicProvider_SendParsesToolUse(t *testing.T) {
 		}
 		body, _ := io.ReadAll(r.Body)
 		capturedBody = body
-		w.Header().Set("content-type", "application/json")
+		w.Header().Set("content-type", "text/event-stream")
 		_, _ = io.WriteString(w, cannedAnthropicToolUseResponse("synth_tool_a", map[string]any{"path": "go.mod"}))
 	}))
 	defer srv.Close()
