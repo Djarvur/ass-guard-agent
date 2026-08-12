@@ -91,6 +91,14 @@ type Engine struct {
 // returned UNCHANGED (the turn has already completed, so the engine failure is
 // invisible to the caller). Provenance (D-05): every Decision carries the
 // source turn id.
+//
+// Cancel-drain (ENG-03 — the structural off-switch): the drain mechanism is ctx
+// cancellation. Observe checks ctx.Err() before each continue-injection; a
+// cancelled ctx ⇒ no further runner.Run calls + ("cancelled", nil). Plan 04-05
+// runs Observe under the SAME ctx derived from the ACP turnCtx, so session/cancel
+// (handleSessionCancel → sessionState.cancelTurn → cancel()) reaches this loop
+// and drains every queued injection. See TestObserve_CancelDrain (unit) +
+// cmd/ass-guard TestCancelDrainsInjections (ACP-level).
 func (e *Engine) Observe(ctx context.Context, runner TurnRunner, table PatternTable, userPrompt []session.ContentBlock) (stop string, err error) {
 	// Step 1: run the user's prompt. A panic here or anywhere below is
 	// recovered and the ORIGINAL (stop, err) are returned — graceful
