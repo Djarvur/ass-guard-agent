@@ -50,6 +50,7 @@ func (f *fakeProvider) Send(ctx context.Context, prof profile.Profile, msgs []pr
 		if marshalErr != nil {
 			panic(marshalErr)
 		}
+
 		bus.Publish(event.RequestShaped{
 			TurnID:          turnIDFromMessages(msgs),
 			VerbatimRequest: body,
@@ -98,6 +99,7 @@ func (f *fakeProvider) Stream(ctx context.Context, prof profile.Profile, msgs []
 		if marshalErr != nil {
 			panic(marshalErr)
 		}
+
 		bus.Publish(event.RequestShaped{
 			TurnID: turnIDFromMessages(msgs), VerbatimRequest: body,
 			Profile: prof.Name, Timestamp: time.Now(),

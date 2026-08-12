@@ -166,6 +166,7 @@ func (r *reconProvider) Stream(ctx context.Context, prof profile.Profile, _ []pr
 	if marshalErr != nil {
 		panic(marshalErr)
 	}
+
 	r.bus.Publish(event.RequestShaped{VerbatimRequest: body, Profile: prof.Name, Timestamp: time.Now()})
 
 	ch := make(chan provider.StreamChunk, 8)

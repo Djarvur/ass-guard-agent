@@ -237,6 +237,7 @@ func TestMessageIDNilIsNotification(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal zero-id request: %v", err)
 	}
+
 	if !bytes.Contains(raw, []byte(`"id":0`)) {
 		t.Errorf("id=0 request did not marshal id field: %s (0 is a valid id)", string(raw))
 	}

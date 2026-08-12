@@ -414,6 +414,7 @@ func TestStdoutClean(t *testing.T) {
 	}()
 
 	_, _ = cliW.Write(mustFrame(t, newRequest(0, methodInitialize, map[string]any{keyProtocolVersion: 1})))
+
 	time.Sleep(100 * time.Millisecond)
 	cancel()
 
