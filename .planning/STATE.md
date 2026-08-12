@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-08-12T19:17:19.468Z"
+last_updated: "2026-08-12T23:30:00.000Z"
 progress:
   total_phases: 7
-  completed_phases: 3
-  total_plans: 32
-  completed_plans: 16
-  percent: 43
+  completed_phases: 4
+  total_plans: 37
+  completed_plans: 23
+  percent: 62
 ---
 
 # State: ass-guard-agent (working name)
@@ -18,14 +18,14 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-08-09)
 **Core value:** Outgoing requests to the model provider must be structurally indistinguishable from the mimicked agent's (zcode first)
-**Current focus:** Phase 4 — unified engine + hook dag + openspec + learning
+**Current focus:** Phase 4 COMPLETE — unified engine + hook dag + openspec + learning. Next: Phase 5 (Ecosystem Compatibility) planning.
 
 ## Current Phase
 
 **Phase:** 4
-**Status:** Ready to execute
-**Next action:** Plan Phase 1 (Mimicry MVP — north-star proof). Carry-forward: (1) correct MIMC-02 path wording to `~/.zcode/cli/rollout/model-io-sess_<id>.jsonl` during Phase 1 planning (option-a consequence; munged-cwd obsolete for zcode); (2) operator provisions `MINIMAX_API_KEY`/`GROQ_API_KEY` to flip item #2 PARTIAL → VERIFIED (schema VERIFIED offline already).
-**Last session:** 2026-08-12T19:03:26.061Z
+**Status:** COMPLETE (7/7 plans)
+**Next action:** Phase 5 (Ecosystem Compatibility) planning. Carry-forward (unchanged from prior state): Phase 1 remains blocked on the operator key + data-source gate (see Blockers); Phase 2/3/4 substrate is fully built + race-clean. Phase 4 verified the project's reason to exist end-to-end (zero-continue OpenSpec scenario passes — `cmd/ass-guard.TestEndToEnd_ZeroContinue`).
+**Last session:** 2026-08-12T23:30:00.000Z
 
 ## Phase Status
 
@@ -35,12 +35,13 @@ See: .planning/PROJECT.md (updated 2026-08-09)
 | 1 — Mimicry MVP (north-star proof) | Not started | Gates everything; A/B parity test must pass before Phase 2. 16 REQ-IDs. Highest research depth. |
 | 2 — Session Core + ACP Interface | Not started | 18 REQ-IDs. Needs Phase 1. |
 | 3 — Model Scheduling | Not started | 6 REQ-IDs. Needs Phases 1-2. |
-| 4 — Unified Engine + Hook-DAG + OpenSpec + Learning | Not started | 19 REQ-IDs. Needs Phases 1-3. Project's reason to exist. |
+| 4 — Unified Engine + Hook-DAG + OpenSpec + Learning | **COMPLETE (7/7 plans)** | All 7 plans done across 4 waves (04-01/03/04 W1, 04-02/06 W2, 04-05 W3, 04-07 W4). 19 REQ-IDs implemented (ENG-01..05, HOOK-01..05, LRN-01..04, OPEN-01..03, TOOL-04/05). 5 new packages: internal/engine, internal/hookdag, internal/openspec, internal/learning, internal/toolexec + toolcat.Register + session.SetToolExecutor + acp_serve engine wiring + `ass-guard learning` CLI. End-to-end zero-continue OpenSpec scenario green (`cmd/ass-guard.TestEndToEnd_ZeroContinue`); structural safety (unmatched ⇒ nothing) proven end-to-end + via testing/quick property; cancel-drain (ENG-03) proven at the ACP level; hand-rolled hook-DAG ≤300 LOC core; swappable WebSearch/WebFetch backends. Phase gate GREEN: build + vet clean, 9 Phase-4 packages -race green, 0 TODO/FIXME. 04-VERIFICATION-PREP.md maps the 5 success criteria → tests + commands. Real-openspec tests gated behind ASSGUARD_OPENSPEC_BIN=1. Carry-forward: `internal/profile.TestStability_WithinSessionExtractionSource` still FAILS (pre-existing Phase-1 data-source blocker — Phase 4 did not touch internal/profile). Next: Phase 5 (Ecosystem Compatibility). |
 | 5 — Ecosystem Compatibility | Not started | 5 REQ-IDs. Needs stable tool registry (Phase 2). |
 | 6 — Distribution + Polish | Not started | 3 REQ-IDs. Ship readiness after all deltas validated. |
 
 ## Decisions Log
 
+- **Phase 4 (2026-08-12):** Phase 4 COMPLETE (7/7 plans, 4 waves, autonomous execution). All 19 REQ-IDs (ENG-01..05, HOOK-01..05, LRN-01..04, OPEN-01..03, TOOL-04/05) implemented + tested under `-race`. Wave structure: W1 = 04-01 (engine decision core + pure Decide + Observe wrapper with graceful degradation + re-fire budget + cancel-drain) + 04-03 (hookdag: declarative YAML config + ≤300 LOC executor + provenance loop prevention + 4 step kinds) + 04-04 (toolexec: DispatchBatch concurrent-reads/serialized-mutations + swappable Backend + RealExecutor + toolcat.Register + session.SetToolExecutor loop replacement); W2 = 04-02 (openspec: TOML config + subprocess Adapter + RegisterTools + OpenSpecPatternTable bridge, real-openspec gated behind ASSGUARD_OPENSPEC_BIN=1) + 04-06 (learning: single-writer yaml Store + ProposeHooks + `ass-guard learning list/revert` CLI); W3 = 04-05 (integration: acp_serve engine wiring + ActionDispatcher hook→hookdag/ask→store + engineTurnRunnerAdapter + end-to-end zero-continue); W4 = 04-07 (cancel-drain ACP-level proof + consolidated 5-criteria e2e + 04-VERIFICATION-PREP.md). Key invariants honored: D-01 post-turn observer (never in the turn critical path), D-03 structural safety (unmatched ⇒ nothing — proven by testing/quick + end-to-end), D-04 graceful degradation (engine panic recovered, original stop returned), D-07 hand-rolled DAG executor (executor.go = 187 LOC, ≤300 budget), D-14 TOML isolated to internal/openspec (yaml.v3 for hookdag + learning), D-22 swappable backends (no firecrawl dep — stub proves the seam). One deviation recorded inline: case-insensitive import-path casing (`Djarvur` per go.mod) — followed the canonical module path. Phase gate GREEN (build + vet clean; internal/engine, hookdag, openspec, learning, toolexec, toolcat, event, session, cmd/ass-guard all `-race` green; 0 TODO/FIXME in Phase-4 production files). The single `go test ./... -race` failure is the PRE-EXISTING Phase-1 data-source blocker (internal/profile TestStability_WithinSessionExtractionSource — globs for the absent zcode rollout session eea3dc48, documented above); no Phase-4 file was touched in internal/profile. Commits: 7943c62 (W1), 994542f (W2), edaeaf4 (W3), 5b5331c (W4).
 - **Plan 00-05 (2026-08-09):** D-07 Tier-B resolution for item #1 (zcode JSONL path) — research-predicted default **option-a (revise-and-continue) APPLIED BY DEFAULT** after the user declined to override the checkpoint across multiple prompts (NOT 'user chose option-a' — honest audit-trail attribution). Confirmed by on-disk evidence from plans 00-01..00-04 and documented as the prediction in 00-05-PLAN.md Task 2. Consequence (option-a, verbatim): Phase 1 MIMC-02 path wording to be corrected to `~/.zcode/cli/rollout/model-io-sess_<id>.jsonl` during Phase 1 planning; munged-cwd convention obsolete for zcode. Reversible at Phase 1 planning. Recorded in VERIFIED-FACTS.md item #1 Notes.
 - **Plan 00-05 (2026-08-09):** Phase 0 COMPLETE (5/5 plans, 5/5 STACK items closed). VERIFIED-FACTS.md is the post-spike source of truth (STACK.md unchanged, D-01 — md5 `5e4eecc8418f9ff61272702044da0f54` preserved). The completeness gate `check-verified-facts.sh` exits 0 (6/6 checks); the plan `<verify>` chain prints PHASE0_GATE_PASS. D-03 sanitization is the phase's final secret-leak barrier (threat T-00-10, high) — zero sk-/Bearer/*_API_KEY=/raw UUID//Users/ matches across the merged file. Item #2 carries forward as PARTIAL: schema VERIFIED offline, live round-trip deferred pending operator key provisioning (single carry-forward operator action). Phase 1 (Mimicry MVP) is ready to plan.
 - **Plan 00-01 (2026-08-09):** STACK item #1 (zcode JSONL path) is Tier-B-favorable → D-07 (a) revise-and-continue, confirmed on disk. Corrected path: `~/.zcode/cli/rollout/model-io-sess_<session-id>.jsonl` (STACK's `~/.claude/projects/<munged-cwd>/...` is a different product, Claude Code, `queue-operation` schema). Schema richer than STACK claimed (full wire-level capture; no MITM needed for request body). Explicit user sign-off on MIMC-02 wording correction lands in Plan 00-05.
@@ -117,6 +118,15 @@ Per the critical rules + PROJECT.md investigate-and-fix-ready principle: silentl
 | Phase 00 P03 | 8min | 2 tasks | 3 files |
 | Phase 00 P04 | 10min | 2 tasks | 3 files |
 | Phase 00 P05 | 8min | 1 task | 4 files |
+| Phase 04 P01 (engine) | — | 4 tasks | 7 files |
+| Phase 04 P02 (openspec) | — | 3 tasks | 9 files |
+| Phase 04 P03 (hookdag) | — | 3 tasks | 8 files |
+| Phase 04 P04 (toolexec) | — | 3 tasks | 8 files |
+| Phase 04 P05 (integration) | — | 3 tasks | 5 files |
+| Phase 04 P06 (learning) | — | 4 tasks | 9 files |
+| Phase 04 P07 (cancel+verify) | — | 3 tasks | 4 files |
+
+Phase-4 totals: 7 plans, 23 tasks, 5 new packages (engine/hookdag/openspec/learning/toolexec), 2 expanded packages (toolcat/session), 1 CLI subcommand (`ass-guard learning`), 1 wiring point (cmd/ass-guard/acp_serve.go). All 9 Phase-4 packages green under `-race`.
 
 ## Decisions
 
