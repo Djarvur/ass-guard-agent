@@ -64,6 +64,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newParityCmd())
 	root.AddCommand(newACPCmd())
 	root.AddCommand(newSchedulingCmd())
+	root.AddCommand(newLearningCmd())
 
 	return root
 }

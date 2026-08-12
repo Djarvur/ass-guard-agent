@@ -3,6 +3,7 @@ module github.com/Djarvur/ass-guard-agent
 go 1.25
 
 require (
+	github.com/BurntSushi/toml v1.6.0
 	github.com/anthropics/anthropic-sdk-go v1.63.0
 	github.com/sashabaranov/go-openai v1.42.0
 	github.com/spf13/cobra v1.10.2
