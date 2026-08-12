@@ -343,7 +343,7 @@ func (noopCostTracker) Account(string, int, int)   {}
 // nil (kept lazy so the scheduler package does not import provider's concrete
 // constructor at load time — it does, but the indirection makes test injection
 // of a fake Sem clean).
-func asDefaultSem() Sem {
+func asDefaultSem() Sem { //nolint:ireturn // returns the Sem interface so callers depend on the abstraction, not the provider concrete type
 	return provider.NewDefaultSemaphore()
 }
 

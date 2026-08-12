@@ -69,8 +69,7 @@ func (s *scriptedRunner) LastTurnOutput() engine.TurnOutput {
 	return s.outputs[idx]
 }
 
-func (s *scriptedRunner) runCalls() int     { return int(s.calls.Load()) }
-func (s *scriptedRunner) lastOutCalls() int { return int(s.lastCalls.Load()) }
+func (s *scriptedRunner) runCalls() int { return int(s.calls.Load()) }
 
 // capturingManager is a fake EngineDecisionWriter that records every decision
 // written to the transcript seam.

@@ -45,7 +45,7 @@ func ExtractTurnsFromRollout(path string) ([]CapturedTurn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open rollout: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var turns []CapturedTurn
 

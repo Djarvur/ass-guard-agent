@@ -89,7 +89,7 @@ func (h *HTTPBackend) getRaw(ctx context.Context, full string) (json.RawMessage,
 	if err != nil {
 		return nil, fmt.Errorf("toolexec: HTTP get: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -170,7 +170,7 @@ func BackendsFromConfig(cfg map[string]string) (map[string]Backend, error) {
 }
 
 // selectBackend maps a single backend name to its concrete impl.
-func selectBackend(name, tool string) (Backend, error) {
+func selectBackend(name, tool string) (Backend, error) { //nolint:ireturn // returns one of several Backend implementations selected by name
 	switch strings.ToLower(name) {
 	case "http", "":
 		return &HTTPBackend{}, nil

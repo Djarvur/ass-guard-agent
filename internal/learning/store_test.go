@@ -299,7 +299,7 @@ func TestStore_RevertAtomicReadOnlyDir(t *testing.T) {
 	if err := os.Chmod(dir, 0o500); err != nil {
 		t.Fatalf("chmod dir read-only: %v", err)
 	}
-	defer os.Chmod(dir, 0o755)
+	defer func() { _ = os.Chmod(dir, 0o755) }()
 
 	if err := s.Revert(learning.Slug("b")); err == nil {
 		t.Error("Revert on a read-only dir = nil; want a write error (atomic)")

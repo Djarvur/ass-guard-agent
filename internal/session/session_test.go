@@ -26,7 +26,6 @@ type fakeProvider struct {
 	callN     int
 	panicOn   int // 1-indexed; 0 = never
 	delay     time.Duration
-	cancelErr error // returned when ctx is cancelled (e.g. context.Canceled)
 }
 
 func (f *fakeProvider) Send(ctx context.Context, prof profile.Profile, msgs []provider.Message) (provider.Response, error) {

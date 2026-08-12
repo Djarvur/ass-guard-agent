@@ -81,7 +81,7 @@ func ExtractFromRollout(path string) (ExtractResult, error) {
 	if err != nil {
 		return ExtractResult{}, fmt.Errorf("open rollout: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var (
 		firstFull *ModelIO
@@ -293,7 +293,7 @@ func countFullRequests(path string) (int, int) {
 	if err != nil {
 		return 0, 0
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	scanner := bufio.NewScanner(f)
 	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)

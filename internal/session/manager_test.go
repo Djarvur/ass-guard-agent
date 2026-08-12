@@ -290,7 +290,7 @@ func TestSelfGitignore(t *testing.T) {
 		t.Fatalf("NewManager: %v", err)
 	}
 
-	defer m.Close()
+	defer func() { _ = m.Close() }()
 
 	gi := dir + "/.ass-guard/.gitignore"
 

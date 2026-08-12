@@ -53,7 +53,7 @@ func newSchedulingValidateCmd() *cobra.Command {
 				return fmt.Errorf("scheduling config invalid: %w", err)
 			}
 
-			fmt.Fprintln(cmd.ErrOrStderr(), "scheduling config valid")
+			_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "scheduling config valid")
 
 			return nil
 		},
@@ -136,11 +136,11 @@ func emitResolveHuman(w io.Writer, tier, project string, primary scheduler.Targe
 		proj = "(global)"
 	}
 
-	fmt.Fprintf(w, "%s [%s] -> %s/%s\n", tier, proj, primary.Provider, primary.Model)
-	fmt.Fprintf(w, "  base_url: %s\n", primary.BaseURL)
-	fmt.Fprintf(w, "  shape: %s\n", primary.Shape)
-	fmt.Fprintf(w, "  capabilities: %s\n", describeCapabilities(primary.Capabilities))
-	fmt.Fprintf(w, "  pricing: $%.4f/Mtok in, $%.4f/Mtok out\n",
+	_, _ = fmt.Fprintf(w, "%s [%s] -> %s/%s\n", tier, proj, primary.Provider, primary.Model)
+	_, _ = fmt.Fprintf(w, "  base_url: %s\n", primary.BaseURL)
+	_, _ = fmt.Fprintf(w, "  shape: %s\n", primary.Shape)
+	_, _ = fmt.Fprintf(w, "  capabilities: %s\n", describeCapabilities(primary.Capabilities))
+	_, _ = fmt.Fprintf(w, "  pricing: $%.4f/Mtok in, $%.4f/Mtok out\n",
 		primary.Pricing.InputPerMToken, primary.Pricing.OutputPerMToken)
 
 	if len(fallbacks) > 0 {
@@ -149,9 +149,9 @@ func emitResolveHuman(w io.Writer, tier, project string, primary scheduler.Targe
 			names = append(names, f.Provider+"/"+f.Model)
 		}
 
-		fmt.Fprintf(w, "  fallback: %s\n", strings.Join(names, ", "))
+		_, _ = fmt.Fprintf(w, "  fallback: %s\n", strings.Join(names, ", "))
 	} else {
-		fmt.Fprintf(w, "  fallback: (none)\n")
+		_, _ = fmt.Fprintf(w, "  fallback: (none)\n")
 	}
 }
 

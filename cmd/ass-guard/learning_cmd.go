@@ -65,14 +65,14 @@ func resolveLearnedPath(flag string) string {
 func runLearningList(stdout io.Writer, stderr io.Writer, path string) error {
 	store, err := learning.Open(path)
 	if err != nil {
-		fmt.Fprintf(stderr, "learning: open %q: %v\n", path, err)
+		_, _ = fmt.Fprintf(stderr, "learning: open %q: %v\n", path, err)
 
 		return err
 	}
 
 	entries := store.List()
 
-	fmt.Fprintln(stdout, "ID\tSITUATION\tANSWER\tCONFIDENCE\tSTATUS\tEXPIRY")
+	_, _ = fmt.Fprintln(stdout, "ID\tSITUATION\tANSWER\tCONFIDENCE\tSTATUS\tEXPIRY")
 
 	for _, e := range entries {
 		expiry := ""
@@ -80,11 +80,11 @@ func runLearningList(stdout io.Writer, stderr io.Writer, path string) error {
 			expiry = e.Expiry.UTC().Format("2006-01-02")
 		}
 
-		fmt.Fprintf(stdout, "%s\t%s\t%s\t%d\t%s\t%s\n", e.ID, e.Situation, e.Answer, e.Confidence, e.Status, expiry)
+		_, _ = fmt.Fprintf(stdout, "%s\t%s\t%s\t%d\t%s\t%s\n", e.ID, e.Situation, e.Answer, e.Confidence, e.Status, expiry)
 	}
 
 	if len(entries) == 0 {
-		fmt.Fprintln(stderr, "learning: no learned entries (empty store)")
+		_, _ = fmt.Fprintln(stderr, "learning: no learned entries (empty store)")
 	}
 
 	return nil
@@ -96,24 +96,24 @@ func runLearningList(stdout io.Writer, stderr io.Writer, path string) error {
 func runLearningRevert(stdout io.Writer, stderr io.Writer, path, id string) error {
 	store, err := learning.Open(path)
 	if err != nil {
-		fmt.Fprintf(stderr, "learning: open %q: %v\n", path, err)
+		_, _ = fmt.Fprintf(stderr, "learning: open %q: %v\n", path, err)
 
 		return err
 	}
 
 	before := len(store.List())
 	if err := store.Revert(id); err != nil {
-		fmt.Fprintf(stderr, "learning: revert %q: %v\n", id, err)
+		_, _ = fmt.Fprintf(stderr, "learning: revert %q: %v\n", id, err)
 
 		return err
 	}
 
 	after := len(store.List())
 	if after == before {
-		fmt.Fprintf(stderr, "learning: no entry with id %q (nothing reverted)\n", id)
+		_, _ = fmt.Fprintf(stderr, "learning: no entry with id %q (nothing reverted)\n", id)
 	}
 
-	fmt.Fprintf(stdout, "reverted %s\n", id)
+	_, _ = fmt.Fprintf(stdout, "reverted %s\n", id)
 
 	return nil
 }

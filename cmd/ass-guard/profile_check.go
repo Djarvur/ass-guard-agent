@@ -191,7 +191,7 @@ func readFirstLine(path string) (json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	// Read the whole first line (rollout lines can be large).
 	buf := make([]byte, 0, 4096)
 

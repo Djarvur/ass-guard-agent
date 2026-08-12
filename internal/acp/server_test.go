@@ -92,19 +92,6 @@ func (h *pipeHarness) readFrame(t *testing.T) *Message {
 	return msg
 }
 
-// readFrameFromBR reads one frame from the shared client reader without the
-// mu (used when the caller already holds cliMu).
-func (h *pipeHarness) readFrameLocked(t *testing.T) *Message {
-	t.Helper()
-
-	msg, err := readFrame(h.cbr)
-	if err != nil {
-		t.Fatalf("client readFrame: %v", err)
-	}
-
-	return msg
-}
-
 // stubTurn is the tracer's TurnRunner: it emits 1-2 agent_message_chunk events
 // then returns stopReason "end_turn". The real Session.Prompt runner replaces
 // it in Plan 02-05.
@@ -420,7 +407,7 @@ func TestStdoutClean(t *testing.T) {
 		<-done
 	}()
 
-	cliW.Write(mustFrame(t, newRequest(0, methodInitialize, map[string]any{keyProtocolVersion: 1})))
+	_, _ = cliW.Write(mustFrame(t, newRequest(0, methodInitialize, map[string]any{keyProtocolVersion: 1})))
 	time.Sleep(100 * time.Millisecond)
 	cancel()
 

@@ -16,12 +16,10 @@ import (
 // conformanceCase is one row of the PROV-02 round-trip conformance table. Both
 // adapters must satisfy the same contract through the common Provider interface.
 type conformanceCase struct {
-	name      string
-	provider  provider.Provider
-	servePath string         // the path the mock expects
-	serveBody func() string  // canned response body
-	wantName  string         // expected parsed ToolCall name
-	wantArgs  map[string]any // expected parsed ToolCall args
+	name     string
+	provider provider.Provider
+	wantName string         // expected parsed ToolCall name
+	wantArgs map[string]any // expected parsed ToolCall args
 }
 
 // TestConformance_BothAdapters proves the Anthropic and OpenAI adapters are

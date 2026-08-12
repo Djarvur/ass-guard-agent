@@ -213,7 +213,7 @@ func (stubExecutor) Execute(_ context.Context, _ string, _ json.RawMessage) (jso
 // toolExecOrStub returns the real tool executor if set, else a stub executor
 // that returns stubToolResult (Phase-2 backward-compat). DispatchBatch consumes
 // this; a nil never reaches it.
-func (s *Session) toolExecOrStub() toolcat.ToolExecutor {
+func (s *Session) toolExecOrStub() toolcat.ToolExecutor { //nolint:ireturn // returns the ToolExecutor abstraction (injected exec or stub fallback)
 	if s.toolExec != nil {
 		return s.toolExec
 	}
@@ -222,18 +222,6 @@ func (s *Session) toolExecOrStub() toolcat.ToolExecutor {
 }
 
 // executeStub is retained for Phase-2 callers/tests that drive one tool call
-// directly (not through DispatchBatch). It prefers the real executor, then the
-// canned stub — the Phase-2 behavior unchanged.
-func (s *Session) executeStub(ctx context.Context, tc provider.ToolCall) (json.RawMessage, error) {
-	if s.toolExec != nil {
-		if out, err := s.toolExec.Execute(ctx, tc.Name, tc.Input); err == nil {
-			return out, nil
-		}
-	}
-
-	return stubToolResult, nil
-}
-
 // streamAndEmit opens Provider.Stream, reads chunks until the channel closes,
 // and emits each to the bus as AgentMessageChunk / ToolCall / UsageUpdate (D-18
 // step 4 — ACP-04 streaming, NO full-turn buffering). It returns the assembled
@@ -321,35 +309,4 @@ func mapStopReason(finish string) string {
 	default:
 		return finish
 	}
-}
-
-// extractAssistantText pulls the assistant text out of a non-streaming Response
-// (best-effort parse of resp.Raw; Phase-1 Send captures it). Plan 02-05 uses
-// Stream chunks instead.
-func extractAssistantText(resp provider.Response) string {
-	if len(resp.Raw) == 0 {
-		return ""
-	}
-
-	var msg struct {
-		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"content"`
-	}
-
-	err := json.Unmarshal(resp.Raw, &msg)
-	if err != nil {
-		return ""
-	}
-
-	var sb strings.Builder
-
-	for _, b := range msg.Content {
-		if b.Type == blockText {
-			sb.WriteString(b.Text)
-		}
-	}
-
-	return sb.String()
 }

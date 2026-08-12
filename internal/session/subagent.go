@@ -56,7 +56,7 @@ func (s *Session) DispatchSubagent(ctx context.Context, parentTurnID, toolCallID
 			if r != nil {
 				stack := debug.Stack()
 				err := fmt.Errorf("subagent panic: %v", r)
-				s.Manager.AppendError(subagentTurnID, "subagent", err.Error(), nil, false, string(stack))
+				_ = s.Manager.AppendError(subagentTurnID, "subagent", err.Error(), nil, false, string(stack))
 
 				if s.Bus != nil {
 					s.Bus.Publish(event.SubagentResult{ParentTurnID: parentTurnID, ToolCallID: toolCallID, SubagentTurnID: subagentTurnID, Err: err})

@@ -99,7 +99,7 @@ func (p *AnthropicProvider) Stream(ctx context.Context, prof profile.Profile, me
 	ch := make(chan StreamChunk, 8)
 
 	go func() {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		defer close(ch)
 
 		p.drainSSE(ctx, resp.Body, ch)

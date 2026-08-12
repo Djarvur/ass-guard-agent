@@ -119,11 +119,11 @@ func TestProfileCheck_DriftDetected(t *testing.T) { //nolint:paralleltest // swa
 	os.Stderr = w
 	done := make(chan struct{})
 
-	go func() { stderr.ReadFrom(r); close(done) }()
+	go func() { _, _ = stderr.ReadFrom(r); close(done) }()
 
 	err := runProfileCheck(profileZcode, profilesDir, capture)
 
-	w.Close()
+	_ = w.Close()
 
 	os.Stderr = oldStderr
 
@@ -154,11 +154,11 @@ func TestProfileCheck_ReportContainsStructuredFooter(t *testing.T) { //nolint:pa
 	os.Stderr = w
 	done := make(chan struct{})
 
-	go func() { stderr.ReadFrom(r); close(done) }()
+	go func() { _, _ = stderr.ReadFrom(r); close(done) }()
 
 	_ = runProfileCheck(profileZcode, profilesDir, capture)
 
-	w.Close()
+	_ = w.Close()
 
 	os.Stderr = oldStderr
 

@@ -26,23 +26,6 @@ func rolloutDir(t *testing.T) string {
 	return dir
 }
 
-// sessionPath returns the rollout path for a session id prefix, or "" if absent.
-func sessionPath(t *testing.T, idPrefix string) string {
-	t.Helper()
-
-	dir := rolloutDir(t)
-	if dir == "" {
-		return ""
-	}
-
-	matches, _ := filepath.Glob(filepath.Join(dir, "model-io-sess_"+idPrefix+"*.jsonl"))
-	if len(matches) == 0 {
-		return ""
-	}
-
-	return matches[0]
-}
-
 // TestStability_WithinSessionExtractionSource is the HARD within-session
 // stability assertion on the profile's extraction source: every full-request
 // line in the session must agree on system block count, the tool-NAME set, and
