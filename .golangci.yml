@@ -13,8 +13,45 @@ linters:
     - gomodguard     # Deprecated (v2.12.0); replaced by gomodguard_v2
 
   settings:
+    depguard:
+      rules:
+        Main:
+          list-mode: lax
+          deny:
+            - pkg: "unsafe"
+              desc: "unsafe breaks the static-binary + memory-safety guarantees"
     gocyclo:
       min-complexity: 20
+    cyclop:
+      max-complexity: 15
+    gocognit:
+      min-complexity: 30
+    varnamelen:
+      min-name-length: 1
+      ignore-names:
+        - i
+        - j
+        - k
+        - v
+        - r
+        - w
+        - id
+        - ok
+        - err
+        - ctx
+        - t
+        - db
+        - tc
+        - ch
+        - fr
+    lll:
+      line-length: 120
+      tab-width: 4
+    tagliatelle:
+      rules:
+        json: snake_case
+        yaml: snake_case
+        toml: snake_case
     gocritic:
       enabled-tags:
         - diagnostic
