@@ -65,6 +65,7 @@ func CompareSequence(expected, observed []string) bool {
 // heuristically trimmed to a relative tail when they contain a repo-root-like segment).
 func CompareArgs(expected, observed json.RawMessage) ([]ArgMismatch, bool) {
 	var e, o any
+
 	err := json.Unmarshal(expected, &e)
 	if err != nil {
 		return []ArgMismatch{{Reason: "expected input is not valid JSON"}}, false

@@ -62,6 +62,7 @@ func ExtractTurnsFromRollout(path string) ([]CapturedTurn, error) {
 		}
 
 		var rl rolloutLine
+
 		err := json.Unmarshal(raw, &rl)
 		if err != nil {
 			continue // skip non-model_io / unparseable lines

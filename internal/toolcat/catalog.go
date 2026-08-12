@@ -23,6 +23,7 @@ func NewCatalog() *Catalog {
 	c := &Catalog{tools: map[string]Tool{}}
 
 	var entries []Tool
+
 	err := json.Unmarshal(coreToolsJSON, &entries)
 	if err != nil {
 		panic(fmt.Sprintf("toolcat: embedded coretools.json failed to parse: %v", err))
@@ -51,6 +52,7 @@ func (c *Catalog) Register(t Tool) {
 	if c.tools == nil {
 		c.tools = map[string]Tool{}
 	}
+
 	c.tools[t.Name] = t
 }
 

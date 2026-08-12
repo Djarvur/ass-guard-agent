@@ -15,14 +15,13 @@ func TestSemaphore_AllowsMaxConcurrent(t *testing.T) {
 	sem := provider.NewSemaphore(2)
 
 	ctx := context.Background()
-	err := sem.Acquire(ctx)
 
+	err := sem.Acquire(ctx)
 	if err != nil {
 		t.Fatalf("Acquire 1: %v", err)
 	}
 
 	err = sem.Acquire(ctx)
-
 	if err != nil {
 		t.Fatalf("Acquire 2: %v", err)
 	}
@@ -57,8 +56,8 @@ func TestSemaphore_Cancel(t *testing.T) {
 	sem := provider.NewSemaphore(1)
 
 	ctx := context.Background()
-	err := sem.Acquire(ctx)
 
+	err := sem.Acquire(ctx)
 	if err != nil {
 		t.Fatalf("Acquire 1: %v", err)
 	}
@@ -90,7 +89,6 @@ func TestSemaphore_Cancel(t *testing.T) {
 	sem.Release()
 
 	err = sem.Acquire(ctx)
-
 	if err != nil {
 		t.Errorf("Acquire after cancel+release returned %v; want nil (slot must be free)", err)
 	}

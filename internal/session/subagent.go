@@ -227,6 +227,7 @@ func extractSubagentPrompt(input json.RawMessage) string {
 	}
 
 	var m map[string]any
+
 	err := json.Unmarshal(input, &m)
 	if err != nil {
 		return "subagent task"

@@ -139,6 +139,7 @@ func (c *CircuitBreakerConfig) UnmarshalYAML(value *yaml.Node) error {
 	}
 
 	var r raw
+
 	err := value.Decode(&r)
 	if err != nil {
 		return err
@@ -172,6 +173,7 @@ func (c *CostCeilingConfig) UnmarshalYAML(value *yaml.Node) error {
 	}
 
 	var r raw
+
 	err := value.Decode(&r)
 	if err != nil {
 		return err

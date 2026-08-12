@@ -98,6 +98,7 @@ func sendFrame(t *testing.T, w io.Writer, m acp.Message) {
 	t.Helper()
 
 	var buf bytes.Buffer
+
 	err := writeFrameDirect(&buf, m)
 	if err != nil {
 		t.Fatalf("writeFrame: %v", err)
@@ -148,6 +149,7 @@ func readFrames(t *testing.T, cliR io.Reader, n int) []*acp.Message {
 		}
 
 		var m acp.Message
+
 		jerr := json.Unmarshal(line, &m)
 		if jerr == nil {
 			out = append(out, &m)

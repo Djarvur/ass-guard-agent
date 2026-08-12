@@ -93,6 +93,7 @@ func TestACPServeWiresStdoutClean(t *testing.T) {
 		}
 
 		var m map[string]any
+
 		err := json.Unmarshal([]byte(line), &m)
 		if err != nil {
 			t.Errorf("stdout line %d is not valid JSON (transport discipline): %v (line=%q)", i, err, line)

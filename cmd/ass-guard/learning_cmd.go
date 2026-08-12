@@ -17,6 +17,7 @@ import (
 // diagnostics go to STDERR.
 func newLearningCmd() *cobra.Command {
 	var learnedPath string
+
 	cmd := &cobra.Command{
 		Use:   "learning",
 		Short: "Inspect and revert the learned-config store",
@@ -29,6 +30,7 @@ func newLearningCmd() *cobra.Command {
 			return runLearningList(cmd.OutOrStdout(), cmd.ErrOrStderr(), resolveLearnedPath(learnedPath))
 		},
 	}
+
 	revertCmd := &cobra.Command{
 		Use:          "revert <id>",
 		Short:        "revert one learned entry by id (LRN-04)",
@@ -41,8 +43,10 @@ func newLearningCmd() *cobra.Command {
 	for _, sub := range []*cobra.Command{listCmd, revertCmd} {
 		sub.Flags().StringVar(&learnedPath, "learned", "", "path to learned.yaml (default: .ass-guard/learned.yaml)")
 	}
+
 	cmd.AddCommand(listCmd)
 	cmd.AddCommand(revertCmd)
+
 	return cmd
 }
 
@@ -52,6 +56,7 @@ func resolveLearnedPath(flag string) string {
 	if flag != "" {
 		return flag
 	}
+
 	return filepath.Join(".ass-guard", "learned.yaml")
 }
 
@@ -61,20 +66,27 @@ func runLearningList(stdout io.Writer, stderr io.Writer, path string) error {
 	store, err := learning.Open(path)
 	if err != nil {
 		fmt.Fprintf(stderr, "learning: open %q: %v\n", path, err)
+
 		return err
 	}
+
 	entries := store.List()
+
 	fmt.Fprintln(stdout, "ID\tSITUATION\tANSWER\tCONFIDENCE\tSTATUS\tEXPIRY")
+
 	for _, e := range entries {
 		expiry := ""
 		if !e.Expiry.IsZero() {
 			expiry = e.Expiry.UTC().Format("2006-01-02")
 		}
+
 		fmt.Fprintf(stdout, "%s\t%s\t%s\t%d\t%s\t%s\n", e.ID, e.Situation, e.Answer, e.Confidence, e.Status, expiry)
 	}
+
 	if len(entries) == 0 {
 		fmt.Fprintln(stderr, "learning: no learned entries (empty store)")
 	}
+
 	return nil
 }
 
@@ -85,17 +97,23 @@ func runLearningRevert(stdout io.Writer, stderr io.Writer, path, id string) erro
 	store, err := learning.Open(path)
 	if err != nil {
 		fmt.Fprintf(stderr, "learning: open %q: %v\n", path, err)
+
 		return err
 	}
+
 	before := len(store.List())
 	if err := store.Revert(id); err != nil {
 		fmt.Fprintf(stderr, "learning: revert %q: %v\n", id, err)
+
 		return err
 	}
+
 	after := len(store.List())
 	if after == before {
 		fmt.Fprintf(stderr, "learning: no entry with id %q (nothing reverted)\n", id)
 	}
+
 	fmt.Fprintf(stdout, "reverted %s\n", id)
+
 	return nil
 }

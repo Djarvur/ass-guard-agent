@@ -145,6 +145,7 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 			// Subagent dispatch (Task/Agent) runs inline + is excluded from the
 			// batch — it is a nested turn, not a catalog tool execution.
 			var batchCalls []provider.ToolCall
+
 			for _, tc := range resp.ToolCalls {
 				if isSubagentTool(tc.Name) {
 					result, derr := s.DispatchSubagent(ctx, turnID, tc.Name, extractSubagentPrompt(tc.Input), nil)
@@ -157,8 +158,10 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 					// SESS-02/03 boundary (subagent tools are read-only; only
 					// a config-added entry would fire).
 					_ = s.MaybeAppendBoundary(tc.Name, tc.Name, turnID)
+
 					continue
 				}
+
 				batchCalls = append(batchCalls, tc)
 			}
 			// Dispatch the remaining (non-subagent) calls in one batch. Results
@@ -170,6 +173,7 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 				// the loop re-projects with whatever partial results we have.
 				s.appendError(turnID, "toolexec", batchErr, true)
 			}
+
 			for _, res := range results {
 				_ = s.Manager.AppendToolResult(turnID, res.Name, res.Output, res.IsError)
 				// SESS-02/03: a mutating/config-added tool is a boundary. The
@@ -213,6 +217,7 @@ func (s *Session) toolExecOrStub() toolcat.ToolExecutor {
 	if s.toolExec != nil {
 		return s.toolExec
 	}
+
 	return stubExecutor{}
 }
 
@@ -332,6 +337,7 @@ func extractAssistantText(resp provider.Response) string {
 			Text string `json:"text"`
 		} `json:"content"`
 	}
+
 	err := json.Unmarshal(resp.Raw, &msg)
 	if err != nil {
 		return ""

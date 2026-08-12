@@ -167,8 +167,8 @@ func toToolInputSchema(raw json.RawMessage) (anthropic.ToolInputSchemaParam, err
 		Properties json.RawMessage `json:"properties"`
 		Required   []string        `json:"required"`
 	}
-	err := json.Unmarshal(raw, &s)
 
+	err := json.Unmarshal(raw, &s)
 	if err != nil {
 		return anthropic.ToolInputSchemaParam{}, err
 	}
@@ -194,6 +194,7 @@ func toToolInputSchema(raw json.RawMessage) (anthropic.ToolInputSchemaParam, err
 // schema so the SDK request carries them verbatim.
 func schemaExtras(raw json.RawMessage) map[string]any {
 	var m map[string]json.RawMessage
+
 	err := json.Unmarshal(raw, &m)
 	if err != nil {
 		return nil
@@ -228,8 +229,8 @@ func toThinking(raw json.RawMessage) anthropic.ThinkingConfigParamUnion {
 		Type         string `json:"type"`
 		BudgetTokens int64  `json:"budget_tokens"`
 	}
-	err := json.Unmarshal(raw, &t)
 
+	err := json.Unmarshal(raw, &t)
 	if err != nil {
 		return anthropic.ThinkingConfigParamUnion{}
 	}
@@ -254,8 +255,8 @@ func toToolChoice(raw json.RawMessage) anthropic.ToolChoiceUnionParam {
 	var tc struct {
 		Type string `json:"type"`
 	}
-	err := json.Unmarshal(raw, &tc)
 
+	err := json.Unmarshal(raw, &tc)
 	if err != nil {
 		return anthropic.ToolChoiceUnionParam{}
 	}

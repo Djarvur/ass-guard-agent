@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 	"io"
 	"strings"
 	"sync"
@@ -23,39 +23,43 @@ import (
 // zero-continue scenario: call 0 emits the impl-complete handoff text, call 1
 // emits final unmatched text.
 type scriptedACPProvider struct {
-	mu       sync.Mutex
-	script   []scriptedResp
-	calls    int
+	mu     sync.Mutex
+	script []scriptedResp
+	calls  int
 }
 
 type scriptedResp struct {
-	text       string
-	toolCalls  []provider.ToolCall
-	finish     string
+	text      string
+	toolCalls []provider.ToolCall
+	finish    string
 }
 
 func (p *scriptedACPProvider) queue(r ...scriptedResp) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
 	p.script = append(p.script, r...)
 }
 
 func (p *scriptedACPProvider) Send(_ context.Context, _ profile.Profile, _ []provider.Message) (provider.Response, error) {
-	return provider.Response{}, fmt.Errorf("not used")
+	return provider.Response{}, errors.New("not used")
 }
 
 func (p *scriptedACPProvider) Stream(ctx context.Context, _ profile.Profile, _ []provider.Message) (<-chan provider.StreamChunk, error) {
 	p.mu.Lock()
 	p.calls++
 	idx := p.calls - 1
+
 	var resp scriptedResp
 	if idx < len(p.script) {
 		resp = p.script[idx]
 	}
 	p.mu.Unlock()
+
 	ch := make(chan provider.StreamChunk, 4)
 	go func() {
 		defer close(ch)
+
 		if resp.text != "" {
 			select {
 			case ch <- provider.StreamChunk{Type: "text", Text: resp.text}:
@@ -63,6 +67,7 @@ func (p *scriptedACPProvider) Stream(ctx context.Context, _ profile.Profile, _ [
 				return
 			}
 		}
+
 		for _, tc := range resp.toolCalls {
 			tcc := tc
 			select {
@@ -71,15 +76,18 @@ func (p *scriptedACPProvider) Stream(ctx context.Context, _ profile.Profile, _ [
 				return
 			}
 		}
+
 		fin := resp.finish
 		if fin == "" {
 			fin = "end_turn"
 		}
+
 		select {
 		case ch <- provider.StreamChunk{Type: "done", FinishReason: fin}:
 		case <-ctx.Done():
 		}
 	}()
+
 	return ch, nil
 }
 
@@ -90,6 +98,7 @@ func (p *scriptedACPProvider) ToolResultMessage(_ string, _ json.RawMessage) (js
 func (p *scriptedACPProvider) callCount() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
 	return p.calls
 }
 
@@ -98,6 +107,7 @@ type noopEmitter struct{ chunks []string }
 
 func (n *noopEmitter) AgentMessageChunk(_, text string) error {
 	n.chunks = append(n.chunks, text)
+
 	return nil
 }
 
@@ -114,20 +124,25 @@ func fakeProfileACP() profile.Profile {
 // transcript dir.
 func newEngineRunner(t *testing.T, script ...scriptedResp) (*sessionTurnRunner, *scriptedACPProvider, string) {
 	t.Helper()
+
 	bus := event.NewBus()
 	prov := &scriptedACPProvider{}
 	prov.queue(script...)
+
 	dir := t.TempDir()
+
 	r := &sessionTurnRunner{
-		bus:     bus,
-		profile: fakeProfileACP(),
-		workDir: dir,
-		maxConc: 4,
+		bus:          bus,
+		profile:      fakeProfileACP(),
+		workDir:      dir,
+		maxConc:      4,
 		makeProvider: func() provider.Provider { return prov },
 	}
-	if err := r.setupEngine(); err != nil {
+	err := r.setupEngine()
+	if err != nil {
 		t.Fatalf("setupEngine: %v", err)
 	}
+
 	return r, prov, dir
 }
 
@@ -146,6 +161,7 @@ func TestEndToEnd_ZeroContinue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
 	}
+
 	if stop != "end_turn" {
 		t.Errorf("stop = %q; want end_turn", stop)
 	}
@@ -157,15 +173,19 @@ func TestEndToEnd_ZeroContinue(t *testing.T) {
 	// Two engine_decision lines in the transcript: continue then nothing.
 	mgr := r.sessions["sess-e2e-1"].Manager
 	lines, _ := mgr.ReadAll()
+
 	var decisions []string
+
 	for _, l := range lines {
 		if l.Type == session.TypeEngineDecision {
 			decisions = append(decisions, l.Name)
 		}
 	}
+
 	if len(decisions) != 2 || decisions[0] != "continue" || decisions[1] != "nothing" {
 		t.Errorf("engine_decision actions = %v; want [continue nothing]", decisions)
 	}
+
 	_ = dir
 }
 
@@ -176,13 +196,16 @@ func TestEndToEnd_StructuralSafety(t *testing.T) {
 	r, prov, _ := newEngineRunner(t,
 		scriptedResp{text: "the agent did something with no handoff signal at all", finish: "end_turn"},
 	)
+
 	stop, err := r.Run(context.Background(), "sess-e2e-2", &noopEmitter{}, []acp.ContentBlock{{Type: "text", Text: "hi"}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
 	}
+
 	if stop != "end_turn" {
 		t.Errorf("stop = %q; want end_turn", stop)
 	}
+
 	if got := prov.callCount(); got != 1 {
 		t.Errorf("provider Stream calls = %d; want 1 (zero injections)", got)
 	}
@@ -205,10 +228,12 @@ func TestEndToEnd_ToolSignalContinue(t *testing.T) {
 	// Cap the turn so a runaway doesn't hang the test.
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+
 	stop, err := r.Run(ctx, "sess-e2e-3", &noopEmitter{}, []acp.ContentBlock{{Type: "text", Text: "go"}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
 	}
+
 	_ = stop
 	// At least 2 provider calls (the engine observed a handoff tool-call +
 	// continued). The exact count depends on the inner tool loop; the load-bearing
@@ -225,26 +250,31 @@ func TestEndToEnd_EngineDisabledBackwardCompat(t *testing.T) {
 	bus := event.NewBus()
 	prov := &scriptedACPProvider{}
 	prov.queue(scriptedResp{text: "unmatched text that the engine WOULD have ignored anyway", finish: "end_turn"})
+
 	r := &sessionTurnRunner{
-		bus:     bus,
-		profile: fakeProfileACP(),
-		workDir: t.TempDir(),
-		maxConc: 4,
+		bus:          bus,
+		profile:      fakeProfileACP(),
+		workDir:      t.TempDir(),
+		maxConc:      4,
 		makeProvider: func() provider.Provider { return prov },
 		// engineEnabled stays false — no setupEngine call.
 	}
+
 	stop, err := r.Run(context.Background(), "sess-noeng", &noopEmitter{}, []acp.ContentBlock{{Type: "text", Text: "hi"}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
 	}
+
 	if stop != "end_turn" {
 		t.Errorf("stop = %q; want end_turn", stop)
 	}
+
 	if got := prov.callCount(); got != 1 {
 		t.Errorf("provider Stream calls = %d; want 1 (no engine re-entry)", got)
 	}
 	// No engine_decision lines (the engine never ran).
 	mgr := r.sessions["sess-noeng"].Manager
+
 	lines, _ := mgr.ReadAll()
 	for _, l := range lines {
 		if l.Type == session.TypeEngineDecision {
@@ -261,6 +291,7 @@ func TestRunACPServe_NoEngineFlag(t *testing.T) {
 	// runner with engineEnabled=false. This is a structural check; the e2e test
 	// above covers the enabled path.
 	bus := event.NewBus()
+
 	r := &sessionTurnRunner{bus: bus, makeProvider: func() provider.Provider {
 		return provider.NewAnthropicProvider(shaper.New())
 	}}
@@ -283,6 +314,7 @@ func TestCancelDrainsInjections(t *testing.T) {
 	)
 	ctx, cancel := context.WithCancel(context.Background())
 	emitter := &cancelAfterChunkEmitter{cancelAfter: 1, cancel: cancel}
+
 	stop, err := r.Run(ctx, "sess-cancel", emitter, []acp.ContentBlock{{Type: "text", Text: "go"}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
@@ -291,6 +323,7 @@ func TestCancelDrainsInjections(t *testing.T) {
 	if got := prov.callCount(); got != 1 {
 		t.Errorf("provider Stream calls = %d; want 1 (queued injection drained on cancel)", got)
 	}
+
 	if stop != "cancelled" && stop != "end_turn" {
 		t.Errorf("stop = %q; want cancelled or end_turn", stop)
 	}
@@ -299,10 +332,10 @@ func TestCancelDrainsInjections(t *testing.T) {
 // cancelAfterChunkEmitter cancels the test ctx after the Nth chunk then accepts
 // further chunks silently (so Run can drain without error).
 type cancelAfterChunkEmitter struct {
-	n          int
+	n           int
 	cancelAfter int
-	cancel     context.CancelFunc
-	once       sync.Once
+	cancel      context.CancelFunc
+	once        sync.Once
 }
 
 func (c *cancelAfterChunkEmitter) AgentMessageChunk(_, text string) error {
@@ -310,6 +343,7 @@ func (c *cancelAfterChunkEmitter) AgentMessageChunk(_, text string) error {
 	if c.n >= c.cancelAfter {
 		c.once.Do(func() { c.cancel() })
 	}
+
 	return nil
 }
 
@@ -323,10 +357,12 @@ func TestE2E_Criterion1_ZeroContinueAndSafety(t *testing.T) {
 			scriptedResp{text: "## Implementation Complete — ready for review", finish: "end_turn"},
 			scriptedResp{text: "final, no signal", finish: "end_turn"},
 		)
+
 		stop, err := r.Run(context.Background(), "c1a", &noopEmitter{}, []acp.ContentBlock{{Type: "text", Text: "go"}})
 		if err != nil || stop != "end_turn" {
 			t.Fatalf("Run = (%q,%v)", stop, err)
 		}
+
 		if got := prov.callCount(); got != 2 {
 			t.Errorf("Stream calls = %d; want 2 (zero continue taps)", got)
 		}
@@ -335,10 +371,12 @@ func TestE2E_Criterion1_ZeroContinueAndSafety(t *testing.T) {
 		r, prov, _ := newEngineRunner(t,
 			scriptedResp{text: "unmatched output", finish: "end_turn"},
 		)
+
 		_, err := r.Run(context.Background(), "c1b", &noopEmitter{}, []acp.ContentBlock{{Type: "text", Text: "hi"}})
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		if got := prov.callCount(); got != 1 {
 			t.Errorf("Stream calls = %d; want 1 (unmatched => nothing)", got)
 		}
@@ -363,12 +401,14 @@ func TestE2E_Criterion4_LearningAskOnce(t *testing.T) {
 	if store == nil {
 		t.Fatal("learning store not wired")
 	}
+
 	_ = store.RecordCandidate("sit-x", "fresh-context", "turn-1")
-	for i := 0; i < 2; i++ { // 2 confirms ⇒ still candidate
+	for i := range 2 { // 2 confirms ⇒ still candidate
 		if _, err := store.Confirm("sit-x", "fresh-context", "turn-x"); err != nil {
 			t.Fatalf("Confirm %d: %v", i, err)
 		}
 	}
+
 	if e, _ := store.Lookup("sit-x"); e.Status != "candidate" {
 		t.Errorf("after 2 confirms Status = %s; want candidate", e.Status)
 	}
@@ -376,6 +416,7 @@ func TestE2E_Criterion4_LearningAskOnce(t *testing.T) {
 	if _, err := store.Confirm("sit-x", "fresh-context", "turn-y"); err != nil {
 		t.Fatal(err)
 	}
+
 	if e, ok := store.Lookup("sit-x"); !ok || e.Status != "active" {
 		t.Errorf("after 3 confirms Lookup = %+v ok=%v; want active", e, ok)
 	}
@@ -384,6 +425,7 @@ func TestE2E_Criterion4_LearningAskOnce(t *testing.T) {
 	if err != nil || stop != "end_turn" {
 		t.Fatalf("Run = (%q,%v)", stop, err)
 	}
+
 	if got := prov.callCount(); got != 1 {
 		t.Errorf("Stream calls = %d; want 1 (unmatched => nothing, no ask loop)", got)
 	}

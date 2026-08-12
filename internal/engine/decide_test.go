@@ -197,6 +197,7 @@ func TestDecide_QuickProperty(t *testing.T) {
 
 		return dec.TurnID == "q"
 	}
+
 	err := quick.Check(property, &quick.Config{MaxCount: 200})
 	if err != nil {
 		t.Fatalf("quick check structural-safety property failed: %v", err)

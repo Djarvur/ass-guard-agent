@@ -72,6 +72,7 @@ func Redact(raw []byte) ([]byte, error) {
 	}
 	// Fast path: valid JSON. Walk the tree, replace secret values, re-encode.
 	var node any
+
 	err := json.Unmarshal(raw, &node)
 	if err == nil {
 		walkRedact(node)

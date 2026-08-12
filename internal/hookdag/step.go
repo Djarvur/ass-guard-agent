@@ -22,15 +22,18 @@ func runCommandStep(ctx context.Context, e *Executor, step Step) (detail string,
 	if e.Commands == nil {
 		return "", fmt.Errorf("run-command %q: no command runner configured", step.Command)
 	}
+
 	stdout, stderr, code, runErr := e.Commands.Run(ctx, step.Command, step.Args)
 	if runErr != nil {
 		// A runner-level error (e.g. ctx cancel) takes precedence over the exit
 		// code — surface it so the on-failure policy applies.
 		return stdout, fmt.Errorf("run-command %q: %w", step.Command, runErr)
 	}
+
 	if code != 0 {
 		return stdout, fmt.Errorf("run-command %q exit %d: %s", step.Command, code, stderr)
 	}
+
 	return stdout, nil
 }
 
@@ -42,12 +45,15 @@ func sendPromptStep(ctx context.Context, e *Executor, step Step) (detail string,
 	if e.Turns == nil {
 		return "", fmt.Errorf("send-prompt %q: no turn runner configured", step.Name)
 	}
+
 	prompt := []ContentBlock{{Type: "text", Text: step.Prompt}}
 	stop, runErr := e.Turns.Run(ctx, prompt)
-	detail = fmt.Sprintf("stop=%s", stop)
+
+	detail = "stop=" + stop
 	if runErr != nil {
 		return detail, fmt.Errorf("send-prompt %q: %w", step.Name, runErr)
 	}
+
 	return detail, nil
 }
 
@@ -58,10 +64,12 @@ func freshContextStep(ctx context.Context, e *Executor, step Step) (detail strin
 	if e.Boundaries == nil {
 		return "", fmt.Errorf("fresh-context %q: no boundary opener configured", step.Name)
 	}
+
 	cause := "fresh-context:" + step.Name
 	if err := e.Boundaries.OpenBoundary(ctx, cause); err != nil {
 		return "", fmt.Errorf("fresh-context %q: %w", step.Name, err)
 	}
+
 	return cause, nil
 }
 
@@ -70,11 +78,13 @@ func freshContextStep(ctx context.Context, e *Executor, step Step) (detail strin
 // value degrades to "no wait" rather than a panic).
 func waitStep(ctx context.Context, step Step) (detail string, err error) {
 	d := 0 * time.Second
+
 	if step.Duration != "" {
 		if parsed, perr := time.ParseDuration(step.Duration); perr == nil {
 			d = parsed
 		}
 	}
+
 	select {
 	case <-ctx.Done():
 		return "", ctx.Err()

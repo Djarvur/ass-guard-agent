@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -42,15 +43,19 @@ func Open(path string) (*Store, error) {
 	s := &Store{path: path, log: slog.Default()}
 	// Ensure the parent dir exists (the operator may point at .ass-guard/...).
 	if dir := filepath.Dir(path); dir != "" {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+		err := os.MkdirAll(dir, 0o755)
+		if err != nil {
 			return nil, fmt.Errorf("learning: mkdir %q: %w", dir, err)
 		}
 	}
+
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		if werr := s.save(nil); werr != nil {
+		werr := s.save(nil)
+		if werr != nil {
 			return nil, fmt.Errorf("learning: create %q: %w", path, werr)
 		}
 	}
+
 	return s, nil
 }
 
@@ -61,20 +66,25 @@ func (s *Store) Lookup(situation string) (Entry, bool) {
 	entries := s.load()
 	slug := Slug(situation)
 	now := time.Now()
+
 	for _, e := range entries {
 		if e.ID != slug {
 			continue
 		}
+
 		if e.Status == StatusConflict {
 			continue
 		}
+
 		if !e.Expiry.IsZero() && now.After(e.Expiry) {
 			// Expired — skip (NOT deleted; List still returns it so the operator
 			// can renew/purge).
 			continue
 		}
+
 		return copyEntry(e), true
 	}
+
 	return Entry{}, false
 }
 
@@ -85,13 +95,16 @@ func (s *Store) Lookup(situation string) (Entry, bool) {
 func (s *Store) RecordCandidate(situation, answer, sourceTurnID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	entries := s.load()
+
 	slug := Slug(situation)
 	for _, e := range entries {
 		if e.ID == slug {
 			return nil // idempotent — do not overwrite
 		}
 	}
+
 	entry := Entry{
 		ID:          slug,
 		Situation:   situation,
@@ -101,6 +114,7 @@ func (s *Store) RecordCandidate(situation, answer, sourceTurnID string) error {
 		SourceTurns: []string{sourceTurnID},
 		Status:      StatusCandidate,
 	}
+
 	return s.save(append(entries, entry))
 }
 
@@ -111,25 +125,34 @@ func (s *Store) RecordCandidate(situation, answer, sourceTurnID string) error {
 func (s *Store) Confirm(situation, answer, sourceTurnID string) (Entry, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	entries := s.load()
+
 	slug := Slug(situation)
 	for i := range entries {
 		if entries[i].ID != slug {
 			continue
 		}
+
 		if entries[i].Answer != answer {
 			entries[i].Status = StatusConflict
 			_ = s.save(entries)
+
 			return copyEntry(entries[i]), ErrConflict
 		}
+
 		entries[i].Confidence++
+
 		entries[i].SourceTurns = appendUnique(entries[i].SourceTurns, sourceTurnID)
 		if entries[i].Confidence >= 3 {
 			entries[i].Status = StatusActive
 		}
+
 		_ = s.save(entries)
+
 		return copyEntry(entries[i]), nil
 	}
+
 	return Entry{}, ErrNotFound
 }
 
@@ -137,10 +160,12 @@ func (s *Store) Confirm(situation, answer, sourceTurnID string) (Entry, error) {
 // expired ones, so the operator sees the full picture. Deterministic order.
 func (s *Store) List() []Entry {
 	entries := s.load()
+
 	out := make([]Entry, len(entries))
 	for i := range entries {
 		out[i] = copyEntry(entries[i])
 	}
+
 	return out
 }
 
@@ -152,14 +177,18 @@ func (s *Store) List() []Entry {
 func (s *Store) Revert(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	entries := s.load()
+
 	out := make([]Entry, 0, len(entries))
 	for _, e := range entries {
 		if e.ID == id {
 			continue // drop
 		}
+
 		out = append(out, e)
 	}
+
 	return s.save(out)
 }
 
@@ -170,10 +199,12 @@ func (s *Store) load() []Entry {
 	if err != nil || len(raw) == 0 {
 		return nil
 	}
+
 	var env fileEnvelope
 	if err := yaml.Unmarshal(raw, &env); err != nil {
 		return nil
 	}
+
 	return env.Entries
 }
 
@@ -181,17 +212,21 @@ func (s *Store) load() []Entry {
 // by mutating methods.
 func (s *Store) save(entries []Entry) error {
 	env := fileEnvelope{Entries: entries}
+
 	raw, err := yaml.Marshal(env)
 	if err != nil {
 		return fmt.Errorf("learning: marshal: %w", err)
 	}
+
 	tmp := s.path + ".tmp"
 	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
 		return fmt.Errorf("learning: write tmp %q: %w", tmp, err)
 	}
+
 	if err := os.Rename(tmp, s.path); err != nil {
 		return fmt.Errorf("learning: rename %q → %q: %w", tmp, s.path, err)
 	}
+
 	return nil
 }
 
@@ -201,6 +236,7 @@ func copyEntry(e Entry) Entry {
 	if e.SourceTurns != nil {
 		e.SourceTurns = append([]string(nil), e.SourceTurns...)
 	}
+
 	return e
 }
 
@@ -210,10 +246,10 @@ func appendUnique(list []string, s string) []string {
 	if s == "" {
 		return list
 	}
-	for _, v := range list {
-		if v == s {
-			return list
-		}
+
+	if slices.Contains(list, s) {
+		return list
 	}
+
 	return append(list, s)
 }

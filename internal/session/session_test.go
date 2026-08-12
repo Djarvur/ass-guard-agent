@@ -391,25 +391,29 @@ func TestParentPanicRecovery(t *testing.T) {
 // recordingToolExec is a toolcat.ToolExecutor that records call names + sleeps
 // per call so the DispatchBatch loop's parallelism/serialization is observable.
 type recordingToolExec struct {
-	mu       sync.Mutex
-	calls    []string
-	starts   []int64
-	sleep    time.Duration
+	mu     sync.Mutex
+	calls  []string
+	starts []int64
+	sleep  time.Duration
 }
 
 func (r *recordingToolExec) Execute(ctx context.Context, name string, _ json.RawMessage) (json.RawMessage, error) {
 	r.mu.Lock()
 	r.calls = append(r.calls, name)
 	r.mu.Unlock()
+
 	start := time.Since(testStartTool).Nanoseconds()
+
 	select {
 	case <-time.After(r.sleep):
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
+
 	r.mu.Lock()
 	r.starts = append(r.starts, start)
 	r.mu.Unlock()
+
 	return json.RawMessage(`{"echo":"` + name + `"}`), nil
 }
 
@@ -430,6 +434,7 @@ func TestPromptDispatchBatchLoop(t *testing.T) {
 	s.Catalog = toolcat.NewCatalog()
 	s.Catalog.Register(toolcat.Tool{Name: "Read", Mutability: toolcat.MutabilityReadOnly})
 	s.Catalog.Register(toolcat.Tool{Name: "Bash", Mutability: toolcat.MutabilityMutating})
+
 	rec := &recordingToolExec{sleep: 10 * time.Millisecond}
 	s.SetToolExecutor(rec)
 
@@ -441,28 +446,34 @@ func TestPromptDispatchBatchLoop(t *testing.T) {
 	rec.mu.Lock()
 	gotCalls := append([]string(nil), rec.calls...)
 	rec.mu.Unlock()
+
 	if len(gotCalls) != 2 {
 		t.Fatalf("executor calls = %v; want [Read Bash]", gotCalls)
 	}
 	// Arrival order preserved in the transcript: tool_result lines in [Read, Bash].
 	lines, _ := m.ReadAll()
+
 	var results []string
+
 	for _, l := range lines {
 		if l.Type == TypeToolResult {
 			// AppendToolResult stores the tool-call id (the name) in ToolCallID.
 			results = append(results, l.ToolCallID)
 		}
 	}
+
 	if len(results) != 2 || results[0] != "Read" || results[1] != "Bash" {
 		t.Errorf("tool_result order = %v; want [Read Bash] (arrival order)", results)
 	}
 	// Boundary fires for Bash (mutating) only — SESS-02 invariant.
 	var boundaries []string
+
 	for _, l := range lines {
 		if l.Type == TypeBoundary {
 			boundaries = append(boundaries, l.Cause)
 		}
 	}
+
 	if len(boundaries) != 1 || !strings.Contains(boundaries[0], "Bash") {
 		t.Errorf("boundaries = %v; want exactly one Bash boundary", boundaries)
 	}
@@ -484,15 +495,18 @@ func TestPromptNilToolExecutorStubs(t *testing.T) {
 	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: "text", Text: "hi"}}); err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
+
 	lines, _ := m.ReadAll()
 	for _, l := range lines {
 		if l.Type == TypeToolResult {
 			if !strings.Contains(string(l.Output), "stubbed in Phase 2") {
 				t.Errorf("nil-exec tool_result = %s; want the Phase-2 stub", l.Output)
 			}
+
 			return
 		}
 	}
+
 	t.Fatal("no tool_result line written (nil-exec stub path broken)")
 }
 

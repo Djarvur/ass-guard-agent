@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -174,13 +175,7 @@ func dayMatches(days []string, wd time.Weekday) bool {
 	}
 
 	abbr := weekdayAbbr(wd)
-	for _, d := range days {
-		if d == abbr {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(days, abbr)
 }
 
 func weekdayAbbr(wd time.Weekday) string {

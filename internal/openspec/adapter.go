@@ -37,24 +37,33 @@ func (a *Adapter) Run(ctx context.Context, command string, args ...string) (stdo
 	if binary == "" {
 		binary = "openspec"
 	}
+
 	argv := append([]string{command}, args...)
 	cmd := exec.CommandContext(ctx, binary, argv...)
+
 	var stdoutBuf, stderrBuf bytes.Buffer
+
 	cmd.Stdout = &stdoutBuf
+
 	cmd.Stderr = &stderrBuf
-	if startErr := cmd.Start(); startErr != nil {
+	startErr := cmd.Start()
+	if startErr != nil {
 		// exec.ErrNotFound covers a missing binary (LookPath fails inside Start);
 		// the wrapped *os.PathError / *exec.Error chain satisfies errors.Is.
 		if errors.Is(startErr, exec.ErrNotFound) {
 			return "", "", ErrOpenSpecNotFound
 		}
+
 		return "", "", fmt.Errorf("openspec: start %q: %w", binary, startErr)
 	}
+
 	waitErr := cmd.Wait()
+
 	stdout, stderr = stdoutBuf.String(), stderrBuf.String()
 	if waitErr == nil {
 		return stdout, stderr, nil
 	}
+
 	if ctx.Err() != nil {
 		// ctx-cancelled kill — surface the ctx error (no orphan; T-04-06).
 		return stdout, stderr, ctx.Err()
@@ -64,5 +73,6 @@ func (a *Adapter) Run(ctx context.Context, command string, args ...string) (stdo
 	if errors.As(waitErr, &exitErr) {
 		return stdout, stderr, fmt.Errorf("openspec %s exit %d: %s", command, exitErr.ExitCode(), stderr)
 	}
+
 	return stdout, stderr, fmt.Errorf("openspec %s: %w", command, waitErr)
 }

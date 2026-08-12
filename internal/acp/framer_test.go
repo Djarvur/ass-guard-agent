@@ -18,6 +18,7 @@ func TestWriteFrameProducesMarshalPlusNewline(t *testing.T) {
 	var buf bytes.Buffer
 
 	msg := Message{JSONRPC: "2.0", ID: intPtr(1), Method: "initialize"}
+
 	err := writeFrame(&buf, msg)
 	if err != nil {
 		t.Fatalf("writeFrame: %v", err)
@@ -162,6 +163,7 @@ func TestWriterConcurrentSafety(t *testing.T) {
 		}
 
 		var m Message
+
 		err := json.Unmarshal(line, &m)
 		if err != nil {
 			t.Errorf("line %d unmarshal: %v (line=%q)", i, err, string(line))

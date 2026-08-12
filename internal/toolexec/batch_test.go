@@ -34,21 +34,26 @@ func nowMono() int64 { return int64(time.Since(testStart)) }
 
 func (r *recordingExec) Execute(ctx context.Context, name string, _ json.RawMessage) (json.RawMessage, error) {
 	start := nowMono()
+
 	select {
 	case <-time.After(r.sleep):
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
+
 	end := nowMono()
+
 	r.mu.Lock()
 	r.events = append(r.events, execEvent{name: name, start: start, end: end})
 	r.mu.Unlock()
+
 	return json.RawMessage(`{"ok":true,"name":"` + name + `"}`), nil
 }
 
 func (r *recordingExec) snapshot() []execEvent {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
 	return append([]execEvent(nil), r.events...)
 }
 
@@ -64,6 +69,7 @@ func newCatalog(tools map[string]toolcat.Mutability) *toolcat.Catalog {
 	for name, m := range tools {
 		c.Register(toolcat.Tool{Name: name, Mutability: m})
 	}
+
 	return c
 }
 
@@ -81,12 +87,15 @@ func TestDispatchBatch_ReadOnlyParallelism(t *testing.T) {
 	t0 := time.Now()
 	results, err := toolexec.DispatchBatch(context.Background(), exec, catalog, calls)
 	elapsed := time.Since(t0)
+
 	if err != nil {
 		t.Fatalf("DispatchBatch err = %v", err)
 	}
+
 	if len(results) != 4 {
 		t.Fatalf("got %d results; want 4", len(results))
 	}
+
 	if elapsed >= 80*time.Millisecond {
 		t.Errorf("4 read-only calls took %v; want < 80ms (sequential would be ~120ms) — parallelism not observed", elapsed)
 	}
@@ -95,6 +104,7 @@ func TestDispatchBatch_ReadOnlyParallelism(t *testing.T) {
 		if r.CallIndex != i {
 			t.Errorf("results[%d].CallIndex = %d; want %d (arrival order)", i, r.CallIndex, i)
 		}
+
 		if r.IsError {
 			t.Errorf("results[%d] unexpectedly errored: %v", i, r.Err)
 		}
@@ -114,11 +124,13 @@ func TestDispatchBatch_MutatingSerialization(t *testing.T) {
 	if _, err := toolexec.DispatchBatch(context.Background(), exec, catalog, calls); err != nil {
 		t.Fatalf("DispatchBatch err = %v", err)
 	}
+
 	events := exec.snapshot()
 	if len(events) != 3 {
 		t.Fatalf("got %d events; want 3", len(events))
 	}
-	for i := 0; i < len(events); i++ {
+
+	for i := range events {
 		for j := i + 1; j < len(events); j++ {
 			if overlaps(events[i], events[j]) {
 				t.Errorf("mutating calls %q and %q overlapped: %+v vs %+v (D-21 violation)",
@@ -142,14 +154,17 @@ func TestDispatchBatch_ArrivalOrderMixed(t *testing.T) {
 		{Name: "Grep"},  // idx 2, read-only
 		{Name: "Write"}, // idx 3, mutating
 	}
+
 	results, err := toolexec.DispatchBatch(context.Background(), exec, catalog, calls)
 	if err != nil {
 		t.Fatalf("DispatchBatch err = %v", err)
 	}
+
 	for i, r := range results {
 		if r.CallIndex != i {
 			t.Errorf("results[%d].CallIndex = %d; want %d", i, r.CallIndex, i)
 		}
+
 		if r.Name != calls[i].Name {
 			t.Errorf("results[%d].Name = %q; want %q", i, r.Name, calls[i].Name)
 		}
@@ -165,12 +180,16 @@ func TestDispatchBatch_MutatingAlone(t *testing.T) {
 		"Read": toolcat.MutabilityReadOnly, "Grep": toolcat.MutabilityReadOnly,
 		"Bash": toolcat.MutabilityMutating,
 	})
+
 	calls := []provider.ToolCall{{Name: "Read"}, {Name: "Bash"}, {Name: "Grep"}}
 	if _, err := toolexec.DispatchBatch(context.Background(), exec, catalog, calls); err != nil {
 		t.Fatalf("DispatchBatch err = %v", err)
 	}
+
 	events := exec.snapshot()
+
 	var bash, read, grep *execEvent
+
 	for i := range events {
 		switch events[i].name {
 		case "Bash":
@@ -181,12 +200,15 @@ func TestDispatchBatch_MutatingAlone(t *testing.T) {
 			grep = &events[i]
 		}
 	}
+
 	if bash == nil || read == nil || grep == nil {
 		t.Fatalf("missing events: %+v", events)
 	}
+
 	if overlaps(*bash, *read) {
 		t.Errorf("mutating Bash overlapped read-only Read: %+v vs %+v", *bash, *read)
 	}
+
 	if overlaps(*bash, *grep) {
 		t.Errorf("mutating Bash overlapped read-only Grep: %+v vs %+v", *bash, *grep)
 	}
@@ -198,10 +220,12 @@ func TestDispatchBatch_UnknownToolReadOnly(t *testing.T) {
 	exec := &recordingExec{sleep: 1 * time.Millisecond}
 	catalog := toolcat.NewCatalog() // empty — no tools declared
 	calls := []provider.ToolCall{{Name: "Mystery"}}
+
 	results, err := toolexec.DispatchBatch(context.Background(), exec, catalog, calls)
 	if err != nil {
 		t.Fatalf("DispatchBatch err = %v", err)
 	}
+
 	if len(results) != 1 {
 		t.Fatalf("got %d results; want 1", len(results))
 	}
@@ -226,6 +250,7 @@ func TestDispatchBatch_MaxConcurrentBound(t *testing.T) {
 	t0 := time.Now()
 	_, err := toolexec.DispatchBatch(context.Background(), exec, catalog, calls, toolexec.MaxConcurrent(2))
 	elapsed := time.Since(t0)
+
 	if err != nil {
 		t.Fatalf("DispatchBatch err = %v", err)
 	}
@@ -245,11 +270,14 @@ func TestDispatchBatch_CtxCancel(t *testing.T) {
 	calls := []provider.ToolCall{{Name: "R1"}, {Name: "R2"}}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel before dispatch
+
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+
 		_, _ = toolexec.DispatchBatch(ctx, exec, catalog, calls)
 	}()
+
 	select {
 	case <-done:
 		// good — no deadlock on a pre-cancelled ctx.
@@ -264,10 +292,12 @@ func TestDispatchBatch_CtxCancel(t *testing.T) {
 func TestDispatchBatch_NilExecutor(t *testing.T) {
 	catalog := newCatalog(map[string]toolcat.Mutability{"Read": toolcat.MutabilityReadOnly})
 	calls := []provider.ToolCall{{Name: "Read"}}
+
 	results, err := toolexec.DispatchBatch(context.Background(), nil, catalog, calls)
 	if err != nil {
 		t.Fatalf("DispatchBatch err = %v", err)
 	}
+
 	if !results[0].IsError || !errors.Is(results[0].Err, toolexec.ErrNoExecutor) {
 		t.Errorf("results[0] = %+v; want IsError + ErrNoExecutor", results[0])
 	}

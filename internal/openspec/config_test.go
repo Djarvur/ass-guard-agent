@@ -15,25 +15,31 @@ func TestDefaultConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DefaultConfig: %v", err)
 	}
+
 	if len(cfg.Patterns) < 2 {
 		t.Errorf("patterns = %d; want >= 2", len(cfg.Patterns))
 	}
+
 	if len(cfg.HandoffTools) < 1 {
 		t.Errorf("handoff_tools = %d; want >= 1", len(cfg.HandoffTools))
 	}
+
 	if len(cfg.Commands) < 4 {
 		t.Errorf("commands = %d; want >= 4", len(cfg.Commands))
 	}
 	// The seeded impl-complete pattern is the canonical handoff.
 	var sawImpl bool
+
 	for _, p := range cfg.Patterns {
 		if p.ID == "impl-complete" {
 			sawImpl = true
+
 			if p.Action != "continue" {
 				t.Errorf("impl-complete action = %q; want continue", p.Action)
 			}
 		}
 	}
+
 	if !sawImpl {
 		t.Error("seeded impl-complete pattern missing")
 	}
@@ -47,6 +53,7 @@ func TestDefaultConfig(t *testing.T) {
 func TestLoadConfig_File(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "openspec.toml")
+
 	body := `
 [[patterns]]
 id = "x"
@@ -64,10 +71,12 @@ mutability = "read-only"
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
+
 	cfg, err := openspec.LoadConfig(path)
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
+
 	if len(cfg.Patterns) != 1 || cfg.Patterns[0].ID != "x" {
 		t.Errorf("patterns = %+v; want one [x]", cfg.Patterns)
 	}
@@ -78,6 +87,7 @@ mutability = "read-only"
 func TestLoadConfig_InvalidRegex(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "bad.toml")
+
 	body := `
 [[patterns]]
 id = "badpat"
@@ -87,10 +97,12 @@ action = "continue"
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
+
 	_, err := openspec.LoadConfig(path)
 	if err == nil {
 		t.Fatal("LoadConfig returned nil; want ConfigError for invalid regex")
 	}
+
 	if !contains(err.Error(), "badpat") {
 		t.Errorf("err = %v; want it to name the bad pattern id", err)
 	}
@@ -100,6 +112,7 @@ action = "continue"
 func TestLoadConfig_InvalidAction(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "badaction.toml")
+
 	body := `
 [[patterns]]
 id = "x"
@@ -109,10 +122,12 @@ action = "explode"
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
+
 	_, err := openspec.LoadConfig(path)
 	if err == nil {
 		t.Fatal("LoadConfig returned nil; want ConfigError for unknown action")
 	}
+
 	if !contains(err.Error(), "explode") {
 		t.Errorf("err = %v; want it to name the bad action", err)
 	}
@@ -123,6 +138,7 @@ action = "explode"
 func TestLoadConfig_InvalidMutability(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "badmut.toml")
+
 	body := `
 [commands.weird]
 mutability = "maybe"
@@ -130,10 +146,12 @@ mutability = "maybe"
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
+
 	_, err := openspec.LoadConfig(path)
 	if err == nil {
 		t.Fatal("LoadConfig returned nil; want ConfigError for unknown mutability")
 	}
+
 	if !contains(err.Error(), "weird") || !contains(err.Error(), "maybe") {
 		t.Errorf("err = %v; want it to name the command + the bad value", err)
 	}
@@ -158,6 +176,7 @@ mutability = "also-nope"
 	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
+
 	_, err := openspec.LoadConfig(path)
 	if err == nil {
 		t.Fatal("LoadConfig returned nil; want ConfigError")
@@ -174,5 +193,6 @@ func contains(haystack, needle string) bool {
 			return true
 		}
 	}
+
 	return false
 }

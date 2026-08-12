@@ -1,7 +1,7 @@
 package openspec
 
 import (
-	"fmt"
+	"errors"
 
 	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 )
@@ -24,21 +24,25 @@ func namespacedName(command string) string {
 // boundary classification.
 func RegisterTools(catalog *toolcat.Catalog, cfg *OpenSpecConfig) error {
 	if catalog == nil {
-		return fmt.Errorf("openspec: RegisterTools requires a non-nil catalog")
+		return errors.New("openspec: RegisterTools requires a non-nil catalog")
 	}
+
 	if cfg == nil {
-		return fmt.Errorf("openspec: RegisterTools requires a non-nil config")
+		return errors.New("openspec: RegisterTools requires a non-nil config")
 	}
+
 	for name, shape := range cfg.Commands {
 		mut := toolcat.MutabilityReadOnly
 		if shape.Mutability == "mutating" {
 			mut = toolcat.MutabilityMutating
 		}
+
 		catalog.Register(toolcat.Tool{
 			Name:        namespacedName(name),
 			Description: "OpenSpec " + name + " command (hosted as a subprocess)",
 			Mutability:  mut,
 		})
 	}
+
 	return nil
 }

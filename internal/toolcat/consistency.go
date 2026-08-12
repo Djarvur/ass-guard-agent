@@ -98,8 +98,8 @@ func requiredFields(raw json.RawMessage) []string {
 	var s struct {
 		Required []string `json:"required"`
 	}
-	err := json.Unmarshal(raw, &s)
 
+	err := json.Unmarshal(raw, &s)
 	if err != nil {
 		return nil
 	}

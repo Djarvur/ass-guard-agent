@@ -44,8 +44,8 @@ type CommandShape struct {
 
 // OpenSpecConfig is the parsed openspec.toml (D-14).
 type OpenSpecConfig struct {
-	Patterns     []PatternEntry         `toml:"patterns"`
-	HandoffTools []HandoffToolEntry     `toml:"handoff_tools"`
+	Patterns     []PatternEntry          `toml:"patterns"`
+	HandoffTools []HandoffToolEntry      `toml:"handoff_tools"`
 	Commands     map[string]CommandShape `toml:"commands"`
 }
 
@@ -65,8 +65,10 @@ func (e *ConfigError) Error() string {
 	if len(e.Violations) == 0 {
 		return "openspec config invalid"
 	}
+
 	cp := append([]string(nil), e.Violations...)
 	sort.Strings(cp)
+
 	return strings.Join(cp, "; ")
 }
 
@@ -79,9 +81,12 @@ func LoadConfig(path string) (*OpenSpecConfig, error) {
 	if _, err := toml.DecodeFile(path, &cfg); err != nil {
 		return nil, fmt.Errorf("openspec: decode %q: %w", path, err)
 	}
-	if err := validate(&cfg); err != nil {
+
+	err := validate(&cfg)
+	if err != nil {
 		return nil, err
 	}
+
 	return &cfg, nil
 }
 
@@ -91,9 +96,12 @@ func DefaultConfig() (*OpenSpecConfig, error) {
 	if _, err := toml.Decode(string(embeddedSeeded), &cfg); err != nil {
 		return nil, fmt.Errorf("openspec: decode embedded seeded.toml: %w", err)
 	}
-	if err := validate(&cfg); err != nil {
+
+	err := validate(&cfg)
+	if err != nil {
 		return nil, err
 	}
+
 	return &cfg, nil
 }
 
@@ -102,36 +110,45 @@ func DefaultConfig() (*OpenSpecConfig, error) {
 // ids may be empty (a missing id is flagged).
 func validate(cfg *OpenSpecConfig) error {
 	var v []string
+
 	for i := range cfg.Patterns {
 		p := &cfg.Patterns[i]
 		if !validAction(p.Action) {
 			v = append(v, fmt.Sprintf("patterns[%d] %q: unknown action %q (want continue/hook/ask/wait)", i, p.ID, p.Action))
 		}
+
 		if p.Regex == "" {
 			v = append(v, fmt.Sprintf("patterns[%d] %q: empty regex", i, p.ID))
+
 			continue
 		}
+
 		if _, err := regexp.Compile(p.Regex); err != nil {
 			v = append(v, fmt.Sprintf("patterns[%d] %q: invalid regex %q: %v", i, p.ID, p.Regex, err))
 		}
 	}
+
 	for i := range cfg.HandoffTools {
 		h := &cfg.HandoffTools[i]
 		if !validAction(h.Action) {
 			v = append(v, fmt.Sprintf("handoff_tools[%d] %q: unknown action %q (want continue/hook/ask/wait)", i, h.ID, h.Action))
 		}
+
 		if h.Tool == "" {
 			v = append(v, fmt.Sprintf("handoff_tools[%d] %q: empty tool", i, h.ID))
 		}
 	}
+
 	for name, shape := range cfg.Commands {
 		if shape.Mutability != "mutating" && shape.Mutability != "read-only" {
 			v = append(v, fmt.Sprintf("commands.%s: unknown mutability %q (want mutating|read-only)", name, shape.Mutability))
 		}
 	}
+
 	if len(v) > 0 {
 		return &ConfigError{Violations: v}
 	}
+
 	return nil
 }
 

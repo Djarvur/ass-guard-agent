@@ -15,33 +15,41 @@ import (
 // TestHTTPBackend_ImplementsInterface is the compile-time assertion that the
 // default impl satisfies Backend (T-04-05).
 func TestHTTPBackend_ImplementsInterface(t *testing.T) {
-	var _ toolexec.Backend = (*toolexec.HTTPBackend)(nil)
-	var _ toolexec.Backend = toolexec.FirecrawlBackend{}
+	var (
+		_ toolexec.Backend = (*toolexec.HTTPBackend)(nil)
+		_ toolexec.Backend = toolexec.FirecrawlBackend{}
+	)
 }
 
 // TestHTTPBackend_Search verifies Search GETs the URL template with the
 // {query} substituted (httptest-backed — no live network).
 func TestHTTPBackend_Search(t *testing.T) {
 	var gotPath, gotQuery string
+
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		gotQuery = r.URL.Query().Get("q")
 		_, _ = w.Write([]byte(`{"results":["a","b"]}`))
 	}))
 	defer srv.Close()
+
 	b := &toolexec.HTTPBackend{
 		SearchURLTemplate: srv.URL + "/search?q={query}",
 	}
+
 	out, err := b.Search(context.Background(), "hello world")
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
+
 	if gotPath != "/search" {
 		t.Errorf("path = %q; want /search", gotPath)
 	}
+
 	if gotQuery != "hello world" {
 		t.Errorf("query = %q; want hello world", gotQuery)
 	}
+
 	var parsed map[string]any
 	if err := json.Unmarshal(out, &parsed); err != nil {
 		t.Fatalf("body not JSON: %v", err)
@@ -56,11 +64,14 @@ func TestHTTPBackend_Fetch(t *testing.T) {
 			_, _ = w.Write([]byte(`{"fetched":true}`))
 		}))
 		defer srv.Close()
+
 		b := &toolexec.HTTPBackend{FetchURLTemplate: srv.URL + "/fetch?u={url}"}
+
 		out, err := b.Fetch(context.Background(), "https://example.com/page")
 		if err != nil {
 			t.Fatalf("Fetch: %v", err)
 		}
+
 		if !strings.Contains(string(out), "fetched") {
 			t.Errorf("body = %s; want fetched:true", out)
 		}
@@ -70,11 +81,14 @@ func TestHTTPBackend_Fetch(t *testing.T) {
 			_, _ = w.Write([]byte(`{"direct":true}`))
 		}))
 		defer srv.Close()
+
 		b := &toolexec.HTTPBackend{}
+
 		out, err := b.Fetch(context.Background(), srv.URL+"/anything")
 		if err != nil {
 			t.Fatalf("Fetch: %v", err)
 		}
+
 		if !strings.Contains(string(out), "direct") {
 			t.Errorf("body = %s; want direct:true", out)
 		}
@@ -89,6 +103,7 @@ func TestBackendsFromConfig_Select(t *testing.T) {
 		if err != nil {
 			t.Fatalf("err = %v", err)
 		}
+
 		if got["WebSearch"].Name() != "http" || got["WebFetch"].Name() != "http" {
 			t.Errorf("names = %q,%q; want http,http", got["WebSearch"].Name(), got["WebFetch"].Name())
 		}
@@ -98,9 +113,11 @@ func TestBackendsFromConfig_Select(t *testing.T) {
 		if err != nil {
 			t.Fatalf("err = %v", err)
 		}
+
 		if got["WebSearch"].Name() != "firecrawl" {
 			t.Errorf("WebSearch = %q; want firecrawl", got["WebSearch"].Name())
 		}
+
 		if _, ok := got["WebFetch"]; ok {
 			t.Errorf("WebFetch unexpectedly set; want absent (not in config)")
 		}
@@ -110,10 +127,12 @@ func TestBackendsFromConfig_Select(t *testing.T) {
 		if err == nil {
 			t.Fatal("err = nil; want ConfigError for unknown backend")
 		}
+
 		var ce *toolexec.ConfigError
 		if !errors.As(err, &ce) {
 			t.Fatalf("err type = %T; want *toolexec.ConfigError", err)
 		}
+
 		if !strings.Contains(err.Error(), "exfiltrate-evil") {
 			t.Errorf("err = %v; want it to name the unknown backend", err)
 		}
@@ -127,6 +146,7 @@ func TestBackend_SwappableWithoutCodeChange(t *testing.T) {
 	httpMap, _ := toolexec.BackendsFromConfig(map[string]string{"websearch": "http"})
 	fireMap, _ := toolexec.BackendsFromConfig(map[string]string{"websearch": "firecrawl"})
 	httpName := httpMap["WebSearch"].Name()
+
 	fireName := fireMap["WebSearch"].Name()
 	if httpName == fireName {
 		t.Errorf("config swap returned same backend (%s); want http != firecrawl (swap seam broken)", httpName)
@@ -141,6 +161,7 @@ func TestFirecrawlBackend_NotConfigured(t *testing.T) {
 	if _, err := f.Search(context.Background(), "x"); err == nil {
 		t.Error("Search with empty API key = nil; want not-configured error")
 	}
+
 	if _, err := f.Fetch(context.Background(), "x"); err == nil {
 		t.Error("Fetch with empty API key = nil; want not-configured error")
 	}

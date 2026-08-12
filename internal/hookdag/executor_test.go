@@ -27,10 +27,10 @@ type recordedCall struct {
 }
 
 type commandResult struct {
-	stdout   string
-	stderr   string
-	exit     int
-	err      error
+	stdout string
+	stderr string
+	exit   int
+	err    error
 }
 
 func (f *fakeCommands) Run(ctx context.Context, command string, args []string) (string, string, int, error) {
@@ -38,6 +38,7 @@ func (f *fakeCommands) Run(ctx context.Context, command string, args []string) (
 	f.calls = append(f.calls, recordedCall{command: command, args: append([]string(nil), args...)})
 	idx := len(f.calls) - 1
 	f.mu.Unlock()
+
 	if f.sleep > 0 {
 		select {
 		case <-time.After(f.sleep):
@@ -45,48 +46,56 @@ func (f *fakeCommands) Run(ctx context.Context, command string, args []string) (
 			return "", "", 0, ctx.Err()
 		}
 	}
+
 	res, ok := f.scripted[idx]
 	if !ok {
 		// Default success for unscripted indices.
 		return "ok-" + command, "", 0, nil
 	}
+
 	return res.stdout, res.stderr, res.exit, res.err
 }
 
 func (f *fakeCommands) callCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
 	return len(f.calls)
 }
 
 // fakeTurns is a recording TurnRunner for send-prompt steps.
 type fakeTurns struct {
-	mu     sync.Mutex
+	mu      sync.Mutex
 	prompts []string
-	stop   string
-	err    error
+	stop    string
+	err     error
 }
 
 func (f *fakeTurns) Run(_ context.Context, prompt []hookdag.ContentBlock) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
 	text := ""
 	if len(prompt) > 0 {
 		text = prompt[0].Text
 	}
+
 	f.prompts = append(f.prompts, text)
 	if f.err != nil {
 		return f.stop, f.err
 	}
+
 	if f.stop == "" {
 		return "end_turn", nil
 	}
+
 	return f.stop, nil
 }
 
 func (f *fakeTurns) promptCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
 	return len(f.prompts)
 }
 
@@ -100,31 +109,39 @@ type fakeBoundaries struct {
 func (f *fakeBoundaries) OpenBoundary(_ context.Context, cause string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
 	f.causes = append(f.causes, cause)
+
 	return f.err
 }
 
 func (f *fakeBoundaries) lastCause() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
 	if len(f.causes) == 0 {
 		return ""
 	}
+
 	return f.causes[len(f.causes)-1]
 }
 
 // captureHooks subscribes to HookProgress + drains the buffer synchronously.
 func captureHooks(t *testing.T, bus *event.Bus) func() []event.HookProgress {
 	t.Helper()
+
 	ch := bus.Subscribe("HookProgress", event.BufHookProgress)
+
 	return func() []event.HookProgress {
 		var got []event.HookProgress
+
 		for {
 			select {
 			case e, ok := <-ch:
 				if !ok {
 					return got
 				}
+
 				if hp, ok := e.(event.HookProgress); ok {
 					got = append(got, hp)
 				}
@@ -144,9 +161,9 @@ func prov(name string) hookdag.Provenance {
 func TestExecute_HappyPath(t *testing.T) {
 	bus := event.NewBus()
 	e := &hookdag.Executor{
-		Bus: bus,
-		Commands: &fakeCommands{},
-		Turns:    &fakeTurns{},
+		Bus:        bus,
+		Commands:   &fakeCommands{},
+		Turns:      &fakeTurns{},
 		Boundaries: &fakeBoundaries{},
 	}
 	hook := hookdag.Hook{
@@ -158,10 +175,12 @@ func TestExecute_HappyPath(t *testing.T) {
 		},
 	}
 	collect := captureHooks(t, bus)
+
 	res := e.Execute(context.Background(), hook, prov("h"))
 	if res.Status != hookdag.StatusCompleted {
 		t.Errorf("Status = %q; want completed", res.Status)
 	}
+
 	if res.StepsRun != 3 {
 		t.Errorf("StepsRun = %d; want 3", res.StepsRun)
 	}
@@ -186,19 +205,24 @@ func TestExecute_RunCommandHalt(t *testing.T) {
 			{Name: "s1", Kind: hookdag.StepRunCommand, Command: "b", OnFailure: hookdag.OnFailureHalt},
 			{Name: "s2", Kind: hookdag.StepRunCommand, Command: "c"},
 		}}
+
 	res := e.Execute(context.Background(), hook, prov("h"))
 	if res.Status != hookdag.StatusHalted {
 		t.Errorf("Status = %q; want halted", res.Status)
 	}
+
 	if res.FailedStep != 1 {
 		t.Errorf("FailedStep = %d; want 1", res.FailedStep)
 	}
+
 	if res.StepsRun != 1 {
 		t.Errorf("StepsRun = %d; want 1 (s2 not executed)", res.StepsRun)
 	}
+
 	if !errors.Is(errors.New(res.Detail), errors.New("boom")) && !contains(res.Detail, "boom") {
 		t.Errorf("Detail = %q; want it to carry the stderr boom", res.Detail)
 	}
+
 	if fc.callCount() != 2 {
 		t.Errorf("command calls = %d; want 2 (s2 skipped)", fc.callCount())
 	}
@@ -221,20 +245,24 @@ func TestExecute_OnFailureContinue(t *testing.T) {
 			{Name: "s2", Kind: hookdag.StepRunCommand, Command: "c"},
 		}}
 	collect := captureHooks(t, bus)
+
 	res := e.Execute(context.Background(), hook, prov("h"))
 	if res.Status != hookdag.StatusCompleted {
 		t.Errorf("Status = %q; want completed (continue)", res.Status)
 	}
+
 	if res.StepsRun != 3 {
 		t.Errorf("StepsRun = %d; want 3 (chain proceeded)", res.StepsRun)
 	}
 	// A HookProgress{error} event was emitted for step s1.
 	var sawError bool
+
 	for _, hp := range collect() {
 		if hp.Status == "error" && hp.StepIndex == 1 {
 			sawError = true
 		}
 	}
+
 	if !sawError {
 		t.Error("no HookProgress{error} emitted for the continued s1 failure (HOOK-03 — never silent)")
 	}
@@ -254,19 +282,24 @@ func TestExecute_OnFailureAsk(t *testing.T) {
 			{Name: "s1", Kind: hookdag.StepRunCommand, Command: "b"},
 		}}
 	collect := captureHooks(t, bus)
+
 	res := e.Execute(context.Background(), hook, prov("h"))
 	if res.Status != hookdag.StatusAsked {
 		t.Errorf("Status = %q; want asked", res.Status)
 	}
+
 	if res.FailedStep != 0 {
 		t.Errorf("FailedStep = %d; want 0", res.FailedStep)
 	}
+
 	var sawAsk bool
+
 	for _, hp := range collect() {
 		if hp.Status == "ask" {
 			sawAsk = true
 		}
 	}
+
 	if !sawAsk {
 		t.Error("no HookProgress{ask} emitted (HOOK-03)")
 	}
@@ -279,6 +312,7 @@ func TestExecute_StepInheritsHookDefault(t *testing.T) {
 	e := &hookdag.Executor{Commands: fc}
 	hook := hookdag.Hook{Name: "h", Trigger: "post-implement", OnFailure: hookdag.OnFailureHalt,
 		Steps: []hookdag.Step{{Name: "s0", Kind: hookdag.StepRunCommand, Command: "a"}}}
+
 	res := e.Execute(context.Background(), hook, prov("h"))
 	if res.Status != hookdag.StatusHalted {
 		t.Errorf("Status = %q; want halted (inherited hook default)", res.Status)
@@ -292,15 +326,19 @@ func TestExecute_SendPromptIsATurn(t *testing.T) {
 	e := &hookdag.Executor{Turns: ft}
 	hook := hookdag.Hook{Name: "h", Trigger: "post-implement",
 		Steps: []hookdag.Step{{Name: "sp", Kind: hookdag.StepSendPrompt, Prompt: "review me"}}}
+
 	res := e.Execute(context.Background(), hook, prov("h"))
 	if res.Status != hookdag.StatusCompleted {
 		t.Errorf("Status = %q; want completed", res.Status)
 	}
+
 	if ft.promptCount() != 1 {
 		t.Fatalf("turn calls = %d; want 1 (send-prompt IS a turn)", ft.promptCount())
 	}
+
 	ft.mu.Lock()
 	defer ft.mu.Unlock()
+
 	if ft.prompts[0] != "review me" {
 		t.Errorf("prompt = %q; want review me", ft.prompts[0])
 	}
@@ -313,6 +351,7 @@ func TestExecute_SendPromptStopIsNotError(t *testing.T) {
 	e := &hookdag.Executor{Turns: ft}
 	hook := hookdag.Hook{Name: "h", Trigger: "post-implement",
 		Steps: []hookdag.Step{{Name: "sp", Kind: hookdag.StepSendPrompt, Prompt: "x", OnFailure: hookdag.OnFailureHalt}}}
+
 	res := e.Execute(context.Background(), hook, prov("h"))
 	if res.Status != hookdag.StatusCompleted {
 		t.Errorf("Status = %q; want completed (stop=end_turn is not an error)", res.Status)
@@ -326,10 +365,12 @@ func TestExecute_FreshContextIsABoundary(t *testing.T) {
 	e := &hookdag.Executor{Boundaries: fb}
 	hook := hookdag.Hook{Name: "h", Trigger: "post-implement",
 		Steps: []hookdag.Step{{Name: "fc", Kind: hookdag.StepFreshContext}}}
+
 	res := e.Execute(context.Background(), hook, prov("h"))
 	if res.Status != hookdag.StatusCompleted {
 		t.Errorf("Status = %q; want completed", res.Status)
 	}
+
 	if !contains(fb.lastCause(), "fc") {
 		t.Errorf("OpenBoundary cause = %q; want it to contain the step name", fb.lastCause())
 	}
@@ -345,13 +386,16 @@ func TestExecute_Wait(t *testing.T) {
 	hook := hookdag.Hook{Name: "h", Trigger: "post-implement",
 		Steps: []hookdag.Step{{Name: "w", Kind: hookdag.StepWait, Duration: "1ms"}}}
 	t0 := time.Now()
+
 	res := e.Execute(context.Background(), hook, prov("h"))
 	if res.Status != hookdag.StatusCompleted {
 		t.Errorf("Status = %q; want completed", res.Status)
 	}
+
 	if time.Since(t0) < time.Millisecond {
 		t.Errorf("wait slept %v; want >= 1ms", time.Since(t0))
 	}
+
 	if fc.callCount() != 0 || ft.promptCount() != 0 || len(fb.causes) != 0 {
 		t.Error("wait step called another seam; want isolated")
 	}
@@ -363,33 +407,40 @@ func TestReentrant_Refused(t *testing.T) {
 	// A 50ms sleep on the first command call forces overlap between two
 	// concurrent Execute calls.
 	fc := &fakeCommands{
-		sleep: 50 * time.Millisecond,
+		sleep:    50 * time.Millisecond,
 		scripted: map[int]commandResult{0: {exit: 0}},
 	}
 	e := &hookdag.Executor{Commands: fc}
 	hook := hookdag.Hook{Name: "rh", Trigger: "post-implement",
 		Steps: []hookdag.Step{{Name: "s", Kind: hookdag.StepRunCommand, Command: "x"}}}
+
 	var wg sync.WaitGroup
+
 	results := make(chan hookdag.Result, 2)
-	for i := 0; i < 2; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+
+	for range 2 {
+		wg.Go(func() {
+
 			results <- e.Execute(context.Background(), hook, prov("rh"))
-		}()
+		})
 	}
+
 	wg.Wait()
 	close(results)
+
 	var statuses []string
 	for r := range results {
 		statuses = append(statuses, r.Status)
 	}
+
 	skipped := 0
+
 	for _, s := range statuses {
 		if s == hookdag.StatusSkippedReentrant {
 			skipped++
 		}
 	}
+
 	if skipped != 1 {
 		t.Errorf("got %d skipped-reentrant; want exactly 1 (HOOK-04): statuses=%v", skipped, statuses)
 	}
@@ -402,17 +453,21 @@ func TestReentrant_AllowReentrant(t *testing.T) {
 	e := &hookdag.Executor{Commands: fc}
 	hook := hookdag.Hook{Name: "rh2", Trigger: "post-implement", AllowReentrant: true,
 		Steps: []hookdag.Step{{Name: "s", Kind: hookdag.StepRunCommand, Command: "x"}}}
+
 	var wg sync.WaitGroup
+
 	results := make(chan hookdag.Result, 2)
-	for i := 0; i < 2; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+
+	for range 2 {
+		wg.Go(func() {
+
 			results <- e.Execute(context.Background(), hook, prov("rh2"))
-		}()
+		})
 	}
+
 	wg.Wait()
 	close(results)
+
 	for r := range results {
 		if r.Status == hookdag.StatusSkippedReentrant {
 			t.Error("got skipped-reentrant with allow_reentrant:true; want both completed")
@@ -429,6 +484,7 @@ func TestReentrant_InFlightClearedAfterCompletion(t *testing.T) {
 	hook := hookdag.Hook{Name: "seq", Trigger: "post-implement",
 		Steps: []hookdag.Step{{Name: "s", Kind: hookdag.StepRunCommand, Command: "x"}}}
 	r1 := e.Execute(context.Background(), hook, prov("seq"))
+
 	r2 := e.Execute(context.Background(), hook, prov("seq"))
 	if r1.Status != hookdag.StatusCompleted || r2.Status != hookdag.StatusCompleted {
 		t.Errorf("sequential statuses = %q,%q; want completed,completed (in-flight cleared)", r1.Status, r2.Status)
@@ -441,6 +497,7 @@ func TestRunCommand_ExitCodeContract(t *testing.T) {
 	t.Run("zero no error", func(t *testing.T) {
 		fc := &fakeCommands{scripted: map[int]commandResult{0: {exit: 0, stdout: "out"}}}
 		e := &hookdag.Executor{Commands: fc}
+
 		hook := hookdag.Hook{Name: "h", Trigger: "t",
 			Steps: []hookdag.Step{{Name: "s", Kind: hookdag.StepRunCommand, Command: "x", OnFailure: hookdag.OnFailureHalt}}}
 		if res := e.Execute(context.Background(), hook, prov("h")); res.Status != hookdag.StatusCompleted {
@@ -452,10 +509,12 @@ func TestRunCommand_ExitCodeContract(t *testing.T) {
 		e := &hookdag.Executor{Commands: fc}
 		hook := hookdag.Hook{Name: "h", Trigger: "t",
 			Steps: []hookdag.Step{{Name: "s", Kind: hookdag.StepRunCommand, Command: "x", OnFailure: hookdag.OnFailureHalt}}}
+
 		res := e.Execute(context.Background(), hook, prov("h"))
 		if res.Status != hookdag.StatusHalted {
 			t.Errorf("exit-2 Status = %q; want halted", res.Status)
 		}
+
 		if !contains(res.Detail, "the stderr") {
 			t.Errorf("Detail = %q; want it to carry stderr", res.Detail)
 		}

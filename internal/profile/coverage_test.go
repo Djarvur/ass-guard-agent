@@ -99,13 +99,13 @@ func TestCoverageManifest_Validate(t *testing.T) {
 			{Path: "request.body.tools", Tier: profile.Tier1ByteFaithful, ObservedCount: 103},
 		},
 	}
+
 	err := m.Validate(map[string]int{"request.body.tools": 103})
 	if err != nil {
 		t.Errorf("matching capture failed Validate: %v", err)
 	}
 
 	err = m.Validate(map[string]int{"request.body.tools": 50})
-
 	if err == nil {
 		t.Error("drifted capture passed Validate; want error")
 	}

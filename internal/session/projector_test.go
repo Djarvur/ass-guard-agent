@@ -47,10 +47,12 @@ func TestProjector_LeanSeedAfterBoundary(t *testing.T) {
 	}
 
 	combined := ""
+
 	var combinedSb49 strings.Builder
 	for _, mm := range msgs {
 		combinedSb49.WriteString(mm.Content + "\n")
 	}
+
 	combined += combinedSb49.String()
 
 	if !strings.Contains(combined, "what now") {
@@ -77,10 +79,12 @@ func TestProjector_SummaryExtraction(t *testing.T) {
 	}
 
 	combined := ""
+
 	var combinedSb75 strings.Builder
 	for _, mm := range msgs {
 		combinedSb75.WriteString(mm.Content + "\n")
 	}
+
 	combined += combinedSb75.String()
 
 	if !strings.Contains(combined, "edit the file") {
@@ -113,10 +117,12 @@ func TestProjector_FirstTurn(t *testing.T) {
 	}
 
 	combined := ""
+
 	var combinedSb103 strings.Builder
 	for _, mm := range msgs {
 		combinedSb103.WriteString(mm.Content + "\n")
 	}
+
 	combined += combinedSb103.String()
 
 	if !strings.Contains(combined, "hello") {
@@ -140,10 +146,12 @@ func TestProjector_Truncation(t *testing.T) {
 	}
 
 	combined := ""
+
 	var combinedSb125 strings.Builder
 	for _, mm := range msgs {
 		combinedSb125.WriteString(mm.Content)
 	}
+
 	combined += combinedSb125.String()
 	// The 1000-char message must be truncated to <= MaxSummaryUserChars + ellipsis.
 	if strings.Contains(combined, strings.Repeat("a", MaxSummaryUserChars+10)) {

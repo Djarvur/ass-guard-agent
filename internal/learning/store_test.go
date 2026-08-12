@@ -1,6 +1,7 @@
 package learning_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -13,10 +14,12 @@ import (
 func newStore(t *testing.T) *learning.Store {
 	t.Helper()
 	dir := t.TempDir()
+
 	s, err := learning.Open(filepath.Join(dir, "learned.yaml"))
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
+
 	return s
 }
 
@@ -25,13 +28,16 @@ func newStore(t *testing.T) *learning.Store {
 func TestStore_OpenCreatesEmpty(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "nested", "learned.yaml")
+
 	s, err := learning.Open(path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
+
 	if _, err := os.Stat(path); err != nil {
 		t.Errorf("Open did not create %q: %v", path, err)
 	}
+
 	if entries := s.List(); len(entries) != 0 {
 		t.Errorf("new store List = %v; want empty", entries)
 	}
@@ -41,19 +47,24 @@ func TestStore_OpenCreatesEmpty(t *testing.T) {
 // candidate (confidence 0) entry that Lookup returns (LRN-01).
 func TestStore_RecordCandidateConfidence0(t *testing.T) {
 	s := newStore(t)
-	if err := s.RecordCandidate("unmatched:launch", "fresh-context", "turn-001"); err != nil {
+	err := s.RecordCandidate("unmatched:launch", "fresh-context", "turn-001")
+	if err != nil {
 		t.Fatalf("RecordCandidate: %v", err)
 	}
+
 	e, ok := s.Lookup("unmatched:launch")
 	if !ok {
 		t.Fatal("Lookup returned ok=false after RecordCandidate")
 	}
+
 	if e.Status != learning.StatusCandidate {
 		t.Errorf("Status = %q; want candidate", e.Status)
 	}
+
 	if e.Confidence != 0 {
 		t.Errorf("Confidence = %d; want 0", e.Confidence)
 	}
+
 	if e.Answer != "fresh-context" {
 		t.Errorf("Answer = %q; want fresh-context", e.Answer)
 	}
@@ -65,10 +76,12 @@ func TestStore_RecordCandidateIdempotent(t *testing.T) {
 	s := newStore(t)
 	_ = s.RecordCandidate("x", "A", "t1")
 	_ = s.RecordCandidate("x", "B", "t2")
+
 	e, ok := s.Lookup("x")
 	if !ok {
 		t.Fatal("Lookup returned ok=false")
 	}
+
 	if e.Answer != "A" {
 		t.Errorf("Answer = %q; want A (not overwritten)", e.Answer)
 	}
@@ -78,19 +91,23 @@ func TestStore_RecordCandidateIdempotent(t *testing.T) {
 // flip Status to active (LRN-03 — the confidence threshold).
 func TestStore_ConfirmThresholdActive(t *testing.T) {
 	s := newStore(t)
+
 	_ = s.RecordCandidate("feature", "continue", "t1")
 	for _, tid := range []string{"t1", "t2", "t3"} {
 		if _, err := s.Confirm("feature", "continue", tid); err != nil {
 			t.Fatalf("Confirm(%s): %v", tid, err)
 		}
 	}
+
 	e, ok := s.Lookup("feature")
 	if !ok {
 		t.Fatal("Lookup returned ok=false")
 	}
+
 	if e.Status != learning.StatusActive {
 		t.Errorf("Status = %q; want active after 3 confirms", e.Status)
 	}
+
 	if e.Confidence != 3 {
 		t.Errorf("Confidence = %d; want 3", e.Confidence)
 	}
@@ -103,6 +120,7 @@ func TestStore_ConfirmBelowThresholdCandidate(t *testing.T) {
 	_ = s.RecordCandidate("feature", "continue", "t1")
 	_, _ = s.Confirm("feature", "continue", "t1")
 	_, _ = s.Confirm("feature", "continue", "t2")
+
 	e, _ := s.Lookup("feature")
 	if e.Status != learning.StatusCandidate {
 		t.Errorf("Status = %q; want candidate (provisional below 3)", e.Status)
@@ -114,14 +132,17 @@ func TestStore_ConfirmBelowThresholdCandidate(t *testing.T) {
 func TestStore_ConfirmConflict(t *testing.T) {
 	s := newStore(t)
 	_ = s.RecordCandidate("c", "A", "t1")
+
 	_, err := s.Confirm("c", "B", "t2")
-	if err != learning.ErrConflict {
+	if !errors.Is(err, learning.ErrConflict) {
 		t.Errorf("Confirm err = %v; want ErrConflict", err)
 	}
+
 	entries := s.List()
 	if len(entries) != 1 || entries[0].Status != learning.StatusConflict {
 		t.Errorf("entry = %+v; want status conflict", entries)
 	}
+
 	if entries[0].Confidence != 0 {
 		t.Errorf("Confidence = %d; want 0 (not incremented on conflict)", entries[0].Confidence)
 	}
@@ -132,6 +153,7 @@ func TestStore_ConfirmConflict(t *testing.T) {
 func TestStore_ConflictBlocksUse(t *testing.T) {
 	s := newStore(t)
 	_ = s.RecordCandidate("c", "A", "t1")
+
 	_, _ = s.Confirm("c", "B", "t2")
 	if _, ok := s.Lookup("c"); ok {
 		t.Error("Lookup returned a conflicted entry; want ok=false (engine re-asks)")
@@ -157,19 +179,23 @@ func TestStore_ExpiredIgnoredNotDeleted(t *testing.T) {
 	// temp dir). We need the path — re-create a store whose file we control.
 	dir := t.TempDir()
 	fp := filepath.Join(dir, "learned.yaml")
+
 	s2, err := learning.Open(fp)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	_ = s2.RecordCandidate("old2", "wait", "t1")
 	entries := s2.List()
 	// Overwrite the file with a back-dated expiry.
 	past := time.Now().Add(-1 * time.Hour)
 	_ = os.WriteFile(fp, []byte("entries:\n  - id: old2\n    situation: old2\n    answer: wait\n    confidence: 3\n    expiry: "+past.Format(time.RFC3339)+"\n    source_turns: [t1]\n    status: active\n"), 0o600)
 	_ = entries
+
 	if _, ok := s2.Lookup("old2"); ok {
 		t.Error("Lookup returned an expired entry; want ok=false (ignored)")
 	}
+
 	if list := s2.List(); len(list) != 1 {
 		t.Errorf("List = %d entries; want 1 (expired entry retained)", len(list))
 	}
@@ -180,16 +206,20 @@ func TestStore_ExpiredIgnoredNotDeleted(t *testing.T) {
 // (deduped — Test 8).
 func TestStore_SourceTurnProvenanceDeduped(t *testing.T) {
 	s := newStore(t)
+
 	_ = s.RecordCandidate("p", "continue", "t1")
 	for _, tid := range []string{"t1", "t2", "t3", "t1"} { // t1 repeated
 		_, _ = s.Confirm("p", "continue", tid)
 	}
+
 	e, _ := s.Lookup("p")
 	want := map[string]bool{"t1": true, "t2": true, "t3": true}
+
 	got := map[string]bool{}
 	for _, t := range e.SourceTurns {
 		got[t] = true
 	}
+
 	if len(got) != 3 || !want["t1"] || !want["t2"] || !want["t3"] {
 		t.Errorf("SourceTurns = %v; want [t1 t2 t3] deduped", e.SourceTurns)
 	}
@@ -201,16 +231,20 @@ func TestStore_RevertRemovesEntry(t *testing.T) {
 	s := newStore(t)
 	_ = s.RecordCandidate("a", "x", "t1")
 	_ = s.RecordCandidate("b", "y", "t1")
+
 	_ = s.RecordCandidate("c", "z", "t1")
-	if err := s.Revert(learning.Slug("b")); err != nil {
+	err := s.Revert(learning.Slug("b"))
+	if err != nil {
 		t.Fatalf("Revert: %v", err)
 	}
+
 	list := s.List()
 	if len(list) != 2 {
 		t.Errorf("after Revert, List = %d entries; want 2", len(list))
 	}
 	// Re-Revert the same id — no-op (not an error).
-	if err := s.Revert(learning.Slug("b")); err != nil {
+	err = s.Revert(learning.Slug("b"))
+	if err != nil {
 		t.Errorf("re-Revert missing id = %v; want nil (no-op)", err)
 	}
 }
@@ -222,6 +256,7 @@ func TestStore_ListDeterministicOrder(t *testing.T) {
 	_ = s.RecordCandidate("alpha", "x", "t1")
 	_ = s.RecordCandidate("beta", "y", "t1")
 	_ = s.RecordCandidate("gamma", "z", "t1")
+
 	list := s.List()
 	if len(list) != 3 {
 		t.Fatalf("List = %d; want 3", len(list))
@@ -237,10 +272,12 @@ func TestStore_ListDeterministicOrder(t *testing.T) {
 func TestStore_RevertAtomicReadOnlyDir(t *testing.T) {
 	dir := t.TempDir()
 	fp := filepath.Join(dir, "learned.yaml")
+
 	s, err := learning.Open(fp)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	_ = s.RecordCandidate("a", "x", "t1")
 	_ = s.RecordCandidate("b", "y", "t1")
 	_ = s.RecordCandidate("c", "z", "t1")
@@ -249,11 +286,13 @@ func TestStore_RevertAtomicReadOnlyDir(t *testing.T) {
 		t.Fatalf("chmod dir read-only: %v", err)
 	}
 	defer os.Chmod(dir, 0o755)
+
 	if err := s.Revert(learning.Slug("b")); err == nil {
 		t.Error("Revert on a read-only dir = nil; want a write error (atomic)")
 	}
 	// Restore + verify all 3 entries still present.
 	_ = os.Chmod(dir, 0o755)
+
 	if list := s.List(); len(list) != 3 {
 		t.Errorf("after failed Revert, List = %d; want 3 (unchanged)", len(list))
 	}
@@ -262,10 +301,12 @@ func TestStore_RevertAtomicReadOnlyDir(t *testing.T) {
 // TestSlug_Deterministic verifies Slug produces a stable id for a situation.
 func TestSlug_Deterministic(t *testing.T) {
 	a := learning.Slug("unmatched:launch:webfetch")
+
 	b := learning.Slug("Unmatched:Launch:WebFetch")
 	if a != b {
 		t.Errorf("Slug casing not normalized: %q vs %q", a, b)
 	}
+
 	if a == "" {
 		t.Error("Slug returned empty for a non-empty situation")
 	}

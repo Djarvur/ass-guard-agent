@@ -63,5 +63,6 @@ func Slug(situation string) string {
 	s := strings.ToLower(situation)
 	s = slugNonAlnum.ReplaceAllString(s, "-")
 	s = strings.Trim(s, "-")
+
 	return s
 }

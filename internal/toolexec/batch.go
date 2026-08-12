@@ -84,7 +84,9 @@ func DispatchBatch(ctx context.Context, exec toolcat.ToolExecutor, catalog *tool
 		idx  int
 		call provider.ToolCall
 	}
+
 	var readOnly, mutating []indexed
+
 	for i, c := range calls {
 		if isMutating(c.Name, catalog) {
 			mutating = append(mutating, indexed{idx: i, call: c})
@@ -98,18 +100,24 @@ func DispatchBatch(ctx context.Context, exec toolcat.ToolExecutor, catalog *tool
 	// goroutine acquires a slot (ctx-aware), executes, writes its OWN results
 	// slot, releases. No shared slot ⇒ no synchronization beyond the semaphore.
 	var wg sync.WaitGroup
+
 	sem := make(chan struct{}, cfg.maxConcurrent)
+
 	for _, ro := range readOnly {
 		wg.Add(1)
 		go func(ro indexed) {
 			defer wg.Done()
+
 			select {
 			case sem <- struct{}{}:
 			case <-ctx.Done():
 				results[ro.idx] = ToolResult{CallIndex: ro.idx, Name: ro.call.Name, Err: ctx.Err(), IsError: true}
+
 				return
 			}
+
 			defer func() { <-sem }()
+
 			results[ro.idx] = executeOne(ctx, exec, ro.idx, ro.call)
 		}(ro)
 	}
@@ -121,8 +129,10 @@ func DispatchBatch(ctx context.Context, exec toolcat.ToolExecutor, catalog *tool
 	// Mutating calls: strictly sequential, each one alone. ctx checked before
 	// every call so a cancel surfaces promptly without deadlock.
 	for _, m := range mutating {
-		if err := ctx.Err(); err != nil {
+		err := ctx.Err()
+		if err != nil {
 			results[m.idx] = ToolResult{CallIndex: m.idx, Name: m.call.Name, Err: err, IsError: true}
+
 			continue
 		}
 		// Synchronous (alone) — no goroutine, no overlap.
@@ -141,18 +151,24 @@ func executeOne(ctx context.Context, exec toolcat.ToolExecutor, idx int, call pr
 	if exec == nil {
 		res.Err = ErrNoExecutor
 		res.IsError = true
+
 		return res
 	}
+
 	out, err := exec.Execute(ctx, call.Name, call.Input)
 	if err != nil {
 		res.Err = err
+
 		res.IsError = true
 		if len(out) > 0 {
 			res.Output = out
 		}
+
 		return res
 	}
+
 	res.Output = out
+
 	return res
 }
 
@@ -163,9 +179,11 @@ func isMutating(name string, catalog *toolcat.Catalog) bool {
 	if catalog == nil {
 		return false
 	}
+
 	t, ok := catalog.Get(name)
 	if !ok {
 		return false
 	}
+
 	return t.IsMutating()
 }

@@ -13,6 +13,8 @@ package toolcat
 //     flips a catalog-mutating tool off; the formula does not consult config for
 //     downgrading.
 
+import "slices"
+
 // EffectiveMutability returns the effective mutability of a tool given an
 // adapter-class hint (SESS-03). The "more-mutating wins" rule: if either the
 // tool's declared Mutability or the adapter class is Mutating, the result is
@@ -45,11 +47,5 @@ func IsBoundary(toolName string, catalog *Catalog, configAdded []string) bool {
 		}
 	}
 
-	for _, name := range configAdded {
-		if name == toolName {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(configAdded, toolName)
 }

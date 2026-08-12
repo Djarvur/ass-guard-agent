@@ -23,12 +23,16 @@ func ProposeHooks(worklog []WorklogEntry) []Proposal {
 
 	// Count occurrences of every distinct window of length minLen..maxLen.
 	const minLen, maxLen = 2, 4
+
 	type counted struct {
 		steps []string
 		n     int
 	}
+
 	counts := map[string]*counted{}
+
 	var order []string // first-seen order for stable iteration
+
 	for windowLen := minLen; windowLen <= maxLen; windowLen++ {
 		for i := 0; i+windowLen <= len(seq); i++ {
 			key := strings.Join(seq[i:i+windowLen], "|")
@@ -46,11 +50,13 @@ func ProposeHooks(worklog []WorklogEntry) []Proposal {
 	// sequence's steps are a prefix/substring of a longer one with equal or
 	// greater count, prefer the longer (richer hook).
 	var proposals []Proposal
+
 	for _, key := range order {
 		c := counts[key]
 		if c.n < 3 {
 			continue
 		}
+
 		proposals = append(proposals, Proposal{
 			HookName:    "learned-" + Slug(strings.Join(c.steps, "-")),
 			Trigger:     "post-implement",
@@ -68,8 +74,10 @@ func ProposeHooks(worklog []WorklogEntry) []Proposal {
 		if proposals[i].Occurrences != proposals[j].Occurrences {
 			return proposals[i].Occurrences > proposals[j].Occurrences
 		}
+
 		return strings.Join(proposals[i].Steps, "|") < strings.Join(proposals[j].Steps, "|")
 	})
+
 	return proposals
 }
 
@@ -81,25 +89,32 @@ func dedupeSubsumed(in []Proposal) []Proposal {
 	out := make([]Proposal, 0, len(in))
 	for i, sub := range in {
 		dropped := false
+
 		for j, other := range in {
 			if i == j {
 				continue
 			}
+
 			if len(other.Steps) <= len(sub.Steps) {
 				continue
 			}
+
 			if other.Occurrences < sub.Occurrences {
 				continue
 			}
+
 			if isContiguousSubSlice(sub.Steps, other.Steps) {
 				dropped = true
+
 				break
 			}
 		}
+
 		if !dropped {
 			out = append(out, sub)
 		}
 	}
+
 	return out
 }
 
@@ -109,17 +124,22 @@ func isContiguousSubSlice(small, big []string) bool {
 	if len(small) == 0 || len(small) > len(big) {
 		return false
 	}
+
 	for i := 0; i+len(small) <= len(big); i++ {
 		match := true
+
 		for k := range small {
 			if big[i+k] != small[k] {
-								match = false
-								break
-							}
+				match = false
+
+				break
+			}
 		}
+
 		if match {
 			return true
 		}
 	}
+
 	return false
 }

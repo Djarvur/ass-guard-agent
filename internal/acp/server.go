@@ -168,14 +168,11 @@ func (s *Server) Serve(ctx context.Context) error {
 		// Request: dispatch in a goroutine so the reader keeps reading.
 		m := *msg // capture the envelope value
 
-		s.handlerWG.Add(1)
-
-		go func() {
-			defer s.handlerWG.Done()
+		s.handlerWG.Go(func() {
 			defer s.recoverDispatch(m)
 
 			s.handleRequest(ctx, m)
-		}()
+		})
 	}
 }
 

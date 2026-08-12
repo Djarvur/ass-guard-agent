@@ -41,7 +41,7 @@ const (
 type Step struct {
 	Name      string    `yaml:"name"`
 	Kind      StepKind  `yaml:"kind"`
-	OnFailure OnFailure `yaml:"on_failure"`        // defaults to the hook's when empty
+	OnFailure OnFailure `yaml:"on_failure"`         // defaults to the hook's when empty
 	Command   string    `yaml:"command,omitempty"`  // run-command: the executable
 	Args      []string  `yaml:"args,omitempty"`     // run-command: the argv tail
 	Prompt    string    `yaml:"prompt,omitempty"`   // send-prompt: the turn prompt
@@ -51,10 +51,10 @@ type Step struct {
 // Hook is one declarative hook entry.
 type Hook struct {
 	Name           string    `yaml:"name"`
-	Trigger        string    `yaml:"trigger"`          // "post-implement" | "post-phase" | custom stage
+	Trigger        string    `yaml:"trigger"` // "post-implement" | "post-phase" | custom stage
 	Steps          []Step    `yaml:"steps"`
-	OnFailure      OnFailure `yaml:"on_failure"`       // default for steps that omit theirs
-	AllowReentrant bool      `yaml:"allow_reentrant"`   // D-11 opt-in for the rare re-entrant case
+	OnFailure      OnFailure `yaml:"on_failure"`      // default for steps that omit theirs
+	AllowReentrant bool      `yaml:"allow_reentrant"` // D-11 opt-in for the rare re-entrant case
 }
 
 // Provenance identifies the stage + turn that triggered this hook (HOOK-04). It
@@ -86,28 +86,35 @@ func Load(paths ...string) ([]Hook, error) {
 	if err := yaml.Unmarshal(embeddedSeeded, &merged); err != nil {
 		return nil, fmt.Errorf("hookdag: decode embedded seeded default: %w", err)
 	}
+
 	for _, p := range paths {
 		raw, err := os.ReadFile(p)
 		if err != nil {
 			return nil, fmt.Errorf("hookdag: read config %q: %w", p, err)
 		}
+
 		overlay := make(map[string]any)
 		if err := yaml.Unmarshal(raw, &overlay); err != nil {
 			return nil, fmt.Errorf("hookdag: decode config %q: %w", p, err)
 		}
+
 		deepMerge(merged, overlay)
 	}
+
 	out, err := yaml.Marshal(merged)
 	if err != nil {
 		return nil, fmt.Errorf("hookdag: re-encode merged config: %w", err)
 	}
+
 	var cfg configFile
 	if err := yaml.Unmarshal(out, &cfg); err != nil {
 		return nil, fmt.Errorf("hookdag: decode merged config: %w", err)
 	}
+
 	if err := Validate(cfg.Hooks); err != nil {
 		return nil, err
 	}
+
 	return cfg.Hooks, nil
 }
 
@@ -120,10 +127,12 @@ func deepMerge(dst, src map[string]any) {
 			if dv, ok := dst[k]; ok {
 				if dm, ok := dv.(map[string]any); ok {
 					deepMerge(dm, sm)
+
 					continue
 				}
 			}
 		}
+
 		dst[k] = sv
 	}
 }
@@ -138,8 +147,10 @@ func (e *ConfigError) Error() string {
 	if len(e.Violations) == 0 {
 		return "hookdag config invalid"
 	}
+
 	cp := append([]string(nil), e.Violations...)
 	sort.Strings(cp)
+
 	return strings.Join(cp, "; ")
 }
 
@@ -151,8 +162,10 @@ func (e *ConfigError) Error() string {
 // omits its policy) inherits the hook's at execution time, NOT here.
 func Validate(hooks []Hook) error {
 	var v []string
+
 	seenNames := map[string]struct{}{}
 	validKinds := map[StepKind]bool{StepRunCommand: true, StepSendPrompt: true, StepFreshContext: true, StepWait: true}
+
 	for i := range hooks {
 		h := &hooks[i]
 		if h.Name == "" {
@@ -160,24 +173,30 @@ func Validate(hooks []Hook) error {
 		} else if _, dup := seenNames[h.Name]; dup {
 			v = append(v, fmt.Sprintf("hook %q: duplicate name", h.Name))
 		}
+
 		seenNames[h.Name] = struct{}{}
 		if h.OnFailure != "" && !validOnFailure(h.OnFailure) {
 			v = append(v, fmt.Sprintf("hook %q: unknown on_failure %q (want halt/continue/ask)", h.Name, h.OnFailure))
 		}
+
 		if h.Trigger == "" {
 			v = append(v, fmt.Sprintf("hook %q: empty trigger", h.Name))
 		}
+
 		for j := range h.Steps {
 			s := &h.Steps[j]
 			if !validKinds[s.Kind] {
 				v = append(v, fmt.Sprintf("hook %q step %q: unknown kind %q (want run-command/send-prompt/fresh-context/wait)", h.Name, s.Name, s.Kind))
 			}
+
 			if s.OnFailure != "" && !validOnFailure(s.OnFailure) {
 				v = append(v, fmt.Sprintf("hook %q step %q: unknown on_failure %q (want halt/continue/ask)", h.Name, s.Name, s.OnFailure))
 			}
+
 			if s.Name == "" {
 				v = append(v, fmt.Sprintf("hook %q step[%d]: empty name", h.Name, j))
 			}
+
 			switch s.Kind {
 			case StepRunCommand:
 				if s.Command == "" {
@@ -196,9 +215,11 @@ func Validate(hooks []Hook) error {
 			}
 		}
 	}
+
 	if len(v) > 0 {
 		return &ConfigError{Violations: v}
 	}
+
 	return nil
 }
 

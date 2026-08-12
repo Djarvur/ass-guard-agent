@@ -17,21 +17,27 @@ func TestRegisterTools_Mutability(t *testing.T) {
 			"apply": {Mutability: "mutating"},
 		},
 	}
+
 	cat := toolcat.NewCatalog()
-	if err := openspec.RegisterTools(cat, cfg); err != nil {
+	err := openspec.RegisterTools(cat, cfg)
+	if err != nil {
 		t.Fatalf("RegisterTools: %v", err)
 	}
+
 	list, ok := cat.Get("openspec:list")
 	if !ok {
 		t.Fatal("openspec:list not registered")
 	}
+
 	if list.IsMutating() {
 		t.Error("openspec:list classified mutating; want read-only")
 	}
+
 	apply, ok := cat.Get("openspec:apply")
 	if !ok {
 		t.Fatal("openspec:apply not registered")
 	}
+
 	if !apply.IsMutating() {
 		t.Error("openspec:apply classified read-only; want mutating")
 	}
@@ -47,12 +53,14 @@ func TestRegisterTools_DrivesIsBoundary(t *testing.T) {
 		},
 	}
 	cat := toolcat.NewCatalog()
+
 	_ = openspec.RegisterTools(cat, cfg)
 	if toolcat.IsBoundary("openspec:apply", cat, nil) {
 		// good
 	} else {
 		t.Error("IsBoundary(openspec:apply) = false; want true (mutating ⇒ boundary)")
 	}
+
 	if toolcat.IsBoundary("openspec:list", cat, nil) {
 		t.Error("IsBoundary(openspec:list) = true; want false (read-only)")
 	}
@@ -67,16 +75,20 @@ func TestPatternTable_MatchTextFirstWins(t *testing.T) {
 			{ID: "spec-done", Regex: "(?i)specification.*finalized", Action: "continue"},
 		},
 	}
+
 	pt, err := openspec.FromConfig(cfg)
 	if err != nil {
 		t.Fatalf("FromConfig: %v", err)
 	}
+
 	if id, act := pt.MatchText("... Implementation Complete — ready for review ..."); id != "impl-complete" || act != engine.ActionContinue {
 		t.Errorf("MatchText(impl) = (%q,%v); want (impl-complete, continue)", id, act)
 	}
+
 	if id, act := pt.MatchText("the Specification is now finalized"); id != "spec-done" || act != engine.ActionContinue {
 		t.Errorf("MatchText(spec) = (%q,%v); want (spec-done, continue)", id, act)
 	}
+
 	if id, act := pt.MatchText("totally unrelated text"); id != "" || act != engine.ActionNothing {
 		t.Errorf("MatchText(unmatched) = (%q,%v); want (\"\", Nothing)", id, act)
 	}
@@ -90,13 +102,16 @@ func TestPatternTable_MatchTool(t *testing.T) {
 			{ID: "os-handoff", Tool: "openspec_handoff", Action: "continue"},
 		},
 	}
+
 	pt, err := openspec.FromConfig(cfg)
 	if err != nil {
 		t.Fatalf("FromConfig: %v", err)
 	}
+
 	if id, act := pt.MatchTool("openspec_handoff"); id != "os-handoff" || act != engine.ActionContinue {
 		t.Errorf("MatchTool(handoff) = (%q,%v); want (os-handoff, continue)", id, act)
 	}
+
 	if id, act := pt.MatchTool("Read"); id != "" || act != engine.ActionNothing {
 		t.Errorf("MatchTool(Read) = (%q,%v); want (\"\", Nothing)", id, act)
 	}
@@ -109,6 +124,7 @@ func TestPatternTable_SatisfiesEngineInterface(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FromConfig: %v", err)
 	}
+
 	var _ engine.PatternTable = pt // compile-time check (also in patterntable.go)
 }
 
@@ -123,10 +139,12 @@ func TestPatternTable_ActionMapping(t *testing.T) {
 			{ID: "w", Regex: "q", Action: "wait"},
 		},
 	}
+
 	pt, err := openspec.FromConfig(cfg)
 	if err != nil {
 		t.Fatalf("FromConfig: %v", err)
 	}
+
 	cases := map[string]engine.Action{
 		"x": engine.ActionContinue,
 		"y": engine.ActionHook,
@@ -143,10 +161,13 @@ func TestPatternTable_ActionMapping(t *testing.T) {
 // TestRegisterTools_NilArgs verifies nil catalog/config yields a structured error
 // (never a panic).
 func TestRegisterTools_NilArgs(t *testing.T) {
-	if err := openspec.RegisterTools(nil, &openspec.OpenSpecConfig{}); err == nil {
+	err := openspec.RegisterTools(nil, &openspec.OpenSpecConfig{})
+	if err == nil {
 		t.Error("RegisterTools(nil catalog) = nil; want error")
 	}
-	if err := openspec.RegisterTools(toolcat.NewCatalog(), nil); err == nil {
+
+	err = openspec.RegisterTools(toolcat.NewCatalog(), nil)
+	if err == nil {
 		t.Error("RegisterTools(nil cfg) = nil; want error")
 	}
 }

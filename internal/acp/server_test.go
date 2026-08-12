@@ -427,6 +427,7 @@ func TestStdoutClean(t *testing.T) {
 
 	for i, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
 		var m Message
+
 		err := json.Unmarshal([]byte(line), &m)
 		if err != nil {
 			t.Errorf("stdout line %d is not a valid JSON frame: %v (line=%q)", i, err, line)
@@ -461,6 +462,7 @@ func mustFrame(t *testing.T, msg Message) []byte {
 	t.Helper()
 
 	var sb strings.Builder
+
 	err := writeFrame(&sb, msg)
 	if err != nil {
 		t.Fatalf("writeFrame: %v", err)

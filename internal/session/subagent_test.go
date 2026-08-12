@@ -67,6 +67,7 @@ func TestSubagent_StreamsProgressWithParentTurnID(t *testing.T) {
 	}
 	// Drain a beat; at least one chunk should arrive (the subagent streams).
 	var got strings.Builder
+
 	deadline := time.After(1 * time.Second)
 
 	for {

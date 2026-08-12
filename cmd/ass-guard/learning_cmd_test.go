@@ -14,10 +14,13 @@ import (
 func TestLearningList_Empty(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "learned.yaml")
+
 	var stdout, stderr bytes.Buffer
-	if err := runLearningList(&stdout, &stderr, path); err != nil {
+	err := runLearningList(&stdout, &stderr, path)
+	if err != nil {
 		t.Fatalf("runLearningList: %v", err)
 	}
+
 	if !strings.Contains(stdout.String(), "ID") || !strings.Contains(stdout.String(), "SITUATION") {
 		t.Errorf("stdout = %q; want the header row", stdout.String())
 	}
@@ -25,6 +28,7 @@ func TestLearningList_Empty(t *testing.T) {
 	if strings.Count(stdout.String(), "\n") != 1 {
 		t.Errorf("stdout rows = %d; want 1 (header only) for an empty store", strings.Count(stdout.String(), "\n"))
 	}
+
 	if !strings.Contains(stderr.String(), "no learned entries") {
 		t.Errorf("stderr = %q; want the empty-store note", stderr.String())
 	}
@@ -34,10 +38,12 @@ func TestLearningList_Empty(t *testing.T) {
 func TestLearningList_Populated(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "learned.yaml")
+
 	store, err := learning.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	_ = store.RecordCandidate("alpha situation", "x", "t1")
 	_ = store.RecordCandidate("beta situation", "y", "t1")
 	_ = store.RecordCandidate("gamma situation", "z", "t1")
@@ -50,6 +56,7 @@ func TestLearningList_Populated(t *testing.T) {
 	if got := strings.Count(stdout.String(), "\n"); got != 4 {
 		t.Errorf("stdout rows = %d; want 4 (header + 3 entries):\n%s", got, stdout.String())
 	}
+
 	for _, want := range []string{"alpha-situation", "beta-situation", "gamma-situation"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Errorf("stdout missing row for %q:\n%s", want, stdout.String())
@@ -62,19 +69,24 @@ func TestLearningList_Populated(t *testing.T) {
 func TestLearningRevert_Existing(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "learned.yaml")
+
 	store, err := learning.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	_ = store.RecordCandidate("alpha", "x", "t1")
 	_ = store.RecordCandidate("beta", "y", "t1")
+
 	var stdout, stderr bytes.Buffer
 	if err := runLearningRevert(&stdout, &stderr, path, learning.Slug("alpha")); err != nil {
 		t.Fatalf("runLearningRevert: %v", err)
 	}
+
 	if !strings.Contains(stdout.String(), "reverted") {
 		t.Errorf("stdout = %q; want reverted confirmation", stdout.String())
 	}
+
 	store2, _ := learning.Open(path)
 	if len(store2.List()) != 1 {
 		t.Errorf("after revert, store has %d entries; want 1", len(store2.List()))
@@ -86,14 +98,17 @@ func TestLearningRevert_Existing(t *testing.T) {
 func TestLearningRevert_Missing(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "learned.yaml")
+
 	_, err := learning.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	var stdout, stderr bytes.Buffer
 	if err := runLearningRevert(&stdout, &stderr, path, "does-not-exist"); err != nil {
 		t.Fatalf("runLearningRevert on missing id: %v (want nil — no-op)", err)
 	}
+
 	if !strings.Contains(stderr.String(), "nothing reverted") {
 		t.Errorf("stderr = %q; want the missing-id warning", stderr.String())
 	}

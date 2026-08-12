@@ -15,30 +15,37 @@ func TestLoadSeeded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DefaultHooks: %v", err)
 	}
+
 	if len(hooks) != 2 {
 		t.Fatalf("got %d hooks; want 2 (post-implement + post-phase)", len(hooks))
 	}
+
 	byName := map[string]hookdag.Hook{}
 	for _, h := range hooks {
 		byName[h.Name] = h
 	}
+
 	pi, ok := byName["post-implement"]
 	if !ok {
 		t.Fatal("post-implement hook missing from seed")
 	}
+
 	if len(pi.Steps) != 4 {
 		t.Errorf("post-implement steps = %d; want 4 (test+lint+review+memory)", len(pi.Steps))
 	}
+
 	if _, ok := byName["post-phase"]; !ok {
 		t.Error("post-phase hook missing from seed")
 	}
 	// The seeded test step halts on failure (a failing test stops the chain).
 	var testStep *hookdag.Step
+
 	for i := range pi.Steps {
 		if pi.Steps[i].Name == "test" {
 			testStep = &pi.Steps[i]
 		}
 	}
+
 	if testStep == nil || testStep.OnFailure != hookdag.OnFailureHalt {
 		t.Errorf("seeded test step on_failure = %v; want halt", testStep)
 	}
@@ -51,10 +58,12 @@ func TestValidateRejectsUnknownKind(t *testing.T) {
 		Name: "h", Trigger: "post-implement",
 		Steps: []hookdag.Step{{Name: "s", Kind: "teleport"}},
 	}}
+
 	err := hookdag.Validate(hooks)
 	if err == nil {
 		t.Fatal("Validate returned nil; want ConfigError for unknown kind")
 	}
+
 	if !contains(err.Error(), "teleport") {
 		t.Errorf("err = %v; want it to name the unknown kind", err)
 	}
@@ -67,7 +76,8 @@ func TestValidateRejectsBadOnFailure(t *testing.T) {
 		Name: "h", Trigger: "post-implement", OnFailure: "explode",
 		Steps: []hookdag.Step{{Name: "s", Kind: hookdag.StepSendPrompt, Prompt: "x"}},
 	}}
-	if err := hookdag.Validate(hooks); err == nil {
+	err := hookdag.Validate(hooks)
+	if err == nil {
 		t.Fatal("Validate returned nil; want ConfigError for unknown on_failure")
 	}
 }
@@ -78,16 +88,18 @@ func TestValidateRejectsMissingFields(t *testing.T) {
 	hooks := []hookdag.Hook{{
 		Name: "h", Trigger: "post-implement",
 		Steps: []hookdag.Step{
-			{Name: "rc", Kind: hookdag.StepRunCommand},                       // missing command
-			{Name: "sp", Kind: hookdag.StepSendPrompt},                       // missing prompt
-			{Name: "w", Kind: hookdag.StepWait},                              // missing duration
+			{Name: "rc", Kind: hookdag.StepRunCommand},                         // missing command
+			{Name: "sp", Kind: hookdag.StepSendPrompt},                         // missing prompt
+			{Name: "w", Kind: hookdag.StepWait},                                // missing duration
 			{Name: "badw", Kind: hookdag.StepWait, Duration: "not-a-duration"}, // bad duration
 		},
 	}}
+
 	err := hookdag.Validate(hooks)
 	if err == nil {
 		t.Fatal("Validate returned nil; want ConfigError")
 	}
+
 	msg := err.Error()
 	for _, want := range []string{"rc", "sp", "w", "badw"} {
 		if !contains(msg, want) {
@@ -110,10 +122,12 @@ func TestLoadLayering(t *testing.T) {
         args: ["hi"]
 `
 	dir := t.TempDir()
+
 	path := filepath.Join(dir, "overlay.yaml")
 	if err := os.WriteFile(path, []byte(overlay), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
+
 	hooks, err := hookdag.Load(path)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -124,11 +138,13 @@ func TestLoadLayering(t *testing.T) {
 	// hooks list). Both the embedded seed (TestLoadSeeded) + this overlay path
 	// work independently; this test pins the overlay behavior.
 	var found bool
+
 	for _, h := range hooks {
 		if h.Name == "custom-extra" {
 			found = true
 		}
 	}
+
 	if !found {
 		t.Errorf("overlay hook custom-extra missing from merged result: %+v", hooks)
 	}
@@ -145,10 +161,13 @@ func TestLoadRejectsBadOverlay(t *testing.T) {
         kind: nonsense
 `
 	dir := t.TempDir()
+
 	path := filepath.Join(dir, "bad.yaml")
-	if err := os.WriteFile(path, []byte(overlay), 0o644); err != nil {
+	err := os.WriteFile(path, []byte(overlay), 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
+
 	if _, err := hookdag.Load(path); err == nil {
 		t.Fatal("Load returned nil; want ConfigError for bad overlay")
 	}
@@ -164,5 +183,6 @@ func indexStr(haystack, needle string) int {
 			return i
 		}
 	}
+
 	return -1
 }

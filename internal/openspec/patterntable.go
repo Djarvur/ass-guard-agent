@@ -1,6 +1,7 @@
 package openspec
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 
@@ -33,27 +34,34 @@ type toolEntry struct {
 // FromConfig is defensive) yields a structured error.
 func FromConfig(cfg *OpenSpecConfig) (*OpenSpecPatternTable, error) {
 	if cfg == nil {
-		return nil, fmt.Errorf("openspec: FromConfig requires a non-nil config")
+		return nil, errors.New("openspec: FromConfig requires a non-nil config")
 	}
+
 	pt := &OpenSpecPatternTable{handoffTools: map[string]toolEntry{}}
+
 	for _, p := range cfg.Patterns {
 		act, err := parseAction(p.Action)
 		if err != nil {
 			return nil, fmt.Errorf("openspec: pattern %q: %w", p.ID, err)
 		}
+
 		re, err := regexp.Compile(p.Regex)
 		if err != nil {
 			return nil, fmt.Errorf("openspec: pattern %q regex %q: %w", p.ID, p.Regex, err)
 		}
+
 		pt.textPatterns = append(pt.textPatterns, compiledPattern{id: p.ID, regex: re, action: act})
 	}
+
 	for _, h := range cfg.HandoffTools {
 		act, err := parseAction(h.Action)
 		if err != nil {
 			return nil, fmt.Errorf("openspec: handoff tool %q: %w", h.ID, err)
 		}
+
 		pt.handoffTools[h.Tool] = toolEntry{id: h.ID, action: act}
 	}
+
 	return pt, nil
 }
 
@@ -66,6 +74,7 @@ func (t *OpenSpecPatternTable) MatchText(text string) (string, engine.Action) {
 			return p.id, p.action
 		}
 	}
+
 	return "", engine.ActionNothing
 }
 
@@ -75,6 +84,7 @@ func (t *OpenSpecPatternTable) MatchTool(name string) (string, engine.Action) {
 	if e, ok := t.handoffTools[name]; ok {
 		return e.id, e.action
 	}
+
 	return "", engine.ActionNothing
 }
 

@@ -282,6 +282,7 @@ func readTranscriptFile(path string) ([]Line, error) {
 		}
 
 		var l Line
+
 		jerr := json.Unmarshal(line, &l)
 		if jerr != nil {
 			continue

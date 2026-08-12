@@ -56,7 +56,6 @@ func runProfileCheck(name, profilesDir, captureFile, zcodeBin string) error {
 	manifestPath := filepath.Join(profilesDir, name, "coverage.yaml")
 
 	manifest, err := profile.LoadCoverage(manifestPath)
-
 	if err != nil {
 		return fmt.Errorf("load coverage manifest %q: %w", manifestPath, err)
 	}
@@ -117,6 +116,7 @@ func loadCaptureLine(captureFile string) (json.RawMessage, error) {
 // header-name sets) pulled out of a model_io JSON line.
 func extractCaptureCounts(raw json.RawMessage) map[string]any {
 	var mio profile.ModelIO
+
 	err := json.Unmarshal(raw, &mio)
 	if err != nil {
 		return map[string]any{}

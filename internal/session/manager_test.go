@@ -35,6 +35,7 @@ func (redactorAdapter) ScrubError(err error) string     { return redact.ScrubErr
 // well-formed JSON line with the type discriminator + turnID + content.
 func TestAppendUserMessageWritesJSONLine(t *testing.T) {
 	m := newTestManager(t, "sess-1")
+
 	err := m.AppendUserMessage("turn_1", []ContentBlock{{Type: "text", Text: "hello"}})
 	if err != nil {
 		t.Fatalf("AppendUserMessage: %v", err)
@@ -117,6 +118,7 @@ func TestAppendEngineDecisionNothing(t *testing.T) {
 
 func TestAppendBoundary(t *testing.T) {
 	m := newTestManager(t, "sess-1")
+
 	err := m.AppendBoundary("mutating-command:Bash", "toolCallId_abc", "turn_042")
 	if err != nil {
 		t.Fatalf("AppendBoundary: %v", err)
@@ -144,6 +146,7 @@ func TestAppendBoundary(t *testing.T) {
 // (LOG-03) but the component + recoverable flag are preserved.
 func TestAppendErrorScrubsMessage(t *testing.T) {
 	m := newTestManager(t, "sess-1")
+
 	err := m.AppendError("turn_1", "provider", "send failed: sk-live-xxx", nil, false, "")
 	if err != nil {
 		t.Fatalf("AppendError: %v", err)
@@ -171,8 +174,8 @@ func TestRedactionOnRequestShaped(t *testing.T) {
 	m := newTestManager(t, "sess-1")
 
 	body := json.RawMessage(`{"authorization":"Bearer sk-test","headers":{"x-request-id":"abc"}}`)
-	err := m.AppendRequestShaped("turn_1", body, "zcode", time.Now())
 
+	err := m.AppendRequestShaped("turn_1", body, "zcode", time.Now())
 	if err != nil {
 		t.Fatalf("AppendRequestShaped: %v", err)
 	}
@@ -298,6 +301,7 @@ func readTranscriptLines(t *testing.T, path string) []map[string]any {
 		}
 
 		var m map[string]any
+
 		err := json.Unmarshal([]byte(line), &m)
 		if err != nil {
 			t.Fatalf("malformed transcript line: %v (line=%q)", err, line)

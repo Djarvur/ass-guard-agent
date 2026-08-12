@@ -42,6 +42,7 @@ func (a *Adapter) ResolveCall(name string, input json.RawMessage, profileDecls [
 	// Phase 1: parse-only check. The input must be valid JSON against the schema's
 	// declared type (object). Full JSON-schema validation is Phase 2/4.
 	var probe any
+
 	err := json.Unmarshal(input, &probe)
 	if err != nil {
 		return nil, fmt.Errorf("adapter: tool %q input is not valid JSON: %w", name, err)

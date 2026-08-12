@@ -109,9 +109,7 @@ func TestConcurrent(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range n {
-
 		wg.Go(func() {
-
 			b.Publish(event.AgentMessageChunk{Content: "c"})
 		})
 	}

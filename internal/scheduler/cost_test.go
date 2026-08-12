@@ -178,9 +178,7 @@ func TestCostConcurrentAccount(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range 100 {
-
 		wg.Go(func() {
-
 			for range 100 {
 				tr.Account("glm-5.2", 1_000_000, 0) // $1 each
 			}

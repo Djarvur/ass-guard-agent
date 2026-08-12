@@ -64,6 +64,7 @@ func TestCatalog_Register(t *testing.T) {
 	if !ok {
 		t.Fatal("Get(openspec:apply) returned ok=false after Register")
 	}
+
 	if !apply.IsMutating() {
 		t.Error("openspec:apply classified read-only; want mutating")
 	}
@@ -72,12 +73,14 @@ func TestCatalog_Register(t *testing.T) {
 	if !toolcat.IsBoundary("openspec:apply", c, nil) {
 		t.Error("IsBoundary(openspec:apply) = false; want true (mutating ⇒ boundary)")
 	}
+
 	if toolcat.IsBoundary("openspec:list", c, nil) {
 		t.Error("IsBoundary(openspec:list) = true; want false (read-only)")
 	}
 
 	// Overwrite: re-registering list as mutating flips it (operator override).
 	c.Register(toolcat.Tool{Name: "openspec:list", Mutability: toolcat.MutabilityMutating})
+
 	if !toolcat.IsBoundary("openspec:list", c, nil) {
 		t.Error("IsBoundary(openspec:list) = false after overwrite; want true")
 	}

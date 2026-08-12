@@ -15,28 +15,32 @@ import (
 // fakeDispatcher is an ActionDispatcher test double recording its calls +
 // returning scripted Hook status / Ask answer.
 type fakeDispatcher struct {
-	mu          sync.Mutex
-	hookCalls   []string
-	askCalls    []string
-	hookStatus  string
-	askAnswer   string
-	askErr      error
+	mu         sync.Mutex
+	hookCalls  []string
+	askCalls   []string
+	hookStatus string
+	askAnswer  string
+	askErr     error
 }
 
 func (f *fakeDispatcher) Hook(_ context.Context, signal, turnID string) string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
 	f.hookCalls = append(f.hookCalls, signal+"@"+turnID)
 	if f.hookStatus == "" {
 		return "completed"
 	}
+
 	return f.hookStatus
 }
 
 func (f *fakeDispatcher) Ask(_ context.Context, situation string) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
 	f.askCalls = append(f.askCalls, situation)
+
 	return f.askAnswer, f.askErr
 }
 
@@ -70,14 +74,18 @@ func TestDispatch_HookCallsDispatcher(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Observe err = %v", err)
 	}
+
 	_ = stop
+
 	if len(d.hookCalls) != 1 {
 		t.Fatalf("Hook calls = %v; want exactly 1", d.hookCalls)
 	}
+
 	events := collect()
 	if len(events) == 0 {
 		t.Fatal("no EngineDecision events emitted")
 	}
+
 	last := events[len(events)-1]
 	if !strings.Contains(last.Reason, "completed") {
 		t.Errorf("last event Reason = %q; want it to carry the hook status", last.Reason)
@@ -106,13 +114,17 @@ func TestDispatch_AskWithStoredAnswerContinues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Observe err = %v", err)
 	}
+
 	_ = stop
+
 	if got := runner.runCalls(); got != 2 {
 		t.Errorf("Run calls = %d; want 2 (ask returned continue ⇒ re-entered)", got)
 	}
+
 	if len(d.askCalls) != 1 {
 		t.Errorf("Ask calls = %d; want 1 (only the first turn asked)", len(d.askCalls))
 	}
+
 	events := collect()
 	if len(events) == 0 {
 		t.Fatal("no events emitted")
@@ -129,7 +141,9 @@ func (a *askOnceTable) MatchText(_ string) (string, engine.Action) {
 	if a.called {
 		return "", engine.ActionNothing
 	}
+
 	a.called = true
+
 	return "unmatched-launch", engine.ActionAsk
 }
 func (a *askOnceTable) MatchTool(string) (string, engine.Action) { return "", engine.ActionNothing }
@@ -148,14 +162,18 @@ func TestDispatch_AskPendingBreaksLoop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Observe err = %v", err)
 	}
+
 	_ = stop
+
 	if got := runner.runCalls(); got != 1 {
 		t.Errorf("Run calls = %d; want 1 (loop breaks on pending ask)", got)
 	}
+
 	events := collect()
 	if len(events) != 1 {
 		t.Fatalf("events = %d; want 1 (the ask decision)", len(events))
 	}
+
 	if events[0].Action != "ask" {
 		t.Errorf("event Action = %q; want ask", events[0].Action)
 	}
@@ -169,10 +187,12 @@ func TestDispatch_NilDispatcherDegradesToNothing(t *testing.T) {
 	eng := &engine.Engine{Bus: bus} // no Dispatcher
 	collect := captureEvents(t, bus)
 	_, _ = eng.Observe(context.Background(), runner, hookTable{}, []session.ContentBlock{{Type: "text", Text: "go"}})
+
 	events := collect()
 	if len(events) == 0 {
 		t.Fatal("no events")
 	}
+
 	if events[0].Action != "nothing" {
 		t.Errorf("nil-dispatcher hook degraded to %q; want nothing", events[0].Action)
 	}

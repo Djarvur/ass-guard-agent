@@ -172,6 +172,7 @@ func (p *Projector) findCurrentIntent(after, before []Line, turnID string) strin
 func extractText(l Line) string {
 	if len(l.Content) > 0 {
 		var blocks []ContentBlock
+
 		err := json.Unmarshal(l.Content, &blocks)
 		if err == nil {
 			var sb strings.Builder
@@ -197,6 +198,7 @@ func extractFilePaths(toolName string, input json.RawMessage) []string {
 	}
 
 	var m map[string]any
+
 	err := json.Unmarshal(input, &m)
 	if err != nil {
 		return nil

@@ -106,6 +106,7 @@ func ExtractFromRollout(path string) (ExtractResult, error) {
 		}
 
 		var mio ModelIO
+
 		err := json.Unmarshal(raw, &mio)
 		if err != nil {
 			return ExtractResult{}, fmt.Errorf("line %d: parse: %w", lineIdx, err)

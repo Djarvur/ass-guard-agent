@@ -108,6 +108,7 @@ func TestStreamWired(t *testing.T) {
 	}
 	// At least one AgentMessageChunk must have been published via Stream.
 	var got strings.Builder
+
 	deadline := time.After(1 * time.Second)
 
 	for {

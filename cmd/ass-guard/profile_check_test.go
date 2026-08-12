@@ -46,6 +46,7 @@ func writeCaptureFixture(t *testing.T, sysCount, toolCount, headerCount int) str
 	}
 
 	raw, _ := json.Marshal(line)
+
 	err := os.WriteFile(path, raw, 0o600)
 	if err != nil {
 		t.Fatal(err)
@@ -75,6 +76,7 @@ func writeCoverageFixture(t *testing.T, name string, sysCount, toolCount, header
 	root := t.TempDir()
 
 	pdir := filepath.Join(root, name)
+
 	err := os.MkdirAll(pdir, 0o755)
 	if err != nil {
 		t.Fatal(err)
@@ -84,6 +86,7 @@ func writeCoverageFixture(t *testing.T, name string, sysCount, toolCount, header
 		"  - path: request.body.system\n    tier: 1\n    observed_count: " + itoa(sysCount) + "\n" +
 		"  - path: request.body.tools\n    tier: 1\n    observed_count: " + itoa(toolCount) + "\n" +
 		"  - path: request.headers\n    tier: 2\n    observed_count: " + itoa(headerCount) + "\n")
+
 	err = os.WriteFile(filepath.Join(pdir, "coverage.yaml"), manifest, 0o600)
 	if err != nil {
 		t.Fatal(err)

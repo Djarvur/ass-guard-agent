@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"log"
 	"log/slog"
@@ -10,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -133,12 +135,14 @@ func runACPServe(ctx context.Context, in io.Reader, out, stderr io.Writer, opts 
 		},
 	}
 	if opts.EngineEnabled {
-		if err := runner.setupEngine(); err != nil {
+		err := runner.setupEngine()
+		if err != nil {
 			// A bad config degrades to defaults, never a server crash (the
 			// engine is an observer — D-04 graceful degradation at startup).
 			log.Printf("ass-guard: engine setup failed (continuing without engine): %v", err)
 		}
 	}
+
 	srv := acp.NewServer(in, out, stderr, acp.WithTurnRunner(runner))
 
 	return srv.Serve(ctx)
@@ -159,13 +163,16 @@ func (r *sessionTurnRunner) setupEngine() error {
 	if err != nil {
 		return err
 	}
+
 	if err := openspec.RegisterTools(catalog, oscfg); err != nil {
 		return err
 	}
+
 	pt, err := openspec.FromConfig(oscfg)
 	if err != nil {
 		return err
 	}
+
 	r.patternTable = pt
 
 	// Hook-DAG config (HOOK-02) — embedded default seeded set.
@@ -173,6 +180,7 @@ func (r *sessionTurnRunner) setupEngine() error {
 	if err != nil {
 		return err
 	}
+
 	r.hookCfg = hooks
 	r.hookExec = &hookdag.Executor{Bus: r.bus, Log: slog.Default()}
 
@@ -193,6 +201,7 @@ func (r *sessionTurnRunner) setupEngine() error {
 		bus:     r.bus,
 	}
 	r.engineEnabled = true
+
 	return nil
 }
 
@@ -201,7 +210,9 @@ func (r *sessionTurnRunner) workDirOrDefault() string {
 	if r.workDir != "" {
 		return r.workDir
 	}
+
 	wd, _ := os.Getwd()
+
 	return wd
 }
 
@@ -320,6 +331,7 @@ func (r *sessionTurnRunner) runOneTurn(ctx context.Context, sess *session.Sessio
 	if err == nil && stop == "" {
 		stop = "end_turn"
 	}
+
 	return stop, err
 }
 
@@ -373,6 +385,7 @@ func (r *sessionTurnRunner) sessionFor(sessionID string) *session.Session {
 	if r.engineEnabled {
 		s.SetToolExecutor(&toolexec.RealExecutor{Catalog: s.Catalog, Log: slog.Default()})
 	}
+
 	r.sessions[sessionID] = s
 
 	return s
@@ -413,26 +426,33 @@ func (a *engineTurnRunnerAdapter) LastTurnOutput() engine.TurnOutput {
 	if a.mgr == nil {
 		return engine.TurnOutput{}
 	}
+
 	lines, err := a.mgr.ReadAll()
 	if err != nil {
 		return engine.TurnOutput{}
 	}
+
 	var lastAssistant *session.Line
-	for i := len(lines) - 1; i >= 0; i-- {
-		if lines[i].Type == session.TypeAssistantMessage {
-			lastAssistant = &lines[i]
+
+	for _, v := range slices.Backward(lines) {
+		if v.Type == session.TypeAssistantMessage {
+			lastAssistant = &v
+
 			break
 		}
 	}
+
 	if lastAssistant == nil {
 		return engine.TurnOutput{}
 	}
+
 	out := engine.TurnOutput{TurnID: lastAssistant.TurnID, Text: lastAssistant.Text}
 	for _, l := range lines {
 		if l.TurnID == lastAssistant.TurnID && l.Type == session.TypeToolCall {
 			out.ToolCalls = append(out.ToolCalls, l.Name)
 		}
 	}
+
 	return out
 }
 
@@ -461,15 +481,19 @@ func (d *acpDispatcher) Hook(ctx context.Context, signal, sourceTurnID string) s
 	if d.hooks == nil || len(d.hookCfg) == 0 {
 		return "no-hooks-configured"
 	}
+
 	trigger := triggerFromSignal(signal)
 	for _, h := range d.hookCfg {
 		if h.Trigger != trigger {
 			continue
 		}
+
 		prov := hookdag.Provenance{HookName: h.Name, TriggerStage: trigger, SourceTurnID: sourceTurnID}
 		res := d.hooks.Execute(ctx, h, prov)
+
 		return res.Status
 	}
+
 	return "no-matching-hook:" + trigger
 }
 
@@ -480,9 +504,11 @@ func (d *acpDispatcher) Ask(_ context.Context, situation string) (string, error)
 	if d.learned == nil {
 		return "", engine.ErrAskPending
 	}
+
 	if e, ok := d.learned.Lookup(situation); ok {
 		return e.Answer, nil
 	}
+
 	return "", engine.ErrAskPending
 }
 
@@ -497,9 +523,11 @@ func triggerFromSignal(signal string) string {
 			id = id[len(p):]
 		}
 	}
+
 	if id == "changes-proposed" || id == "proposal-ready" {
 		return "post-phase"
 	}
+
 	return "post-implement"
 }
 
@@ -515,6 +543,7 @@ func (h *hookSessionTurnRunner) Run(ctx context.Context, prompt []hookdag.Conten
 	for i, b := range prompt {
 		blocks[i] = session.ContentBlock{Type: b.Type, Text: b.Text}
 	}
+
 	return h.sess.Prompt(ctx, blocks)
 }
 
@@ -529,6 +558,7 @@ func (h *hookSessionBoundaryOpener) OpenBoundary(_ context.Context, cause string
 	if h.mgr == nil {
 		return nil
 	}
+
 	return h.mgr.AppendBoundary(cause, "", h.turnID)
 }
 
@@ -538,17 +568,22 @@ type realCommandRunner struct{}
 
 func (realCommandRunner) Run(ctx context.Context, command string, args []string) (string, string, int, error) {
 	cmd := exec.CommandContext(ctx, command, args...)
+
 	var stdout, stderr bytes.Buffer
+
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 	code := 0
+
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		exitErr := &exec.ExitError{}
+		if errors.As(err, &exitErr) {
 			code = exitErr.ExitCode()
 		} else {
 			return stdout.String(), stderr.String(), 0, err
 		}
 	}
+
 	return stdout.String(), stderr.String(), code, nil
 }

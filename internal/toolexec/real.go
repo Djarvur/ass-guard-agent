@@ -47,6 +47,7 @@ func (r *RealExecutor) Execute(ctx context.Context, name string, input json.RawM
 			return be.Search(ctx, extractQuery(input))
 		}
 	}
+
 	if name == "WebFetch" {
 		if be, ok := r.Backends["WebFetch"]; ok {
 			return be.Fetch(ctx, extractURL(input))
@@ -56,14 +57,17 @@ func (r *RealExecutor) Execute(ctx context.Context, name string, input json.RawM
 	if r.Catalog == nil {
 		return nil, fmt.Errorf("toolexec: tool %q not executable (no catalog)", name)
 	}
+
 	tool, ok := r.Catalog.Get(name)
 	if !ok {
 		return nil, fmt.Errorf("toolexec: tool %q not in catalog", name)
 	}
+
 	if tool.Execute == nil {
 		// Forward-compat: the schema is authoritative even before the impl.
 		return json.RawMessage(`{"error":"tool ` + name + ` has no implementation yet (catalog schema authoritative)"}`), nil
 	}
+
 	return tool.Execute(ctx, input)
 }
 
@@ -71,23 +75,27 @@ func (r *RealExecutor) Execute(ctx context.Context, name string, input json.RawM
 // unparseable input yields the empty string (the backend reports the error).
 func extractQuery(input json.RawMessage) string {
 	var q queryArgs
-	if err := json.Unmarshal(input, &q); err != nil {
+	err := json.Unmarshal(input, &q)
+	if err != nil {
 		return ""
 	}
+
 	return q.Query
 }
 
 // extractURL best-effort parses a WebFetch input's `url` field.
 func extractURL(input json.RawMessage) string {
 	var u urlArgs
-	if err := json.Unmarshal(input, &u); err != nil {
+	err := json.Unmarshal(input, &u)
+	if err != nil {
 		return ""
 	}
+
 	return u.URL
 }
 
 // compile-time interface checks.
 var (
 	_ toolcat.ToolExecutor = (*RealExecutor)(nil)
-	_ Backend               = (*HTTPBackend)(nil)
+	_ Backend              = (*HTTPBackend)(nil)
 )

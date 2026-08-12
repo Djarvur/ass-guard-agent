@@ -41,11 +41,11 @@ type Result struct {
 
 // Result status values (canonical strings).
 const (
-	StatusCompleted      = "completed"
-	StatusHalted         = "halted"
-	StatusAsked          = "asked"
+	StatusCompleted        = "completed"
+	StatusHalted           = "halted"
+	StatusAsked            = "asked"
 	StatusSkippedReentrant = "skipped-reentrant"
-	StatusError          = "error"
+	StatusError            = "error"
 )
 
 // Executor is the hand-rolled DAG executor (D-07). The only mutable state is
@@ -75,30 +75,38 @@ func (e *Executor) Execute(ctx context.Context, hook Hook, prov Provenance) Resu
 	defer e.end(hook, prov)
 
 	res := Result{Status: StatusCompleted, FailedStep: -1}
+
 	for i, step := range hook.Steps {
 		if err := ctx.Err(); err != nil {
 			res.Status = StatusError
 			res.FailedStep = i
 			res.Detail = fmt.Sprintf("ctx cancelled before step %q: %v", step.Name, err)
 			e.emit(prov.SourceTurnID, hook.Name, i, step.Kind, StatusError, res.Detail)
+
 			return res
 		}
+
 		e.emit(prov.SourceTurnID, hook.Name, i, step.Kind, "start", "")
+
 		detail, err := e.dispatch(ctx, step)
 		if err != nil {
 			policy := effectiveOnFailure(step, hook)
 			switch policy {
 			case OnFailureHalt:
 				e.emit(prov.SourceTurnID, hook.Name, i, step.Kind, StatusError, err.Error())
+
 				res.Status = StatusHalted
 				res.FailedStep = i
 				res.Detail = err.Error()
+
 				return res
 			case OnFailureAsk:
 				e.emit(prov.SourceTurnID, hook.Name, i, step.Kind, "ask", err.Error())
+
 				res.Status = StatusAsked
 				res.FailedStep = i
 				res.Detail = err.Error()
+
 				return res
 			default: // OnFailureContinue
 				e.emit(prov.SourceTurnID, hook.Name, i, step.Kind, StatusError, err.Error()+" (on_failure:continue)")
@@ -107,8 +115,10 @@ func (e *Executor) Execute(ctx context.Context, hook Hook, prov Provenance) Resu
 		} else {
 			e.emit(prov.SourceTurnID, hook.Name, i, step.Kind, "finish", detail)
 		}
+
 		res.StepsRun++
 	}
+
 	return res
 }
 
@@ -134,9 +144,11 @@ func effectiveOnFailure(step Step, hook Hook) OnFailure {
 	if step.OnFailure != "" {
 		return step.OnFailure
 	}
+
 	if hook.OnFailure != "" {
 		return hook.OnFailure
 	}
+
 	return OnFailureHalt // the safe default for steps that mutate
 }
 
@@ -147,6 +159,7 @@ func (e *Executor) emit(turnID, hookName string, stepIdx int, kind StepKind, sta
 	if e.Bus == nil {
 		return
 	}
+
 	e.Bus.Publish(event.HookProgress{
 		TurnID:    turnID,
 		HookName:  hookName,
@@ -162,21 +175,27 @@ func (e *Executor) emit(turnID, hookName string, stepIdx int, kind StepKind, sta
 // prevention). On success the entry is added + cleared by the matching end().
 func (e *Executor) begin(hook Hook, prov Provenance) bool {
 	key := inFlightKey(hook, prov)
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
+
 	if e.inFlight == nil {
 		e.inFlight = map[string]struct{}{}
 	}
+
 	if _, ok := e.inFlight[key]; ok && !hook.AllowReentrant {
 		return false
 	}
+
 	e.inFlight[key] = struct{}{}
+
 	return true
 }
 
 // end clears the in-flight entry (deferred after every Execute).
 func (e *Executor) end(hook Hook, prov Provenance) {
 	key := inFlightKey(hook, prov)
+
 	e.mu.Lock()
 	delete(e.inFlight, key)
 	e.mu.Unlock()

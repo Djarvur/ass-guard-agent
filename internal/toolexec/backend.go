@@ -55,6 +55,7 @@ func (h *HTTPBackend) Fetch(ctx context.Context, target string) (json.RawMessage
 		// No template: fetch the URL directly.
 		return h.getRaw(ctx, target)
 	}
+
 	return h.do(ctx, h.FetchURLTemplate, "url", target)
 }
 
@@ -64,8 +65,10 @@ func (h *HTTPBackend) do(ctx context.Context, template, placeholder, value strin
 	if template == "" {
 		return nil, errors.New("toolexec: HTTPBackend " + placeholder + " URL template not configured")
 	}
+
 	enc := url.QueryEscape(value)
 	final := strings.ReplaceAll(template, "{"+placeholder+"}", enc)
+
 	return h.getRaw(ctx, final)
 }
 
@@ -76,19 +79,23 @@ func (h *HTTPBackend) getRaw(ctx context.Context, full string) (json.RawMessage,
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, full, nil)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, full, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("toolexec: build request: %w", err)
 	}
+
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("toolexec: HTTP get: %w", err)
 	}
 	defer resp.Body.Close()
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("toolexec: read response: %w", err)
 	}
+
 	return json.RawMessage(body), nil
 }
 
@@ -111,6 +118,7 @@ func (f FirecrawlBackend) Search(ctx context.Context, query string) (json.RawMes
 	if f.APIKey == "" {
 		return nil, errors.New("toolexec: firecrawl backend not configured (API key empty)")
 	}
+
 	return nil, fmt.Errorf("toolexec: firecrawl Search not implemented (endpoint=%s)", f.Endpoint)
 }
 
@@ -119,6 +127,7 @@ func (f FirecrawlBackend) Fetch(ctx context.Context, target string) (json.RawMes
 	if f.APIKey == "" {
 		return nil, errors.New("toolexec: firecrawl backend not configured (API key empty)")
 	}
+
 	return nil, fmt.Errorf("toolexec: firecrawl Fetch not implemented (endpoint=%s)", f.Endpoint)
 }
 
@@ -143,17 +152,20 @@ func BackendsFromConfig(cfg map[string]string) (map[string]Backend, error) {
 			if err != nil {
 				return nil, err
 			}
+
 			out["WebSearch"] = b
 		case "webfetch":
 			b, err := selectBackend(v, "webfetch")
 			if err != nil {
 				return nil, err
 			}
+
 			out["WebFetch"] = b
 		default:
 			// Ignore unrelated keys (the config map may carry other entries).
 		}
 	}
+
 	return out, nil
 }
 
@@ -180,5 +192,6 @@ func (e *ConfigError) Error() string {
 	if len(e.Violations) == 0 {
 		return "toolexec config invalid"
 	}
+
 	return strings.Join(e.Violations, "; ")
 }
