@@ -129,6 +129,7 @@ Outgoing requests to the model provider must be structurally indistinguishable f
 - **Platform**: macOS + Linux, amd64 + arm64 — Windows deferred
 - **Safety model**: No tool-execution confirmation tier; the pattern/hook table (no match → nothing runs) plus manual cancellation is the only safety mechanism
 - **Investigate-and-fix-ready logging (must-have)**: ass-guard must log every problem it encounters — errors, panics, failed tool calls, provider failures, engine misfires, unexpected states — in a form detailed enough that a developer reading the transcript can diagnose the root cause and fix it. Not just "an error occurred" but the context, the inputs, the failure point, and the recoverable/non-recoverable classification. The transcript is the primary diagnostic surface (corollary of Phase 2 D-03/D-20: transcript = human-investigation artifact); every problem must be investigate-able from the transcript alone.
+- **Phase completion gate (non-negotiable)**: every phase MUST end with `mise ci` (go vet + golangci-lint v2 all-linters + CGO_ENABLED=0 go build + go test -race) passing clean — zero lint issues, zero vet issues, zero test failures, zero build failures. No phase is marked complete until this gate passes. No exceptions, no "fix it later," no disabling linters for noisiness. The `.mise.toml` and `.golangci.yml` configs define the gate; `mise ci` is the command.
 
 ## Key Decisions
 
