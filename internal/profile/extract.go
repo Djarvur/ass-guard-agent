@@ -19,7 +19,7 @@ import (
 // proxy is needed for the request body.
 type ModelIO struct {
 	Type      string `json:"type"`
-	SessionID string `json:"sessionId"`
+	SessionID string `json:"sessionId"` //nolint:tagliatelle // external model_io rollout format (camelCase source) — cannot rename
 	Request   struct {
 		Body struct {
 			Model      json.RawMessage `json:"model"`

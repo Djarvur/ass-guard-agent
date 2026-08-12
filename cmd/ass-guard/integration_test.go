@@ -182,7 +182,7 @@ func TestIntegration_RealStreamingThroughACP(t *testing.T) {
 	frames = readFrames(t, cliR, 1)
 
 	var snew struct {
-		SessionID string `json:"sessionId"`
+		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP protocol wire field (camelCase per spec) — cannot rename
 	}
 
 	_ = json.Unmarshal(frames[0].Result, &snew)
@@ -222,7 +222,7 @@ func TestIntegration_RealStreamingThroughACP(t *testing.T) {
 
 		if m.ID != nil && *m.ID == 2 {
 			var pres struct {
-				StopReason string `json:"stopReason"`
+				StopReason string `json:"stopReason"` //nolint:tagliatelle // ACP protocol wire field (camelCase per spec) — cannot rename
 			}
 
 			_ = json.Unmarshal(m.Result, &pres)

@@ -48,10 +48,11 @@ linters:
       line-length: 120
       tab-width: 4
     tagliatelle:
-      rules:
-        json: snake_case
-        yaml: snake_case
-        toml: snake_case
+      case:
+        rules:
+          json: snake
+          yaml: snake
+          toml: snake
     gocritic:
       enabled-tags:
         - diagnostic

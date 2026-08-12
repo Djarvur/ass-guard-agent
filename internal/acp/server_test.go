@@ -182,13 +182,13 @@ func TestInitializeReturnsAgentCapabilities(t *testing.T) {
 	}
 
 	var res struct {
-		ProtocolVersion   int            `json:"protocolVersion"`
-		AgentCapabilities map[string]any `json:"agentCapabilities"`
-		AgentInfo         map[string]any `json:"agentInfo"`
-		AuthMethods       []any          `json:"authMethods"`
+		ProtocolVersion   int            `json:"protocolVersion"`   //nolint:tagliatelle // ACP protocol wire field (camelCase per spec) — cannot rename
+		AgentCapabilities map[string]any `json:"agentCapabilities"` //nolint:tagliatelle // ACP protocol wire field (camelCase per spec) — cannot rename
+		AgentInfo         map[string]any `json:"agentInfo"`         //nolint:tagliatelle // ACP protocol wire field (camelCase per spec) — cannot rename
+		AuthMethods       []any          `json:"authMethods"`       //nolint:tagliatelle // ACP protocol wire field (camelCase per spec) — cannot rename
 		// Negative asserts: these fields must NOT appear.
 		Capabilities map[string]any `json:"capabilities,omitempty"`
-		ServerInfo   map[string]any `json:"serverInfo,omitempty"`
+		ServerInfo   map[string]any `json:"serverInfo,omitempty"` //nolint:tagliatelle // ACP protocol wire field (camelCase per spec) — cannot rename
 	}
 
 	err := json.Unmarshal(msg.Result, &res)
@@ -234,7 +234,7 @@ func TestSessionNewReturnsSessionID(t *testing.T) {
 	msg := h.readFrame(t)
 
 	var res struct {
-		SessionID string `json:"sessionId"`
+		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP protocol wire field (camelCase per spec) — cannot rename
 	}
 
 	err := json.Unmarshal(msg.Result, &res)
@@ -262,7 +262,7 @@ func TestSessionPromptStreamsUpdate(t *testing.T) {
 	snew := h.readFrame(t)
 
 	var sres struct {
-		SessionID string `json:"sessionId"`
+		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP protocol wire field (camelCase per spec) — cannot rename
 	}
 
 	_ = json.Unmarshal(snew.Result, &sres)
@@ -291,7 +291,7 @@ func TestSessionPromptStreamsUpdate(t *testing.T) {
 
 			var params struct {
 				Update struct {
-					SessionUpdate string         `json:"sessionUpdate"`
+					SessionUpdate string         `json:"sessionUpdate"` //nolint:tagliatelle // ACP protocol wire field (camelCase per spec) — cannot rename
 					Content       map[string]any `json:"content,omitempty"`
 				} `json:"update"`
 			}
@@ -321,7 +321,7 @@ func TestSessionPromptStreamsUpdate(t *testing.T) {
 	}
 
 	var pres struct {
-		StopReason string `json:"stopReason"`
+		StopReason string `json:"stopReason"` //nolint:tagliatelle // ACP protocol wire field (camelCase per spec) — cannot rename
 	}
 
 	_ = json.Unmarshal(promptResp.Result, &pres)
@@ -345,7 +345,7 @@ func TestSessionCancelProducesNoResponse(t *testing.T) {
 	snew := h.readFrame(t)
 
 	var sres struct {
-		SessionID string `json:"sessionId"`
+		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP protocol wire field (camelCase per spec) — cannot rename
 	}
 
 	_ = json.Unmarshal(snew.Result, &sres)
@@ -377,7 +377,7 @@ func TestSessionCancelProducesNoResponse(t *testing.T) {
 
 		if msg.ID != nil && *msg.ID == 2 {
 			var pres struct {
-				StopReason string `json:"stopReason"`
+				StopReason string `json:"stopReason"` //nolint:tagliatelle // ACP protocol wire field (camelCase per spec) — cannot rename
 			}
 
 			_ = json.Unmarshal(msg.Result, &pres)

@@ -40,28 +40,28 @@ type ContentBlock struct {
 // format one-line-per-event, human-greppable, and forward-compatible.
 type Line struct {
 	Type      string    `json:"type"`
-	TurnID    string    `json:"turnID,omitempty"`
+	TurnID    string    `json:"turnID,omitempty"` //nolint:tagliatelle // transcript on-disk JSON format (backward compat) — cannot rename
 	Timestamp time.Time `json:"timestamp"`
 
 	// user_message / assistant_message / agent_message_chunk
 	Content   json.RawMessage `json:"content,omitempty"`
 	Text      string          `json:"text,omitempty"`
-	MessageID string          `json:"messageID,omitempty"`
+	MessageID string          `json:"messageID,omitempty"` //nolint:tagliatelle // transcript on-disk JSON format (backward compat) — cannot rename
 
 	// request_shaped (the verbatim outgoing request, LOG-01 mimicry evidence)
-	VerbatimRequest json.RawMessage `json:"verbatimRequest,omitempty"`
+	VerbatimRequest json.RawMessage `json:"verbatimRequest,omitempty"` //nolint:tagliatelle // transcript on-disk JSON format (backward compat) — cannot rename
 	Profile         string          `json:"profile,omitempty"`
 
 	// tool_call / tool_result
-	ToolCallID string          `json:"toolCallID,omitempty"`
+	ToolCallID string          `json:"toolCallID,omitempty"` //nolint:tagliatelle // transcript on-disk JSON format (backward compat) — cannot rename
 	Name       string          `json:"name,omitempty"`
 	Input      json.RawMessage `json:"input,omitempty"`
 	Output     json.RawMessage `json:"output,omitempty"`
-	IsError    bool            `json:"isError,omitempty"`
+	IsError    bool            `json:"isError,omitempty"` //nolint:tagliatelle // transcript on-disk JSON format (backward compat) — cannot rename
 
 	// boundary
 	Cause      string `json:"cause,omitempty"`
-	CommandRef string `json:"commandRef,omitempty"`
+	CommandRef string `json:"commandRef,omitempty"` //nolint:tagliatelle // transcript on-disk JSON format (backward compat) — cannot rename
 
 	// error
 	Component   string `json:"component,omitempty"`
@@ -70,14 +70,14 @@ type Line struct {
 	Stack       string `json:"stack,omitempty"`
 
 	// subagent
-	ParentTurnID    string   `json:"parentTurnID,omitempty"`
-	SubagentTurnID  string   `json:"subagentTurnID,omitempty"`
-	RestrictedTools []string `json:"restrictedTools,omitempty"`
+	ParentTurnID    string   `json:"parentTurnID,omitempty"`    //nolint:tagliatelle // transcript on-disk JSON format (backward compat) — cannot rename
+	SubagentTurnID  string   `json:"subagentTurnID,omitempty"`  //nolint:tagliatelle // transcript on-disk JSON format (backward compat) — cannot rename
+	RestrictedTools []string `json:"restrictedTools,omitempty"` //nolint:tagliatelle // transcript on-disk JSON format (backward compat) — cannot rename
 	Result          string   `json:"result,omitempty"`
 
 	// usage
-	InputTokens  int64 `json:"inputTokens,omitempty"`
-	OutputTokens int64 `json:"outputTokens,omitempty"`
+	InputTokens  int64 `json:"inputTokens,omitempty"`  //nolint:tagliatelle // transcript on-disk JSON format (backward compat) — cannot rename
+	OutputTokens int64 `json:"outputTokens,omitempty"` //nolint:tagliatelle // transcript on-disk JSON format (backward compat) — cannot rename
 }
 
 // selfGitignoreContent is the .ass-guard/.gitignore body (D-07): ignore
