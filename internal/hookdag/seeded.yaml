@@ -1,0 +1,42 @@
+# seeded.yaml — the embedded zero-config hook floor (HOOK-02). The engine loads
+# this default when no operator overlay is present; operators override/add/remove
+# hooks via the layered YAML loader (D-06 — embedded default → operator overlay,
+# matching internal/scheduler's scheduling.yaml convention).
+#
+# The seeded set ships the "forgotten routine":
+#   - post-implement runs after every implementation stage — test + lint + a
+#     review prompt + a memory prompt. test on-failure:halt (a failing test
+#     stops the chain); lint/review/memory on-failure:continue (advisory).
+#   - post-phase runs after a whole phase — a single improvement-proposals
+#     prompt turn.
+hooks:
+  - name: post-implement
+    trigger: post-implement
+    on_failure: halt
+    steps:
+      - name: test
+        kind: run-command
+        command: go
+        args: ["test", "./..."]
+        on_failure: halt
+      - name: lint
+        kind: run-command
+        command: golangci-lint
+        args: ["run", "./..."]
+        on_failure: continue
+      - name: review
+        kind: send-prompt
+        prompt: "Review the implementation just completed for correctness and gaps; report findings."
+        on_failure: continue
+      - name: memory
+        kind: send-prompt
+        prompt: "Record what was learned during this implementation step in memory."
+        on_failure: continue
+  - name: post-phase
+    trigger: post-phase
+    on_failure: continue
+    steps:
+      - name: proposals
+        kind: send-prompt
+        prompt: "Propose improvements based on this phase's outcomes — what should change before the next phase?"
+        on_failure: continue

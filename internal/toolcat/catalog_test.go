@@ -49,6 +49,40 @@ func TestCatalog_Nonexistent(t *testing.T) {
 	}
 }
 
+// TestCatalog_Register verifies Register adds (or overwrites) a tool entry, a
+// registered mutating tool is reflected by IsBoundary via the existing
+// mutability floor (no boundary-engine change — OPEN-03/Plan 04-02 relies on
+// this), and a read-only registration stays read-only.
+func TestCatalog_Register(t *testing.T) {
+	c := toolcat.NewCatalog()
+	// Register a mutating OpenSpec command.
+	c.Register(toolcat.Tool{Name: "openspec:apply", Mutability: toolcat.MutabilityMutating})
+	// Register a read-only command.
+	c.Register(toolcat.Tool{Name: "openspec:list", Mutability: toolcat.MutabilityReadOnly})
+
+	apply, ok := c.Get("openspec:apply")
+	if !ok {
+		t.Fatal("Get(openspec:apply) returned ok=false after Register")
+	}
+	if !apply.IsMutating() {
+		t.Error("openspec:apply classified read-only; want mutating")
+	}
+	// IsBoundary reflects the registered mutability with NO boundary-engine
+	// change (the SESS-02 structural floor consults the catalog field).
+	if !toolcat.IsBoundary("openspec:apply", c, nil) {
+		t.Error("IsBoundary(openspec:apply) = false; want true (mutating ⇒ boundary)")
+	}
+	if toolcat.IsBoundary("openspec:list", c, nil) {
+		t.Error("IsBoundary(openspec:list) = true; want false (read-only)")
+	}
+
+	// Overwrite: re-registering list as mutating flips it (operator override).
+	c.Register(toolcat.Tool{Name: "openspec:list", Mutability: toolcat.MutabilityMutating})
+	if !toolcat.IsBoundary("openspec:list", c, nil) {
+		t.Error("IsBoundary(openspec:list) = false after overwrite; want true")
+	}
+}
+
 // TestCatalog_Names covers the full built-in core set.
 func TestCatalog_Names(t *testing.T) {
 	c := toolcat.NewCatalog()
