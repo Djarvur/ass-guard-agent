@@ -18,6 +18,13 @@ import (
 //go:embed defaults/scheduling.yaml
 var embeddedDefault []byte
 
+// EmbeddedDefaultScheduling returns the embedded zero-config scheduling.yaml
+// floor (DIST-03). Exposed so cross-package drift guards can assert the seed
+// copy (internal/defaults) stays byte-identical to this floor WITHOUT a
+// filesystem path lookup — robust under -trimpath (both sides are build-time
+// embed bytes, not runtime file reads).
+func EmbeddedDefaultScheduling() []byte { return embeddedDefault }
+
 // Load decodes the embedded default, then each path in order (layered: later
 // paths overlay earlier ones — project over global over default), applies
 // documented defaults to zero-valued fields, and validates the graph (D-10). A

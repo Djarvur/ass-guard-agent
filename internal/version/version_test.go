@@ -1,6 +1,10 @@
-package version
+package version_test
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/Djarvur/ass-guard-agent/internal/version"
+)
 
 // TestString_EqualsVersionVar asserts String returns the current Version var.
 // Robust regardless of ldflags injection (the default "dev" check would break
@@ -8,8 +12,8 @@ import "testing"
 func TestString_EqualsVersionVar(t *testing.T) {
 	t.Parallel()
 
-	if got := String(); got != Version {
-		t.Errorf("String() = %q, want %q (= Version var)", got, Version)
+	if got := version.String(); got != version.Version {
+		t.Errorf("String() = %q, want %q (= Version var)", got, version.Version)
 	}
 }
 
@@ -20,7 +24,8 @@ func TestString_EqualsVersionVar(t *testing.T) {
 func TestVersion_DefaultDevWhenNotInjected(t *testing.T) {
 	t.Parallel()
 
-	if Version != "dev" {
-		t.Logf("Version = %q (ldflags-injected, not the default 'dev') — expected under release builds", Version)
+	if version.Version != "dev" {
+		t.Logf("Version = %q (ldflags-injected, not the default 'dev') — expected under release builds",
+			version.Version)
 	}
 }

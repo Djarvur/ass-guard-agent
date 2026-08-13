@@ -42,11 +42,11 @@ func main() {
 
 func newRootCmd() *cobra.Command {
 	var (
-		prompt       string
-		profileName  string
-		profilesDir  string
-		auditLog     string
-		versionFlag  bool
+		prompt      string
+		profileName string
+		profilesDir string
+		auditLog    string
+		versionFlag bool
 	)
 
 	root := &cobra.Command{
@@ -62,6 +62,7 @@ func newRootCmd() *cobra.Command {
 			// to STDERR (transport discipline — stdout stays clean for ACP frames).
 			if versionFlag {
 				fmt.Fprintln(os.Stderr, "ass-guard version "+version.String())
+
 				return nil
 			}
 

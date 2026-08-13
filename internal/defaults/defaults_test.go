@@ -1,14 +1,17 @@
-package defaults
+package defaults_test
 
 import (
+	"bytes"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
+	"github.com/Djarvur/ass-guard-agent/internal/defaults"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
+	"github.com/Djarvur/ass-guard-agent/internal/scheduler"
 )
 
 // Seed-profile expectations. tools = 103 (catalog drift, STATE.md blocker): the
@@ -28,7 +31,8 @@ func TestWriteTree_MaterializesAllArtifacts(t *testing.T) {
 
 	tmp := t.TempDir()
 
-	if err := WriteTree(tmp, false); err != nil {
+	err := defaults.WriteTree(tmp, false)
+	if err != nil {
 		t.Fatalf("WriteTree: %v", err)
 	}
 
@@ -45,7 +49,8 @@ func TestWriteTree_MaterializesAllArtifacts(t *testing.T) {
 		"openspec.toml",
 		"scheduling.yaml",
 	} {
-		if _, err := os.Stat(filepath.Join(tmp, rel)); err != nil {
+		_, err := os.Stat(filepath.Join(tmp, rel))
+		if err != nil {
 			t.Errorf("expected %s materialized under root: %v", rel, err)
 		}
 	}
@@ -58,18 +63,22 @@ func TestWriteTree_NonClobberIdempotent(t *testing.T) {
 
 	tmp := t.TempDir()
 
-	if err := WriteTree(tmp, false); err != nil {
+	err := defaults.WriteTree(tmp, false)
+	if err != nil {
 		t.Fatalf("first WriteTree: %v", err)
 	}
 
 	// Simulate an operator edit on tools.json.
 	marker := []byte("// operator edit — must survive non-clobber\n")
-	target := filepath.Join(tmp, "profiles/zcode/tools.json")
-	if err := os.WriteFile(target, marker, 0o644); err != nil {
+	target := filepath.Join(tmp, "profiles", "zcode", "tools.json")
+
+	err = os.WriteFile(target, marker, 0o644)
+	if err != nil {
 		t.Fatalf("write marker: %v", err)
 	}
 
-	if err := WriteTree(tmp, false); err != nil {
+	err = defaults.WriteTree(tmp, false)
+	if err != nil {
 		t.Fatalf("second WriteTree: %v", err)
 	}
 
@@ -78,7 +87,7 @@ func TestWriteTree_NonClobberIdempotent(t *testing.T) {
 		t.Fatalf("read marker: %v", err)
 	}
 
-	if string(got) != string(marker) {
+	if !bytes.Equal(got, marker) {
 		t.Errorf("non-clobber violated: tools.json overwritten (got %q)", truncate(string(got), 60))
 	}
 }
@@ -90,15 +99,19 @@ func TestWriteTree_OverwriteTrue(t *testing.T) {
 	tmp := t.TempDir()
 
 	target := filepath.Join(tmp, "openspec.toml")
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+
+	err := os.MkdirAll(filepath.Dir(target), 0o755)
+	if err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 
-	if err := os.WriteFile(target, []byte("stale operator content\n"), 0o644); err != nil {
+	err = os.WriteFile(target, []byte("stale operator content\n"), 0o644)
+	if err != nil {
 		t.Fatalf("write stale: %v", err)
 	}
 
-	if err := WriteTree(tmp, true); err != nil {
+	err = defaults.WriteTree(tmp, true)
+	if err != nil {
 		t.Fatalf("WriteTree overwrite: %v", err)
 	}
 
@@ -124,7 +137,8 @@ func TestSeedProfileLoads(t *testing.T) {
 
 	tmp := t.TempDir()
 
-	if err := WriteTree(tmp, false); err != nil {
+	err := defaults.WriteTree(tmp, false)
+	if err != nil {
 		t.Fatalf("WriteTree: %v", err)
 	}
 
@@ -147,23 +161,20 @@ func TestSeedProfileLoads(t *testing.T) {
 }
 
 // TestDriftGuard_SchedulingYAML asserts the embedded seed scheduling.yaml is
-// byte-identical to internal/scheduler/defaults/scheduling.yaml (the DIST-03
-// floor). The two must not drift — run sync.sh if this fails.
+// byte-identical to internal/scheduler's embedded default (the DIST-03 floor).
+// Both sides are build-time embed bytes (no filesystem lookup), so this is
+// robust under -trimpath. Run sync.sh if this fails.
 func TestDriftGuard_SchedulingYAML(t *testing.T) {
 	t.Parallel()
 
-	seedBytes, err := Seed.ReadFile("seed/scheduling.yaml")
+	seedBytes, err := defaults.Seed.ReadFile("seed/scheduling.yaml")
 	if err != nil {
 		t.Fatalf("read embedded seed/scheduling.yaml: %v", err)
 	}
 
-	schedulerFile := repoPath(t, "internal", "scheduler", "defaults", "scheduling.yaml")
-	schedulerBytes, err := os.ReadFile(schedulerFile)
-	if err != nil {
-		t.Fatalf("read scheduler defaults/scheduling.yaml at %s: %v", schedulerFile, err)
-	}
+	schedulerBytes := scheduler.EmbeddedDefaultScheduling()
 
-	if string(seedBytes) != string(schedulerBytes) {
+	if !bytes.Equal(seedBytes, schedulerBytes) {
 		t.Errorf("scheduling.yaml drift: seed=%d bytes != scheduler=%d bytes — run ./internal/defaults/seed/sync.sh",
 			len(seedBytes), len(schedulerBytes))
 	}
@@ -177,18 +188,18 @@ func TestLeakGuard_NoAbsoluteHomePaths(t *testing.T) {
 
 	leaks := []string{"/Users/", "/home/"}
 
-	err := fs.WalkDir(Seed, "seed", func(path string, d fs.DirEntry, walkErr error) error {
+	err := fs.WalkDir(defaults.Seed, "seed", func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
-			return walkErr
+			return fmt.Errorf("walk %s: %w", path, walkErr)
 		}
 
 		if d.IsDir() {
 			return nil
 		}
 
-		data, rerr := Seed.ReadFile(path)
+		data, rerr := defaults.Seed.ReadFile(path)
 		if rerr != nil {
-			return rerr
+			return fmt.Errorf("read %s: %w", path, rerr)
 		}
 
 		for _, leak := range leaks {
@@ -202,21 +213,6 @@ func TestLeakGuard_NoAbsoluteHomePaths(t *testing.T) {
 	if err != nil {
 		t.Fatalf("walk embedded seed: %v", err)
 	}
-}
-
-// repoPath resolves a repo-rooted path via runtime.Caller. The test source
-// (internal/defaults/defaults_test.go) is two levels below the repo root.
-func repoPath(t *testing.T, elem ...string) string {
-	t.Helper()
-
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller failed")
-	}
-
-	root := filepath.Join(filepath.Dir(thisFile), "..", "..")
-
-	return filepath.Join(append([]string{root}, elem...)...)
 }
 
 // truncate returns s shortened to at most n runes for readable test output.

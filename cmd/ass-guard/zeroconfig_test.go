@@ -7,61 +7,81 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
 
+// wantGitignore is the canonical D-07 self-gitignore body (must match
+// internal/session/transcript.go selfGitignoreContent byte-for-byte).
+const wantGitignore = "*\n!.gitignore\n"
+
 // TestZeroConfigFirstRun is the Phase-6 TRACER proof (plan 06-01 T5): it builds
 // the real ass-guard binary, drops it into a fresh empty project directory as
-// the registry would, sends one ACP `initialize` frame over stdio, and asserts:
-//
-//   (a) .ass-guard/ was created with .gitignore (body "*\n!.gitignore\n"),
-//       profiles/zcode/tools.json, openspec.toml, scheduling.yaml (D-01/D-04);
-//   (b) the seeded zcode profile loaded — a valid initialize response with
-//       agentCapabilities appears on stdout (runACPServe loads the profile
-//       before serving; a failed load yields no response);
-//   (c) stdout carries ONLY ACP frames — the first-run log went to stderr
-//       (transport discipline, T-06-03);
-//   (d) a second invocation in the same dir does NOT re-seed (idempotent — the
-//       .gitignore is unchanged and stderr omits the "initialized" log).
-//
-// No ZAI_API_KEY is required: the handshake + first-run + profile load never
-// call the model (DIST-03 is about defaults being present, not a live turn).
+// the registry would, sends one ACP initialize frame over stdio, and asserts:
+// .ass-guard/ is seeded (D-01/D-04); the seeded zcode profile loaded (a valid
+// initialize response with agentCapabilities is on stdout); stdout carries ONLY
+// ACP frames (transport discipline, T-06-03); and a second run does not re-seed
+// (idempotent). No ZAI_API_KEY is required — the handshake never calls the model.
 func TestZeroConfigFirstRun(t *testing.T) {
-	// Building the binary also proves the go:embed survives compilation into a
-	// real artifact (the embed is compiled into the cmd/ass-guard main package).
-	tmpBin := filepath.Join(t.TempDir(), "ass-guard")
+	t.Parallel()
 
-	_, thisFile, _, _ := runtime.Caller(0) //nolint:dogsled // build-dir resolution
-	pkgDir := filepath.Dir(thisFile)
-
-	build := exec.Command("go", "build", "-o", tmpBin, ".")
-	build.Dir = pkgDir
-
-	var buildErr bytes.Buffer
-	build.Stderr = &buildErr
-	if err := build.Run(); err != nil {
-		t.Fatalf("go build . (in %s): %v\n%s", pkgDir, err, buildErr.String())
-	}
-
+	bin := buildServeBinary(t)
 	project := t.TempDir()
 
-	// First run: drive the initialize handshake and capture stdout/stderr.
-	firstStdout, firstStderr := driveServeInit(t, tmpBin, project)
+	firstOut, firstErr := driveServeInit(t, bin, project)
 
-	// (c) Transport discipline: every non-empty stdout line is a valid ACP frame.
+	assertACPHandshakeOnStdout(t, firstOut, firstErr)
+	assertAssGuardSeeded(t, project)
+
+	if !strings.Contains(firstErr, "ass-guard: initialized") {
+		t.Errorf("stderr missing first-run init log; got:\n%s", firstErr)
+	}
+
+	assertSecondRunIsIdempotent(t, bin, project)
+}
+
+// buildServeBinary builds the ass-guard binary by import path (robust under
+// -trimpath and from any cwd — no filesystem path lookup). Building the real
+// binary also proves the go:embed survives compilation into a real artifact.
+func buildServeBinary(t *testing.T) string {
+	t.Helper()
+
+	tmpBin := filepath.Join(t.TempDir(), "ass-guard")
+
+	build := exec.CommandContext(t.Context(), "go", "build", "-o", tmpBin,
+		"github.com/Djarvur/ass-guard-agent/cmd/ass-guard")
+
+	var buildErr bytes.Buffer
+
+	build.Stderr = &buildErr
+
+	err := build.Run()
+	if err != nil {
+		t.Fatalf("go build cmd/ass-guard: %v\n%s", err, buildErr.String())
+	}
+
+	return tmpBin
+}
+
+// assertACPHandshakeOnStdout asserts every stdout line is a valid ACP frame and
+// at least one carries agentCapabilities (proving the seeded profile loaded —
+// runACPServe returns early on a failed load, yielding no response).
+func assertACPHandshakeOnStdout(t *testing.T, stdout, stderr string) {
+	t.Helper()
+
 	var sawAgentCapabilities bool
 
-	for i, line := range strings.Split(strings.TrimRight(firstStdout, "\n"), "\n") {
+	for i, line := range strings.Split(strings.TrimRight(stdout, "\n"), "\n") {
 		if line == "" {
 			continue
 		}
 
 		var m map[string]any
-		if err := json.Unmarshal([]byte(line), &m); err != nil {
-			t.Errorf("stdout line %d is not valid JSON (transport discipline): %v (line=%q)", i, err, line)
+
+		err := json.Unmarshal([]byte(line), &m)
+		if err != nil {
+			t.Errorf("stdout line %d not valid JSON (transport discipline): %v (%q)", i, err, line)
 		}
 
 		if strings.Contains(line, "agentCapabilities") {
@@ -69,79 +89,81 @@ func TestZeroConfigFirstRun(t *testing.T) {
 		}
 	}
 
-	// (b) The seeded profile loaded: the initialize response is on stdout.
 	if !sawAgentCapabilities {
-		t.Errorf("stdout missing initialize response (agentCapabilities) — profile load likely failed.\nstdout:\n%s\nstderr:\n%s",
-			firstStdout, firstStderr)
+		t.Errorf("stdout missing initialize response (agentCapabilities) — profile load failed")
+		t.Logf("stdout:\n%s\nstderr:\n%s", stdout, stderr)
 	}
+}
 
-	// (a) .ass-guard/ was seeded with the embedded defaults.
+// assertAssGuardSeeded asserts .ass-guard/ was materialized with the embedded
+// defaults and the canonical D-07 self-gitignore body.
+func assertAssGuardSeeded(t *testing.T, project string) {
+	t.Helper()
+
 	assGuard := filepath.Join(project, ".ass-guard")
 
 	for _, rel := range []string{
 		".gitignore",
-		"profiles/zcode/tools.json",
-		"profiles/zcode/profile.yaml",
+		filepath.Join("profiles", "zcode", "tools.json"),
+		filepath.Join("profiles", "zcode", "profile.yaml"),
 		"openspec.toml",
 		"scheduling.yaml",
 	} {
-		if _, err := os.Stat(filepath.Join(assGuard, rel)); err != nil {
+		_, err := os.Stat(filepath.Join(assGuard, rel))
+		if err != nil {
 			t.Errorf("expected .ass-guard/%s seeded: %v", rel, err)
 		}
 	}
 
-	// The .gitignore body is the canonical D-07 self-gitignore.
 	gi, err := os.ReadFile(filepath.Join(assGuard, ".gitignore"))
 	if err != nil {
 		t.Fatalf("read .ass-guard/.gitignore: %v", err)
 	}
 
-	const wantGI = "*\n!.gitignore\n"
-	if string(gi) != wantGI {
-		t.Errorf(".gitignore body = %q, want %q (D-07)", gi, wantGI)
+	if string(gi) != wantGitignore {
+		t.Errorf(".gitignore body = %q, want %q (D-07)", gi, wantGitignore)
 	}
+}
 
-	// The first-run log went to stderr (transport discipline) and the seeded
-	// profile carries 103 tools (catalog drift — not the plan's stale 77).
-	if !strings.Contains(firstStderr, "ass-guard: initialized") {
-		t.Errorf("stderr missing first-run init log; got:\n%s", firstStderr)
-	}
+// assertSecondRunIsIdempotent asserts a second invocation in the same dir does
+// not re-seed: the .gitignore mtime is unchanged and stderr omits "initialized".
+func assertSecondRunIsIdempotent(t *testing.T, bin, project string) {
+	t.Helper()
 
-	// (d) Idempotence: a second run in the same dir does NOT re-seed. Capture the
-	// .gitignore mtime, run again, assert it is unchanged + no "initialized" log.
-	giPath := filepath.Join(assGuard, ".gitignore")
+	giPath := filepath.Join(project, ".ass-guard", ".gitignore")
+
 	beforeInfo, err := os.Stat(giPath)
 	if err != nil {
 		t.Fatalf("stat .gitignore before second run: %v", err)
 	}
 
-	_, secondStderr := driveServeInit(t, tmpBin, project)
+	_, secondErr := driveServeInit(t, bin, project)
 
 	afterInfo, err := os.Stat(giPath)
 	if err != nil {
 		t.Fatalf("stat .gitignore after second run: %v", err)
 	}
 
-	// mtime unchanged ⇒ the file was not rewritten (non-clobbering, idempotent).
 	if !beforeInfo.ModTime().Equal(afterInfo.ModTime()) {
 		t.Errorf("second run rewrote .gitignore (non-idempotent): mtime %s → %s",
 			beforeInfo.ModTime(), afterInfo.ModTime())
 	}
 
-	if strings.Contains(secondStderr, "ass-guard: initialized") {
-		t.Errorf("second run re-seeded an existing .ass-guard/ (non-idempotent):\n%s", secondStderr)
+	if strings.Contains(secondErr, "ass-guard: initialized") {
+		t.Errorf("second run re-seeded an existing .ass-guard/ (non-idempotent):\n%s", secondErr)
 	}
 }
 
 // driveServeInit runs `<bin> acp serve` in dir, sends one ACP initialize frame
-// on stdin, reads the response(s) from stdout, then closes stdin to let the
-// server exit. Returns (stdout, stderr). stdout MUST be drained before Wait
-// (os/exec closes the pipe on Wait); a goroutine + timeout guards against a
-// hung server.
-func driveServeInit(t *testing.T, bin, dir string) (string, string) { //nolint:nonamedreturns // names document the pair
+// on stdin, drains stdout (BEFORE Wait — os/exec closes the pipe on Wait), then
+// reaps the child. A bounded timeout guards against a hung server. Returns the
+// captured stdout and stderr.
+//
+//nolint:nonamedreturns // the names document the (stdout, stderr) pair
+func driveServeInit(t *testing.T, bin, dir string) (stdout, stderr string) {
 	t.Helper()
 
-	cmd := exec.Command(bin, "acp", "serve")
+	cmd := exec.CommandContext(t.Context(), bin, "acp", "serve")
 	cmd.Dir = dir
 
 	stdin, err := cmd.StdinPipe()
@@ -154,49 +176,63 @@ func driveServeInit(t *testing.T, bin, dir string) (string, string) { //nolint:n
 		t.Fatalf("stdout pipe: %v", err)
 	}
 
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
+	var stderrBuf bytes.Buffer
 
-	if err := cmd.Start(); err != nil {
+	cmd.Stderr = &stderrBuf
+
+	err = cmd.Start()
+	if err != nil {
 		t.Fatalf("start serve: %v", err)
 	}
 
-	// Send the initialize frame (ACP v1: protocolVersion integer 1).
+	// ACP v1 initialize (protocolVersion is integer 1).
 	initFrame := `{"jsonrpc":"2.0","id":0,"method":"initialize","params":` +
 		`{"protocolVersion":1,"clientCapabilities":{},` +
 		`"clientInfo":{"name":"zeroconfig-test","version":"0"}}}` + "\n"
 
-	_, writeErr := io.WriteString(stdin, initFrame)
+	_, err = io.WriteString(stdin, initFrame)
 	_ = stdin.Close()
 
-	if writeErr != nil {
-		t.Fatalf("write init frame: %v", writeErr)
+	if err != nil {
+		t.Fatalf("write init frame: %v", err)
 	}
 
-	// Drain stdout BEFORE Wait (Wait closes the pipe). EOF arrives when the child
-	// exits (stdin EOF ends Serve). Bounded so a hung server cannot stall the suite.
+	stdoutBytes := drainServeStdout(t, cmd, stdoutPipe)
+
+	return string(stdoutBytes), stderrBuf.String()
+}
+
+// drainServeStdout reads stdout to EOF (child exit), bounded by a timeout so a
+// hung server cannot stall the suite. Must complete BEFORE cmd.Wait (Wait closes
+// the pipe).
+func drainServeStdout(t *testing.T, cmd *exec.Cmd, stdoutPipe io.ReadCloser) []byte {
+	t.Helper()
+
 	type drain struct{ b []byte }
 
 	stdoutCh := make(chan drain, 1)
+
 	go func() {
 		b, _ := io.ReadAll(stdoutPipe)
 		stdoutCh <- drain{b}
 	}()
 
-	waitCh := make(chan error, 1)
-	go func() { waitCh <- cmd.Wait() }()
-
-	var stdoutBytes []byte
+	var captured []byte
 
 	select {
 	case r := <-stdoutCh:
-		stdoutBytes = r.b
-		<-waitCh // reap the child
+		captured = r.b
 	case <-time.After(15 * time.Second):
 		_ = cmd.Process.Kill()
-		<-waitCh
+		_ = cmd.Wait()
+
 		t.Fatalf("acp serve did not exit within 15s after stdin EOF")
+
+		return nil
 	}
 
-	return string(stdoutBytes), stderr.String()
+	// stdout drained to EOF (child exited); reap it before returning.
+	_ = cmd.Wait()
+
+	return captured
 }

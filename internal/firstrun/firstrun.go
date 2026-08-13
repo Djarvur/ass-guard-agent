@@ -40,28 +40,36 @@ const assGuardDir = ".ass-guard"
 //
 // All writes are confined to the fixed .ass-guard/ relative path under workDir;
 // no path traversal is possible (the embedded filenames contain no "..").
-func Ensure(workDir string) (seeded bool, err error) {
+func Ensure(workDir string) (bool, error) {
 	dir := filepath.Join(workDir, assGuardDir)
 
-	if _, statErr := os.Stat(dir); statErr == nil {
+	_, statErr := os.Stat(dir)
+	if statErr == nil {
 		// Already initialized (including a partial/empty dir). Never clobber.
 		return false, nil
-	} else if !os.IsNotExist(statErr) {
+	}
+
+	if !os.IsNotExist(statErr) {
 		return false, fmt.Errorf("stat %s: %w", dir, statErr)
 	}
 
-	if mkErr := os.MkdirAll(dir, dirPerm); mkErr != nil {
+	mkErr := os.MkdirAll(dir, dirPerm)
+	if mkErr != nil {
 		return false, fmt.Errorf("mkdir %s: %w", dir, mkErr)
 	}
 
 	giPath := filepath.Join(dir, ".gitignore")
-	if _, statErr := os.Stat(giPath); os.IsNotExist(statErr) {
-		if wErr := os.WriteFile(giPath, []byte(selfGitignoreContent), filePerm); wErr != nil {
+
+	_, statErr = os.Stat(giPath)
+	if os.IsNotExist(statErr) {
+		wErr := os.WriteFile(giPath, []byte(selfGitignoreContent), filePerm)
+		if wErr != nil {
 			return false, fmt.Errorf("write %s: %w", giPath, wErr)
 		}
 	}
 
-	if wErr := defaults.WriteTree(dir, false); wErr != nil {
+	wErr := defaults.WriteTree(dir, false)
+	if wErr != nil {
 		return false, fmt.Errorf("seed defaults: %w", wErr)
 	}
 

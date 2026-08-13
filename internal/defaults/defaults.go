@@ -48,38 +48,53 @@ const filePerm = 0o644
 // are replaced. Directories are created as needed (mode 0o755); files are
 // written mode 0o644. Returns an error wrapping the first failed write.
 func WriteTree(root string, overwrite bool) error {
-	return fs.WalkDir(Seed, seedRoot, func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return fmt.Errorf("walk %s: %w", path, err)
-		}
+	err := fs.WalkDir(Seed, seedRoot, func(path string, d fs.DirEntry, walkErr error) error {
+		return writeSeedEntry(root, overwrite, path, d, walkErr)
+	})
+	if err != nil {
+		return fmt.Errorf("materialize seed tree under %s: %w", root, err)
+	}
 
-		if d.IsDir() {
+	return nil
+}
+
+// writeSeedEntry is the per-file WalkDir callback for WriteTree. It skips
+// directories, preserves existing files when overwrite is false (D-04), and
+// writes each embedded file under root (seed/ prefix stripped).
+func writeSeedEntry(root string, overwrite bool, path string, d fs.DirEntry, walkErr error) error {
+	if walkErr != nil {
+		return fmt.Errorf("walk %s: %w", path, walkErr)
+	}
+
+	if d.IsDir() {
+		return nil
+	}
+
+	rel := strings.TrimPrefix(path, seedRoot+"/")
+	target := filepath.Join(root, rel)
+
+	if !overwrite {
+		_, statErr := os.Stat(target)
+		if statErr == nil {
+			// Existing file preserved (non-clobbering, D-04).
 			return nil
 		}
+	}
 
-		rel := strings.TrimPrefix(path, seedRoot+"/")
-		target := filepath.Join(root, rel)
+	data, rerr := Seed.ReadFile(path)
+	if rerr != nil {
+		return fmt.Errorf("read embedded %s: %w", path, rerr)
+	}
 
-		if !overwrite {
-			if _, statErr := os.Stat(target); statErr == nil {
-				// Existing file preserved (non-clobbering, D-04).
-				return nil
-			}
-		}
+	mkErr := os.MkdirAll(filepath.Dir(target), dirPerm)
+	if mkErr != nil {
+		return fmt.Errorf("mkdir %s: %w", filepath.Dir(target), mkErr)
+	}
 
-		data, rerr := Seed.ReadFile(path)
-		if rerr != nil {
-			return fmt.Errorf("read embedded %s: %w", path, rerr)
-		}
+	wErr := os.WriteFile(target, data, filePerm)
+	if wErr != nil {
+		return fmt.Errorf("write %s: %w", target, wErr)
+	}
 
-		if mkErr := os.MkdirAll(filepath.Dir(target), dirPerm); mkErr != nil {
-			return fmt.Errorf("mkdir %s: %w", filepath.Dir(target), mkErr)
-		}
-
-		if wErr := os.WriteFile(target, data, filePerm); wErr != nil {
-			return fmt.Errorf("write %s: %w", target, wErr)
-		}
-
-		return nil
-	})
+	return nil
 }

@@ -11,7 +11,11 @@ package version
 // Version is the build version. Defaults to "dev" for a plain `go build`; set
 // via ldflags at release (goreleaser). Informational only — the released
 // archives are the authoritative artifacts (sha256-pinned in agent.json).
-var Version = "dev"
+//
+// gochecknoglobals: this MUST be a mutable package-level var — the linker
+// patches it via -X at build time (goreleaser ldflags). An immutable const or a
+// function-local would defeat the injection.
+var Version = "dev" //nolint:gochecknoglobals // ldflags injection target — linker-patched at build time
 
 // String returns the version string. Trivial accessor today, but keeps the
 // call site stable if Version later derives from build info (vcs.revision).

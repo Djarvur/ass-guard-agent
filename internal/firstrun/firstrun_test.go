@@ -1,10 +1,18 @@
-package firstrun
+package firstrun_test
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/Djarvur/ass-guard-agent/internal/firstrun"
 )
+
+// wantGitignore is the canonical D-07 self-gitignore body, byte-identical to
+// internal/session/transcript.go's selfGitignoreContent and to
+// internal/firstrun's selfGitignoreContent. Asserted as a literal because the
+// const is unexported (the plan sanctions asserting the literal).
+const wantGitignore = "*\n!.gitignore\n"
 
 // TestEnsure_SeedsFreshDir asserts Ensure on a directory with no .ass-guard/
 // creates the dir, the self-gitignore, and the full default tree (D-04).
@@ -13,7 +21,7 @@ func TestEnsure_SeedsFreshDir(t *testing.T) {
 
 	work := t.TempDir()
 
-	seeded, err := Ensure(work)
+	seeded, err := firstrun.Ensure(work)
 	if err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
@@ -29,7 +37,8 @@ func TestEnsure_SeedsFreshDir(t *testing.T) {
 		"openspec.toml",
 		"scheduling.yaml",
 	} {
-		if _, err := os.Stat(filepath.Join(work, ".ass-guard", rel)); err != nil {
+		_, err := os.Stat(filepath.Join(work, ".ass-guard", rel))
+		if err != nil {
 			t.Errorf("expected .ass-guard/%s materialized: %v", rel, err)
 		}
 	}
@@ -42,17 +51,20 @@ func TestEnsure_IdempotentSecondRun(t *testing.T) {
 
 	work := t.TempDir()
 
-	if _, err := Ensure(work); err != nil {
+	_, err := firstrun.Ensure(work)
+	if err != nil {
 		t.Fatalf("first Ensure: %v", err)
 	}
 
 	// Drop a marker the second run must not touch (and must not delete).
 	marker := filepath.Join(work, ".ass-guard", "operator-marker.txt")
-	if err := os.WriteFile(marker, []byte("keep me\n"), 0o644); err != nil {
+
+	err = os.WriteFile(marker, []byte("keep me\n"), 0o644)
+	if err != nil {
 		t.Fatalf("write marker: %v", err)
 	}
 
-	seeded, err := Ensure(work)
+	seeded, err := firstrun.Ensure(work)
 	if err != nil {
 		t.Fatalf("second Ensure: %v", err)
 	}
@@ -72,14 +84,15 @@ func TestEnsure_IdempotentSecondRun(t *testing.T) {
 }
 
 // TestEnsure_GitignoreBodyIsCanonical asserts the written .ass-guard/.gitignore
-// is byte-equal to the D-07 self-gitignore body ("*\n!.gitignore\n"), identical
-// to internal/session/transcript.go's selfGitignoreContent.
+// is byte-equal to the D-07 self-gitignore body (literal — the const is
+// unexported; this mirrors internal/session/transcript.go's value).
 func TestEnsure_GitignoreBodyIsCanonical(t *testing.T) {
 	t.Parallel()
 
 	work := t.TempDir()
 
-	if _, err := Ensure(work); err != nil {
+	_, err := firstrun.Ensure(work)
+	if err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
 
@@ -88,8 +101,8 @@ func TestEnsure_GitignoreBodyIsCanonical(t *testing.T) {
 		t.Fatalf("read .gitignore: %v", err)
 	}
 
-	if string(got) != selfGitignoreContent {
-		t.Errorf(".gitignore body = %q, want %q (D-07)", got, selfGitignoreContent)
+	if string(got) != wantGitignore {
+		t.Errorf(".gitignore body = %q, want %q (D-07)", got, wantGitignore)
 	}
 }
 
@@ -101,11 +114,12 @@ func TestEnsure_ExistingEmptyDirIsNotReseeded(t *testing.T) {
 
 	work := t.TempDir()
 
-	if err := os.MkdirAll(filepath.Join(work, ".ass-guard"), 0o755); err != nil {
+	err := os.MkdirAll(filepath.Join(work, ".ass-guard"), 0o755)
+	if err != nil {
 		t.Fatalf("mkdir .ass-guard: %v", err)
 	}
 
-	seeded, err := Ensure(work)
+	seeded, err := firstrun.Ensure(work)
 	if err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
@@ -115,7 +129,8 @@ func TestEnsure_ExistingEmptyDirIsNotReseeded(t *testing.T) {
 	}
 
 	// The dir stays empty — Ensure did not write the tree into it.
-	if _, err := os.Stat(filepath.Join(work, ".ass-guard", "profiles")); !os.IsNotExist(err) {
+	_, err = os.Stat(filepath.Join(work, ".ass-guard", "profiles"))
+	if !os.IsNotExist(err) {
 		t.Errorf("Ensure wrote profiles/ into an existing empty .ass-guard/ (should not half-seed): %v", err)
 	}
 }

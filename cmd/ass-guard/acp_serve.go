@@ -138,56 +138,10 @@ func newACPServeCmd() *cobra.Command {
 			"works without it for the ACP handshake.",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Transport discipline (Pitfall 1): stdout is reserved EXCLUSIVELY for
-			// ACP frames. All log/diagnostic output goes to stderr.
-			log.SetOutput(os.Stderr)
-
-			// Resolve workDir eagerly (flag value or cwd) so the seed dir and the
-			// session dir agree. The session runner's lazy cwd fallback is now a
-			// belt-and-suspenders path only.
-			resolvedWorkDir := workDir
-			if resolvedWorkDir == "" {
-				wd, werr := os.Getwd()
-				if werr != nil {
-					return fmt.Errorf("resolve work dir: %w", werr)
-				}
-
-				resolvedWorkDir = wd
-			}
-
-			// Phase 6 first-run (D-04): seed .ass-guard/ with the embedded defaults
-			// when it does not already exist. Non-clobbering — an operator's
-			// pre-existing .ass-guard/ is left untouched. A failed seed degrades to
-			// defaults, never a server crash (the agent is still runnable).
-			if seeded, ferr := firstrun.Ensure(resolvedWorkDir); ferr != nil {
-				log.Printf("ass-guard: first-run seeding failed (continuing): %v", ferr)
-			} else if seeded {
-				log.Printf("ass-guard: initialized %s", filepath.Join(resolvedWorkDir, ".ass-guard"))
-			}
-
-			// Zero-config profiles dir (DIST-03): when the --profiles-dir flag was
-			// left at its default AND the seeded .ass-guard/profiles exists, prefer
-			// it (the seeded zcode profile). Otherwise fall back to the dev
-			// ./profiles default (defaultProfilesDir). An explicit --profiles-dir is
-			// always honored as-is. Non-serve subcommands keep ./profiles.
-			resolvedProfilesDir := profilesDir
-			if !cmd.Flags().Changed(flagProfilesDir) {
-				seedProfiles := filepath.Join(resolvedWorkDir, ".ass-guard", "profiles")
-				if _, statErr := os.Stat(seedProfiles); statErr == nil {
-					resolvedProfilesDir = seedProfiles
-				}
-			}
-
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 
-			return runACPServe(ctx, os.Stdin, os.Stdout, os.Stderr, &serveOptions{
-				Profile:       profileName,
-				MaxConcurrent: maxConcurrent,
-				ProfilesDir:   resolvedProfilesDir,
-				WorkDir:       resolvedWorkDir,
-				EngineEnabled: !noEngine,
-			})
+			return runACPServeCmd(ctx, cmd, profileName, maxConcurrent, profilesDir, workDir, !noEngine)
 		},
 	}
 	c.Flags().StringVar(&profileName, "profile", profileZcode, "profile name to load (PROF-01)")
@@ -199,6 +153,86 @@ func newACPServeCmd() *cobra.Command {
 		"disable the Phase-4 unified engine (fall back to manual continue — D-04)")
 
 	return c
+}
+
+// runACPServeCmd is the `acp serve` RunE body (extracted for readability): it
+// resolves workDir, runs the Phase-6 first-run seed (D-04), resolves the
+// zero-config profiles dir (DIST-03), then constructs + serves the ACP server.
+// All diagnostics go to stderr (transport discipline — stdout = ACP frames).
+func runACPServeCmd(
+	ctx context.Context, cmd *cobra.Command,
+	profileName string, maxConcurrent int, profilesDir, workDir string, engineEnabled bool,
+) error {
+	log.SetOutput(os.Stderr)
+
+	resolvedWorkDir, err := resolveWorkDir(workDir)
+	if err != nil {
+		return err
+	}
+
+	// Phase 6 first-run (D-04): seed .ass-guard/ when missing. Non-clobbering; a
+	// failed seed degrades to defaults, never a server crash.
+	seedACPGuard(resolvedWorkDir)
+
+	// Zero-config profiles dir (DIST-03): prefer .ass-guard/profiles when the
+	// flag is default and that dir exists; else the dev ./profiles default.
+	resolvedProfilesDir := resolveProfilesDir(cmd, profilesDir, resolvedWorkDir)
+
+	return runACPServe(ctx, os.Stdin, os.Stdout, os.Stderr, &serveOptions{
+		Profile:       profileName,
+		MaxConcurrent: maxConcurrent,
+		ProfilesDir:   resolvedProfilesDir,
+		WorkDir:       resolvedWorkDir,
+		EngineEnabled: engineEnabled,
+	})
+}
+
+// resolveWorkDir returns workDir, or the current working directory when the flag
+// is empty. Eager resolution keeps the seed dir and the session dir consistent.
+func resolveWorkDir(workDir string) (string, error) {
+	if workDir != "" {
+		return workDir, nil
+	}
+
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("resolve work dir: %w", err)
+	}
+
+	return wd, nil
+}
+
+// seedACPGuard runs the Phase-6 first-run seed (D-04) and logs the outcome to
+// stderr. A failed seed is non-fatal — the agent stays runnable on defaults.
+func seedACPGuard(workDir string) {
+	seeded, err := firstrun.Ensure(workDir)
+	if err != nil {
+		log.Printf("ass-guard: first-run seeding failed (continuing): %v", err)
+
+		return
+	}
+
+	if seeded {
+		log.Printf("ass-guard: initialized %s", filepath.Join(workDir, ".ass-guard"))
+	}
+}
+
+// resolveProfilesDir honors an explicit --profiles-dir; otherwise it prefers the
+// seeded <workDir>/.ass-guard/profiles when it exists (zero-config, DIST-03),
+// falling back to the flag's default (the dev ./profiles) otherwise.
+func resolveProfilesDir(cmd *cobra.Command, profilesDir, workDir string) string {
+	if cmd.Flags().Changed(flagProfilesDir) {
+		return profilesDir
+	}
+
+	seedProfiles := filepath.Join(workDir, ".ass-guard", "profiles")
+
+	_, err := os.Stat(seedProfiles)
+	if err != nil {
+		return profilesDir
+	}
+
+	return seedProfiles
 }
 
 // runACPServe constructs the ACP server and runs it until ctx is cancelled or
