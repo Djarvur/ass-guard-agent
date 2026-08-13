@@ -243,7 +243,7 @@ func (m *Manager) ReadLastBoundary() (*Line, error) {
 		return nil, err
 	}
 
-	for i := len(lines) - 1; i >= 0; i-- {
+	for i := len(lines) - 1; i >= 0; i-- { //nolint:modernize // conflicts with gocritic rangeValCopy
 		if lines[i].Type == TypeBoundary {
 			return &lines[i], nil
 		}

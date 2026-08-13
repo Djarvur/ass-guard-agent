@@ -454,7 +454,7 @@ func (a *engineTurnRunnerAdapter) LastTurnOutput() engine.TurnOutput {
 
 	var lastAssistant *session.Line
 
-	for i := len(lines) - 1; i >= 0; i-- {
+	for i := len(lines) - 1; i >= 0; i-- { //nolint:modernize // conflicts with gocritic rangeValCopy
 		if lines[i].Type == session.TypeAssistantMessage {
 			lastAssistant = &lines[i]
 

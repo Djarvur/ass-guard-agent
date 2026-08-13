@@ -147,21 +147,21 @@ func (p *Projector) extractSummary(before []Line) string {
 // the boundary, or (no boundary) the last user_message overall.
 func (p *Projector) findCurrentIntent(after, before []Line, turnID string) string {
 	// Prefer the user message matching turnID; fall back to the last user_message.
-	for i := len(after) - 1; i >= 0; i-- {
+	for i := len(after) - 1; i >= 0; i-- { //nolint:modernize // conflicts with gocritic rangeValCopy
 		v := &after[i]
 		if v.Type == TypeUserMessage && (turnID == "" || v.TurnID == turnID) {
 			return extractText(v)
 		}
 	}
 
-	for i := len(after) - 1; i >= 0; i-- {
+	for i := len(after) - 1; i >= 0; i-- { //nolint:modernize // conflicts with gocritic rangeValCopy
 		v := &after[i]
 		if v.Type == TypeUserMessage {
 			return extractText(v)
 		}
 	}
 
-	for i := len(before) - 1; i >= 0; i-- {
+	for i := len(before) - 1; i >= 0; i-- { //nolint:modernize // conflicts with gocritic rangeValCopy
 		v := &before[i]
 		if v.Type == TypeUserMessage {
 			return extractText(v)

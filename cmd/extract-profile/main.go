@@ -126,6 +126,7 @@ func writeArtifact(out, name string, res *profile.ExtractResult, paritySession s
 	// system blocks
 	for i, b := range res.System {
 		blockPath := filepath.Join(out, "system", fmt.Sprintf("block-%d.txt", i))
+
 		err := os.WriteFile(blockPath, []byte(b.Text), filePermDefault)
 		if err != nil {
 			return fmt.Errorf("call: %w", err)
