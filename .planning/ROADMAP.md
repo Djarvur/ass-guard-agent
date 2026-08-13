@@ -19,6 +19,7 @@ The six deltas (mimicry, multi-tier scheduling, configurable backends, learning 
 | 4 | Unified Engine + Hook-DAG + OpenSpec + Learning | A developer can run an unmodified OpenSpec scenario end-to-end through ass-guard with zero manual "continue" taps, while the forgotten routine (tests, lint, review, memory, improvement proposals) runs automatically after each stage | ENG-01, ENG-02, ENG-03, ENG-04, ENG-05, HOOK-01, HOOK-02, HOOK-03, HOOK-04, HOOK-05, LRN-01, LRN-02, LRN-03, LRN-04, OPEN-01, OPEN-02, OPEN-03, TOOL-04, TOOL-05 | 5 |
 | 5 | Ecosystem Compatibility | A Claude Code user can drop their existing `.claude/` setup (MCP servers, skills, slash-commands, plugins) into ass-guard and have it work unchanged, alongside ass-guard's own additions | ECOS-01, ECOS-02, ECOS-03, ECOS-04, ECOS-05 | 4 |
 | 6 | Distribution + Polish | 2/2 | Complete   | 2026-08-13 |
+| 7 | Multi-Provider Config & Credentials | An operator declares multiple providers (base_url + protocol shape + credential) and multiple models per provider; ass-guard resolves a scheduler tier to a fully-credentialed provider+model instance at request time, reading credentials from config so editor-spawned processes (no env vars) work | PCFG-01.. (new, assigned in discuss) + completes PROV-01 | 4 |
 
 ## Phase Details
 
@@ -62,6 +63,7 @@ Plans:
 3. A user can run `ass-guard profile check zcode` and the drift detector reports whether the target agent's observed requests still match the captured profile (PROF-04 — north-star killer N1 engineered out from day one)
 4. The behavioral mimicry A/B parity test passes: a fixed prompt suite run through both ass-guard-with-zcode-profile and live zcode produces statistically indistinguishable tool-call sequences, with the byte-identical bar explicitly documented as out of scope (MIMC-03, MIMC-04 — the gate)
 5. A developer can inspect the audit log and see the verbatim shaped outgoing request for every turn — the mimicry evidence source is recorded from day one (LOG-01; foundation that Phase 2 completes)
+
 Plans:
 **Wave 1**
 
@@ -97,6 +99,7 @@ Plans:
 
 **Plans:** 7/7 plans complete
 Plans:
+
 - [x] 02-01-PLAN.md — Tracer: ACP v1 stdio server (initialize → session/new → session/prompt → streamed session/update) with hand-rolled framing (ACP-01/02/04/05)
 - [x] 02-02-PLAN.md — Session Core: transcript (one artifact) + projector (lean window) + turn loop (SESS-01/04/05/06, LOG-02/03)
 - [x] 02-03-PLAN.md — Mutability declaration interface (per-tool field + SESS-03 formula) + runtime tool restriction (SESS-02/03, PARA-01)
@@ -180,6 +183,22 @@ Phases likely needing deeper research during `/gsd:plan-phase`:
 - **Phase 3:** Fallback-chain semantics under correlated failure (N5) and time-window timezone handling (N6) need explicit design. LiteLLM's router is a design template worth studying (NOT a dependency — it's a Python proxy).
 - **Phase 5:** Per-interface threat model (N15) is a PROJECT.md decision: ACP ungated vs Telegram-gated allowlist for mutating MCP tools. (Telegram itself is v2, but the MCP threat-model decision lands here since MCP is v1.)
 - **Phases 2, 4, 6:** Standard patterns; skip dedicated research phase.
+
+### Phase 7: Multi-Provider Config & Credentials
+
+**Goal:** An operator can declare multiple model providers in a single config — each with its base URL, protocol shape (anthropic/openai), and credential — and multiple models per provider with capability/pricing metadata. ass-guard resolves a scheduler tier to a fully-credentialed provider+model instance at request time. Credentials read from config so editor-spawned processes (Zed → `ass-guard acp serve`) work with zero env vars, while an explicit env var (or CLI flag) still overrides for CI/operators. This completes the multi-provider promise of PROV-01 and connects SCHED tier-resolution to real provider instances (today only one provider/model is wired and the key is env-only).
+**Mode:** mvp
+**Requirements:** completes PROV-01 (configurable base URL per provider); new PCFG-01.. (provider/model/credential config schema + loader, credential precedence + redaction, scheduler→provider credentialed-instance wiring) — REQ-IDs finalized in discuss
+**Depends on:** Phase 3 (scheduler tier→model resolution + scheduling.yaml schema), Phase 6 (`.ass-guard/` config dir + go:embed first-run seed + redactor)
+**Success Criteria:**
+
+1. An operator declares ≥2 providers (e.g. Z.ai anthropic-shape + an OpenAI-shape provider) each with `base_url` + `shape` + `api_key` in `.ass-guard/` config; ass-guard reads credentials from the file (no env var required), so a Zed-spawned `ass-guard acp serve` makes a real model turn with zero environment. (PCFG — config + credentials)
+2. An operator declares ≥2 models per provider; a scheduler tier→model table entry resolves to a (provider, model) pair and ass-guard constructs the correct provider instance — right base_url + right key + right shape — for the resolved pair. (PROV-01 + scheduler→provider wiring)
+3. Credential precedence is explicit and tested: config-file credential is the fallback when the env var is unset; an explicit env var (or `--api-key` flag) overrides the config value; secrets never reach logs (redactor already covers `api_key`/`sk-`/`Bearer`; config file is gitignored and ass-guard warns if looser than 0600). (security model)
+4. Existing single-provider behavior keeps working unchanged: the embedded default seeds the current Z.ai GLM-5.2 provider, and an operator who changes nothing still gets today's behavior (`$ZAI_API_KEY` still works). (zero-config / backward compat)
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 7 to break down — after /gsd-discuss-phase 7)
 
 ---
 
