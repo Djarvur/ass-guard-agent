@@ -1,7 +1,3 @@
-// Package drift implements the PROF-04 drift detector core. Given a coverage
-// manifest and a freshly-captured request (as a generic map), it reports the
-// TIER-1/2 fields that drifted. TIER-3 fields (timestamps, token counts, ids)
-// are audit-only and never flagged (D-06).
 package drift
 
 import (

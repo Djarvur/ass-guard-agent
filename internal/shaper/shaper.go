@@ -1,13 +1,3 @@
-// Package shaper implements the Profile Shaper — the mimicry chokepoint
-// (MIMC-01). It populates anthropic-sdk-go native request types from a loaded
-// profile and emits per-request identity headers via option.WithHeader (the
-// D-09 escape hatch).
-//
-// The Shaper is profile-agnostic (PROF-02): the same code path shapes any
-// profile. There are no profile-name branches, no hardcoded header names, and
-// no hardcoded tool names — everything is driven by the Profile struct handed
-// to Shape. The D-11 lint (grep for any profile's literal name in this file,
-// excluding tests) is belt-and-suspenders.
 package shaper
 
 import (

@@ -1,11 +1,3 @@
-// Package provider defines the common Provider interface and the protocol-shape
-// adapters that talk to model providers and parse tool-call responses into the
-// zcode-normalized []ToolCall{Name, Input} shape.
-//
-// Two adapters ship in Phase 1: Anthropic-shape (primary, the zcode path via
-// Z.ai/GLM) and OpenAI-shape (secondary, Plan 01-04). Both implement the same
-// Provider interface (PROV-02) so the loop and parity harness are
-// protocol-agnostic.
 package provider
 
 import (

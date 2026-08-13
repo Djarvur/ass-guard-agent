@@ -1,4 +1,4 @@
-package scheduler
+package scheduler //nolint:testpackage // internal package test
 
 import (
 	"sync"

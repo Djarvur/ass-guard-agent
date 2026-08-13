@@ -1,17 +1,3 @@
-// Package event implements the typed-channel event bus (D-04/D-05) — the spine
-// of the streaming path AND the async audit/transcript writer AND future
-// subagent results.
-//
-// Producers Publish; consumers Subscribe to a kind and receive a typed receive
-// channel. Each channel is buffered to a per-kind bound (D-05 — bounded buffer
-// + block): a slow consumer fills its buffer, then the producer blocks on send,
-// which naturally slows the provider SSE read (Go's io.Reader blocks until
-// consumed). Backpressure propagates end-to-end. A stuck client stalls the turn
-// rather than dropping user-visible tokens or growing memory unbounded.
-//
-// The Phase-1 seed (goroutine-per-subscriber handler API) is REPLACED by this
-// channel API in Phase 2: consumers select on the channels they care about
-// (idiomatic Go, type-safe, zero-dep).
 package event
 
 import (

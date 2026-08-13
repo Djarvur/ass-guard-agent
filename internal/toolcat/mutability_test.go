@@ -1,4 +1,4 @@
-package toolcat
+package toolcat //nolint:testpackage // internal package test
 
 import (
 	"testing"

@@ -1,4 +1,4 @@
-package redact
+package redact //nolint:testpackage // internal package test
 
 import (
 	"errors"

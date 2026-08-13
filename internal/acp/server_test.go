@@ -1,4 +1,4 @@
-package acp
+package acp //nolint:testpackage // internal package test
 
 import (
 	"bufio"

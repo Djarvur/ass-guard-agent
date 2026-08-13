@@ -1,6 +1,3 @@
-// Package audit implements the LOG-01 audit-log subscriber. It subscribes to
-// RequestShaped on the event bus and writes each event's REDACTED verbatim
-// request to a sink (file or stderr — NEVER stdout, per transport discipline).
 package audit
 
 import (

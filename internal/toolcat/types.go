@@ -1,10 +1,3 @@
-// Package toolcat implements the built-in tool catalog (TOOL-01), the
-// schema-adapter layer (TOOL-02 — the profile-declared schema is authoritative
-// at runtime), and the catalog-consistency CI check (TOOL-03).
-//
-// "What the model sees" (profile-declared schema) and "what the tool does"
-// (catalog execution behavior) are cleanly separable. In Phase 1 tool execution
-// is stubbed across the board (D-15); only schemas + the dispatch skeleton ship.
 package toolcat
 
 import (

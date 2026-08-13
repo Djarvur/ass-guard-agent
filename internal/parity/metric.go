@@ -1,9 +1,3 @@
-// Package parity implements the behavioral mimicry A/B parity test — the
-// project's reason to exist (MIMC-03/MIMC-04, D-01..D-05).
-//
-// The two-layer metric (D-02): (1) tool-name SEQUENCE equality, (2) per-tool
-// argument STRUCTURAL equality with explicit normalization. Byte-diff is out of
-// scope (MIMC-04 — structural indistinguishability is the bar, not byte-identity).
 package parity
 
 import (

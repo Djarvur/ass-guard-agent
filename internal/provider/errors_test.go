@@ -1,4 +1,4 @@
-package provider
+package provider //nolint:testpackage // internal package test
 
 import (
 	"context"

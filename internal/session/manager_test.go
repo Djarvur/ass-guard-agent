@@ -1,4 +1,4 @@
-package session
+package session //nolint:testpackage // internal package test
 
 import (
 	"encoding/json"
