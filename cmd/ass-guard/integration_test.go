@@ -24,11 +24,15 @@ type mockStreamProvider struct {
 	finish string
 }
 
-func (m *mockStreamProvider) Send(ctx context.Context, _ *profile.Profile, _ []provider.Message) (provider.Response, error) {
+func (m *mockStreamProvider) Send(
+	ctx context.Context, _ *profile.Profile, _ []provider.Message,
+) (provider.Response, error) {
 	return provider.Response{FinishReason: m.finish}, nil
 }
 
-func (m *mockStreamProvider) Stream(ctx context.Context, _ *profile.Profile, _ []provider.Message) (<-chan provider.StreamChunk, error) {
+func (m *mockStreamProvider) Stream(
+	ctx context.Context, _ *profile.Profile, _ []provider.Message,
+) (<-chan provider.StreamChunk, error) {
 	ch := make(chan provider.StreamChunk, 8)
 	go func() {
 		defer close(ch)

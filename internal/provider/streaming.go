@@ -144,7 +144,7 @@ func (p *AnthropicProvider) drainSSE(ctx context.Context, body io.Reader, ch cha
 
 		line, err := br.ReadString('\n')
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				flushToolUse(ctx, &tuName, &tuID, &tuInput, &inToolUse, ch)
 				sendDone(ch, finishReason, finalizeAssembled(&assembled))
 
@@ -171,6 +171,7 @@ func (p *AnthropicProvider) drainSSE(ctx context.Context, body io.Reader, ch cha
 		}
 
 		var ev map[string]any
+
 		err = json.Unmarshal([]byte(payload), &ev)
 		if err != nil {
 			continue
@@ -276,7 +277,7 @@ func tuInputBytes(b *strings.Builder) json.RawMessage {
 // captures the stop reason). Tool-use events are handled by the lifecycle state
 // machine in drainSSE (content_block_start → input_json_delta → content_block_stop);
 // this function handles only the simple single-event types.
-func parseAnthropicSSEEvent(ev map[string]any) (*StreamChunk, string) { //nolint:gocritic // unnamedResult conflicts with nonamedreturns
+func parseAnthropicSSEEvent(ev map[string]any) (*StreamChunk, string) { //nolint:gocritic // conflicts w/ nonamedreturns
 	typ, _ := ev[keyType].(string)
 	switch typ {
 	case "message_start":
@@ -342,6 +343,7 @@ func finalizeAssembled(b *bytes.Buffer) json.RawMessage {
 // It re-decodes/marshals so the result is valid JSON.
 func injectStreamTrue(body []byte) []byte {
 	var m map[string]any
+
 	err := json.Unmarshal(body, &m)
 	if err != nil {
 		return body

@@ -38,6 +38,7 @@ func (l *Loader) Load(name string) (Profile, error) {
 	}
 
 	var p Profile
+
 	err = loadYAML(filepath.Join(dir, "profile.yaml"), &p)
 	if err != nil {
 		return Profile{}, fmt.Errorf("profile %q profile.yaml: %w", name, err)

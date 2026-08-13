@@ -18,7 +18,7 @@ type ContentBlock struct {
 // code 0 ⇒ success (stdout returned as the detail); non-zero ⇒ an error whose
 // message carries the exit code + stderr (the step's on-failure applies with the
 // stderr as the failure detail — the Claudecourse exit-code contract, D-08).
-func runCommandStep(ctx context.Context, e *Executor, step *Step) (detail string, err error) {
+func runCommandStep(ctx context.Context, e *Executor, step *Step) (string, error) {
 	if e.Commands == nil {
 		return "", fmt.Errorf("run-command %q: no command runner configured", step.Command)
 	}
@@ -41,7 +41,7 @@ func runCommandStep(ctx context.Context, e *Executor, step *Step) (detail string
 // Session Core (HOOK-05 — the hook orchestrates turns; it does not bypass
 // them). The turn's stop reason is recorded in the detail; stop=end_turn is NOT
 // an error (the turn completed normally — only a real err is).
-func sendPromptStep(ctx context.Context, e *Executor, step *Step) (detail string, err error) {
+func sendPromptStep(ctx context.Context, e *Executor, step *Step) (string, error) {
 	if e.Turns == nil {
 		return "", fmt.Errorf("send-prompt %q: no turn runner configured", step.Name)
 	}
@@ -49,7 +49,7 @@ func sendPromptStep(ctx context.Context, e *Executor, step *Step) (detail string
 	prompt := []ContentBlock{{Type: "text", Text: step.Prompt}}
 	stop, runErr := e.Turns.Run(ctx, prompt)
 
-	detail = "stop=" + stop
+	detail := "stop=" + stop
 	if runErr != nil {
 		return detail, fmt.Errorf("send-prompt %q: %w", step.Name, runErr)
 	}
@@ -60,13 +60,14 @@ func sendPromptStep(ctx context.Context, e *Executor, step *Step) (detail string
 // freshContextStep dispatches a fresh-context step: open a new context window
 // via the Phase-2 boundary semantics (HOOK-05). The next projection resets the
 // lean window.
-func freshContextStep(ctx context.Context, e *Executor, step *Step) (detail string, err error) {
+func freshContextStep(ctx context.Context, e *Executor, step *Step) (string, error) {
 	if e.Boundaries == nil {
 		return "", fmt.Errorf("fresh-context %q: no boundary opener configured", step.Name)
 	}
 
 	cause := "fresh-context:" + step.Name
-	err = e.Boundaries.OpenBoundary(ctx, cause)
+
+	err := e.Boundaries.OpenBoundary(ctx, cause)
 	if err != nil {
 		return "", fmt.Errorf("fresh-context %q: %w", step.Name, err)
 	}
@@ -77,7 +78,7 @@ func freshContextStep(ctx context.Context, e *Executor, step *Step) (detail stri
 // waitStep sleeps the parsed Duration (or until ctx cancels). A bad duration is
 // a no-op sleep (the executor validates the shape at Load time; a stray bad
 // value degrades to "no wait" rather than a panic).
-func waitStep(ctx context.Context, step *Step) (detail string, err error) {
+func waitStep(ctx context.Context, step *Step) (string, error) {
 	d := 0 * time.Second
 
 	if step.Duration != "" {

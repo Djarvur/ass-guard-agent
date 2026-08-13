@@ -63,6 +63,7 @@ func containsDecodedNewline(v any) bool {
 	}
 
 	var node any
+
 	err = json.Unmarshal(raw, &node)
 	if err != nil {
 		return false
@@ -110,6 +111,7 @@ func readFrame(r *bufio.Reader) (*Message, error) {
 	}
 
 	var msg Message
+
 	err = json.Unmarshal(line, &msg)
 	if err != nil {
 		return nil, fmt.Errorf("unmarshal frame: %w (line=%q)", err, string(line))

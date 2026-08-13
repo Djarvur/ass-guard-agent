@@ -78,6 +78,7 @@ func (e *ConfigError) Error() string {
 // compiled once in patterntable.go's FromConfig, which is the only consumer).
 func LoadConfig(path string) (*OpenSpecConfig, error) {
 	var cfg OpenSpecConfig
+
 	_, err := toml.DecodeFile(path, &cfg)
 	if err != nil {
 		return nil, fmt.Errorf("openspec: decode %q: %w", path, err)
@@ -94,6 +95,7 @@ func LoadConfig(path string) (*OpenSpecConfig, error) {
 // DefaultConfig returns the embedded zero-config floor (OPEN-02).
 func DefaultConfig() (*OpenSpecConfig, error) {
 	var cfg OpenSpecConfig
+
 	_, err := toml.Decode(string(embeddedSeeded), &cfg)
 	if err != nil {
 		return nil, fmt.Errorf("openspec: decode embedded seeded.toml: %w", err)

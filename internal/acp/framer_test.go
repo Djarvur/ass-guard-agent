@@ -121,6 +121,7 @@ func TestReadFrameMalformedJSON(t *testing.T) {
 	in := []byte("{\"jsonrpc\":\"2.0\",TRUNCATED\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}\n")
 
 	r := bufio.NewReader(bytes.NewReader(in))
+
 	_, err := readFrame(r)
 	if err == nil {
 		t.Fatal("readFrame returned nil error for malformed JSON; want parse error")

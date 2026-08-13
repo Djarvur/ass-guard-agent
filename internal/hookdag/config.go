@@ -87,6 +87,7 @@ var embeddedSeeded []byte
 // violation is found; the config is NOT executed.
 func Load(paths ...string) ([]Hook, error) {
 	merged := make(map[string]any)
+
 	err := yaml.Unmarshal(embeddedSeeded, &merged)
 	if err != nil {
 		return nil, fmt.Errorf("hookdag: decode embedded seeded default: %w", err)
@@ -99,6 +100,7 @@ func Load(paths ...string) ([]Hook, error) {
 		}
 
 		overlay := make(map[string]any)
+
 		err = yaml.Unmarshal(raw, &overlay)
 		if err != nil {
 			return nil, fmt.Errorf("hookdag: decode config %q: %w", p, err)
@@ -113,6 +115,7 @@ func Load(paths ...string) ([]Hook, error) {
 	}
 
 	var cfg configFile
+
 	err = yaml.Unmarshal(out, &cfg)
 	if err != nil {
 		return nil, fmt.Errorf("hookdag: decode merged config: %w", err)

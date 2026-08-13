@@ -75,6 +75,7 @@ func TestConformance_BothAdapters(t *testing.T) {
 			}
 
 			var in map[string]any
+
 			err = json.Unmarshal(resp.ToolCalls[0].Input, &in)
 			if err != nil {
 				t.Fatalf("Input not valid JSON: %v", err)
@@ -97,6 +98,7 @@ func TestConformance_BothAdapters(t *testing.T) {
 			}
 
 			var msg map[string]any
+
 			err = json.Unmarshal(raw, &msg)
 			if err != nil {
 				t.Fatalf("ToolResultMessage output not valid JSON: %v", err)

@@ -37,6 +37,7 @@ func TestDispatchSubagent_AppendsDispatchLine(t *testing.T) {
 		},
 		{FinishReason: stopEndTurn},
 	})
+
 	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "dispatch"}})
 	if err != nil {
 		t.Fatalf("Prompt: %v", err)
@@ -113,6 +114,7 @@ func TestSubagent_FinalResultToParent(t *testing.T) {
 		},
 		{FinishReason: stopEndTurn},
 	})
+
 	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "go"}})
 	if err != nil {
 		t.Fatalf("Prompt: %v", err)
@@ -149,6 +151,7 @@ func TestSubagent_RestrictedExecutor(t *testing.T) {
 	fake := &fakeToolExec{}
 
 	s.toolExec = fake
+
 	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "go"}})
 	if err != nil {
 		t.Fatalf("Prompt: %v", err)

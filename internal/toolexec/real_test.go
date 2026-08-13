@@ -113,6 +113,7 @@ func TestRealExecutor_BackendErrorPropagates(t *testing.T) {
 	be := &fakeBackend{name: backendFake, searchErr: errors.New("backend down")}
 
 	re := &toolexec.RealExecutor{Backends: map[string]toolexec.Backend{"WebSearch": be}}
+
 	_, err := re.Execute(context.Background(), "WebSearch", json.RawMessage(`{"query":"x"}`))
 	if err == nil {
 		t.Error("err = nil; want backend down")
@@ -125,6 +126,7 @@ func TestRealExecutor_NilCatalogUnknownErrors(t *testing.T) {
 	t.Parallel()
 
 	re := &toolexec.RealExecutor{}
+
 	_, err := re.Execute(context.Background(), "Anything", json.RawMessage(`{}`))
 	if err == nil {
 		t.Error("err = nil; want structured no-catalog error")

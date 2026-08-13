@@ -111,6 +111,7 @@ func LoadReplaySession(jsonPath string) ([]CapturedTurn, error) {
 	}
 
 	var turns []CapturedTurn
+
 	err = json.Unmarshal(raw, &turns)
 	if err != nil {
 		return nil, fmt.Errorf("parse replay session: %w", err)

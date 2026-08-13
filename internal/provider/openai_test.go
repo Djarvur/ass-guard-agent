@@ -91,6 +91,7 @@ func TestOpenAIProvider_SendParsesToolCalls(t *testing.T) {
 	}
 
 	var in map[string]any
+
 	err = json.Unmarshal(resp.ToolCalls[0].Input, &in)
 	if err != nil {
 		t.Fatalf("Input not valid JSON: %v", err)
@@ -118,6 +119,7 @@ func TestOpenAIProvider_ToolResultMessageShape(t *testing.T) {
 	}
 
 	var msg map[string]any
+
 	err = json.Unmarshal(raw, &msg)
 	if err != nil {
 		t.Fatal(err)
@@ -139,6 +141,7 @@ func TestOpenAIProvider_NoAPIKeyErrors(t *testing.T) {
 	p := provider.NewOpenAIProvider(provider.WithOpenAIBaseURL("http://must-not-be-called.invalid"))
 
 	minProf := loadProfile(t, "minimal")
+
 	_, err := p.Send(context.Background(), &minProf, []shaper.Message{{Role: roleUser, Content: "x"}})
 	if err == nil {
 		t.Fatal("nil error with no API key; want non-nil")

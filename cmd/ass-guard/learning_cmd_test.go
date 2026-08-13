@@ -52,6 +52,7 @@ func TestLearningList_Populated(t *testing.T) {
 	_ = store.RecordCandidate("gamma situation", "z", "t1")
 
 	var stdout bytes.Buffer
+
 	err = runLearningList(&stdout, &bytes.Buffer{}, path)
 	if err != nil {
 		t.Fatalf("runLearningList: %v", err)
@@ -84,6 +85,7 @@ func TestLearningRevert_Existing(t *testing.T) {
 	_ = store.RecordCandidate("beta", "y", "t1")
 
 	var stdout, stderr bytes.Buffer
+
 	err = runLearningRevert(&stdout, &stderr, path, learning.Slug("alpha"))
 	if err != nil {
 		t.Fatalf("runLearningRevert: %v", err)
@@ -112,6 +114,7 @@ func TestLearningRevert_Missing(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
+
 	err = runLearningRevert(&stdout, &stderr, path, "does-not-exist")
 	if err != nil {
 		t.Fatalf("runLearningRevert on missing id: %v (want nil — no-op)", err)

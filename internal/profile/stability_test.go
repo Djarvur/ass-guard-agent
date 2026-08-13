@@ -19,6 +19,7 @@ func rolloutDir(t *testing.T) string {
 	}
 
 	dir := filepath.Join(home, ".zcode", "cli", "rollout")
+
 	_, err = os.Stat(dir)
 	if err != nil {
 		return ""

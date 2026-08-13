@@ -36,7 +36,9 @@ func NewResolver(cfg *Config) *Resolver {
 // regardless of capReq so the D-02 precedence is the single focus (RESEARCH
 // §4.1, §7.2). Every returned Target carries its CapabilityProfile (D-09) and
 // Pricing (D-08).
-func (r *Resolver) Resolve(tier, project string, now time.Time, capReq CapabilityReq) (Target, []Target, error) { //nolint:gocritic // unnamedResult conflicts with nonamedreturns
+//
+//nolint:gocritic // conflicts w/ nonamedreturns
+func (r *Resolver) Resolve(tier, project string, now time.Time, capReq CapabilityReq) (Target, []Target, error) {
 	binding, ok := r.resolveBinding(tier, project, now)
 	if !ok {
 		return Target{}, nil, fmt.Errorf("scheduler: tier %q is not configured (no window/project/global binding)", tier)

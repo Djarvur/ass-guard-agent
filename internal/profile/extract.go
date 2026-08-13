@@ -290,7 +290,7 @@ func sessionIDFromName(name string) string {
 }
 
 // countFullRequests returns (full-request line count, first line's tool count).
-func countFullRequests(path string) (int, int) { //nolint:gocritic // unnamedResult conflicts with nonamedreturns
+func countFullRequests(path string) (int, int) { //nolint:gocritic // conflicts w/ nonamedreturns
 	f, err := os.Open(path)
 	if err != nil {
 		return 0, 0

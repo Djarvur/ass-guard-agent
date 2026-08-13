@@ -71,6 +71,7 @@ action = "continue"
 [commands.foo]
 mutability = "read-only"
 `
+
 	err := os.WriteFile(path, []byte(body), 0o644)
 	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -99,6 +100,7 @@ id = "badpat"
 regex = "[unterminated"
 action = "continue"
 `
+
 	err := os.WriteFile(path, []byte(body), 0o644)
 	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -126,6 +128,7 @@ id = "x"
 regex = "ok"
 action = "explode"
 `
+
 	err := os.WriteFile(path, []byte(body), 0o644)
 	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -152,6 +155,7 @@ func TestLoadConfig_InvalidMutability(t *testing.T) {
 [commands.weird]
 mutability = "maybe"
 `
+
 	err := os.WriteFile(path, []byte(body), 0o644)
 	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -184,6 +188,7 @@ action = "nope"
 [commands.c]
 mutability = "also-nope"
 `
+
 	err := os.WriteFile(path, []byte(body), 0o644)
 	if err != nil {
 		t.Fatalf("WriteFile: %v", err)

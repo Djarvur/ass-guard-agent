@@ -94,6 +94,7 @@ type sessionPromptResult struct {
 // the seam (stub in the tracer; real Session.Prompt in Plan 02-05).
 func (s *Server) handleSessionPrompt(ctx context.Context, params json.RawMessage) (any, error) {
 	var p sessionPromptParams
+
 	err := json.Unmarshal(params, &p)
 	if err != nil {
 		return nil, fmt.Errorf("session/prompt params: %w", err)
@@ -211,6 +212,7 @@ func (s *Server) handleSessionSetMode(ctx context.Context, params json.RawMessag
 // source (mirrors internal/shaper uuidV4).
 func newSessionID() string {
 	var b [16]byte
+
 	_, err := rand.Read(b[:])
 	if err != nil {
 		panic("crypto/rand failed: " + err.Error())

@@ -33,7 +33,9 @@ func (f *fakeProvider) ToolResultMessage(toolCallID string, result json.RawMessa
 // Stream satisfies the Phase-2-expanded Provider interface. The Phase-1 test
 // harness loop only exercises Send; Stream is a stub that returns a non-streamed
 // error so it is never accidentally used here.
-func (f *fakeProvider) Stream(ctx context.Context, _ *profile.Profile, _ []provider.Message) (<-chan provider.StreamChunk, error) {
+func (f *fakeProvider) Stream(
+	ctx context.Context, _ *profile.Profile, _ []provider.Message,
+) (<-chan provider.StreamChunk, error) {
 	return nil, errors.New("fakeProvider: Stream not used by the Phase-1 test-harness loop")
 }
 
@@ -57,6 +59,7 @@ func TestRun_PropagatesProviderError(t *testing.T) {
 	t.Parallel()
 
 	p := &fakeProvider{err: errors.New("boom")}
+
 	_, err := loop.Run(context.Background(), &profile.Profile{}, p, "x")
 	if err == nil {
 		t.Fatal("Run returned nil error; want the provider error propagated")

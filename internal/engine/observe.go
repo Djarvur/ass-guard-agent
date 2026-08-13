@@ -278,7 +278,7 @@ func (e *Engine) applyDispatcher(ctx context.Context, dec *Decision) Decision {
 	}
 
 	return *dec
-}// emit publishes the EngineDecision event + writes the engine_decision
+} // emit publishes the EngineDecision event + writes the engine_decision
 // transcript line (for EVERY decision, including Nothing — D-20 audit log).
 // Failures in the bus/manager are logged investigate-and-fix-ready but never
 // block the loop (the engine is an observer; its telemetry must not break the

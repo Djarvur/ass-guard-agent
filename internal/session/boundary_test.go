@@ -36,6 +36,7 @@ func TestMaybeAppendBoundary_OnMutatingTool(t *testing.T) {
 		},
 		{FinishReason: stopEndTurn},
 	})
+
 	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "run ls"}})
 	if err != nil {
 		t.Fatalf("Prompt: %v", err)
@@ -66,6 +67,7 @@ func TestMaybeAppendBoundary_ReadOnlyNoBoundary(t *testing.T) {
 		},
 		{FinishReason: stopEndTurn},
 	})
+
 	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "read"}})
 	if err != nil {
 		t.Fatalf("Prompt: %v", err)

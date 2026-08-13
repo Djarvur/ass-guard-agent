@@ -135,6 +135,7 @@ func TestLoadLayering(t *testing.T) {
 	dir := t.TempDir()
 
 	path := filepath.Join(dir, "overlay.yaml")
+
 	err := os.WriteFile(path, []byte(overlay), 0o644)
 	if err != nil {
 		t.Fatalf("WriteFile: %v", err)

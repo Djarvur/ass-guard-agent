@@ -82,6 +82,7 @@ func (e *Executor) Execute(ctx context.Context, hook *Hook, prov Provenance) Res
 
 	for i := range hook.Steps {
 		step := &hook.Steps[i]
+
 		err := ctx.Err()
 		if err != nil {
 			res.Status = StatusError

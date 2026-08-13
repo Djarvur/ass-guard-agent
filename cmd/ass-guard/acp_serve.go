@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -224,6 +225,7 @@ func (r *sessionTurnRunner) setupEngine() error {
 
 	// Learning store (LRN-01..04) — versioned .ass-guard/learned.yaml.
 	learnedPath := filepath.Join(r.workDirOrDefault(), ".ass-guard", "learned.yaml")
+
 	learned, lerr := learning.Open(learnedPath)
 	if lerr == nil {
 		r.learned = learned
@@ -442,9 +444,9 @@ func (a *engineTurnRunnerAdapter) LastTurnOutput() engine.TurnOutput {
 
 	var lastAssistant *session.Line
 
-	for i := len(lines) - 1; i >= 0; i-- {
-		if lines[i].Type == session.TypeAssistantMessage {
-			lastAssistant = &lines[i]
+	for _, v := range slices.Backward(lines) {
+		if v.Type == session.TypeAssistantMessage {
+			lastAssistant = &v
 
 			break
 		}
@@ -574,7 +576,8 @@ func (h *hookSessionBoundaryOpener) OpenBoundary(_ context.Context, cause string
 // capture stdout/stderr, return the exit code (D-08 exit-code contract).
 type realCommandRunner struct{}
 
-func (realCommandRunner) Run(ctx context.Context, command string, args []string) (string, string, int, error) { //nolint:gocritic // unnamedResult conflicts with nonamedreturns
+//nolint:gocritic // conflicts w/ nonamedreturns
+func (realCommandRunner) Run(ctx context.Context, command string, args []string) (string, string, int, error) {
 	cmd := exec.CommandContext(ctx, command, args...)
 
 	var stdout, stderr bytes.Buffer

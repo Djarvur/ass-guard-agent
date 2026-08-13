@@ -202,6 +202,7 @@ func (s *Store) load() []Entry {
 	}
 
 	var env fileEnvelope
+
 	err = yaml.Unmarshal(raw, &env)
 	if err != nil {
 		return nil
@@ -221,6 +222,7 @@ func (s *Store) save(entries []Entry) error {
 	}
 
 	tmp := s.path + ".tmp"
+
 	err = os.WriteFile(tmp, raw, 0o600)
 	if err != nil {
 		return fmt.Errorf("learning: write tmp %q: %w", tmp, err)

@@ -33,7 +33,8 @@ type commandResult struct {
 	err    error
 }
 
-func (f *fakeCommands) Run(ctx context.Context, command string, args []string) (string, string, int, error) { //nolint:gocritic // unnamedResult conflicts with nonamedreturns
+//nolint:gocritic // conflicts w/ nonamedreturns
+func (f *fakeCommands) Run(ctx context.Context, command string, args []string) (string, string, int, error) {
 	f.mu.Lock()
 	f.calls = append(f.calls, recordedCall{command: command, args: append([]string(nil), args...)})
 	idx := len(f.calls) - 1

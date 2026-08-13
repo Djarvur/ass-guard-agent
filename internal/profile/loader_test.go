@@ -82,6 +82,7 @@ func TestLoader_MissingProfile(t *testing.T) {
 	t.Parallel()
 
 	l := profile.NewLoader(filepath.Join(".", "testdata"))
+
 	_, err := l.Load("does-not-exist")
 	if err == nil {
 		t.Fatal("Load(nonexistent) returned nil error, want non-nil")

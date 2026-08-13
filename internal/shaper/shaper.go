@@ -45,7 +45,9 @@ func New() *Shaper { return &Shaper{} }
 // returns one option.WithHeader per profile.Headers entry (the D-09 escape
 // hatch for the identity headers the SDK types do not model). Every populated
 // field is read from the profile in a loop — no profile-specific literals.
-func (s *Shaper) Shape(p *profile.Profile, messages []Message) (anthropic.MessageNewParams, []option.RequestOption, error) {
+func (s *Shaper) Shape(
+	p *profile.Profile, messages []Message,
+) (anthropic.MessageNewParams, []option.RequestOption, error) {
 	systemBlocks := make([]anthropic.TextBlockParam, 0, len(p.System))
 	for _, b := range p.System {
 		systemBlocks = append(systemBlocks, anthropic.TextBlockParam{Text: b.Text})
@@ -280,6 +282,7 @@ func toToolChoice(raw json.RawMessage) anthropic.ToolChoiceUnionParam {
 // working entropy source.
 func uuidV4() string {
 	var b [16]byte
+
 	_, err := rand.Read(b[:])
 	if err != nil {
 		panic("crypto/rand failed: " + err.Error())

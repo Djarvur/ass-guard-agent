@@ -65,6 +65,7 @@ func TestAppendEngineDecision(t *testing.T) {
 	t.Parallel()
 
 	m := newTestManager(t, "sess-1")
+
 	err := m.AppendEngineDecision("turn_7", "continue", "text:impl-complete", "text-pattern matched")
 	if err != nil {
 		t.Fatalf("AppendEngineDecision: %v", err)
@@ -108,6 +109,7 @@ func TestAppendEngineDecisionNothing(t *testing.T) {
 	t.Parallel()
 
 	m := newTestManager(t, "sess-1")
+
 	err := m.AppendEngineDecision("turn_1", "nothing", "unmatched",
 		"no pattern or handoff tool matched")
 	if err != nil {

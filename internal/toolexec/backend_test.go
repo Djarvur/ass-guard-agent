@@ -55,6 +55,7 @@ func TestHTTPBackend_Search(t *testing.T) {
 	}
 
 	var parsed map[string]any
+
 	err = json.Unmarshal(out, &parsed)
 	if err != nil {
 		t.Fatalf("body not JSON: %v", err)
@@ -179,6 +180,7 @@ func TestFirecrawlBackend_NotConfigured(t *testing.T) {
 	t.Parallel()
 
 	f := toolexec.FirecrawlBackend{}
+
 	_, err := f.Search(context.Background(), "x")
 	if err == nil {
 		t.Error("Search with empty API key = nil; want not-configured error")

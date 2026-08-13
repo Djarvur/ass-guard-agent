@@ -2,6 +2,7 @@ package session
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
@@ -147,22 +148,22 @@ func (p *Projector) extractSummary(before []Line) string {
 // the boundary, or (no boundary) the last user_message overall.
 func (p *Projector) findCurrentIntent(after, before []Line, turnID string) string {
 	// Prefer the user message matching turnID; fall back to the last user_message.
-	for i := len(after) - 1; i >= 0; i-- {
-		v := &after[i]
+	for _, v := range slices.Backward(after) {
+		v := &v
 		if v.Type == TypeUserMessage && (turnID == "" || v.TurnID == turnID) {
 			return extractText(v)
 		}
 	}
 
-	for i := len(after) - 1; i >= 0; i-- {
-		v := &after[i]
+	for _, v := range slices.Backward(after) {
+		v := &v
 		if v.Type == TypeUserMessage {
 			return extractText(v)
 		}
 	}
 
-	for i := len(before) - 1; i >= 0; i-- {
-		v := &before[i]
+	for _, v := range slices.Backward(before) {
+		v := &v
 		if v.Type == TypeUserMessage {
 			return extractText(v)
 		}

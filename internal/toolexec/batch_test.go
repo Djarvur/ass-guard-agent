@@ -192,6 +192,7 @@ func TestDispatchBatch_MutatingAlone(t *testing.T) {
 	})
 
 	calls := []provider.ToolCall{{Name: toolRead}, {Name: toolBash}, {Name: toolGrep}}
+
 	_, err := toolexec.DispatchBatch(context.Background(), exec, catalog, calls)
 	if err != nil {
 		t.Fatalf("DispatchBatch err = %v", err)

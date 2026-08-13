@@ -28,7 +28,9 @@ func (e *CapabilityError) Error() string {
 // This is the request-time half of SCHED-06 (D-09), pairing with the load-time
 // D-10 validation in Validate: together they make tier mismatch explicit at
 // both authoring time and request time.
-func applyCapabilityGate(primary *Target, fallback []Target, capReq CapabilityReq) (Target, []Target, error) { //nolint:gocritic // unnamedResult conflicts with nonamedreturns
+//
+//nolint:gocritic // conflicts w/ nonamedreturns
+func applyCapabilityGate(primary *Target, fallback []Target, capReq CapabilityReq) (Target, []Target, error) {
 	if capReq == (CapabilityReq{}) {
 		return *primary, fallback, nil
 	}

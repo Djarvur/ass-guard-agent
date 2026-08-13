@@ -28,7 +28,9 @@ type fakeProvider struct {
 	delay     time.Duration
 }
 
-func (f *fakeProvider) Send(ctx context.Context, prof *profile.Profile, msgs []provider.Message) (provider.Response, error) {
+func (f *fakeProvider) Send(
+	ctx context.Context, prof *profile.Profile, msgs []provider.Message,
+) (provider.Response, error) {
 	f.mu.Lock()
 	f.callN++
 	n := f.callN
@@ -236,6 +238,7 @@ func TestRequestShapedPublished(t *testing.T) {
 	ch := bus.Subscribe("RequestShaped", event.BufRequestShaped)
 
 	s, _, _ := newTestSession(t, bus, []provider.Response{{FinishReason: stopEndTurn}})
+
 	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "hi"}})
 	if err != nil {
 		t.Fatalf("Prompt: %v", err)
@@ -345,6 +348,7 @@ func TestStubToolExecution(t *testing.T) {
 		},
 		{FinishReason: stopEndTurn},
 	})
+
 	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "read x"}})
 	if err != nil {
 		t.Fatalf("Prompt: %v", err)

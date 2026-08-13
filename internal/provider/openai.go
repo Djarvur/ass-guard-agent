@@ -215,7 +215,9 @@ func (p *OpenAIProvider) ToolResultMessage(toolCallID string, result json.RawMes
 // GLM Anthropic endpoint). It returns a clear error so callers do not silently
 // fall back to a non-streaming shape. OpenAI-shape streaming lands in a later
 // phase if a non-Anthropic streaming provider becomes a target.
-func (p *OpenAIProvider) Stream(ctx context.Context, prof *profile.Profile, messages []Message) (<-chan StreamChunk, error) {
+func (p *OpenAIProvider) Stream(
+	ctx context.Context, prof *profile.Profile, messages []Message,
+) (<-chan StreamChunk, error) {
 	return nil, errOpenAIStreamNotImplemented
 }
 
