@@ -12,19 +12,25 @@ import (
 	_ "time/tzdata"
 )
 
+const mnd5 = 5
+const mnd20 = 20
+const mnd050 = 0.50
+const mnd60 = 60
+const mnd24 = 24
+
 // defaultBreaker holds the documented D-07 circuit-breaker defaults applied when
 // a loaded config has a zero-valued circuit_breaker block (RESEARCH §1.3). These
 // are the tunable parameters with documented defaults; operators override via
 // scheduling.yaml.
 var defaultBreaker = CircuitBreakerConfig{ //nolint:gochecknoglobals // process-wide default singleton
-	ConsecutiveFailures: 5,
-	ErrorRateWindow:     20,
-	ErrorRateThreshold:  0.50,
-	Cooldown:            60 * time.Second,
+	ConsecutiveFailures: mnd5,
+	ErrorRateWindow:     mnd20,
+	ErrorRateThreshold:  mnd050,
+	Cooldown:            mnd60 * time.Second,
 	HalfOpenProbes:      1,
 }
 
 // defaultCost holds the documented D-08 cost-ceiling defaults (RESEARCH §1.3).
 var defaultCost = CostCeilingConfig{ //nolint:gochecknoglobals // process-wide default singleton
-	Window: 24 * time.Hour,
+	Window: mnd24 * time.Hour,
 }

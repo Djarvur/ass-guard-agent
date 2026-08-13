@@ -13,6 +13,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const mnd3 = 3
+const filePermOwner = 0o600
+
 // ErrConflict signals a Confirm observed a different answer than the stored one
 // (LRN-03 / T-04-07): the entry flips to conflict + Lookup skips it. The
 // operator resolves via Revert + re-ask.
@@ -145,7 +148,7 @@ func (s *Store) Confirm(situation, answer, sourceTurnID string) (Entry, error) {
 		entries[i].Confidence++
 
 		entries[i].SourceTurns = appendUnique(entries[i].SourceTurns, sourceTurnID)
-		if entries[i].Confidence >= 3 {
+		if entries[i].Confidence >= mnd3 {
 			entries[i].Status = StatusActive
 		}
 
@@ -223,7 +226,7 @@ func (s *Store) save(entries []Entry) error {
 
 	tmp := s.path + ".tmp"
 
-	err = os.WriteFile(tmp, raw, 0o600)
+	err = os.WriteFile(tmp, raw, filePermOwner)
 	if err != nil {
 		return fmt.Errorf("learning: write tmp %q: %w", tmp, err)
 	}

@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+const filePermOwner = 0o600
+
 // Line-type discriminators for the append-only JSONL transcript (D-03/D-20).
 // Each line is one structured JSON object with a `type` discriminator. The 15
 // types cover every event the Session Core, the turn loop, and the engine emit.
@@ -108,7 +110,7 @@ func openTranscript(dir, sessionID string) (*os.File, string, error) {
 	fname := "transcript_" + sessionID + ".jsonl"
 	path := filepath.Join(storeDir, fname)
 
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, filePermOwner)
 	if err != nil {
 		return nil, "", fmt.Errorf("call: %w", err)
 	}

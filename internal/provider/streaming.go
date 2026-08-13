@@ -16,6 +16,8 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 )
 
+const mnd8 = 8
+
 var errAnthropicNoApi = errors.New("anthropic provider: no API key (set ZAI_API_KEY or pass WithAnthropicAPIKey)")
 var errAnthropicNilShaper = errors.New("anthropic provider: nil Shaper")
 
@@ -101,7 +103,7 @@ func (p *AnthropicProvider) Stream(ctx context.Context, prof *profile.Profile, m
 		return nil, fmt.Errorf("anthropic provider stream send: %w", err)
 	}
 
-	ch := make(chan StreamChunk, 8)
+	ch := make(chan StreamChunk, mnd8)
 
 	go func() {
 		defer func() { _ = resp.Body.Close() }()

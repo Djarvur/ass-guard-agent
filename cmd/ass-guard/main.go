@@ -27,6 +27,8 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 )
 
+const filePermOwner = 0o600
+
 var errIsRequired = errors.New("--prompt is required")
 
 func main() {
@@ -136,7 +138,7 @@ func openAuditSink(path string) (io.Writer, func(), error) {
 		return os.Stderr, nil, nil
 	}
 
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, filePermOwner)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open audit-log: %w", err)
 	}

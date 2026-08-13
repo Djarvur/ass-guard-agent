@@ -12,6 +12,8 @@ import (
 	"time"
 )
 
+const scannerBufSize = 1024
+
 var errNoRolloutSessionsFound = errors.New("no rollout sessions found")
 var errNoSessionWith = errors.New("no session with full-request lines found")
 
@@ -97,7 +99,7 @@ func ExtractFromRollout(path string) (ExtractResult, error) {
 
 	scanner := bufio.NewScanner(f)
 	// Rollout lines can be large (system prompts + tool schemas per line); raise the buffer.
-	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
+	scanner.Buffer(make([]byte, 64*scannerBufSize), 16*1024*1024)
 
 	lineIdx := 0
 	for scanner.Scan() {
@@ -306,7 +308,7 @@ func countFullRequests(path string) (int, int) { //nolint:gocritic // conflicts 
 	defer func() { _ = f.Close() }()
 
 	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
+	scanner.Buffer(make([]byte, 64*scannerBufSize), 16*1024*1024)
 
 	full, firstTools := 0, 0
 

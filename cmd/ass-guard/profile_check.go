@@ -12,6 +12,8 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 )
 
+const readBufSize = 4096
+
 // newProfileCheckCmd builds the `ass-guard profile check <name>` subcommand
 // (PROF-04, D-08). The fixture path (--capture-file) is fully unit-tested; the
 // live path reads the freshest main rollout line and diffs against the manifest.
@@ -107,7 +109,7 @@ func loadCaptureLine(captureFile string) (json.RawMessage, error) {
 
 	chosen, err := profile.PickRichestMain(stats)
 	if err != nil {
-		//nolint:err113 // dynamic error message
+
 		return nil, fmt.Errorf("no fresh capture available; pass --capture-file "+
 			"or run zcode to produce a rollout: %w", err)
 	}
@@ -197,9 +199,9 @@ func readFirstLine(path string) (json.RawMessage, error) {
 	}
 	defer func() { _ = f.Close() }()
 	// Read the whole first line (rollout lines can be large).
-	buf := make([]byte, 0, 4096)
+	buf := make([]byte, 0, readBufSize)
 
-	chunk := make([]byte, 4096)
+	chunk := make([]byte, readBufSize)
 
 	for {
 		n, err := f.Read(chunk)

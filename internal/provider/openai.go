@@ -214,6 +214,7 @@ func (p *OpenAIProvider) ToolResultMessage(toolCallID string, result json.RawMes
 	if mErr != nil {
 		return nil, fmt.Errorf("marshal: %w", mErr)
 	}
+
 	return data, nil
 }
 

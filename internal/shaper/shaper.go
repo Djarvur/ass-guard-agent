@@ -24,6 +24,9 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 )
 
+const asciiDelete = 0x40
+const mnd80 = 0x80
+
 // Message is one conversational turn shaped into the outgoing request. It is
 // defined here (not in the provider package) to keep the dependency edge
 // one-directional: provider imports the Shaper; the Shaper never imports the
@@ -289,8 +292,8 @@ func uuidV4() string {
 		panic("crypto/rand failed: " + err.Error())
 	}
 
-	b[6] = (b[6] & 0x0f) | 0x40
-	b[8] = (b[8] & 0x3f) | 0x80
+	b[6] = (b[6] & 0x0f) | asciiDelete
+	b[8] = (b[8] & 0x3f) | mnd80
 
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }

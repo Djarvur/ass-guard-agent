@@ -13,6 +13,8 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 )
 
+const filePermOwner = 0o600
+
 var errParityNilProvider = errors.New("parity run: nil provider")
 
 // LiveArm is the ass-guard arm: it runs one prompt through the test-harness Turn
@@ -119,5 +121,5 @@ func writeResults(path string, res *RunResult) error {
 		return fmt.Errorf("call: %w", err)
 	}
 
-	return os.WriteFile(path, raw, 0o600)
+	return os.WriteFile(path, raw, filePermOwner)
 }

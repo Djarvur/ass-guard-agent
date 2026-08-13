@@ -117,6 +117,7 @@ func (p *AnthropicProvider) ToolResultMessage(toolCallID string, result json.Raw
 	if mErr != nil {
 		return nil, fmt.Errorf("marshal: %w", mErr)
 	}
+
 	return data, nil
 }
 

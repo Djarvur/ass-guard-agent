@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+const mnd2 = 2
+
 // Resolver applies the D-02 precedence (time-window → project → global) to
 // resolve a tier to a concrete Target at a given moment. It is a PURE FUNCTION
 // of (config, tier, project, now): no sync, no logging, no network (RESEARCH
@@ -210,7 +212,7 @@ func weekdayAbbr(wd time.Weekday) string {
 // matching.
 func parseHHMM(s string, day time.Time) (time.Time, error) {
 	parts := strings.Split(s, ":")
-	if len(parts) != 2 {
+	if len(parts) != mnd2 {
 		//nolint:err113 // dynamic error message
 		return time.Time{}, fmt.Errorf("parse HH:MM %q: want exactly one ':'", s)
 	}

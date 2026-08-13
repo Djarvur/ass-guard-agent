@@ -22,6 +22,8 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 )
 
+const mnd60 = 60
+
 const extractorVersion = "extract-profile/01-02"
 
 func main() {
@@ -270,7 +272,7 @@ func printStats(stats []profile.SessionStat) {
 }
 
 func short(p string) string {
-	if len(p) > 60 {
+	if len(p) > mnd60 {
 		return "..." + p[len(p)-57:]
 	}
 

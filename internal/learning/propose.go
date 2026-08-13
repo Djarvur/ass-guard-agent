@@ -53,7 +53,7 @@ func ProposeHooks(worklog []WorklogEntry) []Proposal {
 
 	for _, key := range order {
 		c := counts[key]
-		if c.n < 3 {
+		if c.n < mnd3 {
 			continue
 		}
 

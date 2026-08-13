@@ -8,6 +8,8 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/event"
 )
 
+const mnd1e6 = 1e6
+
 // CostCeilingTracker implements CostTracker (D-08): dollars-per-fixed-window
 // accumulation from token counts × per-model pricing, with degrade-then-stop on
 // breach. First breach → CostDegrade + a warn CostCeilingWarn event (the
@@ -78,7 +80,7 @@ func (c *CostCeilingTracker) Account(model string, inTokens, outTokens int) {
 		return
 	}
 
-	cost := (float64(inTokens)*p.InputPerMToken + float64(outTokens)*p.OutputPerMToken) / 1e6
+	cost := (float64(inTokens)*p.InputPerMToken + float64(outTokens)*p.OutputPerMToken) / mnd1e6
 	if c.degraded {
 		c.degradedSpent += cost
 	} else {

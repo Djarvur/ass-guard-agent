@@ -32,6 +32,8 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/toolexec"
 )
 
+const mnd6 = 6
+
 // serveOptions carries the `acp serve` subcommand flags. The profile is loaded
 // by name (default zcode); --max-concurrent bounds outbound provider concurrency
 // (PARA-04, default 6). WorkDir is where .ass-guard/ transcripts live (default
@@ -115,7 +117,7 @@ func newACPServeCmd() *cobra.Command {
 		},
 	}
 	c.Flags().StringVar(&profileName, "profile", profileZcode, "profile name to load (PROF-01)")
-	c.Flags().IntVar(&maxConcurrent, "max-concurrent", 6,
+	c.Flags().IntVar(&maxConcurrent, "max-concurrent", mnd6,
 		"max concurrent outbound provider calls across parent + subagents (PARA-04)")
 	c.Flags().StringVar(&profilesDir, "profiles-dir", defaultProfilesDir(), "directory containing profile bundles")
 	c.Flags().StringVar(&workDir, "work-dir", "", "working directory for .ass-guard/ transcripts (default: cwd)")

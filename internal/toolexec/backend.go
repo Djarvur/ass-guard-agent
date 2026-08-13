@@ -12,6 +12,8 @@ import (
 	"time"
 )
 
+const mnd30 = 30
+
 var errFirecrawlBackendNot = errors.New("toolexec: firecrawl backend not configured (API key empty)")
 
 // Backend is the swappable WebSearch/WebFetch implementation (D-22 / TOOL-05).
@@ -80,7 +82,7 @@ func (h *HTTPBackend) do(ctx context.Context, template, placeholder, value strin
 func (h *HTTPBackend) getRaw(ctx context.Context, full string) (json.RawMessage, error) {
 	client := h.Client
 	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
+		client = &http.Client{Timeout: mnd30 * time.Second}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, full, http.NoBody)
