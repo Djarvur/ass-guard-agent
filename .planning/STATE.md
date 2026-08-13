@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: completed
-last_updated: "2026-08-13T09:15:00.000Z"
+last_updated: "2026-08-13T14:13:26.011Z"
 progress:
   total_phases: 7
-  completed_phases: 6
+  completed_phases: 4
   total_plans: 34
-  completed_plans: 20
-  percent: 59
+  completed_plans: 18
+  percent: 53
 ---
 
 # State: ass-guard-agent (working name)
@@ -23,7 +23,7 @@ See: .planning/PROJECT.md (updated 2026-08-09)
 ## Current Phase
 
 **Phase:** 6
-**Status:** COMPLETE (2/2 plans: 06-01 embed+firstrun, 06-02 goreleaser+agent.json)
+**Status:** Phase 5 complete
 **Next action:** v1.0 milestone ready to ship. Suggested: `/gsd:complete-milestone` + `/gsd:verify-work 06`. The full test suite passes under -race (the earlier Phase-1 data-source blocker `internal/profile.TestStability_WithinSessionExtractionSource` now PASSES — the rollout session is available again).
 **Last session:** 2026-08-13T09:15:00.000Z
 
