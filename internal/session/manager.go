@@ -76,7 +76,8 @@ func (m *Manager) appendLine(line Line) error {
 
 	red, err := m.redactor.Redact(raw)
 	if err != nil {
-		red = []byte(m.redactor.ScrubError(errors.New(string(raw)) //nolint:err113 // dynamic error from raw input))
+		rawErr := errors.New(string(raw)) //nolint:err113 // dynamic error from raw input
+		red = []byte(m.redactor.ScrubError(rawErr))
 	}
 
 	red = append(red, '\n')
@@ -173,7 +174,8 @@ func (m *Manager) AppendError(
 	turnID, component, message string,
 	inputs json.RawMessage, recoverable bool, stack string,
 ) error {
-	scrubbed := m.redactor.ScrubError(errors.New(message) //nolint:err113 // dynamic error from caller)
+	callerErr := errors.New(message) //nolint:err113 // dynamic error from caller
+	scrubbed := m.redactor.ScrubError(callerErr)
 
 	return m.appendLine(Line{
 		Type: TypeError, TurnID: turnID, Timestamp: now(),

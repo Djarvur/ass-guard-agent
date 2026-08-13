@@ -227,7 +227,8 @@ func TestExecute_RunCommandHalt(t *testing.T) {
 		t.Errorf("StepsRun = %d; want 1 (s2 not executed)", res.StepsRun)
 	}
 
-	if !errors.Is(errors.New(res.Detail) //nolint:err113 // dynamic error from result, errBoom) && !contains(res.Detail, "boom") {
+	detailErr := errors.New(res.Detail) //nolint:err113 // dynamic error from result
+	if !errors.Is(detailErr, errBoom) && !contains(res.Detail, "boom") {
 		t.Errorf("Detail = %q; want it to carry the stderr boom", res.Detail)
 	}
 
