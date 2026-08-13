@@ -52,7 +52,7 @@ func cannedAnthropicToolUseResponse(name string, input map[string]any) string {
 		`{"type":"message_start","message":{"usage":{"input_tokens":10,"output_tokens":0}}}` + "\n\n")
 	b.WriteString("data: " +
 		`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_01","name":"` +
-		name + `}}` + "\n\n")
+		name + `"}}` + "\n\n")
 	b.WriteString(`data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":` +
 		string(partialJSONStr) + `}}` + "\n\n")
 	b.WriteString("data: " + `{"type":"content_block_stop","index":0}` + "\n\n")
