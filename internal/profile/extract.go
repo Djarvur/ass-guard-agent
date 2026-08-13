@@ -31,12 +31,22 @@ type ModelIO struct {
 			Model      json.RawMessage `json:"model"`
 			MaxTokens  int             `json:"max_tokens"`
 			System     []SystemBlock   `json:"system"`
-			Tools      []RawTool       `json:"tools"`
+			Tools      json.RawMessage `json:"tools"`
 			Thinking   json.RawMessage `json:"thinking"`
 			ToolChoice json.RawMessage `json:"tool_choice"`
 		} `json:"body"`
 		Headers map[string]json.RawMessage `json:"headers"`
 	} `json:"request"`
+}
+
+// ParsedTools decodes the RawMessage tools field into []RawTool. Lines where
+// tools is an object (not an array) return nil — those are skipped by callers.
+func (m *ModelIO) ParsedTools() []RawTool {
+	var tools []RawTool
+
+	_ = json.Unmarshal(m.Request.Body.Tools, &tools)
+
+	return tools
 }
 
 // SystemBlock is one entry of request.body.system (Anthropic system-block shape).
@@ -127,7 +137,7 @@ func ExtractFromRollout(path string) (ExtractResult, error) { //nolint:funlen //
 			firstFile = path
 
 			firstSysCount = len(mio.Request.Body.System)
-			for _, t := range mio.Request.Body.Tools {
+			for _, t := range mio.ParsedTools() {
 				if t.Name != "" {
 					firstToolNames[t.Name] = struct{}{}
 				}
@@ -160,7 +170,7 @@ func ExtractFromRollout(path string) (ExtractResult, error) { //nolint:funlen //
 }
 
 func isFullRequest(m *ModelIO) bool {
-	return m.Type == "model_io" && len(m.Request.Body.System) > 0 && len(m.Request.Body.Tools) > 0
+	return m.Type == "model_io" && len(m.Request.Body.System) > 0 && len(m.ParsedTools()) > 0
 }
 
 func assertStable(sysCount int, toolNames map[string]struct{}, headerNames []string, m *ModelIO) error {
@@ -171,7 +181,7 @@ func assertStable(sysCount int, toolNames map[string]struct{}, headerNames []str
 
 	seen := map[string]struct{}{}
 
-	for _, t := range m.Request.Body.Tools {
+	for _, t := range m.ParsedTools() {
 		if t.Name == "" {
 			continue
 		}
@@ -223,7 +233,7 @@ func buildResult(m *ModelIO, path string) ExtractResult {
 		res.System = append(res.System, TextBlock(b))
 	}
 
-	for _, t := range m.Request.Body.Tools {
+	for _, t := range m.ParsedTools() {
 		if t.Name == "" {
 			continue // filter the null/empty-named edge case
 		}
@@ -325,7 +335,7 @@ func countFullRequests(path string) (int, int) { //nolint:gocritic // conflicts 
 
 		full++
 		if full == 1 {
-			firstTools = len(m.Request.Body.Tools)
+			firstTools = len(m.ParsedTools())
 		}
 	}
 

@@ -138,9 +138,9 @@ func extractCaptureCounts(raw json.RawMessage) map[string]any {
 		out["request.body.system"] = s
 	}
 
-	if len(mio.Request.Body.Tools) > 0 {
-		t := make([]any, len(mio.Request.Body.Tools))
-		for i, d := range mio.Request.Body.Tools {
+	if tools := mio.ParsedTools(); len(tools) > 0 {
+		t := make([]any, len(tools))
+		for i, d := range tools {
 			t[i] = d
 		}
 
