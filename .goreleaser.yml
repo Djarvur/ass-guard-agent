@@ -1,0 +1,56 @@
+# .goreleaser.yml — the single source of truth for the ass-guard build matrix
+# (D-02). Produces four static Go binaries (darwin/linux × amd64/arm64) with
+# CGO_ENABLED=0 (no runtime deps, no cgo — whisper.cpp is structurally moot per
+# VERIFIED-FACTS #4). time/tzdata is blank-imported in internal/scheduler/init.go
+# (D-03, DIST-03) so IANA zones load without a system tz database.
+#
+# Validate with: goreleaser check
+# Local build (no publish, no token): goreleaser build --snapshot --clean
+#
+# Tier-A correction (load-bearing): the ldflags -X target MUST use capital-D
+# github.com/Djarvur/ass-guard-agent/... — the go.mod module path. A lowercase
+# github.com/djarvur/... target silently fails to inject the version (verified).
+version: 2
+
+project_name: ass-guard
+
+before:
+  hooks:
+    - go mod tidy
+    - ./scripts/gen-agent-json.sh
+
+builds:
+  - id: ass-guard
+    main: ./cmd/ass-guard
+    binary: ass-guard
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X github.com/Djarvur/ass-guard-agent/internal/version.Version={{.Version}}
+
+archives:
+  - formats: [ tar.gz ]
+    name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}'
+    files:
+      - agent.json
+      - README.md
+
+checksum:
+  name_template: '{{ .ProjectName }}_{{ .Version }}_checksums.txt'
+
+snapshot:
+  version_template: '{{ incpatch .Version }}-dev'
+
+changelog:
+  use: github
+
+release:
+  github:
+    owner: Djarvur
+    name: ass-guard-agent
