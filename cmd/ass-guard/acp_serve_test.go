@@ -97,7 +97,7 @@ func TestACPServeWiresStdoutClean(t *testing.T) {
 	}
 
 	for i, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
-		if len(line) == 0 {
+		if line == "" {
 			continue
 		}
 

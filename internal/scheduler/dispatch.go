@@ -239,7 +239,7 @@ func (s *Scheduler) Dispatch(ctx context.Context, tier, project string, capReq C
 
 			callProf := prof
 			callProf.Model = cand.Model
-			resp, err := s.providers[cand.Provider].Send(ctx, callProf, messages)
+			resp, err := s.providers[cand.Provider].Send(ctx, &callProf, messages)
 			s.sem.Release()
 
 			if err == nil {

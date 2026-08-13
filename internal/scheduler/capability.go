@@ -74,16 +74,16 @@ func describeReq(req CapabilityReq) string {
 // satisfies reports whether a capability profile meets a capability requirement
 // (D-09). A zero-valued CapabilityReq (no specific needs) is always satisfied.
 // Relocated from resolver.go (Plan 03-04) so all capability logic lives here.
-func satisfies(cap CapabilityProfile, req CapabilityReq) bool {
-	if req.NeedsTools && !cap.ToolCalling {
+func satisfies(caps CapabilityProfile, req CapabilityReq) bool {
+	if req.NeedsTools && !caps.ToolCalling {
 		return false
 	}
 
-	if req.NeedsStreaming && !cap.Streaming {
+	if req.NeedsStreaming && !caps.Streaming {
 		return false
 	}
 
-	if req.NeedsThinking && !cap.ExtendedThinking {
+	if req.NeedsThinking && !caps.ExtendedThinking {
 		return false
 	}
 

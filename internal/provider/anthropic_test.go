@@ -88,7 +88,7 @@ func TestAnthropicProvider_SendParsesToolUse(t *testing.T) {
 		provider.WithAnthropicBaseURL(srv.URL),
 	)
 
-	resp, err := p.Send(context.Background(), prof, []shaper.Message{{Role: roleUser, Content: "read go.mod"}})
+	resp, err := p.Send(context.Background(), &prof, []shaper.Message{{Role: roleUser, Content: "read go.mod"}})
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestAnthropicProvider_NoAPIKeyErrors(t *testing.T) {
 		provider.WithAnthropicBaseURL("http://must-not-be-called.invalid"),
 	)
 
-	_, err := p.Send(context.Background(), prof, []shaper.Message{{Role: roleUser, Content: "x"}})
+	_, err := p.Send(context.Background(), &prof, []shaper.Message{{Role: roleUser, Content: "x"}})
 	if err == nil {
 		t.Fatal("Send returned nil error with no API key; want non-nil")
 	}

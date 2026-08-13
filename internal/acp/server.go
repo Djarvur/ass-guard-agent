@@ -37,7 +37,7 @@ type TurnRunner interface {
 // JSON-RPC error response; a nil error with a non-nil result surfaces as a
 // success response. Notifications (msg.ID == nil) are dispatched but produce no
 // response frame.
-type Handler func(ctx context.Context, params json.RawMessage, msg Message) (result any, err error)
+type Handler func(ctx context.Context, params json.RawMessage) (result any, err error)
 
 // Server is the ACP v1 stdio server (D-15). One reader goroutine reads frames
 // from stdin; requests are dispatched to handlers in per-request goroutines so
@@ -98,7 +98,7 @@ func WithLogger(l *log.Logger) ServerOption {
 
 // NewServer builds a Server reading frames from in, writing frames to out, and
 // diagnostics to stderrSink (must NEVER be stdout — transport discipline).
-func NewServer(in io.Reader, out io.Writer, stderrSink io.Writer, opts ...ServerOption) *Server {
+func NewServer(in io.Reader, out, stderrSink io.Writer, opts ...ServerOption) *Server {
 	s := &Server{
 		in:         in,
 		out:        newWriter(out),
@@ -190,7 +190,7 @@ func (s *Server) handleRequest(ctx context.Context, msg Message) {
 		return
 	}
 
-	result, err := handler(ctx, msg.Params, msg)
+	result, err := handler(ctx, msg.Params)
 	if err != nil {
 		// A handler may return a *RPCError to surface a specific JSON-RPC code
 		// (e.g. session/load's -32601 no-op, D-09). Any other error is scrubbed
@@ -228,7 +228,7 @@ func (s *Server) safeDispatchInline(ctx context.Context, msg Message) {
 		return
 	}
 
-	_, _ = handler(ctx, msg.Params, msg)
+	_, _ = handler(ctx, msg.Params)
 }
 
 // recoverDispatch converts a panic in a handler/dispatch into a stderr log line

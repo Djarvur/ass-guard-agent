@@ -68,7 +68,7 @@ type Executor struct {
 // whose (Name, Trigger) is already in-flight is refused (StatusSkippedReentrant)
 // — the structural loop-prevention. Every step boundary emits a HookProgress
 // event (investigate-and-fix-ready).
-func (e *Executor) Execute(ctx context.Context, hook Hook, prov Provenance) Result {
+func (e *Executor) Execute(ctx context.Context, hook *Hook, prov Provenance) Result {
 	if !e.begin(hook, prov) {
 		detail := fmt.Sprintf(
 			"hook %q on trigger %q already in-flight (allow_reentrant not set)",
@@ -80,7 +80,8 @@ func (e *Executor) Execute(ctx context.Context, hook Hook, prov Provenance) Resu
 
 	res := Result{Status: StatusCompleted, FailedStep: -1}
 
-	for i, step := range hook.Steps {
+	for i := range hook.Steps {
+		step := &hook.Steps[i]
 		if err := ctx.Err(); err != nil {
 			res.Status = StatusError
 			res.FailedStep = i
@@ -127,7 +128,7 @@ func (e *Executor) Execute(ctx context.Context, hook Hook, prov Provenance) Resu
 }
 
 // dispatch routes a step to its impl by Kind.
-func (e *Executor) dispatch(ctx context.Context, step Step) (string, error) {
+func (e *Executor) dispatch(ctx context.Context, step *Step) (string, error) {
 	switch step.Kind {
 	case StepRunCommand:
 		return runCommandStep(ctx, e, step)
@@ -144,7 +145,7 @@ func (e *Executor) dispatch(ctx context.Context, step Step) (string, error) {
 
 // effectiveOnFailure returns the step's on-failure, falling back to the hook's
 // when the step omits its policy.
-func effectiveOnFailure(step Step, hook Hook) OnFailure {
+func effectiveOnFailure(step *Step, hook *Hook) OnFailure {
 	if step.OnFailure != "" {
 		return step.OnFailure
 	}
@@ -177,7 +178,7 @@ func (e *Executor) emit(turnID, hookName string, stepIdx int, kind StepKind, sta
 // begin is the provenance in-flight guard (HOOK-04). It returns false if the
 // hook is already in-flight AND not allow_reentrant (the structural loop
 // prevention). On success the entry is added + cleared by the matching end().
-func (e *Executor) begin(hook Hook, prov Provenance) bool {
+func (e *Executor) begin(hook *Hook, prov Provenance) bool {
 	key := inFlightKey(hook, prov)
 
 	e.mu.Lock()
@@ -197,7 +198,7 @@ func (e *Executor) begin(hook Hook, prov Provenance) bool {
 }
 
 // end clears the in-flight entry (deferred after every Execute).
-func (e *Executor) end(hook Hook, prov Provenance) {
+func (e *Executor) end(hook *Hook, prov Provenance) {
 	key := inFlightKey(hook, prov)
 
 	e.mu.Lock()
@@ -205,6 +206,6 @@ func (e *Executor) end(hook Hook, prov Provenance) {
 	e.mu.Unlock()
 }
 
-func inFlightKey(hook Hook, prov Provenance) string {
+func inFlightKey(hook *Hook, prov Provenance) string {
 	return hook.Name + "|" + prov.TriggerStage
 }

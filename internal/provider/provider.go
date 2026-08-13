@@ -28,14 +28,14 @@ type Provider interface {
 	// Send shapes the profile + messages into an outgoing request, sends it to
 	// the provider, and returns the parsed tool-calls. The shaped outgoing
 	// request is observable via the RequestCapturer hook when set (LOG-01).
-	Send(ctx context.Context, prof profile.Profile, messages []Message) (Response, error)
+	Send(ctx context.Context, prof *profile.Profile, messages []Message) (Response, error)
 	// Stream shapes the profile + messages, opens a streaming SSE request, and
 	// returns a channel of StreamChunks (ACP-04 — provider SSE → bus →
 	// session/update, NO full-turn buffering). The channel emits text/tool_use/
 	// usage chunks as they arrive, then a single "done" chunk carrying the
 	// FinishReason, then closes. ctx cancellation aborts the request and closes
 	// the channel promptly.
-	Stream(ctx context.Context, prof profile.Profile, messages []Message) (<-chan StreamChunk, error)
+	Stream(ctx context.Context, prof *profile.Profile, messages []Message) (<-chan StreamChunk, error)
 	// ToolResultMessage builds the provider-native follow-up message that closes
 	// a tool-call loop (PROV-02 TranslateFromInternal). The returned bytes are
 	// the marshaled native message — each protocol's shape (Anthropic user+

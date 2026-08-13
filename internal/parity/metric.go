@@ -221,7 +221,7 @@ func normalizePath(s string) string {
 // looksLikeEnum approximates closed-enum values: a short single token with no
 // whitespace or sentence punctuation.
 func looksLikeEnum(s string) bool {
-	if len(s) == 0 || len(s) > 24 {
+	if s == "" || len(s) > 24 {
 		return false
 	}
 

@@ -71,7 +71,7 @@ func NewAnthropicProvider(s *shaper.Shaper, opts ...AnthropicOption) *AnthropicP
 // streaming for operations that may take longer than 10 minutes. The SSE
 // response is drained synchronously and accumulated into a Response — callers
 // see the same interface as a non-streaming call, but the wire uses stream:true.
-func (p *AnthropicProvider) Send(ctx context.Context, prof profile.Profile, messages []Message) (Response, error) {
+func (p *AnthropicProvider) Send(ctx context.Context, prof *profile.Profile, messages []Message) (Response, error) {
 	ch, err := p.Stream(ctx, prof, messages)
 	if err != nil {
 		return Response{}, err

@@ -41,11 +41,11 @@ func (p *scriptedACPProvider) queue(r ...scriptedResp) {
 	p.script = append(p.script, r...)
 }
 
-func (p *scriptedACPProvider) Send(_ context.Context, _ profile.Profile, _ []provider.Message) (provider.Response, error) {
+func (p *scriptedACPProvider) Send(_ context.Context, _ *profile.Profile, _ []provider.Message) (provider.Response, error) {
 	return provider.Response{}, errors.New("not used")
 }
 
-func (p *scriptedACPProvider) Stream(ctx context.Context, _ profile.Profile, _ []provider.Message) (<-chan provider.StreamChunk, error) {
+func (p *scriptedACPProvider) Stream(ctx context.Context, _ *profile.Profile, _ []provider.Message) (<-chan provider.StreamChunk, error) {
 	p.mu.Lock()
 	p.calls++
 	idx := p.calls - 1

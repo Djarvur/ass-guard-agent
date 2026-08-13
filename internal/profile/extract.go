@@ -101,7 +101,7 @@ func ExtractFromRollout(path string) (ExtractResult, error) {
 		lineIdx++
 
 		raw := scanner.Bytes()
-		if len(strings.TrimSpace(string(raw))) == 0 {
+		if strings.TrimSpace(string(raw)) == "" {
 			continue
 		}
 

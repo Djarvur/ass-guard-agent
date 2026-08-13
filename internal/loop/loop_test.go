@@ -18,7 +18,7 @@ type fakeProvider struct {
 	err   error
 }
 
-func (f *fakeProvider) Send(ctx context.Context, _ profile.Profile, _ []provider.Message) (provider.Response, error) {
+func (f *fakeProvider) Send(ctx context.Context, _ *profile.Profile, _ []provider.Message) (provider.Response, error) {
 	if f.err != nil {
 		return provider.Response{}, f.err
 	}
@@ -33,7 +33,7 @@ func (f *fakeProvider) ToolResultMessage(toolCallID string, result json.RawMessa
 // Stream satisfies the Phase-2-expanded Provider interface. The Phase-1 test
 // harness loop only exercises Send; Stream is a stub that returns a non-streamed
 // error so it is never accidentally used here.
-func (f *fakeProvider) Stream(ctx context.Context, _ profile.Profile, _ []provider.Message) (<-chan provider.StreamChunk, error) {
+func (f *fakeProvider) Stream(ctx context.Context, _ *profile.Profile, _ []provider.Message) (<-chan provider.StreamChunk, error) {
 	return nil, errors.New("fakeProvider: Stream not used by the Phase-1 test-harness loop")
 }
 

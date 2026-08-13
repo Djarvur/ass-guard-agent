@@ -36,7 +36,7 @@ const anthropicVersion = "2023-06-01"
 // The channel is buffered small (8); the turn loop drains it. A slow consumer
 // is fine — the HTTP body read blocks until the consumer drains (backpressure
 // propagates to the provider via the TCP window).
-func (p *AnthropicProvider) Stream(ctx context.Context, prof profile.Profile, messages []Message) (<-chan StreamChunk, error) {
+func (p *AnthropicProvider) Stream(ctx context.Context, prof *profile.Profile, messages []Message) (<-chan StreamChunk, error) {
 	key := p.apiKey
 	if key == "" {
 		key = os.Getenv("ZAI_API_KEY")
@@ -358,7 +358,7 @@ func injectStreamTrue(body []byte) []byte {
 // headersFromProfile builds the header map the RequestCapturer sees for the
 // streaming path (the identity header NAMES from the profile + auth). Mirrors
 // the non-streaming Send's capture hook.
-func headersFromProfile(prof profile.Profile) map[string]string {
+func headersFromProfile(prof *profile.Profile) map[string]string {
 	out := map[string]string{}
 	for _, h := range prof.Headers {
 		out[h.Name] = shaper.RenderHeaderValue(h.ValueTemplate)

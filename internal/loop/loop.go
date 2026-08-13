@@ -19,7 +19,7 @@ import (
 func Run(ctx context.Context, prof profile.Profile, p provider.Provider, prompt string) ([]provider.ToolCall, error) {
 	msgs := []provider.Message{{Role: "user", Content: prompt}}
 
-	resp, err := p.Send(ctx, prof, msgs)
+	resp, err := p.Send(ctx, &prof, msgs)
 	if err != nil {
 		return nil, fmt.Errorf("loop turn: %w", err)
 	}

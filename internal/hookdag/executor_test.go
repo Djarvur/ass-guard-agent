@@ -178,7 +178,7 @@ func TestExecute_HappyPath(t *testing.T) {
 	}
 	collect := captureHooks(t, bus)
 
-	res := e.Execute(context.Background(), hook, prov("h"))
+	res := e.Execute(context.Background(), &hook, prov("h"))
 	if res.Status != hookdag.StatusCompleted {
 		t.Errorf("Status = %q; want completed", res.Status)
 	}
@@ -210,7 +210,7 @@ func TestExecute_RunCommandHalt(t *testing.T) {
 			{Name: "s2", Kind: hookdag.StepRunCommand, Command: "c"},
 		}}
 
-	res := e.Execute(context.Background(), hook, prov("h"))
+	res := e.Execute(context.Background(), &hook, prov("h"))
 	if res.Status != hookdag.StatusHalted {
 		t.Errorf("Status = %q; want halted", res.Status)
 	}
@@ -252,7 +252,7 @@ func TestExecute_OnFailureContinue(t *testing.T) {
 		}}
 	collect := captureHooks(t, bus)
 
-	res := e.Execute(context.Background(), hook, prov("h"))
+	res := e.Execute(context.Background(), &hook, prov("h"))
 	if res.Status != hookdag.StatusCompleted {
 		t.Errorf("Status = %q; want completed (continue)", res.Status)
 	}
@@ -291,7 +291,7 @@ func TestExecute_OnFailureAsk(t *testing.T) {
 		}}
 	collect := captureHooks(t, bus)
 
-	res := e.Execute(context.Background(), hook, prov("h"))
+	res := e.Execute(context.Background(), &hook, prov("h"))
 	if res.Status != hookdag.StatusAsked {
 		t.Errorf("Status = %q; want asked", res.Status)
 	}
@@ -323,7 +323,7 @@ func TestExecute_StepInheritsHookDefault(t *testing.T) {
 	hook := hookdag.Hook{Name: "h", Trigger: stagePostImplement, OnFailure: hookdag.OnFailureHalt,
 		Steps: []hookdag.Step{{Name: "s0", Kind: hookdag.StepRunCommand, Command: "a"}}}
 
-	res := e.Execute(context.Background(), hook, prov("h"))
+	res := e.Execute(context.Background(), &hook, prov("h"))
 	if res.Status != hookdag.StatusHalted {
 		t.Errorf("Status = %q; want halted (inherited hook default)", res.Status)
 	}
@@ -339,7 +339,7 @@ func TestExecute_SendPromptIsATurn(t *testing.T) {
 	hook := hookdag.Hook{Name: "h", Trigger: stagePostImplement,
 		Steps: []hookdag.Step{{Name: "sp", Kind: hookdag.StepSendPrompt, Prompt: reviewPrompt}}}
 
-	res := e.Execute(context.Background(), hook, prov("h"))
+	res := e.Execute(context.Background(), &hook, prov("h"))
 	if res.Status != hookdag.StatusCompleted {
 		t.Errorf("Status = %q; want completed", res.Status)
 	}
@@ -369,7 +369,7 @@ func TestExecute_SendPromptStopIsNotError(t *testing.T) {
 			Prompt: "x", OnFailure: hookdag.OnFailureHalt,
 		}}}
 
-	res := e.Execute(context.Background(), hook, prov("h"))
+	res := e.Execute(context.Background(), &hook, prov("h"))
 	if res.Status != hookdag.StatusCompleted {
 		t.Errorf("Status = %q; want completed (stop=end_turn is not an error)", res.Status)
 	}
@@ -385,7 +385,7 @@ func TestExecute_FreshContextIsABoundary(t *testing.T) {
 	hook := hookdag.Hook{Name: "h", Trigger: stagePostImplement,
 		Steps: []hookdag.Step{{Name: "fc", Kind: hookdag.StepFreshContext}}}
 
-	res := e.Execute(context.Background(), hook, prov("h"))
+	res := e.Execute(context.Background(), &hook, prov("h"))
 	if res.Status != hookdag.StatusCompleted {
 		t.Errorf("Status = %q; want completed", res.Status)
 	}
@@ -408,7 +408,7 @@ func TestExecute_Wait(t *testing.T) {
 		Steps: []hookdag.Step{{Name: "w", Kind: hookdag.StepWait, Duration: "1ms"}}}
 	t0 := time.Now()
 
-	res := e.Execute(context.Background(), hook, prov("h"))
+	res := e.Execute(context.Background(), &hook, prov("h"))
 	if res.Status != hookdag.StatusCompleted {
 		t.Errorf("Status = %q; want completed", res.Status)
 	}
@@ -442,7 +442,7 @@ func TestReentrant_Refused(t *testing.T) {
 
 	for range 2 {
 		wg.Go(func() {
-			results <- e.Execute(context.Background(), hook, prov("rh"))
+			results <- e.Execute(context.Background(), &hook, prov("rh"))
 		})
 	}
 
@@ -483,7 +483,7 @@ func TestReentrant_AllowReentrant(t *testing.T) {
 
 	for range 2 {
 		wg.Go(func() {
-			results <- e.Execute(context.Background(), hook, prov("rh2"))
+			results <- e.Execute(context.Background(), &hook, prov("rh2"))
 		})
 	}
 
@@ -507,9 +507,9 @@ func TestReentrant_InFlightClearedAfterCompletion(t *testing.T) {
 	e := &hookdag.Executor{Commands: fc}
 	hook := hookdag.Hook{Name: "seq", Trigger: stagePostImplement,
 		Steps: []hookdag.Step{{Name: "s", Kind: hookdag.StepRunCommand, Command: "x"}}}
-	r1 := e.Execute(context.Background(), hook, prov("seq"))
+	r1 := e.Execute(context.Background(), &hook, prov("seq"))
 
-	r2 := e.Execute(context.Background(), hook, prov("seq"))
+	r2 := e.Execute(context.Background(), &hook, prov("seq"))
 	if r1.Status != hookdag.StatusCompleted || r2.Status != hookdag.StatusCompleted {
 		t.Errorf("sequential statuses = %q,%q; want completed,completed (in-flight cleared)", r1.Status, r2.Status)
 	}
@@ -530,7 +530,7 @@ func TestRunCommand_ExitCodeContract(t *testing.T) {
 				Name: "s", Kind: hookdag.StepRunCommand,
 				Command: "x", OnFailure: hookdag.OnFailureHalt,
 			}}}
-		if res := e.Execute(context.Background(), hook, prov("h")); res.Status != hookdag.StatusCompleted {
+		if res := e.Execute(context.Background(), &hook, prov("h")); res.Status != hookdag.StatusCompleted {
 			t.Errorf("exit-0 Status = %q; want completed", res.Status)
 		}
 	})
@@ -545,7 +545,7 @@ func TestRunCommand_ExitCodeContract(t *testing.T) {
 				Command: "x", OnFailure: hookdag.OnFailureHalt,
 			}}}
 
-		res := e.Execute(context.Background(), hook, prov("h"))
+		res := e.Execute(context.Background(), &hook, prov("h"))
 		if res.Status != hookdag.StatusHalted {
 			t.Errorf("exit-2 Status = %q; want halted", res.Status)
 		}

@@ -46,6 +46,9 @@ type serveOptions struct {
 	EngineEnabled         bool
 }
 
+// redactorAdapter adapts internal/redact to session.Redactor.
+type redactorAdapter struct{}
+
 // Redact satisfies session.Redactor.
 func (redactorAdapter) Redact(b []byte) ([]byte, error) { return redact.Redact(b) }
 func (redactorAdapter) ScrubError(err error) string     { return redact.ScrubError(err) }
@@ -68,7 +71,7 @@ func newACPCmd() *cobra.Command {
 // server.Serve(ctx) with a signal-cancelled context.
 func newACPServeCmd() *cobra.Command {
 	var (
-		profile       string
+		profileName   string
 		maxConcurrent int
 		profilesDir   string
 		workDir       string
@@ -94,7 +97,7 @@ func newACPServeCmd() *cobra.Command {
 			defer stop()
 
 			return runACPServe(ctx, os.Stdin, os.Stdout, os.Stderr, serveOptions{
-				Profile:       profile,
+				Profile:       profileName,
 				MaxConcurrent: maxConcurrent,
 				ProfilesDir:   profilesDir,
 				WorkDir:       workDir,
@@ -102,7 +105,7 @@ func newACPServeCmd() *cobra.Command {
 			})
 		},
 	}
-	c.Flags().StringVar(&profile, "profile", profileZcode, "profile name to load (PROF-01)")
+	c.Flags().StringVar(&profileName, "profile", profileZcode, "profile name to load (PROF-01)")
 	c.Flags().IntVar(&maxConcurrent, "max-concurrent", 6,
 		"max concurrent outbound provider calls across parent + subagents (PARA-04)")
 	c.Flags().StringVar(&profilesDir, "profiles-dir", defaultProfilesDir(), "directory containing profile bundles")
@@ -152,6 +155,39 @@ func runACPServe(ctx context.Context, in io.Reader, out, stderr io.Writer, opts 
 
 // setupEngine builds the Phase-4 engine wiring (Plan 04-05 D-01/D-13/D-15/D-21):
 // the shared catalog + OpenSpec tool registration + the openspec pattern table +
+// sessionTurnRunner adapts the Session Core to the ACP TurnRunner interface
+// (Plan 02-05). For each session/prompt it creates (or reuses) a Session for the
+// ACP sessionId, subscribes a chunk-forwarder to the bus (AgentMessageChunk →
+// emit → session/update), and calls Session.Prompt. ctx cancellation (from
+// session/cancel) aborts the turn end-to-end (D-16).
+//
+// Phase-4 wiring (Plan 04-05): when the engine is enabled, Run wraps sess.Prompt
+// with engine.Observe — after the user's turn reaches end_turn, the engine's
+// dual-signal detector decides continue/hook/ask/nothing. The engine re-enters
+// sess.Prompt for continue-injections (real turns through the same bus →
+// session/update). A nil engine (engineEnabled=false, e.g. --no-engine) falls
+// back to the unwrapped sess.Prompt path (backward-compatible).
+type sessionTurnRunner struct {
+	bus          *event.Bus
+	profile      profile.Profile
+	workDir      string
+	maxConc      int
+	configAdded  []string
+	makeProvider func() provider.Provider
+
+	// Phase-4 engine wiring (Plan 04-05). Built once in setupEngine(); nil when
+	// the engine is disabled.
+	engineEnabled bool
+	patternTable  engine.PatternTable
+	eng           *engine.Engine
+	hookExec      *hookdag.Executor
+	hookCfg       []hookdag.Hook
+	learned       *learning.Store
+	catalog       *toolcat.Catalog // shared catalog (OpenSpec tools registered once)
+
+	sessions map[string]*session.Session
+}
+
 // the loaded hook-DAG config + the learning store + the engine + its
 // ActionDispatcher. On any error the engine stays disabled (Run falls back to
 // the unwrapped sess.Prompt — backward-compatible + D-04 graceful degradation).
@@ -216,39 +252,6 @@ func (r *sessionTurnRunner) workDirOrDefault() string {
 	wd, _ := os.Getwd()
 
 	return wd
-}
-
-// sessionTurnRunner adapts the Session Core to the ACP TurnRunner interface
-// (Plan 02-05). For each session/prompt it creates (or reuses) a Session for the
-// ACP sessionId, subscribes a chunk-forwarder to the bus (AgentMessageChunk →
-// emit → session/update), and calls Session.Prompt. ctx cancellation (from
-// session/cancel) aborts the turn end-to-end (D-16).
-//
-// Phase-4 wiring (Plan 04-05): when the engine is enabled, Run wraps sess.Prompt
-// with engine.Observe — after the user's turn reaches end_turn, the engine's
-// dual-signal detector decides continue/hook/ask/nothing. The engine re-enters
-// sess.Prompt for continue-injections (real turns through the same bus →
-// session/update). A nil engine (engineEnabled=false, e.g. --no-engine) falls
-// back to the unwrapped sess.Prompt path (backward-compatible).
-type sessionTurnRunner struct {
-	bus          *event.Bus
-	profile      profile.Profile
-	workDir      string
-	maxConc      int
-	configAdded  []string
-	makeProvider func() provider.Provider
-
-	// Phase-4 engine wiring (Plan 04-05). Built once in setupEngine(); nil when
-	// the engine is disabled.
-	engineEnabled bool
-	patternTable  engine.PatternTable
-	eng           *engine.Engine
-	hookExec      *hookdag.Executor
-	hookCfg       []hookdag.Hook
-	learned       *learning.Store
-	catalog       *toolcat.Catalog // shared catalog (OpenSpec tools registered once)
-
-	sessions map[string]*session.Session
 }
 
 // Run drives one session/prompt through the real Session Core.
@@ -408,9 +411,6 @@ func toContentBlocks(in []acp.ContentBlock) []session.ContentBlock {
 	return out
 }
 
-// redactorAdapter adapts internal/redact to session.Redactor.
-type redactorAdapter struct{}
-
 // engineTurnRunnerAdapter adapts the Session Core to the engine.TurnRunner seam
 // (Plan 04-05 D-01). Run delegates to sess.Prompt (a real turn); LastTurnOutput
 // reads the transcript via Manager.ReadAll to extract the most-recent
@@ -484,19 +484,19 @@ type acpDispatcher struct {
 // the matching hook + executes it. The signal shape is "hook:<id>"; v1 maps
 // proposal-ready/changes-proposed to post-phase, everything else to
 // post-implement.
-func (d *acpDispatcher) Hook(ctx context.Context, signal, sourceTurnID string) string {
+func (d *acpDispatcher) Hook(ctx context.Context, hookSignal, sourceTurnID string) string {
 	if d.hooks == nil || len(d.hookCfg) == 0 {
 		return "no-hooks-configured"
 	}
 
-	trigger := triggerFromSignal(signal)
+	trigger := triggerFromSignal(hookSignal)
 	for _, h := range d.hookCfg {
 		if h.Trigger != trigger {
 			continue
 		}
 
 		prov := hookdag.Provenance{HookName: h.Name, TriggerStage: trigger, SourceTurnID: sourceTurnID}
-		res := d.hooks.Execute(ctx, h, prov)
+		res := d.hooks.Execute(ctx, &h, prov)
 
 		return res.Status
 	}
@@ -522,9 +522,9 @@ func (d *acpDispatcher) Ask(_ context.Context, situation string) (string, error)
 // triggerFromSignal extracts the trigger stage from an engine signal string.
 // The signal shape is "hook:<id>" (the OpenSpec pattern id) or "text:<id>";
 // v1 defaults to "post-implement" unless the id carries an explicit stage.
-func triggerFromSignal(signal string) string {
+func triggerFromSignal(hookSignal string) string {
 	// Strip a "hook:" / "text:" prefix.
-	id := signal
+	id := hookSignal
 	for _, p := range []string{"hook:", "text:"} {
 		if len(id) > len(p) && id[:len(p)] == p {
 			id = id[len(p):]

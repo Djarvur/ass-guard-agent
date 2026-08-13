@@ -63,7 +63,7 @@ func NewOpenAIProvider(opts ...OpenAIOption) *OpenAIProvider {
 
 // Send builds a Chat Completions request from the profile + messages, posts it,
 // and parses Choices[0].Message.ToolCalls into zcode-normalized ToolCalls.
-func (p *OpenAIProvider) Send(ctx context.Context, prof profile.Profile, messages []Message) (Response, error) {
+func (p *OpenAIProvider) Send(ctx context.Context, prof *profile.Profile, messages []Message) (Response, error) {
 	key := p.apiKey
 	if key == "" {
 		key = os.Getenv("OPENAI_API_KEY")
@@ -99,7 +99,7 @@ func (p *OpenAIProvider) Send(ctx context.Context, prof profile.Profile, message
 // buildRequest constructs the Chat Completions request: messages → ChatCompletionMessage,
 // profile tools → openai.Tool{Type:function, Function:{Name,Description,Parameters}},
 // tool_choice from the profile, model from the provider override or the profile.
-func (p *OpenAIProvider) buildRequest(prof profile.Profile, messages []Message) openai.ChatCompletionRequest {
+func (p *OpenAIProvider) buildRequest(prof *profile.Profile, messages []Message) openai.ChatCompletionRequest {
 	model := p.model
 	if model == "" {
 		model = prof.Model
@@ -162,11 +162,12 @@ func parseOpenAIResponse(resp openai.ChatCompletionResponse) (Response, error) {
 		var input json.RawMessage
 
 		args := []byte(tc.Function.Arguments)
-		if len(args) == 0 {
+		switch {
+		case len(args) == 0:
 			input = json.RawMessage("{}")
-		} else if json.Valid(args) {
+		case json.Valid(args):
 			input = json.RawMessage(args)
-		} else {
+		default:
 			// The spec says Arguments is a JSON-encoded string; defensively wrap
 			// a non-JSON value as a JSON string so the consumer always sees valid JSON.
 			wrapped, mErr := json.Marshal(tc.Function.Arguments)
@@ -213,7 +214,7 @@ func (p *OpenAIProvider) ToolResultMessage(toolCallID string, result json.RawMes
 // GLM Anthropic endpoint). It returns a clear error so callers do not silently
 // fall back to a non-streaming shape. OpenAI-shape streaming lands in a later
 // phase if a non-Anthropic streaming provider becomes a target.
-func (p *OpenAIProvider) Stream(ctx context.Context, prof profile.Profile, messages []Message) (<-chan StreamChunk, error) {
+func (p *OpenAIProvider) Stream(ctx context.Context, prof *profile.Profile, messages []Message) (<-chan StreamChunk, error) {
 	return nil, errOpenAIStreamNotImplemented
 }
 

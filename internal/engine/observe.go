@@ -241,7 +241,7 @@ func (e *Engine) decideAndRecover( //nolint:nonamedreturns // err assigned by pa
 func (e *Engine) applyDispatcher(ctx context.Context, dec Decision) Decision {
 	if e.Dispatcher == nil {
 		if dec.Action == ActionHook || dec.Action == ActionAsk {
-			dec.Reason = dec.Reason + " (dispatcher not configured; degrading to nothing)"
+			dec.Reason += " (dispatcher not configured; degrading to nothing)"
 			dec.Action = ActionNothing
 		}
 

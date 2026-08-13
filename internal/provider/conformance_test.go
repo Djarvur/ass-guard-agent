@@ -61,7 +61,7 @@ func TestConformance_BothAdapters(t *testing.T) {
 	}
 	for _, c := range cases { //nolint:paralleltest // shared httptest servers
 		t.Run(c.name, func(t *testing.T) {
-			resp, err := c.provider.Send(context.Background(), prof, msgs)
+			resp, err := c.provider.Send(context.Background(), &prof, msgs)
 			if err != nil {
 				t.Fatalf("Send: %v", err)
 			}

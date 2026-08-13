@@ -36,7 +36,7 @@ type initializeResponse struct {
 // handleInitialize echoes the protocol version and advertises loadSession:false.
 // D-09: NO replay in v1, so loadSession is structurally false (session/load
 // returns -32601).
-func (s *Server) handleInitialize(ctx context.Context, params json.RawMessage, msg Message) (any, error) {
+func (s *Server) handleInitialize(ctx context.Context, params json.RawMessage) (any, error) {
 	return initializeResponse{
 		ProtocolVersion: 1,
 		AgentCapabilities: map[string]any{
@@ -56,7 +56,7 @@ type sessionNewResult struct {
 }
 
 // handleSessionNew creates a sessionState and returns its id.
-func (s *Server) handleSessionNew(ctx context.Context, params json.RawMessage, msg Message) (any, error) {
+func (s *Server) handleSessionNew(ctx context.Context, params json.RawMessage) (any, error) {
 	var p struct {
 		Cwd        string `json:"cwd"`
 		McpServers []any  `json:"mcpServers"` //nolint:tagliatelle // ACP wire field
@@ -92,7 +92,7 @@ type sessionPromptResult struct {
 // cancellable turn ctx (CancelFunc stored so session/cancel can abort it),
 // streams chunks via the adapter, and returns the stopReason. The turn runner is
 // the seam (stub in the tracer; real Session.Prompt in Plan 02-05).
-func (s *Server) handleSessionPrompt(ctx context.Context, params json.RawMessage, msg Message) (any, error) {
+func (s *Server) handleSessionPrompt(ctx context.Context, params json.RawMessage) (any, error) {
 	var p sessionPromptParams
 	if err := json.Unmarshal(params, &p); err != nil {
 		return nil, fmt.Errorf("session/prompt params: %w", err)
@@ -140,7 +140,7 @@ func (s *Server) handleSessionPrompt(ctx context.Context, params json.RawMessage
 // It is a notification (no id, no response): it looks up the session's cancel
 // func and calls it. The session/prompt handler observes the cancelled ctx,
 // aborts the turn, drains queued events, and returns stopReason "cancelled".
-func (s *Server) handleSessionCancel(ctx context.Context, params json.RawMessage, msg Message) (any, error) {
+func (s *Server) handleSessionCancel(ctx context.Context, params json.RawMessage) (any, error) {
 	var p struct {
 		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
 	}
@@ -170,7 +170,7 @@ func (s *Server) handleSessionCancel(ctx context.Context, params json.RawMessage
 // handleSessionLoad is a NO-OP per D-09 (NO replay in v1). It returns a -32601
 // method-not-supported error; loadSession is advertised false in initialize.
 // There is deliberately NO replay code path (Pitfall 6 — scope-creep guard).
-func (s *Server) handleSessionLoad(ctx context.Context, params json.RawMessage, msg Message) (any, error) {
+func (s *Server) handleSessionLoad(ctx context.Context, params json.RawMessage) (any, error) {
 	return nil, &RPCError{
 		Code:    CodeMethodNotFound,
 		Message: "session/load not supported (loadSession is false; replay is out of v1 scope — D-09)",
@@ -178,7 +178,7 @@ func (s *Server) handleSessionLoad(ctx context.Context, params json.RawMessage, 
 }
 
 // handleLogout drops the session. It accepts an optional sessionId param.
-func (s *Server) handleLogout(ctx context.Context, params json.RawMessage, msg Message) (any, error) {
+func (s *Server) handleLogout(ctx context.Context, params json.RawMessage) (any, error) {
 	var p struct {
 		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
 	}
@@ -199,7 +199,7 @@ func (s *Server) handleLogout(ctx context.Context, params json.RawMessage, msg M
 // handleSessionSetMode accepts the mode-change notification. v1 has a single
 // mode; this is a no-op that returns an empty result (forward-compatible with a
 // future plan-mode / act-mode split).
-func (s *Server) handleSessionSetMode(ctx context.Context, params json.RawMessage, msg Message) (any, error) {
+func (s *Server) handleSessionSetMode(ctx context.Context, params json.RawMessage) (any, error) {
 	_ = redact.ScrubError(nil) // keep redact import live for future scrubbing here
 
 	return map[string]any{}, nil

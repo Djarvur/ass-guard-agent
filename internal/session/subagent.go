@@ -187,7 +187,7 @@ func (s *Session) streamAndEmitTagged(
 	ctx context.Context, subagentTurnID, parentTurnID string,
 	messages []provider.Message,
 ) (provider.Response, string, error) {
-	ch, err := s.Provider.Stream(ctx, s.Profile, messages)
+	ch, err := s.Provider.Stream(ctx, &s.Profile, messages)
 	if err != nil {
 		return provider.Response{}, "", err
 	}

@@ -29,13 +29,13 @@ func TestTzdataBundled(t *testing.T) {
 // ny returns a time in America/New_York (the valid.yaml top-level zone) for the
 // given wall-clock components. All resolver tests construct `now` this way so
 // they are deterministic regardless of the host TZ.
-func ny(year int, month time.Month, day, hour, min int) time.Time {
+func ny(year int, month time.Month, day, hour, minute int) time.Time {
 	loc, err := time.LoadLocation("America/New_York")
 	if err != nil {
 		panic("America/New_York must load via bundled tzdata: " + err.Error())
 	}
 
-	return time.Date(year, month, day, hour, min, 0, 0, loc)
+	return time.Date(year, month, day, hour, minute, 0, 0, loc)
 }
 
 // loadValid is the shared fixture loader for resolver tests.
@@ -246,9 +246,9 @@ func TestResolveUnknownTier(t *testing.T) {
 func TestSatisfies(t *testing.T) {
 	t.Parallel()
 
-	cap := CapabilityProfile{ToolCalling: true, Streaming: true, ExtendedThinking: false}
-	require.True(t, satisfies(cap, CapabilityReq{}), "zero req is always satisfied")
-	require.True(t, satisfies(cap, CapabilityReq{NeedsTools: true}))
-	require.False(t, satisfies(cap, CapabilityReq{NeedsThinking: true}), "cap lacks thinking")
-	require.False(t, satisfies(cap, CapabilityReq{NeedsStreaming: false, NeedsThinking: true}))
+	caps := CapabilityProfile{ToolCalling: true, Streaming: true, ExtendedThinking: false}
+	require.True(t, satisfies(caps, CapabilityReq{}), "zero req is always satisfied")
+	require.True(t, satisfies(caps, CapabilityReq{NeedsTools: true}))
+	require.False(t, satisfies(caps, CapabilityReq{NeedsThinking: true}), "cap lacks thinking")
+	require.False(t, satisfies(caps, CapabilityReq{NeedsStreaming: false, NeedsThinking: true}))
 }

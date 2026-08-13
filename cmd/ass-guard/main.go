@@ -129,7 +129,7 @@ func runTrace(ctx context.Context, prompt, name, dir, auditLogPath string) error
 
 // openAuditSink resolves the audit sink. Empty path → stderr (default). stdout
 // is rejected (transport discipline).
-func openAuditSink(path string) (sink io.Writer, close func(), err error) {
+func openAuditSink(path string) (sink io.Writer, closeFn func(), err error) {
 	if path == "" || path == "-" {
 		return os.Stderr, nil, nil
 	}

@@ -62,7 +62,7 @@ func resolveLearnedPath(flag string) string {
 
 // runLearningList prints one row per entry to stdout. An empty store prints a
 // header only (exit 0). Diagnostics go to stderr.
-func runLearningList(stdout io.Writer, stderr io.Writer, path string) error {
+func runLearningList(stdout, stderr io.Writer, path string) error {
 	store, err := learning.Open(path)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "learning: open %q: %v\n", path, err)
@@ -94,7 +94,7 @@ func runLearningList(stdout io.Writer, stderr io.Writer, path string) error {
 // runLearningRevert removes the entry by id. A missing id is a no-op + a stderr
 // warning (the store's Revert does not error on a missing id — the CLI warns so
 // the operator knows nothing changed).
-func runLearningRevert(stdout io.Writer, stderr io.Writer, path, id string) error {
+func runLearningRevert(stdout, stderr io.Writer, path, id string) error {
 	store, err := learning.Open(path)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "learning: open %q: %v\n", path, err)

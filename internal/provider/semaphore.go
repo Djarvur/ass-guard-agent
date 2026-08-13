@@ -19,12 +19,12 @@ type Semaphore struct {
 }
 
 // NewSemaphore returns a Semaphore with the given max concurrency.
-func NewSemaphore(max int) *Semaphore {
-	if max < 1 {
-		max = 1
+func NewSemaphore(maxConcurrency int) *Semaphore {
+	if maxConcurrency < 1 {
+		maxConcurrency = 1
 	}
 
-	return &Semaphore{tokens: make(chan struct{}, max)}
+	return &Semaphore{tokens: make(chan struct{}, maxConcurrency)}
 }
 
 // NewDefaultSemaphore returns a Semaphore bounded at DefaultMaxConcurrent.

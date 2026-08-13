@@ -61,7 +61,7 @@ func TestAudit_IntegrationViaProviderCapturer(t *testing.T) {
 		provider.WithAnthropicBaseURL(srv.URL),
 		provider.WithAnthropicRequestCapture(capturer),
 	)
-	if _, err := p.Send(context.Background(), prof, []shaper.Message{{Role: "user", Content: "hi"}}); err != nil {
+	if _, err := p.Send(context.Background(), &prof, []shaper.Message{{Role: "user", Content: "hi"}}); err != nil {
 		t.Fatal(err)
 	}
 

@@ -237,7 +237,7 @@ func (s *Session) toolExecOrStub() toolcat.ToolExecutor { //nolint:ireturn // To
 func (s *Session) streamAndEmit(
 	ctx context.Context, turnID string, messages []provider.Message,
 ) (provider.Response, string, error) {
-	ch, err := s.Provider.Stream(ctx, s.Profile, messages)
+	ch, err := s.Provider.Stream(ctx, &s.Profile, messages)
 	if err != nil {
 		return provider.Response{}, "", err
 	}

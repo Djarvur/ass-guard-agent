@@ -40,7 +40,7 @@ func (f *fakeProvider) set(model string, oc fakeOutcome) *fakeProvider {
 	return f
 }
 
-func (f *fakeProvider) Send(_ context.Context, prof profile.Profile, _ []provider.Message) (provider.Response, error) {
+func (f *fakeProvider) Send(_ context.Context, prof *profile.Profile, _ []provider.Message) (provider.Response, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -59,7 +59,7 @@ func (f *fakeProvider) Send(_ context.Context, prof profile.Profile, _ []provide
 }
 
 func (f *fakeProvider) Stream(
-	context.Context, profile.Profile, []provider.Message,
+	context.Context, *profile.Profile, []provider.Message,
 ) (<-chan provider.StreamChunk, error) {
 	return nil, errors.New("fake: Stream not implemented in dispatch tests")
 }

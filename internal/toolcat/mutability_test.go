@@ -1,7 +1,6 @@
 package toolcat
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -153,5 +152,5 @@ func TestEffectiveMutabilityStringStability(t *testing.T) {
 	}
 	// Ensure the test file references the mutating label at least once so the
 	// stability contract is grep-visible.
-	_ = strings.Contains(classMutating, classMutating)
+	_ = classMutating
 }

@@ -67,7 +67,7 @@ var skRe = regexp.MustCompile(`sk-[A-Za-z0-9_\-]{6,}`)
 // structure minus any embedded tokens.
 func Redact(raw []byte) ([]byte, error) {
 	trimmed := strings.TrimSpace(string(raw))
-	if len(trimmed) == 0 {
+	if trimmed == "" {
 		return raw, nil
 	}
 	// Fast path: valid JSON. Walk the tree, replace secret values, re-encode.

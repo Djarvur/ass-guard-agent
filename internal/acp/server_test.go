@@ -423,7 +423,7 @@ func TestStdoutClean(t *testing.T) {
 	<-done
 
 	out := stdout.String()
-	if len(out) == 0 {
+	if out == "" {
 		t.Fatal("no bytes on stdout; expected the initialize response frame")
 	}
 

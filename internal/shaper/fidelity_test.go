@@ -42,7 +42,7 @@ func TestFidelity_SystemBlocksByteEqual(t *testing.T) {
 	prof := loadProfileFromRoot(t, profilesRoot(t), profileZcode)
 	s := shaper.New()
 
-	params, _, err := s.Shape(prof, []shaper.Message{{Role: roleUser, Content: "x"}})
+	params, _, err := s.Shape(&prof, []shaper.Message{{Role: roleUser, Content: "x"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestFidelity_ToolCountAndThinking(t *testing.T) {
 	prof := loadProfileFromRoot(t, profilesRoot(t), profileZcode)
 	s := shaper.New()
 
-	params, opts, err := s.Shape(prof, nil)
+	params, opts, err := s.Shape(&prof, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestPROF02_SyntheticProfileShapes(t *testing.T) {
 	prof := loadProfileFromRoot(t, profilesRoot(t), "synthetic")
 	s := shaper.New()
 
-	params, opts, err := s.Shape(prof, []shaper.Message{{Role: roleUser, Content: "x"}})
+	params, opts, err := s.Shape(&prof, []shaper.Message{{Role: roleUser, Content: "x"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestPROF02_SyntheticProfileShapes(t *testing.T) {
 func TestPROF02_NoProfileNameLiteralsInShaper(t *testing.T) {
 	t.Parallel()
 
-	root, err := filepath.Abs(filepath.Join(".."))
+	root, err := filepath.Abs("..")
 	if err != nil {
 		t.Fatal(err)
 	}

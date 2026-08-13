@@ -77,7 +77,7 @@ func TestOpenAIProvider_SendParsesToolCalls(t *testing.T) {
 		provider.WithOpenAIBaseURL(srv.URL+"/v1"),
 	)
 
-	resp, err := p.Send(context.Background(), prof, []shaper.Message{{Role: roleUser, Content: "x"}})
+	resp, err := p.Send(context.Background(), &prof, []shaper.Message{{Role: roleUser, Content: "x"}})
 	if err != nil {
 		t.Fatalf("Send: %v", err)
 	}
@@ -136,7 +136,8 @@ func TestOpenAIProvider_NoAPIKeyErrors(t *testing.T) {
 
 	p := provider.NewOpenAIProvider(provider.WithOpenAIBaseURL("http://must-not-be-called.invalid"))
 
-	_, err := p.Send(context.Background(), loadProfile(t, "minimal"), []shaper.Message{{Role: roleUser, Content: "x"}})
+	minProf := loadProfile(t, "minimal")
+	_, err := p.Send(context.Background(), &minProf, []shaper.Message{{Role: roleUser, Content: "x"}})
 	if err == nil {
 		t.Fatal("nil error with no API key; want non-nil")
 	}

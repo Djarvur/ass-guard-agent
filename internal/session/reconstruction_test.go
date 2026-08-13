@@ -166,11 +166,11 @@ type reconProvider struct {
 	n      int
 }
 
-func (r *reconProvider) Send(ctx context.Context, _ profile.Profile, _ []provider.Message) (provider.Response, error) {
+func (r *reconProvider) Send(ctx context.Context, _ *profile.Profile, _ []provider.Message) (provider.Response, error) {
 	return provider.Response{}, nil
 }
 
-func (r *reconProvider) Stream(ctx context.Context, prof profile.Profile, _ []provider.Message) (<-chan provider.StreamChunk, error) {
+func (r *reconProvider) Stream(ctx context.Context, prof *profile.Profile, _ []provider.Message) (<-chan provider.StreamChunk, error) {
 	body, marshalErr := json.Marshal(map[string]any{keyModel: prof.Model})
 	if marshalErr != nil {
 		panic(marshalErr)

@@ -144,7 +144,7 @@ func (f FirecrawlBackend) Fetch(ctx context.Context, target string) (json.RawMes
 func BackendsFromConfig(cfg map[string]string) (map[string]Backend, error) {
 	out := make(map[string]Backend)
 	// Normalize keys: accept the tool name in either case.
-	norm := func(k string) string { return strings.ToLower(k) }
+	norm := strings.ToLower
 	for k, v := range cfg {
 		switch norm(k) {
 		case "websearch":
