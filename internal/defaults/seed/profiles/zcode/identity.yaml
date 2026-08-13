@@ -1,0 +1,25 @@
+headers:
+    - name: HTTP-Referer
+      value_template: <http_referer>
+    - name: User-Agent
+      value_template: <user_agent>
+    - name: X-Os-Category
+      value_template: <x_os_category>
+    - name: X-Os-Version
+      value_template: <x_os_version>
+    - name: X-Platform
+      value_template: <x_platform>
+    - name: X-Title
+      value_template: <x_title>
+    - name: X-ZCode-Agent
+      value_template: <x_zcode_agent>
+    - name: X-ZCode-App-Version
+      value_template: <x_zcode_app_version>
+    - name: x-query-id
+      value_template: <x_query_id>
+    - name: x-request-id
+      value_template: <x_request_id>
+    - name: x-session-id
+      value_template: <x_session_id>
+    - name: x-zcode-trace-id
+      value_template: <x_zcode_trace_id>
