@@ -125,7 +125,8 @@ func writeArtifact(out, name string, res *profile.ExtractResult, paritySession s
 	}
 	// system blocks
 	for i, b := range res.System {
-		err := os.WriteFile(filepath.Join(out, "system", fmt.Sprintf("block-%d.txt", i)), []byte(b.Text), filePermDefault)
+		blockPath := filepath.Join(out, "system", fmt.Sprintf("block-%d.txt", i))
+		err := os.WriteFile(blockPath, []byte(b.Text), filePermDefault)
 		if err != nil {
 			return fmt.Errorf("call: %w", err)
 		}
@@ -194,7 +195,12 @@ func writeArtifact(out, name string, res *profile.ExtractResult, paritySession s
 		return fmt.Errorf("call: %w", err)
 	}
 
-	return os.WriteFile(filepath.Join(out, "meta.yaml"), meta, filePermDefault)
+	err = os.WriteFile(filepath.Join(out, "meta.yaml"), meta, filePermDefault)
+	if err != nil {
+		return fmt.Errorf("write meta.yaml: %w", err)
+	}
+
+	return nil
 }
 
 func headersToYAML(hs []profile.Header) []map[string]string {

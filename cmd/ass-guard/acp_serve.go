@@ -12,7 +12,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"slices"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -455,9 +454,9 @@ func (a *engineTurnRunnerAdapter) LastTurnOutput() engine.TurnOutput {
 
 	var lastAssistant *session.Line
 
-	for _, v := range slices.Backward(lines) {
-		if v.Type == session.TypeAssistantMessage {
-			lastAssistant = &v
+	for i := len(lines) - 1; i >= 0; i-- {
+		if lines[i].Type == session.TypeAssistantMessage {
+			lastAssistant = &lines[i]
 
 			break
 		}
