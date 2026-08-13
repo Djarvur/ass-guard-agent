@@ -46,3 +46,9 @@ spikes/bin/
 # Phase 1 build artifacts (Plan 01-01 T1)
 /ass-guard
 *.log
+
+# Phase 6 distribution artifacts (Plan 06-02): goreleaser output + the snapshot
+# build dir. agent.json is generated at release by scripts/gen-agent-json.sh but
+# the committed dev placeholder IS tracked (do not ignore it).
+/dist/
+
