@@ -25,6 +25,7 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
+	"github.com/Djarvur/ass-guard-agent/internal/version"
 )
 
 const filePermOwner = 0o600
@@ -41,10 +42,11 @@ func main() {
 
 func newRootCmd() *cobra.Command {
 	var (
-		prompt      string
-		profileName string
-		profilesDir string
-		auditLog    string
+		prompt       string
+		profileName  string
+		profilesDir  string
+		auditLog     string
+		versionFlag  bool
 	)
 
 	root := &cobra.Command{
@@ -56,6 +58,13 @@ func newRootCmd() *cobra.Command {
 			"(reserved for ACP frames). Needs ZAI_API_KEY in the environment.",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// --version takes precedence over the tracer default RunE. Output goes
+			// to STDERR (transport discipline — stdout stays clean for ACP frames).
+			if versionFlag {
+				fmt.Fprintln(os.Stderr, "ass-guard version "+version.String())
+				return nil
+			}
+
 			return runTrace(cmd.Context(), prompt, profileName, profilesDir, auditLog)
 		},
 	}
@@ -65,6 +74,8 @@ func newRootCmd() *cobra.Command {
 		"directory containing profile bundles")
 	root.PersistentFlags().StringVar(&auditLog, "audit-log", "",
 		"write the redacted verbatim shaped request to this file (LOG-01); empty = stderr")
+	root.Flags().BoolVar(&versionFlag, "version", false,
+		"print the ass-guard version (build-time-injected) to stderr and exit")
 
 	root.AddCommand(newProfileCmd())
 	root.AddCommand(newParityCmd())
