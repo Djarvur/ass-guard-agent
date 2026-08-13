@@ -76,7 +76,8 @@ func (p *OpenAIProvider) Send(ctx context.Context, prof *profile.Profile, messag
 	req := p.buildRequest(prof, messages)
 
 	if p.capture != nil {
-		if body, err := json.Marshal(req); err == nil {
+		body, err := json.Marshal(req)
+		if err == nil {
 			p.capture(body, nil)
 		}
 	}

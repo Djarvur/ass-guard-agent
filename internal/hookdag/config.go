@@ -87,7 +87,8 @@ var embeddedSeeded []byte
 // violation is found; the config is NOT executed.
 func Load(paths ...string) ([]Hook, error) {
 	merged := make(map[string]any)
-	if err := yaml.Unmarshal(embeddedSeeded, &merged); err != nil {
+	err := yaml.Unmarshal(embeddedSeeded, &merged)
+	if err != nil {
 		return nil, fmt.Errorf("hookdag: decode embedded seeded default: %w", err)
 	}
 
@@ -98,7 +99,8 @@ func Load(paths ...string) ([]Hook, error) {
 		}
 
 		overlay := make(map[string]any)
-		if err := yaml.Unmarshal(raw, &overlay); err != nil {
+		err = yaml.Unmarshal(raw, &overlay)
+		if err != nil {
 			return nil, fmt.Errorf("hookdag: decode config %q: %w", p, err)
 		}
 
@@ -111,11 +113,13 @@ func Load(paths ...string) ([]Hook, error) {
 	}
 
 	var cfg configFile
-	if err := yaml.Unmarshal(out, &cfg); err != nil {
+	err = yaml.Unmarshal(out, &cfg)
+	if err != nil {
 		return nil, fmt.Errorf("hookdag: decode merged config: %w", err)
 	}
 
-	if err := Validate(cfg.Hooks); err != nil {
+	err = Validate(cfg.Hooks)
+	if err != nil {
 		return nil, err
 	}
 
@@ -221,10 +225,13 @@ func Validate(hooks []Hook) error {
 			case StepWait:
 				if s.Duration == "" {
 					v = append(v, fmt.Sprintf("hook %q step %q: wait requires a duration", h.Name, s.Name))
-				} else if _, derr := time.ParseDuration(s.Duration); derr != nil {
-					v = append(v, fmt.Sprintf(
-						"hook %q step %q: unparseable duration %q: %v",
-						h.Name, s.Name, s.Duration, derr))
+				} else {
+					_, derr := time.ParseDuration(s.Duration)
+					if derr != nil {
+						v = append(v, fmt.Sprintf(
+							"hook %q step %q: unparseable duration %q: %v",
+							h.Name, s.Name, s.Duration, derr))
+					}
 				}
 			case StepFreshContext:
 				// no user-supplied fields to validate.

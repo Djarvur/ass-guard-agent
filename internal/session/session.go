@@ -84,13 +84,15 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 		}
 	}()
 
-	if err := s.Manager.AppendUserMessage(turnID, userPrompt); err != nil {
+	err = s.Manager.AppendUserMessage(turnID, userPrompt)
+	if err != nil {
 		return "", err
 	}
 
 	const maxIterations = 16 // bound the tool loop (avoid runaway in stubs)
 	for range maxIterations {
-		if err := ctx.Err(); err != nil {
+		err = ctx.Err()
+		if err != nil {
 			s.recordCanceled(turnID, "context cancelled before turn step")
 
 			return stopCancelled, nil
@@ -289,7 +291,8 @@ func (s *Session) streamAndEmit(
 	// If ctx was cancelled mid-stream, surface that so the caller records a
 	// canceled line + returns "cancelled" (D-16). The provider's goroutine has
 	// already closed the channel (the HTTP request was aborted by ctx).
-	if err := ctx.Err(); err != nil {
+	err = ctx.Err()
+	if err != nil {
 		return resp, sb.String(), err
 	}
 

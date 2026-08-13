@@ -234,7 +234,8 @@ func (s *Scheduler) Dispatch(ctx context.Context, tier, project string, capReq C
 			}
 
 			// Semaphore + provider call.
-			if err := s.sem.Acquire(ctx); err != nil {
+			err := s.sem.Acquire(ctx)
+			if err != nil {
 				return provider.Response{}, fmt.Errorf("scheduler: acquire semaphore: %w", err)
 			}
 

@@ -106,7 +106,8 @@ func TestReadFrameParsesOneLine(t *testing.T) {
 		t.Errorf("id = %v; want 3", msg.ID)
 	}
 	// Next read at clean EOF returns io.EOF.
-	if _, err := readFrame(r); !errors.Is(err, io.EOF) {
+	_, err = readFrame(r)
+	if !errors.Is(err, io.EOF) {
 		t.Errorf("readFrame at EOF = %v; want io.EOF", err)
 	}
 }
@@ -120,7 +121,8 @@ func TestReadFrameMalformedJSON(t *testing.T) {
 	in := []byte("{\"jsonrpc\":\"2.0\",TRUNCATED\n{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\"}\n")
 
 	r := bufio.NewReader(bytes.NewReader(in))
-	if _, err := readFrame(r); err == nil {
+	_, err := readFrame(r)
+	if err == nil {
 		t.Fatal("readFrame returned nil error for malformed JSON; want parse error")
 	}
 	// The reader is still usable: the next well-formed line parses.

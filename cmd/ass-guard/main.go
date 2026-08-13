@@ -145,7 +145,8 @@ func openAuditSink(path string) (sink io.Writer, closeFn func(), err error) {
 // defaultProfilesDir resolves the profiles directory relative to the working
 // directory (the binary is run from the repo root in dev; the flag overrides).
 func defaultProfilesDir() string {
-	if abs, err := filepath.Abs("profiles"); err == nil {
+	abs, err := filepath.Abs("profiles")
+	if err == nil {
 		return abs
 	}
 

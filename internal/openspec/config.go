@@ -78,11 +78,12 @@ func (e *ConfigError) Error() string {
 // compiled once in patterntable.go's FromConfig, which is the only consumer).
 func LoadConfig(path string) (*OpenSpecConfig, error) {
 	var cfg OpenSpecConfig
-	if _, err := toml.DecodeFile(path, &cfg); err != nil {
+	_, err := toml.DecodeFile(path, &cfg)
+	if err != nil {
 		return nil, fmt.Errorf("openspec: decode %q: %w", path, err)
 	}
 
-	err := validate(&cfg)
+	err = validate(&cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -93,11 +94,12 @@ func LoadConfig(path string) (*OpenSpecConfig, error) {
 // DefaultConfig returns the embedded zero-config floor (OPEN-02).
 func DefaultConfig() (*OpenSpecConfig, error) {
 	var cfg OpenSpecConfig
-	if _, err := toml.Decode(string(embeddedSeeded), &cfg); err != nil {
+	_, err := toml.Decode(string(embeddedSeeded), &cfg)
+	if err != nil {
 		return nil, fmt.Errorf("openspec: decode embedded seeded.toml: %w", err)
 	}
 
-	err := validate(&cfg)
+	err = validate(&cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +127,8 @@ func validate(cfg *OpenSpecConfig) error {
 			continue
 		}
 
-		if _, err := regexp.Compile(p.Regex); err != nil {
+		_, err := regexp.Compile(p.Regex)
+		if err != nil {
 			v = append(v, fmt.Sprintf("patterns[%d] %q: invalid regex %q: %v", i, p.ID, p.Regex, err))
 		}
 	}

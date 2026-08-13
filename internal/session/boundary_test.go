@@ -36,7 +36,8 @@ func TestMaybeAppendBoundary_OnMutatingTool(t *testing.T) {
 		},
 		{FinishReason: stopEndTurn},
 	})
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "run ls"}}); err != nil {
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "run ls"}})
+	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 
@@ -65,7 +66,8 @@ func TestMaybeAppendBoundary_ReadOnlyNoBoundary(t *testing.T) {
 		},
 		{FinishReason: stopEndTurn},
 	})
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "read"}}); err != nil {
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "read"}})
+	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 
@@ -90,7 +92,8 @@ func TestMaybeAppendBoundary_ConfigAddsBoundary(t *testing.T) {
 
 	s.ConfigAdded = []string{toolWebFetch}
 
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "fetch"}}); err != nil {
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "fetch"}})
+	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 
@@ -121,7 +124,8 @@ func TestStreamWired(t *testing.T) {
 
 	s.Catalog = toolcat.NewCatalog()
 
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "hi"}}); err != nil {
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "hi"}})
+	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 	// At least one AgentMessageChunk must have been published via Stream.

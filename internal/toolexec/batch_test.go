@@ -126,7 +126,8 @@ func TestDispatchBatch_MutatingSerialization(t *testing.T) {
 	})
 	calls := []provider.ToolCall{{Name: toolBash}, {Name: toolWrite}, {Name: "Edit"}}
 
-	if _, err := toolexec.DispatchBatch(context.Background(), exec, catalog, calls); err != nil {
+	_, err := toolexec.DispatchBatch(context.Background(), exec, catalog, calls)
+	if err != nil {
 		t.Fatalf("DispatchBatch err = %v", err)
 	}
 
@@ -191,7 +192,8 @@ func TestDispatchBatch_MutatingAlone(t *testing.T) {
 	})
 
 	calls := []provider.ToolCall{{Name: toolRead}, {Name: toolBash}, {Name: toolGrep}}
-	if _, err := toolexec.DispatchBatch(context.Background(), exec, catalog, calls); err != nil {
+	_, err := toolexec.DispatchBatch(context.Background(), exec, catalog, calls)
+	if err != nil {
 		t.Fatalf("DispatchBatch err = %v", err)
 	}
 

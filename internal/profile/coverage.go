@@ -26,7 +26,8 @@ func LoadCoverage(path string) (CoverageManifest, error) {
 	// Tier is marshaled as an int in the manifest; yaml.v3 unmarshals it into
 	// the Tier (int) type directly.
 	var m CoverageManifest
-	if err := yaml.Unmarshal(raw, &m); err != nil {
+	err = yaml.Unmarshal(raw, &m)
+	if err != nil {
 		return CoverageManifest{}, err
 	}
 

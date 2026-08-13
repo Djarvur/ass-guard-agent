@@ -106,7 +106,8 @@ func TestAnthropicProvider_SendParsesToolUse(t *testing.T) {
 	}
 
 	var in map[string]any
-	if err := json.Unmarshal(resp.ToolCalls[0].Input, &in); err != nil {
+	err = json.Unmarshal(resp.ToolCalls[0].Input, &in)
+	if err != nil {
 		t.Fatalf("unmarshal Input: %v", err)
 	}
 

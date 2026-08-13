@@ -49,7 +49,8 @@ func Open(path string) (*Store, error) {
 		}
 	}
 
-	if _, err := os.Stat(path); os.IsNotExist(err) {
+	_, err := os.Stat(path)
+	if os.IsNotExist(err) {
 		werr := s.save(nil)
 		if werr != nil {
 			return nil, fmt.Errorf("learning: create %q: %w", path, werr)
@@ -201,7 +202,8 @@ func (s *Store) load() []Entry {
 	}
 
 	var env fileEnvelope
-	if err := yaml.Unmarshal(raw, &env); err != nil {
+	err = yaml.Unmarshal(raw, &env)
+	if err != nil {
 		return nil
 	}
 
@@ -219,11 +221,13 @@ func (s *Store) save(entries []Entry) error {
 	}
 
 	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
+	err = os.WriteFile(tmp, raw, 0o600)
+	if err != nil {
 		return fmt.Errorf("learning: write tmp %q: %w", tmp, err)
 	}
 
-	if err := os.Rename(tmp, s.path); err != nil {
+	err = os.Rename(tmp, s.path)
+	if err != nil {
 		return fmt.Errorf("learning: rename %q → %q: %w", tmp, s.path, err)
 	}
 

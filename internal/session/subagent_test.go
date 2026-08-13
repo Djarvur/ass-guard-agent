@@ -37,7 +37,8 @@ func TestDispatchSubagent_AppendsDispatchLine(t *testing.T) {
 		},
 		{FinishReason: stopEndTurn},
 	})
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "dispatch"}}); err != nil {
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "dispatch"}})
+	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 
@@ -71,7 +72,8 @@ func TestSubagent_StreamsProgressWithParentTurnID(t *testing.T) {
 	})
 	chunks := bus.Subscribe("AgentMessageChunk", event.BufAgentMessageChunk)
 
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "go"}}); err != nil {
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "go"}})
+	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 	// Drain a beat; at least one chunk should arrive (the subagent streams).
@@ -111,7 +113,8 @@ func TestSubagent_FinalResultToParent(t *testing.T) {
 		},
 		{FinishReason: stopEndTurn},
 	})
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "go"}}); err != nil {
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "go"}})
+	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 
@@ -146,7 +149,8 @@ func TestSubagent_RestrictedExecutor(t *testing.T) {
 	fake := &fakeToolExec{}
 
 	s.toolExec = fake
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "go"}}); err != nil {
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "go"}})
+	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 	// The fake executor records calls; assertion is structural (the subagent
@@ -186,7 +190,8 @@ func TestSubagentPanicRecovery(t *testing.T) {
 	// Inject a panicking subagent runner.
 	s.subagentRunner = panickingSubagentRunner{}
 
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "go"}}); err != nil {
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "go"}})
+	if err != nil {
 		// The parent may return an error from the subagent result, or continue.
 		t.Logf("parent returned err=%v (acceptable)", err)
 	}

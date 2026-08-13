@@ -201,7 +201,8 @@ func (r *sessionTurnRunner) setupEngine() error {
 		return err
 	}
 
-	if err := openspec.RegisterTools(catalog, oscfg); err != nil {
+	err = openspec.RegisterTools(catalog, oscfg)
+	if err != nil {
 		return err
 	}
 
@@ -223,7 +224,8 @@ func (r *sessionTurnRunner) setupEngine() error {
 
 	// Learning store (LRN-01..04) — versioned .ass-guard/learned.yaml.
 	learnedPath := filepath.Join(r.workDirOrDefault(), ".ass-guard", "learned.yaml")
-	if learned, lerr := learning.Open(learnedPath); lerr == nil {
+	learned, lerr := learning.Open(learnedPath)
+	if lerr == nil {
 		r.learned = learned
 	} else {
 		log.Printf("ass-guard: learning store open failed (continuing without learning): %v", lerr)

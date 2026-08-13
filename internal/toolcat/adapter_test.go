@@ -50,11 +50,13 @@ func TestAdapter_ResolveCallParsesInput(t *testing.T) {
 		t.Errorf("ResolveCall returned %s, want the input unchanged", out)
 	}
 
-	if _, err := a.ResolveCall(toolWrite, in, decls); err == nil {
+	_, err = a.ResolveCall(toolWrite, in, decls)
+	if err == nil {
 		t.Error("ResolveCall Write (undeclared) returned nil error; want non-nil")
 	}
 
-	if _, err := a.ResolveCall(toolRead, json.RawMessage(`{bad`), decls); err == nil {
+	_, err = a.ResolveCall(toolRead, json.RawMessage(`{bad`), decls)
+	if err == nil {
 		t.Error("ResolveCall accepted malformed JSON; want non-nil error")
 	}
 }

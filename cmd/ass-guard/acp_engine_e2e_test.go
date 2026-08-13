@@ -419,7 +419,8 @@ func TestE2E_Criterion4_LearningAskOnce(t *testing.T) {
 
 	_ = store.RecordCandidate("sit-x", "fresh-context", "turn-1")
 	for i := range 2 { // 2 confirms ⇒ still candidate
-		if _, err := store.Confirm("sit-x", "fresh-context", "turn-x"); err != nil {
+		_, err := store.Confirm("sit-x", "fresh-context", "turn-x")
+		if err != nil {
 			t.Fatalf("Confirm %d: %v", i, err)
 		}
 	}
@@ -428,7 +429,8 @@ func TestE2E_Criterion4_LearningAskOnce(t *testing.T) {
 		t.Errorf("after 2 confirms Status = %s; want candidate", e.Status)
 	}
 	// 3rd confirm flips to active.
-	if _, err := store.Confirm("sit-x", "fresh-context", "turn-y"); err != nil {
+	_, err := store.Confirm("sit-x", "fresh-context", "turn-y")
+	if err != nil {
 		t.Fatal(err)
 	}
 

@@ -35,7 +35,8 @@ func TestStore_OpenCreatesEmpty(t *testing.T) {
 		t.Fatalf("Open: %v", err)
 	}
 
-	if _, err := os.Stat(path); err != nil {
+	_, err = os.Stat(path)
+	if err != nil {
 		t.Errorf("Open did not create %q: %v", path, err)
 	}
 
@@ -99,7 +100,8 @@ func TestStore_ConfirmThresholdActive(t *testing.T) {
 
 	_ = s.RecordCandidate("feature", stopContinue, "t1")
 	for _, tid := range []string{"t1", "t2", "t3"} {
-		if _, err := s.Confirm("feature", stopContinue, tid); err != nil {
+		_, err := s.Confirm("feature", stopContinue, tid)
+		if err != nil {
 			t.Fatalf("Confirm(%s): %v", tid, err)
 		}
 	}
@@ -300,12 +302,14 @@ func TestStore_RevertAtomicReadOnlyDir(t *testing.T) {
 	_ = s.RecordCandidate("b", "y", "t1")
 	_ = s.RecordCandidate("c", "z", "t1")
 	// Make the directory read-only so the temp+rename fails. Restore after.
-	if err := os.Chmod(dir, 0o500); err != nil {
+	err = os.Chmod(dir, 0o500)
+	if err != nil {
 		t.Fatalf("chmod dir read-only: %v", err)
 	}
 	defer func() { _ = os.Chmod(dir, 0o755) }()
 
-	if err := s.Revert(learning.Slug("b")); err == nil {
+	err = s.Revert(learning.Slug("b"))
+	if err == nil {
 		t.Error("Revert on a read-only dir = nil; want a write error (atomic)")
 	}
 	// Restore + verify all 3 entries still present.

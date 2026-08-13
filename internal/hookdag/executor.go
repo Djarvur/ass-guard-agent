@@ -82,7 +82,8 @@ func (e *Executor) Execute(ctx context.Context, hook *Hook, prov Provenance) Res
 
 	for i := range hook.Steps {
 		step := &hook.Steps[i]
-		if err := ctx.Err(); err != nil {
+		err := ctx.Err()
+		if err != nil {
 			res.Status = StatusError
 			res.FailedStep = i
 			res.Detail = fmt.Sprintf("ctx cancelled before step %q: %v", step.Name, err)

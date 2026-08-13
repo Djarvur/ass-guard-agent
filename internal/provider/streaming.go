@@ -171,7 +171,8 @@ func (p *AnthropicProvider) drainSSE(ctx context.Context, body io.Reader, ch cha
 		}
 
 		var ev map[string]any
-		if err := json.Unmarshal([]byte(payload), &ev); err != nil {
+		err = json.Unmarshal([]byte(payload), &ev)
+		if err != nil {
 			continue
 		}
 
@@ -341,7 +342,8 @@ func finalizeAssembled(b *bytes.Buffer) json.RawMessage {
 // It re-decodes/marshals so the result is valid JSON.
 func injectStreamTrue(body []byte) []byte {
 	var m map[string]any
-	if err := json.Unmarshal(body, &m); err != nil {
+	err := json.Unmarshal(body, &m)
+	if err != nil {
 		return body
 	}
 

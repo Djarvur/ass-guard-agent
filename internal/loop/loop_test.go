@@ -57,7 +57,8 @@ func TestRun_PropagatesProviderError(t *testing.T) {
 	t.Parallel()
 
 	p := &fakeProvider{err: errors.New("boom")}
-	if _, err := loop.Run(context.Background(), &profile.Profile{}, p, "x"); err == nil {
+	_, err := loop.Run(context.Background(), &profile.Profile{}, p, "x")
+	if err == nil {
 		t.Fatal("Run returned nil error; want the provider error propagated")
 	}
 }

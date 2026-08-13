@@ -56,15 +56,18 @@ func TestTranscriptReconstructsSession(t *testing.T) {
 	_ = m.AppendSessionStart("sess-recon")
 
 	// Prompt 1: triggers Bash boundary.
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "list files"}}); err != nil {
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "list files"}})
+	if err != nil {
 		t.Fatalf("prompt 1: %v", err)
 	}
 	// Prompt 2: triggers Task subagent.
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "research"}}); err != nil {
+	_, err = s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "research"}})
+	if err != nil {
 		t.Fatalf("prompt 2: %v", err)
 	}
 	// Prompt 3: end_turn text.
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "summarize"}}); err != nil {
+	_, err = s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "summarize"}})
+	if err != nil {
 		t.Fatalf("prompt 3: %v", err)
 	}
 	// Inject a canceled line directly (cancel mid-turn is exercised separately by

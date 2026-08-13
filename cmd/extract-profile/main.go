@@ -48,7 +48,8 @@ func main() {
 }
 
 func defaultRolloutDir() string {
-	if home, err := os.UserHomeDir(); err == nil {
+	home, err := os.UserHomeDir()
+	if err == nil {
 		return filepath.Join(home, ".zcode", "cli", "rollout")
 	}
 
@@ -80,7 +81,8 @@ func run(sessions, rolloutDir, out, name, paritySession string) error {
 		return fmt.Errorf("extract: %w", err)
 	}
 
-	if err := writeArtifact(out, name, &res, paritySession); err != nil {
+	err = writeArtifact(out, name, &res, paritySession)
+	if err != nil {
 		return fmt.Errorf("write artifact: %w", err)
 	}
 
@@ -112,7 +114,8 @@ func chooseSession(stats []profile.SessionStat, sessions string) (profile.Sessio
 }
 
 func writeArtifact(out, name string, res *profile.ExtractResult, paritySession string) error {
-	if err := os.MkdirAll(filepath.Join(out, "system"), 0o755); err != nil {
+	err := os.MkdirAll(filepath.Join(out, "system"), 0o755)
+	if err != nil {
 		return err
 	}
 	// system blocks
@@ -128,15 +131,18 @@ func writeArtifact(out, name string, res *profile.ExtractResult, paritySession s
 		return err
 	}
 
-	if err := os.WriteFile(filepath.Join(out, "tools.json"), toolsJSON, 0o644); err != nil {
+	err = os.WriteFile(filepath.Join(out, "tools.json"), toolsJSON, 0o644)
+	if err != nil {
 		return err
 	}
 	// thinking + tool_choice
-	if err := os.WriteFile(filepath.Join(out, "thinking.json"), res.Thinking, 0o644); err != nil {
+	err = os.WriteFile(filepath.Join(out, "thinking.json"), res.Thinking, 0o644)
+	if err != nil {
 		return err
 	}
 
-	if err := os.WriteFile(filepath.Join(out, "tool_choice.json"), res.ToolChoice, 0o644); err != nil {
+	err = os.WriteFile(filepath.Join(out, "tool_choice.json"), res.ToolChoice, 0o644)
+	if err != nil {
 		return err
 	}
 	// profile.yaml
@@ -149,7 +155,8 @@ func writeArtifact(out, name string, res *profile.ExtractResult, paritySession s
 		return err
 	}
 
-	if err := os.WriteFile(filepath.Join(out, "profile.yaml"), profileYAML, 0o644); err != nil {
+	err = os.WriteFile(filepath.Join(out, "profile.yaml"), profileYAML, 0o644)
+	if err != nil {
 		return err
 	}
 	// identity.yaml (header names byte-faithful, values templated)
@@ -160,7 +167,8 @@ func writeArtifact(out, name string, res *profile.ExtractResult, paritySession s
 		return err
 	}
 
-	if err := os.WriteFile(filepath.Join(out, "identity.yaml"), idYAML, 0o644); err != nil {
+	err = os.WriteFile(filepath.Join(out, "identity.yaml"), idYAML, 0o644)
+	if err != nil {
 		return err
 	}
 	// coverage.yaml (PROF-05 manifest)
@@ -171,7 +179,8 @@ func writeArtifact(out, name string, res *profile.ExtractResult, paritySession s
 		return err
 	}
 
-	if err := os.WriteFile(filepath.Join(out, "coverage.yaml"), covYAML, 0o644); err != nil {
+	err = os.WriteFile(filepath.Join(out, "coverage.yaml"), covYAML, 0o644)
+	if err != nil {
 		return err
 	}
 	// meta.yaml (PROF-03 target_capture_ref)

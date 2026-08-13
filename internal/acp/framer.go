@@ -40,11 +40,13 @@ func writeFrame(w io.Writer, v any) error {
 		return errors.New("marshaled frame contains a raw newline byte — internal invariant violated")
 	}
 
-	if _, err := w.Write(raw); err != nil {
+	_, err = w.Write(raw)
+	if err != nil {
 		return fmt.Errorf("write frame: %w", err)
 	}
 
-	if _, err := w.Write([]byte("\n")); err != nil {
+	_, err = w.Write([]byte("\n"))
+	if err != nil {
 		return fmt.Errorf("write frame newline: %w", err)
 	}
 
@@ -61,7 +63,8 @@ func containsDecodedNewline(v any) bool {
 	}
 
 	var node any
-	if err := json.Unmarshal(raw, &node); err != nil {
+	err = json.Unmarshal(raw, &node)
+	if err != nil {
 		return false
 	}
 
@@ -107,7 +110,8 @@ func readFrame(r *bufio.Reader) (*Message, error) {
 	}
 
 	var msg Message
-	if err := json.Unmarshal(line, &msg); err != nil {
+	err = json.Unmarshal(line, &msg)
+	if err != nil {
 		return nil, fmt.Errorf("unmarshal frame: %w (line=%q)", err, string(line))
 	}
 

@@ -38,7 +38,8 @@ func (l *Loader) Load(name string) (Profile, error) {
 	}
 
 	var p Profile
-	if err := loadYAML(filepath.Join(dir, "profile.yaml"), &p); err != nil {
+	err = loadYAML(filepath.Join(dir, "profile.yaml"), &p)
+	if err != nil {
 		return Profile{}, fmt.Errorf("profile %q profile.yaml: %w", name, err)
 	}
 
@@ -49,7 +50,8 @@ func (l *Loader) Load(name string) (Profile, error) {
 
 	p.System = blocks
 
-	if err := loadJSON(filepath.Join(dir, "tools.json"), &p.Tools); err != nil {
+	err = loadJSON(filepath.Join(dir, "tools.json"), &p.Tools)
+	if err != nil {
 		return Profile{}, fmt.Errorf("profile %q tools.json: %w", name, err)
 	}
 
@@ -57,17 +59,20 @@ func (l *Loader) Load(name string) (Profile, error) {
 		Headers []Header `yaml:"headers"`
 	}
 
-	if err := loadYAML(filepath.Join(dir, "identity.yaml"), &id); err != nil {
+	err = loadYAML(filepath.Join(dir, "identity.yaml"), &id)
+	if err != nil {
 		return Profile{}, fmt.Errorf("profile %q identity.yaml: %w", name, err)
 	}
 
 	p.Headers = id.Headers
 
-	if p.Thinking, err = os.ReadFile(filepath.Join(dir, "thinking.json")); err != nil {
+	p.Thinking, err = os.ReadFile(filepath.Join(dir, "thinking.json"))
+	if err != nil {
 		return Profile{}, fmt.Errorf("profile %q thinking.json: %w", name, err)
 	}
 
-	if p.ToolChoice, err = os.ReadFile(filepath.Join(dir, "tool_choice.json")); err != nil {
+	p.ToolChoice, err = os.ReadFile(filepath.Join(dir, "tool_choice.json"))
+	if err != nil {
 		return Profile{}, fmt.Errorf("profile %q tool_choice.json: %w", name, err)
 	}
 

@@ -66,7 +66,8 @@ func freshContextStep(ctx context.Context, e *Executor, step *Step) (detail stri
 	}
 
 	cause := "fresh-context:" + step.Name
-	if err := e.Boundaries.OpenBoundary(ctx, cause); err != nil {
+	err = e.Boundaries.OpenBoundary(ctx, cause)
+	if err != nil {
 		return "", fmt.Errorf("fresh-context %q: %w", step.Name, err)
 	}
 
@@ -80,7 +81,8 @@ func waitStep(ctx context.Context, step *Step) (detail string, err error) {
 	d := 0 * time.Second
 
 	if step.Duration != "" {
-		if parsed, perr := time.ParseDuration(step.Duration); perr == nil {
+		parsed, perr := time.ParseDuration(step.Duration)
+		if perr == nil {
 			d = parsed
 		}
 	}

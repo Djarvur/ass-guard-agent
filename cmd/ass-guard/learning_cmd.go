@@ -103,7 +103,8 @@ func runLearningRevert(stdout, stderr io.Writer, path, id string) error {
 	}
 
 	before := len(store.List())
-	if err := store.Revert(id); err != nil {
+	err = store.Revert(id)
+	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "learning: revert %q: %v\n", id, err)
 
 		return err

@@ -61,7 +61,8 @@ func TestAudit_IntegrationViaProviderCapturer(t *testing.T) {
 		provider.WithAnthropicBaseURL(srv.URL),
 		provider.WithAnthropicRequestCapture(capturer),
 	)
-	if _, err := p.Send(context.Background(), &prof, []shaper.Message{{Role: "user", Content: "hi"}}); err != nil {
+	_, err = p.Send(context.Background(), &prof, []shaper.Message{{Role: "user", Content: "hi"}})
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -81,7 +82,8 @@ func TestAudit_IntegrationViaProviderCapturer(t *testing.T) {
 	}
 	// Confirm the line is one JSON object.
 	var line map[string]any
-	if err := json.Unmarshal([]byte(strings.TrimSpace(out)), &line); err != nil {
+	err = json.Unmarshal([]byte(strings.TrimSpace(out)), &line)
+	if err != nil {
 		t.Errorf("audit line is not one JSON object: %v", err)
 	}
 }

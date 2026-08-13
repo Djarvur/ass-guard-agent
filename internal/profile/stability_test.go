@@ -19,7 +19,8 @@ func rolloutDir(t *testing.T) string {
 	}
 
 	dir := filepath.Join(home, ".zcode", "cli", "rollout")
-	if _, err := os.Stat(dir); err != nil {
+	_, err = os.Stat(dir)
+	if err != nil {
 		return ""
 	}
 
@@ -45,7 +46,8 @@ func TestStability_WithinSessionExtractionSource(t *testing.T) {
 		t.Skipf("no main session: %v", err)
 	}
 
-	if _, err := profile.ExtractFromRollout(chosen.Path); err != nil {
+	_, err = profile.ExtractFromRollout(chosen.Path)
+	if err != nil {
 		t.Fatalf("within-session stability failed for %s: %v", chosen.ID, err)
 	}
 }

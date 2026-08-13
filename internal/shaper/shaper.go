@@ -280,7 +280,8 @@ func toToolChoice(raw json.RawMessage) anthropic.ToolChoiceUnionParam {
 // working entropy source.
 func uuidV4() string {
 	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
+	_, err := rand.Read(b[:])
+	if err != nil {
 		panic("crypto/rand failed: " + err.Error())
 	}
 

@@ -42,7 +42,8 @@ func putStubOnPATH(t *testing.T) {
 		t.Fatalf("read stub: %v", err)
 	}
 
-	if err := os.WriteFile(target, data, 0o755); err != nil {
+	err = os.WriteFile(target, data, 0o755)
+	if err != nil {
 		t.Fatalf("write stub copy: %v", err)
 	}
 
@@ -120,7 +121,8 @@ func TestAdapter_CtxCancelKillsProcess(t *testing.T) { //nolint:paralleltest // 
 	}
 	// Confirm no orphaned stub process lingers. Best-effort: pgrep for the
 	// stub sleep; if ps is unavailable this check is a no-op.
-	if _, perr := exec.LookPath("pgrep"); perr == nil {
+	_, perr := exec.LookPath("pgrep")
+	if perr == nil {
 		// Give the OS a moment to reap.
 		time.Sleep(100 * time.Millisecond)
 
@@ -171,7 +173,8 @@ func TestAdapter_RealOpenspecGated(t *testing.T) {
 		t.Skip("set ASSGUARD_OPENSPEC_BIN=1 to run against the real openspec binary")
 	}
 
-	if _, err := exec.LookPath("openspec"); err != nil {
+	_, err := exec.LookPath("openspec")
+	if err != nil {
 		t.Skip("openspec binary not on PATH even though ASSGUARD_OPENSPEC_BIN=1")
 	}
 

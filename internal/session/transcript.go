@@ -88,13 +88,15 @@ const selfGitignoreContent = "*\n!.gitignore\n"
 // opens the per-session JSONL file O_APPEND|O_CREATE|O_WRONLY mode 0600.
 func openTranscript(dir, sessionID string) (*os.File, string, error) {
 	storeDir := filepath.Join(dir, ".ass-guard")
-	if err := os.MkdirAll(storeDir, 0o755); err != nil {
+	err := os.MkdirAll(storeDir, 0o755)
+	if err != nil {
 		return nil, "", err
 	}
 
 	giPath := filepath.Join(storeDir, ".gitignore")
-	if _, err := os.Stat(giPath); os.IsNotExist(err) {
-		err := os.WriteFile(giPath, []byte(selfGitignoreContent), 0o644)
+	_, err = os.Stat(giPath)
+	if os.IsNotExist(err) {
+		err = os.WriteFile(giPath, []byte(selfGitignoreContent), 0o644)
 		if err != nil {
 			return nil, "", err
 		}

@@ -135,7 +135,8 @@ func TestLoadLayering(t *testing.T) {
 	dir := t.TempDir()
 
 	path := filepath.Join(dir, "overlay.yaml")
-	if err := os.WriteFile(path, []byte(overlay), 0o644); err != nil {
+	err := os.WriteFile(path, []byte(overlay), 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
@@ -182,7 +183,8 @@ func TestLoadRejectsBadOverlay(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	if _, err := hookdag.Load(path); err == nil {
+	_, err = hookdag.Load(path)
+	if err == nil {
 		t.Fatal("Load returned nil; want ConfigError for bad overlay")
 	}
 }

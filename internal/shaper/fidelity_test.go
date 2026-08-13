@@ -60,7 +60,8 @@ func TestFidelity_SystemBlocksByteEqual(t *testing.T) {
 		} `json:"system"`
 	}
 
-	if err := json.Unmarshal(raw, &got); err != nil {
+	err = json.Unmarshal(raw, &got)
+	if err != nil {
 		t.Fatal(err)
 	}
 

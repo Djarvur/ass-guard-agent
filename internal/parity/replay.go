@@ -95,7 +95,8 @@ func ExtractTurnsFromRollout(path string) ([]CapturedTurn, error) {
 		})
 	}
 
-	if err := scanner.Err(); err != nil {
+	err = scanner.Err()
+	if err != nil {
 		return nil, fmt.Errorf("scan rollout: %w", err)
 	}
 
@@ -110,7 +111,8 @@ func LoadReplaySession(jsonPath string) ([]CapturedTurn, error) {
 	}
 
 	var turns []CapturedTurn
-	if err := json.Unmarshal(raw, &turns); err != nil {
+	err = json.Unmarshal(raw, &turns)
+	if err != nil {
 		return nil, fmt.Errorf("parse replay session: %w", err)
 	}
 

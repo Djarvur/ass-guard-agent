@@ -140,7 +140,8 @@ func ExtractFromRollout(path string) (ExtractResult, error) {
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
+	err = scanner.Err()
+	if err != nil {
 		return ExtractResult{}, fmt.Errorf("scan rollout: %w", err)
 	}
 

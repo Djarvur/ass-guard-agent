@@ -35,7 +35,8 @@ var embeddedDefault []byte
 // is preserved exactly; only the parsing library changes.
 func Load(paths ...string) (*Config, error) {
 	merged := make(map[string]any)
-	if err := yaml.Unmarshal(embeddedDefault, &merged); err != nil {
+	err := yaml.Unmarshal(embeddedDefault, &merged)
+	if err != nil {
 		return nil, fmt.Errorf("decode embedded scheduling default: %w", err)
 	}
 
@@ -46,7 +47,8 @@ func Load(paths ...string) (*Config, error) {
 		}
 
 		overlay := make(map[string]any)
-		if err := yaml.Unmarshal(raw, &overlay); err != nil {
+		err = yaml.Unmarshal(raw, &overlay)
+		if err != nil {
 			return nil, fmt.Errorf("decode scheduling config %q: %w", p, err)
 		}
 
@@ -61,13 +63,15 @@ func Load(paths ...string) (*Config, error) {
 	}
 
 	var cfg Config
-	if err := yaml.Unmarshal(out, &cfg); err != nil {
+	err = yaml.Unmarshal(out, &cfg)
+	if err != nil {
 		return nil, fmt.Errorf("decode scheduling config: %w", err)
 	}
 
 	applyDefaults(&cfg)
 
-	if err := Validate(&cfg); err != nil {
+	err = Validate(&cfg)
+	if err != nil {
 		return nil, err
 	}
 

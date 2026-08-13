@@ -236,7 +236,8 @@ func TestRequestShapedPublished(t *testing.T) {
 	ch := bus.Subscribe("RequestShaped", event.BufRequestShaped)
 
 	s, _, _ := newTestSession(t, bus, []provider.Response{{FinishReason: stopEndTurn}})
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "hi"}}); err != nil {
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "hi"}})
+	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 
@@ -262,7 +263,8 @@ func TestTranscriptWriterAsync(t *testing.T) { //nolint:paralleltest // timing-s
 
 	start := time.Now()
 
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "hi"}}); err != nil {
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "hi"}})
+	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 
@@ -343,7 +345,8 @@ func TestStubToolExecution(t *testing.T) {
 		},
 		{FinishReason: stopEndTurn},
 	})
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "read x"}}); err != nil {
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "read x"}})
+	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 
@@ -461,7 +464,8 @@ func TestPromptDispatchBatchLoop(t *testing.T) {
 	rec := &recordingToolExec{sleep: 10 * time.Millisecond}
 	s.SetToolExecutor(rec)
 
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "do it"}}); err != nil {
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "do it"}})
+	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 	// Both tools executed via the injected (recording) executor — DispatchBatch
@@ -517,7 +521,8 @@ func TestPromptNilToolExecutorStubs(t *testing.T) {
 	s.Catalog.Register(toolcat.Tool{Name: toolRead, Mutability: toolcat.MutabilityReadOnly})
 	// SetToolExecutor NOT called — toolExec is nil.
 
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "hi"}}); err != nil {
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "hi"}})
+	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 

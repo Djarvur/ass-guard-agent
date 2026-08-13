@@ -56,7 +56,8 @@ func TestRealExecutor_CatalogLookup(t *testing.T) {
 		t.Errorf("out = %s; want {\"read\":\"ok\"}", out)
 	}
 
-	if _, err := re.Execute(context.Background(), "Mystery", json.RawMessage(`{}`)); err == nil {
+	_, err = re.Execute(context.Background(), "Mystery", json.RawMessage(`{}`))
+	if err == nil {
 		t.Error("unknown tool = nil err; want structured error")
 	}
 }
@@ -112,7 +113,8 @@ func TestRealExecutor_BackendErrorPropagates(t *testing.T) {
 	be := &fakeBackend{name: backendFake, searchErr: errors.New("backend down")}
 
 	re := &toolexec.RealExecutor{Backends: map[string]toolexec.Backend{"WebSearch": be}}
-	if _, err := re.Execute(context.Background(), "WebSearch", json.RawMessage(`{"query":"x"}`)); err == nil {
+	_, err := re.Execute(context.Background(), "WebSearch", json.RawMessage(`{"query":"x"}`))
+	if err == nil {
 		t.Error("err = nil; want backend down")
 	}
 }
@@ -123,7 +125,8 @@ func TestRealExecutor_NilCatalogUnknownErrors(t *testing.T) {
 	t.Parallel()
 
 	re := &toolexec.RealExecutor{}
-	if _, err := re.Execute(context.Background(), "Anything", json.RawMessage(`{}`)); err == nil {
+	_, err := re.Execute(context.Background(), "Anything", json.RawMessage(`{}`))
+	if err == nil {
 		t.Error("err = nil; want structured no-catalog error")
 	}
 }

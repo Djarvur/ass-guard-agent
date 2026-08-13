@@ -79,7 +79,8 @@ func mutateRequired(t *testing.T, schema json.RawMessage, required []string) jso
 	t.Helper()
 
 	var m map[string]any
-	if err := json.Unmarshal(schema, &m); err != nil {
+	err := json.Unmarshal(schema, &m)
+	if err != nil {
 		t.Fatal(err)
 	}
 

@@ -71,7 +71,8 @@ action = "continue"
 [commands.foo]
 mutability = "read-only"
 `
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+	err := os.WriteFile(path, []byte(body), 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
@@ -98,11 +99,12 @@ id = "badpat"
 regex = "[unterminated"
 action = "continue"
 `
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+	err := os.WriteFile(path, []byte(body), 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	_, err := openspec.LoadConfig(path)
+	_, err = openspec.LoadConfig(path)
 	if err == nil {
 		t.Fatal("LoadConfig returned nil; want ConfigError for invalid regex")
 	}
@@ -124,11 +126,12 @@ id = "x"
 regex = "ok"
 action = "explode"
 `
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+	err := os.WriteFile(path, []byte(body), 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	_, err := openspec.LoadConfig(path)
+	_, err = openspec.LoadConfig(path)
 	if err == nil {
 		t.Fatal("LoadConfig returned nil; want ConfigError for unknown action")
 	}
@@ -149,11 +152,12 @@ func TestLoadConfig_InvalidMutability(t *testing.T) {
 [commands.weird]
 mutability = "maybe"
 `
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+	err := os.WriteFile(path, []byte(body), 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	_, err := openspec.LoadConfig(path)
+	_, err = openspec.LoadConfig(path)
 	if err == nil {
 		t.Fatal("LoadConfig returned nil; want ConfigError for unknown mutability")
 	}
@@ -180,11 +184,12 @@ action = "nope"
 [commands.c]
 mutability = "also-nope"
 `
-	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+	err := os.WriteFile(path, []byte(body), 0o644)
+	if err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	_, err := openspec.LoadConfig(path)
+	_, err = openspec.LoadConfig(path)
 	if err == nil {
 		t.Fatal("LoadConfig returned nil; want ConfigError")
 	}

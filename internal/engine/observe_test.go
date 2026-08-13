@@ -364,8 +364,9 @@ func TestObserve_EmitsPerTurnWithManager(t *testing.T) {
 	mgr := &capturingManager{}
 
 	eng := &engine.Engine{Manager: mgr}
-	if _, err := eng.Observe(context.Background(), runner, table,
-		[]session.ContentBlock{{Type: blockText, Text: "go"}}); err != nil {
+	_, err := eng.Observe(context.Background(), runner, table,
+		[]session.ContentBlock{{Type: blockText, Text: "go"}})
+	if err != nil {
 		t.Fatalf("Observe err = %v", err)
 	}
 
