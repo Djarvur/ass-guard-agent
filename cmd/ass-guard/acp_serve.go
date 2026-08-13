@@ -21,6 +21,7 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/engine"
 	"github.com/Djarvur/ass-guard-agent/internal/event"
+	"github.com/Djarvur/ass-guard-agent/internal/firstrun"
 	"github.com/Djarvur/ass-guard-agent/internal/hookdag"
 	"github.com/Djarvur/ass-guard-agent/internal/learning"
 	mcp "github.com/Djarvur/ass-guard-agent/internal/mcp"
@@ -141,14 +142,50 @@ func newACPServeCmd() *cobra.Command {
 			// ACP frames. All log/diagnostic output goes to stderr.
 			log.SetOutput(os.Stderr)
 
+			// Resolve workDir eagerly (flag value or cwd) so the seed dir and the
+			// session dir agree. The session runner's lazy cwd fallback is now a
+			// belt-and-suspenders path only.
+			resolvedWorkDir := workDir
+			if resolvedWorkDir == "" {
+				wd, werr := os.Getwd()
+				if werr != nil {
+					return fmt.Errorf("resolve work dir: %w", werr)
+				}
+
+				resolvedWorkDir = wd
+			}
+
+			// Phase 6 first-run (D-04): seed .ass-guard/ with the embedded defaults
+			// when it does not already exist. Non-clobbering — an operator's
+			// pre-existing .ass-guard/ is left untouched. A failed seed degrades to
+			// defaults, never a server crash (the agent is still runnable).
+			if seeded, ferr := firstrun.Ensure(resolvedWorkDir); ferr != nil {
+				log.Printf("ass-guard: first-run seeding failed (continuing): %v", ferr)
+			} else if seeded {
+				log.Printf("ass-guard: initialized %s", filepath.Join(resolvedWorkDir, ".ass-guard"))
+			}
+
+			// Zero-config profiles dir (DIST-03): when the --profiles-dir flag was
+			// left at its default AND the seeded .ass-guard/profiles exists, prefer
+			// it (the seeded zcode profile). Otherwise fall back to the dev
+			// ./profiles default (defaultProfilesDir). An explicit --profiles-dir is
+			// always honored as-is. Non-serve subcommands keep ./profiles.
+			resolvedProfilesDir := profilesDir
+			if !cmd.Flags().Changed(flagProfilesDir) {
+				seedProfiles := filepath.Join(resolvedWorkDir, ".ass-guard", "profiles")
+				if _, statErr := os.Stat(seedProfiles); statErr == nil {
+					resolvedProfilesDir = seedProfiles
+				}
+			}
+
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 
 			return runACPServe(ctx, os.Stdin, os.Stdout, os.Stderr, &serveOptions{
 				Profile:       profileName,
 				MaxConcurrent: maxConcurrent,
-				ProfilesDir:   profilesDir,
-				WorkDir:       workDir,
+				ProfilesDir:   resolvedProfilesDir,
+				WorkDir:       resolvedWorkDir,
 				EngineEnabled: !noEngine,
 			})
 		},
@@ -156,7 +193,7 @@ func newACPServeCmd() *cobra.Command {
 	c.Flags().StringVar(&profileName, "profile", profileZcode, "profile name to load (PROF-01)")
 	c.Flags().IntVar(&maxConcurrent, "max-concurrent", mnd6,
 		"max concurrent outbound provider calls across parent + subagents (PARA-04)")
-	c.Flags().StringVar(&profilesDir, "profiles-dir", defaultProfilesDir(), "directory containing profile bundles")
+	c.Flags().StringVar(&profilesDir, flagProfilesDir, defaultProfilesDir(), "directory containing profile bundles")
 	c.Flags().StringVar(&workDir, "work-dir", "", "working directory for .ass-guard/ transcripts (default: cwd)")
 	c.Flags().BoolVar(&noEngine, "no-engine", false,
 		"disable the Phase-4 unified engine (fall back to manual continue — D-04)")
