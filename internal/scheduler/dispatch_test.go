@@ -184,7 +184,7 @@ func dispatchAndCollect(ctx context.Context, t *testing.T, s *Scheduler, bus *ev
 	t.Helper()
 
 	ch := bus.Subscribe("ProviderFallback", 16)
-	resp, err := s.Dispatch(ctx, tier, project, capReq, profile.Profile{}, nil)
+	resp, err := s.Dispatch(ctx, tier, project, capReq, &profile.Profile{}, nil)
 
 	var events []ProviderFallback
 
@@ -450,7 +450,7 @@ func TestAsProviderErrorWrapsNonTyped(t *testing.T) {
 	t.Parallel()
 
 	cand := Target{Provider: providerOpenAI, Model: modelMinimaxM3}
-	perr := asProviderError(errors.New("raw transport boom"), cand)
+	perr := asProviderError(errors.New("raw transport boom"), &cand)
 	require.Equal(t, provider.KindTransient, perr.Kind, "unknown error defaults Transient (safe-side)")
 	require.Equal(t, providerOpenAI, perr.Provider)
 	require.Equal(t, modelMinimaxM3, perr.Model)

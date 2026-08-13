@@ -11,7 +11,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"slices"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -96,7 +95,7 @@ func newACPServeCmd() *cobra.Command {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 
-			return runACPServe(ctx, os.Stdin, os.Stdout, os.Stderr, serveOptions{
+			return runACPServe(ctx, os.Stdin, os.Stdout, os.Stderr, &serveOptions{
 				Profile:       profileName,
 				MaxConcurrent: maxConcurrent,
 				ProfilesDir:   profilesDir,
@@ -121,7 +120,7 @@ func newACPServeCmd() *cobra.Command {
 // 02-05): each session/prompt drives a session.Session whose Provider.Stream
 // streams chunks to the event bus; the sessionTurnRunner forwards bus chunks to
 // the ACP adapter as session/update notifications.
-func runACPServe(ctx context.Context, in io.Reader, out, stderr io.Writer, opts serveOptions) error {
+func runACPServe(ctx context.Context, in io.Reader, out, stderr io.Writer, opts *serveOptions) error {
 	bus := event.NewBus()
 
 	prof, err := profile.NewLoader(opts.ProfilesDir).Load(opts.Profile)
@@ -373,7 +372,7 @@ func (r *sessionTurnRunner) sessionFor(sessionID string) *session.Session {
 
 	s := &session.Session{
 		Manager:     mgr,
-		Projector:   session.NewProjector(r.profile, mgr),
+		Projector:   session.NewProjector(&r.profile, mgr),
 		Provider:    r.makeProvider(),
 		Bus:         r.bus,
 		Semaphore:   provider.NewSemaphore(maxConc),
@@ -441,9 +440,9 @@ func (a *engineTurnRunnerAdapter) LastTurnOutput() engine.TurnOutput {
 
 	var lastAssistant *session.Line
 
-	for _, v := range slices.Backward(lines) {
-		if v.Type == session.TypeAssistantMessage {
-			lastAssistant = &v
+	for i := len(lines) - 1; i >= 0; i-- {
+		if lines[i].Type == session.TypeAssistantMessage {
+			lastAssistant = &lines[i]
 
 			break
 		}
@@ -454,9 +453,9 @@ func (a *engineTurnRunnerAdapter) LastTurnOutput() engine.TurnOutput {
 	}
 
 	out := engine.TurnOutput{TurnID: lastAssistant.TurnID, Text: lastAssistant.Text}
-	for _, l := range lines {
-		if l.TurnID == lastAssistant.TurnID && l.Type == session.TypeToolCall {
-			out.ToolCalls = append(out.ToolCalls, l.Name)
+	for i := range lines {
+		if lines[i].TurnID == lastAssistant.TurnID && lines[i].Type == session.TypeToolCall {
+			out.ToolCalls = append(out.ToolCalls, lines[i].Name)
 		}
 	}
 
@@ -573,7 +572,7 @@ func (h *hookSessionBoundaryOpener) OpenBoundary(_ context.Context, cause string
 // capture stdout/stderr, return the exit code (D-08 exit-code contract).
 type realCommandRunner struct{}
 
-func (realCommandRunner) Run(ctx context.Context, command string, args []string) (string, string, int, error) {
+func (realCommandRunner) Run(ctx context.Context, command string, args []string) (string, string, int, error) { //nolint:gocritic // unnamedResult conflicts with nonamedreturns
 	cmd := exec.CommandContext(ctx, command, args...)
 
 	var stdout, stderr bytes.Buffer

@@ -36,7 +36,7 @@ func TestSchedulerEndToEnd(t *testing.T) {
 
 	ch := bus.Subscribe("ProviderFallback", 8)
 	ctx := WithTurnID(context.Background(), "turn-end-to-end")
-	resp, err := s.Dispatch(ctx, tierHeavy, "myproj", CapabilityReq{NeedsTools: true}, profile.Profile{}, nil)
+	resp, err := s.Dispatch(ctx, tierHeavy, "myproj", CapabilityReq{NeedsTools: true}, &profile.Profile{}, nil)
 
 	// The fallback (minimax-m3) succeeded — Dispatch returns its response.
 	require.NoError(t, err)

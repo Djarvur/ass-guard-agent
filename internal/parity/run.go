@@ -24,7 +24,7 @@ type LiveArm struct {
 
 // RunTurn runs one prompt and returns the parity-normalized tool-calls.
 func (a *LiveArm) RunTurn(ctx context.Context, prompt string) ([]ToolCall, error) {
-	calls, err := loop.Run(ctx, a.Profile, a.Provider, prompt)
+	calls, err := loop.Run(ctx, &a.Profile, a.Provider, prompt)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +72,7 @@ type turnEvidence struct {
 // Run executes the parity A/B comparison and writes the structured footer +
 // results file. Returns the Summary; the caller decides exit-code semantics.
 // Temp is fixed at 0 (D-04 determinism).
-func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
+func Run(ctx context.Context, opts *RunOptions) (RunResult, error) {
 	if opts.Provider == nil {
 		return RunResult{}, errors.New("parity run: nil provider")
 	}
@@ -102,7 +102,7 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 	}
 
 	if opts.ResultsPath != "" {
-		err := writeResults(opts.ResultsPath, res)
+		err := writeResults(opts.ResultsPath, &res)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "parity: could not write results: %v\n", err)
 		}
@@ -111,7 +111,7 @@ func Run(ctx context.Context, opts RunOptions) (RunResult, error) {
 	return res, nil
 }
 
-func writeResults(path string, res RunResult) error {
+func writeResults(path string, res *RunResult) error {
 	raw, err := json.MarshalIndent(res, "", "  ")
 	if err != nil {
 		return err

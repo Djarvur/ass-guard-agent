@@ -109,10 +109,10 @@ func newSchedulingResolveCmd() *cobra.Command {
 			}
 
 			if asJSON {
-				return emitResolveJSON(cmd.OutOrStdout(), tier, project, primary, fallbacks)
+				return emitResolveJSON(cmd.OutOrStdout(), tier, project, &primary, fallbacks)
 			}
 
-			emitResolveHuman(cmd.ErrOrStderr(), tier, project, primary, fallbacks)
+			emitResolveHuman(cmd.ErrOrStderr(), tier, project, &primary, fallbacks)
 
 			return nil
 		},
@@ -130,7 +130,7 @@ func newSchedulingResolveCmd() *cobra.Command {
 // emitResolveHuman writes the human-readable resolution to the STDERR writer
 // (transport discipline — stdout stays byte-clean unless --json). In production
 // cobra wires this to os.Stderr; tests redirect via SetErr.
-func emitResolveHuman(w io.Writer, tier, project string, primary scheduler.Target, fallbacks []scheduler.Target) {
+func emitResolveHuman(w io.Writer, tier, project string, primary *scheduler.Target, fallbacks []scheduler.Target) {
 	proj := project
 	if proj == "" {
 		proj = "(global)"
@@ -145,8 +145,8 @@ func emitResolveHuman(w io.Writer, tier, project string, primary scheduler.Targe
 
 	if len(fallbacks) > 0 {
 		names := make([]string, 0, len(fallbacks))
-		for _, f := range fallbacks {
-			names = append(names, f.Provider+"/"+f.Model)
+		for i := range fallbacks {
+			names = append(names, fallbacks[i].Provider+"/"+fallbacks[i].Model)
 		}
 
 		_, _ = fmt.Fprintf(w, "  fallback: %s\n", strings.Join(names, ", "))
@@ -159,7 +159,7 @@ func emitResolveHuman(w io.Writer, tier, project string, primary scheduler.Targe
 // the ONLY stdout path in the scheduling CLI, only when --json is explicitly
 // requested. In production cobra wires this to os.Stdout; tests redirect via
 // SetOut.
-func emitResolveJSON(w io.Writer, tier, project string, primary scheduler.Target, fallbacks []scheduler.Target) error {
+func emitResolveJSON(w io.Writer, tier, project string, primary *scheduler.Target, fallbacks []scheduler.Target) error {
 	type fb struct {
 		Provider string `json:"provider"`
 		Model    string `json:"model"`
@@ -181,8 +181,8 @@ func emitResolveJSON(w io.Writer, tier, project string, primary scheduler.Target
 		BaseURL: primary.BaseURL, Shape: primary.Shape,
 		Capabilities: primary.Capabilities, Pricing: primary.Pricing,
 	}
-	for _, f := range fallbacks {
-		out.Fallback = append(out.Fallback, fb{Provider: f.Provider, Model: f.Model})
+	for i := range fallbacks {
+		out.Fallback = append(out.Fallback, fb{Provider: fallbacks[i].Provider, Model: fallbacks[i].Model})
 	}
 
 	enc := json.NewEncoder(w)

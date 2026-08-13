@@ -161,7 +161,7 @@ func (s *Server) Serve(ctx context.Context) error {
 			// Notification: dispatch inline (session/cancel must cancel the
 			// active turn synchronously). Recover per-dispatch so a panicking
 			// notification handler never crashes the reader (Pitfall 7).
-			s.safeDispatchInline(ctx, *msg)
+			s.safeDispatchInline(ctx, msg)
 
 			continue
 		}
@@ -169,9 +169,9 @@ func (s *Server) Serve(ctx context.Context) error {
 		m := *msg // capture the envelope value
 
 		s.handlerWG.Go(func() {
-			defer s.recoverDispatch(m)
+			defer s.recoverDispatch(&m)
 
-			s.handleRequest(ctx, m)
+			s.handleRequest(ctx, &m)
 		})
 	}
 }
@@ -179,7 +179,7 @@ func (s *Server) Serve(ctx context.Context) error {
 // handleRequest looks up the handler, calls it, and writes the response (result
 // or error). Errors are scrubbed via redact.ScrubError before reaching the wire
 // (T-02-03 — error responses never leak a credential).
-func (s *Server) handleRequest(ctx context.Context, msg Message) {
+func (s *Server) handleRequest(ctx context.Context, msg *Message) {
 	handler, ok := s.handlers[msg.Method]
 	if !ok {
 		s.writeError(msg.ID, &RPCError{
@@ -219,7 +219,7 @@ func (s *Server) handleRequest(ctx context.Context, msg Message) {
 
 // safeDispatchInline runs a notification handler with a recover guard so a
 // panicking handler never crashes the reader.
-func (s *Server) safeDispatchInline(ctx context.Context, msg Message) {
+func (s *Server) safeDispatchInline(ctx context.Context, msg *Message) {
 	defer s.recoverDispatch(msg)
 
 	handler, ok := s.handlers[msg.Method]
@@ -234,7 +234,7 @@ func (s *Server) safeDispatchInline(ctx context.Context, msg Message) {
 // recoverDispatch converts a panic in a handler/dispatch into a stderr log line
 // (investigate-and-fix-ready). For requests, also surface a -32603 error so the
 // client isn't left waiting. Never re-panics.
-func (s *Server) recoverDispatch(msg Message) {
+func (s *Server) recoverDispatch(msg *Message) {
 	r := recover()
 	if r == nil {
 		return
@@ -252,7 +252,7 @@ func (s *Server) recoverDispatch(msg Message) {
 // id:null per JSON-RPC convention and keep reading.
 func (s *Server) handleParseError(err error) {
 	s.log.Printf("frame parse error: %v", err)
-	_ = s.out.Write(Message{
+	_ = s.out.Write(&Message{
 		JSONRPC: protocolVersion20,
 		ID:      nil,
 		Error:   &RPCError{Code: CodeParseError, Message: "parse error"},
@@ -261,12 +261,12 @@ func (s *Server) handleParseError(err error) {
 
 // writeResult writes a success response with the given id.
 func (s *Server) writeResult(id *int, result json.RawMessage) {
-	_ = s.out.Write(Message{JSONRPC: protocolVersion20, ID: id, Result: result})
+	_ = s.out.Write(&Message{JSONRPC: protocolVersion20, ID: id, Result: result})
 }
 
 // writeError writes an error response with the given id.
 func (s *Server) writeError(id *int, e *RPCError) {
-	_ = s.out.Write(Message{JSONRPC: protocolVersion20, ID: id, Error: e})
+	_ = s.out.Write(&Message{JSONRPC: protocolVersion20, ID: id, Error: e})
 }
 
 // adapter is the default ChunkEmitter: it writes session/update notifications
@@ -292,5 +292,5 @@ func (a *adapter) AgentMessageChunk(messageID, text string) error {
 		return err
 	}
 
-	return a.out.Write(Message{JSONRPC: protocolVersion20, Method: methodSessionUpdate, Params: raw})
+	return a.out.Write(&Message{JSONRPC: protocolVersion20, Method: methodSessionUpdate, Params: raw})
 }

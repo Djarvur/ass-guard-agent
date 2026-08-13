@@ -61,7 +61,7 @@ func TestSafetyBreakerSkipsOpenCandidate(t *testing.T) {
 	fp.mu.Unlock()
 
 	ch := bus.Subscribe("ProviderFallback", 8)
-	resp, err := s.Dispatch(context.Background(), tierHeavy, "myproj", CapabilityReq{}, profile.Profile{}, nil)
+	resp, err := s.Dispatch(context.Background(), tierHeavy, "myproj", CapabilityReq{}, &profile.Profile{}, nil)
 	require.NoError(t, err)
 	require.Equal(t, stopReasonStop, resp.FinishReason)
 
@@ -101,7 +101,7 @@ func TestSafetyCostHardStop(t *testing.T) {
 	require.Equal(t, CostHardStop, hard.Check(now), "precondition: tracker in HardStop state")
 	s.SetCostTracker(hard)
 
-	_, err := s.Dispatch(context.Background(), tierHeavy, "myproj", CapabilityReq{}, profile.Profile{}, nil)
+	_, err := s.Dispatch(context.Background(), tierHeavy, "myproj", CapabilityReq{}, &profile.Profile{}, nil)
 	require.Error(t, err)
 
 	var perr *provider.ProviderError
@@ -136,7 +136,7 @@ func TestSafetyCostDegradeReResolves(t *testing.T) {
 	require.Equal(t, CostDegrade, degrading.Check(now))
 	s.SetCostTracker(degrading)
 
-	resp, err := s.Dispatch(context.Background(), tierHeavy, "myproj", CapabilityReq{}, profile.Profile{}, nil)
+	resp, err := s.Dispatch(context.Background(), tierHeavy, "myproj", CapabilityReq{}, &profile.Profile{}, nil)
 	require.NoError(t, err)
 	require.Equal(t, stopReasonStop, resp.FinishReason)
 
@@ -159,7 +159,7 @@ func TestSafetyStatePersistsAcrossDispatch(t *testing.T) {
 	s, _, _ := newSafetyScheduler(t, fp)
 
 	// Dispatch 1: glm-5.2 transient → fallback minimax-m3 success.
-	_, err := s.Dispatch(context.Background(), tierHeavy, "myproj", CapabilityReq{}, profile.Profile{}, nil)
+	_, err := s.Dispatch(context.Background(), tierHeavy, "myproj", CapabilityReq{}, &profile.Profile{}, nil)
 	require.NoError(t, err)
 
 	cb := s.Breaker(providerAnthropic, modelGLM52)
@@ -172,7 +172,7 @@ func TestSafetyStatePersistsAcrossDispatch(t *testing.T) {
 	fp.calls = nil
 	fp.mu.Unlock()
 
-	_, err = s.Dispatch(context.Background(), tierHeavy, "myproj", CapabilityReq{}, profile.Profile{}, nil)
+	_, err = s.Dispatch(context.Background(), tierHeavy, "myproj", CapabilityReq{}, &profile.Profile{}, nil)
 	require.NoError(t, err)
 	require.Equal(t, 2, consecutiveOf(cb), "breaker state persists — counter advanced on call 2")
 }

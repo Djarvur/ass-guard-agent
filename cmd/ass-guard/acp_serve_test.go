@@ -79,7 +79,7 @@ func TestACPServeWiresStdoutClean(t *testing.T) {
 
 	ctx := t.Context()
 
-	err := runACPServe(ctx, in, &stdout, &stderr, serveOptions{
+	err := runACPServe(ctx, in, &stdout, &stderr, &serveOptions{
 		Profile: profileZcode, MaxConcurrent: 6,
 		ProfilesDir: repoProfilesDir(t), WorkDir: t.TempDir(),
 	})
@@ -122,7 +122,7 @@ func TestACPServeNoStdoutPollutionFromLogs(t *testing.T) {
 
 	ctx := t.Context()
 
-	_ = runACPServe(ctx, in, &stdout, &stderr, serveOptions{
+	_ = runACPServe(ctx, in, &stdout, &stderr, &serveOptions{
 		Profile: profileZcode, MaxConcurrent: 6,
 		ProfilesDir: repoProfilesDir(t), WorkDir: t.TempDir(),
 	})

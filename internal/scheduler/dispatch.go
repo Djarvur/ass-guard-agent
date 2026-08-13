@@ -160,7 +160,7 @@ func (s *Scheduler) breakerFor(cand Target) Breaker {
 // counts" path; full token-cost coupling lands when Dispatch drives Stream
 // (Phase 4) where StreamChunk.Usage supplies the counts.
 func (s *Scheduler) Dispatch(ctx context.Context, tier, project string, capReq CapabilityReq,
-	prof profile.Profile, messages []provider.Message) (provider.Response, error) {
+	prof *profile.Profile, messages []provider.Message) (provider.Response, error) {
 	degradeTo := s.resolver.cfg.CostCeiling.DegradeTo
 	turnID := turnIDFromCtx(ctx)
 	currentTier := tier
@@ -182,7 +182,8 @@ func (s *Scheduler) Dispatch(ctx context.Context, tier, project string, capReq C
 		switchedTier := false
 
 	candidateLoop:
-		for i, cand := range candidates {
+		for i := range candidates {
+			cand := candidates[i]
 			// Capability gate (D-09 runtime seam). A zero-valued capReq (no
 			// specific needs) skips the filter so the tracer behaves as 03-01.
 			if !capReq.isZero() && !satisfies(cand.Capabilities, capReq) {
@@ -239,7 +240,7 @@ func (s *Scheduler) Dispatch(ctx context.Context, tier, project string, capReq C
 
 			callProf := prof
 			callProf.Model = cand.Model
-			resp, err := s.providers[cand.Provider].Send(ctx, &callProf, messages)
+			resp, err := s.providers[cand.Provider].Send(ctx, callProf, messages)
 			s.sem.Release()
 
 			if err == nil {
@@ -249,7 +250,7 @@ func (s *Scheduler) Dispatch(ctx context.Context, tier, project string, capReq C
 				return resp, nil
 			}
 
-			perr := asProviderError(err, cand)
+			perr := asProviderError(err, &cand)
 			if perr.Kind == provider.KindStructural {
 				// Report, no retry (D-04). Structural errors do not feed the breaker
 				// (pitfall 4: a 401 is a config bug, not an outage).
@@ -308,7 +309,7 @@ func (s *Scheduler) Dispatch(ctx context.Context, tier, project string, capReq C
 // asProviderError extracts a *provider.ProviderError from err; if err is not one,
 // it is wrapped via ClassifyHTTP (status 0) so the scheduler always pattern-
 // matches on a typed Kind.
-func asProviderError(err error, cand Target) *provider.ProviderError {
+func asProviderError(err error, cand *Target) *provider.ProviderError {
 	var perr *provider.ProviderError
 	if errors.As(err, &perr) {
 		if perr.Provider == "" {

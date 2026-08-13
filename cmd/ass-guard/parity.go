@@ -84,7 +84,7 @@ func runParity(suitePath, rollout, name, dir, results, surprise string) error {
 	// The provider surfaces a clear error if ZAI_API_KEY is unset (Tier-A).
 	prov := provider.NewAnthropicProvider(shaper.New())
 
-	res, err := parity.Run(context.Background(), parity.RunOptions{
+	res, err := parity.Run(context.Background(), &parity.RunOptions{
 		Suite:       suite,
 		Profile:     prof,
 		Provider:    prov,
@@ -95,14 +95,14 @@ func runParity(suitePath, rollout, name, dir, results, surprise string) error {
 		return err
 	}
 
-	emitParityFooter("curated", res)
+	emitParityFooter("curated", &res)
 
 	if res.Summary.OverallPass && surprise != "" {
 		surpriseSuite, err := parity.LoadReplaySession(surprise)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "parity: surprise-check suite did not load (%v); skipping\n", err)
 		} else {
-			sres, err := parity.Run(context.Background(), parity.RunOptions{
+			sres, err := parity.Run(context.Background(), &parity.RunOptions{
 				Suite: surpriseSuite, Profile: prof, Provider: prov,
 				ResultsPath: "", Model: prof.Model,
 			})
@@ -110,20 +110,20 @@ func runParity(suitePath, rollout, name, dir, results, surprise string) error {
 				return err
 			}
 
-			emitParityFooter("surprise-check", sres)
+			emitParityFooter("surprise-check", &sres)
 		}
 	}
 
 	if !res.Summary.OverallPass {
 		// Non-zero exit signals the gate failed (PROJECT.md Anti-Pattern 5: stop-and-replan).
 		return fmt.Errorf("PARITY GATE FAIL: %d/%d turns matched on both layers (Layer1=%.2f Layer2=%.2f)",
-			countBothLayerPass(res), res.Summary.SuiteSize, res.Summary.Layer1PassRate, res.Summary.Layer2PassRate)
+			countBothLayerPass(&res), res.Summary.SuiteSize, res.Summary.Layer1PassRate, res.Summary.Layer2PassRate)
 	}
 
 	return nil
 }
 
-func emitParityFooter(label string, res parity.RunResult) {
+func emitParityFooter(label string, res *parity.RunResult) {
 	status := "PASS"
 	if !res.Summary.OverallPass {
 		status = "FAIL"
@@ -145,7 +145,7 @@ func emitParityFooter(label string, res parity.RunResult) {
 	}
 }
 
-func countBothLayerPass(res parity.RunResult) int {
+func countBothLayerPass(res *parity.RunResult) int {
 	n := 0
 
 	for _, t := range res.Turns {

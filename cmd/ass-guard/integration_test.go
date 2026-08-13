@@ -96,7 +96,7 @@ func driveACP(t *testing.T, mp provider.Provider) ( //nolint:nonamedreturns // n
 }
 
 // sendFrame writes one ACP frame to w.
-func sendFrame(t *testing.T, w io.Writer, m acp.Message) {
+func sendFrame(t *testing.T, w io.Writer, m *acp.Message) {
 	t.Helper()
 
 	var buf bytes.Buffer
@@ -111,7 +111,7 @@ func sendFrame(t *testing.T, w io.Writer, m acp.Message) {
 
 // writeFrameDirect mirrors acp.writeFrame (unexported); defined here to drive the
 // server from the test without exporting internals.
-func writeFrameDirect(buf *bytes.Buffer, m acp.Message) error {
+func writeFrameDirect(buf *bytes.Buffer, m *acp.Message) error {
 	raw, err := json.Marshal(m)
 	if err != nil {
 		return err
@@ -173,7 +173,7 @@ func TestIntegration_RealStreamingThroughACP(t *testing.T) {
 	cliW, cliR, stop := driveACP(t, mp)
 	defer stop()
 
-	sendFrame(t, cliW, acp.Message{
+	sendFrame(t, cliW, &acp.Message{
 		JSONRPC: protocolVersion20, ID: intPtrACP(0), Method: "initialize",
 		Params: rawJSON(map[string]any{"protocolVersion": 1}),
 	})
@@ -183,7 +183,7 @@ func TestIntegration_RealStreamingThroughACP(t *testing.T) {
 		t.Fatalf("no initialize response with agentCapabilities: %+v", frames)
 	}
 
-	sendFrame(t, cliW, acp.Message{
+	sendFrame(t, cliW, &acp.Message{
 		JSONRPC: protocolVersion20, ID: intPtrACP(1), Method: "session/new",
 		Params: rawJSON(map[string]any{"cwd": "/tmp", "mcpServers": []any{}}),
 	})
@@ -199,7 +199,7 @@ func TestIntegration_RealStreamingThroughACP(t *testing.T) {
 		t.Fatalf("no sessionId in session/new response: %+v", frames)
 	}
 
-	sendFrame(t, cliW, acp.Message{
+	sendFrame(t, cliW, &acp.Message{
 		JSONRPC: protocolVersion20, ID: intPtrACP(2), Method: "session/prompt",
 		Params: rawJSON(map[string]any{
 			keySessionID: snew.SessionID,
@@ -262,12 +262,12 @@ func TestIntegration_SessionLoadNoOp(t *testing.T) {
 	cliW, cliR, stop := driveACP(t, mp)
 	defer stop()
 
-	sendFrame(t, cliW, acp.Message{
+	sendFrame(t, cliW, &acp.Message{
 		JSONRPC: protocolVersion20, ID: intPtrACP(0), Method: "initialize",
 		Params: rawJSON(map[string]any{"protocolVersion": 1}),
 	})
 	readFrames(t, cliR, 1)
-	sendFrame(t, cliW, acp.Message{
+	sendFrame(t, cliW, &acp.Message{
 		JSONRPC: protocolVersion20, ID: intPtrACP(1), Method: "session/load",
 		Params: rawJSON(map[string]any{keySessionID: "x"}),
 	})

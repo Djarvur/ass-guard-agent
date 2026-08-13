@@ -112,7 +112,7 @@ func runTrace(ctx context.Context, prompt, name, dir, auditLogPath string) error
 		provider.WithAnthropicRequestCapture(capturer),
 	)
 
-	calls, err := loop.Run(ctx, prof, p, prompt)
+	calls, err := loop.Run(ctx, &prof, p, prompt)
 	if err != nil {
 		return err
 	}

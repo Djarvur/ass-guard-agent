@@ -30,7 +30,7 @@ type Drift struct {
 //   - TIER-2 (header NAMES, message-block shape): presence/count — value
 //     variance for per-session fields (e.g. an x-request-id value) is NOT a
 //     drift; only the NAME set / count matters.
-func Detect(manifest profile.CoverageManifest, captured map[string]any) []Drift {
+func Detect(manifest *profile.CoverageManifest, captured map[string]any) []Drift {
 	var d []Drift
 
 	for _, f := range manifest.Fields {

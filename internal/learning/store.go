@@ -82,7 +82,7 @@ func (s *Store) Lookup(situation string) (Entry, bool) {
 			continue
 		}
 
-		return copyEntry(e), true
+		return copyEntry(&e), true
 	}
 
 	return Entry{}, false
@@ -138,7 +138,7 @@ func (s *Store) Confirm(situation, answer, sourceTurnID string) (Entry, error) {
 			entries[i].Status = StatusConflict
 			_ = s.save(entries)
 
-			return copyEntry(entries[i]), ErrConflict
+			return copyEntry(&entries[i]), ErrConflict
 		}
 
 		entries[i].Confidence++
@@ -150,7 +150,7 @@ func (s *Store) Confirm(situation, answer, sourceTurnID string) (Entry, error) {
 
 		_ = s.save(entries)
 
-		return copyEntry(entries[i]), nil
+		return copyEntry(&entries[i]), nil
 	}
 
 	return Entry{}, ErrNotFound
@@ -163,7 +163,7 @@ func (s *Store) List() []Entry {
 
 	out := make([]Entry, len(entries))
 	for i := range entries {
-		out[i] = copyEntry(entries[i])
+		out[i] = copyEntry(&entries[i])
 	}
 
 	return out
@@ -232,12 +232,13 @@ func (s *Store) save(entries []Entry) error {
 
 // copyEntry returns a deep-enough copy so callers cannot mutate the store's
 // in-memory slice via the returned Entry (the SourceTurns slice is copied).
-func copyEntry(e Entry) Entry {
-	if e.SourceTurns != nil {
-		e.SourceTurns = append([]string(nil), e.SourceTurns...)
+func copyEntry(e *Entry) Entry {
+	out := *e
+	if out.SourceTurns != nil {
+		out.SourceTurns = append([]string(nil), out.SourceTurns...)
 	}
 
-	return e
+	return out
 }
 
 // appendUnique appends s to list only if it is not already present (provenance

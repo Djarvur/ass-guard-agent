@@ -128,7 +128,7 @@ func readFrame(r *bufio.Reader) (*Message, error) {
 // slow-down), but the common case (a responsive client) never blocks.
 type Writer struct {
 	w      io.Writer
-	ch     chan Message
+	ch     chan *Message
 	wg     sync.WaitGroup
 	mu     sync.Mutex // guards Close once
 	closed bool
@@ -137,7 +137,7 @@ type Writer struct {
 // newWriter wraps an io.Writer (production: os.Stdout; tests: a bytes.Buffer or
 // pipe) and starts the drain goroutine.
 func newWriter(w io.Writer) *Writer {
-	wtr := &Writer{w: w, ch: make(chan Message, writeBuffer)}
+	wtr := &Writer{w: w, ch: make(chan *Message, writeBuffer)}
 
 	wtr.wg.Add(1)
 
@@ -153,7 +153,7 @@ const writeBuffer = 256
 // Write enqueues one Message for the drain goroutine. It blocks if the buffer is
 // full (D-05 backpressure — a stuck client stalls the turn rather than growing
 // memory unbounded).
-func (w *Writer) Write(msg Message) error {
+func (w *Writer) Write(msg *Message) error {
 	w.ch <- msg
 
 	return nil

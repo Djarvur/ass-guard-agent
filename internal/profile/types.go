@@ -136,7 +136,7 @@ type CoverageManifest struct {
 // Validate returns an error naming any TIER-1/2 manifest field whose observed
 // count in a fresh capture differs from the manifest's declared ObservedCount
 // (the PROF-05 incomplete-capture gate). TIER-3 fields are not validated.
-func (m CoverageManifest) Validate(captured map[string]int) error {
+func (m *CoverageManifest) Validate(captured map[string]int) error {
 	var mismatches []string
 
 	for _, f := range m.Fields {

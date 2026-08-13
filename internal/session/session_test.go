@@ -177,7 +177,7 @@ func newTestSession(t *testing.T, bus *event.Bus, responses []provider.Response)
 		Provider:  fp,
 		Bus:       bus,
 		Semaphore: sem,
-		Profile:   fakeProfile("test agent"),
+		Profile:   *fakeProfile("test agent"),
 		WorkDir:   t.TempDir(),
 		SessionID: "sess-test",
 	}

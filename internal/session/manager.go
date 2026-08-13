@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"slices"
 	"sync"
 	"time"
 )
@@ -239,9 +238,9 @@ func (m *Manager) ReadLastBoundary() (*Line, error) {
 		return nil, err
 	}
 
-	for _, v := range slices.Backward(lines) {
-		if v.Type == TypeBoundary {
-			return &v, nil
+	for i := len(lines) - 1; i >= 0; i-- {
+		if lines[i].Type == TypeBoundary {
+			return &lines[i], nil
 		}
 	}
 
@@ -262,8 +261,8 @@ func (m *Manager) ReadSince(turnID string) ([]Line, error) {
 
 	lastIdx := -1
 
-	for i, l := range lines {
-		if l.TurnID == turnID {
+	for i := range lines {
+		if lines[i].TurnID == turnID {
 			lastIdx = i
 		}
 	}

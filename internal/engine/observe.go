@@ -131,8 +131,8 @@ func (e *Engine) Observe(
 			return stop, err
 		}
 
-		dec = e.applyDispatcher(ctx, dec)
-		e.emit(dec)
+		dec = e.applyDispatcher(ctx, &dec)
+		e.emit(&dec)
 
 		if dec.Action != ActionContinue {
 			return stop, err
@@ -140,7 +140,7 @@ func (e *Engine) Observe(
 		// Step 3: re-enter the runner with the continue-injection (a real turn).
 		nextPrompt := dec.NextPrompt
 		if len(nextPrompt) == 0 {
-			nextPrompt = NextStagePrompt(dec)
+			nextPrompt = NextStagePrompt(&dec)
 		}
 
 		injStop, injErr := e.runAndRecover(ctx, runner, nextPrompt)
@@ -158,7 +158,7 @@ func (e *Engine) Observe(
 	// Re-fire budget exhausted — the second infinite-loop bar. Emit a Nothing
 	// with a Reason noting the cap (logged, not errored — a safety stop).
 	if injections == MaxContinueInjections {
-		e.emit(Decision{
+		e.emit(&Decision{
 			TurnID: safeLastTurnID(runner),
 			Action: ActionNothing,
 			Signal: "budget",
@@ -238,14 +238,14 @@ func (e *Engine) decideAndRecover( //nolint:nonamedreturns // err assigned by pa
 // degrade to ActionNothing so the loop stops gracefully. Continue is left to
 // the wrapper's runner.Run re-entry (the Dispatcher is NOT used for continue —
 // keeping one path for the real turn simplifies the contract).
-func (e *Engine) applyDispatcher(ctx context.Context, dec Decision) Decision {
+func (e *Engine) applyDispatcher(ctx context.Context, dec *Decision) Decision {
 	if e.Dispatcher == nil {
 		if dec.Action == ActionHook || dec.Action == ActionAsk {
 			dec.Reason += " (dispatcher not configured; degrading to nothing)"
 			dec.Action = ActionNothing
 		}
 
-		return dec
+		return *dec
 	}
 
 	switch dec.Action {
@@ -261,7 +261,7 @@ func (e *Engine) applyDispatcher(ctx context.Context, dec Decision) Decision {
 			dec.Reason = fmt.Sprintf("ask pending (%s): %v", dec.Signal, aerr)
 			dec.Action = ActionAsk // keep ask so the loop stops (ActionAsk != Continue)
 
-			return dec
+			return *dec
 		}
 		// A learned answer maps onto an action. The tracer only knows
 		// "continue"; richer answers land in 04-05's real dispatcher.
@@ -277,15 +277,13 @@ func (e *Engine) applyDispatcher(ctx context.Context, dec Decision) Decision {
 		// no dispatcher action — these decisions flow through the turn loop unchanged.
 	}
 
-	return dec
-}
-
-// emit publishes the EngineDecision event + writes the engine_decision
+	return *dec
+}// emit publishes the EngineDecision event + writes the engine_decision
 // transcript line (for EVERY decision, including Nothing — D-20 audit log).
 // Failures in the bus/manager are logged investigate-and-fix-ready but never
 // block the loop (the engine is an observer; its telemetry must not break the
 // turn).
-func (e *Engine) emit(dec Decision) {
+func (e *Engine) emit(dec *Decision) {
 	if e.Bus != nil {
 		e.Bus.Publish(event.EngineDecision{
 			TurnID: dec.TurnID,
@@ -318,7 +316,7 @@ func (e *Engine) logFailure(msg string, r any) {
 // NextStagePrompt is the tracer's continue-injection: a single text block
 // carrying the literal "continue". Plan 04-05's real wiring replaces this with
 // the OpenSpec config's per-pattern next-stage prompt template.
-func NextStagePrompt(dec Decision) []session.ContentBlock {
+func NextStagePrompt(dec *Decision) []session.ContentBlock {
 	return []session.ContentBlock{{Type: "text", Text: stopContinue}}
 }
 

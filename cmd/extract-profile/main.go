@@ -80,7 +80,7 @@ func run(sessions, rolloutDir, out, name, paritySession string) error {
 		return fmt.Errorf("extract: %w", err)
 	}
 
-	if err := writeArtifact(out, name, res, paritySession); err != nil {
+	if err := writeArtifact(out, name, &res, paritySession); err != nil {
 		return fmt.Errorf("write artifact: %w", err)
 	}
 
@@ -111,7 +111,7 @@ func chooseSession(stats []profile.SessionStat, sessions string) (profile.Sessio
 	return profile.SessionStat{}, fmt.Errorf("requested session(s) %q not found in rollout dir", sessions)
 }
 
-func writeArtifact(out, name string, res profile.ExtractResult, paritySession string) error {
+func writeArtifact(out, name string, res *profile.ExtractResult, paritySession string) error {
 	if err := os.MkdirAll(filepath.Join(out, "system"), 0o755); err != nil {
 		return err
 	}
@@ -192,7 +192,7 @@ func headersToYAML(hs []profile.Header) []map[string]string {
 	return out
 }
 
-func buildManifest(name string, res profile.ExtractResult, paritySession string) profile.CoverageManifest {
+func buildManifest(name string, res *profile.ExtractResult, paritySession string) profile.CoverageManifest {
 	src := res.SourcePath
 	t1 := profile.Tier1ByteFaithful
 	fields := []profile.CoverageEntry{
@@ -218,7 +218,7 @@ func buildManifest(name string, res profile.ExtractResult, paritySession string)
 	}
 }
 
-func buildMeta(name string, res profile.ExtractResult, paritySession string) map[string]any {
+func buildMeta(name string, res *profile.ExtractResult, paritySession string) map[string]any {
 	m := map[string]any{
 		"profile":            name,
 		"extractor_version":  extractorVersion,
@@ -236,7 +236,7 @@ func buildMeta(name string, res profile.ExtractResult, paritySession string) map
 	return m
 }
 
-func buildTargetCaptureRef(res profile.ExtractResult, paritySession string) profile.TargetCaptureRef {
+func buildTargetCaptureRef(res *profile.ExtractResult, paritySession string) profile.TargetCaptureRef {
 	ref := profile.TargetCaptureRef{
 		ExtractedAt:      time.Now().UTC(),
 		ExtractorVersion: extractorVersion,

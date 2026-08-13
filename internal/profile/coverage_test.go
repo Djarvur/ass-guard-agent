@@ -22,7 +22,7 @@ func TestCheckCoverage_Tier1Drift(t *testing.T) {
 		"request.body.system": 3,
 	}
 
-	diffs, ok := profile.CheckCoverage(manifest, fresh)
+	diffs, ok := profile.CheckCoverage(&manifest, fresh)
 	if ok {
 		t.Fatal("ok = true; want false (tools drifted)")
 	}
@@ -52,7 +52,7 @@ func TestCheckCoverage_Tier3Ignored(t *testing.T) {
 		"response.usage.totalTokens": 9999, // TIER-3 variance — must NOT count
 	}
 
-	diffs, ok := profile.CheckCoverage(manifest, fresh)
+	diffs, ok := profile.CheckCoverage(&manifest, fresh)
 	if !ok {
 		t.Fatalf("ok = false; want true (only TIER-3 differs): diffs=%+v", diffs)
 	}
@@ -73,7 +73,7 @@ func TestCheckCoverage_MissingField(t *testing.T) {
 		},
 	}
 
-	diffs, ok := profile.CheckCoverage(manifest, map[string]int{})
+	diffs, ok := profile.CheckCoverage(&manifest, map[string]int{})
 	if ok {
 		t.Fatal("ok = true; want false (headers missing)")
 	}

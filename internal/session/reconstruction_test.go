@@ -42,7 +42,7 @@ func TestTranscriptReconstructsSession(t *testing.T) {
 	s := &Session{
 		Manager: m, Projector: NewProjector(fakeProfile("test agent"), m),
 		Provider: fp, Bus: bus, Semaphore: provider.NewSemaphore(2),
-		Profile: fakeProfile("test agent"), WorkDir: t.TempDir(), SessionID: "sess-recon",
+		Profile: *fakeProfile("test agent"), WorkDir: t.TempDir(), SessionID: "sess-recon",
 		Catalog: toolcat.NewCatalog(),
 	}
 	// Start the async TranscriptWriter (the one session-path audit writer, D-20).

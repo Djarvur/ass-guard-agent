@@ -112,7 +112,7 @@ func ExtractFromRollout(path string) (ExtractResult, error) {
 			return ExtractResult{}, fmt.Errorf("line %d: parse: %w", lineIdx, err)
 		}
 
-		if !isFullRequest(mio) {
+		if !isFullRequest(&mio) {
 			continue
 		}
 		// Stability check against the first full line.
@@ -133,7 +133,7 @@ func ExtractFromRollout(path string) (ExtractResult, error) {
 
 			sort.Strings(firstHeaderNames)
 		} else {
-			err := assertStable(firstSysCount, firstToolNames, firstHeaderNames, mio)
+			err := assertStable(firstSysCount, firstToolNames, firstHeaderNames, &mio)
 			if err != nil {
 				return ExtractResult{}, fmt.Errorf("line %d: within-session stability: %w", lineIdx, err)
 			}
@@ -148,14 +148,14 @@ func ExtractFromRollout(path string) (ExtractResult, error) {
 		return ExtractResult{}, fmt.Errorf("no full-request lines (system+tools) found in %s", firstFile)
 	}
 
-	return buildResult(*firstFull, path), nil
+	return buildResult(firstFull, path), nil
 }
 
-func isFullRequest(m ModelIO) bool {
+func isFullRequest(m *ModelIO) bool {
 	return m.Type == "model_io" && len(m.Request.Body.System) > 0 && len(m.Request.Body.Tools) > 0
 }
 
-func assertStable(sysCount int, toolNames map[string]struct{}, headerNames []string, m ModelIO) error {
+func assertStable(sysCount int, toolNames map[string]struct{}, headerNames []string, m *ModelIO) error {
 	if len(m.Request.Body.System) != sysCount {
 		return fmt.Errorf("system block count drift: %d -> %d", sysCount, len(m.Request.Body.System))
 	}
@@ -194,7 +194,7 @@ func assertStable(sysCount int, toolNames map[string]struct{}, headerNames []str
 	return nil
 }
 
-func buildResult(m ModelIO, path string) ExtractResult {
+func buildResult(m *ModelIO, path string) ExtractResult {
 	res := ExtractResult{
 		SessionID:  m.SessionID,
 		Thinking:   m.Request.Body.Thinking,
@@ -289,7 +289,7 @@ func sessionIDFromName(name string) string {
 }
 
 // countFullRequests returns (full-request line count, first line's tool count).
-func countFullRequests(path string) (int, int) {
+func countFullRequests(path string) (int, int) { //nolint:gocritic // unnamedResult conflicts with nonamedreturns
 	f, err := os.Open(path)
 	if err != nil {
 		return 0, 0
@@ -307,7 +307,7 @@ func countFullRequests(path string) (int, int) {
 			continue
 		}
 
-		if !isFullRequest(m) {
+		if !isFullRequest(&m) {
 			continue
 		}
 

@@ -68,7 +68,7 @@ func runProfileCheck(name, profilesDir, captureFile string) error {
 
 	captured := extractCaptureCounts(raw)
 
-	drifts := drift.Detect(manifest, captured)
+	drifts := drift.Detect(&manifest, captured)
 	reportProfileCheck(name, drifts, len(manifest.Fields))
 
 	if len(drifts) > 0 {

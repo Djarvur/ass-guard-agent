@@ -33,7 +33,7 @@ func TestEndToEndSession(t *testing.T) {
 	s := &Session{
 		Manager: m, Projector: NewProjector(fakeProfile("test agent"), m),
 		Provider: fp, Bus: bus, Semaphore: provider.NewSemaphore(2),
-		Profile: fakeProfile("test agent"), WorkDir: t.TempDir(), SessionID: "sess-e2e",
+		Profile: *fakeProfile("test agent"), WorkDir: t.TempDir(), SessionID: "sess-e2e",
 		Catalog: toolcat.NewCatalog(),
 	}
 	tw := NewTranscriptWriter(m, bus)

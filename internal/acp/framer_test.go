@@ -154,7 +154,7 @@ func TestWriterConcurrentSafety(t *testing.T) {
 			defer wg.Done()
 
 			id := i
-			_ = w.Write(Message{JSONRPC: protocolVersion20, ID: &id, Method: methodSessionUpdate})
+			_ = w.Write(&Message{JSONRPC: protocolVersion20, ID: &id, Method: methodSessionUpdate})
 		}(i)
 	}
 

@@ -93,7 +93,7 @@ func (p *OpenAIProvider) Send(ctx context.Context, prof *profile.Profile, messag
 		return Response{}, fmt.Errorf("openai provider send: %w", err)
 	}
 
-	return parseOpenAIResponse(resp)
+	return parseOpenAIResponse(&resp)
 }
 
 // buildRequest constructs the Chat Completions request: messages → ChatCompletionMessage,
@@ -152,7 +152,7 @@ func (p *OpenAIProvider) buildRequest(prof *profile.Profile, messages []Message)
 // zcode-normalized Response. Each ToolCall.Function.Arguments (a JSON-encoded
 // STRING per the OpenAI spec — VERIFIED-FACTS.md item #2) is parsed into a
 // json.RawMessage ToolCall.Input.
-func parseOpenAIResponse(resp openai.ChatCompletionResponse) (Response, error) {
+func parseOpenAIResponse(resp *openai.ChatCompletionResponse) (Response, error) {
 	out := Response{FinishReason: string(resp.Choices[0].FinishReason)}
 	if len(resp.Choices) == 0 {
 		return out, errors.New("openai provider: response has no choices")

@@ -8,8 +8,8 @@ import (
 )
 
 // fakeProfile builds a minimal profile with one system block for projector tests.
-func fakeProfile(systemText string) profile.Profile {
-	return profile.Profile{
+func fakeProfile(systemText string) *profile.Profile {
+	return &profile.Profile{
 		Name:   "test",
 		System: []profile.TextBlock{{Type: blockText, Text: systemText}},
 	}

@@ -43,7 +43,7 @@ func TestRun_ReturnsProviderToolCalls(t *testing.T) {
 	want := []provider.ToolCall{{Name: "Read", Input: []byte(`{"file_path":"go.mod"}`)}}
 	p := &fakeProvider{calls: want}
 
-	got, err := loop.Run(context.Background(), profile.Profile{}, p, "read go.mod")
+	got, err := loop.Run(context.Background(), &profile.Profile{}, p, "read go.mod")
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestRun_PropagatesProviderError(t *testing.T) {
 	t.Parallel()
 
 	p := &fakeProvider{err: errors.New("boom")}
-	if _, err := loop.Run(context.Background(), profile.Profile{}, p, "x"); err == nil {
+	if _, err := loop.Run(context.Background(), &profile.Profile{}, p, "x"); err == nil {
 		t.Fatal("Run returned nil error; want the provider error propagated")
 	}
 }

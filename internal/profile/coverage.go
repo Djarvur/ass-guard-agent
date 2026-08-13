@@ -37,7 +37,7 @@ func LoadCoverage(path string) (CoverageManifest, error) {
 // declared counts and returns the drifted TIER-1/2 fields. TIER-3 fields are
 // ignored. ok is true iff no TIER-1/2 field drifted (the PROF-05 incomplete-
 // capture gate).
-func CheckCoverage(manifest CoverageManifest, freshCapture map[string]int) ([]FieldDiff, bool) {
+func CheckCoverage(manifest *CoverageManifest, freshCapture map[string]int) ([]FieldDiff, bool) {
 	var diffs []FieldDiff
 
 	for _, f := range manifest.Fields {

@@ -2,7 +2,6 @@ package session
 
 import (
 	"encoding/json"
-	"slices"
 	"strings"
 
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
@@ -31,12 +30,12 @@ var fileBearingTools = map[string]bool{ //nolint:gochecknoglobals // immutable t
 // task summary + current user message, with ZERO carry-forward of prior turn
 // messages as separate messages.
 type Projector struct {
-	prof    profile.Profile
+	prof    *profile.Profile
 	manager *Manager
 }
 
 // NewProjector returns a Projector over the given profile + transcript Manager.
-func NewProjector(prof profile.Profile, m *Manager) *Projector {
+func NewProjector(prof *profile.Profile, m *Manager) *Projector {
 	return &Projector{prof: prof, manager: m}
 }
 
@@ -54,8 +53,8 @@ func (p *Projector) Project(turnID string) ([]provider.Message, error) {
 	// Find the last boundary — the reset point.
 	boundaryIdx := -1
 
-	for i, l := range lines {
-		if l.Type == TypeBoundary {
+	for i := range lines {
+		if lines[i].Type == TypeBoundary {
 			boundaryIdx = i
 		}
 	}
@@ -101,7 +100,8 @@ func (p *Projector) extractSummary(before []Line) string {
 	files := []string{}
 	seen := map[string]bool{}
 
-	for _, l := range before {
+	for i := range before {
+		l := &before[i]
 		switch l.Type {
 		case TypeUserMessage:
 			lastUser = truncate(extractText(l), MaxSummaryUserChars)
@@ -147,19 +147,22 @@ func (p *Projector) extractSummary(before []Line) string {
 // the boundary, or (no boundary) the last user_message overall.
 func (p *Projector) findCurrentIntent(after, before []Line, turnID string) string {
 	// Prefer the user message matching turnID; fall back to the last user_message.
-	for _, v := range slices.Backward(after) {
+	for i := len(after) - 1; i >= 0; i-- {
+		v := &after[i]
 		if v.Type == TypeUserMessage && (turnID == "" || v.TurnID == turnID) {
 			return extractText(v)
 		}
 	}
 
-	for _, v := range slices.Backward(after) {
+	for i := len(after) - 1; i >= 0; i-- {
+		v := &after[i]
 		if v.Type == TypeUserMessage {
 			return extractText(v)
 		}
 	}
 
-	for _, v := range slices.Backward(before) {
+	for i := len(before) - 1; i >= 0; i-- {
+		v := &before[i]
 		if v.Type == TypeUserMessage {
 			return extractText(v)
 		}
@@ -170,7 +173,7 @@ func (p *Projector) findCurrentIntent(after, before []Line, turnID string) strin
 
 // extractText returns the plain text from a user_message content block slice
 // (or the line's Text shorthand).
-func extractText(l Line) string {
+func extractText(l *Line) string {
 	if len(l.Content) > 0 {
 		var blocks []ContentBlock
 

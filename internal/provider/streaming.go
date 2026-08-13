@@ -275,7 +275,7 @@ func tuInputBytes(b *strings.Builder) json.RawMessage {
 // captures the stop reason). Tool-use events are handled by the lifecycle state
 // machine in drainSSE (content_block_start → input_json_delta → content_block_stop);
 // this function handles only the simple single-event types.
-func parseAnthropicSSEEvent(ev map[string]any) (*StreamChunk, string) {
+func parseAnthropicSSEEvent(ev map[string]any) (*StreamChunk, string) { //nolint:gocritic // unnamedResult conflicts with nonamedreturns
 	typ, _ := ev[keyType].(string)
 	switch typ {
 	case "message_start":

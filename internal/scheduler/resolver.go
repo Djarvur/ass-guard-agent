@@ -36,7 +36,7 @@ func NewResolver(cfg *Config) *Resolver {
 // regardless of capReq so the D-02 precedence is the single focus (RESEARCH
 // §4.1, §7.2). Every returned Target carries its CapabilityProfile (D-09) and
 // Pricing (D-08).
-func (r *Resolver) Resolve(tier, project string, now time.Time, capReq CapabilityReq) (Target, []Target, error) {
+func (r *Resolver) Resolve(tier, project string, now time.Time, capReq CapabilityReq) (Target, []Target, error) { //nolint:gocritic // unnamedResult conflicts with nonamedreturns
 	binding, ok := r.resolveBinding(tier, project, now)
 	if !ok {
 		return Target{}, nil, fmt.Errorf("scheduler: tier %q is not configured (no window/project/global binding)", tier)
@@ -60,7 +60,7 @@ func (r *Resolver) Resolve(tier, project string, now time.Time, capReq Capabilit
 	// Apply the request-time capability gate (D-09): when capReq is non-zero,
 	// skip incapable candidates and return the first capable one + the remaining
 	// chain. A zero capReq leaves the chain unchanged (Plan 03-01 behavior).
-	chosen, remaining, err := applyCapabilityGate(primary, fallbacks, capReq)
+	chosen, remaining, err := applyCapabilityGate(&primary, fallbacks, capReq)
 	if err != nil {
 		return Target{}, nil, fmt.Errorf("resolve tier %q: %w", tier, err)
 	}
@@ -133,7 +133,7 @@ func (r *Resolver) activeWindow(now time.Time) *TimeWindow {
 // used when the window declares no zone of its own (RESEARCH §2.3). The window
 // evaluates in its own zone (loaded via the bundled tzdata), regardless of the
 // host's local time.
-func (w TimeWindow) contains(t time.Time, fallbackZone string) bool {
+func (w *TimeWindow) contains(t time.Time, fallbackZone string) bool {
 	zone := w.Zone
 	if zone == "" {
 		zone = fallbackZone

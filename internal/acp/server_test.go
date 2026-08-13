@@ -69,7 +69,7 @@ func newPipeHarness(t *testing.T, opts ...ServerOption) *pipeHarness {
 }
 
 // send writes one client frame (request or notification) to the server stdin.
-func (h *pipeHarness) send(t *testing.T, msg Message) {
+func (h *pipeHarness) send(t *testing.T, msg *Message) {
 	t.Helper()
 
 	err := writeFrame(h.cliW, msg)
@@ -142,23 +142,23 @@ func itoa(n int) string {
 }
 
 // newRequest builds a request Message with the given integer id.
-func newRequest(id int, method string, params map[string]any) Message {
+func newRequest(id int, method string, params map[string]any) *Message {
 	pmsg, marshalErr := json.Marshal(params)
 	if marshalErr != nil {
 		panic(marshalErr)
 	}
 
-	return Message{JSONRPC: protocolVersion20, ID: &id, Method: method, Params: pmsg}
+	return &Message{JSONRPC: protocolVersion20, ID: &id, Method: method, Params: pmsg}
 }
 
 // newNotification builds a notification Message (no id).
-func newNotification(method string, params map[string]any) Message {
+func newNotification(method string, params map[string]any) *Message {
 	pmsg, marshalErr := json.Marshal(params)
 	if marshalErr != nil {
 		panic(marshalErr)
 	}
 
-	return Message{JSONRPC: protocolVersion20, Method: method, Params: pmsg}
+	return &Message{JSONRPC: protocolVersion20, Method: method, Params: pmsg}
 }
 
 // TestInitializeReturnsAgentCapabilities verifies the initialize response uses
@@ -460,7 +460,7 @@ func (b *bytesAccumulator) String() string {
 	return string(b.buf)
 }
 
-func mustFrame(t *testing.T, msg Message) []byte {
+func mustFrame(t *testing.T, msg *Message) []byte {
 	t.Helper()
 
 	var sb strings.Builder

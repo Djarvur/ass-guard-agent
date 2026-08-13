@@ -28,21 +28,21 @@ func (e *CapabilityError) Error() string {
 // This is the request-time half of SCHED-06 (D-09), pairing with the load-time
 // D-10 validation in Validate: together they make tier mismatch explicit at
 // both authoring time and request time.
-func applyCapabilityGate(primary Target, fallback []Target, capReq CapabilityReq) (Target, []Target, error) {
+func applyCapabilityGate(primary *Target, fallback []Target, capReq CapabilityReq) (Target, []Target, error) { //nolint:gocritic // unnamedResult conflicts with nonamedreturns
 	if capReq == (CapabilityReq{}) {
-		return primary, fallback, nil
+		return *primary, fallback, nil
 	}
 
-	candidates := append([]Target{primary}, fallback...)
-	for i, cand := range candidates {
-		if satisfies(cand.Capabilities, capReq) {
-			return cand, candidates[i+1:], nil
+	candidates := append([]Target{*primary}, fallback...)
+	for i := range candidates {
+		if satisfies(candidates[i].Capabilities, capReq) {
+			return candidates[i], candidates[i+1:], nil
 		}
 	}
 
 	slugs := make([]string, len(candidates))
-	for i, c := range candidates {
-		slugs[i] = c.Model
+	for i := range candidates {
+		slugs[i] = candidates[i].Model
 	}
 
 	return Target{}, nil, &CapabilityError{Requirement: describeReq(capReq), Candidates: slugs}
