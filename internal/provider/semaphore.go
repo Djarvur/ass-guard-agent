@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"fmt"
 	"context"
 )
 
@@ -37,7 +38,7 @@ func (s *Semaphore) Acquire(ctx context.Context) error {
 	case s.tokens <- struct{}{}:
 		return nil
 	case <-ctx.Done():
-		return ctx.Err()
+		return fmt.Errorf("ctx: %w", ctx.Err())
 	}
 }
 

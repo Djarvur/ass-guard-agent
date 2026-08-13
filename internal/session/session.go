@@ -241,7 +241,7 @@ func (s *Session) streamAndEmit(
 ) (provider.Response, string, error) {
 	ch, err := s.Provider.Stream(ctx, &s.Profile, messages)
 	if err != nil {
-		return provider.Response{}, "", err
+		return provider.Response{}, "", fmt.Errorf("call: %w", err)
 	}
 
 	var (

@@ -44,7 +44,7 @@ func (f *fakeCommands) Run(ctx context.Context, command string, args []string) (
 		select {
 		case <-time.After(f.sleep):
 		case <-ctx.Done():
-			return "", "", 0, ctx.Err()
+			return "", "", 0, fmt.Errorf("ctx: %w", ctx.Err())
 		}
 	}
 

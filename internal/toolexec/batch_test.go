@@ -38,7 +38,7 @@ func (r *recordingExec) Execute(ctx context.Context, name string, _ json.RawMess
 	select {
 	case <-time.After(r.sleep):
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, fmt.Errorf("ctx: %w", ctx.Err())
 	}
 
 	end := nowMono()

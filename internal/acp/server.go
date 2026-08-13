@@ -141,7 +141,7 @@ func (s *Server) Serve(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return fmt.Errorf("ctx: %w", ctx.Err())
 		default:
 		}
 
@@ -289,7 +289,7 @@ func (a *adapter) AgentMessageChunk(messageID, text string) error {
 
 	raw, err := json.Marshal(params)
 	if err != nil {
-		return err
+		return fmt.Errorf("call: %w", err)
 	}
 
 	return a.out.Write(&Message{JSONRPC: protocolVersion20, Method: methodSessionUpdate, Params: raw})

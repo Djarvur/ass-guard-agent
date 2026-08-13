@@ -114,7 +114,7 @@ func runTrace(ctx context.Context, prompt, name, dir, auditLogPath string) error
 
 	calls, err := loop.Run(ctx, &prof, p, prompt)
 	if err != nil {
-		return err
+		return fmt.Errorf("call: %w", err)
 	}
 
 	out, err := json.MarshalIndent(calls, "", "  ")

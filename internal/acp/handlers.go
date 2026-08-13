@@ -128,7 +128,7 @@ func (s *Server) handleSessionPrompt(ctx context.Context, params json.RawMessage
 			return sessionPromptResult{StopReason: stopCancelled}, nil
 		}
 
-		return nil, err
+		return nil, fmt.Errorf("call: %w", err)
 	}
 
 	if stopReason == "" {

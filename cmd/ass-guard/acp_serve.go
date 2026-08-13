@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"log/slog"
@@ -126,7 +127,7 @@ func runACPServe(ctx context.Context, in io.Reader, out, stderr io.Writer, opts 
 
 	prof, err := profile.NewLoader(opts.ProfilesDir).Load(opts.Profile)
 	if err != nil {
-		return err
+		return fmt.Errorf("call: %w", err)
 	}
 
 	runner := &sessionTurnRunner{
@@ -199,17 +200,17 @@ func (r *sessionTurnRunner) setupEngine() error {
 	// could be loaded here. Register each command's mutability into the catalog.
 	oscfg, err := openspec.DefaultConfig()
 	if err != nil {
-		return err
+		return fmt.Errorf("call: %w", err)
 	}
 
 	err = openspec.RegisterTools(catalog, oscfg)
 	if err != nil {
-		return err
+		return fmt.Errorf("call: %w", err)
 	}
 
 	pt, err := openspec.FromConfig(oscfg)
 	if err != nil {
-		return err
+		return fmt.Errorf("call: %w", err)
 	}
 
 	r.patternTable = pt
@@ -217,7 +218,7 @@ func (r *sessionTurnRunner) setupEngine() error {
 	// Hook-DAG config (HOOK-02) — embedded default seeded set.
 	hooks, err := hookdag.DefaultHooks()
 	if err != nil {
-		return err
+		return fmt.Errorf("call: %w", err)
 	}
 
 	r.hookCfg = hooks
@@ -345,7 +346,7 @@ func (r *sessionTurnRunner) runOneTurn(
 		stop = stopEndTurn
 	}
 
-	return stop, err
+	return stop, fmt.Errorf("call: %w", err)
 }
 
 // sessionFor returns the Session for sessionID, creating it on first use.

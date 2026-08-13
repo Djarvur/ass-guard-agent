@@ -116,34 +116,34 @@ func chooseSession(stats []profile.SessionStat, sessions string) (profile.Sessio
 func writeArtifact(out, name string, res *profile.ExtractResult, paritySession string) error {
 	err := os.MkdirAll(filepath.Join(out, "system"), 0o755)
 	if err != nil {
-		return err
+		return fmt.Errorf("call: %w", err)
 	}
 	// system blocks
 	for i, b := range res.System {
 		err := os.WriteFile(filepath.Join(out, "system", fmt.Sprintf("block-%d.txt", i)), []byte(b.Text), 0o644)
 		if err != nil {
-			return err
+			return fmt.Errorf("call: %w", err)
 		}
 	}
 	// tools.json
 	toolsJSON, err := json.MarshalIndent(res.Tools, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf("call: %w", err)
 	}
 
 	err = os.WriteFile(filepath.Join(out, "tools.json"), toolsJSON, 0o644)
 	if err != nil {
-		return err
+		return fmt.Errorf("call: %w", err)
 	}
 	// thinking + tool_choice
 	err = os.WriteFile(filepath.Join(out, "thinking.json"), res.Thinking, 0o644)
 	if err != nil {
-		return err
+		return fmt.Errorf("call: %w", err)
 	}
 
 	err = os.WriteFile(filepath.Join(out, "tool_choice.json"), res.ToolChoice, 0o644)
 	if err != nil {
-		return err
+		return fmt.Errorf("call: %w", err)
 	}
 	// profile.yaml
 	profileYAML, err := yaml.Marshal(map[string]any{
@@ -152,41 +152,41 @@ func writeArtifact(out, name string, res *profile.ExtractResult, paritySession s
 		"max_tokens": res.MaxTokens,
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("call: %w", err)
 	}
 
 	err = os.WriteFile(filepath.Join(out, "profile.yaml"), profileYAML, 0o644)
 	if err != nil {
-		return err
+		return fmt.Errorf("call: %w", err)
 	}
 	// identity.yaml (header names byte-faithful, values templated)
 	idMap := map[string]any{"headers": headersToYAML(res.Headers)}
 
 	idYAML, err := yaml.Marshal(idMap)
 	if err != nil {
-		return err
+		return fmt.Errorf("call: %w", err)
 	}
 
 	err = os.WriteFile(filepath.Join(out, "identity.yaml"), idYAML, 0o644)
 	if err != nil {
-		return err
+		return fmt.Errorf("call: %w", err)
 	}
 	// coverage.yaml (PROF-05 manifest)
 	manifest := buildManifest(name, res, paritySession)
 
 	covYAML, err := yaml.Marshal(manifest)
 	if err != nil {
-		return err
+		return fmt.Errorf("call: %w", err)
 	}
 
 	err = os.WriteFile(filepath.Join(out, "coverage.yaml"), covYAML, 0o644)
 	if err != nil {
-		return err
+		return fmt.Errorf("call: %w", err)
 	}
 	// meta.yaml (PROF-03 target_capture_ref)
 	meta, err := yaml.Marshal(buildMeta(name, res, paritySession))
 	if err != nil {
-		return err
+		return fmt.Errorf("call: %w", err)
 	}
 
 	return os.WriteFile(filepath.Join(out, "meta.yaml"), meta, 0o644)

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -118,7 +119,7 @@ func sendFrame(t *testing.T, w io.Writer, m *acp.Message) {
 func writeFrameDirect(buf *bytes.Buffer, m *acp.Message) error {
 	raw, err := json.Marshal(m)
 	if err != nil {
-		return err
+		return fmt.Errorf("call: %w", err)
 	}
 
 	buf.Write(raw)

@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"fmt"
 	"os"
 
 	"gopkg.in/yaml.v3"
@@ -21,7 +22,7 @@ type FieldDiff struct {
 func LoadCoverage(path string) (CoverageManifest, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return CoverageManifest{}, err
+		return CoverageManifest{}, fmt.Errorf("call: %w", err)
 	}
 	// Tier is marshaled as an int in the manifest; yaml.v3 unmarshals it into
 	// the Tier (int) type directly.
@@ -29,7 +30,7 @@ func LoadCoverage(path string) (CoverageManifest, error) {
 
 	err = yaml.Unmarshal(raw, &m)
 	if err != nil {
-		return CoverageManifest{}, err
+		return CoverageManifest{}, fmt.Errorf("call: %w", err)
 	}
 
 	return m, nil

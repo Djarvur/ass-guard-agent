@@ -90,7 +90,7 @@ func waitStep(ctx context.Context, step *Step) (string, error) {
 
 	select {
 	case <-ctx.Done():
-		return "", ctx.Err()
+		return "", fmt.Errorf("ctx: %w", ctx.Err())
 	case <-time.After(d):
 		return "slept " + d.String(), nil
 	}

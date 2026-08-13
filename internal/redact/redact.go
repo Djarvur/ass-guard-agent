@@ -20,6 +20,7 @@ package redact
 
 import (
 	"encoding/json"
+	"fmt"
 	"regexp"
 	"strings"
 )
@@ -79,7 +80,7 @@ func Redact(raw []byte) ([]byte, error) {
 
 		out, err := json.Marshal(node)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("call: %w", err)
 		}
 
 		return out, nil

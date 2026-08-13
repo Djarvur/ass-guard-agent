@@ -26,7 +26,7 @@ type LiveArm struct {
 func (a *LiveArm) RunTurn(ctx context.Context, prompt string) ([]ToolCall, error) {
 	calls, err := loop.Run(ctx, &a.Profile, a.Provider, prompt)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("call: %w", err)
 	}
 
 	out := make([]ToolCall, 0, len(calls))
@@ -114,7 +114,7 @@ func Run(ctx context.Context, opts *RunOptions) (RunResult, error) {
 func writeResults(path string, res *RunResult) error {
 	raw, err := json.MarshalIndent(res, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf("call: %w", err)
 	}
 
 	return os.WriteFile(path, raw, 0o600)

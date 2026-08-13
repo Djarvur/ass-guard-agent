@@ -191,7 +191,7 @@ func reportProfileCheck(profileName string, drifts []drift.Drift, manifestFields
 func readFirstLine(path string) (json.RawMessage, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("call: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 	// Read the whole first line (rollout lines can be large).

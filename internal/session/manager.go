@@ -60,7 +60,7 @@ func (m *Manager) Close() error {
 	err := m.f.Close()
 	m.f = nil
 
-	return err
+	return fmt.Errorf("call: %w", err)
 }
 
 // appendLine marshals the line, redacts it, appends a newline, and writes it
@@ -68,7 +68,7 @@ func (m *Manager) Close() error {
 func (m *Manager) appendLine(line Line) error {
 	raw, err := json.Marshal(line)
 	if err != nil {
-		return err
+		return fmt.Errorf("call: %w", err)
 	}
 
 	red, err := m.redactor.Redact(raw)
@@ -87,7 +87,7 @@ func (m *Manager) appendLine(line Line) error {
 
 	_, err = m.f.Write(red)
 
-	return err
+	return fmt.Errorf("call: %w", err)
 }
 
 func now() time.Time { return time.Now().UTC() }
@@ -279,7 +279,7 @@ func (m *Manager) ReadSince(turnID string) ([]Line, error) {
 func readTranscriptFile(path string) ([]Line, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("call: %w", err)
 	}
 
 	defer func() { _ = f.Close() }()

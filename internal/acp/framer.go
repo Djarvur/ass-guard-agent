@@ -102,7 +102,7 @@ func readFrame(r *bufio.Reader) (*Message, error) {
 	if err != nil {
 		// io.EOF with no bytes is a clean end-of-input; any partial line with
 		// io.EOF is a truncated frame and surfaces as an error.
-		return nil, err
+		return nil, fmt.Errorf("call: %w", err)
 	}
 
 	line = bytes.TrimRight(line, "\n")

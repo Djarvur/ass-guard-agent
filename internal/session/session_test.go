@@ -65,7 +65,7 @@ func (f *fakeProvider) Send(
 		select {
 		case <-time.After(delay):
 		case <-ctx.Done():
-			return provider.Response{}, ctx.Err()
+			return provider.Response{}, fmt.Errorf("ctx: %w", ctx.Err())
 		}
 	}
 
@@ -435,7 +435,7 @@ func (r *recordingToolExec) Execute(ctx context.Context, name string, _ json.Raw
 	select {
 	case <-time.After(r.sleep):
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, fmt.Errorf("ctx: %w", ctx.Err())
 	}
 
 	r.mu.Lock()

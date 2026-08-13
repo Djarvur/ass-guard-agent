@@ -92,7 +92,7 @@ func runParity(suitePath, rollout, name, dir, results, surprise string) error {
 		Model:       prof.Model,
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("call: %w", err)
 	}
 
 	emitParityFooter("curated", &res)
@@ -107,7 +107,7 @@ func runParity(suitePath, rollout, name, dir, results, surprise string) error {
 				ResultsPath: "", Model: prof.Model,
 			})
 			if err != nil {
-				return err
+				return fmt.Errorf("call: %w", err)
 			}
 
 			emitParityFooter("surprise-check", &sres)

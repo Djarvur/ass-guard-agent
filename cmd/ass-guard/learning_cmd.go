@@ -67,7 +67,7 @@ func runLearningList(stdout, stderr io.Writer, path string) error {
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "learning: open %q: %v\n", path, err)
 
-		return err
+		return fmt.Errorf("call: %w", err)
 	}
 
 	entries := store.List()
@@ -99,7 +99,7 @@ func runLearningRevert(stdout, stderr io.Writer, path, id string) error {
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "learning: open %q: %v\n", path, err)
 
-		return err
+		return fmt.Errorf("call: %w", err)
 	}
 
 	before := len(store.List())
@@ -108,7 +108,7 @@ func runLearningRevert(stdout, stderr io.Writer, path, id string) error {
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "learning: revert %q: %v\n", id, err)
 
-		return err
+		return fmt.Errorf("call: %w", err)
 	}
 
 	after := len(store.List())

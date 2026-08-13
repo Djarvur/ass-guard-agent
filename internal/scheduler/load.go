@@ -149,7 +149,7 @@ func (c *CircuitBreakerConfig) UnmarshalYAML(value *yaml.Node) error {
 
 	err := value.Decode(&r)
 	if err != nil {
-		return err
+		return fmt.Errorf("call: %w", err)
 	}
 
 	c.ConsecutiveFailures = r.ConsecutiveFailures
@@ -183,7 +183,7 @@ func (c *CostCeilingConfig) UnmarshalYAML(value *yaml.Node) error {
 
 	err := value.Decode(&r)
 	if err != nil {
-		return err
+		return fmt.Errorf("call: %w", err)
 	}
 
 	c.AmountUSD = r.AmountUSD

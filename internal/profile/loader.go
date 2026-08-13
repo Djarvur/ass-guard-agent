@@ -128,7 +128,7 @@ func readSystemBlocks(dir string) ([]TextBlock, error) {
 func loadYAML(path string, out any) error {
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("call: %w", err)
 	}
 
 	return yaml.Unmarshal(raw, out)
@@ -137,7 +137,7 @@ func loadYAML(path string, out any) error {
 func loadJSON(path string, out any) error {
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("call: %w", err)
 	}
 
 	return json.Unmarshal(raw, out)

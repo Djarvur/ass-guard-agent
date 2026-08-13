@@ -88,7 +88,7 @@ func (s *Session) DispatchSubagent(ctx context.Context, parentTurnID, toolCallID
 			})
 		}
 
-		return "", err
+		return "", fmt.Errorf("call: %w", err)
 	case o := <-resCh:
 		errMsg := ""
 		if o.err != nil {
@@ -136,13 +136,13 @@ func (defaultSubagentRunner) Run(
 	for range maxIter {
 		err := ctx.Err()
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("call: %w", err)
 		}
 
 		if s.Semaphore != nil {
 			err := s.Semaphore.Acquire(ctx)
 			if err != nil {
-				return "", err
+				return "", fmt.Errorf("call: %w", err)
 			}
 		}
 
@@ -189,7 +189,7 @@ func (s *Session) streamAndEmitTagged(
 ) (provider.Response, string, error) {
 	ch, err := s.Provider.Stream(ctx, &s.Profile, messages)
 	if err != nil {
-		return provider.Response{}, "", err
+		return provider.Response{}, "", fmt.Errorf("call: %w", err)
 	}
 
 	var (

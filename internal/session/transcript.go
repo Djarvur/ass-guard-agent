@@ -2,6 +2,7 @@ package session
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -91,7 +92,7 @@ func openTranscript(dir, sessionID string) (*os.File, string, error) {
 
 	err := os.MkdirAll(storeDir, 0o755)
 	if err != nil {
-		return nil, "", err
+		return nil, "", fmt.Errorf("call: %w", err)
 	}
 
 	giPath := filepath.Join(storeDir, ".gitignore")
@@ -100,7 +101,7 @@ func openTranscript(dir, sessionID string) (*os.File, string, error) {
 	if os.IsNotExist(err) {
 		err = os.WriteFile(giPath, []byte(selfGitignoreContent), 0o644)
 		if err != nil {
-			return nil, "", err
+			return nil, "", fmt.Errorf("call: %w", err)
 		}
 	}
 
@@ -109,7 +110,7 @@ func openTranscript(dir, sessionID string) (*os.File, string, error) {
 
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
-		return nil, "", err
+		return nil, "", fmt.Errorf("call: %w", err)
 	}
 
 	return f, path, nil

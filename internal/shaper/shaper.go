@@ -172,14 +172,14 @@ func toToolInputSchema(raw json.RawMessage) (anthropic.ToolInputSchemaParam, err
 
 	err := json.Unmarshal(raw, &s)
 	if err != nil {
-		return anthropic.ToolInputSchemaParam{}, err
+		return anthropic.ToolInputSchemaParam{}, fmt.Errorf("call: %w", err)
 	}
 
 	var props any
 	if len(s.Properties) > 0 {
 		err := json.Unmarshal(s.Properties, &props)
 		if err != nil {
-			return anthropic.ToolInputSchemaParam{}, err
+			return anthropic.ToolInputSchemaParam{}, fmt.Errorf("call: %w", err)
 		}
 	}
 

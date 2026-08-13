@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"sync"
@@ -115,7 +116,7 @@ func (s *stubTurn) Run(ctx context.Context, _ string, emit ChunkEmitter, prompt 
 
 		err := emit.AgentMessageChunk(messageID(i+1), c)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("call: %w", err)
 		}
 	}
 

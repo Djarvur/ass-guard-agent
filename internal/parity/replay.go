@@ -107,7 +107,7 @@ func ExtractTurnsFromRollout(path string) ([]CapturedTurn, error) {
 func LoadReplaySession(jsonPath string) ([]CapturedTurn, error) {
 	raw, err := os.ReadFile(jsonPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("call: %w", err)
 	}
 
 	var turns []CapturedTurn

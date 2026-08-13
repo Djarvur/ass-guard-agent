@@ -69,7 +69,7 @@ func (a *Adapter) Run(ctx context.Context, command string, args ...string) (stri
 
 	if ctx.Err() != nil {
 		// ctx-cancelled kill — surface the ctx error (no orphan; T-04-06).
-		return stdout, stderr, ctx.Err()
+		return stdout, stderr, fmt.Errorf("ctx: %w", ctx.Err())
 	}
 	// Non-zero exit: carry the exit code + stderr in the error message.
 	var exitErr *exec.ExitError

@@ -105,7 +105,7 @@ func newSchedulingResolveCmd() *cobra.Command {
 
 			primary, fallbacks, err := scheduler.NewResolver(cfg).Resolve(tier, project, now, scheduler.CapabilityReq{})
 			if err != nil {
-				return err
+				return fmt.Errorf("call: %w", err)
 			}
 
 			if asJSON {
