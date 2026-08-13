@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-last_updated: "2026-08-12T23:30:00.000Z"
+status: completed
+last_updated: "2026-08-13T09:15:00.000Z"
 progress:
   total_phases: 7
-  completed_phases: 4
-  total_plans: 37
-  completed_plans: 23
-  percent: 62
+  completed_phases: 6
+  total_plans: 34
+  completed_plans: 20
+  percent: 59
 ---
 
 # State: ass-guard-agent (working name)
@@ -18,14 +18,14 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-08-09)
 **Core value:** Outgoing requests to the model provider must be structurally indistinguishable from the mimicked agent's (zcode first)
-**Current focus:** Phase 4 COMPLETE — unified engine + hook dag + openspec + learning. Next: Phase 5 (Ecosystem Compatibility) planning.
+**Current focus:** Phase 6 COMPLETE — distribution + polish (go:embed zero-config defaults, goreleaser 4-target static build, canonical ACP registry agent.json). v1.0 milestone is SHIP-READY: full `mise ci` gate green (vet + golangci-lint v2 all-linters 0 issues + CGO_ENABLED=0 build + go test -race, all 24 packages).
 
 ## Current Phase
 
-**Phase:** 4
-**Status:** COMPLETE (7/7 plans)
-**Next action:** Phase 5 (Ecosystem Compatibility) planning. Carry-forward (unchanged from prior state): Phase 1 remains blocked on the operator key + data-source gate (see Blockers); Phase 2/3/4 substrate is fully built + race-clean. Phase 4 verified the project's reason to exist end-to-end (zero-continue OpenSpec scenario passes — `cmd/ass-guard.TestEndToEnd_ZeroContinue`).
-**Last session:** 2026-08-12T23:30:00.000Z
+**Phase:** 6
+**Status:** COMPLETE (2/2 plans: 06-01 embed+firstrun, 06-02 goreleaser+agent.json)
+**Next action:** v1.0 milestone ready to ship. Suggested: `/gsd:complete-milestone` + `/gsd:verify-work 06`. The full test suite passes under -race (the earlier Phase-1 data-source blocker `internal/profile.TestStability_WithinSessionExtractionSource` now PASSES — the rollout session is available again).
+**Last session:** 2026-08-13T09:15:00.000Z
 
 ## Phase Status
 
@@ -37,10 +37,11 @@ See: .planning/PROJECT.md (updated 2026-08-09)
 | 3 — Model Scheduling | Not started | 6 REQ-IDs. Needs Phases 1-2. |
 | 4 — Unified Engine + Hook-DAG + OpenSpec + Learning | **COMPLETE (7/7 plans)** | All 7 plans done across 4 waves (04-01/03/04 W1, 04-02/06 W2, 04-05 W3, 04-07 W4). 19 REQ-IDs implemented (ENG-01..05, HOOK-01..05, LRN-01..04, OPEN-01..03, TOOL-04/05). 5 new packages: internal/engine, internal/hookdag, internal/openspec, internal/learning, internal/toolexec + toolcat.Register + session.SetToolExecutor + acp_serve engine wiring + `ass-guard learning` CLI. End-to-end zero-continue OpenSpec scenario green (`cmd/ass-guard.TestEndToEnd_ZeroContinue`); structural safety (unmatched ⇒ nothing) proven end-to-end + via testing/quick property; cancel-drain (ENG-03) proven at the ACP level; hand-rolled hook-DAG ≤300 LOC core; swappable WebSearch/WebFetch backends. Phase gate GREEN: build + vet clean, 9 Phase-4 packages -race green, 0 TODO/FIXME. 04-VERIFICATION-PREP.md maps the 5 success criteria → tests + commands. Real-openspec tests gated behind ASSGUARD_OPENSPEC_BIN=1. Carry-forward: `internal/profile.TestStability_WithinSessionExtractionSource` still FAILS (pre-existing Phase-1 data-source blocker — Phase 4 did not touch internal/profile). Next: Phase 5 (Ecosystem Compatibility). |
 | 5 — Ecosystem Compatibility | Not started | 5 REQ-IDs. Needs stable tool registry (Phase 2). |
-| 6 — Distribution + Polish | Not started | 3 REQ-IDs. Ship readiness after all deltas validated. |
+| 6 — Distribution + Polish | **COMPLETE (2/2 plans)** | All 3 REQ-IDs (DIST-01/02/03) implemented. 06-01: `internal/defaults` (go:embed seed: sanitized zcode profile + openspec.toml + scheduling.yaml) + `internal/firstrun` (Ensure → non-clobbering first-run) + `acp serve` zero-config profiles-dir wiring + zeroconfig_test.go TRACER proof (build binary, seed, ACP handshake, idempotent). 06-02: `internal/version` (--version flag, ldflags-injected) + `.goreleaser.yml` (4 targets darwin/linux × amd64/arm64, CGO_ENABLED=0, `goreleaser check` exits 0) + canonical `agent.json` (REAL ACP schema: cmd/args, NOT command/command_args/cwd — Tier-A correction) + `scripts/gen-agent-json.sh` + `docs/install.md`. Tier-A corrections: ldflags target MUST be capital-D `github.com/Djarvur/...` (lowercase silently fails); archives use v2.17 `formats`/`files` (plan's `format`/`extra_files` deprecated). Snapshot build proof: linux_amd64 statically linked, `--version` prints 0.0.1-dev, zero-config first-run works inside the goreleaser binary. Phase gate GREEN: `mise ci` exits 0 (vet + golangci-lint v2 all-linters 0 issues + CGO build + -race, 24 packages). Note: catalog drift — tools.json carries 103 tools (PROF-04 drift, STATE.md blocker), not the plans' stale 77; seed mirrors source byte-for-byte. |
 
 ## Decisions Log
 
+- **Phase 6 (2026-08-13):** Phase 6 COMPLETE (2/2 plans, autonomous execution). All 3 REQ-IDs (DIST-01/02/03) implemented + tested. 06-01 (embed + first-run, D-01/D-04): `internal/defaults` embeds the seed tree via go:embed (sanitized zcode profile + openspec.toml + scheduling.yaml) — `sync.sh` is the T-06-01 (HIGH) build-operator leak barrier (`/Users/nil/...` → `<working_directory>` / tilde-relative; coverage.yaml excluded). `internal/firstrun.Ensure` is the non-clobbering first-run (D-07 self-gitignore, byte-identical to internal/session). `acp serve` RunE seeds `.ass-guard/` + resolves profilesDir to `.ass-guard/profiles` (zero-config). 06-02 (goreleaser + agent.json, D-02/D-03): `internal/version` + `--version` flag; `.goreleaser.yml` 4 targets CGO_ENABLED=0; canonical `agent.json` (cmd/args, NOT command/command_args/cwd). Three Tier-A corrections: (1) ldflags -X target MUST be capital-D `github.com/Djarvur/...` (lowercase silently fails — verified); (2) D-03 field names corrected to canonical ACP schema (agent.schema.json fetched 2026-08-09); (3) goreleaser v2.17 `formats`/`files` (plan's `format`/`extra_files` deprecated). Two `-trimpath` bugs found + fixed at the gate (mise sets GOFLAGS=-trimpath): the drift guard + the E2E binary build used `runtime.Caller` (returns module-relative paths under -trimpath) — replaced with embed-to-embed comparison (`scheduler.EmbeddedDefaultScheduling()` accessor) and a go build by import path respectively. Catalog-drift deviation: tools.json carries 103 tools (PROF-04, STATE.md blocker), not the plans' stale 77 — seed mirrors source byte-for-byte. Phase gate GREEN: `mise ci` exits 0 (vet + golangci-lint v2 all-linters 0 issues + CGO_ENABLED=0 build + go test -race, 24 packages). Snapshot build proof: linux_amd64 statically linked, version injection confirmed, zero-config first-run works in the goreleaser binary (embed survived cross-compile). v1.0 milestone is SHIP-READY.
 - **Phase 4 (2026-08-12):** Phase 4 COMPLETE (7/7 plans, 4 waves, autonomous execution). All 19 REQ-IDs (ENG-01..05, HOOK-01..05, LRN-01..04, OPEN-01..03, TOOL-04/05) implemented + tested under `-race`. Wave structure: W1 = 04-01 (engine decision core + pure Decide + Observe wrapper with graceful degradation + re-fire budget + cancel-drain) + 04-03 (hookdag: declarative YAML config + ≤300 LOC executor + provenance loop prevention + 4 step kinds) + 04-04 (toolexec: DispatchBatch concurrent-reads/serialized-mutations + swappable Backend + RealExecutor + toolcat.Register + session.SetToolExecutor loop replacement); W2 = 04-02 (openspec: TOML config + subprocess Adapter + RegisterTools + OpenSpecPatternTable bridge, real-openspec gated behind ASSGUARD_OPENSPEC_BIN=1) + 04-06 (learning: single-writer yaml Store + ProposeHooks + `ass-guard learning list/revert` CLI); W3 = 04-05 (integration: acp_serve engine wiring + ActionDispatcher hook→hookdag/ask→store + engineTurnRunnerAdapter + end-to-end zero-continue); W4 = 04-07 (cancel-drain ACP-level proof + consolidated 5-criteria e2e + 04-VERIFICATION-PREP.md). Key invariants honored: D-01 post-turn observer (never in the turn critical path), D-03 structural safety (unmatched ⇒ nothing — proven by testing/quick + end-to-end), D-04 graceful degradation (engine panic recovered, original stop returned), D-07 hand-rolled DAG executor (executor.go = 187 LOC, ≤300 budget), D-14 TOML isolated to internal/openspec (yaml.v3 for hookdag + learning), D-22 swappable backends (no firecrawl dep — stub proves the seam). One deviation recorded inline: case-insensitive import-path casing (`Djarvur` per go.mod) — followed the canonical module path. Phase gate GREEN (build + vet clean; internal/engine, hookdag, openspec, learning, toolexec, toolcat, event, session, cmd/ass-guard all `-race` green; 0 TODO/FIXME in Phase-4 production files). The single `go test ./... -race` failure is the PRE-EXISTING Phase-1 data-source blocker (internal/profile TestStability_WithinSessionExtractionSource — globs for the absent zcode rollout session eea3dc48, documented above); no Phase-4 file was touched in internal/profile. Commits: 7943c62 (W1), 994542f (W2), edaeaf4 (W3), 5b5331c (W4).
 - **Plan 00-05 (2026-08-09):** D-07 Tier-B resolution for item #1 (zcode JSONL path) — research-predicted default **option-a (revise-and-continue) APPLIED BY DEFAULT** after the user declined to override the checkpoint across multiple prompts (NOT 'user chose option-a' — honest audit-trail attribution). Confirmed by on-disk evidence from plans 00-01..00-04 and documented as the prediction in 00-05-PLAN.md Task 2. Consequence (option-a, verbatim): Phase 1 MIMC-02 path wording to be corrected to `~/.zcode/cli/rollout/model-io-sess_<id>.jsonl` during Phase 1 planning; munged-cwd convention obsolete for zcode. Reversible at Phase 1 planning. Recorded in VERIFIED-FACTS.md item #1 Notes.
 - **Plan 00-05 (2026-08-09):** Phase 0 COMPLETE (5/5 plans, 5/5 STACK items closed). VERIFIED-FACTS.md is the post-spike source of truth (STACK.md unchanged, D-01 — md5 `5e4eecc8418f9ff61272702044da0f54` preserved). The completeness gate `check-verified-facts.sh` exits 0 (6/6 checks); the plan `<verify>` chain prints PHASE0_GATE_PASS. D-03 sanitization is the phase's final secret-leak barrier (threat T-00-10, high) — zero sk-/Bearer/*_API_KEY=/raw UUID//Users/ matches across the merged file. Item #2 carries forward as PARTIAL: schema VERIFIED offline, live round-trip deferred pending operator key provisioning (single carry-forward operator action). Phase 1 (Mimicry MVP) is ready to plan.

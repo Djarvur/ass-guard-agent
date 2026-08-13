@@ -117,9 +117,9 @@ Requirements for initial release. Each maps to roadmap phases. Categorized by ca
 
 ### Distribution (Phase 6)
 
-- [ ] **DIST-01**: A single static Go binary is produced via goreleaser for macOS + Linux (amd64 + arm64), no runtime deps
-- [ ] **DIST-02**: An ACP registry `agent.json` manifest declares `command`/`command_args`/`cwd` so Zed can spawn the agent via `zed: acp registry`
-- [ ] **DIST-03**: First run via `zed: acp registry` works with sensible defaults (a default model + a pre-seeded zcode profile + a pre-seeded openspec.toml) — zero-config for the team
+- [x] **DIST-01**: A single static Go binary is produced via goreleaser for macOS + Linux (amd64 + arm64), no runtime deps
+- [x] **DIST-02**: An ACP registry `agent.json` manifest declares `cmd`/`args` (per the canonical `agent.schema.json`) so Zed can spawn the agent via `zed: acp registry` — the original `command`/`command_args`/`cwd` wording was superseded (Tier-A correction, Phase 6)
+- [x] **DIST-03**: First run via `zed: acp registry` works with sensible defaults (a default model + a pre-seeded zcode profile + a pre-seeded openspec.toml) — zero-config for the team
 
 ## v2 Requirements
 
@@ -233,9 +233,9 @@ Which phases cover which requirements. Updated during roadmap creation (2026-08-
 | ECOS-03 | 5 — Ecosystem Compatibility | Pending |
 | ECOS-04 | 5 — Ecosystem Compatibility | Pending |
 | ECOS-05 | 5 — Ecosystem Compatibility | Pending |
-| DIST-01 | 6 — Distribution + Polish | Pending |
-| DIST-02 | 6 — Distribution + Polish | Pending |
-| DIST-03 | 6 — Distribution + Polish | Pending |
+| DIST-01 | 6 — Distribution + Polish | Complete |
+| DIST-02 | 6 — Distribution + Polish | Complete |
+| DIST-03 | 6 — Distribution + Polish | Complete |
 
 **Coverage:**
 - v1 requirements: 67 total

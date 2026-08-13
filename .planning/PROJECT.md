@@ -85,7 +85,7 @@ Outgoing requests to the model provider must be structurally indistinguishable f
 
 **Distribution**
 
-- [ ] Single static Go binary via goreleaser (macOS + Linux, amd64 + arm64); ACP registry manifest for one-shot install
+- [x] Single static Go binary via goreleaser (macOS + Linux, amd64 + arm64); ACP registry manifest for one-shot install — *Validated in Phase 6 (DIST-01/02/03)*
 
 ### Out of Scope
 

@@ -18,7 +18,7 @@ The six deltas (mimicry, multi-tier scheduling, configurable backends, learning 
 | 3 | Model Scheduling | An operator can configure heavy/good/light tiers with time-windowed model substitution, per-project overrides, and fallback chains, and ass-guard picks the right model at request time without the developer noticing | SCHED-01, SCHED-02, SCHED-03, SCHED-04, SCHED-05, SCHED-06 | 4 |
 | 4 | Unified Engine + Hook-DAG + OpenSpec + Learning | A developer can run an unmodified OpenSpec scenario end-to-end through ass-guard with zero manual "continue" taps, while the forgotten routine (tests, lint, review, memory, improvement proposals) runs automatically after each stage | ENG-01, ENG-02, ENG-03, ENG-04, ENG-05, HOOK-01, HOOK-02, HOOK-03, HOOK-04, HOOK-05, LRN-01, LRN-02, LRN-03, LRN-04, OPEN-01, OPEN-02, OPEN-03, TOOL-04, TOOL-05 | 5 |
 | 5 | Ecosystem Compatibility | A Claude Code user can drop their existing `.claude/` setup (MCP servers, skills, slash-commands, plugins) into ass-guard and have it work unchanged, alongside ass-guard's own additions | ECOS-01, ECOS-02, ECOS-03, ECOS-04, ECOS-05 | 4 |
-| 6 | Distribution + Polish | A team can install ass-guard via the ACP registry with one command and have a working, zero-config default setup on first launch | DIST-01, DIST-02, DIST-03 | 3 |
+| 6 | Distribution + Polish | 2/2 | Complete   | 2026-08-13 |
 
 ## Phase Details
 
