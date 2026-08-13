@@ -173,6 +173,10 @@ func (s *Server) handleSessionCancel(ctx context.Context, params json.RawMessage
 	}
 
 	st.cancelTurn()
+	// Plan 05-01 T4: reap the session's MCP host + other session-scoped
+	// resources. The TurnRunner's SessionCloser (if implemented) drains the
+	// subprocesses; cancelTurn already aborted the in-flight turn.
+	s.closeSessionIfPossible(p.SessionID)
 
 	return nil, nil //nolint:nilnil // nil result signals "no JSON-RPC response" (notification / unknown session)
 }
@@ -198,6 +202,8 @@ func (s *Server) handleLogout(ctx context.Context, params json.RawMessage) (any,
 	}
 
 	if p.SessionID != "" {
+		// Plan 05-01 T4: reap the session's MCP host before dropping it.
+		s.closeSessionIfPossible(p.SessionID)
 		s.mu.Lock()
 		delete(s.sessions, p.SessionID)
 		s.mu.Unlock()

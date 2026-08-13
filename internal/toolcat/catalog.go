@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"sort"
 )
 
@@ -54,6 +55,16 @@ func (c *Catalog) Register(t Tool) {
 	}
 
 	c.tools[t.Name] = t
+}
+
+// Clone returns a shallow copy of the catalog. Phase 5 uses this to build a
+// per-session catalog from the shared engine catalog so per-session MCP tools
+// (D-16) never leak across sessions or back into the shared catalog.
+func (c *Catalog) Clone() *Catalog {
+	out := &Catalog{tools: make(map[string]Tool, len(c.tools))}
+	maps.Copy(out.tools, c.tools)
+
+	return out
 }
 
 // Names returns the sorted catalog tool names.

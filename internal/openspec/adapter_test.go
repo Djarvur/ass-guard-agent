@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -14,16 +13,19 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/openspec"
 )
 
-// stubPath returns the absolute path to the testdata stub script.
+// stubPath returns the absolute path to the testdata stub script. `go test` runs
+// with CWD = the package source directory, so a relative path resolves correctly
+// under -trimpath (where runtime.Caller returns module-relative paths that are
+// not real filesystem paths).
 func stubPath(t *testing.T) string {
 	t.Helper()
 
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller failed")
+	abs, err := filepath.Abs(filepath.Join("testdata", "openspec-stub.sh"))
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	return filepath.Join(filepath.Dir(file), "testdata", "openspec-stub.sh")
+	return abs
 }
 
 // putStubOnPATH copies/symlinks the stub script into a temp dir named "openspec"

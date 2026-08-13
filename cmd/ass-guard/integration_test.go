@@ -179,7 +179,7 @@ func TestIntegration_RealStreamingThroughACP(t *testing.T) { //nolint:funlen // 
 	defer stop()
 
 	sendFrame(t, cliW, &acp.Message{
-		JSONRPC: protocolVersion20, ID: intPtrACP(0), Method: "initialize",
+		JSONRPC: protocolVersion20, ID: new(0), Method: "initialize",
 		Params: rawJSON(map[string]any{"protocolVersion": 1}),
 	})
 
@@ -189,7 +189,7 @@ func TestIntegration_RealStreamingThroughACP(t *testing.T) { //nolint:funlen // 
 	}
 
 	sendFrame(t, cliW, &acp.Message{
-		JSONRPC: protocolVersion20, ID: intPtrACP(1), Method: "session/new",
+		JSONRPC: protocolVersion20, ID: new(1), Method: "session/new",
 		Params: rawJSON(map[string]any{"cwd": "/tmp", "mcpServers": []any{}}),
 	})
 	frames = readFrames(t, cliR, 1)
@@ -205,7 +205,7 @@ func TestIntegration_RealStreamingThroughACP(t *testing.T) { //nolint:funlen // 
 	}
 
 	sendFrame(t, cliW, &acp.Message{
-		JSONRPC: protocolVersion20, ID: intPtrACP(2), Method: "session/prompt",
+		JSONRPC: protocolVersion20, ID: new(2), Method: "session/prompt",
 		Params: rawJSON(map[string]any{
 			keySessionID: snew.SessionID,
 			"prompt":     []map[string]any{{keyType: blockText, blockText: "hi"}},
@@ -268,12 +268,12 @@ func TestIntegration_SessionLoadNoOp(t *testing.T) {
 	defer stop()
 
 	sendFrame(t, cliW, &acp.Message{
-		JSONRPC: protocolVersion20, ID: intPtrACP(0), Method: "initialize",
+		JSONRPC: protocolVersion20, ID: new(0), Method: "initialize",
 		Params: rawJSON(map[string]any{"protocolVersion": 1}),
 	})
 	readFrames(t, cliR, 1)
 	sendFrame(t, cliW, &acp.Message{
-		JSONRPC: protocolVersion20, ID: intPtrACP(1), Method: "session/load",
+		JSONRPC: protocolVersion20, ID: new(1), Method: "session/load",
 		Params: rawJSON(map[string]any{keySessionID: "x"}),
 	})
 
@@ -296,6 +296,3 @@ func rawJSON(m map[string]any) json.RawMessage {
 
 	return b
 }
-
-// intPtrACP returns a pointer to i (test helper).
-func intPtrACP(i int) *int { return &i }

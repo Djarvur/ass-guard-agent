@@ -77,7 +77,9 @@ func (p *scriptedACPProvider) Stream(
 		for _, tc := range resp.toolCalls {
 			tcc := tc
 			select {
-			case ch <- provider.StreamChunk{Type: "tool_use", ToolCall: &tcc, ToolCallID: tc.Name}:
+			case ch <- provider.StreamChunk{
+				Type: tracerToolUse, ToolCall: &tcc, ToolCallID: tc.Name,
+			}:
 			case <-ctx.Done():
 				return
 			}

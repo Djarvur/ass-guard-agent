@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -21,6 +23,7 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/event"
 	"github.com/Djarvur/ass-guard-agent/internal/hookdag"
 	"github.com/Djarvur/ass-guard-agent/internal/learning"
+	mcp "github.com/Djarvur/ass-guard-agent/internal/mcp"
 	"github.com/Djarvur/ass-guard-agent/internal/openspec"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
@@ -31,7 +34,42 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/toolexec"
 )
 
-const mnd6 = 6
+const (
+	mnd6            = 6
+	mcpStartTimeout = 30 * time.Second
+)
+
+// stubExecResult is the canned tool result for the non-engine path (mirrors
+// session.stubResultMsg). Used by stubCatalogExec so MCPExecutor has a working
+// inner executor when the engine is disabled (--no-engine).
+const stubExecResult = `{"output":"stubbed (engine disabled)"}`
+
+// nopHost returns a no-op MCP host (zero servers). CallTool on it returns an
+// "unknown server" error; Close is a no-op. Used when .mcp.json is absent or
+// load fails so the session always has a non-nil host to wrap/reap.
+func nopHost() *mcp.Host { return &mcp.Host{} }
+
+// stubCatalogExec is the ToolExecutor for the non-engine path: it returns the
+// canned stub result for every non-mcp tool (mirrors session.stubExecutor). MCP
+// calls never reach it (MCPExecutor intercepts them first).
+type stubCatalogExec struct{}
+
+// toProfileDecls converts toolcat Decls to profile Decls (structurally identical
+// types; the Shaper consumes profile.Decl). Used to merge MCP tool decls into
+// the per-session profile copy.
+func toProfileDecls(in []toolcat.Decl) []profile.Decl {
+	out := make([]profile.Decl, len(in))
+	for i, d := range in {
+		out[i] = profile.Decl{Name: d.Name, Description: d.Description, InputSchema: d.InputSchema}
+	}
+
+	return out
+}
+
+// Execute returns the canned stub result for every non-mcp tool.
+func (stubCatalogExec) Execute(_ context.Context, _ string, _ json.RawMessage) (json.RawMessage, error) {
+	return json.RawMessage(stubExecResult), nil
+}
 
 // serveOptions carries the `acp serve` subcommand flags. The profile is loaded
 // by name (default zcode); --max-concurrent bounds outbound provider concurrency
@@ -160,6 +198,14 @@ func runACPServe(ctx context.Context, in io.Reader, out, stderr io.Writer, opts 
 
 	srv := acp.NewServer(in, out, stderr, acp.WithTurnRunner(runner))
 
+	// Phase 5 (Plan 05-02 T4): when the server-level ctx is cancelled
+	// (SIGINT/SIGTERM), close every live session's MCP host so no subprocess
+	// outlives the ass-guard process. Serve returns after ctx cancellation.
+	go func() {
+		<-ctx.Done()
+		runner.closeAllSessions()
+	}()
+
 	return srv.Serve(ctx) //nolint:wrapcheck // direct delegation
 }
 
@@ -272,7 +318,7 @@ func (r *sessionTurnRunner) Run(
 	ctx context.Context, sessionID string,
 	emit acp.ChunkEmitter, prompt []acp.ContentBlock,
 ) (string, error) {
-	sess := r.sessionFor(sessionID)
+	sess := r.sessionFor(ctx, sessionID)
 	// Subscribe a chunk-forwarder so streamed AgentMessageChunk events become
 	// session/update notifications. The forwarder runs until the turn completes.
 	ch := r.bus.Subscribe("AgentMessageChunk", event.BufAgentMessageChunk)
@@ -327,7 +373,7 @@ func (r *sessionTurnRunner) Run(
 // The engine + the continue-injections all run under the SAME ctx derived from
 // the ACP turnCtx (ENG-03 — session/cancel reaches the engine + drains queued
 // injections).
-func (r *sessionTurnRunner) runOneTurn(
+func (r *sessionTurnRunner) runOneTurn( //nolint:funcorder // grouping keeps the turn pipeline together
 	ctx context.Context, sess *session.Session, blocks []session.ContentBlock,
 ) (string, error) {
 	if !r.engineEnabled || r.eng == nil || r.patternTable == nil {
@@ -363,7 +409,9 @@ func (r *sessionTurnRunner) runOneTurn(
 }
 
 // sessionFor returns the Session for sessionID, creating it on first use.
-func (r *sessionTurnRunner) sessionFor(sessionID string) *session.Session {
+func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen // grouping keeps the turn pipeline together
+	ctx context.Context, sessionID string,
+) *session.Session {
 	if r.sessions == nil {
 		r.sessions = map[string]*session.Session{}
 	}
@@ -388,34 +436,112 @@ func (r *sessionTurnRunner) sessionFor(sessionID string) *session.Session {
 		maxConc = provider.DefaultMaxConcurrent
 	}
 
+	// Phase 5 (Plan 05-01): spawn configured MCP servers + bridge their tools.
+	// MCP is opt-in — a missing .mcp.json yields an empty host (no servers, no
+	// decls). The host lives for the session and is reaped via OnClose (D-02).
+	mcpHost, mcpDecls := r.spawnMCP(ctx, dir)
+
+	// Per-session profile COPY: append MCP tool decls so the Shaper surfaces them
+	// to the model (D-01/D-16). r.profile is shared; the double-append makes a
+	// fresh slice so the shared profile is NEVER mutated.
+	prof := r.profile
+	if len(mcpDecls) > 0 {
+		prof.Tools = append(append([]profile.Decl(nil), r.profile.Tools...), toProfileDecls(mcpDecls)...)
+	}
+
+	// Per-session catalog: clone the shared engine catalog (OpenSpec + core) so
+	// MCP tools never leak across sessions or back into r.catalog (D-16).
+	var sCatalog *toolcat.Catalog
+	if r.catalog != nil {
+		sCatalog = r.catalog.Clone()
+	} else {
+		sCatalog = toolcat.NewCatalog()
+	}
+
+	mcpHost.Register(sCatalog)
+
 	s := &session.Session{
 		Manager:     mgr,
-		Projector:   session.NewProjector(&r.profile, mgr),
+		Projector:   session.NewProjector(&prof, mgr),
 		Provider:    r.makeProvider(),
 		Bus:         r.bus,
 		Semaphore:   provider.NewSemaphore(maxConc),
-		Profile:     r.profile,
+		Profile:     prof,
 		WorkDir:     dir,
 		SessionID:   sessionID,
-		Catalog:     r.catalog, // shared: nil when the engine is disabled → NewCatalog below
+		Catalog:     sCatalog,
 		ConfigAdded: r.configAdded,
-	}
-	if s.Catalog == nil {
-		s.Catalog = toolcat.NewCatalog()
 	}
 	// Phase-4 TOOL-04/05: inject the catalog-backed real executor (WebSearch/
 	// WebFetch delegate to the configured backend; others call catalog
-	// Tool.Execute). Nil Backends ⇒ WebSearch/WebFetch return a not-configured
-	// error until the operator configures templates — every other tool still
-	// runs via the catalog. When the engine is disabled the stub path is used
-	// (SetToolExecutor not called) — backward-compatible.
+	// Tool.Execute). Phase 5 wraps it in toolcat.MCPExecutor so mcp__* calls
+	// route to the MCP host and everything else reaches the inner executor.
 	if r.engineEnabled {
-		s.SetToolExecutor(&toolexec.RealExecutor{Catalog: s.Catalog, Log: slog.Default()})
+		s.SetToolExecutor(toolcat.NewMCPExecutor(
+			&toolexec.RealExecutor{Catalog: sCatalog, Log: slog.Default()}, mcpHost))
+	} else {
+		s.SetToolExecutor(toolcat.NewMCPExecutor(stubCatalogExec{}, mcpHost))
 	}
+
+	// Phase 5: reap MCP subprocesses on session end (logout/cancel/ctx-done).
+	s.OnClose = func() error { return mcpHost.Close() }
 
 	r.sessions[sessionID] = s
 
 	return s
+}
+
+// spawnMCP loads the project .mcp.json from dir and starts the MCP host. It
+// returns (host, mcpDecls); on any load/start error it returns an empty host
+// (MCP is opt-in — one bad config never breaks the session). The ctx is
+// derived from the ACP turn ctx (session/cancel reaches MCP spawn); a bounded
+// timeout guards a hanging server.
+func (r *sessionTurnRunner) spawnMCP( //nolint:funcorder // shutdown helper grouped with session lifecycle
+	ctx context.Context, dir string,
+) (*mcp.Host, []toolcat.Decl) {
+	cfg, err := mcp.LoadConfig(dir)
+	if err != nil || len(cfg.Servers) == 0 {
+		return nopHost(), nil
+	}
+
+	// Use a bounded context so a hanging server cannot block session/new.
+	spawnCtx, cancel := context.WithTimeout(ctx, mcpStartTimeout)
+	defer cancel()
+
+	host, decls, err := mcp.Start(spawnCtx, cfg)
+	if err != nil {
+		return nopHost(), nil
+	}
+
+	return host, decls
+}
+
+// closeAllSessions closes every live session's host (the ctx-done path — Plan
+// 05-02 T4). Called when the server-level ctx is cancelled (SIGINT/SIGTERM) so
+// no MCP subprocess outlives the ass-guard process.
+func (r *sessionTurnRunner) closeAllSessions() { //nolint:funcorder // shutdown helper grouped with session lifecycle
+	if r.sessions == nil {
+		return
+	}
+
+	for _, s := range r.sessions {
+		_ = s.Close()
+	}
+}
+
+// CloseSession closes one session's MCP host (the logout/cancel path — Plan
+// 05-01 T4). It satisfies acp.SessionCloser; the ACP server calls it via type
+// assertion when handling logout/session-cancel. An unknown sessionID is a no-op.
+func (r *sessionTurnRunner) CloseSession(sessionID string) error {
+	if r.sessions == nil {
+		return nil
+	}
+
+	if s, ok := r.sessions[sessionID]; ok {
+		return s.Close() //nolint:wrapcheck // session delegation
+	}
+
+	return nil
 }
 
 // toContentBlocks converts the ACP content blocks to session content blocks.

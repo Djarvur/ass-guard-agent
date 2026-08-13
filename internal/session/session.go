@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
@@ -58,6 +59,15 @@ type Session struct {
 	// subagentRunner is the seam for Task/Agent dispatch (Plan 02-06). Nil →
 	// defaultSubagentRunner (real nested loop). Tests inject a fake.
 	subagentRunner subagentRunner
+
+	// OnClose is the session-end hook (Plan 05-01 T4): when set, Session.Close
+	// runs it exactly once (idempotent). cmd/ass-guard sets it to host.Close()
+	// so MCP subprocesses are reaped when the session ends (logout/cancel/ctx).
+	// It is a func seam (not a *mcp.Host) so internal/session has no import
+	// cycle on internal/mcp.
+	OnClose func() error
+
+	closeOnce sync.Once
 
 	turnCounter atomic.Int64
 }
@@ -216,6 +226,23 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 // When not called, the session uses stubToolResult for every non-subagent tool
 // (the Phase-2 backward-compatible behavior — real execution is opt-in).
 func (s *Session) SetToolExecutor(tx toolcat.ToolExecutor) { s.toolExec = tx }
+
+// Close ends the session: it runs the OnClose hook exactly once (idempotent) so
+// MCP subprocesses are reaped, transcript managers flushed, etc. (Plan 05-01
+// T4). Safe to call multiple times; concurrent calls are serialized. A
+// mid-session turn panic does NOT call Close (the session survives for the next
+// turn); Close is session-end only.
+func (s *Session) Close() error {
+	var firstErr error
+
+	s.closeOnce.Do(func() {
+		if s.OnClose != nil {
+			firstErr = s.OnClose()
+		}
+	})
+
+	return firstErr
+}
 
 // stubExecutor returns the Phase-2 canned stub for every tool (D-15 — execution
 // stays stubbed until SetToolExecutor wires the RealExecutor). It is used by

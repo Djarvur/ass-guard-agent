@@ -32,6 +32,15 @@ type TurnRunner interface {
 	Run(ctx context.Context, sessionID string, emit ChunkEmitter, prompt []ContentBlock) (stopReason string, err error)
 }
 
+// SessionCloser is an OPTIONAL capability a TurnRunner may implement to release
+// session-scoped resources (Plan 05-01 T4). When the TurnRunner implements it,
+// logout/session-cancel call CloseSession(sessionID) so MCP subprocesses and
+// other session-scoped resources are reaped (D-02). It is a separate interface
+// (not part of TurnRunner) so stub runners need not implement it.
+type SessionCloser interface {
+	CloseSession(sessionID string) error
+}
+
 // Handler is one ACP method's handler. params is the raw JSON params; msg is the
 // full envelope (so handlers can read the id). A non-nil error surfaces as a
 // JSON-RPC error response; a nil error with a non-nil result surfaces as a
@@ -174,6 +183,19 @@ func (s *Server) Serve(ctx context.Context) error {
 			s.handleRequest(ctx, &m)
 		})
 	}
+}
+
+// closeSessionIfPossible type-asserts the TurnRunner to SessionCloser and calls
+// CloseSession. A non-implementing runner is a no-op (backward-compatible).
+// Plan 05-01 T4: logout/session-cancel reach the session's MCP host via this
+// seam so subprocesses are reaped on session end.
+func (s *Server) closeSessionIfPossible(sessionID string) {
+	closer, ok := s.turnRunner.(SessionCloser)
+	if !ok {
+		return
+	}
+
+	_ = closer.CloseSession(sessionID)
 }
 
 // handleRequest looks up the handler, calls it, and writes the response (result

@@ -19,7 +19,7 @@ func TestWriteFrameProducesMarshalPlusNewline(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	msg := Message{JSONRPC: protocolVersion20, ID: intPtr(1), Method: methodInitialize}
+	msg := Message{JSONRPC: protocolVersion20, ID: new(1), Method: methodInitialize}
 
 	err := writeFrame(&buf, msg)
 	if err != nil {
@@ -245,6 +245,3 @@ func TestMessageIDNilIsNotification(t *testing.T) {
 		t.Errorf("id=0 request did not marshal id field: %s (0 is a valid id)", string(raw))
 	}
 }
-
-// intPtr is a small helper for taking the address of an int literal.
-func intPtr(i int) *int { return &i }
