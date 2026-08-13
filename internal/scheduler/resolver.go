@@ -41,7 +41,8 @@ func NewResolver(cfg *Config) *Resolver {
 func (r *Resolver) Resolve(tier, project string, now time.Time, capReq CapabilityReq) (Target, []Target, error) {
 	binding, ok := r.resolveBinding(tier, project, now)
 	if !ok {
-		return Target{}, nil, fmt.Errorf("scheduler: tier %q is not configured (no window/project/global binding)", tier) //nolint:err113 // dynamic error message
+		//nolint:err113 // dynamic error message
+		return Target{}, nil, fmt.Errorf("scheduler: tier %q is not configured", tier)
 	}
 
 	primary, err := r.buildTarget(binding.Model)
@@ -98,12 +99,14 @@ func (r *Resolver) resolveBinding(tier, project string, now time.Time) (TierBind
 func (r *Resolver) buildTarget(modelSlug string) (Target, error) {
 	m, ok := r.cfg.Models[modelSlug]
 	if !ok {
-		return Target{}, fmt.Errorf("model %q is not declared in models", modelSlug) //nolint:err113 // dynamic error message
+		//nolint:err113 // dynamic error message
+		return Target{}, fmt.Errorf("model %q is not declared in models", modelSlug)
 	}
 
 	p, ok := r.cfg.Providers[m.Provider]
 	if !ok {
-		return Target{}, fmt.Errorf("provider %q (for model %q) is not declared in providers", m.Provider, modelSlug) //nolint:err113 // dynamic error message
+		//nolint:err113 // dynamic error message
+		return Target{}, fmt.Errorf("provider %q (for model %q) is not declared in providers", m.Provider, modelSlug)
 	}
 
 	return Target{
@@ -208,7 +211,8 @@ func weekdayAbbr(wd time.Weekday) string {
 func parseHHMM(s string, day time.Time) (time.Time, error) {
 	parts := strings.Split(s, ":")
 	if len(parts) != 2 {
-		return time.Time{}, fmt.Errorf("parse HH:MM %q: want exactly one ':'", s) //nolint:err113 // dynamic error message
+		//nolint:err113 // dynamic error message
+		return time.Time{}, fmt.Errorf("parse HH:MM %q: want exactly one ':'", s)
 	}
 
 	h, err := strconv.Atoi(parts[0])

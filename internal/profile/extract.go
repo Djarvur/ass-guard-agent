@@ -149,7 +149,8 @@ func ExtractFromRollout(path string) (ExtractResult, error) {
 	}
 
 	if firstFull == nil {
-		return ExtractResult{}, fmt.Errorf("no full-request lines (system+tools) found in %s", firstFile) //nolint:err113 // dynamic error message
+		//nolint:err113 // dynamic error message
+		return ExtractResult{}, fmt.Errorf("no full-request lines (system+tools) found in %s", firstFile)
 	}
 
 	return buildResult(firstFull, path), nil
@@ -161,7 +162,8 @@ func isFullRequest(m *ModelIO) bool {
 
 func assertStable(sysCount int, toolNames map[string]struct{}, headerNames []string, m *ModelIO) error {
 	if len(m.Request.Body.System) != sysCount {
-		return fmt.Errorf("system block count drift: %d -> %d", sysCount, len(m.Request.Body.System)) //nolint:err113 // dynamic error message
+		//nolint:err113 // dynamic error message
+		return fmt.Errorf("system block count drift: %d -> %d", sysCount, len(m.Request.Body.System))
 	}
 
 	seen := map[string]struct{}{}
@@ -175,12 +177,14 @@ func assertStable(sysCount int, toolNames map[string]struct{}, headerNames []str
 	}
 
 	if len(seen) != len(toolNames) {
-		return fmt.Errorf("tool-name set drift: %d -> %d", len(toolNames), len(seen)) //nolint:err113 // dynamic error message
+		//nolint:err113 // dynamic error message
+		return fmt.Errorf("tool-name set drift: %d -> %d", len(toolNames), len(seen))
 	}
 
 	for n := range seen {
 		if _, ok := toolNames[n]; !ok {
-			return fmt.Errorf("tool-name set drift: %q not in first-line set", n) //nolint:err113 // dynamic error message
+			//nolint:err113 // dynamic error message
+			return fmt.Errorf("tool-name set drift: %q not in first-line set", n)
 		}
 	}
 
@@ -192,7 +196,8 @@ func assertStable(sysCount int, toolNames map[string]struct{}, headerNames []str
 	sort.Strings(curHeaders)
 
 	if strings.Join(curHeaders, ",") != strings.Join(headerNames, ",") {
-		return fmt.Errorf("header-name set drift: %v -> %v", headerNames, curHeaders) //nolint:err113 // dynamic error message
+		//nolint:err113 // dynamic error message
+		return fmt.Errorf("header-name set drift: %v -> %v", headerNames, curHeaders)
 	}
 
 	return nil

@@ -104,7 +104,8 @@ func parseAction(s string) (engine.Action, error) {
 	case ActionWait:
 		return engine.ActionWait, nil
 	default:
-		return engine.ActionNothing, fmt.Errorf("unknown action %q (want continue/hook/ask/wait)", s) //nolint:err113 // dynamic error message
+		//nolint:err113 // dynamic error message
+		return engine.ActionNothing, fmt.Errorf("unknown action %q (want continue/hook/ask/wait)", s)
 	}
 }
 

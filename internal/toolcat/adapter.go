@@ -39,7 +39,8 @@ func (a *Adapter) ResolveCall(
 ) (json.RawMessage, error) {
 	decl := findDecl(profileDecls, name)
 	if decl == nil {
-		return nil, fmt.Errorf("adapter: tool %q not declared in the profile", name) //nolint:err113 // dynamic error message
+		//nolint:err113 // dynamic error message
+		return nil, fmt.Errorf("adapter: tool %q not declared in the profile", name)
 	}
 	// Phase 1: parse-only check. The input must be valid JSON against the schema's
 	// declared type (object). Full JSON-schema validation is Phase 2/4.

@@ -110,7 +110,8 @@ func chooseSession(stats []profile.SessionStat, sessions string) (profile.Sessio
 		}
 	}
 
-	return profile.SessionStat{}, fmt.Errorf("requested session(s) %q not found in rollout dir", sessions) //nolint:err113 // dynamic error message
+	//nolint:err113 // dynamic error message
+	return profile.SessionStat{}, fmt.Errorf("requested session(s) %q not found in rollout dir", sessions)
 }
 
 func writeArtifact(out, name string, res *profile.ExtractResult, paritySession string) error {

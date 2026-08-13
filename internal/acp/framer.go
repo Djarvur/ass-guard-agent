@@ -12,8 +12,10 @@ import (
 	"sync"
 )
 
-var errFrameValueContainsAn = errors.New("frame value contains an embedded newline — ACP spec forbids it (transports.md: messages MUST NOT contain embedded newlines)")
-var errMarshaledFrameContainsA = errors.New("marshaled frame contains a raw newline byte — internal invariant violated")
+var errFrameEmbeddedNewline = errors.New(
+	"frame value contains an embedded newline — ACP spec forbids it " +
+		"(transports.md: messages MUST NOT contain embedded newlines)")
+var errMarshaledFrameNewline = errors.New("marshaled frame contains a raw newline byte — internal invariant violated")
 var errEmptyFrameLine = errors.New("empty frame line")
 
 // writeFrame marshals v as a single JSON object followed by exactly one '\n'
@@ -30,7 +32,7 @@ var errEmptyFrameLine = errors.New("empty frame line")
 // slices, and json.RawMessage params.
 func writeFrame(w io.Writer, v any) error {
 	if containsDecodedNewline(v) {
-		return errFrameValueContainsAn
+		return errFrameEmbeddedNewline
 	}
 
 	raw, err := json.Marshal(v)
@@ -41,7 +43,7 @@ func writeFrame(w io.Writer, v any) error {
 	// json.Marshal guarantees this; the check makes the invariant explicit and
 	// catches any future marshaler regression.
 	if bytes.ContainsRune(raw, '\n') {
-		return errMarshaledFrameContainsA
+		return errMarshaledFrameNewline
 	}
 
 	_, err = w.Write(raw)

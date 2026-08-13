@@ -65,7 +65,8 @@ func (h *HTTPBackend) Fetch(ctx context.Context, target string) (json.RawMessage
 // placeholder is "query" or "url".
 func (h *HTTPBackend) do(ctx context.Context, template, placeholder, value string) (json.RawMessage, error) {
 	if template == "" {
-		return nil, errors.New("toolexec: HTTPBackend " + placeholder + " URL template not configured") //nolint:err113 // dynamic config error
+		//nolint:err113 // dynamic config error
+		return nil, errors.New("toolexec: HTTPBackend " + placeholder + " URL template not configured")
 	}
 
 	enc := url.QueryEscape(value)
@@ -121,7 +122,8 @@ func (f FirecrawlBackend) Search(ctx context.Context, query string) (json.RawMes
 		return nil, errFirecrawlBackendNot
 	}
 
-	return nil, fmt.Errorf("toolexec: firecrawl Search not implemented (endpoint=%s)", f.Endpoint) //nolint:err113 // dynamic error message
+	//nolint:err113 // dynamic error message
+	return nil, fmt.Errorf("toolexec: firecrawl Search not implemented (endpoint=%s)", f.Endpoint)
 }
 
 // Fetch returns a not-configured error when the API key is unset.
@@ -130,7 +132,8 @@ func (f FirecrawlBackend) Fetch(ctx context.Context, target string) (json.RawMes
 		return nil, errFirecrawlBackendNot
 	}
 
-	return nil, fmt.Errorf("toolexec: firecrawl Fetch not implemented (endpoint=%s)", f.Endpoint) //nolint:err113 // dynamic error message
+	//nolint:err113 // dynamic error message
+	return nil, fmt.Errorf("toolexec: firecrawl Fetch not implemented (endpoint=%s)", f.Endpoint)
 }
 
 // BackendsFromConfig selects the concrete Backend for each complex tool from a

@@ -52,7 +52,8 @@ func (f *fakeProvider) Send(_ context.Context, prof *profile.Profile, _ []provid
 
 	oc, ok := f.outcomes[prof.Model]
 	if !ok {
-		return provider.Response{}, errors.New("fake: no outcome registered for model " + prof.Model) //nolint:err113 // dynamic test error
+		//nolint:err113 // dynamic test error
+		return provider.Response{}, errors.New("fake: no outcome registered for model " + prof.Model)
 	}
 
 	if oc.err != nil {

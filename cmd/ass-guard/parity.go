@@ -116,7 +116,8 @@ func runParity(suitePath, rollout, name, dir, results, surprise string) error {
 
 	if !res.Summary.OverallPass {
 		// Non-zero exit signals the gate failed (PROJECT.md Anti-Pattern 5: stop-and-replan).
-		return fmt.Errorf("PARITY GATE FAIL: %d/%d turns matched on both layers (Layer1=%.2f Layer2=%.2f)", //nolint:err113 // dynamic error message
+		//nolint:err113 // dynamic error message
+		return fmt.Errorf("PARITY GATE FAIL: %d/%d turns matched on both layers (Layer1=%.2f Layer2=%.2f)",
 			countBothLayerPass(&res), res.Summary.SuiteSize, res.Summary.Layer1PassRate, res.Summary.Layer2PassRate)
 	}
 

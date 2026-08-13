@@ -111,7 +111,8 @@ func (s *Server) handleSessionPrompt(ctx context.Context, params json.RawMessage
 	s.mu.Unlock()
 
 	if !ok {
-		return nil, fmt.Errorf("session/prompt: unknown sessionId %q", p.SessionID) //nolint:err113 // dynamic error message
+		//nolint:err113 // dynamic error message
+		return nil, fmt.Errorf("session/prompt: unknown sessionId %q", p.SessionID)
 	}
 
 	turnCtx, cancel := context.WithCancel(ctx)

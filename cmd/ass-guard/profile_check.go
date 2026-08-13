@@ -72,7 +72,8 @@ func runProfileCheck(name, profilesDir, captureFile string) error {
 	reportProfileCheck(name, drifts, len(manifest.Fields))
 
 	if len(drifts) > 0 {
-		return fmt.Errorf("drift detected: %d TIER-1/2 field(s) changed", len(drifts)) //nolint:err113 // dynamic error message
+		//nolint:err113 // dynamic error message
+		return fmt.Errorf("drift detected: %d TIER-1/2 field(s) changed", len(drifts))
 	}
 
 	return nil
@@ -106,7 +107,8 @@ func loadCaptureLine(captureFile string) (json.RawMessage, error) {
 
 	chosen, err := profile.PickRichestMain(stats)
 	if err != nil {
-		return nil, fmt.Errorf("no fresh capture available; pass --capture-file "+ //nolint:err113 // dynamic error message
+		//nolint:err113 // dynamic error message
+		return nil, fmt.Errorf("no fresh capture available; pass --capture-file "+
 			"or run zcode to produce a rollout: %w", err)
 	}
 

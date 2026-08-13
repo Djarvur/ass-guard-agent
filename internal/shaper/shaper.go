@@ -132,7 +132,8 @@ func toMessageParamRole(role string) (anthropic.MessageParamRole, error) {
 	case "assistant":
 		return anthropic.MessageParamRoleAssistant, nil
 	default:
-		return "", fmt.Errorf("unsupported message role %q (want user|assistant)", role) //nolint:err113 // dynamic error message
+		//nolint:err113 // dynamic error message
+		return "", fmt.Errorf("unsupported message role %q (want user|assistant)", role)
 	}
 }
 

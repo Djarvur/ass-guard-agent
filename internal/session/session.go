@@ -81,8 +81,10 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 	// an investigate-and-fix-ready error line + an error return (never a crash).
 	defer func() {
 		if r := recover(); r != nil {
-			s.appendError(turnID, "session", fmt.Errorf("turn panic: %v", r), false) //nolint:err113 // dynamic error message
-			err = fmt.Errorf("session turn panic recovered: %v", r)                  //nolint:err113 // dynamic error message
+			//nolint:err113 // dynamic error message
+			s.appendError(turnID, "session", fmt.Errorf("turn panic: %v", r), false)
+			//nolint:err113 // dynamic error message
+			err = fmt.Errorf("session turn panic recovered: %v", r)
 			stop = ""
 		}
 	}()
