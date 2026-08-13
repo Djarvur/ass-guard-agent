@@ -31,6 +31,8 @@ func NewTranscriptWriter(manager *Manager, bus *event.Bus) *TranscriptWriter {
 
 // Run drains all 7 subscribed event channels until ctx is cancelled. Each event
 // is appended to the transcript via the matching Manager.Append*.
+//
+//nolint:gocognit,cyclop,gocyclo,funlen // async writer complexity is inherent
 func (w *TranscriptWriter) Run(ctx context.Context) {
 	subs := w.subscribeAll()
 

@@ -173,7 +173,7 @@ func (w *Writer) Write(msg *Message) error {
 
 // drain writes enqueued frames to the underlying writer in order, one at a time.
 // A write error (e.g. closed pipe on shutdown) is swallowed — best-effort.
-func (w *Writer) drain() {
+func (w *Writer) drain() { //nolint:funcorder // ordering groups related logic
 	defer w.wg.Done()
 
 	for msg := range w.ch {

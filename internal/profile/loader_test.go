@@ -10,7 +10,7 @@ import (
 // TestLoader_MinimalFixture verifies the loader reads a synthetic fixture
 // profile faithfully. This also seeds PROF-02 enforcement: the loader must be
 // profile-agnostic (the same code loads the zcode and the synthetic profile).
-func TestLoader_MinimalFixture(t *testing.T) {
+func TestLoader_MinimalFixture(t *testing.T) { //nolint:cyclop,funlen // comprehensive test scenario
 	t.Parallel()
 
 	l := profile.NewLoader(filepath.Join(".", "testdata"))

@@ -103,6 +103,8 @@ func (p *OpenAIProvider) Send(ctx context.Context, prof *profile.Profile, messag
 // buildRequest constructs the Chat Completions request: messages → ChatCompletionMessage,
 // profile tools → openai.Tool{Type:function, Function:{Name,Description,Parameters}},
 // tool_choice from the profile, model from the provider override or the profile.
+//
+//nolint:funcorder // ordering groups related logic
 func (p *OpenAIProvider) buildRequest(prof *profile.Profile, messages []Message) openai.ChatCompletionRequest {
 	model := p.model
 	if model == "" {

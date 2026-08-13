@@ -170,7 +170,7 @@ func readFrames(t *testing.T, cliR io.Reader, n int) []*acp.Message {
 // token-by-token through ACP: initialize → session/new → session/prompt emits
 // agent_message_chunk session/update notifications (one per chunk) before the
 // stopReason response. NO full-turn buffering (ACP-04).
-func TestIntegration_RealStreamingThroughACP(t *testing.T) {
+func TestIntegration_RealStreamingThroughACP(t *testing.T) { //nolint:funlen // comprehensive test scenario
 	t.Parallel()
 
 	mp := &mockStreamProvider{chunks: []string{"Hello", " ", "world"}, finish: stopEndTurn}

@@ -41,7 +41,11 @@ const anthropicVersion = "2023-06-01"
 // The channel is buffered small (8); the turn loop drains it. A slow consumer
 // is fine — the HTTP body read blocks until the consumer drains (backpressure
 // propagates to the provider via the TCP window).
-func (p *AnthropicProvider) Stream(ctx context.Context, prof *profile.Profile, messages []Message) (<-chan StreamChunk, error) {
+//
+//nolint:funlen // domain complexity is inherent
+func (p *AnthropicProvider) Stream(
+	ctx context.Context, prof *profile.Profile, messages []Message,
+) (<-chan StreamChunk, error) {
 	key := p.apiKey
 	if key == "" {
 		key = os.Getenv("ZAI_API_KEY")
@@ -119,6 +123,8 @@ func (p *AnthropicProvider) Stream(ctx context.Context, prof *profile.Profile, m
 // StreamChunk, and sends it on ch. On EOF it sends the terminal "done" chunk
 // carrying the captured FinishReason + the assembled raw response, then returns
 // (the caller closes ch). ctx cancellation stops the drain.
+//
+//nolint:gocognit,gocyclo,cyclop,funlen // SSE parsing is inherently complex
 func (p *AnthropicProvider) drainSSE(ctx context.Context, body io.Reader, ch chan<- StreamChunk) {
 	br := bufio.NewReader(body)
 

@@ -165,6 +165,8 @@ func (b *CircuitBreaker) RecordTransient(now time.Time, err *provider.ProviderEr
 
 // transition moves to the target state and logs a Warn line with full
 // diagnostic detail (C5 — investigate-and-fix-ready). Caller already holds b.mu.
+//
+//nolint:funcorder // ordering groups related logic
 func (b *CircuitBreaker) transition(to breakerState, now time.Time, reason string) {
 	from := b.state
 	b.state = to

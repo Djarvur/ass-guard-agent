@@ -62,12 +62,16 @@ func (m *Manager) Close() error {
 	err := m.f.Close()
 	m.f = nil
 
-	return fmt.Errorf("call: %w", err)
+	if err != nil {
+		return fmt.Errorf("call: %w", err)
+	}
+
+	return nil
 }
 
 // appendLine marshals the line, redacts it, appends a newline, and writes it
 // under the mutex. Redaction happens BEFORE the write (LOG-03).
-func (m *Manager) appendLine(line Line) error {
+func (m *Manager) appendLine(line *Line) error { //nolint:funcorder // ordering groups related logic
 	raw, err := json.Marshal(line)
 	if err != nil {
 		return fmt.Errorf("call: %w", err)
@@ -89,20 +93,23 @@ func (m *Manager) appendLine(line Line) error {
 	}
 
 	_, err = m.f.Write(red)
+	if err != nil {
+		return fmt.Errorf("call: %w", err)
+	}
 
-	return fmt.Errorf("call: %w", err)
+	return nil
 }
 
 func now() time.Time { return time.Now().UTC() }
 
 // AppendSessionStart records the session_start line.
 func (m *Manager) AppendSessionStart(sessionID string) error {
-	return m.appendLine(Line{Type: TypeSessionStart, Timestamp: now(), Text: sessionID})
+	return m.appendLine(&Line{Type: TypeSessionStart, Timestamp: now(), Text: sessionID})
 }
 
 // AppendSessionEnd records the session_end line.
 func (m *Manager) AppendSessionEnd() error {
-	return m.appendLine(Line{Type: TypeSessionEnd, Timestamp: now()})
+	return m.appendLine(&Line{Type: TypeSessionEnd, Timestamp: now()})
 }
 
 // AppendUserMessage records a user message (the prompt content blocks).
@@ -112,17 +119,17 @@ func (m *Manager) AppendUserMessage(turnID string, content []ContentBlock) error
 		return fmt.Errorf("marshal user content: %w", err)
 	}
 
-	return m.appendLine(Line{Type: TypeUserMessage, TurnID: turnID, Timestamp: now(), Content: raw})
+	return m.appendLine(&Line{Type: TypeUserMessage, TurnID: turnID, Timestamp: now(), Content: raw})
 }
 
 // AppendAssistantMessage records the final assembled assistant text for a turn.
 func (m *Manager) AppendAssistantMessage(turnID, text string) error {
-	return m.appendLine(Line{Type: TypeAssistantMessage, TurnID: turnID, Timestamp: now(), Text: text})
+	return m.appendLine(&Line{Type: TypeAssistantMessage, TurnID: turnID, Timestamp: now(), Text: text})
 }
 
 // AppendAgentMessageChunk records one streamed chunk (for reconstruction).
 func (m *Manager) AppendAgentMessageChunk(turnID, messageID, text string) error {
-	return m.appendLine(Line{
+	return m.appendLine(&Line{
 		Type: TypeAgentMessageChunk, TurnID: turnID, Timestamp: now(),
 		MessageID: messageID, Text: text,
 	})
@@ -131,7 +138,7 @@ func (m *Manager) AppendAgentMessageChunk(turnID, messageID, text string) error 
 // AppendRequestShaped records the verbatim shaped outgoing request (LOG-01),
 // redacted per-line (LOG-03).
 func (m *Manager) AppendRequestShaped(turnID string, verbatim json.RawMessage, profileName string, ts time.Time) error {
-	return m.appendLine(Line{
+	return m.appendLine(&Line{
 		Type: TypeRequestShaped, TurnID: turnID, Timestamp: ts,
 		VerbatimRequest: verbatim, Profile: profileName,
 	})
@@ -139,7 +146,7 @@ func (m *Manager) AppendRequestShaped(turnID string, verbatim json.RawMessage, p
 
 // AppendToolCall records a model-selected tool invocation.
 func (m *Manager) AppendToolCall(turnID, toolCallID, name string, input json.RawMessage) error {
-	return m.appendLine(Line{
+	return m.appendLine(&Line{
 		Type: TypeToolCall, TurnID: turnID, Timestamp: now(),
 		ToolCallID: toolCallID, Name: name, Input: input,
 	})
@@ -147,7 +154,7 @@ func (m *Manager) AppendToolCall(turnID, toolCallID, name string, input json.Raw
 
 // AppendToolResult records a tool's result (stubbed in Phase 2; real in Phase 4).
 func (m *Manager) AppendToolResult(turnID, toolCallID string, output json.RawMessage, isError bool) error {
-	return m.appendLine(Line{
+	return m.appendLine(&Line{
 		Type: TypeToolResult, TurnID: turnID, Timestamp: now(),
 		ToolCallID: toolCallID, Output: output, IsError: isError,
 	})
@@ -156,7 +163,7 @@ func (m *Manager) AppendToolResult(turnID, toolCallID string, output json.RawMes
 // AppendBoundary records a context-boundary (a mutating command completed,
 // D-08). The next projection resets the lean window.
 func (m *Manager) AppendBoundary(cause, commandRef, turnID string) error {
-	return m.appendLine(Line{
+	return m.appendLine(&Line{
 		Type: TypeBoundary, TurnID: turnID, Timestamp: now(),
 		Cause: cause, CommandRef: commandRef,
 	})
@@ -164,7 +171,7 @@ func (m *Manager) AppendBoundary(cause, commandRef, turnID string) error {
 
 // AppendCanceled records that a turn was cancelled (D-16).
 func (m *Manager) AppendCanceled(turnID string, ts time.Time, reason string) error {
-	return m.appendLine(Line{Type: TypeCanceled, TurnID: turnID, Timestamp: ts, Text: reason})
+	return m.appendLine(&Line{Type: TypeCanceled, TurnID: turnID, Timestamp: ts, Text: reason})
 }
 
 // AppendError records an investigate-and-fix-ready error line (PROJECT.md). The
@@ -176,7 +183,7 @@ func (m *Manager) AppendError(
 	callerErr := errors.New(message) //nolint:err113 // dynamic error from caller
 	scrubbed := m.redactor.ScrubError(callerErr)
 
-	return m.appendLine(Line{
+	return m.appendLine(&Line{
 		Type: TypeError, TurnID: turnID, Timestamp: now(),
 		Component: component, Message: scrubbed, Recoverable: recoverable,
 		Stack: stack, Input: inputs,
@@ -185,7 +192,7 @@ func (m *Manager) AppendError(
 
 // AppendSubagentDispatch records a Task/Agent subagent dispatch.
 func (m *Manager) AppendSubagentDispatch(parentTurnID, subagentTurnID, toolCallID string, restricted []string) error {
-	return m.appendLine(Line{
+	return m.appendLine(&Line{
 		Type: TypeSubagentDispatch, TurnID: subagentTurnID, Timestamp: now(),
 		ParentTurnID: parentTurnID, SubagentTurnID: subagentTurnID,
 		ToolCallID: toolCallID, RestrictedTools: restricted,
@@ -194,7 +201,7 @@ func (m *Manager) AppendSubagentDispatch(parentTurnID, subagentTurnID, toolCallI
 
 // AppendSubagentResult records a subagent's final result.
 func (m *Manager) AppendSubagentResult(parentTurnID, subagentTurnID, result, errMsg string) error {
-	return m.appendLine(Line{
+	return m.appendLine(&Line{
 		Type: TypeSubagentResult, TurnID: subagentTurnID, Timestamp: now(),
 		ParentTurnID: parentTurnID, SubagentTurnID: subagentTurnID,
 		Result: result, Message: errMsg,
@@ -203,7 +210,7 @@ func (m *Manager) AppendSubagentResult(parentTurnID, subagentTurnID, result, err
 
 // AppendUsage records a token-usage update.
 func (m *Manager) AppendUsage(turnID string, input, output int64) error {
-	return m.appendLine(Line{
+	return m.appendLine(&Line{
 		Type: TypeUsage, TurnID: turnID, Timestamp: now(),
 		InputTokens: input, OutputTokens: output,
 	})
@@ -217,7 +224,7 @@ func (m *Manager) AppendUsage(turnID string, input, output int64) error {
 // investigate-and-fix-ready human note (PROJECT.md). The audit log therefore
 // proves the structural-safety property: unmatched output triggers nothing.
 func (m *Manager) AppendEngineDecision(turnID, action, signal, reason string) error {
-	return m.appendLine(Line{
+	return m.appendLine(&Line{
 		Type:      TypeEngineDecision,
 		TurnID:    turnID,
 		Timestamp: now(),

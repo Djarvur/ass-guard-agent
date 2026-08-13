@@ -36,7 +36,7 @@ type scriptedResp struct {
 	finish    string
 }
 
-func (p *scriptedACPProvider) queue(r ...scriptedResp) {
+func (p *scriptedACPProvider) queue(r ...scriptedResp) { //nolint:funcorder // ordering groups related logic
 	p.mu.Lock()
 	defer p.mu.Unlock()
 

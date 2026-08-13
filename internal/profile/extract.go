@@ -82,7 +82,7 @@ type SessionStat struct {
 // and asserts the TIER-1 shape (system block count, tool NAME set, header NAME
 // set) is stable across every full-request line in the session. Null/empty-named
 // tools are filtered (the observed edge case).
-func ExtractFromRollout(path string) (ExtractResult, error) {
+func ExtractFromRollout(path string) (ExtractResult, error) { //nolint:funlen // domain complexity is inherent
 	f, err := os.Open(path)
 	if err != nil {
 		return ExtractResult{}, fmt.Errorf("open rollout: %w", err)

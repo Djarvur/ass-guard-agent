@@ -63,7 +63,7 @@ type Session struct {
 }
 
 // nextTurnID returns a monotonically-increasing turn id for this session.
-func (s *Session) nextTurnID() string {
+func (s *Session) nextTurnID() string { //nolint:funcorder // ordering groups related logic
 	n := s.turnCounter.Add(1)
 
 	return fmt.Sprintf("%s-turn-%03d", s.SessionID, n)
@@ -75,6 +75,8 @@ func (s *Session) nextTurnID() string {
 // aborts the turn and records a canceled line (D-16). A panic is recovered at
 // the turn boundary and recorded as an investigate-and-fix-ready error line
 // (PROJECT.md, D-13 for the parent).
+//
+//nolint:gocognit,cyclop,funlen,nonamedreturns // domain complexity; err used by defer
 func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop string, err error) {
 	turnID := s.nextTurnID()
 	// Recover at the goroutine/turn boundary (D-13 parent-side): a panic becomes
@@ -146,7 +148,7 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 		// dispatched in one batch via toolexec.DispatchBatch (Phase-4 TOOL-04:
 		// read-only concurrent, mutating strictly serial, arrival-order results).
 		// A nil toolExec preserves the Phase-2 stub behavior (backward-compat).
-		if len(resp.ToolCalls) > 0 {
+		if len(resp.ToolCalls) > 0 { //nolint:nestif // tool-call processing is inherently nested
 			// Record every model-selected tool_call first (the audit log shows
 			// what the model asked for, independent of how it was executed).
 			for _, tc := range resp.ToolCalls {

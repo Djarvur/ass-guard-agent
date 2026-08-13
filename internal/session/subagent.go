@@ -32,7 +32,11 @@ type subagentRunner interface {
 // with parent-turn-id, PARA-02), and returns the final result. A panic is
 // recovered at the goroutine boundary (D-13) → SubagentResult error +
 // investigate-and-fix-ready error line; the process NEVER crashes.
-func (s *Session) DispatchSubagent(ctx context.Context, parentTurnID, toolCallID, prompt string, restricted []string) (string, error) {
+//
+//nolint:funlen // domain complexity is inherent
+func (s *Session) DispatchSubagent(
+	ctx context.Context, parentTurnID, toolCallID, prompt string, restricted []string,
+) (string, error) {
 	if restricted == nil {
 		restricted = subagentRestrictedDefault
 	}

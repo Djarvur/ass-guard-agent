@@ -80,7 +80,11 @@ func (f *fakeProvider) Send(
 // simulates the RequestCapturer (publishes RequestShaped), honors delay/cancel,
 // and delivers the queued response as chunks (tool_use chunks for ToolCalls, a
 // text chunk otherwise) + a terminal "done" chunk carrying FinishReason.
-func (f *fakeProvider) Stream(ctx context.Context, prof *profile.Profile, msgs []provider.Message) (<-chan provider.StreamChunk, error) {
+//
+//nolint:cyclop,funlen // comprehensive test scenario
+func (f *fakeProvider) Stream(
+	ctx context.Context, prof *profile.Profile, msgs []provider.Message,
+) (<-chan provider.StreamChunk, error) {
 	f.mu.Lock()
 	f.callN++
 	n := f.callN

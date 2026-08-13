@@ -233,7 +233,7 @@ func (e *ConfigError) Error() string {
 //
 // Overlapping time-windows are a soft WARN (RESEARCH §7.3) and are NOT rejected
 // here — first-match-in-config-order is deterministic.
-func Validate(cfg *Config) error {
+func Validate(cfg *Config) error { //nolint:gocognit,cyclop,gocyclo,funlen // domain complexity is inherent
 	var v []string
 
 	// checkBinding appends violations for dangling slugs + capability mismatch

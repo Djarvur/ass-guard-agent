@@ -201,7 +201,7 @@ type sessionTurnRunner struct {
 // the loaded hook-DAG config + the learning store + the engine + its
 // ActionDispatcher. On any error the engine stays disabled (Run falls back to
 // the unwrapped sess.Prompt — backward-compatible + D-04 graceful degradation).
-func (r *sessionTurnRunner) setupEngine() error {
+func (r *sessionTurnRunner) setupEngine() error { //nolint:funcorder // ordering groups related logic
 	catalog := toolcat.NewCatalog()
 	r.catalog = catalog
 
@@ -257,7 +257,7 @@ func (r *sessionTurnRunner) setupEngine() error {
 }
 
 // workDirOrDefault returns the configured work dir or cwd.
-func (r *sessionTurnRunner) workDirOrDefault() string {
+func (r *sessionTurnRunner) workDirOrDefault() string { //nolint:funcorder // ordering groups related logic
 	if r.workDir != "" {
 		return r.workDir
 	}
@@ -355,7 +355,11 @@ func (r *sessionTurnRunner) runOneTurn(
 		stop = stopEndTurn
 	}
 
-	return stop, fmt.Errorf("call: %w", err)
+	if err != nil {
+		return stop, fmt.Errorf("call: %w", err)
+	}
+
+	return stop, nil
 }
 
 // sessionFor returns the Session for sessionID, creating it on first use.

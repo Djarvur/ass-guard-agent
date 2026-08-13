@@ -17,7 +17,7 @@ import (
 // session (new + 3 prompts: one Bash boundary, one Task subagent, + cancel), the
 // transcript + profile answer every investigation question (RESEARCH §9 a-h),
 // every line is well-formed JSON, and NO secret value leaks.
-func TestTranscriptReconstructsSession(t *testing.T) {
+func TestTranscriptReconstructsSession(t *testing.T) { //nolint:cyclop,funlen // comprehensive test scenario
 	t.Parallel()
 
 	bus := event.NewBus()

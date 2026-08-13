@@ -26,7 +26,7 @@ type conformanceCase struct {
 // drop-in interchangeable through the Provider interface (PROV-02). Each runs
 // the same scenario: Send → ToolCalls, and ToolResultMessage builds the
 // provider-correct follow-up.
-func TestConformance_BothAdapters(t *testing.T) {
+func TestConformance_BothAdapters(t *testing.T) { //nolint:funlen,tparallel // shared httptest servers
 	t.Parallel()
 	prof := loadProfile(t, "minimal")
 	msgs := []shaper.Message{{Role: roleUser, Content: "do the thing"}}

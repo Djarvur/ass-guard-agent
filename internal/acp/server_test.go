@@ -247,7 +247,7 @@ func TestSessionNewReturnsSessionID(t *testing.T) {
 // session/update notification (agent_message_chunk, no id) arriving BEFORE the
 // session/prompt response carrying stopReason (ACP-04 streaming — NO full-turn
 // buffering).
-func TestSessionPromptStreamsUpdate(t *testing.T) {
+func TestSessionPromptStreamsUpdate(t *testing.T) { //nolint:funlen // comprehensive test scenario
 	t.Parallel()
 
 	stub := &stubTurn{chunks: []string{"Hello", " world"}}

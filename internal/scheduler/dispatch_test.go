@@ -38,6 +38,7 @@ func newFakeProvider() *fakeProvider {
 	return &fakeProvider{outcomes: map[string]fakeOutcome{}}
 }
 
+//nolint:funcorder // ordering groups related logic
 func (f *fakeProvider) set(model string, oc fakeOutcome) *fakeProvider {
 	f.outcomes[model] = oc
 

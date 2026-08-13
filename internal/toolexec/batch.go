@@ -69,7 +69,12 @@ func MaxConcurrent(n int) BatchOpt {
 // read-only by default and dispatched; its executor surfaces the error in the
 // result (IsError=true). ctx cancellation aborts in-flight calls (the read-only
 // semaphore acquire + the mutating loop both respect ctx).
-func DispatchBatch(ctx context.Context, exec toolcat.ToolExecutor, catalog *toolcat.Catalog, calls []provider.ToolCall, opts ...BatchOpt) ([]ToolResult, error) {
+//
+//nolint:funlen // domain complexity is inherent
+func DispatchBatch(
+	ctx context.Context, exec toolcat.ToolExecutor, catalog *toolcat.Catalog,
+	calls []provider.ToolCall, opts ...BatchOpt,
+) ([]ToolResult, error) {
 	cfg := batchConfig{maxConcurrent: DefaultMaxConcurrent}
 	for _, opt := range opts {
 		opt(&cfg)

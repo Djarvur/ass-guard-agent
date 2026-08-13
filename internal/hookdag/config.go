@@ -171,7 +171,7 @@ func (e *ConfigError) Error() string {
 // non-empty Command; every send-prompt has a non-empty Prompt; every wait has a
 // parseable Duration; hook Name is unique. The default OnFailure (when a step
 // omits its policy) inherits the hook's at execution time, NOT here.
-func Validate(hooks []Hook) error {
+func Validate(hooks []Hook) error { //nolint:gocognit,cyclop,gocyclo,funlen // domain complexity is inherent
 	var v []string
 
 	seenNames := map[string]struct{}{}

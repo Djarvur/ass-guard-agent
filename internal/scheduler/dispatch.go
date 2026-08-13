@@ -134,8 +134,9 @@ func (s *Scheduler) SetNow(now func() time.Time) {
 }
 
 // breakerFor returns the breaker for a candidate, or a no-op when none is
+
 // registered for that (provider, model) key.
-func (s *Scheduler) breakerFor(cand Target) Breaker {
+func (s *Scheduler) breakerFor(cand *Target) Breaker { //nolint:funcorder,ireturn // abstraction; related logic
 	if b, ok := s.breakers[providerModelKey{cand.Provider, cand.Model}]; ok {
 		return b
 	}
@@ -159,6 +160,8 @@ func (s *Scheduler) breakerFor(cand Target) Breaker {
 // the cost Account on this path is (0,0) — pitfall 5's graceful "no token
 // counts" path; full token-cost coupling lands when Dispatch drives Stream
 // (Phase 4) where StreamChunk.Usage supplies the counts.
+//
+//nolint:gocognit,gocyclo,cyclop,funlen // domain complexity is inherent
 func (s *Scheduler) Dispatch(ctx context.Context, tier, project string, capReq CapabilityReq,
 	prof *profile.Profile, messages []provider.Message) (provider.Response, error) {
 	degradeTo := s.resolver.cfg.CostCeiling.DegradeTo
@@ -196,7 +199,7 @@ func (s *Scheduler) Dispatch(ctx context.Context, tier, project string, capReq C
 			anyConsidered = true
 
 			// Breaker (D-07).
-			b := s.breakerFor(cand)
+			b := s.breakerFor(&cand)
 			if !b.Allow(s.now()) {
 				s.log.Info("scheduler: skip candidate (breaker open)",
 					"provider", cand.Provider, keyModel, cand.Model)

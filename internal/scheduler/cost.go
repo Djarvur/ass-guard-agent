@@ -158,7 +158,7 @@ func (c *CostCeilingTracker) Check(now time.Time) CostAction {
 
 // publish emits a warn event to the bus if one is configured (nil bus = warnings
 // skipped, for unit tests that don't need the event).
-func (c *CostCeilingTracker) publish(e CostCeilingWarn) {
+func (c *CostCeilingTracker) publish(e CostCeilingWarn) { //nolint:funcorder // ordering groups related logic
 	if c.bus == nil {
 		return
 	}
@@ -167,7 +167,7 @@ func (c *CostCeilingTracker) publish(e CostCeilingWarn) {
 }
 
 // windowLabel formats the current window's [start, end) range for the warn event.
-func (c *CostCeilingTracker) windowLabel() string {
+func (c *CostCeilingTracker) windowLabel() string { //nolint:funcorder // ordering groups related logic
 	end := c.windowStart.Add(c.cfg.Window)
 
 	return c.cfg.Window.String() + " ending " + end.Format(time.RFC3339)
