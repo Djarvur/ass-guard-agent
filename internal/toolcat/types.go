@@ -48,7 +48,7 @@ func (m *Mutability) UnmarshalJSON(b []byte) error {
 	case `"read-only"`, `""`, `null`:
 		*m = MutabilityReadOnly
 	default:
-		return fmt.Errorf("toolcat: unknown mutability %s", b)
+		return fmt.Errorf("toolcat: unknown mutability %s", b) //nolint:err113 // dynamic error message
 	}
 
 	return nil

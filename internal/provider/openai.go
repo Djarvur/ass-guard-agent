@@ -12,6 +12,9 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 )
 
+var errOpenaiNoApi = errors.New("openai provider: no API key (set OPENAI_API_KEY or pass WithOpenAIAPIKey)")
+var errOpenaiResponseHas = errors.New("openai provider: response has no choices")
+
 // OpenAIDefaultBaseURL is the canonical OpenAI Chat Completions endpoint. Z.ai,
 // MiniMax, Groq, and OpenRouter all accept this shape with a base-URL swap
 // (PROV-01 — configurable base URL).
@@ -70,7 +73,7 @@ func (p *OpenAIProvider) Send(ctx context.Context, prof *profile.Profile, messag
 	}
 
 	if key == "" {
-		return Response{}, errors.New("openai provider: no API key (set OPENAI_API_KEY or pass WithOpenAIAPIKey)")
+		return Response{}, errOpenaiNoApi
 	}
 
 	req := p.buildRequest(prof, messages)
@@ -156,7 +159,7 @@ func (p *OpenAIProvider) buildRequest(prof *profile.Profile, messages []Message)
 func parseOpenAIResponse(resp *openai.ChatCompletionResponse) (Response, error) {
 	out := Response{FinishReason: string(resp.Choices[0].FinishReason)}
 	if len(resp.Choices) == 0 {
-		return out, errors.New("openai provider: response has no choices")
+		return out, errOpenaiResponseHas
 	}
 
 	for _, tc := range resp.Choices[0].Message.ToolCalls {
@@ -207,7 +210,11 @@ func (p *OpenAIProvider) ToolResultMessage(toolCallID string, result json.RawMes
 		ToolCallID: toolCallID,
 	}
 
-	data, mErr := json.Marshal(msg); if mErr != nil { return nil, fmt.Errorf("marshal: %w", mErr) }; return data, nil
+	data, mErr := json.Marshal(msg)
+	if mErr != nil {
+		return nil, fmt.Errorf("marshal: %w", mErr)
+	}
+	return data, nil
 }
 
 // Stream is not implemented for the OpenAI-shape adapter in Phase 2 (the

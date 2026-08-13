@@ -17,6 +17,9 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/event"
 )
 
+var errToolLoopExceededMax = errors.New("tool loop exceeded max iterations")
+var errToolLoopExceeded = errors.New("session: tool loop exceeded max iterations")
+
 // stubToolResult is the canned Phase-2 tool result (D-15 — execution stays
 // stubbed; real execution lands in Phase 4). The transcript records it so the
 // reconstruction is faithful even before tools are real.
@@ -78,8 +81,8 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 	// an investigate-and-fix-ready error line + an error return (never a crash).
 	defer func() {
 		if r := recover(); r != nil {
-			s.appendError(turnID, "session", fmt.Errorf("turn panic: %v", r), false)
-			err = fmt.Errorf("session turn panic recovered: %v", r)
+			s.appendError(turnID, "session", fmt.Errorf("turn panic: %v", r), false) //nolint:err113 // dynamic error message
+			err = fmt.Errorf("session turn panic recovered: %v", r)                  //nolint:err113 // dynamic error message
 			stop = ""
 		}
 	}()
@@ -199,9 +202,9 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 		return mapStopReason(resp.FinishReason), nil
 	}
 
-	s.appendError(turnID, "session", errors.New("tool loop exceeded max iterations"), true)
+	s.appendError(turnID, "session", errToolLoopExceededMax, true)
 
-	return "", errors.New("session: tool loop exceeded max iterations")
+	return "", errToolLoopExceeded
 }
 
 // SetToolExecutor injects the real tool executor (Phase-4 TOOL-04/05 — a

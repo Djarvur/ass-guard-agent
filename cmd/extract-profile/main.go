@@ -63,7 +63,7 @@ func run(sessions, rolloutDir, out, name, paritySession string) error {
 	}
 
 	if len(stats) == 0 {
-		return fmt.Errorf("no model-io-sess_*.jsonl files in %q", rolloutDir)
+		return fmt.Errorf("no model-io-sess_*.jsonl files in %q", rolloutDir) //nolint:err113 // dynamic error message
 	}
 
 	printStats(stats)
@@ -110,7 +110,7 @@ func chooseSession(stats []profile.SessionStat, sessions string) (profile.Sessio
 		}
 	}
 
-	return profile.SessionStat{}, fmt.Errorf("requested session(s) %q not found in rollout dir", sessions)
+	return profile.SessionStat{}, fmt.Errorf("requested session(s) %q not found in rollout dir", sessions) //nolint:err113 // dynamic error message
 }
 
 func writeArtifact(out, name string, res *profile.ExtractResult, paritySession string) error {

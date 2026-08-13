@@ -17,7 +17,7 @@ type testRedactor struct{}
 func (testRedactor) Redact(b []byte) ([]byte, error) {
 	return redact.Redact(b) //nolint:wrapcheck // test adapter
 }
-func (testRedactor) ScrubError(err error) string     { return redact.ScrubError(err) }
+func (testRedactor) ScrubError(err error) string { return redact.ScrubError(err) }
 
 // newIntegrationManager opens a real session.Manager against a temp dir so the
 // engine_decision audit lines are real artifacts (D-20), not fakes.

@@ -8,6 +8,8 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/engine"
 )
 
+var errFromconfigRequiresA = errors.New("openspec: FromConfig requires a non-nil config")
+
 // compiledPattern is one [[patterns]] row with its regex compiled once at load.
 type compiledPattern struct {
 	id     string
@@ -34,7 +36,7 @@ type toolEntry struct {
 // FromConfig is defensive) yields a structured error.
 func FromConfig(cfg *OpenSpecConfig) (*OpenSpecPatternTable, error) {
 	if cfg == nil {
-		return nil, errors.New("openspec: FromConfig requires a non-nil config")
+		return nil, errFromconfigRequiresA
 	}
 
 	pt := &OpenSpecPatternTable{handoffTools: map[string]toolEntry{}}
@@ -102,7 +104,7 @@ func parseAction(s string) (engine.Action, error) {
 	case ActionWait:
 		return engine.ActionWait, nil
 	default:
-		return engine.ActionNothing, fmt.Errorf("unknown action %q (want continue/hook/ask/wait)", s)
+		return engine.ActionNothing, fmt.Errorf("unknown action %q (want continue/hook/ask/wait)", s) //nolint:err113 // dynamic error message
 	}
 }
 

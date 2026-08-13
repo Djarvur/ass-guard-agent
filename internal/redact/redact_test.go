@@ -6,6 +6,10 @@ import (
 	"testing"
 )
 
+var errRequestBearer = errors.New("request failed: Authorization: Bearer sk-leak-1234")
+var errInvalid = errors.New("invalid api_key sk-deadbeef99")
+var errConnectionRefused = errors.New("connection refused")
+
 // TestRedact covers the canonical secret-redaction contract (Plan 01-01 T2,
 // PATTERNS C2): decode JSON, walk the tree replacing secret-carrier VALUES
 // while preserving field NAMES, re-encode.
@@ -199,17 +203,17 @@ func TestScrubError(t *testing.T) {
 	}{
 		{
 			name: "bearer token in error",
-			err:  errors.New("request failed: Authorization: Bearer sk-leak-1234"),
+			err:  errRequestBearer,
 			want: "sk-leak-1234",
 		},
 		{
 			name: "bare sk token in error",
-			err:  errors.New("invalid api_key sk-deadbeef99"),
+			err:  errInvalid,
 			want: "sk-deadbeef99",
 		},
 		{
 			name: "clean error unchanged in substance",
-			err:  errors.New("connection refused"),
+			err:  errConnectionRefused,
 			want: "__never_present__",
 		},
 	}

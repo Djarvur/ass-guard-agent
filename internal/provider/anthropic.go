@@ -1,9 +1,9 @@
 package provider
 
 import (
-	"fmt"
 	"context"
 	"encoding/json"
+	"fmt"
 
 	"github.com/anthropics/anthropic-sdk-go/option"
 
@@ -113,7 +113,11 @@ func (p *AnthropicProvider) ToolResultMessage(toolCallID string, result json.Raw
 		}},
 	}
 
-	data, mErr := json.Marshal(msg); if mErr != nil { return nil, fmt.Errorf("marshal: %w", mErr) }; return data, nil
+	data, mErr := json.Marshal(msg)
+	if mErr != nil {
+		return nil, fmt.Errorf("marshal: %w", mErr)
+	}
+	return data, nil
 }
 
 // orEmpty returns b as-is, or a single space if empty, so JSON object fields

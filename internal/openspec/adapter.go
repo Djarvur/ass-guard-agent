@@ -74,7 +74,7 @@ func (a *Adapter) Run(ctx context.Context, command string, args ...string) (stri
 	// Non-zero exit: carry the exit code + stderr in the error message.
 	var exitErr *exec.ExitError
 	if errors.As(waitErr, &exitErr) {
-		return stdout, stderr, fmt.Errorf("openspec %s exit %d: %s", command, exitErr.ExitCode(), stderr)
+		return stdout, stderr, fmt.Errorf("openspec %s exit %d: %s", command, exitErr.ExitCode(), stderr) //nolint:err113 // dynamic error message
 	}
 
 	return stdout, stderr, fmt.Errorf("openspec %s: %w", command, waitErr)

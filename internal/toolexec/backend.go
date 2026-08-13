@@ -12,6 +12,8 @@ import (
 	"time"
 )
 
+var errFirecrawlBackendNot = errors.New("toolexec: firecrawl backend not configured (API key empty)")
+
 // Backend is the swappable WebSearch/WebFetch implementation (D-22 / TOOL-05).
 // The concrete impl is selected at startup from config (BackendsFromConfig),
 // so swapping backends = config + inject a different Backend, never a code
@@ -63,7 +65,7 @@ func (h *HTTPBackend) Fetch(ctx context.Context, target string) (json.RawMessage
 // placeholder is "query" or "url".
 func (h *HTTPBackend) do(ctx context.Context, template, placeholder, value string) (json.RawMessage, error) {
 	if template == "" {
-		return nil, errors.New("toolexec: HTTPBackend " + placeholder + " URL template not configured")
+		return nil, errors.New("toolexec: HTTPBackend " + placeholder + " URL template not configured") //nolint:err113 // dynamic config error
 	}
 
 	enc := url.QueryEscape(value)
@@ -116,19 +118,19 @@ func (FirecrawlBackend) Name() string { return "firecrawl" }
 // is exercised by tests; a real impl would POST to the firecrawl endpoint).
 func (f FirecrawlBackend) Search(ctx context.Context, query string) (json.RawMessage, error) {
 	if f.APIKey == "" {
-		return nil, errors.New("toolexec: firecrawl backend not configured (API key empty)")
+		return nil, errFirecrawlBackendNot
 	}
 
-	return nil, fmt.Errorf("toolexec: firecrawl Search not implemented (endpoint=%s)", f.Endpoint)
+	return nil, fmt.Errorf("toolexec: firecrawl Search not implemented (endpoint=%s)", f.Endpoint) //nolint:err113 // dynamic error message
 }
 
 // Fetch returns a not-configured error when the API key is unset.
 func (f FirecrawlBackend) Fetch(ctx context.Context, target string) (json.RawMessage, error) {
 	if f.APIKey == "" {
-		return nil, errors.New("toolexec: firecrawl backend not configured (API key empty)")
+		return nil, errFirecrawlBackendNot
 	}
 
-	return nil, fmt.Errorf("toolexec: firecrawl Fetch not implemented (endpoint=%s)", f.Endpoint)
+	return nil, fmt.Errorf("toolexec: firecrawl Fetch not implemented (endpoint=%s)", f.Endpoint) //nolint:err113 // dynamic error message
 }
 
 // BackendsFromConfig selects the concrete Backend for each complex tool from a

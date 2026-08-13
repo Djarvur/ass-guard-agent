@@ -13,6 +13,8 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/session"
 )
 
+var errProviderDown = errors.New("provider down")
+
 // scriptedRunner is a fake TurnRunner: it returns a scripted slice of
 // TurnOutputs in order (one per Run call). It records the prompts it received +
 // a count of Run calls. The last scripted output is repeated once exhausted so
@@ -393,7 +395,7 @@ func TestObserve_RealErrorStopsLoop(t *testing.T) {
 	t.Parallel()
 
 	table := seededTable()
-	runner := &errorRunner{err: errors.New("provider down")}
+	runner := &errorRunner{err: errProviderDown}
 	eng := &engine.Engine{}
 
 	_, err := eng.Observe(context.Background(), runner, table, []session.ContentBlock{{Type: blockText, Text: "go"}})

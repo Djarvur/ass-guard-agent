@@ -58,7 +58,7 @@ func (l *AuditLogger) handle(e event.Event) {
 	if err != nil {
 		// Redaction failed (non-JSON / regex fallback). Best-effort: scrub errors
 		// rather than dropping the audit line entirely.
-		redacted = []byte(redact.ScrubError(fmt.Errorf("%s", string(rs.VerbatimRequest))))
+		redacted = []byte(redact.ScrubError(fmt.Errorf("%s", string(rs.VerbatimRequest)))) //nolint:err113 // dynamic error message
 	}
 
 	line := map[string]any{

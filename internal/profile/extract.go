@@ -12,6 +12,9 @@ import (
 	"time"
 )
 
+var errNoRolloutSessionsFound = errors.New("no rollout sessions found")
+var errNoSessionWith = errors.New("no session with full-request lines found")
+
 // ModelIO mirrors the per-line schema of a zcode rollout JSONL file
 // (VERIFIED-FACTS.md item #1). Only the fields ass-guard extracts are modeled;
 // the rest are ignored. The rollout captures the FULL wire-level request body
@@ -146,7 +149,7 @@ func ExtractFromRollout(path string) (ExtractResult, error) {
 	}
 
 	if firstFull == nil {
-		return ExtractResult{}, fmt.Errorf("no full-request lines (system+tools) found in %s", firstFile)
+		return ExtractResult{}, fmt.Errorf("no full-request lines (system+tools) found in %s", firstFile) //nolint:err113 // dynamic error message
 	}
 
 	return buildResult(firstFull, path), nil
@@ -158,7 +161,7 @@ func isFullRequest(m *ModelIO) bool {
 
 func assertStable(sysCount int, toolNames map[string]struct{}, headerNames []string, m *ModelIO) error {
 	if len(m.Request.Body.System) != sysCount {
-		return fmt.Errorf("system block count drift: %d -> %d", sysCount, len(m.Request.Body.System))
+		return fmt.Errorf("system block count drift: %d -> %d", sysCount, len(m.Request.Body.System)) //nolint:err113 // dynamic error message
 	}
 
 	seen := map[string]struct{}{}
@@ -172,12 +175,12 @@ func assertStable(sysCount int, toolNames map[string]struct{}, headerNames []str
 	}
 
 	if len(seen) != len(toolNames) {
-		return fmt.Errorf("tool-name set drift: %d -> %d", len(toolNames), len(seen))
+		return fmt.Errorf("tool-name set drift: %d -> %d", len(toolNames), len(seen)) //nolint:err113 // dynamic error message
 	}
 
 	for n := range seen {
 		if _, ok := toolNames[n]; !ok {
-			return fmt.Errorf("tool-name set drift: %q not in first-line set", n)
+			return fmt.Errorf("tool-name set drift: %q not in first-line set", n) //nolint:err113 // dynamic error message
 		}
 	}
 
@@ -189,7 +192,7 @@ func assertStable(sysCount int, toolNames map[string]struct{}, headerNames []str
 	sort.Strings(curHeaders)
 
 	if strings.Join(curHeaders, ",") != strings.Join(headerNames, ",") {
-		return fmt.Errorf("header-name set drift: %v -> %v", headerNames, curHeaders)
+		return fmt.Errorf("header-name set drift: %v -> %v", headerNames, curHeaders) //nolint:err113 // dynamic error message
 	}
 
 	return nil
@@ -325,7 +328,7 @@ func countFullRequests(path string) (int, int) { //nolint:gocritic // conflicts 
 // richest overall if no main session exists. Returns an error if stats is empty.
 func PickRichestMain(stats []SessionStat) (SessionStat, error) {
 	if len(stats) == 0 {
-		return SessionStat{}, errors.New("no rollout sessions found")
+		return SessionStat{}, errNoRolloutSessionsFound
 	}
 
 	for _, s := range stats {
@@ -340,7 +343,7 @@ func PickRichestMain(stats []SessionStat) (SessionStat, error) {
 		}
 	}
 
-	return SessionStat{}, errors.New("no session with full-request lines found")
+	return SessionStat{}, errNoSessionWith
 }
 
 // ExtractedAtNow is a tiny helper for timestamping manifests in tests/prod.

@@ -20,7 +20,7 @@ type ContentBlock struct {
 // stderr as the failure detail — the Claudecourse exit-code contract, D-08).
 func runCommandStep(ctx context.Context, e *Executor, step *Step) (string, error) {
 	if e.Commands == nil {
-		return "", fmt.Errorf("run-command %q: no command runner configured", step.Command)
+		return "", fmt.Errorf("run-command %q: no command runner configured", step.Command) //nolint:err113 // dynamic error message
 	}
 
 	stdout, stderr, code, runErr := e.Commands.Run(ctx, step.Command, step.Args)
@@ -31,7 +31,7 @@ func runCommandStep(ctx context.Context, e *Executor, step *Step) (string, error
 	}
 
 	if code != 0 {
-		return stdout, fmt.Errorf("run-command %q exit %d: %s", step.Command, code, stderr)
+		return stdout, fmt.Errorf("run-command %q exit %d: %s", step.Command, code, stderr) //nolint:err113 // dynamic error message
 	}
 
 	return stdout, nil
@@ -43,7 +43,7 @@ func runCommandStep(ctx context.Context, e *Executor, step *Step) (string, error
 // an error (the turn completed normally — only a real err is).
 func sendPromptStep(ctx context.Context, e *Executor, step *Step) (string, error) {
 	if e.Turns == nil {
-		return "", fmt.Errorf("send-prompt %q: no turn runner configured", step.Name)
+		return "", fmt.Errorf("send-prompt %q: no turn runner configured", step.Name) //nolint:err113 // dynamic error message
 	}
 
 	prompt := []ContentBlock{{Type: "text", Text: step.Prompt}}
@@ -62,7 +62,7 @@ func sendPromptStep(ctx context.Context, e *Executor, step *Step) (string, error
 // lean window.
 func freshContextStep(ctx context.Context, e *Executor, step *Step) (string, error) {
 	if e.Boundaries == nil {
-		return "", fmt.Errorf("fresh-context %q: no boundary opener configured", step.Name)
+		return "", fmt.Errorf("fresh-context %q: no boundary opener configured", step.Name) //nolint:err113 // dynamic error message
 	}
 
 	cause := "fresh-context:" + step.Name

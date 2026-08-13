@@ -43,7 +43,7 @@ func NewRestrictedExecutor(inner ToolExecutor, allowed []string) *RestrictedExec
 // it returns a "not available" error WITHOUT calling inner (the model adapts).
 func (r *RestrictedExecutor) Execute(ctx context.Context, name string, input json.RawMessage) (json.RawMessage, error) {
 	if _, ok := r.allowed[name]; !ok {
-		return nil, fmt.Errorf("tool %q is not available in this subagent context", name)
+		return nil, fmt.Errorf("tool %q is not available in this subagent context", name) //nolint:err113 // dynamic error message
 	}
 
 	return r.inner.Execute(ctx, name, input) //nolint:wrapcheck // thin delegation

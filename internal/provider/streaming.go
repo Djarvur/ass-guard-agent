@@ -16,6 +16,9 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 )
 
+var errAnthropicNoApi = errors.New("anthropic provider: no API key (set ZAI_API_KEY or pass WithAnthropicAPIKey)")
+var errAnthropicNilShaper = errors.New("anthropic provider: nil Shaper")
+
 // httpClient is the streaming-path HTTP client. A shared default client is fine
 // (Go's http.Transport pools connections). Tests override the endpoint via
 // WithAnthropicBaseURL against an httptest server.
@@ -43,11 +46,11 @@ func (p *AnthropicProvider) Stream(ctx context.Context, prof *profile.Profile, m
 	}
 
 	if key == "" {
-		return nil, errors.New("anthropic provider: no API key (set ZAI_API_KEY or pass WithAnthropicAPIKey)")
+		return nil, errAnthropicNoApi
 	}
 
 	if p.shaper == nil {
-		return nil, errors.New("anthropic provider: nil Shaper")
+		return nil, errAnthropicNilShaper
 	}
 
 	params, _, err := p.shaper.Shape(prof, messages)

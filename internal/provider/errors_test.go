@@ -9,6 +9,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var errConnectionRefused = errors.New("connection refused")
+var errResetByPeer = errors.New("reset by peer")
+var errUpstreamSdkFailure = errors.New("upstream sdk failure")
+var errUpstreamBearer = errors.New("upstream returned: Authorization: Bearer sk-leaked-token-123456")
+
 // TestClassifyTransientStatuses asserts every retryable HTTP status classifies
 // as KindTransient (RESEARCH §3.2).
 func TestClassifyTransientStatuses(t *testing.T) {
@@ -42,8 +47,8 @@ func TestClassifyNetErrorsTransient(t *testing.T) {
 	cases := []error{
 		context.DeadlineExceeded,
 		context.Canceled,
-		&net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connection refused")},
-		&net.OpError{Op: "read", Net: "tcp", Err: errors.New("reset by peer")},
+		&net.OpError{Op: "dial", Net: "tcp", Err: errConnectionRefused},
+		&net.OpError{Op: "read", Net: "tcp", Err: errResetByPeer},
 	}
 	for _, err := range cases {
 		perr := ClassifyHTTP("openai", "minimax-m3", 0, err)
@@ -86,7 +91,7 @@ func TestProviderErrorMessage(t *testing.T) {
 func TestProviderErrorUnwrap(t *testing.T) {
 	t.Parallel()
 
-	wrapped := errors.New("upstream sdk failure")
+	wrapped := errUpstreamSdkFailure
 	perr := &ProviderError{Kind: KindTransient, Cause: wrapped}
 	require.ErrorIs(t, perr, wrapped, "errors.Is must traverse Cause")
 
@@ -104,7 +109,7 @@ func TestProviderErrorRedactsCause(t *testing.T) {
 	perr := &ProviderError{
 		Kind: KindTransient, Provider: providerAnthropic, Model: modelGLM52,
 		StatusCode: 500,
-		Cause:      errors.New("upstream returned: Authorization: Bearer sk-leaked-token-123456"),
+		Cause:      errUpstreamBearer,
 	}
 	msg := perr.Error()
 	require.NotContains(t, msg, "sk-leaked-token-123456", "Error() must scrub the leaked key (C2)")

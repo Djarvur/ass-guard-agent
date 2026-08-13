@@ -141,7 +141,7 @@ func (e *Executor) dispatch(ctx context.Context, step *Step) (string, error) {
 	case StepWait:
 		return waitStep(ctx, step)
 	default:
-		return "", fmt.Errorf("unknown step kind %q", step.Kind)
+		return "", fmt.Errorf("unknown step kind %q", step.Kind) //nolint:err113 // dynamic error message
 	}
 }
 

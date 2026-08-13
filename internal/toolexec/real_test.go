@@ -10,6 +10,8 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/toolexec"
 )
 
+var errBackendDown = errors.New("backend down")
+
 // fakeBackend is a Backend test double that records calls + returns canned JSON.
 type fakeBackend struct {
 	name      string
@@ -110,7 +112,7 @@ func TestRealExecutor_WebFetchDelegates(t *testing.T) {
 func TestRealExecutor_BackendErrorPropagates(t *testing.T) {
 	t.Parallel()
 
-	be := &fakeBackend{name: backendFake, searchErr: errors.New("backend down")}
+	be := &fakeBackend{name: backendFake, searchErr: errBackendDown}
 
 	re := &toolexec.RealExecutor{Backends: map[string]toolexec.Backend{"WebSearch": be}}
 

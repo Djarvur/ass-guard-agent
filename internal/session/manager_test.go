@@ -31,7 +31,7 @@ type redactorAdapter struct{}
 func (redactorAdapter) Redact(b []byte) ([]byte, error) {
 	return redact.Redact(b) //nolint:wrapcheck // test adapter
 }
-func (redactorAdapter) ScrubError(err error) string     { return redact.ScrubError(err) }
+func (redactorAdapter) ScrubError(err error) string { return redact.ScrubError(err) }
 
 // TestAppendUserMessageWritesJSONLine verifies AppendUserMessage writes one
 // well-formed JSON line with the type discriminator + turnID + content.

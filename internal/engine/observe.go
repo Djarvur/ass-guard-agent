@@ -206,7 +206,7 @@ func (e *Engine) lastTurnAndRecover( //nolint:nonamedreturns // err assigned by 
 	defer func() {
 		if r := recover(); r != nil {
 			e.logFailure("engine LastTurnOutput panic recovered", r)
-			err = fmt.Errorf("engine: LastTurnOutput panicked: %v", r)
+			err = fmt.Errorf("engine: LastTurnOutput panicked: %v", r) //nolint:err113 // dynamic error message
 		}
 	}()
 
@@ -226,7 +226,7 @@ func (e *Engine) decideAndRecover( //nolint:nonamedreturns // err assigned by pa
 	defer func() {
 		if r := recover(); r != nil {
 			e.logFailure("engine Decide panic recovered", r)
-			err = fmt.Errorf("engine: Decide panicked: %v", r)
+			err = fmt.Errorf("engine: Decide panicked: %v", r) //nolint:err113 // dynamic error message
 		}
 	}()
 

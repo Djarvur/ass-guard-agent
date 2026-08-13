@@ -159,7 +159,7 @@ func (m *CoverageManifest) Validate(captured map[string]int) error {
 	}
 
 	if len(mismatches) > 0 {
-		return fmt.Errorf("coverage check failed: %v", mismatches)
+		return fmt.Errorf("coverage check failed: %v", mismatches) //nolint:err113 // dynamic error message
 	}
 
 	return nil

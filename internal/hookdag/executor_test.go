@@ -13,6 +13,8 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/hookdag"
 )
 
+var errBoom = errors.New("boom")
+
 // fakeCommands is a recording CommandRunner. Each scripted call returns its
 // canned (stdout, stderr, exit, err); sleeps force overlap in concurrency tests.
 type fakeCommands struct {
@@ -225,7 +227,7 @@ func TestExecute_RunCommandHalt(t *testing.T) {
 		t.Errorf("StepsRun = %d; want 1 (s2 not executed)", res.StepsRun)
 	}
 
-	if !errors.Is(errors.New(res.Detail), errors.New("boom")) && !contains(res.Detail, "boom") {
+	if !errors.Is(errors.New(res.Detail) //nolint:err113 // dynamic error from result, errBoom) && !contains(res.Detail, "boom") {
 		t.Errorf("Detail = %q; want it to carry the stderr boom", res.Detail)
 	}
 

@@ -3,7 +3,6 @@ package session
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"runtime/debug"
 	"strings"
@@ -58,7 +57,7 @@ func (s *Session) DispatchSubagent(ctx context.Context, parentTurnID, toolCallID
 			r := recover()
 			if r != nil {
 				stack := debug.Stack()
-				err := fmt.Errorf("subagent panic: %v", r)
+				err := fmt.Errorf("subagent panic: %v", r) //nolint:err113 // dynamic error message
 				_ = s.Manager.AppendError(subagentTurnID, "subagent", err.Error(), nil, false, string(stack))
 
 				if s.Bus != nil {
@@ -178,7 +177,7 @@ func (defaultSubagentRunner) Run(
 		return textBuf, nil
 	}
 
-	return "", errors.New("subagent: tool loop exceeded max iterations")
+	return "", errToolLoopExceeded
 }
 
 // streamAndEmitTagged is the subagent's streaming variant: it publishes events

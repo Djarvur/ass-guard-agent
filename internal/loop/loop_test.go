@@ -11,6 +11,9 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 )
 
+var errStreamNotUsed = errors.New("fakeProvider: Stream not used by the Phase-1 test-harness loop")
+var errBoom = errors.New("boom")
+
 // fakeProvider is a Provider stub that returns a canned tool-call list, proving
 // the loop is single-turn and provider-agnostic (D-12).
 type fakeProvider struct {
@@ -36,7 +39,7 @@ func (f *fakeProvider) ToolResultMessage(toolCallID string, result json.RawMessa
 func (f *fakeProvider) Stream(
 	ctx context.Context, _ *profile.Profile, _ []provider.Message,
 ) (<-chan provider.StreamChunk, error) {
-	return nil, errors.New("fakeProvider: Stream not used by the Phase-1 test-harness loop")
+	return nil, errStreamNotUsed
 }
 
 func TestRun_ReturnsProviderToolCalls(t *testing.T) {
@@ -58,7 +61,7 @@ func TestRun_ReturnsProviderToolCalls(t *testing.T) {
 func TestRun_PropagatesProviderError(t *testing.T) {
 	t.Parallel()
 
-	p := &fakeProvider{err: errors.New("boom")}
+	p := &fakeProvider{err: errBoom}
 
 	_, err := loop.Run(context.Background(), &profile.Profile{}, p, "x")
 	if err == nil {

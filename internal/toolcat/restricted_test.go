@@ -8,6 +8,8 @@ import (
 	"testing"
 )
 
+var errToolInternalFailure = errors.New("tool internal failure")
+
 // fakeExecutor is a test ToolExecutor that records the call and returns a
 // canned result. It is the inner executor RestrictedExecutor wraps.
 type fakeExecutor struct {
@@ -101,7 +103,7 @@ func TestRestrictedExecutorEmptyAllowedSet(t *testing.T) {
 func TestRestrictedExecutorPropagatesInnerError(t *testing.T) {
 	t.Parallel()
 
-	innerErr := errors.New("tool internal failure")
+	innerErr := errToolInternalFailure
 	inner := &fakeExecutor{execErr: innerErr}
 	r := NewRestrictedExecutor(inner, []string{toolRead})
 

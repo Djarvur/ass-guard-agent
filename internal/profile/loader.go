@@ -34,7 +34,7 @@ func (l *Loader) Load(name string) (Profile, error) {
 	}
 
 	if !info.IsDir() {
-		return Profile{}, fmt.Errorf("profile %q: not a directory", name)
+		return Profile{}, fmt.Errorf("profile %q: not a directory", name) //nolint:err113 // dynamic error message
 	}
 
 	var p Profile
@@ -108,7 +108,7 @@ func readSystemBlocks(dir string) ([]TextBlock, error) {
 	sort.Strings(names)
 
 	if len(names) == 0 {
-		return nil, fmt.Errorf("no system/block-*.txt files in %s", sysDir)
+		return nil, fmt.Errorf("no system/block-*.txt files in %s", sysDir) //nolint:err113 // dynamic error message
 	}
 
 	blocks := make([]TextBlock, 0, len(names))

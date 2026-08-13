@@ -12,6 +12,10 @@ import (
 	"sync"
 )
 
+var errFrameValueContainsAn = errors.New("frame value contains an embedded newline — ACP spec forbids it (transports.md: messages MUST NOT contain embedded newlines)")
+var errMarshaledFrameContainsA = errors.New("marshaled frame contains a raw newline byte — internal invariant violated")
+var errEmptyFrameLine = errors.New("empty frame line")
+
 // writeFrame marshals v as a single JSON object followed by exactly one '\n'
 // (ACP v1 newline-delimited framing — VERIFIED-FACTS #3 / transports.md). It
 // rejects values whose DECODED form contains an embedded newline anywhere in a
@@ -26,7 +30,7 @@ import (
 // slices, and json.RawMessage params.
 func writeFrame(w io.Writer, v any) error {
 	if containsDecodedNewline(v) {
-		return errors.New("frame value contains an embedded newline — ACP spec forbids it (transports.md: messages MUST NOT contain embedded newlines)")
+		return errFrameValueContainsAn
 	}
 
 	raw, err := json.Marshal(v)
@@ -37,7 +41,7 @@ func writeFrame(w io.Writer, v any) error {
 	// json.Marshal guarantees this; the check makes the invariant explicit and
 	// catches any future marshaler regression.
 	if bytes.ContainsRune(raw, '\n') {
-		return errors.New("marshaled frame contains a raw newline byte — internal invariant violated")
+		return errMarshaledFrameContainsA
 	}
 
 	_, err = w.Write(raw)
@@ -107,7 +111,7 @@ func readFrame(r *bufio.Reader) (*Message, error) {
 
 	line = bytes.TrimRight(line, "\n")
 	if len(line) == 0 {
-		return nil, errors.New("empty frame line")
+		return nil, errEmptyFrameLine
 	}
 
 	var msg Message

@@ -299,11 +299,11 @@ func (s *Scheduler) Dispatch(ctx context.Context, tier, project string, capReq C
 
 	if !anyConsidered {
 		// Every candidate was filtered by the capability gate.
-		return provider.Response{}, fmt.Errorf(
+		return provider.Response{}, fmt.Errorf( //nolint:err113 // dynamic error message
 			"scheduler: no candidate for tier %q satisfies capability requirement %+v", tier, capReq)
 	}
 	// All candidates were skipped by the breaker.
-	return provider.Response{}, fmt.Errorf(
+	return provider.Response{}, fmt.Errorf( //nolint:err113 // dynamic error message
 		"scheduler: all candidates for tier %q skipped (breaker open or cost)", tier)
 }
 

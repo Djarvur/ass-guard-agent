@@ -15,6 +15,10 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 )
 
+var errStreamNotImplemented = errors.New("fake: Stream not implemented in dispatch tests")
+var errToolresultmessageNotImplemented = errors.New("fake: ToolResultMessage not implemented")
+var errRawTransportBoom = errors.New("raw transport boom")
+
 // fakeProvider implements provider.Provider for dispatch tests. Its Send reads
 // the resolved model slug (set by Dispatch on prof.Model) and returns a canned
 // outcome per model, recording every call. Stream/ToolResultMessage are stubs
@@ -48,7 +52,7 @@ func (f *fakeProvider) Send(_ context.Context, prof *profile.Profile, _ []provid
 
 	oc, ok := f.outcomes[prof.Model]
 	if !ok {
-		return provider.Response{}, errors.New("fake: no outcome registered for model " + prof.Model)
+		return provider.Response{}, errors.New("fake: no outcome registered for model " + prof.Model) //nolint:err113 // dynamic test error
 	}
 
 	if oc.err != nil {
@@ -61,11 +65,11 @@ func (f *fakeProvider) Send(_ context.Context, prof *profile.Profile, _ []provid
 func (f *fakeProvider) Stream(
 	context.Context, *profile.Profile, []provider.Message,
 ) (<-chan provider.StreamChunk, error) {
-	return nil, errors.New("fake: Stream not implemented in dispatch tests")
+	return nil, errStreamNotImplemented
 }
 
 func (f *fakeProvider) ToolResultMessage(string, json.RawMessage) (json.RawMessage, error) {
-	return nil, errors.New("fake: ToolResultMessage not implemented")
+	return nil, errToolresultmessageNotImplemented
 }
 
 func (f *fakeProvider) callCount() int {
@@ -450,7 +454,7 @@ func TestAsProviderErrorWrapsNonTyped(t *testing.T) {
 	t.Parallel()
 
 	cand := Target{Provider: providerOpenAI, Model: modelMinimaxM3}
-	perr := asProviderError(errors.New("raw transport boom"), &cand)
+	perr := asProviderError(errRawTransportBoom, &cand)
 	require.Equal(t, provider.KindTransient, perr.Kind, "unknown error defaults Transient (safe-side)")
 	require.Equal(t, providerOpenAI, perr.Provider)
 	require.Equal(t, modelMinimaxM3, perr.Model)

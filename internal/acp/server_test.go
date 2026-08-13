@@ -13,6 +13,8 @@ import (
 	"time"
 )
 
+var errBoomFailed = errors.New("boom session/prompt failed")
+
 // pipeHarness wires an in-process mock ACP client to a Server over two io.Pipe
 // pairs (client→server stdin, server→client stdout). Pattern from
 // spikes/03-acp-handshake/. The harness is the load-bearing test substrate for
@@ -525,7 +527,7 @@ func (e *errTurn) Run(ctx context.Context, _ string, emit ChunkEmitter, prompt [
 // response with the request's id (never a crash).
 func TestErrorResponseShape(t *testing.T) {
 	t.Parallel()
-	h := newPipeHarness(t, WithTurnRunner(&errTurn{err: errors.New("boom session/prompt failed")}))
+	h := newPipeHarness(t, WithTurnRunner(&errTurn{err: errBoomFailed}))
 	h.send(t, newRequest(0, methodInitialize, map[string]any{keyProtocolVersion: 1}))
 	h.readFrame(t)
 	h.send(t, newRequest(1, "session/new", map[string]any{keyCwd: testCwdTmp, keyMcpServers: []any{}}))

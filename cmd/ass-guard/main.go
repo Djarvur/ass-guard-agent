@@ -27,6 +27,8 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 )
 
+var errIsRequired = errors.New("--prompt is required")
+
 func main() {
 	err := newRootCmd().Execute()
 	if err != nil {
@@ -77,7 +79,7 @@ func newRootCmd() *cobra.Command {
 // request is captured via the event bus (LOG-01, D-13).
 func runTrace(ctx context.Context, prompt, name, dir, auditLogPath string) error {
 	if prompt == "" {
-		return errors.New("--prompt is required")
+		return errIsRequired
 	}
 
 	prof, err := profile.NewLoader(dir).Load(name)

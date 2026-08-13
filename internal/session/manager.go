@@ -11,6 +11,9 @@ import (
 	"time"
 )
 
+var errNewmanagerRequiresA = errors.New("session: NewManager requires a non-nil Redactor")
+var errManagerClosed = errors.New("session: manager closed")
+
 // Redactor is the per-line redaction interface the Manager calls before writing
 // each transcript line (LOG-03). internal/redact satisfies it.
 type Redactor interface {
@@ -34,7 +37,7 @@ type Manager struct {
 // and returns the sole-owner Manager.
 func NewManager(dir, sessionID string, red Redactor) (*Manager, error) {
 	if red == nil {
-		return nil, errors.New("session: NewManager requires a non-nil Redactor")
+		return nil, errNewmanagerRequiresA
 	}
 
 	f, path, err := openTranscript(dir, sessionID)
@@ -73,7 +76,7 @@ func (m *Manager) appendLine(line Line) error {
 
 	red, err := m.redactor.Redact(raw)
 	if err != nil {
-		red = []byte(m.redactor.ScrubError(errors.New(string(raw))))
+		red = []byte(m.redactor.ScrubError(errors.New(string(raw)) //nolint:err113 // dynamic error from raw input))
 	}
 
 	red = append(red, '\n')
@@ -82,7 +85,7 @@ func (m *Manager) appendLine(line Line) error {
 	defer m.mu.Unlock()
 
 	if m.f == nil {
-		return errors.New("session: manager closed")
+		return errManagerClosed
 	}
 
 	_, err = m.f.Write(red)
@@ -170,7 +173,7 @@ func (m *Manager) AppendError(
 	turnID, component, message string,
 	inputs json.RawMessage, recoverable bool, stack string,
 ) error {
-	scrubbed := m.redactor.ScrubError(errors.New(message))
+	scrubbed := m.redactor.ScrubError(errors.New(message) //nolint:err113 // dynamic error from caller)
 
 	return m.appendLine(Line{
 		Type: TypeError, TurnID: turnID, Timestamp: now(),

@@ -55,12 +55,12 @@ func (r *RealExecutor) Execute(ctx context.Context, name string, input json.RawM
 	}
 	// Catalog-driven tools.
 	if r.Catalog == nil {
-		return nil, fmt.Errorf("toolexec: tool %q not executable (no catalog)", name)
+		return nil, fmt.Errorf("toolexec: tool %q not executable (no catalog)", name) //nolint:err113 // dynamic error message
 	}
 
 	tool, ok := r.Catalog.Get(name)
 	if !ok {
-		return nil, fmt.Errorf("toolexec: tool %q not in catalog", name)
+		return nil, fmt.Errorf("toolexec: tool %q not in catalog", name) //nolint:err113 // dynamic error message
 	}
 
 	if tool.Execute == nil {

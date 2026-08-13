@@ -18,6 +18,8 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 )
 
+var errNotUsed = errors.New("not used")
+
 // scriptedACPProvider is a provider.Provider test double whose Stream emits a
 // queued (text, finishReason) script per call. It drives the engine's
 // zero-continue scenario: call 0 emits the impl-complete handoff text, call 1
@@ -44,7 +46,7 @@ func (p *scriptedACPProvider) queue(r ...scriptedResp) {
 func (p *scriptedACPProvider) Send(
 	_ context.Context, _ *profile.Profile, _ []provider.Message,
 ) (provider.Response, error) {
-	return provider.Response{}, errors.New("not used")
+	return provider.Response{}, errNotUsed
 }
 
 func (p *scriptedACPProvider) Stream(

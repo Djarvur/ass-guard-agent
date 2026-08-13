@@ -6,6 +6,9 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 )
 
+var errRegisterToolsNilCatalog = errors.New("openspec: RegisterTools requires a non-nil catalog")
+var errRegisterToolsNilConfig = errors.New("openspec: RegisterTools requires a non-nil config")
+
 // namespacedName returns the catalog registration name for an OpenSpec command:
 // "openspec:" + command. OpenSpec tools are namespaced so they never collide
 // with built-in tools (e.g. an OpenSpec "apply" is registered as
@@ -24,11 +27,11 @@ func namespacedName(command string) string {
 // boundary classification.
 func RegisterTools(catalog *toolcat.Catalog, cfg *OpenSpecConfig) error {
 	if catalog == nil {
-		return errors.New("openspec: RegisterTools requires a non-nil catalog")
+		return errRegisterToolsNilCatalog
 	}
 
 	if cfg == nil {
-		return errors.New("openspec: RegisterTools requires a non-nil config")
+		return errRegisterToolsNilConfig
 	}
 
 	for name, shape := range cfg.Commands {

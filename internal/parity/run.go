@@ -13,6 +13,8 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 )
 
+var errParityNilProvider = errors.New("parity run: nil provider")
+
 // LiveArm is the ass-guard arm: it runs one prompt through the test-harness Turn
 // Loop with the zcode profile + a Provider (live Anthropic by default), and
 // converts the returned provider.ToolCalls to parity.ToolCalls. It implements
@@ -74,7 +76,7 @@ type turnEvidence struct {
 // Temp is fixed at 0 (D-04 determinism).
 func Run(ctx context.Context, opts *RunOptions) (RunResult, error) {
 	if opts.Provider == nil {
-		return RunResult{}, errors.New("parity run: nil provider")
+		return RunResult{}, errParityNilProvider
 	}
 
 	arm := &LiveArm{Profile: opts.Profile, Provider: opts.Provider}
