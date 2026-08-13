@@ -9,6 +9,8 @@ import (
 )
 
 const filePermOwner = 0o600
+const dirPerm = 0o750
+const filePermDefault = 0o600
 
 // Line-type discriminators for the append-only JSONL transcript (D-03/D-20).
 // Each line is one structured JSON object with a `type` discriminator. The 15
@@ -92,7 +94,7 @@ const selfGitignoreContent = "*\n!.gitignore\n"
 func openTranscript(dir, sessionID string) (*os.File, string, error) {
 	storeDir := filepath.Join(dir, ".ass-guard")
 
-	err := os.MkdirAll(storeDir, 0o755)
+	err := os.MkdirAll(storeDir, dirPerm)
 	if err != nil {
 		return nil, "", fmt.Errorf("call: %w", err)
 	}
@@ -101,7 +103,7 @@ func openTranscript(dir, sessionID string) (*os.File, string, error) {
 
 	_, err = os.Stat(giPath)
 	if os.IsNotExist(err) {
-		err = os.WriteFile(giPath, []byte(selfGitignoreContent), 0o644)
+		err = os.WriteFile(giPath, []byte(selfGitignoreContent), filePermDefault)
 		if err != nil {
 			return nil, "", fmt.Errorf("call: %w", err)
 		}

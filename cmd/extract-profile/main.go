@@ -23,6 +23,8 @@ import (
 )
 
 const mnd60 = 60
+const dirPerm = 0o750
+const filePermDefault = 0o600
 
 const extractorVersion = "extract-profile/01-02"
 
@@ -117,13 +119,13 @@ func chooseSession(stats []profile.SessionStat, sessions string) (profile.Sessio
 }
 
 func writeArtifact(out, name string, res *profile.ExtractResult, paritySession string) error {
-	err := os.MkdirAll(filepath.Join(out, "system"), 0o755)
+	err := os.MkdirAll(filepath.Join(out, "system"), dirPerm)
 	if err != nil {
 		return fmt.Errorf("call: %w", err)
 	}
 	// system blocks
 	for i, b := range res.System {
-		err := os.WriteFile(filepath.Join(out, "system", fmt.Sprintf("block-%d.txt", i)), []byte(b.Text), 0o644)
+		err := os.WriteFile(filepath.Join(out, "system", fmt.Sprintf("block-%d.txt", i)), []byte(b.Text), filePermDefault)
 		if err != nil {
 			return fmt.Errorf("call: %w", err)
 		}
@@ -134,17 +136,17 @@ func writeArtifact(out, name string, res *profile.ExtractResult, paritySession s
 		return fmt.Errorf("call: %w", err)
 	}
 
-	err = os.WriteFile(filepath.Join(out, "tools.json"), toolsJSON, 0o644)
+	err = os.WriteFile(filepath.Join(out, "tools.json"), toolsJSON, filePermDefault)
 	if err != nil {
 		return fmt.Errorf("call: %w", err)
 	}
 	// thinking + tool_choice
-	err = os.WriteFile(filepath.Join(out, "thinking.json"), res.Thinking, 0o644)
+	err = os.WriteFile(filepath.Join(out, "thinking.json"), res.Thinking, filePermDefault)
 	if err != nil {
 		return fmt.Errorf("call: %w", err)
 	}
 
-	err = os.WriteFile(filepath.Join(out, "tool_choice.json"), res.ToolChoice, 0o644)
+	err = os.WriteFile(filepath.Join(out, "tool_choice.json"), res.ToolChoice, filePermDefault)
 	if err != nil {
 		return fmt.Errorf("call: %w", err)
 	}
@@ -158,7 +160,7 @@ func writeArtifact(out, name string, res *profile.ExtractResult, paritySession s
 		return fmt.Errorf("call: %w", err)
 	}
 
-	err = os.WriteFile(filepath.Join(out, "profile.yaml"), profileYAML, 0o644)
+	err = os.WriteFile(filepath.Join(out, "profile.yaml"), profileYAML, filePermDefault)
 	if err != nil {
 		return fmt.Errorf("call: %w", err)
 	}
@@ -170,7 +172,7 @@ func writeArtifact(out, name string, res *profile.ExtractResult, paritySession s
 		return fmt.Errorf("call: %w", err)
 	}
 
-	err = os.WriteFile(filepath.Join(out, "identity.yaml"), idYAML, 0o644)
+	err = os.WriteFile(filepath.Join(out, "identity.yaml"), idYAML, filePermDefault)
 	if err != nil {
 		return fmt.Errorf("call: %w", err)
 	}
@@ -182,7 +184,7 @@ func writeArtifact(out, name string, res *profile.ExtractResult, paritySession s
 		return fmt.Errorf("call: %w", err)
 	}
 
-	err = os.WriteFile(filepath.Join(out, "coverage.yaml"), covYAML, 0o644)
+	err = os.WriteFile(filepath.Join(out, "coverage.yaml"), covYAML, filePermDefault)
 	if err != nil {
 		return fmt.Errorf("call: %w", err)
 	}
@@ -192,7 +194,7 @@ func writeArtifact(out, name string, res *profile.ExtractResult, paritySession s
 		return fmt.Errorf("call: %w", err)
 	}
 
-	return os.WriteFile(filepath.Join(out, "meta.yaml"), meta, 0o644)
+	return os.WriteFile(filepath.Join(out, "meta.yaml"), meta, filePermDefault)
 }
 
 func headersToYAML(hs []profile.Header) []map[string]string {

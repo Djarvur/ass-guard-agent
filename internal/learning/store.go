@@ -15,6 +15,7 @@ import (
 
 const mnd3 = 3
 const filePermOwner = 0o600
+const dirPerm = 0o750
 
 // ErrConflict signals a Confirm observed a different answer than the stored one
 // (LRN-03 / T-04-07): the entry flips to conflict + Lookup skips it. The
@@ -46,7 +47,7 @@ func Open(path string) (*Store, error) {
 	s := &Store{path: path, log: slog.Default()}
 	// Ensure the parent dir exists (the operator may point at .ass-guard/...).
 	if dir := filepath.Dir(path); dir != "" {
-		err := os.MkdirAll(dir, 0o755)
+		err := os.MkdirAll(dir, dirPerm)
 		if err != nil {
 			return nil, fmt.Errorf("learning: mkdir %q: %w", dir, err)
 		}
