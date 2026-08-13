@@ -175,7 +175,7 @@ func writeArtifact(out, name string, res *profile.ExtractResult, paritySession s
 		return fmt.Errorf("call: %w", err)
 	}
 	// coverage.yaml (PROF-05 manifest)
-	manifest := buildManifest(name, res, paritySession)
+	manifest := buildManifest(name, res)
 
 	covYAML, err := yaml.Marshal(manifest)
 	if err != nil {
@@ -204,7 +204,7 @@ func headersToYAML(hs []profile.Header) []map[string]string {
 	return out
 }
 
-func buildManifest(name string, res *profile.ExtractResult, paritySession string) profile.CoverageManifest {
+func buildManifest(name string, res *profile.ExtractResult) profile.CoverageManifest {
 	src := res.SourcePath
 	t1 := profile.Tier1ByteFaithful
 	fields := []profile.CoverageEntry{
@@ -221,7 +221,7 @@ func buildManifest(name string, res *profile.ExtractResult, paritySession string
 
 	return profile.CoverageManifest{
 		Profile:          name,
-		TargetCaptureRef: buildTargetCaptureRef(res, paritySession),
+		TargetCaptureRef: buildTargetCaptureRef(res),
 		ExtractedAt:      time.Now().UTC(),
 		ExtractorVersion: extractorVersion,
 		Fields:           fields,
@@ -235,7 +235,7 @@ func buildMeta(name string, res *profile.ExtractResult, paritySession string) ma
 		"profile":            name,
 		"extractor_version":  extractorVersion,
 		"extracted_at":       time.Now().UTC().Format(time.RFC3339),
-		"target_capture_ref": buildTargetCaptureRef(res, paritySession),
+		"target_capture_ref": buildTargetCaptureRef(res),
 		"data_source_strategy": "D-16: scan rollout dir at extraction time; " +
 			"tool count = source-declared (not hardcoded)",
 	}
@@ -248,7 +248,7 @@ func buildMeta(name string, res *profile.ExtractResult, paritySession string) ma
 	return m
 }
 
-func buildTargetCaptureRef(res *profile.ExtractResult, paritySession string) profile.TargetCaptureRef {
+func buildTargetCaptureRef(res *profile.ExtractResult) profile.TargetCaptureRef {
 	ref := profile.TargetCaptureRef{
 		ExtractedAt:      time.Now().UTC(),
 		ExtractorVersion: extractorVersion,

@@ -121,5 +121,10 @@ func writeResults(path string, res *RunResult) error {
 		return fmt.Errorf("call: %w", err)
 	}
 
-	return os.WriteFile(path, raw, filePermOwner)
+	err = os.WriteFile(path, raw, filePermOwner)
+	if err != nil {
+		return fmt.Errorf("write results: %w", err)
+	}
+
+	return nil
 }

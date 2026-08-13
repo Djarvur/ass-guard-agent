@@ -109,7 +109,6 @@ func loadCaptureLine(captureFile string) (json.RawMessage, error) {
 
 	chosen, err := profile.PickRichestMain(stats)
 	if err != nil {
-
 		return nil, fmt.Errorf("no fresh capture available; pass --capture-file "+
 			"or run zcode to produce a rollout: %w", err)
 	}

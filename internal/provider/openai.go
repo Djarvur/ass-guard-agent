@@ -12,7 +12,7 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 )
 
-var errOpenaiNoApi = errors.New("openai provider: no API key (set OPENAI_API_KEY or pass WithOpenAIAPIKey)")
+var errOpenaiNoAPI = errors.New("openai provider: no API key (set OPENAI_API_KEY or pass WithOpenAIAPIKey)")
 var errOpenaiResponseHas = errors.New("openai provider: response has no choices")
 
 // OpenAIDefaultBaseURL is the canonical OpenAI Chat Completions endpoint. Z.ai,
@@ -73,7 +73,7 @@ func (p *OpenAIProvider) Send(ctx context.Context, prof *profile.Profile, messag
 	}
 
 	if key == "" {
-		return Response{}, errOpenaiNoApi
+		return Response{}, errOpenaiNoAPI
 	}
 
 	req := p.buildRequest(prof, messages)

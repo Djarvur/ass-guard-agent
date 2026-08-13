@@ -32,9 +32,9 @@ func (m Mutability) String() string {
 	case MutabilityMutating:
 		return classMutating
 	case MutabilityReadOnly:
-		return "read-only"
+		return classReadOnly
 	default:
-		return "read-only"
+		return classReadOnly
 	}
 }
 

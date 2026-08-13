@@ -18,7 +18,7 @@ import (
 
 const mnd8 = 8
 
-var errAnthropicNoApi = errors.New("anthropic provider: no API key (set ZAI_API_KEY or pass WithAnthropicAPIKey)")
+var errAnthropicNoAPI = errors.New("anthropic provider: no API key (set ZAI_API_KEY or pass WithAnthropicAPIKey)")
 var errAnthropicNilShaper = errors.New("anthropic provider: nil Shaper")
 
 // httpClient is the streaming-path HTTP client. A shared default client is fine
@@ -48,7 +48,7 @@ func (p *AnthropicProvider) Stream(ctx context.Context, prof *profile.Profile, m
 	}
 
 	if key == "" {
-		return nil, errAnthropicNoApi
+		return nil, errAnthropicNoAPI
 	}
 
 	if p.shaper == nil {

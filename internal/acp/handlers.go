@@ -11,7 +11,9 @@ import (
 )
 
 const asciiDelete = 0x40
-const mnd80 = 0x80
+const uuidVariantSet = 0x80
+const variantMask = 0x3F
+const versionMask = 0x0F
 
 var errMissingSessionid = errors.New("session/prompt: missing sessionId")
 
@@ -224,8 +226,8 @@ func newSessionID() string {
 		panic("crypto/rand failed: " + err.Error())
 	}
 
-	b[6] = (b[6] & 0x0f) | asciiDelete
-	b[8] = (b[8] & 0x3f) | mnd80
+	b[6] = (b[6] & versionMask) | asciiDelete
+	b[8] = (b[8] & variantMask) | uuidVariantSet
 
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }

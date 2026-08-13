@@ -10,6 +10,7 @@ import (
 )
 
 const scannerBufSize = 1024
+const scannerBufInit = 64
 
 // CapturedTurn is one zcode turn: the user prompt paired with the tool-calls
 // zcode actually produced (the "zcode arm" of the A/B test — D-05 replay).
@@ -52,7 +53,7 @@ func ExtractTurnsFromRollout(path string) ([]CapturedTurn, error) {
 	var turns []CapturedTurn
 
 	scanner := bufio.NewScanner(f)
-	scanner.Buffer(make([]byte, 64*scannerBufSize), 16*1024*1024)
+	scanner.Buffer(make([]byte, scannerBufInit*scannerBufSize), 16*scannerBufSize*scannerBufSize)
 
 	lineIdx := 0
 	for scanner.Scan() {
