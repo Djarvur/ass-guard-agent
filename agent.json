@@ -1,0 +1,45 @@
+{
+  "id": "ass-guard",
+  "name": "ass-guard",
+  "version": "0.0.0-dev",
+  "description": "Mimicry-first ACP agent — structurally indistinguishable outgoing model requests",
+  "repository": "https://github.com/Djarvur/ass-guard-agent",
+  "license": "MIT",
+  "website": "https://github.com/Djarvur/ass-guard-agent",
+  "distribution": {
+    "binary": {
+      "darwin-aarch64": {
+        "archive": "https://github.com/Djarvur/ass-guard-agent/releases/download/v0.0.0-dev/ass-guard_0.0.0-dev_darwin_arm64.tar.gz",
+        "cmd": "ass-guard",
+        "args": [
+          "acp",
+          "serve"
+        ]
+      },
+      "darwin-x86_64": {
+        "archive": "https://github.com/Djarvur/ass-guard-agent/releases/download/v0.0.0-dev/ass-guard_0.0.0-dev_darwin_amd64.tar.gz",
+        "cmd": "ass-guard",
+        "args": [
+          "acp",
+          "serve"
+        ]
+      },
+      "linux-aarch64": {
+        "archive": "https://github.com/Djarvur/ass-guard-agent/releases/download/v0.0.0-dev/ass-guard_0.0.0-dev_linux_arm64.tar.gz",
+        "cmd": "ass-guard",
+        "args": [
+          "acp",
+          "serve"
+        ]
+      },
+      "linux-x86_64": {
+        "archive": "https://github.com/Djarvur/ass-guard-agent/releases/download/v0.0.0-dev/ass-guard_0.0.0-dev_linux_amd64.tar.gz",
+        "cmd": "ass-guard",
+        "args": [
+          "acp",
+          "serve"
+        ]
+      }
+    }
+  }
+}
