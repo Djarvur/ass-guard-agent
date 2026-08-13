@@ -1,6 +1,7 @@
 package hookdag_test
 
 import (
+	"fmt"
 	"context"
 	"encoding/json"
 	"errors"
