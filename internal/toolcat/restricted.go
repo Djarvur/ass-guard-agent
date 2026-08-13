@@ -46,7 +46,7 @@ func (r *RestrictedExecutor) Execute(ctx context.Context, name string, input jso
 		return nil, fmt.Errorf("tool %q is not available in this subagent context", name)
 	}
 
-	return r.inner.Execute(ctx, name, input)
+	return r.inner.Execute(ctx, name, input) //nolint:wrapcheck // thin delegation
 }
 
 // compile-time interface check.

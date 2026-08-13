@@ -44,13 +44,13 @@ func (r *RealExecutor) Execute(ctx context.Context, name string, input json.RawM
 	// Swappable backends first (D-22).
 	if name == "WebSearch" {
 		if be, ok := r.Backends["WebSearch"]; ok {
-			return be.Search(ctx, extractQuery(input))
+			return be.Search(ctx, extractQuery(input)) //nolint:wrapcheck // backend delegation
 		}
 	}
 
 	if name == toolWebFetch {
 		if be, ok := r.Backends[toolWebFetch]; ok {
-			return be.Fetch(ctx, extractURL(input))
+			return be.Fetch(ctx, extractURL(input)) //nolint:wrapcheck // backend delegation
 		}
 	}
 	// Catalog-driven tools.
@@ -69,7 +69,7 @@ func (r *RealExecutor) Execute(ctx context.Context, name string, input json.RawM
 			` has no implementation yet (catalog schema authoritative)"}`), nil
 	}
 
-	return tool.Execute(ctx, input)
+	return tool.Execute(ctx, input) //nolint:wrapcheck // catalog delegation
 }
 
 // extractQuery best-effort parses a WebSearch input's `query` field. An

@@ -207,7 +207,7 @@ func (p *OpenAIProvider) ToolResultMessage(toolCallID string, result json.RawMes
 		ToolCallID: toolCallID,
 	}
 
-	return json.Marshal(msg)
+	data, mErr := json.Marshal(msg); if mErr != nil { return nil, fmt.Errorf("marshal: %w", mErr) }; return data, nil
 }
 
 // Stream is not implemented for the OpenAI-shape adapter in Phase 2 (the

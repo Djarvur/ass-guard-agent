@@ -1,8 +1,8 @@
 package provider
 
 import (
-	"fmt"
 	"context"
+	"fmt"
 )
 
 // DefaultMaxConcurrent is the default outbound provider-concurrency bound

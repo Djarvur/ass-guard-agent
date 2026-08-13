@@ -98,7 +98,7 @@ func run(sessions, rolloutDir, out, name, paritySession string) error {
 
 func chooseSession(stats []profile.SessionStat, sessions string) (profile.SessionStat, error) {
 	if sessions == "" {
-		return profile.PickRichestMain(stats)
+		return profile.PickRichestMain(stats) //nolint:wrapcheck // profile selection
 	}
 
 	want := strings.Split(sessions, ",")

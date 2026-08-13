@@ -131,7 +131,12 @@ func loadYAML(path string, out any) error {
 		return fmt.Errorf("call: %w", err)
 	}
 
-	return yaml.Unmarshal(raw, out)
+	err = yaml.Unmarshal(raw, out)
+	if err != nil {
+		return fmt.Errorf("yaml unmarshal: %w", err)
+	}
+
+	return nil
 }
 
 func loadJSON(path string, out any) error {
@@ -140,5 +145,10 @@ func loadJSON(path string, out any) error {
 		return fmt.Errorf("call: %w", err)
 	}
 
-	return json.Unmarshal(raw, out)
+	err = json.Unmarshal(raw, out)
+	if err != nil {
+		return fmt.Errorf("json unmarshal: %w", err)
+	}
+
+	return nil
 }

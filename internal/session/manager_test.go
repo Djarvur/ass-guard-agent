@@ -28,7 +28,9 @@ func newTestManager(t *testing.T, sessionID string) *Manager {
 // redactorAdapter adapts internal/redact to the Manager's Redactor interface.
 type redactorAdapter struct{}
 
-func (redactorAdapter) Redact(b []byte) ([]byte, error) { return redact.Redact(b) }
+func (redactorAdapter) Redact(b []byte) ([]byte, error) {
+	return redact.Redact(b) //nolint:wrapcheck // test adapter
+}
 func (redactorAdapter) ScrubError(err error) string     { return redact.ScrubError(err) }
 
 // TestAppendUserMessageWritesJSONLine verifies AppendUserMessage writes one

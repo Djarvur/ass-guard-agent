@@ -51,8 +51,16 @@ type serveOptions struct {
 type redactorAdapter struct{}
 
 // Redact satisfies session.Redactor.
-func (redactorAdapter) Redact(b []byte) ([]byte, error) { return redact.Redact(b) }
-func (redactorAdapter) ScrubError(err error) string     { return redact.ScrubError(err) }
+func (redactorAdapter) Redact(b []byte) ([]byte, error) {
+	out, err := redact.Redact(b)
+	if err != nil {
+		return nil, fmt.Errorf("redact: %w", err)
+	}
+
+	return out, nil
+}
+
+func (redactorAdapter) ScrubError(err error) string { return redact.ScrubError(err) }
 
 // newACPCmd builds the `acp` parent command. Today it carries the `serve`
 // subcommand (the IDE entrypoint); future ACP-facing subcommands nest here.
@@ -151,7 +159,7 @@ func runACPServe(ctx context.Context, in io.Reader, out, stderr io.Writer, opts 
 
 	srv := acp.NewServer(in, out, stderr, acp.WithTurnRunner(runner))
 
-	return srv.Serve(ctx)
+	return srv.Serve(ctx) //nolint:wrapcheck // direct delegation
 }
 
 // setupEngine builds the Phase-4 engine wiring (Plan 04-05 D-01/D-13/D-15/D-21):
@@ -323,7 +331,7 @@ func (r *sessionTurnRunner) runOneTurn(
 ) (string, error) {
 	if !r.engineEnabled || r.eng == nil || r.patternTable == nil {
 		// Backward-compatible path: no engine wrap.
-		return sess.Prompt(ctx, blocks)
+		return sess.Prompt(ctx, blocks) //nolint:wrapcheck // session delegation
 	}
 	// Wire the hook-DAG seams to the active session so ActionHook can launch the
 	// post-implement/post-phase DAG against the real Session Core (HOOK-05 —
@@ -426,7 +434,7 @@ type engineTurnRunnerAdapter struct {
 
 // Run drives one turn through the Session Core.
 func (a *engineTurnRunnerAdapter) Run(ctx context.Context, prompt []session.ContentBlock) (string, error) {
-	return a.sess.Prompt(ctx, prompt)
+	return a.sess.Prompt(ctx, prompt) //nolint:wrapcheck // session delegation
 }
 
 // LastTurnOutput reads the transcript to build the engine's view of the most
@@ -555,7 +563,7 @@ func (h *hookSessionTurnRunner) Run(ctx context.Context, prompt []hookdag.Conten
 		blocks[i] = session.ContentBlock{Type: b.Type, Text: b.Text}
 	}
 
-	return h.sess.Prompt(ctx, blocks)
+	return h.sess.Prompt(ctx, blocks) //nolint:wrapcheck // session delegation
 }
 
 // hookSessionBoundaryOpener adapts the active Manager to the hookdag
@@ -570,7 +578,7 @@ func (h *hookSessionBoundaryOpener) OpenBoundary(_ context.Context, cause string
 		return nil
 	}
 
-	return h.mgr.AppendBoundary(cause, "", h.turnID)
+	return h.mgr.AppendBoundary(cause, "", h.turnID) //nolint:wrapcheck // manager delegation
 }
 
 // realCommandRunner is the hookdag.CommandRunner seam: exec a shell command,

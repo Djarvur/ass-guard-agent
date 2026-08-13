@@ -14,7 +14,9 @@ import (
 // test (the real Manager scrubs each transcript line — LOG-03).
 type testRedactor struct{}
 
-func (testRedactor) Redact(b []byte) ([]byte, error) { return redact.Redact(b) }
+func (testRedactor) Redact(b []byte) ([]byte, error) {
+	return redact.Redact(b) //nolint:wrapcheck // test adapter
+}
 func (testRedactor) ScrubError(err error) string     { return redact.ScrubError(err) }
 
 // newIntegrationManager opens a real session.Manager against a temp dir so the

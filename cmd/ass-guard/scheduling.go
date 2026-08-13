@@ -188,7 +188,7 @@ func emitResolveJSON(w io.Writer, tier, project string, primary *scheduler.Targe
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 
-	return enc.Encode(out)
+	return enc.Encode(out) //nolint:wrapcheck // json encoder
 }
 
 // describeCapabilities renders a compact human form of the capability profile.

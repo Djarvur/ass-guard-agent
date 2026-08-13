@@ -24,7 +24,7 @@ func (s *safeBuffer) Write(p []byte) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	return s.buf.Write(p)
+	return s.buf.Write(p) //nolint:wrapcheck // test buffer
 }
 
 func (s *safeBuffer) String() string {

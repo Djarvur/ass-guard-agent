@@ -237,7 +237,7 @@ func (s *Session) executeRestricted(
 
 	re := toolcat.NewRestrictedExecutor(s.toolExec, restricted)
 
-	return re.Execute(ctx, tc.Name, tc.Input)
+	return re.Execute(ctx, tc.Name, tc.Input) //nolint:wrapcheck // thin delegation
 }
 
 // isSubagentTool reports whether the tool name dispatches a subagent (PARA-01).

@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"fmt"
 	"context"
 	"encoding/json"
 
@@ -112,7 +113,7 @@ func (p *AnthropicProvider) ToolResultMessage(toolCallID string, result json.Raw
 		}},
 	}
 
-	return json.Marshal(msg)
+	data, mErr := json.Marshal(msg); if mErr != nil { return nil, fmt.Errorf("marshal: %w", mErr) }; return data, nil
 }
 
 // orEmpty returns b as-is, or a single space if empty, so JSON object fields

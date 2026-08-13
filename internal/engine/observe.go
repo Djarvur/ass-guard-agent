@@ -195,7 +195,7 @@ func (e *Engine) runAndRecover(
 		}
 	}()
 
-	return runner.Run(ctx, prompt)
+	return runner.Run(ctx, prompt) //nolint:wrapcheck // thin delegation
 }
 
 // lastTurnAndRecover reads LastTurnOutput under a recover so a panicking fake

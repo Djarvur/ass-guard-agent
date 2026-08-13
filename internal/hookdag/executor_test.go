@@ -1,10 +1,10 @@
 package hookdag_test
 
 import (
-	"fmt"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
