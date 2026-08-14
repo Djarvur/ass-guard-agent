@@ -44,6 +44,8 @@ Progress: [██░░░░░░░░] 17%
 
 Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecting current work:
 
+- **[Phase-8 checkpoint DISPOSITION, 2026-08-15, operator]:** the 08-06 real-model gate's blocking finding (within-turn tool-result carry missing — v1.0 architectural gap) is dispositioned **APPROVED for gap-closure**: execute the 08-07 gap-closure plan (ToolCall IDs, tool-role shaper.Message matched to captured zcode wire forms, ToolResultMessage wiring, mid-turn Projector accumulation) once checker-passed, then return to the 08-06 gate. The final E2E re-run remains operator-witnessed. Resume signal: **approved**.
+
 - [v1.1 roadmap]: Phase order follows the operator's strict priority chain — kickoff → (audit + re-capture, merged) → Telegram → dsh — numbered 8–11, continuing from v1.0's Phase 7.
 - [v1.1 roadmap]: The capturer factory seam lands in Phase 9, deliberately BEFORE Phase 10's `internal/runtime` extraction, so the audit wiring is written once.
 - [v1.1 roadmap]: Generalized v1.0 lesson as cross-phase invariant — no feature closes with stub-only evidence; every phase gate = `mise ci` + a real-binary/live-service check.
