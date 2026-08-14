@@ -36,7 +36,7 @@ v1.1 makes the hands-off OpenSpec promise real end-to-end. The milestone's reaso
 
 | # | Phase | Goal | Requirements | Success Criteria |
 |---|-------|------|--------------|------------------|
-| 8 | Slash-Command Kickoff | 4/6 | In Progress|  |
+| 8 | Slash-Command Kickoff | 5/6 | In Progress|  |
 | 9 | Serve-Path Audit + zcode Parity Re-capture | Every serve-path session leaves a redacted, bounded audit trail that explains the engine's decisions; the parity stability test runs green on a newly pinned session | AUD-01, AUD-02, AUD-03, AUD-04, AUD-05 | 5 |
 | 10 | Telegram Peer (Text + Voice) | A user drives the same engine from a Telegram chat — full SDD scenarios, voice input, disciplined shutdown | TG-01, TG-02, TG-03, TG-04, TG-05, TG-06 | 5 |
 | 11 | dsh Mimicry Profile #2 | DeepSeek-model turns are structurally indistinguishable from deepseek-harness, captured not hand-written | DSH-01, DSH-02, DSH-03, DSH-04, DSH-05 | 5 |
@@ -60,7 +60,7 @@ v1.1 makes the hands-off OpenSpec promise real end-to-end. The milestone's reaso
   7. WebSearch ships a real DDG-HTML default backend (zero key) on the swappable seam and WebFetch returns fetch + html→markdown — at minimum sufficient for `/opsx:explore` workflows; zero-config first run unaffected (CMD-07, added at Phase-8 discussion)
 
 **Phase gate:** `mise ci` clean AND the operator-gated real-binary test (`ASSGUARD_OPENSPEC_BIN=1` against real openspec v1.5.0, all three paths) AND a real `/opsx` E2E in a scratch project AND the 11 deferred UAT checks green. No stub-only evidence closes this phase.
-**Plans:** 4/6 plans executed
+**Plans:** 5/6 plans executed
 Plans:
 **Wave 1**
 
@@ -74,7 +74,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 08-05-PLAN.md — skills invocation: model-invoked Skill tool with SKILL.md loading into the turn, captured-shape listing dynamic merge, all skills exposed [CMD-06]
+- [x] 08-05-PLAN.md — skills invocation: model-invoked Skill tool with SKILL.md loading into the turn, captured-shape listing dynamic merge, all skills exposed [CMD-06]
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
