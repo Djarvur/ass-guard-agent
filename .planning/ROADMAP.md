@@ -205,7 +205,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 07-02-PLAN.md — wire factory into acp serve/tracer/parity + D-07 startup warnings + 0600 perm + zero-config/zero-env proofs + traceability (PCFG-02..04, PROV-01)
+- [x] 07-02-PLAN.md — wire factory into acp serve/tracer/parity + D-07 startup warnings + 0600 perm + zero-config/zero-env proofs + traceability (PCFG-02..04, PROV-01)
 
 ---
 

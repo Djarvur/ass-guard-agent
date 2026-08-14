@@ -34,7 +34,7 @@ Requirements for initial release. Each maps to roadmap phases. Categorized by ca
 
 ### Providers (Phase 1 substrate + Phase 3)
 
-- [x] **PROV-01**: Both Anthropic-shape and OpenAI-shape protocols are supported, with any compatible provider via configurable base URL
+- [x] **PROV-01**: Both Anthropic-shape and OpenAI-shape protocols are supported, with any compatible provider via configurable base URL (completed by Phase 7)
 - [ ] **PROV-02**: Both adapter shapes implement a common `Provider` interface with `TranslateToInternal`/`TranslateFromInternal` tool-call translation, verified by round-trip conformance tests
 - [ ] **PROV-03**: The Anthropic-shape adapter uses `anthropics/anthropic-sdk-go` with swappable base URL (Z.ai for GLM); the OpenAI-shape adapter uses `sashabaranov/go-openai`
 
@@ -249,11 +249,11 @@ Which phases cover which requirements. Updated during roadmap creation (2026-08-
 | DIST-03 | 6 — Distribution + Polish | Complete |
 
 **Coverage:**
-- v1 requirements: 67 total
-- Mapped to phases: 67 (100%)
+- v1 requirements: 71 total (67 + 4 new PCFG)
+- Mapped to phases: 71 (100%)
 - Unmapped: 0 ✓
-- Phase distribution: Phase 0 = 0 (spike); Phase 1 = 16; Phase 2 = 18; Phase 3 = 6; Phase 4 = 19; Phase 5 = 5; Phase 6 = 3
+- Phase distribution: Phase 0 = 0 (spike); Phase 1 = 16; Phase 2 = 18; Phase 3 = 6; Phase 4 = 19; Phase 5 = 5; Phase 6 = 3; Phase 7 = 4 (PCFG-01..04; also completes PROV-01, counted under Phase 1)
 
 ---
 *Requirements defined: 2026-08-09*
-*Last updated: 2026-08-09 after initial definition*
+*Last updated: 2026-08-14 after Phase 7 (PCFG-01..04 added; PROV-01 completed)*
