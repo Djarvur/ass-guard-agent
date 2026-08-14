@@ -16,6 +16,7 @@ import (
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/event"
+	"github.com/Djarvur/ass-guard-agent/internal/openspec"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
@@ -963,5 +964,93 @@ func TestSkill_ZeroSkillDegradation(t *testing.T) { //nolint:paralleltest // HOM
 		[]acp.ContentBlock{{Type: blockText, Text: "just a normal prompt"}})
 	if err != nil {
 		t.Fatalf("Run err = %v; want the session to keep working", err)
+	}
+}
+
+// TestNextPrompt_InjectionExpandsWithProvenance (08-06 Test 4): a matched
+// handoff injects the NEXT /opsx command as a real turn through the 08-04
+// seam — the injected prompt expands, records provenance, and (mutating
+// stages) opens the boundary, exactly like a typed command.
+func TestNextPrompt_InjectionExpandsWithProvenance(t *testing.T) { //nolint:paralleltest // HOME pin via helper
+	r, prov := newSkillRunner(t, true,
+		scriptedResp{text: "the proposal is ready — handoff to apply", finish: stopEndTurn},
+		scriptedResp{text: "proposed; no further handoff", finish: stopEndTurn},
+	)
+
+	// A pattern table whose row chains propose→apply via the next field.
+	cfg := &openspec.OpenSpecConfig{Patterns: []openspec.PatternEntry{
+		{ID: "post-propose-handoff", Regex: "handoff to apply", Action: "continue", Next: "/opsx:apply add-login"},
+	}}
+
+	pt, err := openspec.FromConfig(cfg)
+	if err != nil {
+		t.Fatalf("FromConfig: %v", err)
+	}
+
+	r.patternTable = pt
+
+	_, err = r.Run(context.Background(), "sess-chain", &noopEmitter{},
+		[]acp.ContentBlock{{Type: blockText, Text: "/opsx:propose add-login"}})
+	if err != nil {
+		t.Fatalf("Run err = %v", err)
+	}
+
+	// The engine continued exactly once: 2 provider calls (typed turn + injection).
+	if got := prov.callCount(); got != 2 {
+		t.Errorf("provider calls = %d; want 2 (typed propose + injected apply)", got)
+	}
+
+	// The injected turn IS the expanded apply body with provenance + boundary.
+	if got := lastUserMessageText(t, r, "sess-chain"); !strings.Contains(got, "Apply the change: add-login") {
+		t.Errorf("last user_message = %q; want the EXPANDED apply body", got)
+	}
+
+	prov2 := transcriptLinesOfType(t, r, "sess-chain", session.TypeCommandProvenance)
+	foundApply := false
+
+	for i := range prov2 {
+		if prov2[i].Name == "opsx:apply" && prov2[i].Text == "add-login" {
+			foundApply = true
+		}
+	}
+
+	if !foundApply {
+		t.Errorf("no opsx:apply provenance line — the injection did not flow through the expansion seam (got %+v)", prov2)
+	}
+
+	bounds := transcriptLinesOfType(t, r, "sess-chain", session.TypeBoundary)
+	sawMutatingApply := false
+
+	for i := range bounds {
+		if strings.HasPrefix(bounds[i].Cause, "mutating-command:opsx:apply") {
+			sawMutatingApply = true
+		}
+	}
+
+	if !sawMutatingApply {
+		t.Error("no mutating-command:opsx:apply boundary — the injected mutating stage missed its boundary")
+	}
+}
+
+// TestStageVocab_TriggerFromSignal (08-06 Test 5): stage-bearing pattern ids
+// map to their hook stages; un-staged signals keep the post-implement default.
+func TestStageVocab_TriggerFromSignal(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]string{
+		"text:post-explore-handoff": "post-explore",
+		"text:post-propose-handoff": "post-propose",
+		"text:post-apply-handoff":   "post-apply",
+		"text:post-archive-handoff": "post-archive",
+		"hook:post-propose-handoff": "post-propose",
+		"text:impl-complete":        "post-implement",
+		"text:changes-proposed":     "post-phase",
+		"text:something-unstaged":   "post-implement",
+	}
+
+	for signal, want := range cases {
+		if got := triggerFromSignal(signal); got != want {
+			t.Errorf("triggerFromSignal(%q) = %q; want %q", signal, got, want)
+		}
 	}
 }
