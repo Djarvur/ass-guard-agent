@@ -36,7 +36,7 @@ v1.1 makes the hands-off OpenSpec promise real end-to-end. The milestone's reaso
 
 | # | Phase | Goal | Requirements | Success Criteria |
 |---|-------|------|--------------|------------------|
-| 8 | Slash-Command Kickoff | 2/6 | In Progress|  |
+| 8 | Slash-Command Kickoff | 3/6 | In Progress|  |
 | 9 | Serve-Path Audit + zcode Parity Re-capture | Every serve-path session leaves a redacted, bounded audit trail that explains the engine's decisions; the parity stability test runs green on a newly pinned session | AUD-01, AUD-02, AUD-03, AUD-04, AUD-05 | 5 |
 | 10 | Telegram Peer (Text + Voice) | A user drives the same engine from a Telegram chat — full SDD scenarios, voice input, disciplined shutdown | TG-01, TG-02, TG-03, TG-04, TG-05, TG-06 | 5 |
 | 11 | dsh Mimicry Profile #2 | DeepSeek-model turns are structurally indistinguishable from deepseek-harness, captured not hand-written | DSH-01, DSH-02, DSH-03, DSH-04, DSH-05 | 5 |
@@ -60,13 +60,13 @@ v1.1 makes the hands-off OpenSpec promise real end-to-end. The milestone's reaso
   7. WebSearch ships a real DDG-HTML default backend (zero key) on the swappable seam and WebFetch returns fetch + html→markdown — at minimum sufficient for `/opsx:explore` workflows; zero-config first run unaffected (CMD-07, added at Phase-8 discussion)
 
 **Phase gate:** `mise ci` clean AND the operator-gated real-binary test (`ASSGUARD_OPENSPEC_BIN=1` against real openspec v1.5.0, all three paths) AND a real `/opsx` E2E in a scratch project AND the 11 deferred UAT checks green. No stub-only evidence closes this phase.
-**Plans:** 2/6 plans executed
+**Plans:** 3/6 plans executed
 Plans:
 **Wave 1**
 
 - [x] 08-01-PLAN.md — ecosys namespaced discovery: one-level `commands/<ns>/<name>.md` scan with colon-join keys, zcode name/frontmatter rules, flat-parser fallback, shadow warnings (THE structural blocker, first) [CMD-01, CMD-05]
 - [x] 08-02-PLAN.md — real web-tool backends: DDG-HTML WebSearch default (zero key) + WebFetch fetch+html→markdown on the swappable seam [CMD-07]
-- [ ] 08-03-PLAN.md — openspec adapter reconciliation: probe-pinned surface (phantom apply/implement removed), Adapter-backed Execute closures, non-interactive guards + three-path real-binary gate [CMD-03]
+- [x] 08-03-PLAN.md — openspec adapter reconciliation: probe-pinned surface (phantom apply/implement removed), Adapter-backed Execute closures, non-interactive guards + three-path real-binary gate [CMD-03]
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
