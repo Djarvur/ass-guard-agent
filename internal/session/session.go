@@ -106,7 +106,11 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 		return "", err
 	}
 
-	const maxIterations = 16 // bound the tool loop (avoid runaway in stubs)
+	// maxIterations bounds the inner tool loop. 64 (raised from the stub-era
+	// 16 in Phase 8): a REAL model explore/apply turn routinely makes dozens of
+	// tool calls — the real-/opsx E2E gate burned through 16 in ~2 minutes
+	// (08-06 T2 finding). Still a runaway bound, not a license.
+	const maxIterations = 64 // bound the tool loop (runaway guard)
 	for range maxIterations {
 		err = ctx.Err()
 		if err != nil {
