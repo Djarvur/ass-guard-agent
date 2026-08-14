@@ -1,0 +1,34 @@
+{
+  "_provenance": {
+    "source": "zcode rollout capture, session model-io-sess_fb066d52 (uuid suffix; full id redacted per D-03). The original rollout file has since rotated out of ~/.zcode/cli/rollout/; this excerpt is pinned verbatim from the committed capture in .planning/phases/08-slash-command-kickoff/08-07-PLAN.md (<interfaces> block, the request.messages ground truth read at planning time).",
+    "sessionId": "fb066d52 (suffix)",
+    "harvestDate": "2026-08-15",
+    "recordIndex": "model_io record, request.messages kind=tail window (messages[0..7])",
+    "redaction": "D-03 discipline: JSON keys, roles, enum values, structural shape, and array lengths are PRESERVED (they are the mimicry target); values (prompt text, file paths, tool arguments, output contents, model refs) are redacted or replaced with shape-preserving stand-ins; the toolCallId <-> toolCalls[].id pairing is preserved so the pairing invariant is assertable over the fixture.",
+    "corpusLimitation": "rollout records carry the runtime-normalized request.messages; request.body has NO messages key, so the Anthropic WIRE rendering of mid-turn blocks is not directly verifiable from this corpus — it follows the protocol-canonical rendering (PROV-02 ToolResultMessage / shaper block construction, T1 single-source); wire verification rides Phase 9 AUD-05. Content-format divergence, flagged for Phase 9: zcode renders tool results as plain text (e.g. '(Bash completed with no output)') while ass-guard's executor returns JSON objects — structure is this plan's mimicry bar, content format is not."
+  },
+  "messages": [
+    { "role": "user", "content": "[REDACTED: user prompt text]" },
+    {
+      "role": "assistant",
+      "content": "",
+      "toolCalls": [
+        { "id": "call_R1", "name": "Bash", "input": { "command": "[REDACTED: shell command]" } }
+      ],
+      "modelRef": "[REDACTED: model ref]"
+    },
+    { "role": "tool", "content": "(Bash completed with no output)", "toolCallId": "call_R1", "toolName": "Bash", "isError": false },
+    {
+      "role": "assistant",
+      "content": "",
+      "toolCalls": [
+        { "id": "call_R2", "name": "Read", "input": { "file_path": "[REDACTED: absolute path]" } },
+        { "id": "call_R3", "name": "Grep", "input": { "pattern": "[REDACTED: pattern]" } }
+      ]
+    },
+    { "role": "tool", "content": "[REDACTED: file content excerpt, plain numbered text]", "toolCallId": "call_R2", "toolName": "Read", "isError": false },
+    { "role": "tool", "content": "(no matches found)", "toolCallId": "call_R3", "toolName": "Grep", "isError": false },
+    { "role": "assistant", "content": "[REDACTED: assistant analysis text between batches]" },
+    { "role": "system", "content": "[REDACTED: mid-conversation system reminder]" }
+  ]
+}

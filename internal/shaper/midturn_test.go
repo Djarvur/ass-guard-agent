@@ -2,6 +2,8 @@ package shaper_test
 
 import (
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -229,5 +231,193 @@ func assertToolResultBlock(
 
 	if res.OfText.Text != wantText {
 		t.Errorf("tool_result.Content = %q, want %q", res.OfText.Text, wantText)
+	}
+}
+
+// --- 08-07 T3: the capture-grounded golden fixture + pairing invariant ---
+
+// midturnFixtureMessage is one fixture entry (the captured zcode-normalized
+// request.messages form — keys preserved verbatim per D-03).
+type midturnFixtureMessage struct {
+	Role       string           `json:"role"`
+	Content    string           `json:"content"`
+	ToolCalls  []shaper.ToolCall `json:"toolCalls"`
+	ToolCallID string           `json:"toolCallId"`
+	ToolName   string           `json:"toolName"`
+	IsError    *bool            `json:"isError"`
+	ModelRef   string           `json:"modelRef"`
+}
+
+type midturnFixture struct {
+	Messages []midturnFixtureMessage `json:"messages"`
+}
+
+// loadMidTurnFixture reads the committed capture-grounded fixture.
+func loadMidTurnFixture(t *testing.T) midturnFixture {
+	t.Helper()
+
+	raw, err := os.ReadFile(filepath.Join("testdata", "zcode-midturn-messages.json"))
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+
+	var f midturnFixture
+	if err := json.Unmarshal(raw, &f); err != nil {
+		t.Fatalf("parse fixture: %v", err)
+	}
+
+	return f
+}
+
+// fixtureMessages maps fixture entries to shaper.Messages (the structured
+// mid-turn forms; the modelRef key is runtime bookkeeping, not message shape).
+func fixtureMessages(f midturnFixture) []shaper.Message {
+	out := make([]shaper.Message, 0, len(f.Messages))
+	for _, m := range f.Messages {
+		sm := shaper.Message{Role: m.Role, Content: m.Content, ToolCalls: m.ToolCalls}
+		if m.Role == "tool" {
+			sm.ToolCallID = m.ToolCallID
+			sm.ToolName = m.ToolName
+			if m.IsError != nil {
+				sm.IsError = *m.IsError
+			}
+		}
+
+		out = append(out, sm)
+	}
+
+	return out
+}
+
+// TestMidTurnCapture_GoldenShape pins the mid-turn message shapes against the
+// CAPTURED zcode session (the committed fixture with provenance — the D-06
+// fidelity discipline applied to the message-shape dimension): assistant
+// {content, toolCalls[{id,name,input}]} renders ordered tool_use blocks; tool
+// {content, toolCallId, toolName, isError} renders tool_result blocks with
+// tool_use_id == toolCallId and is_error == isError; consecutive tool messages
+// group; plain user/assistant text and mid-conversation system messages render
+// as text blocks.
+func TestMidTurnCapture_GoldenShape(t *testing.T) {
+	t.Parallel()
+
+	f := loadMidTurnFixture(t)
+	if len(f.Messages) != 8 { //nolint:mnd // fixture shape: [0..7]
+		t.Fatalf("fixture messages = %d, want 8 (fixture edited?)", len(f.Messages))
+	}
+
+	s := shaper.New()
+	params, _, err := s.Shape(midTurnProfile(), fixtureMessages(f))
+	if err != nil {
+		t.Fatalf("Shape over the capture fixture: %v", err)
+	}
+
+	// Expected rendered sequence (consecutive tool messages GROUP):
+	//   [0] user (prompt)
+	//   [1] assistant: tool_use call_R1 (Bash)
+	//   [2] user: tool_result call_R1
+	//   [3] assistant: tool_use call_R2 (Read), call_R3 (Grep) — ordered
+	//   [4] user: tool_result call_R2, call_R3 — grouped, ordered
+	//   [5] assistant: plain text
+	//   [6] user: mid-conversation system text (wire: user-role block)
+	if len(params.Messages) != 7 { //nolint:mnd // see sequence above
+		t.Fatalf("rendered params = %d, want 7", len(params.Messages))
+	}
+
+	assertParam := func(i int, role anthropic.MessageParamRole) anthropic.MessageParam {
+		t.Helper()
+
+		if params.Messages[i].Role != role {
+			t.Errorf("params[%d].Role = %v, want %v", i, params.Messages[i].Role, role)
+		}
+
+		return params.Messages[i]
+	}
+
+	assertParam(0, anthropic.MessageParamRoleUser)
+
+	b1 := assertParam(1, anthropic.MessageParamRoleAssistant)
+	if len(b1.Content) != 1 || b1.Content[0].OfToolUse == nil || b1.Content[0].OfToolUse.ID != "call_R1" {
+		t.Errorf("params[1] = %+v; want ONE tool_use block (call_R1, empty content → no text block)", b1.Content)
+	}
+
+	if b1.Content[0].OfToolUse != nil && b1.Content[0].OfToolUse.Name != "Bash" {
+		t.Errorf("params[1] tool_use name = %q, want Bash (from the capture)", b1.Content[0].OfToolUse.Name)
+	}
+
+	assertParam(2, anthropic.MessageParamRoleUser)
+
+	b2 := assertParam(3, anthropic.MessageParamRoleAssistant)
+	if len(b2.Content) != 2 {
+		t.Fatalf("params[3] blocks = %d, want 2 tool_use blocks", len(b2.Content))
+	}
+
+	for i, want := range []struct{ id, name string }{{"call_R2", "Read"}, {"call_R3", "Grep"}} {
+		blk := b2.Content[i]
+		if blk.OfToolUse == nil || blk.OfToolUse.ID != want.id || blk.OfToolUse.Name != want.name {
+			t.Errorf("params[3][%d] = %+v; want tool_use {%s %s} in ORDER", i, blk, want.id, want.name)
+		}
+	}
+
+	r2 := assertParam(4, anthropic.MessageParamRoleUser)
+	if len(r2.Content) != 2 {
+		t.Fatalf("params[4] blocks = %d, want 2 grouped tool_result blocks", len(r2.Content))
+	}
+
+	for i, wantID := range []string{"call_R2", "call_R3"} {
+		blk := r2.Content[i]
+		if blk.OfToolResult == nil || blk.OfToolResult.ToolUseID != wantID {
+			t.Errorf("params[4][%d] = %+v; want tool_result {%s} (tool_use_id == toolCallId)", i, blk, wantID)
+		}
+	}
+
+	if r2.Content[1].OfToolResult != nil && r2.Content[1].OfToolResult.IsError.Value {
+		t.Error("params[4][1].is_error = true, want false (fixture isError:false)")
+	}
+
+	b3 := assertParam(5, anthropic.MessageParamRoleAssistant)
+	if len(b3.Content) != 1 || b3.Content[0].OfText == nil {
+		t.Errorf("params[5] = %+v; want a plain assistant text block", b3.Content)
+	}
+
+	sys := assertParam(6, anthropic.MessageParamRoleUser)
+	if len(sys.Content) != 1 || sys.Content[0].OfText == nil {
+		t.Errorf("params[6] = %+v; want the mid-conversation system text as a user-role text block", sys.Content)
+	}
+}
+
+// TestPairingInvariant_CaptureFixture asserts the pairing invariant over the
+// capture fixture: every tool message's toolCallId is an element of the
+// immediately-preceding assistant batch's ids (T-8-28 — no mispaired results).
+func TestPairingInvariant_CaptureFixture(t *testing.T) {
+	t.Parallel()
+
+	f := loadMidTurnFixture(t)
+
+	var batchIDs []string
+
+	for i, m := range f.Messages {
+		switch m.Role {
+		case roleToolMidturn:
+			found := false
+			for _, id := range batchIDs {
+				if id == m.ToolCallID {
+					found = true
+
+					break
+				}
+			}
+
+			if !found {
+				t.Errorf("fixture[%d] tool message toolCallId %q not in the preceding batch %v",
+					i, m.ToolCallID, batchIDs)
+			}
+		case "assistant":
+			batchIDs = batchIDs[:0]
+			for _, tc := range m.ToolCalls {
+				batchIDs = append(batchIDs, tc.ID)
+			}
+		default:
+			batchIDs = nil
+		}
 	}
 }

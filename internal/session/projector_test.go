@@ -543,3 +543,108 @@ func TestProjector_MidTurnEndOfTurnText(t *testing.T) {
 		t.Errorf("msgs[3] = %s; want plain assistant text after the exchange", msgSummary(&last))
 	}
 }
+
+// TestPairingInvariant_ProjectorWindow (08-07 T3 Test 2, second arm): the
+// pairing invariant holds over a Projector-PRODUCED window from a synthetic
+// transcript — every tool message's ToolCallID is an element of a preceding
+// assistant batch's ids in the window (T-8-28).
+func TestPairingInvariant_ProjectorWindow(t *testing.T) {
+	t.Parallel()
+
+	m := newTestManager(t, "s-pair")
+	p := NewProjector(fakeProfile("sys"), m)
+
+	_ = m.AppendUserMessage("turnP", []ContentBlock{{Type: blockText, Text: "multi-batch turn"}})
+
+	// Batch 1: two calls + results. Batch 2: one call + result. Interleaved
+	// assistant text. Then a dangling tool_call (dispatch pending) whose batch
+	// is flushed WITHOUT results — legal mid-iteration state.
+	_ = m.AppendToolCall("turnP", "p1", toolRead, json.RawMessage(`{"file_path":"a"}`))
+	_ = m.AppendToolCall("turnP", "p2", toolBash, json.RawMessage(`{"command":"ls"}`))
+	_ = m.AppendToolResult("turnP", "p1", json.RawMessage(`{"o":"1"}`), false)
+	_ = m.AppendToolResult("turnP", "p2", json.RawMessage(`{"o":"2"}`), false)
+	_ = m.AppendAssistantMessage("turnP", "interim note")
+	_ = m.AppendToolCall("turnP", "p3", "Grep", json.RawMessage(`{"pattern":"x"}`))
+	_ = m.AppendToolResult("turnP", "p3", json.RawMessage(`{"o":"3"}`), false)
+	_ = m.AppendToolCall("turnP", "p4", toolRead, json.RawMessage(`{"file_path":"b"}`))
+
+	msgs, err := p.Project("turnP")
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+
+	// Walk the window: a tool message's id must be in the MOST RECENT batch.
+	var batchIDs []string
+
+	for i, mm := range msgs {
+		switch {
+		case len(mm.ToolCalls) > 0:
+			batchIDs = batchIDs[:0]
+			for _, tc := range mm.ToolCalls {
+				batchIDs = append(batchIDs, tc.ID)
+			}
+		case mm.Role == roleToolMsg:
+			found := false
+			for _, id := range batchIDs {
+				if id == mm.ToolCallID {
+					found = true
+
+					break
+				}
+			}
+
+			if !found {
+				t.Fatalf("window[%d] tool message id %q not in the preceding batch %v — pairing violated:\n%s",
+					i, mm.ToolCallID, batchIDs, msgSummaryList(msgs))
+			}
+		}
+	}
+
+	// The dangling p4 batch flushes as an assistant message WITHOUT results —
+	// still pair-safe (no orphaned results), and present so the next iteration
+	// sees the pending call.
+	var last = msgs[len(msgs)-1]
+	if last.Role != roleAssistant || len(last.ToolCalls) != 1 || last.ToolCalls[0].ID != "p4" {
+		t.Errorf("last window message = %s; want the dangling p4 batch", msgSummary(&last))
+	}
+}
+
+// TestProjector_ToolResultRedactionCarry (08-07 T3 Test 4, LOG-03 extends to
+// the mid-turn window): a tool result written through the Manager with a
+// redactable secret projects as the REDACTED content — the projection reads
+// the redacted transcript file, so the model never sees the secret.
+func TestProjector_ToolResultRedactionCarry(t *testing.T) {
+	t.Parallel()
+
+	m := newTestManager(t, "s-red")
+	p := NewProjector(fakeProfile("sys"), m)
+
+	_ = m.AppendUserMessage("turnR", []ContentBlock{{Type: blockText, Text: "run"}})
+	_ = m.AppendToolCall("turnR", "r1", toolBash, json.RawMessage(`{"command":"env"}`))
+	_ = m.AppendToolResult("turnR", "r1",
+		json.RawMessage(`{"token":"sk-livesecretvalue123","note":"ok"}`), false)
+
+	msgs, err := p.Project("turnR")
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+
+	var toolMsg *provider.Message
+	for i := range msgs {
+		if msgs[i].Role == roleToolMsg {
+			toolMsg = &msgs[i]
+		}
+	}
+
+	if toolMsg == nil {
+		t.Fatal("no tool message in the projection")
+	}
+
+	if strings.Contains(toolMsg.Content, "sk-livesecretvalue123") {
+		t.Errorf("tool result content leaked the secret: %q", toolMsg.Content)
+	}
+
+	if !strings.Contains(toolMsg.Content, "[REDACTED]") {
+		t.Errorf("tool result content = %q; want the redacted placeholder", toolMsg.Content)
+	}
+}
