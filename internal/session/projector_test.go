@@ -280,7 +280,7 @@ func assertProvenanceLine(t *testing.T, m *Manager, srcPath, srcArgs string) {
 // --- 08-07: within-turn accumulation (mid-turn conversation assembly) ---
 
 // msgSummary renders a provider.Message compactly for failure messages.
-func msgSummary(m provider.Message) string {
+func msgSummary(m *provider.Message) string {
 	if len(m.ToolCalls) > 0 {
 		ids := make([]string, 0, len(m.ToolCalls))
 		for _, tc := range m.ToolCalls {
@@ -290,7 +290,7 @@ func msgSummary(m provider.Message) string {
 		return fmt.Sprintf("assistant{toolCalls:%v text:%q}", ids, m.Content)
 	}
 
-	if m.Role == "tool" {
+	if m.Role == roleToolMsg {
 		return fmt.Sprintf("tool{id:%s name:%s err:%v content:%q}", m.ToolCallID, m.ToolName, m.IsError, m.Content)
 	}
 
@@ -316,19 +316,19 @@ func TestProjector_MidTurnAccumulation(t *testing.T) {
 		t.Fatalf("Project: %v", err)
 	}
 
-	if len(msgs) != 3 { //nolint:mnd // seed + assistant batch + tool result
+	if len(msgs) != 3 {
 		t.Fatalf("len(msgs) = %d, want 3 (seed + assistant + tool):\n%s",
 			len(msgs), msgSummaryList(msgs))
 	}
 
 	seed := msgs[0]
-	if seed.Role != "user" || !strings.Contains(seed.Content, "run ls") {
-		t.Errorf("seed = %s; want user lean seed carrying the intent", msgSummary(seed))
+	if seed.Role != roleUserMsg || !strings.Contains(seed.Content, "run ls") {
+		t.Errorf("seed = %s; want user lean seed carrying the intent", msgSummary(&seed))
 	}
 
 	am := msgs[1]
 	if am.Role != "assistant" || len(am.ToolCalls) != 1 || am.ToolCalls[0].ID != "call_1" {
-		t.Errorf("msgs[1] = %s; want assistant batch with call_1", msgSummary(am))
+		t.Errorf("msgs[1] = %s; want assistant batch with call_1", msgSummary(&am))
 	}
 
 	if am.ToolCalls[0].Name != toolBash || string(am.ToolCalls[0].Input) != `{"command":"ls"}` {
@@ -336,8 +336,8 @@ func TestProjector_MidTurnAccumulation(t *testing.T) {
 	}
 
 	tm := msgs[2]
-	if tm.Role != "tool" || tm.ToolCallID != "call_1" {
-		t.Errorf("msgs[2] = %s; want tool message paired to call_1", msgSummary(tm))
+	if tm.Role != roleToolMsg || tm.ToolCallID != "call_1" {
+		t.Errorf("msgs[2] = %s; want tool message paired to call_1", msgSummary(&tm))
 	}
 
 	if tm.ToolName != toolBash {
@@ -352,8 +352,8 @@ func TestProjector_MidTurnAccumulation(t *testing.T) {
 // msgSummaryList renders a whole window for failure messages.
 func msgSummaryList(msgs []provider.Message) string {
 	parts := make([]string, 0, len(msgs))
-	for i, m := range msgs {
-		parts = append(parts, fmt.Sprintf("[%d] %s", i, msgSummary(m)))
+	for i := range msgs {
+		parts = append(parts, fmt.Sprintf("[%d] %s", i, msgSummary(&msgs[i])))
 	}
 
 	return strings.Join(parts, "\n")
@@ -382,13 +382,13 @@ func TestProjector_MidTurnBatchGrouping(t *testing.T) {
 		t.Fatalf("Project: %v", err)
 	}
 
-	if len(msgs) != 5 { //nolint:mnd // seed + 1 assistant batch + 3 tool results
+	if len(msgs) != 5 {
 		t.Fatalf("len(msgs) = %d, want 5:\n%s", len(msgs), msgSummaryList(msgs))
 	}
 
 	am := msgs[1]
-	if am.Role != "assistant" || len(am.ToolCalls) != 3 {
-		t.Fatalf("msgs[1] = %s; want ONE assistant message with 3 ToolCalls", msgSummary(am))
+	if am.Role != roleAssistant || len(am.ToolCalls) != 3 {
+		t.Fatalf("msgs[1] = %s; want ONE assistant message with 3 ToolCalls", msgSummary(&am))
 	}
 
 	wantIDs := []string{"c1", "c2", "c3"}
@@ -400,8 +400,8 @@ func TestProjector_MidTurnBatchGrouping(t *testing.T) {
 
 	for i, want := range wantIDs {
 		tm := msgs[2+i]
-		if tm.Role != "tool" || tm.ToolCallID != want {
-			t.Errorf("msgs[%d] = %s; want tool result for %s", 2+i, msgSummary(tm), want)
+		if tm.Role != roleToolMsg || tm.ToolCallID != want {
+			t.Errorf("msgs[%d] = %s; want tool result for %s", 2+i, msgSummary(&tm), want)
 		}
 	}
 
@@ -438,16 +438,16 @@ func TestProjector_MidTurnBoundaryReset(t *testing.T) {
 
 	// Seed + post-boundary batch + post-boundary result ONLY. The pre_2 orphan
 	// is dropped (no in-window batch), pre_1's exchange was reset away.
-	if len(msgs) != 3 { //nolint:mnd // seed + post-batch + post-result
+	if len(msgs) != 3 {
 		t.Fatalf("len(msgs) = %d, want 3 (post-boundary only):\n%s", len(msgs), msgSummaryList(msgs))
 	}
 
-	if msgs[1].Role != "assistant" || len(msgs[1].ToolCalls) != 1 || msgs[1].ToolCalls[0].ID != "post_1" {
-		t.Errorf("msgs[1] = %s; want post_1 batch only", msgSummary(msgs[1]))
+	if msgs[1].Role != roleAssistant || len(msgs[1].ToolCalls) != 1 || msgs[1].ToolCalls[0].ID != "post_1" {
+		t.Errorf("msgs[1] = %s; want post_1 batch only", msgSummary(&msgs[1]))
 	}
 
-	if msgs[2].Role != "tool" || msgs[2].ToolCallID != "post_1" {
-		t.Errorf("msgs[2] = %s; want post_1 result", msgSummary(msgs[2]))
+	if msgs[2].Role != roleToolMsg || msgs[2].ToolCallID != "post_1" {
+		t.Errorf("msgs[2] = %s; want post_1 result", msgSummary(&msgs[2]))
 	}
 }
 
@@ -459,7 +459,7 @@ func TestProjector_MidTurnBoundaryReset(t *testing.T) {
 func TestProjector_MidTurnWindowBound(t *testing.T) {
 	t.Parallel()
 
-	if MidTurnWindowMessages != 64 { //nolint:mnd // capture-pinned bound
+	if MidTurnWindowMessages != 64 {
 		t.Errorf("MidTurnWindowMessages = %d, want 64 (captured zcode tail window)", MidTurnWindowMessages)
 	}
 
@@ -488,11 +488,12 @@ func TestProjector_MidTurnWindowBound(t *testing.T) {
 	// Pair-safety: the first mid message must be an assistant batch head (a
 	// leading tool-role message would be an orphaned result), and every kept
 	// tool message's id must belong to a kept assistant batch.
-	if msgs[1].Role != "assistant" || len(msgs[1].ToolCalls) == 0 {
-		t.Fatalf("msgs[1] = %s; want an assistant batch head (pair-safety)", msgSummary(msgs[1]))
+	if msgs[1].Role != roleAssistant || len(msgs[1].ToolCalls) == 0 {
+		t.Fatalf("msgs[1] = %s; want an assistant batch head (pair-safety)", msgSummary(&msgs[1]))
 	}
 
 	batchIDs := map[string]bool{}
+
 	for _, mm := range msgs {
 		for _, tc := range mm.ToolCalls {
 			batchIDs[tc.ID] = true
@@ -502,14 +503,14 @@ func TestProjector_MidTurnWindowBound(t *testing.T) {
 	for i, mm := range msgs[1:] {
 		if mm.Role == "tool" && !batchIDs[mm.ToolCallID] {
 			t.Fatalf("msgs[%d] = %s — tool result separated from its batch (pair-safety violated)",
-				i+1, msgSummary(mm))
+				i+1, msgSummary(&mm))
 		}
 	}
 
 	// The MOST RECENT tail is kept: the last exchange (call_39) must be present.
 	last := msgs[len(msgs)-1]
-	if last.Role != "tool" || last.ToolCallID != "call_39" {
-		t.Errorf("last = %s; want the most recent exchange (call_39 result)", msgSummary(last))
+	if last.Role != roleToolMsg || last.ToolCallID != "call_39" {
+		t.Errorf("last = %s; want the most recent exchange (call_39 result)", msgSummary(&last))
 	}
 }
 
@@ -533,12 +534,12 @@ func TestProjector_MidTurnEndOfTurnText(t *testing.T) {
 		t.Fatalf("Project: %v", err)
 	}
 
-	if len(msgs) != 4 { //nolint:mnd // seed + batch + result + assistant text
+	if len(msgs) != 4 {
 		t.Fatalf("len(msgs) = %d, want 4:\n%s", len(msgs), msgSummaryList(msgs))
 	}
 
 	last := msgs[3]
-	if last.Role != "assistant" || last.Content != "the file contains one entry" || len(last.ToolCalls) != 0 {
-		t.Errorf("msgs[3] = %s; want plain assistant text after the exchange", msgSummary(last))
+	if last.Role != roleAssistant || last.Content != "the file contains one entry" || len(last.ToolCalls) != 0 {
+		t.Errorf("msgs[3] = %s; want plain assistant text after the exchange", msgSummary(&last))
 	}
 }

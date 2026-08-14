@@ -133,8 +133,15 @@ func (f *fakeProvider) Stream(
 
 		for _, tc := range resp.ToolCalls {
 			tcCopy := tc
+			// 08-07: carry the REAL provider id on the chunk (name fallback for
+			// legacy ID-less responses).
+			chunkID := tc.ID
+			if chunkID == "" {
+				chunkID = tc.Name
+			}
+
 			select {
-			case ch <- provider.StreamChunk{Type: blockToolUse, ToolCall: &tcCopy, ToolCallID: tc.Name}:
+			case ch <- provider.StreamChunk{Type: blockToolUse, ToolCall: &tcCopy, ToolCallID: chunkID}:
 			case <-ctx.Done():
 				return
 			}
@@ -554,7 +561,7 @@ var _ = fmt.Sprintf
 // --- 08-07: real tool-call ids in the transcript + convergence ---
 
 // TestPromptRecordsRealToolCallID (08-07 T2 Test 1): a streamed tool_use chunk
-// with id "call_9" must be recorded on the transcript's tool_call line as
+// with id realCallID must be recorded on the transcript's tool_call line as
 // ToolCallID=call_9 (Name=Read) — today the NAME is recorded as the call id,
 // making tool_use/tool_result pairing impossible (blocker root cause 2).
 func TestPromptRecordsRealToolCallID(t *testing.T) {
@@ -563,7 +570,7 @@ func TestPromptRecordsRealToolCallID(t *testing.T) {
 	bus := event.NewBus()
 	s, m, _ := newTestSession(t, bus, []provider.Response{
 		{ToolCalls: []provider.ToolCall{{
-			ID: "call_9", Name: toolRead, Input: json.RawMessage(`{"file_path":"x"}`),
+			ID: realCallID, Name: toolRead, Input: json.RawMessage(`{"file_path":"x"}`),
 		}}, FinishReason: blockToolUse},
 		{FinishReason: stopEndTurn},
 	})
@@ -592,7 +599,7 @@ func TestPromptRecordsRealToolCallID(t *testing.T) {
 		t.Fatal("no tool_call line in transcript")
 	}
 
-	if callLine.ToolCallID != "call_9" {
+	if callLine.ToolCallID != realCallID {
 		t.Errorf("tool_call ToolCallID = %q, want call_9 (the REAL provider id)", callLine.ToolCallID)
 	}
 
@@ -604,7 +611,7 @@ func TestPromptRecordsRealToolCallID(t *testing.T) {
 		t.Fatal("no tool_result line in transcript")
 	}
 
-	if resultLine.ToolCallID != "call_9" {
+	if resultLine.ToolCallID != realCallID {
 		t.Errorf("tool_result ToolCallID = %q, want call_9 (pairing key)", resultLine.ToolCallID)
 	}
 }
@@ -621,6 +628,7 @@ type convergingProvider struct {
 }
 
 const convCallID = "call_conv_1"
+const realCallID = "call_9"
 
 func (c *convergingProvider) Send(
 	_ context.Context, _ *profile.Profile, _ []provider.Message,
@@ -628,7 +636,6 @@ func (c *convergingProvider) Send(
 	return provider.Response{}, nil
 }
 
-//nolint:cyclop // two-branch scenario harness
 func (c *convergingProvider) Stream(
 	_ context.Context, _ *profile.Profile, msgs []provider.Message,
 ) (<-chan provider.StreamChunk, error) {
@@ -639,8 +646,9 @@ func (c *convergingProvider) Stream(
 	c.mu.Unlock()
 
 	hasResult := false
+
 	for _, m := range msgs {
-		if m.Role == "tool" && m.ToolCallID == convCallID {
+		if m.Role == roleToolMsg && m.ToolCallID == convCallID {
 			hasResult = true
 
 			break
@@ -657,12 +665,14 @@ func (c *convergingProvider) Stream(
 				ID: convCallID, Name: toolRead, Input: json.RawMessage(`{"file_path":"counter.txt"}`),
 			}
 			ch <- provider.StreamChunk{Type: blockToolUse, ToolCall: &tc, ToolCallID: convCallID}
+
 			ch <- provider.StreamChunk{Type: stopDone, FinishReason: blockToolUse}
 
 			return
 		}
 
 		ch <- provider.StreamChunk{Type: blockText, Text: "done reading"}
+
 		ch <- provider.StreamChunk{Type: stopDone, FinishReason: stopEndTurn}
 	}()
 
@@ -712,7 +722,7 @@ func TestConverge_ModelSeesOwnToolResults(t *testing.T) {
 	second := append([]provider.Message(nil), cp.seen[1]...)
 	cp.mu.Unlock()
 
-	if calls > 3 { //nolint:mnd // convergence budget from the plan
+	if calls > 3 {
 		t.Fatalf("Stream calls = %d, want <= 3 (tool-loop exhaustion — the 08-06 finding)", calls)
 	}
 
@@ -721,12 +731,13 @@ func TestConverge_ModelSeesOwnToolResults(t *testing.T) {
 	}
 
 	var hasUse, hasResult bool
+
 	for _, mm := range second {
-		if mm.Role == "assistant" && len(mm.ToolCalls) > 0 && mm.ToolCalls[0].ID == convCallID {
+		if mm.Role == roleAssistant && len(mm.ToolCalls) > 0 && mm.ToolCalls[0].ID == convCallID {
 			hasUse = true
 		}
 
-		if mm.Role == "tool" && mm.ToolCallID == convCallID {
+		if mm.Role == roleToolMsg && mm.ToolCallID == convCallID {
 			hasResult = true
 		}
 	}

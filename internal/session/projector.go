@@ -23,12 +23,24 @@ var fileBearingTools = map[string]bool{ //nolint:gochecknoglobals // immutable t
 	"Glob": true, "Grep": true, toolBash: true,
 }
 
+// MidTurnWindowMessages bounds the within-turn accumulated window: the MOST
+// RECENT tail of the current turn's exchanges, dropping only COMPLETE exchange
+// groups (an assistant batch is never separated from its tool results —
+// pair-safety). Pinned to the captured zcode tail window: rollout records of
+// kind "tail" carry the last 64 messages (messageOffset/messageCount
+// bookkeeping, 08-07 capture).
+const MidTurnWindowMessages = 64
+
 // Projector builds the lean model-visible window (D-01) by mechanical extraction
 // from the transcript (D-02 — NO model call). It is the sole producer of the
 // []provider.Message the Shaper consumes. The window resets at each boundary
 // (SESS-04): the lean seed = system (added by the Shaper from the profile) +
 // task summary + current user message, with ZERO carry-forward of prior turn
-// messages as separate messages.
+// messages as separate messages. WITHIN a turn (08-07's two-layer model), the
+// window ACCUMULATES: the current turn's assistant tool_use batches and tool
+// results follow the lean seed so the model sees its own exchanges on the next
+// tool-loop iteration — without this, real agentic turns cannot converge (the
+// 08-06 gate finding).
 type Projector struct {
 	prof    *profile.Profile
 	manager *Manager
@@ -39,11 +51,15 @@ func NewProjector(prof *profile.Profile, m *Manager) *Projector {
 	return &Projector{prof: prof, manager: m}
 }
 
-// Project builds the lean window the model sees for the given turn. The window
-// is a small slice of user-role messages: a task-summary message (files touched
-// + last user/assistant excerpts from before the boundary) bridging the prior
-// context, plus the current user message. Prior assistant/tool turns are NOT
-// carried as separate messages (D-01 zero carry-forward).
+// Project builds the window the model sees for the given turn. The lean seed
+// is ONE user message (the task summary + the current intent); prior turns are
+// NOT carried as messages (D-01 zero carry-forward). Within the turn, the
+// current turn's exchanges accumulate after the seed (08-07): consecutive
+// tool_call lines fold into ONE assistant message with a ToolCalls batch, each
+// tool_result becomes a tool-role message (name resolved from its paired
+// tool_call), and the turn's assistant text lines render as plain assistant
+// messages — mechanically extracted from the transcript, bounded to the
+// MidTurnWindowMessages tail, pair-safe.
 func (p *Projector) Project(turnID string) ([]provider.Message, error) {
 	lines, err := p.manager.ReadAll()
 	if err != nil {
@@ -73,7 +89,7 @@ func (p *Projector) Project(turnID string) ([]provider.Message, error) {
 	summary := p.extractSummary(beforeBoundary)
 	currentIntent := p.findCurrentIntent(afterBoundary, beforeBoundary, turnID)
 
-	// The lean window is ONE user message: the task summary + the current intent.
+	// The lean seed is ONE user message: the task summary + the current intent.
 	// (The Shaper adds the system prompt separately from p.prof.System.)
 	var content string
 	if summary != "" {
@@ -84,7 +100,105 @@ func (p *Projector) Project(turnID string) ([]provider.Message, error) {
 		content = currentIntent
 	}
 
-	return []provider.Message{{Role: "user", Content: content}}, nil
+	mid := boundMidTurn(accumulateMidTurn(lines, turnID))
+
+	out := make([]provider.Message, 0, 1+len(mid))
+	out = append(out, provider.Message{Role: roleUserMsg, Content: content})
+	out = append(out, mid...)
+
+	return out, nil
+}
+
+// accumulateMidTurn folds the current turn's post-anchor lines (the later of
+// {last boundary, the turn's user_message} — D-11 within-turn semantics) into
+// the mid-turn message sequence: consecutive TypeToolCall lines become ONE
+// assistant message with a ToolCalls batch (the capture's batch form), each
+// TypeToolResult becomes a tool-role message whose ToolName is resolved from
+// the paired tool_call line, and TypeAssistantMessage becomes a plain
+// assistant text message. A tool_result whose call is not in the window (cut
+// off by a mid-turn boundary) is dropped — an orphaned tool_result would break
+// the provider's tool_use/tool_result pairing invariant.
+func accumulateMidTurn(lines []Line, turnID string) []provider.Message {
+	// The anchor is the LATER of the last boundary (any turn — D-11 reset)
+	// and the current turn's user_message (the seed already carries it).
+	anchor := 0
+
+	for i := range lines {
+		switch {
+		case lines[i].Type == TypeBoundary:
+			anchor = i + 1
+		case lines[i].Type == TypeUserMessage && lines[i].TurnID == turnID && i >= anchor:
+			anchor = i + 1
+		}
+	}
+
+	var (
+		out     []provider.Message
+		pending []provider.ToolCall
+		names   = map[string]string{} // callID -> tool name (pairing resolution)
+	)
+
+	flushBatch := func() {
+		if len(pending) > 0 {
+			out = append(out, provider.Message{Role: roleAssistant, ToolCalls: pending})
+			pending = nil
+		}
+	}
+
+	for i := anchor; i < len(lines); i++ {
+		l := &lines[i]
+		if l.TurnID != turnID {
+			continue // only the CURRENT turn's lines fold (subagent turns have their own)
+		}
+
+		switch l.Type {
+		case TypeToolCall:
+			pending = append(pending, provider.ToolCall{ID: l.ToolCallID, Name: l.Name, Input: l.Input})
+			names[l.ToolCallID] = l.Name
+		case TypeToolResult:
+			flushBatch() // the batch is closed once its results start arriving
+
+			name, paired := names[l.ToolCallID]
+			if !paired {
+				continue // orphaned result — its batch is outside the window
+			}
+
+			out = append(out, provider.Message{
+				Role: roleToolMsg, ToolCallID: l.ToolCallID, ToolName: name,
+				Content: string(l.Output), IsError: l.IsError,
+			})
+		case TypeAssistantMessage:
+			flushBatch()
+
+			out = append(out, provider.Message{Role: roleAssistant, Content: l.Text})
+		}
+	}
+
+	flushBatch()
+
+	return out
+}
+
+// boundMidTurn keeps the MOST RECENT MidTurnWindowMessages messages, dropping
+// only COMPLETE exchange groups: the cut advances past tool-role messages so
+// the window never STARTS with an orphaned tool result (its assistant batch
+// would be missing — pair-safety). The lean seed is applied by the caller and
+// is never dropped.
+func boundMidTurn(mid []provider.Message) []provider.Message {
+	if len(mid) <= MidTurnWindowMessages {
+		return mid
+	}
+
+	cut := len(mid) - MidTurnWindowMessages
+	for cut < len(mid) && mid[cut].Role == roleToolMsg {
+		cut++ // advance to the next group head (assistant message)
+	}
+
+	if cut >= len(mid) {
+		return nil
+	}
+
+	return mid[cut:]
 }
 
 // extractSummary builds the bridge summary from the lines before the boundary:

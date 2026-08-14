@@ -86,7 +86,7 @@ func (s *Session) nextTurnID() string { //nolint:funcorder // ordering groups re
 // the turn boundary and recorded as an investigate-and-fix-ready error line
 // (PROJECT.md, D-13 for the parent).
 //
-//nolint:gocognit,cyclop,funlen,nonamedreturns // domain complexity; err used by defer
+//nolint:gocognit,gocyclo,cyclop,funlen,nonamedreturns // domain complexity; err used by defer
 func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop string, err error) {
 	turnID := s.nextTurnID()
 	// Recover at the goroutine/turn boundary (D-13 parent-side): a panic becomes
@@ -165,14 +165,19 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 		if len(resp.ToolCalls) > 0 { //nolint:nestif // tool-call processing is inherently nested
 			// Record every model-selected tool_call first (the audit log shows
 			// what the model asked for, independent of how it was executed).
+			// The REAL provider id (T1) is the pairing key for tool_result —
+			// recording the tool NAME here was the 08-06 blocker's root cause 2.
 			for _, tc := range resp.ToolCalls {
-				_ = s.Manager.AppendToolCall(turnID, tc.Name, tc.Name, tc.Input)
+				_ = s.Manager.AppendToolCall(turnID, toolCallIDOf(tc), tc.Name, tc.Input)
 			}
 			// Subagent dispatch (Task/Agent) runs inline + is excluded from the
 			// batch — it is a nested turn, not a catalog tool execution.
 			var batchCalls []provider.ToolCall
 
+			batchIDs := make([]string, 0, len(resp.ToolCalls))
+
 			for _, tc := range resp.ToolCalls {
+				callID := toolCallIDOf(tc)
 				if isSubagentTool(tc.Name) {
 					result, derr := s.DispatchSubagent(ctx, turnID, tc.Name, extractSubagentPrompt(tc.Input), nil)
 					if derr != nil {
@@ -181,18 +186,19 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 							errJSON = []byte(`{"error":"marshal error failed"}`)
 						}
 
-						_ = s.Manager.AppendToolResult(turnID, tc.Name, errJSON, true)
+						_ = s.Manager.AppendToolResult(turnID, callID, errJSON, true)
 					} else {
-						_ = s.Manager.AppendToolResult(turnID, tc.Name, json.RawMessage(`"`+result+`"`), false)
+						_ = s.Manager.AppendToolResult(turnID, callID, json.RawMessage(`"`+result+`"`), false)
 					}
 					// SESS-02/03 boundary (subagent tools are read-only; only
 					// a config-added entry would fire).
-					_ = s.MaybeAppendBoundary(tc.Name, tc.Name, turnID)
+					_ = s.MaybeAppendBoundary(tc.Name, callID, turnID)
 
 					continue
 				}
 
 				batchCalls = append(batchCalls, tc)
+				batchIDs = append(batchIDs, callID)
 			}
 			// Dispatch the remaining (non-subagent) calls in one batch. Results
 			// are in arrival order so the transcript stays deterministic.
@@ -205,10 +211,17 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 			}
 
 			for _, res := range results {
-				_ = s.Manager.AppendToolResult(turnID, res.Name, res.Output, res.IsError)
+				// Key the result by the SAME call id the tool_call line
+				// recorded (pairing is consistent end-to-end, 08-07).
+				callID := res.Name
+				if res.CallIndex >= 0 && res.CallIndex < len(batchIDs) {
+					callID = batchIDs[res.CallIndex]
+				}
+
+				_ = s.Manager.AppendToolResult(turnID, callID, res.Output, res.IsError)
 				// SESS-02/03: a mutating/config-added tool is a boundary. The
 				// next projection resets the lean window.
-				_ = s.MaybeAppendBoundary(res.Name, res.Name, turnID)
+				_ = s.MaybeAppendBoundary(res.Name, callID, turnID)
 			}
 
 			continue // loop to project again with the results
@@ -223,6 +236,18 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 	s.appendError(turnID, "session", errToolLoopExceededMax, true)
 
 	return "", errToolLoopExceeded
+}
+
+// toolCallIDOf returns the tool call's REAL provider id (T1's seam carry),
+// falling back to the tool name when the call carries no id (legacy fake
+// providers and parity arms) so tool_call/tool_result pairing stays consistent
+// end-to-end either way.
+func toolCallIDOf(tc provider.ToolCall) string {
+	if tc.ID != "" {
+		return tc.ID
+	}
+
+	return tc.Name
 }
 
 // SetToolExecutor injects the real tool executor (Phase-4 TOOL-04/05 — a
