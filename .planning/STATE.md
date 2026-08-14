@@ -131,7 +131,7 @@ Per the critical rules + PROJECT.md investigate-and-fix-ready principle: silentl
 | Phase 04 P06 (learning) | — | 4 tasks | 9 files |
 | Phase 04 P07 (cancel+verify) | — | 3 tasks | 4 files |
 | Phase 07 P01 (config+cred+factory) | 10m | 3 tasks | 8 files |
-| Phase 07 P02 (factory wiring) | 54m | 3 tasks | 10 files |
+| Phase 07 P02 (factory wiring) | 16m | 3 tasks | 10 files |
 
 Phase-4 totals: 7 plans, 23 tasks, 5 new packages (engine/hookdag/openspec/learning/toolexec), 2 expanded packages (toolcat/session), 1 CLI subcommand (`ass-guard learning`), 1 wiring point (cmd/ass-guard/acp_serve.go). All 9 Phase-4 packages green under `-race`.
 

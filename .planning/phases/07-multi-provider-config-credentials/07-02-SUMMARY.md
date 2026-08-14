@@ -76,7 +76,7 @@ coverage:
         status: pass
 
 metrics:
-  duration: 54m
+  duration: 16m
   completed: 2026-08-14
   commits: 5
 status: complete
