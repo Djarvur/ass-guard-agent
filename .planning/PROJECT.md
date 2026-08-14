@@ -73,7 +73,7 @@ Outgoing requests to the model provider must be structurally indistinguishable f
 - GSD / spec-kit / BMad toolkit adapters in v1 — OpenSpec only; interface accommodates them, implementation deferred
 - Perplexity or other paid search backends — configurable backend design replaces the hardcode, but no specific paid integrations are committed
 - Byte-for-byte request identity with the mimicked agent — "structurally indistinguishable to the model" is the bar, not binary diff equality (cosmetic field ordering/optional fields allowed)
-- A standalone CLI surface — ACP (IDE) and Telegram are the only interfaces; no terminal REPL to maintain
+- A standalone terminal REPL — ACP (IDE) and Telegram are the only interfaces; `acp serve` and `telegram` are launch modes for those two interfaces, not CLI surfaces (amended at Phase-10 discussion 2026-08-14, resolving the flagged tension)
 - A confirmation/permission tier for tool execution — tools run ungated; the pattern/hook table + manual cancellation is the safety mechanism (inherited from predecessor)
 - Porting code from `sdd-acp-agent` — fresh build; predecessor is reference-only
 - opencode as a mimicry target — explicitly excluded (operator, 2026-08-14); opencode appears in research as landscape context only
