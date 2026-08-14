@@ -10,6 +10,17 @@ Outgoing requests to the model provider must be structurally indistinguishable f
 
 *Validated v1.0:* the Phase-1 A/B parity test proved the thesis — ass-guard's shaped requests (3 byte-identical system blocks, 103-tool catalog, thinking/tool_choice/stream fields) produce statistically indistinguishable tool-call sequences from live zcode.
 
+## Current Milestone: v1.1 Kickoff & Peers
+
+**Goal:** Make the hands-off OpenSpec promise real end-to-end — kickoff via agent commands (verified against the real openspec binary), v1.0 operational gaps closed (audit log, parity re-capture), and two new peer surfaces added (Telegram, deepseek-harness profile).
+
+**Target features (strict priority order — phases chain 1→4→3→5→2, adjacent small items may merge):**
+- Slash-command kickoff: ecosys wired into session/ACP, `/namespace:name` expansion, OpenSpec adapter reconciled to real openspec v1.5.0, real-binary gate run, 11 deferred UAT checks completed
+- LOG-01 completion: audit log on the `acp serve` path
+- zcode parity re-capture (operator-gated): unblocks the Phase-1 stability test
+- Telegram peer: full SDD-scenario driving, text + voice STT, context-first shutdown beside ACP stdio
+- deepseek-harness profile #2: mimic `deepseek-ai/deepseek-harness` for DeepSeek-model turns
+
 ## Business Context
 
 - **Customer**: SDD-practicing engineering teams (and the author's own SDD workflow as the first instance)
@@ -32,22 +43,29 @@ Outgoing requests to the model provider must be structurally indistinguishable f
 
 ### Active
 
-**Close the OpenSpec kickoff surface (from v1.0 UAT gap, 2026-08-14)**
+**v1.1 — Slash-command kickoff (priority 1)**
 
 - [ ] Wire `internal/ecosys` command/skill discovery into the session/ACP layer: expose loaded slash-commands and expand `/namespace:name` invocations (e.g. `/opsx:explore`) into the command's markdown prompt before the provider turn
 - [ ] Reconcile the OpenSpec adapter command set with the real `openspec` v1.5.0 binary surface (`list/view/change/spec/archive/doctor/context`, not `show/validate/apply/implement`); the toolkit's workflow is driven by agent-executed command files (`openspec init --tools claude` installs `.claude/commands/opsx/*.md` + skills), with the binary as supporting tooling
-- [ ] Run the operator-gated real-binary test (`ASSGUARD_OPENSPEC_BIN=1`) as a fix gate; then complete the 11 deferred Phase-4 UAT checks
+- [ ] Run the operator-gated real-binary test (`ASSGUARD_OPENSPEC_BIN=1`) as a phase gate; complete the 11 deferred Phase-4 UAT checks
 
-**Mimicry follow-ups**
+**v1.1 — Operational gaps (priority 2-3, adjacent — may share a phase)**
 
-- [ ] Re-capture a divergence-prone zcode session to unblock the parity stability test (Phase-1 data-source carry-forward)
-- [ ] Profile #2 candidate: `deepseek-ai/deepseek-harness` ("dsh" — DeepSeek's official agent harness) for DeepSeek-model turns; ground-truth capture from source + its own logs (operator direction, 2026-08-14)
-- [ ] Claude-Code slash-commands/plugins must not just load but *work unchanged* end-to-end in ass-guard (ECOS-04 completion — invocation surface)
+- [ ] LOG-01 completion: `--audit-log` written on the `acp serve` path (tracer wired via main.go only today)
+- [ ] zcode parity re-capture (operator-gated: `ZAI_API_KEY` export + capture session): unblocks the Phase-1 within-session stability test
 
-**Remaining v1 vision (unaddressed)**
+**v1.1 — Telegram peer (priority 4)**
 
-- [ ] Telegram peer interface: full SDD-scenario driving (text + voice), voice transcribed via configurable STT backend (v2)
-- [ ] LOG-01 completion: audit log written on the `acp serve` path
+- [ ] Telegram is a full peer interface: can drive an entire SDD scenario; voice messages transcribed to text as ordinary user input via a configurable STT backend (OpenAI Whisper API default; whisper.cpp subprocess and Groq accommodated by config)
+- [ ] Telegram frontend runs as a goroutine in the same process as ACP stdio, sharing the core engine; context-first shutdown drains the long-poll loop and in-flight Telegram-driven turns (go-telegram/bot, verified stdout-silent in Phase 0)
+
+**v1.1 — deepseek-harness profile #2 (priority 5)**
+
+- [ ] Profile #2: mimic `deepseek-ai/deepseek-harness` ("dsh" — DeepSeek's official agent harness) for DeepSeek-model turns; ground-truth capture from source + its own logs; rides the existing N-profile architecture (no zcode-specific paths)
+
+**Future (post-v1.1)**
+
+- [ ] ECOS-04 end-to-end beyond commands: plugins and skills not just loaded but *working unchanged* in every interaction mode
 
 ### Out of Scope
 
@@ -130,4 +148,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-14 after v1.0 milestone*
+*Last updated: 2026-08-14 — v1.1 Kickoff & Peers started*
