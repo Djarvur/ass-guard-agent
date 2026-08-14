@@ -219,7 +219,7 @@ func TestProviderFactory_WireRoundTrip(t *testing.T) {
 		gotHost = r.Host
 		gotKey = r.Header.Get("X-Api-Key")
 
-		w.Header().Set("content-type", "text/event-stream")
+		w.Header().Set("Content-Type", "text/event-stream")
 		flusher, _ := w.(http.Flusher)
 
 		for _, frame := range []string{
