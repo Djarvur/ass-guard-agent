@@ -27,7 +27,25 @@ case "$mode" in
   version|--version)
     printf 'openspec stub 0.0.0\n'
     ;;
+  env)
+    # print OPEN_SPEC_INTERACTIVE from the environment (T3 Test 7)
+    printf 'OPEN_SPEC_INTERACTIVE=%s\n' "${OPEN_SPEC_INTERACTIVE:-unset}"
+    ;;
+  stdin)
+    # observe stdin: immediate EOF prints "stdin=eof"; any data prints "stdin=data"
+    if IFS= read -r line; then
+      printf 'stdin=data:%s\n' "$line"
+    else
+      printf 'stdin=eof\n'
+    fi
+    ;;
   *)
+    # default: env-controlled outcome (T2/T3) — print argv to stdout, then
+    # honor ASSGUARD_STUB_EXIT (non-zero exits print ASSGUARD_STUB_STDERR to stderr)
     printf 'openspec stub invoked: %s\n' "$*"
+    if [ -n "${ASSGUARD_STUB_EXIT:-}" ]; then
+      [ -z "${ASSGUARD_STUB_STDERR:-}" ] || printf '%s\n' "$ASSGUARD_STUB_STDERR" 1>&2
+      exit "$ASSGUARD_STUB_EXIT"
+    fi
     ;;
 esac
