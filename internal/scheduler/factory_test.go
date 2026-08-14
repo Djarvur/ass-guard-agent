@@ -21,6 +21,7 @@ import (
 const (
 	testZAIEnv     = "ZAI_API_KEY"
 	testNoKeyEnv   = "NOKEY_API_KEY"
+	testNoKeySlug  = "nokey"
 	testZaiSlug    = "zai"
 	testEnvSecret  = "env-secret"
 	testFlagSecret = "flag-secret"
@@ -161,13 +162,13 @@ func TestProviderFactory_NoCredentialLazy(t *testing.T) {
 
 	cfg := &Config{
 		Providers: map[string]ProviderConfig{
-			"nokey": {Shape: providerAnthropic},
+			testNoKeySlug: {Shape: providerAnthropic},
 		},
 	}
 
 	f := NewProviderFactory(cfg, "", nil)
 
-	p, err := f.Build("nokey", nil)
+	p, err := f.Build(testNoKeySlug, nil)
 	require.NoError(t, err, "Build must not fail eagerly for an uncredentialed provider")
 	require.NotNil(t, p)
 
@@ -177,7 +178,7 @@ func TestProviderFactory_NoCredentialLazy(t *testing.T) {
 	var perr *provider.ProviderError
 	require.ErrorAs(t, err, &perr)
 	require.Equal(t, provider.KindStructural, perr.Kind)
-	require.Equal(t, "nokey", perr.Provider)
+	require.Equal(t, testNoKeySlug, perr.Provider)
 	require.Contains(t, perr.Reason, testNoKeyEnv, "reason must name the env var to set")
 }
 
@@ -189,8 +190,8 @@ func TestProviderFactory_WarnUncredentialed(t *testing.T) {
 
 	cfg := &Config{
 		Providers: map[string]ProviderConfig{
-			"haskey": {Shape: providerAnthropic, APIKey: testLitKey},
-			"nokey":  {Shape: providerOpenAI},
+			"haskey":      {Shape: providerAnthropic, APIKey: testLitKey},
+			testNoKeySlug: {Shape: providerOpenAI},
 		},
 	}
 
@@ -200,7 +201,7 @@ func TestProviderFactory_WarnUncredentialed(t *testing.T) {
 	f.WarnUncredentialed(&buf)
 
 	out := buf.String()
-	require.Contains(t, out, "nokey", "warning must name the uncredentialed provider")
+	require.Contains(t, out, testNoKeySlug, "warning must name the uncredentialed provider")
 	require.Contains(t, out, testNoKeyEnv, "warning must name the env var")
 	require.NotContains(t, out, "haskey", "credentialed provider must not warn")
 	require.NotContains(t, out, testLitKey, "warning must never print the key")

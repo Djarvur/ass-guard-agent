@@ -127,14 +127,14 @@ func TestValidateWarns_NoCredentialField(t *testing.T) {
 
 	cfg := &Config{
 		Providers: map[string]ProviderConfig{
-			"nokey": {Shape: providerAnthropic},
+			testNoKeySlug: {Shape: providerAnthropic},
 		},
 	}
 
 	warnings, err := ValidateWithWarnings(cfg)
 	require.NoError(t, err, "missing credential fields must warn, not reject")
 	require.NotEmpty(t, warnings)
-	require.Contains(t, strings.Join(warnings, " "), "nokey")
+	require.Contains(t, strings.Join(warnings, " "), testNoKeySlug)
 	require.Contains(t, strings.Join(warnings, " "), "api_key")
 }
 

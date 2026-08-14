@@ -80,9 +80,15 @@ func Load(paths ...string) (*Config, error) {
 
 	applyDefaults(&cfg)
 
-	err = Validate(&cfg)
+	warnings, err := ValidateWithWarnings(&cfg)
 	if err != nil {
 		return nil, err
+	}
+
+	// Soft warnings (D-04) never reject the config; they go to stderr so the
+	// operator sees them at startup (stdout is ACP-only transport discipline).
+	for _, w := range warnings {
+		fmt.Fprintln(os.Stderr, "scheduling config:", w)
 	}
 
 	return &cfg, nil
@@ -238,10 +244,30 @@ func (e *ConfigError) Error() string {
 //   - every provider.shape is anthropic|openai;
 //   - cost_ceiling.degrade_to references a declared tier.
 //
+// Providers declaring neither api_key nor api_key_env are NOT violations —
+// they produce a soft WARN surfaced via ValidateWithWarnings (D-04: warn,
+// don't reject; the uncredentialed provider fails lazily at first use, D-07).
 // Overlapping time-windows are a soft WARN (RESEARCH §7.3) and are NOT rejected
 // here — first-match-in-config-order is deterministic.
-func Validate(cfg *Config) error { //nolint:gocognit,cyclop,gocyclo,funlen // domain complexity is inherent
-	var v []string
+func Validate(cfg *Config) error {
+	// Validate's contract is violations-only: drop the soft warnings.
+	_, err := ValidateWithWarnings(cfg)
+
+	return err
+}
+
+// ValidateWithWarnings validates like Validate and additionally returns the
+// collected soft warnings (D-04): non-fatal findings the caller should surface
+// to the operator (stderr) while still serving the config. Validate keeps its
+// original signature for existing callers, dropping the warnings; Load uses
+// this variant and prints each warning to stderr.
+//
+//nolint:gocognit,cyclop,gocyclo,funlen // domain complexity is inherent
+func ValidateWithWarnings(cfg *Config) ([]string, error) {
+	var (
+		v        []string
+		warnings []string
+	)
 
 	// checkBinding appends violations for dangling slugs + capability mismatch
 	// for one TierBinding (used by tiers, windows, projects).
@@ -304,7 +330,7 @@ func Validate(cfg *Config) error { //nolint:gocognit,cyclop,gocyclo,funlen // do
 		}
 	}
 
-	// model.provider exists + provider.shape valid.
+	// model.provider exists + provider.shape valid + credential-field WARN.
 	for _, slug := range sortedKeys(cfg.Models) {
 		m := cfg.Models[slug]
 		if _, ok := cfg.Providers[m.Provider]; !ok {
@@ -318,6 +344,15 @@ func Validate(cfg *Config) error { //nolint:gocognit,cyclop,gocyclo,funlen // do
 			v = append(v, fmt.Sprintf(
 				"provider %q: unknown shape %q (want \"anthropic\" or \"openai\")", slug, p.Shape))
 		}
+
+		// D-04: a provider with no credential field is a WARN, not a rejection —
+		// it may be a fallback the operator has not keyed yet (D-07 lazy error).
+		// Load-time cannot know runtime env state, so api_key_env presence is
+		// enough to stay silent; the startup warn (Plan 07-02) checks resolvability.
+		if p.APIKey == "" && p.APIKeyEnv == "" {
+			warnings = append(warnings, fmt.Sprintf(
+				"provider %q: no api_key or api_key_env declared — set api_key in scheduling.yaml", slug))
+		}
 	}
 
 	// cost_ceiling.degrade_to references a declared tier (only when set).
@@ -330,10 +365,10 @@ func Validate(cfg *Config) error { //nolint:gocognit,cyclop,gocyclo,funlen // do
 	}
 
 	if len(v) > 0 {
-		return &ConfigError{Violations: v}
+		return warnings, &ConfigError{Violations: v}
 	}
 
-	return nil
+	return warnings, nil
 }
 
 func sortedKeys[V any](m map[string]V) []string {
