@@ -63,11 +63,32 @@
 
 ## Traceability
 
-Which phases cover which requirements. Filled during roadmap creation.
+Which phases cover which requirements. Filled during roadmap creation (2026-08-14 — 21/21 mapped, no orphans).
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
+| CMD-01 | Phase 8 | Pending |
+| CMD-02 | Phase 8 | Pending |
+| CMD-03 | Phase 8 | Pending |
+| CMD-04 | Phase 8 | Pending |
+| CMD-05 | Phase 8 | Pending |
+| AUD-01 | Phase 9 | Pending |
+| AUD-02 | Phase 9 | Pending |
+| AUD-03 | Phase 9 | Pending |
+| AUD-04 | Phase 9 | Pending |
+| AUD-05 | Phase 9 | Pending |
+| TG-01 | Phase 10 | Pending |
+| TG-02 | Phase 10 | Pending |
+| TG-03 | Phase 10 | Pending |
+| TG-04 | Phase 10 | Pending |
+| TG-05 | Phase 10 | Pending |
+| TG-06 | Phase 10 | Pending |
+| DSH-01 | Phase 11 | Pending |
+| DSH-02 | Phase 11 | Pending |
+| DSH-03 | Phase 11 | Pending |
+| DSH-04 | Phase 11 | Pending |
+| DSH-05 | Phase 11 | Pending |
 
 ---
 *Requirements defined: 2026-08-14*
-*Last updated: 2026-08-14 — v1.1 Kickoff & Peers scoping (21 REQ-IDs across 4 categories)*
+*Last updated: 2026-08-14 — v1.1 roadmap created: Phases 8–11 mapped (CMD→8, AUD→9, TG→10, DSH→11)*
