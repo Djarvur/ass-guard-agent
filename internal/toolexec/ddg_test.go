@@ -196,3 +196,87 @@ func TestDDGQueryEncoding(t *testing.T) {
 
 // urlEncodedQuery is "go routines & context (tutorial)" after QueryEscape.
 const urlEncodedQuery = "go+routines+%26+context+%28tutorial%29"
+
+// TestDefaultSelection (Test 7) verifies the zero-config default: an
+// empty/unset backend name resolves to the DDG default; an explicit "http"
+// override still selects HTTPBackend.
+func TestDefaultSelection(t *testing.T) { //nolint:paralleltest // asserts package helpers
+	be, err := selectBackend("", "websearch")
+	require.NoError(t, err)
+	assert.Equal(t, "ddg", be.Name(), "empty name must resolve to the DDG default")
+
+	be, err = selectBackend("ddg", "websearch")
+	require.NoError(t, err)
+	assert.Equal(t, "ddg", be.Name(), "explicit ddg name selects the default backend")
+
+	be, err = selectBackend("http", "websearch")
+	require.NoError(t, err)
+	assert.Equal(t, "http", be.Name(), "explicit http override preserved")
+
+	got, err := BackendsFromConfig(map[string]string{toolWebsearchCfg: ""})
+	require.NoError(t, err)
+	assert.Equal(t, "ddg", got["WebSearch"].Name(), "empty config value resolves to the DDG default")
+}
+
+// toolWebsearchCfg is the config-map key for WebSearch ("websearch").
+const toolWebsearchCfg = "websearch"
+
+// TestRealExecutorFallbackDefault (Test 8) verifies the zero-config fix: a
+// RealExecutor with nil Backends executing WebSearch hits the injected default
+// backend (DDG shape), while a configured backend still wins.
+func TestRealExecutorFallbackDefault(t *testing.T) { //nolint:paralleltest // swaps package default seam
+	prev := defaultWebBackend
+	t.Cleanup(func() { defaultWebBackend = prev })
+
+	defaultWebBackend = fixtureBackend(t, loadFixture(t, "ddg-results.html"))
+
+	// Nil Backends: the fallback answers (no more "no implementation yet").
+	re := &RealExecutor{}
+	out, err := re.Execute(context.Background(), "WebSearch", json.RawMessage(`{"query":"mimicry"}`))
+	require.NoError(t, err)
+
+	var results []map[string]any
+	require.NoError(t, json.Unmarshal(out, &results))
+	assert.NotEmpty(t, results, "zero-config WebSearch must return DDG-shaped results")
+
+	// Configured backend wins over the default (D-07 override preserved).
+	fake := &fakeBackend{searchOut: json.RawMessage(`[{"title":"fake","url":"https://fake","snippet":"s"}]`)}
+	re = &RealExecutor{Backends: map[string]Backend{"WebSearch": fake}}
+
+	out, err = re.Execute(context.Background(), "WebSearch", json.RawMessage(`{"query":"mimicry"}`))
+	require.NoError(t, err)
+	assert.Contains(t, string(out), "fake", "configured backend must beat the default")
+	assert.True(t, fake.searchCalled, "configured backend must be the one called")
+}
+
+// fakeBackend records calls for override assertions.
+type fakeBackend struct {
+	searchOut    json.RawMessage
+	searchCalled bool
+	fetchCalled  bool
+}
+
+func (f *fakeBackend) Name() string { return "fake" }
+
+func (f *fakeBackend) Search(_ context.Context, _ string) (json.RawMessage, error) {
+	f.searchCalled = true
+
+	return f.searchOut, nil
+}
+
+func (f *fakeBackend) Fetch(_ context.Context, _ string) (json.RawMessage, error) {
+	f.fetchCalled = true
+
+	return f.searchOut, nil
+}
+
+// TestUnknownBackendStillConfigError (Test 9) verifies loud misconfiguration
+// is preserved: an unknown backend name yields the structured ConfigError.
+func TestUnknownBackendStillConfigError(t *testing.T) {
+	_, err := BackendsFromConfig(map[string]string{toolWebsearchCfg: "bogus"})
+	require.Error(t, err)
+
+	var cfgErr *ConfigError
+	require.ErrorAs(t, err, &cfgErr)
+	assert.NotEmpty(t, cfgErr.Violations)
+}
