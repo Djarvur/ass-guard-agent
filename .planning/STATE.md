@@ -17,9 +17,9 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-08-09)
-**Core value:** Outgoing requests to the model provider must be structurally indistinguishable from the mimicked agent's (zcode first)
-**Current focus:** Milestone complete
+See: .planning/PROJECT.md (updated 2026-08-14)
+**Core value:** Outgoing requests to the model provider must be structurally indistinguishable from the mimicked agent's (zcode first) — *validated v1.0 (Phase-1 A/B parity)*
+**Current focus:** Planning next milestone (scoping inputs in Operator Next Steps)
 
 ## Current Phase
 
