@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-08-13T22:15:38.617Z"
+last_updated: "2026-08-14T10:44:00.000Z"
 progress:
   total_phases: 8
   completed_phases: 7
-  total_plans: 36
-  completed_plans: 34
-  percent: 88
+  total_plans: 37
+  completed_plans: 36
+  percent: 97
 ---
 
 # State: ass-guard-agent (working name)
@@ -18,14 +18,14 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-08-09)
 **Core value:** Outgoing requests to the model provider must be structurally indistinguishable from the mimicked agent's (zcode first)
-**Current focus:** Phase 6 COMPLETE — distribution + polish (go:embed zero-config defaults, goreleaser 4-target static build, canonical ACP registry agent.json). v1.0 milestone is SHIP-READY: full `mise ci` gate green (vet + golangci-lint v2 all-linters 0 issues + CGO_ENABLED=0 build + go test -race, all 24 packages).
+**Current focus:** Phase 07 — multi-provider-config-credentials
 
 ## Current Phase
 
-**Phase:** 6
-**Status:** Ready to execute
-**Next action:** v1.0 milestone ready to ship. Suggested: `/gsd:complete-milestone` + `/gsd:verify-work 06`. The full test suite passes under -race (the earlier Phase-1 data-source blocker `internal/profile.TestStability_WithinSessionExtractionSource` now PASSES — the rollout session is available again).
-**Last session:** 2026-08-13T09:15:00.000Z
+**Phase:** 7
+**Status:** Executing Phase 07 — 07-01 COMPLETE (credential schema + resolver + factory); 07-02 remaining
+**Next action:** Execute 07-02-PLAN.md — wire the ProviderFactory into acp serve/tracer/parity, D-07 startup warnings + 0600 perm warning, zero-config/zero-env proofs, traceability.
+**Last session:** 2026-08-14T10:44:00.000Z
 
 ## Phase Status
 
@@ -41,6 +41,7 @@ See: .planning/PROJECT.md (updated 2026-08-09)
 
 ## Decisions Log
 
+- **Plan 07-01 (2026-08-14):** Phase 7 Plan 1 COMPLETE (3/3 TDD tasks, 8 commits, tracer slice). PCFG-01..04 core + PROV-01 completed: `ProviderConfig` gains `api_key`/`api_key_env`; `ResolveCredential` (flag > env > config with `${VAR}` expansion, no-log); `ProviderFactory.Build` constructs the correct anthropic/openai adapter per declared provider (wire-proven: X-Api-Key == resolved key, Host == configured base_url); uncredentialed providers fail lazily via `noCredentialProvider` → typed `KindStructural` error (D-07); embedded default + seed both carry `api_key_env: ZAI_API_KEY` (drift guard green); `ValidateWithWarnings` warns-not-rejects on credential-less providers (D-04) while D-10 shape/ref rejection is preserved. Key decision recorded: credentials resolve LAZILY at factory-construction time, never at load (D-02 vs D-06/D-07 reconciliation — a load-fatal on unset `$ZAI_API_KEY` would break zero-config). PCFG-01..04 added to REQUIREMENTS.md + traceability (D-09 contract the planner had not materialized). `mise ci` gate green (vet + lint 0 issues + build + test -race all packages). Next: 07-02 (factory wiring + startup warnings + zero-config proofs).
 - **Phase 7 added (2026-08-13):** New phase "Multi-Provider Config & Credentials" added to v1.0 (`07-multi-provider-config-credentials`). Rationale: live testing (this session) confirmed the mimicry path works end-to-end with a real `ZAI_API_KEY`, but surfaced that v1's multi-provider promise is incomplete — `internal/scheduler/defaults/scheduling.yaml` declares a `providers`/`models`/`tiers` schema but (a) no `api_key` field, (b) only 1 provider (Z.ai anthropic) + 1 model (glm-5.2) wired, (c) provider keys read env-only (`$ZAI_API_KEY`) so editor-spawned processes (Zed → `ass-guard acp serve`) can't authenticate. PROV-01 ("any compatible provider via configurable base URL") + SCHED-02 ("heavy=glm-5.2, minimax-m3 in peak") are v1 REQ-IDs that presume multi-provider; Phase 7 closes that gap. Depends on Phase 3 (scheduler) + Phase 6 (`.ass-guard/` + embed + redactor). REQ-IDs PCFG-01.. assigned in discuss. Milestone status flipped completed→in_progress (outstanding phase). Next: `/gsd-discuss-phase 7`.
 - **Phase 6 (2026-08-13):** Phase 6 COMPLETE (2/2 plans, autonomous execution). All 3 REQ-IDs (DIST-01/02/03) implemented + tested. 06-01 (embed + first-run, D-01/D-04): `internal/defaults` embeds the seed tree via go:embed (sanitized zcode profile + openspec.toml + scheduling.yaml) — `sync.sh` is the T-06-01 (HIGH) build-operator leak barrier (`/Users/nil/...` → `<working_directory>` / tilde-relative; coverage.yaml excluded). `internal/firstrun.Ensure` is the non-clobbering first-run (D-07 self-gitignore, byte-identical to internal/session). `acp serve` RunE seeds `.ass-guard/` + resolves profilesDir to `.ass-guard/profiles` (zero-config). 06-02 (goreleaser + agent.json, D-02/D-03): `internal/version` + `--version` flag; `.goreleaser.yml` 4 targets CGO_ENABLED=0; canonical `agent.json` (cmd/args, NOT command/command_args/cwd). Three Tier-A corrections: (1) ldflags -X target MUST be capital-D `github.com/Djarvur/...` (lowercase silently fails — verified); (2) D-03 field names corrected to canonical ACP schema (agent.schema.json fetched 2026-08-09); (3) goreleaser v2.17 `formats`/`files` (plan's `format`/`extra_files` deprecated). Two `-trimpath` bugs found + fixed at the gate (mise sets GOFLAGS=-trimpath): the drift guard + the E2E binary build used `runtime.Caller` (returns module-relative paths under -trimpath) — replaced with embed-to-embed comparison (`scheduler.EmbeddedDefaultScheduling()` accessor) and a go build by import path respectively. Catalog-drift deviation: tools.json carries 103 tools (PROF-04, STATE.md blocker), not the plans' stale 77 — seed mirrors source byte-for-byte. Phase gate GREEN: `mise ci` exits 0 (vet + golangci-lint v2 all-linters 0 issues + CGO_ENABLED=0 build + go test -race, 24 packages). Snapshot build proof: linux_amd64 statically linked, version injection confirmed, zero-config first-run works in the goreleaser binary (embed survived cross-compile). v1.0 milestone is SHIP-READY.
 - **Phase 4 (2026-08-12):** Phase 4 COMPLETE (7/7 plans, 4 waves, autonomous execution). All 19 REQ-IDs (ENG-01..05, HOOK-01..05, LRN-01..04, OPEN-01..03, TOOL-04/05) implemented + tested under `-race`. Wave structure: W1 = 04-01 (engine decision core + pure Decide + Observe wrapper with graceful degradation + re-fire budget + cancel-drain) + 04-03 (hookdag: declarative YAML config + ≤300 LOC executor + provenance loop prevention + 4 step kinds) + 04-04 (toolexec: DispatchBatch concurrent-reads/serialized-mutations + swappable Backend + RealExecutor + toolcat.Register + session.SetToolExecutor loop replacement); W2 = 04-02 (openspec: TOML config + subprocess Adapter + RegisterTools + OpenSpecPatternTable bridge, real-openspec gated behind ASSGUARD_OPENSPEC_BIN=1) + 04-06 (learning: single-writer yaml Store + ProposeHooks + `ass-guard learning list/revert` CLI); W3 = 04-05 (integration: acp_serve engine wiring + ActionDispatcher hook→hookdag/ask→store + engineTurnRunnerAdapter + end-to-end zero-continue); W4 = 04-07 (cancel-drain ACP-level proof + consolidated 5-criteria e2e + 04-VERIFICATION-PREP.md). Key invariants honored: D-01 post-turn observer (never in the turn critical path), D-03 structural safety (unmatched ⇒ nothing — proven by testing/quick + end-to-end), D-04 graceful degradation (engine panic recovered, original stop returned), D-07 hand-rolled DAG executor (executor.go = 187 LOC, ≤300 budget), D-14 TOML isolated to internal/openspec (yaml.v3 for hookdag + learning), D-22 swappable backends (no firecrawl dep — stub proves the seam). One deviation recorded inline: case-insensitive import-path casing (`Djarvur` per go.mod) — followed the canonical module path. Phase gate GREEN (build + vet clean; internal/engine, hookdag, openspec, learning, toolexec, toolcat, event, session, cmd/ass-guard all `-race` green; 0 TODO/FIXME in Phase-4 production files). The single `go test ./... -race` failure is the PRE-EXISTING Phase-1 data-source blocker (internal/profile TestStability_WithinSessionExtractionSource — globs for the absent zcode rollout session eea3dc48, documented above); no Phase-4 file was touched in internal/profile. Commits: 7943c62 (W1), 994542f (W2), edaeaf4 (W3), 5b5331c (W4).
@@ -127,11 +128,13 @@ Per the critical rules + PROJECT.md investigate-and-fix-ready principle: silentl
 | Phase 04 P05 (integration) | — | 3 tasks | 5 files |
 | Phase 04 P06 (learning) | — | 4 tasks | 9 files |
 | Phase 04 P07 (cancel+verify) | — | 3 tasks | 4 files |
+| Phase 07 P01 (config+cred+factory) | 10m | 3 tasks | 8 files |
 
 Phase-4 totals: 7 plans, 23 tasks, 5 new packages (engine/hookdag/openspec/learning/toolexec), 2 expanded packages (toolcat/session), 1 CLI subcommand (`ass-guard learning`), 1 wiring point (cmd/ass-guard/acp_serve.go). All 9 Phase-4 packages green under `-race`.
 
 ## Decisions
 
+- [Phase 7]: Plan 07-01 (2026-08-14): credentials resolve LAZILY at factory-construction time (flag > env > config), never at load — an unset `${VAR}` / missing credential field makes the provider uncredentialed (D-07 warn + typed structural error on first use), never a load fatal. This is the 07-CONTEXT surfaced-assumption reconciliation of D-02's "errors at load time" with D-06 (embedded default is env-only) + D-07 (do not refuse to start); a load-fatal on unset `$ZAI_API_KEY` would break zero-config (`scheduling validate`, first-run seed). `api_key_env` and `${VAR}` carry identical lazy semantics; a strict load-fatal form for explicit `${VAR}` is a one-line change to `ResolveCredential` later if the operator wants it.
 - [Phase ?]: Plan 00-02 (2026-08-09): STACK item #2 (go-openai tool-calling schema) — schema fidelity VERIFIED offline (Chat Completions tools[].function wrapper, string-typed arguments, tool-role result message, distinct from newer Responses API). Live round-trip recorded PARTIAL: MINIMAX_API_KEY/GROQ_API_KEY both unset at exec (Tier-A fallback, D-07). VERIFIED requires operator to export a key + re-run spikes/02-openai-toolschema. Plan 00-05 folds RESULT.md into VERIFIED-FACTS.md item #2.
 - [Phase ?]: Plan 00-02 (2026-08-09): go-openai@v1.42.0 targets Chat Completions (tools[].function, tool_calls, role:tool) — NOT the newer Responses API shape (output[].function_call). Phase 1's OpenAI-shape provider adapter conforms to the Chat Completions schema; must not drift to Responses API. pkg.go.dev cadence lag confirmed real but not stagnation (GitHub active: v1.40→v1.42 over May-Aug 2026).
 - [Phase ?]: Plan 00-03 (2026-08-09): STACK item #3 (ACP v1 method names + wire shape) — VERIFIED against the canonical spec (agentclientprotocol.com/protocol/v1/, fetched 2026-08-09). Framing is newline-delimited JSON-RPC (NOT LSP-style Content-Length headers; no embedded newlines; stdout = ACP only). Lifecycle is initialize → session/new → session/prompt (+ observe session/update) — Tier-A correction: STACK omitted the mandatory session/new step (you cannot send session/prompt without a sessionId from session/new). Result field is agentCapabilities (NOT capabilities/serverInfo). protocolVersion is integer 1 (not string). No discrepancy vs STACK on framing; the only correction is the omitted session/new step.

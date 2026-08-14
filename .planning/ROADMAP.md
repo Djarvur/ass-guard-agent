@@ -19,7 +19,7 @@ The six deltas (mimicry, multi-tier scheduling, configurable backends, learning 
 | 4 | Unified Engine + Hook-DAG + OpenSpec + Learning | A developer can run an unmodified OpenSpec scenario end-to-end through ass-guard with zero manual "continue" taps, while the forgotten routine (tests, lint, review, memory, improvement proposals) runs automatically after each stage | ENG-01, ENG-02, ENG-03, ENG-04, ENG-05, HOOK-01, HOOK-02, HOOK-03, HOOK-04, HOOK-05, LRN-01, LRN-02, LRN-03, LRN-04, OPEN-01, OPEN-02, OPEN-03, TOOL-04, TOOL-05 | 5 |
 | 5 | Ecosystem Compatibility | A Claude Code user can drop their existing `.claude/` setup (MCP servers, skills, slash-commands, plugins) into ass-guard and have it work unchanged, alongside ass-guard's own additions | ECOS-01, ECOS-02, ECOS-03, ECOS-04, ECOS-05 | 4 |
 | 6 | Distribution + Polish | 2/2 | Complete   | 2026-08-13 |
-| 7 | Multi-Provider Config & Credentials | An operator declares multiple providers (base_url + protocol shape + credential) and multiple models per provider; ass-guard resolves a scheduler tier to a fully-credentialed provider+model instance at request time, reading credentials from config so editor-spawned processes (no env vars) work | PCFG-01.. (new, assigned in discuss) + completes PROV-01 | 4 |
+| 7 | Multi-Provider Config & Credentials | 1/2 | In Progress|  |
 
 ## Phase Details
 
@@ -201,7 +201,7 @@ Plans:
 
 **Wave 1**
 
-- [ ] 07-01-PLAN.md — credential schema + precedence resolver + provider factory (PCFG-01..04 core; tracer slice: config→loader→factory→correct credentialed instance)
+- [x] 07-01-PLAN.md — credential schema + precedence resolver + provider factory (PCFG-01..04 core; tracer slice: config→loader→factory→correct credentialed instance)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 

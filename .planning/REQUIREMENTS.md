@@ -34,9 +34,16 @@ Requirements for initial release. Each maps to roadmap phases. Categorized by ca
 
 ### Providers (Phase 1 substrate + Phase 3)
 
-- [ ] **PROV-01**: Both Anthropic-shape and OpenAI-shape protocols are supported, with any compatible provider via configurable base URL
+- [x] **PROV-01**: Both Anthropic-shape and OpenAI-shape protocols are supported, with any compatible provider via configurable base URL
 - [ ] **PROV-02**: Both adapter shapes implement a common `Provider` interface with `TranslateToInternal`/`TranslateFromInternal` tool-call translation, verified by round-trip conformance tests
 - [ ] **PROV-03**: The Anthropic-shape adapter uses `anthropics/anthropic-sdk-go` with swappable base URL (Z.ai for GLM); the OpenAI-shape adapter uses `sashabaranov/go-openai`
+
+### Multi-provider config & credentials (Phase 7)
+
+- [x] **PCFG-01**: The scheduling.yaml `providers` block gains `api_key`/`api_key_env` credential fields (literal or `${VAR}`); the loader parses them and validation warns (not rejects) on a provider missing both, preserving Phase-3 D-10 shape/reference rejection
+- [x] **PCFG-02**: Credential precedence at provider construction: `--api-key` flag > provider env var > config literal, with `${VAR}` expansion (minimal surface); secrets never reach logs; an uncredentialed provider fails lazily with a typed structural error (classified like 401/403, never retried)
+- [x] **PCFG-03**: A provider factory built once at startup constructs the correct credentialed Anthropic/OpenAI adapter per declared provider (right base_url + right key + right shape), replacing the single hardcoded provider construction sites
+- [x] **PCFG-04**: Zero-config backward-compat: the embedded default seeds `api_key_env: ZAI_API_KEY` with no literal, so an operator who changes nothing keeps today's `$ZAI_API_KEY`-only flow
 
 ### Model scheduling (Phase 3)
 
@@ -181,9 +188,13 @@ Which phases cover which requirements. Updated during roadmap creation (2026-08-
 | TOOL-01 | 1 — Mimicry MVP | Pending |
 | TOOL-02 | 1 — Mimicry MVP | Pending |
 | TOOL-03 | 1 — Mimicry MVP | Pending |
-| PROV-01 | 1 — Mimicry MVP | Pending |
+| PROV-01 | 1 — Mimicry MVP | Complete |
 | PROV-02 | 1 — Mimicry MVP | Pending |
 | PROV-03 | 1 — Mimicry MVP | Pending |
+| PCFG-01 | 7 — Multi-Provider Config & Credentials | Complete |
+| PCFG-02 | 7 — Multi-Provider Config & Credentials | Complete |
+| PCFG-03 | 7 — Multi-Provider Config & Credentials | Complete |
+| PCFG-04 | 7 — Multi-Provider Config & Credentials | Complete |
 | LOG-01 | 1 — Mimicry MVP | Pending |
 | SESS-01 | 2 — Session Core + ACP | Pending |
 | SESS-02 | 2 — Session Core + ACP | Pending |
