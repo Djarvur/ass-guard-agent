@@ -248,6 +248,16 @@ func runACPServe(ctx context.Context, in io.Reader, out, stderr io.Writer, opts 
 		return fmt.Errorf("call: %w", err)
 	}
 
+	// Phase 7 (D-08): build the provider factory ONCE at startup from the
+	// operator's .ass-guard/scheduling.yaml overlaid on the embedded default.
+	// The heavy-tier provider is resolved through the validated scheduler
+	// resolver; the session's provider is the factory-built credentialed
+	// instance (T-07-07 — resolution is deterministic + validated).
+	factory, providerName, ferr := setupProviderFactory(opts.WorkDir, stderr)
+	if ferr != nil {
+		return fmt.Errorf("setup provider factory: %w", ferr)
+	}
+
 	runner := &sessionTurnRunner{
 		bus:         bus,
 		profile:     prof,
@@ -255,7 +265,9 @@ func runACPServe(ctx context.Context, in io.Reader, out, stderr io.Writer, opts 
 		maxConc:     opts.MaxConcurrent,
 		configAdded: opts.ConfigAddedBoundaries,
 		makeProvider: func() provider.Provider {
-			return provider.NewAnthropicProvider(shaper.New())
+			p, _ := factory.Build(providerName, shaper.New())
+
+			return p
 		},
 	}
 	if opts.EngineEnabled {

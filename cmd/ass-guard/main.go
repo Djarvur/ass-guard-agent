@@ -124,9 +124,31 @@ func runTrace(ctx context.Context, prompt, name, dir, auditLogPath string) error
 		})
 	}
 
-	p := provider.NewAnthropicProvider(shaper.New(),
-		provider.WithAnthropicRequestCapture(capturer),
-	)
+	// Phase 7 (D-08): the tracer builds its provider through the scheduler
+	// factory so credential/base_url resolution is single-sourced. LOG-01 needs
+	// the RequestCapturer, which the factory's Build interface cannot attach —
+	// reconstruct the AnthropicProvider with factory-RESOLVED base_url+key
+	// (never hardcoded defaults) when the heavy-tier provider is credentialed.
+	// An uncredentialed build keeps the lazy noCredentialProvider wrapper (D-07).
+	factory, providerName, ferr := setupProviderFactory("", os.Stderr)
+	if ferr != nil {
+		return fmt.Errorf("setup provider factory: %w", ferr)
+	}
+
+	p, err := factory.Build(providerName, shaper.New())
+	if err != nil {
+		return fmt.Errorf("build provider %q: %w", providerName, err)
+	}
+
+	if _, isAnthropic := p.(*provider.AnthropicProvider); isAnthropic {
+		if baseURL, key, ok := factory.Endpoint(providerName); ok {
+			p = provider.NewAnthropicProvider(shaper.New(),
+				provider.WithAnthropicBaseURL(baseURL),
+				provider.WithAnthropicAPIKey(key),
+				provider.WithAnthropicRequestCapture(capturer),
+			)
+		}
+	}
 
 	calls, err := loop.Run(ctx, &prof, p, prompt)
 	if err != nil {

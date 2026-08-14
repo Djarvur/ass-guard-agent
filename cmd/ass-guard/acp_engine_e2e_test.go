@@ -310,8 +310,18 @@ func TestRunACPServe_NoEngineFlag(t *testing.T) {
 	// above covers the enabled path.
 	bus := event.NewBus()
 
+	// Phase 7 (D-08): even the fixture delegates provider construction to the
+	// scheduler factory — no bare ctor remains in cmd/ass-guard. The provider
+	// is never invoked by this structural check (the runner stays nil-engine).
+	factory, providerName, ferr := setupProviderFactory(t.TempDir(), io.Discard)
+	if ferr != nil {
+		t.Fatalf("setupProviderFactory: %v", ferr)
+	}
+
 	r := &sessionTurnRunner{bus: bus, makeProvider: func() provider.Provider {
-		return provider.NewAnthropicProvider(shaper.New())
+		p, _ := factory.Build(providerName, shaper.New())
+
+		return p
 	}}
 	if r.engineEnabled {
 		t.Error("zero-value sessionTurnRunner should have engine disabled")

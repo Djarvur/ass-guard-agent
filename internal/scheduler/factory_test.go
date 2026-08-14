@@ -207,6 +207,48 @@ func TestProviderFactory_WarnUncredentialed(t *testing.T) {
 	require.NotContains(t, out, testLitKey, "warning must never print the key")
 }
 
+// TestProviderFactory_Endpoint asserts the Plan 07-02 cross-plan accessor: it
+// returns the configured base_url + resolved key for a credentialed provider
+// (from env or config), and ok=false for an undeclared or uncredentialed one
+// (D-07 lazy semantics).
+func TestProviderFactory_Endpoint(t *testing.T) {
+	t.Setenv(testZAIEnv, "") // zai's configured env var forced empty -> literal wins
+	t.Setenv("OTHER_API_KEY", "other-secret")
+
+	cfg := &Config{
+		Providers: map[string]ProviderConfig{
+			"zaienv": {BaseURL: "https://api.z.ai/api/anthropic", Shape: providerAnthropic, APIKeyEnv: "OTHER_API_KEY"},
+			testZaiSlug: {
+				BaseURL:   "https://api.z.ai/api/anthropic",
+				Shape:     providerAnthropic,
+				APIKeyEnv: testZAIEnv, // forced empty -> the config literal wins
+				APIKey:    testLitKey,
+			},
+			testNoKeySlug: {
+				Shape: providerAnthropic,
+			},
+		},
+	}
+
+	f := NewProviderFactory(cfg, "", nil)
+
+	baseURL, key, ok := f.Endpoint("zaienv")
+	require.True(t, ok)
+	require.Equal(t, "https://api.z.ai/api/anthropic", baseURL)
+	require.Equal(t, "other-secret", key)
+
+	baseURL, key, ok = f.Endpoint(testZaiSlug)
+	require.True(t, ok)
+	require.Equal(t, "https://api.z.ai/api/anthropic", baseURL)
+	require.Equal(t, testLitKey, key, "config literal resolves when the env var is empty")
+
+	_, _, ok = f.Endpoint(testNoKeySlug)
+	require.False(t, ok, "an uncredentialed provider has no endpoint credential")
+
+	_, _, ok = f.Endpoint("undeclared")
+	require.False(t, ok, "an undeclared provider has no endpoint")
+}
+
 // TestProviderFactory_WireRoundTrip drives a factory-built AnthropicProvider
 // through Stream against an httptest server and asserts the resolved key +
 // configured base_url reach the wire: URL path /v1/messages, request Host ==

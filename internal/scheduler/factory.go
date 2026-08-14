@@ -146,6 +146,26 @@ func (f *ProviderFactory) Build(
 	}
 }
 
+// Endpoint returns the configured base URL + the resolved credential key for a
+// declared provider (Plan 07-02 cross-plan accessor: the LOG-01 tracer
+// reconstructs the Anthropic adapter with factory-RESOLVED values so it can
+// attach its RequestCapturer — never hardcoded defaults, D-08). ok is false
+// for an undeclared provider or an uncredentialed one (D-07 lazy semantics —
+// the caller falls back to Build's noCredentialProvider).
+func (f *ProviderFactory) Endpoint(providerName string) (baseURL, key string, ok bool) {
+	prov, declared := f.cfg.Providers[providerName]
+	if !declared {
+		return "", "", false
+	}
+
+	cred := ResolveCredential(prov, providerName, f.flagKey)
+	if cred.Key == "" {
+		return "", "", false
+	}
+
+	return prov.BaseURL, cred.Key, true
+}
+
 // WarnUncredentialed writes one stderr-style warning line per provider whose
 // credential is unresolvable (neither flag, env, nor config), naming the
 // provider + the env var to set — never the key (D-07, T-07-01). The startup

@@ -10,7 +10,6 @@ import (
 
 	"github.com/Djarvur/ass-guard-agent/internal/parity"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
-	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 )
 
@@ -83,8 +82,20 @@ func runParity(suitePath, rollout, name, dir, results, surprise string) error {
 	if err != nil {
 		return fmt.Errorf("load profile %q: %w", name, err)
 	}
-	// The provider surfaces a clear error if ZAI_API_KEY is unset (Tier-A).
-	prov := provider.NewAnthropicProvider(shaper.New())
+
+	// Phase 7 (D-08): the parity arm builds its provider through the scheduler
+	// factory (zero-config $ZAI_API_KEY env resolution applies — the gate is
+	// operator-gated on the env var). The provider surfaces a clear typed error
+	// if the heavy-tier credential is unresolvable (Tier-A).
+	factory, providerName, ferr := setupProviderFactory("", os.Stderr)
+	if ferr != nil {
+		return fmt.Errorf("setup provider factory: %w", ferr)
+	}
+
+	prov, ferr := factory.Build(providerName, shaper.New())
+	if ferr != nil {
+		return fmt.Errorf("build provider %q: %w", providerName, ferr)
+	}
 
 	res, err := parity.Run(context.Background(), &parity.RunOptions{
 		Suite:       suite,
