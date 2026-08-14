@@ -14,6 +14,8 @@
 - [ ] **CMD-03**: The model invoking any `openspec:*` tool gets a real executed subprocess result — Adapter-backed `Execute` on registered tools, command surface pinned to the installed binary's probe (phantom `apply`/`implement` removed; read-only vs mutating classified), non-interactive guards (nil stdin, per-command timeout, exit-code classification)
 - [ ] **CMD-04**: A developer runs a real `/opsx:explore → propose → apply → archive` OpenSpec scenario end-to-end through ass-guard in a scratch project with zero manual continues, gated by `ASSGUARD_OPENSPEC_BIN=1` against the real binary (happy / fixable-failure / missing-binary paths) — and the 11 deferred v1.0 Phase-4 UAT checks pass
 - [ ] **CMD-05**: Expanded turns record provenance (which command file drove the turn), engine pattern-matching remains assistant-role-only (regression test), and same-key shadowing across discovery scopes emits a warning
+- [ ] **CMD-06**: Skills work claude-code-compatibly: the model invokes the `Skill` tool, skill name + description reach the model's context via the captured profile's shape with dynamically discovered skills merged in (the v1.0 dynamic-MCP-tools pattern), the skill's SKILL.md loads into the turn, and all discovered skills (`.claude/skills/` + `.ass-guard/skills/`, existing precedence) are exposed — the `/opsx` prompts naturally trigger the matching `openspec-*` skills *(added at Phase-8 discussion 2026-08-14 — user: "to make the commands working we also need skills working, again in claude code compatible way")*
+- [ ] **CMD-07**: WebSearch ships a real DDG-HTML default backend (zero API key) on the existing swappable-Backend seam, and WebFetch returns fetch + html→markdown conversion — at minimum sufficient for `/opsx:explore` workflows; keyed APIs remain config-swappable; zero-config first run unaffected *(added at Phase-8 discussion 2026-08-14 — user: "we need websearch and webfetch tools at least for /opsx:explore")*
 
 ### Audit & Parity Re-capture (priority 2-3, merged — adjacent in the operator chain)
 
@@ -72,6 +74,8 @@ Which phases cover which requirements. Filled during roadmap creation (2026-08-1
 | CMD-03 | Phase 8 | Pending |
 | CMD-04 | Phase 8 | Pending |
 | CMD-05 | Phase 8 | Pending |
+| CMD-06 | Phase 8 | Pending |
+| CMD-07 | Phase 8 | Pending |
 | AUD-01 | Phase 9 | Pending |
 | AUD-02 | Phase 9 | Pending |
 | AUD-03 | Phase 9 | Pending |

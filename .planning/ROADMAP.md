@@ -2,7 +2,7 @@
 
 **Project mode:** mvp (vertical slices — each phase delivers an end-to-end user capability)
 **Milestone:** v1.1 Kickoff & Peers (Phases 8–11; numbering continues from v1.0's Phase 7 — never reset)
-**Requirements mapped:** 21/21 v1.1 ✓
+**Requirements mapped:** 23/23 v1.1 ✓
 
 v1.1 makes the hands-off OpenSpec promise real end-to-end. The milestone's reason to exist is Phase 8: closing the kickoff loop (`/opsx:explore → propose → apply → archive` chained by the engine with zero manual continues, verified against the real openspec binary) is the product's proof — v1.0 shipped with this as its major known gap. Phases 9–11 then close the v1.0 operational gaps (audit on `acp serve`, parity re-capture) and add the two peer surfaces (Telegram, dsh profile #2), strictly in the operator's priority chain. Scope discipline: two new deps only (`go-telegram/bot` v1.23.0, `klauspost/compress/zstd` v1.19.2), one structural refactor (`internal/runtime` extraction, Phase 10), and the generalized v1.0 lesson as a cross-phase invariant — **no feature closes with stub-only evidence; every external surface carries a real-binary/live-service gate**.
 
@@ -36,7 +36,7 @@ v1.1 makes the hands-off OpenSpec promise real end-to-end. The milestone's reaso
 
 | # | Phase | Goal | Requirements | Success Criteria |
 |---|-------|------|--------------|------------------|
-| 8 | Slash-Command Kickoff | A user types `/opsx:*` and drives a real OpenSpec change end-to-end with zero manual continues | CMD-01, CMD-02, CMD-03, CMD-04, CMD-05 | 5 |
+| 8 | Slash-Command Kickoff | A user types `/opsx:*` and drives a real OpenSpec change end-to-end with zero manual continues | CMD-01..07 | 7 |
 | 9 | Serve-Path Audit + zcode Parity Re-capture | Every serve-path session leaves a redacted, bounded audit trail that explains the engine's decisions; the parity stability test runs green on a newly pinned session | AUD-01, AUD-02, AUD-03, AUD-04, AUD-05 | 5 |
 | 10 | Telegram Peer (Text + Voice) | A user drives the same engine from a Telegram chat — full SDD scenarios, voice input, disciplined shutdown | TG-01, TG-02, TG-03, TG-04, TG-05, TG-06 | 5 |
 | 11 | dsh Mimicry Profile #2 | DeepSeek-model turns are structurally indistinguishable from deepseek-harness, captured not hand-written | DSH-01, DSH-02, DSH-03, DSH-04, DSH-05 | 5 |
@@ -48,13 +48,15 @@ v1.1 makes the hands-off OpenSpec promise real end-to-end. The milestone's reaso
 **Goal:** As a developer practicing SDD, I want to kick off and drive an entire OpenSpec change (`/opsx:explore → propose → apply → archive`) from ass-guard by typing the toolkit's own slash-commands, so that the unmodified workflow runs hands-off — the milestone's product proof and the closure of v1.0's major known gap.
 **Mode:** mvp
 **Depends on:** Nothing (first v1.1 phase; builds on shipped v1.0 — `internal/ecosys`, `internal/openspec`, `internal/session`, the engine). Carries the milestone's only structural blocker as its **first task**: `internal/ecosys.discoverCommands` scans `commands/*.md` flat and skips directories, so the `openspec init --tools claude` layout (`.claude/commands/opsx/*.md`) is invisible today — without fixing this first, `/opsx:*` cannot work at all. Expansion hooks at the turn runner (session layer), NOT the ACP handler — that surface-agnosticity is why Telegram later gets `/opsx:*` for free.
-**Requirements:** CMD-01, CMD-02, CMD-03, CMD-04, CMD-05
+**Requirements:** CMD-01, CMD-02, CMD-03, CMD-04, CMD-05, CMD-06, CMD-07
 **Success Criteria** (what must be TRUE):
   1. A user invoking `/opsx:explore` has the command discovered: `commands/<ns>/<name>.md` layouts (like `openspec init --tools claude` installs) are found via one-level subdirectory scan with colon-joined keys, under the existing precedence (project `.claude/` > user `.claude/` > `.ass-guard/`), proven by a real-fixture test generated from actual `openspec init` output (CMD-01)
   2. A user typing `/namespace:name args` gets the command's markdown body expanded with exact zcode substitution semantics — `$ARGUMENTS` and `$1..$N` (out-of-range → empty), args without placeholders appended under a "User arguments:" heading, `${ARGUMENTS}` brace form and `` !`cmd` `` dynamic shell NOT recognized — fed to the turn as the user message, with the contract pinned by a table-driven edge-case test written before implementation; unknown `/foo` falls through as plain text (CMD-02)
   3. The model invoking any `openspec:*` tool gets a real executed subprocess result — Adapter-backed `Execute` on registered tools, command surface pinned to the installed binary's probe (phantom `apply`/`implement` removed; read-only vs mutating classified), non-interactive guards (nil stdin, per-command timeout, exit-code classification) (CMD-03)
   4. A developer runs a real `/opsx:explore → propose → apply → archive` OpenSpec scenario end-to-end through ass-guard in a scratch project with zero manual continues — happy / fixable-failure / missing-binary paths — and the 11 deferred v1.0 Phase-4 UAT checks pass (CMD-04)
   5. Expanded turns record provenance (which command file drove the turn), engine pattern-matching remains assistant-role-only (regression test — the prompt-injection guard for repo-shipped command markdown), and same-key shadowing across discovery scopes emits a warning (CMD-05)
+  6. Skills work claude-code-compatibly — the model invokes the `Skill` tool; skill name + description reach context via the captured profile's shape with dynamically discovered skills merged in (the v1.0 dynamic-MCP pattern); SKILL.md loads into the turn; all discovered skills exposed — `/opsx` prompts naturally trigger the matching `openspec-*` skills (CMD-06, added at Phase-8 discussion)
+  7. WebSearch ships a real DDG-HTML default backend (zero key) on the swappable seam and WebFetch returns fetch + html→markdown — at minimum sufficient for `/opsx:explore` workflows; zero-config first run unaffected (CMD-07, added at Phase-8 discussion)
 **Phase gate:** `mise ci` clean AND the operator-gated real-binary test (`ASSGUARD_OPENSPEC_BIN=1` against real openspec v1.5.0, all three paths) AND a real `/opsx` E2E in a scratch project AND the 11 deferred UAT checks green. No stub-only evidence closes this phase.
 **Plans:** TBD
 
