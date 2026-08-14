@@ -7,6 +7,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -23,6 +24,7 @@ const gitignoreContent = "*\n!.gitignore\n"
 var (
 	errEmptyAssguardDir = errors.New("ecosys: EnsureGitignore requires a non-empty assguard dir")
 	errClaudeReadonly   = errors.New("ecosys: EnsureGitignore refuses a .claude/ path (read-only contract)")
+	errCommandDropped   = errors.New("ecosys: command dropped (neither description nor body)")
 )
 
 // claudeDirName is the Claude-Code config directory name (read-only).
@@ -160,7 +162,10 @@ func discoverSkills(root string, reg Registry) error {
 	return nil
 }
 
-// discoverCommands walks root/commands/*.md (filename stem is the command name).
+// discoverCommands walks root/commands/*.md (filename stem is the command name)
+// and ONE level of subdirectories (commands/<ns>/<name>.md → key "<ns>:<name>",
+// colon not slash — the layout `openspec init --tools claude` installs). zcode
+// joins exactly one level; deeper trees are not flattened.
 func discoverCommands(root string, reg Registry) error {
 	cmdsDir := filepath.Join(root, "commands")
 
@@ -174,28 +179,76 @@ func discoverCommands(root string, reg Registry) error {
 	}
 
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), markdownExt) {
+		if e.IsDir() {
+			err := discoverNamespacedCommands(filepath.Join(cmdsDir, e.Name()), e.Name(), reg)
+			if err != nil {
+				return err
+			}
+
 			continue
 		}
 
-		cmdPath := filepath.Join(cmdsDir, e.Name())
-
-		data, err := os.ReadFile(cmdPath)
-		if err != nil {
+		if !strings.HasSuffix(e.Name(), markdownExt) {
 			continue
 		}
 
 		stem := strings.TrimSuffix(e.Name(), markdownExt)
-
-		cmd, err := parseCommand(string(data), stem, cmdPath)
-		if err != nil {
-			continue
-		}
-
-		reg.Commands[cmd.Name] = cmd
+		loadCommandFile(reg, filepath.Join(cmdsDir, e.Name()), stem)
 	}
 
 	return nil
+}
+
+// discoverNamespacedCommands walks one namespace directory
+// (commands/<ns>/*.md), keying each command "<ns>:<stem>". Subdirectories
+// inside the namespace are not walked — one level only (zcode rule).
+func discoverNamespacedCommands(nsDir, ns string, reg Registry) error {
+	entries, err := os.ReadDir(nsDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+
+		return fmt.Errorf("read commands namespace dir: %w", err)
+	}
+
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), markdownExt) {
+			continue
+		}
+
+		stem := strings.TrimSuffix(e.Name(), markdownExt)
+		loadCommandFile(reg, filepath.Join(nsDir, e.Name()), ns+":"+stem)
+	}
+
+	return nil
+}
+
+// commandNameRe is zcode's command-name rule: keys must match
+// ^[a-z0-9][a-z0-9_:-]{0,63}$ — a key that passes cannot be a path (no dots,
+// slashes, or separators — T-8-04). Violators are dropped silently (the
+// mimicry target is silent; no error, no warning).
+var commandNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_:-]{0,63}$`)
+
+// loadCommandFile reads and parses one command markdown file into reg. Invalid
+// names, unreadable files, and files failing zcode's drop rules are silently
+// skipped.
+func loadCommandFile(reg Registry, cmdPath, name string) {
+	if !commandNameRe.MatchString(name) {
+		return // zcode drops invalid names silently
+	}
+
+	data, err := os.ReadFile(cmdPath)
+	if err != nil {
+		return
+	}
+
+	cmd, err := parseCommand(string(data), name, cmdPath)
+	if err != nil {
+		return // dropped (e.g. neither description nor body)
+	}
+
+	reg.Commands[cmd.Name] = cmd
 }
 
 // discoverPlugins walks root/plugins/*/manifest.json.
@@ -266,21 +319,202 @@ func parseSkill(content, path string) (Skill, error) {
 	}, nil
 }
 
-// parseCommand parses a command markdown file: frontmatter (description) + body
-// (the command body with $ARGUMENTS).
+// commandFrontmatter is the recognized command-frontmatter key set (zcode's).
+// All fields are parsed but NOT acted on functionally (D-09).
+type commandFrontmatter struct {
+	Description  string   `yaml:"description"`
+	ArgumentHint string   `yaml:"argument-hint"` //nolint:tagliatelle // kebab-case frontmatter key
+	AllowedTools []string `yaml:"allowed-tools"` //nolint:tagliatelle // kebab-case frontmatter key
+	Model        string   `yaml:"model"`
+}
+
+// parseCommand parses a command markdown file: flat frontmatter + body.
+//
+// zcode's frontmatter parser is FLAT: only single-line top-level entries count;
+// indented lines and multi-line (block) arrays are silently dropped (STACK
+// §Feature 1a / PITFALLS Pitfall 6 — accepting values zcode drops is a mimicry
+// divergence). Strict yaml.Unmarshal is attempted first so single-line values
+// (quoted strings, flow arrays) decode robustly with unknown keys ignored; a
+// file whose frontmatter fails strict YAML (tab indentation, comma-scalar
+// lists) still loads through the flat single-line view — zcode never rejects a
+// command file for YAML invalidity.
+//
+// Description rules (zcode): empty description + non-empty body → first
+// non-empty body line; neither description nor body → the command is dropped.
 func parseCommand(content, name, path string) (Command, error) {
 	frontmatter, body := splitFrontmatter(content)
 
-	var fm struct {
-		Description string `yaml:"description"`
+	fm := parseCommandFrontmatter(frontmatter)
+
+	desc := fm.Description
+	if desc == "" {
+		desc = firstNonEmptyLine(body)
 	}
+
+	if desc == "" {
+		// Dropped (zcode rule): neither description nor body. The caller skips
+		// the file silently; the error only signals the drop.
+		return Command{}, errCommandDropped
+	}
+
+	return Command{
+		Name: name, Description: desc, Body: body, Path: path,
+		ArgumentHint: fm.ArgumentHint, AllowedTools: fm.AllowedTools, Model: fm.Model,
+	}, nil
+}
+
+// parseCommandFrontmatter decodes the recognized keys under zcode's flat
+// semantics. Strict YAML is tried first (unknown keys ignored); on error the
+// flat single-line parser takes over. On success, recognized keys without a
+// single-line entry (multi-line/indented blocks) are dropped — zcode parity.
+func parseCommandFrontmatter(frontmatter string) commandFrontmatter {
+	var fm commandFrontmatter
 
 	err := yaml.Unmarshal([]byte(frontmatter), &fm)
 	if err != nil {
-		return Command{}, fmt.Errorf("parse command frontmatter %s: %w", path, err)
+		return parseFlatCommandFrontmatter(frontmatter)
 	}
 
-	return Command{Name: name, Description: fm.Description, Body: body, Path: path}, nil
+	// Flat overlay: recognized keys count only from single-line entries. A key
+	// whose only form is a multi-line block (valid YAML — e.g. a block-style
+	// allowed-tools list) is dropped, matching what zcode's flat parser sees.
+	entries := flatSingleLineEntries(frontmatter)
+
+	if _, ok := entries["description"]; !ok {
+		fm.Description = ""
+	}
+
+	if _, ok := entries[fmKeyArgumentHint]; !ok {
+		fm.ArgumentHint = ""
+	}
+
+	if _, ok := entries[fmKeyModel]; !ok {
+		fm.Model = ""
+	}
+
+	if _, ok := entries[fmKeyAllowedTools]; !ok {
+		fm.AllowedTools = nil
+	}
+
+	return fm
+}
+
+// Recognized flat-frontmatter keys (zcode's set — kebab-case literals).
+const (
+	fmKeyArgumentHint = "argument-hint"
+	fmKeyAllowedTools = "allowed-tools"
+	fmKeyModel        = "model"
+	minQuotedValueLen = 2 // shortest possible quoted value: `""`
+)
+
+// parseFlatCommandFrontmatter is the flat single-line fallback: split the
+// frontmatter on newlines, take lines matching `^key: value` for the recognized
+// keys only, drop indented continuations and multi-line values (zcode's
+// observable outcome on the same file).
+func parseFlatCommandFrontmatter(frontmatter string) commandFrontmatter {
+	var fm commandFrontmatter
+
+	for key, value := range flatSingleLineEntries(frontmatter) {
+		switch key {
+		case "description":
+			fm.Description = value
+		case fmKeyArgumentHint:
+			fm.ArgumentHint = value
+		case fmKeyModel:
+			fm.Model = value
+		case fmKeyAllowedTools:
+			fm.AllowedTools = parseAllowedToolsValue(value)
+		}
+	}
+
+	return fm
+}
+
+// flatSingleLineEntries returns the single-line `key: value` entries for the
+// recognized keys. Indented lines (block-list continuations) never match, and
+// a bare `key:` line (block-list opener with no inline value) is treated as
+// absent — zcode's flat parser sees no value for it.
+func flatSingleLineEntries(frontmatter string) map[string]string {
+	recognized := map[string]bool{
+		"description": true, fmKeyArgumentHint: true, fmKeyAllowedTools: true, fmKeyModel: true,
+	}
+
+	out := map[string]string{}
+
+	for line := range strings.SplitSeq(frontmatter, "\n") {
+		if line == "" || line[0] == ' ' || line[0] == '\t' {
+			continue // indented continuation — zcode drops it
+		}
+
+		key, value, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+
+		key = strings.TrimSpace(key)
+		if !recognized[key] {
+			continue
+		}
+
+		value = unquoteFrontmatterValue(strings.TrimSpace(value))
+		if value == "" {
+			continue // bare `key:` opener — no single-line value
+		}
+
+		out[key] = value
+	}
+
+	return out
+}
+
+// parseAllowedToolsValue parses an allowed-tools value from its single-line
+// form: a comma-separated scalar (`Bash, Read`) or a YAML flow array
+// (`[Bash, Read]`) — both yield the same slice.
+func parseAllowedToolsValue(value string) []string {
+	value = strings.TrimSpace(value)
+	value = strings.TrimPrefix(value, "[")
+	value = strings.TrimSuffix(value, "]")
+
+	parts := strings.Split(value, ",")
+
+	out := make([]string, 0, len(parts))
+
+	for _, p := range parts {
+		if s := strings.TrimSpace(p); s != "" {
+			out = append(out, s)
+		}
+	}
+
+	if len(out) == 0 {
+		return nil
+	}
+
+	return out
+}
+
+// unquoteFrontmatterValue strips one level of surrounding single or double
+// quotes from a flat frontmatter value.
+func unquoteFrontmatterValue(value string) string {
+	if len(value) >= minQuotedValueLen {
+		if (value[0] == '"' && value[len(value)-1] == '"') ||
+			(value[0] == '\'' && value[len(value)-1] == '\'') {
+			return value[1 : len(value)-1]
+		}
+	}
+
+	return value
+}
+
+// firstNonEmptyLine returns the first non-empty (trimmed) line of body, or ""
+// (zcode's description fallback).
+func firstNonEmptyLine(body string) string {
+	for line := range strings.SplitSeq(body, "\n") {
+		if trimmed := strings.TrimSpace(line); trimmed != "" {
+			return trimmed
+		}
+	}
+
+	return ""
 }
 
 // splitFrontmatter splits a markdown file into (frontmatter, body). A leading

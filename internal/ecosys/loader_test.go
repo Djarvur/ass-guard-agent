@@ -237,8 +237,8 @@ func TestDiscoverCoexist(t *testing.T) {
 
 	require.Contains(t, reg.Commands, "flat", "bare-stem key must survive")
 	require.Contains(t, reg.Commands, "opsx:explore", "colon-joined key must coexist")
-	assert.Equal(t, "flat body", reg.Commands["flat"].Body)
-	assert.Equal(t, "explore body", reg.Commands["opsx:explore"].Body)
+	assert.Equal(t, "flat body\n", reg.Commands["flat"].Body)
+	assert.Equal(t, "explore body\n", reg.Commands["opsx:explore"].Body)
 }
 
 // writeNamespacedCommand writes a fixture command under
@@ -308,16 +308,18 @@ func writeRawCommand(t *testing.T, root, name, content string) {
 // cannot silently rot across openspec upgrades. Skips unless
 // ASSGUARD_OPENSPEC_BIN=1 AND the binary is on PATH.
 func TestOpsxFixtureMatchesRealInit(t *testing.T) {
+	t.Parallel()
+
 	if os.Getenv("ASSGUARD_OPENSPEC_BIN") != "1" {
 		t.Skip("ASSGUARD_OPENSPEC_BIN not set — fixture-provenance check skipped")
 	}
 
-	if _, err := exec.LookPath("openspec"); err != nil {
+	if _, err := exec.LookPath("openspec"); err != nil { //nolint:noinlineerr // skip-path
 		t.Skip("openspec binary not on PATH — fixture-provenance check skipped")
 	}
 
 	work := t.TempDir()
-	cmd := exec.Command("openspec", "init", "--tools", "claude", "--force")
+	cmd := exec.CommandContext(t.Context(), "openspec", "init", "--tools", "claude", "--force")
 	cmd.Dir = work
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "openspec init failed: %s", string(out))
@@ -329,7 +331,7 @@ func TestOpsxFixtureMatchesRealInit(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, generated, committed,
-		"committed testdata/opsx-real fixture drifted from real `openspec init` output — regenerate per the fixture README")
+		"committed fixture drifted from real openspec init output — regenerate per the README")
 }
 
 // TestNamespacedKeyShape (Test 6) verifies the colon-join: commands/opsx/explore.md
@@ -362,7 +364,9 @@ func TestOneLevelOnly(t *testing.T) {
 	root := t.TempDir()
 	deepDir := filepath.Join(root, "commands", "a", "b")
 	require.NoError(t, os.MkdirAll(deepDir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(deepDir, "deep.md"), []byte("---\ndescription: d\n---\nbody\n"), 0o600))
+
+	deepFile := filepath.Join(deepDir, "deep.md")
+	require.NoError(t, os.WriteFile(deepFile, []byte("---\ndescription: d\n---\nbody\n"), 0o600))
 
 	reg, err := loadTree(root)
 	require.NoError(t, err)
@@ -370,41 +374,53 @@ func TestOneLevelOnly(t *testing.T) {
 	assert.Empty(t, reg.Commands, "two-level commands must not be discovered (no flattening)")
 }
 
-// TestFrontmatterExtension (Test 8, D-09) verifies argument-hint/allowed-tools/model
-// are PARSED (not acted on): comma-scalar and YAML-flow-list forms both land in
-// Command.AllowedTools.
+// TestFrontmatterExtension (Test 8, D-09) verifies argument-hint /
+// allowed-tools / model are PARSED (not acted on): comma-scalar and
+// YAML-flow-list forms both land in Command.AllowedTools.
 func TestFrontmatterExtension(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	writeRawCommand(t, root, "comma", "---\nargument-hint: name\nallowed-tools: Bash, Read\nmodel: opus\ndescription: comma form\n---\nbody\n")
-	writeRawCommand(t, root, "flowlist", "---\nallowed-tools: [Bash, Read]\ndescription: flow form\n---\nbody\n")
+	writeRawCommand(t, root, "comma",
+		"---\nargument-hint: name\nallowed-tools: Bash, Read\nmodel: opus\ndescription: comma form\n---\nbody\n")
+	writeRawCommand(t, root, "flowlist",
+		"---\nallowed-tools: [Bash, Read]\ndescription: flow form\n---\nbody\n")
 
 	reg, err := loadTree(root)
 	require.NoError(t, err)
+
+	wantTools := []string{toolBash, toolRead}
 
 	comma, ok := reg.Commands["comma"]
 	require.True(t, ok, "comma-scalar frontmatter command must load")
 
 	assert.Equal(t, "name", comma.ArgumentHint)
-	assert.Equal(t, []string{"Bash", "Read"}, comma.AllowedTools)
+	assert.Equal(t, wantTools, comma.AllowedTools)
 	assert.Equal(t, "opus", comma.Model)
 
 	flow, ok := reg.Commands["flowlist"]
 	require.True(t, ok, "flow-list frontmatter command must load")
-	assert.Equal(t, []string{"Bash", "Read"}, flow.AllowedTools, "flow-list form must parse to the same slice")
+	assert.Equal(t, wantTools, flow.AllowedTools, "flow-list form must parse to the same slice")
 }
 
-// TestFlatFallback (Test 9) verifies zcode's flat frontmatter semantics: a file
-// with tab-indented (yaml-invalid) frontmatter still loads via the flat
+// Fixture tool names shared across frontmatter tests (goconst).
+const (
+	toolBash = "Bash"
+	toolRead = "Read"
+)
+
+// TestFlatFallback (Test 9) verifies zcode's flat frontmatter semantics: a
+// file with tab-indented (yaml-invalid) frontmatter still loads via the flat
 // single-line view, and a multi-line allowed-tools list is DROPPED (zcode
 // parity — accepting what zcode drops is a mimicry divergence, PITFALLS 6).
 func TestFlatFallback(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	writeRawCommand(t, root, "tabbed", "---\ndescription: x\nallowed-tools:\n\t- Bash\n\t- Read\n---\nbody\n")
-	writeRawCommand(t, root, "blocklist", "---\ndescription: block list\nallowed-tools:\n  - Bash\n  - Read\n---\nbody\n")
+	writeRawCommand(t, root, "tabbed",
+		"---\ndescription: x\nallowed-tools:\n\t- Bash\n\t- Read\n---\nbody\n")
+	writeRawCommand(t, root, "blocklist",
+		"---\ndescription: block list\nallowed-tools:\n  - Bash\n  - Read\n---\nbody\n")
 
 	reg, err := loadTree(root)
 	require.NoError(t, err)
@@ -426,7 +442,8 @@ func TestUnknownKeysIgnored(t *testing.T) {
 
 	root := t.TempDir()
 	writeRawCommand(t, root, "opsxlike",
-		"---\nname: \"OPSX: Explore\"\ndescription: \"Enter explore mode\"\ncategory: Workflow\ntags: [workflow, explore, experimental, thinking]\n---\nbody\n")
+		"---\nname: \"OPSX: Explore\"\ndescription: \"Enter explore mode\"\n"+
+			"category: Workflow\ntags: [workflow, explore, experimental, thinking]\n---\nbody\n")
 
 	reg, err := loadTree(root)
 	require.NoError(t, err)
@@ -435,6 +452,9 @@ func TestUnknownKeysIgnored(t *testing.T) {
 	require.True(t, ok, "command with unknown frontmatter keys must load cleanly")
 	assert.Equal(t, "Enter explore mode", cmd.Description)
 }
+
+// commandFrontmatterSet maps command file names → {name, description} parsed
+// from the file's YAML frontmatter (fixture-provenance comparison).
 func commandFrontmatterSet(commandsDir string) (map[string][2]string, error) {
 	entries, err := os.ReadDir(filepath.Join(commandsDir, "opsx"))
 	if err != nil {
@@ -442,28 +462,39 @@ func commandFrontmatterSet(commandsDir string) (map[string][2]string, error) {
 	}
 
 	out := map[string][2]string{}
+
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
 			continue
 		}
 
-		data, err := os.ReadFile(filepath.Join(commandsDir, "opsx", e.Name()))
+		out[e.Name()], err = commandNameDescription(filepath.Join(commandsDir, "opsx", e.Name()))
 		if err != nil {
-			return nil, fmt.Errorf("read %s: %w", e.Name(), err)
+			return nil, err
 		}
-
-		fm, _ := splitFrontmatter(string(data))
-
-		var parsed struct {
-			Name        string `yaml:"name"`
-			Description string `yaml:"description"`
-		}
-		if err := yaml.Unmarshal([]byte(fm), &parsed); err != nil {
-			return nil, fmt.Errorf("parse %s frontmatter: %w", e.Name(), err)
-		}
-
-		out[e.Name()] = [2]string{parsed.Name, parsed.Description}
 	}
 
 	return out, nil
+}
+
+// commandNameDescription reads one command file and returns its frontmatter
+// name/description pair (fixture-provenance comparison).
+func commandNameDescription(path string) ([2]string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return [2]string{}, fmt.Errorf("read %s: %w", path, err)
+	}
+
+	fm, _ := splitFrontmatter(string(data))
+
+	var parsed struct {
+		Name        string `yaml:"name"`
+		Description string `yaml:"description"`
+	}
+
+	if err := yaml.Unmarshal([]byte(fm), &parsed); err != nil { //nolint:noinlineerr // error wrapped with path below
+		return [2]string{}, fmt.Errorf("parse %s frontmatter: %w", path, err)
+	}
+
+	return [2]string{parsed.Name, parsed.Description}, nil
 }

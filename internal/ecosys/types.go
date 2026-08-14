@@ -10,14 +10,24 @@ type Skill struct {
 	Path         string
 }
 
-// Command is one slash-command discovered from `commands/<name>.md` (D-07). The
-// filename stem is the Name; the frontmatter supplies Description; the body
-// (carrying the `$ARGUMENTS` placeholder) is Body. Path is the on-disk location.
+// Command is one slash-command discovered from `commands/<name>.md` (flat) or
+// `commands/<ns>/<name>.md` (one-level namespaced, keyed "<ns>:<name>" — the
+// layout `openspec init --tools claude` installs). The filename stem (or
+// colon-joined namespace:stem) is the Name; the frontmatter supplies
+// Description plus the extended parsed-only fields; the body (carrying the
+// `$ARGUMENTS` placeholder) is Body. Path is the on-disk location.
 type Command struct {
 	Name        string
 	Description string
 	Body        string
 	Path        string
+
+	// ArgumentHint, AllowedTools, and Model are PARSED from frontmatter but NOT
+	// acted on functionally (D-09: parse-side only — zcode surfaces them for
+	// UX/matching; ass-guard stores them for mimicry parity without behavior).
+	ArgumentHint string   // frontmatter `argument-hint`
+	AllowedTools []string // frontmatter `allowed-tools` (comma scalar or list)
+	Model        string   // frontmatter `model`
 }
 
 // Plugin is one plugin discovered from `plugins/<name>/manifest.json` (D-07).
