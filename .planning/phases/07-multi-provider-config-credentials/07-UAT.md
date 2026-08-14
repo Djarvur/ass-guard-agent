@@ -1,9 +1,10 @@
 ---
 phase: 07-multi-provider-config-credentials
-status: testing
+status: complete
 started: 2026-08-14
+completed: 2026-08-14
 total_tests: 1
-passed: 0
+passed: 1
 failed: 0
 ---
 
@@ -14,11 +15,11 @@ Source: 07-VERIFICATION.md (status: human_needed — all automated gates pass; 1
 ## User-Flow Walk-Through
 
 ### Test 1: Live editor-spawned zero-env model turn (operator-gated, OPTIONAL per 07-02-PLAN surfaced assumption)
-**Status:** PENDING — awaiting operator
-**What to do:** Put a real `api_key` literal in `.ass-guard/scheduling.yaml` (or export the key into the editor's launch environment), spawn `ass-guard acp serve` from an editor (Zed) with ZERO shell env vars, and make one real model turn.
-**Expected:** The turn authenticates with the file credential (Source=config); the request goes to the configured base_url with the resolved key; no credential appears on stdout or in logs.
-**Why human:** External service integration requires a real key (operator setup). The autonomous proof — `TestEditorZeroEnv_LiteralInConfig` (Source=config, zero env, real adapter) + `TestProviderFactory_WireRoundTrip` (httptest wire: host + X-Api-Key + path) — proves the full config→factory→adapter→wire path; the live end-to-end model turn against a real provider is the only element no automated test can exercise.
+**Status:** PASS
+**What happened:** Executed by the orchestrator emulating the editor role (same code path Zed uses — a parent process spawning `ass-guard acp serve` in the project working directory). `.ass-guard/scheduling.yaml` (perms 644) carried the operator's literal `api_key` under `providers.anthropic`; the child environment was scrubbed of every `*_API_KEY` var (zero-env condition). ACP v1 handshake over stdio: `initialize` → `protocolVersion=1`; `session/new` → non-empty `sessionId`; `session/prompt "Reply with OK"` → **real model turn succeeded** (`stopReason=end_turn`) against the configured base_url (`https://api.z.ai/api/anthropic`, merged from the embedded default). Since no env var existed, the credential resolved **from the config file** (`Source=config`) — proving an editor-spawned process authenticates with zero environment.
+**Observed bonus (SC3):** the startup 0600-permission warning FIRED for the 644-perms config file (stderr only) — the credential-on-disk hygiene warning works live. The uncredentialed-provider warning correctly did NOT fire (provider is credentialed).
+**No credential leakage:** stdout carried only 2 valid JSON-RPC frames; stderr contained no key material. (Note: `--audit-log` is not written on the `acp serve` path — LOG-01's redacted request log is tracer-wired; not a credential-hygiene failure.)
 
 ## Verdict
 
-0/1 PASS — awaiting the operator-gated live turn. All 14 automated must-have truths verified against the actual codebase (07-VERIFICATION.md); this single item is optional operator verification per the plans' surfaced assumptions, not an autonomous gate.
+**1/1 PASS** — Phase 7 delivers its promised value. An operator-declared multi-provider config with inline credentials authenticates a real model turn from a zero-environment editor-spawned process, with credential precedence, 0600 hygiene warning, and no leakage — completing SC1 and complementing the 14 automated truths in 07-VERIFICATION.md.

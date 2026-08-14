@@ -1,7 +1,7 @@
 ---
 phase: 07-multi-provider-config-credentials
 verified: 2026-08-14T12:30:00Z
-status: human_needed
+status: passed
 score: 14/14 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
@@ -16,7 +16,7 @@ human_verification:
 
 **Phase Goal:** An operator can declare multiple model providers in a single config — each with its base URL, protocol shape (anthropic/openai), and credential — and multiple models per provider with capability/pricing metadata. ass-guard resolves a scheduler tier to a fully-credentialed provider+model instance at request time. Credentials read from config so editor-spawned processes (Zed → `ass-guard acp serve`) work with zero env vars, while an explicit env var (or CLI flag) still overrides for CI/operators. This completes the multi-provider promise of PROV-01 and connects SCHED tier-resolution to real provider instances.
 **Verified:** 2026-08-14
-**Status:** human_needed (all automated gates pass; 1 optional operator-gated live-turn item)
+**Status:** passed — UAT 1/1 (live zero-env editor-spawned turn authenticated from the config-file credential, 2026-08-14); 14/14 automated truths verified
 **Re-verification:** No — initial verification
 
 ## Goal Achievement
