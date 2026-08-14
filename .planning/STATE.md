@@ -4,7 +4,7 @@ milestone: v1.1
 milestone_name: Kickoff & Peers
 status: executing
 stopped_at: Phase 10 context gathered
-last_updated: "2026-08-14T18:55:37.522Z"
+last_updated: "2026-08-14T18:56:15.341Z"
 last_activity: 2026-08-14
 progress:
   total_phases: 4
@@ -30,7 +30,7 @@ Status: Ready to execute
 Last activity: 2026-08-14
 Next action: `/gsd-execute-phase 8`
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█░░░░░░░░░] 8%
 
 ## Performance Metrics
 
@@ -47,6 +47,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [v1.1 roadmap]: Phase order follows the operator's strict priority chain — kickoff → (audit + re-capture, merged) → Telegram → dsh — numbered 8–11, continuing from v1.0's Phase 7.
 - [v1.1 roadmap]: The capturer factory seam lands in Phase 9, deliberately BEFORE Phase 10's `internal/runtime` extraction, so the audit wiring is written once.
 - [v1.1 roadmap]: Generalized v1.0 lesson as cross-phase invariant — no feature closes with stub-only evidence; every phase gate = `mise ci` + a real-binary/live-service check.
+- [Phase ?]: [08-01] ecosys flat frontmatter view is authoritative even when strict YAML succeeds — multi-line values zcode drops are dropped (mimicry divergence rule, PITFALLS 6)
+- [Phase ?]: [08-01] shadow warnings via swappable slog stderr seam; precedence direction unchanged (D-06)
 
 ### Pending Todos
 
@@ -72,9 +74,10 @@ Carried from v1.0 close — dispositioned into v1.1 scope:
 | uat | 04-UAT.md 11 pending checks | Consumed by Phase 8 (CMD-04) | 2026-08-14 |
 | parity | stability test blocked on absent pinned session `eea3dc48` | Consumed by Phase 9 (AUD-05) | 2026-08-14 |
 | log | `--audit-log` not written on `acp serve` | Consumed by Phase 9 (AUD-01..04) | 2026-08-14 |
+| Phase 8 P08-01 | 42min | 3 tasks | 7 files |
 
 ## Session Continuity
 
-Last session: 2026-08-14T18:33:04.125Z
+Last session: 2026-08-14T18:56:03.765Z
 Stopped at: Phase 10 context gathered
-Resume file: .planning/phases/10-telegram-peer-text-voice/10-CONTEXT.md
+Resume file: None
