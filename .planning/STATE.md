@@ -4,13 +4,13 @@ milestone: v1.1
 milestone_name: Kickoff & Peers
 status: executing
 stopped_at: Phase 11 context gathered
-last_updated: "2026-08-14T19:00:56.769Z"
+last_updated: "2026-08-14T19:24:56.981Z"
 last_activity: 2026-08-14
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 12
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-08-14)
 ## Current Position
 
 Phase: 8 (slash-command-kickoff) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 Status: Ready to execute
 Last activity: 2026-08-14
 Next action: `/gsd-execute-phase 8`
 
-Progress: [█░░░░░░░░░] 8%
+Progress: [██░░░░░░░░] 17%
 
 ## Performance Metrics
 
@@ -49,6 +49,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [v1.1 roadmap]: Generalized v1.0 lesson as cross-phase invariant — no feature closes with stub-only evidence; every phase gate = `mise ci` + a real-binary/live-service check.
 - [Phase ?]: [08-01] ecosys flat frontmatter view is authoritative even when strict YAML succeeds — multi-line values zcode drops are dropped (mimicry divergence rule, PITFALLS 6)
 - [Phase ?]: [08-01] shadow warnings via swappable slog stderr seam; precedence direction unchanged (D-06)
+- [Phase ?]: [08-02] DDG fixture strategy under anomaly wall: structure-contract fixture with real data + real anomaly capture + documented regeneration (clean-egress curl)
 
 ### Pending Todos
 
@@ -64,6 +65,7 @@ None yet.
 - [Phase 8 execution, env note]: execute-phase ran with the gsd-executor contract executed IN-PROCESS by the orchestrating agent — this ZCode runtime exposes no subagent-spawn tool (same constraint the Phase-8 planner hit). ~/.claude/agents/gsd-executor.md was followed step-for-step (per-task atomic commits, TDD RED→GREEN gates, deviation rules, SUMMARY.md + state updates). Worktrees disabled per project config; execution sequential on master, matching prior phases.
 - [Phase 9 planning, env note]: plan-phase ran with the gsd-planner and gsd-plan-checker contracts executed IN-PROCESS (same no-subagent-spawn constraint as Phase 8; both agent definition files followed step-for-step; all gsd-sdk validators + coverage gates ran normally). Two planning judgment calls, both per the phase brief: (1) NO phase-level researcher spawn — this phase's research flag is operator-procedure design, not library research; the fresh v1.1 project research (.planning/research/{SUMMARY,ARCHITECTURE,PITFALLS}.md, 2026-08-14 editions) was consumed directly, and the re-capture runbook from Pitfalls 17/18 is written verbatim into plans 09-03/09-04; (2) pattern-mapper skipped (non-blocking; CONTEXT.md's <code_context> section already carries the analog map). Nyquist VALIDATION.md not created — no phase RESEARCH.md exists to source a Validation Architecture section (workflow warns and continues; every plan task carries automated verify anyway).
 - [Phase 9]: 09-04 is autonomous:false — execute-phase will pause at the operator capture checkpoint (the scripted divergence-prone zcode workload, run ONCE by the operator per D-04); the parity re-baseline leg additionally needs ZAI_API_KEY.
+- [Phase 8 env note]: TestStability_WithinSessionExtractionSource (internal/profile) is flaky while concurrent zcode sessions write ~/.zcode/cli/rollout — it picks the richest live main session. Pre-existing, zero dependency on Phase-8 packages; pinned-session fix already dispositioned to Phase 9 (AUD-05).
 
 ## Deferred Items
 
@@ -75,9 +77,10 @@ Carried from v1.0 close — dispositioned into v1.1 scope:
 | parity | stability test blocked on absent pinned session `eea3dc48` | Consumed by Phase 9 (AUD-05) | 2026-08-14 |
 | log | `--audit-log` not written on `acp serve` | Consumed by Phase 9 (AUD-01..04) | 2026-08-14 |
 | Phase 8 P08-01 | 42min | 3 tasks | 7 files |
+| Phase 8 P08-02 | 50min | 3 tasks | 11 files |
 
 ## Session Continuity
 
-Last session: 2026-08-14T19:00:56.732Z
+Last session: 2026-08-14T19:24:55.019Z
 Stopped at: Phase 11 context gathered
-Resume file: .planning/phases/11-dsh-mimicry-profile-2/11-CONTEXT.md
+Resume file: None
