@@ -1,10 +1,13 @@
 package session //nolint:testpackage // internal package test
 
 import (
+	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
+	"github.com/Djarvur/ass-guard-agent/internal/provider"
 )
 
 // fakeProfile builds a minimal profile with one system block for projector tests.
@@ -272,4 +275,270 @@ func assertProvenanceLine(t *testing.T, m *Manager, srcPath, srcArgs string) {
 	}
 
 	t.Fatal("no command_provenance line in the transcript")
+}
+
+// --- 08-07: within-turn accumulation (mid-turn conversation assembly) ---
+
+// msgSummary renders a provider.Message compactly for failure messages.
+func msgSummary(m provider.Message) string {
+	if len(m.ToolCalls) > 0 {
+		ids := make([]string, 0, len(m.ToolCalls))
+		for _, tc := range m.ToolCalls {
+			ids = append(ids, tc.ID)
+		}
+
+		return fmt.Sprintf("assistant{toolCalls:%v text:%q}", ids, m.Content)
+	}
+
+	if m.Role == "tool" {
+		return fmt.Sprintf("tool{id:%s name:%s err:%v content:%q}", m.ToolCallID, m.ToolName, m.IsError, m.Content)
+	}
+
+	return fmt.Sprintf("%s{%q}", m.Role, m.Content)
+}
+
+// TestProjector_MidTurnAccumulation (08-07 T2 Test 2): the current turn's
+// tool_call/tool_result lines AFTER the lean seed are carried as messages —
+// the model's NEXT request contains its own prior exchange (the 08-06 blocker
+// was the projector rebuilding an identical lean window every iteration).
+func TestProjector_MidTurnAccumulation(t *testing.T) {
+	t.Parallel()
+
+	m := newTestManager(t, "s1")
+	p := NewProjector(fakeProfile("sys"), m)
+
+	_ = m.AppendUserMessage("turnT", []ContentBlock{{Type: blockText, Text: "run ls"}})
+	_ = m.AppendToolCall("turnT", "call_1", toolBash, json.RawMessage(`{"command":"ls"}`))
+	_ = m.AppendToolResult("turnT", "call_1", json.RawMessage(`{"out":"files"}`), false)
+
+	msgs, err := p.Project("turnT")
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+
+	if len(msgs) != 3 { //nolint:mnd // seed + assistant batch + tool result
+		t.Fatalf("len(msgs) = %d, want 3 (seed + assistant + tool):\n%s",
+			len(msgs), msgSummaryList(msgs))
+	}
+
+	seed := msgs[0]
+	if seed.Role != "user" || !strings.Contains(seed.Content, "run ls") {
+		t.Errorf("seed = %s; want user lean seed carrying the intent", msgSummary(seed))
+	}
+
+	am := msgs[1]
+	if am.Role != "assistant" || len(am.ToolCalls) != 1 || am.ToolCalls[0].ID != "call_1" {
+		t.Errorf("msgs[1] = %s; want assistant batch with call_1", msgSummary(am))
+	}
+
+	if am.ToolCalls[0].Name != toolBash || string(am.ToolCalls[0].Input) != `{"command":"ls"}` {
+		t.Errorf("assistant batch call = %+v; want Bash with the recorded input", am.ToolCalls[0])
+	}
+
+	tm := msgs[2]
+	if tm.Role != "tool" || tm.ToolCallID != "call_1" {
+		t.Errorf("msgs[2] = %s; want tool message paired to call_1", msgSummary(tm))
+	}
+
+	if tm.ToolName != toolBash {
+		t.Errorf("tool message name = %q; want Bash resolved from the paired call", tm.ToolName)
+	}
+
+	if tm.Content != `{"out":"files"}` {
+		t.Errorf("tool message content = %q; want the recorded output", tm.Content)
+	}
+}
+
+// msgSummaryList renders a whole window for failure messages.
+func msgSummaryList(msgs []provider.Message) string {
+	parts := make([]string, 0, len(msgs))
+	for i, m := range msgs {
+		parts = append(parts, fmt.Sprintf("[%d] %s", i, msgSummary(m)))
+	}
+
+	return strings.Join(parts, "\n")
+}
+
+// TestProjector_MidTurnBatchGrouping (08-07 T2 Test 3): three consecutive
+// tool_call lines fold into ONE assistant message carrying three ToolCalls,
+// followed by three tool-role messages — the capture's batch form (one
+// assistant per response batch, one result per call).
+func TestProjector_MidTurnBatchGrouping(t *testing.T) {
+	t.Parallel()
+
+	m := newTestManager(t, "s1")
+	p := NewProjector(fakeProfile("sys"), m)
+
+	_ = m.AppendUserMessage("turnT", []ContentBlock{{Type: blockText, Text: "go"}})
+	_ = m.AppendToolCall("turnT", "c1", toolRead, json.RawMessage(`{"file_path":"a"}`))
+	_ = m.AppendToolCall("turnT", "c2", "Grep", json.RawMessage(`{"pattern":"x"}`))
+	_ = m.AppendToolCall("turnT", "c3", toolBash, json.RawMessage(`{"command":"ls"}`))
+	_ = m.AppendToolResult("turnT", "c1", json.RawMessage(`{"o":"1"}`), false)
+	_ = m.AppendToolResult("turnT", "c2", json.RawMessage(`{"o":"2"}`), false)
+	_ = m.AppendToolResult("turnT", "c3", json.RawMessage(`{"o":"3"}`), true)
+
+	msgs, err := p.Project("turnT")
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+
+	if len(msgs) != 5 { //nolint:mnd // seed + 1 assistant batch + 3 tool results
+		t.Fatalf("len(msgs) = %d, want 5:\n%s", len(msgs), msgSummaryList(msgs))
+	}
+
+	am := msgs[1]
+	if am.Role != "assistant" || len(am.ToolCalls) != 3 {
+		t.Fatalf("msgs[1] = %s; want ONE assistant message with 3 ToolCalls", msgSummary(am))
+	}
+
+	wantIDs := []string{"c1", "c2", "c3"}
+	for i, want := range wantIDs {
+		if am.ToolCalls[i].ID != want {
+			t.Errorf("ToolCalls[%d].ID = %q, want %q", i, am.ToolCalls[i].ID, want)
+		}
+	}
+
+	for i, want := range wantIDs {
+		tm := msgs[2+i]
+		if tm.Role != "tool" || tm.ToolCallID != want {
+			t.Errorf("msgs[%d] = %s; want tool result for %s", 2+i, msgSummary(tm), want)
+		}
+	}
+
+	if !msgs[4].IsError {
+		t.Error("third result should carry IsError (recorded true)")
+	}
+}
+
+// TestProjector_MidTurnBoundaryReset (08-07 T2 Test 5, NEW): a mid-turn
+// boundary resets the accumulation — the projection shows the lean seed + only
+// POST-boundary exchanges (D-11 within-turn semantics). Pre-boundary exchanges
+// are never carried (D-01), and an orphaned tool_result (its batch cut off by
+// the boundary) is dropped — pair-safety.
+func TestProjector_MidTurnBoundaryReset(t *testing.T) {
+	t.Parallel()
+
+	m := newTestManager(t, "s1")
+	p := NewProjector(fakeProfile("sys"), m)
+
+	_ = m.AppendUserMessage("turnT", []ContentBlock{{Type: blockText, Text: "do several"}})
+	_ = m.AppendToolCall("turnT", "pre_1", toolBash, json.RawMessage(`{"command":"ls"}`))
+	_ = m.AppendToolResult("turnT", "pre_1", json.RawMessage(`{"o":"x"}`), false)
+	_ = m.AppendBoundary(mutatingCommandBash, "pre_1", "turnT")
+	// Post-boundary exchange.
+	_ = m.AppendToolCall("turnT", "post_1", toolRead, json.RawMessage(`{"file_path":"a"}`))
+	_ = m.AppendToolResult("turnT", "post_1", json.RawMessage(`{"o":"y"}`), false)
+	// An orphaned result: its call was recorded BEFORE the boundary.
+	_ = m.AppendToolResult("turnT", "pre_2", json.RawMessage(`{"o":"z"}`), false)
+
+	msgs, err := p.Project("turnT")
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+
+	// Seed + post-boundary batch + post-boundary result ONLY. The pre_2 orphan
+	// is dropped (no in-window batch), pre_1's exchange was reset away.
+	if len(msgs) != 3 { //nolint:mnd // seed + post-batch + post-result
+		t.Fatalf("len(msgs) = %d, want 3 (post-boundary only):\n%s", len(msgs), msgSummaryList(msgs))
+	}
+
+	if msgs[1].Role != "assistant" || len(msgs[1].ToolCalls) != 1 || msgs[1].ToolCalls[0].ID != "post_1" {
+		t.Errorf("msgs[1] = %s; want post_1 batch only", msgSummary(msgs[1]))
+	}
+
+	if msgs[2].Role != "tool" || msgs[2].ToolCallID != "post_1" {
+		t.Errorf("msgs[2] = %s; want post_1 result", msgSummary(msgs[2]))
+	}
+}
+
+// TestProjector_MidTurnWindowBound (08-07 T2 Test 6): a turn with more than
+// MidTurnWindowMessages accumulated messages keeps the MOST RECENT tail,
+// dropping only COMPLETE exchange groups (an assistant batch is never
+// separated from its tool results) and never the seed. The bound is pinned to
+// the captured zcode tail window (kind "tail", 64 messages observed).
+func TestProjector_MidTurnWindowBound(t *testing.T) {
+	t.Parallel()
+
+	if MidTurnWindowMessages != 64 { //nolint:mnd // capture-pinned bound
+		t.Errorf("MidTurnWindowMessages = %d, want 64 (captured zcode tail window)", MidTurnWindowMessages)
+	}
+
+	m := newTestManager(t, "s1")
+	p := NewProjector(fakeProfile("sys"), m)
+
+	_ = m.AppendUserMessage("turnT", []ContentBlock{{Type: blockText, Text: "many"}})
+
+	// 40 single-call exchanges = 80 mid messages (batch + result each).
+	for i := range 40 {
+		id := fmt.Sprintf("call_%02d", i)
+		_ = m.AppendToolCall("turnT", id, toolRead, json.RawMessage(`{"file_path":"f"}`))
+		_ = m.AppendToolResult("turnT", id, json.RawMessage(`{"o":"r"}`), false)
+	}
+
+	msgs, err := p.Project("turnT")
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+
+	// Seed + at most MidTurnWindowMessages mid messages.
+	if len(msgs) > 1+MidTurnWindowMessages {
+		t.Fatalf("len(msgs) = %d, want <= %d (seed + bound)", len(msgs), 1+MidTurnWindowMessages)
+	}
+
+	// Pair-safety: the first mid message must be an assistant batch head (a
+	// leading tool-role message would be an orphaned result), and every kept
+	// tool message's id must belong to a kept assistant batch.
+	if msgs[1].Role != "assistant" || len(msgs[1].ToolCalls) == 0 {
+		t.Fatalf("msgs[1] = %s; want an assistant batch head (pair-safety)", msgSummary(msgs[1]))
+	}
+
+	batchIDs := map[string]bool{}
+	for _, mm := range msgs {
+		for _, tc := range mm.ToolCalls {
+			batchIDs[tc.ID] = true
+		}
+	}
+
+	for i, mm := range msgs[1:] {
+		if mm.Role == "tool" && !batchIDs[mm.ToolCallID] {
+			t.Fatalf("msgs[%d] = %s — tool result separated from its batch (pair-safety violated)",
+				i+1, msgSummary(mm))
+		}
+	}
+
+	// The MOST RECENT tail is kept: the last exchange (call_39) must be present.
+	last := msgs[len(msgs)-1]
+	if last.Role != "tool" || last.ToolCallID != "call_39" {
+		t.Errorf("last = %s; want the most recent exchange (call_39 result)", msgSummary(last))
+	}
+}
+
+// TestProjector_MidTurnEndOfTurnText (08-07 T2 Test 7): the turn's final
+// assistant_message line renders as a plain assistant text message AFTER the
+// last exchange within the same turn's window (the capture's assistant text
+// blocks between batches).
+func TestProjector_MidTurnEndOfTurnText(t *testing.T) {
+	t.Parallel()
+
+	m := newTestManager(t, "s1")
+	p := NewProjector(fakeProfile("sys"), m)
+
+	_ = m.AppendUserMessage("turnT", []ContentBlock{{Type: blockText, Text: "read then report"}})
+	_ = m.AppendToolCall("turnT", "c1", toolRead, json.RawMessage(`{"file_path":"a"}`))
+	_ = m.AppendToolResult("turnT", "c1", json.RawMessage(`{"o":"1"}`), false)
+	_ = m.AppendAssistantMessage("turnT", "the file contains one entry")
+
+	msgs, err := p.Project("turnT")
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+
+	if len(msgs) != 4 { //nolint:mnd // seed + batch + result + assistant text
+		t.Fatalf("len(msgs) = %d, want 4:\n%s", len(msgs), msgSummaryList(msgs))
+	}
+
+	last := msgs[3]
+	if last.Role != "assistant" || last.Content != "the file contains one entry" || len(last.ToolCalls) != 0 {
+		t.Errorf("msgs[3] = %s; want plain assistant text after the exchange", msgSummary(last))
+	}
 }

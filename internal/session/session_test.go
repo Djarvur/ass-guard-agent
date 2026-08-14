@@ -550,3 +550,192 @@ func TestPromptNilToolExecutorStubs(t *testing.T) {
 
 // guard against unused fmt import if tests evolve.
 var _ = fmt.Sprintf
+
+// --- 08-07: real tool-call ids in the transcript + convergence ---
+
+// TestPromptRecordsRealToolCallID (08-07 T2 Test 1): a streamed tool_use chunk
+// with id "call_9" must be recorded on the transcript's tool_call line as
+// ToolCallID=call_9 (Name=Read) — today the NAME is recorded as the call id,
+// making tool_use/tool_result pairing impossible (blocker root cause 2).
+func TestPromptRecordsRealToolCallID(t *testing.T) {
+	t.Parallel()
+
+	bus := event.NewBus()
+	s, m, _ := newTestSession(t, bus, []provider.Response{
+		{ToolCalls: []provider.ToolCall{{
+			ID: "call_9", Name: toolRead, Input: json.RawMessage(`{"file_path":"x"}`),
+		}}, FinishReason: blockToolUse},
+		{FinishReason: stopEndTurn},
+	})
+	s.Catalog = toolcat.NewCatalog()
+	s.Catalog.Register(toolcat.Tool{Name: toolRead, Mutability: toolcat.MutabilityReadOnly})
+
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "read"}})
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+
+	lines, _ := m.ReadAll()
+
+	var callLine, resultLine *Line
+
+	for i := range lines {
+		switch lines[i].Type {
+		case TypeToolCall:
+			callLine = &lines[i]
+		case TypeToolResult:
+			resultLine = &lines[i]
+		}
+	}
+
+	if callLine == nil {
+		t.Fatal("no tool_call line in transcript")
+	}
+
+	if callLine.ToolCallID != "call_9" {
+		t.Errorf("tool_call ToolCallID = %q, want call_9 (the REAL provider id)", callLine.ToolCallID)
+	}
+
+	if callLine.Name != toolRead {
+		t.Errorf("tool_call Name = %q, want Read", callLine.Name)
+	}
+
+	if resultLine == nil {
+		t.Fatal("no tool_result line in transcript")
+	}
+
+	if resultLine.ToolCallID != "call_9" {
+		t.Errorf("tool_result ToolCallID = %q, want call_9 (pairing key)", resultLine.ToolCallID)
+	}
+}
+
+// convergingProvider is the 08-07 convergence harness: it emulates a model
+// that needs its own tool result — it emits a tool_use for "Read" until the
+// INCOMING messages contain a tool-role message for its call id, then ends the
+// turn. Without within-turn accumulation the turn can never converge (the
+// 08-06 gate finding at unit scale).
+type convergingProvider struct {
+	mu    sync.Mutex
+	calls int
+	seen  [][]provider.Message
+}
+
+const convCallID = "call_conv_1"
+
+func (c *convergingProvider) Send(
+	_ context.Context, _ *profile.Profile, _ []provider.Message,
+) (provider.Response, error) {
+	return provider.Response{}, nil
+}
+
+//nolint:cyclop // two-branch scenario harness
+func (c *convergingProvider) Stream(
+	_ context.Context, _ *profile.Profile, msgs []provider.Message,
+) (<-chan provider.StreamChunk, error) {
+	c.mu.Lock()
+	c.calls++
+	callN := c.calls
+	c.seen = append(c.seen, append([]provider.Message(nil), msgs...))
+	c.mu.Unlock()
+
+	hasResult := false
+	for _, m := range msgs {
+		if m.Role == "tool" && m.ToolCallID == convCallID {
+			hasResult = true
+
+			break
+		}
+	}
+
+	ch := make(chan provider.StreamChunk, 4)
+
+	go func() {
+		defer close(ch)
+
+		if !hasResult {
+			tc := provider.ToolCall{
+				ID: convCallID, Name: toolRead, Input: json.RawMessage(`{"file_path":"counter.txt"}`),
+			}
+			ch <- provider.StreamChunk{Type: blockToolUse, ToolCall: &tc, ToolCallID: convCallID}
+			ch <- provider.StreamChunk{Type: stopDone, FinishReason: blockToolUse}
+
+			return
+		}
+
+		ch <- provider.StreamChunk{Type: blockText, Text: "done reading"}
+		ch <- provider.StreamChunk{Type: stopDone, FinishReason: stopEndTurn}
+	}()
+
+	_ = callN
+
+	return ch, nil
+}
+
+func (c *convergingProvider) ToolResultMessage(_ string, _ json.RawMessage) (json.RawMessage, error) {
+	return json.RawMessage(`{}`), nil
+}
+
+// TestConverge_ModelSeesOwnToolResults (08-07 T2 Test 4, THE convergence
+// test): a model that returns end_turn only once its own tool result reaches
+// it must finish within <= 3 iterations — and iteration 2's outgoing messages
+// must include BOTH the assistant tool_use and the tool result. RED today: the
+// projection never carries them, so the turn exhausts maxIterations.
+func TestConverge_ModelSeesOwnToolResults(t *testing.T) {
+	t.Parallel()
+
+	bus := event.NewBus()
+	m := newTestManager(t, "conv")
+	cp := &convergingProvider{}
+	pj := NewProjector(fakeProfile("test agent"), m)
+	s := &Session{
+		Manager:   m,
+		Projector: pj,
+		Provider:  cp,
+		Bus:       bus,
+		Semaphore: provider.NewSemaphore(4),
+		Profile:   *fakeProfile("test agent"),
+		WorkDir:   t.TempDir(),
+		SessionID: "conv",
+	}
+
+	stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "read counter.txt"}})
+	if err != nil {
+		t.Fatalf("Prompt: %v (the turn failed to converge)", err)
+	}
+
+	if stop != stopEndTurn {
+		t.Fatalf("stop = %q, want end_turn (the model never saw its result)", stop)
+	}
+
+	cp.mu.Lock()
+	calls := cp.calls
+	second := append([]provider.Message(nil), cp.seen[1]...)
+	cp.mu.Unlock()
+
+	if calls > 3 { //nolint:mnd // convergence budget from the plan
+		t.Fatalf("Stream calls = %d, want <= 3 (tool-loop exhaustion — the 08-06 finding)", calls)
+	}
+
+	if calls < 2 {
+		t.Fatalf("Stream calls = %d, want >= 2 (the model needed its result first)", calls)
+	}
+
+	var hasUse, hasResult bool
+	for _, mm := range second {
+		if mm.Role == "assistant" && len(mm.ToolCalls) > 0 && mm.ToolCalls[0].ID == convCallID {
+			hasUse = true
+		}
+
+		if mm.Role == "tool" && mm.ToolCallID == convCallID {
+			hasResult = true
+		}
+	}
+
+	if !hasUse {
+		t.Error("iteration 2 messages missing the assistant tool_use (call_conv_1)")
+	}
+
+	if !hasResult {
+		t.Error("iteration 2 messages missing the tool result (call_conv_1)")
+	}
+}
