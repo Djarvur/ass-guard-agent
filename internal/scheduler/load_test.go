@@ -118,3 +118,60 @@ func TestLoadEmbeddedDefault(t *testing.T) {
 	require.Equal(t, modelGLM52, cfg.Tiers[tierHeavy].Model)
 	require.Equal(t, providerAnthropic, cfg.Models[modelGLM52].Provider)
 }
+
+// TestValidateWarns_NoCredentialField asserts D-04's warn-not-reject: a
+// provider declared with neither api_key nor api_key_env yields a warning
+// naming the provider, and validation still succeeds (no *ConfigError).
+func TestValidateWarns_NoCredentialField(t *testing.T) {
+	t.Parallel()
+
+	cfg := &Config{
+		Providers: map[string]ProviderConfig{
+			"nokey": {Shape: providerAnthropic},
+		},
+	}
+
+	warnings, err := ValidateWithWarnings(cfg)
+	require.NoError(t, err, "missing credential fields must warn, not reject")
+	require.NotEmpty(t, warnings)
+	require.Contains(t, strings.Join(warnings, " "), "nokey")
+	require.Contains(t, strings.Join(warnings, " "), "api_key")
+}
+
+// TestValidate_NoWarnWhenAPIKeyEnvDeclared asserts a provider that declares
+// api_key_env (even with the env var currently unset) produces NO load-time
+// warning — load-time cannot know runtime env state; the startup warn (Plan
+// 07-02) handles that.
+func TestValidate_NoWarnWhenAPIKeyEnvDeclared(t *testing.T) {
+	t.Parallel()
+
+	cfg := &Config{
+		Providers: map[string]ProviderConfig{
+			testZaiSlug: {Shape: providerAnthropic, APIKeyEnv: testZAIEnv},
+		},
+	}
+
+	warnings, err := ValidateWithWarnings(cfg)
+	require.NoError(t, err)
+	require.Empty(t, warnings)
+}
+
+// TestValidate_StillRejectsBadShape guards Phase-3 D-10: an unknown provider
+// shape remains a hard violation even after the credential warn was added.
+func TestValidate_StillRejectsBadShape(t *testing.T) {
+	t.Parallel()
+
+	cfg := &Config{
+		Providers: map[string]ProviderConfig{
+			"weird": {Shape: "weird", APIKey: "sk-lit"},
+		},
+	}
+
+	_, err := ValidateWithWarnings(cfg)
+	require.Error(t, err)
+
+	var cerr *ConfigError
+
+	require.ErrorAs(t, err, &cerr, "unknown shape must still be a *ConfigError")
+	require.Contains(t, err.Error(), "weird")
+}
