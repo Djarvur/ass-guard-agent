@@ -258,6 +258,11 @@ func runACPServe(ctx context.Context, in io.Reader, out, stderr io.Writer, opts 
 		return fmt.Errorf("setup provider factory: %w", ferr)
 	}
 
+	// SC3 (Phase 7): warn once at startup when the operator's scheduling.yaml
+	// is looser than 0600 — it may carry a literal api_key (credential-on-disk
+	// hygiene, T-07-05). Advisory only; the seed itself stays 0644 (D-06).
+	warnLooseConfigPerm(filepath.Join(opts.WorkDir, ".ass-guard", "scheduling.yaml"), stderr)
+
 	runner := &sessionTurnRunner{
 		bus:         bus,
 		profile:     prof,

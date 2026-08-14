@@ -30,7 +30,12 @@ models:
   glm-5.2:
     provider: zai
     pricing: { input_per_mtoken: 0.60, output_per_mtoken: 2.20 }
-    capabilities: { context_window: 200000, max_output_tokens: 32000, tool_calling: true, streaming: true, extended_thinking: true }
+    capabilities:
+      context_window: 200000
+      max_output_tokens: 32000
+      tool_calling: true
+      streaming: true
+      extended_thinking: true
 tiers:
   heavy:
     model: glm-5.2
@@ -53,7 +58,12 @@ models:
   glm-5.2:
     provider: zai
     pricing: { input_per_mtoken: 0.60, output_per_mtoken: 2.20 }
-    capabilities: { context_window: 200000, max_output_tokens: 32000, tool_calling: true, streaming: true, extended_thinking: true }
+    capabilities:
+      context_window: 200000
+      max_output_tokens: 32000
+      tool_calling: true
+      streaming: true
+      extended_thinking: true
 tiers:
   heavy:
     model: glm-5.2
@@ -80,6 +90,12 @@ func writeTestScheduling(t *testing.T, workDir, content string) string {
 // the uncredentialed provider — and the factory is still built (warn, never
 // refuse to start).
 func TestLoadSchedulingFactory_WarnsUncredentialed(t *testing.T) {
+	// Env hygiene: the assertions assume NOKEY_API_KEY is unset (the fixture
+	// declares it via api_key_env) and zai stays credentialed regardless of
+	// any ambient ZAI_API_KEY. t.Setenv also makes this test non-parallel.
+	t.Setenv("ZAI_API_KEY", "")
+	t.Setenv("NOKEY_API_KEY", "")
+
 	workDir := t.TempDir()
 	writeTestScheduling(t, workDir, testSchedulingWarnsConfig)
 
@@ -125,6 +141,8 @@ func TestLoadSchedulingFactory_ZeroConfigEnv(t *testing.T) {
 // warning: a group/world-readable scheduling.yaml warns at startup with the
 // 0600 recommendation; a 0600-tight file stays silent. Never refuses to start.
 func TestStartupWarn_ConfigPermLoose(t *testing.T) {
+	t.Parallel()
+
 	workDir := t.TempDir()
 	path := writeTestScheduling(t, workDir, testSchedulingZeroEnvConfig)
 

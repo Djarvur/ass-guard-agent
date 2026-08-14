@@ -152,6 +152,8 @@ func (f *ProviderFactory) Build(
 // attach its RequestCapturer — never hardcoded defaults, D-08). ok is false
 // for an undeclared provider or an uncredentialed one (D-07 lazy semantics —
 // the caller falls back to Build's noCredentialProvider).
+//
+//nolint:nonamedreturns // (baseURL, key, ok) is the Plan 07-02 accessor contract
 func (f *ProviderFactory) Endpoint(providerName string) (baseURL, key string, ok bool) {
 	prov, declared := f.cfg.Providers[providerName]
 	if !declared {

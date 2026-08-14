@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"log/slog"
@@ -9,7 +10,9 @@ import (
 	"sort"
 	"time"
 
+	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/scheduler"
+	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 )
 
 // loadSchedulingFactory is the D-08 wiring seam shared by acp serve / tracer /
@@ -18,7 +21,11 @@ import (
 // emits the D-07 startup uncredentialed-provider warnings to stderr (transport
 // discipline — stdout stays ACP-only). A load error is returned for the caller
 // to degrade gracefully (T-07-08); the factory never refuses to build.
-func loadSchedulingFactory(workDir, apiKeyFlag string, stderr io.Writer) (*scheduler.Config, *scheduler.ProviderFactory, error) {
+//
+//nolint:unparam // apiKeyFlag is the D-05 flag-precedence seam (07-CONTEXT D-05), kept per the plan contract
+func loadSchedulingFactory(
+	workDir, apiKeyFlag string, stderr io.Writer,
+) (*scheduler.Config, *scheduler.ProviderFactory, error) {
 	overlayPath := filepath.Join(workDir, ".ass-guard", "scheduling.yaml")
 
 	var (
@@ -26,14 +33,15 @@ func loadSchedulingFactory(workDir, apiKeyFlag string, stderr io.Writer) (*sched
 		err error
 	)
 
-	if _, statErr := os.Stat(overlayPath); statErr == nil {
+	_, statErr := os.Stat(overlayPath)
+	if statErr == nil {
 		cfg, err = scheduler.Load(overlayPath)
 	} else {
 		cfg, err = scheduler.Load()
 	}
 
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("load scheduling config: %w", err)
 	}
 
 	factory := scheduler.NewProviderFactory(cfg, apiKeyFlag, slog.Default())
@@ -55,7 +63,7 @@ func setupProviderFactory(workDir string, stderr io.Writer) (*scheduler.Provider
 
 		cfg, err = scheduler.Load()
 		if err != nil {
-			return nil, "", err
+			return nil, "", fmt.Errorf("load embedded scheduling default: %w", err)
 		}
 
 		factory = scheduler.NewProviderFactory(cfg, "", nil)
@@ -63,13 +71,41 @@ func setupProviderFactory(workDir string, stderr io.Writer) (*scheduler.Provider
 	}
 
 	providerName := firstDeclaredProvider(cfg)
-	if primary, _, rerr := scheduler.NewResolver(cfg).Resolve(
-		tierHeavy, "", time.Now(), scheduler.CapabilityReq{},
-	); rerr == nil {
+
+	primary, _, rerr := scheduler.NewResolver(cfg).Resolve(tierHeavy, "", time.Now(), scheduler.CapabilityReq{})
+	if rerr == nil {
 		providerName = primary.Provider
 	}
 
 	return factory, providerName, nil
+}
+
+// tracerProvider builds the LOG-01 tracer's provider through the factory
+// (D-08): a credentialed anthropic provider is reconstructed with
+// factory-RESOLVED base_url+key so the RequestCapturer can be attached (never
+// hardcoded defaults); anything else keeps the factory-built instance — the
+// uncredentialed noCredentialProvider fails lazily at first use (D-07).
+//
+//nolint:ireturn // factory seam: returns the provider.Provider abstraction
+func tracerProvider(
+	factory *scheduler.ProviderFactory, providerName string, capturer provider.RequestCapturer,
+) (provider.Provider, error) {
+	p, err := factory.Build(providerName, shaper.New())
+	if err != nil {
+		return nil, fmt.Errorf("build provider %q: %w", providerName, err)
+	}
+
+	if _, isAnthropic := p.(*provider.AnthropicProvider); isAnthropic {
+		if baseURL, key, ok := factory.Endpoint(providerName); ok {
+			return provider.NewAnthropicProvider(shaper.New(),
+				provider.WithAnthropicBaseURL(baseURL),
+				provider.WithAnthropicAPIKey(key),
+				provider.WithAnthropicRequestCapture(capturer),
+			), nil
+		}
+	}
+
+	return p, nil
 }
 
 // firstDeclaredProvider returns the first provider name in sorted order — the
@@ -87,4 +123,23 @@ func firstDeclaredProvider(cfg *scheduler.Config) string {
 	}
 
 	return names[0]
+}
+
+// warnLooseConfigPerm implements the SC3 credential-on-disk hygiene warning: a
+// scheduling.yaml that is group/world-readable (mode not 0600-tight) may carry
+// a literal api_key, so warn once at startup recommending chmod 0600. Advisory
+// only — never refuses to start. Transport discipline: stderr only (T-07-06:
+// names only the path + the recommended mode, never a key).
+func warnLooseConfigPerm(path string, stderr io.Writer) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return
+	}
+
+	perm := info.Mode().Perm()
+	if perm&0o077 != 0 {
+		_, _ = fmt.Fprintf(stderr,
+			"ass-guard: %s is %04o (group/world-accessible) and may carry an api_key — chmod 0600 to protect it\n",
+			path, perm)
+	}
 }
