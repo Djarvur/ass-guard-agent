@@ -232,6 +232,7 @@ func TestProviderFactory_WireRoundTrip(t *testing.T) {
 				flusher.Flush()
 			}
 		}
+
 		fmt.Fprint(w, "data: [DONE]\n\n")
 	}))
 	defer srv.Close()
@@ -261,7 +262,8 @@ func TestProviderFactory_WireRoundTrip(t *testing.T) {
 	drainStreamChannel(t, ch)
 
 	require.Equal(t, "/v1/messages", gotPath, "base_url must be honored")
-	require.Equal(t, strings.TrimPrefix(srv.URL, "http://"), gotHost, "request Host must be the configured base_url host")
+	require.Equal(t, strings.TrimPrefix(srv.URL, "http://"), gotHost,
+		"request Host must be the configured base_url host")
 	require.Equal(t, "sk-wire-secret", gotKey, "X-Api-Key must carry the resolved key")
 }
 
