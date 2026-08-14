@@ -1,0 +1,49 @@
+# seeded.toml — the embedded zero-config OpenSpec config floor (OPEN-02). The
+# engine loads this default when no operator overlay is present; operators
+# override via the TOML loader. Seeded from real OpenSpec handoff examples.
+#
+# [[patterns]] — assistant-text regex → action (the engine's dual-signal text
+#   half, D-02). The engine continues the SDD scenario when the assistant's
+#   output matches one of these handoff patterns.
+# [[handoff_tools]] — tool-call name → action (the dual-signal tool half).
+# [commands] — command → mutability (D-15 / OPEN-03, the boundary source of truth).
+
+[[patterns]]
+id = "impl-complete"
+regex = "Implementation Complete.*ready for review"
+action = "continue"
+
+[[patterns]]
+id = "spec-done"
+regex = "(?i)specification.*finalized"
+action = "continue"
+
+[[patterns]]
+id = "changes-proposed"
+regex = "(?i)change proposal.*ready"
+action = "hook"
+
+[[handoff_tools]]
+id = "os-handoff"
+tool = "openspec_handoff"
+action = "continue"
+
+[[handoff_tools]]
+id = "os-stage-done"
+tool = "openspec_stage_done"
+action = "continue"
+
+[commands.list]
+mutability = "read-only"
+
+[commands.show]
+mutability = "read-only"
+
+[commands.validate]
+mutability = "read-only"
+
+[commands.apply]
+mutability = "mutating"
+
+[commands.implement]
+mutability = "mutating"

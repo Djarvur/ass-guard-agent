@@ -13,7 +13,8 @@
 
 # Code coverage profiles and other test artifacts
 *.out
-coverage.*
+coverage.out
+coverage.txt
 *.coverprofile
 profile.cov
 
@@ -30,3 +31,30 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# gsd-core (local ZCode install — managed by `npx @opengsd/gsd-core`)
+.zcode/
+gsd-file-manifest.json
+gsd-install-state.json
+
+# spikes/ throwaway module build artifacts (D-05: go.sum + built binaries are
+# NOT committed; spike .go source + go.mod + findings ARE committed)
+spikes/go.sum
+spikes/bin/
+/spikes/**/bin/
+
+# Phase 1 build artifacts (Plan 01-01 T1)
+/ass-guard
+*.log
+
+# Phase 6 distribution artifacts (Plan 06-02): goreleaser output + the snapshot
+# build dir. agent.json is generated at release by scripts/gen-agent-json.sh but
+# the committed dev placeholder IS tracked (do not ignore it).
+/dist/
+
+# .ass-guard/ is the per-machine runtime dir (Phase-6 first-run seed:
+# materialized profiles + openspec.toml + scheduling.yaml + learned.yaml).
+# It also holds local secrets — e.g. api_key, config.yaml with a provider key.
+# Never commit: generated from embedded defaults + may carry credentials.
+.ass-guard/
+

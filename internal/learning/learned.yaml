@@ -1,0 +1,5 @@
+# learned.yaml — the zero-config floor for the learning store. Empty-but-valid
+# so a fresh install with no learned settings still loads cleanly. The store
+# writes this file on first Open if absent (D-16); it is plain YAML so the
+# operator can git-track it (LRN-04) or gitignore it like transcripts.
+entries: []

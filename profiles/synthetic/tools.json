@@ -1,0 +1,4 @@
+[
+  {"name":"synth_tool_a","description":"A synthetic test tool.","input_schema":{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}},
+  {"name":"synth_tool_b","description":"Another synthetic tool.","input_schema":{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}}
+]

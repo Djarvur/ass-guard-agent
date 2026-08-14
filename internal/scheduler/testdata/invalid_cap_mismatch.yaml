@@ -1,0 +1,69 @@
+# invalid_cap_mismatch.yaml — same as valid.yaml BUT tiers.heavy.fallback is
+# [haiku-cheap], a model that lacks tool_calling while the heavy primary
+# (glm-5.2) has it. D-10 REJECTS this config at load time, naming both models
+# and the unmet capability. Used by TestLoadInvalidCapMismatch.
+timezone: "America/New_York"
+
+providers:
+  anthropic:
+    base_url: "https://api.z.ai/api/anthropic"
+    shape: anthropic
+  openai:
+    base_url: "https://api.openai.com/v1"
+    shape: openai
+  groq:
+    base_url: "https://api.groq.com/openai/v1"
+    shape: openai
+
+models:
+  glm-5.2:
+    provider: anthropic
+    pricing: { input_per_mtoken: 0.60, output_per_mtoken: 2.20 }
+    capabilities: { context_window: 200000, max_output_tokens: 32000, tool_calling: true, streaming: true, extended_thinking: true }
+  glm-4.6:
+    provider: anthropic
+    pricing: { input_per_mtoken: 0.15, output_per_mtoken: 0.60 }
+    capabilities: { context_window: 128000, max_output_tokens: 16000, tool_calling: true, streaming: true, extended_thinking: false }
+  minimax-m3:
+    provider: openai
+    pricing: { input_per_mtoken: 0.10, output_per_mtoken: 0.30 }
+    capabilities: { context_window: 200000, max_output_tokens: 32000, tool_calling: true, streaming: true, extended_thinking: false }
+  haiku-cheap:
+    provider: groq
+    pricing: { input_per_mtoken: 0.05, output_per_mtoken: 0.10 }
+    capabilities: { context_window: 64000, max_output_tokens: 8000, tool_calling: false, streaming: true, extended_thinking: false }
+
+tiers:
+  heavy:
+    model: glm-5.2
+    fallback: [haiku-cheap]   # D-10 violation: glm-5.2 has tool_calling, haiku-cheap does not
+  good:
+    model: glm-4.6
+    fallback: [minimax-m3]
+  light:
+    model: minimax-m3
+    fallback: []
+
+time_windows:
+  - name: peak
+    zone: "America/New_York"
+    schedule: { from: "09:00", to: "17:00", days: [Mon, Tue, Wed, Thu, Fri] }
+    tiers:
+      heavy: { model: minimax-m3, fallback: [glm-5.2] }
+
+projects:
+  myproj:
+    tiers:
+      good: { model: minimax-m3, fallback: [] }
+
+circuit_breaker:
+  consecutive_failures: 5
+  error_rate_window: 20
+  error_rate_threshold: 0.50
+  cooldown: 60s
+  half_open_probes: 1
+
+cost_ceiling:
+  amount_usd: 50.0
+  window: 24h
+  degrade_to: light

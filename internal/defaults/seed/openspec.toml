@@ -1,0 +1,43 @@
+# openspec.toml — the operator-visible OpenSpec handoff patterns seed (OPEN-02).
+#
+# Written to .ass-guard/openspec.toml on first run (D-04) so a team can see and
+# edit the patterns that drive the autocontinue engine. This file carries the
+# schema skeleton; real patterns are populated from Phase 4 D-14 extraction.
+# Until then it carries the structure so the file exists AND parses as valid TOML.
+#
+# CROSS-PHASE DEPENDENCY (T-06-04): the Phase-4 engine (internal/openspec) loads
+# its EMBEDDED config floor via DefaultConfig() (internal/openspec/seeded.toml).
+# This operator file is the OVERLAY path: when a team edits
+# .ass-guard/openspec.toml, the engine's TOML loader consumes it. The schema
+# below mirrors internal/openspec/seeded.toml so the overlay is drop-in.
+# Phase-4 planner must reconcile the engine's read path with .ass-guard/openspec.toml.
+
+[openspec]
+version = 1
+
+# [[patterns]] — assistant-text regex → action (the engine's dual-signal text
+# half, D-02). The engine continues the SDD scenario when the assistant's output
+# matches one of these handoff patterns. action ∈ {continue, hook}.
+# Uncomment and edit to declare a handoff.
+#
+# [[patterns]]
+# id = "impl-complete"
+# regex = "Implementation Complete.*ready for review"
+# action = "continue"
+
+# [[handoff_tools]] — tool-call name → action (the dual-signal tool half, D-02).
+# The engine continues when the assistant emits one of these tool calls.
+#
+# [[handoff_tools]]
+# id = "os-handoff"
+# tool = "openspec_handoff"
+# action = "continue"
+
+# [commands] — command → mutability (D-15 / OPEN-03, the boundary source of
+# truth). Read-only commands never start a context boundary; mutating commands
+# always do.
+#
+# [commands.list]
+# mutability = "read-only"
+# [commands.apply]
+# mutability = "mutating"

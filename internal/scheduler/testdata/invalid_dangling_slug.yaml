@@ -1,0 +1,34 @@
+# invalid_dangling_slug.yaml — tiers.heavy.model references "nonexistent-model",
+# a slug absent from models. Validate rejects naming the dangling slug.
+timezone: "America/New_York"
+
+providers:
+  anthropic:
+    base_url: "https://api.z.ai/api/anthropic"
+    shape: anthropic
+
+models:
+  glm-4.6:
+    provider: anthropic
+    pricing: { input_per_mtoken: 0.15, output_per_mtoken: 0.60 }
+    capabilities: { context_window: 128000, max_output_tokens: 16000, tool_calling: true, streaming: true, extended_thinking: false }
+
+tiers:
+  heavy:
+    model: nonexistent-model   # dangling slug — no such key in models
+    fallback: [glm-4.6]
+  good:
+    model: glm-4.6
+    fallback: []
+
+circuit_breaker:
+  consecutive_failures: 5
+  error_rate_window: 20
+  error_rate_threshold: 0.50
+  cooldown: 60s
+  half_open_probes: 1
+
+cost_ceiling:
+  amount_usd: 50.0
+  window: 24h
+  degrade_to: good

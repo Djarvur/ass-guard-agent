@@ -1,0 +1,42 @@
+profile: zcode
+target_capture_ref:
+    sessions:
+        - id: sess_016eee8a-f2f0-44c3-abf9-9d57a2cf04a1
+          path: /Users/nil/.zcode/cli/rollout/model-io-sess_016eee8a-f2f0-44c3-abf9-9d57a2cf04a1.jsonl
+          role: main
+    extracted_at: 2026-08-11T19:03:28.858958Z
+    extractor_version: extract-profile/01-02
+extracted_at: 2026-08-11T19:03:28.858958Z
+extractor_version: extract-profile/01-02
+fields:
+    - path: request.body.system
+      tier: 1
+      type: '[]TextBlock'
+      observed_count: 3
+      source: /Users/nil/.zcode/cli/rollout/model-io-sess_016eee8a-f2f0-44c3-abf9-9d57a2cf04a1.jsonl
+    - path: request.body.tools
+      tier: 1
+      type: '[]Decl'
+      observed_count: 103
+      source: /Users/nil/.zcode/cli/rollout/model-io-sess_016eee8a-f2f0-44c3-abf9-9d57a2cf04a1.jsonl
+    - path: request.body.thinking
+      tier: 1
+      type: json
+      observed_count: 1
+      source: /Users/nil/.zcode/cli/rollout/model-io-sess_016eee8a-f2f0-44c3-abf9-9d57a2cf04a1.jsonl
+    - path: request.body.tool_choice
+      tier: 1
+      type: json
+      observed_count: 1
+      source: /Users/nil/.zcode/cli/rollout/model-io-sess_016eee8a-f2f0-44c3-abf9-9d57a2cf04a1.jsonl
+    - path: request.headers
+      tier: 2
+      type: '[]Header (names)'
+      observed_count: 12
+      source: /Users/nil/.zcode/cli/rollout/model-io-sess_016eee8a-f2f0-44c3-abf9-9d57a2cf04a1.jsonl
+    - path: request.body.model
+      tier: 1
+      type: string
+      observed_count: 1
+      source: /Users/nil/.zcode/cli/rollout/model-io-sess_016eee8a-f2f0-44c3-abf9-9d57a2cf04a1.jsonl
+required_tools_satisfied_by_catalog: false

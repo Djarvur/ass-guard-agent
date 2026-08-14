@@ -1,0 +1,53 @@
+# providers-cred.yaml — Phase 7 fixture: two providers (anthropic + openai
+# shapes) with inline credentials (api_key_env / api_key), two models per
+# provider, and a tier whose fallback crosses into the other provider.
+# The literal api_key below is a FAKE test value — never a real secret.
+timezone: "UTC"
+
+providers:
+  zai:
+    base_url: "https://api.z.ai/api/anthropic"
+    shape: anthropic
+    api_key_env: ZAI_API_KEY
+  oai:
+    base_url: "https://api.openai.com/v1"
+    shape: openai
+    api_key: "sk-test-literal"
+
+models:
+  glm-5.2:
+    provider: zai
+    pricing: { input_per_mtoken: 0.60, output_per_mtoken: 2.20 }
+    capabilities: { context_window: 200000, max_output_tokens: 32000, tool_calling: true, streaming: true, extended_thinking: true }
+  glm-4.6:
+    provider: zai
+    pricing: { input_per_mtoken: 0.15, output_per_mtoken: 0.60 }
+    capabilities: { context_window: 128000, max_output_tokens: 16000, tool_calling: true, streaming: true, extended_thinking: true }
+  gpt-4o-mini:
+    provider: oai
+    pricing: { input_per_mtoken: 0.15, output_per_mtoken: 0.60 }
+    capabilities: { context_window: 128000, max_output_tokens: 16000, tool_calling: true, streaming: true, extended_thinking: true }
+  groq-llama:
+    provider: oai
+    pricing: { input_per_mtoken: 0.05, output_per_mtoken: 0.10 }
+    capabilities: { context_window: 64000, max_output_tokens: 8000, tool_calling: true, streaming: true, extended_thinking: true }
+
+tiers:
+  heavy:
+    model: glm-5.2
+    fallback: [gpt-4o-mini]
+  light:
+    model: glm-4.6
+    fallback: [groq-llama]
+
+circuit_breaker:
+  consecutive_failures: 5
+  error_rate_window: 20
+  error_rate_threshold: 0.50
+  cooldown: 60s
+  half_open_probes: 1
+
+cost_ceiling:
+  amount_usd: 50.0
+  window: 24h
+  degrade_to: heavy

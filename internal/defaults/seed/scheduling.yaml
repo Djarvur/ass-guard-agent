@@ -1,0 +1,34 @@
+# defaults/scheduling.yaml — the embedded zero-config floor (DIST-03). Loaded
+# first by Load(); global + per-project configs overlay it. Minimal-but-valid so
+# a fresh install with no scheduling.yaml still resolves a tier (heavy → glm-5.2
+# via the Z.ai Anthropic endpoint, VERIFIED-FACTS #1).
+timezone: "UTC"
+
+providers:
+  anthropic:
+    base_url: "https://api.z.ai/api/anthropic"
+    shape: anthropic
+    api_key_env: ZAI_API_KEY
+
+models:
+  glm-5.2:
+    provider: anthropic
+    pricing: { input_per_mtoken: 0.60, output_per_mtoken: 2.20 }
+    capabilities: { context_window: 200000, max_output_tokens: 32000, tool_calling: true, streaming: true, extended_thinking: true }
+
+tiers:
+  heavy:
+    model: glm-5.2
+    fallback: []
+
+circuit_breaker:
+  consecutive_failures: 5
+  error_rate_window: 20
+  error_rate_threshold: 0.50
+  cooldown: 60s
+  half_open_probes: 1
+
+cost_ceiling:
+  amount_usd: 50.0
+  window: 24h
+  degrade_to: heavy

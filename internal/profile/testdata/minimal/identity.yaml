@@ -1,0 +1,5 @@
+headers:
+  - name: X-Synth-Test
+    value_template: "<synth-test>"
+  - name: X-Synth-Run-Id
+    value_template: "<run-id>"
