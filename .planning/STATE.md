@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Kickoff & Peers
 status: executing
-stopped_at: Phase 8 planned (6 plans, 4 waves)
-last_updated: "2026-08-14T18:02:42.234Z"
-last_activity: 2026-08-14 -- Phase 8 planning complete
+stopped_at: Phase 10 context gathered
+last_updated: "2026-08-14T18:33:04.168Z"
+last_activity: 2026-08-14 -- Phase 8 execution started
 progress:
   total_phases: 4
   completed_phases: 0
-  total_plans: 6
+  total_plans: 8
   completed_plans: 0
   percent: 0
 ---
@@ -20,14 +20,14 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-08-14)
 **Core value:** Outgoing requests to the model provider must be structurally indistinguishable from the mimicked agent's (zcode first) — *validated v1.0 (Phase-1 A/B parity)*
-**Current focus:** Phase 8 — Slash-Command Kickoff (v1.1's product proof; closes v1.0's major known gap)
+**Current focus:** Phase 8 — slash-command-kickoff
 
 ## Current Position
 
-Phase: 8 of 11 (Slash-Command Kickoff)
-Plan: 08-01 .. 08-06 (6 plans, 4 waves — all planned)
-Status: Ready to execute
-Last activity: 2026-08-14 -- Phase 8 planning complete
+Phase: 8 (slash-command-kickoff) — EXECUTING
+Plan: 1 of 6
+Status: Executing Phase 8
+Last activity: 2026-08-14 -- Phase 8 execution started
 Next action: `/gsd-execute-phase 8`
 
 Progress: [░░░░░░░░░░] 0%
@@ -59,6 +59,7 @@ None yet.
 - [Phase 9]: AUD-05 needs an operator action (export `ZAI_API_KEY`, run the divergence-prone capture workload per the runbook).
 - [Phase 10]: the bot-token redactor + canary test MUST land before the first Telegram HTTP call (token shape matches no existing redactor pattern).
 - [Phase 11]: only phase with open unknowns — research/capture spike recommended at phase start (`--research-phase 11`).
+- [Phase 8 execution, env note]: execute-phase ran with the gsd-executor contract executed IN-PROCESS by the orchestrating agent — this ZCode runtime exposes no subagent-spawn tool (same constraint the Phase-8 planner hit). ~/.claude/agents/gsd-executor.md was followed step-for-step (per-task atomic commits, TDD RED→GREEN gates, deviation rules, SUMMARY.md + state updates). Worktrees disabled per project config; execution sequential on master, matching prior phases.
 
 ## Deferred Items
 
@@ -72,6 +73,6 @@ Carried from v1.0 close — dispositioned into v1.1 scope:
 
 ## Session Continuity
 
-Last session: 2026-08-14T17:55:10.365Z
-Stopped at: Phase 9 context gathered
-Resume file: .planning/phases/09-serve-path-audit-zcode-parity-re-capture/09-CONTEXT.md
+Last session: 2026-08-14T18:33:04.125Z
+Stopped at: Phase 10 context gathered
+Resume file: .planning/phases/10-telegram-peer-text-voice/10-CONTEXT.md
