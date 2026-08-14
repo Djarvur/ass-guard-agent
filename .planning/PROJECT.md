@@ -2,90 +2,52 @@
 
 ## What This Is
 
-A Go-based AI coding agent that makes SDD (Spec-Driven Development) workflows run hands-off by automatically doing the routine work a developer keeps forgetting to ask for. It speaks to model providers with requests structured like another agent (the first mimicry target is zcode — a claude-code-compat runtime shipping its own `AGENTS.md`, skills, commands, MCP, and tool catalog), so the model behaves identically to how it behaves in the mimicked agent. The agent hosts unmodified SDD toolkits (OpenSpec in v1), drives them to completion without manual "continue" taps, and runs configurable post-stage routines (review / memory / tests / linters / improvement proposals) on its own. Primary interface is ACP (IDE-native, e.g. Zed); Telegram is a full peer surface (text + voice). Built for SDD-capable teams who want the toolkit to just run.
+A Go-based AI coding agent that makes SDD (Spec-Driven Development) workflows run hands-off by automatically doing the routine work a developer keeps forgetting to ask for. It speaks to model providers with requests structured like another agent (the first mimicry target is zcode — a claude-code-compat runtime shipping its own `AGENTS.md`, skills, commands, MCP, and tool catalog), so the model behaves identically to how it behaves in the mimicked agent. The agent hosts unmodified SDD toolkits (OpenSpec in v1), drives them to completion without manual "continue" taps, and runs configurable post-stage routines (review / memory / tests / linters / improvement proposals) on its own. Primary interface is ACP (IDE-native, e.g. Zed); Telegram is a planned full peer surface (text + voice, v2). Built for SDD-capable teams who want the toolkit to just run.
 
 ## Core Value
 
 Outgoing requests to the model provider must be structurally indistinguishable from the mimicked agent's (zcode first) — if the model can tell the requests apart, everything built on top is compromised, because model behavior diverges. Every other capability (autocontinue, hooks, scheduling, interfaces) is downstream of this.
+
+*Validated v1.0:* the Phase-1 A/B parity test proved the thesis — ass-guard's shaped requests (3 byte-identical system blocks, 103-tool catalog, thinking/tool_choice/stream fields) produce statistically indistinguishable tool-call sequences from live zcode.
 
 ## Business Context
 
 - **Customer**: SDD-practicing engineering teams (and the author's own SDD workflow as the first instance)
 - **Revenue model**: Undecided (open-source team tooling; possible hosted/managed later)
 - **Success metric**: A team can install ass-guard via ACP registry, run an unmodified OpenSpec workflow, and never tap "continue" or remember to ask for review/tests/lint/memory — the agent does the forgotten routine automatically
-- **Strategy notes**: Successor to `sdd-acp-agent` (closed in favor of this project). The predecessor's research, architecture spine, and specs survive as reference; its Go code does not carry over — ass-guard is built fresh against its own scope.
+- **Strategy notes**: Successor to `sdd-acp-agent` (closed in favor of this project). The predecessor's research, architecture spine, and specs survive as reference; its Go code does not carry over — ass-guard is built fresh against its own scope. Model access in daily practice runs through an opencode subscription serving MiniMax + DeepSeek models (recorded 2026-08-14; informs provider-config defaults and future profile targets).
 
 ## Requirements
 
 ### Validated
 
 - Model scheduling layer (Phase 3 — Model Scheduling): tier abstraction (heavy/good/light → concrete provider+model), time-windowed substitution with IANA-zone support + bundled tzdata, per-project override (D-02 precedence: time-window → project → global), typed ProviderError classification (Transient/Structural) driving an explicit fallback chain, circuit breakers (consecutive + error-rate, D-07) and a dollars-per-window cost ceiling with degrade-then-stop (D-08), and structured capability profiles with load-time + request-time mismatch enforcement (D-09/D-10). Validated by `internal/scheduler` (config/resolver/dispatch/breaker/cost/capability) + `internal/provider/errors.go` + the `ass-guard scheduling validate|resolve` CLI.
+- Distribution (Phase 6 — DIST-01/02/03): single static Go binary via goreleaser (macOS + Linux, amd64 + arm64, CGO_ENABLED=0), canonical ACP registry `agent.json` (cmd/args schema), `--version` with ldflags injection, and zero-config first run (go:embed seed: sanitized zcode profile + openspec.toml + scheduling.yaml written to `.ass-guard/` non-clobbering).
+- Mimicry core (Phase 1 — MIMC-01..04, PROF-01..05, TOOL-01..03, PROV-01..03): Profile Shaper between Turn Loop and provider adapter; zcode profile extracted from real rollout logs (3 system blocks, 103 tools, identity, thinking, tool_choice); A/B parity thesis proven; drift detector (`ass-guard profile check`); coverage manifest. *Caveat carried: the pinned capture session (`eea3dc48`) is absent on disk, so the within-session stability test fails until a divergence-prone session is re-captured (operator action).*
+- Session core + ACP v1 (Phase 2 — SESS-01..06, ACP-01..05, LOG-02..04, PARA-01..04): Zed-spawnable stdio JSON-RPC server, token streaming, session replay on restart, two-layer context (durable transcript + lean projected window reset at command boundaries), parallel subagents as goroutine turn-loops. Post-ship fix: JSON-RPC string ids accepted (Zed sends UUIDs).
+- Unified engine + Hook-DAG + learning (Phase 4 — ENG-01..05, HOOK-01..05, LRN-01..04, OPEN-01..03, TOOL-04/05): post-turn observer deciding continue/hook/ask/wait; dual-signal handoffs (text-pattern OR tool-call); structural safety (unmatched ⇒ nothing, testing/quick + E2E); cancel-drain at ACP level; hand-rolled ≤300-LOC DAG executor with on-failure halt/continue/ask + provenance loop prevention; learning store (ask-once-remember, propose-hooks, versioned, revertible via `ass-guard learning list/revert`); read-only tools concurrent / mutating serialized; swappable WebSearch/WebFetch backends. *Caveat carried: live OpenSpec kickoff requires slash-command invocation — see Active.*
+- Multi-provider config & credentials (Phase 7 — PCFG-01..04, completes PROV-01): provider+model declarations with base URL, protocol shape (anthropic/openai), per-model capability/pricing metadata; credential resolution flag > env > config with `${VAR}` expansion; two-shape ProviderFactory wired at all three construction sites; lazy uncredentialed failure (typed structural error); 0600-perm hygiene warning + uncredentialed-provider warnings on stderr. Proven live: zero-env editor-spawned turn authenticating from config file.
+- Ecosystem discovery + MCP hosting (Phase 5 — ECOS-01/02/03/05): MCP servers hosted as robust subprocesses (process-group spawn, group-signal shutdown, reaper, tools/list re-fetch per connection); skills/commands/plugins discovered from `.claude/` (project + user) merged with `.ass-guard/` additions under explicit precedence, strictly read-only on `.claude/`.
+- Audit logging (Phase 1/2 — LOG-01, tracer-wired): redacted request logging via the tracer path with redactor. *Caveat carried: `--audit-log` is not written on the `acp serve` path — the tracer is wired through main.go; closing the acp-serve audit path is next-milestone material.*
 
 ### Active
 
-**Mimicry (north star — must work first)**
+**Close the OpenSpec kickoff surface (from v1.0 UAT gap, 2026-08-14)**
 
-- [ ] Outgoing model requests are structurally indistinguishable from the active profile's target agent (zcode first): message hierarchy, tool catalog (names + schemas), identity/system prompt structure, and significant fields/headers all match
-- [ ] Profile = a configurable bundle of {system prompts, tool catalog, message shape, identity}; zcode is the first profile, architecture supports N profiles from day one
-- [ ] Profile content is extracted from the target agent's on-disk logs (grounded, not guessed)
+- [ ] Wire `internal/ecosys` command/skill discovery into the session/ACP layer: expose loaded slash-commands and expand `/namespace:name` invocations (e.g. `/opsx:explore`) into the command's markdown prompt before the provider turn
+- [ ] Reconcile the OpenSpec adapter command set with the real `openspec` v1.5.0 binary surface (`list/view/change/spec/archive/doctor/context`, not `show/validate/apply/implement`); the toolkit's workflow is driven by agent-executed command files (`openspec init --tools claude` installs `.claude/commands/opsx/*.md` + skills), with the binary as supporting tooling
+- [ ] Run the operator-gated real-binary test (`ASSGUARD_OPENSPEC_BIN=1`) as a fix gate; then complete the 11 deferred Phase-4 UAT checks
 
-**Model provider layer**
+**Mimicry follow-ups**
 
-- [ ] Supports both Anthropic-shape and OpenAI-shape protocols, with any compatible provider via configurable base URL
-- [x] Model tiers (heavy/good/light ≈ opus/sonnet/haiku) abstract the concrete model; command/skill/subagent selects a tier — *Validated in Phase 3 (SCHED-01)*
-- [x] Tier→model mapping is time-scheduled (e.g. heavy is glm-5.2 normally, minimax-m3 in peak hours) — *Validated in Phase 3 (SCHED-02)*
-- [x] Per-project override of the tier→model table (falls back to config default if unset) — *Validated in Phase 3 (SCHED-03)*
-- [x] Fallback chains on provider error/limit (degrade tier, or walk a configured chain — not just a single default) — *Validated in Phase 3 (SCHED-04/05)*
+- [ ] Re-capture a divergence-prone zcode session to unblock the parity stability test (Phase-1 data-source carry-forward)
+- [ ] Profile #2 candidate: `deepseek-ai/deepseek-harness` ("dsh" — DeepSeek's official agent harness) for DeepSeek-model turns; ground-truth capture from source + its own logs (operator direction, 2026-08-14)
+- [ ] Claude-Code slash-commands/plugins must not just load but *work unchanged* end-to-end in ass-guard (ECOS-04 completion — invocation surface)
 
-**Agent ecosystem compatibility**
+**Remaining v1 vision (unaddressed)**
 
-- [ ] Claude Code drop-in: plugins, skills, MCP servers, and slash-commands installed for Claude Code work unchanged in ass-guard
-- [ ] Reuses Claude Code's `.claude/` config layout (settings, CLAUDE.md/AGENTS.md hierarchy); ass-guard's additions namespace cleanly, never clobbering Claude Code's files
-
-**Tooling**
-
-- [ ] Built-in tool catalog matching the active profile's tool set (claude-code-compat catalog as the baseline), each tool's call/result shape faithful to the reference
-- [ ] Complex tools (e.g. WebSearch) use a configurable backend, not a hardcoded one
-- [ ] Read-only tools parallelize within a turn; mutating tools serialize relative to each other
-
-**Unified engine (autocontinue is the upper mechanism; hooks are a special case)**
-
-- [ ] After turn-complete, a single engine decides: continue the SDD scenario (dual-signal — text-pattern OR known handoff tool-call), trigger a hook-DAG, ask the user, or wait
-- [ ] SDD scenarios run to completion with zero manual "continue" taps, except where the toolkit explicitly requests user input
-- [ ] Unmatched output triggers nothing — the structural safety property; the only off-switch is manual cancellation, which drains queued injections
-- [ ] Learning mode: when the engine doesn't know how to launch what should be launched, it asks (fresh context? wait for confirmation? how long?) and remembers the answer
-- [ ] Learning mode proposes new hooks based on the work log and asks the user whether to add them
-
-**Hook-DAG (the "forgotten routine")**
-
-- [ ] Configurable DAG of arbitrary steps (run command / send prompt / fresh context / wait) in any order — fully customizable per stage
-- [ ] Seeded hook set out of the box (post-implement: test + lint + review + memory; post-phase: improvement proposals) for zero-config first run
-
-**Context hygiene**
-
-- [ ] Two-layer model: durable replayable transcript (ACP-visible) + lean projected window (model-visible), reset at command boundaries
-- [ ] Mutating toolkit commands are always boundaries (cannot be removed by config); config may only add boundaries
-
-**Logging**
-
-- [ ] Full audit log: user input, model requests, tool calls, and everything needed to reconstruct the exact sequence of actions
-
-**Parallelism**
-
-- [ ] `Task`/`Agent` tool dispatches subagents as isolated goroutine turn-loops with scoped context and a restricted tool subset
-
-**Interfaces**
-
-- [ ] ACP v1 server over stdio JSON-RPC is the primary interface (IDE-native; spawned by the editor as a subprocess)
-- [ ] Telegram is a secondary but full peer: can drive an entire SDD scenario (text and voice); voice messages are transcribed to text as ordinary user input via a configurable STT backend
-
-**Toolkits**
-
-- [ ] v1 hosts OpenSpec, consumed unmodified (per-toolkit pattern/handoff config; GSD / spec-kit / BMad accommodated by the adapter interface but deferred)
-
-**Distribution**
-
-- [x] Single static Go binary via goreleaser (macOS + Linux, amd64 + arm64); ACP registry manifest for one-shot install — *Validated in Phase 6 (DIST-01/02/03)*
+- [ ] Telegram peer interface: full SDD-scenario driving (text + voice), voice transcribed via configurable STT backend (v2)
+- [ ] LOG-01 completion: audit log written on the `acp serve` path
 
 ### Out of Scope
 
@@ -96,8 +58,13 @@ Outgoing requests to the model provider must be structurally indistinguishable f
 - A standalone CLI surface — ACP (IDE) and Telegram are the only interfaces; no terminal REPL to maintain
 - A confirmation/permission tier for tool execution — tools run ungated; the pattern/hook table + manual cancellation is the safety mechanism (inherited from predecessor)
 - Porting code from `sdd-acp-agent` — fresh build; predecessor is reference-only
+- opencode as a mimicry target — explicitly excluded (operator, 2026-08-14); opencode appears in research as landscape context only
 
 ## Context
+
+**Shipped v1.0 (2026-08-14).** 8 phases, 36 plans, 210 commits over 6 days (2026-08-09 → 2026-08-14); ~33.5k LOC Go across 24 packages; 65.8k insertions over 410 files. Every phase closed through the `mise ci` gate (vet + golangci-lint v2 all-linters + CGO_ENABLED=0 build + `go test -race`), zero issues.
+
+**Known gaps at ship (see MILESTONES.md v1.0 entry):** (1) Phase-4 UAT kickoff gap — `/opsx:*` command invocation unsupported (ecosys unwired; adapter model mismatched the real openspec surface); 11 UAT checks deferred. (2) Phase-1 parity stability test blocked on absent pinned capture session (operator re-capture needed). (3) LOG-01 audit-log not written on the `acp serve` path. (4) tools.json catalog carries 103 tools vs the plans' stale 77 (documented drift, seed mirrors source).
 
 **Predecessor — `sdd-acp-agent`.** A Go-based SDD-toolkit host with ACP UI, Claude-Code-compatible tooling, and pattern-matching autocontinue. Closed in favor of ass-guard. Its planning artifacts (technical research, architecture spine with 11 architectural decisions, epic breakdown with 5 epics/27 stories, log analysis of tool catalog and system prompts) are first-class reference material and live at `/Users/nil/DiskD/W/Djarvur/sdd-acp-agent`. The predecessor validated several load-bearing facts that carry forward as given:
 
@@ -114,9 +81,9 @@ Outgoing requests to the model provider must be structurally indistinguishable f
 3. **Configurable tool backends** — generalizing the predecessor's hardcoded DDG search into configurable backends
 4. **Learning mode** — the autocontinue engine asks and remembers how to handle unfamiliar launch situations (fresh context? wait? how long?), and proposes new hooks from the work log
 5. **Unified engine** — autocontinue and hooks collapse into one post-turn-complete decision engine (hooks are a special case), simplifying the predecessor's two-mechanism design
-6. **Telegram peer** — a second full interface (text + voice) the predecessor explicitly did not have
+6. **Telegram peer** — a second full interface (text and voice) the predecessor explicitly did not have
 
-**Mimicry reference — zcode.** zcode is a claude-code-compat runtime that ships its own `AGENTS.md`, skills, slash-commands, MCP integrations, and a built-in tool catalog. Its on-disk logs (to be located during Phase 1) are the source of truth for the zcode profile: system prompts, tool catalog (names + schemas), message shape, and identity fields. The profile is then expressed as ass-guard config.
+**Mimicry reference — zcode.** zcode is a claude-code-compat runtime that ships its own `AGENTS.md`, skills, slash-commands, MCP integrations, and a built-in tool catalog. Its on-disk logs (`~/.zcode/cli/rollout/model-io-sess_<id>.jsonl` — corrected during Phase 0 from the research-predicted `~/.claude/projects/` path) are the source of truth for the zcode profile: system prompts, tool catalog (names + schemas), message shape, and identity fields. The profile is then expressed as ass-guard config.
 
 **Author's SDD practice.** The author runs OpenSpec, GSD, BMad, and spec-kit workflows and routinely forgets to invoke the routine work between stages (review, memory updates, tests, linters, improvement proposals). The hook-DAG + seeded set directly addresses this — it is the project's reason to exist for the author personally.
 
@@ -135,13 +102,15 @@ Outgoing requests to the model provider must be structurally indistinguishable f
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Fresh build; `sdd-acp-agent` is reference-only (no code port) | Predecessor's scope was narrower; its code carries decisions that don't fit the mimicry + scheduling + hooks + Telegram scope. Building fresh against the new scope is cleaner than retrofitting. | — Pending |
-| Mimicry is the north star, not a feature | Model behavior diverges if requests aren't structurally identical; everything downstream (forgotten-routine hooks, autocontinue, scheduling) is meaningless if the model doesn't behave as in the target agent. Validated first, on the thinnest possible stack. | — Pending |
-| Autocontinue is the upper mechanism; hooks are a special case | Collapses two predecessor ideas into one decision point after turn-complete, avoiding a two-mechanism design and unifying learning under one engine. | — Pending |
-| Profiles are config (zcode first, architecture for N) | "Mimic under any agent" is an explicit goal; baking zcode as the only profile would force a rewrite later. | — Pending |
-| Profile content is log-extracted, not hand-written | Grounded mimicry: the only honest source of "what does zcode actually send" is zcode's own request logs. Hand-written profiles are guesses. | — Pending |
-| ACP primary, Telegram secondary-but-peer | ACP is the IDE-native working surface for code; Telegram extends reach (mobile, voice, async) without duplicating the IDE experience. Both are full-capability fronts to one core. | — Pending |
-| v1 toolkits = OpenSpec only | OpenSpec has the deepest reference (predecessor's ccr-log, handoff examples, pattern research); GSD/spec-kit/BMad accommodated by the adapter interface, implemented later. | — Pending |
+| Fresh build; `sdd-acp-agent` is reference-only (no code port) | Predecessor's scope was narrower; its code carries decisions that don't fit the mimicry + scheduling + hooks + Telegram scope. Building fresh against the new scope is cleaner than retrofitting. | ✓ Good — v1.0 shipped clean in 6 days |
+| Mimicry is the north star, not a feature | Model behavior diverges if requests aren't structurally identical; everything downstream is meaningless if the model doesn't behave as in the target agent. Validated first, on the thinnest possible stack. | ✓ Good — A/B parity thesis proven (Phase 1) |
+| Autocontinue is the upper mechanism; hooks are a special case | Collapses two predecessor ideas into one decision point after turn-complete, avoiding a two-mechanism design and unifying learning under one engine. | ✓ Good — unified engine shipped (Phase 4), structural safety proven |
+| Profiles are config (zcode first, architecture for N) | "Mimic under any agent" is an explicit goal; baking zcode as the only profile would force a rewrite later. | ✓ Good — profile #2 candidate (deepseek-harness) already scoped without architecture change |
+| Profile content is log-extracted, not hand-written | Grounded mimicry: the only honest source of "what does zcode actually send" is zcode's own request logs. Hand-written profiles are guesses. | ✓ Good — ⚠️ revisit: pinned capture session absent; re-capture needed for the stability test |
+| ACP primary, Telegram secondary-but-peer | ACP is the IDE-native working surface for code; Telegram extends reach (mobile, voice, async) without duplicating the IDE experience. Both are full-capability fronts to one core. | — Pending — ACP shipped (Phase 2); Telegram deferred to v2 |
+| v1 toolkits = OpenSpec only | OpenSpec has the deepest reference; GSD/spec-kit/BMad accommodated by the adapter interface, implemented later. | ✓ Good — ⚠️ revisit: hosting model corrected at UAT (workflow is command-file-driven, binary is tooling — see Active) |
+| Credentials resolve lazily at factory construction, never at load (Phase 7 D-02) | A load-fatal on unset `$ZAI_API_KEY` would break zero-config first run; lazy resolution + typed structural error preserves both. | ✓ Good — proven live (zero-env editor-spawned turn, Phase 7 UAT) |
+| opencode excluded as mimicry target (2026-08-14) | Operator runs MiniMax + DeepSeek via an opencode subscription; the profile should match the harness the target model behaves in — deepseek-harness is the candidate for DeepSeek turns. | — Pending — profile #2 scoping at next milestone |
 
 ## Evolution
 
@@ -161,4 +130,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-11 after Phase 3 (Model Scheduling) completion*
+*Last updated: 2026-08-14 after v1.0 milestone*

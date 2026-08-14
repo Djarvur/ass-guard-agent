@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: milestone_complete
-last_updated: 2026-08-14T14:20:00.000Z
+status: completed
+last_updated: "2026-08-14T15:07:04.864Z"
+last_activity: 2026-08-14 — Milestone v1.0 completed and archived
 progress:
   total_phases: 8
   completed_phases: 8
-  total_plans: 37
+  total_plans: 36
   completed_plans: 36
   percent: 100
-stopped_at: Milestone complete (Phase 7 was final phase)
 ---
 
 # State: ass-guard-agent (working name)
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-08-09)
 ## Current Phase
 
 **Phase:** 7
-**Status:** Milestone complete
+**Status:** v1.0 milestone complete
 **Next action:** v1.0 milestone ship path — `/gsd:complete-milestone` + `/gsd:verify-work 07`. Full `mise ci` gate green.
 **Last session:** 2026-08-14T08:08:43.000Z
 
@@ -150,3 +150,23 @@ Phase-4 totals: 7 plans, 23 tasks, 5 new packages (engine/hookdag/openspec/learn
 - [Phase ?]: Plan 00-04 (2026-08-09): STACK item #5 (go-telegram/bot + ACP stdout collision) — VERIFIED via the integration spike at spikes/05-stdout-collision/. go-telegram/bot@v1.23.0 is silent-by-default (zero os.Stdout writes in package source — only the examples/ samples write to stdout, not the library; all library output via 3 default handlers in bot.go all log.Printf→os.Stderr; debug path gated behind WithDebug; no WithLogger/io.Writer option). Captured real os.Stdout (os.Pipe) byte-equal to 3 canned ACP frames (415==415, 0 extra) while the bot goroutine ran concurrently; deterministic handler-routing probe (synthetic marker in stderr sink, absent from stdout). Transport discipline (stdout = ACP only) holds for the multi-frontend case.
 - [Phase ?]: Plan 00-04 (2026-08-09): Tier-A refinement vs RESEARCH.md §5 — go-telegram/bot@v1.23.0 callback signatures are ErrorsHandler func(err error) and DebugHandler func(format string, args ...any) (SIMPLER than RESEARCH.md documented; no context.Context params). The load-bearing "callbacks, no stdout, no io.Writer" claim is unchanged. Phase 5's v2 Telegram frontend must use the real signatures + the 4-step mitigation recipe (WithErrorsHandler→slog→stderr, NO WithDebug, log.SetOutput(os.Stderr) belt-and-suspenders, go b.Start(ctx) goroutine; cancel telegramCtx on editor-initiated shutdown to drain the loop).
 - [Phase ?]: Phase 1 re-dispatch: autonomous substrate complete (01-02..01-05 + 01-01/01-06 T1-T5); D-16 session assignment documented; 2 live gates blocked on ZAI_API_KEY
+
+## Current Position
+
+Phase: Milestone v1.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-08-14 — Milestone v1.0 completed and archived
+
+## Deferred Items
+
+Items acknowledged and deferred at milestone close on 2026-08-14:
+
+| Category | Item | Status |
+|----------|------|--------|
+| uat | 04-UAT.md (Phase 4) | partial — 11 pending checks; kickoff gap diagnosed, fix deferred to next milestone (operator) |
+| uat | 01-UAT.md (Phase 1) | passed — 0 open scenarios; flagged by audit on status vocabulary only (passed ≠ complete), no action needed |
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone (scoping inputs: Phase-4 kickoff gap fix, deepseek-harness profile #2, ecosys invocation wiring, zcode session re-capture, Telegram v2)
