@@ -282,12 +282,12 @@ func (s *Server) handleParseError(err error) {
 }
 
 // writeResult writes a success response with the given id.
-func (s *Server) writeResult(id *int, result json.RawMessage) {
+func (s *Server) writeResult(id, result json.RawMessage) {
 	_ = s.out.Write(&Message{JSONRPC: protocolVersion20, ID: id, Result: result})
 }
 
 // writeError writes an error response with the given id.
-func (s *Server) writeError(id *int, e *RPCError) {
+func (s *Server) writeError(id json.RawMessage, e *RPCError) {
 	_ = s.out.Write(&Message{JSONRPC: protocolVersion20, ID: id, Error: e})
 }
 

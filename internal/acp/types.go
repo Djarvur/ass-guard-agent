@@ -23,13 +23,16 @@ import (
 // params; a notification carries method + params with NO id; a response carries
 // an id + exactly one of result/error.
 //
-// ID is *int so a notification (nil ID) marshals with NO `id` field at all
-// (json:"id,omitempty") — distinguishing "no id" (notification) from "id: 0"
-// (a valid request id). This is the JSON-RPC notification-vs-request distinction
-// (VERIFIED-FACTS #3 Note 5).
+// ID is json.RawMessage so a notification (nil ID) marshals with NO `id` field
+// at all (json:"id,omitempty") — distinguishing "no id" (notification) from
+// "id: 0" (a valid request id). RawMessage also accepts string ids (jsonrpc.org/
+// spec: id may be a string, number, or null) and echoes them VERBATIM in the
+// response — Zed sends UUID strings, which *int rejected with a -32700 parse
+// error (endless-loading report, 2026-08-14). This preserves the JSON-RPC
+// notification-vs-request distinction (VERIFIED-FACTS #3 Note 5).
 type Message struct {
 	JSONRPC string          `json:"jsonrpc"`          // always "2.0"
-	ID      *int            `json:"id,omitempty"`     // nil for notifications
+	ID      json.RawMessage `json:"id,omitempty"`     // nil for notifications
 	Method  string          `json:"method,omitempty"` // present on request/notification
 	Params  json.RawMessage `json:"params,omitempty"` // request/notification payload
 	Result  json.RawMessage `json:"result,omitempty"` // response success

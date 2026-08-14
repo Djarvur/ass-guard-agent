@@ -179,7 +179,7 @@ func TestIntegration_RealStreamingThroughACP(t *testing.T) { //nolint:funlen // 
 	defer stop()
 
 	sendFrame(t, cliW, &acp.Message{
-		JSONRPC: protocolVersion20, ID: new(0), Method: "initialize",
+		JSONRPC: protocolVersion20, ID: json.RawMessage("0"), Method: "initialize",
 		Params: rawJSON(map[string]any{"protocolVersion": 1}),
 	})
 
@@ -189,7 +189,7 @@ func TestIntegration_RealStreamingThroughACP(t *testing.T) { //nolint:funlen // 
 	}
 
 	sendFrame(t, cliW, &acp.Message{
-		JSONRPC: protocolVersion20, ID: new(1), Method: "session/new",
+		JSONRPC: protocolVersion20, ID: json.RawMessage("1"), Method: "session/new",
 		Params: rawJSON(map[string]any{"cwd": "/tmp", "mcpServers": []any{}}),
 	})
 	frames = readFrames(t, cliR, 1)
@@ -205,7 +205,7 @@ func TestIntegration_RealStreamingThroughACP(t *testing.T) { //nolint:funlen // 
 	}
 
 	sendFrame(t, cliW, &acp.Message{
-		JSONRPC: protocolVersion20, ID: new(2), Method: "session/prompt",
+		JSONRPC: protocolVersion20, ID: json.RawMessage("2"), Method: "session/prompt",
 		Params: rawJSON(map[string]any{
 			keySessionID: snew.SessionID,
 			"prompt":     []map[string]any{{keyType: blockText, blockText: "hi"}},
@@ -235,7 +235,7 @@ func TestIntegration_RealStreamingThroughACP(t *testing.T) { //nolint:funlen // 
 			chunks++
 		}
 
-		if m.ID != nil && *m.ID == 2 {
+		if m.ID != nil && string(m.ID) == "2" {
 			var pres struct {
 				StopReason string `json:"stopReason"` //nolint:tagliatelle // ACP wire field
 			}
@@ -268,12 +268,12 @@ func TestIntegration_SessionLoadNoOp(t *testing.T) {
 	defer stop()
 
 	sendFrame(t, cliW, &acp.Message{
-		JSONRPC: protocolVersion20, ID: new(0), Method: "initialize",
+		JSONRPC: protocolVersion20, ID: json.RawMessage("0"), Method: "initialize",
 		Params: rawJSON(map[string]any{"protocolVersion": 1}),
 	})
 	readFrames(t, cliR, 1)
 	sendFrame(t, cliW, &acp.Message{
-		JSONRPC: protocolVersion20, ID: new(1), Method: "session/load",
+		JSONRPC: protocolVersion20, ID: json.RawMessage("1"), Method: "session/load",
 		Params: rawJSON(map[string]any{keySessionID: "x"}),
 	})
 

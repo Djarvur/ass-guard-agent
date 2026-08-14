@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -19,7 +20,7 @@ func TestWriteFrameProducesMarshalPlusNewline(t *testing.T) {
 
 	var buf bytes.Buffer
 
-	msg := Message{JSONRPC: protocolVersion20, ID: new(1), Method: methodInitialize}
+	msg := Message{JSONRPC: protocolVersion20, ID: json.RawMessage("1"), Method: methodInitialize}
 
 	err := writeFrame(&buf, msg)
 	if err != nil {
@@ -102,7 +103,7 @@ func TestReadFrameParsesOneLine(t *testing.T) {
 		t.Errorf("method = %q; want session/new", msg.Method)
 	}
 
-	if msg.ID == nil || *msg.ID != 3 {
+	if msg.ID == nil || string(msg.ID) != "3" {
 		t.Errorf("id = %v; want 3", msg.ID)
 	}
 	// Next read at clean EOF returns io.EOF.
@@ -156,8 +157,8 @@ func TestWriterConcurrentSafety(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 
-			id := i
-			_ = w.Write(&Message{JSONRPC: protocolVersion20, ID: &id, Method: methodSessionUpdate})
+			id := json.RawMessage(strconv.Itoa(i))
+			_ = w.Write(&Message{JSONRPC: protocolVersion20, ID: id, Method: methodSessionUpdate})
 		}(i)
 	}
 
@@ -171,7 +172,7 @@ func TestWriterConcurrentSafety(t *testing.T) {
 		t.Fatalf("got %d line segments; want %d frames + 1 trailing empty", len(lines), n)
 	}
 
-	seen := map[int]bool{}
+	seen := map[string]bool{}
 
 	for i, line := range lines[:n] {
 		if len(line) == 0 {
@@ -195,7 +196,7 @@ func TestWriterConcurrentSafety(t *testing.T) {
 			continue
 		}
 
-		seen[*m.ID] = true
+		seen[string(m.ID)] = true
 	}
 
 	if len(seen) != n {
@@ -221,8 +222,7 @@ func TestMessageIDNilIsNotification(t *testing.T) {
 		t.Errorf("notification marshaled with an id field: %s", string(raw))
 	}
 
-	id := 7
-	req := Message{JSONRPC: protocolVersion20, ID: &id, Method: methodInitialize}
+	req := Message{JSONRPC: protocolVersion20, ID: json.RawMessage("7"), Method: methodInitialize}
 
 	raw, err = json.Marshal(req)
 	if err != nil {
@@ -233,8 +233,7 @@ func TestMessageIDNilIsNotification(t *testing.T) {
 		t.Errorf("request did not marshal id=7: %s", string(raw))
 	}
 	// id:0 must round-trip (0 is a valid JSON-RPC id; omitempty on *int keeps it).
-	zero := 0
-	zeroReq := Message{JSONRPC: protocolVersion20, ID: &zero, Method: methodInitialize}
+	zeroReq := Message{JSONRPC: protocolVersion20, ID: json.RawMessage("0"), Method: methodInitialize}
 
 	raw, err = json.Marshal(zeroReq)
 	if err != nil {

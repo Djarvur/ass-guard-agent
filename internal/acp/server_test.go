@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -151,7 +152,12 @@ func newRequest(id int, method string, params map[string]any) *Message {
 		panic(marshalErr)
 	}
 
-	return &Message{JSONRPC: protocolVersion20, ID: &id, Method: method, Params: pmsg}
+	return &Message{
+		JSONRPC: protocolVersion20,
+		ID:      json.RawMessage(strconv.Itoa(id)),
+		Method:  method,
+		Params:  pmsg,
+	}
 }
 
 // newNotification builds a notification Message (no id).
@@ -173,7 +179,7 @@ func TestInitializeReturnsAgentCapabilities(t *testing.T) {
 	h.send(t, newRequest(0, methodInitialize, map[string]any{keyProtocolVersion: 1}))
 
 	msg := h.readFrame(t)
-	if msg.ID == nil || *msg.ID != 0 {
+	if msg.ID == nil || string(msg.ID) != "0" {
 		t.Fatalf("response id = %v; want 0", msg.ID)
 	}
 
@@ -216,6 +222,38 @@ func TestInitializeReturnsAgentCapabilities(t *testing.T) {
 
 	if res.ServerInfo != nil {
 		t.Errorf("response has a 'serverInfo' field; must be 'agentInfo' (VERIFIED-FACTS #3)")
+	}
+}
+
+// TestInitializeStringID verifies JSON-RPC string ids (the v1 spec allows
+// string, number, or null ids; Zed sends UUID strings) parse and are echoed
+// verbatim in the response. Regression for the Zed "endless loading" report:
+// Message.id was *int, so every Zed frame hit the -32700 parse-error path and
+// initialize never got answered.
+func TestInitializeStringID(t *testing.T) {
+	t.Parallel()
+	h := newPipeHarness(t)
+
+	const id = "b88df47d-ab10-4831-aad2-bad625231c5a" // the exact shape Zed sends
+
+	_, err := fmt.Fprintf(h.cliW,
+		`{"jsonrpc":"2.0","id":%q,"method":"initialize","params":{"protocolVersion":1}}`+"\n",
+		id)
+	if err != nil {
+		t.Fatalf("write raw frame: %v", err)
+	}
+
+	resp := h.readFrame(t)
+	if resp.Error != nil {
+		t.Fatalf("initialize with string id: unexpected error: %+v", resp.Error)
+	}
+
+	if got := string(resp.ID); got != `"`+id+`"` {
+		t.Fatalf("response id = %v; want %q echoed verbatim", got, id)
+	}
+
+	if !strings.Contains(string(resp.Result), `"protocolVersion":1`) {
+		t.Fatalf("initialize result missing protocolVersion: %s", resp.Result)
 	}
 }
 
@@ -282,7 +320,7 @@ func TestSessionPromptStreamsUpdate(t *testing.T) { //nolint:funlen // comprehen
 
 		if msg.Method == methodSessionUpdate {
 			if msg.ID != nil {
-				t.Errorf("session/update carried an id (%v); notifications carry no id", *msg.ID)
+				t.Errorf("session/update carried an id (%v); notifications carry no id", string(msg.ID))
 			}
 
 			var params struct {
@@ -301,7 +339,7 @@ func TestSessionPromptStreamsUpdate(t *testing.T) { //nolint:funlen // comprehen
 			gotUpdate = true
 		}
 
-		if msg.ID != nil && *msg.ID == 2 {
+		if msg.ID != nil && string(msg.ID) == "2" {
 			promptResp = msg
 
 			break
@@ -371,7 +409,7 @@ func TestSessionCancelProducesNoResponse(t *testing.T) {
 			cancelResponseSeen = true
 		}
 
-		if msg.ID != nil && *msg.ID == 2 {
+		if msg.ID != nil && string(msg.ID) == "2" {
 			var pres struct {
 				StopReason string `json:"stopReason"` //nolint:tagliatelle // ACP wire field
 			}
@@ -501,7 +539,7 @@ func TestMalformedFrameContinues(t *testing.T) {
 			gotParseError = true
 		}
 
-		if msg.ID != nil && *msg.ID == 0 && msg.Result != nil {
+		if msg.ID != nil && string(msg.ID) == "0" && msg.Result != nil {
 			gotInit = true
 		}
 	}
@@ -543,7 +581,7 @@ func TestErrorResponseShape(t *testing.T) {
 			t.Fatalf("readFrame[%d]: %v", i, err)
 		}
 
-		if msg.ID != nil && *msg.ID == 2 {
+		if msg.ID != nil && string(msg.ID) == "2" {
 			loadResp = msg
 
 			break
