@@ -44,6 +44,8 @@ Progress: [██░░░░░░░░] 17%
 
 Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecting current work:
 
+- **[OVERNIGHT DELEGATION, 2026-08-15, operator]:** "please run as much test as possible yourself — the things you could not solve yourself have to wait till morning." Concretely: the 08-07 T4 E2E witnessing is delegated for tonight (run the gated E2E, preserve evidence); on convergence, continue into 08-06's remaining scope (pattern re-seed + 11 UAT checks + phase gate); on Phase-8 completion, execute Phase 9's code plans (09-01..03, 05, 06). HARD STOPS that stay operator-only: plan 09-04's zcode re-capture workload, Phase 11's dsh capture + gateway-key legs, and anything blocked. Morning report expected.
+
 - **[Phase-8 checkpoint DISPOSITION, 2026-08-15, operator]:** the 08-06 real-model gate's blocking finding (within-turn tool-result carry missing — v1.0 architectural gap) is dispositioned **APPROVED for gap-closure**: execute the 08-07 gap-closure plan (ToolCall IDs, tool-role shaper.Message matched to captured zcode wire forms, ToolResultMessage wiring, mid-turn Projector accumulation) once checker-passed, then return to the 08-06 gate. The final E2E re-run remains operator-witnessed. Resume signal: **approved**.
 
 - [v1.1 roadmap]: Phase order follows the operator's strict priority chain — kickoff → (audit + re-capture, merged) → Telegram → dsh — numbered 8–11, continuing from v1.0's Phase 7.
