@@ -27,9 +27,9 @@ type Config struct {
 // ZAI_API_KEY) as a self-documenting alias for the `${...}` form. Either may be
 // absent — a provider with neither resolves to no credential (D-07 lazy error).
 type ProviderConfig struct {
-	BaseURL  string `yaml:"base_url"`
-	Shape    string `yaml:"shape"`
-	APIKey   string `yaml:"api_key"`
+	BaseURL   string `yaml:"base_url"`
+	Shape     string `yaml:"shape"`
+	APIKey    string `yaml:"api_key"`
 	APIKeyEnv string `yaml:"api_key_env"`
 }
 
