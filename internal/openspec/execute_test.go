@@ -10,11 +10,6 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 )
 
-// executeInput is the model-facing call shape for openspec:* tools.
-type executeInput struct {
-	Args []string `json:"args"`
-}
-
 // execResult is the structured model-facing result shape (D-10).
 type execResult struct {
 	Stdout         string `json:"stdout"`
@@ -33,7 +28,9 @@ func registeredTool(t *testing.T) (*toolcat.Catalog, *openspec.OpenSpecConfig) {
 	}
 
 	cat := toolcat.NewCatalog()
-	if err := openspec.RegisterTools(cat, cfg); err != nil {
+
+	err = openspec.RegisterTools(cat, cfg)
+	if err != nil {
 		t.Fatalf("RegisterTools: %v", err)
 	}
 
@@ -63,7 +60,9 @@ func TestExecute_RealSubprocessViaStub(t *testing.T) { //nolint:paralleltest // 
 	}
 
 	var res execResult
-	if err := json.Unmarshal(out, &res); err != nil {
+
+	err = json.Unmarshal(out, &res)
+	if err != nil {
 		t.Fatalf("result not JSON: %v (%s)", err, out)
 	}
 
@@ -91,6 +90,7 @@ func TestExecute_ArgsForwarded(t *testing.T) { //nolint:paralleltest // putStubO
 	}
 
 	var res execResult
+
 	_ = json.Unmarshal(out, &res)
 
 	for _, want := range []string{"--changes", "--json"} {
@@ -103,7 +103,7 @@ func TestExecute_ArgsForwarded(t *testing.T) { //nolint:paralleltest // putStubO
 // TestExecute_FailureIsStructured (Test 3, D-10) verifies a non-zero exit with
 // a fixable entry yields {exit_code, stderr, classification:"fixable"} and a
 // NIL Go error — the model adapts, nothing halts.
-func TestExecute_FailureIsStructured(t *testing.T) { //nolint:paralleltest // stub env vars via t.Setenv
+func TestExecute_FailureIsStructured(t *testing.T) {
 	putStubOnPATH(t)
 	t.Setenv("ASSGUARD_STUB_EXIT", "3")
 	t.Setenv("ASSGUARD_STUB_STDERR", "blocked: tasks incomplete")
@@ -118,6 +118,7 @@ func TestExecute_FailureIsStructured(t *testing.T) { //nolint:paralleltest // st
 	}
 
 	var res execResult
+
 	_ = json.Unmarshal(out, &res)
 
 	if res.ExitCode != 3 {
@@ -135,7 +136,7 @@ func TestExecute_FailureIsStructured(t *testing.T) { //nolint:paralleltest // st
 
 // TestExecute_HardErrorDefault (Test 8 default-class half) verifies a non-zero
 // exit WITHOUT the fixable hint classifies hard-error.
-func TestExecute_HardErrorDefault(t *testing.T) { //nolint:paralleltest // stub env vars
+func TestExecute_HardErrorDefault(t *testing.T) {
 	putStubOnPATH(t)
 	t.Setenv("ASSGUARD_STUB_EXIT", "2")
 	t.Setenv("ASSGUARD_STUB_STDERR", "boom")
@@ -150,6 +151,7 @@ func TestExecute_HardErrorDefault(t *testing.T) { //nolint:paralleltest // stub 
 	}
 
 	var res execResult
+
 	_ = json.Unmarshal(out, &res)
 
 	if res.Classification != "hard-error" {
@@ -159,7 +161,7 @@ func TestExecute_HardErrorDefault(t *testing.T) { //nolint:paralleltest // stub 
 
 // TestExecute_MissingBinaryStructured (Test 4) verifies a missing binary yields
 // classification "not-found" with a NIL Go error (model-facing structure).
-func TestExecute_MissingBinaryStructured(t *testing.T) { //nolint:paralleltest // isolates PATH
+func TestExecute_MissingBinaryStructured(t *testing.T) {
 	empty := t.TempDir()
 	t.Setenv("PATH", empty) // no openspec anywhere
 
@@ -173,6 +175,7 @@ func TestExecute_MissingBinaryStructured(t *testing.T) { //nolint:paralleltest /
 	}
 
 	var res execResult
+
 	_ = json.Unmarshal(out, &res)
 
 	if res.Classification != "not-found" {
@@ -192,7 +195,9 @@ func TestExecute_AllMutatingStayBoundaries(t *testing.T) {
 	}
 
 	cat := toolcat.NewCatalog()
-	if err := openspec.RegisterTools(cat, cfg); err != nil {
+
+	err = openspec.RegisterTools(cat, cfg)
+	if err != nil {
 		t.Fatalf("RegisterTools: %v", err)
 	}
 
@@ -246,10 +251,14 @@ func TestExecute_MultiWordArgvPrefix(t *testing.T) { //nolint:paralleltest // pu
 	}
 
 	var res execResult
+
 	_ = json.Unmarshal(out, &res)
 
-	if !strings.Contains(res.Stdout, "new") || !strings.Contains(res.Stdout, "change") || !strings.Contains(res.Stdout, "fix-login") {
-		t.Errorf("stdout = %q; want argv prefix [new change] then model arg fix-login", res.Stdout)
+	// The stub prints its full argv: prefix [new change] then the model arg.
+	for _, want := range []string{"new", "change", "fix-login"} {
+		if !strings.Contains(res.Stdout, want) {
+			t.Errorf("stdout = %q; want argv token %q", res.Stdout, want)
+		}
 	}
 }
 
@@ -260,9 +269,9 @@ func TestExecute_InputSchemaPresent(t *testing.T) {
 
 	cat, _ := registeredTool(t)
 
-	tool, _ := cat.Get("openspec:list")
+	tool, _ := cat.Get("openspec:" + cmdList)
 	if len(tool.InputSchema) == 0 {
-		t.Fatal("openspec:list InputSchema empty; want the args-array schema")
+		t.Fatalf("openspec:%s InputSchema empty; want the args-array schema", cmdList)
 	}
 
 	if !strings.Contains(string(tool.InputSchema), "args") {
