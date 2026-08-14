@@ -247,3 +247,45 @@ func contains(haystack, needle string) bool {
 
 	return false
 }
+
+// TestMutability_CommandTable (08-04 Test 18) verifies the [command_mutability]
+// seeded table classifies the opsx stages by write semantics (explore
+// read-only; the artifact-writing stages mutating) and that an operator file
+// flips a classification (file wins — the loader's normal precedence).
+func TestMutability_CommandTable(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := openspec.DefaultConfig()
+	if err != nil {
+		t.Fatalf("DefaultConfig: %v", err)
+	}
+
+	if got := cfg.CommandMutability["opsx:explore"]; got != openspec.MutabilityReadOnly {
+		t.Errorf("opsx:explore mutability = %q; want read-only (writes no artifacts)", got)
+	}
+
+	for _, key := range []string{"opsx:propose", "opsx:apply", "opsx:sync", "opsx:update", "opsx:archive"} {
+		if got := cfg.CommandMutability[key]; got != openspec.MutabilityMutating {
+			t.Errorf("%s mutability = %q; want mutating (writes openspec/ artifacts)", key, got)
+		}
+	}
+
+	// Operator overlay flips a classification (D-11 operator-overridable).
+	dir := t.TempDir()
+	overlay := filepath.Join(dir, "openspec.toml")
+
+	err = os.WriteFile(overlay, []byte(
+		"[command_mutability]\n\"opsx:explore\" = \"mutating\"\n"), 0o600)
+	if err != nil {
+		t.Fatalf("write overlay: %v", err)
+	}
+
+	ovr, err := openspec.LoadConfig(overlay)
+	if err != nil {
+		t.Fatalf("LoadConfig(overlay): %v", err)
+	}
+
+	if got := ovr.CommandMutability["opsx:explore"]; got != openspec.MutabilityMutating {
+		t.Errorf("overlay opsx:explore mutability = %q; want flipped to mutating", got)
+	}
+}

@@ -179,3 +179,97 @@ func TestProjector_NoModelCall(t *testing.T) {
 		t.Error("Projector exposes a Provider accessor — D-02 violation (must be pure mechanical extraction)")
 	}
 }
+
+// keyOpsxExplore is the provenance fixture key (08-04).
+const keyOpsxExplore = "opsx:explore"
+
+// TestProvenance_LineAndReplay (08-04 Tests 15-16, D-02/CMD-05) verifies the
+// command_provenance line: written next to the expanded user message it
+// records the command key + source file + typed args, and the projector
+// replays the EXPANDED body as the user message while provenance NEVER leaks
+// into model-visible message content (metadata, not a message).
+func TestProvenance_LineAndReplay(t *testing.T) {
+	t.Parallel()
+	m := newTestManager(t, "s-prov")
+	p := NewProjector(fakeProfile("you are a test agent"), m)
+
+	const (
+		srcPath = "/work/.claude/commands/opsx/explore.md"
+		srcArgs = "fix login flow"
+	)
+
+	err := m.AppendCommandProvenance("", keyOpsxExplore, srcPath, srcArgs)
+	if err != nil {
+		t.Fatalf("AppendCommandProvenance: %v", err)
+	}
+
+	expanded := "Explore the change: fix login flow\n\n- read the codebase\n- compare options\n"
+
+	err = m.AppendUserMessage("turn_prov", []ContentBlock{{Type: blockText, Text: expanded}})
+	if err != nil {
+		t.Fatalf("AppendUserMessage: %v", err)
+	}
+
+	assertProvenanceLine(t, m, srcPath, srcArgs)
+
+	// Test 16: the projector replays the expanded body as the user message;
+	// the provenance record never appears as message content.
+	msgs, err := p.Project("turn_prov")
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+
+	var combinedSb strings.Builder
+	for _, mm := range msgs {
+		combinedSb.WriteString(mm.Content + "\n")
+	}
+
+	combined := combinedSb.String()
+
+	if !strings.Contains(combined, "Explore the change: fix login flow") {
+		t.Errorf("lean window missing the expanded body:\n%s", combined)
+	}
+
+	if strings.Contains(combined, srcPath) || strings.Contains(combined, "command_provenance") {
+		t.Errorf("provenance leaked into model-visible message content:\n%s", combined)
+	}
+}
+
+// assertProvenanceLine verifies the command_provenance line records the key,
+// source path, and typed args, and sits immediately before the expanded user
+// message (append-order adjacency — D-02).
+func assertProvenanceLine(t *testing.T, m *Manager, srcPath, srcArgs string) {
+	t.Helper()
+
+	lines, err := m.ReadAll()
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+
+	for i := range lines {
+		l := &lines[i]
+		if l.Type != TypeCommandProvenance {
+			continue
+		}
+
+		if l.Name != keyOpsxExplore {
+			t.Errorf("provenance key = %q; want %q", l.Name, keyOpsxExplore)
+		}
+
+		if l.CommandRef != srcPath {
+			t.Errorf("provenance source = %q; want %q", l.CommandRef, srcPath)
+		}
+
+		if l.Text != srcArgs {
+			t.Errorf("provenance args = %q; want %q", l.Text, srcArgs)
+		}
+
+		if i+1 >= len(lines) || lines[i+1].Type != TypeUserMessage {
+			t.Errorf("provenance line at %d is not followed by the user message", i)
+		}
+
+		return
+	}
+
+	t.Fatal("no command_provenance line in the transcript")
+}
