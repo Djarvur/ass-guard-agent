@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"maps"
 	"os"
 	"path/filepath"
@@ -537,24 +538,62 @@ func splitFrontmatter(content string) (frontmatter, body string) {
 	return "", content // no closing delim — treat as no frontmatter
 }
 
+// shadowWarnLogger emits same-key precedence-overwrite warnings. Default
+// target is stderr (NEVER stdout — the ACP discipline); tests swap it to
+// capture output. Swappable seam per the Phase-8 plan (T3).
+var shadowWarnLogger = slog.New(slog.NewTextHandler(os.Stderr, nil)) //nolint:gochecknoglobals // swappable test seam
+
 // mergeRegistries returns base with overlay applied: overlay wins on key
-// conflict (per D-06 precedence). Both inputs are left unchanged.
+// conflict (per D-06 precedence — direction unchanged, locked v1.0 D-06).
+// Every same-key overwrite in the Skills and Commands maps emits one warning
+// naming the winning and shadowed file paths (CMD-05: "which file answered my
+// invocation?" must be answerable from the log alone).
 func mergeRegistries(base, overlay Registry) Registry {
 	out := newRegistry()
 
-	maps.Copy(out.Skills, base.Skills)
-
-	maps.Copy(out.Skills, overlay.Skills)
-
-	maps.Copy(out.Commands, base.Commands)
-
-	maps.Copy(out.Commands, overlay.Commands)
+	mergeSkillsWithShadowWarnings(out.Skills, base.Skills, overlay.Skills)
+	mergeCommandsWithShadowWarnings(out.Commands, base.Commands, overlay.Commands)
 
 	maps.Copy(out.Plugins, base.Plugins)
 
 	maps.Copy(out.Plugins, overlay.Plugins)
 
 	return out
+}
+
+// mergeSkillsWithShadowWarnings copies base then overlay into out, warning on
+// each same-key skill overwrite (the shared mechanism — one helper per map).
+func mergeSkillsWithShadowWarnings(out, base, overlay map[string]Skill) {
+	maps.Copy(out, base)
+
+	for key, ov := range overlay {
+		if bv, shadowed := base[key]; shadowed {
+			logShadowWarning("skill", key, ov.Path, bv.Path)
+		}
+
+		out[key] = ov
+	}
+}
+
+// mergeCommandsWithShadowWarnings copies base then overlay into out, warning
+// on each same-key command overwrite.
+func mergeCommandsWithShadowWarnings(out, base, overlay map[string]Command) {
+	maps.Copy(out, base)
+
+	for key, ov := range overlay {
+		if bv, shadowed := base[key]; shadowed {
+			logShadowWarning("command", "/"+key, ov.Path, bv.Path)
+		}
+
+		out[key] = ov
+	}
+}
+
+// logShadowWarning emits one stderr warning line naming both file paths so a
+// support session can answer "which file answered my invocation?" from the
+// log alone (PITFALLS Pitfall 5 — shadowing observability).
+func logShadowWarning(kind, key, winningPath, shadowedPath string) {
+	shadowWarnLogger.Warn(kind + " " + key + ": " + winningPath + " shadows " + shadowedPath)
 }
 
 // newRegistry returns a Registry with initialized maps.

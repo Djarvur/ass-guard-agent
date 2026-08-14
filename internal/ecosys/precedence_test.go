@@ -198,7 +198,7 @@ func TestShadowWarningWithinTree(t *testing.T) {
 
 // TestShadowNoFalsePositives (Test 13) verifies a shadow-free merge emits
 // zero warnings.
-func TestShadowNoFalsePositives(t *testing.T) { //nolint:paralleltest // mutates package logger
+func TestShadowNoFalsePositives(t *testing.T) {
 	buf := captureShadowLogger(t)
 
 	tmp := t.TempDir()
