@@ -165,7 +165,26 @@ Plans:
   5. The A/B parity harness is green for dsh against a DeepSeek endpoint, one live DeepSeek tool-calling round-trip succeeds per routed model, and every profile entry is traceable to a captured request (DSH-05)
 
 **Phase gate:** `mise ci` clean AND the zstd decode spike passed against a real `session.jsonl.zstd` AND the A/B parity harness (`internal/parity`) green against a DeepSeek endpoint AND one live DeepSeek tool-calling round-trip per routed model AND every profile entry traceable to a captured request. Per-turn profile switching stays a v1.2 non-goal — `--profile` remains explicit. No stub-only evidence closes this phase.
-**Plans:** TBD
+**Plans:** 7 plans
+Plans:
+**Wave 1**
+
+- [ ] 11-01-PLAN.md — zcode-ism audit + shared-code generalization: committed census, the grep gate (CI-wired, provider-name-switch ban), redaction identity semantics profile-supplied [DSH-01]
+- [ ] 11-02-PLAN.md — OpenAI adapter wire mapping (TDD): profile.System emission (1..N captured form), omit-when-empty tools, strict threading, message-shape fields, loader tolerance, real Stream (SSE + include_usage) + profile headers [DSH-02]
+- [ ] 11-03-PLAN.md — the recording proxy (cmd/dsh-proxy): positioned plain-HTTP reverse proxy at the configured baseURL, redact-at-record, SSE capture, the recording-contract conformance suite [DSH-03]
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 11-04-PLAN.md — per-model profile selection: ModelConfig.Profile schema + resolution (--profile stays the override), the DeepSeek provider entry (opencode gateway, base-URL-swappable) with dialect Limitations, the gateway compatibility probe [DSH-04]
+- [ ] 11-05-PLAN.md — zstd spike + dsh extractor + runbook: klauspost v1.19.2 exact pin (retraction guard), extract-profile -mode dsh (wire-truth extraction, system-form decision procedure, capture-line provenance), docs/dsh-recapture-runbook.md (manual, D-02) [DSH-03]
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 11-06-PLAN.md — the capture run (autonomous: false): operator workload at the pinned dsh commit (checkpoint), mechanical threshold verification, real-artifact zstd spike green, capture census BEFORE the bundle, profiles/dsh shipped as pure extractor output, sanitized seed embedded [DSH-03, DSH-04]
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 11-07-PLAN.md — the proof: per-profile capture loaders for `profile check dsh`, the dsh parity suite extractor, A/B parity run (fresh baseline; credential-gated loud-skip), live probe per routed model, traceability audit, the full phase-gate close-out [DSH-04, DSH-05]
 
 ## Dependency Chains
 
