@@ -1015,7 +1015,7 @@ func TestNextPrompt_InjectionExpandsWithProvenance(t *testing.T) { //nolint:para
 	}
 
 	if !foundApply {
-		t.Errorf("no opsx:apply provenance line — the injection did not flow through the expansion seam (got %+v)", prov2)
+		t.Errorf("no opsx:apply provenance line — the injection bypassed the expansion seam (got %+v)", prov2)
 	}
 
 	bounds := transcriptLinesOfType(t, r, "sess-chain", session.TypeBoundary)

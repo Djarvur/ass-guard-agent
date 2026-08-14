@@ -10,13 +10,16 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/session"
 )
 
+// chainPatternID is the stage-bearing fixture pattern id (goconst).
+const chainPatternID = "post-explore-handoff"
+
 // continueTable matches any text containing "handoff" and reports a
 // stage-bearing pattern id; everything else is unmatched.
 type continueTable struct{}
 
 func (continueTable) MatchText(text string) (string, engine.Action) {
 	if strings.Contains(text, "handoff") {
-		return "post-explore-handoff", engine.ActionContinue
+		return chainPatternID, engine.ActionContinue
 	}
 
 	return "", engine.ActionNothing
@@ -31,6 +34,8 @@ func (continueTable) MatchTool(string) (string, engine.Action) {
 // seam).
 type populatingDispatcher struct {
 	fakeDispatcher
+
+	// next maps pattern id → the next command text to inject.
 	next map[string]string
 }
 
@@ -55,7 +60,7 @@ func TestChain_PopulatorFillsNextPrompt(t *testing.T) {
 	}}
 
 	d := &populatingDispatcher{next: map[string]string{
-		"post-explore-handoff": "/opsx:propose add-login",
+		chainPatternID: "/opsx:propose add-login",
 	}}
 
 	eng := &engine.Engine{Bus: event.NewBus(), Dispatcher: d}

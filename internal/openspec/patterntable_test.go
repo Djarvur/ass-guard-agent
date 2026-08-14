@@ -8,6 +8,9 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/openspec"
 )
 
+// nextApplyCmd is the chaining fixture's next command (goconst).
+const nextApplyCmd = "/opsx:apply"
+
 // TestNextPrompt_ConfigParsesNextField (08-06 Test 1): a [[patterns]] entry
 // with a stage-bearing id and a next command parses with both preserved.
 func TestNextPrompt_ConfigParsesNextField(t *testing.T) {
@@ -16,8 +19,10 @@ func TestNextPrompt_ConfigParsesNextField(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "openspec.toml")
 
-	err := os.WriteFile(path, []byte(
-		"[[patterns]]\nid = \"post-propose-handoff\"\nregex = \"ready for .opsx:apply\"\naction = \"continue\"\nnext = \"/opsx:apply\"\n"), 0o600)
+	toml := "[[patterns]]\nid = \"post-propose-handoff\"\n" +
+		"regex = \"ready for .opsx:apply\"\naction = \"continue\"\nnext = \"/opsx:apply\"\n"
+
+	err := os.WriteFile(path, []byte(toml), 0o600)
 	if err != nil {
 		t.Fatalf("write config: %v", err)
 	}
@@ -36,8 +41,8 @@ func TestNextPrompt_ConfigParsesNextField(t *testing.T) {
 		t.Errorf("id = %q; want post-propose-handoff", p.ID)
 	}
 
-	if p.Next != "/opsx:apply" {
-		t.Errorf("next = %q; want /opsx:apply", p.Next)
+	if p.Next != nextApplyCmd {
+		t.Errorf("next = %q; want %s", p.Next, nextApplyCmd)
 	}
 }
 
@@ -48,7 +53,7 @@ func TestNextPrompt_TableAnswersNextPromptFor(t *testing.T) {
 	t.Parallel()
 
 	cfg := &openspec.OpenSpecConfig{Patterns: []openspec.PatternEntry{
-		{ID: "post-propose-handoff", Regex: "ready", Action: "continue", Next: "/opsx:apply"},
+		{ID: "post-propose-handoff", Regex: "ready", Action: "continue", Next: nextApplyCmd},
 		{ID: "no-next-handoff", Regex: "plain", Action: "continue"},
 	}}
 
@@ -57,8 +62,8 @@ func TestNextPrompt_TableAnswersNextPromptFor(t *testing.T) {
 		t.Fatalf("FromConfig: %v", err)
 	}
 
-	if got := pt.NextPromptFor("post-propose-handoff"); got != "/opsx:apply" {
-		t.Errorf("NextPromptFor(post-propose-handoff) = %q; want /opsx:apply", got)
+	if got := pt.NextPromptFor("post-propose-handoff"); got != nextApplyCmd {
+		t.Errorf("NextPromptFor(post-propose-handoff) = %q; want %s", got, nextApplyCmd)
 	}
 
 	if got := pt.NextPromptFor("no-next-handoff"); got != "" {
