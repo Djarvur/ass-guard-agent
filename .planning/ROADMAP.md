@@ -196,9 +196,16 @@ Phases likely needing deeper research during `/gsd:plan-phase`:
 2. An operator declares ≥2 models per provider; a scheduler tier→model table entry resolves to a (provider, model) pair and ass-guard constructs the correct provider instance — right base_url + right key + right shape — for the resolved pair. (PROV-01 + scheduler→provider wiring)
 3. Credential precedence is explicit and tested: config-file credential is the fallback when the env var is unset; an explicit env var (or `--api-key` flag) overrides the config value; secrets never reach logs (redactor already covers `api_key`/`sk-`/`Bearer`; config file is gitignored and ass-guard warns if looser than 0600). (security model)
 4. Existing single-provider behavior keeps working unchanged: the embedded default seeds the current Z.ai GLM-5.2 provider, and an operator who changes nothing still gets today's behavior (`$ZAI_API_KEY` still works). (zero-config / backward compat)
+
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 7 to break down — after /gsd-discuss-phase 7)
+**Wave 1**
+
+- [ ] 07-01-PLAN.md — credential schema + precedence resolver + provider factory (PCFG-01..04 core; tracer slice: config→loader→factory→correct credentialed instance)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 07-02-PLAN.md — wire factory into acp serve/tracer/parity + D-07 startup warnings + 0600 perm + zero-config/zero-env proofs + traceability (PCFG-02..04, PROV-01)
 
 ---
 
