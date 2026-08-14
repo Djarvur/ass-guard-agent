@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Kickoff & Peers
-status: planning
-stopped_at: Phase 9 context gathered
-last_updated: "2026-08-14T17:55:10.398Z"
-last_activity: 2026-08-14 — v1.1 roadmap created (4 phases, 21/21 REQ-IDs mapped)
+status: executing
+stopped_at: Phase 8 planned (6 plans, 4 waves)
+last_updated: "2026-08-14T18:02:42.234Z"
+last_activity: 2026-08-14 -- Phase 8 planning complete
 progress:
   total_phases: 4
   completed_phases: 0
-  total_plans: 4
+  total_plans: 6
   completed_plans: 0
   percent: 0
 ---
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-08-14)
 ## Current Position
 
 Phase: 8 of 11 (Slash-Command Kickoff)
-Plan: — (not yet planned)
-Status: Ready to plan
-Last activity: 2026-08-14 — v1.1 roadmap created (4 phases, 21/21 REQ-IDs mapped)
-Next action: `/gsd-discuss-phase 8`
+Plan: 08-01 .. 08-06 (6 plans, 4 waves — all planned)
+Status: Ready to execute
+Last activity: 2026-08-14 -- Phase 8 planning complete
+Next action: `/gsd-execute-phase 8`
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -54,6 +54,7 @@ None yet.
 
 ### Blockers/Concerns
 
+- [Phase 8 planning, env note]: plan-phase ran with the gsd-planner and gsd-plan-checker contracts executed IN-PROCESS by the orchestrating agent — this ZCode runtime exposes no subagent-spawn tool, and the `claude` CLI fallback is unusable (its inference gateway 127.0.0.1:3456 is down; two probes failed with connection refused). Both agent definition files (~/.claude/agents/gsd-planner.md, gsd-plan-checker.md) were followed step-for-step; all gsd-sdk validators + coverage gates ran normally. No action needed for execution; surface if plan quality looks off.
 - [Phase 8]: `internal/ecosys.discoverCommands` flat-scans `commands/*.md` and skips directories — the opsx layout is invisible today. This structural blocker is Phase 8's FIRST task.
 - [Phase 9]: AUD-05 needs an operator action (export `ZAI_API_KEY`, run the divergence-prone capture workload per the runbook).
 - [Phase 10]: the bot-token redactor + canary test MUST land before the first Telegram HTTP call (token shape matches no existing redactor pattern).

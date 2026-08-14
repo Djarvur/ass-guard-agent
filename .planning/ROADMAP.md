@@ -50,6 +50,7 @@ v1.1 makes the hands-off OpenSpec promise real end-to-end. The milestone's reaso
 **Depends on:** Nothing (first v1.1 phase; builds on shipped v1.0 — `internal/ecosys`, `internal/openspec`, `internal/session`, the engine). Carries the milestone's only structural blocker as its **first task**: `internal/ecosys.discoverCommands` scans `commands/*.md` flat and skips directories, so the `openspec init --tools claude` layout (`.claude/commands/opsx/*.md`) is invisible today — without fixing this first, `/opsx:*` cannot work at all. Expansion hooks at the turn runner (session layer), NOT the ACP handler — that surface-agnosticity is why Telegram later gets `/opsx:*` for free.
 **Requirements:** CMD-01, CMD-02, CMD-03, CMD-04, CMD-05, CMD-06, CMD-07
 **Success Criteria** (what must be TRUE):
+
   1. A user invoking `/opsx:explore` has the command discovered: `commands/<ns>/<name>.md` layouts (like `openspec init --tools claude` installs) are found via one-level subdirectory scan with colon-joined keys, under the existing precedence (project `.claude/` > user `.claude/` > `.ass-guard/`), proven by a real-fixture test generated from actual `openspec init` output (CMD-01)
   2. A user typing `/namespace:name args` gets the command's markdown body expanded with exact zcode substitution semantics — `$ARGUMENTS` and `$1..$N` (out-of-range → empty), args without placeholders appended under a "User arguments:" heading, `${ARGUMENTS}` brace form and `` !`cmd` `` dynamic shell NOT recognized — fed to the turn as the user message, with the contract pinned by a table-driven edge-case test written before implementation; unknown `/foo` falls through as plain text (CMD-02)
   3. The model invoking any `openspec:*` tool gets a real executed subprocess result — Adapter-backed `Execute` on registered tools, command surface pinned to the installed binary's probe (phantom `apply`/`implement` removed; read-only vs mutating classified), non-interactive guards (nil stdin, per-command timeout, exit-code classification) (CMD-03)
@@ -57,8 +58,27 @@ v1.1 makes the hands-off OpenSpec promise real end-to-end. The milestone's reaso
   5. Expanded turns record provenance (which command file drove the turn), engine pattern-matching remains assistant-role-only (regression test — the prompt-injection guard for repo-shipped command markdown), and same-key shadowing across discovery scopes emits a warning (CMD-05)
   6. Skills work claude-code-compatibly — the model invokes the `Skill` tool; skill name + description reach context via the captured profile's shape with dynamically discovered skills merged in (the v1.0 dynamic-MCP pattern); SKILL.md loads into the turn; all discovered skills exposed — `/opsx` prompts naturally trigger the matching `openspec-*` skills (CMD-06, added at Phase-8 discussion)
   7. WebSearch ships a real DDG-HTML default backend (zero key) on the swappable seam and WebFetch returns fetch + html→markdown — at minimum sufficient for `/opsx:explore` workflows; zero-config first run unaffected (CMD-07, added at Phase-8 discussion)
+
 **Phase gate:** `mise ci` clean AND the operator-gated real-binary test (`ASSGUARD_OPENSPEC_BIN=1` against real openspec v1.5.0, all three paths) AND a real `/opsx` E2E in a scratch project AND the 11 deferred UAT checks green. No stub-only evidence closes this phase.
-**Plans:** TBD
+**Plans:** 6 plans
+Plans:
+**Wave 1**
+
+- [ ] 08-01-PLAN.md — ecosys namespaced discovery: one-level `commands/<ns>/<name>.md` scan with colon-join keys, zcode name/frontmatter rules, flat-parser fallback, shadow warnings (THE structural blocker, first) [CMD-01, CMD-05]
+- [ ] 08-02-PLAN.md — real web-tool backends: DDG-HTML WebSearch default (zero key) + WebFetch fetch+html→markdown on the swappable seam [CMD-07]
+- [ ] 08-03-PLAN.md — openspec adapter reconciliation: probe-pinned surface (phantom apply/implement removed), Adapter-backed Execute closures, non-interactive guards + three-path real-binary gate [CMD-03]
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 08-04-PLAN.md — Expand engine + turn wiring: zcode substitution contract (test-first), expansion at the turn runner on all paths + injections, transcript provenance, D-11 command boundaries, injection regression [CMD-02, CMD-05]
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 08-05-PLAN.md — skills invocation: model-invoked Skill tool with SKILL.md loading into the turn, captured-shape listing dynamic merge, all skills exposed [CMD-06]
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 08-06-PLAN.md — the gate: real /opsx E2E in a scratch project, pattern re-seed from real output, 11 UAT checks, operator witness [CMD-04]
 
 ### Phase 9: Serve-Path Audit + zcode Parity Re-capture
 
@@ -67,11 +87,13 @@ v1.1 makes the hands-off OpenSpec promise real end-to-end. The milestone's reaso
 **Depends on:** Phase 8 (operator priority chain; also the engine decisions recorded by AUD-04 observe Phase-8-hardened turns). AUD (audit) and AUD-05 (re-capture) are adjacent in the operator's chain and merged here by design: both are small, both land before Phase 10's `internal/runtime` extraction moves the wiring — the capturer factory seam reaches its final home here, written once, not re-wired. AUD-05 additionally unblocks the v1.0 Phase-1 within-session stability test (`eea3dc48` is absent on disk).
 **Requirements:** AUD-01, AUD-02, AUD-03, AUD-04, AUD-05
 **Success Criteria** (what must be TRUE):
+
   1. A provider request made during `acp serve` is captured through a single-sourced factory-seam capturer covering both protocol shapes — the existing tracer path refactored onto the same seam, with no divergent provider-construction copies (the copy-`tracerProvider` shortcut is banned) (AUD-01)
   2. Every serve-path session writes a redacted audit trail — per-session transcript events with correlation IDs (session/turn/request) including `RequestShaped`, plus an optional `--audit-log` mirror (0600, append-only JSONL, rejects stdout as a target) (AUD-02)
   3. Audit volume is bounded via the body_ref pattern (hash in the event, full body in a capped store), and audit write failures are loud but never fatal to a turn (AUD-03)
   4. The audit trail records engine decisions (continue / hook / ask / wait, with the matched signal) — the "why did the agent continue" question is answerable from the log alone (AUD-04)
   5. The zcode parity stability test runs green against a newly pinned divergence-prone capture session produced via the operator runbook (scripted subagent/MCP-attach/tool-variety workload — not richest-session selection), with the pinned session ID consumed by the test, zcode + extractor versions recorded, thresholds explicitly re-baselined, and the drift report committed before any profile update (AUD-05)
+
 **Phase gate:** `mise ci` clean AND live-serve redacted-audit verification (a redacted `RequestShaped` line observed on a real serve) AND the stability test green against the newly pinned session AND token/secret canary greps clean. No stub-only evidence closes this phase.
 **Plans:** TBD
 
@@ -82,11 +104,13 @@ v1.1 makes the hands-off OpenSpec promise real end-to-end. The milestone's reaso
 **Depends on:** Phase 8 (session-layer command expansion — Telegram gets `/opsx:*` for free) and Phase 9 (capturer seam landed in its final home before this phase's `internal/runtime` extraction moves the code). This phase performs the milestone's one structural refactor: extracting the turn core (runner + engine/hook/MCP wiring) from `cmd/ass-guard/acp_serve.go` into `internal/runtime` as the Telegram prerequisite.
 **Requirements:** TG-01, TG-02, TG-03, TG-04, TG-05, TG-06
 **Success Criteria** (what must be TRUE):
+
   1. The turn core (runner + engine/hook/MCP wiring) lives in `internal/runtime` shared by the ACP and Telegram frontends with no copied construction paths, and the operator can launch Telegram standalone (`ass-guard telegram`) or beside ACP (`acp serve --telegram`), both reusing the shared core builder (TG-01, TG-06)
   2. A user chatting with the bot drives the same engine as ACP — stable `tg-<chatID>` session IDs with resume across restarts, long-poll `Start(ctx)`, `deleteWebhook` at startup, no daemon and no network port; shutdown is one drain path, SIGTERM and stdin-EOF identical, draining in < 5s (TG-02)
   3. A user runs a full SDD scenario from Telegram text — `/opsx:*` commands work from chat, output arrives as fence-aware ≤4096-char chunks with MarkdownV2 escaping, `/stop` cancels the in-flight turn, an allowlist gates access, and engine-ask surfaces as a chat message (TG-03)
   4. A user sending a voice message gets it transcribed and executed as ordinary user input — OGG/Opus download → `Transcriber` interface → text — with the OpenAI default via the existing go-openai client, Groq via base-URL swap, whisper.cpp via config-gated subprocess, async acknowledgement while transcribing, and both `voice` and `audio` updates handled (TG-04)
   5. The bot token never appears in any log, audit event, or error string — a dedicated redactor pattern with a canary test landing **before the first Telegram HTTP call** (TG-05)
+
 **Phase gate:** `mise ci` clean AND a live Telegram round-trip — a full text SDD scenario driven from a real chat plus a voice message transcribed and driving a turn — AND the SIGTERM/stdin-EOF drain test AND stdout byte-clean in both launch modes. No stub-only evidence closes this phase.
 **Plans:** TBD
 **UI hint**: yes
@@ -98,11 +122,13 @@ v1.1 makes the hands-off OpenSpec promise real end-to-end. The milestone's reaso
 **Depends on:** Phase 9 (capture-provenance pattern — recording-proxy wire truth, pinned-session discipline — made profile-agnostic) and follows Phase 10 per the operator priority chain. DSH-02's OpenAI `profile.System` mapping fix is generic and may land earlier if convenient, but the profile itself closes last. Verification-gated: wire truth comes from the capture, never from source-reading alone (dsh session JSONL stores events, not outgoing HTTP requests).
 **Requirements:** DSH-01, DSH-02, DSH-03, DSH-04, DSH-05
 **Success Criteria** (what must be TRUE):
+
   1. Shared mimicry code contains no zcode-specific paths — a zcode-ism audit genericizes or parameterizes them (e.g. redaction's preserved-header list becomes profile-supplied) so "N profiles, no target-specific code paths" holds for two profiles (DSH-01)
   2. The OpenAI-shape provider maps `profile.System` onto the wire exactly as captured dsh traffic does (form decided from the capture, not assumption), and the profile loader tolerates profiles without `thinking.json` / `tool_choice.json` (DSH-02)
   3. The dsh profile's content is captured, not hand-written — recording-proxy wire-truth capture at the configured baseURL plus zstd harvest of dsh session event logs (decode spike against a real `session.jsonl.zstd` first), with the pinned dsh commit recorded in profile meta (DSH-03)
   4. An operator selects `--profile dsh`, `scheduling.yaml` carries a credentialed DeepSeek provider entry, `profile check dsh` detects drift against the per-profile capture, and a sanitized dsh seed ships in the embedded defaults (DSH-04)
   5. The A/B parity harness is green for dsh against a DeepSeek endpoint, one live DeepSeek tool-calling round-trip succeeds per routed model, and every profile entry is traceable to a captured request (DSH-05)
+
 **Phase gate:** `mise ci` clean AND the zstd decode spike passed against a real `session.jsonl.zstd` AND the A/B parity harness (`internal/parity`) green against a DeepSeek endpoint AND one live DeepSeek tool-calling round-trip per routed model AND every profile entry traceable to a captured request. Per-turn profile switching stays a v1.2 non-goal — `--profile` remains explicit. No stub-only evidence closes this phase.
 **Plans:** TBD
 
