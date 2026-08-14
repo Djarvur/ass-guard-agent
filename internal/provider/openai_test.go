@@ -68,7 +68,8 @@ func TestOpenAIProvider_SendParsesToolCalls(t *testing.T) {
 		capturedBody = body
 
 		w.Header().Set("content-type", "application/json")
-		_, _ = io.WriteString(w, cannedOpenAIToolCallsResponse(toolCallIDDefault, synthToolA, `{"path":"go.mod"}`))
+		_, _ = io.WriteString(w,
+			cannedOpenAIToolCallsResponse(toolCallIDDefault, synthToolA, `{"path":"go.mod"}`))
 	}))
 	defer srv.Close()
 
@@ -140,6 +141,48 @@ func TestToolCallID_OpenAICarriesID(t *testing.T) {
 	}
 }
 
+// capturedMessages is the decoded messages array of a captured Chat
+// Completions request.
+type capturedMessages []struct {
+	Role       string `json:"role"`
+	Content    string `json:"content"`
+	ToolCallID string `json:"tool_call_id"`
+	ToolCalls  []struct {
+		ID       string `json:"id"`
+		Type     string `json:"type"`
+		Function struct {
+			Name      string `json:"name"`
+			Arguments string `json:"arguments"`
+		} `json:"function"`
+	} `json:"tool_calls"`
+}
+
+// newOpenAITestProvider builds the OpenAI adapter under test against a mock
+// endpoint (shared by the id-carry and rendering tests).
+func newOpenAITestProvider(_ *testing.T, baseURL string, capture provider.RequestCapturer) *provider.OpenAIProvider {
+	return provider.NewOpenAIProvider(
+		provider.WithOpenAIAPIKey("test-key"),
+		provider.WithOpenAIBaseURL(baseURL),
+		provider.WithOpenAIRequestCapture(capture),
+	)
+}
+
+// decodeCapturedMessages decodes a captured request body into its messages.
+func decodeCapturedMessages(t *testing.T, body []byte) capturedMessages {
+	t.Helper()
+
+	var req struct {
+		Messages capturedMessages `json:"messages"`
+	}
+
+	err := json.Unmarshal(body, &req)
+	if err != nil {
+		t.Fatalf("captured request not valid JSON: %v", err)
+	}
+
+	return req.Messages
+}
+
 // TestMidTurn_OpenAIRendering (08-07 T1 Test 6): structured mid-turn messages
 // build to the OpenAI-native forms on the Send path — an assistant message
 // carries tool_calls[{id,type:function,function:{name,arguments}}] (arguments =
@@ -148,29 +191,29 @@ func TestToolCallID_OpenAICarriesID(t *testing.T) {
 func TestMidTurn_OpenAIRendering(t *testing.T) {
 	t.Parallel()
 
+	const callOai9 = "call_oai_9"
+
 	var captured []byte
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("content-type", "application/json")
-		_, _ = io.WriteString(w, cannedOpenAIToolCallsResponse(toolCallIDDefault, synthToolA, `{"path":"go.mod"}`))
+		_, _ = io.WriteString(w,
+			cannedOpenAIToolCallsResponse(toolCallIDDefault, synthToolA, `{"path":"go.mod"}`))
 	}))
 	defer srv.Close()
 
 	prof := loadProfile(t, "minimal")
-	p := provider.NewOpenAIProvider(
-		provider.WithOpenAIAPIKey("test-key"),
-		provider.WithOpenAIBaseURL(srv.URL+"/v1"),
-		provider.WithOpenAIRequestCapture(func(body []byte, _ map[string]string) { captured = body }),
-	)
+	p := newOpenAITestProvider(t, srv.URL+"/v1",
+		func(body []byte, _ map[string]string) { captured = body })
 
 	msgs := []shaper.Message{
 		{Role: roleUser, Content: "go"},
 		{
 			Role: "assistant", ToolCalls: []shaper.ToolCall{
-				{ID: "call_oai_9", Name: "Read", Input: json.RawMessage(`{"path":"go.mod"}`)},
+				{ID: callOai9, Name: toolNameRead, Input: json.RawMessage(`{"path":"go.mod"}`)},
 			},
 		},
-		{Role: "tool", ToolCallID: "call_oai_9", ToolName: "Read", Content: `{"ok":true}`},
+		{Role: roleTool, ToolCallID: callOai9, ToolName: toolNameRead, Content: `{"ok":true}`},
 	}
 
 	_, err := p.Send(context.Background(), &prof, msgs)
@@ -178,46 +221,28 @@ func TestMidTurn_OpenAIRendering(t *testing.T) {
 		t.Fatalf("Send: %v", err)
 	}
 
-	var req struct {
-		Messages []struct {
-			Role       string `json:"role"`
-			Content    string `json:"content"`
-			ToolCallID string `json:"tool_call_id"`
-			ToolCalls  []struct {
-				ID       string `json:"id"`
-				Type     string `json:"type"`
-				Function struct {
-					Name      string `json:"name"`
-					Arguments string `json:"arguments"`
-				} `json:"function"`
-			} `json:"tool_calls"`
-		} `json:"messages"`
+	ms := decodeCapturedMessages(t, captured)
+	if len(ms) != 3 {
+		t.Fatalf("len(messages) = %d, want 3", len(ms))
 	}
 
-	if err := json.Unmarshal(captured, &req); err != nil {
-		t.Fatalf("captured request not valid JSON: %v", err)
-	}
-
-	if len(req.Messages) != 3 {
-		t.Fatalf("len(messages) = %d, want 3", len(req.Messages))
-	}
-
-	am := req.Messages[1]
+	am := ms[1]
 	if am.Role != "assistant" || len(am.ToolCalls) != 1 {
 		t.Fatalf("assistant message = {role:%s, tool_calls:%d}; want {assistant,1}", am.Role, len(am.ToolCalls))
 	}
 
 	tc := am.ToolCalls[0]
-	if tc.ID != "call_oai_9" || tc.Type != "function" || tc.Function.Name != "Read" {
-		t.Errorf("tool_calls[0] = {id:%s,type:%s,name:%s}; want {call_oai_9,function,Read}", tc.ID, tc.Type, tc.Function.Name)
+	if tc.ID != callOai9 || tc.Type != "function" || tc.Function.Name != toolNameRead {
+		t.Errorf("tool_calls[0] = {id:%s,type:%s,name:%s}; want {call_oai_9,function,Read}",
+			tc.ID, tc.Type, tc.Function.Name)
 	}
 
 	if tc.Function.Arguments != `{"path":"go.mod"}` {
 		t.Errorf("tool_calls[0].arguments = %q, want the Input JSON verbatim", tc.Function.Arguments)
 	}
 
-	tm := req.Messages[2]
-	if tm.Role != "tool" || tm.ToolCallID != "call_oai_9" {
+	tm := ms[2]
+	if tm.Role != roleTool || tm.ToolCallID != callOai9 {
 		t.Errorf("tool message = {role:%s, tool_call_id:%s}; want {tool,call_oai_9}", tm.Role, tm.ToolCallID)
 	}
 

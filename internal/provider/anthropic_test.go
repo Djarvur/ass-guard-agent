@@ -80,7 +80,8 @@ func TestAnthropicProvider_SendParsesToolUse(t *testing.T) { //nolint:funlen // 
 		capturedBody = body
 
 		w.Header().Set("content-type", "text/event-stream")
-		_, _ = io.WriteString(w, cannedAnthropicToolUseResponse(toolCallIDDefault, synthToolA, map[string]any{keyPath: goModFile}))
+		_, _ = io.WriteString(w,
+			cannedAnthropicToolUseResponse(toolCallIDDefault, synthToolA, map[string]any{keyPath: goModFile}))
 	}))
 	defer srv.Close()
 
@@ -146,7 +147,7 @@ func TestToolCallID_AnthropicStreamCarriesID(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("content-type", "text/event-stream")
-		_, _ = io.WriteString(w, cannedAnthropicToolUseResponse("call_abc123", "Read",
+		_, _ = io.WriteString(w, cannedAnthropicToolUseResponse("call_abc123", toolNameRead,
 			map[string]any{keyPath: goModFile}))
 	}))
 	defer srv.Close()

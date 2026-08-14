@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/sashabaranov/go-openai"
 
@@ -111,11 +112,60 @@ func (p *OpenAIProvider) buildRequest(prof *profile.Profile, messages []Message)
 		model = prof.Model
 	}
 
-	msgs := make([]openai.ChatCompletionMessage, 0, len(messages))
-	for _, m := range messages {
-		msgs = append(msgs, openai.ChatCompletionMessage{Role: m.Role, Content: m.Content})
+	req := openai.ChatCompletionRequest{
+		Model:    model,
+		Messages: toOpenAIMessages(messages),
+		Tools:    openAITools(prof),
+	}
+	// tool_choice: only "auto"/"none"/"required" map directly; object forms are
+	// provider-specific and out of Phase-1 scope.
+	if prof.ToolChoice != nil {
+		var tc struct {
+			Type string `json:"type"`
+		}
+
+		if json.Unmarshal(prof.ToolChoice, &tc) == nil {
+			req.ToolChoice = tc.Type
+		}
 	}
 
+	return req
+}
+
+// toOpenAIMessages maps Messages to Chat Completions messages. Structured
+// mid-turn messages render OpenAI-natively (08-07): an assistant batch becomes
+// tool_calls[{id,type:function,function:{name,arguments}}] (arguments = the
+// Input JSON verbatim) and a tool-role message becomes
+// {role:"tool", tool_call_id, content}.
+func toOpenAIMessages(messages []Message) []openai.ChatCompletionMessage {
+	msgs := make([]openai.ChatCompletionMessage, 0, len(messages))
+	for _, m := range messages {
+		cm := openai.ChatCompletionMessage{Role: m.Role, Content: m.Content}
+
+		for _, tc := range m.ToolCalls {
+			cm.ToolCalls = append(cm.ToolCalls, openai.ToolCall{
+				ID:   tc.ID,
+				Type: openai.ToolTypeFunction,
+				Function: openai.FunctionCall{
+					Name:      tc.Name,
+					Arguments: string(tc.Input),
+				},
+			})
+		}
+
+		if strings.EqualFold(m.Role, "tool") {
+			cm.ToolCallID = m.ToolCallID
+		}
+
+		msgs = append(msgs, cm)
+	}
+
+	return msgs
+}
+
+// openAITools maps the profile's tool declarations to the Chat Completions
+// tools wrapper.
+func openAITools(prof *profile.Profile) []openai.Tool {
 	tools := make([]openai.Tool, 0, len(prof.Tools))
 
 	for _, d := range prof.Tools {
@@ -134,24 +184,7 @@ func (p *OpenAIProvider) buildRequest(prof *profile.Profile, messages []Message)
 		})
 	}
 
-	req := openai.ChatCompletionRequest{
-		Model:    model,
-		Messages: msgs,
-		Tools:    tools,
-	}
-	// tool_choice: only "auto"/"none"/"required" map directly; object forms are
-	// provider-specific and out of Phase-1 scope.
-	if prof.ToolChoice != nil {
-		var tc struct {
-			Type string `json:"type"`
-		}
-
-		if json.Unmarshal(prof.ToolChoice, &tc) == nil {
-			req.ToolChoice = tc.Type
-		}
-	}
-
-	return req
+	return tools
 }
 
 // parseOpenAIResponse turns the Chat Completions response into the
@@ -184,7 +217,7 @@ func parseOpenAIResponse(resp *openai.ChatCompletionResponse) (Response, error) 
 			input = json.RawMessage(wrapped)
 		}
 
-		out.ToolCalls = append(out.ToolCalls, ToolCall{Name: tc.Function.Name, Input: input})
+		out.ToolCalls = append(out.ToolCalls, ToolCall{ID: tc.ID, Name: tc.Function.Name, Input: input})
 	}
 
 	raw, err := json.Marshal(resp)

@@ -68,12 +68,13 @@ type Response struct {
 }
 
 // ToolCall is one zcode-normalized tool invocation (VERIFIED-FACTS.md item #1:
-// the response.toolCalls[] shape is {name, input}, independent of provider wire
-// format). Input is the raw JSON arguments.
-type ToolCall struct {
-	Name  string          `json:"name"`
-	Input json.RawMessage `json:"input"`
-}
+// the captured response.toolCalls[] shape is {id, name, input}). It is an alias
+// of shaper.ToolCall — the same one-directional pattern as Message (provider
+// imports the Shaper; the Shaper never imports the provider) — so the REAL
+// provider tool-call id carries end-to-end: streaming parses it, the
+// transcript records it, and the Projector pairs tool_use with tool_result
+// (08-07; the 08-06 gate's root cause 1 was a local no-ID struct here).
+type ToolCall = shaper.ToolCall
 
 // RequestCapturer is invoked by an adapter with the verbatim outgoing request
 // body + header set after the Shaper produces them and before the provider

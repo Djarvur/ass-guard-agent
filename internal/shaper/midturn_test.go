@@ -2,7 +2,6 @@ package shaper_test
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -11,12 +10,24 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 )
 
+// midturn-test constants (goconst).
+const (
+	toolNameRead    = "Read"
+	toolNameBash    = "Bash"
+	callID1         = "call_1"
+	callID2         = "call_2"
+	callID9         = "call_9"
+	roleToolMidturn = "tool"
+	contentListOut  = "file_a\nfile_b"
+	contentReadOut  = "module x"
+)
+
 // midTurnProfile is the minimal profile the mid-turn shaping tests use — the
 // message-block rendering under test is profile-independent.
 func midTurnProfile() *profile.Profile {
 	return &profile.Profile{
 		Name:      "midturn-test",
-		Model:     "synth-model",
+		Model:     synthModel,
 		MaxTokens: 1024,
 		System:    []profile.TextBlock{{Type: "text", Text: "sys"}},
 	}
@@ -31,16 +42,18 @@ func TestMidTurn_ToolCallStruct(t *testing.T) {
 
 	tc := shaper.ToolCall{
 		ID:    "call_abc123",
-		Name:  "Read",
+		Name:  toolNameRead,
 		Input: json.RawMessage(`{"file_path":"go.mod"}`),
 	}
 
-	if tc.ID != "call_abc123" || tc.Name != "Read" {
+	if tc.ID != "call_abc123" || tc.Name != toolNameRead {
 		t.Errorf("ToolCall fields = {%q,%q}; want {call_abc123,Read}", tc.ID, tc.Name)
 	}
 
 	var in map[string]any
-	if err := json.Unmarshal(tc.Input, &in); err != nil {
+
+	err := json.Unmarshal(tc.Input, &in)
+	if err != nil {
 		t.Fatalf("Input not valid JSON: %v", err)
 	}
 
@@ -58,13 +71,13 @@ func TestMidTurn_AnthropicToolUseRendering(t *testing.T) {
 
 	s := shaper.New()
 	msgs := []shaper.Message{
-		{Role: "user", Content: "list the files"},
+		{Role: roleUser, Content: "list the files"},
 		{
 			Role:    "assistant",
 			Content: "I will list them.",
 			ToolCalls: []shaper.ToolCall{
-				{ID: "call_1", Name: "Bash", Input: json.RawMessage(`{"command":"ls"}`)},
-				{ID: "call_2", Name: "Read", Input: json.RawMessage(`{"file_path":"go.mod"}`)},
+				{ID: callID1, Name: toolNameBash, Input: json.RawMessage(`{"command":"ls"}`)},
+				{ID: callID2, Name: toolNameRead, Input: json.RawMessage(`{"file_path":"go.mod"}`)},
 			},
 		},
 	}
@@ -92,7 +105,7 @@ func TestMidTurn_AnthropicToolUseRendering(t *testing.T) {
 		t.Errorf("block[0] is not a text block (want text BEFORE tool_use)")
 	}
 
-	for i, wantID := range []string{"call_1", "call_2"} {
+	for i, wantID := range []string{callID1, callID2} {
 		blk := am.Content[i+1]
 		if blk.OfToolUse == nil {
 			t.Fatalf("block[%d] is not a tool_use block", i+1)
@@ -103,7 +116,7 @@ func TestMidTurn_AnthropicToolUseRendering(t *testing.T) {
 		}
 	}
 
-	if am.Content[1].OfToolUse.Name != "Bash" {
+	if am.Content[1].OfToolUse.Name != toolNameBash {
 		t.Errorf("tool_use[0].Name = %q, want Bash", am.Content[1].OfToolUse.Name)
 	}
 
@@ -121,22 +134,21 @@ func TestMidTurn_AnthropicToolUseRendering(t *testing.T) {
 // consecutive tool-role messages group into ONE user-role MessageParam carrying
 // one tool_result block per message (canonical Anthropic batch form; the
 // capture's per-result granularity is preserved by block order), each with
-// tool_use_id + content + is_error built via anthropic.NewToolResultBlock. A
-// lone tool-role message still renders as its own user message.
+// tool_use_id + content + is_error built via anthropic.NewToolResultBlock.
 func TestMidTurn_AnthropicToolResultGrouping(t *testing.T) {
 	t.Parallel()
 
 	s := shaper.New()
 	msgs := []shaper.Message{
-		{Role: "user", Content: "go"},
+		{Role: roleUser, Content: "go"},
 		{
 			Role: "assistant", ToolCalls: []shaper.ToolCall{
-				{ID: "call_1", Name: "Bash", Input: json.RawMessage(`{"command":"ls"}`)},
-				{ID: "call_2", Name: "Read", Input: json.RawMessage(`{"file_path":"go.mod"}`)},
+				{ID: callID1, Name: toolNameBash, Input: json.RawMessage(`{"command":"ls"}`)},
+				{ID: callID2, Name: toolNameRead, Input: json.RawMessage(`{"file_path":"go.mod"}`)},
 			},
 		},
-		{Role: "tool", ToolCallID: "call_1", ToolName: "Bash", Content: "file_a\nfile_b", IsError: false},
-		{Role: "tool", ToolCallID: "call_2", ToolName: "Read", Content: "module x", IsError: true},
+		{Role: roleToolMidturn, ToolCallID: callID1, ToolName: toolNameBash, Content: contentListOut, IsError: false},
+		{Role: roleToolMidturn, ToolCallID: callID2, ToolName: toolNameRead, Content: contentReadOut, IsError: true},
 	}
 
 	params, _, err := s.Shape(midTurnProfile(), msgs)
@@ -158,32 +170,20 @@ func TestMidTurn_AnthropicToolResultGrouping(t *testing.T) {
 		t.Fatalf("grouped content blocks = %d, want 2 tool_result blocks", len(tr.Content))
 	}
 
-	wantIDs := []string{"call_1", "call_2"}
-	wantErr := []bool{false, true}
-	for i := range 2 {
-		blk := tr.Content[i]
-		if blk.OfToolResult == nil {
-			t.Fatalf("block[%d] is not a tool_result block", i)
-		}
+	assertToolResultBlock(t, &tr.Content[0], callID1, false, contentListOut)
+	assertToolResultBlock(t, &tr.Content[1], callID2, true, contentReadOut)
+}
 
-		if blk.OfToolResult.ToolUseID != wantIDs[i] {
-			t.Errorf("tool_result[%d].ToolUseID = %q, want %q", i, blk.OfToolResult.ToolUseID, wantIDs[i])
-		}
+// TestMidTurn_AnthropicToolResultLone verifies a LONE tool-role message (no
+// adjacent tool messages) renders as its own user message carrying exactly one
+// tool_result block (the grouping never merges across non-tool messages).
+func TestMidTurn_AnthropicToolResultLone(t *testing.T) {
+	t.Parallel()
 
-		if bool(blk.OfToolResult.IsError) != wantErr[i] {
-			t.Errorf("tool_result[%d].IsError = %v, want %v", i, blk.OfToolResult.IsError, wantErr[i])
-		}
-
-		if !strings.Contains(blk.OfToolResult.Content[0].Text, "file") && i == 0 {
-			t.Errorf("tool_result[0].Content = %v, want the result text", blk.OfToolResult.Content)
-		}
-	}
-
-	// A LONE tool-role message (no adjacent tool messages) renders as its own
-	// user message carrying exactly one tool_result block.
+	s := shaper.New()
 	lone := []shaper.Message{
-		{Role: "user", Content: "x"},
-		{Role: "tool", ToolCallID: "call_9", ToolName: "Bash", Content: "out", IsError: false},
+		{Role: roleUser, Content: "x"},
+		{Role: roleToolMidturn, ToolCallID: callID9, ToolName: toolNameBash, Content: "out", IsError: false},
 	}
 
 	lparams, _, err := s.Shape(midTurnProfile(), lone)
@@ -200,7 +200,34 @@ func TestMidTurn_AnthropicToolResultGrouping(t *testing.T) {
 		t.Fatalf("lone tool message did not render as its own user tool_result param: %+v", last)
 	}
 
-	if last.Content[0].OfToolResult.ToolUseID != "call_9" {
-		t.Errorf("lone tool_result ToolUseID = %q, want call_9", last.Content[0].OfToolResult.ToolUseID)
+	assertToolResultBlock(t, &last.Content[0], callID9, false, "out")
+}
+
+// assertToolResultBlock checks one rendered content block is a tool_result
+// with the expected tool_use_id, is_error, and text content.
+func assertToolResultBlock(
+	t *testing.T, blk *anthropic.ContentBlockParamUnion, wantID string, wantErr bool, wantText string,
+) {
+	t.Helper()
+
+	if blk.OfToolResult == nil {
+		t.Fatalf("block is not a tool_result block: %+v", blk)
+	}
+
+	if blk.OfToolResult.ToolUseID != wantID {
+		t.Errorf("tool_result.ToolUseID = %q, want %q", blk.OfToolResult.ToolUseID, wantID)
+	}
+
+	if blk.OfToolResult.IsError.Value != wantErr {
+		t.Errorf("tool_result.IsError = %v, want %v", blk.OfToolResult.IsError.Value, wantErr)
+	}
+
+	res := blk.OfToolResult.Content[0]
+	if res.OfText == nil {
+		t.Fatalf("tool_result.Content[0] is not a text block: %+v", res)
+	}
+
+	if res.OfText.Text != wantText {
+		t.Errorf("tool_result.Content = %q, want %q", res.OfText.Text, wantText)
 	}
 }

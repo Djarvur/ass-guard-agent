@@ -34,7 +34,8 @@ func TestConformance_BothAdapters(t *testing.T) { //nolint:funlen,tparallel // s
 	// Anthropic arm.
 	antSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "text/event-stream")
-		_, _ = io.WriteString(w, cannedAnthropicToolUseResponse(toolCallIDDefault, synthToolA, map[string]any{keyPath: goModFile}))
+		_, _ = io.WriteString(w,
+			cannedAnthropicToolUseResponse(toolCallIDDefault, synthToolA, map[string]any{keyPath: goModFile}))
 	}))
 	defer antSrv.Close()
 
@@ -130,29 +131,22 @@ func TestConformance_ToolResultMessageMatchesShaper(t *testing.T) {
 		t.Fatalf("ToolResultMessage: %v", err)
 	}
 
-	params, _, err := shaper.New().Shape(&prof, []shaper.Message{
-		{Role: "tool", ToolCallID: toolCallIDDefault, ToolName: synthToolA, Content: string(result)},
-	})
-	if err != nil {
-		t.Fatalf("Shape: %v", err)
+	shaperMsgs := []shaper.Message{
+		{Role: roleTool, ToolCallID: toolCallIDDefault, ToolName: synthToolA, Content: string(result)},
+	}
+
+	params, _, shapeErr := shaper.New().Shape(&prof, shaperMsgs)
+	if shapeErr != nil {
+		t.Fatalf("Shape: %v", shapeErr)
 	}
 
 	if len(params.Messages) != 1 {
 		t.Fatalf("len(shaper Messages) = %d, want 1", len(params.Messages))
 	}
 
-	shaped, err := json.Marshal(params.Messages[0])
-	if err != nil {
-		t.Fatalf("marshal shaper message: %v", err)
-	}
-
-	var gotAny, wantAny any
-	if err := json.Unmarshal(raw, &gotAny); err != nil {
-		t.Fatalf("ToolResultMessage output not valid JSON: %v", err)
-	}
-
-	if err := json.Unmarshal(shaped, &wantAny); err != nil {
-		t.Fatalf("shaper message not valid JSON: %v", err)
+	shaped, marshalErr := json.Marshal(params.Messages[0])
+	if marshalErr != nil {
+		t.Fatalf("marshal shaper message: %v", marshalErr)
 	}
 
 	if string(raw) != string(shaped) {
@@ -166,15 +160,21 @@ func TestConformance_ToolResultMessageMatchesShaper(t *testing.T) {
 func TestConformance_ToolCallAlias(t *testing.T) {
 	t.Parallel()
 
-	// A shaper.ToolCall value assigned to a provider.ToolCall variable (and
-	// back) compiles ONLY when the two are the same type.
-	var asProvider provider.ToolCall = shaper.ToolCall{ID: "call_x", Name: "Read", Input: json.RawMessage(`{}`)}
-	var asShaper shaper.ToolCall = asProvider
+	tc := shaper.ToolCall{ID: "call_x", Name: toolNameRead, Input: json.RawMessage(`{}`)}
 
-	if asShaper.ID != "call_x" {
-		t.Errorf("alias round-trip lost the ID: %+v", asShaper)
+	// Passing a shaper.ToolCall where a provider.ToolCall parameter is
+	// expected compiles ONLY when the two are the same type (assignability
+	// between distinct named types with identical fields does not hold).
+	acceptProviderToolCall(tc)
+
+	if tc.ID != "call_x" {
+		t.Errorf("alias round-trip lost the ID: %+v", tc)
 	}
 }
+
+// acceptProviderToolCall exists so the alias test can prove shaper.ToolCall is
+// assignable to provider.ToolCall (the alias) without a local declaration.
+func acceptProviderToolCall(_ provider.ToolCall) {}
 
 // TestConformance_InterfaceSatisfied is a compile-time-ish guarantee that both
 // adapters implement the Provider interface (the test fails to compile otherwise,

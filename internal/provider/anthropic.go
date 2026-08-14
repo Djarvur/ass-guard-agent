@@ -101,19 +101,17 @@ func (p *AnthropicProvider) Send(ctx context.Context, prof *profile.Profile, mes
 
 // ToolResultMessage builds the Anthropic-shape follow-up: a user-role message
 // whose content is a tool_result block referencing the tool-call id (PROV-02
-// TranslateFromInternal). The result bytes are JSON the SDK would accept as a
-// user MessageParam content block.
+// TranslateFromInternal). The block construction is the SAME one the Shaper's
+// message path uses (shaper.RenderToolResultParam) — the two renderings cannot
+// silently diverge (08-07 T1 single-source; pinned by conformance).
 func (p *AnthropicProvider) ToolResultMessage(toolCallID string, result json.RawMessage) (json.RawMessage, error) {
-	msg := map[string]any{
-		"role": "user",
-		"content": []map[string]any{{
-			keyType:       "tool_result",
-			"tool_use_id": toolCallID,
-			"content":     orEmpty(result),
-		}},
-	}
+	param := shaper.RenderToolResultParam(&shaper.Message{
+		Role:       "tool",
+		ToolCallID: toolCallID,
+		Content:    string(orEmpty(result)),
+	})
 
-	data, mErr := json.Marshal(msg)
+	data, mErr := json.Marshal(param)
 	if mErr != nil {
 		return nil, fmt.Errorf("marshal: %w", mErr)
 	}

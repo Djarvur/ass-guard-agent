@@ -18,14 +18,41 @@ const asciiDelete = 0x40
 const uuidVariantSet = 0x80
 const variantMask = 0x3F
 const versionMask = 0x0F
+const roleTool = "tool"
 
 // Message is one conversational turn shaped into the outgoing request. It is
 // defined here (not in the provider package) to keep the dependency edge
 // one-directional: provider imports the Shaper; the Shaper never imports the
 // provider, so the message type lives with the layer that consumes it.
+//
+// The structured mid-turn fields (ToolCalls, ToolCallID, ToolName, IsError)
+// follow the CAPTURED zcode-normalized forms (08-07, VERIFIED-FACTS.md item #1
+// and the rollout request.messages capture): an assistant response batch is
+// {"role":"assistant","content":"","toolCalls":[{"id","name","input"}]} and a
+// tool result is {"role":"tool","content":"<text>","toolCallId":…,
+// "toolName":…,"isError":false}. Text-only user/assistant messages shape
+// exactly as before (backward compatibility).
 type Message struct {
 	Role    string
 	Content string
+	// ToolCalls is the assistant mid-turn batch (empty for plain text turns).
+	ToolCalls []ToolCall
+	// ToolCallID/ToolName/IsError describe one tool-role result message.
+	ToolCallID string
+	ToolName   string
+	IsError    bool
+}
+
+// ToolCall is one zcode-normalized tool invocation (VERIFIED-FACTS.md item #1:
+// the captured response.toolCalls[] shape is {id, name, input}). It is defined
+// here (like Message) so the provider seam can alias it — the REAL provider id
+// is the join key that pairs a tool_use block with its tool_result block
+// (08-07: the 08-06 gate's root cause 1 was this id being dropped). Input is
+// the raw JSON arguments.
+type ToolCall struct {
+	ID    string          `json:"id"`
+	Name  string          `json:"name"`
+	Input json.RawMessage `json:"input"`
 }
 
 // Shaper turns a loaded Profile + conversational messages into the native SDK
@@ -102,22 +129,102 @@ func RenderHeaderValue(template string) string {
 	}
 }
 
+// toMessageParams maps Messages to Anthropic MessageParams. Text-only messages
+// render exactly one text block (byte-identical to the pre-08-07 shaping).
+// Mid-turn structured messages render natively per protocol: an assistant
+// batch becomes text-block-first + one tool_use block per ToolCall; consecutive
+// tool-role messages GROUP into one user-role param carrying one tool_result
+// block per message (the canonical Anthropic batch form — the capture's
+// per-result message granularity is preserved by block order).
 func toMessageParams(messages []Message) ([]anthropic.MessageParam, error) {
 	out := make([]anthropic.MessageParam, 0, len(messages))
 
-	for _, m := range messages {
+	for i := 0; i < len(messages); {
+		m := messages[i]
+
+		if strings.EqualFold(m.Role, roleTool) {
+			// Group this tool-role message with every consecutive tool-role
+			// message into ONE user param (never emitted as an Anthropic role).
+			blocks := []anthropic.ContentBlockParamUnion{toolResultBlock(&m)}
+
+			j := i + 1
+			for j < len(messages) && strings.EqualFold(messages[j].Role, roleTool) {
+				blocks = append(blocks, toolResultBlock(&messages[j]))
+				j++
+			}
+
+			out = append(out, anthropic.MessageParam{
+				Role:    anthropic.MessageParamRoleUser,
+				Content: blocks,
+			})
+			i = j
+
+			continue
+		}
+
 		role, err := toMessageParamRole(m.Role)
 		if err != nil {
 			return nil, err
 		}
 
-		out = append(out, anthropic.MessageParam{
-			Role:    role,
-			Content: []anthropic.ContentBlockParamUnion{anthropic.NewTextBlock(m.Content)},
-		})
+		blocks := make([]anthropic.ContentBlockParamUnion, 0, 1+len(m.ToolCalls))
+		if len(m.ToolCalls) == 0 {
+			// Text-only: exactly the pre-08-07 rendering (byte-compat).
+			blocks = append(blocks, anthropic.NewTextBlock(m.Content))
+		} else {
+			// Assistant batch: optional text block FIRST, then tool_use blocks.
+			if m.Content != "" {
+				blocks = append(blocks, anthropic.NewTextBlock(m.Content))
+			}
+
+			for _, tc := range m.ToolCalls {
+				input, perr := parseToolCallInput(tc.Input)
+				if perr != nil {
+					return nil, fmt.Errorf("tool %q input: %w", tc.Name, perr)
+				}
+
+				blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, input, tc.Name))
+			}
+		}
+
+		out = append(out, anthropic.MessageParam{Role: role, Content: blocks})
+		i++
 	}
 
 	return out, nil
+}
+
+// toolResultBlock renders one tool-role Message as a native tool_result block.
+func toolResultBlock(m *Message) anthropic.ContentBlockParamUnion {
+	return anthropic.NewToolResultBlock(m.ToolCallID, m.Content, m.IsError)
+}
+
+// RenderToolResultParam renders ONE tool-role Message to the Anthropic-native
+// MessageParam (user role + tool_result block). It is the single block
+// construction shared by the Shaper path and the provider's ToolResultMessage
+// (08-07: the PROV-02 surface and the turn-loop rendering cannot diverge).
+func RenderToolResultParam(m *Message) anthropic.MessageParam {
+	return anthropic.MessageParam{
+		Role:    anthropic.MessageParamRoleUser,
+		Content: []anthropic.ContentBlockParamUnion{toolResultBlock(m)},
+	}
+}
+
+// parseToolCallInput decodes a ToolCall's raw JSON Input into the any the SDK's
+// NewToolUseBlock takes. Empty input shapes as an empty object.
+func parseToolCallInput(raw json.RawMessage) (any, error) {
+	if len(raw) == 0 {
+		return map[string]any{}, nil
+	}
+
+	var v any
+
+	err := json.Unmarshal(raw, &v)
+	if err != nil {
+		return nil, fmt.Errorf("parse tool-call input: %w", err)
+	}
+
+	return v, nil
 }
 
 func toMessageParamRole(role string) (anthropic.MessageParamRole, error) {
@@ -126,9 +233,14 @@ func toMessageParamRole(role string) (anthropic.MessageParamRole, error) {
 		return anthropic.MessageParamRoleUser, nil
 	case "assistant":
 		return anthropic.MessageParamRoleAssistant, nil
+	case roleTool:
+		// "tool" never appears as an Anthropic role — toMessageParams maps it
+		// to a user-role param carrying tool_result blocks at the grouping
+		// site. The case exists so the accepted-role set is explicit.
+		return anthropic.MessageParamRoleUser, nil
 	default:
 		//nolint:err113 // dynamic error message
-		return "", fmt.Errorf("unsupported message role %q (want user|assistant)", role)
+		return "", fmt.Errorf("unsupported message role %q (want user|assistant|tool)", role)
 	}
 }
 

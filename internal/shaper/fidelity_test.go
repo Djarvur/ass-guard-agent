@@ -122,7 +122,7 @@ func TestPROF02_SyntheticProfileShapes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if params.Model != "synth-model" {
+	if params.Model != synthModel {
 		t.Errorf("Model = %q, want synth-model (PROF-02: synthetic fields, not zcode)", params.Model)
 	}
 

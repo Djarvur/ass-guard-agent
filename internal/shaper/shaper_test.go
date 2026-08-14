@@ -42,7 +42,7 @@ func TestShape_SyntheticFixture(t *testing.T) {
 		t.Fatalf("Shape: %v", err)
 	}
 
-	if got := params.Model; got != "synth-model" {
+	if got := params.Model; got != synthModel {
 		t.Errorf("Model = %q, want synth-model", got)
 	}
 

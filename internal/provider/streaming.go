@@ -262,7 +262,12 @@ func flushToolUse(ctx context.Context, name, id *string, input *strings.Builder,
 		in = json.RawMessage("{}")
 	}
 
-	chunk := StreamChunk{Type: blockToolUse, ToolCall: &ToolCall{Name: *name, Input: in}, ToolCallID: *id}
+	// The ToolCall carries the REAL provider id (08-07): pairing of a
+	// subsequent tool_result with this tool_use depends on it. ToolCallID stays
+	// on the chunk for the bus event consumers.
+	chunk := StreamChunk{
+		Type: blockToolUse, ToolCall: &ToolCall{ID: *id, Name: *name, Input: in}, ToolCallID: *id,
+	}
 	select {
 	case ch <- chunk:
 	case <-ctx.Done():
