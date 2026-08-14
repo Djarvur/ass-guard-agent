@@ -22,10 +22,15 @@ type Config struct {
 }
 
 // ProviderConfig declares one provider endpoint. Shape selects the Phase-1
-// adapter ("anthropic" or "openai").
+// adapter ("anthropic" or "openai"). Credentials (D-01/D-03): APIKey is a
+// literal or a `${NAME}` expansion; APIKeyEnv names the env var (e.g.
+// ZAI_API_KEY) as a self-documenting alias for the `${...}` form. Either may be
+// absent — a provider with neither resolves to no credential (D-07 lazy error).
 type ProviderConfig struct {
-	BaseURL string `yaml:"base_url"`
-	Shape   string `yaml:"shape"`
+	BaseURL  string `yaml:"base_url"`
+	Shape    string `yaml:"shape"`
+	APIKey   string `yaml:"api_key"`
+	APIKeyEnv string `yaml:"api_key_env"`
 }
 
 // ModelConfig is the per-(provider, model) declaration: the capability profile
