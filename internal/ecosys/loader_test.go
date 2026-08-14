@@ -332,8 +332,109 @@ func TestOpsxFixtureMatchesRealInit(t *testing.T) {
 		"committed testdata/opsx-real fixture drifted from real `openspec init` output — regenerate per the fixture README")
 }
 
-// commandFrontmatterSet maps command file names → {name, description} parsed
-// from the file's YAML frontmatter (fixture-provenance comparison).
+// TestNamespacedKeyShape (Test 6) verifies the colon-join: commands/opsx/explore.md
+// registers under key "opsx:explore" with Name, Path, and Body populated.
+func TestNamespacedKeyShape(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeNamespacedCommand(t, root, "opsx", "explore", "explore command", "explore body")
+
+	reg, err := loadTree(root)
+	require.NoError(t, err)
+
+	cmd, ok := reg.Commands["opsx:explore"]
+	require.True(t, ok, "key must be the colon-joined opsx:explore")
+
+	assert.Equal(t, "opsx:explore", cmd.Name)
+
+	suffix := filepath.Join("commands", "opsx", "explore.md")
+	assert.True(t, strings.HasSuffix(cmd.Path, suffix), "Path %q must point at the real file", cmd.Path)
+
+	assert.Equal(t, "explore body\n", cmd.Body)
+}
+
+// TestOneLevelOnly (Test 7) verifies zcode joins exactly ONE subdirectory
+// level: commands/a/b/deep.md (two levels) is not discovered.
+func TestOneLevelOnly(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	deepDir := filepath.Join(root, "commands", "a", "b")
+	require.NoError(t, os.MkdirAll(deepDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(deepDir, "deep.md"), []byte("---\ndescription: d\n---\nbody\n"), 0o600))
+
+	reg, err := loadTree(root)
+	require.NoError(t, err)
+
+	assert.Empty(t, reg.Commands, "two-level commands must not be discovered (no flattening)")
+}
+
+// TestFrontmatterExtension (Test 8, D-09) verifies argument-hint/allowed-tools/model
+// are PARSED (not acted on): comma-scalar and YAML-flow-list forms both land in
+// Command.AllowedTools.
+func TestFrontmatterExtension(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeRawCommand(t, root, "comma", "---\nargument-hint: name\nallowed-tools: Bash, Read\nmodel: opus\ndescription: comma form\n---\nbody\n")
+	writeRawCommand(t, root, "flowlist", "---\nallowed-tools: [Bash, Read]\ndescription: flow form\n---\nbody\n")
+
+	reg, err := loadTree(root)
+	require.NoError(t, err)
+
+	comma, ok := reg.Commands["comma"]
+	require.True(t, ok, "comma-scalar frontmatter command must load")
+
+	assert.Equal(t, "name", comma.ArgumentHint)
+	assert.Equal(t, []string{"Bash", "Read"}, comma.AllowedTools)
+	assert.Equal(t, "opus", comma.Model)
+
+	flow, ok := reg.Commands["flowlist"]
+	require.True(t, ok, "flow-list frontmatter command must load")
+	assert.Equal(t, []string{"Bash", "Read"}, flow.AllowedTools, "flow-list form must parse to the same slice")
+}
+
+// TestFlatFallback (Test 9) verifies zcode's flat frontmatter semantics: a file
+// with tab-indented (yaml-invalid) frontmatter still loads via the flat
+// single-line view, and a multi-line allowed-tools list is DROPPED (zcode
+// parity — accepting what zcode drops is a mimicry divergence, PITFALLS 6).
+func TestFlatFallback(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeRawCommand(t, root, "tabbed", "---\ndescription: x\nallowed-tools:\n\t- Bash\n\t- Read\n---\nbody\n")
+	writeRawCommand(t, root, "blocklist", "---\ndescription: block list\nallowed-tools:\n  - Bash\n  - Read\n---\nbody\n")
+
+	reg, err := loadTree(root)
+	require.NoError(t, err)
+
+	tabbed, ok := reg.Commands["tabbed"]
+	require.True(t, ok, "tab-indented frontmatter must still load via the flat fallback")
+	assert.Equal(t, "x", tabbed.Description)
+	assert.Empty(t, tabbed.AllowedTools, "multi-line allowed-tools value must be dropped (flat view)")
+
+	block, ok := reg.Commands["blocklist"]
+	require.True(t, ok, "valid-yaml block list must still load")
+	assert.Empty(t, block.AllowedTools, "block-style list has no single-line form — zcode drops it")
+}
+
+// TestUnknownKeysIgnored (Test 10) verifies unknown frontmatter keys (category,
+// tags flow array — the real opsx v1.5.0 shape) load cleanly.
+func TestUnknownKeysIgnored(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeRawCommand(t, root, "opsxlike",
+		"---\nname: \"OPSX: Explore\"\ndescription: \"Enter explore mode\"\ncategory: Workflow\ntags: [workflow, explore, experimental, thinking]\n---\nbody\n")
+
+	reg, err := loadTree(root)
+	require.NoError(t, err)
+
+	cmd, ok := reg.Commands["opsxlike"]
+	require.True(t, ok, "command with unknown frontmatter keys must load cleanly")
+	assert.Equal(t, "Enter explore mode", cmd.Description)
+}
 func commandFrontmatterSet(commandsDir string) (map[string][2]string, error) {
 	entries, err := os.ReadDir(filepath.Join(commandsDir, "opsx"))
 	if err != nil {
