@@ -120,3 +120,84 @@ func TestLoadSchedulingFactory_ZeroConfigEnv(t *testing.T) {
 	require.IsType(t, &provider.AnthropicProvider{}, p, "a credentialed build returns the real adapter")
 	require.Empty(t, stderr.String(), "a fully-credentialed config warns nothing")
 }
+
+// TestStartupWarn_ConfigPermLoose proves the SC3 credential-on-disk hygiene
+// warning: a group/world-readable scheduling.yaml warns at startup with the
+// 0600 recommendation; a 0600-tight file stays silent. Never refuses to start.
+func TestStartupWarn_ConfigPermLoose(t *testing.T) {
+	workDir := t.TempDir()
+	path := writeTestScheduling(t, workDir, testSchedulingZeroEnvConfig)
+
+	require.NoError(t, os.Chmod(path, 0o644))
+
+	var loose bytes.Buffer
+
+	warnLooseConfigPerm(path, &loose)
+	require.Contains(t, loose.String(), "0600", "a 0644 config warns with the 0600 recommendation")
+
+	require.NoError(t, os.Chmod(path, 0o600))
+
+	var tight bytes.Buffer
+
+	warnLooseConfigPerm(path, &tight)
+	require.Empty(t, tight.String(), "a 0600-tight config stays silent")
+}
+
+// TestBackwardCompat_ZAIEnvOnly is the SC4 proof: embedded default only,
+// $ZAI_API_KEY set, no flag, no literal — the resolved anthropic credential
+// Source is "env" and the key equals $ZAI_API_KEY (today's exact behavior).
+func TestBackwardCompat_ZAIEnvOnly(t *testing.T) {
+	t.Setenv("ZAI_API_KEY", "env-secret")
+
+	var stderr bytes.Buffer
+
+	cfg, factory, err := loadSchedulingFactory(t.TempDir(), "", &stderr)
+	require.NoError(t, err)
+
+	prov, ok := cfg.Providers["anthropic"]
+	require.True(t, ok, "the embedded default declares the anthropic provider")
+
+	cred := scheduler.ResolveCredential(prov, "anthropic", "")
+	require.Equal(t, "env", cred.Source, "zero-config resolves from the env (D-06)")
+	require.Equal(t, "env-secret", cred.Key, "the key equals $ZAI_API_KEY")
+
+	p, err := factory.Build("anthropic", shaper.New())
+	require.NoError(t, err)
+	require.IsType(t, &provider.AnthropicProvider{}, p, "a real adapter, not the noCredentialProvider wrapper")
+}
+
+// TestEditorZeroEnv_LiteralInConfig is the SC1 proof: a 2-provider config where
+// the active (heavy-tier) provider carries a literal api_key authenticates with
+// ZERO environment — the Zed-spawned `ass-guard acp serve` case (D-01).
+func TestEditorZeroEnv_LiteralInConfig(t *testing.T) {
+	// Zero environment: every provider-key var is empty.
+	t.Setenv("ZAI_API_KEY", "")
+	t.Setenv("OPENAI_API_KEY", "")
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("NOKEY_API_KEY", "")
+
+	workDir := t.TempDir()
+	writeTestScheduling(t, workDir, testSchedulingZeroEnvConfig)
+
+	var stderr bytes.Buffer
+
+	cfg, factory, err := loadSchedulingFactory(workDir, "", &stderr)
+	require.NoError(t, err)
+	require.NotNil(t, factory)
+
+	prov, ok := cfg.Providers["zai"]
+	require.True(t, ok, "the config declares the active provider")
+
+	cred := scheduler.ResolveCredential(prov, "zai", "")
+	require.Equal(t, "config", cred.Source, "the file credential is the floor (D-05)")
+	require.Equal(t, "sk-test-literal", cred.Key)
+
+	baseURL, key, ok := factory.Endpoint("zai")
+	require.True(t, ok)
+	require.Equal(t, "https://api.z.ai/api/anthropic", baseURL)
+	require.Equal(t, "sk-test-literal", key)
+
+	p, err := factory.Build("zai", shaper.New())
+	require.NoError(t, err)
+	require.IsType(t, &provider.AnthropicProvider{}, p, "a file credential authenticates with zero env (SC1)")
+}
