@@ -34,7 +34,7 @@ func TestConformance_BothAdapters(t *testing.T) { //nolint:funlen,tparallel // s
 	// Anthropic arm.
 	antSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "text/event-stream")
-		_, _ = io.WriteString(w, cannedAnthropicToolUseResponse(synthToolA, map[string]any{keyPath: goModFile}))
+		_, _ = io.WriteString(w, cannedAnthropicToolUseResponse(toolCallIDDefault, synthToolA, map[string]any{keyPath: goModFile}))
 	}))
 	defer antSrv.Close()
 
@@ -46,7 +46,7 @@ func TestConformance_BothAdapters(t *testing.T) { //nolint:funlen,tparallel // s
 	// OpenAI arm.
 	oaiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("content-type", "application/json")
-		_, _ = io.WriteString(w, cannedOpenAIToolCallsResponse(synthToolA, `{"path":"go.mod"}`))
+		_, _ = io.WriteString(w, cannedOpenAIToolCallsResponse(toolCallIDDefault, synthToolA, `{"path":"go.mod"}`))
 	}))
 	defer oaiSrv.Close()
 
@@ -85,6 +85,12 @@ func TestConformance_BothAdapters(t *testing.T) { //nolint:funlen,tparallel // s
 				t.Errorf("Input.path = %v, want go.mod", in[keyPath])
 			}
 
+			// 08-07 T1 Test 7: the provider tool-call id round-trips through
+			// the shared ToolCall type (both adapters must carry {id,name,input}).
+			if resp.ToolCalls[0].ID != toolCallIDDefault {
+				t.Errorf("ToolCalls[0].ID = %q, want %q", resp.ToolCalls[0].ID, toolCallIDDefault)
+			}
+
 			if len(resp.Raw) == 0 {
 				t.Error("Raw empty; want captured response bytes")
 			}
@@ -104,6 +110,69 @@ func TestConformance_BothAdapters(t *testing.T) { //nolint:funlen,tparallel // s
 				t.Fatalf("ToolResultMessage output not valid JSON: %v", err)
 			}
 		})
+	}
+}
+
+// TestConformance_ToolResultMessageMatchesShaper (08-07 T1 Test 7,
+// single-source): the Anthropic adapter's ToolResultMessage output must EQUAL
+// the Shaper-rendered tool_result message for the same input — the PROV-02
+// surface and the turn-loop Shaper path cannot silently diverge.
+func TestConformance_ToolResultMessageMatchesShaper(t *testing.T) {
+	t.Parallel()
+
+	prof := loadProfile(t, "minimal")
+	ant := provider.NewAnthropicProvider(shaper.New(), provider.WithAnthropicAPIKey("test-key"))
+
+	result := json.RawMessage(`{"ok":true}`)
+
+	raw, err := ant.ToolResultMessage(toolCallIDDefault, result)
+	if err != nil {
+		t.Fatalf("ToolResultMessage: %v", err)
+	}
+
+	params, _, err := shaper.New().Shape(&prof, []shaper.Message{
+		{Role: "tool", ToolCallID: toolCallIDDefault, ToolName: synthToolA, Content: string(result)},
+	})
+	if err != nil {
+		t.Fatalf("Shape: %v", err)
+	}
+
+	if len(params.Messages) != 1 {
+		t.Fatalf("len(shaper Messages) = %d, want 1", len(params.Messages))
+	}
+
+	shaped, err := json.Marshal(params.Messages[0])
+	if err != nil {
+		t.Fatalf("marshal shaper message: %v", err)
+	}
+
+	var gotAny, wantAny any
+	if err := json.Unmarshal(raw, &gotAny); err != nil {
+		t.Fatalf("ToolResultMessage output not valid JSON: %v", err)
+	}
+
+	if err := json.Unmarshal(shaped, &wantAny); err != nil {
+		t.Fatalf("shaper message not valid JSON: %v", err)
+	}
+
+	if string(raw) != string(shaped) {
+		t.Errorf("ToolResultMessage and the Shaper rendering diverge:\n provider: %s\n shaper:   %s", raw, shaped)
+	}
+}
+
+// TestConformance_ToolCallAlias (08-07 T1 Test 1): provider.ToolCall must be
+// an alias of shaper.ToolCall (the Message pattern extended to the call type) —
+// one type flows across the seam; toolexec/session/parity compile unchanged.
+func TestConformance_ToolCallAlias(t *testing.T) {
+	t.Parallel()
+
+	// A shaper.ToolCall value assigned to a provider.ToolCall variable (and
+	// back) compiles ONLY when the two are the same type.
+	var asProvider provider.ToolCall = shaper.ToolCall{ID: "call_x", Name: "Read", Input: json.RawMessage(`{}`)}
+	var asShaper shaper.ToolCall = asProvider
+
+	if asShaper.ID != "call_x" {
+		t.Errorf("alias round-trip lost the ID: %+v", asShaper)
 	}
 }
 
