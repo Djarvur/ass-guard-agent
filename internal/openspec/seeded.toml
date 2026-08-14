@@ -4,9 +4,22 @@
 #
 # [[patterns]] — assistant-text regex → action (the engine's dual-signal text
 #   half, D-02). The engine continues the SDD scenario when the assistant's
-#   output matches one of these handoff patterns.
+#   output matches one of these handoff patterns. (08-06 owns re-seeding these
+#   from captured real stage-end output.)
 # [[handoff_tools]] — tool-call name → action (the dual-signal tool half).
-# [commands] — command → mutability (D-15 / OPEN-03, the boundary source of truth).
+# [commands] — command → classification (D-15 / OPEN-03, the boundary source of
+#   truth). Every entry runs as a subprocess via the Adapter with
+#   OPEN_SPEC_INTERACTIVE=0 + nil stdin + per-command timeout.
+#
+# [commands] SOURCE OF TRUTH: the INSTALLED binary's probe (v1.5.0 on this
+# machine, captured 2026-08-14 from `openspec --help` — NEVER the moving npm
+# main, whose surface differs). Keys are hyphenated tool-name suffixes; `argv`
+# carries the exact subprocess argv prefix when it differs from the key
+# (e.g. key "new-change" → argv "new change"). Human-only commands (view,
+# workset open, config edit, feedback, completion) are NEVER registered.
+# RE-PROBE PROCEDURE on binary upgrades: run
+#   ASSGUARD_OPENSPEC_BIN=1 go test ./internal/openspec/ -run TestSurfaceMatchesInstalledBinary
+# — a mismatch fails with a diff naming the stale entries (Pitfall 7.2).
 
 [[patterns]]
 id = "impl-complete"
@@ -33,17 +46,125 @@ id = "os-stage-done"
 tool = "openspec_stage_done"
 action = "continue"
 
+# ---- read-only surface (probe-pinned v1.5.0) ----
+
 [commands.list]
 mutability = "read-only"
+timeout_secs = 60
 
 [commands.show]
 mutability = "read-only"
+timeout_secs = 60
 
 [commands.validate]
 mutability = "read-only"
+timeout_secs = 60
+exit_class = "fixable" # validation findings are actionable, not hard errors
 
-[commands.apply]
-mutability = "mutating"
+[commands.status]
+mutability = "read-only"
+timeout_secs = 60
 
-[commands.implement]
+[commands.instructions]
+mutability = "read-only"
+timeout_secs = 60
+
+[commands.context]
+mutability = "read-only"
+timeout_secs = 120 # --code-workspace runs can be long (probe-observed)
+
+[commands.doctor]
+mutability = "read-only"
+timeout_secs = 60
+exit_class = "fixable" # health findings surface as actionable results
+
+[commands.templates]
+mutability = "read-only"
+timeout_secs = 60
+
+[commands.schemas]
+mutability = "read-only"
+timeout_secs = 60
+
+[commands.spec]
+mutability = "read-only"
+timeout_secs = 60 # spec show|list|validate read subcommands
+
+[commands.change]
+mutability = "read-only"
+timeout_secs = 60 # change show|validate (change list is DEPRECATED upstream)
+
+# ---- mutating surface (probe-pinned v1.5.0) ----
+
+[commands.archive]
 mutability = "mutating"
+timeout_secs = 60
+exit_class = "fixable" # a blocked archive (incomplete tasks) is actionable
+
+[commands.new-change]
+argv = "new change"
+mutability = "mutating"
+timeout_secs = 60
+
+[commands.init]
+mutability = "mutating"
+timeout_secs = 120 # writes instruction files (+ optional tool scaffolding)
+
+[commands.update]
+mutability = "mutating"
+timeout_secs = 120 # rewrites instruction files across the tree
+
+[commands.config-set]
+argv = "config set"
+mutability = "mutating"
+timeout_secs = 60
+
+[commands.config-unset]
+argv = "config unset"
+mutability = "mutating"
+timeout_secs = 60
+
+[commands.config-reset]
+argv = "config reset"
+mutability = "mutating"
+timeout_secs = 60
+
+[commands.schema-fork]
+argv = "schema fork"
+mutability = "mutating"
+timeout_secs = 60
+
+[commands.schema-init]
+argv = "schema init"
+mutability = "mutating"
+timeout_secs = 60
+
+[commands.store-setup]
+argv = "store setup"
+mutability = "mutating"
+timeout_secs = 120 # store provisioning can hit the network
+
+[commands.store-register]
+argv = "store register"
+mutability = "mutating"
+timeout_secs = 60
+
+[commands.store-unregister]
+argv = "store unregister"
+mutability = "mutating"
+timeout_secs = 60
+
+[commands.store-remove]
+argv = "store remove"
+mutability = "mutating"
+timeout_secs = 60
+
+[commands.workset-create]
+argv = "workset create"
+mutability = "mutating"
+timeout_secs = 60
+
+[commands.workset-remove]
+argv = "workset remove"
+mutability = "mutating"
+timeout_secs = 60

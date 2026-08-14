@@ -35,12 +35,32 @@ type HandoffToolEntry struct {
 	Action string `toml:"action"`
 }
 
-// CommandShape declares one OpenSpec command's mutability (D-15 / OPEN-03 — the
-// single source of truth for context boundaries; a mutating command IS a
-// boundary via the existing toolcat.IsBoundary floor).
+// CommandShape declares one OpenSpec command's classification + subprocess
+// guards (D-15 / OPEN-03 — the single source of truth for context boundaries; a
+// mutating command IS a boundary via the existing toolcat.IsBoundary floor).
+//
+// Argv is the exact subprocess argv prefix when it differs from the key
+// (multi-word subcommands, e.g. key "new-change" → argv "new change"); empty
+// means "use the key". TimeoutSecs bounds EACH subprocess run (distinct from
+// the turn ctx); 0 at load time defaults to DefaultTimeoutSecs. ExitClass
+// ("fixable" or empty) marks commands whose non-zero exits are actionable
+// findings rather than hard errors (validate/doctor/archive — D-10).
 type CommandShape struct {
-	Mutability string `toml:"mutability"`
+	Mutability  string `toml:"mutability"`
+	Argv        string `toml:"argv"`
+	TimeoutSecs int    `toml:"timeout_secs"`
+	ExitClass   string `toml:"exit_class"`
 }
+
+// Command-guard defaults applied at load time (Phase-8 CMD-03).
+const (
+	// DefaultTimeoutSecs bounds each openspec subprocess when an entry does not
+	// declare its own.
+	DefaultTimeoutSecs = 60
+
+	// ExitClassFixable marks a non-zero exit as an actionable finding.
+	ExitClassFixable = "fixable"
+)
 
 // OpenSpecConfig is the parsed openspec.toml (D-14).
 type OpenSpecConfig struct {
@@ -149,18 +169,56 @@ func validate(cfg *OpenSpecConfig) error {
 	}
 
 	for name, shape := range cfg.Commands {
-		if shape.Mutability != "mutating" && shape.Mutability != "read-only" {
-			v = append(v, fmt.Sprintf(
-				"commands.%s: unknown mutability %q (want mutating|read-only)",
-				name, shape.Mutability))
-		}
+		v = append(v, validateCommand(name, shape)...)
 	}
 
 	if len(v) > 0 {
 		return &ConfigError{Violations: v}
 	}
 
+	applyCommandDefaults(cfg)
+
 	return nil
+}
+
+// validateCommand returns the violations for one [commands] entry.
+func validateCommand(name string, shape CommandShape) []string {
+	var v []string
+
+	if shape.Mutability != "mutating" && shape.Mutability != "read-only" {
+		v = append(v, fmt.Sprintf(
+			"commands.%s: unknown mutability %q (want mutating|read-only)",
+			name, shape.Mutability))
+	}
+
+	if shape.ExitClass != "" && shape.ExitClass != ExitClassFixable {
+		v = append(v, fmt.Sprintf(
+			"commands.%s: unknown exit_class %q (want %q or empty)",
+			name, shape.ExitClass, ExitClassFixable))
+	}
+
+	if shape.TimeoutSecs < 0 {
+		v = append(v, fmt.Sprintf(
+			"commands.%s: negative timeout_secs %d", name, shape.TimeoutSecs))
+	}
+
+	return v
+}
+
+// applyCommandDefaults fills per-entry defaults: argv defaults to the key;
+// timeout defaults to DefaultTimeoutSecs. Idempotent.
+func applyCommandDefaults(cfg *OpenSpecConfig) {
+	for name, shape := range cfg.Commands {
+		if shape.Argv == "" {
+			shape.Argv = name
+		}
+
+		if shape.TimeoutSecs == 0 {
+			shape.TimeoutSecs = DefaultTimeoutSecs
+		}
+
+		cfg.Commands[name] = shape
+	}
 }
 
 func validAction(a string) bool {

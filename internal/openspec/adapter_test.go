@@ -3,9 +3,12 @@ package openspec_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -189,5 +192,88 @@ func TestAdapter_RealOpenspecGated(t *testing.T) {
 
 	if strings.TrimSpace(stdout) == "" {
 		t.Errorf("real openspec --version stdout empty")
+	}
+}
+
+// installedSubcommands runs `openspec --help` and returns the top-level
+// subcommand names (lines indented exactly two spaces in the Commands section).
+func installedSubcommands(t *testing.T) map[string]bool {
+	t.Helper()
+
+	a := &openspec.Adapter{}
+
+	help, _, err := a.Run(context.Background(), "--help")
+	if err != nil {
+		t.Fatalf("real openspec --help: %v", err)
+	}
+
+	cmds := map[string]bool{}
+
+	cmdLine := regexp.MustCompile(`^ {2}([a-zA-Z-]+)\b`)
+
+	for line := range strings.SplitSeq(help, "\n") {
+		if m := cmdLine.FindStringSubmatch(line); m != nil {
+			cmds[m[1]] = true
+		}
+	}
+
+	if len(cmds) == 0 {
+		t.Fatal("parsed zero subcommands from --help — parser drift?")
+	}
+
+	return cmds
+}
+
+// TestSurfaceMatchesInstalledBinary is the surface-drift gate (Pitfall 7.2):
+// every seeded [commands] entry must exist on the INSTALLED binary's probe,
+// and the phantom apply/implement must never come back. Gated like
+// TestAdapter_RealOpenspecGated — this is the re-probe procedure for upgrades.
+func TestSurfaceMatchesInstalledBinary(t *testing.T) {
+	t.Parallel()
+
+	if os.Getenv("ASSGUARD_OPENSPEC_BIN") != "1" {
+		t.Skip("set ASSGUARD_OPENSPEC_BIN=1 to run against the real openspec binary")
+	}
+
+	if _, err := exec.LookPath("openspec"); err != nil { //nolint:noinlineerr // skip-path
+		t.Skip("openspec binary not on PATH even though ASSGUARD_OPENSPEC_BIN=1")
+	}
+
+	cfg, err := openspec.DefaultConfig()
+	if err != nil {
+		t.Fatalf("DefaultConfig: %v", err)
+	}
+
+	if _, exists := cfg.Commands["apply"]; exists {
+		t.Error("phantom [commands.apply] present — deleted in Phase 8, must stay out")
+	}
+
+	if _, exists := cfg.Commands["implement"]; exists {
+		t.Error("phantom [commands.implement] present — deleted in Phase 8, must stay out")
+	}
+
+	installed := installedSubcommands(t)
+
+	var stale []string
+
+	for name, shape := range cfg.Commands {
+		argv0 := strings.Fields(shape.Argv)
+		if len(argv0) == 0 {
+			stale = append(stale, name+" (empty argv)")
+
+			continue
+		}
+
+		if !installed[argv0[0]] {
+			stale = append(stale, fmt.Sprintf("%s (argv %q: %q not on installed binary)",
+				name, shape.Argv, argv0[0]))
+		}
+	}
+
+	if len(stale) > 0 {
+		sort.Strings(stale)
+		t.Errorf("seeded surface drifted from installed binary — stale entries:\n  %s\n"+
+			"Re-probe the binary and update seeded.toml (see its header).",
+			strings.Join(stale, "\n  "))
 	}
 }

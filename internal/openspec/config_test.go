@@ -45,9 +45,43 @@ func TestDefaultConfig(t *testing.T) {
 	if !sawImpl {
 		t.Error("seeded impl-complete pattern missing")
 	}
-	// apply is mutating (the canonical boundary command — OPEN-03).
-	if apply, ok := cfg.Commands["apply"]; !ok || apply.Mutability != classMutating {
-		t.Errorf("commands.apply = %+v ok=%v; want mutating", apply, ok)
+
+	assertProbePinnedCommands(t, cfg)
+}
+
+// cmdList is the canonical read-only command key (goconst).
+const cmdList = "list"
+
+// assertProbePinnedCommands asserts the Phase-8 probe-pinned [commands] surface
+// (archive mutating+fixable, phantoms absent, load-time defaults applied).
+func assertProbePinnedCommands(t *testing.T, cfg *openspec.OpenSpecConfig) {
+	t.Helper()
+
+	archive, ok := cfg.Commands["archive"]
+	if !ok || archive.Mutability != classMutating {
+		t.Errorf("commands.archive = %+v ok=%v; want mutating", archive, ok)
+	}
+
+	if archive.ExitClass != openspec.ExitClassFixable {
+		t.Errorf("commands.archive exit_class = %q; want fixable", archive.ExitClass)
+	}
+
+	if _, exists := cfg.Commands["apply"]; exists {
+		t.Error("phantom commands.apply present; deleted in Phase 8")
+	}
+
+	if _, exists := cfg.Commands["implement"]; exists {
+		t.Error("phantom commands.implement present; deleted in Phase 8")
+	}
+	// Load-time defaults: argv defaults to the key; multi-word argv preserved;
+	// timeout defaults applied.
+	if cfg.Commands[cmdList].Argv != cmdList || cfg.Commands[cmdList].TimeoutSecs != openspec.DefaultTimeoutSecs {
+		t.Errorf("commands.%s = %+v; want argv=list timeout=%d",
+			cmdList, cfg.Commands[cmdList], openspec.DefaultTimeoutSecs)
+	}
+
+	if got := cfg.Commands["new-change"].Argv; got != "new change" {
+		t.Errorf("commands.new-change argv = %q; want \"new change\"", got)
 	}
 }
 

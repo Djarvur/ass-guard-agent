@@ -15,7 +15,7 @@ func TestRegisterTools_Mutability(t *testing.T) {
 
 	cfg := &openspec.OpenSpecConfig{
 		Commands: map[string]openspec.CommandShape{
-			"list":  {Mutability: "read-only"},
+			cmdList: {Mutability: "read-only"},
 			"apply": {Mutability: classMutating},
 		},
 	}
@@ -27,7 +27,7 @@ func TestRegisterTools_Mutability(t *testing.T) {
 		t.Fatalf("RegisterTools: %v", err)
 	}
 
-	list, ok := cat.Get("openspec:list")
+	list, ok := cat.Get("openspec:" + cmdList)
 	if !ok {
 		t.Fatal("openspec:list not registered")
 	}
@@ -53,7 +53,7 @@ func TestRegisterTools_DrivesIsBoundary(t *testing.T) {
 
 	cfg := &openspec.OpenSpecConfig{
 		Commands: map[string]openspec.CommandShape{
-			"list":  {Mutability: "read-only"},
+			cmdList: {Mutability: "read-only"},
 			"apply": {Mutability: classMutating},
 		},
 	}
