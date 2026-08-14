@@ -3,7 +3,6 @@ package toolexec //nolint:testpackage // internal package test (accesses the fet
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net"
 	"os"
 	"path/filepath"
