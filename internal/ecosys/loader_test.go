@@ -2,13 +2,16 @@ package ecosys //nolint:testpackage // internal package test (accesses unexporte
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 // writeSkill writes a fixture skill under root/skills/<name>/SKILL.md.
@@ -196,4 +199,170 @@ func TestLoadUserMCPConfigMissing(t *testing.T) {
 	cfg, err := LoadUserMCPConfig()
 	require.NoError(t, err)
 	assert.Empty(t, cfg)
+}
+
+// opsxRealFixture is the committed REAL-fixture project scope generated from
+// actual `openspec init --tools claude` output (CMD-01). See the fixture README
+// for the regeneration command.
+const opsxRealFixture = "testdata/opsx-real/.claude"
+
+// TestDiscoverNamespaced (Test 1, CMD-01) verifies the REAL opsx fixture tree is
+// discovered with colon-joined keys: commands/opsx/explore.md → "opsx:explore".
+func TestDiscoverNamespaced(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	reg, err := Load(opsxRealFixture, "")
+	require.NoError(t, err)
+
+	for _, key := range []string{"opsx:explore", "opsx:propose", "opsx:apply", "opsx:archive", "opsx:sync"} {
+		cmd, ok := reg.Commands[key]
+		require.True(t, ok, "namespaced command %q not discovered (CMD-01)", key)
+		assert.Contains(t, cmd.Path, "opsx", "Path must point at the real file")
+		assert.NotEmpty(t, cmd.Body, "command %q must carry its body", key)
+	}
+}
+
+// TestDiscoverCoexist (Test 2) verifies both layouts coexist in one registry:
+// top-level commands/flat.md keeps its bare stem while commands/opsx/explore.md
+// joins under "opsx:explore" — no collision, no data loss.
+func TestDiscoverCoexist(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeCommand(t, root, "flat", "flat command", "flat body")
+	writeNamespacedCommand(t, root, "opsx", "explore", "explore command", "explore body")
+
+	reg, err := loadTree(root)
+	require.NoError(t, err)
+
+	require.Contains(t, reg.Commands, "flat", "bare-stem key must survive")
+	require.Contains(t, reg.Commands, "opsx:explore", "colon-joined key must coexist")
+	assert.Equal(t, "flat body", reg.Commands["flat"].Body)
+	assert.Equal(t, "explore body", reg.Commands["opsx:explore"].Body)
+}
+
+// writeNamespacedCommand writes a fixture command under
+// root/commands/<ns>/<name>.md (the opsx layout).
+func writeNamespacedCommand(t *testing.T, root, ns, name, desc, bodyText string) {
+	t.Helper()
+
+	body := "---\ndescription: " + desc + "\n---\n" + bodyText + "\n"
+	dir := filepath.Join(root, "commands", ns)
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name+".md"), []byte(body), 0o600))
+}
+
+// TestNameRegex (Test 3) verifies zcode's command-name rule: keys must match
+// ^[a-z0-9][a-z0-9_:-]{0,63}$ — violators are dropped silently.
+func TestNameRegex(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeCommand(t, root, "Bad_Name", "uppercase dropped", "body")
+	writeCommand(t, root, "has space", "space dropped", "body")
+	writeCommand(t, root, strings.Repeat("a", 65), "65-char dropped", "body")
+	writeCommand(t, root, strings.Repeat("b", 64), "64-char survives", "body")
+	writeCommand(t, root, "good-cmd", "valid", "body")
+
+	reg, err := loadTree(root)
+	require.NoError(t, err)
+
+	assert.NotContains(t, reg.Commands, "Bad_Name", "uppercase name must be dropped")
+	assert.NotContains(t, reg.Commands, "has space", "space in name must be dropped")
+	assert.NotContains(t, reg.Commands, strings.Repeat("a", 65), "65-char name must be dropped")
+	assert.Contains(t, reg.Commands, strings.Repeat("b", 64), "64-char name must survive")
+	assert.Contains(t, reg.Commands, "good-cmd")
+}
+
+// TestDescriptionFallback (Test 4) verifies zcode's description rules: empty
+// description + non-empty body → first non-empty body line; neither → dropped.
+func TestDescriptionFallback(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeRawCommand(t, root, "fallback", "---\ndescription:\n---\n\nFirst body line.\nSecond line.\n")
+	writeRawCommand(t, root, "empty", "---\ndescription:\n---\n\n")
+
+	reg, err := loadTree(root)
+	require.NoError(t, err)
+
+	cmd, ok := reg.Commands["fallback"]
+	require.True(t, ok, "command with body but no description must load")
+	assert.Equal(t, "First body line.", cmd.Description, "description must fall back to first non-empty body line")
+
+	assert.NotContains(t, reg.Commands, "empty", "command with neither description nor body must be dropped")
+}
+
+// writeRawCommand writes raw fixture bytes under root/commands/<name>.md.
+func writeRawCommand(t *testing.T, root, name, content string) {
+	t.Helper()
+
+	dir := filepath.Join(root, "commands")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, name+".md"), []byte(content), 0o600))
+}
+
+// TestOpsxFixtureMatchesRealInit (Test 5, gated) re-runs `openspec init
+// --tools claude --force` and asserts the committed fixture command set equals
+// the generated set (file names + frontmatter name/description) — the fixture
+// cannot silently rot across openspec upgrades. Skips unless
+// ASSGUARD_OPENSPEC_BIN=1 AND the binary is on PATH.
+func TestOpsxFixtureMatchesRealInit(t *testing.T) {
+	if os.Getenv("ASSGUARD_OPENSPEC_BIN") != "1" {
+		t.Skip("ASSGUARD_OPENSPEC_BIN not set — fixture-provenance check skipped")
+	}
+
+	if _, err := exec.LookPath("openspec"); err != nil {
+		t.Skip("openspec binary not on PATH — fixture-provenance check skipped")
+	}
+
+	work := t.TempDir()
+	cmd := exec.Command("openspec", "init", "--tools", "claude", "--force")
+	cmd.Dir = work
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "openspec init failed: %s", string(out))
+
+	generated, err := commandFrontmatterSet(filepath.Join(work, ".claude", "commands"))
+	require.NoError(t, err)
+
+	committed, err := commandFrontmatterSet(filepath.Join(opsxRealFixture, "commands"))
+	require.NoError(t, err)
+
+	assert.Equal(t, generated, committed,
+		"committed testdata/opsx-real fixture drifted from real `openspec init` output — regenerate per the fixture README")
+}
+
+// commandFrontmatterSet maps command file names → {name, description} parsed
+// from the file's YAML frontmatter (fixture-provenance comparison).
+func commandFrontmatterSet(commandsDir string) (map[string][2]string, error) {
+	entries, err := os.ReadDir(filepath.Join(commandsDir, "opsx"))
+	if err != nil {
+		return nil, fmt.Errorf("read opsx commands dir: %w", err)
+	}
+
+	out := map[string][2]string{}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+
+		data, err := os.ReadFile(filepath.Join(commandsDir, "opsx", e.Name()))
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", e.Name(), err)
+		}
+
+		fm, _ := splitFrontmatter(string(data))
+
+		var parsed struct {
+			Name        string `yaml:"name"`
+			Description string `yaml:"description"`
+		}
+		if err := yaml.Unmarshal([]byte(fm), &parsed); err != nil {
+			return nil, fmt.Errorf("parse %s frontmatter: %w", e.Name(), err)
+		}
+
+		out[e.Name()] = [2]string{parsed.Name, parsed.Description}
+	}
+
+	return out, nil
 }
