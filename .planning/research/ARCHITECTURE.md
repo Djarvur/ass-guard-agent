@@ -1,625 +1,332 @@
 # Architecture Research
 
-**Domain:** Go-based SDD-hosting AI coding agent with mimicry, multi-tier model scheduling, configurable tool backends, learning-mode unified engine, hook-DAGs, and dual ACP+Telegram interfaces
-**Researched:** 2026-08-09
-**Confidence:** HIGH (inherited spine high-confidence from predecessor research; new deltas medium-high — interfaces fixed, internals to be validated during build)
+**Domain:** v1.1 feature integration onto the shipped ass-guard v1.0 architecture (24 Go packages, ~33.5k LOC) — slash-command kickoff, LOG-01 audit completion, zcode parity re-capture, Telegram peer, deepseek-harness profile #2
+**Researched:** 2026-08-14
+**Confidence:** HIGH for integration points (all verified against source + a live `openspec v1.5.0` probe); MEDIUM for Telegram/dsh internal details (library/target specifics verified at the API-surface level, internals to be validated during build)
 
-> This document extends — and does not re-derive — the predecessor's architecture (`sdd-acp-agent`, technical research dated 2026-07-02). The predecessor's 6-component model, event bus, two-layer context, provider-shape isolation, and stdio discipline are treated as given and load-bearing. Read sections "Inherited Architecture" and "Where the Deltas Attach" first; everything after that is the ass-guard-specific layering on top.
-
----
-
-## Inherited Architecture (carried forward, not re-derived)
-
-The predecessor established a 6-component runtime that is the foundation for ass-guard. These are **unchanged in responsibility**; only some get new collaborators (see the deltas below).
-
-| # | Component (inherited) | Owns | Boundary contract |
-|---|---|---|---|
-| 1 | **ACP Frontend** | stdin/stdout JSON-RPC framing; ACP method handlers | Inbound frames → Session Manager; outbound `session/update` from Event Bus |
-| 2 | **Session Manager** | Durable replayable **transcript** (ACP-visible); **context-window projection** (model-visible); context-drop at boundaries | Transcript is source of truth; window is reproducible projection |
-| 3 | **Turn Loop** | model↔tool execution for one turn; provider call, tool exec, streaming | Spawns subagents via Task; emits assistant stream to bus |
-| 4 | **Tool Registry** | Built-in tool catalog (`Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep`, `WebSearch`, `WebFetch`, `Task`, `TodoWrite`, …); each tool `func(ctx, args) (result, error)` | Read-only tools parallelize; mutating tools serialize |
-| 5 | **Subagent Manager** | Implements the `Task` tool; each subagent = goroutine running its own Turn Loop with isolated context + restricted tool subset | Fan-out via goroutines, fan-in via channels; panic-recover isolates failures |
-| 6 | **Autocontinue Engine** | Tap on Event Bus; pattern-match → inject next turn | Observer only — never in a turn's critical path; failure = graceful degrade to manual-continue |
-
-**Cross-cutting spine (also inherited):**
-- **Internal Event Bus** — integration spine. Producers: Turn Loop, Subagent Manager, Tool Registry. Consumers: ACP Frontend (outbound), Autocontinue Engine, and now (new) the Unified Engine, Audit Log.
-- **Two provider-shape adapters** (Anthropic-shape, OpenAI-shape) behind **one internal tool-call representation**. Tool-call translation is owned per-adapter.
-- **Single-process, multi-goroutine**; stdout reserved for protocol, all logging to stderr.
-
-These six are the floor. The ass-guard deltas build **above and beside** them without rewriting any.
+> This document covers ONLY how the five v1.1 features integrate with the shipped architecture. The v1.0 architecture itself (event-bus spine, two-layer context, provider-shape isolation, unified engine, stdio discipline) is treated as given — it is embodied in the code and documented in MILESTONES.md. Every integration point below names the real package, type, and function it attaches to.
 
 ---
 
-## Where the Deltas Attach (executive summary)
+## System Overview
 
-The eight new architecture questions resolve to **five new components** plus **one internal rename/promotion**:
-
-| Delta | Mechanism | New/changed component |
-|---|---|---|
-| (1) Mimicry/profiles | Shape outgoing requests *before* the provider adapter | **NEW: Profile Shaper** |
-| (2) Multi-tier scheduling | Tier→model resolution with time-windows, per-project override, fallback chains | **NEW: Model Scheduler** |
-| (3) Unified engine | Autocontinue is the upper mechanism; hooks are a special case; learning mode | **PROMOTED: Autocontinue Engine → Unified Engine** |
-| (4) Hook-DAG executor | DAG of run-command/send-prompt/fresh-context/wait steps | **NEW: Hook-DAG Executor** |
-| (5) Multi-interface (ACP + Telegram) | Interface Adapter above Session Manager | **NEW: Interface Adapter Layer** (with ACP Adapter + Telegram Adapter impls) |
-| (6) Learning-mode persistence | Remember decisions; propose new hooks | **NEW: Learned Config (Memory)** |
-| — | Reconstruct-exact-sequence audit | **NEW: Audit Log** |
-
-**Total component count: 11** (6 inherited + 5 new + 1 promoted-to-unified counted within the 6). The Autocontinue Engine's responsibility expands into the Unified Engine — it is not a separate 12th component, it is the same component with a broader decision mandate.
-
-The rest of this document specifies each new component's boundary, the end-to-end data flow with all new tap-in points, the dependency-ordered build sequence, and explicit interface boundaries.
-
----
-
-## Standard Architecture
-
-### System Overview
+The five v1.1 features attach to the shipped architecture at four layers. Nothing rewrites a v1.0 component; every feature is either a new leaf package or new wiring inside existing seams.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│                       INTERFACE LAYER (peers)                             │
-│   ┌──────────────────┐        ┌────────────────────────┐                  │
-│   │   ACP Adapter    │        │   Telegram Adapter     │  (text + voice;  │
-│   │ (stdio JSON-RPC) │        │  (HTTP long-poll/bot)  │   STT at edge)   │
-│   └────────┬─────────┘        └───────────┬────────────┘                  │
-│            │            Interface Adapter │                               │
-└────────────┼──────────────────────────────────────────────────────────────┘
-             │  (normalized Input/Output events, serialized per session)
-             ▼
+│ FRONTENDS (process surfaces — stdout stays ACP-only in every mode)       │
+│                                                                          │
+│  ┌─────────────────────┐        ┌────────────────────────────────────┐   │
+│  │ internal/acp        │        │ internal/telegram        [NEW]     │   │
+│  │ JSON-RPC v1 stdio   │        │ go-telegram/bot long-poll goroutine│   │
+│  │ session/prompt ─────┼──┐     │ per-chat session binding + voice   │   │
+│  └─────────────────────┘  │     │ STT (Whisper default)              │   │
+│                           │     └───────────────┬────────────────────┘   │
+│  cmd/ass-guard: `acp serve`   `telegram` [NEW]  │ both share one core    │
+└───────────────────────────┼─────────────────────┼────────────────────────┘
+                            ▼                     ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
-│                         SESSION CORE                                      │
-│   ┌──────────────────────────────────────────────────────────────────┐    │
-│   │                     Session Manager                              │    │
-│   │   (transcript + projection; owns per-session lock → input order) │    │
-│   └──────────────────────────────┬───────────────────────────────────┘    │
-│                                  │ active context window                  │
-│                                  ▼                                        │
-│   ┌──────────────────────────────────────────────────────────────────┐    │
-│   │                          Turn Loop                                │    │
-│   │   (model↔tool loop; spawns Subagent Manager for Task)             │    │
-│   └────┬───────────────────────┬───────────────────────────┬──────────┘    │
-│        │                       │                           │               │
-│        ▼                       ▼                           ▼               │
-│  ┌──────────┐         ┌─────────────────┐         ┌──────────────────┐     │
-│  │ Profile  │         │ Model Scheduler │◀────────│  Tool Registry   │     │
-│  │ Shaper   │         │  (tier→model,   │         │ (catalog +       │     │
-│  │(system   │         │   time-windows, │         │  backends)       │     │
-│  │ prompt,  │         │   per-project,  │         └──────────────────┘     │
-│  │ catalog, │         │   fallback)     │                                  │
-│  │ shape)   │         └────────┬────────┘                                  │
-│  └────┬─────┘                  │ model spec                                 │
-│       │ shaped request         ▼                                           │
-│       │            ┌─────────────────────────┐                            │
-│       └───────────▶│ Provider Adapters       │                            │
-│                    │ (Anthropic / OpenAI)    │                            │
-│                    └────────────┬────────────┘                            │
-│                                 │ SSE stream                              │
-└─────────────────────────────────┼─────────────────────────────────────────┘
-                                  │
-                                  ▼
-┌──────────────────────────────────────────────────────────────────────────┐
-│                       EVENT BUS (spine)                                    │
-│  Producers: Turn Loop, Subagent Manager, Tool Registry, Hook-DAG Exec     │
-│  Consumers: Interface Adapters (outbound), Unified Engine, Audit Log      │
-└───┬───────────────────┬─────────────────────────┬─────────────────────────┘
-    │                   │                         │
-    ▼                   ▼                         ▼
-┌────────────┐  ┌──────────────────┐    ┌──────────────────┐
-│  Unified   │  │  Hook-DAG        │    │   Audit Log      │
-│  Engine    │─▶│  Executor        │    │  (reconstruct    │
-│ (decision: │  │  (DAG of steps;  │    │   exact sequence)│
-│  continue/ │  │  fresh-context)  │    └──────────────────┘
-│  hook/ask/ │  └────────┬─────────┘
-│  wait)     │           │
-└─────┬──────┘           │ proposed-new-hooks / learned settings
-      │ feedback          │
-      ▼                   ▼
-┌──────────────────────────────────────────┐
-│   Learned Config (Memory)                │
-│   (settings store + proposed-hook queue) │
-└──────────────────────────────────────────┘
+│ TURN CORE (extracted from cmd/ass-guard sessionTurnRunner → internal/    │
+│ runtime [NEW package]; owns sessionFor + runOneTurn + engine wiring)     │
+│                                                                          │
+│  ┌────────────────────────────────────────────────────────────────────┐  │
+│  │ slash-command expander [MODIFIED: internal/ecosys + wiring]        │  │
+│  │ "/opsx:explore args" → ecosys.AllCommands → markdown body          │  │
+│  └────────────────────────────────────────────────────────────────────┘  │
+│  ┌───────────────────────────┐  ┌────────────────────────────────────┐   │
+│  │ internal/session (Core)   │  │ internal/engine (post-turn observer)│   │
+│  │ Prompt loop, transcript,  │  │ Observe → Decide → continue/hook/   │   │
+│  │ projector, boundaries     │  │ ask/wait; PatternTable from         │   │
+│  └────────────┬──────────────┘  │ internal/openspec toml [MODIFIED]   │   │
+│               │                 └────────────────────────────────────┘   │
+│  ┌────────────▼──────────────────────────────────────────────────────┐   │
+│  │ audit wiring [MODIFIED: RequestCapturer on serve path +            │   │
+│  │ TranscriptWriter per session + optional --audit-log sink]          │   │
+│  └───────────────────────────────────────────────────────────────────┘   │
+├──────────────────────────────────────────────────────────────────────────┤
+│ PROVIDER / PROFILE LAYER                                                 │
+│  ┌────────────────────────────┐  ┌────────────────────────────────────┐   │
+│  │ internal/profile [MODIFIED]│  │ internal/provider [MODIFIED]        │   │
+│  │ loader + extractor ride    │  │ OpenAI shape gains system-block     │   │
+│  │ unchanged; profile #2 =    │  │ mapping (today: silently dropped)   │   │
+│  │ profiles/dsh bundle [NEW]  │  │ + dsh DeepSeek provider entry       │   │
+│  └────────────────────────────┘  └────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Component Responsibilities
+### Component Responsibilities (v1.1 delta view)
 
-| Component | Responsibility | Inherited or new |
-|-----------|----------------|------------------|
-| **ACP Adapter** | ACP stdio JSON-RPC frontend | Inherited (was "ACP Frontend", now an Interface Adapter impl) |
-| **Telegram Adapter** | Telegram Bot API frontend; STT at the edge (voice → text) | **NEW** |
-| **Session Manager** | Durable transcript + context-window projection; per-session serialization | Inherited (gains per-session lock for multi-interface inputs) |
-| **Turn Loop** | One model↔tool turn; provider call, tool execution, streaming | Inherited (now receives shaped request + model spec) |
-| **Tool Registry** | Built-in tool catalog; **configurable backends** per tool | Inherited (gains backend-config indirection) |
-| **Subagent Manager** | `Task` tool → goroutine Turn Loops with isolated context | Inherited, unchanged |
-| **Profile Shaper** | Apply active profile (system prompt, tool catalog projection, message shape, identity) to outgoing provider request, before the adapter | **NEW** |
-| **Model Scheduler** | Resolve tier→model at request time; time-windows, per-project override, fallback chains | **NEW** |
-| **Unified Engine** | Post-turn-complete decision: continue / trigger hook-DAG / ask user / wait; also drives learning mode. (Autocontinue is the upper mechanism; hooks are a special action type) | **PROMOTED** from Autocontinue Engine |
-| **Hook-DAG Executor** | Runs a configurable DAG of steps (run-command / send-prompt / fresh-context / wait); owns its own context windows | **NEW** |
-| **Learned Config (Memory)** | Persistent store of learned launch decisions and a queue of proposed-new-hooks awaiting user confirmation | **NEW** |
-| **Audit Log** | Tap on Event Bus; full reconstruction-grade record of inputs, requests, tool calls, decisions | **NEW** |
+| Component | Status | Responsibility for v1.1 |
+|-----------|--------|------------------------|
+| `internal/ecosys` | MODIFIED | Gains namespaced command discovery (`commands/<ns>/<name>.md`), richer command frontmatter (allowed-tools/model), and a pure `Expand` function; gets its first non-test importer |
+| `internal/openspec` | MODIFIED | `seeded.toml` `[commands]` reconciled to the real v1.5.0 binary surface; registered tools gain an Adapter-backed `Execute`; pattern table re-seeded from real handoff texts |
+| `cmd/ass-guard` (`acp_serve.go`) | MODIFIED | Loads the ecosys registry at startup, expands `/ns:name` in `sessionTurnRunner.Run`, passes `--audit-log` into the serve path, attaches the RequestCapturer, wires the TranscriptWriter, gains the `telegram` subcommand |
+| `internal/runtime` (or similar) | NEW | The extracted turn core (sessionTurnRunner + engine/hook/learning wiring) shared by ACP and Telegram frontends |
+| `internal/telegram` | NEW | Bot long-poll loop, per-chat session binding, chat-message emit sink, /stop cancellation, voice download + STT hand-off |
+| `internal/stt` (or `internal/telegram/stt`) | NEW | `Transcriber` interface; OpenAI Whisper default via `go-openai` (existing dep), Groq via base-URL swap, whisper.cpp via subprocess |
+| `internal/audit` | MODIFIED (small) | Reused as the optional flat-file sink on the serve path; the primary audit artifact stays the transcript (D-20) |
+| `internal/session` | MODIFIED (small) | `sessionFor` path gains TranscriptWriter construction; possibly a `CurrentTurnID()` accessor so captured requests carry a TurnID |
+| `internal/provider` | MODIFIED | `openai.go buildRequest` maps `profile.System` → system message (today dropped — verified); dsh turns need it |
+| `internal/profile` | MODIFIED (small) | Loader tolerates absent `thinking.json`/`tool_choice.json` (hard-errors today); `cmd/extract-profile` gains a dsh source+log extraction mode |
+| `profiles/dsh/` + `internal/defaults/seed/profiles/dsh/` | NEW | Profile #2 artifact bundle, zero-config seeded |
+| `internal/redact` | UNCHANGED | Both audit paths already redact through it — nothing new needed |
 
 ---
 
-## Where Each Delta Sits — Concrete Answers to the Eight Questions
+## Recommended Project Structure (v1.1 additions)
 
-### Q1 — Where does the mimicry/profile layer sit?
-
-**Sits between the Turn Loop and the Provider Adapter, as a synchronous transform.** The Turn Loop prepares an internal "request intent" (messages, requested tier, intended tool subset) and hands it to the **Profile Shaper**, which produces the wire-shaped request the chosen provider adapter expects.
-
-**New component: Profile Shaper.** Boundary:
-
-```go
-// internal/profile
-type Shaper interface {
-    // Apply takes the canonical internal request and produces a provider-shaped
-    // request that is structurally indistinguishable from the active profile's
-    // target agent. Called synchronously per turn; failure is a turn error.
-    Apply(ctx context.Context, in InternalRequest, profile Profile) (ProviderRequest, error)
-}
-
-type Profile struct {
-    ID            string
-    SystemPrompts []PromptFragment   // identity + role
-    ToolCatalog   []ToolSpec         // names + JSON schemas the model should see
-    MessageShape  MessageMolder      // role/field ordering, wrapper conventions
-    Identity      IdentityFields     // significant headers / client tags
-}
+```
+ass-guard-agent/
+├── cmd/ass-guard/
+│   ├── acp_serve.go          # MODIFIED: ecosys load, expansion call, audit flags, telegram sidecar flag
+│   ├── telegram_cmd.go       # NEW: `telegram` cobra subcommand (telegram-only launch)
+│   ├── provider_factory.go   # MODIFIED: generalize tracerProvider → shared captured-provider helper
+│   └── profile_check.go      # MODIFIED: per-profile capture loader (dsh live path)
+├── internal/
+│   ├── runtime/              # NEW: extracted turn core (runner, engine wiring, sessionFor)
+│   │   ├── runner.go         #   sessionTurnRunner moved here, frontend-agnostic RunTurn
+│   │   └── engine_wiring.go  #   setupEngine, dispatchers, hook seams (moved from acp_serve.go)
+│   ├── ecosys/
+│   │   ├── loader.go         # MODIFIED: discoverCommands walks one subdirectory level (namespace)
+│   │   ├── types.go          # MODIFIED: Command gains Namespace + frontmatter directives
+│   │   └── expand.go         # NEW: pure "/ns:name args" parser + body expansion ($ARGUMENTS)
+│   ├── telegram/             # NEW: frontend (bot loop, chat binding, voice download)
+│   │   ├── frontend.go       #   Start(ctx) long-poll, handler registration, chat→session map
+│   │   ├── sink.go           #   bus-chunk → Telegram message batching (rate-limit aware)
+│   │   └── stt.go            #   Transcriber interface + whisper-openai/groq/whisper-cpp impls
+│   ├── openspec/
+│   │   ├── seeded.toml       # MODIFIED: real binary surface + real handoff patterns
+│   │   └── register.go       # MODIFIED: register Adapter-backed Execute per command
+│   └── profile/
+│       └── loader.go         # MODIFIED: optional thinking/tool_choice files
+├── profiles/dsh/             # NEW: profile #2 bundle (profile.yaml, system/, tools.json, …)
+└── internal/defaults/seed/
+    └── profiles/dsh/         # NEW: sanitized seed copy (sync.sh extended)
 ```
 
-- **Location:** between Turn Loop and Provider Adapters. Not between Profile and bus — shaping is request-direction only; response tokens flow back unmodified through the adapter and onto the bus.
-- **Tool catalog projection:** the Shaper narrows the Tool Registry's full catalog to the profile's `ToolSpec` set. The Registry still owns execution; the Shaper only decides which tools the *model* sees.
-- **Profile source:** extracted from the target agent's on-disk request logs (the PROJECT.md north-star). Profiles are **config**, not code; zcode is profile #1, N supported by design.
-- **Mimicry verification hook:** the Audit Log records the *shaped* request verbatim, enabling a "diff against a recorded zcode request" assertion in tests. The Profile Shaper is the single place mimicry correctness is asserted.
+### Structure Rationale
 
-### Q2 — Where does model scheduling sit?
+- **`internal/runtime` extraction is the one structural refactor v1.1 needs.** Today the turn core (`sessionTurnRunner`, engine wiring, hook seams, MCP spawn) lives in `cmd/ass-guard/acp_serve.go` (package `main`). Telegram must drive the identical path (same sessions, same engine, same audit); a frontend-agnostic core package is the only way both surfaces share it without duplicating 400 lines of wiring. It is a move, not a rewrite — the ACP path calls the same functions afterward.
+- **`internal/telegram` is a leaf** mirroring `internal/acp`'s shape: it owns a transport, a session-binding policy, and a chunk sink; it never imports provider/profile logic directly.
+- **Expansion lives in `internal/ecosys`** because it is pure over the already-precedence-resolved `Registry`; no new package needed, and the read-only `.claude/` contract stays in one place.
+- **Profile #2 is data, not code**: a directory bundle under the existing name-keyed loader (verified: `profile.NewLoader(root).Load(name)` is profile-agnostic — PROF-02 held).
 
-**Separate component, not folded into the provider adapter.** New component **Model Scheduler** resolves tier→concrete-model at request time and owns fallback chains.
+---
 
-```go
-// internal/scheduler
-type Scheduler interface {
-    // Resolve picks a concrete model+provider+baseURL for the requested tier,
-    // honoring time-windows, per-project override, and walking the fallback
-    // chain if the preferred entry is unavailable.
-    Resolve(ctx context.Context, in ResolveInput) (Resolved, error)
-    // Report lets the Turn Loop record a provider error so the Scheduler can
-    // advance its fallback-chain cursor for the next attempt.
-    Report(ctx context.Context, key ResolveKey, err ProviderError)
-}
+## Architectural Patterns (feature-by-feature integration)
 
-type ResolveInput struct {
-    Tier        Tier          // heavy / good / light
-    ProjectID   string        // for per-project override
-    RequestID   string        // correlation
-}
+### Pattern 1: Slash-command expansion — hook at the TurnRunner, not the ACP handler
 
-type Resolved struct {
-    Provider   string         // "anthropic" | "openai"
-    BaseURL    string
-    ModelID    string
-    Fallback   []FallbackStep // the chain the Turn Loop may walk on its own
-}
+**What:** Intercept `/namespace:name args` in incoming prompt text, resolve via the ecosys precedence chain, expand the command's markdown body, and feed the expanded text as the turn's user message.
+
+**Where it hooks (the decision):** `sessionTurnRunner.Run` in `cmd/ass-guard/acp_serve.go:405` (moving to `internal/runtime`), immediately before `runOneTurn` — NOT in `internal/acp.handleSessionPrompt` (`internal/acp/handlers.go:102`).
+
+Rationale, verified against the code:
+
+1. `internal/acp` is protocol-pure: it has no filesystem, no workDir, no ecosys dependency. Putting markdown-file resolution there drags ecosystem discovery into the JSON-RPC layer and breaks the package's clean test surface.
+2. `sessionTurnRunner` already owns `workDir` (the discovery root), the profile, and the engine — everything expansion needs. It is also the single place the Telegram frontend will enter after the runtime extraction, so Telegram gets slash-commands for free (a hard requirement: "Telegram can drive an entire SDD scenario").
+3. The expanded blocks must be what `engine.Observe` receives as `userPrompt` (`acp_serve.go:487`), so expansion must happen before `runOneTurn`, and the transcript's `user_message` line records the *expanded* body (the audit trail shows what the model actually saw).
+
+**Load-bearing gap found (verified live):** `internal/ecosys.discoverCommands` (`internal/ecosys/loader.go:164`) scans `commands/*.md` flat and explicitly skips directories (`if e.IsDir() … continue`). But `openspec init --tools claude` (probed against the real v1.5.0 binary) installs commands as a **subdirectory**: `.claude/commands/opsx/{explore,apply,propose,sync,archive}.md` plus five skills (`.claude/skills/openspec-*/SKILL.md`). With today's loader, zero opsx commands are discoverable. The loader needs one-level-deep discovery mapping `commands/<ns>/<name>.md` → key `ns:name` (matching the `/opsx:explore` invocation surface). Top-level `commands/<name>.md` stays the un-namespaced form.
+
+**Expansion semantics:**
+
+- `ecosys.Command` (types.go) gains the frontmatter directives the body may carry: `allowed-tools`, `model`, plus keep `description`. The current `parseCommand` decodes only `description`; opsx v1.5.0 files use `name/description/category/tags` (verified) — unknown keys are ignored by YAML decode, so this is additive.
+- `$ARGUMENTS`: the ecosys doc already promises the placeholder. Verified: opsx v1.5.0 bodies do NOT use `$ARGUMENTS` (they reference "the argument after `/opsx:explore`" in prose). Expansion rule (Claude-Code convention): substitute `$ARGUMENTS` where present; otherwise append the args as a trailing line (`Arguments: <args>`). Both paths needed.
+- Frontmatter directives: v1 `allowed-tools` can restrict the session's projected tool set for that turn (a natural extension of the per-session profile copy already built in `sessionFor`, `acp_serve.go:534-538`); `model` can influence the tier/model override through the existing scheduler config. Ship allowed-tools as a follow-on within the phase; do not let it block the kickoff UAT.
+- Unknown `/command` (no registry match): pass the text through unchanged + a stderr log. This matches the project's structural-safety posture (no match ⇒ nothing happens); an ACP error response would break Telegram parity where the same rule applies.
+- Exposure: ACP v1 has no commands-list method, so "expose loaded slash-commands" = stderr log at startup + a small `ass-guard commands` listing (optional). The user types `/opsx:explore` as ordinary prompt text; Zed forwards it verbatim.
+
+**How OpenSpec stages then drive (the full kickoff chain):**
+
+```
+user types "/opsx:explore add-auth" in Zed
+  → ACP session/prompt (verbatim text)
+  → runtime.RunTurn: ecosys.Expand → opsx:explore markdown body (+args)
+  → Session.Prompt: transcript user_message = expanded body; provider turn
+  → model follows the command body: runs `openspec list --json`, `openspec show …`
+    (via Bash tool calls — the binary as supporting tooling) and/or the
+    namespaced openspec:* catalog tools
+  → turn ends (end_turn)
+  → engine.Observe → Decide(TurnOutput, OpenSpecPatternTable)
+      text handoff ("proposal ready…") OR tool-call handoff → ActionContinue
+  → NextStagePrompt injects the next stage as a REAL turn (D-12)
+  → hooks fire post-implement/post-phase via acpDispatcher.Hook → hookdag
 ```
 
-- **Resolution inputs:** tier (chosen by command/skill/subagent), project id (per-project override table), wall-clock (time-windows). The default tier→model table + override + window + chain are all config.
-- **Fallback interaction with the Turn Loop:** the Scheduler returns a *primary* resolution plus a *fallback chain*. The Turn Loop attempts the primary; on a provider error class the Scheduler flagged as fallback-eligible (rate limit, 5xx, no-key), the Turn Loop walks one step down the chain, *re-shapes* via the Profile Shaper (the chain may cross providers, so the request shape can change), and retries. The Turn Loop owns the retry loop body; the Scheduler owns *which model is next*.
-- **Why separate from the adapter:** the adapter is shape-mechanical (Anthropic vs OpenAI wire format). Scheduling is policy (which model, when, on what failure). Mixing them couples policy to wire format and makes time-windows/fallback untestable in isolation. Separate = each testable, each swappable.
+**Adapter reconciliation — verified against the real binary (v1.5.0 `--help` probed):** the real surface is `init, update, list, view, change, archive, spec, config, schema, store, doctor, context, workset, validate, show, status, instructions, templates, feedback, completion`. The seeded `[commands]` table (`internal/openspec/seeded.toml`) declares `list/show/validate/apply/implement` — `apply` and `implement` do not exist as binary subcommands (they are agent-workflow stages driven by the command files). Reconcile: read-only `list, show, view, validate, status, instructions, context, doctor, spec(list/view)`; mutating `archive, change, config, schema, store`. Note the UAT report's claim that show/validate "don't exist" was half-right: they DO exist on v1.5.0; the true mismatch is `apply`/`implement`.
 
-### Q3 — How does the unified engine extend the predecessor's Autocontinue Engine?
+**Should tools be re-derived from `openspec/config.yaml`? No.** Probed the file produced by `openspec init`: it holds `schema:` (e.g. `spec-driven`), optional project `context:` and per-artifact `rules:` — it is project configuration for artifact generation, NOT a command-surface declaration. Deriving the tool table from it is not viable. The `[commands]` table should be reconciled against the binary surface (a dev-time probe; the table stays hand-maintained TOML), and mutability stays the single source of truth for boundaries via `toolcat.IsBoundary` (verified: `openspec.RegisterTools` → `toolcat.Tool.Mutability` → existing boundary floor, no boundary-engine change).
 
-**The Autocontinue Engine is promoted to the Unified Engine.** Same siting (observer on the Event Bus), same safety property (no match → nothing runs), but the decision after turn-complete is broader than "inject next turn."
+**Second load-bearing gap (verified):** `openspec.RegisterTools` (`internal/openspec/register.go:28`) registers catalog entries with **no `Execute`** — the comment says the engine invokes them via the Adapter, but the actual 04-05 wiring gives the session `toolexec.RealExecutor{Catalog}`, whose nil-Execute path returns `{"error":"tool openspec:* has no implementation yet"}` (`internal/toolexec/real.go:67-71`). The Adapter (`internal/openspec/adapter.go`) is constructed nowhere outside tests. The fix is small: in `RegisterTools`, set `Execute` to a closure over an `Adapter` that parses `{command, args}` input and calls `Run` — then model-invoked `openspec:list` style calls actually execute the binary. (The command-file bodies mostly drive the binary through `Bash`; the namespaced tools are the structured alternative and must work when the model prefers them.)
 
-**Decision-point structure: a small rule engine, not a state machine.** The input is a turn-complete event carrying the accumulated assistant text, the active toolkit, the project, and the last handoff-tool-call (if any). The output is one of:
+**When to use / trade-offs:** expansion-at-runner keeps ACP pure and shares across frontends, at the cost of one indirection layer (runtime package). Doing it in the ACP handler instead would be less code today and wrong tomorrow (Telegram + the "same core" constraint).
 
-1. `ContinueNextTurn(text)` — the predecessor's behavior: synthesize the next user-turn and re-enter the Turn Loop. Dual-signal: text-pattern match OR a known handoff tool-call.
-2. `TriggerHookDAG(hookID, vars)` — invoke the Hook-DAG Executor with a named hook and its variables (e.g. `post-implement` after an implement stage).
-3. `AskUser(prompt)` — request user input via the active Interface Adapter (terminal answer to a question, or a Telegram reply).
-4. `Wait(duration | condition)` — park the session, resumable by timeout or by an external wake event.
-5. `Learn(unknown)` — only in learning mode: the engine has no rule for the situation; ask the user how to handle it, persist the answer, and act on it now.
-6. `Stop` — no continuation; the scenario is complete or unmatched.
+### Pattern 2: LOG-01 audit wiring on `acp serve` — transcript is the artifact, file sink is optional
 
-```go
-// internal/engine
-type UnifiedEngine interface {
-    // OnTurnComplete is invoked by the Event Bus after every turn. It is the
-    // single post-turn decision point. Hooks are a special case of Action.
-    OnTurnComplete(ctx context.Context, ev TurnComplete) (Action, error)
-}
+**What:** Make `--audit-log` (and, more importantly, `request_shaped` capture) real on the serve path.
 
-type Action interface{ kind() string } // ContinueNextTurn | TriggerHookDAG | AskUser | Wait | Learn | Stop
-```
+**Verified current state:**
 
-- **Hooks as a special case:** `TriggerHookDAG` is just another Action kind. The engine does not treat hooks as a separate mechanism; the PROJECT.md delta (autocontinue is the upper mechanism; hooks are a special case) is enforced structurally.
-- **Structural safety property preserved:** unmatched output still triggers nothing. The only off-switch is manual cancellation, which drains queued injections — inherited unchanged.
-- **Learning mode plumbing:** when the engine emits `Learn`, it consults Learned Config first (maybe the answer exists). If not, it surfaces an AskUser via the Interface Adapter, persists the result, then converts the answer into the equivalent `ContinueNextTurn`/`Wait`/`TriggerHookDAG` action.
+- `--audit-log` is a root persistent flag (`cmd/ass-guard/main.go:74`); cobra propagates it to `acp serve`, but `runACPServeCmd` never reads it — the value dies unparsed-to-use. The tracer path (`runTrace`) owns the only audit wiring: `openAuditSink` + `audit.NewAuditLogger(bus, sink)` + `tracerProvider(...)` which reconstructs the Anthropic adapter with `WithAnthropicRequestCapture` (`cmd/ass-guard/provider_factory.go:90-109`).
+- On the serve path, `makeProvider` (`acp_serve.go:272`) calls `factory.Build(providerName, shaper.New())` with **no capturer** — so `event.RequestShaped` is never published, and neither an AuditLogger nor a TranscriptWriter could see anything.
+- **Second verified gap:** `session.NewTranscriptWriter` has zero non-test callers. The serve path never runs it, so streaming audit lines (`request_shaped`, `agent_message_chunk`, `usage`) never reach the per-session transcript — only the session-structure lines written synchronously by `Session.Prompt`. D-20 ("audit log = transcript, one artifact") is only half-realized on the serve path.
 
-### Q4 — Hook-DAG Executor
+**Recommended wiring (reuse, not new mechanisms):**
 
-**New component running a configurable DAG of steps.** Each "send-prompt" step **is** a turn (it re-enters the Turn Loop). The executor owns its own context windows via the "fresh-context" step.
+1. **Attach the capturer:** generalize `tracerProvider` into one shared helper (e.g. `capturedProvider(factory, name, capturer)`) handling BOTH shapes — the OpenAI adapter already has `WithOpenAIRequestCapture` (`internal/provider/openai.go:53`, verified). `serveOptions` gains `AuditLogPath`; `runACPServe` passes a capturer closure publishing `event.RequestShaped{Profile: prof.Name, Timestamp: now}` to the shared bus.
+2. **Primary artifact = transcript (D-20):** construct and run one `TranscriptWriter` per session inside the `sessionFor` path (`go tw.Run(ctx)`), so `AppendRequestShaped`/chunks/usage land in `.ass-guard/transcript_<sessionID>.jsonl`. This is the LOG-01 completion in the D-20 sense and needs no new code in `internal/audit`.
+3. **Optional flat file:** when `--audit-log` is set, also `audit.NewAuditLogger(bus, sink)` for a process-wide cross-session JSONL (reuse verbatim; it already redacts and already panics on a stdout sink — keep that guard).
+4. **TurnID on captured requests:** the `RequestCapturer` signature (`func(body []byte, headers map[string]string)`) carries no TurnID; the tracer publishes with it empty. Cheapest correct fix: add an atomic `CurrentTurnID()` accessor on `Session` (it already keeps `turnCounter`) and let the per-session capturer closure read it; acceptable fallback for v1.1 is empty TurnID (the line still lands, ordering preserved by append).
 
-```go
-// internal/hookdag
-type Executor interface {
-    // Run executes a named DAG against the current session. Each send-prompt
-    // node re-enters the Turn Loop; each fresh-context node resets the window;
-    // each run-command node shells out; each wait node parks.
-    Run(ctx context.Context, in RunInput) (RunResult, error)
-}
+**Redaction already exists — nothing to build:** `internal/redact` redacts secret-carrier VALUES preserving field names (JSON-tree walker: authorization/api_key/bearer/token/x-api-key/…) with a Bearer/sk- regex fallback for non-JSON, plus `ScrubError`. Both consumers already route through it: `Manager.appendLine` redacts every transcript line before write (LOG-03), and `audit.AuditLogger.handle` redacts before sink. Verified importers: acp server/handlers (error scrubbing), session manager, audit, provider errors.
 
-type Step interface{ kind() string } // RunCommand | SendPrompt | FreshContext | Wait
-```
+**When to use / trade-offs:** the alternative — a separate session-level event log under `.ass-guard/` — would create a second artifact and violate D-20's one-writer property (the TranscriptWriter doc comment explicitly warns about two-writer drift). Keep the flat `--audit-log` file strictly optional/operator-facing.
 
-- **Relation to the Turn Loop:** `SendPrompt` step = one turn. The executor does not bypass the Turn Loop; it calls into it. A DAG of three `SendPrompt` nodes is three sequential turns (or parallel branches → three goroutine Turn Loops, one per node).
-- **Owns its own context windows:** the `FreshContext` step is explicit, not implicit. The executor asks the Session Manager to start a new projected window (transcript stays durable; only the window resets). This is the same two-layer mechanism the predecessor used for command boundaries; the executor reuses it rather than inventing a second path.
-- **Concurrency model for parallel branches:** a DAG node with multiple out-edges fans out into goroutines (one per edge), each running its sub-DAG to completion; the join node waits on all. Same fan-out/fan-in shape as the Subagent Manager, scoped to DAG execution. Mutating side effects (run-command mutating the filesystem, mutating tool calls) must declare ordering dependencies in the DAG itself — the executor will not infer them.
-- **Seeded hook set out of the box:** post-implement (test + lint + review + memory), post-phase (improvement proposals). These are config files shipped with the binary; learning-mode-proposed hooks land in the same store pending user confirmation.
-- **Boundary:** the executor emits step/progress events onto the Event Bus (so the Audit Log records them and the Interface Adapter surfaces progress to the user). It never writes to the protocol directly.
+### Pattern 3: Telegram frontend — a second driver over the same turn core
 
-### Q5 — Multi-interface: ACP + Telegram as peers
+**What:** A Telegram bot as a full peer surface: text and voice in, the same engine/sessions/audit out; runs either as a goroutine beside ACP stdio or as its own launch mode.
 
-**New "Interface Adapter" abstraction above the Session Manager.** Both ACP and Telegram are full peers — both can drive an entire SDD scenario.
+**Integration shape:**
 
-```go
-// internal/interface
-type Adapter interface {
-    // In returns a stream of normalized user-input events (text turns,
-    // cancellations). STT happens before this — the Adapter emits text only.
-    In(ctx context.Context) <-chan InputEvent
-    // Out consumes normalized outbound events (assistant stream, tool events,
-    // AskUser prompts, progress) and renders them to the surface.
-    Out(ctx context.Context) chan<- OutputEvent
-}
-```
+1. **Shared core (the prerequisite):** extract `sessionTurnRunner` + `setupEngine` + the hook/learning/MCP wiring from `cmd/ass-guard/acp_serve.go` into `internal/runtime`. The ACP server then consumes it via the existing `acp.TurnRunner` interface (unchanged seam — `internal/acp/server.go:31`), and Telegram consumes the same runner through a frontend-agnostic entry (the chunk-forwarding goroutine in `Run` is the only ACP-specific part; it becomes one sink implementation among two). `runOneTurn`/`eng.Observe`/`sessionFor` are already frontend-agnostic — verified: everything below `Run` talks in `session.ContentBlock` and bus events.
+2. **Long-poll loop:** `github.com/go-telegram/bot` (new dep — NOT in go.mod today, verified), chosen in v1.0 research for zero-dependency + idiomatic `context.Context` throughout. `bot.Start(ctx)` runs the GetUpdates loop; ctx cancellation drains it. Handler-based registration maps message updates to the frontend.
+3. **Per-chat session binding:** `map[chatID]*session.Session` over the same `sessionFor` construction, with **stable session IDs** (`tg-<chatID>`) so the durable transcript (`transcript_tg-<chatID>.jsonl`) survives process restarts — unlike ACP's per-editor-session UUIDs. One chat = one continuing session = one engine state.
+4. **Chunk streaming to chat:** subscribe `AgentMessageChunk` on the shared bus exactly as `sessionTurnRunner.Run` does, batch into Telegram messages (rate limits: ~1 msg/sec per chat, edit-message throttling — v1 recommendation: stream coarse chunk batches, fall back to final-message-only if editing proves noisy). Final `stopReason` mirrors the ACP contract.
+5. **Voice flow:** `message.Voice` (ogg/opus) → `getFile` → download from `https://api.telegram.org/file/bot<token>/<file_path>` (Bot API mechanics; the library exposes GetFile + the URL helper) → `Transcriber.Transcribe(ctx, io.Reader) (string, error)` → the transcript text becomes an ordinary user prompt through the same `RunTurn` (with a transcript note that it originated as voice). Backends behind one interface: **OpenAI Whisper API default via `sashabaranov/go-openai` transcription (already a dependency — zero new deps for the default)**; Groq = base-URL swap on the same client; whisper.cpp = out-of-process `whisper-cli` subprocess (never cgo — goreleaser/static-binary constraint). Config in `.ass-guard/telegram.yaml` (seeded by firstrun; mirrors scheduling.yaml conventions), bot token via the established credential precedence (flag > `$TELEGRAM_BOT_TOKEN` env > config literal).
+6. **Launch modes:** new cobra subcommand `telegram` (telegram-only: runner + bot, no ACP server, stdin unused) AND an `acp serve --telegram` flag to run the bot goroutine beside the ACP server sharing one runner (the PROJECT.md requirement "goroutine in the same process as ACP stdio"). One GetUpdates loop per token — never two (409 conflict), a pitfall if both modes run against the same bot.
+7. **Shutdown:** derive one ctx from `signal.NotifyContext` (the `acp serve` RunE already does this — `acp_serve.go:141`); on cancel: bot long-poll returns (`Start(ctx)`), in-flight Telegram turns abort via per-chat cancel funcs mirroring `sessionState.cancelTurn` (a `/stop` chat command maps to the same cancel), then `closeAllSessions()` reaps MCP subprocesses (existing helper, `acp_serve.go:610`).
+8. **stdout discipline:** the bot library's logger must be redirected to stderr (`bot.WithLogger` / slog bridge). In telegram-only mode stdout stays byte-clean even though unused — enforce via the same review/lint gate as ACP.
 
-- **ACP Adapter** is the renamed inherited ACP Frontend, now an Interface Adapter implementation. Transport: stdio JSON-RPC. Same ACP method set, same stdout=protocol/stderr=logs discipline.
-- **Telegram Adapter** is the new peer. Transport: Telegram Bot API (HTTP long-poll or webhook). Renders assistant tokens as message edits; renders tool-call progress as status messages; surfaces `AskUser` actions as inline reply keyboards.
-- **STT sits at the Telegram Adapter boundary, not in the core.** Voice messages are transcribed to text via a configurable STT backend *before* entering `In()`. The core never sees audio — it sees ordinary text input, indistinguishable from a typed message. This keeps STT a surface concern and lets the core remain interface-agnostic.
-- **Concurrent input serialization:** each session has a single serialized input queue inside the Session Manager. Whether an input arrives from ACP or Telegram, it enters the same queue; turns run one-at-a-time per session. If Telegram sends a second input mid-turn, it queues (or is rejected with a "busy" reply — config). This avoids dual-interface races without a distributed lock; the Session Manager's per-session mutex is the single arbiter.
+**When to use / trade-offs:** running Telegram in-process (not a separate daemon) honors "single static binary, no daemon"; the cost is that a Telegram-driven heavy turn competes with ACP turns for the process-wide provider semaphore (existing `provider.NewSemaphore(maxConc)`) — acceptable and arguably correct (PARA-04 bounds outbound concurrency across parent + subagents already; Telegram turns are just more parents).
 
-### Q6 — Learning-mode persistence
+### Pattern 4: Profile #2 (deepseek-harness) — data bundle plus two targeted code fixes
 
-**New component: Learned Config (Memory).** Two distinct stores, one component:
+**What:** Mimic `deepseek-ai/deepseek-harness` ("dsh" — DeepSeek's MIT-licensed, plugin-based open-source coding agent; TypeScript, "traceable sessions") for DeepSeek-model turns, riding the N-profile architecture with no zcode-specific paths.
 
-```go
-// internal/memory
-type Learned interface {
-    // LaunchDecision returns a remembered answer to a "how do I launch this?"
-    // question (fresh-context? wait? how long?), or NotKnown.
-    LaunchDecision(ctx context.Context, key LaunchKey) (LaunchDecision, error)
-    RecordLaunchDecision(ctx context.Context, key LaunchKey, d LaunchDecision) error
+**The artifact (identical bundle shape, verified loader contract):** `profiles/dsh/` containing `profile.yaml` (name/model/max_tokens), `system/block-*.txt` (byte-faithful, lexical order), `tools.json` (name+description+input_schema), `identity.yaml` (header NAMES byte-faithful, value templates), `thinking.json`, `tool_choice.json`, plus `coverage.yaml` (tiered manifest with `TargetCaptureRef` provenance). `internal/profile.Loader.Load(name)` is directory-keyed and profile-agnostic — zero changes to load dsh. Selection is already a flag: `ass-guard acp serve --profile dsh`.
 
-    // ProposedHooks returns hooks the engine has proposed but the user hasn't
-    // confirmed yet; ConfirmHook promotes one into the live hook table.
-    ProposedHooks(ctx context.Context) ([]ProposedHook, error)
-    RecordProposedHook(ctx context.Context, h ProposedHook) error
-    ConfirmHook(ctx context.Context, id string) error
-}
-```
+**Two code adaptations required (both verified gaps):**
 
-- **Launch decisions** are (situation-signature → action) entries the Unified Engine's `Learn` action writes after asking the user. The engine consults this store first; a hit short-circuits the ask.
-- **Proposed hooks** are derived from the work log (the Audit Log is the source of "what just happened repeatedly"). The engine proposes; the user confirms via either Interface Adapter. Unconfirmed hooks never run — preserves the "no match → nothing runs" safety property.
-- **Feedback into the Unified Engine:** at decision time the engine queries Learned Config first (launch decision) and writes to it on a confirmed learning. The hook table the executor runs is the union of seeded + user-confirmed hooks; proposed-but-unconfirmed hooks are *visible* to the user (so they can confirm them) but never executed.
-- **Storage:** on-disk under the project's config namespace (Claude-Code-compat: `.claude/` layout, ass-guard additions namespaced cleanly). No external service; this is a local file store.
+1. **OpenAI-shape system mapping:** `internal/provider/openai.go buildRequest` (verified, lines 108-155) never reads `profile.System` — system blocks are silently dropped on the OpenAI shape. DeepSeek's API is OpenAI-shape, so dsh turns would carry NO system prompt. The adapter must prepend the system content as message(s) — exact form (one joined system message vs multiple vs developer-role) is a ground-truth extraction question: mimic however dsh itself sends it.
+2. **Optional profile fields:** `Loader.Load` hard-errors when `thinking.json`/`tool_choice.json` are missing (`os.ReadFile` error returned). Anthropic-isms may be absent in dsh (Chat Completions has no thinking param). Either convention: ship empty files, or (cleaner) make the loader tolerate absence when `profile.yaml` declares `shape: openai`. Keep the Shaper untouched (Anthropic path unchanged).
 
-### Q7 — Audit log
+**Extraction (ground-truth, per the "log-extracted, not hand-written" Key Decision):** dsh is open source, so capture is two-sourced: (a) its **TypeScript source** — system prompts, tool registry schemas, identity/request assembly are in-repo code; (b) **its own session logs** (dsh advertises traceable sessions — on-disk format is a build-time discovery item). This differs from zcode (closed binary, logs-only) but the profile contract is the same: verbatim system text (TIER-1), tool name+schema set (TIER-1), header names (TIER-2), model/max_tokens (TIER-3). `cmd/extract-profile` + `internal/profile/extract.go` gain a dsh mode (the current `ModelIO` rollout schema is zcode-specific); `CoverageEntry.Source` already records which artifact each field came from. Where logs and source disagree, logs win (source shows what it *would* send; logs show what it *did*).
 
-**Dedicated component, fed as a tap on the Event Bus** (same shape as the Unified Engine — observer, not in the critical path).
+**Drift-check adaptation:** `drift.Detect` + `CoverageManifest.Validate` are profile-agnostic (verified — they consume a manifest + a captured map). The only zcode-ism is `profile_check.go`'s live path hardcoding `~/.zcode/cli/rollout`. Fix: a per-profile capture loader (dsh's log location resolved from its config/layout), with `--capture-file` continuing to work for fixtures. `ass-guard profile check dsh` then runs the identical tiered diff.
 
-```go
-// internal/audit
-type Logger interface {
-    // Record appends a reconstruction-grade event. Never blocks producers;
-    // internally buffered + flushed to disk.
-    Record(ctx context.Context, ev Event)
-}
-```
+**Scheduling:** a DeepSeek provider entry (openai shape, operator's opencode-subscription endpoint or DeepSeek API) in `scheduling.yaml` is pure config — the two-shape `ProviderFactory.Build` already constructs it. Open design note: today profile is chosen per-launch (`--profile`), while the scheduler picks provider per tier. Coupling tier→profile (so DeepSeek-model turns automatically use the dsh profile) is the natural v1.2 extension; v1.1 keeps profile selection explicit at launch — do not silently introduce per-turn profile switching under this feature.
 
-- **Siting:** the Audit Log subscribes to the Event Bus like any other consumer. It is not a tap *on the bus implementation* (no special bus plumbing) — it is a regular consumer that happens to record everything.
-- **Log schema for "reconstruct the exact sequence of actions":** each event carries:
-  - `timestamp` (monotonic + wall-clock pair)
-  - `session_id`, `turn_id`, `parent_turn_id` (subagents)
-  - `kind` (input | shaped_request | provider_response_token | tool_call | tool_result | engine_decision | dag_step | dag_complete | output_rendered | cancel)
-  - `payload` (the verbatim content; for `shaped_request`, the exact bytes the Profile Shaper produced — this is the mimicry-correctness evidence)
-  - `source` (which component produced it)
-- **Reconstruction property:** given the audit log for a session, an external reader can replay the exact input→request→response→tool→decision sequence without re-running the model. The `shaped_request` payloads are diff-able against recorded target-agent requests — this is how mimicry correctness is verified continuously.
-- **Failure mode:** the Audit Log never blocks producers. If the disk fill or error, it logs to stderr and drops (or buffers, per config) — never breaks the agent.
+### Pattern 5 (cross-cutting): operator-gated verification as phase gates
 
-### Q8 — Component count and build order
-
-**Total component count: 11.** Six inherited (ACP Adapter [renamed from ACP Frontend], Session Manager, Turn Loop, Tool Registry, Subagent Manager, Unified Engine [promoted from Autocontinue Engine]) plus five new (Profile Shaper, Model Scheduler, Hook-DAG Executor, Interface Adapter Layer [which contains ACP + Telegram impls], Learned Config, Audit Log). Note: "Interface Adapter Layer" is one new abstraction; the ACP impl is the renamed inherited frontend, and the Telegram impl is new. Counted as one new layer-component plus its new Telegram impl, which keeps the new-component total at five.
-
-**Dependency-ordered build sequence (mimicry thesis proven first):**
-
-| # | Build item | Validates | Depends on |
-|---|---|---|---|
-| 1 | **Profile Shaper + Audit Log + thinnest possible Turn Loop (one provider adapter, one tier)** | The north star: outgoing requests structurally indistinguishable from zcode's. Audit Log enables the diff-against-recorded-zcode-request assertion. | nothing (this *is* the foundation) |
-| 2 | **Session Manager (transcript + projection) wired to the Turn Loop** | Two-layer context; replay-on-load contract holds while window is resettable | #1 |
-| 3 | **ACP Adapter (renamed frontend) + Interface Adapter abstraction** | ACP surface works end-to-end with mimicry-faithful requests; abstraction validates cleanly with one impl | #2 |
-| 4 | **Model Scheduler (tiers, time-windows, per-project override, fallback chain)** | Multi-tier substitution; fallback retries flow back through the Profile Shaper correctly when crossing providers | #1, #3 |
-| 5 | **Tool Registry with configurable backends + Subagent Manager** | Built-in catalog faithful to the profile; `Task` subagents isolated; WebSearch-style tools run via configurable backend | #3 |
-| 6 | **Unified Engine (continue-action only first)** | Predecessor's autocontinue behavior reproduced inside the new decision-point shape | #3 |
-| 7 | **Hook-DAG Executor + seeded hooks (post-implement, post-phase)** | The "forgotten routine" runs hands-off; send-prompt step re-enters Turn Loop correctly | #5, #6 |
-| 8 | **Learned Config + learning mode in the Unified Engine** | Engine asks and remembers; proposed-hook flow works | #6, #7 |
-| 9 | **Telegram Adapter (text first, then voice via STT at the edge)** | Second interface as a true peer; serialization of concurrent inputs is correct | #3, #6 |
-| 10 | **Polish + distribution (goreleaser, ACP registry manifest, full audit-log replay tooling)** | Ship readiness | all |
-
-The mimicry thesis (#1) is built before anything else. If it fails, the project stops and re-plans — this is the explicit, deliberate de-risking of the north star. Every later item assumes #1 is proven.
+The kickoff phase's gate is the operator-gated real-binary run (`ASSGUARD_OPENSPEC_BIN=1`) — the stub-binary E2E is exactly what hid the model mismatch last time (UAT root cause). The parity re-capture (`ZAI_API_KEY` + a divergence-prone capture session, pinned in `profiles/zcode/coverage.yaml` `TargetCaptureRef`) unblocks `internal/profile/stability_test.go`, which fails today because session `eea3dc48` is absent on disk. Both are operator actions riding existing machinery — the code work around them is small, which is why they pair naturally in one phase.
 
 ---
 
 ## Data Flow
 
-### Request Flow (end-to-end with all new tap-in points)
+### Request Flow (v1.1 — slash-command kickoff, the headline flow)
 
 ```
-   [User input via ACP or Telegram]
-        │
-        ▼
-   Interface Adapter ──(STT at Telegram edge: voice → text)──▶ normalized InputEvent
-        │
-        ▼
-   Session Manager ──(per-session lock serializes concurrent inputs)──▶ active context window
-        │                                                       │
-        │                                                       ▼
-        │                                          (record input) ──▶ Audit Log
-        ▼
-   Turn Loop
-        │
-        ├─▶ 1. Build canonical InternalRequest (messages, requested Tier, tool subset)
-        │
-        ├─▶ 2. ★ NEW: Model Scheduler.Resolve(tier, projectID) → Resolved{provider, modelID, fallback}
-        │
-        ├─▶ 3. ★ NEW: Profile Shaper.Apply(InternalRequest, Profile) → ProviderRequest
-        │             (system prompt + tool catalog projection + message shape + identity)
-        │
-        ├─▶ 4. ★ Audit Log records the verbatim ProviderRequest (mimicry evidence)
-        │
-        ├─▶ 5. Provider Adapter sends ProviderRequest → model
-        │
-        ├─▶ 6. Streamed tokens + tool_use requests arrive
-        │             │
-        │             ▼ published onto Event Bus
-        │       ┌─────────────────────────────────────────────────┐
-        │       │  Consumers (parallel):                          │
-        │       │   • Interface Adapter.Out  (user sees tokens)   │
-        │       │   • Audit Log              (records each)        │
-        │       │   • Unified Engine         (accumulates text)    │
-        │       └─────────────────────────────────────────────────┘
-        │
-        ├─▶ 7. For each tool_use: Tool Registry executes
-        │             │
-        │             ▼ (read-only tools parallelize; mutating serialize)
-        │       backend resolution (e.g. WebSearch → configured backend)
-        │             │
-        │             ▼ tool result published onto Event Bus
-        │
-        └─▶ 8. Model stops requesting tools → turn completes
-                  │
-                  ▼ TurnComplete event on Event Bus
-        ╔═══════════════════════════════════════════════════════╗
-        ║   ★ NEW: Unified Engine decision (post-turn-complete) ║
-        ║                                                       ║
-        ║   consult Learned Config ──┐                          ║
-        ║                            ▼                          ║
-        ║   match text-pattern  ──▶ ContinueNextTurn           ║
-        ║   known handoff call  ──▶ ContinueNextTurn           ║
-        ║   hook-DAG trigger    ──▶ TriggerHookDAG             ║
-        ║   needs user input    ──▶ AskUser (via Adapter)      ║
-        ║   should wait         ──▶ Wait                       ║
-        ║   unknown + learning  ──▶ Learn (ask + persist)      ║
-        ║   nothing matched     ──▶ Stop                       ║
-        ╚═══════════════════════════════════════════════════════╝
-                  │
-                  ├── ContinueNextTurn ──▶ re-enter Session Manager (synthesized input) ──▶ Turn Loop
-                  │
-                  ├── TriggerHookDAG ──▶ ★ NEW: Hook-DAG Executor.Run(hookID, vars)
-                  │        │
-                  │        ├── RunCommand step ──▶ shell out; stdout into context
-                  │        ├── SendPrompt step ──▶ re-enter Turn Loop (one turn per node)
-                  │        ├── FreshContext step ──▶ Session Manager resets window
-                  │        └── Wait step ──▶ park; resumable
-                  │        │
-                  │        └── progress events onto Event Bus (→ Audit Log + Interface)
-                  │
-                  ├── AskUser ──▶ Interface Adapter.Out renders the question; awaits In
-                  │
-                  └── Wait ──▶ timer / external wake ──▶ resume decision
+[User types /opsx:explore add-auth in Zed]
+    ↓ (ACP session/prompt — verbatim text block)
+internal/acp.handleSessionPrompt → turnRunner.Run(ctx, sessionID, emit, prompt)
+    ↓
+internal/runtime.RunTurn
+    ├─ ecosys registry (loaded once at startup via Discover(workDir))     [NEW wiring]
+    ├─ ecosys.Expand("/opsx:explore add-auth")                            [NEW]
+    │    → Command{Namespace:"opsx", Name:"explore", Body, AllowedTools, Model}
+    │    → expanded text (body with $ARGUMENTS→args, or body + "Arguments: …")
+    ↓
+runOneTurn → engine.Observe(engineTurnRunnerAdapter, patternTable, expandedBlocks)
+    ↓
+session.Session.Prompt  (transcript user_message = EXPANDED body; provider turn;
+    ↓                    model drives openspec binary via Bash / openspec:* tools)
+engine.Decide(TurnOutput, OpenSpecPatternTable)  → continue / hook / ask / nothing
+    ↓ (ActionContinue)
+NextStagePrompt → real turn → … until non-continue decision or cancel
 ```
 
-### State Management
+### Audit Flow (LOG-01 completion)
 
 ```
-              ┌──────────────────────────────────────────────┐
-              │           Session Manager (per session)       │
-              │  ┌────────────────────────────────────────┐  │
-              │  │  Transcript (durable, ACP-visible)     │  │
-              │  │  append-only; replayable on load       │  │
-              │  └────────────────────────────────────────┘  │
-              │  ┌────────────────────────────────────────┐  │
-              │  │  Active Context Window (model-visible) │  │
-              │  │  projection of transcript; reset at:   │  │
-              │  │   • mutating-toolkit-command boundary  │  │
-              │  │   • DAG FreshContext step              │  │
-              │  └────────────────────────────────────────┘  │
-              └──────────────────────────────────────────────┘
-                              │
-                              ▼ (mutating-toolkit boundaries are non-removable; config may only add)
-        ┌─────────────────────────────────────────────────────────┐
-        │  Unified Engine decision state                          │
-        │   per-session: accumulated assistant text, last         │
-        │   handoff tool-call, active toolkit, learning flag      │
-        └─────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-        ┌─────────────────────────────────────────────────────────┐
-        │  Learned Config (cross-session, persistent)             │
-        │   launch decisions; proposed hooks (pending confirm)    │
-        └─────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-        ┌─────────────────────────────────────────────────────────┐
-        │  Audit Log (append-only, per session)                   │
-        │   every event, verbatim shaped requests, full replay    │
-        └─────────────────────────────────────────────────────────┘
+Session.streamAndEmit → Provider.Stream(shape(profile, messages))
+    ├─ adapter invokes RequestCapturer(body, headers)                      [NEW on serve path]
+    ↓ capturer publishes event.RequestShaped{TurnID?, VerbatimRequest, Profile}
+event.Bus
+    ├─ session.TranscriptWriter (per-session, Run(ctx))                    [NEW wiring]
+    │    → Manager.AppendRequestShaped → redact.Redact → transcript_<id>.jsonl
+    └─ audit.AuditLogger (optional --audit-log file)                       [reuse]
+         → redact.Redact → <audit-log> JSONL
+```
+
+### Telegram Flow (text + voice)
+
+```
+Telegram update → internal/telegram handler
+    ├─ text:  prompt → runtime.RunTurn(chatSession, blocks, telegramSink)
+    ├─ voice: getFile → download ogg/opus → Transcriber.Transcribe
+    │         → text block → same RunTurn (voice origin noted in transcript)
+    └─ /stop: chat-level cancel func → drains in-flight turn (mirror session/cancel)
+runOneTurn (identical to ACP: same engine, same hooks, same audit)
+    ↓ AgentMessageChunk events on shared bus
+telegramSink batches chunks → chat messages (rate-limit aware)
 ```
 
 ### Key Data Flows
 
-1. **Mimicry flow (request direction):** Turn Loop → Model Scheduler (resolve tier) → Profile Shaper (apply profile) → Audit Log (record verbatim) → Provider Adapter → model. The Shaper is the single chokepoint where mimicry correctness is asserted; the Audit Log is the single source of mimicry evidence.
-2. **Stream flow (response direction):** provider SSE → Event Bus → fan-out to Interface Adapter (user-visible), Audit Log (record), Unified Engine (accumulate). Same fan-out shape as the predecessor — only the consumer set grew.
-3. **Decision flow (post-turn):** TurnComplete → Unified Engine → Action. Each Action kind has a single, distinct sink (Session Manager, Hook-DAG Executor, Interface Adapter, or timer). Hooks are not a separate decision path; they are one Action kind.
-4. **Learning flow:** Unified Engine emits `Learn` → consults Learned Config → on miss, asks via Interface Adapter → user answer writes Learned Config → answer translates to a concrete Action.
-5. **Multi-interface serialization:** any input from any Adapter → Session Manager's per-session input queue → one turn at a time. The Adapter abstraction means the core is unaware whether input came from ACP or Telegram; serialization is centralized.
-6. **Fallback flow:** Turn Loop hits a fallback-eligible provider error → reports to Model Scheduler → Scheduler advances fallback cursor → Turn Loop receives next resolution → re-enters Profile Shaper (the chain may cross providers, so shaping repeats) → retries.
-
----
-
-## Recommended Project Structure
-
-```
-ass-guard-agent/
-├── cmd/
-│   └── ass-guard/              # main package; wires components, starts Interface Adapters
-├── internal/
-│   ├── interface/              # ★ NEW layer
-│   │   ├── adapter.go          # Adapter interface (In/Out channels)
-│   │   ├── acp/                # ACP Adapter (renamed inherited frontend)
-│   │   └── telegram/           # ★ NEW Telegram Adapter + STT at edge
-│   ├── session/                # Session Manager (transcript + projection; per-session lock)
-│   ├── turnloop/               # Turn Loop (model↔tool; calls Shaper, Scheduler)
-│   ├── profile/                # ★ NEW Profile Shaper + Profile definitions
-│   ├── scheduler/              # ★ NEW Model Scheduler (tiers, windows, fallback)
-│   ├── provider/               # Provider Adapters (Anthropic-shape, OpenAI-shape)
-│   ├── tools/                  # Tool Registry + tool implementations
-│   │   └── backends/           # ★ NEW configurable backends per complex tool
-│   ├── subagent/               # Subagent Manager (Task tool → goroutine Turn Loops)
-│   ├── engine/                 # ★ PROMOTED Unified Engine (was autocontinue)
-│   ├── hookdag/                # ★ NEW Hook-DAG Executor + step types
-│   ├── memory/                 # ★ NEW Learned Config (launch decisions + proposed hooks)
-│   ├── audit/                  # ★ NEW Audit Log (Event Bus tap)
-│   ├── bus/                    # Internal Event Bus (inherited spine)
-│   └── config/                 # Config loading (Claude-Code-compat layout, ass-guard namespace)
-├── config/
-│   ├── profiles/               # zcode.toml (first profile), future profiles
-│   ├── hooks/                  # seeded hook DAGs (post-implement, post-phase)
-│   └── models.toml             # tier→model table, time-windows, per-project overrides
-├── testdata/                   # recorded zcode requests (mimicry fixtures); ACP replay fixtures
-├── .planning/                  # PROJECT.md, research (this file), specs
-└── go.mod
-```
-
-### Structure Rationale
-
-- **`internal/`:** everything is implementation-private; only `cmd/ass-guard` is the entry point. This is idiomatic Go and matches the predecessor.
-- **`interface/` as a layer package (not `acp/` at the root):** signals that ACP is one of N peers. Adding a third interface later (web, CLI) lands here without restructuring.
-- **`profile/`, `scheduler/`, `hookdag/`, `memory/`, `audit/` as peers:** each new delta is one cohesive package with a narrow interface — same shape as the inherited components. No god-package.
-- **`tools/backends/` subpackage:** isolates the configurable-backend indirection. A tool that wants a pluggable backend depends on a backend interface defined next to the tool, with implementations registered in `backends/`.
-- **`config/profiles/` and `config/hooks/`:** profiles and hook-DAGs are *data*, not code. Keeping them as config files makes team-sharing and learning-mode hook proposals first-class (proposed hooks land as files pending confirmation).
-- **`testdata/` carries recorded zcode requests:** these are the mimicry-correctness fixtures. They are load-bearing test assets, not examples.
-
----
-
-## Architectural Patterns
-
-### Pattern 1: Observer-not-controller (inherited, broadened)
-
-**What:** the dangerous/complex thing is an observer/projection/adapter. The canonical path stays simple. The predecessor applied this to the Autocontinue Engine (event-bus tap, never in the critical path). ass-guard broadens it: the Unified Engine, the Audit Log, and the Profile Shaper's tool-catalog projection are all observers/projections.
-
-**When to use:** whenever a cross-cutting concern (continuation, audit, mimicry projection) could be woven into the Turn Loop. Don't. Tap the bus or transform at the boundary.
-
-**Trade-offs:** pros — graceful degradation (any observer can fail without breaking turns), independently testable, swappable. Cons — ordering across observers must be specified (the bus guarantees per-turn order; cross-observer causality is by design not enforced — observers must be independent).
-
-### Pattern 2: Boundary-transform isolation (new — for mimicry)
-
-**What:** structural indistinguishability is enforced at exactly one boundary (Profile Shaper → Provider Adapter), with one source of evidence (Audit Log's verbatim `shaped_request` records). The Turn Loop speaks a canonical internal representation; mimicry is a transform *on the way out*.
-
-**When to use:** any "X must look like Y to an external observer" requirement. Isolate the shaping in one place, record the output, diff against a reference. Never let mimicry leak into the Turn Loop's internals.
-
-**Trade-offs:** pros — mimicry correctness is locally verifiable, profile-swappable by design (N profiles), Turn Loop stays provider-agnostic. Cons — every profile must be authored/maintained; the boundary interface must be stable enough to survive profile additions.
-
-### Pattern 3: Policy/mechanism separation (new — for scheduling)
-
-**What:** the Provider Adapter is mechanism (wire format); the Model Scheduler is policy (which model, when, on what failure). They are separate components with a narrow contract.
-
-**When to use:** any time a wire-format concern and a routing/scheduling concern could be conflated. Keep them separate so each is testable in isolation.
-
-**Trade-offs:** pros — fallback chains, time-windows, and per-project overrides are testable without HTTP; adapters are testable without policy. Cons — one extra hop on the request path; the Scheduler must return enough context (the fallback chain) for the Turn Loop to retry without re-consulting.
-
-### Pattern 4: Hooks-as-action-kind (new — for the unified engine)
-
-**What:** the post-turn decision is a single rule engine emitting typed Actions. `TriggerHookDAG` is one Action kind among five. The Unified Engine does not have a separate "hook trigger path" — it has a decision point that can choose to trigger a hook.
-
-**When to use:** when collapsing two predecessor mechanisms (autocontinue + hooks) into one. A single decision point with typed outputs beats two parallel mechanisms with overlapping concerns.
-
-**Trade-offs:** pros — one place to reason about post-turn behavior; learning mode plugs into the same decision point; safety property ("no match → nothing") is preserved uniformly. Cons — the Action union must stay disciplined; allowing ad-hoc Action kinds re-creates the two-mechanism problem.
-
-### Pattern 5: Interface Adapter above Session Manager (new — for multi-surface)
-
-**What:** a normalized Input/Output channel abstraction sits between any surface (ACP, Telegram, future) and the Session Manager. The core is surface-agnostic.
-
-**When to use:** any time more than one surface must drive the same session core, especially with mixed modalities (text + voice).
-
-**Trade-offs:** pros — surfaces are independently developable; STT and rendering stay at the edge. Cons — concurrent-input serialization must be centralized (Session Manager's per-session queue), or surfaces race.
-
----
+1. **Command expansion is pre-transcript:** the expanded body is recorded as the user_message — the transcript remains the faithful record of what the model saw (investigate-and-fix-ready contract).
+2. **One bus, two sinks:** ACP `session/update` notifications and Telegram messages are both subscriptions on the same `AgentMessageChunk` stream; neither sink is in the turn's critical path.
+3. **Voice becomes text before the core:** STT is a frontend concern; the turn core never knows a prompt came from audio (preserves the mimicry contract — outgoing requests are identical regardless of surface).
+4. **Profile #2 is load-time data:** dsh changes what the Shaper emits by changing the bundle, not the shaping code (one exception: the OpenAI system-mapping fix, which is generic, not dsh-specific).
 
 ## Scaling Considerations
 
-"Scale" here is local-concurrency and per-project complexity, not horizontal distribution. The agent is a single binary subprocess; it never multiplies across machines.
+Not a user-scale system; the real "scaling" axes and what breaks first:
 
-| Scale dimension | Architecture adjustment |
-|-----------------|------------------------|
-| Sessions per process | Bounded by model-API concurrency, not by the runtime. A semaphore on outbound provider calls (inherited) prevents self-DDoS. Per-session state is small (transcript on disk, window in memory). |
-| Tool fan-out per turn | Read-only tools parallelize freely (inherited). Mutating tools serialize. The Tool Registry enforces this; no per-tool tuning needed. |
-| Subagent fan-out | One goroutine per subagent; bounded by a configurable concurrency limit. Fan-in via channels (inherited). |
-| Hook-DAG parallelism | One goroutine per parallel DAG branch; join nodes wait. Mutating side-effect ordering must be expressed as DAG dependencies. |
-| Audit Log volume | Buffered + batched flush. On overflow, configurable: drop or back-pressure. Never blocks producers. |
-| Profile count | Profiles are config; N supported by design. Only one active per session. |
+| Axis | What breaks first | Mitigation already in place / needed |
+|------|-------------------|--------------------------------------|
+| Transcript volume (request_shaped lines are ~80 KB each) | Transcript files grow fast once LOG-01 lands on serve | Acceptable (operator artifact, self-gitignored `.ass-guard/`); optional rotation is post-v1.1 |
+| Concurrent turns (ACP + Telegram chats) | Outbound provider concurrency | Existing process-wide `provider.NewSemaphore` (PARA-04) already bounds parent + subagents; Telegram turns are additional parents under the same cap |
+| Telegram message rate | Edit/send throttling per chat (~1/s) | Batch chunks in the sink; final-message fallback |
+| Ecosystem discovery cost | Re-scanning `.claude/` per prompt | Load once at startup (per `acp serve` process); reload-on-change is post-v1.1 |
 
 ### Scaling Priorities
 
-1. **First bottleneck: model-API concurrency.** Hits long before CPU or memory. Mitigation: the outbound semaphore (inherited) plus tier-aware scheduling (heavy models cost more, light models cheap) — the Model Scheduler naturally biases toward cheaper tiers for fan-out work.
-2. **Second bottleneck: context-window growth within a long scenario.** Mitigated structurally by the two-layer model (window is a projection; transcript on disk). The Hook-DAG's FreshContext step is the explicit reset trigger for "forgotten routine" sub-workflows that would otherwise bloat the window.
-
----
+1. **First bottleneck:** audit line volume vs transcript size — measure during the kickoff phase E2E; keep `--audit-log` file opt-in.
+2. **Second bottleneck:** Telegram turn concurrency from multiple chats — bounded by the semaphore; serialize per-chat (one in-flight turn per chat, queue or reject with a "busy" reply) to keep transcripts deterministic.
 
 ## Anti-Patterns
 
-### Anti-Pattern 1: Weaving mimicry into the Turn Loop
+### Anti-Pattern 1: Expanding slash-commands inside internal/acp
 
-**What people do:** inline system-prompt assembly and tool-catalog filtering inside the Turn Loop's request-building code, because "it's just a few fields."
-**Why it's wrong:** mimicry correctness becomes implicit, untestable in isolation, and impossible to diff against a reference. Profile-swapping requires editing the Turn Loop.
-**Do this instead:** Turn Loop produces a canonical InternalRequest; the Profile Shaper applies the profile at the boundary. The Audit Log records the verbatim result for diffing.
+**What people do:** Patch `handleSessionPrompt` to detect `/…` and read command files.
+**Why it's wrong:** Puts filesystem/ecosys knowledge into the protocol layer; Telegram (and any future frontend) then needs a second implementation; the acp package's clean test surface (in-memory reader/writer) dies.
+**Do this instead:** Expand in the shared turn core (runtime.RunTurn) before `runOneTurn`; internal/acp stays transport-pure.
 
-### Anti-Pattern 2: Folding scheduling into the provider adapter
+### Anti-Pattern 2: Treating the openspec binary as the stage driver
 
-**What people do:** put tier→model resolution and fallback logic inside the Anthropic/OpenAI adapter, because "the adapter knows the provider."
-**Why it's wrong:** time-windows, per-project overrides, and fallback chains are policy, not wire format. Mixing them couples policy to adapter internals and makes both untestable.
-**Do this instead:** separate Model Scheduler (policy) from Provider Adapter (mechanism). The Scheduler resolves; the Adapter transmits.
+**What people do:** Model the workflow as `openspec apply` / `openspec implement` subprocess stages (exactly what seeded.toml did).
+**Why it's wrong:** Those subcommands don't exist (verified against v1.5.0). The toolkit's workflow is driven by agent-executed command files (`/opsx:*` markdown); the binary is supporting tooling (list/show/validate/status/instructions/context/doctor/archive/change…).
+**Do this instead:** ecosys discovery + expansion drives stages; the adapter's `[commands]` table mirrors the real binary surface; the pattern table matches real handoff texts.
 
-### Anti-Pattern 3: Two parallel post-turn mechanisms (autocontinue + hooks)
+### Anti-Pattern 3: A second audit artifact under `.ass-guard/`
 
-**What people do:** keep the predecessor's Autocontinue Engine as-is and add a separate "hook runner" that also fires after turn-complete.
-**Why it's wrong:** two mechanisms with overlapping triggers, undefined precedence, and double the surface area for the safety property. Learning mode has nowhere clean to plug in.
-**Do this instead:** one Unified Engine, one decision point, typed Actions. `TriggerHookDAG` is an Action kind.
+**What people do:** Add a parallel `events.jsonl` beside the transcript for LOG-01.
+**Why it's wrong:** Violates D-20 (audit = transcript, one writer, one artifact); two writers drift; redaction must be maintained twice.
+**Do this instead:** Wire the existing TranscriptWriter per session; keep the flat `--audit-log` strictly as an optional operator-facing mirror reusing `internal/audit`.
 
-### Anti-Pattern 4: Letting STT leak into the core
+### Anti-Pattern 4: cgo-binding whisper.cpp, daemonizing Telegram, or porting the bot to HTTP
 
-**What people do:** pass audio or a "voice input" flag through the Session Manager and Turn Loop because "the model should know."
-**Why it's wrong:** the core becomes surface-aware; every new modality requires core changes; voice and text diverge in behavior.
-**Do this instead:** STT at the Telegram Adapter boundary. The core sees text only. Voice is just a way the user typed.
+**What people do:** Link whisper via cgo for "integrated" STT; run Telegram as a separate daemon process or open a port.
+**Why it's wrong:** Breaks the single static binary / no-daemon / no-port constraints (goreleaser CGO_ENABLED=0 cross-compile; editor-owned lifecycle).
+**Do this instead:** whisper.cpp as an out-of-process `whisper-cli` subprocess if ever needed (Whisper API default needs no new dep); Telegram as a goroutine inside the one process; stdout stays ACP-only in every mode.
 
-### Anti-Pattern 5: Skipping the mimicry-first build order
+### Anti-Pattern 5: Hand-writing the dsh profile from its source "because it's open source"
 
-**What people do:** build all of ACP + tools + autocontinue first (because it feels like progress), then bolt mimicry on at the end.
-**Why it's wrong:** if mimicry fails, everything built on top is compromised. The north star is unvalidated exactly when the most code depends on it.
-**Do this instead:** build the Profile Shaper + Audit Log + thinnest Turn Loop first. Prove the thesis. Then build downstream.
-
-### Anti-Pattern 6: Audit log as an afterthought
-
-**What people do:** add logging "later," scattered across components, each choosing what to record.
-**Why it's wrong:** the "reconstruct the exact sequence" property is unachievable retroactively; mimicry evidence is incomplete.
-**Do this instead:** Audit Log as a first-class Event Bus consumer, built alongside the Profile Shaper (item #1 in the build order).
-
----
+**What people do:** Copy system prompts/tool schemas out of the TypeScript repo and call the profile done.
+**Why it's wrong:** The Key Decision is log-extracted content — source shows intent, logs show the wire. Source-only extraction repeats the hand-written-profile guess the project explicitly rejected.
+**Do this instead:** Extract from dsh's own session logs where available (traceable sessions), use source to fill fields logs don't carry, and record provenance per field in `coverage.yaml` (`CoverageEntry.Source`).
 
 ## Integration Points
 
@@ -627,61 +334,46 @@ ass-guard-agent/
 
 | Service | Integration Pattern | Notes |
 |---------|---------------------|-------|
-| Model provider (Anthropic-shape: GLM via Z.ai, etc.) | HTTP/SSE via `anthropic-sdk-go`, base URL configurable | Fallback chain may cross to OpenAI-shape; re-shaping required on switch |
-| Model provider (OpenAI-shape: MiniMax M3, etc.) | HTTP/SSE via `go-openai`, base URL configurable | Tool-call translation owned by this adapter |
-| Telegram Bot API | HTTP long-poll or webhook; Telegram Adapter owns transport | STT backend invoked at this boundary for voice messages |
-| STT backend | Pluggable interface, configurable (specific providers out of scope for v1 per PROJECT.md) | Voice → text before entering the Adapter's In stream |
-| SDD toolkit (OpenSpec) | Shell subprocess via toolkit adapter; stdout into context | v1 = OpenSpec only; GSD/spec-kit/BMad interface-accommodated, deferred |
-| Web search backend | Configurable backend interface (generalizing ddg-search) | No hardcoded backend; no paid integrations committed in v1 |
-| ACP Registry | `agent.json` manifest, goreleaser packaging | Static binary; stdio subprocess; no daemon |
+| `openspec` v1.5.0 binary | subprocess via existing `internal/openspec.Adapter`; registered as catalog `Execute` closures | Read-only surface (`list/show/view/validate/status/instructions/context/doctor`) + mutating (`archive/change/config/schema/store`); `apply`/`implement` do NOT exist — stages are command-file driven |
+| Telegram Bot API | `github.com/go-telegram/bot` long-poll (`Start(ctx)`); `getFile` + `https://api.telegram.org/file/bot<token>/<file_path>` for voice | New dep (verified absent from go.mod); one GetUpdates loop per token (409 on two); redirect library logs to stderr |
+| OpenAI Whisper API (STT default) | `sashabaranov/go-openai` transcription client (existing dep) | Groq = base-URL swap; whisper.cpp = subprocess, never cgo |
+| DeepSeek / opencode-subscription endpoint | OpenAI-shape provider entry in `scheduling.yaml` via existing `ProviderFactory` | Requires the OpenAI adapter system-mapping fix or dsh sends no system prompt |
+| Zed (ACP client) | unchanged stdio v1 server | Slash text arrives as ordinary prompt content; `session/load` stays no-op (D-09) |
 
 ### Internal Boundaries
 
-| Boundary | Communication | Notes |
-|----------|---------------|-------|
-| Interface Adapter ↔ Session Manager | Normalized Input/Output event channels | Per-session lock inside Session Manager serializes concurrent inputs from any adapter |
-| Session Manager ↔ Turn Loop | Active context window (in-memory projection) | Transcript stays durable; window is reproducible from transcript |
-| Turn Loop ↔ Model Scheduler | `Resolve(input) → Resolved` (sync call) | Scheduler returns primary + fallback chain; Turn Loop owns retry loop body |
-| Turn Loop ↔ Profile Shaper | `Apply(InternalRequest, Profile) → ProviderRequest` (sync) | Single mimicry boundary; Profile is read-only config |
-| Turn Loop ↔ Provider Adapter | `Send(ProviderRequest) → Stream` | Adapter owns tool-call translation; one internal representation on return |
-| Turn Loop / Subagent / Tool Registry ↔ Event Bus | Publish events | Ordered per turn; subagent events tagged with parent turn id |
-| Event Bus ↔ {Interface Adapter, Unified Engine, Audit Log} | Subscribe (fan-out) | Consumers are independent; ordering guaranteed per producer, not across consumers |
-| Unified Engine ↔ Hook-DAG Executor | `Run(hookID, vars) → RunResult` | Executor emits step events onto bus; engine awaits completion |
-| Unified Engine ↔ Learned Config | Query launch decision; write on learn; list/confirm proposed hooks | Cross-session persistent store |
-| Hook-DAG Executor ↔ Session Manager | FreshContext step requests window reset | Reuses two-layer mechanism; no second reset path |
-| Hook-DAG Executor ↔ Turn Loop | SendPrompt step re-enters Turn Loop | One turn per node; same loop, no shortcut |
-| Profile Shaper ↔ Audit Log | Audit Log records verbatim ProviderRequest | Mimicry-correctness evidence; diff-able against recorded zcode requests |
+| Boundary | Communication | v1.1 consideration |
+|----------|---------------|--------------------|
+| acp ↔ runtime | `acp.TurnRunner` interface (unchanged) | Runner moves into `internal/runtime`; ACP wiring is a constructor change only |
+| telegram ↔ runtime | new frontend-agnostic `RunTurn(ctx, sessionID, blocks, sink)` | Same sessions/engine/audit; per-chat stable session IDs |
+| runtime ↔ ecosys | startup `Discover(workDir)` + per-turn pure `Expand` | First non-test importer of ecosys (today zero — verified); ecosys stays read-only on `.claude/` |
+| runtime ↔ engine/openspec | `engine.Observe` + `PatternTable` (unchanged) | Only the seeded config content changes; `triggerFromSignal` may need real stage names (post-explore/post-propose/post-apply/post-archive) beyond today's post-implement/post-phase |
+| audit ↔ session | both consume `RequestShaped` on the shared bus | TranscriptWriter per session (primary), AuditLogger optional; both already redact via `internal/redact` |
+| profile ↔ provider | `Profile` struct consumed by Shaper (anthropic) / buildRequest (openai) | OpenAI path must start honoring `System` blocks; loader must tolerate absent Anthropic-ism files |
 
----
+## Suggested Build Order
 
-## Composability With the Predecessor's 6-Component Model
+Operator's strict priority chain (PROJECT.md): **kickoff gap first; LOG-01 + zcode re-capture may share a phase; Telegram before dsh profile.** Dependency analysis agrees, with one argument for sequencing the audit phase before Telegram (below).
 
-The ass-guard design **composes cleanly** with the predecessor's six components:
+| Phase | Contents | New / Modified | Gate |
+|-------|----------|----------------|------|
+| **1. Slash-command kickoff** | (a) ecosys namespaced discovery + `Expand`; runtime wiring at `Run`-before-`runOneTurn`; `ecosys.Command` frontmatter fields; openspec `seeded.toml` reconciliation (real binary surface, real handoff patterns, `apply`/`implement` removed); `RegisterTools` gains Adapter-backed `Execute`; extend `triggerFromSignal` stage vocabulary | M: `internal/ecosys`, `internal/openspec`, `cmd/ass-guard/acp_serve.go` (or the runtime extraction if done here); N: `ecosys/expand.go` | `mise ci`; **operator-gated `ASSGUARD_OPENSPEC_BIN=1` run against real openspec v1.5.0**; the 11 deferred Phase-4 UAT checks; run `openspec init --tools claude` in a scratch project and drive `/opsx:explore → propose → apply → archive` end-to-end |
+| **2. Operational gaps (merged — adjacent per operator)** | (b) LOG-01 on serve: shared captured-provider helper (both shapes), `serveOptions.AuditLogPath`, per-session TranscriptWriter, optional AuditLogger sink, `CurrentTurnID()` accessor; (c-parity) zcode re-capture: operator runs the gated capture (`ZAI_API_KEY` + divergence-prone session), re-pin `coverage.yaml` `TargetCaptureRef`, `profile check zcode` green, stability test unblocked | M: `cmd/ass-guard/provider_factory.go`, `acp_serve.go`, `internal/session` (accessor); operator action for the capture | `mise ci`; `--audit-log` file verified redacted on a live serve; stability test passes on the new pinned session |
+| **3. Telegram peer** | Runtime extraction to `internal/runtime` (prerequisite, mechanical move); `internal/telegram` frontend + per-chat binding + chunk sink; `internal/stt` Transcriber (Whisper default); `telegram` cobra subcommand + `acp serve --telegram` sidecar; context-first shutdown; `telegram.yaml` seed | N: `internal/telegram`, `internal/stt` (or nested), `cmd/ass-guard/telegram_cmd.go`, dep `go-telegram/bot`; M: `acp_serve.go` → runtime move, `internal/defaults` seed | `mise ci`; a full SDD scenario driven from a Telegram chat (text); voice message transcribed and drove a turn; SIGTERM drains long-poll + in-flight turns; stdout byte-clean in both modes |
+| **4. deepseek-harness profile #2** | dsh ground-truth capture (source + its logs); `profiles/dsh` bundle + sanitized seed; OpenAI adapter system mapping; loader optional-field tolerance; extract-profile dsh mode; profile_check per-profile capture loader; scheduling.yaml DeepSeek provider entry | N: `profiles/dsh`, seed copy; M: `internal/provider/openai.go`, `internal/profile/loader.go`, `cmd/extract-profile`, `cmd/ass-guard/profile_check.go` | `mise ci`; `--profile dsh` A/B parity harness run (existing `internal/parity`) against a DeepSeek endpoint; `profile check dsh` green |
 
-- **No inherited component is removed.** ACP Frontend is renamed to ACP Adapter and becomes one Interface Adapter impl — same responsibility, broader abstraction. Autocontinue Engine is promoted to Unified Engine — same siting (observer on bus), same safety property, broader decision mandate.
-- **No inherited boundary is violated.** The Turn Loop still produces/consumes the same internal tool-call representation; the Session Manager still owns transcript + projection; the Subagent Manager still maps `Task` to goroutine Turn Loops; the Tool Registry still owns execution with read-only-parallelize / mutating-serialize.
-- **The Event Bus remains the spine.** All new consumers (Unified Engine was already there as Autocontinue; Audit Log is new) subscribe like any other consumer. The bus contract is unchanged: ordered per turn, fan-out to independent consumers.
-- **The two-layer context model is reused, not duplicated.** The Hook-DAG Executor's FreshContext step asks the Session Manager for a window reset — the same mechanism the predecessor used for command boundaries. There is exactly one context-reset path.
-- **The safety property is preserved uniformly.** "No match → nothing runs" applies to the Unified Engine's decision (unmatched → Stop, inert), to proposed-but-unconfirmed hooks (never executed), and to the inherited manual-cancel-drains-queue behavior. No new mechanism introduces an off-path trigger.
+**Why 2 before 3 (the one judgment call):** the operator chain allows LOG-01+re-capture to share a phase and requires only kickoff-first and Telegram-before-dsh. Doing audit wiring in Phase 2 means the shared captured-provider helper lands in `cmd/ass-guard` *before* the Phase-3 runtime extraction moves it — the capturer wiring is written once, in its final home, instead of being re-wired during the move. (PROJECT.md's compressed chain notation `1→4→3→5→2` reads as Telegram immediately after kickoff; the three operator constraints are satisfied by both groupings — flagging this so the roadmapper phases it deliberately. The Phase-2→3 order is recommended for the write-once reason above; if the operator prefers 1→4 first, Phase 2's audit work must be re-homed in Phase 3's extraction with zero functional change.)
 
-The net effect: the predecessor's six components are the floor; ass-guard adds five new components and broadens one. No contradictions, no rewrites of inherited internals.
-
----
+Cross-phase invariants (every phase): `mise ci` clean (vet + golangci-lint v2 all-linters + CGO_ENABLED=0 build + `go test -race`); stdout = ACP frames only; no daemon, no port; static binary; `.claude/` strictly read-only.
 
 ## Sources
 
-**Project scope (primary):**
-- `/Users/nil/DiskD/W/Djarvur/ass-guard-agent/.planning/PROJECT.md` — six deltas, requirements, key decisions, constraints
-
-**Predecessor architecture (inherited spine, primary):**
-- `/Users/nil/DiskD/W/Djarvur/sdd-acp-agent/_bmad-output/planning-artifacts/research/technical-sdd-acp-agent-research-2026-07-02.md` — 6-component decomposition, event bus, two-layer context, provider-shape isolation, ACP wire protocol, integration patterns, phased risk-ordered build
-
-**External references (from predecessor research, still load-bearing):**
-- [ACP spec](https://agentclientprotocol.com/get-started/introduction), [ACP transports](https://agentclientprotocol.com/protocol/v1/transports), [prompt-turn](https://agentclientprotocol.com/protocol/v1/prompt-turn), [tool-calls](https://agentclientprotocol.com/protocol/v1/tool-calls), [session-setup](https://agentclientprotocol.com/protocol/v1/session-setup)
-- [ACP Agent Registry RFD](https://agentclientprotocol.com/rfds/acp-agent-registry), [agent.schema.json](https://github.com/agentclientprotocol/registry/blob/main/agent.schema.json)
-- [anthropic-sdk-go](https://github.com/anthropics/anthropic-sdk-go), [go-openai](https://github.com/sashabaranov/go-openai)
-- [gsd-pi auto-mode](https://www.opengsd.net/docs/v2/auto-mode) (autonomous-loop reference)
+- Codebase (primary, all read this session): `internal/{acp,session,engine,openspec,ecosys,audit,redact,profile,provider,shaper,scheduler,toolcat,toolexec,hookdag,learning,mcp,event,defaults,firstrun,drift,parity}/*.go`, `cmd/ass-guard/{main,acp_serve,provider_factory,profile_check}.go`, `go.mod`, `profiles/zcode/`, `internal/defaults/seed/`
+- `.planning/PROJECT.md` (v1.1 milestone scope, priority chain, constraints) and `.planning/milestones/v1.0-phases/04-…/04-UAT.md` (kickoff gap root cause)
+- Live probe (2026-08-14): `openspec v1.5.0` (`/usr/local/bin/openspec`) — `--help` surface; `openspec init --tools claude` in a scratch dir → `.claude/commands/opsx/{explore,apply,propose,sync,archive}.md` + 5 skills; `openspec/config.yaml` contents (schema/context/rules — no command surface)
+- v1.0 research carried in repo: `.planning/research/{STACK,FEATURES,VERIFIED-FACTS}.md` (go-telegram/bot selection, JSONL/rollout formats, provider shapes)
+- External grounding: Telegram Bot API file handling (`getFile` → `https://api.telegram.org/file/bot<token>/<file_path>`, core.telegram.org/bots/api#getfile); DeepSeek Harness (github.com/deepseek-ai/deepseek-harness — MIT, plugin-based, TypeScript, traceable sessions; deepseek.com/harness/en)
 
 ---
-*Architecture research for: ass-guard-agent — Go-based SDD-hosting AI coding agent with mimicry, scheduling, unified engine, hook-DAGs, and dual ACP+Telegram interfaces*
-*Researched: 2026-08-09*
+*Architecture research for: v1.1 feature integration (kickoff / audit / parity / Telegram / dsh profile)*
+*Researched: 2026-08-14*

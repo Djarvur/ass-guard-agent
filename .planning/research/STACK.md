@@ -1,388 +1,187 @@
-# Stack Research
+# Stack Research — v1.1 New Features
 
-**Domain:** Go-based SDD-hosting AI coding agent with model-request mimicry (working name: ass-guard-agent)
-**Researched:** 2026-08-09
-**Confidence:** HIGH overall (every load-bearing recommendation verified against current public sources in Aug 2026; per-area confidence in the tables below)
+**Domain:** Stack additions for the v1.1 milestone of ass-guard (Go AI coding agent with model-request mimicry)
+**Researched:** 2026-08-14
+**Confidence:** HIGH overall (every version verified against live sources in Aug 2026; OpenSpec surface captured from the installed v1.5.0 binary itself; per-area confidence in the tables)
 
-> This document is **implementation-ready**: every library recommendation carries a version pinned to a release current as of Aug 2026, a rationale (why, not just what), and a confidence level. It separates **inherited (verified current)** choices carried over from the `sdd-acp-agent` predecessor research (2026-07-02) from the **five new focus areas** ass-guard adds: mimicry/profile mechanism, model scheduling, Telegram peer, hook-DAG engine, and MCP server hosting.
+> **Scope:** This document covers ONLY the five v1.1 features: (1) slash-command invocation + OpenSpec adapter reconciliation, (2) audit log on `acp serve`, (3) zcode parity re-capture, (4) Telegram peer with STT, (5) mimicry profile #2 (deepseek-harness). The v1.0 stack (ACP core, two-shape provider factory, scheduler, hook-DAG, MCP hosting, ecosys, goreleaser) is validated and NOT re-researched; it is referenced only where a new feature integrates with it.
+>
+> **Headline:** v1.1 needs exactly **two new Go dependencies** — `github.com/go-telegram/bot` (Telegram peer) and `github.com/klauspost/compress/zstd` (reading deepseek-harness session logs) — plus **zero new runtime-mandatory externals**. Features 2 and 3 need no stack at all (internal wiring). `gopkg.in/yaml.v3` is confirmed sufficient for command frontmatter; the real gaps are in `internal/ecosys` code (no recursion into subdirectories), not the library. Static-binary / no-cgo / goreleaser constraints survive everywhere (klauspost zstd is pure Go; whisper.cpp stays out-of-process).
 
 ---
 
 ## How To Read This Document
 
-Each table row has a **Confidence** column with three levels:
+Each table row carries a **Confidence** level:
 
-- **HIGH** — multiple independent current sources agree; the choice is uncontroversial for the stated use case; safe to build against.
-- **MEDIUM** — solid primary source or strong precedent, but either the library is newer (less battle-testing) or there is one open verification item to close in a Phase-0 spike. Build against it; budget a half-day fallback.
-- **LOW** — plausible default but genuine uncertainty; spike before committing.
-
-The "Inherited vs New" split is explicit in every section.
+- **HIGH** — multiple independent current sources agree, or verified against a primary artifact (installed binary, module proxy, `go doc` of the pinned dependency); safe to build against.
+- **MEDIUM** — solid primary source but one open verification item remains for our specific use; build against it, budget a small spike.
+- **LOW** — plausible but genuinely uncertain; spike before committing.
 
 ---
 
 ## Recommended Stack
 
-### Core Technologies
-
-The core technologies are split into **inherited** (carried over from the predecessor's research, re-verified for currency) and **new** (the five focus areas ass-guard introduces).
-
-#### Inherited Core Technologies (verified current as of Aug 2026)
+### New Core Technologies (v1.1 additions)
 
 | Technology | Version | Purpose | Confidence | Why Recommended |
 |------------|---------|---------|------------|-----------------|
-| Go | 1.25.x (or 1.26.x if released) | Implementation language | **HIGH** | Single static binary distribution (the editor spawns the agent as a subprocess — zero runtime deps for the host); first-class concurrency (goroutines map to subagent fan-out); mature streaming HTTP for model inference. The predecessor pinned 1.23+; 1.23 is now end-of-support per Go's two-release policy — **bump the floor to 1.25**. Verified: 1.26 is referenced as the Feb 2026 release; 1.27 ~Aug 2026. Pin `go 1.25` in go.mod as the supported floor. |
-| ACP (Agent Client Protocol) v1 | spec v1 (v2 is Draft, not stable) | The primary IDE-native interface | **HIGH** | JSON-RPC 2.0 over stdio; the editor (Zed, JetBrains) spawns the agent as a subprocess; stdout reserved for protocol frames, all logging to stderr (non-negotiable LSP-style discipline). Verified: v1 is the current stable spec at agentclientprotocol.com; **v2 is in Draft** (https://agentclientprotocol.com/announcements/acp-v2-draft) — pin to v1 for ass-guard's v1. Method names (`initialize`, `session/prompt`, `session/update`, `session/load`) confirmed against the canonical spec pages. |
-| `anthropics/anthropic-sdk-go` | v1.62.0 (Jul 2026) | Anthropic-shape provider client (also covers GLM via Z.ai) | **HIGH** | First-party Go SDK; supports streaming (SSE), native `tool_use` blocks, configurable base URL, and a tool-loop helper. **Currency verified:** v1.62.0 released with `mid-conversation-tool-changes-2026-07-01` beta + session budgets (GitHub Releases page, Jul 2026). Point the base URL at `https://api.z.ai/api/anthropic` for GLM — Z.ai's "GLM Coding Plan" explicitly supports both Anthropic and OpenAI protocols (verified Z.ai dev docs). One SDK covers Claude + GLM with no separate GLM client needed. |
-| `sashabaranov/go-openai` | latest (1.x; last pkg.go.dev publish Aug 2025, repo active 2026) | OpenAI-shape provider client (MiniMax M3, others) | **MEDIUM** | The de-facto Go client for OpenAI-compatible endpoints. ~10.7k stars, references GPT-5/5.5 in repo description (2026-active). Used for OpenAI-shape providers (MiniMax M3 "apply" route, OpenRouter passthrough). **Caveat:** publish cadence on pkg.go.dev looks ~1 year stale vs. GitHub repo activity — pin to the latest tag at build time and verify the tool-calling schema matches the target provider's expectation during Phase 0. If a specific provider misbehaves, the thin-adapter design (inherited) keeps blast-radius small. |
-| JSON-RPC 2.0 framing | hand-rolled (primary); `go.lsp.dev/jsonrpc2` (optional) | ACP wire framing | **HIGH** (hand-rolled) / **MEDIUM** (`go.lsp.dev`) | The predecessor flagged `go.lsp.dev/jsonrpc2` as "effectively unmaintained." **2026 verification confirms:** upstream is quiet; a 2026 fork `github.com/kwo/jsonrpc2` (`v0.0.0-20260410…`) exists as a maintained fallback. **Recommendation: hand-roll the newline-delimited JSON-RPC reader/writer/dispatcher.** It is ~150 lines of trivial Go, gives full control over ACP's notification semantics (which `go.lsp.dev` was only ever a partial fit for), removes a stagnant dep, and matches the LSP-in-Go lineage the architecture follows. The framing protocol is small; a library buys little and costs maintenance risk. See "What NOT to Use" below. |
-| `goreleaser` | v2.17 (2026) | Cross-platform static binary release | **HIGH** | The standard for Go release engineering. **Verified current:** v2.17 is the latest stable (goreleaser.com, 2026). Produces macOS+Linux amd64+arm64 tarballs/archives from one config. Also generates the ACP registry `agent.json` packaging step (the registry just names the spawn command + args; goreleaser ships the binary the registry points at). |
-| Claude Code `.claude/` config layout | (convention, not versioned) | Drop-in ecosystem compat | **HIGH** | `.claude/settings.json` (user/project), `CLAUDE.md`/`AGENTS.md` hierarchy, `.claude/commands/`, `.claude/agents/`, `.claude/skills/`, `.mcp.json` (project-scoped MCP). ass-guard reuses this layout so existing Claude-Code setups work unchanged; ass-guard's additions namespace under `.claude/ass-guard/` (or a clearly-namespaced settings key) — never clobber Claude Code's files. Verified: multiple 2026 secondary sources confirm the layout; `~/.claude.json` is the global config (history, project settings, user-scoped MCP). |
+| `github.com/go-telegram/bot` | **v1.23.0** (Aug 3, 2026; verified against GitHub releases + Go module proxy) | Telegram peer frontend (text + voice) | **HIGH** | Zero-dependency, idiomatic `context.Context` throughout. `bot.Start(ctx)` long-polls and **blocks until ctx cancellation** — exactly the context-first drain the ACP-owned process lifecycle needs. File download for voice: `b.GetFile(ctx, &bot.GetFileParams{FileID})` → `b.FileDownloadLink(file)` (plain `https://api.telegram.org/file/bot<token>/<file_path>`) → stdlib `http.Get`. Covers Bot API 10.2 (July 14, 2026). v1.23.0's changes are additive/marshal-fixes (union `MarshalJSON` returns errors instead of panicking; no caller-value mutation; `ReplyParameters.message_id` optional) — no breakage to the handler/`Start`/`GetFile` API ass-guard uses. Phase 0 already verified stdout-silence (load-bearing: stdout belongs to ACP frames). **Pin v1.23.0.** |
+| `github.com/klauspost/compress/zstd` | **v1.19.2** (latest on Go module proxy, verified 2026-08-14) | Decode deepseek-harness `session.jsonl.zstd` logs (profile #2 ground truth) | **HIGH** (library) / **MEDIUM** (against real dsh files — one spike) | Pure Go, no cgo — goreleaser CGO_ENABLED=0 cross-compile survives. The decoder handles **concatenated independent zstd frames by default** (multistream, like the reference CLI) and verifies XXH64 frame checksums — matching dsh's format exactly (one checksummed frame per append batch; see Feature 5). De-facto standard (used across the Go ecosystem). **Spike:** decode one real `session.jsonl.zstd` before building the harvest tool on it. Note: v1.18.1 was retracted upstream and early v1.19.x had an arm64 runtime bug fixed in later v1.19.x — pin v1.19.2, don't take "latest" blind. |
+| STT backend abstraction | (internal interface in `internal/` — no library) | Voice → text as ordinary user input | **HIGH** | Three backends collapse into one Go interface `Transcribe(ctx, oggBytes) (text, error)`: OpenAI-compatible HTTP (default; covers OpenAI + Groq via base-URL swap, reusing the **existing** go-openai client) and whisper.cpp subprocess (config-gated, out-of-process). No new HTTP stacks, no audio-processing Go deps (Telegram voice arrives as OGG/Opus bytes; both cloud APIs accept it natively — only the whisper.cpp path needs transcoding, see below). |
 
-#### New Core Technologies (the five ass-guard focus areas)
+### Existing Dependencies Confirmed for New Use (no change needed)
 
-These are the **load-bearing new recommendations** — each gets its own deeper section below the table.
+| Dependency | Pinned In go.mod | New v1.1 Use | Confidence | Verification |
+|------------|------------------|--------------|------------|--------------|
+| `sashabaranov/go-openai` | v1.42.0 | STT default backend: `client.CreateTranscription(ctx, openai.AudioRequest{Model, FilePath/Reader, Language, Format})` → `AudioResponse.Text` (verified via `go doc` against the pinned module) | **HIGH** | The transcription call POSTs multipart to `<BaseURL>/audio/transcriptions`. Works against OpenAI (`gpt-transcribe` — current recommended; `gpt-4o-transcribe`/`gpt-4o-mini-transcribe`; `whisper-1` legacy-but-supported; 25 MB file cap) and against Groq by pointing `cfg.BaseURL` at `https://api.groq.com/openai/v1` (models `whisper-large-v3` / `whisper-large-v3-turbo`, ~$0.03/hr — OpenAI-compatible by contract). Model slug is pure config — the existing `internal/provider` credential chain (flag > env > config) extends unchanged. |
+| `gopkg.in/yaml.v3` | v3.0.1 | Command/skill frontmatter for `/namespace:name` expansion | **HIGH** (sufficient) | Real YAML is a strict superset of zcode's flat single-line frontmatter; yaml.v3 ignores unknown keys by default and parses YAML flow arrays (`tags: [a, b]` — which real OpenSpec opsx command files carry). **No new parser library.** Gaps are in our code (see Feature 1). yaml.v3 is maintenance-mode (v3.0.1, 2022) and its successor `go.yaml.in/yaml/v4` (rc) is already an indirect dep — do not churn; revisit only if v4 goes GA. |
+| `internal/ecosys` (existing package) | — | Command discovery feeding session/ACP | — | **Load-bearing gap found:** `discoverCommands` scans `commands/*.md` FLAT and skips directories — so `commands/opsx/explore.md` (installed by `openspec init --tools claude`) is invisible today. Fix is code, not stack: recurse subdirectories, join names with `:` (zcode rule: `review/code.md` → `/review:code`). |
+| `internal/openspec` Adapter | — | Reconcile to real v1.5.0 binary | — | The adapter's subprocess pattern (`Run(command, args...)`) is already right; only the command set and seeded.toml mutability table are wrong (see Feature 1). |
 
-| Technology | Version | Purpose | Confidence | Why Recommended |
-|------------|---------|---------|------------|-----------------|
-| **Mimicry capture: JSONL transcript harvest + MITM proxy** | (no library — pattern) | Extract the zcode profile (system prompts, tool catalog, message shape, identity) from ground-truth logs | **HIGH** | The north star requires grounded mimicry (hand-written profiles are guesses). claude-code-compat runtimes (including zcode) write full message-level transcripts as JSONL at `~/.claude/projects/<munged-cwd>/<session-id>.jsonl` (one JSON object per line, capturing messages + tool calls + metadata). For deeper "what is actually on the wire" capture, MITM proxies exist purpose-built for AI agents (LLM Interceptor, Sherlock, Claude Inspector) — see Focus 1 below. |
-| **Mimicry expression: profile = config bundle** | (no library — internal types) | `{system prompts, tool catalog, message shape, identity}` per profile | **HIGH** | A profile is a config-driven struct, not code. The Turn Loop reads the active profile and shapes every outgoing provider request from it. zcode is profile #1; the architecture supports N from day one (decided in PROJECT.md). See Focus 1. |
-| **Model scheduling: internal config-table resolver (no routing library)** | (no library — internal) | Tier abstraction (heavy/good/light), time-windowed substitution, per-project override, fallback chains | **HIGH** | Surveyed LiteLLM router, OpenRouter routing, Portkey — all are **Python or hosted-proxy** products, not Go-embeddable libraries. There is **no mature Go library for multi-provider model routing** (verified Aug 2026). The right 2026 call: a small in-process resolver over a config table — see Focus 2. |
-| **Telegram: `go-telegram/bot`** | latest (active 2026) | Telegram peer interface (text + voice) | **HIGH** | Among gotgbot / telebot / go-telegram-bot-api / go-telegram/bot, **`go-telegram/bot` wins for ass-guard**: zero-dependency, idiomatic `context.Context` throughout (load-bearing for clean cancellation/shutdown when the ACP server owns process lifecycle), modern Go conventions, handler-based API. gotgbot is a fine alternative (code-generated, dispatcher pattern) but its Python-inspired shape is a worse fit for a process that must coexist with an ACP stdio server. See Focus 3. |
-| **STT (voice → text): pluggable backend, OpenAI Whisper API default** | (configurable) | Transcribe Telegram voice messages to ordinary user input | **MEDIUM** (default) / **HIGH** (architecture) | Three viable backends: (1) **OpenAI Whisper API** (default — drop-in via the OpenAI-shape provider client, no extra dep), (2) **whisper.cpp local** via the official Go binding `github.com/ggml-org/whisper.cpp/bindings/go` for offline/privacy, (3) **Groq STT** for low-latency. Backend is configurable; v1 ships the OpenAI default and the interface accommodates the others. See Focus 3. |
-| **Hook-DAG engine: hand-rolled in-process executor** | (no library — internal) | Configurable post-stage routine DAG (run-command / send-prompt / fresh-context / wait) | **HIGH** | No mature, lightweight, in-process Go DAG library fits (Temporal/Argo are distributed heavy iron; see Focus 4). The step types are few and well-defined. A ~300-line executor over a config-driven DAG is the right call — matches GitHub-Actions-style YAML semantics in a Go-native shape. |
-| **MCP hosting: `modelcontextprotocol/go-sdk`** | v1.0.0+ (official, Google-collaborated) | Host Claude-Code-installed MCP servers as subprocesses; bridge their tools into ass-guard's catalog | **HIGH** | The **official Go MCP SDK** reached v1.0.0 in 2026 (maintained in collaboration with Google, in the `modelcontextprotocol` org). It ships both client and server: `StdioMCPClient` launches an MCP server as a subprocess and speaks JSON-RPC over its stdin/stdout — exactly the host pattern ass-guard needs. Supersedes the community `mark3labs/mcp-go` for new builds (mark3labs influenced the official SDK and remains a fine library, but official now wins on spec-compliance + long-term support). Protocol version 2026-07-28. See Focus 5. |
+### External Binaries (optional, config-gated — NOT Go dependencies)
 
-### Supporting Libraries
+| Binary | Version | Purpose | When Required |
+|--------|---------|---------|---------------|
+| `openspec` | **v1.5.0** (installed at `/usr/local/bin/openspec`; surface captured from the binary — see Feature 1) | SDD toolkit binary (supporting tooling; the workflow itself is command-file-driven) | Already the operator's environment; adapter calls it via PATH (existing `ErrOpenSpecNotFound` handling). |
+| `whisper-cli` (whisper.cpp) | v1.9.2 (Oct 15, 2025 — latest; maintenance-cadence project, stable) | Local STT backend (offline/privacy) | Only when `stt.backend = whisper-cpp-local`. Out-of-process subprocess — **never** cgo-bind (protects goreleaser cross-compile; unchanged from v1.0 decision). |
+| `ffmpeg` | any recent distro build | Transcode Telegram OGG/Opus → 16 kHz mono 16-bit PCM WAV for whisper-cli | Only on the whisper.cpp path. whisper-cli reads 16-bit WAV (or an FFMPEG-enabled build; assume stock builds need WAV). `ffmpeg -i voice.oga -ar 16000 -ac 1 -c:a pcm_s16le voice.wav`. Cloud APIs ingest OGG/Opus natively — no ffmpeg on the default path. |
 
-#### Inherited Supporting Libraries (verified current)
-
-| Library | Version | Purpose | Confidence | When to Use |
-|---------|---------|---------|------------|-------------|
-| `spf13/cobra` | latest (v1.x, active) | CLI surface (the `acp` subcommand for the registry; any future CLI flags) | **HIGH** | Always — the ACP registry spawns `ass-guard acp` (or similar); cobra structures that entrypoint. Idiomatic, uncontroversial. |
-| `spf13/viper` | latest (v1.x, active) | Config loading (settings hierarchy: defaults → user `.claude/` → project `.claude/`) | **HIGH** | Always — ass-guard layers Claude-Code-compat config + its own namespaced keys. Viper handles the precedence stack cleanly. |
-| `log/slog` (stdlib) | Go 1.21+ | Structured logging → stderr | **HIGH** | Always. Zero-dep, structured, stdlib. **Critical:** all log output goes to stderr; stdout is reserved for ACP frames. |
-| `golangci-lint` | latest (v1.x+, active) | Linting | **HIGH** | Always — standard Go linting. |
-| `stretchr/testify` | latest (v1.x, active) | Test assertions | **MEDIUM** | Optional — table-driven tests + assertions. The predecessor flagged this; stdlib `testing` alone is also fine. |
-| `JohannesKaufmann/html-to-markdown` | latest (active) | `WebFetch` HTML→markdown conversion (ddg-search port) | **HIGH** | For the `WebFetch` built-in tool. Mature, used by scrapers widely. |
-| `golang.org/x/net/html` | latest (golang.org/x) | HTML parsing for scrape/fetch | **HIGH** | Supporting the WebSearch/WebFetch port from ddg-search. |
-
-#### New Supporting Libraries
-
-| Library | Version | Purpose | Confidence | When to Use |
-|---------|---------|---------|------------|-------------|
-| `github.com/go-telegram/bot` | latest (active 2026) | Telegram bot framework | **HIGH** | Always for the Telegram peer. See Focus 3. |
-| `github.com/ggml-org/whisper.cpp/bindings/go` | tracks whisper.cpp | Local whisper.cpp STT (offline/privacy backend) | **LOW** | Optional — only if the configured STT backend is `whisper-cpp-local`. Adds a C dependency to the build (breaks pure-Go static binary claim — verify goreleaser cross-compile impact before committing). The OpenAI Whisper API default avoids this entirely. |
-| `github.com/modelcontextprotocol/go-sdk` | v1.0.0+ | MCP client + server | **HIGH** | Always — hosts Claude-Code-installed MCP servers. See Focus 5. |
-| `github.com/kwo/jsonrpc2` | `v0.0.0-20260410…` | **Fallback only** — maintained 2026 fork of `go.lsp.dev/jsonrpc2` | **MEDIUM** | Only if a future need makes hand-rolled framing painful (e.g. complex bidirectional notification routing). Default is hand-rolled — see "What NOT to Use." |
-| Internal: `internal/profile` | (project package) | Profile types + loader | **HIGH** | Always — the mimicry profile mechanism. |
-| Internal: `internal/scheduler` | (project package) | Tier/time-window/fallback resolver | **HIGH** | Always — the model scheduling layer. |
-| Internal: `internal/hookdag` | (project package) | In-process DAG executor | **HIGH** | Always — the "forgotten routine" engine. |
-
-### Development Tools
+### Development Tools (dev-time only, not shipped)
 
 | Tool | Purpose | Notes |
 |------|---------|-------|
-| `go` 1.25+ | Build/test | Pin `go 1.25` in go.mod as the floor (1.23 is EOL). |
-| `goreleaser` v2.17 | Release | macOS+Linux, amd64+arm64; produces the binary the ACP registry manifest points at. |
-| `golangci-lint` | Lint | Standard linters; enforce the stdout/stderr discipline via a custom check or review gate. |
-| `mitmproxy` / LLM Interceptor / Sherlock | **Profile extraction** (dev-time, not shipped) | Run during Phase 1 to capture zcode's actual outgoing requests → ground the zcode profile. Not a runtime dependency. |
-| ACP log viewer (Zed `dev: open acp logs`) | Debug ACP traffic | Essential during Phase 0 (ACP skeleton). |
-| `claude-code-log` (Python CLI) | Read Claude-Code-compat JSONL transcripts during profile authoring | Converts JSONL → readable HTML/Markdown. Dev-time tool, not shipped. |
-
----
+| Node 22.19+/24 + pnpm 11.7.0 (Corepack) | Inspect/build deepseek-harness from source (profile #2 extraction) | dsh pins pnpm 11.7.0; `pnpm install && pnpm run typecheck`. Build via tsc project references + tsdown; tests vitest. Only needed on the operator's capture machine. |
+| Telegram @BotFather | Bot token issuance | Dev-time; token flows through the existing credential chain (flag > env `TELEGRAM_BOT_TOKEN` > config). |
 
 ## Installation
 
-ass-guard is Go — no `npm`. The `go.mod` (floor `go 1.25`) pulls these:
-
 ```bash
-# Initialize (once)
-go mod init github.com/<org>/ass-guard-agent
+# New runtime deps (only two)
+go get github.com/go-telegram/bot@v1.23.0
+go get github.com/klauspost/compress@v1.19.2   # import _ "github.com/klauspost/compress/zstd"
 
-# Inherited core
-go get github.com/anthropics/anthropic-sdk-go@v1.62.0      # Anthropic-shape provider (Claude + GLM via Z.ai)
-go get github.com/sashabaranov/go-openai@latest             # OpenAI-shape provider (MiniMax M3, etc.)
-go get github.com/spf13/cobra@latest                        # CLI entrypoint
-go get github.com/spf13/viper@latest                        # Config layering
-go get github.com/JohannesKaufmann/html-to-markdown@latest  # WebFetch HTML→md
-# (stdlib log/slog, net/http, regexp, encoding/json — no go get needed)
-
-# New for ass-guard scope
-go get github.com/go-telegram/bot@latest                    # Telegram peer
-go get github.com/modelcontextprotocol/go-sdk@latest        # MCP server hosting (official)
-
-# Optional / backend-conditional
-go get github.com/ggml-org/whisper.cpp/bindings/go@latest   # ONLY if shipping local whisper STT
-# (hand-rolled JSON-RPC framing + hook-DAG + profile + scheduler: no external dep)
-
-# Dev
-go install github.com/goreleaser/goreleaser@latest          # Release tooling (v2.17+)
-go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+# Nothing else. Explicitly NOT added:
+#   - no STT SDK          (existing go-openai client covers OpenAI + Groq)
+#   - no audio/cgo lib    (whisper.cpp stays a subprocess)
+#   - no YAML/frontmatter lib (yaml.v3 already in go.mod, confirmed sufficient)
+#   - no Telegram webhooks framework (long-poll via Start(ctx); no network port — constraint)
 ```
-
-**No JSON-RPC library, no DAG library, no model-routing library** — these are hand-rolled (rationale in the focus sections). The dependency surface stays small and stagnant-dep-free.
 
 ---
 
-## The Five New Focus Areas (deep dives)
-
-### Focus 1 — Mimicry / Profile Mechanism
+## Feature Deep Dives
 
-**The problem.** Outgoing model requests must be *structurally indistinguishable* from zcode's. "Structurally" means: system-prompt composition, tool-catalog declaration (names + JSON schemas), message-block shapes, identity fields, and significant headers. Byte-for-byte equality is explicitly out of scope (PROJECT.md), but the model must not be able to tell the two apart.
+### Feature 1 — Slash-command invocation + OpenSpec adapter reconciliation
 
-**Two sub-problems: (A) capture, (B) expression.**
+**Stack verdict: zero new libraries.** All work is code in `internal/ecosys` + `internal/session`/`internal/acp` + `internal/openspec`.
 
-#### A. Capture — where do agent request shapes come from?
+#### 1a. Command discovery and frontmatter (internal/ecosys)
 
-Three grounded sources, in descending order of fidelity:
+Ground truth on formats (three sources, all primary):
 
-1. **JSONL session transcripts (primary, always available).** claude-code-compat runtimes (zcode included) write full message-level transcripts as JSONL at:
-   ```
-   ~/.claude/projects/<munged-project-path>/<session-id>.jsonl
-   ```
-   The "munged" path is the cwd with `/` replaced by `-`. Each line is one JSON object: messages, tool calls, tool results, metadata. This is the **honest ground truth** of what zcode sends/receives, and it is on-disk by default — no instrumentation needed. **Verified currency:** multiple 2026 sources (Aditya Bawankule blog, claude-dev.tools, databunny medium) confirm the path and format; note one source flags that recent Claude Code versions moved/changed some session-file write behavior, so verify zcode's exact path during Phase 1.
+- **zcode command rules** (from the zcode-guide skill shipped with the mimicry target): command name = filename, must match `^[a-z0-9][a-z0-9_:-]{0,63}$`; **subdirectories join with `:`** (`review/code.md` → `/review:code`); frontmatter is a **flat parser** — only single-line top-level keys, indented lines and multi-line arrays dropped; recognized keys `description`, `argument-hint`, `allowed-tools`, `model`, `skills`, `disable-noninteractive` (hyphenated); unknown keys ignored but command still loads; **description or non-empty body required** (else dropped); missing description → first non-empty body line used; `$ARGUMENTS` full-string and `$1`/`$2` positional substitution; when args are supplied but no placeholder exists they're appended under a `User arguments:` heading; dynamic shell (`!`cmd``) rejected.
+- **Claude Code command frontmatter** (2026 docs): `description`, `argument-hint`, `allowed-tools` (comma/space-separated string, e.g. `allowed-tools: Bash(gh *), Read, Grep`), `model`, `disable-model-invocation`, `context: fork`. All scalar/inline — YAML-parseable.
+- **Real OpenSpec opsx files** (captured by running `openspec init --tools claude` in a temp dir — this is exactly what `/opsx:explore` comes from): installs `.claude/commands/opsx/{explore,propose,apply,archive,sync}.md` + `.claude/skills/openspec-{explore,propose,apply-change,archive-change,sync-specs}/SKILL.md`. Frontmatter includes `name: "OPSX: Explore"`, `description`, `category`, and **`tags: [workflow, explore, experimental, thinking]` — a YAML flow array**.
 
-   *Limitation:* transcripts capture the *message* layer but may not capture every wire-level header or the exact system-prompt assembly order. For higher fidelity, use source 2.
+**yaml.v3 sufficiency verdict: SUFFICIENT, no library change.** Real YAML (yaml.v3) parses everything the zcode flat parser accepts (single-line scalars are valid YAML) plus flow arrays that zcode's flat parser would drop. yaml.v3 ignores unknown keys by default (`category`/`tags` won't break anything). Known-field tolerance matches Claude Code.
 
-2. **MITM proxy (high-fidelity, dev-time).** Purpose-built tools exist to sit between an AI agent and its model API and log every request verbatim:
-   - **LLM Interceptor (LLI)** — `github.com/chouzz/llm-interceptor` — explicitly built to intercept/log Claude Code, OpenCode, etc. traffic to LLM APIs.
-   - **Sherlock** — a MITM proxy with a live dashboard that auto-saves every prompt as markdown + JSON.
-   - **Claude Inspector** — macOS desktop app, real-time HTTP traffic visualization.
-   - **LocalAI MITM proxy** — allowlist-based (defaults to `api.anthropic.com`, `api.openai.com`), lets everything else pass untouched.
-   - **mitmproxy** (generic) — the foundation; the c-sharpcorner walkthrough shows intercepting Claude Code's ~80 KB payloads in detail.
+**Code gaps to close (in `internal/ecosys/loader.go`, none needing new deps):**
 
-   *Use during Phase 1 profile authoring:* run zcode through a MITM proxy, capture a representative workload, harvest the exact request shape (system blocks, tool definitions, headers, user-agent). This is the highest-fidelity capture. **Not shipped** in the runtime — it is a dev-time extraction tool.
+1. **Recursive command discovery** — `discoverCommands` currently skips directories; must walk subdirectories and colon-join names. Without this, `/opsx:*` commands are structurally invisible. (THE blocker.)
+2. **Extend the command frontmatter struct** beyond `description`: add `argument-hint`, `allowed-tools`, `model` (normalize `allowed-tools` both as comma-string and as YAML list — Claude Code writes strings, YAML files may write lists).
+3. **Argument substitution semantics** for expansion at session/ACP layer: `$ARGUMENTS` / `$1` / `$2` replacement + `User arguments:` append fallback (zcode parity).
+4. **Description fallback** to first non-empty body line; drop commands with neither (zcode parity).
+5. **Lenience fallback:** a file that fails strict `yaml.Unmarshal` (e.g. tab-indented frontmatter) is currently silently skipped; zcode's flat parser would still read its single-line keys. Add a flat line-parser fallback on unmarshal error to match.
 
-3. **SDK logging / env-var debug flags (secondary).** The Anthropic SDK and Claude Code respond to debug env vars that log outgoing requests to stderr. Useful as a cross-check, lower fidelity than MITM.
+Integration point: session/ACP consumes `Registry.AllCommands()`; `/namespace:name` expansion replaces the invocation text with the command Body (post-substitution) before the provider turn — no changes to `internal/shaper`/`internal/loop` needed (the expanded prompt is ordinary user text at that layer).
 
-**Recommendation (Confidence: HIGH):** Profile authoring = JSONL harvest (always-on ground truth) + a MITM proxy run (high-fidelity one-shot extraction). Both feed the same profile artifact. The profile is then version-controlled and treated as the mimicry contract.
+#### 1b. OpenSpec v1.5.0 real CLI surface (captured from the installed binary — ground truth, not docs)
 
-#### B. Expression — how does ass-guard shape outgoing requests to match?
+Top-level commands (`openspec --help`, v1.5.0): `init, update, list, view, change, archive, spec, config, schema, store, doctor, context, workset, validate, show, status, instructions, templates, schemas, new, feedback, completion, help`.
 
-A **profile** is a config bundle (YAML or JSON, loaded by `internal/profile`):
+**Correction to the adapter model:** v1.5.0 keeps `show` and `validate` (both top-level and as `change`/`spec` subcommands). What does NOT exist: `apply` and `implement` as commands — the seeded.toml's `[commands.apply]`/`[commands.implement]` entries are phantom; "apply" is an **artifact instructions surface** (`openspec instructions apply`). The workflow is command-file-driven (`opsx` markdown + skills); the binary is supporting tooling.
 
-```yaml
-# profile: zcode (example shape — actual content harvested from logs)
-name: zcode
-identity:
-  user_agent: "<harvested from MITM>"
-  anthropic_beta_headers: ["<harvested>"]
-system_prompt:
-  # ordered list of blocks composed into the system field
-  blocks:
-    - { role: system, text: "<harvested bootstrap>" }
-    - { kind: tool_catalog, order: "<harvested>" }
-tool_catalog:
-  # names + JSON schemas, in the order the target agent declares them
-  tools:
-    - { name: Bash, schema: { ... } }
-    - { name: Read, schema: { ... } }
-    # ...
-message_shape:
-  provider: anthropic   # or openai
-  block_ordering: "<harvested>"
-  significant_fields: ["<harvested>"]
-```
+Agent-relevant surface with mutability classification (for the rebuilt `[commands]` table):
 
-The Turn Loop reads the active profile and **every outgoing provider request is assembled from it** — not from hardcoded defaults. Switching profiles switches the mimicry target. This is the mechanism that makes "mimic under any agent" a config concern, not an architecture one (PROJECT.md key decision).
+| Invocation | Mutability | Key flags | Notes |
+|------------|-----------|-----------|-------|
+| `list [--specs\|--changes] [--sort recent\|name] [--json]` | read-only | `--json` | Changes by default |
+| `show [item] [--type change\|spec] [--json] [--deltas-only] [--requirements] [--no-scenarios] [-r <id>]` | read-only | `--json` | Several flags JSON-mode-only |
+| `view` | read-only, **human-only** | — | Interactive dashboard; adapter must NOT call |
+| `validate [item] [--all\|--changes\|--specs\|--archived] [--strict] [--json] [--concurrency n]` | read-only | `--json` | |
+| `status [--change <id>] [--schema <name>] [--json]` | read-only | `--json` | Artifact completion |
+| `instructions [artifact] [--change <id>] [--schema <name>] [--json]` | read-only | `--json` | `apply`/`archive` artifact surfaces |
+| `templates [--schema <name>] [--json]` / `schemas [--json]` | read-only | `--json` | |
+| `context [--store <id>] [--json] [--code-workspace <path> [--force]]` | read-only (one optional write: workspace file) | `--json` | The agent brief |
+| `doctor [--store <id>] [--json]` | read-only | `--json` | Health findings exit 0 |
+| `new change <name> [--description] [--goal] [--schema] [--store] [--json]` | **mutating** | `--json` | kebab-case names |
+| `archive [change] [-y\|--yes] [--skip-specs] [--no-validate] [--json]` | **mutating** | `--yes` required non-TTY | Merges deltas, moves to `changes/archive/YYYY-MM-DD-<name>/` |
+| `init [path] [--tools <list>] [--force] [--profile]` / `update [path] [--force]` | **mutating** | | `--tools claude` installs the opsx command files |
+| `config <path\|list\|get <key>\|set <key> <val>\|unset\|reset\|edit\|profile>` | set/unset/reset/edit **mutating**; rest read-only | | |
+| `schema <which\|validate\|fork\|init>` | fork/init **mutating**; which/validate read-only | `[experimental]` | |
+| `store <setup\|register\|unregister\|remove\|list\|doctor>` | setup/register/unregister/remove **mutating**; list/doctor read-only | `--json` | Stores beta |
+| `workset <create\|list\|open\|remove>` | create/remove **mutating**; list read-only; `open` human-only | `--json` (not `open`) | Purely local |
+| `change <show\|list\|validate>` | read-only | `--json` | `change list` **DEPRECATED** (use `list`) |
+| `spec <show\|list\|validate>` | read-only | | |
 
-**Tools to NOT use:** none specifically — this is an internal-types concern, not a library. The capture side uses dev-time proxies (above).
+Global: `-V/--version`, `--no-color`, `-h/--help`. Exit codes 0/1. `--json` exists on: list, show, validate, status, instructions, templates, schemas, doctor, context, archive, new change, all store subcommands, all workset subcommands except open.
 
-**Confidence: HIGH** on the mechanism; **MEDIUM** on the exact JSONL line schema for zcode specifically (close in Phase 1 by inspecting a real zcode transcript).
+**Adapter reconciliation plan:** rebuild `seeded.toml` `[commands]` around this table (read-only: list/show/validate/status/instructions/context/doctor/spec */change show|validate; mutating: new change/archive/init/update/config set*/schema fork|init/store setup|register|unregister|remove/workset create|remove); never invoke `view`/`workset open`/`config edit`/`feedback`. Pattern table (`[[patterns]]`/`[[handoff_tools]]`) stays as-is — it matches assistant text, not the binary.
 
----
+### Feature 2 — Audit log on the `acp serve` path (LOG-01)
 
-### Focus 2 — Model Scheduling Layer
+**Stack verdict: nothing to add.** `internal/audit`, the tracer, and the redactor exist and work (proven on the main.go path). The work is wiring the same tracer construction into the `acp serve` command path. No libraries, no externals, no schema changes.
 
-**The problem.** ass-guard adds multi-tier model scheduling beyond the predecessor's flat per-command routing:
-- Tiers (heavy/good/light ≈ opus/sonnet/haiku) abstract the concrete model.
-- Tier→model mapping is **time-scheduled** (e.g. heavy = glm-5.2 normally, minimax-m3 in peak hours).
-- **Per-project override** of the tier→model table.
-- **Fallback chains** on provider error/limit (degrade tier, or walk a configured chain).
+### Feature 3 — zcode parity re-capture (operator-gated)
 
-**Survey findings (verified Aug 2026):**
-- **LiteLLM Router** — the canonical reference design (load balancing, retries, cooldowns, fallback chains across providers). **But it is Python and runs as a proxy server** — not embeddable in a Go binary. Its value to ass-guard is **as a design template**, not a dependency.
-- **OpenRouter** — a hosted routing service (OpenAI-compatible endpoint). Useful as a *provider* ass-guard can route to, not as the routing logic itself.
-- **Portkey** — hosted AI gateway. Same shape as OpenRouter: provider, not library.
-- **Requesty** — hosted routing. Same.
+**Stack verdict: nothing to add.** The capture pipeline (`extract-profile`, `internal/parity`, `~/.zcode/cli/rollout/model-io-sess_<id>.jsonl` harvest) is built and proven; the pinned session is simply absent on disk. The operator exports `ZAI_API_KEY`, runs a divergence-prone zcode session, and the existing flow re-captures. No new tooling.
 
-**Key finding: there is no mature Go library for multi-provider model routing.** Verified Aug 2026. The 2026 call is unambiguous: **build a small in-process resolver.**
+### Feature 4 — Telegram peer (text + voice STT)
 
-**Recommendation (Confidence: HIGH): an internal config-table resolver, not a library.** The resolver is ~200 lines:
+**Library: `go-telegram/bot` v1.23.0 (the only new frontend dep).**
 
-```go
-// internal/scheduler (sketch)
-type Resolver struct {
-    defaults  TierTable          // heavy/good/light → {provider, baseURL, model}
-    overrides map[string]TierTable // per-project (cwd-keyed)
-    windows   []TimeWindow        // peak-hours substitutions
-    fallbacks map[Tier][]Tier     // fallback chains
-}
-func (r *Resolver) Resolve(tier Tier, project string, now time.Time) (Target, []Target) {
-    // 1. pick table: per-project override if set, else defaults
-    // 2. apply time-window substitution (peak hours → swap model)
-    // 3. return primary target + fallback chain
-}
-```
+Shape that fits the constraints:
 
-The two inherited provider adapters (Anthropic-shape, OpenAI-shape) sit downstream — the resolver hands them `{provider, baseURL, model}`, they make the call. Fallback = the resolver returns a chain; the turn loop walks it on error.
+- **Same process, one goroutine** — `bot.New(token, opts)` + handler registration (`bot.RegisterHandler`/`ProcessUpdate` callbacks) + `b.Start(ctx)` in a goroutine beside the ACP stdio loop; both frontends share the core engine (`internal/engine`, `internal/loop`). `Start` blocks until ctx cancel → context-first drain of the long-poll loop, mirroring the ACP shutdown path.
+- **stdout discipline** — library verified stdout-silent in Phase 0; its logging hooks route to slog→stderr. All Telegram diagnostics via slog (same as every other package).
+- **No network port** — long polling only, NO webhook mode (webhooks would violate the no-daemon/no-port constraint; `WithWebhookURL` simply unused).
+- **Voice flow** — `upd.Message.Voice.FileID` → `b.GetFile(ctx, &bot.GetFileParams{FileID})` → `b.FileDownloadLink(file)` → `http.Get` → OGG/Opus bytes → `Transcribe(ctx, bytes)` → text enters the turn loop as ordinary user input.
 
-**Why not a library:** the logic is project-specific config glue (tier abstraction + time windows + per-project overrides), not a general-purpose algorithm. A library would either over-fit (LiteLLM's proxy shape doesn't match a single-process agent) or under-fit (a generic "router" doesn't know about SDD tiers). The inherited "two shapes, not N" insight makes the resolver trivial — it's a config table with time and override dimensions.
+**STT backends (one interface, three configs):**
 
-**What NOT to use:** LiteLLM as a runtime dep (it's Python + a proxy server; running it alongside a Go stdio agent breaks the "single static binary, no daemon" constraint). Use it only as a design reference for fallback-chain semantics.
+| Backend | Config target | Mechanism | Notes |
+|---------|--------------|-----------|-------|
+| **OpenAI (default)** | provider `base_url=https://api.openai.com/v1`, model `gpt-transcribe` (recommended current) or `gpt-4o-transcribe`/`whisper-1` | Existing go-openai client, `CreateTranscription` + `AudioRequest{Model, Reader, Language}` | 25 MB cap (Telegram voice ≈1–2 min ≪ cap). OGG/Opus accepted natively. |
+| **Groq** | `base_url=https://api.groq.com/openai/v1`, model `whisper-large-v3` or `whisper-large-v3-turbo` | Same client, base-URL swap only | Fastest; ~$0.03/hr (large-v3). OpenAI-compatible `/audio/transcriptions` verified by Groq docs. |
+| **whisper.cpp local** | `stt.backend=whisper-cpp-local`, `bin=/path/to/whisper-cli`, `model=/path/to/ggml-*.bin` | Subprocess: `ffmpeg -i in.oga -ar 16000 -ac 1 -c:a pcm_s16le -out wav` → `whisper-cli -m <model> -f <wav>` (plus output-format flags from `whisper-cli -h`; the repo README documents `-m/-f/-t/-ml/--vad*`), parse stdout/transcript file | Offline/privacy. whisper.cpp v1.9.2 (Oct 2025, latest). Models via `sh ./models/download-ggml-model.sh <name>` (tiny→large-v3, large-v3-turbo; HF `ggerganov/whisper.cpp`; tiny 273 MB → large 3.9 GB). Stock whisper-cli reads 16-bit WAV only → ffmpeg transcode step (both externals config-gated). |
 
-**Confidence: HIGH.**
+**Failure posture:** STT errors degrade to a stderr-logged transcript note and a user-visible "voice transcription failed" message; they must never kill the process or the ACP frontend (investigate-and-fix-ready logging constraint).
 
----
+### Feature 5 — Mimicry profile #2: deepseek-ai/deepseek-harness ("dsh")
 
-### Focus 3 — Telegram Bot Stack in Go
+**Stack verdict: one new Go dep (klauspost/compress/zstd v1.19.2) for log harvest; dev-time Node/pnpm on the capture machine only.** The profile rides the existing N-profile architecture (`internal/profile`, `internal/shaper`) — the OpenAI-shape provider already speaks dsh's wire format.
 
-**The problem.** Telegram is a full peer interface alongside ACP — same core, second surface. Must run in **one Go process** with the ACP stdio server. Voice messages → text via configurable STT.
+#### Repo facts (verified against github.com/deepseek-ai/deepseek-harness, `master`)
 
-#### A. Bot library
+- MIT, **developer preview** ("compatibility-breaking changes expected"), ~92k stars. TypeScript **pnpm monorepo**: pnpm 11.7.0 (Corepack), Node 22.19+/24+, tsc project references + **tsdown** bundling, **vitest**, Lefthook, Oxlint. Two isolated aggregate programs (host/client) — `pnpm run typecheck` is the smoke test.
+- Layout: `packages/<group>/<pkg>` with ~49 packages: `core/*` (agent-loop, agent, **system-prompt**, agent-default-model…), `llm/llm` (abstract service), **`llm/llm-deepseek`** (DeepSeek adapter), `llm/llm-pi-ai` (multi-provider), `session/*` (**session-persistence-jsonl**, -sqlite, projections, titles), `context/*` (agent-instructions, time-context, tmux-context), model-facing tool packages (`shell`, `terminal`, `fs`, `web`, `todo`, `subagent`, `jobs`, `workflow`, `lsp`, `skill`, `code-runtime`), plus `acp` (dsh has its own ACP server) and `hooks` (a "shared Claude Code / Codex wire-protocol library").
 
-Four candidates surveyed (verified Aug 2026):
+#### Where the profile's four ingredients live
 
-| Library | Shape | Context handling | Maintenance | Verdict |
-|---|---|---|---|---|
-| `github.com/go-telegram/bot` | Handler-based, zero-dep | **Idiomatic `context.Context` throughout** | Active 2026 | **Recommended** |
-| `github.com/PaulSonOfLars/gotgbot/v2` | Updater/dispatcher (python-telegram-bot-inspired), code-generated | Good | Active 2026 (v2 published May 2026) | Strong alternative |
-| `gopkg.in/telebot.v3` | Decorator-based, beginner-friendly | OK | Active | Easiest start; less idiomatic |
-| `go-telegram-bot-api/telegram-bot-api` | Long-established | OK | **"A bit neglected" (maintainer's words)** | **Avoid** |
+1. **Request shape** — `packages/llm/llm-deepseek/src/{adapter,serialize}.ts`. Verified wire facts (quote-level): POST `{baseURL}/chat/completions`, Bearer auth, SSE. Body: `model`; `stream: true` **always** + `stream_options: {include_usage: true}`; messages as `{role, content}` — system via `flattenText`, assistant carries `tool_calls[{id, type:'function', function:{name, arguments}}]` and `reasoning_content` (tool-call turns only, never null content), tool results `{role:'tool', tool_call_id, content}` with literal `'(no output)'` for empty outputs; tools `{type:'function', function:{name, description, parameters}}` **omitted entirely when empty**; **`tool_choice` is NEVER serialized**; `temperature`/`max_tokens`/`stop` only when defined (omit-don't-null); DeepSeek-specific `thinking: {type:'enabled'|'disabled'}` and `reasoning_effort: 'high'|'max'` (never 'off' on the wire). Text-only (images rejected). Defaults: context window 1M, max_tokens 256k, stream idle timeout 300s. Identity/telemetry headers: `x-deepseek-harness-user-id` (+ session/compaction flags); reads back `x-request-id`/`x-deepseek-request-id`, `retry-after`. **This maps 1:1 onto the existing OpenAI-shape provider — profile #2 is config + shaper data, not a new provider.**
+2. **System prompt** — `packages/core/system-prompt` is a **runtime-composed registry, not a static blob**: ordered sections (`-100` harness identity "You are an AI agent powered by DeepSeek Harness.", `0` deployment persona, plugin sections), `{{variable}}` interpolation, an expert-waterfall event, and a separate durable user-role context snapshot. **Consequence (load-bearing): static source extraction CANNOT produce the final prompt.** Ground truth must come from a live capture (below) or by running the harness's own assembly.
+3. **Tool catalog** — tools are plugin-registered across the model-facing packages (shell, fs, web, todo, subagent, …). The authoritative per-session catalog is the `tools` array on real requests → harvest from capture, use source as cross-check (same method as the zcode 103-tool catalog).
+4. **Logs** — `packages/session/session-persistence-jsonl`: root is **deployment-configured (no default home like `~/.dsh`)**; layout `<root>/<normalized-cwd>/<encoded-session-id>/session.jsonl.zstd` (default) or `session.jsonl` (compression:'none'). Format: first line immutable session header; then `SessionEvent` JSON per line, with runs of ≥3 assistant streaming chunks packed into `text-chunks`/`reasoning-chunks`/`tool-call-chunks` rows (seq/time reconstructed from `seq0/time0 + dt`). Compression: **concatenation of independent checksummed zstd frames** (one per append batch) — hence klauspost/compress. **Load-bearing caveat: dsh session JSONL stores SESSION EVENTS (assistant chunks, tool calls), NOT the raw outgoing HTTP request** — unlike zcode's model-io JSONL, it does not persist the assembled system prompt + tools array. The honest capture path is the adapter's own configurability: `baseURL` comes from connection config, so a recording proxy (MITM/echo) at the configured baseURL captures the exact serialized requests — the same pattern as the zcode MITM capture, and it satisfies "profile content is log-extracted, not hand-written."
 
-**Recommendation (Confidence: HIGH): `github.com/go-telegram/bot`.**
+#### Extraction toolchain (dev-time)
 
-**Why:** the load-bearing reason is **`context.Context` throughout the API**. ass-guard runs Telegram as a peer *inside the same process* as an ACP stdio server whose lifecycle the editor owns. Clean cancellation/shutdown propagation (the editor kills the process; the Telegram long-poll loop must drain) requires context to be first-class. Community feedback (a developer who used both extensively): *"go-telegram/bot has way better architecture — proper context handling and follows modern Go conventions. Error handling is much better."* It is zero-dependency, handler-based, and has the larger community. gotgbot is a fine fallback (code-generated, guarantees API-docs consistency) but its Python-inspired dispatcher shape is a worse fit for a context-disciplined Go process.
+1. Clone dsh; `corepack enable && pnpm install && pnpm run typecheck` (Node 22.19+/24, pnpm 11.7.0 pinned).
+2. Configure a capture run: session root with `compression: 'none'` if harvesting events by line, and/or a baseURL-pointed recording proxy for the wire truth; `DEEPSEEK_API_KEY` from the operator's env.
+3. Go side: harvest tool reuses the `extract-profile` pattern + zstd frame decoding (klauspost) for compressed roots; emits the profile bundle (system blocks, tool catalog, message shape, identity headers, defaults) into `profiles/`.
+4. Verify with `ass-guard profile check` (existing drift detector) and the Phase-1 A/B method adapted to dsh sessions.
 
-#### B. STT (voice → text)
-
-Three backends, configurable (the "configurable backends" pattern from PROJECT.md):
-
-| Backend | Library / path | Latency | Privacy | Notes |
-|---|---|---|---|---|
-| **OpenAI Whisper API** (default) | Reuse the OpenAI-shape provider client (`sashabaranov/go-openai`) — no extra dep | Low | Cloud | **Default for v1.** Drop-in; the same client handles chat + transcription. |
-| **whisper.cpp local** | `github.com/ggml-org/whisper.cpp/bindings/go` (official Go binding) | Medium (hardware-dependent) | **Offline** | Optional. **Caveat:** adds a C build dependency — verify it does not break goreleaser cross-compilation for the static binary claim. If it does, ship whisper.cpp as an **out-of-process subprocess** (the agent shells out to the `whisper-cli` binary) rather than cgo-binding it. |
-| **Groq STT** | OpenAI-compatible endpoint via `go-openai` (base URL swap) | **Very low** | Cloud | Optional; for latency-sensitive deployments. |
-
-**Recommendation (Confidence: MEDIUM on default, HIGH on architecture):** Pluggable STT backend interface; OpenAI Whisper API default; interface accommodates whisper.cpp-local (subprocess, not cgo, to preserve the static binary) and Groq. The voice message arrives as an OGA/OGG file from Telegram → transcribed → injected as ordinary user text input into the same turn loop the ACP interface uses.
-
-#### C. Architecture: Telegram peer + ACP stdio in one process
-
-```
-                       ┌─────────────────────────────┐
-   editor (stdin)──────▶│  ACP Frontend (stdio)        │
-                       │  JSON-RPC, stdout=frames      │
-                       └──────────────┬──────────────┘
-                                      │
-                                      ▼
-                       ┌─────────────────────────────┐
-                       │      Core Engine             │  (Turn Loop, Tools,
-                       │  (shared, interface-agnostic) │   Session, Scheduler,
-                       └──────────────┬──────────────┘    Profile, Hook-DAG)
-                                      ▲
-                                      │
-                       ┌──────────────┴──────────────┐
-                       │  Telegram Frontend           │
-                       │  (long-poll goroutine;       │
-                       │   voice → STT → text)         │
-                       └─────────────────────────────┘
-```
-
-**Pattern (Confidence: HIGH): both frontends are thin adapters over one core.** The Telegram frontend is a goroutine running `go-telegram/bot`'s long-poll loop; incoming messages (text or transcribed voice) are injected into the same Session Manager the ACP frontend uses. Outbound assistant tokens from the event bus fan out to both surfaces (ACP as `session/update`, Telegram as bot messages). **Critical discipline:** Telegram logging MUST go to stderr (stdout is ACP's). The Telegram frontend owns no model logic — it is a transport adapter.
-
-**Concurrency shape:** one goroutine for the Telegram long-poll loop; one goroutine per active Telegram-driven turn; the ACP-driven turns run on their own goroutines. The Session Manager serializes per-session (a session is either ACP-attached or Telegram-attached, not both simultaneously — or, if shared, turns serialize).
-
-**What NOT to use:** `go-telegram-bot-api/telegram-bot-api` (the original — maintainer-admitted neglect). `gopkg.in/telebot.v3` is fine but less idiomatic than `go-telegram/bot` for a context-disciplined process.
-
----
-
-### Focus 4 — Hook-DAG / Configurable Pipeline Engine
-
-**The problem.** The "forgotten routine" is a configurable DAG of arbitrary steps (run-command / send-prompt / fresh-context / wait) in any order, fully customizable per stage. Seeded hook set out of the box (post-implement: test + lint + review + memory; post-phase: improvement proposals).
-
-**Survey findings (verified Aug 2026):**
-- **Temporal** — the canonical durable-execution engine. **Confirmed too heavy:** it requires a server, persistence layer, and workers. Reddit r/golang consensus: Temporal is "awesome" for genuinely long-running complex workflows needing durability; "overkill" for embedded pipelines. **Violates ass-guard's "single static binary, no daemon" constraint.** Refute: do not use.
-- **Argo Workflows** — Kubernetes-native. Wrong shape entirely (container orchestration).
-- **Windmill** — fast self-hosted workflow engine, but it is a *product*, not an embeddable Go library.
-- **go-task/task** — a Make-like build tool with task dependencies (DAG ordering). Single binary. **Useful as a design reference** for the YAML semantics + dependency ordering, but it is a CLI build tool, not an in-process library.
-- **Flowpack/prunner** — the closest analog: an embeddable Go pipeline runner with an HTTP API, single binary, no DB. **Useful design reference**, but ass-guard's hook-DAG is simpler (4 step types, in-process, no HTTP API needed).
-- **No lightweight, mature, in-process Go DAG library** is a clean fit. Verified Aug 2026.
-
-**Recommendation (Confidence: HIGH): hand-rolled in-process DAG executor in `internal/hookdag`.** ~300 lines.
-
-**Step types (fixed enum, configurable instances):**
-```go
-type Step interface{ Run(ctx context.Context, env *RunEnv) error }
-type RunCommandStep struct{ Cmd string; Args []string }   // shell out
-type SendPromptStep struct{ Prompt string; Tier Tier }     // inject a model turn
-type FreshContextStep struct{ Seed string }                // reset the projected window
-type WaitStep struct{ Duration time.Duration }
-```
-
-**DAG definition:** config-driven (YAML, GitHub-Actions-flavored):
-```yaml
-hooks:
-  post-implement:
-    steps:
-      test:   { kind: run-command, cmd: "openspec", args: ["test"] }
-      lint:   { kind: run-command, cmd: "golangci-lint", args: ["run"] }
-      review: { kind: send-prompt, prompt: "<review template>", tier: good }
-      memory: { kind: send-prompt, prompt: "<memory update>", tier: light }
-    order:
-      - [test, lint]   # parallel
-      - [review]       # after test+lint
-      - [memory]       # after review
-```
-
-**Executor semantics:**
-- Topological execution with parallelism within a dependency-rank (test + lint run concurrently; review waits).
-- Step failure → configurable (halt chain, or continue with error note). Mirrors GitHub Actions' `if: always()` / `if: failure()`.
-- The whole DAG is triggered by the **unified engine** after turn-complete (PROJECT.md: autocontinue and hooks collapse into one decision engine; hooks are a special case).
-- **Learning mode:** when an unfamiliar handoff appears, the engine asks ("fresh context? wait? how long?") and remembers → proposes a new hook DAG entry.
-
-**Why hand-rolled:** the four step types are ass-guard-specific (send-prompt and fresh-context are not generic workflow primitives — they manipulate the agent's own turn loop and context window). A general DAG library would need wrapping anyway; the wrapping + the config loader + the step interface is the whole executor. The unified-engine integration (hooks fire from the same decision point as autocontinue) is the load-bearing design — that has to be custom regardless of the DAG library.
-
-**What NOT to use:** Temporal (server + DB + workers — violates "no daemon"); Argo (K8s-only); any hosted/persistent workflow engine. Use go-task/task and prunner as **design references** for YAML semantics and embedding patterns, not as dependencies.
-
-**Confidence: HIGH.**
-
----
-
-### Focus 5 — MCP Server Hosting in Go
-
-**The problem.** ass-guard must load and run Claude-Code-installed MCP servers (from `.mcp.json` project-scoped and `~/.claude.json` user-scoped config) and bridge their tools into ass-guard's own tool catalog — so the model sees them indistinguishably from built-in tools.
-
-**Survey findings (verified Aug 2026):**
-- **`modelcontextprotocol/go-sdk`** — the **official Go SDK**, reached **v1.0.0** in 2026. Maintained in collaboration with **Google**, in the official `modelcontextprotocol` org. Supports protocol version **2026-07-28**. Ships both server and client, including **`StdioMCPClient`** — launches an MCP server as a subprocess, speaks JSON-RPC over its stdin/stdout. This is precisely the host pattern ass-guard needs.
-- **`mark3labs/mcp-go`** — the community library (Ed Zynda) that **influenced the official SDK's design**. Still a fine, actively-maintained library with a high-level API; stronger for quick HTTP-transport server setup. But for a greenfield 2026 build where spec-compliance and long-term support matter, the official SDK wins.
-- **`mcp package`** (pkg.go.dev) — the official reference; notes protocol 2026-07-28, with explicit guidance on consuming stderr for stdio servers (the same stdout/stderr discipline ass-guard already enforces for ACP).
-
-**Recommendation (Confidence: HIGH): `github.com/modelcontextprotocol/go-sdk` v1.0.0+.**
-
-**The hosting pattern:**
-```
-ass-guard process
-  ├── reads .mcp.json + ~/.claude.json → list of MCP servers
-  ├── for each: go-sdk's StdioMCPClient launches it as a subprocess
-  │      (subprocess stdin/stdout = JSON-RPC; subprocess stderr → ass-guard's logs)
-  ├── on initialize: lists tools from each MCP server
-  └── bridges those tools into ass-guard's tool catalog
-        (model sees: mcp__<server>__<tool>, same as Claude Code's naming)
-```
-
-**Why the official SDK:**
-1. **Spec compliance + protocol-version currency (2026-07-28).** ass-guard's mimicry north star means ass-guard must behave like Claude Code to MCP servers — the official SDK tracks the spec Claude Code tracks.
-2. **Long-term support.** Google-collaborated, in the official org — the maintenance trajectory is assured. mark3labs is one motivated maintainer (good, but riskier for a load-bearing dep).
-3. **Bidirectional.** ass-guard is a *host* (client of MCP servers) — the SDK's `StdioMCPClient` is purpose-built for this. (If ass-guard later *exposes* itself as an MCP server, the same SDK does the server side.)
-4. **Stderr discipline alignment.** The SDK explicitly handles consuming subprocess stderr — matches ass-guard's LSP-style stdout/stderr split.
-
-**Tool-bridge detail:** MCP server tools are registered in ass-guard's tool registry with their MCP-namespace names (`mcp__<server>__<tool>`), the same naming Claude Code uses — so the mimicry profile's tool catalog already includes them by name. When the model invokes one, the tool registry routes the call through the MCP client to the subprocess and returns the result. To the model, an MCP tool is indistinguishable from a built-in tool.
-
-**Lifecycle gotcha (verified):** some hosts (Cursor, notably) kill stdio MCP servers ~1.5s after `initialize` in certain races. ass-guard must keep its launched MCP subprocesses alive for the full session and drain them cleanly on shutdown (the `context.Context` discipline from Focus 3 applies here too).
-
-**What NOT to use:** `mark3labs/mcp-go` is not "wrong" — it is a strong library that influenced the official SDK. But for a greenfield Aug-2026 build, the official SDK is the better default. Re-evaluate only if the official SDK lacks a specific feature mark3labs has.
-
-**Confidence: HIGH.**
+**Watch item:** dsh is developer-preview with announced breaking changes — pin the profile to a captured commit hash and record it in the profile manifest (drift detector re-capture is cheap once the toolchain exists).
 
 ---
 
@@ -390,176 +189,67 @@ ass-guard process
 
 | Recommended | Alternative | When to Use Alternative |
 |-------------|-------------|-------------------------|
-| Hand-rolled JSON-RPC framing | `github.com/kwo/jsonrpc2` (2026 fork of `go.lsp.dev/jsonrpc2`) | If bidirectional ACP notification routing grows complex enough that hand-rolling costs more than a dep. The fork is actively maintained (Apr 2026 timestamp). Default stays hand-rolled — the protocol is small. |
-| Hand-rolled JSON-RPC framing | `sourcegraph/jsonrpc2` | Never for new builds — historically mature but updates have slowed; `go.lsp.dev` and its forks superseded it. |
-| `go-telegram/bot` | `PaulSonOfLars/gotgbot/v2` | If you prefer a python-telegram-bot-style dispatcher/updater and want code-generated API-docs consistency. Active (May 2026 publish). Loses on idiomatic `context.Context`. |
-| `go-telegram/bot` | `gopkg.in/telebot.v3` | For the fastest prototyping start (decorator syntax). Less idiomatic; not the best fit for a context-disciplined multi-frontend process. |
-| OpenAI Whisper API (STT default) | whisper.cpp local (subprocess) | When privacy/offline is required. Run as a subprocess (`whisper-cli`), not cgo, to preserve the static binary. |
-| OpenAI Whisper API (STT default) | Groq STT | When latency is critical (Groq is very fast). Same OpenAI-compatible client, base URL swap. |
-| Internal scheduler resolver | LiteLLM Router (as a proxy sidecar) | **Never for v1** — violates "no daemon, single binary." LiteLLM's *design* (fallbacks, cooldowns) is worth studying as a template for the internal resolver. |
-| Internal hook-DAG executor | Temporal / Argo / Windmill | **Never for ass-guard** — all are server/cluster products. Use go-task/task + prunner as design references only. |
-| `modelcontextprotocol/go-sdk` (official) | `mark3labs/mcp-go` | If a specific feature in mark3labs is missing from the official SDK at build time. Otherwise the official SDK wins on spec-compliance + support. |
-| `anthropics/anthropic-sdk-go` | hand-rolled Anthropic client | Never — the first-party SDK is actively maintained (v1.62.0, Jul 2026), supports streaming + tools + base URL swap. No reason to hand-roll. |
-| `sashabaranov/go-openai` | `CherryHQ/openai-go` (community fork) | Only if the upstream stalls further. Currently go-openai is the standard (~10.7k stars, 2026-active). |
-
----
+| `go-telegram/bot` v1.23.0 | `PaulSonOfLars/gotgbot/v2` | If a dispatcher/updater shape is preferred; loses nothing critical. Active 2026 but go-telegram/bot's context-first API matches the ACP-owned lifecycle better (v1.0 decision unchanged; now version-pinned). |
+| OpenAI/Groq STT via existing go-openai client | Dedicated STT SDKs | Never — the client already implements the multipart transcription endpoint; a second HTTP stack is pure surface area. |
+| whisper.cpp as subprocess (+ffmpeg transcode) | cgo binding `ggml-org/whisper.cpp/bindings/go` | Never for ass-guard — breaks CGO_ENABLED=0 static cross-compile (constraint, unchanged from v1.0). |
+| klauspost/compress/zstd | Shell out to system `zstd` binary | Only if the spike against real dsh files hits a decoder edge — unlikely (concatenated frames + XXH64 are the default decode path). Shelling out adds a runtime external; avoid. |
+| yaml.v3 for frontmatter | `adrg/frontmatter` or goldmark-meta | Never — yet another parser dep for a format yaml.v3 already covers; the gaps are field coverage + recursion in our code, not parse capability. |
+| Flat-parser fallback (on YAML error) | Strict YAML only | Strict-only silently drops commands zcode would load — the fallback is parity, not gold-plating. |
+| Session-event harvest + baseURL recording proxy for dsh | Source-only profile | Source-only misses the composed system prompt (runtime-registry assembly) — violates the log-extracted-not-hand-written decision. |
 
 ## What NOT to Use
 
 | Avoid | Why | Use Instead |
 |-------|-----|-------------|
-| `go.lsp.dev/jsonrpc2` (upstream) | Effectively unmaintained — the predecessor flagged this; 2026 verification confirms upstream is quiet. Scorecard security score 5.6/10. | Hand-rolled newline-delimited JSON-RPC framing (~150 lines). Fallback: `github.com/kwo/jsonrpc2` (2026 fork). |
-| `sourcegraph/jsonrpc2` | Updates slowed; superseded by the `go.lsp.dev` line. | Hand-rolled framing (or `kwo/jsonrpc2` fork). |
-| `go-telegram-bot-api/telegram-bot-api` (original) | Maintainer has publicly said it is "a bit neglected." | `github.com/go-telegram/bot` (idiomatic, context-aware, active). |
-| Temporal (or any durable-workflow server) | Requires server + persistence + workers. Violates ass-guard's "single static binary, no daemon, no network port" constraint (PROJECT.md constraints). Confirmed too heavy by r/golang consensus. | Hand-rolled in-process DAG executor in `internal/hookdag`. |
-| Argo Workflows | Kubernetes-container-native; completely wrong shape for an embedded agent pipeline. | Hand-rolled hook-DAG executor. |
-| LiteLLM as a runtime dependency | It is a Python proxy server. Running it alongside a Go stdio agent breaks the static-binary + no-daemon constraints. | Internal scheduler resolver. **Do** study LiteLLM's router docs as a fallback-chain design template. |
-| whisper.cpp via cgo binding (in the static binary) | Adds a C build dependency; risks breaking goreleaser cross-compilation for macOS+Linux amd64+arm64. | Ship whisper.cpp as an out-of-process subprocess (`whisper-cli`) if local STT is needed; default to OpenAI Whisper API (no extra dep). |
-| `mark3labs/mcp-go` (for greenfield 2026 builds) | Not wrong — a fine library — but the official `modelcontextprotocol/go-sdk` (v1.0.0, Google-collaborated, protocol 2026-07-28) now wins on spec-compliance and long-term support. mark3labs influenced the official SDK. | `github.com/modelcontextprotocol/go-sdk` v1.0.0+. |
-| Hand-written mimicry profiles (guessed content) | PROJECT.md key decision: profile content must be log-extracted, not hand-written — hand-written is a guess. | Harvest from JSONL transcripts (`~/.claude/projects/...`) + MITM proxy capture (LLM Interceptor / Sherlock / mitmproxy). |
-| A standalone CLI surface | Out of scope (PROJECT.md): ACP (IDE) + Telegram are the only interfaces; no terminal REPL to maintain. | ACP stdio + Telegram peer, sharing one core. |
-
----
+| Telegram webhook mode | Opens a network port — violates no-daemon/no-port (editor owns lifecycle). | Long-poll `bot.Start(ctx)`. |
+| Any cgo / audio-processing Go dependency | Breaks goreleaser CGO_ENABLED=0 macOS+Linux amd64+arm64 cross-compile. | Subprocess `whisper-cli` + `ffmpeg` (config-gated externals). |
+| `openspec view` / `workset open` / `config edit` from the adapter | Interactive/human-only surfaces; hang a headless subprocess. | The `--json` command set (table in Feature 1). |
+| Seeded `[commands]` entries `apply`/`implement` | Not real v1.5.0 commands (phantom from an older mental model). | `instructions apply` artifact surface / `new change`+`archive` lifecycle. |
+| Replacing yaml.v3 with go.yaml.in/yaml/v4 now | v4 is rc; yaml.v3 is sufficient and already load-bearing across config parsing. | Keep yaml.v3; note v4 as the successor if/when GA. |
+| Assuming dsh session JSONL contains model-io | It stores session events, not outgoing requests — a source-only or logs-only profile would be a guess. | baseURL recording-proxy capture + session-log harvest. |
+| Hand-written dsh system prompt from README prose | The prompt is runtime-composed (sections, interpolation, persona) — prose ≠ wire truth. | Capture the assembled request. |
 
 ## Stack Patterns by Variant
 
-**If the active profile is zcode (default, v1):**
-- Load `profile: zcode` from config (harvested from zcode's JSONL transcripts + a MITM capture run).
-- Outgoing requests assembled from the profile: system blocks, tool catalog, message shape, identity.
-- The mimicry contract is the profile artifact; switching profiles switches the target.
+**If `stt.backend = openai` (default):** voice bytes → `internal/provider` OpenAI client → `CreateTranscription`; model slug `gpt-transcribe` (or `whisper-1`) from provider config; credentials via existing flag>env>config chain. No ffmpeg, no externals.
 
-**If a profile field cannot be harvested from JSONL (e.g. a header only visible on the wire):**
-- Run a one-shot MITM proxy capture (LLM Interceptor / Sherlock / mitmproxy with an Anthropic+OpenAI allowlist) against the target agent.
-- Harvest the missing field, fold it into the profile.
-- The runtime never depends on the proxy — it is dev-time extraction only.
+**If `stt.backend = groq`:** identical code path; provider entry `base_url=https://api.groq.com/openai/v1`, model `whisper-large-v3-turbo`. Trade latency for a second vendor.
 
-**If the configured model tier hits a provider error:**
-- The scheduler resolver returns a primary target **plus a fallback chain** (degrade tier, or walk a configured provider chain).
-- The turn loop walks the chain on error; the user sees an info `session/update` noting the degradation.
+**If `stt.backend = whisper-cpp-local`:** config carries `bin`, `model`, optional `ffmpeg` path; pipeline = ffmpeg transcode → whisper-cli → parse. Fully offline; two optional externals; degrade gracefully when missing (typed structural error, stderr-visible).
 
-**If peak-hours routing is configured:**
-- The scheduler applies the time-window substitution before returning the target (e.g. heavy tier → minimax-m3 during 09:00–17:00 local, → glm-5.2 otherwise).
-- Per-project override takes precedence over the global table.
+**If a Telegram text message arrives:** handler → core engine turn — identical path to an ACP `session/prompt`, sharing scheduler, shaper, engine, learning.
 
-**If the editor (ACP) owns the process lifecycle (default):**
-- Telegram frontend runs as a goroutine inside the same process; both frontends share the core engine.
-- On editor-initiated shutdown, `context.Context` cancellation drains the Telegram long-poll loop and any in-flight Telegram-driven turns.
+**If `/namespace:name args...` arrives (ACP or Telegram):** session layer looks up `Registry.Commands[namespace:name]` (recursively discovered, colon-joined), substitutes `$ARGUMENTS`/`$1`/`$2` (or appends `User arguments:`), injects the command body as the user prompt for the turn.
 
-**If Telegram is the only active surface (no editor attached):**
-- The process can be launched in Telegram-only mode (a cobra subcommand distinct from `acp`).
-- Same core, only the frontend differs. (Note: this slightly tensions "no standalone CLI surface" in PROJECT.md — resolve at architecture time whether Telegram-only launch counts as a "CLI surface.")
-
-**If a Claude-Code-installed MCP server is configured (`.mcp.json`):**
-- `modelcontextprotocol/go-sdk`'s `StdioMCPClient` launches it as a subprocess.
-- Its tools register in ass-guard's catalog as `mcp__<server>__<tool>` (Claude-Code naming) — the profile's tool catalog already names them.
-- The model invokes them like any built-in tool; the registry routes the call through the MCP client.
-
-**If the voice STT backend is `whisper-cpp-local`:**
-- The Telegram frontend shells out to `whisper-cli` (subprocess), reads the transcript, injects as text.
-- **Do not** cgo-bind whisper.cpp into the static binary — preserve goreleaser cross-compilation.
-
-**If a hook-DAG step fails:**
-- Per-step configurable: halt the chain (default for mutating steps) or continue-with-note (for advisory steps like lint after test).
-- Mirrors GitHub Actions' `if: failure()` / `if: always()` semantics.
-
----
+**If dsh profile is active:** provider factory selects the OpenAI shape; shaper emits dsh wire specifics (always-stream + include_usage, omit-when-empty tools, no tool_choice, thinking/reasoning_effort mapping, `'(no output)'` tool-result substitution, identity headers); scheduler maps DeepSeek-model tiers to the dsh-profiled turns.
 
 ## Version Compatibility
 
 | Package A | Compatible With | Notes |
 |-----------|-----------------|-------|
-| Go 1.25 floor | `anthropics/anthropic-sdk-go` v1.62.0 | SDK requires modern Go; 1.25 floor is safe. |
-| Go 1.25 floor | `modelcontextprotocol/go-sdk` v1.0.0 | Official SDK tracks current Go; 1.25 is safe. |
-| Go 1.25 floor | `go-telegram/bot` latest | Library follows modern Go conventions (context-first); 1.25 safe. |
-| `anthropics/anthropic-sdk-go` v1.62.0 | Z.ai GLM endpoint (`https://api.z.ai/api/anthropic`) | Verified: Z.ai "GLM Coding Plan" explicitly supports the Anthropic protocol. Set base URL, use model slug `glm-4.6` / `glm-5`. |
-| `sashabaranov/go-openai` latest | MiniMax M3, OpenRouter, Groq (STT) | All OpenAI-compatible; swap base URL + model slug. **Verify** the tool-calling schema matches each provider at Phase 0. |
-| ACP v1 (stable) | v2 (Draft) | **v2 is draft** — do not target it. Pin v1 method names. Verify against canonical spec in Phase 0. |
-| `modelcontextprotocol/go-sdk` v1.0.0 | MCP protocol 2026-07-28 | Official SDK tracks the spec; pin SDK version, be aware of protocol-version deprecations noted in pkg.go.dev. |
-| whisper.cpp subprocess (if used) | ggml-format models | Follow the 2026 whisper.cpp setup guide for model download; do not cgo-bind. |
-| goreleaser v2.17 | macOS+Linux amd64+arm64 | Verified; produces the binary the ACP registry manifest points at. |
-| `go-telegram/bot` + ACP stdio in one process | Both share `log/slog` → stderr | **Critical:** Telegram frontend must never write to stdout (stdout is ACP's). Enforce via review/lint. |
-
----
-
-## Open Verification Items (Phase-0 spike checklist)
-
-These do not block the stack recommendation but should be closed in the Phase-0 spike (mirrors the predecessor's two verification flags):
-
-1. **zcode's exact JSONL transcript path + line schema.** claude-code-compat runtimes use `~/.claude/projects/<munged-cwd>/<session-id>.jsonl`, but recent Claude Code versions changed some session-file behavior. Confirm zcode's actual path and the exact JSONL line schema (which fields carry the system prompt, tool catalog, identity). *Closes Focus 1 confidence from MEDIUM → HIGH on zcode specifics.*
-2. **`sashabaranov/go-openai` latest tag + tool-calling schema** for each configured OpenAI-shape provider (MiniMax M3, Groq STT). Pin the tag; verify schema fidelity.
-3. **ACP v1 method names** against the canonical spec repo (`github.com/agentclientprotocol/agent-client-protocol`) — pin the spec version; some community impls lag.
-4. **whisper.cpp cross-compile impact** — if local STT is in scope, confirm the subprocess approach (`whisper-cli`) preserves goreleaser's clean macOS+Linux amd64+arm64 matrix (it should, since it is out-of-process, but verify).
-5. **`go-telegram/bot` + ACP stdout-collision test** — integration test that both frontends running in one process never write a non-ACP frame to stdout.
-
----
+| `go-telegram/bot` v1.23.0 | Bot API 10.2 (Jul 14, 2026) | Server-side Bot API is backward-compatible; pin v1.23.0. Marshal semantics tightened in v1.23.0 (error-not-panic; no caller mutation) — additive for our usage. |
+| `klauspost/compress` v1.19.2 | Go 1.26 (go.mod) | Pure Go; avoid v1.18.1 (retracted) and early v1.19.x arm64 issue. Multistream concatenated frames + XXH64 checksum verification by default — matches dsh's per-batch frame layout. |
+| `sashabaranov/go-openai` v1.42.0 (existing) | OpenAI + Groq transcription endpoints | `AudioRequest.Reader` for in-memory bytes; `AudioResponse.Text` for plain text. gpt-transcribe family: use plain text/json formats only (not verbose_json). |
+| `gopkg.in/yaml.v3` v3.0.1 (existing) | zcode flat frontmatter ⊂ YAML; Claude Code command keys; opsx flow arrays | Unknown-key tolerance default; add flat-parser fallback for tab-malformed files. |
+| `openspec` v1.5.0 binary | `internal/openspec` Adapter (subprocess) | Real-binary gate `ASSGUARD_OPENSPEC_BIN=1` runs against this exact surface; `--json` where offered; `archive` needs `--yes` non-TTY. |
+| whisper.cpp v1.9.2 + ffmpeg (optional externals) | macOS/Linux amd64+arm64 | Both are plain subprocesses — no interaction with the static build. |
+| dsh capture | pinned commit hash | Developer-preview upstream; record the hash in the profile manifest; re-capture on drift. |
 
 ## Sources
 
-Verified Aug 2026 unless noted.
-
-**ACP (inherited, re-verified):**
-- https://agentclientprotocol.com/get-started/introduction — ACP overview
-- https://agentclientprotocol.com/protocol/v1/overview, /transports, /prompt-turn, /tool-calls, /session-setup, /schema — v1 spec (stable)
-- https://agentclientprotocol.com/announcements/acp-v2-draft — **v2 is Draft** (confirms v1 is the stable target)
-- https://github.com/agentclientprotocol/agent-client-protocol — canonical repo
-- https://agentclientprotocol.com/rfds/acp-agent-registry + https://github.com/agentclientprotocol/registry/blob/main/agent.schema.json — registry manifest format
-
-**Go & build (inherited, re-verified):**
-- https://go.dev/doc/devel/release — release history (1.23 = Aug 2024; 1.26 = Feb 2026; floor bumped to 1.25)
-- https://goreleaser.com/ — v2.17 current (2026)
-
-**Model providers (inherited, re-verified):**
-- https://github.com/anthropics/anthropic-sdk-go/releases — v1.62.0 (Jul 2026), mid-conversation-tool-changes + session budgets
-- https://github.com/sashabaranov/go-openai — ~10.7k stars, 2026-active (GPT-5/5.5 in repo desc)
-- https://docs.z.ai/devpack/quick-start — **Z.ai Anthropic-compatible base URL `https://api.z.ai/api/anthropic` confirmed**
-
-**JSON-RPC (inherited, re-verified):**
-- https://pkg.go.dev/go.lsp.dev/jsonrpc2 — upstream stagnant (v0.10.0, scorecard 5.6/10)
-- https://libraries.io/go/github.com%2Fkwo%2Fjsonrpc2 — 2026 fork (`v0.0.0-20260410…`) as fallback
-- https://github.com/sourcegraph/jsonrpc2 — superseded; not for new builds
-
-**Focus 1 — Mimicry / capture:**
-- https://www.adityabawankule.io/blog/claude-code-session-jsonl-format — JSONL path `~/.claude/projects/<munged-cwd>/<session-id>.jsonl`
-- https://claude-dev.tools/docs/jsonl-format — JSONL format reference
-- https://databunny.medium.com/inside-claude-code-the-session-file-format-and-how-to-inspect-it-b9998e66d56b — full transcript on-disk
-- https://github.com/chouzz/llm-interceptor — MITM proxy for AI coding assistants
-- https://news.ycombinator.com/item?id=46799898 — Sherlock MITM proxy
-- https://localai.io/features/mitm-proxy/index.print.html — allowlist-based LLM MITM
-- https://www.c-sharpcorner.com/article/intercepting-and-decoding-claude-code-api-calls-using-mitm-proxy/ — Claude Code ~80 KB payload interception walkthrough
-- https://github.com/daaain/claude-code-log — JSONL → HTML/Markdown converter (dev-time tool)
-
-**Focus 2 — Model scheduling:**
-- https://docs.litellm.ai/docs/routing + /docs/proxy/reliability — LiteLLM router/fallback design (template only; Python proxy, not a Go dep)
-- https://www.requesty.ai/blog/best-llm-routing-platforms-compared-2026-requesty-portkey-litellm-openrouter — 2026 comparison (all are hosted/Python)
-
-**Focus 3 — Telegram + STT:**
-- https://github.com/go-telegram/bot — recommended (zero-dep, context-first, active)
-- https://pkg.go.dev/github.com/PaulSonOfLars/gotgbot/v2/ext — gotgbot alternative (May 2026 publish)
-- https://community.latenode.com/t/which-library-offers-better-architecture-go-telegram-bot-or-go-telegram-bot-api/27111 — go-telegram/bot architecture praise
-- https://developers.openai.com/api/docs/guides/speech-to-text — OpenAI Whisper API (default STT)
-- https://github.com/ggml-org/whisper.cpp + https://pkg.go.dev/github.com/ggml-org/whisper.cpp/bindings/go — local STT (subprocess, not cgo)
-
-**Focus 4 — Hook-DAG:**
-- https://www.reddit.com/r/golang/comments/nsfjtq/for_those_running_go_in_production_at_scale_what/ — Temporal = overkill for embedded pipelines
-- https://github.com/go-task/task — design reference (DAG-ordered Make-like)
-- https://github.com/Flowpack/prunner — design reference (embeddable Go pipeline runner)
-
-**Focus 5 — MCP hosting:**
-- https://github.com/modelcontextprotocol/go-sdk — **official Go SDK, v1.0.0, Google-collaborated** (recommended)
-- https://pkg.go.dev/github.com/modelcontextprotocol/go-sdk/mcp — protocol 2026-07-28, stdio + stderr guidance
-- https://modelcontextprotocol.io/docs/2026-07-28/sdk — official SDK docs
-- https://github.com/orgs/modelcontextprotocol/discussions/364 — Go SDK design discussion (vs mark3labs)
-- https://github.com/mark3labs/mcp-go — community alternative (influenced official SDK)
-- https://fast.io/resources/mcp-server-golang/ — 2026 comparison (official = spec compliance; mark3labs = quick setup)
-- https://code.claude.com/docs/en/mcp-quickstart — `.mcp.json` config format + subprocess launch
-- https://forum.cursor.com/t/cursor-3-4-20-kills-stdio-mcp-servers-1-5s-after-successful-initialize-sigkill-v2-fsm-race/160892 — stdio lifecycle gotcha
-
-**Claude Code config layout (inherited, re-verified):**
-- https://code.claude.com/docs/en/hooks — hooks reference (config schema, JSON I/O, lifecycle events)
-- https://www.adityabawankule.io/blog/claude-code-session-jsonl-format — `~/.claude/projects/` layout
+- https://github.com/go-telegram/bot + /releases — v1.23.0 (Aug 3, 2026), Bot API 10.2, release notes (marshal fixes); Go module proxy confirms v1.23.0 latest
+- Context7 `/go-telegram/bot` — `GetFile`/`FileDownloadLink`/`Start(ctx)` usage (autodocs from repo)
+- pkg.go.dev `github.com/klauspost/compress/zstd` + GitHub releases — v1.19.x current, multistream/checksum decode semantics; Go module proxy confirms v1.19.2 latest
+- `go doc` against pinned `sashabaranov/go-openai` v1.42.0 — `AudioRequest`/`CreateTranscription`/`AudioResponse` signatures (ground truth)
+- https://developers.openai.com/api/docs/guides/speech-to-text + API reference — `gpt-transcribe` recommended, `whisper-1` legacy-supported, 25 MB cap
+- https://console.groq.com/docs/speech-to-text + /docs/model/whisper-large-v3-turbo — OpenAI-compatible `/openai/v1/audio/transcriptions`, model slugs, pricing
+- https://github.com/ggml-org/whisper.cpp + releases — v1.9.2 (Oct 15, 2025), whisper-cli flags, `models/download-ggml-model.sh`, 16-bit WAV requirement, ffmpeg convert recipe
+- https://github.com/deepseek-ai/deepseek-harness — repo layout (pnpm/tsdown/vitest, packages tree via GitHub API); README (Everything-is-a-Plugin, Cordis, developer preview)
+- dsh sources (raw.githubusercontent.com, master): `docs/development.md` (toolchain), `packages/llm/llm-deepseek/src/adapter.ts` + `serialize.ts` (wire shape, headers, defaults), `packages/core/system-prompt/src/index.ts` (composed prompt), `packages/session/session-persistence-jsonl/README.md` (root config, layout, zstd framing, packed chunk rows), `docs/cookbook/adding-an-llm-adapter.md`
+- Local zcode-guide skill (`diagnosing-commands/SKILL.md`) — zcode command discovery/name rules/flat frontmatter/substitution semantics (primary: shipped by the mimicry target)
+- https://code.claude.com/docs/en/skills + community guides — Claude Code command frontmatter keys (`description`, `argument-hint`, `allowed-tools`, `model`, `disable-model-invocation`, `context`)
+- **Installed `openspec` v1.5.0 binary** (`/usr/local/bin/openspec`) — full `--help` surface captured per command (ground truth); `openspec init --tools claude` run in a temp dir to enumerate installed `.claude/commands/opsx/*.md` + skills; https://github.com/Fission-AI/OpenSpec/releases (v1.5.0 "Stores Beta", Jun 28) and docs/cli.md for cross-checking
 
 ---
-
-*Stack research for: Go-based SDD-hosting AI coding agent with model-request mimicry (ass-guard-agent)*
-*Researched: 2026-08-09*
-*Overall confidence: HIGH — every load-bearing recommendation verified against current (Aug 2026) public sources; per-area confidence in tables. Five Phase-0 verification items identified, none architectural.*
+*Stack research for: ass-guard v1.1 — slash-command kickoff, audit log, parity re-capture, Telegram peer + STT, deepseek-harness profile #2*
+*Researched: 2026-08-14*

@@ -1,263 +1,163 @@
 # Project Research Summary
 
-**Project:** ass-guard-agent (working name)
-**Domain:** Go-based SDD-hosting AI coding agent with model-request mimicry
-**Researched:** 2026-08-09
-**Confidence:** HIGH
+**Project:** ass-guard — milestone v1.1 "Kickoff & Peers" (on the shipped v1.0 Go ACP agent)
+**Domain:** AI coding agent with model-request mimicry; SDD toolkit hosting; multi-surface (ACP stdio + Telegram)
+**Researched:** 2026-08-14
+**Confidence:** HIGH overall — integration points verified against this repo's source and a live `openspec v1.5.0` probe; the one MEDIUM area (dsh zstd/log capture against real artifacts) carries a single named spike.
 
 ## Executive Summary
 
-ass-guard-agent is a Go-based AI coding agent whose north star is **mimicry**: outgoing model requests must be structurally indistinguishable from a configured target agent (zcode first), so the model behaves identically to how it behaves in the mimicked agent. Around that core it hosts unmodified SDD toolkits (OpenSpec in v1), drives them hands-off through multi-stage scenarios (zero "continue" taps), runs configurable "forgotten routine" hook-DAGs (review/tests/lint/memory), and exposes a primary ACP interface (IDE-native) plus a full Telegram peer (text + voice). v1 scope is deliberately disciplined: OpenSpec only (GSD/spec-kit/BMad accommodated by the adapter interface, deferred), ACP primary + Telegram peer, macOS + Linux (Windows deferred), fresh build (the `sdd-acp-agent` predecessor is reference-only — no code port).
+v1.1 adds five feature areas to a working shipped agent, in the operator's strict priority order: (1) slash-command kickoff — ecosys wiring + `/namespace:name` expansion + OpenSpec adapter reconciliation + the real-binary gate + 11 deferred UAT checks; (2) LOG-01 audit log on `acp serve`; (3) zcode parity re-capture; (4) Telegram peer (text + voice STT); (5) deepseek-harness ("dsh") mimicry profile #2. The milestone's reason to exist is area 1: closing the OpenSpec loop (`/opsx:explore → propose → apply → archive` chained by the engine with zero manual continues) is the product's proof. The recommended approach is conservative: exactly **two new Go dependencies** (`github.com/go-telegram/bot` v1.23.0 for the Telegram frontend, `github.com/klauspost/compress/zstd` v1.19.2 for dsh log harvest), one structural refactor (extract the turn core from `cmd/ass-guard/acp_serve.go` into `internal/runtime` as the Telegram prerequisite), and otherwise wiring on existing seams — the tracer/redactor for audit, the N-profile loader for dsh, the existing go-openai client for STT.
 
-The recommended approach is anchored by a **mimicry-first build order**: prove the thesis (outgoing requests are structurally indistinguishable from zcode's, verified by a behavioral A/B parity test against recorded ground-truth logs) on the thinnest possible stack before building anything downstream. The stack is Go 1.25 with ACP v1 (the stable editor-native standard, JSON-RPC over stdio), two provider-shape adapters (Anthropic-shape via the first-party SDK covering Claude + GLM via Z.ai; OpenAI-shape covering MiniMax M3), the official `modelcontextprotocol/go-sdk` for MCP hosting, and `go-telegram/bot` for the Telegram peer. Three subsystems have **no mature Go library** and are hand-rolled by design: the in-process model scheduler (tier/time-window/fallback resolver), the hook-DAG executor (4 step types, ~300 lines), and the newline-delimited JSON-RPC framing (~150 lines). Hand-written mimicry profiles are explicitly rejected — profile content must be log-extracted (JSONL transcripts + a MITM proxy capture run), making mimicry grounded rather than guessed.
+The four researchers independently converged on findings that must drive roadmap shape. **The structural blocker:** `internal/ecosys.discoverCommands` scans `commands/*.md` flat and skips directories, so `openspec init --tools claude`'s `.claude/commands/opsx/*.md` layout is invisible today — without fixing this first, `/opsx:*` cannot work at all, and the "wiring" phase becomes a mid-phase loader rewrite. **Dead tools:** `openspec.RegisterTools` registers catalog entries with no `Execute` (the Adapter is constructed nowhere outside tests) — model-invoked `openspec:*` calls return "no implementation yet". **Silent prompt drop:** the OpenAI-shape provider never reads `profile.System` — a dsh turn would carry no system prompt until this is fixed. **Capture correction:** dsh session JSONL stores session *events* (assistant chunks, tool calls), not outgoing HTTP requests — wire truth for profile #2 must come from a recording proxy at the configured `baseURL` (plus zstd harvest of events), never from source-reading alone. **Security hole:** the Telegram bot token (`123456789:AAH…`) matches no existing redactor pattern and is embedded in file-download URLs — the scrubber must land before the first Telegram HTTP call. **The generalized v1.0 lesson:** no feature closes with stub-only evidence; every phase touching an external surface carries a real-binary/live-service gate (`ASSGUARD_OPENSPEC_BIN=1` in P1, real-log re-capture in P2, live Telegram round-trip in P3, live DeepSeek tool-call probe in P4).
 
-Key risks are dominated by the north star. **Profile drift** (zcode updates silently, the captured profile goes stale), **incomplete capture** (logs don't exercise every code path, mimicry breaks only on un-exercised tools), and **catalog drift** (ass-guard's built-in tool implementation diverges from the profile's declared schema) all compromise mimicry silently and must be engineered out from Phase M with a versioned profile artifact, a coverage manifest, a drift detector, and a schema-adapter layer. A second cross-cutting risk class is the **single-process operational envelope** (stdout reserved for ACP frames, MCP subprocess lifecycle, audit-log volume) — every subsystem must respect it. The roadmap must serialize the six deltas rather than slice them in parallel; a thin-slice-of-everything plan is risk-multiplication because when (not if) it breaks, you cannot tell which delta is at fault.
+Key risks and mitigations: prompt injection via repo-shipped command markdown riding the autocontinue engine (keep pattern-matching scoped to assistant-role text, record provenance on expanded turns, hooks stay config-authored never markdown-authorable); substitution semantics diverging from zcode — the target wins over Claude Code wherever they differ (`` !`cmd` `` dynamic shell and `${ARGUMENTS}` braces are zcode-rejected non-goals; pin the contract with a table-driven edge-case test before implementing); audit wiring forked into divergent copies (single-source the capturer through the provider factory seam — the copy-`tracerProvider` shortcut is explicitly banned); Telegram lifecycle coupling (shared core builder, one drain path for SIGTERM and stdin-EOF, chat-scoped session IDs so one Session never serves two frontends). The phase structure all research supports: **kickoff → (audit + re-capture) → Telegram → dsh**.
 
 ## Key Findings
 
 ### Recommended Stack
 
-The stack is split into **inherited** core (verified current as of Aug 2026 — ACP v1 stable, ACP v2 is Draft and must NOT be targeted; Go floor bumped to 1.25 as 1.23 is end-of-support) and **five new focus areas** (mimicry mechanism, model scheduling, Telegram peer, hook-DAG engine, MCP hosting). Notably, three of the new areas deliberately carry **no external library** — the survey found no mature Go library for multi-provider model routing, no lightweight in-process Go DAG library that fits, and the JSON-RPC framing library line (`go.lsp.dev/jsonrpc2`) is stagnant. The right 2026 call in each case is hand-rolled (~150-300 lines), preserving the "single static binary, no daemon" constraint.
+From STACK.md: v1.1 is stack-light — two pinned new deps, zero new runtime-mandatory externals; features 2 and 3 need no stack at all (internal wiring + operator action). Static-binary / CGO_ENABLED=0 / no-daemon / no-port constraints survive everywhere (klauspost zstd is pure Go; whisper.cpp stays an out-of-process subprocess).
 
-**Core technologies:**
-- **Go 1.25** — implementation language — single static binary (editor spawns it as a subprocess, zero runtime deps), goroutines map to subagent fan-out, mature streaming HTTP. Pin `go 1.25` in go.mod; 1.23 is end-of-support.
-- **ACP v1** (spec v1; **v2 is Draft, do not target**) — primary IDE-native interface — JSON-RPC 2.0 over stdio; Zed/JetBrains/Obsidian spawn the agent as a subprocess; stdout reserved for frames, all logging to stderr (non-negotiable LSP-style discipline).
-- **`anthropics/anthropic-sdk-go` v1.62.0** — Anthropic-shape provider client — first-party, streaming + native `tool_use` + configurable base URL; one SDK covers Claude + GLM via `https://api.z.ai/api/anthropic`.
-- **`sashabaranov/go-openai`** — OpenAI-shape provider client — covers MiniMax M3, OpenRouter, Groq STT; verify tool-calling schema per provider in Phase 0.
-- **`modelcontextprotocol/go-sdk` v1.0.0+** (official, Google-collaborated) — MCP server hosting — `StdioMCPClient` launches Claude-Code-installed MCP servers as subprocesses; supersedes the community `mark3labs/mcp-go` on spec-compliance and long-term support.
-- **`go-telegram/bot`** — Telegram peer framework — zero-dependency, idiomatic `context.Context` throughout (load-bearing for clean shutdown when ACP owns process lifecycle), handler-based.
-- **Hand-rolled internal packages** (`internal/profile`, `internal/scheduler`, `internal/hookdag`, hand-rolled JSON-RPC framing) — mimicry profiles, tier/time-window/fallback scheduling, configurable hook-DAG executor, ACP wire framing — each is small, project-specific, and removes a stagnant/heavy dependency.
-- **Claude Code `.claude/` config layout** (convention) — drop-in ecosystem compat — existing Claude-Code setups work unchanged; ass-guard namespaces additions cleanly under its own key, never clobbering.
-- **STT: pluggable backend, OpenAI Whisper API default** — voice → text — drop-in via the OpenAI-shape client; interface accommodates whisper.cpp (subprocess, not cgo) and Groq.
-- **`goreleaser` v2.17** — distribution — macOS + Linux, amd64 + arm64; produces the binary the ACP registry `agent.json` manifest points at.
+**Core additions:**
+- `go-telegram/bot` **v1.23.0** — Telegram peer; zero-dep, idiomatic `context.Context`, `Start(ctx)` long-poll blocks until cancel (context-first drain); stdout-silence verified in Phase 0. Webhook mode banned (opens a port).
+- `klauspost/compress/zstd` **v1.19.2** — decode dsh `session.jsonl.zstd` (concatenated checksummed frames by default — exactly dsh's per-append-batch layout). Avoid v1.18.1 (retracted) and early v1.19.x (arm64 bug). One spike against a real dsh file before building on it.
+- STT as an internal interface — `Transcribe(ctx, oggBytes)`; OpenAI default via the **existing** go-openai client (`CreateTranscription`; `gpt-transcribe`/`whisper-1`, 25 MB cap), Groq via base-URL swap, whisper.cpp via `ffmpeg`-transcode + `whisper-cli` subprocess (both config-gated externals, never cgo).
 
-See [STACK.md](./STACK.md) for the full per-area confidence levels, the "What NOT to Use" rationale (Temporal/LiteLLM/Argo/`go.lsp.dev` upstream/whisper.cpp-via-cgo), and the Phase-0 spike checklist.
+**Confirmed sufficient / corrected:**
+- `gopkg.in/yaml.v3` handles all real command frontmatter (zcode flat ⊂ YAML; opsx flow arrays parse) — gaps are in our code, not the library; add a flat-parser fallback on unmarshal error for zcode parity.
+- OpenSpec v1.5.0 surface captured **from the installed binary**: `apply`/`implement` are phantom commands ("apply" is the `instructions apply` artifact surface); the workflow is command-file-driven with the binary as supporting tooling; `--json` on most read commands; `archive` needs `--yes` non-TTY. npm main is already 1.9.0 — pin the adapter to the installed binary's probe, never to docs.
 
 ### Expected Features
 
-The 2026 AI-coding-agent market has converged on a recognizable table-stakes core (multi-provider routing, built-in tool catalog, hooks/lifecycle events, subagents, AGENTS.md/CLAUDE.md instruction layer, skills/slash-commands). "claude-code-compat" is now a product category, but it means *accepts-the-same-config*, NOT *indistinguishable-to-the-model* — ass-guard's mimicry is stricter and unoccupied. See [FEATURES.md](./FEATURES.md).
+From FEATURES.md:
 
 **Must have (table stakes):**
-- ACP v1 stdio server (initialize, session/prompt, streamed session/update, session/load replay) — IDE-native entry point; without it the agent doesn't exist in an editor.
-- Two-shape provider layer (Anthropic-shape + OpenAI-shape, configurable base URL) — must send the target shape to make mimicry possible.
-- Built-in tool catalog (Bash, Read, Edit, Write, Glob, Grep, WebSearch, WebFetch, Task, TodoWrite) — matching the active profile name-for-name, schema-for-schema (log-extracted, not hand-written).
-- AGENTS.md / `.claude/` config drop-in — identity layer; Claude Code users feel at home.
-- Per-task model routing + single fallback — predecessor baseline; substrate for the scheduling differentiator.
-- Context hygiene (two-layer: durable replayable transcript + lean projected window; mutating-toolkit-commands are always boundaries) — required for the ACP replay-on-load contract.
-- Session durability + replay on restart; audit logging (full action sequence, replayable); subagents (goroutine turn-loops, panic-recovered); static-binary distribution via goreleaser.
+- `/namespace:name` expansion with **zcode semantics** — `$ARGUMENTS`/`$1..$N` (out-of-range → empty), args-without-placeholder appended under "User arguments:", flat single-line frontmatter (6 recognized keys), `:` namespacing, zcode discovery precedence, dynamic shell rejected; unknown `/foo` falls through as plain text.
+- OpenSpec core profile E2E driven with zero manual continues; adapter pinned to the installed binary; `ASSGUARD_OPENSPEC_BIN=1` gate green; 11 deferred UAT checks closed.
+- Audit on every path including `acp serve`: correlation IDs, secrets always redacted, append-only JSONL with caps — plus engine-decision events (why the agent continued/ran a hook/waited), which no comparable records.
+- Telegram: chat↔session binding with resume (stable `tg-<chatID>` session IDs), long-poll with drain, allowlist access control, 4096 chunking + MarkdownV2 escaping, voice → STT → ordinary user input, `/opsx:*` drivable from chat.
+- dsh profile #2: captured not hand-written (recording-proxy wire truth + event-log harvest), pinned dsh commit, model→profile availability via config, drift check extended.
 
-**Should have (differentiators — the six deltas):**
-- **Agent mimicry via profiles** (NORTH STAR — delta 1): profile = configurable bundle {system prompts, tool catalog, message shape, identity}; zcode first, N supported by design; **profile content is log-extracted, not hand-written**. Validated first on the thinnest stack.
-- **Hands-off SDD autocontinue** for OpenSpec (zero continue-taps; dual-signal: text-pattern OR known handoff tool-call) — predecessor's reason-to-exist, carried forward.
-- **Multi-tier model scheduling** (delta 2): heavy/good/light tiers, time-windowed substitution, per-project override, multi-step fallback chains.
-- **Unified post-turn engine** (delta 5): one decision point (continue / trigger hook-DAG / ask user / wait / learn / stop); autocontinue is the upper mechanism, hooks are a special case.
-- **Hook-DAG + seeded set** (delta 4/5): configurable DAG (run-command / send-prompt / fresh-context / wait); seeded post-implement (test+lint+review+memory) and post-phase (improvement proposals) for zero-config first run.
-- **Configurable tool backends** (delta 3): generalizes the predecessor's hardcoded DDG; no paid backend committed in v1.
-- **Telegram peer (text + voice)** (delta 6): a full-capability second front to one core; voice transcribed to ordinary text input via configurable STT at the edge.
-- **Learning mode** (delta 4): ask-and-remember launch policies; propose new hooks from the work log.
+**Should have (differentiators):**
+- Zero-continue `/opsx:*` stage chaining — the headline value no comparable has.
+- In-process Telegram peer beside ACP stdio (one engine, same sessions, no daemon) — every comparable runs a separate daemon supervising CLI processes.
+- Audit doubling as parity evidence (per-turn shape fingerprints make drift visible in production).
+- Cross-harness mimicry as a platform thesis (2 profiles, one shaper) — the acceptance test is "no zcode-specific paths".
 
-**Defer (v2+):**
-- Additional profiles beyond zcode (interface supports N from day one; each profile needs log-capture + extraction + conformance work).
-- GSD / spec-kit / BMad toolkit adapters (interface accommodates them in v1; implementations deferred — OpenSpec has the deepest reference).
-- Windows platform support (macOS + Linux in v1).
-- Paid search backends (Perplexity, etc.) — configurable backend makes this possible; no commitment.
-- Additional peer interfaces (Discord, Slack) — Telegram first; same front-to-core pattern.
-- Standalone CLI / terminal REPL surface, byte-for-byte request identity, a tool-execution confirmation tier, general-purpose vector memory, remote/HTTP transport — all **explicitly out of scope** (see PROJECT.md); they would compromise the core value or operational envelope.
+**Defer (v1.1.x / v2+):** forum-topic threading; STT fallback chain beyond config; OTLP export; raw-body opt-in audit mode; expanded OpenSpec profile E2E; dsh Responses-API shape (only if verification demands it); Claude-Code command≡skill merge semantics (`context: fork`, stacking); TTS replies; approval buttons — **rejected**, they violate the no-confirmation-tier safety model and surface-independence invariant; webhook mode — **rejected**, violates no-port.
 
 ### Architecture Approach
 
-ass-guard composes cleanly with the predecessor's 6-component runtime (ACP Frontend, Session Manager, Turn Loop, Tool Registry, Subagent Manager, Autocontinue Engine) — **no inherited component is removed, no inherited boundary is violated, the Event Bus remains the integration spine, the two-layer context model is reused.** The eight new architecture questions resolve to **5 new components + 1 promotion**: the Autocontinue Engine is promoted to the **Unified Engine** (broader decision mandate, same siting and safety property). The Event Bus pattern is broadened: the dangerous/complex things (Unified Engine, Audit Log, Profile Shaper's tool-catalog projection) are observers/projections, never in a turn's critical path. The mimicry mechanism is isolated at exactly one boundary (Profile Shaper → Provider Adapter), with one source of evidence (Audit Log's verbatim `shaped_request` records) — this makes mimicry locally verifiable and profile-swappable. See [ARCHITECTURE.md](./ARCHITECTURE.md).
+From ARCHITECTURE.md: nothing rewrites a v1.0 component; every feature is a new leaf package or wiring inside existing seams. Expansion hooks at the **turn runner** (`sessionTurnRunner.Run` → `internal/runtime`), NOT the ACP handler — keeps `internal/acp` protocol-pure and gives Telegram slash-commands for free. The transcript remains the primary audit artifact (D-20 one-writer); the flat `--audit-log` file is an optional operator-facing mirror. Profile #2 is data, not code — a `profiles/dsh/` bundle under the profile-agnostic loader.
 
-**Major components (11 total = 6 inherited + 5 new, with the Autocontinue Engine promoted within the 6):**
-1. **ACP Adapter** (inherited, renamed from ACP Frontend — an Interface Adapter impl) — stdio JSON-RPC frontend; stdout=frames, stderr=logs.
-2. **Telegram Adapter** (NEW) — Telegram Bot API frontend; STT at the edge (voice → text before entering the core).
-3. **Session Manager** (inherited, gains per-session lock for multi-interface serialization) — durable transcript + context-window projection; owns per-session input queue.
-4. **Turn Loop** (inherited) — one model↔tool turn; now receives shaped request + model spec.
-5. **Tool Registry** (inherited, gains configurable backends) — built-in catalog; read-only tools parallelize, mutating serialize.
-6. **Subagent Manager** (inherited, unchanged) — `Task` tool → goroutine Turn Loops with isolated context.
-7. **Profile Shaper** (NEW) — applies the active profile (system prompts, tool catalog projection, message shape, identity) to the outgoing provider request, before the adapter. Single mimicry chokepoint.
-8. **Model Scheduler** (NEW) — resolves tier→model at request time (time-windows, per-project override, fallback chains); separate from the adapter (policy vs mechanism).
-9. **Unified Engine** (PROMOTED from Autocontinue Engine) — post-turn-complete decision point emitting typed Actions (ContinueNextTurn / TriggerHookDAG / AskUser / Wait / Learn / Stop).
-10. **Hook-DAG Executor** (NEW) — runs a configurable DAG of steps; `SendPrompt` re-enters the Turn Loop; owns its own context windows via `FreshContext`.
-11. **Learned Config (Memory)** (NEW) + **Audit Log** (NEW) — persistent launch-decisions + proposed-hooks store; reconstruction-grade Event Bus tap recording verbatim shaped requests.
+**Major components:**
+1. `internal/runtime` (NEW) — extracted turn core (runner, engine/hook/MCP wiring) shared by both frontends; the one structural refactor.
+2. `internal/ecosys` (MODIFIED) — one-level subdirectory discovery (`commands/<ns>/<name>.md` → `ns:name`), richer frontmatter, pure `Expand`; its first non-test importer.
+3. `internal/openspec` (MODIFIED) — `seeded.toml` reconciled to the probed binary surface; Adapter-backed `Execute` closures on registered tools; pattern table re-seeded from real handoff texts.
+4. `internal/telegram` + `internal/stt` (NEW) — bot loop, per-chat binding, chunk sink (rate-limit aware), `/stop` cancellation, voice download + Transcriber interface.
+5. `internal/provider` / `internal/profile` (MODIFIED) — OpenAI `buildRequest` maps `profile.System` → system message(s); loader tolerates absent `thinking.json`/`tool_choice.json`; `cmd/extract-profile` gains a dsh mode.
+6. Audit wiring (MODIFIED) — shared captured-provider helper in the factory (both shapes), per-session TranscriptWriter on the serve path, optional AuditLogger sink, `CurrentTurnID()` accessor.
 
 ### Critical Pitfalls
 
-Top risks from [PITFALLS.md](./PITFALLS.md) (priority-ordered for the mimicry north star). All five below must be engineered out from Phase M — they are not retrofit-safe.
+Top pitfalls from PITFALLS.md (18 total, all phase-mapped):
 
-1. **Profile drift (N1, CRITICAL — north-star killer):** zcode updates silently; the captured profile goes stale; mimicry degrades with no error. *Mitigation:* treat the profile as a versioned artifact `{profile_version, target_capture_ref (zcode build hash), captured_at}`; ship a profile-drift detector (`ass-guard profile check zcode`) that structurally diffs the profile against a fresh re-capture; pin a zcode version range per profile and warn loudly when out of range; distinguish cosmetic drift (acceptable) from structural drift (hard fail).
-2. **Incomplete capture (N3, HIGH):** logs don't exercise every code path; mimicry breaks only on un-exercised tools — harder to detect than drift. *Mitigation:* the extractor must emit a **coverage manifest** from day one (`{observed, observation_count, source_log_entries}` per section); cross-check the extracted catalog against a non-log source (zcode's declared tool-definitions); build a capture-completeness script that exercises every declared tool.
-3. **Tool-catalog drift (N4, HIGH):** ass-guard's built-in tool implementation drifts from the profile's declared schema; the model calls a tool expecting one shape, the executor runs another. *Mitigation:* the profile's declared catalog is the authoritative schema at runtime; a **schema-adapter layer** translates between profile-declared and built-in-implementation schemas; a catalog-consistency check runs in CI.
-4. **Over-investing in byte-identical mimicry (N2, HIGH — wastes scarce attention on the wrong axis):** chasing `diff`-empty equality instead of behavioral parity. *Mitigation:* define mimicry parity as an **empirical property** — a fixed prompt suite through both ass-guard (zcode profile) and live zcode must produce statistically indistinguishable tool-call sequences; maintain a parity-impact triage (cosmetic / structural-low / structural-high); make PROJECT.md's "byte-identical is out of scope" a load-bearing comment at the top of the profile-serialization module.
-5. **Hook-DAG infinite loops (N8, HIGH — runaway agent, cost + state corruption):** a hook's output matches the trigger for the next stage. *Mitigation:* tag every turn with provenance `{user, model, hook, autocontinue}`; the engine only fires autocontinue/hooks on `user`/`model`-provenance turns, never on `hook`/`autocontinue`; maintain an injection-depth counter per scenario with a small bound; add a loop-detector test fixture to the engine's acceptance test.
-
-Two cross-cutting operational pitfalls also rank high because every phase depends on them being usable: **Audit log volume + sensitive-data leakage (N16)** (async/bounded writes, redaction layer, per-session rotation, reconstruction-sufficiency test) and **Greenfield-from-reference drift (N18)** (hard no-copy rule, re-verify every inherited fact in Phase 0 — the predecessor's verification is 2026-07-02 and 5 weeks is enough for an ACP spec revision).
+1. **Validating against a stand-in** (the v1.0 stub lesson, generalized) — make real-dependency runs phase gates, not optional extras: real openspec binary (P1), real-log re-capture (P2), live Telegram round-trip (P3), live DeepSeek probe (P4). Rule: no feature closes with only stub-path evidence.
+2. **The ecosys namespace discovery gap** — `discoverCommands` skips directories; `/opsx:*` is structurally invisible today. Fix is the FIRST task of Phase 1, with a real-fixture test from actual `openspec init` output; colon-join keys or `opsx/explore.md` collides silently with top-level files.
+3. **Prompt injection via command markdown riding autocontinue** — repo-shipped `.claude/commands/*.md` is attacker-controllable prompt content in a no-confirmation agent. Keep pattern-matching assistant-role only (regression test), record provenance on expanded turns, never sanitize/fence bodies (mimicry), hooks stay config-authored.
+4. **Substitution semantics divergence** — implement the zcode contract exactly (append-heading, empty out-of-range positionals, brace form NOT recognized, `` !`cmd` `` REJECTED, single-pass `strings.ReplaceAll`, substitution inside code fences); table-driven edge-case test written before the implementation.
+5. **Divergent audit wiring + unbounded growth** — copy-pasting `tracerProvider` into `acp_serve.go` creates drifting provider-construction sites; single-source the capturer through the factory seam. Verbatim ~80 KB requests per turn × hands-off multiplication = hundreds of MB/day; adopt the body_ref pattern (hash in the event, full body in a capped store), loud-but-never-fatal write failures.
+6. **Telegram token redaction hole + lifecycle coupling** — the bot-token shape matches no redactor pattern and rides download URLs; add the regex + canary test before the first HTTP call. Editor close kills the combined-mode bot mid-turn (defined behavior, documented); telegram-only mode must reuse the shared core builder, not a copied `runACPServe`.
+7. **dsh extraction traps** — source-reading is a guess wearing a costume (logs win); the wire protocol comes from the capture, not docs; `strict: true` and DeepSeek dialect quirks keyed by capability profile, never `if provider == "deepseek"`; and zcode-isms in shared code (the "12 identity headers" rule in `internal/redact` etc.) must be audited and genericized first.
 
 ## Implications for Roadmap
 
-The single most important roadmap decision is **prove mimicry before anything else.** The north star is a thesis that must be validated empirically before code accumulates on top of it; if it fails, the project stops and re-plans. This dictates a strict dependency-ordered build, not a thin-slice-of-everything plan. The architecture's build sequence (ARCHITECTURE.md item #1) and the pitfalls' phase mapping (PITFALLS.md Phase M) agree: the Profile Shaper + Audit Log + thinnest possible Turn Loop (one adapter, one tier) is item #1, and every later item assumes it is proven.
+Suggested phase structure — matches the operator priority chain and the dependency analysis; all four research files agree.
 
-Based on the research, suggested phase structure:
+### Phase 1: Slash-command kickoff (ecosys discovery + expansion + OpenSpec reconciliation)
+**Rationale:** The milestone's product proof; everything else is downstream. Also carries the milestone's only structural blocker.
+**Delivers:** ecosys namespaced discovery (first task — Pitfall 4) + real-fixture test; `Expand` with zcode substitution semantics (edge-case test first); expansion wired at the turn runner so the transcript records the expanded body; `seeded.toml` rebuilt from the installed binary's probe table (read-only vs mutating; `apply`/`implement` removed; `view`/`workset open`/`config edit` never called); Adapter-backed `Execute` on `openspec:*` tools; `triggerFromSignal` stage vocabulary (post-explore/post-propose/post-apply/post-archive); interactive-subprocess guards (`OPEN_SPEC_INTERACTIVE=0`, nil stdin, per-command timeout, exit-code classification); shadow warnings + provenance.
+**Addresses:** Area 1 table stakes + the zero-continue-chaining differentiator.
+**Avoids:** Pitfalls 1–7 (stub-vs-real gate enforced here; injection provenance; substitution contract; namespace gap; silent shadowing; flat-parser trap; rename-not-remodel).
+**Gate:** `mise ci`; operator-gated `ASSGUARD_OPENSPEC_BIN=1` against real openspec v1.5.0 (happy/fixable-failure/missing-binary paths); 11 deferred UAT checks; a real `/opsx:explore → propose → apply → archive` E2E in a scratch project.
 
-### Phase 0: Spike + Re-verification
-**Rationale:** PITFALLS N18 flags that every load-bearing inherited fact is 5 weeks old and must be re-verified before building; STACK flags 5 Phase-0 verification items that do not block the recommendation but should be closed. The predecessor's research is *input*, not *oracle*.
-**Delivers:** Closed verification items: zcode's exact JSONL transcript path + line schema; `go-openai` latest tag + tool-calling schema per OpenAI-shape provider; ACP v1 method names against the canonical spec; whisper.cpp cross-compile impact (only if local STT is in scope); `go-telegram/bot` + ACP stdout-collision integration test. Re-verified facts recorded with `{fact, source, verified_date, verified_against_version}`.
-**Avoids:** Pitfall N18 (greenfield-from-reference drift — carrying forward a stale fact), I1 (ACP spec drift).
+### Phase 2: Operational gaps — audit on `acp serve` + zcode parity re-capture (merged; adjacent)
+**Rationale:** Both are small; the operator chain allows them to share a phase. Sequencing BEFORE Telegram is the one judgment call: the shared capturer seam lands in its final home before Phase 3's runtime extraction moves the code — written once, not re-wired. (Both orderings satisfy the operator's stated constraints; the roadmapper should phase this deliberately.)
+**Delivers:** Factory-seam capturer (`BuildWithCapturer`-style; both shapes) with the tracer path refactored onto it (deleting `tracerProvider`'s reconstruction); per-session TranscriptWriter on the serve path; optional `--audit-log` mirror via `openAuditSink` verbatim (0600, stdout-rejecting); `CurrentTurnID()` accessor; serve-path audit integration test asserting a redacted `RequestShaped` line; audit growth policy (body_ref + caps). Re-capture: operator runbook (fresh rollout dir, scripted divergence-prone workload — subagents, MCP attach/detach, tool variety; NOT richest-session), pinned session ID consumed by the stability test, zcode + extractor versions in meta, drift report committed before the profile update, parity thresholds re-baselined explicitly. Header-capture redaction discipline.
+**Addresses:** Area 2 table stakes + engine-decision events + parity-fingerprint differentiator; Area 3 stability-test unblock.
+**Avoids:** Pitfalls 8, 9 (headers), 10, 17, 18.
+**Gate:** `mise ci`; redacted audit file verified on a live serve; stability test green against the newly pinned session; token/secret canary greps clean.
 
-### Phase 1 (Phase M): Mimicry MVP — the north-star proof
-**Rationale:** ARCHITECTURE.md build item #1; FEATURES dependency graph puts mimicry at the top of the table-stakes stack; PITFALLS marks N1/N2/N3/N4 as Phase M. This is the deliberate de-risking of the project's reason to exist. If it fails, stop and re-plan — do not build downstream on an unvalidated thesis.
-**Delivers:** Profile Shaper + Audit Log + thinnest possible Turn Loop (one provider adapter, one tier); the zcode profile extracted from real logs (JSONL + a one-shot MITM proxy capture); a profile-drift detector (`ass-guard profile check zcode`); a coverage manifest; a catalog schema-adapter; and a **behavioral mimicry A/B parity test** (fixed prompt suite through both ass-guard-with-zcode-profile and live zcode → statistically indistinguishable tool-call sequences).
-**Addresses:** Differentiator "Agent mimicry via profiles" (the north star); table-stakes catalog + provider layer as its substrate.
-**Avoids:** N1 (drift), N2 (byte-identical waste — set the empirical bar early), N3 (incomplete capture), N4 (catalog drift), N18 (copy-ban enforced from project start).
-**Cannot parallelize with:** anything. This phase is the gate.
+### Phase 3: Telegram peer (text + voice STT)
+**Rationale:** Needs the Phase 2 seam and the runtime extraction; gets slash-commands for free because expansion lives in the session layer. Telegram before dsh per the operator chain.
+**Delivers:** `internal/runtime` extraction (mechanical move — prerequisite, done here); `internal/telegram` frontend (long-poll `Start(ctx)`, per-chat stable session IDs, rate-limit-aware chunk sink with fence-aware 4096 splitting + MarkdownV2 escaping, `/stop` cancellation); `internal/stt` Transcriber (OpenAI default via existing client, Groq base-URL swap, whisper.cpp subprocess config-gated); `telegram` cobra subcommand + `acp serve --telegram` sidecar; `deleteWebhook` at startup; one-drain-path shutdown (SIGTERM and stdin-EOF identical; drain < 5s); **bot-token redactor + canary before the first HTTP call**; allowlist; async STT ack; `voice` AND `audio` update handling; engine-`ask` rendered as a Telegram message.
+**Addresses:** Area 4 table stakes + the in-process-peer differentiator + full SDD from Telegram.
+**Avoids:** Pitfalls 9 (token shape), 11, 12, 13; anti-features (no approval buttons, no webhook, no TTS).
+**Gate:** `mise ci`; a full SDD scenario driven from a Telegram chat (text); a voice message transcribed and driving a turn (live round-trip — Pitfall 1's rule); SIGTERM/stdin-EOF drain test; stdout byte-clean in both modes.
 
-### Phase 2 (Phase A + Session Core): Audit log, Session Manager, ACP Adapter
-**Rationale:** ARCHITECTURE.md build items #2-#3. The Audit Log must exist alongside the Profile Shaper (it records the verbatim shaped request — that's the mimicry-evidence source). The two-layer Session Manager + the ACP Adapter (renamed frontend) wire the proven mimicry core to an IDE surface. The Interface Adapter abstraction validates cleanly with one implementation before Telegram is added.
-**Delivers:** Two-layer context (transcript + projection) with replay-on-load; ACP surface working end-to-end with mimicry-faithful requests; audit log as a first-class async Event Bus consumer with redaction + rotation + reconstruction-sufficiency test.
-**Uses:** Go 1.25, ACP v1, hand-rolled JSON-RPC framing, internal/audit, internal/session.
-**Implements:** Session Manager, ACP Adapter, Audit Log components.
-**Avoids:** N16 (audit-log volume/explosion — async from day one), I5 (context-drop breaking ACP replay — two-layer model present from day one).
-
-### Phase 3 (Phase S): Model scheduling
-**Rationale:** ARCHITECTURE.md build item #4. Depends on Phase 1 (the Shaper, for re-shaping when a fallback chain crosses providers) and Phase 2 (the wired ACP surface). Per-task routing (predecessor's FR5 baseline) is the substrate; tiers/time-windows/chains layer on top — do not build the differentiator before the baseline.
-**Delivers:** Tier abstraction (heavy/good/light), time-windowed substitution (timezone-explicit, IANA zones), per-project override, multi-step fallback chains with transient-vs-structural failure classification + circuit breakers + cost ceilings.
-**Addresses:** Differentiator "Multi-tier model scheduling" (delta 2).
-**Avoids:** N5 (fallback-chain cascading failure), N6 (time-window boundary bugs — bundle `time/tzdata`), N7 (tier mismatch across providers — document per-(provider,tier) capability profile).
-
-### Phase 4 (Phase H, part 1): Unified engine + Hook-DAG + learning mode
-**Rationale:** ARCHITECTURE.md build items #6-#8. Autocontinue (the predecessor's validated dual-signal design) is built first *inside* the new decision-point shape, then generalized to the Unified Engine with hooks-as-special-case. Building the unified engine abstractly first risks an unvalidated abstraction. The Hook-DAG depends on the engine + context hygiene (FreshContext step needs boundary semantics). Learning mode comes last — it depends on the engine + hook-DAG to plug into and propose additions to.
-**Delivers:** Unified Engine with provenance-tagged turns; Hook-DAG executor with seeded set (post-implement, post-phase); learned-config store + learning mode (confidence-threshold ≥3, expiry/review dates, conflict-checked at accept time).
-**Addresses:** Differentiators "Unified post-turn engine" (delta 5), "Hook-DAG + seeded set" (delta 4/5), "Hands-off SDD autocontinue" for OpenSpec, "Learning mode" (delta 4).
-**Avoids:** N8 (hook loops — provenance tagging is structural), N9 (hook failure semantics — every hook declares `on-failure: halt|continue|ask`), N17 (learning proposes bad hooks — confidence threshold, counter-examples, versioned+revertible).
-
-### Phase 5 (Phase I): Telegram peer (text first, then voice) + MCP hosting (Phase C)
-**Rationale:** ARCHITECTURE.md build items #9. Telegram is a front to the shared core, not a separate agent — build it after the core is hands-off-capable so it inherits autocontinue. STT sits at the Telegram Adapter boundary; the core sees text only. MCP hosting can proceed in parallel with Telegram once the tool registry is stable (Phase 2/3), since it bridges MCP tools into the catalog.
-**Delivers:** Telegram Adapter (text first), Interface Adapter abstraction validated with two impls; STT at the edge (OpenAI Whisper default); MCP hosting via `StdioMCPClient` with process-group spawn + group-signal shutdown + reaper goroutine.
-**Uses:** `go-telegram/bot`, OpenAI Whisper API, `modelcontextprotocol/go-sdk`.
-**Implements:** Telegram Adapter, MCP client hosting; per-interface threat model (ACP ungated, Telegram-gated allowlist for mutating MCP tools).
-**Avoids:** N10 (concurrent input race — single serialized session mailbox from the start), N11 (responsiveness asymmetry — status queries + cancel-via-either-interface), N12 (STT errors compounding — echo-back-before-acting + domain-term dictionary), N13 (MCP subprocess zombies — process groups + transport-coupled kill), N14 (MCP schema drift — never cache `tools/list`; re-fetch every connection), N15 (MCP security — per-interface threat model, Telegram mutating-MCP allowlist).
-
-### Phase 6: Polish + distribution
-**Rationale:** ARCHITECTURE.md build item #10. Ship readiness after all functional deltas are validated.
-**Delivers:** goreleaser config (macOS + Linux, amd64 + arm64); ACP registry `agent.json` manifest; full audit-log replay tooling; documented threat model; profile-drift detector in CI.
-**Addresses:** Static-binary distribution (NFR1/NFR10); one-shot team install via ACP registry.
+### Phase 4: deepseek-harness mimicry profile #2
+**Rationale:** Last per the operator chain; benefits from Area 3's capture-provenance work made generic; needs the OpenAI system-mapping fix anyway.
+**Delivers:** First task — zcode-ism audit (`grep -ri zcode internal/ cmd/`; genericize/parameterize, e.g. redaction's preserved-header list becomes profile-supplied); OpenAI adapter `profile.System` mapping (form follows the captured dsh wire, not assumption); loader tolerance for absent Anthropic-ism files; dsh capture via **recording proxy at the configured baseURL** (wire truth) + zstd event-log harvest (klauspost spike first); `profiles/dsh/` bundle + sanitized seed; extract-profile dsh mode; `profile check dsh` per-profile capture loader; scheduling.yaml DeepSeek provider entry; explicit `--profile dsh` selection (per-turn profile switching stays a v1.2 extension — do not introduce it silently here).
+**Addresses:** Area 5 table stakes + the cross-harness-mimicry thesis validation.
+**Avoids:** Pitfalls 14, 15, 16; anti-features (no HEAD tracking — pin the commit; no UI/plugin-runtime mimicry; never assume Anthropic-shape).
+**Gate:** `mise ci`; zstd spike passed against a real `session.jsonl.zstd`; A/B parity harness (`internal/parity`) green against a DeepSeek endpoint; `profile check dsh` green; one live DeepSeek tool-calling round-trip per routed model; every profile entry traceable to a captured request.
 
 ### Phase Ordering Rationale
-- **Mimicry-first is non-negotiable** (Phase 1 gates everything). The north star is a thesis; validating it on the thinnest stack is the deliberate de-risking. ARCHITECTURE.md's build item #1, FEATURES' dependency graph, and PITFALLS' Phase M mapping all agree. Skipping this to build "real features" first is the explicit Anti-Pattern 5 in ARCHITECTURE.md.
-- **The dependency chain is strict through Phase 3.** Session Manager needs the Turn Loop; ACP Adapter needs the Session Manager; Scheduling needs the Shaper (fallback re-shaping). These cannot usefully parallelize.
-- **From Phase 4 onward, limited parallelism is possible** *within* a phase (e.g. seeded-hook authoring alongside engine internals) but not across phases — Phase 4 (engine) must precede Phase 5 (Telegram inherits autocontinue).
-- **MCP hosting (Phase C) can proceed in parallel with Telegram (Phase I)** once the tool registry is stable, because MCP bridges into the catalog without depending on the engine or Telegram.
-- **Serialize the six deltas; do not thin-slice them in parallel.** PITFALLS N18 is explicit: a "thin slice of all six in Phase 1" plan feels like risk-reduction but is risk-multiplication — when it breaks, you cannot tell which delta is at fault.
-- **The v1 cut-line is OpenSpec only, ACP primary + Telegram peer, macOS + Linux.** Do NOT add GSD/spec-kit/BMad implementations, Windows, paid search backends, additional profiles, or a standalone CLI surface in v1 — each is an explicit anti-feature or deferral per FEATURES.md and PROJECT.md.
+- **Kickoff first:** the UAT-closed OpenSpec loop is the product's proof; Areas 4–5 depend on its wiring surface-agnosticity (Telegram gets `/opsx:*` only because expansion lives in the session layer).
+- **Audit + re-capture merged second:** both small, both operator-adjacent; landing the capturer factory seam before the Phase-3 runtime move avoids re-homing the wiring (write-once). Flag: PROJECT.md's compressed chain (`1→4→3→5→2`) reads Telegram immediately after kickoff — if the operator prefers that, Phase 2's audit work must be re-homed in Phase 3's extraction with zero functional change; the recommended order is 1→2→3→4.
+- **Telegram third:** runtime extraction is its mechanical prerequisite; shares the capturer seam and the drain path; the token redactor lands here at the latest.
+- **dsh last:** verification-gated; reuses the genericized capture provenance from Area 3; the OpenAI system-mapping fix is generic and could land earlier if convenient, but the profile itself closes last.
+- **Cross-phase invariants:** `mise ci` clean; stdout = ACP frames only; no daemon, no port, static binary; `.claude/` strictly read-only; real-binary/live-service evidence in every gate.
 
 ### Research Flags
 Phases likely needing deeper research during planning:
-- **Phase 1 (Phase M — Mimicry):** The single highest-research phase. Must close zcode's exact JSONL schema (STACK Phase-0 item #1), design the profile artifact format, the coverage manifest, and the behavioral parity test methodology. The mimicry A/B parity test is itself a research question (what prompt suite, what tolerance band, what statistical comparison).
-- **Phase 3 (Phase S — Scheduling):** Fallback-chain semantics under correlated failure (N5) and time-window timezone handling (N6) need explicit design. LiteLLM's router is a design template worth studying (NOT a dependency — it's a Python proxy).
-- **Phase 5 (Phase I — Telegram/MCP):** Per-interface threat model (N15) is a design decision PROJECT.md must resolve: ACP ungated vs Telegram-gated allowlist for mutating MCP tools. This tension with PROJECT.md's "no tool-execution confirmation tier" must be resolved explicitly.
+- **Phase 4 (dsh):** the only phase with genuine unknowns left — the recording-proxy capture runbook (baseURL swap against a real dsh install), the zstd decode spike, the exact system-message mapping form (one joined message vs multiple — a ground-truth question answerable only from the capture), and DeepSeek dialect quirks (`strict: true`, param rejection) against the captured wire. Recommend `/gsd:plan-phase --research-phase 4` or an explicit capture spike task at phase start.
+- **Phase 2 (re-capture runbook):** not library research but operator-procedure design — the divergence-prone workload spec, session pinning, and re-baselining steps should be written into the phase plan verbatim from Pitfalls 17/18.
 
 Phases with standard patterns (skip research-phase):
-- **Phase 0 (Spike):** Closing STACK's 5 verification items is mechanical.
-- **Phase 6 (Polish/Distribution):** goreleaser + ACP registry manifest are well-documented standard patterns.
+- **Phase 1:** ground truth is already captured in-repo (installed-binary surface table in STACK.md, zcode semantics from the shipped diagnostics skill, real `openspec init` fixture layout) — plan directly against it.
+- **Phase 3:** library and API behaviors are fully documented (go-telegram/bot usage, Bot API limits, STT endpoints); the pitfalls file enumerates the minefield with mitigations — no additional research needed.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | Every load-bearing recommendation verified against current (Aug 2026) public sources. 5 Phase-0 verification items identified, none architectural. Inherited choices (ACP v1, two provider SDKs, goreleaser) re-verified current. |
-| Features | HIGH | 2026 landscape verified across Claude Code, zcode/claude-code-compat ecosystem, OpenCode, Codex CLI, Cursor, Aider, SDD toolkit family, ACP standard. Mimicry-as-product-category confirmed unoccupied. |
-| Architecture | HIGH | Inherited spine high-confidence (predecessor research); 5 new components medium-high (interfaces fixed, internals validated during build). Composes cleanly with predecessor's 6 components — no removals, no boundary violations. |
-| Pitfalls | HIGH | New-scope pitfalls grounded in external sources where available (MCP zombies, Anthropic rate limits) and project-specific reasoning where not. Priority-ordered for the mimicry north star. |
+| Stack | HIGH | Both new deps verified against releases + Go module proxy (v1.23.0 / v1.19.2); OpenSpec surface captured from the installed binary itself. One MEDIUM: zstd against real dsh files (named spike). |
+| Features | HIGH | Slash-command semantics triple-sourced (Claude Code docs, zcode local ground truth, real opsx files); audit norms from official OTel docs. MEDIUM: Telegram comparables (community projects) and dsh user-surface (developer preview). |
+| Architecture | HIGH | Every integration point names the real package/type/function, verified against source; the namespace gap and no-Execute gap verified live. MEDIUM only for Telegram/dsh internals to be validated during build. |
+| Pitfalls | HIGH | Grounded in this repo's actual v1.0 code and the Phase-4 UAT root cause; external facts (DeepSeek `strict`, Telegram limits, OpenSpec interactive mode) source-verified. |
 
-**Overall confidence:** HIGH. The only genuine uncertainty is the Phase-1 mimicry proof itself — which the roadmap is designed to surface and resolve first.
+**Overall confidence:** HIGH — this is incremental work on a shipped, well-instrumented codebase, with the two lowest-confidence items (dsh wire capture, zstd decode) reduced to named spikes rather than open questions.
 
 ### Gaps to Address
-
-Areas where research was inconclusive or needs validation during implementation:
-
-- **zcode's exact JSONL transcript path + line schema** (STACK Phase-0 item #1; closes Focus 1 confidence from MEDIUM → HIGH on zcode specifics). Verify during Phase 0; do not assume the claude-code-compat path is exactly zcode's path.
-- **Mimicry A/B parity test methodology** (PITFALLS N2): defining "statistically indistinguishable tool-call sequences" with a tolerance band is itself a design question. Resolve during Phase 1 planning — the acceptance test shape must be agreed before Phase 1 implementation.
-- **Per-interface threat model for MCP + Telegram** (PITFALLS N15): PROJECT.md's "no tool-execution confirmation tier" tension with Telegram-as-remote/voice-driven surface must be resolved. Recommended: ACP ungated (matches Claude Code), Telegram mutating-MCP-tool allowlist defaults empty. PROJECT.md decision pending.
-- **`sashabaranov/go-openai` tool-calling schema per provider** (STACK Phase-0 item #2): pkg.go.dev publish cadence looks ~1 year stale vs GitHub; pin to latest tag at build time and verify schema fidelity per OpenAI-shape provider.
-- **Telegram-only launch vs PROJECT.md's "no standalone CLI surface"** (STACK tension flagged in Focus 3): whether a Telegram-only cobra subcommand counts as a "CLI surface" must be resolved at architecture time. Minor, but unresolved.
-- **Can a Telegram message interrupt an in-flight ACP turn?** (PITFALLS N10): serialization semantics must be decided. Recommended: no — queue for the next turn boundary; surface "your message will be applied after the current stage."
+- **dsh wire-truth capture:** no recording-proxy run has happened yet; the capture runbook and profile content depend on it. Handle as Phase 4's opening task/spike, not as more desk research.
+- **zstd against real dsh artifacts:** one decode spike before building the harvest tool (MEDIUM → HIGH).
+- **OpenAI system-message mapping form:** mimic however dsh itself sends it — decide from the capture, not assumption.
+- **openspec version drift:** installed v1.5.0 vs npm 1.9.0 — the adapter pins the installed binary's probe and records the version; note the re-probe procedure for upgrades.
+- **telegram-only mode vs "no standalone CLI surface"** (PROJECT.md Out of Scope): explicit tension flagged in STACK.md — resolve deliberately at Phase 3 planning, not via a hack.
+- **TurnID on `RequestCapturer`:** cheapest fix is the `CurrentTurnID()` accessor; acceptable v1.1 fallback is empty TurnID (ordering preserved by append) — decide in Phase 2 planning.
+- **Per-turn profile switching:** deferred to v1.2 by design; Phase 4 keeps `--profile` explicit — record as a non-goal so it isn't half-built.
 
 ## Sources
 
-Consolidated and deduplicated from the four research documents. Full per-document source lists in [STACK.md](./STACK.md), [FEATURES.md](./FEATURES.md), [ARCHITECTURE.md](./ARCHITECTURE.md), and [PITFALLS.md](./PITFALLS.md).
-
 ### Primary (HIGH confidence)
-
-**Project scope:**
-- `/Users/nil/DiskD/W/Djarvur/ass-guard-agent/.planning/PROJECT.md` — north star, six deltas, requirements, key decisions, constraints, v1 cut-line.
-
-**Predecessor research (inherited spine — reference, not oracle; re-verify in Phase 0 per N18):**
-- `/Users/nil/DiskD/W/Djarvur/sdd-acp-agent/_bmad-output/planning-artifacts/research/technical-sdd-acp-agent-research-2026-07-02.md` — 6-component decomposition, event bus, two-layer context, provider-shape isolation, ACP wire protocol, integration patterns, phased build.
-
-**ACP (inherited, re-verified Aug 2026):**
-- https://agentclientprotocol.com/get-started/introduction — ACP overview.
-- https://agentclientprotocol.com/protocol/v1/overview, /transports, /prompt-turn, /tool-calls, /session-setup, /schema — v1 spec (stable).
-- https://agentclientprotocol.com/announcements/acp-v2-draft — v2 is Draft; confirms v1 is the stable target.
-- https://github.com/agentclientprotocol/agent-client-protocol — canonical repo.
-- https://agentclientprotocol.com/rfds/acp-agent-registry + https://github.com/agentclientprotocol/registry/blob/main/agent.schema.json — registry manifest format.
-
-**Go & build:**
-- https://go.dev/doc/devel/release — release history (1.23 EOL; floor bumped to 1.25; 1.26 = Feb 2026).
-- https://goreleaser.com/ — v2.17 current (2026).
-
-**Model providers (verified Aug 2026):**
-- https://github.com/anthropics/anthropic-sdk-go/releases — v1.62.0 (Jul 2026).
-- https://github.com/sashabaranov/go-openai — ~10.7k stars, 2026-active.
-- https://docs.z.ai/devpack/quick-start — Z.ai Anthropic-compatible base URL confirmed.
-- https://platform.claude.com/docs/en/api/rate-limits — Anthropic rate limits (transient-vs-structural failure classification for N5).
-
-**MCP hosting (official SDK):**
-- https://github.com/modelcontextprotocol/go-sdk — official Go SDK, v1.0.0, Google-collaborated.
-- https://pkg.go.dev/github.com/modelcontextprotocol/go-sdk/mcp — protocol 2026-07-28, stdio + stderr guidance.
-- https://modelcontextprotocol.io/docs/2026-07-28/sdk — official SDK docs.
-- https://github.com/mark3labs/mcp-go — community alternative (influenced official SDK; not the default for greenfield 2026).
-
-**Mimicry capture (Focus 1):**
-- https://www.adityabawankule.io/blog/claude-code-session-jsonl-format — JSONL path `~/.claude/projects/<munged-cwd>/<session-id>.jsonl`.
-- https://github.com/chouzz/llm-interceptor — MITM proxy for AI coding assistants (LLI).
-- Sherlock MITM proxy — https://news.ycombinator.com/item?id=46799898.
-- https://github.com/daaain/claude-code-log — JSONL → HTML/Markdown converter (dev-time tool).
-
-**Telegram + STT:**
-- https://github.com/go-telegram/bot — recommended (zero-dep, context-first, active).
-- https://developers.openai.com/api/docs/guides/speech-to-text — OpenAI Whisper API (default STT).
-- https://github.com/ggml-org/whisper.cpp — local STT (subprocess, not cgo).
+- This repo's source (all packages read: `internal/{acp,session,engine,openspec,ecosys,audit,redact,profile,provider,…}`, `cmd/ass-guard/*`, `go.mod`, `profiles/zcode/`) — integration points, verified gaps.
+- Live probe 2026-08-14: installed `openspec` v1.5.0 (`--help` per command; `openspec init --tools claude` scratch run → real opsx command/skill layout; `openspec/config.yaml` contents).
+- Local `zcode-guide/diagnosing-commands` skill (shipped by the mimicry target) — discovery order, name regex, flat frontmatter, substitution semantics.
+- dsh sources (raw.githubusercontent.com, master): `llm-deepseek/adapter.ts` + `serialize.ts` (wire shape quote-level), `core/system-prompt` (runtime-composed — why source-only fails), `session-persistence-jsonl` (zstd framing, events-not-requests).
+- GitHub releases + Go module proxy: `go-telegram/bot` v1.23.0, `klauspost/compress` v1.19.2; `go doc` against pinned `sashabaranov/go-openai` v1.42.0.
+- Claude Code official docs: slash-commands/skills semantics; OTel monitoring (event names, correlation IDs, redaction norms, 60 KB caps, body_ref).
 
 ### Secondary (MEDIUM confidence)
+- Telegram Bot API behavior (4096-after-entities, 409 webhook conflict, 429 `retry_after`, voice = OGG/Opus ≤50 MB vs STT 25 MB, `getFile` URL mechanics); OpenAI + Groq speech-to-text docs.
+- DeepSeek API docs (`strict: true` tool schema validation, JSON-mode truncation, reasoner param quirks); OpenSpec CHANGELOG/CLI docs (interactive-mode env, exit-code semantics, 1.5.0→1.9.0 surface movement).
+- Comparables: `RichardAtCT/claude-code-telegram` (session binding, throttled streaming, whitelist, audit-to-SQLite); Claude Code Channels plugin (voice fallback chain, forum topics, pairing, daemon supervisor — the contrast that defines ass-guard's in-process differentiator).
 
-**claude-code-compat category (validates the mimicry-adjacent ecosystem):**
-- https://github.com/woai3c/x-code-cli ; https://github.com/multica-ai/multica/issues/2288 ; https://commandcode.ai/docs/whats-new ; https://lib.rs/crates/cersei-types — compat-as-config, not indistinguishable-to-model.
-
-**Comparable agents & routing:**
-- https://opencode.ai/ (75+ providers); https://openai-codex.mintlify.app/configuration/reference ; https://github.blog/changelog/2026-07-07-codex-as-agent-provider-and-agentic-enhancements-in-jetbrains-ides/ ; https://docs.litellm.ai/docs/routing (design template only — Python proxy, NOT a Go dep).
-- https://www.augmentcode.com/guides/ai-model-routing-guide ; https://duet.so/guides/claude-opus-vs-sonnet-model-routing — 2026 routing guides.
-
-**SDD toolkit family (the hosting surface):**
-- https://github.com/Fission-AI/openspec (v1 target); https://github.com/github/spec-kit ; https://github.com/fulgidus/pi-gsd — deferred; interface accommodates.
-
-**Multi-interface / chat peers / voice:**
-- https://pub.towardsai.net/claude-code-channels-message-your-ai-coding-agent-from-telegram-and-discord-2026-5f263ccc4b9c — Claude Code Channels (adjunct, not full peer — validates ass-guard's sharper differentiator).
-
-**MCP subprocess lifecycle (PITFALLS N13):**
-- https://dev.to/thestack_ai/i-built-a-zombie-process-killer-because-claude-code-ate-14gb-of-my-ram-1deg — orphaned MCP-server resource accumulation.
-- https://github.com/NousResearch/hermes-agent/issues/15012 — gateway zombie-process bug.
-- https://forum.cursor.com/t/cursor-3-4-20-kills-stdio-mcp-servers-1-5s-after-successful-initialize-sigkill-v2-fsm-race/160892 — stdio lifecycle gotcha.
-
-**Hook-DAG design references (NOT dependencies):**
-- https://github.com/go-task/task (DAG-ordered Make-like); https://github.com/Flowpack/prunner (embeddable Go pipeline runner) — design references only.
-- https://www.reddit.com/r/golang/comments/nsfjtq/ — Temporal = overkill for embedded pipelines.
-
-### Tertiary (LOW confidence — needs validation)
-
-- **zcode's exact JSONL path + line schema for ass-guard's mimicry capture** — claude-code-compat path is verified but zcode's specific behavior may have diverged; verify in Phase 0 (STACK item #1, closes Focus 1 from MEDIUM → HIGH).
-- **`sashabaranov/go-openai` latest-tag tool-calling fidelity per OpenAI-shape provider** (MiniMax M3, Groq) — pin the tag and verify schema during Phase 0 (STACK item #2).
-- **whisper.cpp cross-compile impact via goreleaser** — only relevant if local STT is in scope; subprocess approach should preserve the static binary but verify (STACK item #4).
+### Tertiary (LOW confidence)
+- Community issue trackers for Telegram limit behaviors (node-telegram-bot-api issues, StackOverflow 429 threads) — consistent but anecdotal; validated by comparables' resolved patterns.
+- VentureBeat/x-cmd pages on dsh — positioning and mode facts, superseded by direct source reading.
 
 ---
-*Research completed: 2026-08-09*
+*Research completed: 2026-08-14*
 *Ready for roadmap: yes*
