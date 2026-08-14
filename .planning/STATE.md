@@ -4,12 +4,12 @@ milestone: v1.1
 milestone_name: Kickoff & Peers
 status: executing
 stopped_at: Phase 11 context gathered
-last_updated: "2026-08-14T19:24:56.981Z"
-last_activity: 2026-08-14
+last_updated: "2026-08-14T19:36:20.140Z"
+last_activity: 2026-08-14 -- Phase 10 planning complete
 progress:
   total_phases: 4
   completed_phases: 0
-  total_plans: 12
+  total_plans: 19
   completed_plans: 2
   percent: 0
 ---
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-08-14)
 Phase: 8 (slash-command-kickoff) — EXECUTING
 Plan: 3 of 6
 Status: Ready to execute
-Last activity: 2026-08-14
+Last activity: 2026-08-14 -- Phase 10 planning complete
 Next action: `/gsd-execute-phase 8`
 
 Progress: [██░░░░░░░░] 17%
@@ -60,12 +60,13 @@ None yet.
 - [Phase 8 planning, env note]: plan-phase ran with the gsd-planner and gsd-plan-checker contracts executed IN-PROCESS by the orchestrating agent — this ZCode runtime exposes no subagent-spawn tool, and the `claude` CLI fallback is unusable (its inference gateway 127.0.0.1:3456 is down; two probes failed with connection refused). Both agent definition files (~/.claude/agents/gsd-planner.md, gsd-plan-checker.md) were followed step-for-step; all gsd-sdk validators + coverage gates ran normally. No action needed for execution; surface if plan quality looks off.
 - [Phase 8]: `internal/ecosys.discoverCommands` flat-scans `commands/*.md` and skips directories — the opsx layout is invisible today. This structural blocker is Phase 8's FIRST task.
 - [Phase 9]: AUD-05 needs an operator action (export `ZAI_API_KEY`, run the divergence-prone capture workload per the runbook).
-- [Phase 10]: the bot-token redactor + canary test MUST land before the first Telegram HTTP call (token shape matches no existing redactor pattern).
+- [Phase 10]: the bot-token redactor + canary test MUST land before the first Telegram HTTP call (token shape matches no existing redactor pattern) — SEQUENCED by planning as plan 10-02 (Wave 1, structurally before the first network plan 10-04); close on execution.
 - [Phase 11]: only phase with open unknowns — research/capture spike recommended at phase start (`--research-phase 11`).
 - [Phase 8 execution, env note]: execute-phase ran with the gsd-executor contract executed IN-PROCESS by the orchestrating agent — this ZCode runtime exposes no subagent-spawn tool (same constraint the Phase-8 planner hit). ~/.claude/agents/gsd-executor.md was followed step-for-step (per-task atomic commits, TDD RED→GREEN gates, deviation rules, SUMMARY.md + state updates). Worktrees disabled per project config; execution sequential on master, matching prior phases.
 - [Phase 9 planning, env note]: plan-phase ran with the gsd-planner and gsd-plan-checker contracts executed IN-PROCESS (same no-subagent-spawn constraint as Phase 8; both agent definition files followed step-for-step; all gsd-sdk validators + coverage gates ran normally). Two planning judgment calls, both per the phase brief: (1) NO phase-level researcher spawn — this phase's research flag is operator-procedure design, not library research; the fresh v1.1 project research (.planning/research/{SUMMARY,ARCHITECTURE,PITFALLS}.md, 2026-08-14 editions) was consumed directly, and the re-capture runbook from Pitfalls 17/18 is written verbatim into plans 09-03/09-04; (2) pattern-mapper skipped (non-blocking; CONTEXT.md's <code_context> section already carries the analog map). Nyquist VALIDATION.md not created — no phase RESEARCH.md exists to source a Validation Architecture section (workflow warns and continues; every plan task carries automated verify anyway).
 - [Phase 9]: 09-04 is autonomous:false — execute-phase will pause at the operator capture checkpoint (the scripted divergence-prone zcode workload, run ONCE by the operator per D-04); the parity re-baseline leg additionally needs ZAI_API_KEY.
 - [Phase 8 env note]: TestStability_WithinSessionExtractionSource (internal/profile) is flaky while concurrent zcode sessions write ~/.zcode/cli/rollout — it picks the richest live main session. Pre-existing, zero dependency on Phase-8 packages; pinned-session fix already dispositioned to Phase 9 (AUD-05).
+- [Phase 10 planning, env note]: plan-phase ran with the gsd-planner and gsd-plan-checker contracts executed IN-PROCESS (same no-subagent-spawn constraint as Phases 8/9; both agent definition files followed step-for-step; all gsd-sdk validators + coverage gates ran normally; plan-checker returned VERIFICATION PASSED — 0 blockers, 0 warnings, no revision loop). Planning judgment calls, all per the phase brief: (1) NO phase-level researcher spawn — the operator brief said standard patterns/no research needed; the v1.1 project research (.planning/research/{SUMMARY,STACK,FEATURES,PITFALLS,VERIFIED-FACTS}.md, 2026-08-14 editions) was consumed directly (Pitfalls 9/11/12/13 and STACK's go-telegram/bot v1.23.0 usage are written into the plans verbatim); (2) pattern-mapper skipped (Phase-9 precedent; each plan carries an <interfaces> block with the analog excerpts instead); (3) the roadmap's "UI hint: yes" was treated as a keyword false-positive and UI-SPEC generation skipped — the phase has no visual surface (Telegram chat rendering), and the entire interaction design is already locked by CONTEXT D-03/D-04; run /gsd:ui-phase 10 + replan if the operator disagrees; (4) Nyquist VALIDATION.md not created — no phase RESEARCH.md exists (same as Phase 9; every task carries automated verify). 10-07 is autonomous:false (live Telegram round-trip gate: operator + real bot token + ZAI_API_KEY). No auto-advance to execute-phase: Phase 10 depends on Phases 8 AND 9 executing first (ROADMAP Depends on), and the Phase-8 executor is concurrently active in this repo.
 
 ## Deferred Items
 

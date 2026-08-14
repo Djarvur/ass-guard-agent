@@ -127,7 +127,27 @@ Plans:
   5. The bot token never appears in any log, audit event, or error string — a dedicated redactor pattern with a canary test landing **before the first Telegram HTTP call** (TG-05)
 
 **Phase gate:** `mise ci` clean AND a live Telegram round-trip — a full text SDD scenario driven from a real chat plus a voice message transcribed and driving a turn — AND the SIGTERM/stdin-EOF drain test AND stdout byte-clean in both launch modes. No stub-only evidence closes this phase.
-**Plans:** TBD
+**Plans:** 7 plans
+Plans:
+**Wave 1**
+
+- [ ] 10-01-PLAN.md — `internal/runtime` extraction: the turn core becomes the shared engine home (THE structural refactor, first work)
+- [ ] 10-02-PLAN.md — Telegram bot-token redactor + canary BEFORE the first Telegram HTTP call
+- [ ] 10-03-PLAN.md — chat output pipeline: fence-aware 4096 chunking, MarkdownV2 escaping, throttled edit-and-spill streaming
+- [ ] 10-05-PLAN.md — `internal/stt`: the Transcriber seam — OpenAI default (existing client), Groq by URL swap, whisper.cpp subprocess
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 10-04-PLAN.md — Telegram bot loop: chat↔session binding, allowlist, text turns on the shared engine, /stop + /new, long-poll lifecycle
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 10-06-PLAN.md — voice flow: download → transcribe → the transcript IS the user message (ack + auto-sent echo, no buttons)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 10-07-PLAN.md — launch modes (`ass-guard telegram` + `acp serve --telegram`), the one drain path, and the LIVE phase gate
+
 **UI hint**: yes
 
 ### Phase 11: dsh Mimicry Profile #2
