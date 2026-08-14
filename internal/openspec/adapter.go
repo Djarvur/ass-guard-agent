@@ -9,12 +9,35 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"syscall"
 	"time"
 )
 
 // ErrOpenSpecNotFound signals the openspec binary is not on PATH (OPEN-01 — the
 // engine routes this to learning ask so the operator can install/configure it).
 var ErrOpenSpecNotFound = errors.New("openspec binary not found on PATH")
+
+// killGroupOnCtx arms cmd so a timeout/cancel SIGKILLs the child's WHOLE
+// process group, not just the direct child (CMD-03 / T-8-11). Without this, a
+// wrapper shell's grandchildren (sh → sleep, npm → node) survive the kill,
+// hold the output pipes, and stall Wait for the child's full runtime — the
+// exact hang the per-command timeout exists to prevent. The child gets its
+// own group (Setpgid) so the group kill cannot touch ass-guard's own process.
+func killGroupOnCtx(cmd *exec.Cmd) {
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		if cmd.Process == nil {
+			return nil
+		}
+		// Negative pid = every process in the group; SIGKILL so nothing traps it.
+		err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		if errors.Is(err, syscall.ESRCH) {
+			return nil // group already gone — not a failure
+		}
+
+		return fmt.Errorf("openspec: kill process group %d: %w", cmd.Process.Pid, err)
+	}
+}
 
 // Outcome classifications for RunGuarded results (D-10 — the model adapts on
 // any of these; none is a Go error).
@@ -64,6 +87,7 @@ func (a *Adapter) Run(ctx context.Context, command string, args ...string) (stri
 
 	argv := append([]string{command}, args...)
 	cmd := exec.CommandContext(ctx, binary, argv...)
+	killGroupOnCtx(cmd)
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 
@@ -182,6 +206,7 @@ func (a *Adapter) runGuardedProcess(
 
 	argv := append([]string{command}, args...)
 	cmd := exec.CommandContext(ctx, binary, argv...)
+	killGroupOnCtx(cmd)
 
 	// Non-interactive guards: env kill-switch + nil stdin (prompt reads EOF).
 	cmd.Env = append(os.Environ(), nonInteractiveEnv)

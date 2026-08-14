@@ -288,7 +288,7 @@ func TestSurfaceMatchesInstalledBinary(t *testing.T) {
 // the grandchild holding the output pipes (Wait stalls for the child's full
 // runtime). Budget 1s; RunGuarded must return within ~2s classified "timeout"
 // with no orphaned stub process left.
-func TestRunGuarded_TimeoutKillsHanger(t *testing.T) { //nolint:paralleltest // putStubOnPATH mutates PATH
+func TestRunGuarded_TimeoutKillsHanger(t *testing.T) { // stub PATH + env are test-scoped
 	stub := putStubOnPATH(t)
 	t.Setenv("ASSGUARD_STUB_SLEEP", "10")
 
@@ -311,7 +311,8 @@ func TestRunGuarded_TimeoutKillsHanger(t *testing.T) { //nolint:paralleltest // 
 	// Best-effort pgrep scoped to the stub's absolute path (if ps tooling is
 	// unavailable this check is a no-op — same convention as the ctx-cancel
 	// test).
-	if _, perr := exec.LookPath("pgrep"); perr == nil {
+	_, perr := exec.LookPath("pgrep")
+	if perr == nil {
 		time.Sleep(100 * time.Millisecond) // give the OS a moment to reap
 
 		out, _ := exec.CommandContext(context.Background(), "pgrep", "-f", stub).Output()
@@ -347,7 +348,7 @@ func TestRunGuarded_InteractiveEnvAndNilStdin(t *testing.T) { //nolint:parallelt
 // TestRunGuarded_ClassificationTable (Test 8) verifies exit-code
 // classification: exit 0 → ok; non-zero default → hard-error; non-zero with a
 // fixable entry → fixable (table-driven).
-func TestRunGuarded_ClassificationTable(t *testing.T) { //nolint:paralleltest // stub env vars
+func TestRunGuarded_ClassificationTable(t *testing.T) { // stub env vars are test-scoped
 	putStubOnPATH(t)
 
 	a := &openspec.Adapter{}
@@ -378,14 +379,17 @@ func TestRunGuarded_ClassificationTable(t *testing.T) { //nolint:paralleltest //
 
 // bootstrapScratchProject initializes a scratch OpenSpec project with one
 // change carrying an incomplete task (the three-path gate's shared fixture).
+// Runs from INSIDE the scratch dir (t.Chdir) so init/new operate there, never
+// on the repo.
 func bootstrapScratchProject(t *testing.T) string {
 	t.Helper()
 
 	scratch := t.TempDir()
+	t.Chdir(scratch)
 
 	a := &openspec.Adapter{}
 
-	res := a.RunGuarded(context.Background(), 120, "", "init", "--tools", "claude", "--force", scratch)
+	res := a.RunGuarded(context.Background(), 120, "", "init", "--tools", "claude", "--force")
 	if res.Classification != openspec.ClassOK {
 		t.Fatalf("scratch init failed: %+v", res)
 	}
@@ -396,7 +400,9 @@ func bootstrapScratchProject(t *testing.T) string {
 	}
 
 	tasks := filepath.Join(scratch, "openspec", "changes", "gate-change", "tasks.md")
-	if err := os.WriteFile(tasks, []byte("- [ ] 1. Incomplete task one\n"), 0o600); err != nil {
+
+	err := os.WriteFile(tasks, []byte("- [ ] 1. Incomplete task one\n"), 0o600)
+	if err != nil {
 		t.Fatalf("seed tasks.md: %v", err)
 	}
 
@@ -416,9 +422,7 @@ func TestRunGuarded_ThreePathRealBinaryGate(t *testing.T) { //nolint:paralleltes
 		t.Skip("openspec binary not on PATH even though ASSGUARD_OPENSPEC_BIN=1")
 	}
 
-	scratch := bootstrapScratchProject(t)
-
-	t.Chdir(scratch)
+	bootstrapScratchProject(t)
 
 	cfg, err := openspec.DefaultConfig()
 	if err != nil {
@@ -432,89 +436,113 @@ func TestRunGuarded_ThreePathRealBinaryGate(t *testing.T) { //nolint:paralleltes
 		t.Fatalf("RegisterTools: %v", err)
 	}
 
-	t.Run("happy path", func(t *testing.T) {
-		list, ok := cat.Get("openspec:" + cmdList)
-		if !ok {
-			t.Fatal("openspec:list not registered")
-		}
+	t.Run("happy path", func(t *testing.T) { threePathHappy(t, cat) }) //nolint:paralleltest // shared scratch cwd
 
-		out, err := list.Execute(context.Background(), json.RawMessage(`{"args":["--json"]}`))
-		if err != nil {
-			t.Fatalf("list Execute err = %v", err)
-		}
+	t.Run("fixable failure path", func(t *testing.T) { threePathFixable(t, cat) }) //nolint:paralleltest // scratch cwd
 
-		var res execResult
+	t.Run("missing binary path", func(t *testing.T) { threePathMissingBinary(t, cat) }) //nolint:paralleltest // PATH
+}
 
-		err = json.Unmarshal(out, &res)
-		if err != nil {
-			t.Fatalf("list result not JSON: %v", err)
-		}
+// threePathHappy (Test 9): read-only subcommands return ok with JSON stdout.
+func threePathHappy(t *testing.T, cat *toolcat.Catalog) {
+	t.Helper()
 
-		if res.Classification != openspec.ClassOK {
-			t.Fatalf("list classification = %q; want ok (stderr: %s)", res.Classification, res.Stderr)
-		}
+	list, ok := cat.Get("openspec:" + cmdList)
+	if !ok {
+		t.Fatal("openspec:list not registered")
+	}
 
-		if !json.Valid([]byte(strings.TrimSpace(res.Stdout))) {
-			t.Errorf("list --json stdout not valid JSON: %q", res.Stdout)
-		}
+	out, err := list.Execute(context.Background(), json.RawMessage(`{"args":["--json"]}`))
+	if err != nil {
+		t.Fatalf("list Execute err = %v", err)
+	}
 
-		status, _ := cat.Get("openspec:status")
+	var res execResult
 
-		out, err = status.Execute(context.Background(), json.RawMessage(`{"args":["--change","gate-change","--json"]}`))
-		if err != nil {
-			t.Fatalf("status Execute err = %v", err)
-		}
+	err = json.Unmarshal(out, &res)
+	if err != nil {
+		t.Fatalf("list result not JSON: %v", err)
+	}
 
-		_ = json.Unmarshal(out, &res)
+	if res.Classification != openspec.ClassOK {
+		t.Fatalf("list classification = %q; want ok (stderr: %s)", res.Classification, res.Stderr)
+	}
 
-		if res.Classification != openspec.ClassOK || !json.Valid([]byte(strings.TrimSpace(res.Stdout))) {
-			t.Errorf("status --json = %+v; want ok with valid JSON stdout", res)
-		}
-	})
+	if !json.Valid([]byte(strings.TrimSpace(res.Stdout))) {
+		t.Errorf("list --json stdout not valid JSON: %q", res.Stdout)
+	}
 
-	t.Run("fixable failure path", func(t *testing.T) {
-		archive, ok := cat.Get("openspec:archive")
-		if !ok {
-			t.Fatal("openspec:archive not registered")
-		}
+	status, _ := cat.Get("openspec:status")
 
-		// No --yes: the interactive confirmation prompt reads nil stdin →
-		// immediate EOF → non-zero exit → fixable (actionable stderr), NOT a
-		// hard error and NOT a hang.
-		out, err := archive.Execute(context.Background(), json.RawMessage(`{"args":["gate-change"]}`))
-		if err != nil {
-			t.Fatalf("archive Execute err = %v; want nil (fixable is structured, D-10)", err)
-		}
+	out, err = status.Execute(context.Background(), json.RawMessage(`{"args":["--change","gate-change","--json"]}`))
+	if err != nil {
+		t.Fatalf("status Execute err = %v", err)
+	}
 
-		var res execResult
+	_ = json.Unmarshal(out, &res)
 
-		_ = json.Unmarshal(out, &res)
+	if res.Classification != openspec.ClassOK || !json.Valid([]byte(strings.TrimSpace(res.Stdout))) {
+		t.Errorf("status --json = %+v; want ok with valid JSON stdout", res)
+	}
+}
 
-		if res.Classification != openspec.ClassFixable {
-			t.Errorf("archive classification = %q; want fixable (result %+v)", res.Classification, res)
-		}
+// threePathFixable (Test 10): a real fixable failure reaches the model as a
+// structured fixable result — never a hard error, never a hang.
+func threePathFixable(t *testing.T, cat *toolcat.Catalog) {
+	t.Helper()
 
-		if !strings.Contains(res.Stderr, "incomplete task") {
-			t.Errorf("stderr = %q; want actionable incomplete-task detail", res.Stderr)
-		}
-	})
+	archive, ok := cat.Get("openspec:archive")
+	if !ok {
+		t.Fatal("openspec:archive not registered")
+	}
 
-	t.Run("missing binary path", func(t *testing.T) {
-		t.Setenv("PATH", t.TempDir()) // no openspec anywhere
+	// Deviation from the plan's example text (v1.5.0 live probe): archive
+	// does NOT block on incomplete tasks when --yes is passed — it warns
+	// and archives (exit 0). The reproducible fixable failure on this
+	// binary is the no---yes non-TTY path: the confirmation prompt reads
+	// nil stdin → EOF → exit 1 with actionable stderr ("force closed the
+	// prompt"; the probe table's "--yes required non-TTY"). The model sees
+	// fixable + stderr and adapts (retry with --yes) — D-10 exactly.
+	out, err := archive.Execute(context.Background(), json.RawMessage(`{"args":["gate-change"]}`))
+	if err != nil {
+		t.Fatalf("archive Execute err = %v; want nil (fixable is structured, D-10)", err)
+	}
 
-		list, _ := cat.Get("openspec:" + cmdList)
+	var res execResult
 
-		out, err := list.Execute(context.Background(), json.RawMessage(`{}`))
-		if err != nil {
-			t.Fatalf("Execute err = %v; want nil (not-found is structured)", err)
-		}
+	_ = json.Unmarshal(out, &res)
 
-		var res execResult
+	if res.Classification != openspec.ClassFixable {
+		t.Errorf("archive classification = %q; want fixable (result %+v)", res.Classification, res)
+	}
 
-		_ = json.Unmarshal(out, &res)
+	if res.ExitCode == 0 {
+		t.Errorf("exit_code = 0; want non-zero (the prompt EOF must fail the run)")
+	}
 
-		if res.Classification != openspec.ClassNotFound {
-			t.Errorf("classification = %q; want not-found", res.Classification)
-		}
-	})
+	if !strings.Contains(strings.ToLower(res.Stderr), "prompt") {
+		t.Errorf("stderr = %q; want actionable prompt-closed detail", res.Stderr)
+	}
+}
+
+// threePathMissingBinary (Test 11): PATH stripped → not-found, structured.
+func threePathMissingBinary(t *testing.T, cat *toolcat.Catalog) {
+	t.Helper()
+
+	t.Setenv("PATH", t.TempDir()) // no openspec anywhere
+
+	list, _ := cat.Get("openspec:" + cmdList)
+
+	out, err := list.Execute(context.Background(), json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("Execute err = %v; want nil (not-found is structured)", err)
+	}
+
+	var res execResult
+
+	_ = json.Unmarshal(out, &res)
+
+	if res.Classification != openspec.ClassNotFound {
+		t.Errorf("classification = %q; want not-found", res.Classification)
+	}
 }
