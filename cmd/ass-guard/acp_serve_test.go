@@ -667,6 +667,9 @@ func assertSingleNothingDecision(t *testing.T, r *sessionTurnRunner, sessionID s
 
 // --- Phase 8 / 08-05: Skill tool + listing wiring (Tests 1-5) ---
 
+// skillBodyMarker identifies the explore fixture's body in results.
+const skillBodyMarker = "Explore the change: read the codebase"
+
 // skillListingHeaderCaptured is the listing's first line, pinned from the
 // captured zcode session (see internal/ecosys/skills_test.go for the source).
 const skillListingHeaderCaptured = "The following skills are available for use with the Skill tool:"
@@ -677,7 +680,7 @@ func writeSkillFixtures(t *testing.T, dir string) {
 	t.Helper()
 
 	bodies := map[string]string{
-		"openspec-explore": "---\nname: openspec-explore\ndescription: Explore a proposed change collaboratively\n---\n" +
+		"openspec-explore": "---\nname: openspec-explore\ndescription: Explore a change collaboratively\n---\n" +
 			"Explore the change: read the codebase, compare options, diagram.\n",
 		"openspec-propose": "---\nname: openspec-propose\ndescription: Propose a change with specs and tasks\n---\n" +
 			"Propose the change: write proposal, specs, design, tasks.\n",
@@ -699,9 +702,15 @@ func writeSkillFixtures(t *testing.T, dir string) {
 }
 
 // newSkillRunner builds an engine-on runner over a temp workDir with the opsx
-// command + skill fixtures planted and the registry loaded.
+// command + skill fixtures planted and the registry loaded. HOME is pinned to
+// an empty temp dir so the USER-scope discovery trees (~/.claude, ~/.ass-guard)
+// contribute nothing — these tests assert listing presence/absence and must be
+// hermetic against the operator's real home (t.Setenv ⇒ the callers are not
+// parallel).
 func newSkillRunner(t *testing.T, withSkills bool, script ...scriptedResp) (*sessionTurnRunner, *scriptedACPProvider) {
 	t.Helper()
+
+	t.Setenv("HOME", t.TempDir())
 
 	bus := event.NewBus()
 	prov := &scriptedACPProvider{}
@@ -748,8 +757,7 @@ func sessionSkillEntry(t *testing.T, sess *session.Session) toolcat.Tool {
 // carries the Skill tool with a REAL Execute closure; the captured
 // Description/InputSchema stay byte-identical to the embedded coretools entry
 // (override Execute ONLY — mimicry integrity, T-8-21).
-func TestSkill_ClosureRegisteredAndSchemaUntouched(t *testing.T) {
-	t.Parallel()
+func TestSkill_ClosureRegisteredAndSchemaUntouched(t *testing.T) { //nolint:paralleltest // HOME pin
 	r, _ := newSkillRunner(t, true)
 
 	sess := r.sessionFor(context.Background(), "sess-sk1")
@@ -782,7 +790,7 @@ func TestSkill_ClosureRegisteredAndSchemaUntouched(t *testing.T) {
 		t.Fatalf("result not JSON: %v (%s)", err, out)
 	}
 
-	if !strings.Contains(res.Content, "Explore the change: read the codebase") {
+	if !strings.Contains(res.Content, skillBodyMarker) {
 		t.Errorf("content = %q; want the fixture SKILL.md body", res.Content)
 	}
 }
@@ -791,9 +799,7 @@ func TestSkill_ClosureRegisteredAndSchemaUntouched(t *testing.T) {
 // executes through the REAL executor chain (MCPExecutor → RealExecutor →
 // catalog → closure) and the transcript records the tool_call + a
 // tool_result carrying the SKILL.md body — the skill "loaded into the turn".
-func TestSkill_EndToEndRoundTrip(t *testing.T) {
-	t.Parallel()
-
+func TestSkill_EndToEndRoundTrip(t *testing.T) { //nolint:paralleltest // HOME pin
 	r, _ := newSkillRunner(t, true,
 		scriptedResp{
 			text: "loading the explore skill",
@@ -828,7 +834,7 @@ func TestSkill_EndToEndRoundTrip(t *testing.T) {
 			sawCall = true
 		}
 
-		if l.Type == session.TypeToolResult && strings.Contains(string(l.Output), "Explore the change: read the codebase") {
+		if l.Type == session.TypeToolResult && strings.Contains(string(l.Output), skillBodyMarker) {
 			sawResult = true
 		}
 	}
@@ -846,8 +852,7 @@ func TestSkill_EndToEndRoundTrip(t *testing.T) {
 // profile copy carries the skills listing (captured shape); the SHARED
 // r.profile is byte-identical to before (the v1.0 per-session-copy
 // discipline — D-16).
-func TestSkill_ListingMergedProfileCopyUntouched(t *testing.T) {
-	t.Parallel()
+func TestSkill_ListingMergedProfileCopyUntouched(t *testing.T) { //nolint:paralleltest // HOME pin
 	r, _ := newSkillRunner(t, true)
 
 	sharedBefore := append([]profile.TextBlock(nil), r.profile.System...)
@@ -886,9 +891,7 @@ func TestSkill_ListingMergedProfileCopyUntouched(t *testing.T) {
 // context carries the listing including openspec-explore — the model can see
 // and invoke the matching skill on its own judgment (the natural-trigger
 // requirement, D-05 — NO auto-injection).
-func TestSkill_OpsxTriggerSeesListing(t *testing.T) {
-	t.Parallel()
-
+func TestSkill_OpsxTriggerSeesListing(t *testing.T) { //nolint:paralleltest // HOME pin
 	r, _ := newSkillRunner(t, true,
 		scriptedResp{text: "explored", finish: stopEndTurn})
 
@@ -910,7 +913,7 @@ func TestSkill_OpsxTriggerSeesListing(t *testing.T) {
 	}
 
 	if !hasListing {
-		t.Error("the expanded /opsx:explore turn's context lacks the skills listing — the model cannot trigger the skill")
+		t.Error("expanded /opsx:explore context lacks the listing — the model cannot trigger the skill")
 	}
 
 	// The user message is the EXPANDED command body (no skill auto-injection —
@@ -923,9 +926,7 @@ func TestSkill_OpsxTriggerSeesListing(t *testing.T) {
 // TestSkill_ZeroSkillDegradation (Test 5): an empty registry → no listing
 // merge (profile copy identical to the base), Skill calls return the
 // structured unknown-skill error, and the session still works.
-func TestSkill_ZeroSkillDegradation(t *testing.T) {
-	t.Parallel()
-
+func TestSkill_ZeroSkillDegradation(t *testing.T) { //nolint:paralleltest // HOME pin
 	r, _ := newSkillRunner(t, false,
 		scriptedResp{text: "plain turn works", finish: stopEndTurn})
 

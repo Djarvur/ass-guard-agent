@@ -44,6 +44,11 @@ const (
 	// prefix for a mutating command (mutability values come from the openspec
 	// config's exported vocabulary).
 	mutatingCommandCause = "mutating-command:"
+
+	// skillToolName is the captured core tool the skills closure overrides
+	// (08-05 — the captured catalog entry keeps its schema; only Execute is
+	// replaced).
+	skillToolName = "Skill"
 )
 
 // stubExecResult is the canned tool result for the non-engine path (mirrors
@@ -659,6 +664,18 @@ func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen // grouping ke
 		prof.Tools = append(append([]profile.Decl(nil), r.profile.Tools...), toProfileDecls(mcpDecls)...)
 	}
 
+	// Phase 8 (08-05, CMD-06): merge the skills listing into the profile COPY
+	// in the captured zcode shape (a dedicated system-role listing — see
+	// ecosys.SkillListing's captured-source note). Empty registry → no merge.
+	// KNOWN PLACEMENT NUISANCE: the capture places this listing as its own
+	// system message AFTER the first user message; ass-guard's Shaper today
+	// supports only leading system blocks, so the listing rides as a trailing
+	// System TextBlock — a documented divergence for the Phase-9 re-capture.
+	if listing := ecosys.SkillListing(r.reg); listing != "" {
+		prof.System = append(append([]profile.TextBlock(nil), prof.System...),
+			profile.TextBlock{Type: blockText, Text: listing})
+	}
+
 	// Per-session catalog: clone the shared engine catalog (OpenSpec + core) so
 	// MCP tools never leak across sessions or back into r.catalog (D-16).
 	var sCatalog *toolcat.Catalog
@@ -669,6 +686,14 @@ func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen // grouping ke
 	}
 
 	mcpHost.Register(sCatalog)
+
+	// Phase 8 (08-05, D-05): make the captured Skill tool EXECUTABLE per
+	// session — override ONLY Execute (the captured Description/InputSchema
+	// stay byte-identical; resolution is by registry key via SkillExecute).
+	if core, ok := sCatalog.Get(skillToolName); ok {
+		core.Execute = ecosys.SkillExecute(r.reg)
+		sCatalog.Register(core)
+	}
 
 	s := &session.Session{
 		Manager:     mgr,
