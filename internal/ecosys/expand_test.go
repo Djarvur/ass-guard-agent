@@ -7,11 +7,20 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 )
 
+// Repeated fixture literals (goconst).
+const (
+	argsTwoFields      = "a b"
+	bodyPlainNoToken   = "Just do the thing."
+	keyOpsxExploreTest = "opsx:explore"
+)
+
 // expandCases is the zcode substitution contract (FEATURES §(a) / PITFALLS
 // Pitfall 3) encoded as one table — written BEFORE the implementation (the
 // REQ mandates the contract test precede Expand). Every row pins an observable
 // zcode semantic; ass-guard must match the mimicry target exactly, including
 // where it differs from Claude Code (brace form + dynamic shell stay literal).
+//
+//nolint:funlen // one row per contract edge — the table IS the spec
 func expandCases() []struct {
 	name string
 	body string
@@ -39,13 +48,13 @@ func expandCases() []struct {
 		{
 			name: "out-of-range positional becomes empty",
 			body: "[$3]",
-			args: "a b",
+			args: argsTwoFields,
 			want: "[]",
 		},
 		{
 			name: "zero positional becomes empty (1-based)",
 			body: "[$0]",
-			args: "a b",
+			args: argsTwoFields,
 			want: "[]",
 		},
 		{
@@ -56,13 +65,13 @@ func expandCases() []struct {
 		},
 		{
 			name: "no placeholder appends under User arguments heading",
-			body: "Just do the thing.",
+			body: bodyPlainNoToken,
 			args: "x y",
 			want: "Just do the thing.\n\nUser arguments:\nx y",
 		},
 		{
 			name: "no args no append",
-			body: "Just do the thing.",
+			body: bodyPlainNoToken,
 			args: "",
 			want: "Just do the thing.",
 		},
@@ -73,10 +82,14 @@ func expandCases() []struct {
 			want: "first is one",
 		},
 		{
-			name: "unmatched-only positional still appends (no token matched)",
+			name: "placeholder present but unmatched suppresses the append",
+			// Ground truth (FEATURES §a / STACK): the append fires only when
+			// NO placeholder exists in the body — a present-but-out-of-range
+			// $N already consumed the args slot, so zcode does not re-surface
+			// them under "User arguments:".
 			body: "third was [$3]",
-			args: "a b",
-			want: "third was []\n\nUser arguments:\na b",
+			args: argsTwoFields,
+			want: "third was []",
 		},
 		{
 			name: "brace form stays literal (zcode rejects ${ARGUMENTS})",
@@ -158,10 +171,13 @@ func invocationCases() []struct {
 		args string
 		ok   bool
 	}{
-		{name: "namespaced with args", text: "/opsx:explore fix the thing", key: "opsx:explore", args: "fix the thing", ok: true},
+		{
+			name: "namespaced with args", text: "/opsx:explore fix the thing",
+			key: keyOpsxExploreTest, args: "fix the thing", ok: true,
+		},
 		{name: "registry miss is still parsed (caller decides)", text: "/foo", key: "foo", args: "", ok: true},
-		{name: "no args yields empty args", text: "/opsx:explore", key: "opsx:explore", args: "", ok: true},
-		{name: "leading newline tolerated", text: "\n/opsx:explore x", key: "opsx:explore", args: "x", ok: true},
+		{name: "no args yields empty args", text: "/opsx:explore", key: keyOpsxExploreTest, args: "", ok: true},
+		{name: "leading newline tolerated", text: "\n/opsx:explore x", key: keyOpsxExploreTest, args: "x", ok: true},
 		{name: "uppercase rejected by regex", text: "/Bad_Name", ok: false},
 		{name: "mid-text slash is not an invocation", text: "hello /opsx:explore", ok: false},
 		{name: "leading space is not an invocation", text: " /opsx:explore x", ok: false},
