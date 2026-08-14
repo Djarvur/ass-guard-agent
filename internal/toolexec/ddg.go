@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -90,7 +91,7 @@ func (d *DefaultBackend) Search(ctx context.Context, query string) (json.RawMess
 
 	out, err := json.Marshal(results)
 	if err != nil {
-		return nil, fmt.Errorf("toolexec: ddg marshal: %w", err) //nolint:wrapcheck-v2 // marshaling typed slice
+		return nil, fmt.Errorf("toolexec: ddg marshal: %w", err)
 	}
 
 	return out, nil
@@ -105,11 +106,13 @@ func (d *DefaultBackend) Fetch(ctx context.Context, target string) (json.RawMess
 		return nil, fmt.Errorf("toolexec: fetch url %q: %w", target, err)
 	}
 
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return nil, fmt.Errorf("toolexec: fetch refused %q: scheme must be http/https", target) //nolint:err113 // guard error
+	if u.Scheme != schemeHTTP && u.Scheme != schemeHTTPS {
+		return nil, fmt.Errorf("toolexec: fetch refused %q: scheme must be http/https", //nolint:err113 // guard error
+			target)
 	}
 
-	if err := d.requirePublicHost(ctx, u.Hostname()); err != nil {
+	err = d.requirePublicHost(ctx, u.Hostname())
+	if err != nil {
 		return nil, fmt.Errorf("toolexec: fetch refused %q: %w", target, err)
 	}
 
@@ -119,14 +122,14 @@ func (d *DefaultBackend) Fetch(ctx context.Context, target string) (json.RawMess
 	}
 
 	if isHTMLContentType(contentType) {
-		markdown, err := d.markdownConverter().ConvertString(string(body))
-		if err != nil {
-			return nil, fmt.Errorf("toolexec: html→markdown %q: %w", target, err)
+		markdown, convErr := d.markdownConverter().ConvertString(string(body))
+		if convErr != nil {
+			return nil, fmt.Errorf("toolexec: html→markdown %q: %w", target, convErr)
 		}
 
-		out, err := json.Marshal(map[string]string{"content": markdown}) //nolint:err113 // fixed shape
-		if err != nil {
-			return nil, fmt.Errorf("toolexec: fetch marshal: %w", err)
+		out, marshalErr := json.Marshal(map[string]string{"content": markdown})
+		if marshalErr != nil {
+			return nil, fmt.Errorf("toolexec: fetch marshal: %w", marshalErr)
 		}
 
 		return out, nil
@@ -151,7 +154,9 @@ func (d *DefaultBackend) markdownConverter() *md.Converter {
 
 // fetch routes through the injectable HTTP seam (offline tests) or the
 // production net/http client with a browser-like UA and a 2 MiB read bound.
-func (d *DefaultBackend) fetch(ctx context.Context, pageURL string) ([]byte, string, error) {
+//
+//nolint:nonamedreturns // gocritic unnamedResult prefers names for three-result clarity
+func (d *DefaultBackend) fetch(ctx context.Context, pageURL string) (body []byte, contentType string, err error) {
 	if d.fetchHTML != nil {
 		return d.fetchHTML(ctx, pageURL)
 	}
@@ -176,7 +181,7 @@ func (d *DefaultBackend) fetch(ctx context.Context, pageURL string) ([]byte, str
 
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, fetchReadBound))
+	body, err = io.ReadAll(io.LimitReader(resp.Body, fetchReadBound))
 	if err != nil {
 		return nil, "", fmt.Errorf("read body: %w", err)
 	}
@@ -188,7 +193,8 @@ func (d *DefaultBackend) fetch(ctx context.Context, pageURL string) ([]byte, str
 // name) must not resolve to loopback/private/link-local/unspecified ranges
 // (cloud metadata endpoints included) — checked BEFORE any request.
 func (d *DefaultBackend) requirePublicHost(ctx context.Context, host string) error {
-	if ip := net.ParseIP(host); ip != nil {
+	ip := net.ParseIP(host)
+	if ip != nil {
 		if !isPublicIP(ip) {
 			return fmt.Errorf("host %s is not a public address", host) //nolint:err113 // guard error
 		}
@@ -201,9 +207,9 @@ func (d *DefaultBackend) requirePublicHost(ctx context.Context, host string) err
 		return fmt.Errorf("resolve %s: %w", host, err)
 	}
 
-	for _, ip := range ips {
-		if !isPublicIP(ip) {
-			return fmt.Errorf("host %s resolves to non-public %s", host, ip) //nolint:err113 // guard error
+	for _, resolved := range ips {
+		if !isPublicIP(resolved) {
+			return fmt.Errorf("host %s resolves to non-public %s", host, resolved) //nolint:err113 // guard error
 		}
 	}
 
@@ -216,15 +222,20 @@ func (d *DefaultBackend) resolveHost(ctx context.Context, host string) ([]net.IP
 		return d.resolve(ctx, host)
 	}
 
-	return net.DefaultResolver.LookupIP(ctx, "ip", host)
+	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
+	if err != nil {
+		return nil, fmt.Errorf("lookup %s: %w", host, err)
+	}
+
+	return ips, nil
 }
 
 // isPublicIP reports whether ip is outside every refused range: loopback,
 // private (RFC 1918 + fc00::/7), link-local (169.254.0.0/16 — cloud metadata),
 // unspecified, multicast.
 func isPublicIP(ip net.IP) bool {
-	return !(ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast())
+	return !ip.IsLoopback() && !ip.IsPrivate() && !ip.IsLinkLocalUnicast() &&
+		!ip.IsLinkLocalMulticast() && !ip.IsUnspecified() && !ip.IsMulticast()
 }
 
 // isHTMLContentType matches text/html and application/xhtml content types.
@@ -296,8 +307,9 @@ func parseDDGResults(body []byte) ([]ddgResult, error) {
 // non-http(s) scheme (e.g. javascript:) are dropped.
 func resolveDDGHref(href string) string {
 	candidate := href
+
 	if strings.HasPrefix(candidate, "//") {
-		candidate = "https:" + candidate
+		candidate = schemeHTTPS + ":" + candidate
 	}
 
 	u, err := url.Parse(candidate)
@@ -306,19 +318,23 @@ func resolveDDGHref(href string) string {
 	}
 
 	host := strings.ToLower(u.Hostname())
+
 	isDDG := host == "duckduckgo.com" || strings.HasSuffix(host, ".duckduckgo.com")
 	if isDDG && strings.TrimSuffix(u.Path, "/") == "/l" {
-		if target := u.Query().Get("uddg"); target != "" {
-			tu, terr := url.Parse(target)
-			if terr != nil || (tu.Scheme != "http" && tu.Scheme != "https") {
-				return ""
-			}
-
-			return target
+		target := u.Query().Get("uddg")
+		if target == "" {
+			return ""
 		}
+
+		tu, terr := url.Parse(target)
+		if terr != nil || tu.Scheme != schemeHTTP && tu.Scheme != schemeHTTPS {
+			return ""
+		}
+
+		return target
 	}
 
-	if u.Scheme != "http" && u.Scheme != "https" {
+	if u.Scheme != schemeHTTP && u.Scheme != schemeHTTPS {
 		return ""
 	}
 
@@ -332,13 +348,7 @@ func nodeClasses(n *html.Node) []string {
 
 // hasClass reports whether the class list contains the exact token.
 func hasClass(classes []string, want string) bool {
-	for _, c := range classes {
-		if c == want {
-			return true
-		}
-	}
-
-	return false
+	return slices.Contains(classes, want)
 }
 
 // attrValue returns an element attribute's value ("" when absent).

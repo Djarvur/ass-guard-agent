@@ -43,6 +43,8 @@ func loadFixture(t *testing.T, name string) string {
 // DDG-structure fixture offline: >= 3 results, each with non-empty title,
 // uddg-unwrapped absolute URL, and snippet.
 func TestDDGSearchParsesFixture(t *testing.T) {
+	t.Parallel()
+
 	be := fixtureBackend(t, loadFixture(t, "ddg-results.html"))
 
 	raw, err := be.Search(context.Background(), "golang context tutorial")
@@ -65,6 +67,8 @@ func TestDDGSearchParsesFixture(t *testing.T) {
 // TestDDGSearchShape (Test 2) pins the model-facing JSON shape:
 // [{"title":…,"url":…,"snippet":…}, …].
 func TestDDGSearchShape(t *testing.T) {
+	t.Parallel()
+
 	be := fixtureBackend(t, loadFixture(t, "ddg-results.html"))
 
 	raw, err := be.Search(context.Background(), "golang context tutorial")
@@ -89,6 +93,8 @@ func TestDDGSearchShape(t *testing.T) {
 // DDG's anomaly/bot-challenge page (real captured response): zero results, no
 // crash (T-8-08).
 func TestDDGSearchAnomalyDegradesToEmpty(t *testing.T) {
+	t.Parallel()
+
 	be := fixtureBackend(t, loadFixture(t, "ddg-anomaly.html"))
 
 	raw, err := be.Search(context.Background(), "anything")
@@ -101,6 +107,8 @@ func TestDDGSearchAnomalyDegradesToEmpty(t *testing.T) {
 
 // TestFetchMarkdown (Test 3) verifies HTML converts to clean markdown.
 func TestFetchMarkdown(t *testing.T) {
+	t.Parallel()
+
 	be := fixtureBackend(t, "<html><body><h1>Title</h1><p>Some <b>bold</b> text</p></body></html>")
 
 	raw, err := be.Fetch(context.Background(), "https://example.com/doc")
@@ -117,6 +125,8 @@ func TestFetchMarkdown(t *testing.T) {
 // TestFetchNonHTMLPassthrough (Test 4) verifies text/plain bodies return the
 // raw text unconverted.
 func TestFetchNonHTMLPassthrough(t *testing.T) {
+	t.Parallel()
+
 	be := &DefaultBackend{
 		fetchHTML: func(_ context.Context, _ string) ([]byte, string, error) {
 			return []byte("plain text body"), "text/plain; charset=utf-8", nil
@@ -134,6 +144,8 @@ func TestFetchNonHTMLPassthrough(t *testing.T) {
 // TestSSRFGuard (Test 5) verifies Fetch refuses loopback/private/link-local
 // hosts BEFORE any network attempt, and lets public hosts through.
 func TestSSRFGuard(t *testing.T) {
+	t.Parallel()
+
 	fetchCalled := false
 
 	be := &DefaultBackend{
@@ -177,6 +189,8 @@ func TestSSRFGuard(t *testing.T) {
 
 // TestDDGQueryEncoding (Test 6) verifies the query is URL-encoded into q=.
 func TestDDGQueryEncoding(t *testing.T) {
+	t.Parallel()
+
 	var gotURL string
 
 	be := &DefaultBackend{
@@ -226,6 +240,7 @@ const toolWebsearchCfg = "websearch"
 // backend (DDG shape), while a configured backend still wins.
 func TestRealExecutorFallbackDefault(t *testing.T) { //nolint:paralleltest // swaps package default seam
 	prev := defaultWebBackend
+
 	t.Cleanup(func() { defaultWebBackend = prev })
 
 	defaultWebBackend = fixtureBackend(t, loadFixture(t, "ddg-results.html"))
@@ -273,6 +288,8 @@ func (f *fakeBackend) Fetch(_ context.Context, _ string) (json.RawMessage, error
 // TestUnknownBackendStillConfigError (Test 9) verifies loud misconfiguration
 // is preserved: an unknown backend name yields the structured ConfigError.
 func TestUnknownBackendStillConfigError(t *testing.T) {
+	t.Parallel()
+
 	_, err := BackendsFromConfig(map[string]string{toolWebsearchCfg: "bogus"})
 	require.Error(t, err)
 

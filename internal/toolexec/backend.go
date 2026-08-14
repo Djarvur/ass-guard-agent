@@ -176,15 +176,19 @@ func BackendsFromConfig(cfg map[string]string) (map[string]Backend, error) {
 	return out, nil
 }
 
-// selectBackend maps a single backend name to its concrete impl.
+// selectBackend maps a single backend name to its concrete impl. The empty
+// name (and the explicit "ddg") resolves to the zero-config DefaultBackend —
+// the DDG-HTML default (D-07); "http" and "firecrawl" stay untouched.
 func selectBackend(name, tool string) (Backend, error) { //nolint:ireturn // one of several Backend impls
 	switch strings.ToLower(name) {
-	case "http", "":
+	case "ddg", "":
+		return NewDefaultBackend(), nil
+	case "http":
 		return &HTTPBackend{}, nil
 	case "firecrawl":
 		return FirecrawlBackend{}, nil
 	default:
-		msg := fmt.Sprintf("%s: unknown backend %q (want http or firecrawl)", tool, name)
+		msg := fmt.Sprintf("%s: unknown backend %q (want ddg, http or firecrawl)", tool, name)
 
 		return nil, &ConfigError{Violations: []string{msg}}
 	}

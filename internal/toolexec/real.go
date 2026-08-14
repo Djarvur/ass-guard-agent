@@ -21,11 +21,20 @@ type urlArgs struct {
 	URL string `json:"url"`
 }
 
+// defaultWebBackend is the fallback Backend RealExecutor uses when Backends
+// has no entry for a web tool — the zero-config DDG default (D-07). A var (not
+// built inline) so tests can inject an offline fake; production always gets
+// the real DefaultBackend.
+var defaultWebBackend Backend = NewDefaultBackend() //nolint:gochecknoglobals // injectable test seam
+
 // RealExecutor implements toolcat.ToolExecutor over the catalog (TOOL-04/05).
-// WebSearch + WebFetch delegate to the configured Backend (swappable, D-22);
-// every other tool calls its catalog Tool.Execute; an unknown tool returns a
-// structured error. The Session is wired with a RealExecutor at startup (Plan
-// 04-05 via SetToolExecutor); DispatchBatch drives it per turn-step.
+// WebSearch + WebFetch delegate to the configured Backend (swappable, D-22),
+// falling back to the zero-config DDG default when no backend is configured —
+// a first run with no config gets WORKING web tools, and operators who
+// configure http/firecrawl keep exact current behavior; every other tool calls
+// its catalog Tool.Execute; an unknown tool returns a structured error. The
+// Session is wired with a RealExecutor at startup (Plan 04-05 via
+// SetToolExecutor); DispatchBatch drives it per turn-step.
 type RealExecutor struct {
 	Catalog  *toolcat.Catalog
 	Backends map[string]Backend // keyed by tool name ("WebSearch", "WebFetch")
@@ -33,25 +42,31 @@ type RealExecutor struct {
 }
 
 // Execute runs the named tool. WebSearch/WebFetch route to the configured
-// Backend; everything else looks the tool up in the catalog + calls its
-// Execute. A catalog entry whose Execute is nil returns a canned
-// "not implemented" structured payload (forward-compat — the catalog schema is
-// authoritative even before the impl lands).
+// Backend or the zero-config default; everything else looks the tool up in the
+// catalog + calls its Execute. A catalog entry whose Execute is nil returns a
+// canned "not implemented" structured payload (forward-compat — the catalog
+// schema is authoritative even before the impl lands).
 func (r *RealExecutor) Execute(ctx context.Context, name string, input json.RawMessage) (json.RawMessage, error) {
 	if r == nil {
 		return nil, ErrNoExecutor
 	}
-	// Swappable backends first (D-22).
+	// Swappable backends first (D-22); the DDG default covers zero-config runs.
 	if name == "WebSearch" {
-		if be, ok := r.Backends["WebSearch"]; ok {
-			return be.Search(ctx, extractQuery(input)) //nolint:wrapcheck // backend delegation
+		be, ok := r.Backends["WebSearch"]
+		if !ok {
+			be = defaultWebBackend
 		}
+
+		return be.Search(ctx, extractQuery(input)) //nolint:wrapcheck // backend delegation
 	}
 
 	if name == toolWebFetch {
-		if be, ok := r.Backends[toolWebFetch]; ok {
-			return be.Fetch(ctx, extractURL(input)) //nolint:wrapcheck // backend delegation
+		be, ok := r.Backends[toolWebFetch]
+		if !ok {
+			be = defaultWebBackend
 		}
+
+		return be.Fetch(ctx, extractURL(input)) //nolint:wrapcheck // backend delegation
 	}
 	// Catalog-driven tools.
 	if r.Catalog == nil {
