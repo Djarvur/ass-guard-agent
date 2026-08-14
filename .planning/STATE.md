@@ -4,12 +4,12 @@ milestone: v1.1
 milestone_name: Kickoff & Peers
 status: executing
 stopped_at: Phase 11 context gathered
-last_updated: "2026-08-14T20:10:41.137Z"
-last_activity: 2026-08-14 -- Phase 11 planning complete
+last_updated: "2026-08-14T22:20:49.000Z"
+last_activity: 2026-08-15 -- Gap-closure plan 08-07 staged + checker-passed (within-turn tool-result carry)
 progress:
   total_phases: 4
   completed_phases: 0
-  total_plans: 26
+  total_plans: 27
   completed_plans: 2
   percent: 0
 ---
@@ -24,11 +24,11 @@ See: .planning/PROJECT.md (updated 2026-08-14)
 
 ## Current Position
 
-Phase: 8 (slash-command-kickoff) — EXECUTING
-Plan: 3 of 6
-Status: Ready to execute
-Last activity: 2026-08-14 -- Phase 11 planning complete
-Next action: `/gsd-execute-phase 8`
+Phase: 8 (slash-command-kickoff) — EXECUTING, 08-06 checkpoint HELD
+Plan: 08-07 staged (7th; gap-closure for the 08-06 blocker)
+Status: Gap-closure plan committed + checker-passed; operator disposition APPROVED (Decisions, 2026-08-15) — ready to execute 08-07, then 08-06 resumes (T3 + UAT + phase gate)
+Last activity: 2026-08-15 -- Gap-closure plan 08-07 staged + checker-passed (within-turn tool-result carry)
+Next action: `/gsd-execute-phase 8` (08-07)
 
 Progress: [██░░░░░░░░] 17%
 
@@ -59,7 +59,8 @@ None yet.
 
 ### Blockers/Concerns
 
-- [Phase 8 / 08-06, BLOCKING — surfaced by the real-model E2E gate 2026-08-15]: **within-turn tool-result carry is architecturally missing** — real agentic turns cannot converge. Diagnosis (evidence: TestOpsxEndToEnd_Gated failed twice with `tool loop exceeded max iterations` at 16 AND 64 inner iterations, real model + real binary, ~2min/~8min): the Projector rebuilds the IDENTICAL lean window every tool-loop iteration (summary + current intent only), so the model never sees its own tool calls or their results within a turn — every iteration is a fresh conversation and the model re-explores forever. Root causes across the pipeline: (1) `provider.ToolCall` has no ID (zcode-normalized {name,input}), so tool_use/tool_result pairing is impossible; (2) `session.Prompt` records `AppendToolCall(turnID, tc.Name, tc.Name, …)` — the tool NAME as the call ID; (3) `shaper.Message` is text-only — no tool_use/tool_result block support; (4) `provider.ToolResultMessage` (PROV-02) exists but is wired nowhere. The captured zcode sessions DO carry within-conversation tool results (e.g. model-io-sess_fb066d52 messages[7] role "tool") — the mimicry target's real shape includes them. Fixing this spans internal/{provider,session,shaper} + parity re-verification — beyond plan 08-06's scope. Consequences: 08-06 T2 (real /opsx E2E) cannot pass; T3 (pattern re-seed from a completed capture) and the phase gate are blocked on it. The FAIL-LOUD gated harness is committed (`cmd/ass-guard/e2e_opsx_test.go`); the loop bound was raised 16→64 (real finding, kept). Disposition needed: gap-closure plan/phase for within-turn conversation assembly (recommend: unique tool-call IDs through the provider seam, transcript records real IDs, Projector emits the current turn's assistant/tool_use/tool_result lines after the lean seed, Shaper maps structured blocks to provider-native params, parity check against a captured tool-carrying zcode request).
+- [Phase 8 / 08-06, BLOCKING — surfaced by the real-model E2E gate 2026-08-15]: **within-turn tool-result carry is architecturally missing** — real agentic turns cannot converge. Diagnosis (evidence: TestOpsxEndToEnd_Gated failed twice with `tool loop exceeded max iterations` at 16 AND 64 inner iterations, real model + real binary, ~2min/~8min): the Projector rebuilds the IDENTICAL lean window every tool-loop iteration (summary + current intent only), so the model never sees its own tool calls or their results within a turn — every iteration is a fresh conversation and the model re-explores forever. Root causes across the pipeline: (1) `provider.ToolCall` has no ID (zcode-normalized {name,input}), so tool_use/tool_result pairing is impossible; (2) `session.Prompt` records `AppendToolCall(turnID, tc.Name, tc.Name, …)` — the tool NAME as the call ID; (3) `shaper.Message` is text-only — no tool_use/tool_result block support; (4) `provider.ToolResultMessage` (PROV-02) exists but is wired nowhere. The captured zcode sessions DO carry within-conversation tool results (e.g. model-io-sess_fb066d52 messages[7] role "tool") — the mimicry target's real shape includes them. Fixing this spans internal/{provider,session,shaper} + parity re-verification — beyond plan 08-06's scope. Consequences: 08-06 T2 (real /opsx E2E) cannot pass; T3 (pattern re-seed from a completed capture) and the phase gate are blocked on it. The FAIL-LOUD gated harness is committed (`cmd/ass-guard/e2e_opsx_test.go`); the loop bound was raised 16→64 (real finding, kept). Disposition needed: gap-closure plan/phase for within-turn conversation assembly (recommend: unique tool-call IDs through the provider seam, transcript records real IDs, Projector emits the current turn's assistant/tool_use/tool_result lines after the lean seed, Shaper maps structured blocks to provider-native params, parity check against a captured tool-carrying zcode request). **[Disposition STAGED 2026-08-15]:** gap-closure plan `08-07-PLAN.md` is committed and checker-passed — it implements exactly the recommended path (T1 id+shaper shapes, T2 projector accumulation + convergence, T3 capture-grounded fixture + parity guard, T4 operator-witnessed gated E2E re-run + handback to 08-06 T3). The operator's approval is recorded above (Decisions, 2026-08-15); this blocker entry stays OPEN until 08-07 executes and 08-06's gate passes on real converged turns.
+- [Phase 8 gap-closure planning, env note 2026-08-15]: the 08-07 planning run executed the gsd-planner + gsd-plan-checker contracts IN-PROCESS (same no-subagent-spawn constraint as prior phases; both agent definition files followed step-for-step). `verify.plan-structure` valid (4 tasks, all fields), `plan.task-structure` parsed, decision-coverage gate 12/12, phase requirement coverage CMD-01..07 across plans, plan-checker dimensions: VERIFICATION PASSED (0 blockers; accepted scope warning: 14 files across the three root-cause packages, justified in-plan via <scope_note>). Ground truth read directly: internal/{provider,shaper,session,parity,profile}, the live rollout captures (`~/.zcode/cli/rollout/model-io-sess_*.jsonl` — normalized request.messages forms + tail-64 windowing pinned in-plan), and 08-06's committed harness. Corpus limitation stated in-plan: rollout records carry NO request.body.messages, so the Anthropic wire rendering of mid-turn blocks is protocol-canonical (PROV-02 ToolResultMessage), wire verification routed to Phase 9 AUD-05.
 - [Phase 8 planning, env note]: plan-phase ran with the gsd-planner and gsd-plan-checker contracts executed IN-PROCESS by the orchestrating agent — this ZCode runtime exposes no subagent-spawn tool, and the `claude` CLI fallback is unusable (its inference gateway 127.0.0.1:3456 is down; two probes failed with connection refused). Both agent definition files (~/.claude/agents/gsd-planner.md, gsd-plan-checker.md) were followed step-for-step; all gsd-sdk validators + coverage gates ran normally. No action needed for execution; surface if plan quality looks off.
 - [Phase 8]: `internal/ecosys.discoverCommands` flat-scans `commands/*.md` and skips directories — the opsx layout is invisible today. This structural blocker is Phase 8's FIRST task.
 - [Phase 9]: AUD-05 needs an operator action (export `ZAI_API_KEY`, run the divergence-prone capture workload per the runbook).
