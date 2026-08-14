@@ -7,7 +7,7 @@
     "auto_advance": true,
     "research_before_questions": true,
     "skip_discuss": false,
-    "use_worktrees": true,
+    "use_worktrees": false,
     "research": true,
     "nyquist_validation": true,
     "pattern_mapper": true,
