@@ -38,19 +38,29 @@ created: 2026-08-14
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 11-01-01 | 01 | 1 | DSH-03 | T-11-03 | zstd decode bounded (WithDecoderMaxMemory), checksums ON | unit | `go test ./internal/profile/ -race -run TestZstd` | ❌ W0 | ⬜ pending |
-| 11-01-02 | 01 | 1 | DSH-01 | T-11-01 | grep gate: no zcode mimicry paths, no provider-name switches | unit+script | `go test ./internal/redact/ -race && ./scripts/zcodeism-gate.sh` | ❌ W0 | ⬜ pending |
-| 11-02-01 | 02 | 1 | DSH-02 | T-11-02 | profile.System emitted per captured form; loader tolerates absent thinking/tool_choice | unit (TDD) | `go test ./internal/provider/ -race -run TestOpenAI` | ✅ extends | ⬜ pending |
-| 11-02-02 | 02 | 1 | DSH-02 | — | always-stream + include_usage; headers sent; tools omitted when empty; strict per capture | unit (TDD) | `go test ./internal/provider/ -race -run TestOpenAI` | ✅ extends | ⬜ pending |
-| 11-03-01 | 03 | 2 | DSH-04 | — | per-model profile field resolves; --profile override intact | unit | `go test ./internal/scheduler/ -race -run TestProfile` | ✅ extends | ⬜ pending |
-| 11-03-02 | 03 | 2 | DSH-04 | T-11-04 | profile check dsh drift path; seed sanitized (leak-guard) | unit | `go test ./cmd/ass-guard/ -race -run TestProfileCheck` | ✅ extends | ⬜ pending |
-| 11-04-01 | 04 | 2 | DSH-03 | T-11-05 | proxy records + redacts at record time (Authorization → [REDACTED]); 0600 | unit | `go test ./cmd/dsh-proxy/ -race` (or tool pkg) | ❌ W0 | ⬜ pending |
-| 11-05-01 | 05 | 3 | DSH-03 | — | dsh extraction: every entry carries capture-line source | unit | `go test ./cmd/extract-profile/ -race -run TestDsh` | ❌ W0 | ⬜ pending |
-| 11-06-01 | 06 | 3 | DSH-05 | — | parity suite extraction from dsh capture; arm provider-agnostic | unit | `go test ./internal/parity/ -race -run TestDsh` | ✅ extends | ⬜ pending |
-| 11-06-02 | 06 | 3 | DSH-05 | T-11-06 | live round-trip loud-skip-with-note when credential absent | integration | `go test ./internal/parity/ -race` + parity run | ✅ extends | ⬜ pending |
+| 11-01-T1 | 01 | 1 | DSH-01 | T-11-02 | identity-preserved names never override canonical secretKeys | unit (tdd) | `go test ./internal/redact/ -race` | ✅ extends | ⬜ pending |
+| 11-01-T2 | 01 | 1 | DSH-01 | T-11-01 | grep gate: unlabeled zcode refs + provider-name switches fail | unit+script | `./scripts/zcodeism-gate.sh` | ❌ W0 | ⬜ pending |
+| 11-01-T3 | 01 | 1 | DSH-01 | T-11-03 | census keeps exclusions reviewable | script+docs | `./scripts/zcodeism-gate.sh && go test ./... ` | ✅ | ⬜ pending |
+| 11-02-T1 | 02 | 1 | DSH-02 | — | wire fidelity from profile data only | unit (tdd) | `go test ./internal/provider/ -race -run TestOpenAI` | ✅ extends | ⬜ pending |
+| 11-02-T2 | 02 | 1 | DSH-02 | — | tolerant loading both directions | unit (tdd) | `go test ./internal/profile/ -race -run TestLoader` | ✅ extends | ⬜ pending |
+| 11-02-T3 | 02 | 1 | DSH-02 | T-11-04, T-11-06 | defensive SSE parse; ctx-cancellable stream; header values templated | unit (tdd) | `go test ./internal/provider/ -race -run TestOpenAI` | ✅ extends | ⬜ pending |
+| 11-03-T1 | 03 | 1 | DSH-03 | T-11-07, T-11-09, T-11-10 | redact-at-record; 0600; 127.0.0.1 bind; body bounds | unit (tdd) | `go test ./cmd/dsh-proxy/ -race` | ❌ W0 | ⬜ pending |
+| 11-03-T2 | 03 | 1 | DSH-03 | T-11-08 | recording-contract conformance pinned by test | unit (tdd) | `go test ./cmd/dsh-proxy/ -race -run Contract` | ❌ W0 | ⬜ pending |
+| 11-04-T1 | 04 | 2 | DSH-04 | T-11-11 | load-time profile-name validation | unit (tdd) | `go test ./internal/scheduler/ -race -run 'TestProfile\|TestModelConfig'` | ✅ extends | ⬜ pending |
+| 11-04-T2 | 04 | 2 | DSH-04 | — | swappability assertion; dialect as Limitations data | unit | `go test ./internal/scheduler/ -race -run 'TestDefault\|TestLoad'` | ✅ extends | ⬜ pending |
+| 11-04-T3 | 04 | 2 | DSH-04 | T-11-12, T-11-13 | credential never printed; transport/dialect FAIL classified | unit | `go test ./cmd/ass-guard/ -race -run TestProbe` | ❌ W0 | ⬜ pending |
+| 11-05-T1 | 05 | 2 | DSH-03 | T-11-15, T-11-17 | exact v1.19.2 pin enforced; checksums ON; MaxMemory bound | unit (tdd) | `go test ./internal/profile/ -race -run TestZstd` | ❌ W0 | ⬜ pending |
+| 11-05-T2 | 05 | 2 | DSH-03 | T-11-14, T-11-16 | intra-session inconsistency STOPs; provenance cited per entry | unit (tdd) | `go test ./internal/profile/ -race -run 'TestDsh\|TestExtractDsh'` | ❌ W0 | ⬜ pending |
+| 11-05-T3 | 05 | 2 | DSH-03 | — | manual-only re-capture (D-02); unkeyed extraction | docs | `test -f docs/dsh-recapture-runbook.md && grep -c ...` | ❌ W0 | ⬜ pending |
+| 11-06-T1 | 06 | 3 | DSH-03 | — | operator capture checkpoint (no automated leg by design) | checkpoint | resume-signal + file sanity | — | ⬜ pending |
+| 11-06-T2 | 06 | 3 | DSH-03 | T-11-18 | thresholds mechanical; real-artifact spike PASS; census before bundle | script+test | `ASSGUARD_DSH_SESSION_ZST=<p> go test ./internal/profile/ -run TestZstdReal -v` | ❌ W0 | ⬜ pending |
+| 11-06-T3 | 06 | 3 | DSH-03 | T-11-21 | bundle = extractor output only | integration | `ls profiles/dsh/ && go test ./... -race && mise run ci` | ❌ (produced by run) | ⬜ pending |
+| 11-06-T4 | 06 | 3 | DSH-04 | T-11-19 | seed sanitized; leak-guard green; values spot-checked | unit+script | `go test ./internal/defaults/ -race` | ✅ extends | ⬜ pending |
+| 11-07-T1 | 07 | 4 | DSH-04 | — | per-profile loaders; drift canary proves detection | unit (tdd) | `go test ./cmd/ass-guard/ -race -run TestProfileCheck` | ✅ extends | ⬜ pending |
+| 11-07-T2 | 07 | 4 | DSH-05 | T-11-25 | malformed pairs error (no silent suite shortening) | unit (tdd) | `go test ./internal/parity/ -race -run TestDsh` | ❌ W0 | ⬜ pending |
+| 11-07-T3 | 07 | 4 | DSH-05 | T-11-22, T-11-23, T-11-24 | fresh baseline only; outcomes recorded; keys never printed | integration | `mise run ci && go test ./... -race` | ✅ extends | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
-*(Task IDs provisional at strategy-creation time — finalized against the written plans; the planner keeps every task's `<verify><automated>` aligned with this map.)*
 
 ---
 
