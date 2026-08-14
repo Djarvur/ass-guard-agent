@@ -3,7 +3,12 @@ package scheduler //nolint:testpackage // internal package test
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -199,4 +204,82 @@ func TestProviderFactory_WarnUncredentialed(t *testing.T) {
 	require.Contains(t, out, testNoKeyEnv, "warning must name the env var")
 	require.NotContains(t, out, "haskey", "credentialed provider must not warn")
 	require.NotContains(t, out, testLitKey, "warning must never print the key")
+}
+
+// TestProviderFactory_WireRoundTrip drives a factory-built AnthropicProvider
+// through Stream against an httptest server and asserts the resolved key +
+// configured base_url reach the wire: URL path /v1/messages, request Host ==
+// the configured base_url host, X-Api-Key == the resolved key (PROV-01's
+// configurable base URL + PCFG-02's resolved key, end-to-end).
+func TestProviderFactory_WireRoundTrip(t *testing.T) {
+	var gotPath, gotHost, gotKey string
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotHost = r.Host
+		gotKey = r.Header.Get("X-Api-Key")
+
+		w.Header().Set("content-type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+
+		for _, frame := range []string{
+			`{"type":"message_start","message":{"usage":{"input_tokens":5,"output_tokens":1}}}`,
+			`{"type":"message_delta","delta":{"stop_reason":"end_turn"}}`,
+		} {
+			fmt.Fprintf(w, "data: %s\n\n", frame)
+
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer srv.Close()
+
+	t.Setenv(testZAIEnv, "") // no ambient key interference
+
+	cfg := &Config{
+		Providers: map[string]ProviderConfig{
+			"anthropic": {
+				BaseURL: srv.URL,
+				Shape:   providerAnthropic,
+				APIKey:  "sk-wire-secret",
+			},
+		},
+	}
+
+	f := NewProviderFactory(cfg, "", nil)
+
+	p, err := f.Build("anthropic", shaper.New())
+	require.NoError(t, err)
+
+	ch, err := p.Stream(context.Background(),
+		&profile.Profile{Model: "glm-5.2", MaxTokens: 100},
+		[]shaper.Message{{Role: "user", Content: "hi"}})
+	require.NoError(t, err)
+	require.NotNil(t, ch)
+	drainStreamChannel(t, ch)
+
+	require.Equal(t, "/v1/messages", gotPath, "base_url must be honored")
+	require.Equal(t, strings.TrimPrefix(srv.URL, "http://"), gotHost, "request Host must be the configured base_url host")
+	require.Equal(t, "sk-wire-secret", gotKey, "X-Api-Key must carry the resolved key")
+}
+
+// drainStreamChannel drains a Stream channel until it closes, failing the test
+// if the provider never closes it within the deadline.
+func drainStreamChannel(t *testing.T, ch <-chan provider.StreamChunk) {
+	t.Helper()
+
+	deadline := time.After(3 * time.Second)
+
+	for {
+		select {
+		case _, ok := <-ch:
+			if !ok {
+				return
+			}
+		case <-deadline:
+			t.Fatal("stream channel did not close within 3s")
+		}
+	}
 }

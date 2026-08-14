@@ -8,6 +8,7 @@ providers:
   anthropic:
     base_url: "https://api.z.ai/api/anthropic"
     shape: anthropic
+    api_key_env: ZAI_API_KEY
 
 models:
   glm-5.2:
