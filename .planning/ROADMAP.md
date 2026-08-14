@@ -122,7 +122,7 @@ Plans:
 
 ### Phase 4: Unified Engine + Hook-DAG + OpenSpec + Learning
 
-**Goal:** A developer can run an unmodified OpenSpec workflow (the v1 toolkit) end-to-end through ass-guard with zero manual "continue" taps, while the forgotten routine runs automatically after each stage — and when the agent encounters an unfamiliar launch situation, it asks the user once, remembers the answer, and never asks the same question again. This is the project's reason to exist for the author's SDD practice.
+**Goal:** As a developer practicing SDD, I want to run an unmodified OpenSpec workflow (the v1 toolkit) end-to-end through ass-guard with zero manual "continue" taps, the forgotten routine running automatically after each stage, and unfamiliar launch situations asked once and remembered, so that the toolkit just runs without my babysitting — this being the project's reason to exist for my SDD practice.
 **Mode:** mvp
 **Requirements:** ENG-01, ENG-02, ENG-03, ENG-04, ENG-05, HOOK-01, HOOK-02, HOOK-03, HOOK-04, HOOK-05, LRN-01, LRN-02, LRN-03, LRN-04, OPEN-01, OPEN-02, OPEN-03, TOOL-04, TOOL-05
 **Success Criteria:**
