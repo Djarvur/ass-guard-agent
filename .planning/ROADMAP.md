@@ -95,7 +95,22 @@ Plans:
   5. The zcode parity stability test runs green against a newly pinned divergence-prone capture session produced via the operator runbook (scripted subagent/MCP-attach/tool-variety workload — not richest-session selection), with the pinned session ID consumed by the test, zcode + extractor versions recorded, thresholds explicitly re-baselined, and the drift report committed before any profile update (AUD-05)
 
 **Phase gate:** `mise ci` clean AND live-serve redacted-audit verification (a redacted `RequestShaped` line observed on a real serve) AND the stability test green against the newly pinned session AND token/secret canary greps clean. No stub-only evidence closes this phase.
-**Plans:** TBD
+**Plans:** 6 plans
+Plans:
+**Wave 1**
+
+- [ ] 09-01-PLAN.md — factory capturer seam: `BuildWithCapturer` both shapes (anthropic + openai), tracer refactored onto the seam (`tracerProvider` deleted), serve-path RequestShaped + CurrentTurnID + per-session TranscriptWriter, redacted-line integration test [AUD-01, AUD-02]
+- [ ] 09-02-PLAN.md — engine-decision full provenance: matched text span + config source threaded PatternTable → Decide → EngineDecision event + engine_decision transcript line (D-03) [AUD-04]
+- [ ] 09-03-PLAN.md — re-capture machinery: stability test consumes the pinned session (never PickRichestMain), divergence canary fixture, zcode_version provenance, the operator runbook in-repo (verbatim from Pitfalls 17/18) [AUD-05]
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 09-04-PLAN.md — the re-capture run: operator scripted divergence-prone workload (checkpoint), threshold verification, drift report committed BEFORE the profile update, re-extract + re-pin, stability green, parity re-baseline (ZAI_API_KEY-gated leg) [AUD-05]
+- [ ] 09-05-PLAN.md — bounded audit volume: the body_ref pattern — metadata-only request events (correlation triple + shape fingerprint), capped redacted body store retrievable by hash (D-01) [AUD-02, AUD-03]
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 09-06-PLAN.md — the per-session audit mirror under `.ass-guard/audit/` (default ON), `--audit-log` override on serve, shared stdout-rejecting sink opener, header-NAME discipline, automated secret canary (D-02) [AUD-02]
 
 ### Phase 10: Telegram Peer (Text + Voice)
 

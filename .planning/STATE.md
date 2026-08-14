@@ -4,13 +4,13 @@ milestone: v1.1
 milestone_name: Kickoff & Peers
 status: executing
 stopped_at: Phase 10 context gathered
-last_updated: "2026-08-14T18:33:04.168Z"
-last_activity: 2026-08-14 -- Phase 8 execution started
+last_updated: "2026-08-14T18:55:37.522Z"
+last_activity: 2026-08-14
 progress:
   total_phases: 4
   completed_phases: 0
-  total_plans: 8
-  completed_plans: 0
+  total_plans: 12
+  completed_plans: 1
   percent: 0
 ---
 
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-08-14)
 ## Current Position
 
 Phase: 8 (slash-command-kickoff) — EXECUTING
-Plan: 1 of 6
-Status: Executing Phase 8
-Last activity: 2026-08-14 -- Phase 8 execution started
+Plan: 2 of 6
+Status: Ready to execute
+Last activity: 2026-08-14
 Next action: `/gsd-execute-phase 8`
 
 Progress: [░░░░░░░░░░] 0%
@@ -60,6 +60,8 @@ None yet.
 - [Phase 10]: the bot-token redactor + canary test MUST land before the first Telegram HTTP call (token shape matches no existing redactor pattern).
 - [Phase 11]: only phase with open unknowns — research/capture spike recommended at phase start (`--research-phase 11`).
 - [Phase 8 execution, env note]: execute-phase ran with the gsd-executor contract executed IN-PROCESS by the orchestrating agent — this ZCode runtime exposes no subagent-spawn tool (same constraint the Phase-8 planner hit). ~/.claude/agents/gsd-executor.md was followed step-for-step (per-task atomic commits, TDD RED→GREEN gates, deviation rules, SUMMARY.md + state updates). Worktrees disabled per project config; execution sequential on master, matching prior phases.
+- [Phase 9 planning, env note]: plan-phase ran with the gsd-planner and gsd-plan-checker contracts executed IN-PROCESS (same no-subagent-spawn constraint as Phase 8; both agent definition files followed step-for-step; all gsd-sdk validators + coverage gates ran normally). Two planning judgment calls, both per the phase brief: (1) NO phase-level researcher spawn — this phase's research flag is operator-procedure design, not library research; the fresh v1.1 project research (.planning/research/{SUMMARY,ARCHITECTURE,PITFALLS}.md, 2026-08-14 editions) was consumed directly, and the re-capture runbook from Pitfalls 17/18 is written verbatim into plans 09-03/09-04; (2) pattern-mapper skipped (non-blocking; CONTEXT.md's <code_context> section already carries the analog map). Nyquist VALIDATION.md not created — no phase RESEARCH.md exists to source a Validation Architecture section (workflow warns and continues; every plan task carries automated verify anyway).
+- [Phase 9]: 09-04 is autonomous:false — execute-phase will pause at the operator capture checkpoint (the scripted divergence-prone zcode workload, run ONCE by the operator per D-04); the parity re-baseline leg additionally needs ZAI_API_KEY.
 
 ## Deferred Items
 
