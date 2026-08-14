@@ -6,6 +6,19 @@
 #   half, D-02). The engine continues the SDD scenario when the assistant's
 #   output matches one of these handoff patterns. (08-06 owns re-seeding these
 #   from captured real stage-end output.)
+#
+#   08-06 chaining row format (D-12) — ids are stage-bearing and rows carry
+#   the next /opsx:* command injected on match (the injection expands through
+#   the 08-04 seam: provenance + mutating-command boundary like a typed
+#   command):
+#
+#   [[patterns]]
+#   id = "post-propose-handoff"          # post-<stage>-... selects the hook stage
+#   regex = "<from CAPTURED stage-end output, never command-file prose>"
+#   action = "continue"
+#   next = "/opsx:apply"                 # empty = the generic continue prompt
+#
+#   The final archive stage matches NOTHING (the chain ends naturally).
 # [[handoff_tools]] — tool-call name → action (the dual-signal tool half).
 # [commands] — command → classification (D-15 / OPEN-03, the boundary source of
 #   truth). Every entry runs as a subprocess via the Adapter with

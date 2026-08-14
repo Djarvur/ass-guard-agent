@@ -59,6 +59,15 @@ type ActionDispatcher interface {
 // The wrapper returns + the user's reply lands as the next session/prompt.
 var ErrAskPending = errors.New("engine: ask pending — no learned answer; surface to the user")
 
+// ContinuePopulator is an OPTIONAL ActionDispatcher extension (08-06 chaining):
+// when the engine is about to continue with an empty NextPrompt, the dispatcher
+// may fill it — e.g. from the pattern table's next-command field — BEFORE the
+// generic NextStagePrompt fallback applies. Implementing it is purely additive;
+// dispatchers that don't are unaffected (no engine API break).
+type ContinuePopulator interface {
+	PopulateContinue(dec *Decision)
+}
+
 // Engine is the unified decision engine (D-01 post-turn observer). It is
 // constructed once at startup (04-05) and Observe is called after each top-level
 // sess.Prompt returns. The engine holds no per-turn mutable state — every
@@ -238,7 +247,18 @@ func (e *Engine) decideAndRecover( //nolint:nonamedreturns // err assigned by pa
 // degrade to ActionNothing so the loop stops gracefully. Continue is left to
 // the wrapper's runner.Run re-entry (the Dispatcher is NOT used for continue —
 // keeping one path for the real turn simplifies the contract).
+//
+// 08-06 chaining addition: a Dispatcher MAY also implement ContinuePopulator;
+// when a continue decision carries no NextPrompt, the populator fills it
+// (e.g. from the pattern table's next-command field) BEFORE the generic
+// NextStagePrompt fallback applies. Optional — existing dispatchers unchanged.
 func (e *Engine) applyDispatcher(ctx context.Context, dec *Decision) Decision {
+	if dec.Action == ActionContinue && len(dec.NextPrompt) == 0 {
+		if cp, ok := e.Dispatcher.(ContinuePopulator); ok {
+			cp.PopulateContinue(dec)
+		}
+	}
+
 	if e.Dispatcher == nil {
 		if dec.Action == ActionHook || dec.Action == ActionAsk {
 			dec.Reason += " (dispatcher not configured; degrading to nothing)"

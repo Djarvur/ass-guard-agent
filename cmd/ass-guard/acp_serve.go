@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -49,6 +50,11 @@ const (
 	// (08-05 — the captured catalog entry keeps its schema; only Execute is
 	// replaced).
 	skillToolName = "Skill"
+
+	// Hook-stage vocabulary (08-06): stage-bearing pattern ids select their
+	// own hook stage; un-staged ids keep the v1.0 default.
+	stagePostImplement = "post-implement"
+	stagePostPropose   = "post-propose"
 )
 
 // stubExecResult is the canned tool result for the non-engine path (mirrors
@@ -402,11 +408,21 @@ func (r *sessionTurnRunner) setupEngine() error { //nolint:funcorder // ordering
 
 	// The engine + dispatcher (ActionDispatcher wiring hook→hookdag, ask→store).
 	r.eng = &engine.Engine{Bus: r.bus, Log: slog.Default()}
+	// nextPromptFor resolves DYNAMICALLY through the pattern-table interface so
+	// the table remains the single source of truth (tests may swap it after
+	// setup; the dispatcher follows).
 	r.eng.Dispatcher = &acpDispatcher{
 		hooks:   r.hookExec,
 		hookCfg: r.hookCfg,
 		learned: r.learned,
 		bus:     r.bus,
+		nextPromptFor: func(patternID string) string {
+			if np, ok := r.patternTable.(patternNextPrompter); ok {
+				return np.NextPromptFor(patternID)
+			}
+
+			return ""
+		},
 	}
 	r.engineEnabled = true
 
@@ -862,6 +878,31 @@ type acpDispatcher struct {
 	hookCfg []hookdag.Hook
 	learned *learning.Store
 	bus     *event.Bus
+
+	// nextPromptFor answers "what does the engine inject when this pattern
+	// matches" (08-06 chaining — the pattern table's next-command field).
+	nextPromptFor func(patternID string) string
+}
+
+// PopulateContinue satisfies engine.ContinuePopulator (08-06): a continue
+// decision with an empty NextPrompt gets the matched pattern's next /opsx:*
+// command — the injection then flows through the 08-04 expansion seam
+// (expand + provenance + boundary) like a typed command.
+func (d *acpDispatcher) PopulateContinue(dec *engine.Decision) {
+	if d.nextPromptFor == nil {
+		return
+	}
+
+	id := dec.Signal
+	for _, p := range []string{"text:", "tool:"} {
+		if len(id) > len(p) && id[:len(p)] == p {
+			id = id[len(p):]
+		}
+	}
+
+	if next := d.nextPromptFor(id); next != "" {
+		dec.NextPrompt = []session.ContentBlock{{Type: blockText, Text: next}}
+	}
 }
 
 // Hook launches the hook-DAG matching the trigger derived from the signal. The
@@ -905,6 +946,12 @@ func (d *acpDispatcher) Ask(_ context.Context, situation string) (string, error)
 	return "", engine.ErrAskPending
 }
 
+// patternNextPrompter is the optional pattern-table capability answering
+// "what does the engine inject when this pattern matches" (08-06 chaining).
+type patternNextPrompter interface {
+	NextPromptFor(patternID string) string
+}
+
 // triggerFromSignal extracts the trigger stage from an engine signal string.
 // The signal shape is "hook:<id>" (the OpenSpec pattern id) or "text:<id>";
 // v1 defaults to "post-implement" unless the id carries an explicit stage.
@@ -921,7 +968,15 @@ func triggerFromSignal(hookSignal string) string {
 		return "post-phase"
 	}
 
-	return "post-implement"
+	// 08-06 stage vocabulary: stage-bearing pattern ids ("post-<stage>-...")
+	// select their own hook stage; un-staged ids keep the v1.0 default.
+	for _, stage := range []string{"post-explore", stagePostPropose, "post-apply", "post-archive"} {
+		if strings.HasPrefix(id, stage) {
+			return stage
+		}
+	}
+
+	return stagePostImplement
 }
 
 // hookSessionTurnRunner adapts the active Session to the hookdag.TurnRunner seam

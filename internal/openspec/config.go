@@ -21,10 +21,16 @@ const (
 
 // PatternEntry is one [[patterns]] row: a regex matched against the assistant
 // text + the action the engine takes on match (D-02 text signal).
+//
+// Next (08-06 D-12 chaining) is the NEXT /opsx:* command text injected when
+// this pattern matches (e.g. `next = "/opsx:apply"`); empty means the engine's
+// generic continue prompt applies. Ids are stage-bearing
+// ("post-<stage>-handoff") so hooks fire per stage.
 type PatternEntry struct {
 	ID     string `toml:"id"`
 	Regex  string `toml:"regex"`
 	Action string `toml:"action"`
+	Next   string `toml:"next"`
 }
 
 // HandoffToolEntry is one [[handoff_tools]] row: a tool-call name + the action

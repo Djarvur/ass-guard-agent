@@ -24,6 +24,11 @@ type compiledPattern struct {
 type OpenSpecPatternTable struct {
 	textPatterns []compiledPattern // declared order; first match wins
 	handoffTools map[string]toolEntry
+
+	// nextFor maps pattern id → the next /opsx:* command text (08-06 chaining,
+	// D-12). Consumed by the dispatcher's ContinuePopulator — NOT part of the
+	// engine.PatternTable interface (which stays unwidened).
+	nextFor map[string]string
 }
 
 type toolEntry struct {
@@ -53,6 +58,14 @@ func FromConfig(cfg *OpenSpecConfig) (*OpenSpecPatternTable, error) {
 		}
 
 		pt.textPatterns = append(pt.textPatterns, compiledPattern{id: p.ID, regex: re, action: act})
+
+		if p.Next != "" {
+			if pt.nextFor == nil {
+				pt.nextFor = map[string]string{}
+			}
+
+			pt.nextFor[p.ID] = p.Next
+		}
 	}
 
 	for _, h := range cfg.HandoffTools {
@@ -78,6 +91,13 @@ func (t *OpenSpecPatternTable) MatchText(text string) (string, engine.Action) {
 	}
 
 	return "", engine.ActionNothing
+}
+
+// NextPromptFor returns the next-command text configured for a pattern id
+// (08-06 chaining); "" when the id is unknown or carries no next — the
+// engine's generic continue fallback then applies.
+func (t *OpenSpecPatternTable) NextPromptFor(patternID string) string {
+	return t.nextFor[patternID]
 }
 
 // MatchTool reports whether name is a known handoff tool-call + returns its id +
