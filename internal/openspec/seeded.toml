@@ -168,3 +168,19 @@ timeout_secs = 60
 argv = "workset remove"
 mutability = "mutating"
 timeout_secs = 60
+
+# Command-level mutability for DISCOVERED slash-commands (08-04 D-11): the
+# v1.0 mutability discipline extended from tools to commands. A "mutating"
+# command opens a context boundary AT EXPANSION TIME (cause
+# "mutating-command:<key>"); "read-only" — and any key absent here — never
+# does. Keys are ecosystem command keys (the "<ns>:<name>" form `openspec
+# init --tools claude` installs). Classification mirrors write semantics: the
+# stages that write openspec/ artifacts are mutating; explore only reads.
+# Operator overlays flip entries per the normal loader precedence.
+[command_mutability]
+"opsx:explore" = "read-only"
+"opsx:propose" = "mutating"
+"opsx:apply" = "mutating"
+"opsx:sync" = "mutating"
+"opsx:update" = "mutating"
+"opsx:archive" = "mutating"

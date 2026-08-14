@@ -19,6 +19,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
+	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/internal/engine"
 	"github.com/Djarvur/ass-guard-agent/internal/event"
 	"github.com/Djarvur/ass-guard-agent/internal/firstrun"
@@ -38,6 +39,11 @@ import (
 const (
 	mnd6            = 6
 	mcpStartTimeout = 30 * time.Second
+
+	// Phase-8 command-boundary vocabulary (08-04 D-11): the boundary cause
+	// prefix for a mutating command (mutability values come from the openspec
+	// config's exported vocabulary).
+	mutatingCommandCause = "mutating-command:"
 )
 
 // stubExecResult is the canned tool result for the non-engine path (mirrors
@@ -275,6 +281,11 @@ func runACPServe(ctx context.Context, in io.Reader, out, stderr io.Writer, opts 
 			return p
 		},
 	}
+	// Slash-command registry (08-04): load ONCE at startup, engine-independent
+	// (the engine-off path expands too). A failed load degrades — turns run on
+	// plain text (see loadCommandRegistry).
+	runner.loadCommandRegistry()
+
 	if opts.EngineEnabled {
 		err := runner.setupEngine()
 		if err != nil {
@@ -328,6 +339,13 @@ type sessionTurnRunner struct {
 	hookCfg       []hookdag.Hook
 	learned       *learning.Store
 	catalog       *toolcat.Catalog // shared catalog (OpenSpec tools registered once)
+
+	// Phase-8 slash-command expansion (08-04): the discovered command registry
+	// (loaded ONCE at startup — see loadCommandRegistry) + the command
+	// mutability table (D-11 boundaries, T3). A failed load leaves both zero —
+	// expansion no-ops and turns proceed on plain text (graceful degradation).
+	reg           ecosys.Registry
+	cmdMutability map[string]string
 
 	sessions map[string]*session.Session
 }
@@ -401,6 +419,104 @@ func (r *sessionTurnRunner) workDirOrDefault() string { //nolint:funcorder // or
 	return wd
 }
 
+// loadCommandRegistry loads the ecosys command registry (08-04) + the command
+// mutability table (D-11) ONCE at startup. Any failure is logged to stderr and
+// leaves the fields zero — expansion no-ops and every turn proceeds on plain
+// text (T-8-16: an expansion problem NEVER becomes a turn failure or an ACP
+// error). Tests call it explicitly after planting fixtures; production calls
+// it from runACPServe.
+func (r *sessionTurnRunner) loadCommandRegistry() { //nolint:funcorder // startup helper grouped with engine wiring
+	reg, _, err := ecosys.Discover(r.workDirOrDefault())
+	if err != nil {
+		// Drop to zero (do NOT serve a stale registry): the registry mirrors
+		// the on-disk command tree, and an unreadable tree means expansion is
+		// OFF — turns proceed on plain text (T-8-16).
+		log.Printf("ass-guard: command registry load failed (continuing without slash expansion): %v", err)
+
+		r.reg = ecosys.Registry{}
+		r.cmdMutability = nil
+
+		return
+	}
+
+	r.reg = reg
+
+	oscfg, cerr := openspec.DefaultConfig()
+	if cerr != nil {
+		log.Printf("ass-guard: openspec config load failed (continuing without command boundaries): %v", cerr)
+
+		return
+	}
+
+	r.cmdMutability = oscfg.CommandMutability
+}
+
+// expandUserBlocks applies slash-command expansion to the FIRST text block of
+// a prompt (08-04, CMD-02): when it parses as an invocation AND the key is in
+// the registry, the block's text becomes the command's expanded body (zcode
+// substitution semantics), a command_provenance line is written next to the
+// upcoming user message (D-02 — the typed command is metadata, replay shows
+// the model what it saw), and a mutating command opens a context boundary
+// BEFORE the turn (D-11 — the lean window resets for the expanded stage).
+// Every other case returns the blocks UNCHANGED (unknown /foo is ordinary
+// text — no match, nothing happens). All transcript-write errors degrade to
+// stderr logs — never ACP errors.
+func (r *sessionTurnRunner) expandUserBlocks( //nolint:funcorder // one pipeline; grouped with the turn seam
+	sess *session.Session, blocks []session.ContentBlock,
+) []session.ContentBlock {
+	idx := firstTextBlockIndex(blocks)
+	if idx < 0 {
+		return blocks
+	}
+
+	key, args, ok := ecosys.ParseInvocation(blocks[idx].Text)
+	if !ok {
+		return blocks
+	}
+
+	cmd, found := r.reg.Commands[key]
+	if !found {
+		return blocks
+	}
+
+	out := append([]session.ContentBlock(nil), blocks...)
+	out[idx] = session.ContentBlock{Type: blockText, Text: cmd.Expand(args)}
+
+	if sess == nil || sess.Manager == nil {
+		return out
+	}
+
+	// Mutating commands ALWAYS open the boundary first (D-11): the projector's
+	// ReadLastBoundary reset fires for the expanded stage exactly as for a
+	// tool-call boundary.
+	if r.cmdMutability[key] == openspec.MutabilityMutating {
+		err := sess.Manager.AppendBoundary(mutatingCommandCause+key, cmd.Path, "")
+		if err != nil {
+			log.Printf("ass-guard: command boundary write failed (continuing): %v", err)
+		}
+	}
+
+	// Provenance records which file answered the invocation (CMD-05 /
+	// T-8-15): command key + source file + the typed args.
+	err := sess.Manager.AppendCommandProvenance("", key, cmd.Path, args)
+	if err != nil {
+		log.Printf("ass-guard: command provenance write failed (continuing): %v", err)
+	}
+
+	return out
+}
+
+// firstTextBlockIndex returns the index of the first text-typed block, or -1.
+func firstTextBlockIndex(blocks []session.ContentBlock) int {
+	for i, b := range blocks {
+		if b.Type == blockText {
+			return i
+		}
+	}
+
+	return -1
+}
+
 // Run drives one session/prompt through the real Session Core.
 func (r *sessionTurnRunner) Run(
 	ctx context.Context, sessionID string,
@@ -445,6 +561,12 @@ func (r *sessionTurnRunner) Run(
 	}()
 
 	blocks := toContentBlocks(prompt)
+	// Slash-command expansion (08-04): a leading /opsx:* invocation becomes
+	// the command's expanded body BEFORE the turn runs — on BOTH engine paths
+	// (the expansion result flows into runOneTurn → sess.Prompt /
+	// engine.Observe unchanged).
+	blocks = r.expandUserBlocks(sess, blocks)
+
 	stop, err := r.runOneTurn(ctx, sess, blocks)
 
 	close(promptDone)
@@ -480,7 +602,7 @@ func (r *sessionTurnRunner) runOneTurn( //nolint:funcorder // grouping keeps the
 	// engine_decision lines land in THIS session's transcript (the Manager is
 	// per-session; setupEngine could not bind it).
 	r.eng.Manager = sess.Manager
-	adapter := &engineTurnRunnerAdapter{sess: sess, mgr: sess.Manager}
+	adapter := &engineTurnRunnerAdapter{sess: sess, mgr: sess.Manager, r: r}
 	// The engine runs the user prompt + every continue-injection through the
 	// adapter (which calls sess.Prompt). Nil userPrompt would make Observe skip
 	// the first Run — pass blocks explicitly.
@@ -643,16 +765,24 @@ func toContentBlocks(in []acp.ContentBlock) []session.ContentBlock {
 }
 
 // engineTurnRunnerAdapter adapts the Session Core to the engine.TurnRunner seam
-// (Plan 04-05 D-01). Run delegates to sess.Prompt (a real turn); LastTurnOutput
-// reads the transcript via Manager.ReadAll to extract the most-recent
-// assistant_message text + the turn's tool-call names.
+// (Plan 04-05 D-01). Run delegates to sess.Prompt (a real turn) after applying
+// slash-command expansion (08-04: the engine's continue-injections re-enter
+// here, so an injected "/opsx:propose …" gets identical expansion + provenance
+// + boundary treatment as a user-typed command); LastTurnOutput reads the
+// transcript via Manager.ReadAll to extract the most-recent assistant_message
+// text + the turn's tool-call names.
 type engineTurnRunnerAdapter struct {
 	sess *session.Session
 	mgr  *session.Manager
+	r    *sessionTurnRunner // the expansion owner (nil-safe: expansion no-ops)
 }
 
 // Run drives one turn through the Session Core.
 func (a *engineTurnRunnerAdapter) Run(ctx context.Context, prompt []session.ContentBlock) (string, error) {
+	if a.r != nil {
+		prompt = a.r.expandUserBlocks(a.sess, prompt)
+	}
+
 	return a.sess.Prompt(ctx, prompt) //nolint:wrapcheck // session delegation
 }
 

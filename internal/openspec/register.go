@@ -48,7 +48,7 @@ func RegisterTools(catalog *toolcat.Catalog, cfg *OpenSpecConfig) error {
 
 	for name, shape := range cfg.Commands {
 		mut := toolcat.MutabilityReadOnly
-		if shape.Mutability == "mutating" {
+		if shape.Mutability == MutabilityMutating {
 			mut = toolcat.MutabilityMutating
 		}
 

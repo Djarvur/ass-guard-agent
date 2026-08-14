@@ -169,6 +169,19 @@ func (m *Manager) AppendBoundary(cause, commandRef, turnID string) error {
 	})
 }
 
+// AppendCommandProvenance records which discovered command file answered a
+// slash-command invocation (08-04 / CMD-05): key is the command key
+// ("opsx:explore"), path the on-disk source file, args the typed arguments.
+// Written NEXT TO the expanded user message (which holds the body the model
+// saw — D-02); provenance is metadata, never replayed as message content.
+// turnID may be empty when written pre-turn (association is by append order).
+func (m *Manager) AppendCommandProvenance(turnID, key, path, args string) error {
+	return m.appendLine(&Line{
+		Type: TypeCommandProvenance, TurnID: turnID, Timestamp: now(),
+		Name: key, CommandRef: path, Text: args,
+	})
+}
+
 // AppendCanceled records that a turn was cancelled (D-16).
 func (m *Manager) AppendCanceled(turnID string, ts time.Time, reason string) error {
 	return m.appendLine(&Line{Type: TypeCanceled, TurnID: turnID, Timestamp: ts, Text: reason})

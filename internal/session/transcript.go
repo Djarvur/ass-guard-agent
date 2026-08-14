@@ -31,6 +31,13 @@ const (
 	TypeEngineDecision    = "engine_decision"
 	TypeError             = "error"
 	TypeSessionEnd        = "session_end"
+
+	// TypeCommandProvenance records WHICH discovered command file answered a
+	// slash-command invocation (08-04 / CMD-05): the typed command + source
+	// path + args as metadata NEXT TO the expanded user message (D-02 — the
+	// user_message line holds the expanded body; provenance disambiguates
+	// typed-vs-expanded on replay).
+	TypeCommandProvenance = "command_provenance"
 )
 
 // ContentBlock is one entry of a user/assistant message's content (mirrors the

@@ -60,6 +60,11 @@ const (
 
 	// ExitClassFixable marks a non-zero exit as an actionable finding.
 	ExitClassFixable = "fixable"
+
+	// MutabilityMutating / MutabilityReadOnly are the mutability vocabulary for
+	// BOTH the [commands] shapes and the [command_mutability] table.
+	MutabilityMutating = "mutating"
+	MutabilityReadOnly = "read-only"
 )
 
 // OpenSpecConfig is the parsed openspec.toml (D-14).
@@ -67,6 +72,14 @@ type OpenSpecConfig struct {
 	Patterns     []PatternEntry          `toml:"patterns"`
 	HandoffTools []HandoffToolEntry      `toml:"handoff_tools"`
 	Commands     map[string]CommandShape `toml:"commands"`
+
+	// CommandMutability classifies DISCOVERED slash-commands (08-04 D-11 —
+	// the v1.0 mutability discipline extended from tools to commands): a
+	// "mutating" command opens a context boundary at expansion time;
+	// "read-only" (and unknown keys) never do. Keys are ecosystem command
+	// keys ("opsx:apply"); an operator overlay flips classifications per the
+	// normal loader precedence.
+	CommandMutability map[string]string `toml:"command_mutability"`
 }
 
 // embeddedSeeded is the zero-config floor (OPEN-02), embedded into the binary.
@@ -172,6 +185,13 @@ func validate(cfg *OpenSpecConfig) error {
 		v = append(v, validateCommand(name, shape)...)
 	}
 
+	for key, mut := range cfg.CommandMutability {
+		if mut != MutabilityMutating && mut != MutabilityReadOnly {
+			v = append(v, fmt.Sprintf(
+				"command_mutability.%s: unknown mutability %q (want mutating|read-only)", key, mut))
+		}
+	}
+
 	if len(v) > 0 {
 		return &ConfigError{Violations: v}
 	}
@@ -185,7 +205,7 @@ func validate(cfg *OpenSpecConfig) error {
 func validateCommand(name string, shape CommandShape) []string {
 	var v []string
 
-	if shape.Mutability != "mutating" && shape.Mutability != "read-only" {
+	if shape.Mutability != MutabilityMutating && shape.Mutability != MutabilityReadOnly {
 		v = append(v, fmt.Sprintf(
 			"commands.%s: unknown mutability %q (want mutating|read-only)",
 			name, shape.Mutability))

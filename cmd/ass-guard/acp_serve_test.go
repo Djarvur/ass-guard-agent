@@ -189,6 +189,9 @@ func repoProfilesDir(t *testing.T) string {
 
 // --- Phase 8 / 08-04: slash-command expansion wiring (Tests 9-14) ---
 
+// exploreInvocation is the typed-fragment reused across the expansion tests.
+const exploreInvocation = "/opsx:explore fix-it"
+
 // writeOpsxCommandFixtures installs the opsx command fixtures into dir's
 // project `.claude/` (the layout `openspec init --tools claude` installs).
 func writeOpsxCommandFixtures(t *testing.T, dir string) {
@@ -221,7 +224,9 @@ func writeOpsxCommandFixtures(t *testing.T, dir string) {
 // newExpansionRunner builds a sessionTurnRunner over a temp workDir carrying
 // the opsx fixtures, with the command registry loaded (engineOn controls
 // setupEngine). Returns the runner + its scripted provider.
-func newExpansionRunner(t *testing.T, engineOn bool, script ...scriptedResp) (*sessionTurnRunner, *scriptedACPProvider) {
+func newExpansionRunner(
+	t *testing.T, engineOn bool, script ...scriptedResp,
+) (*sessionTurnRunner, *scriptedACPProvider) {
 	t.Helper()
 
 	bus := event.NewBus()
@@ -262,7 +267,7 @@ func lastUserMessageText(t *testing.T, r *sessionTurnRunner, sessionID string) s
 		t.Fatalf("ReadAll: %v", err)
 	}
 
-	for i := len(lines) - 1; i >= 0; i-- {
+	for i := len(lines) - 1; i >= 0; i-- { //nolint:modernize // mirror of Manager.ReadLastBoundary convention
 		if lines[i].Type != session.TypeUserMessage {
 			continue
 		}
@@ -299,9 +304,9 @@ func transcriptLinesOfType(t *testing.T, r *sessionTurnRunner, sessionID, lineTy
 
 	var out []session.Line
 
-	for _, l := range lines {
-		if l.Type == lineType {
-			out = append(out, l)
+	for i := range lines {
+		if lines[i].Type == lineType {
+			out = append(out, lines[i])
 		}
 	}
 
@@ -313,11 +318,12 @@ func transcriptLinesOfType(t *testing.T, r *sessionTurnRunner, sessionID, lineTy
 // the transcript's user_message line holds the command body, not the typed
 // text.
 func TestExpansion_EngineOffPathExpanded(t *testing.T) {
+	t.Parallel()
 	r, _ := newExpansionRunner(t, false,
 		scriptedResp{text: "explored; no handoff signal", finish: stopEndTurn})
 
 	stop, err := r.Run(context.Background(), "sess-x-off", &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: "/opsx:explore fix-it"}})
+		[]acp.ContentBlock{{Type: blockText, Text: exploreInvocation}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
 	}
@@ -337,11 +343,12 @@ func TestExpansion_EngineOffPathExpanded(t *testing.T) {
 // TestExpansion_EngineOnPathExpanded (Test 10): same on the engine-on path —
 // the first prompt through engine.Observe is already expanded.
 func TestExpansion_EngineOnPathExpanded(t *testing.T) {
+	t.Parallel()
 	r, _ := newExpansionRunner(t, true,
 		scriptedResp{text: "explored; no handoff signal", finish: stopEndTurn})
 
 	_, err := r.Run(context.Background(), "sess-x-on", &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: "/opsx:explore fix-it"}})
+		[]acp.ContentBlock{{Type: blockText, Text: exploreInvocation}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
 	}
@@ -357,6 +364,7 @@ func TestExpansion_EngineOnPathExpanded(t *testing.T) {
 // injected "/opsx:propose name-x" prompt carries the EXPANDED propose body
 // into sess.Prompt, not the raw slash text.
 func TestInjectionExpansion_AdapterExpandsInjections(t *testing.T) {
+	t.Parallel()
 	r, _ := newExpansionRunner(t, true)
 
 	sess := r.sessionFor(context.Background(), "sess-inj")
@@ -383,6 +391,7 @@ func TestInjectionExpansion_AdapterExpandsInjections(t *testing.T) {
 // ordinary text — blocks reach Prompt UNCHANGED, and NO provenance line is
 // written (structural safety: no match, nothing happens).
 func TestExpansion_UnknownCommandFallsThrough(t *testing.T) {
+	t.Parallel()
 	r, _ := newExpansionRunner(t, false,
 		scriptedResp{text: "ok", finish: stopEndTurn})
 
@@ -406,6 +415,7 @@ func TestExpansion_UnknownCommandFallsThrough(t *testing.T) {
 // (unreadable .claude/skills — a file where a dir belongs) never breaks turns:
 // the turn proceeds WITHOUT expansion, plain text reaches the model.
 func TestExpansion_RegistryLoadFailureDegrades(t *testing.T) {
+	t.Parallel()
 	r, _ := newExpansionRunner(t, false,
 		scriptedResp{text: "ok", finish: stopEndTurn})
 
@@ -419,7 +429,7 @@ func TestExpansion_RegistryLoadFailureDegrades(t *testing.T) {
 	r.loadCommandRegistry() // reload fails — logged, non-fatal
 
 	_, err = r.Run(context.Background(), "sess-x-deg", &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: "/opsx:explore fix-it"}})
+		[]acp.ContentBlock{{Type: blockText, Text: exploreInvocation}})
 	if err != nil {
 		t.Fatalf("Run err = %v; want the turn to proceed (degradation)", err)
 	}
@@ -434,13 +444,14 @@ func TestExpansion_RegistryLoadFailureDegrades(t *testing.T) {
 // session/update traffic is AgentMessageChunk forwarding of ASSISTANT text —
 // the expanded body is NEVER echoed back to the editor.
 func TestExpansion_NoEditorEcho(t *testing.T) {
+	t.Parallel()
 	r, _ := newExpansionRunner(t, true,
 		scriptedResp{text: "assistant reply text only", finish: stopEndTurn})
 
 	emit := &noopEmitter{}
 
 	_, err := r.Run(context.Background(), "sess-x-echo", emit,
-		[]acp.ContentBlock{{Type: blockText, Text: "/opsx:explore fix-it"}})
+		[]acp.ContentBlock{{Type: blockText, Text: exploreInvocation}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
 	}
