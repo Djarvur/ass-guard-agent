@@ -10,13 +10,16 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/event"
+	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
+	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 )
 
 // TestACPServeCommandRegistered verifies the cobra root has an `acp serve`
@@ -659,5 +662,305 @@ func assertSingleNothingDecision(t *testing.T, r *sessionTurnRunner, sessionID s
 
 	if len(decisions) != 1 || decisions[0] != "nothing" {
 		t.Errorf("engine_decision actions = %v; want exactly [nothing]", decisions)
+	}
+}
+
+// --- Phase 8 / 08-05: Skill tool + listing wiring (Tests 1-5) ---
+
+// skillListingHeaderCaptured is the listing's first line, pinned from the
+// captured zcode session (see internal/ecosys/skills_test.go for the source).
+const skillListingHeaderCaptured = "The following skills are available for use with the Skill tool:"
+
+// writeSkillFixtures plants the two opsx skill fixtures under dir's project
+// .claude/skills/ (the layout `openspec init --tools claude` installs).
+func writeSkillFixtures(t *testing.T, dir string) {
+	t.Helper()
+
+	bodies := map[string]string{
+		"openspec-explore": "---\nname: openspec-explore\ndescription: Explore a proposed change collaboratively\n---\n" +
+			"Explore the change: read the codebase, compare options, diagram.\n",
+		"openspec-propose": "---\nname: openspec-propose\ndescription: Propose a change with specs and tasks\n---\n" +
+			"Propose the change: write proposal, specs, design, tasks.\n",
+	}
+
+	for name, body := range bodies {
+		p := filepath.Join(dir, ".claude", "skills", name, "SKILL.md")
+
+		err := os.MkdirAll(filepath.Dir(p), 0o750)
+		if err != nil {
+			t.Fatalf("mkdir skill fixture: %v", err)
+		}
+
+		err = os.WriteFile(p, []byte(body), 0o600)
+		if err != nil {
+			t.Fatalf("write skill fixture %s: %v", name, err)
+		}
+	}
+}
+
+// newSkillRunner builds an engine-on runner over a temp workDir with the opsx
+// command + skill fixtures planted and the registry loaded.
+func newSkillRunner(t *testing.T, withSkills bool, script ...scriptedResp) (*sessionTurnRunner, *scriptedACPProvider) {
+	t.Helper()
+
+	bus := event.NewBus()
+	prov := &scriptedACPProvider{}
+	prov.queue(script...)
+
+	dir := t.TempDir()
+	writeOpsxCommandFixtures(t, dir)
+
+	if withSkills {
+		writeSkillFixtures(t, dir)
+	}
+
+	r := &sessionTurnRunner{
+		bus:          bus,
+		profile:      fakeProfileACP(),
+		workDir:      dir,
+		maxConc:      4,
+		makeProvider: func() provider.Provider { return prov },
+	}
+
+	err := r.setupEngine()
+	if err != nil {
+		t.Fatalf("setupEngine: %v", err)
+	}
+
+	r.loadCommandRegistry()
+
+	return r, prov
+}
+
+// sessionSkillEntry returns the session catalog's Skill tool entry.
+func sessionSkillEntry(t *testing.T, sess *session.Session) toolcat.Tool {
+	t.Helper()
+
+	tool, ok := sess.Catalog.Get("Skill")
+	if !ok {
+		t.Fatal("Skill tool not in the session catalog (captured coretools must carry it)")
+	}
+
+	return tool
+}
+
+// TestSkill_ClosureRegisteredAndSchemaUntouched (Test 1): the session catalog
+// carries the Skill tool with a REAL Execute closure; the captured
+// Description/InputSchema stay byte-identical to the embedded coretools entry
+// (override Execute ONLY — mimicry integrity, T-8-21).
+func TestSkill_ClosureRegisteredAndSchemaUntouched(t *testing.T) {
+	t.Parallel()
+	r, _ := newSkillRunner(t, true)
+
+	sess := r.sessionFor(context.Background(), "sess-sk1")
+
+	tool := sessionSkillEntry(t, sess)
+	if tool.Execute == nil {
+		t.Fatal("Skill.Execute nil — the closure did not register")
+	}
+
+	captured, _ := toolcat.NewCatalog().Get("Skill")
+	if tool.Description != captured.Description {
+		t.Errorf("Description changed:\n got: %q\nwant: %q", tool.Description, captured.Description)
+	}
+
+	if string(tool.InputSchema) != string(captured.InputSchema) {
+		t.Errorf("InputSchema changed:\n got: %s\nwant: %s", tool.InputSchema, captured.InputSchema)
+	}
+
+	out, err := tool.Execute(context.Background(), json.RawMessage(`{"skill":"openspec-explore"}`))
+	if err != nil {
+		t.Fatalf("Execute err = %v; want nil", err)
+	}
+
+	var res struct {
+		Content string `json:"content"`
+	}
+
+	err = json.Unmarshal(out, &res)
+	if err != nil {
+		t.Fatalf("result not JSON: %v (%s)", err, out)
+	}
+
+	if !strings.Contains(res.Content, "Explore the change: read the codebase") {
+		t.Errorf("content = %q; want the fixture SKILL.md body", res.Content)
+	}
+}
+
+// TestSkill_EndToEndRoundTrip (Test 2, D-05): a model-emitted Skill tool_call
+// executes through the REAL executor chain (MCPExecutor → RealExecutor →
+// catalog → closure) and the transcript records the tool_call + a
+// tool_result carrying the SKILL.md body — the skill "loaded into the turn".
+func TestSkill_EndToEndRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newSkillRunner(t, true,
+		scriptedResp{
+			text: "loading the explore skill",
+			toolCalls: []provider.ToolCall{{
+				Name:  "Skill",
+				Input: json.RawMessage(`{"skill":"openspec-explore"}`),
+			}},
+			finish: "tool_use",
+		},
+		scriptedResp{text: "skill loaded and followed; nothing more", finish: stopEndTurn},
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err := r.Run(ctx, "sess-sk2", &noopEmitter{},
+		[]acp.ContentBlock{{Type: blockText, Text: "explore the login change"}})
+	if err != nil {
+		t.Fatalf("Run err = %v", err)
+	}
+
+	lines, err := r.sessions["sess-sk2"].Manager.ReadAll()
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+
+	var sawCall, sawResult bool
+
+	for i := range lines {
+		l := &lines[i]
+		if l.Type == session.TypeToolCall && l.Name == "Skill" {
+			sawCall = true
+		}
+
+		if l.Type == session.TypeToolResult && strings.Contains(string(l.Output), "Explore the change: read the codebase") {
+			sawResult = true
+		}
+	}
+
+	if !sawCall {
+		t.Error("no Skill tool_call line in the transcript")
+	}
+
+	if !sawResult {
+		t.Error("no tool_result carrying the SKILL.md body — the skill did not load into the turn")
+	}
+}
+
+// TestSkill_ListingMergedProfileCopyUntouched (Test 3): the per-session
+// profile copy carries the skills listing (captured shape); the SHARED
+// r.profile is byte-identical to before (the v1.0 per-session-copy
+// discipline — D-16).
+func TestSkill_ListingMergedProfileCopyUntouched(t *testing.T) {
+	t.Parallel()
+	r, _ := newSkillRunner(t, true)
+
+	sharedBefore := append([]profile.TextBlock(nil), r.profile.System...)
+
+	sess := r.sessionFor(context.Background(), "sess-sk3")
+
+	var listing string
+
+	for _, b := range sess.Profile.System {
+		if strings.HasPrefix(b.Text, skillListingHeaderCaptured) {
+			listing = b.Text
+		}
+	}
+
+	if listing == "" {
+		t.Fatal("per-session profile copy carries no skills listing (captured header absent)")
+	}
+
+	if !strings.Contains(listing, "- openspec-explore: ") {
+		t.Errorf("listing missing openspec-explore entry:\n%s", listing)
+	}
+
+	if len(r.profile.System) != len(sharedBefore) {
+		t.Errorf("shared r.profile.System grew %d → %d (per-session copy discipline violated)",
+			len(sharedBefore), len(r.profile.System))
+	}
+
+	for i := range sharedBefore {
+		if r.profile.System[i] != sharedBefore[i] {
+			t.Errorf("shared r.profile.System[%d] mutated", i)
+		}
+	}
+}
+
+// TestSkill_OpsxTriggerSeesListing (Test 4): an expanded /opsx:explore turn's
+// context carries the listing including openspec-explore — the model can see
+// and invoke the matching skill on its own judgment (the natural-trigger
+// requirement, D-05 — NO auto-injection).
+func TestSkill_OpsxTriggerSeesListing(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newSkillRunner(t, true,
+		scriptedResp{text: "explored", finish: stopEndTurn})
+
+	_, err := r.Run(context.Background(), "sess-sk4", &noopEmitter{},
+		[]acp.ContentBlock{{Type: blockText, Text: exploreInvocation}})
+	if err != nil {
+		t.Fatalf("Run err = %v", err)
+	}
+
+	sess := r.sessions["sess-sk4"]
+
+	var hasListing bool
+
+	for _, b := range sess.Profile.System {
+		if strings.HasPrefix(b.Text, skillListingHeaderCaptured) &&
+			strings.Contains(b.Text, "openspec-explore") {
+			hasListing = true
+		}
+	}
+
+	if !hasListing {
+		t.Error("the expanded /opsx:explore turn's context lacks the skills listing — the model cannot trigger the skill")
+	}
+
+	// The user message is the EXPANDED command body (no skill auto-injection —
+	// the body itself is the trigger surface).
+	if got := lastUserMessageText(t, r, "sess-sk4"); !strings.Contains(got, "Explore the change: fix-it") {
+		t.Errorf("user_message = %q; want the expanded command body", got)
+	}
+}
+
+// TestSkill_ZeroSkillDegradation (Test 5): an empty registry → no listing
+// merge (profile copy identical to the base), Skill calls return the
+// structured unknown-skill error, and the session still works.
+func TestSkill_ZeroSkillDegradation(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newSkillRunner(t, false,
+		scriptedResp{text: "plain turn works", finish: stopEndTurn})
+
+	sess := r.sessionFor(context.Background(), "sess-sk5")
+
+	for _, b := range sess.Profile.System {
+		if strings.HasPrefix(b.Text, skillListingHeaderCaptured) {
+			t.Fatal("empty registry still merged a listing block")
+		}
+	}
+
+	tool := sessionSkillEntry(t, sess)
+
+	out, err := tool.Execute(context.Background(), json.RawMessage(`{"skill":"anything"}`))
+	if err != nil {
+		t.Fatalf("Execute err = %v; want nil (structured unknown)", err)
+	}
+
+	var res struct {
+		Error     string   `json:"error"`
+		Available []string `json:"available"`
+	}
+
+	err = json.Unmarshal(out, &res)
+	if err != nil {
+		t.Fatalf("result not JSON: %v (%s)", err, out)
+	}
+
+	if !strings.Contains(res.Error, "unknown skill") {
+		t.Errorf("error = %q; want the unknown-skill structure", res.Error)
+	}
+
+	_, err = r.Run(context.Background(), "sess-sk5", &noopEmitter{},
+		[]acp.ContentBlock{{Type: blockText, Text: "just a normal prompt"}})
+	if err != nil {
+		t.Fatalf("Run err = %v; want the session to keep working", err)
 	}
 }
