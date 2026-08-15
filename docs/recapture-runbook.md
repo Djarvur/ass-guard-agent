@@ -110,3 +110,12 @@ below.
 
 | date | session ID | zcode version | extractor version | turns / tools / subagents / catalog-changes | drift-report path |
 |------|-----------|---------------|-------------------|---------------------------------------------|-------------------|
+| 2026-08-16 | `sess_3cee56ae-cc6a-43a6-8f00-a08eb266e1aa` | 0.16.3 | extract-profile/01-02 + divergence-class fixes (`d3fcfa1`) | 13 recs / 81 tools / 1 subagent / 2 transitions (79→80 `mcp__recapture_probe`→79) | `profiles/zcode/drift-reports/2026-08-16-recapture.md` |
+
+Run note (2026-08-16): the workload was driven autonomously via
+`zcode.cjs app-server --stdio` (the internal line-delimited JSON-RPC; driver +
+mechanism findings in the drift report) under the operator's explicit
+direction — the §2–3 procedure's "operator runs the scripted workload" step
+executed programmatically, and the mid-session attach/detach came from
+config-change + `session/resume` boundaries (the only headless-reachable
+mechanism; `/mcp` connect/disconnect are TUI-client-side).

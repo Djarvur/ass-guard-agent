@@ -43,6 +43,18 @@ records 12–13: 79 tools, probe gone        (T5 — DETACH)
 
 No extractor-changed drift: the old extractor (`extract-profile/01-02`) and the current one agree on field paths; the counts moved because the target moved. Per Pitfall 18 this report is committed BEFORE the profile update commit.
 
-## Parity re-baseline
+## Parity re-baseline (fresh numbers — Phase-1 baseline SUPERSEDED)
 
-**PENDING** — appended below after re-pin + the `ZAI_API_KEY`-gated parity run (never gate extraction on the key).
+**Curated suite (div-01..08), NEW profile:** Layer1 0.375, Layer2 0.125, overall **FAIL** (1/8 both layers; only div-07 zero-tool-direct-answer matches cleanly; div-01/div-05 sequence-match with 3/1 arg mismatches).
+**Curated suite, OLD profile (5a2c7f5 bundle, control run):** Layer1 0.375, Layer2 0.125, overall **FAIL** — the IDENTICAL rates and per-turn pattern.
+
+**Classification: the curated gate's recorded expectations are stale against current live behavior, independent of profile.** The suite's ExpectedToolCalls were recorded in the v1.0 era (pre-2026-08-11 capture, older model/system prompts); today's live arm diverges from those recordings whichever profile shapes the request. Tonight's re-pin is not the cause (control run proves it). The gate's true thesis test — ass-guard vs CURRENT zcode — requires re-recording expectations from current live zcode (D-16 held-out-session direction), a follow-up item, not a silent threshold move.
+
+**From-rollout suite (13 turns from the new capture):** Layer1 0.231, overall FAIL (1/13). Artifact decomposition (recorded for the follow-up): 6 turns carry EMPTY expected-calls (`ExtractTurnsFromRollout` cannot reconstruct tool_use from `messagesKind=delta` records); 4 turns are workspace-state pollution (replays mutate the scratch ws — the model reads what earlier replays already edited); 1 turn expects `mcp__recapture_probe__recapture_probe` — runtime MCP state ass-guard cannot host by design (the profile base catalog correctly excludes it); the 3 comparable turns show minor arg-level variance only.
+
+**Follow-up items (operator disposition):**
+1. Re-record curated-suite expectations from current live zcode (the profile-independent staleness above) — then re-run the A/B as the true gate.
+2. `ExtractTurnsFromRollout`: handle `messagesKind=delta` records (messageOffset-based reconstruction) and per-turn workspace fixtures to kill the state-pollution class.
+
+No threshold was silently moved: Phase-1's numeric baseline (curated ~8/8 era) is SUPERSEDED by the fresh numbers above, which are the new recorded reference pending expectation re-recording.
+
