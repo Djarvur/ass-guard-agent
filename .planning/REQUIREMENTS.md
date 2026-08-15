@@ -1,9 +1,9 @@
-# Requirements: ass-guard-agent (working name) — v1.1 ACP Completion
+# Requirements: ass-guard-agent (working name) — v1.1 Product Completion
 
 **Defined:** 2026-08-14 · **Re-scoped:** 2026-08-16 (operator)
 **Core Value:** Outgoing requests to the model provider must be structurally indistinguishable from the mimicked agent's (zcode first) — if the model can tell the requests apart, everything built on top is compromised.
 
-**v1.1 scope discipline (after the 2026-08-16 re-scope):** The milestone is the ACP story — kickoff gap (Phase 8, done), audit + parity re-capture (Phase 9), then ACP Functional Completeness (Phase 12): every catalog tool the model can see executes for real, the result forms are capture-pinned, a behavioral-eval regression net exists, and the OpenSpec command matrix is covered E2E. **Telegram (TG-01..06) and the dsh profile (DSH-01..05) are lowered to the v1.2 planning pool** (operator priority: the agent fully functional on ACP as soon as possible) — their two deps (go-telegram/bot v1.23.0, klauspost/compress/zstd v1.19.2) and the `internal/runtime` structural refactor move with them; v1.1 adds zero new dependencies. No feature closes with stub-only evidence — every external surface carries a real-binary/live-service gate. Research: `.planning/research/SUMMARY.md` (2026-08-14), `.planning/research/ECOSYSTEM-AUDIT.md` (Phase 12: EVAL §4.4, PLUG-05 §4.1/§5).
+**v1.1 scope discipline (after the 2026-08-16 re-scope + phase split):** The milestone completes the product — Phase 8 closed the kickoff loop (done); Phase 9 closes audit + parity re-capture; **Phase 12 (Product Functional Completeness)** makes the machinery whole: every catalog tool executes for real, result forms capture-pinned, the behavioral-eval regression net, plugin-install discovery; **Phase 13 (OpenSpec Workflow Completion)** makes the flagship toolkit whole: the expanded OpenSpec command matrix runs E2E with zero-continue chaining and eval coverage. **Telegram (TG-01..06) and the dsh profile (DSH-01..05) are lowered to the v1.2 planning pool** (operator priority: the product fully functional as soon as possible) — their two deps (go-telegram/bot v1.23.0, klauspost/compress/zstd v1.19.2) and the `internal/runtime` structural refactor move with them; v1.1 adds zero new dependencies. No feature closes with stub-only evidence — every external surface carries a real-binary/live-service gate. Research: `.planning/research/SUMMARY.md` (2026-08-14), `.planning/research/ECOSYSTEM-AUDIT.md` (Phase 12: EVAL §4.4, PLUG-05 §4.1/§5).
 
 ## v1.1 Requirements
 
@@ -25,9 +25,9 @@
 - [ ] **AUD-04**: The audit trail records engine decisions (continue / hook / ask / wait, with the matched signal) — the "why did the agent continue" question is answerable from the log alone
 - [ ] **AUD-05**: The zcode parity stability test runs green against a newly pinned divergence-prone capture session, produced via an operator runbook (scripted subagent/MCP-attach/tool-variety workload — not richest-session selection), with the pinned session ID consumed by the test, zcode + extractor versions recorded, thresholds explicitly re-baselined, and the drift report committed before any profile update
 
-### ACP Functional Completeness (priority 3 — the re-scope's product goal; added 2026-08-16)
+### Product Functional Completeness (priority 3 — the re-scope's machinery half, Phase 12; split 2026-08-16)
 
-*(Operator re-scope 2026-08-16: "make the agent fully functional on ACP as soon as possible." Ground truth: 9 of the 19 built-in catalog tools still return "no implementation yet" — the 08-08 deferred-tools table never dispositioned; Bash background flags unimplemented; corpus-absent result forms routed to Phase 9's re-capture; zero behavioral-eval regression net — ECOSYSTEM-AUDIT §3.3 calls this the biggest methodological hole.)*
+*(Operator re-scope 2026-08-16: "make the product fully functional as soon as possible"; split same day into the machinery half (this, Phase 12) and the OpenSpec-workflow half (Phase 13). Ground truth: 9 of the 19 built-in catalog tools still return "no implementation yet" — the 08-08 deferred-tools table never dispositioned; Bash background flags unimplemented; corpus-absent result forms routed to Phase 9's re-capture; zero behavioral-eval regression net — ECOSYSTEM-AUDIT §3.3 calls this the biggest methodological hole.)*
 
 - [ ] **ACP-01**: The model invoking `AskUserQuestion` gets a real question surface on ACP — question + options surface to the client in the captured shape, the turn suspends on the engine's ask path, and the operator's reply lands as the tool result; capture-grounded result form; the no-confirmation-tier safety model is untouched (a model-initiated question, not a tool-execution gate). Directly addresses the Phase-8 residual class where the model ends a terminal stage by asking a question in plain text and the engine correctly does nothing
 - [ ] **ACP-02**: `EnterPlanMode` / `ExitPlanMode` execute for real with captured result forms; plan-mode state is visible in the transcript and respected by the turn loop (scope per capture — design at plan-phase)
@@ -36,9 +36,16 @@
 - [ ] **ACP-05**: `TaskStop` executes for real — cancels the targeted in-flight task/background work with the captured result form
 - [ ] **ACP-06**: Bash `run_in_background` and `dangerouslyDisableSandbox` execute faithfully per captured semantics, with background-shell output retrieval working in the captured form
 - [ ] **ACP-07**: The corpus-absent result forms — truncation markers, Bash timeout form, Bash default timeout, file-tool failure forms — are re-pinned against the newly pinned Phase-9 capture session (depends on AUD-05's pin) and implemented where the corpus shows them
-- [ ] **ACP-08**: A behavioral-eval regression net exists (ECOSYSTEM-AUDIT §4.4 EVAL-01..03): deterministic tool-unit tests, `/opsx` scenario suites (pass@k against a scratch project with the real binary), and a re-run gate wired so profile / model / turn-behavior changes cannot land without the suites green
-- [ ] **ACP-09**: The expanded OpenSpec command matrix — `new / continue / ff / verify / bulk-archive / onboard` — drives E2E through ass-guard against the real openspec binary (the `/opsx` beyond explore/propose/apply/archive)
+- [ ] **ACP-08**: A behavioral-eval regression net exists (ECOSYSTEM-AUDIT §4.4 EVAL-01..03): deterministic tool-unit tests, scenario suites (pass@k against a scratch project with the real binary — the initial suite is the Phase-8-proven `explore → propose → apply → archive` scenario), and a re-run gate wired so profile / model / turn-behavior changes cannot land without the suites green. Phase 13 extends the suites across the expanded command matrix (OS-03)
 - [ ] **ACP-10**: Command + skill discovery reads Claude-Code-compatible plugin installs (`installed_plugins.json` + `<root>/plugins/cache/<marketplace>/<plugin>/<version>/` layout, PLUG-05 carve-out) and merges plugin skills/commands into the existing discovery with documented precedence; reads span `~/.claude/plugins/` and `~/.zcode/cli/plugins/`, writes stay under the ass-guard root only
+
+### OpenSpec Workflow Completion (priority 4 — the re-scope's workflow half, Phase 13; split 2026-08-16)
+
+*(The operator split 2026-08-16: "make it working with openspec." Phase 8 proved the flagship loop — `explore → propose → apply → archive` — zero-continue against the real binary; the rest of the toolkit's command matrix is unproven. Absorbs ex-ACP-09.)*
+
+- [ ] **OS-01**: The expanded OpenSpec command matrix — `new / continue / ff / verify / bulk-archive / onboard` — drives E2E through ass-guard against the real openspec binary, happy and fixable-failure paths (the `/opsx` beyond the proven loop)
+- [ ] **OS-02**: Zero-continue chaining covers the expanded matrix — engine pattern seeds / dual-signal rows for the new command handoffs, with the structural-safety discipline unchanged (assistant-role-only matching, unmatched ⇒ nothing); interactive dead-ends in the matrix surface via `AskUserQuestion` (ACP-01) instead of stalling the chain — the Phase-8 stage-4 residual class, now with a tool-shaped route
+- [ ] **OS-03**: The Phase-12 eval suites are extended with per-command scenario suites for the expanded matrix (pass@k, real binary, scratch project), running in the same re-run gate
 
 ## Moved to v1.2 (operator re-scope 2026-08-16)
 
@@ -84,7 +91,7 @@
 
 ## Traceability
 
-Which phases cover which requirements. Filled during roadmap creation (2026-08-14 — 21/21 mapped, no orphans); re-scoped 2026-08-16 (22/22 mapped in v1.1: CMD→8, AUD→9, ACP→12; TG/DSH moved to the v1.2 pool).
+Which phases cover which requirements. Filled during roadmap creation (2026-08-14 — 21/21 mapped, no orphans); re-scoped 2026-08-16 (24/24 mapped in v1.1: CMD→8, AUD→9, ACP→12, OS→13; TG/DSH moved to the v1.2 pool; ex-ACP-09 absorbed into OS-01).
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
@@ -108,8 +115,10 @@ Which phases cover which requirements. Filled during roadmap creation (2026-08-1
 | ACP-06 | Phase 12 | Pending |
 | ACP-07 | Phase 12 | Pending (depends on AUD-05's pinned session) |
 | ACP-08 | Phase 12 | Pending |
-| ACP-09 | Phase 12 | Pending |
 | ACP-10 | Phase 12 | Pending |
+| OS-01 | Phase 13 | Pending (absorbs ex-ACP-09) |
+| OS-02 | Phase 13 | Pending |
+| OS-03 | Phase 13 | Pending |
 | TG-01 | v1.2 pool (ex-Phase 10) | Deferred |
 | TG-02 | v1.2 pool (ex-Phase 10) | Deferred |
 | TG-03 | v1.2 pool (ex-Phase 10) | Deferred |
@@ -124,4 +133,4 @@ Which phases cover which requirements. Filled during roadmap creation (2026-08-1
 
 ---
 *Requirements defined: 2026-08-14*
-*Last updated: 2026-08-16 — operator re-scope: Phases 10–11 lowered to the v1.2 pool; ACP-01..10 added as Phase 12 (ACP Functional Completeness); milestone renamed v1.1 ACP Completion*
+*Last updated: 2026-08-16 — operator re-scope + phase split: Phases 10–11 lowered to the v1.2 pool; Phase 12 Product Functional Completeness (ACP-01..08, 10) and Phase 13 OpenSpec Workflow Completion (OS-01..03, ex-ACP-09 absorbed) added; milestone renamed v1.1 Product Completion*

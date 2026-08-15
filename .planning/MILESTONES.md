@@ -1,13 +1,14 @@
 # Milestones
 
-## v1.1 ACP Completion (in progress)
+## v1.1 Product Completion (in progress)
 
-**Phases:** 3 (8, 9, 12) · 1 complete · **Re-scoped 2026-08-16** (operator — renamed from "Kickoff & Peers"; Telegram and dsh lowered to the v1.2 pool in favor of ACP functional completeness; v1.1 adds zero new dependencies)
+**Phases:** 4 (8, 9, 12, 13) · 1 complete · **Re-scoped 2026-08-16** (operator — renamed "Kickoff & Peers" → "ACP Completion" → "Product Completion"; Telegram and dsh lowered to the v1.2 pool in favor of product completeness; the added phase then split into machinery + OpenSpec halves; v1.1 adds zero new dependencies)
 **Started:** 2026-08-14 (continues from v1.0's Phase 7 numbering)
 
 - [x] Phase 8: Slash-Command Kickoff — completed 2026-08-16 (operator witness accepted; zero-continue product proof green — `/opsx:explore → propose → apply → archive` chained by the engine with zero manual continues, verified against the real openspec binary; findings 5+6 confirmed; known residuals: UAT check 3 hook live-leg + one stage-4 model-variance fail in the 2/3 zero-continue tally)
 - [ ] Phase 9: Serve-Path Audit + zcode Parity Re-capture — executed; 09-04 blocked-on-harvest, operator to run the scripted re-capture workload (docs/recapture-runbook.md §3), then automated legs + verification
-- [ ] Phase 12: ACP Functional Completeness — added 2026-08-16; the 9 deferred catalog tools execute for real (AskUserQuestion as engine-ask, plan mode, session interop, cron, TaskStop), Bash background flags, corpus-absent result forms re-pinned on the Phase-9 capture, the EVAL behavioral regression net, expanded `/opsx` command E2E, plugin-install discovery (ACP-01..10); planning dispatches when Phase 9 closes
+- [ ] Phase 12: Product Functional Completeness — added 2026-08-16 (machinery half of the split); the 9 deferred catalog tools execute for real (AskUserQuestion as engine-ask, plan mode, session interop, cron, TaskStop), Bash background flags, corpus-absent result forms re-pinned on the Phase-9 capture, the EVAL behavioral regression net, plugin-install discovery (ACP-01..08, 10); planning dispatches when Phase 9 closes
+- [ ] Phase 13: OpenSpec Workflow Completion — added 2026-08-16 (workflow half of the split; absorbs ex-ACP-09); the expanded command matrix (`new / continue / ff / verify / bulk-archive / onboard`) runs E2E with zero-continue chaining (interactive dead-ends routed through AskUserQuestion) and per-command eval suites (OS-01..03); planning dispatches when Phase 12 closes
 
 **Moved to the v1.2 pool (2026-08-16, operator):**
 

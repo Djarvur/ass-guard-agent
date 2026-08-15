@@ -1,15 +1,15 @@
 # Roadmap: ass-guard-agent (working name)
 
 **Project mode:** mvp (vertical slices — each phase delivers an end-to-end user capability)
-**Milestone:** v1.1 ACP Completion (Phases 8, 9, 12; numbering continues from v1.0's Phase 7 — never reset)
-**Requirements mapped:** 22/22 v1.1 ✓
+**Milestone:** v1.1 Product Completion (Phases 8, 9, 12, 13; numbering continues from v1.0's Phase 7 — never reset)
+**Requirements mapped:** 24/24 v1.1 ✓
 
-v1.1 makes the agent fully functional on ACP. Phase 8 closed the kickoff loop (`/opsx:explore → propose → apply → archive` chained by the engine with zero manual continues, verified against the real openspec binary) — v1.0's major known gap. **Operator re-scope 2026-08-16:** Telegram (ex-Phase 10) and the dsh profile (ex-Phase 11) are lowered to the v1.2 planning pool in favor of a new Phase 12 — ACP Functional Completeness: every built-in catalog tool executes for real (9 of 19 still return "no implementation yet"), result forms capture-pinned, a behavioral-eval regression net, the expanded OpenSpec command matrix E2E, and plugin-install discovery. Phase 9 stays next (it *is* ACP-surface work: serve-path audit + parity re-capture). Scope discipline after the re-scope: **zero new dependencies in v1.1** (go-telegram/bot, zstd, and the `internal/runtime` refactor move to v1.2 with their phases), and the generalized v1.0 lesson holds as a cross-phase invariant — **no feature closes with stub-only evidence; every external surface carries a real-binary/live-service gate**.
+v1.1 completes the product. Phase 8 closed the kickoff loop (`/opsx:explore → propose → apply → archive` chained by the engine with zero manual continues, verified against the real openspec binary) — v1.0's major known gap. **Operator re-scope 2026-08-16 + phase split:** Telegram (ex-Phase 10) and the dsh profile (ex-Phase 11) are lowered to the v1.2 planning pool in favor of two new phases — **Phase 12: Product Functional Completeness** (every built-in catalog tool executes for real — 9 still return "no implementation yet" — result forms capture-pinned, the behavioral-eval regression net, plugin-install discovery) and **Phase 13: OpenSpec Workflow Completion** (the expanded command matrix runs E2E with zero-continue chaining and eval coverage). Phase 9 stays next (it *is* product-surface work: serve-path audit + parity re-capture). Scope discipline after the re-scope: **zero new dependencies in v1.1** (go-telegram/bot, zstd, and the `internal/runtime` refactor move to v1.2 with their phases), and the generalized v1.0 lesson holds as a cross-phase invariant — **no feature closes with stub-only evidence; every external surface carries a real-binary/live-service gate**.
 
 ## Milestones
 
 - ✅ **v1.0 MVP** — Phases 0–7 (shipped 2026-08-14; full detail: `.planning/milestones/v1.0-ROADMAP.md`, artifacts in `.planning/milestones/v1.0-phases/`, record in `.planning/MILESTONES.md`)
-- 🚧 **v1.1 ACP Completion** — Phases 8, 9, 12 (1/3 complete; renamed from "Kickoff & Peers" at the 2026-08-16 re-scope)
+- 🚧 **v1.1 Product Completion** — Phases 8, 9, 12, 13 (1/4 complete; renamed "Kickoff & Peers" → "ACP Completion" → "Product Completion" at the 2026-08-16 re-scope + split)
 - 📋 **v1.2 pool (not yet a milestone)** — ex-Phases 10–11 (Telegram peer; dsh profile #2 — replan against source-analysis), SEED-001 agent-creation kit, ECOSYSTEM-AUDIT clusters PLUG (full lifecycle) / LSP / MEM
 
 <details>
@@ -30,7 +30,8 @@ v1.1 makes the agent fully functional on ACP. Phase 8 closed the kickoff loop (`
 
 - [x] **Phase 8: Slash-Command Kickoff** - `/namespace:name` discovery + zcode-semantics expansion + OpenSpec adapter reconciled to the real binary; the zero-continue product proof (completed 2026-08-16, operator witness accepted; execution + evidence 2026-08-15)
 - [ ] **Phase 9: Serve-Path Audit + zcode Parity Re-capture** - redacted, bounded, decision-explaining audit on `acp serve`; stability test re-grounded on a pinned capture session
-- [ ] **Phase 12: ACP Functional Completeness** - every built-in catalog tool executes for real (the 9 deferred tools + Bash background flags), capture-pinned result forms, the behavioral-eval regression net, expanded OpenSpec command E2E, plugin-install discovery *(added at the 2026-08-16 re-scope; executes directly after Phase 9)*
+- [ ] **Phase 12: Product Functional Completeness** - every built-in catalog tool executes for real (the 9 deferred tools + Bash background flags), capture-pinned result forms, the behavioral-eval regression net, plugin-install discovery *(added at the 2026-08-16 re-scope; split same day — machinery half; executes directly after Phase 9)*
+- [ ] **Phase 13: OpenSpec Workflow Completion** - the expanded OpenSpec command matrix (`new / continue / ff / verify / bulk-archive / onboard`) runs E2E with zero-continue chaining and eval coverage *(the 2026-08-16 split's workflow half; executes after Phase 12)*
 - [ ] ~~**Phase 10: Telegram Peer (Text + Voice)**~~ - → **moved to the v1.2 pool** (operator 2026-08-16; plan preserved in `.planning/phases/10-telegram-peer-text-voice/`)
 - [ ] ~~**Phase 11: dsh Mimicry Profile #2**~~ - → **moved to the v1.2 pool** (operator 2026-08-16; needs replanning against source-analysis — plan preserved in `.planning/phases/11-dsh-mimicry-profile-2/`)
 
@@ -40,7 +41,8 @@ v1.1 makes the agent fully functional on ACP. Phase 8 closed the kickoff loop (`
 |---|-------|------|--------------|------------------|
 | 8 | Slash-Command Kickoff | 8/9 | Completed 2026-08-16 — operator witness accepted; findings 5+6 dispositions confirmed (hybrid provenance chaining + D-10 capture-faithful reshape); full guard green; gated E2E: fixable green + zero-continue 2/3 (one stage-4 model-variance fail recorded as known residual, same class as UAT check 3); UAT 10 pass/1 partial/0 blocked | 2026-08-16 |
 | 9 | Serve-Path Audit + zcode Parity Re-capture | Every serve-path session leaves a redacted, bounded audit trail that explains the engine's decisions; the parity stability test runs green on a newly pinned session | AUD-01, AUD-02, AUD-03, AUD-04, AUD-05 | 5 |
-| 12 | ACP Functional Completeness | Every catalog tool the model can see on ACP executes for real, result forms are capture-pinned, a behavioral-eval regression net guards turn behavior, the expanded OpenSpec matrix runs E2E, and plugin installs widen discovery | ACP-01, ACP-02, ACP-03, ACP-04, ACP-05, ACP-06, ACP-07, ACP-08, ACP-09, ACP-10 | 10 |
+| 12 | Product Functional Completeness | Every catalog tool the model can see executes for real, result forms are capture-pinned, a behavioral-eval regression net guards turn behavior, and plugin installs widen discovery | ACP-01..08, ACP-10 | 9 |
+| 13 | OpenSpec Workflow Completion | The expanded OpenSpec command matrix runs E2E through ass-guard against the real binary, zero-continue chained, eval-covered | OS-01, OS-02, OS-03 | 3 |
 | 10 | ~~Telegram Peer (Text + Voice)~~ | *Moved to v1.2 pool (2026-08-16)* | TG-01..06 | - |
 | 11 | ~~dsh Mimicry Profile #2~~ | *Moved to v1.2 pool (2026-08-16); replan against source-analysis* | DSH-01..05 | - |
 
@@ -205,12 +207,12 @@ Plans:
 
 - [ ] 11-07-PLAN.md — the proof: per-profile capture loaders for `profile check dsh`, the dsh parity suite extractor, A/B parity run (fresh baseline; credential-gated loud-skip), live probe per routed model, traceability audit, the full phase-gate close-out [DSH-04, DSH-05]
 
-### Phase 12: ACP Functional Completeness
+### Phase 12: Product Functional Completeness
 
-**Goal:** As a developer driving ass-guard from an ACP editor, I want every tool in the captured catalog to execute for real with capture-pinned result forms, and turn behavior guarded by a behavioral-eval regression net, so that "fully functional on ACP" is literally true — the model never hits a `no implementation yet` dead end mid-task.
+**Goal:** As a developer driving ass-guard from an ACP editor, I want every tool in the captured catalog to execute for real with capture-pinned result forms, and turn behavior guarded by a behavioral-eval regression net, so that the product machinery is complete — the model never hits a `no implementation yet` dead end mid-task.
 **Mode:** mvp
-**Depends on:** Phase 9 (AUD-05's newly pinned capture session is the ground truth ACP-07 re-pins the corpus-absent result forms against; the eval scenarios ride the Phase-8-proven real-binary gate pattern). Builds on shipped v1.0 + Phases 8–9: the 08-08 core-executor pattern (RegisterCore, captured result forms, catalog-schema-never-rewritten discipline) is the template every new executor follows. **Added at the 2026-08-16 operator re-scope** — the 08-08 deferred-tools table (never dispositioned) plus the ECOSYSTEM-AUDIT's "biggest methodological hole" finding (no behavioral eval net) define the gap.
-**Requirements:** ACP-01, ACP-02, ACP-03, ACP-04, ACP-05, ACP-06, ACP-07, ACP-08, ACP-09, ACP-10
+**Depends on:** Phase 9 (AUD-05's newly pinned capture session is the ground truth ACP-07 re-pins the corpus-absent result forms against; the eval scenarios ride the Phase-8-proven real-binary gate pattern). Builds on shipped v1.0 + Phases 8–9: the 08-08 core-executor pattern (RegisterCore, captured result forms, catalog-schema-never-rewritten discipline) is the template every new executor follows. **Added at the 2026-08-16 operator re-scope, split same day** — this is the machinery half; the OpenSpec-workflow half is Phase 13 (which extends this phase's eval suites and consumes ACP-01's AskUserQuestion route).
+**Requirements:** ACP-01, ACP-02, ACP-03, ACP-04, ACP-05, ACP-06, ACP-07, ACP-08, ACP-10
 **Success Criteria** (what must be TRUE):
 
   1. The model invoking `AskUserQuestion` gets a real question surface on ACP — question + options reach the client in the captured shape, the turn suspends on the engine's ask path, the operator's reply lands as the tool result; capture-grounded result form; the no-confirmation-tier safety model untouched (a model-initiated question, not a tool-execution gate) (ACP-01)
@@ -220,18 +222,33 @@ Plans:
   5. `TaskStop` executes for real — cancels the targeted in-flight task/background work with the captured result form (ACP-05)
   6. Bash `run_in_background` and `dangerouslyDisableSandbox` execute faithfully per captured semantics, with background-shell output retrieval working in the captured form (ACP-06)
   7. The corpus-absent result forms — truncation markers, Bash timeout form, Bash default timeout, file-tool failure forms — are re-pinned against the Phase-9 pinned session and implemented where the corpus shows them (ACP-07, depends on AUD-05)
-  8. A behavioral-eval regression net exists and gates: deterministic tool-unit tests, `/opsx` scenario suites (pass@k, real binary, scratch project), re-run gate on profile / model / turn-behavior changes (ACP-08, ECOSYSTEM-AUDIT §4.4 EVAL-01..03)
-  9. The expanded OpenSpec command matrix — `new / continue / ff / verify / bulk-archive / onboard` — drives E2E through ass-guard against the real openspec binary (ACP-09)
-  10. Command + skill discovery reads Claude-Code-compatible plugin installs (`installed_plugins.json` + cache layout, PLUG-05 carve-out), merging plugin skills/commands with documented precedence; reads span `~/.claude/plugins/` and `~/.zcode/cli/plugins/`, writes stay under the ass-guard root (ACP-10)
+  8. A behavioral-eval regression net exists and gates: deterministic tool-unit tests, scenario suites (pass@k, real binary, scratch project — initial suite = the Phase-8-proven `explore → propose → apply → archive` scenario), re-run gate on profile / model / turn-behavior changes (ACP-08, ECOSYSTEM-AUDIT §4.4 EVAL-01..03; Phase 13 extends the suites)
+  9. Command + skill discovery reads Claude-Code-compatible plugin installs (`installed_plugins.json` + cache layout, PLUG-05 carve-out), merging plugin skills/commands with documented precedence; reads span `~/.claude/plugins/` and `~/.zcode/cli/plugins/`, writes stay under the ass-guard root (ACP-10)
 
-**Phase gate:** `mise ci` clean AND a live-serve session exercising `AskUserQuestion` end-to-end (operator answers a real model question) AND zero `no implementation yet` strings reachable from the 19-tool built-in catalog on any turn (grep-gated) AND the `/opsx` expanded-command E2E green against the real binary AND the eval suites green in CI. No stub-only evidence closes this phase.
+**Phase gate:** `mise ci` clean AND a live-serve session exercising `AskUserQuestion` end-to-end (operator answers a real model question) AND zero `no implementation yet` strings reachable from the 19-tool built-in catalog on any turn (grep-gated) AND the eval suites green in CI. No stub-only evidence closes this phase.
 **Plans:** TBD — dispatch `/gsd:plan-phase 12` after Phase 9 closes (context gathering should consume this section + ECOSYSTEM-AUDIT §4/§5 + the 08-08 deferred-tools table in 08-08-SUMMARY + the rollout corpus for captured AskUserQuestion/plan-mode/cron forms).
+
+### Phase 13: OpenSpec Workflow Completion
+
+**Goal:** As a developer practicing SDD with OpenSpec, I want the toolkit's full command matrix — beyond the proven `explore → propose → apply → archive` loop — to run end-to-end through ass-guard with zero-continue chaining, so that the unmodified toolkit works hands-off, not just its flagship workflow.
+**Mode:** mvp
+**Depends on:** Phase 12 (the eval net its scenarios extend, OS-03; ACP-01's AskUserQuestion as the interactive-dead-end route, OS-02) and Phase 8 (the proven loop, the chaining machinery — `TurnOutput.StartedBy` + `CommandMatcher` + `[[command_patterns]]` seeds — and the probe-pinned adapter surface). **Added at the 2026-08-16 operator split** ("make it working with openspec"); absorbs ex-ACP-09.
+**Requirements:** OS-01, OS-02, OS-03
+**Success Criteria** (what must be TRUE):
+
+  1. The expanded OpenSpec command matrix — `new / continue / ff / verify / bulk-archive / onboard` — drives E2E through ass-guard against the real openspec binary, happy and fixable-failure paths (OS-01)
+  2. Zero-continue chaining covers the expanded matrix — engine pattern seeds / dual-signal rows for the new command handoffs, structural-safety discipline unchanged (assistant-role-only matching, unmatched ⇒ nothing); interactive dead-ends surface via `AskUserQuestion` instead of stalling the chain — the Phase-8 stage-4 residual class, now with a tool-shaped route (OS-02)
+  3. The Phase-12 eval suites are extended with per-command scenario suites for the expanded matrix (pass@k, real binary, scratch project), running in the same re-run gate (OS-03)
+
+**Phase gate:** `mise ci` clean AND the expanded-matrix E2E green against the real binary (`ASSGUARD_OPENSPEC_BIN=1`, happy + fixable per command) AND chaining decisions evidenced in the audit trail (Phase-9 EngineDecision lines) AND the extended eval suites green in CI. No stub-only evidence closes this phase.
+**Plans:** TBD — dispatch `/gsd:plan-phase 13` after Phase 12 closes (context: this section, the Phase-8 chaining/provenance decisions in STATE.md, the openspec v1.5.0 installed-binary surface the Phase-8 adapter probe already pinned, and the 08-06 E2E harness as the template).
 
 ## Dependency Chains
 
-- **Phase 8 gated the milestone** and is complete (2026-08-16). Its session-layer command expansion is what any future peer surface (v1.2 Telegram) inherits for free.
+- **Phase 8 gated the milestone** and is complete (2026-08-16). Its session-layer command expansion is what any future peer surface (v1.2 Telegram) inherits for free, and its chaining machinery (`StartedBy` + `CommandMatcher` + pattern seeds) is what Phase 13 extends to the full command matrix.
 - **Phase 9 follows Phase 8** per the operator chain, with audit + re-capture merged (adjacent, both small). Its operator blocker stands: the scripted 5-turn capture workload (`docs/recapture-runbook.md` §3) must be run once by the operator; the automated 09-04 legs + phase verification follow. AUD-05's pinned session is also Phase 12's ACP-07 ground truth.
 - **Phase 12 needs Phase 9.** The corpus-absent result forms re-pin against AUD-05's newly pinned session, and the eval scenarios reuse the Phase-8/9 real-binary gate pattern. Everything else in Phase 12 builds directly on shipped 08-08 machinery (RegisterCore + captured result forms).
+- **Phase 13 needs Phases 8 and 12.** The command matrix rides Phase 8's proven loop, chaining machinery, and probe-pinned adapter surface; its eval scenarios extend Phase 12's suites (OS-03) and its interactive dead-ends route through Phase 12's AskUserQuestion (OS-02).
 - **Phases 10–11 moved to the v1.2 pool (2026-08-16).** Their former ordering constraints are recorded for the v1.2 replan: Telegram wants Phase 8's session-layer expansion (already shipped) and performs the `internal/runtime` extraction itself; dsh needs full replanning against source-analysis ground truth. Nothing in v1.1 depends on either.
 - **Cross-phase invariants:** `mise ci` clean at every phase gate; stdout = ACP frames only; no daemon, no network port, single static binary (CGO_ENABLED=0); `.claude/` strictly read-only; no feature closes with stub-only evidence.
 
@@ -240,20 +257,22 @@ Plans:
 - **Phase 8:** ground truth already in-repo (installed-binary surface table in STACK.md, zcode substitution semantics from the shipped diagnostics skill, real `openspec init` fixture layout) — plan directly, no research phase. *(Complete.)*
 - **Phase 9:** not library research but operator-procedure design — the divergence-prone workload spec, session pinning, and re-baselining steps should be written into the phase plan verbatim from research Pitfalls 17/18. Also decide the `CurrentTurnID()` accessor vs empty-TurnID fallback. *(Plans done; executing.)*
 - **Phase 12 (new):** mostly in-repo ground truth — the 08-08 deferred-tools table (08-08-SUMMARY), the rollout corpus for captured AskUserQuestion/plan-mode/cron/SendMessage forms, ECOSYSTEM-AUDIT §4.1 (PLUG plugin layout ground truth: `installed_plugins.json` + cache layout measured live), §4.4 (EVAL pyramid), §5 (near-term folds). One design unknown to resolve at planning: ACP-01's ask-path suspension semantics (how a model-initiated AskUserQuestion suspends and resumes within ACP's turn model without becoming a confirmation tier) and ACP-04's cron firing semantics under the editor-owned lifecycle. Recommend `/gsd:plan-phase 12` with a light research pass over the corpus forms only if the harvested shapes prove insufficient.
+- **Phase 13 (new):** ground truth already in-repo — the openspec v1.5.0 installed-binary surface the Phase-8 adapter probe pinned, the Phase-8 chaining/provenance decision record (STATE.md), and the 08-06 E2E harness as template. Plan directly; no research phase expected.
 - **Phase 11 (moved to v1.2, replan required):** the original research flags (recording-proxy runbook, zstd decode, system-message form from capture) are superseded by the source-analysis method — the v1.2 replan re-scopes them (derive runtime-composed content from dsh's source composition logic; re-scope the A/B bar per the 2026-08-15 STATE.md constraint entry).
 
 ## Progress
 
-**Execution order:** 8 → 9 → 12 (v1.1; strict operator priority chain; no parallelism across phases). Phases 10–11 moved to the v1.2 pool 2026-08-16.
+**Execution order:** 8 → 9 → 12 → 13 (v1.1; strict operator priority chain; no parallelism across phases). Phases 10–11 moved to the v1.2 pool 2026-08-16.
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 8. Slash-Command Kickoff | v1.1 | 9/9 | Complete (operator witness accepted; 2 known residuals documented) | 2026-08-16 |
 | 9. Serve-Path Audit + zcode Parity Re-capture | v1.1 | 5/6 code plans done; 09-04 blocked-on-harvest (operator workload) | Executing | - |
-| 12. ACP Functional Completeness | v1.1 | 0 (planning dispatches when Phase 9 closes) | Not started | - |
+| 12. Product Functional Completeness | v1.1 | 0 (planning dispatches when Phase 9 closes) | Not started | - |
+| 13. OpenSpec Workflow Completion | v1.1 | 0 (planning dispatches when Phase 12 closes) | Not started | - |
 | 10. Telegram Peer (Text + Voice) | v1.2 pool | 0/7 (plans preserved) | Moved to v1.2 (2026-08-16) | - |
 | 11. dsh Mimicry Profile #2 | v1.2 pool | 0/7 (plans stale — replan required) | Moved to v1.2 (2026-08-16) | - |
 
 ---
-*Roadmap created: 2026-08-14 · Re-scoped: 2026-08-16 (operator — phases 10/11 lowered to the v1.2 pool; Phase 12 ACP Functional Completeness added; milestone renamed v1.1 ACP Completion)*
-*Derived from: PROJECT.md (v1.1 milestone), REQUIREMENTS.md (22 v1.1 REQ-IDs after re-scope), research/SUMMARY.md, research/ECOSYSTEM-AUDIT.md (Phase 12)*
+*Roadmap created: 2026-08-14 · Re-scoped: 2026-08-16 (operator — phases 10/11 lowered to the v1.2 pool; Phase 12 + Phase 13 added via re-scope + split; milestone renamed v1.1 Product Completion)*
+*Derived from: PROJECT.md (v1.1 milestone), REQUIREMENTS.md (24 v1.1 REQ-IDs after re-scope + split), research/SUMMARY.md, research/ECOSYSTEM-AUDIT.md (Phase 12)*
