@@ -248,3 +248,112 @@ func TestDecide_ProvenanceCarried(t *testing.T) {
 		}
 	}
 }
+// --- 09-02 T1: MatchDetail — span + config-source provenance (AUD-04) ---
+
+// spanTable is a fake table returning span/config-source details.
+type spanTable struct{}
+
+func (spanTable) MatchText(text string) engine.MatchDetail {
+	if i := strings.Index(text, "ready to implement"); i >= 0 {
+		return engine.MatchDetail{
+			ID:          "impl-complete",
+			Action:      engine.ActionContinue,
+			Span:        "ready to implement",
+			ConfigSource: "openspec.toml patterns/impl-complete",
+		}
+	}
+
+	return engine.MatchDetail{}
+}
+
+func (spanTable) MatchTool(name string) engine.MatchDetail {
+	if name == "Task" {
+		return engine.MatchDetail{
+			ID:          "os-handoff",
+			Action:      engine.ActionContinue,
+			Span:        "Task",
+			ConfigSource: "openspec.toml handoff_tools/os-handoff",
+		}
+	}
+
+	return engine.MatchDetail{}
+}
+
+// TestDecide_TextMatchCarriesSpan (09-02 T1 Test 1): a text match populates
+// MatchedSpan with the exact matched substring + ConfigSource from the table.
+func TestDecide_TextMatchCarriesSpan(t *testing.T) {
+	t.Parallel()
+
+	out := engine.TurnOutput{TurnID: "t1", Text: "The change is ready to implement the next stage now."}
+	d := engine.Decide(out, spanTable{})
+
+	if d.Signal != "text:impl-complete" || d.Action != engine.ActionContinue {
+		t.Fatalf("Signal/Action = %q/%v; want text:impl-complete/continue", d.Signal, d.Action)
+	}
+
+	if d.MatchedSpan != "ready to implement" {
+		t.Errorf("MatchedSpan = %q; want the exact matched substring", d.MatchedSpan)
+	}
+
+	if d.ConfigSource != "openspec.toml patterns/impl-complete" {
+		t.Errorf("ConfigSource = %q; want the table-supplied source", d.ConfigSource)
+	}
+}
+
+// TestDecide_ToolMatchSpanIsName (09-02 T1 Test 2): for a tool signal the
+// span slot carries the tool-call NAME (TurnOutput carries names only).
+func TestDecide_ToolMatchSpanIsName(t *testing.T) {
+	t.Parallel()
+
+	out := engine.TurnOutput{TurnID: "t2", Text: "done", ToolCalls: []string{"Read", "Task"}}
+	d := engine.Decide(out, spanTable{})
+
+	if d.Signal != "tool:os-handoff" {
+		t.Fatalf("Signal = %q; want tool:os-handoff", d.Signal)
+	}
+
+	if d.MatchedSpan != "Task" {
+		t.Errorf("MatchedSpan = %q; want Task (the tool name IS the span)", d.MatchedSpan)
+	}
+
+	if d.ConfigSource != "openspec.toml handoff_tools/os-handoff" {
+		t.Errorf("ConfigSource = %q; want the handoff entry source", d.ConfigSource)
+	}
+}
+
+// TestDecide_UnmatchedStaysLean (09-02 T1 Test 3): no match ⇒ empty span +
+// empty config source + signal "unmatched" (structural safety unchanged).
+func TestDecide_UnmatchedStaysLean(t *testing.T) {
+	t.Parallel()
+
+	d := engine.Decide(engine.TurnOutput{TurnID: "t3", Text: "nothing here"}, spanTable{})
+
+	if d.Action != engine.ActionNothing || d.Signal != "unmatched" {
+		t.Fatalf("Action/Signal = %v/%q; want nothing/unmatched", d.Action, d.Signal)
+	}
+
+	if d.MatchedSpan != "" || d.ConfigSource != "" {
+		t.Errorf("unmatched decision carries provenance: span=%q source=%q; want empty", d.MatchedSpan, d.ConfigSource)
+	}
+}
+
+// TestDecide_DualSignalSpanIsText (09-02 T1 Test 4): text + handoff tool both
+// present ⇒ text wins attribution and the span is the TEXT span (D-02 rule).
+func TestDecide_DualSignalSpanIsText(t *testing.T) {
+	t.Parallel()
+
+	out := engine.TurnOutput{TurnID: "t4", Text: "ready to implement", ToolCalls: []string{"Task"}}
+	d := engine.Decide(out, spanTable{})
+
+	if d.Signal != "text:impl-complete" {
+		t.Fatalf("Signal = %q; want text:impl-complete (text wins)", d.Signal)
+	}
+
+	if d.MatchedSpan != "ready to implement" {
+		t.Errorf("MatchedSpan = %q; want the TEXT span under dual signal", d.MatchedSpan)
+	}
+
+	if !strings.Contains(d.Reason, "also present") {
+		t.Errorf("Reason = %q; want the co-present handoff note", d.Reason)
+	}
+}
