@@ -388,10 +388,18 @@ func TestOpsxFixableRecovery_Gated(t *testing.T) { //nolint:paralleltest // real
 
 	const sessionID = "sess-opsx-fixable"
 
-	prompt := "Use the openspec archive tool to archive the change named fixable-probe. " +
-		"IMPORTANT: your FIRST attempt must NOT pass --yes (observe the structured result you get back — " +
-		"its classification and stderr are your signal). Then, using what the result told you, retry so the " +
-		"archive actually completes. Report both attempts' outcomes."
+	// Probe hardening (08-09 finding): post-convergence the model otherwise
+	// routes around the interactive-confirmation path (Skill + Bash with
+	// --json succeeds first try), so the structured fixable result never
+	// fires. The FIRST attempt is pinned to the openspec:archive TOOL —
+	// the adapter's nil-stdin confirmation probe is the deterministic
+	// fixable path (D-10's model-facing failure surface).
+	prompt := "Archive the change named fixable-probe. " +
+		"IMPORTANT: your FIRST attempt MUST call the openspec:archive TOOL directly " +
+		"(the registered tool, NOT Bash, NOT a Skill, and WITHOUT --yes or --json flags). " +
+		"Observe the structured result the tool returns — its classification and stderr are your signal. " +
+		"Then, using what the result told you, retry so the archive actually completes " +
+		"(you may choose the route for the retry). Report both attempts' outcomes."
 
 	runStageTyped(t, r, sessionID, prompt)
 
