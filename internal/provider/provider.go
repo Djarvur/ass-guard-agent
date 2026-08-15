@@ -39,6 +39,8 @@ type Provider interface {
 //   - "text": a text delta (Text is the fragment)
 //   - "tool_use": a tool invocation (ToolCall is set)
 //   - "usage": a token-usage update (Usage is set)
+//   - "error": the stream aborted mid-flight (Error carries the cause — e.g.
+//     the idle watchdog's retryable timeout). No "done" follows an "error".
 //   - "done": the terminal chunk; FinishReason carries the provider's stop reason
 //     and Raw carries the assembled raw response bytes for the audit log.
 type StreamChunk struct {
@@ -49,6 +51,10 @@ type StreamChunk struct {
 	Usage        *Usage
 	FinishReason string
 	Raw          json.RawMessage
+	// Error is set only on "error" chunks (mid-stream abort — the SSE-stall
+	// finding's surface: a wedged stream terminates loudly with a retryable
+	// error instead of fabricating a clean end_turn).
+	Error error
 }
 
 // Usage is the token accounting for a turn (or partial).

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go/option"
 
@@ -25,6 +26,9 @@ type AnthropicProvider struct {
 	baseURL   string
 	extraOpts []option.RequestOption
 	capture   RequestCapturer
+	// idleTimeout bounds server-side mid-stream silence on the SSE read (the
+	// 08-09 SSE-stall finding). Zero → sseIdleTimeoutDefault.
+	idleTimeout time.Duration
 }
 
 // AnthropicOption configures an AnthropicProvider.
@@ -49,6 +53,17 @@ func WithAnthropicExtraOption(o option.RequestOption) AnthropicOption {
 // WithAnthropicRequestCapture installs a RequestCapturer (LOG-01 hook).
 func WithAnthropicRequestCapture(c RequestCapturer) AnthropicOption {
 	return func(p *AnthropicProvider) { p.capture = c }
+}
+
+// WithAnthropicIdleTimeout overrides the SSE idle watchdog bound (server-side
+// mid-stream silence that aborts the stream with a retryable error). Values <= 0
+// keep the default. Primarily a test seam; production keeps the default.
+func WithAnthropicIdleTimeout(d time.Duration) AnthropicOption {
+	return func(p *AnthropicProvider) {
+		if d > 0 {
+			p.idleTimeout = d
+		}
+	}
 }
 
 // NewAnthropicProvider builds an AnthropicProvider from the given Shaper and
