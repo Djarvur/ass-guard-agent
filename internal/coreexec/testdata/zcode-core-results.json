@@ -46,7 +46,8 @@
       "results": {
         "success_with_output": {
           "isError": false,
-          "template": "<combined command output as plain text>",
+          "template": "<combined command output as plain text, TRAILING WHITESPACE TRIMMED>",
+          "trailing_trim_observed": "0/105 text results and 0/2 error-text results end with a newline or any trailing whitespace — zcode trims the captured output's tail (echo hi renders as \"hi\", not \"hi\\n\")",
           "sample_redacted": "---\n[REDACTED: directory listing lines]\n[REDACTED: file path]"
         },
         "success_no_output": {

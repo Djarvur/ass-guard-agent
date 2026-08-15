@@ -83,28 +83,33 @@ func TestCoreExec_BashThroughSession(t *testing.T) {
 		t.Errorf("Bash Output = %q; want the plain captured form %q", decoded, "hi")
 	}
 
-	// The PROJECTED content (T1's plainContent rule) renders unquoted.
+	// D-11 boundary discipline preserved: Bash is mutating, so a context
+	// boundary opens right after the result and the NEXT projection is the
+	// lean seed (the tool exchange is deliberately NOT carried past the
+	// boundary — the projected plainContent rendering of a read-only core
+	// tool is proven in T3's mixed-batch test, which has no boundary).
 	msgs, err := sess.Projector.Project(turnID)
 	if err != nil {
 		t.Fatalf("Project: %v", err)
 	}
 
-	var toolContent string
-
-	projected := false
-
 	for i := range msgs {
 		if msgs[i].Role == "tool" {
-			toolContent, projected = msgs[i].Content, true
+			t.Errorf("projection[%d] carries a tool message past the Bash boundary (D-11 reset violated): %+v", i, msgs[i])
 		}
 	}
 
-	if !projected {
-		t.Fatal("no tool message in the projection")
+	// The turn still completes: the final assistant text lands post-boundary.
+	foundText := false
+
+	for i := range msgs {
+		if msgs[i].Role == "assistant" && msgs[i].Content == "done" {
+			foundText = true
+		}
 	}
 
-	if toolContent != "hi" {
-		t.Errorf("projected Bash content = %q; want %q (plain, unquoted)", toolContent, "hi")
+	if !foundText {
+		t.Errorf("projection missing the final assistant text post-boundary:\n%v", msgs)
 	}
 }
 

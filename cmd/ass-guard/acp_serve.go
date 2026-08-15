@@ -22,6 +22,7 @@ import (
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/audit"
+	"github.com/Djarvur/ass-guard-agent/internal/coreexec"
 	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/internal/engine"
 	"github.com/Djarvur/ass-guard-agent/internal/event"
@@ -778,6 +779,14 @@ func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen // grouping ke
 		core.Execute = ecosys.SkillExecute(r.reg)
 		sCatalog.Register(core)
 	}
+
+	// Phase 8 (08-08): REAL execution for the core /opsx working set —
+	// Bash, Read, Write, Edit, TodoWrite, TodoRead (capture-grounded result
+	// forms, internal/coreexec). The SAME per-session registration site as
+	// the Skill override above: the per-session clone carries the WorkDir +
+	// a fresh per-session TodoStore (D-16 isolation); the shared engine
+	// catalog is never mutated.
+	coreexec.RegisterCore(sCatalog, coreexec.Config{WorkDir: dir, Todos: coreexec.NewTodoStore()})
 
 	// 09-01 T2 (AUD-02): the late-bound capturer closure. sess is declared
 	// BEFORE the Session literal and assigned after — the closure reads

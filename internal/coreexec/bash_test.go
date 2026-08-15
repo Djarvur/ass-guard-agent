@@ -29,9 +29,9 @@ func decodeJSONString(t *testing.T, raw json.RawMessage) string {
 func TestBash_SuccessForm(t *testing.T) {
 	t.Parallel()
 
-	exec := BashExecute(Config{WorkDir: t.TempDir()})
+	bashExec := BashExecute(Config{WorkDir: t.TempDir()})
 
-	out, err := exec(context.Background(), json.RawMessage(`{"command":"printf hello","description":"print"}`))
+	out, err := bashExec(context.Background(), json.RawMessage(`{"command":"printf hello","description":"print"}`))
 	if err != nil {
 		t.Fatalf("err = %v; want nil (success)", err)
 	}
@@ -47,9 +47,9 @@ func TestBash_SuccessForm(t *testing.T) {
 func TestBash_EmptyOutputSentinel(t *testing.T) {
 	t.Parallel()
 
-	exec := BashExecute(Config{WorkDir: t.TempDir()})
+	bashExec := BashExecute(Config{WorkDir: t.TempDir()})
 
-	out, err := exec(context.Background(), json.RawMessage(`{"command":"true"}`))
+	out, err := bashExec(context.Background(), json.RawMessage(`{"command":"true"}`))
 	if err != nil {
 		t.Fatalf("err = %v; want nil", err)
 	}
@@ -66,9 +66,9 @@ func TestBash_EmptyOutputSentinel(t *testing.T) {
 func TestBash_ErrorForm(t *testing.T) {
 	t.Parallel()
 
-	exec := BashExecute(Config{WorkDir: t.TempDir()})
+	bashExec := BashExecute(Config{WorkDir: t.TempDir()})
 
-	out, err := exec(context.Background(),
+	out, err := bashExec(context.Background(),
 		json.RawMessage(`{"command":"sh -c 'echo out; echo err >&2; exit 3'"}`))
 	if err == nil {
 		t.Fatal("err = nil; want non-nil (IsError=true on the ToolResult)")
@@ -86,11 +86,11 @@ func TestBash_ErrorForm(t *testing.T) {
 func TestBash_Timeout(t *testing.T) {
 	t.Parallel()
 
-	exec := BashExecute(Config{WorkDir: t.TempDir()})
+	bashExec := BashExecute(Config{WorkDir: t.TempDir()})
 
 	start := time.Now()
 
-	out, err := exec(context.Background(), json.RawMessage(`{"command":"sleep 5","timeout":100}`))
+	out, err := bashExec(context.Background(), json.RawMessage(`{"command":"sleep 5","timeout":100}`))
 	elapsed := time.Since(start)
 
 	if elapsed > time.Second {
@@ -149,9 +149,9 @@ func TestBash_WorkDir(t *testing.T) {
 
 	dir := t.TempDir()
 
-	exec := BashExecute(Config{WorkDir: dir})
+	bashExec := BashExecute(Config{WorkDir: dir})
 
-	out, err := exec(context.Background(), json.RawMessage(`{"command":"pwd"}`))
+	out, err := bashExec(context.Background(), json.RawMessage(`{"command":"pwd"}`))
 	if err != nil {
 		t.Fatalf("err = %v; want nil", err)
 	}
@@ -181,11 +181,11 @@ func TestBash_WorkDir(t *testing.T) {
 // (no stall), and no `sleep 2999` process survives (08-03's killGroup
 // discipline mirrored; the marker duration scoping avoids pgrep collisions).
 func TestBash_ProcessGroupKill(t *testing.T) { //nolint:paralleltest // PATH-scoped pgrep check
-	exec := BashExecute(Config{WorkDir: t.TempDir()})
+	bashExec := BashExecute(Config{WorkDir: t.TempDir()})
 
 	start := time.Now()
 
-	out, err := exec(context.Background(),
+	out, err := bashExec(context.Background(),
 		json.RawMessage(`{"command":"sh -c 'sleep 2999 & wait'","timeout":200}`))
 	elapsed := time.Since(start)
 
@@ -204,7 +204,7 @@ func TestBash_ProcessGroupKill(t *testing.T) { //nolint:paralleltest // PATH-sco
 	_ = json.Unmarshal(out, &structured)
 
 	// A second command runs immediately — no lingering stall.
-	second, serr := exec(context.Background(), json.RawMessage(`{"command":"true"}`))
+	second, serr := bashExec(context.Background(), json.RawMessage(`{"command":"true"}`))
 	if serr != nil {
 		t.Fatalf("second command err = %v (executor stalled after the kill?)", serr)
 	}
@@ -233,9 +233,9 @@ func TestBash_ProcessGroupKill(t *testing.T) { //nolint:paralleltest // PATH-sco
 func TestBash_IgnoredFields(t *testing.T) {
 	t.Parallel()
 
-	exec := BashExecute(Config{WorkDir: t.TempDir()})
+	bashExec := BashExecute(Config{WorkDir: t.TempDir()})
 
-	out, err := exec(context.Background(),
+	out, err := bashExec(context.Background(),
 		json.RawMessage(`{"command":"echo ok","run_in_background":true,"dangerouslyDisableSandbox":true}`))
 	if err != nil {
 		t.Fatalf("err = %v; want nil (fields accepted)", err)
@@ -258,11 +258,11 @@ func TestBash_FixtureConformance(t *testing.T) {
 	f := loadFixture(t)
 	bash := f.Tools["Bash"].Results
 
-	exec := BashExecute(Config{WorkDir: t.TempDir()})
+	bashExec := BashExecute(Config{WorkDir: t.TempDir()})
 	ctx := context.Background()
 
 	// Sentinel: byte-for-byte the fixture literal.
-	out, err := exec(ctx, json.RawMessage(`{"command":"true"}`))
+	out, err := bashExec(ctx, json.RawMessage(`{"command":"true"}`))
 	if err != nil {
 		t.Fatalf("sentinel err = %v", err)
 	}
@@ -272,7 +272,7 @@ func TestBash_FixtureConformance(t *testing.T) {
 	}
 
 	// Error: the fixture's literal_prefix + <N> header + output body.
-	out, err = exec(ctx, json.RawMessage(`{"command":"sh -c 'echo boom >&2; exit 7'"}`))
+	out, err = bashExec(ctx, json.RawMessage(`{"command":"sh -c 'echo boom >&2; exit 7'"}`))
 	if err == nil {
 		t.Fatal("error-form err = nil; want non-nil")
 	}
@@ -287,7 +287,7 @@ func TestBash_FixtureConformance(t *testing.T) {
 	}
 
 	// Success: plain combined output.
-	out, err = exec(ctx, json.RawMessage(`{"command":"printf fixture"}`))
+	out, err = bashExec(ctx, json.RawMessage(`{"command":"printf fixture"}`))
 	if err != nil {
 		t.Fatalf("success err = %v", err)
 	}
