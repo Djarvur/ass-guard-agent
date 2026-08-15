@@ -221,6 +221,12 @@ func (s *Session) streamAndEmitTagged(
 			}
 		case stopDone:
 			resp.FinishReason = chunk.FinishReason
+		case "error":
+			// Mid-stream abort (the SSE idle watchdog — 08-09 finding): the
+			// subagent's partial response must not masquerade as complete.
+			if chunk.Error != nil {
+				return resp, sb.String(), chunk.Error
+			}
 		}
 	}
 

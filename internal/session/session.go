@@ -372,6 +372,13 @@ func (s *Session) streamAndEmit(
 		case stopDone:
 			resp.FinishReason = chunk.FinishReason
 			resp.Raw = chunk.Raw
+		case "error":
+			// Mid-stream abort (the SSE idle watchdog — 08-09 finding): surface
+			// the retryable error; the turn records it and returns instead of
+			// fabricating a completed response from a truncated body.
+			if chunk.Error != nil {
+				return resp, sb.String(), chunk.Error
+			}
 		}
 	}
 	// If ctx was cancelled mid-stream, surface that so the caller records a

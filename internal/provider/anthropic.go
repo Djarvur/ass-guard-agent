@@ -95,16 +95,29 @@ func (p *AnthropicProvider) Send(ctx context.Context, prof *profile.Profile, mes
 
 	var out Response
 
+	var streamErr error
+
 	for chunk := range ch {
 		switch chunk.Type {
 		case blockToolUse:
 			if chunk.ToolCall != nil {
 				out.ToolCalls = append(out.ToolCalls, *chunk.ToolCall)
 			}
+		case chunkError:
+			if chunk.Error != nil {
+				streamErr = chunk.Error
+			}
 		case "done":
 			out.FinishReason = chunk.FinishReason
 			out.Raw = chunk.Raw
 		}
+	}
+
+	// A mid-stream abort (idle watchdog / transport failure) outranks the
+	// partial response: returning fabricated ToolCalls or a default end_turn
+	// from a truncated body would silently execute half-baked calls.
+	if streamErr != nil {
+		return Response{}, streamErr
 	}
 
 	if out.FinishReason == "" {
