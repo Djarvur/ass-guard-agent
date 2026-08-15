@@ -28,6 +28,15 @@ type Profile struct {
 	Headers    []Header        `json:"headers"     yaml:"headers"`
 	Thinking   json.RawMessage `json:"thinking"    yaml:"thinking"`
 	ToolChoice json.RawMessage `json:"tool_choice" yaml:"tool_choice"`
+	// CaptureWorkDir is the CAPTURED session's absolute working directory —
+	// the value the runtime-composed env/system fields carried at capture time
+	// (e.g. the "Primary working directory" line of the zcode env block). The
+	// mimicry target composes those fields from the RUNTIME cwd per session;
+	// ass-guard's Shaper substitutes the session's actual workDir for this
+	// value at composition time (form identical to the capture, value =
+	// current session cwd). Empty = the profile declares no cwd-bearing
+	// runtime-composed content (no substitution happens).
+	CaptureWorkDir string `json:"capture_work_dir" yaml:"capture_work_dir"`
 }
 
 // TextBlock is one entry of the Anthropic-shape system[] array. The Text is

@@ -63,6 +63,31 @@ type Shaper struct{}
 // New returns a ready Shaper.
 func New() *Shaper { return &Shaper{} }
 
+// ComposeRuntimeWorkDir rewrites the profile's system blocks so every
+// occurrence of the CAPTURED working directory (Profile.CaptureWorkDir — the
+// value the runtime-composed env/system fields carried at capture time) is
+// replaced by the session's actual working directory.
+//
+// The mimicry target composes its env block ("Primary working directory: …")
+// from the RUNTIME cwd per session; replaying the captured value statically
+// tells the model it stands in the capture's repo when it actually stands in
+// the session's (the 08-09 E2E explore leg read the REAL repo instead of the
+// scratch). The substitution is form-identical to the capture — only the cwd
+// VALUE changes. No-op when the profile declares no capture_work_dir, the
+// session dir is empty, or the two are equal (the TIER-1 byte-fidelity default
+// stands; the parity/fidelity guards compare exactly that uncomposed form).
+//
+// Callers own the profile COPY they compose into (the sessionFor per-session
+// copy discipline, D-16 — the shared loaded profile is never mutated).
+func ComposeRuntimeWorkDir(p *profile.Profile, sessionWorkDir string) {
+	if p == nil || p.CaptureWorkDir == "" || sessionWorkDir == "" || p.CaptureWorkDir == sessionWorkDir {
+		return
+	}
+
+	// RED stub: no substitution yet.
+	_ = p.System
+}
+
 // Shape builds an anthropic.MessageNewParams from the profile and messages, and
 // returns one option.WithHeader per profile.Headers entry (the D-09 escape
 // hatch for the identity headers the SDK types do not model). Every populated
