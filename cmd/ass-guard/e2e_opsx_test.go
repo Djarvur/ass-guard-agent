@@ -360,45 +360,68 @@ func TestOpsxEndToEnd_Gated(t *testing.T) { //nolint:paralleltest,cyclop,funlen 
 	}
 }
 
+// seedIncompleteChange creates a real change whose tasks.md is deliberately
+// INCOMPLETE — the deterministic fixable trigger: `openspec archive <name>`
+// without --yes then hits the incomplete-tasks confirmation ("Continue?
+// (y/N)"), which on a non-TTY/nil-stdin reads EOF and fails with a non-zero
+// exit (verified against the installed 1.5.0 binary: plain and --json routes
+// BOTH fail; only --yes or completing the tasks recovers).
+func seedIncompleteChange(t *testing.T, scratch, name string) {
+	t.Helper()
+
+	newCmd := exec.CommandContext(context.Background(), "openspec", "new", "change", name)
+	newCmd.Dir = scratch
+
+	out, oerr := newCmd.CombinedOutput()
+	if oerr != nil {
+		t.Fatalf("openspec new change %s: %v\n%s", name, oerr, out)
+	}
+
+	tasks := filepath.Join(scratch, "openspec", "changes", name, "tasks.md")
+
+	err := os.WriteFile(tasks, []byte("- [ ] 1. Probe task (deliberately incomplete — the fixable trigger)\n"), 0o600)
+	if err != nil {
+		t.Fatalf("seed tasks.md for %s: %v", name, err)
+	}
+}
+
 // TestOpsxFixableRecovery_Gated proves D-10 with the real model + real
-// binary: a fixable openspec failure (archive's non-TTY confirmation prompt
-// reading nil stdin → EOF) reaches the model as a structured fixable result,
-// and the model ADAPTS (retries with --yes) — no halt, no silent swallow.
+// binary, CAPTURE-FAITHFUL (the findings-5 disposition, 2026-08-15): the
+// model meets openspec via Skill+Bash — the request catalog carries the
+// profile's 103 zcode tools and NO openspec:* entries (exposing them would
+// diverge from the capture), so the fixable-failure criterion asserts the
+// behavior where it actually happens:
+//
+//   - MODEL-VISIBLE leg: the probe drives a fixable failure through the
+//     model's own route (the first archive attempt WITHOUT --yes hits the
+//     incomplete-tasks confirmation → the CLI's force-close/incomplete error
+//     reaches the model as tool output) and asserts the model ADAPTS from
+//     what it observed (retry with --yes, or complete the task) so the
+//     archive actually completes — no halt, no silent swallow.
+//   - EXECUTION-LAYER leg: the openspec:* tools stay EXECUTION-ONLY (no
+//     catalog change) — the structured classification is asserted where it
+//     lives, by invoking the registered openspec:archive tool DIRECTLY (no
+//     model) on a second incomplete change and requiring the structured
+//     result {classification: "fixable", exit_code: 1}.
 func TestOpsxFixableRecovery_Gated(t *testing.T) { //nolint:paralleltest,funlen // real scratch + live model
 	e2eGates(t)
 
 	r, scratch := newOpsxRunner(t)
 
-	// A complete tiny change so archive has something real to archive; the
-	// probe asks the model to first try WITHOUT --yes (the fixable path).
-	newCmd := exec.CommandContext(context.Background(), "openspec", "new", "change", "fixable-probe")
-	newCmd.Dir = scratch
-
-	out, oerr := newCmd.CombinedOutput()
-	if oerr != nil {
-		t.Fatalf("openspec new change: %v\n%s", oerr, out)
-	}
-
-	tasks := filepath.Join(scratch, "openspec", "changes", "fixable-probe", "tasks.md")
-
-	err := os.WriteFile(tasks, []byte("- [x] 1. Probe task (complete)\n"), 0o600)
-	if err != nil {
-		t.Fatalf("seed tasks.md: %v", err)
-	}
+	// A deliberately incomplete change: the deterministic fixable trigger.
+	seedIncompleteChange(t, scratch, "fixable-probe")
 
 	const sessionID = "sess-opsx-fixable"
 
-	// Probe hardening (08-09 finding): post-convergence the model otherwise
-	// routes around the interactive-confirmation path (Skill + Bash with
-	// --json succeeds first try), so the structured fixable result never
-	// fires. The FIRST attempt is pinned to the openspec:archive TOOL —
-	// the adapter's nil-stdin confirmation probe is the deterministic
-	// fixable path (D-10's model-facing failure surface).
+	// The probe asks for a natural first attempt (no tool-pinning — the model
+	// cannot see openspec:* tools; pinning them was the failed premise). Any
+	// no---yes first attempt fails fixably (plain AND --json routes both hit
+	// the incomplete-tasks guard against nil stdin).
 	prompt := "Archive the change named fixable-probe. " +
-		"IMPORTANT: your FIRST attempt MUST call the openspec:archive TOOL directly " +
-		"(the registered tool, NOT Bash, NOT a Skill, and WITHOUT --yes or --json flags). " +
-		"Observe the structured result the tool returns — its classification and stderr are your signal. " +
-		"Then, using what the result told you, retry so the archive actually completes " +
+		"On your FIRST attempt do NOT pass --yes and do NOT edit tasks.md — " +
+		"attempt the archive the way you normally would, and observe exactly what the command " +
+		"reports in this non-interactive environment. " +
+		"Then adapt based on what you observed so the archive actually completes " +
 		"(you may choose the route for the retry). Report both attempts' outcomes."
 
 	runStageTyped(t, r, sessionID, prompt)
@@ -408,31 +431,98 @@ func TestOpsxFixableRecovery_Gated(t *testing.T) { //nolint:paralleltest,funlen 
 		t.Fatalf("ReadAll: %v", err)
 	}
 
-	var sawFixable, sawRecovered bool
+	// The model-visible behavior, asserted where it happens: a FAILED first
+	// attempt (either fixable signature — the interactive force-close on the
+	// plain route, or the structured archive_tasks_incomplete on --json),
+	// then a recovery attempt that archives.
+	failIdx, recoverIdx := -1, -1
 
 	for i := range lines {
 		if lines[i].Type != session.TypeToolResult {
 			continue
 		}
 
-		var res struct {
-			Classification string `json:"classification"`
+		out := string(lines[i].Output)
+
+		isFixableFailure := strings.Contains(out, "force closed the prompt") ||
+			strings.Contains(out, "archive_tasks_incomplete")
+
+		if isFixableFailure && failIdx == -1 {
+			failIdx = i
 		}
 
-		if json.Unmarshal(lines[i].Output, &res) == nil && res.Classification == "fixable" {
-			sawFixable = true
-		}
-
-		if strings.Contains(string(lines[i].Output), "archived") {
-			sawRecovered = true
+		if failIdx != -1 && recoverIdx == -1 && strings.Contains(out, "archived") {
+			recoverIdx = i
 		}
 	}
 
-	if !sawFixable {
-		t.Error("no structured fixable result observed — D-10's model-facing failure path did not fire")
+	if failIdx == -1 {
+		t.Error("no fixable-failure result observed — the model's first archive attempt did not " +
+			"hit the incomplete-tasks failure (D-10's model-facing criterion)")
 	}
 
-	if !sawRecovered {
-		t.Error("no recovery observed after the fixable result — the model did not adapt (D-10)")
+	if recoverIdx == -1 || recoverIdx < failIdx {
+		t.Errorf("no recovery observed after the fixable failure (fail@%d recover@%d) — the model did not adapt (D-10)",
+			failIdx, recoverIdx)
+	}
+
+	// The recovery is real: the archived change directory exists.
+	archiveDir := filepath.Join(scratch, "openspec", "changes", "archive")
+
+	entries, err := os.ReadDir(archiveDir)
+	if err != nil {
+		t.Fatalf("archive directory missing after the run (%s): %v", archiveDir, err)
+	}
+
+	found := false
+
+	for _, e := range entries {
+		if strings.Contains(e.Name(), "fixable-probe") {
+			found = true
+		}
+	}
+
+	if !found {
+		t.Errorf("no archived fixable-probe directory under %s (entries: %v)", archiveDir, entries)
+	}
+
+	// The EXECUTION-LAYER classification, asserted where it lives: the
+	// registered openspec:archive tool (execution-only — never in the request
+	// catalog) invoked DIRECTLY on a second incomplete change classifies the
+	// same failure as fixable. t.Chdir keeps the adapter's subprocess inside
+	// the scratch (the adapter runs in the process cwd).
+	seedIncompleteChange(t, scratch, "exec-layer-probe")
+
+	t.Chdir(scratch)
+
+	sess := r.sessions[sessionID]
+
+	tool, ok := sess.Catalog.Get("openspec:archive")
+	if !ok {
+		t.Fatal("openspec:archive tool not registered in the session catalog")
+	}
+
+	out, terr := tool.Execute(context.Background(), json.RawMessage(`{"args":["exec-layer-probe"]}`))
+	if terr != nil {
+		t.Fatalf("direct openspec:archive execution errored (structure over error violated): %v", terr)
+	}
+
+	var res struct {
+		ExitCode       int    `json:"exit_code"`
+		Classification string `json:"classification"`
+		Stderr         string `json:"stderr"`
+	}
+
+	if jerr := json.Unmarshal(out, &res); jerr != nil {
+		t.Fatalf("openspec:archive result not structured JSON: %v (%s)", jerr, out)
+	}
+
+	if res.Classification != "fixable" {
+		t.Errorf("direct openspec:archive classification = %q (exit %d); want fixable — "+
+			"the execution layer must still classify the failure (D-10)", res.Classification, res.ExitCode)
+	}
+
+	if res.ExitCode == 0 {
+		t.Errorf("direct openspec:archive exit_code = 0; want non-zero (the incomplete-tasks failure)")
 	}
 }
