@@ -35,6 +35,29 @@ func (b *Bus) Subscribe(kind string, buffer int) <-chan Event {
 	return ch
 }
 
+// Unsubscribe removes a subscriber (matched by channel identity) so its
+// channel stops receiving events. Callers that subscribe per-unit-of-work (e.g.
+// a per-turn forwarder) MUST unsubscribe when the unit ends: Publish blocks on
+// a full subscriber channel (D-05 backpressure), and a channel nobody drains
+// anymore wedges every later publish once its buffer fills (the stack-proven
+// 08-15 finding: a leaked per-turn forwarder stalled the multi-stage E2E at
+// chunk #129). It is the caller's job to stop publishing to that kind before
+// (or while) unsubscribing — a Publish already holding the pre-removal
+// subscriber list may still send to the removed channel.
+func (b *Bus) Unsubscribe(kind string, ch <-chan Event) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	subs := b.subs[kind]
+	for i, c := range subs {
+		if c == ch { // channel identity (receive-only channels compare by the same backing channel)
+			b.subs[kind] = append(subs[:i], subs[i+1:]...)
+
+			return
+		}
+	}
+}
+
 // Publish fan-outs e to every subscriber of e.Kind(), blocking on each full
 // channel (D-05 — a slow consumer blocks the producer, propagating backpressure
 // end-to-end). If there are no subscribers, the event is dropped + logged (an

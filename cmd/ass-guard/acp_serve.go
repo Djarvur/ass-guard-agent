@@ -614,8 +614,14 @@ func (r *sessionTurnRunner) Run(
 ) (string, error) {
 	sess := r.sessionFor(ctx, sessionID)
 	// Subscribe a chunk-forwarder so streamed AgentMessageChunk events become
-	// session/update notifications. The forwarder runs until the turn completes.
+	// session/update notifications. The forwarder runs until the turn completes
+	// and is UNSUBSCRIBED when Run returns — a leaked dead subscriber's buffer
+	// fills and wedges every later turn's chunk publishes (the stack-proven
+	// 08-15 multi-stage stall: Bus.Publish blocked on the dead channel).
 	ch := r.bus.Subscribe("AgentMessageChunk", event.BufAgentMessageChunk)
+
+	defer r.bus.Unsubscribe("AgentMessageChunk", ch)
+
 	done := make(chan struct{})
 	promptDone := make(chan struct{})
 
@@ -748,6 +754,18 @@ func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen // grouping ke
 	if len(mcpDecls) > 0 {
 		prof.Tools = append(append([]profile.Decl(nil), r.profile.Tools...), toProfileDecls(mcpDecls)...)
 	}
+
+	// Runtime cwd composition (the 08-09 profile-fidelity finding): the
+	// mimicry target composes its env block ("Primary working directory: …")
+	// from the RUNTIME cwd per session — replaying the captured value
+	// statically told the model it stood in the CAPTURED repo (the E2E's
+	// explore leg read the real repo instead of the scratch). Form identical
+	// to the capture; value = this session's working directory. The System
+	// slice is COPIED first (a struct copy alone would share the backing
+	// array — the shared r.profile must never be mutated; the parity path
+	// composes the unmodified capture).
+	prof.System = append([]profile.TextBlock(nil), prof.System...)
+	shaper.ComposeRuntimeWorkDir(&prof, dir)
 
 	// Phase 8 (08-05, CMD-06): merge the skills listing into the profile COPY
 	// in the captured zcode shape (a dedicated system-role listing — see
