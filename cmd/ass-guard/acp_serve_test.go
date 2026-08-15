@@ -1215,21 +1215,26 @@ func TestProvenanceChain_ExploreChainsWithoutTextAnchor(t *testing.T) { //nolint
 		t.Error("no engine_decision with signal command:post-explore-handoff — the provenance row did not fire")
 	}
 
-	// The injected turn IS the expanded propose body with provenance + boundary.
-	if got := lastUserMessageText(t, r, "sess-prov-chain"); !strings.Contains(got, "Propose the change named") {
-		t.Errorf("last user_message = %q; want the EXPANDED propose body", got)
+	// The injected turn IS the expanded propose body — carrying the SCENARIO
+	// SUBJECT (the typed invocation's arguments; the capture's operator named
+	// the change on every stage, and the bare injected command inherits that
+	// subject — propose without it asks for one and the chain dies) — with
+	// provenance + boundary.
+	if got := lastUserMessageText(t, r, "sess-prov-chain"); !strings.Contains(got, "Propose the change named fix-it") {
+		t.Errorf("last user_message = %q; want the EXPANDED propose body carrying the subject", got)
 	}
 
 	foundPropose := false
 
 	for _, p := range transcriptLinesOfType(t, r, "sess-prov-chain", session.TypeCommandProvenance) {
-		if p.Name == "opsx:propose" {
+		if p.Name == "opsx:propose" && p.Text == "fix-it" {
 			foundPropose = true
 		}
 	}
 
 	if !foundPropose {
-		t.Error("no opsx:propose provenance line — the injection bypassed the expansion seam")
+		t.Error("no opsx:propose provenance line with the forwarded subject — " +
+			"the injection was bare or bypassed the expansion seam")
 	}
 
 	sawBoundary := false
