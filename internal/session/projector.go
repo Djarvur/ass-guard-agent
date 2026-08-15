@@ -33,14 +33,26 @@ const MidTurnWindowMessages = 64
 
 // Projector builds the lean model-visible window (D-01) by mechanical extraction
 // from the transcript (D-02 — NO model call). It is the sole producer of the
-// []provider.Message the Shaper consumes. The window resets at each boundary
-// (SESS-04): the lean seed = system (added by the Shaper from the profile) +
-// task summary + current user message, with ZERO carry-forward of prior turn
-// messages as separate messages. WITHIN a turn (08-07's two-layer model), the
-// window ACCUMULATES: the current turn's assistant tool_use batches and tool
-// results follow the lean seed so the model sees its own exchanges on the next
-// tool-loop iteration — without this, real agentic turns cannot converge (the
-// 08-06 gate finding).
+// []provider.Message the Shaper consumes. The window resets BETWEEN turns
+// (SESS-04, revised 08-09): a boundary line resets the projections of turns
+// that START after it — never the producing turn's own mid-turn window. The
+// lean seed = system (added by the Shaper from the profile) + task summary +
+// current user message, with ZERO carry-forward of prior turn messages as
+// separate messages. WITHIN a turn (08-07's two-layer model, re-scoped 08-09),
+// the window ACCUMULATES to the turn's end: the current turn's assistant
+// tool_use batches and tool results follow the lean seed — including exchanges
+// past mid-turn boundary lines — so the model sees its own exchanges on every
+// tool-loop iteration; without this, real agentic turns cannot converge (the
+// 08-08 T4 finding: both gated E2E turns exhausted maxIterations because every
+// mutating result was followed by a boundary that wiped the window).
+//
+// Capture grounding (session 4440f5a7, verified 2026-08-15 — 08-09 / 08-08 T4):
+// the zcode corpus carries a ROLLING last-64-message window per request
+// (46/46 `tail` records, messageOffset advancing as messages append), within-turn
+// tool results PERSIST into later requests of the same turn (579 same-turn
+// toolCallId persistences), and there are ZERO resets on tool results — the
+// per-mutating-call mid-turn reset was itself a request-shape divergence from
+// the mimicry target.
 type Projector struct {
 	prof    *profile.Profile
 	manager *Manager
@@ -53,35 +65,69 @@ func NewProjector(prof *profile.Profile, m *Manager) *Projector {
 
 // Project builds the window the model sees for the given turn. The lean seed
 // is ONE user message (the task summary + the current intent); prior turns are
-// NOT carried as messages (D-01 zero carry-forward). Within the turn, the
-// current turn's exchanges accumulate after the seed (08-07): consecutive
-// tool_call lines fold into ONE assistant message with a ToolCalls batch, each
-// tool_result becomes a tool-role message (name resolved from its paired
-// tool_call), and the turn's assistant text lines render as plain assistant
-// messages — mechanically extracted from the transcript, bounded to the
-// MidTurnWindowMessages tail, pair-safe.
+// NOT carried as messages (D-01 zero carry-forward). The reset point is the
+// last boundary recorded BEFORE the projected turn's user message (SESS-04,
+// revised 08-09 — between turns): mid-turn boundary lines of the CURRENT turn
+// never move the reset point, so the seed stays stable across the turn's
+// iterations, and the summary scope when no reset boundary exists is the
+// PRE-turn lines (not all lines — the turn's own exchanges never churn the
+// summary). Within the turn, the current turn's exchanges accumulate after the
+// seed (08-07, re-scoped 08-09): consecutive tool_call lines fold into ONE
+// assistant message with a ToolCalls batch, each tool_result becomes a
+// tool-role message (name resolved from its paired tool_call), and the turn's
+// assistant text lines render as plain assistant messages — mechanically
+// extracted from the transcript, bounded to the MidTurnWindowMessages tail,
+// pair-safe.
 func (p *Projector) Project(turnID string) ([]provider.Message, error) {
 	lines, err := p.manager.ReadAll()
 	if err != nil {
 		return nil, err
 	}
 
-	// Find the last boundary — the reset point.
+	// The projected turn's user message anchors both the reset scoping and the
+	// mid-turn accumulation (08-09). Fallback: the last user_message overall;
+	// none at all → keep the legacy no-boundary shape below.
+	lastUserIdx, matchedUserIdx := -1, -1
+
+	for i := range lines {
+		if lines[i].Type == TypeUserMessage {
+			lastUserIdx = i
+
+			if lines[i].TurnID == turnID {
+				matchedUserIdx = i
+			}
+		}
+	}
+
+	turnUserIdx := matchedUserIdx
+	if turnUserIdx < 0 {
+		turnUserIdx = lastUserIdx
+	}
+
+	// Find the reset boundary — the LAST boundary recorded STRICTLY BEFORE the
+	// turn's user message (a boundary resets projections of turns that START
+	// after it, never the producing turn's own window — SESS-04 revised 08-09).
 	boundaryIdx := -1
 
 	for i := range lines {
-		if lines[i].Type == TypeBoundary {
+		if lines[i].Type == TypeBoundary && (turnUserIdx < 0 || i < turnUserIdx) {
 			boundaryIdx = i
 		}
 	}
 
 	var beforeBoundary, afterBoundary []Line
-	if boundaryIdx >= 0 {
+	switch {
+	case boundaryIdx >= 0:
 		beforeBoundary = lines[:boundaryIdx]
 		afterBoundary = lines[boundaryIdx+1:]
-	} else {
-		// No boundary yet: everything is "before"; the current turn's user
-		// message is the last user_message overall.
+	case turnUserIdx >= 0:
+		// No reset boundary: the summary scope is the PRE-turn lines, so the
+		// current turn's accumulating exchanges never churn the seed.
+		beforeBoundary = lines[:turnUserIdx]
+		afterBoundary = lines[turnUserIdx:]
+	default:
+		// No user message at all (empty transcript prefix): everything is
+		// "before"; the legacy no-boundary shape.
 		beforeBoundary = lines
 		afterBoundary = nil
 	}
@@ -109,25 +155,25 @@ func (p *Projector) Project(turnID string) ([]provider.Message, error) {
 	return out, nil
 }
 
-// accumulateMidTurn folds the current turn's post-anchor lines (the later of
-// {last boundary, the turn's user_message} — D-11 within-turn semantics) into
-// the mid-turn message sequence: consecutive TypeToolCall lines become ONE
-// assistant message with a ToolCalls batch (the capture's batch form), each
-// TypeToolResult becomes a tool-role message whose ToolName is resolved from
-// the paired tool_call line, and TypeAssistantMessage becomes a plain
-// assistant text message. A tool_result whose call is not in the window (cut
-// off by a mid-turn boundary) is dropped — an orphaned tool_result would break
-// the provider's tool_use/tool_result pairing invariant.
+// accumulateMidTurn folds the current turn's post-user-message lines into the
+// mid-turn message sequence (08-09: the anchor is SOLELY the turn's user_message
+// — the seed already carries it — so mid-turn boundary lines never wipe the
+// accumulation; the capture never resets on tool results): consecutive
+// TypeToolCall lines become ONE assistant message with a ToolCalls batch (the
+// capture's batch form), each TypeToolResult becomes a tool-role message whose
+// ToolName is resolved from the paired tool_call line, and TypeAssistantMessage
+// becomes a plain assistant text message. A tool_result whose call is not in
+// the window (its batch was never accumulated) is dropped — an orphaned
+// tool_result would break the provider's tool_use/tool_result pairing
+// invariant.
 func accumulateMidTurn(lines []Line, turnID string) []provider.Message {
-	// The anchor is the LATER of the last boundary (any turn — D-11 reset)
-	// and the current turn's user_message (the seed already carries it).
+	// The anchor is the current turn's user_message ONLY (between-turn reset,
+	// SESS-04 revised 08-09): boundary lines are audit markers + the NEXT
+	// turn's reset point, never the producing turn's wipe.
 	anchor := 0
 
 	for i := range lines {
-		switch {
-		case lines[i].Type == TypeBoundary:
-			anchor = i + 1
-		case lines[i].Type == TypeUserMessage && lines[i].TurnID == turnID && i >= anchor:
+		if lines[i].Type == TypeUserMessage && lines[i].TurnID == turnID {
 			anchor = i + 1
 		}
 	}
