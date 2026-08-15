@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Djarvur/ass-guard-agent/internal/audit"
 	"github.com/Djarvur/ass-guard-agent/internal/redact"
 )
 
@@ -404,5 +405,55 @@ func TestAppendEngineDecisionProvenance(t *testing.T) {
 
 	if found.ConfigSource != "openspec.toml patterns/impl-complete" {
 		t.Errorf("ConfigSource = %q; want the entry that fired", found.ConfigSource)
+	}
+}
+
+// TestAppendRequestShapedMetadataOnly (09-05 T2 Test 7, AUD-03/D-01): the
+// request_shaped line carries the correlation triple + fingerprint + ref and
+// NOT the body (metadata-only; the body lives in the capped store).
+func TestAppendRequestShapedMetadataOnly(t *testing.T) {
+	t.Parallel()
+
+	m := newTestManager(t, "s-meta")
+
+	meta := audit.RequestMeta{
+		Ref:          "aabbccdd00112233445566778899aabbccdd00112233445566778899aabbccdd0011",
+		SystemBlocks: 3, Tools: 103, Model: "glm-5.2", Bytes: 81921,
+	}
+
+	err := m.AppendRequestShaped("turn_5", "zcode", time.Now(), meta)
+	if err != nil {
+		t.Fatalf("AppendRequestShaped: %v", err)
+	}
+
+	lines, err := m.ReadAll()
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+
+	var found *Line
+
+	for i := range lines {
+		if lines[i].Type == TypeRequestShaped {
+			found = &lines[i]
+		}
+	}
+
+	if found == nil {
+		t.Fatal("no request_shaped line")
+	}
+
+	if found.TurnID != "turn_5" || found.Profile != "zcode" {
+		t.Errorf("correlation = %q/%q; want turn_5/zcode", found.TurnID, found.Profile)
+	}
+
+	if found.Ref != meta.Ref || found.SystemBlocks != 3 || found.Tools != 103 ||
+		found.Model != "glm-5.2" || found.Bytes != 81921 {
+		t.Errorf("fingerprint fields = ref=%q blocks=%d tools=%d model=%q bytes=%d; want %+v",
+			found.Ref, found.SystemBlocks, found.Tools, found.Model, found.Bytes, meta)
+	}
+
+	if len(found.VerbatimRequest) != 0 {
+		t.Error("line still carries an inline verbatim body (D-01 forbids)")
 	}
 }
