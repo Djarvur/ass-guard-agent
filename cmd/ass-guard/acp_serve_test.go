@@ -1803,7 +1803,7 @@ func assertBodyStoreRoundTrip(t *testing.T, workDir, ref, canaryKey string) {
 		t.Error("canary key leaked into the STORED body (redact-before-store failed)")
 	}
 
-	if !strings.Contains(string(body), "GLM-5.2") {
+	if !strings.Contains(string(body), "GLM-5.3") {
 		t.Errorf("stored body lost non-secret content: %.80s", string(body))
 	}
 }

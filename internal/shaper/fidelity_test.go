@@ -96,15 +96,17 @@ func TestFidelity_ToolCountAndThinking(t *testing.T) {
 		t.Errorf("shaped tools = %d, profile = %d", len(params.Tools), len(prof.Tools))
 	}
 
-	if params.Thinking.OfEnabled == nil || params.Thinking.OfEnabled.BudgetTokens != 32000 {
-		t.Error("thinking budget not reproduced byte-faithfully")
+	// The 2026-08-16 re-pin (zcode 0.16.3) carries NO thinking field in the
+	// captured requests — byte-faithful reproduction means none is emitted.
+	if params.Thinking.OfEnabled != nil {
+		t.Error("thinking emitted but the pinned capture carries no thinking config")
 	}
 
 	if len(opts) != 12 {
 		t.Errorf("opts = %d header options, want 12", len(opts))
 	}
 
-	if !strings.EqualFold(params.Model, "GLM-5.2") {
+	if !strings.EqualFold(params.Model, "GLM-5.3") {
 		t.Errorf("Model = %q", params.Model)
 	}
 }

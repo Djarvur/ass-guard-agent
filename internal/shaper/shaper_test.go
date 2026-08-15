@@ -130,20 +130,21 @@ func TestShape_ZcodeProfile(t *testing.T) {
 	if len(params.Tools) == 0 {
 		t.Error("Tools empty; expected the captured catalog")
 	}
-	// D-16: tool count is source-declared (103 for the 016eee8a main session).
+	// D-16: tool count is source-declared (79 for the 3cee56ae pin, zcode 0.16.3).
 	if len(params.Tools) != len(p.Tools) {
 		t.Errorf("len(Tools) = %d, want %d (all profile tools shaped)", len(params.Tools), len(p.Tools))
 	}
 
-	if params.Thinking.OfEnabled == nil || params.Thinking.OfEnabled.BudgetTokens != 32000 {
-		t.Error("thinking budget not reproduced")
+	// The 2026-08-16 re-pin carries NO thinking config — none may be emitted.
+	if params.Thinking.OfEnabled != nil {
+		t.Error("thinking emitted but the pinned capture carries no thinking config")
 	}
 
 	if len(opts) != 12 {
 		t.Errorf("len(opts) = %d, want 12 identity headers", len(opts))
 	}
 
-	if !strings.EqualFold(params.Model, "GLM-5.2") {
-		t.Errorf("Model = %q, want GLM-5.2", params.Model)
+	if !strings.EqualFold(params.Model, "GLM-5.3") {
+		t.Errorf("Model = %q, want GLM-5.3", params.Model)
 	}
 }

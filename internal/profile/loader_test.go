@@ -107,8 +107,8 @@ func TestLoader_ZcodeProfile(t *testing.T) {
 		t.Errorf("Name = %q, want zcode", p.Name)
 	}
 
-	if p.Model != "GLM-5.2" {
-		t.Errorf("Model = %q, want GLM-5.2", p.Model)
+	if p.Model != "GLM-5.3" {
+		t.Errorf("Model = %q, want GLM-5.3", p.Model)
 	}
 
 	if len(p.System) != 3 {

@@ -25,8 +25,8 @@ var errNoSessionWith = errors.New("no session with full-request lines found")
 // proxy is needed for the request body.
 type ModelIO struct {
 	Type        string `json:"type"`
-	SessionID   string `json:"sessionId"` //nolint:tagliatelle // model_io rollout format
-	QuerySource string `json:"querySource"`
+	SessionID   string `json:"sessionId"`   //nolint:tagliatelle // model_io rollout format
+	QuerySource string `json:"querySource"` //nolint:tagliatelle // model_io rollout format
 	Request     struct {
 		Body struct {
 			Model      json.RawMessage `json:"model"`

@@ -8,6 +8,14 @@ status: complete-with-finding   # 2026-08-16 overnight: the capture happened (au
 
 # Phase 9 Plan 04: zcode parity re-capture Summary (delegated harvest run)
 
+## COMPLETION (2026-08-16 overnight — supersedes the stopped-harvest state below)
+
+The operator disproved the plan's "no CLI/API path" premise ("there IS a cli binary inside the app… talk to it using its stdio protocol") and directed the API route. The scripted workload ran AUTONOMOUSLY against `zcode.cjs app-server --stdio` (driver + mechanism findings: `/tmp/zcode-recapture/`, documented in the drift report): 5 scripted turns via `session/create`/`session/send`, and the mid-session MCP attach/detach via **config-change + `session/resume` boundaries** (resume re-reads config and continues the SAME rollout session file — the only headless-reachable mechanism; config hot-reload, `/mcp` slash commands, and server-death were all tested and ruled out).
+
+**Result: SESSION QUALIFIES** — `sess_3cee56ae` (zcode 0.16.3): 13 request records, 81 distinct tools, 1 subagent file, catalog timeline 79 → 80 (`mcp__recapture_probe__recapture_probe`, tool invoked live) → 79. Legs completed in Pitfall-18 order: drift report committed first (`5a2c7f5`), extractor divergence-class fixes TDD (`d3fcfa1`: querySource gating + mcp__-only transition tolerance + the eternal-SKIP stability-test filename bug), profile re-pinned (`3a250b5`), stability test GREEN on the new pin, run record appended, parity fresh numbers recorded (curated 1/8 on BOTH profile bundles — control-proven stale v1.0-era expectations, profile-independent; from-rollout 1/13 with documented harness artifacts). Full `mise ci` green after refreshing four stale GLM-5.2/thinking test expectations. **Open: the parity recalibration disposition** (re-record curated expectations from current live zcode + fix ExtractTurnsFromRollout's delta/state-pollution artifacts) — see the drift report's follow-up section.
+
+---
+
 **The delegated harvest ran the mechanical thresholds over every existing session in `~/.zcode/cli/rollout/` and found NO session meeting all four selection criteria — every session has a STABLE tool catalog (zero mid-session MCP attach/detach events). Per the operator's delegation (STATE.md 4407710): finding recorded, capture-dependent legs stopped for the morning.**
 
 ## The harvest (2026-08-15, mechanical, evidence-backed)
