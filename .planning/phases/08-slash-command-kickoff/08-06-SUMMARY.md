@@ -258,3 +258,60 @@ Score: 7 pass, 4 partial, 0 hard-blocked — every prior blocker on this plan's 
 - Product-proof E2E — BLOCKED on the 6th finding (explore boundary; operator disposition)
 - Fixable probe — BLOCKED on the D-10 route decision (operator; untouched per the delegation)
 - **Phase 8 stays OPEN**, staged exactly as: open on (1) the operator's D-10 route decision (finding 5), (2) the operator's explore-boundary route decision (finding 6), (3) the final gate witness.
+
+---
+
+# Fourth Addendum (2026-08-15, the final execution leg — findings 5+6 dispositions executed)
+
+Both operator dispositions (STATE.md [Findings 5+6 dispositions], flagged for retroactive confirmation; every change cleanly revertible via atomic commits) executed RED→GREEN; the gated E2E then PASSED BOTH LEGS; the gate is staged for the operator's final witness.
+
+## Finding 6 — hybrid provenance chaining (commits 4967cb8→d9891bb, 398ad80→570476b, c332be1→b9fd6c6)
+
+The explore→propose boundary chains on COMMAND PROVENANCE; the capture-seeded text rows stay authoritative for propose/apply/archive:
+
+- **Engine** (`internal/engine`): `TurnOutput.StartedBy` (sourced EXCLUSIVELY from the expansion seam — never assistant/tool content; the assistant-role-only property untouched) + the OPTIONAL `PatternTable` capability `CommandMatcher`, consulted by `Decide` only AFTER the dual signals miss. Signal `command:<id>`; span = the command key. Six tests incl. the required regressions: a NON-command turn's end_turn triggers NOTHING against a command-row table; capability-absent tables stay inert.
+- **Config/table** (`internal/openspec`): `[[command_patterns]]` rows (id/command/action/next; validated collect-all); the table answers `MatchCommand` and registers the row's next through the SAME nextFor map (NextPromptFor/ContinuePopulator machinery unchanged). seeded.toml: the twice-widened `(?i)propos` text row REPLACED by the `opsx:explore` provenance row with the full provenance comment; the excerpt battery re-pins all FOUR live explore closings as matching NO text row.
+- **Wiring** (`cmd/ass-guard`): the engine path defers expansion to the adapter (it must see the RAW invocation; the engine-off path still pre-expands — semantics identical); the adapter records the starting key per Run and reports it in LastTurnOutput; `PopulateContinue`/`triggerFromSignal` learn the `command:` prefix. Full-stack test: typed /opsx:explore with the run-4 Socratic closing chains to the EXPANDED injected /opsx:propose turn (provenance + mutating boundary + the `command:post-explore-handoff` decision line). `TestEngine_CommandProvenanceNotInjectable` pins that transcript content shaped like an invocation NEVER sets StartedBy.
+
+**Sub-fix discovered by the first E2E re-run** (2b1f948→47d17b8): the injected `/opsx:propose` was BARE, and the real propose command asks for a subject when `$ARGUMENTS` is empty (the chain died at stage 2 — evidence `/tmp/e2e-final-evidence/gated-suite.log`, decisions=[continue nothing], propose args empty). The capture's operator typed the change name on EVERY stage; the adapter now forwards the FIRST invocation's arguments (the scenario subject) to later BARE injected commands — injections carrying their own args untouched, plain-text turns never forward, subject sourced from the user-side typed prompt only.
+
+## Finding 5 — D-10 capture-faithful reshape (commit 6a28a5d)
+
+The fixable probe re-targets the capture's actual routing (model meets openspec via Skill+Bash; openspec:* tools stay EXECUTION-ONLY — zero catalog change):
+
+- **Model leg**: a deliberately INCOMPLETE tasks.md is the deterministic fixable trigger (mechanically verified on the installed 1.5.0: `openspec archive` without --yes fails on BOTH the plain route — "User force closed the prompt" — and the --json route — `archive_tasks_incomplete`; exit 1 either way). Assertions target the model-visible behavior where it happens: a failed first attempt in a tool result, then a recovery + the real archive dir.
+- **Execution layer**: the registered `openspec:archive` tool invoked DIRECTLY (no model) on a second incomplete change must classify `{classification: "fixable", exit_code: 1}` — the classification asserted where it actually lives (the three-path adapter suite keeps its own binary-gated pin).
+
+## The gated E2E — BOTH LEGS PASS (`/tmp/e2e-final-evidence/gated-suite-run2.log`)
+
+`ASSGUARD_OPENSPEC_BIN=1 ASSGUARD_E2E_LLM=1 go test ./cmd/ass-guard/ -run 'TestOpsxEndToEnd_Gated|TestOpsxFixableRecovery_Gated' -v -count=1 -timeout 40m`
+
+- **TestOpsxEndToEnd_Gated — PASS 474.43s**: the ZERO-CONTINUE full chain from ONE typed prompt. Engine decisions (transcript, verbatim): `continue command:post-explore-handoff (span opsx:explore)` → `continue text:post-propose-handoff (/opsx:apply)` → `continue text:post-apply-handoff (/opsx:archive)` — 3 continues, one per boundary, the first via the NEW provenance signal. All four stages' provenance lines carry the scenario subject (`opsx:explore|propose|apply|archive`, args `add-a-tiny-feature` each). Real stage work: 44 tool calls (23 Bash, 8 Read, 7 Write, 5 TodoWrite, 1 Skill), real archive dir `openspec/changes/archive/2026-08-15-add-a-tiny-feature/` on disk; the four closings committed as testdata (stage 4 = the "Archive Complete" report — the terminal shield's anchor).
+- **TestOpsxFixableRecovery_Gated — PASS 116.01s**: the reshaped criterion, live. Model-visible: first attempt via the model's own Skill+Bash route failed fixably ("Warning: 1 incomplete task(s) found. Continue? (y/N) … ✖ Error: User force closed the prompt", EXIT_CODE=1), then the model ADAPTED ("Continuing due to --yes flag. Change 'fixable-probe' archived as '2026-08-15-fixable-probe'. EXIT_CODE=0"). Execution layer: the direct openspec:archive tool call on the second incomplete change classified `fixable` (exit 1, WARN line in the log).
+- Run 1 (pre-subject-forwarding) preserved as the honest intermediate: `/tmp/e2e-final-evidence/gated-suite.log` + `live/` (the provenance signal's first live firing, chain-dead-at-propose evidence).
+
+## The 11 UAT checks — FINAL walk (2026-08-15, the passing run's evidence)
+
+| # | Check | Evidence | Status (was) |
+|---|-------|----------|--------------|
+| 2 | Zero "continue" taps | **LIVE**: 3 continue decisions chained explore→propose→apply→archive from ONE typed prompt (474s run); provenance lines prove every stage arrived as an expanded injected turn; hybrid battery green | **pass** (partial) |
+| 3 | Forgotten routine post-implement | hookdag executor battery green (SendPromptIsATurn, FreshContextIsABoundary, OnFailure halt/continue/ask) + engine hook dispatch + the opsx stage vocabulary wired per session; the /opsx scenario fires no hook rows (seeded actions are continue/wait) — the live implement-stage hook leg remains un-exercised | partial (partial) |
+| 4 | Unfamiliar → asked once, remembered | Engine dispatch: ask surfaced (TestDispatch_AskPendingBreaksLoop) + a stored answer applied WITHOUT re-asking (TestDispatch_AskWithStoredAnswerContinues); learning store suite green. NOTE: the happy path now has ZERO asks BY DESIGN (08-06's own bar) — every opsx boundary chains deterministically; the ask fallback's trigger surface is unfamiliar NON-opsx phrasings | **pass** (partial) |
+| 5 | Completes unattended | **LIVE**: the full 4-stage scenario, one typed prompt, zero manual continues, real archive artifacts | pass (pass) |
+| 6 | Unmatched output triggers nothing | TestDecide_UnmatchedIsNothing/Quick* + the NEW provenance-path regressions (TestDecide_NonCommandTurnTriggersNothing, TestEngine_CommandProvenanceNotInjectable) | pass (pass) |
+| 7 | Engine failure degrades | TestObserve_*Degradation suites green in the -race guard re-run | pass (pass) |
+| 8 | Hook on-failure + loop prevention | hookdag config_test (OnFailureHalt pinned) + TestObserve_ReFireBudget green | pass (pass) |
+| 9 | Cancel-drain | TestObserve_CancelDrain, TestCancelDrainsInjections, TestStream_CancelUnblocksStalledBodyRead green | pass (pass) |
+| 10 | Concurrency + swappable backends | TestDispatchBatch_* + backend-swap suites green | pass (pass) |
+| 11 | Learning inspectable + revertible | TestStore_List/Revert* green | pass (pass) |
+| 12 | Coverage — outcome observably true | **LIVE**: "the toolkit just ran" — the zero-continue chain with per-boundary decision audit + real artifacts; every mechanism suite exercised in the -race guard | **pass** (partial) |
+
+**Score: 10 pass, 1 partial (3 — mechanism green, live implement-stage hook leg un-exercised by the opsx scenario), 0 blocked.**
+
+## Phase gate status — GATE-READY, AWAITING OPERATOR WITNESS
+
+- `go test ./... -race -count=1` — GREEN (exit 0, 25 packages; `/tmp/e2e-final-evidence/full-race.log`)
+- `ASSGUARD_OPENSPEC_BIN=1 go test ./internal/openspec/ ./internal/ecosys/ -count=1` — GREEN (three-path + surface suites)
+- `mise run ci` — GREEN (exit 0)
+- Gated E2E — BOTH LEGS GREEN (the re-run command above; evidence `/tmp/e2e-final-evidence/`)
+- **Phase 8 is NOT marked complete by this leg** — per the record, the operator witnesses the gate. Everything is staged; the exact witness steps are in STATE.md's Next action.

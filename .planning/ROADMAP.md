@@ -36,7 +36,7 @@ v1.1 makes the hands-off OpenSpec promise real end-to-end. The milestone's reaso
 
 | # | Phase | Goal | Requirements | Success Criteria |
 |---|-------|------|--------------|------------------|
-| 8 | Slash-Command Kickoff | 8/9 | Blocked (08-06 checkpoint; gap-closure plan 08-09 staged 2026-08-15 — 08-07/08-08 complete, the D-11 boundary-reset finding remains) | 2026-08-15 |
+| 8 | Slash-Command Kickoff | 8/9 | Gate-ready, awaiting operator witness (2026-08-15 — findings 5+6 dispositions executed: hybrid provenance chaining + D-10 capture-faithful reshape; BOTH gated E2E legs green — zero-continue full chain + fixable recovery; full guard green; UAT 10 pass/1 partial/0 blocked) | 2026-08-15 |
 | 9 | Serve-Path Audit + zcode Parity Re-capture | Every serve-path session leaves a redacted, bounded audit trail that explains the engine's decisions; the parity stability test runs green on a newly pinned session | AUD-01, AUD-02, AUD-03, AUD-04, AUD-05 | 5 |
 | 10 | Telegram Peer (Text + Voice) | A user drives the same engine from a Telegram chat — full SDD scenarios, voice input, disciplined shutdown | TG-01, TG-02, TG-03, TG-04, TG-05, TG-06 | 5 |
 | 11 | dsh Mimicry Profile #2 | DeepSeek-model turns are structurally indistinguishable from deepseek-harness, captured not hand-written | DSH-01, DSH-02, DSH-03, DSH-04, DSH-05 | 5 |
