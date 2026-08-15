@@ -24,9 +24,10 @@ var errNoSessionWith = errors.New("no session with full-request lines found")
 // (system, tools, thinking, tool_choice) plus the 12 identity headers — no MITM
 // proxy is needed for the request body.
 type ModelIO struct {
-	Type      string `json:"type"`
-	SessionID string `json:"sessionId"` //nolint:tagliatelle // model_io rollout format
-	Request   struct {
+	Type        string `json:"type"`
+	SessionID   string `json:"sessionId"` //nolint:tagliatelle // model_io rollout format
+	QuerySource string `json:"querySource"`
+	Request     struct {
 		Body struct {
 			Model      json.RawMessage `json:"model"`
 			MaxTokens  int             `json:"max_tokens"`
@@ -170,7 +171,17 @@ func ExtractFromRollout(path string) (ExtractResult, error) { //nolint:funlen //
 }
 
 func isFullRequest(m *ModelIO) bool {
-	return m.Type == "model_io" && len(m.Request.Body.System) > 0 && len(m.ParsedTools()) > 0
+	// Only main-turn requests shape the profile. zcode 0.16.3 also logs auxiliary
+	// subrequests (querySource=web_search_tool: the server-side web-search arm
+	// with its own mini system + single tool) — a different request class, not
+	// drift. Legacy corpora predate the field (empty), so only known-aux
+	// values are excluded.
+	switch m.QuerySource {
+	case "", "main_turn":
+		return m.Type == "model_io" && len(m.Request.Body.System) > 0 && len(m.ParsedTools()) > 0
+	default:
+		return false
+	}
 }
 
 func assertStable(sysCount int, toolNames map[string]struct{}, headerNames []string, m *ModelIO) error {
@@ -189,15 +200,21 @@ func assertStable(sysCount int, toolNames map[string]struct{}, headerNames []str
 		seen[t.Name] = struct{}{}
 	}
 
-	if len(seen) != len(toolNames) {
-		//nolint:err113 // dynamic error message
-		return fmt.Errorf("tool-name set drift: %d -> %d", len(toolNames), len(seen))
-	}
-
+	// Mid-session MCP attach/detach changes the live tool catalog by mcp__-
+	// prefixed tools only (runtime state — connected servers, AUD-05's
+	// divergence class); the base catalog must be untouched. Any other
+	// tool-name delta is real drift and stays fatal.
 	for n := range seen {
-		if _, ok := toolNames[n]; !ok {
+		if _, ok := toolNames[n]; !ok && !strings.HasPrefix(n, "mcp__") {
 			//nolint:err113 // dynamic error message
 			return fmt.Errorf("tool-name set drift: %q not in first-line set", n)
+		}
+	}
+
+	for n := range toolNames {
+		if _, ok := seen[n]; !ok && !strings.HasPrefix(n, "mcp__") {
+			//nolint:err113 // dynamic error message
+			return fmt.Errorf("tool-name set drift: %q missing (non-mcp base tool disappeared)", n)
 		}
 	}
 

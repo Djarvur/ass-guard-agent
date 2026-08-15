@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
@@ -60,7 +61,11 @@ func TestStability_WithinSessionExtractionSource(t *testing.T) {
 		t.Skipf("rollout dir unavailable — pinned %s unchecked (see docs/recapture-runbook.md)", pinned.ID)
 	}
 
-	path := filepath.Join(dir, "model-io-sess_"+pinned.ID+".jsonl")
+	// The manifest records the prefixed id (sess_<uuid>); rollout filenames use
+	// the bare uuid under the model-io-sess_ prefix. Strip to avoid the
+	// double-prefix (model-io-sess_sess_…) that silently skipped this test
+	// even while the pinned capture existed on disk.
+	path := filepath.Join(dir, "model-io-sess_"+strings.TrimPrefix(pinned.ID, "sess_")+".jsonl")
 
 	_, statErr := os.Stat(path)
 	if statErr != nil {
