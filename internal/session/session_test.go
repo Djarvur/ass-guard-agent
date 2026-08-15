@@ -814,9 +814,7 @@ func TestToolCallExactlyOnceWithWriter(t *testing.T) { //nolint:paralleltest // 
 
 	tw := NewTranscriptWriter(m, bus, nil)
 
-	writerCtx, cancelWriter := context.WithCancel(context.Background())
-
-	defer cancelWriter()
+	writerCtx := t.Context()
 
 	go tw.Run(writerCtx)
 
@@ -843,7 +841,8 @@ func TestToolCallExactlyOnceWithWriter(t *testing.T) { //nolint:paralleltest // 
 		}
 
 		if count > 1 {
-			t.Fatalf("tool_call lines for call_once_1 = %d; want exactly 1 (double writer: session loop + TranscriptWriter bus event)", count)
+			t.Fatalf("tool_call lines for call_once_1 = %d; want exactly 1 "+
+				"(double writer: session loop + TranscriptWriter bus event)", count)
 		}
 
 		if count == 1 {

@@ -534,7 +534,7 @@ func TestRun_DoesNotLeakChunkForwarder(t *testing.T) { //nolint:paralleltest // 
 	go func() {
 		defer close(published)
 
-		for i := 0; i < event.BufAgentMessageChunk+32; i++ {
+		for range event.BufAgentMessageChunk + 32 {
 			r.bus.Publish(event.AgentMessageChunk{
 				TurnID: "sess-leak", MessageID: "sess-leak", Content: "x",
 			})

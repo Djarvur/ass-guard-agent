@@ -74,7 +74,7 @@ func (w *TranscriptWriter) appendRequestShaped(rs *event.RequestShaped) {
 // live transcripts; the Projector folds each line into the carried assistant
 // batch, so the duplicates were a request-shape divergence).
 //
-//nolint:gocognit,cyclop,gocyclo,funlen // async writer complexity is inherent
+//nolint:gocognit,cyclop,gocyclo // async writer complexity is inherent
 func (w *TranscriptWriter) Run(ctx context.Context) {
 	subs := w.subscribeAll()
 

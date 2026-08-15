@@ -12,6 +12,12 @@ import (
 // nextApplyCmd is the chaining fixture's next command (goconst).
 const nextApplyCmd = "/opsx:apply"
 
+// Seeded-row literals shared by the capture-pinning test (goconst).
+const (
+	idPostProposeHandoff = "post-propose-handoff"
+	stageApply           = "apply"
+)
+
 // TestNextPrompt_ConfigParsesNextField (08-06 Test 1): a [[patterns]] entry
 // with a stage-bearing id and a next command parses with both preserved.
 func TestNextPrompt_ConfigParsesNextField(t *testing.T) {
@@ -84,7 +90,7 @@ func TestNextPrompt_TableAnswersNextPromptFor(t *testing.T) {
 // stages' closing outputs captured). Each stage's REAL closing text selects its
 // own handoff row + next command; the archive closing selects NOTHING (the
 // chain ends naturally). Excerpts are verbatim from the capture files.
-func TestSeeded_ChainingRowsFromRealCapture(t *testing.T) {
+func TestSeeded_ChainingRowsFromRealCapture(t *testing.T) { //nolint:funlen // four-stage excerpt battery
 	t.Parallel()
 
 	cfg, err := openspec.DefaultConfig()
@@ -112,11 +118,11 @@ func TestSeeded_ChainingRowsFromRealCapture(t *testing.T) {
 		{
 			stage:   "propose",
 			excerpt: "Run `/opsx:apply` (or just ask me to implement) to start working on the tasks.",
-			wantID:  "post-propose-handoff",
+			wantID:  idPostProposeHandoff,
 			wantNxt: "/opsx:apply",
 		},
 		{
-			stage:   "apply",
+			stage:   stageApply,
 			excerpt: "All tasks complete! You can archive this change with `/opsx:archive`.",
 			wantID:  "post-apply-handoff",
 			wantNxt: "/opsx:archive",
