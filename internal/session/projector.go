@@ -84,53 +84,7 @@ func (p *Projector) Project(turnID string) ([]provider.Message, error) {
 		return nil, err
 	}
 
-	// The projected turn's user message anchors both the reset scoping and the
-	// mid-turn accumulation (08-09). Fallback: the last user_message overall;
-	// none at all → keep the legacy no-boundary shape below.
-	lastUserIdx, matchedUserIdx := -1, -1
-
-	for i := range lines {
-		if lines[i].Type == TypeUserMessage {
-			lastUserIdx = i
-
-			if lines[i].TurnID == turnID {
-				matchedUserIdx = i
-			}
-		}
-	}
-
-	turnUserIdx := matchedUserIdx
-	if turnUserIdx < 0 {
-		turnUserIdx = lastUserIdx
-	}
-
-	// Find the reset boundary — the LAST boundary recorded STRICTLY BEFORE the
-	// turn's user message (a boundary resets projections of turns that START
-	// after it, never the producing turn's own window — SESS-04 revised 08-09).
-	boundaryIdx := -1
-
-	for i := range lines {
-		if lines[i].Type == TypeBoundary && (turnUserIdx < 0 || i < turnUserIdx) {
-			boundaryIdx = i
-		}
-	}
-
-	var beforeBoundary, afterBoundary []Line
-	switch {
-	case boundaryIdx >= 0:
-		beforeBoundary = lines[:boundaryIdx]
-		afterBoundary = lines[boundaryIdx+1:]
-	case turnUserIdx >= 0:
-		// No reset boundary: the summary scope is the PRE-turn lines, so the
-		// current turn's accumulating exchanges never churn the seed.
-		beforeBoundary = lines[:turnUserIdx]
-		afterBoundary = lines[turnUserIdx:]
-	default:
-		// No user message at all (empty transcript prefix): everything is
-		// "before"; the legacy no-boundary shape.
-		beforeBoundary = lines
-		afterBoundary = nil
-	}
+	beforeBoundary, afterBoundary := splitAtResetBoundary(lines, turnID)
 
 	summary := p.extractSummary(beforeBoundary)
 	currentIntent := p.findCurrentIntent(afterBoundary, beforeBoundary, turnID)
@@ -153,6 +107,53 @@ func (p *Projector) Project(turnID string) ([]provider.Message, error) {
 	out = append(out, mid...)
 
 	return out, nil
+}
+
+// splitAtResetBoundary splits the transcript at the between-turn reset point
+// (SESS-04, revised 08-09). The reset boundary is the LAST TypeBoundary
+// recorded STRICTLY BEFORE the projected turn's user message — a boundary
+// resets projections of turns that START after it, never the producing turn's
+// own mid-turn window. The turn's user message is the last one carrying
+// TurnID == turnID (fallback: the last user_message overall). With no reset
+// boundary the summary scope is the PRE-turn lines (the current turn's
+// accumulating exchanges never churn the seed); with no user message at all,
+// the legacy all-lines shape applies.
+//
+//nolint:nonamedreturns // gocritic unnamedResult prefers names
+func splitAtResetBoundary(lines []Line, turnID string) (before, after []Line) {
+	lastUserIdx, matchedUserIdx := -1, -1
+
+	for i := range lines {
+		if lines[i].Type == TypeUserMessage {
+			lastUserIdx = i
+
+			if lines[i].TurnID == turnID {
+				matchedUserIdx = i
+			}
+		}
+	}
+
+	turnUserIdx := matchedUserIdx
+	if turnUserIdx < 0 {
+		turnUserIdx = lastUserIdx
+	}
+
+	boundaryIdx := -1
+
+	for i := range lines {
+		if lines[i].Type == TypeBoundary && (turnUserIdx < 0 || i < turnUserIdx) {
+			boundaryIdx = i
+		}
+	}
+
+	switch {
+	case boundaryIdx >= 0:
+		return lines[:boundaryIdx], lines[boundaryIdx+1:]
+	case turnUserIdx >= 0:
+		return lines[:turnUserIdx], lines[turnUserIdx:]
+	default:
+		return lines, nil
+	}
 }
 
 // accumulateMidTurn folds the current turn's post-user-message lines into the

@@ -20,6 +20,7 @@ const (
 	wiringToolBash  = "Bash"
 	wiringToolTodo  = "TodoWrite"
 	wiringFinalText = "finished"
+	wiringRoleTool  = "tool"
 )
 
 // TestCoreExec_BashThroughSession (08-08 T2 Test 10, catalog path): through the
@@ -125,7 +126,7 @@ func TestCoreExec_BashThroughSession(t *testing.T) { //nolint:gocognit,gocyclo,c
 	carried := false
 
 	for i := range msgs {
-		if msgs[i].Role == "tool" && msgs[i].ToolCallID == "call_bash_1" {
+		if msgs[i].Role == wiringRoleTool && msgs[i].ToolCallID == "call_bash_1" {
 			carried = true
 
 			if msgs[i].Content != "hi" {
@@ -135,7 +136,7 @@ func TestCoreExec_BashThroughSession(t *testing.T) { //nolint:gocognit,gocyclo,c
 	}
 
 	if !carried {
-		t.Errorf("projection carries no Bash tool message past the boundary (between-turn reset re-scope violated):\n%v", msgs)
+		t.Errorf("projection carries no Bash tool message past the boundary (re-scope violated):\n%v", msgs)
 	}
 
 	// The turn still completes: the final assistant text lands in the window.
@@ -171,7 +172,7 @@ func TestCoreExec_BashThroughSession(t *testing.T) { //nolint:gocognit,gocyclo,c
 	}
 
 	for i := range nextMsgs {
-		if nextMsgs[i].Role == "tool" || nextMsgs[i].Role == "assistant" {
+		if nextMsgs[i].Role == wiringRoleTool || nextMsgs[i].Role == "assistant" {
 			t.Errorf("next-turn projection[%d] = %s; want NO tool/assistant messages (between-turn reset violated)",
 				i, msgSummaryACP(&nextMsgs[i]))
 		}

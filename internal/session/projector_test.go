@@ -412,6 +412,13 @@ func TestProjector_MidTurnBatchGrouping(t *testing.T) {
 	}
 }
 
+// Shared fixture ids for the 08-09 boundary-carry batteries (goconst: each
+// appears in both the fixture construction and the assertions of two tests).
+const (
+	fxPreOne  = "pre_1"
+	fxPostOne = "post_1"
+)
+
 // TestProjector_MidTurnBoundaryCarry (08-09 T1 Test 1, re-pins 08-07 T2 Test 5
 // `TestProjector_MidTurnBoundaryReset`): a mid-turn boundary NO LONGER resets
 // the producing turn's own accumulation — the projection carries BOTH the
@@ -422,19 +429,19 @@ func TestProjector_MidTurnBatchGrouping(t *testing.T) {
 // turn's reset boundary (asserted in TestProjector_BetweenTurnResetAfterMidTurn
 // Boundary). An orphaned tool_result (its call never entered the window) is
 // still dropped — pair-safety is boundary-independent.
-func TestProjector_MidTurnBoundaryCarry(t *testing.T) {
+func TestProjector_MidTurnBoundaryCarry(t *testing.T) { //nolint:gocyclo,cyclop,funlen // flat battery
 	t.Parallel()
 
 	m := newTestManager(t, "s1")
 	p := NewProjector(fakeProfile("sys"), m)
 
 	_ = m.AppendUserMessage("turnT", []ContentBlock{{Type: blockText, Text: "do several"}})
-	_ = m.AppendToolCall("turnT", "pre_1", toolBash, json.RawMessage(`{"command":"ls"}`))
-	_ = m.AppendToolResult("turnT", "pre_1", json.RawMessage(`{"o":"x"}`), false)
-	_ = m.AppendBoundary(mutatingCommandBash, "pre_1", "turnT")
+	_ = m.AppendToolCall("turnT", fxPreOne, toolBash, json.RawMessage(`{"command":"ls"}`))
+	_ = m.AppendToolResult("turnT", fxPreOne, json.RawMessage(`{"o":"x"}`), false)
+	_ = m.AppendBoundary(mutatingCommandBash, fxPreOne, "turnT")
 	// Post-boundary exchange, same turn.
-	_ = m.AppendToolCall("turnT", "post_1", toolRead, json.RawMessage(`{"file_path":"a"}`))
-	_ = m.AppendToolResult("turnT", "post_1", json.RawMessage(`{"o":"y"}`), false)
+	_ = m.AppendToolCall("turnT", fxPostOne, toolRead, json.RawMessage(`{"file_path":"a"}`))
+	_ = m.AppendToolResult("turnT", fxPostOne, json.RawMessage(`{"o":"y"}`), false)
 	// An orphaned result: its call was never recorded in the window.
 	_ = m.AppendToolResult("turnT", "pre_2", json.RawMessage(`{"o":"z"}`), false)
 
@@ -450,19 +457,19 @@ func TestProjector_MidTurnBoundaryCarry(t *testing.T) {
 			len(msgs), msgSummaryList(msgs))
 	}
 
-	if msgs[1].Role != roleAssistant || len(msgs[1].ToolCalls) != 1 || msgs[1].ToolCalls[0].ID != "pre_1" {
+	if msgs[1].Role != roleAssistant || len(msgs[1].ToolCalls) != 1 || msgs[1].ToolCalls[0].ID != fxPreOne {
 		t.Errorf("msgs[1] = %s; want the pre-boundary pre_1 batch carried", msgSummary(&msgs[1]))
 	}
 
-	if msgs[2].Role != roleToolMsg || msgs[2].ToolCallID != "pre_1" {
+	if msgs[2].Role != roleToolMsg || msgs[2].ToolCallID != fxPreOne {
 		t.Errorf("msgs[2] = %s; want the pre-boundary pre_1 result carried", msgSummary(&msgs[2]))
 	}
 
-	if msgs[3].Role != roleAssistant || len(msgs[3].ToolCalls) != 1 || msgs[3].ToolCalls[0].ID != "post_1" {
+	if msgs[3].Role != roleAssistant || len(msgs[3].ToolCalls) != 1 || msgs[3].ToolCalls[0].ID != fxPostOne {
 		t.Errorf("msgs[3] = %s; want the post-boundary post_1 batch carried", msgSummary(&msgs[3]))
 	}
 
-	if msgs[4].Role != roleToolMsg || msgs[4].ToolCallID != "post_1" {
+	if msgs[4].Role != roleToolMsg || msgs[4].ToolCallID != fxPostOne {
 		t.Errorf("msgs[4] = %s; want the post-boundary post_1 result carried", msgSummary(&msgs[4]))
 	}
 
@@ -483,7 +490,7 @@ func TestProjector_MidTurnBoundaryCarry(t *testing.T) {
 
 	for i := range lines {
 		if lines[i].Type == TypeBoundary && lines[i].Cause == mutatingCommandBash &&
-			lines[i].TurnID == "turnT" && lines[i].CommandRef == "pre_1" {
+			lines[i].TurnID == "turnT" && lines[i].CommandRef == fxPreOne {
 			sawBoundary = true
 		}
 	}
@@ -505,11 +512,11 @@ func TestProjector_BetweenTurnResetAfterMidTurnBoundary(t *testing.T) {
 	p := NewProjector(fakeProfile("sys"), m)
 
 	_ = m.AppendUserMessage("turnT", []ContentBlock{{Type: blockText, Text: "do several"}})
-	_ = m.AppendToolCall("turnT", "pre_1", toolBash, json.RawMessage(`{"command":"ls"}`))
-	_ = m.AppendToolResult("turnT", "pre_1", json.RawMessage(`{"o":"x"}`), false)
-	_ = m.AppendBoundary(mutatingCommandBash, "pre_1", "turnT")
-	_ = m.AppendToolCall("turnT", "post_1", toolRead, json.RawMessage(`{"file_path":"a"}`))
-	_ = m.AppendToolResult("turnT", "post_1", json.RawMessage(`{"o":"y"}`), false)
+	_ = m.AppendToolCall("turnT", fxPreOne, toolBash, json.RawMessage(`{"command":"ls"}`))
+	_ = m.AppendToolResult("turnT", fxPreOne, json.RawMessage(`{"o":"x"}`), false)
+	_ = m.AppendBoundary(mutatingCommandBash, fxPreOne, "turnT")
+	_ = m.AppendToolCall("turnT", fxPostOne, toolRead, json.RawMessage(`{"file_path":"a"}`))
+	_ = m.AppendToolResult("turnT", fxPostOne, json.RawMessage(`{"o":"y"}`), false)
 	// The NEXT turn's user message arrives after the mutating work.
 	_ = m.AppendUserMessage("turnN1", []ContentBlock{{Type: blockText, Text: "next please"}})
 
@@ -605,9 +612,9 @@ func TestProjector_RepeatedMidTurnBoundaries(t *testing.T) {
 
 	_ = m.AppendUserMessage("turnR", []ContentBlock{{Type: blockText, Text: "mutate thrice"}})
 
-	for i, id := range []string{"m_1", "m_2", "m_3"} {
+	for _, id := range []string{"m_1", "m_2", "m_3"} {
 		_ = m.AppendToolCall("turnR", id, toolBash, json.RawMessage(`{"command":"cmd"}`))
-		_ = m.AppendToolResult("turnR", id, json.RawMessage(`{"o":`+fmt.Sprint(i)+`}`), false)
+		_ = m.AppendToolResult("turnR", id, json.RawMessage(`{"o":"`+id+`"}`), false)
 		_ = m.AppendBoundary(mutatingCommandBash, id, "turnR")
 	}
 
