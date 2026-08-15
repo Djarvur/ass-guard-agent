@@ -1,0 +1,56 @@
+# opsx E2E stage 1 closing output (captured 2026-08-15T10:44:40Z, real binary + real model)
+
+Explore mode it is. Let me set the scene with what I found.
+
+## Where we're standing
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  ass-guard-agent  (Go, mimicry-first ACP agent)             │
+│                                                             │
+│  Milestone: v1.1 "Kickoff & Peers"  —  ~17%                 │
+│  Phase 8: slash-command-kickoff  ⚠ BLOCKED                  │
+│    └─ gap-closure plan 08-09 staged, awaiting operator OK   │
+│  Phase 9: audit + re-capture  (09-01..03/05/06 done)        │
+│  Phase 10: Telegram peer   •  Phase 11: dsh profile         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+OpenSpec side: **no active changes** in this root — so `add-a-tiny-feature` isn't an existing change to explore; it reads more like a *name you'd want to give a change once we figure out what the feature is*. Which is a great explore-mode starting point, because right now the name is the most specific thing about it. 😄
+
+## What "tiny" could mean here
+
+I looked around the codebase for what a genuinely tiny feature might look like, to calibrate. A few observations:
+
+| Candidate | Size | Notes |
+|---|---|---|
+| `README.md` is literally one line (`# ass-guard-agent`) | tiny | Docs, zero code risk |
+| `--version` prints to stderr (correct per transport discipline, but unusual for scripts) | tiny | Any change here touches the stdout-purity invariant — interesting to think about |
+| New cobra subcommand (there are already `parity`, `profile check`, `scheduling resolve`, `learning list/revert`) | small | There's an established pattern to follow |
+| Anything near Phase 8's blocked gate | **not tiny** | D-11 boundary-reset territory — locked invariants, operator approval needed |
+
+That last row matters: this project has a strong culture of *tiny ≠ safe*. The STATE.md is full of decisions where a small-looking thing (like when tool-result resets happen) turned out to touch locked mimicry invariants.
+
+## The shape of the question
+
+```
+      "add a tiny feature"
+              │
+      ┌───────┴────────┐
+      ▼                ▼
+  WHAT is it?      WHERE does it live?
+  user-facing?        CLI surface?      → cmd/ass-guard/*.go
+  agent behavior?     turn loop?        → internal/loop, internal/engine
+  mimicry-adjacent?   profile/shaper?   → ⚠ parity blast radius
+  ops/diagnostics?    stderr logging?   → safe harbor
+```
+
+The mimicry-adjacent branch is the one worth respecting a priori — if the feature changes anything the model provider can *see* (tool catalog, message shape, system prompt), it's not tiny anymore, it's a parity event.
+
+## So — opening threads
+
+1. **What's the feature?** Even a one-liner. "I want `ass-guard` to ___" is enough to start pulling on.
+2. **Who's it for** — you as operator debugging the agent, or the end user in Zed/Telegram? (Ops-facing things are nearly always tiny-safe in this codebase; model-facing things never are.)
+3. **Is this a side-quest or does it belong in the v1.1 milestone?** There's a serious GSD pipeline mid-flight (Phase 8 gate blocked on your morning disposition). A tiny feature could be a deliberate palate cleanser, or it could be scope creep in disguise — worth being honest about which.
+
+What's the tiny feature you have in mind? Or if you don't have one yet and want to browse candidates, I can dig deeper into any corner of the codebase — the CLI surface, the ACP server, the scheduler — and we can see what wants to be built.

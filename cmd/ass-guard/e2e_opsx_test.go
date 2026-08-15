@@ -364,7 +364,7 @@ func TestOpsxEndToEnd_Gated(t *testing.T) { //nolint:paralleltest,cyclop,funlen 
 // binary: a fixable openspec failure (archive's non-TTY confirmation prompt
 // reading nil stdin → EOF) reaches the model as a structured fixable result,
 // and the model ADAPTS (retries with --yes) — no halt, no silent swallow.
-func TestOpsxFixableRecovery_Gated(t *testing.T) { //nolint:paralleltest // real scratch + live model
+func TestOpsxFixableRecovery_Gated(t *testing.T) { //nolint:paralleltest,funlen // real scratch + live model
 	e2eGates(t)
 
 	r, scratch := newOpsxRunner(t)
