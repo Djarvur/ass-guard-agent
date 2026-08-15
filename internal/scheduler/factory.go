@@ -109,16 +109,38 @@ func NewProviderFactory(cfg *Config, flagKey string, log *slog.Logger) *Provider
 	return &ProviderFactory{cfg: cfg, flagKey: flagKey, log: log}
 }
 
-// Build returns the credentialed adapter for providerName. An undeclared
-// provider is an error; an uncredentialed provider is NOT a Build error — the
-// noCredentialProvider wrapper fails lazily at first Send/Stream with a typed
-// structural error (D-07: warn at startup, fail lazy at first use). sh may be
-// nil for the openai shape; a nil shaper on the anthropic shape is the caller's
-// error (NewAnthropicProvider rejects a nil Shaper at Stream time).
+// Build returns the credentialed adapter for providerName — it DELEGATES to
+// BuildWithCapturer with a nil capturer (the single construction seam, 09-01).
+// An undeclared provider is an error; an uncredentialed provider is NOT a
+// Build error — the noCredentialProvider wrapper fails lazily at first
+// Send/Stream with a typed structural error (D-07: warn at startup, fail lazy
+// at first use). sh may be nil for the openai shape; a nil shaper on the
+// anthropic shape is the caller's error (NewAnthropicProvider rejects a nil
+// Shaper at Stream time).
 //
 //nolint:ireturn // factory: abstraction over the concrete adapter types
 func (f *ProviderFactory) Build(
 	providerName string, sh *shaper.Shaper,
+) (provider.Provider, error) {
+	return f.BuildWithCapturer(providerName, sh, nil)
+}
+
+// BuildWithCapturer is the SINGLE provider-construction seam that can attach a
+// RequestCapturer (09-01, AUD-01): same resolution path as Build (config
+// lookup → ResolveCredential), then per shape it passes the existing capture
+// options — anthropic: WithAnthropicRequestCapture (fires per Stream, body +
+// headers); openai: WithOpenAIRequestCapture (fires per Send, marshaled wire
+// body, nil headers). A nil capturer is a no-op inside the adapters (both
+// capture sites nil-check), so Build delegates here with nil and the two
+// constructors are indistinguishable without a capturer. The uncredentialed
+// (lazy D-07) and undeclared semantics are identical to Build's — a capturer
+// never fires for a provider that never shapes anything. The tracer path
+// (cmd/ass-guard runTrace) and the serve path (sessionFor) BOTH construct
+// through this method — no divergent copies (Pitfall 8).
+//
+//nolint:ireturn // factory: abstraction over the concrete adapter types
+func (f *ProviderFactory) BuildWithCapturer(
+	providerName string, sh *shaper.Shaper, capturer provider.RequestCapturer,
 ) (provider.Provider, error) {
 	prov, ok := f.cfg.Providers[providerName]
 	if !ok {
@@ -135,11 +157,13 @@ func (f *ProviderFactory) Build(
 	case providerAnthropic:
 		return provider.NewAnthropicProvider(sh,
 			provider.WithAnthropicBaseURL(prov.BaseURL),
-			provider.WithAnthropicAPIKey(cred.Key)), nil
+			provider.WithAnthropicAPIKey(cred.Key),
+			provider.WithAnthropicRequestCapture(capturer)), nil
 	case providerOpenAI:
 		return provider.NewOpenAIProvider(
 			provider.WithOpenAIBaseURL(prov.BaseURL),
-			provider.WithOpenAIAPIKey(cred.Key)), nil
+			provider.WithOpenAIAPIKey(cred.Key),
+			provider.WithOpenAIRequestCapture(capturer)), nil
 	default:
 		//nolint:err113 // dynamic error message
 		return nil, fmt.Errorf("provider %q: unknown shape %q", providerName, prov.Shape)
