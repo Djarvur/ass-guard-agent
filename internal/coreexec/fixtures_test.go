@@ -1,4 +1,4 @@
-package coreexec
+package coreexec //nolint:testpackage // internal package test (loadFixture is shared by the executor suites)
 
 import (
 	"encoding/json"
@@ -16,15 +16,15 @@ const fixturePath = "testdata/zcode-core-results.json"
 // Only the fields the tests assert are modeled (the fixture carries more).
 type fixtureFixture struct {
 	Provenance struct {
-		Sessions    map[string]string `json:"sessions"`
-		HarvestDate string            `json:"harvestDate"`
-		Redaction   string            `json:"redaction"`
-		CorpusAbsent []string         `json:"corpus_absent"`
-	} `json:"_provenance"`
+		Sessions     map[string]string `json:"sessions"`
+		HarvestDate  string            `json:"harvestDate"` //nolint:tagliatelle // fixture header key
+		Redaction    string            `json:"redaction"`   //nolint:tagliatelle // fixture header key
+		CorpusAbsent []string          `json:"corpus_absent"`
+	} `json:"_provenance"` //nolint:tagliatelle // fixture header key
 	Tools map[string]struct {
 		InputKeysObserved []string `json:"input_keys_observed"`
 		Results           map[string]struct {
-			IsError        bool   `json:"isError"`
+			IsError        bool   `json:"isError"` //nolint:tagliatelle // fixture mirrors the capture
 			Template       string `json:"template"`
 			LiteralPrefix  string `json:"literal_prefix,omitempty"`
 			SampleRedacted string `json:"sample_redacted,omitempty"`
@@ -37,13 +37,15 @@ type fixtureFixture struct {
 func loadFixture(t *testing.T) fixtureFixture {
 	t.Helper()
 
-	raw, err := os.ReadFile(fixturePath) //nolint:gosec // test fixture path is constant
+	raw, err := os.ReadFile(fixturePath)
 	if err != nil {
 		t.Fatalf("read %s: %v (the capture fixture must be committed — see 08-08 T1)", fixturePath, err)
 	}
 
 	var f fixtureFixture
-	if err := json.Unmarshal(raw, &f); err != nil {
+
+	err = json.Unmarshal(raw, &f)
+	if err != nil {
 		t.Fatalf("parse %s: %v", fixturePath, err)
 	}
 
@@ -58,7 +60,7 @@ func loadFixture(t *testing.T) fixtureFixture {
 // forms (exact literal templates) + the observed input-key shapes. An invented
 // form passing as captured would erode the mimicry core value silently
 // (T-8-34) — this test is the pin.
-func TestCoreResultsFixturePinned(t *testing.T) {
+func TestCoreResultsFixturePinned(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen // flat battery
 	t.Parallel()
 
 	f := loadFixture(t)
@@ -78,8 +80,9 @@ func TestCoreResultsFixturePinned(t *testing.T) {
 		}
 	}
 
-	if f.Provenance.HarvestDate != "2026-08-15" {
-		t.Errorf("_provenance.harvestDate = %q; want 2026-08-15", f.Provenance.HarvestDate)
+	const wantHarvest = "2026-08-15"
+	if f.Provenance.HarvestDate != wantHarvest {
+		t.Errorf("_provenance.harvestDate = %q; want %s", f.Provenance.HarvestDate, wantHarvest)
 	}
 
 	if !strings.Contains(f.Provenance.Redaction, "D-03") {
@@ -134,7 +137,7 @@ func TestCoreResultsFixturePinned(t *testing.T) {
 
 	// The exact literal forms the executors' conformance tests pin against.
 	bash := f.Tools["Bash"].Results
-	if got := bash["success_no_output"].Template; got != "(Bash completed with no output)" {
+	if got := bash["success_no_output"].Template; got != bashSentinel {
 		t.Errorf("Bash sentinel template = %q; want the captured literal", got)
 	}
 
@@ -152,7 +155,8 @@ func TestCoreResultsFixturePinned(t *testing.T) {
 			read["success"].Template, read["success"].SampleRedacted)
 	}
 
-	if got := read["error_file_missing"].LiteralPrefix; got != "File does not exist. Note: your current working directory is " {
+	const wantReadMissing = "File does not exist. Note: your current working directory is "
+	if got := read["error_file_missing"].LiteralPrefix; got != wantReadMissing {
 		t.Errorf("Read error literal_prefix = %q; want the captured form", got)
 	}
 
@@ -170,7 +174,8 @@ func TestCoreResultsFixturePinned(t *testing.T) {
 		t.Errorf("Edit success template = %q; want the captured literal", got)
 	}
 
-	if got := edit["error_not_found"].Template; !strings.HasPrefix(got, "<tool_use_error>String to replace not found in file.") {
+	const wantEditNotFound = "<tool_use_error>String to replace not found in file."
+	if got := edit["error_not_found"].Template; !strings.HasPrefix(got, wantEditNotFound) {
 		t.Errorf("Edit not-found template = %q; want the captured literal", got)
 	}
 

@@ -1,8 +1,11 @@
 package coreexec
 
 import (
+	"context"
 	"encoding/json"
 	"sync"
+
+	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 )
 
 // TodoItem is one todo-list entry — the captured camelCase shape
@@ -18,7 +21,7 @@ type TodoItem struct {
 type TodoSummary struct {
 	Total      int `json:"total"`
 	Pending    int `json:"pending"`
-	InProgress int `json:"inProgress"`
+	InProgress int `json:"inProgress"` //nolint:tagliatelle // captured echo key
 	Completed  int `json:"completed"`
 }
 
@@ -58,16 +61,23 @@ func (s *TodoStore) Snapshot() []TodoItem {
 	return append([]TodoItem(nil), s.todos...)
 }
 
+// Captured status enum values (fixture: TodoWrite input/output).
+const (
+	statusPending    = "pending"
+	statusInProgress = "in_progress"
+	statusCompleted  = "completed"
+)
+
 // Summarize computes the captured summary block over a list.
 func Summarize(todos []TodoItem) TodoSummary {
 	sum := TodoSummary{Total: len(todos)}
 	for i := range todos {
 		switch todos[i].Status {
-		case "pending":
+		case statusPending:
 			sum.Pending++
-		case "in_progress":
+		case statusInProgress:
 			sum.InProgress++
-		case "completed":
+		case statusCompleted:
 			sum.Completed++
 		}
 	}
@@ -85,4 +95,76 @@ func marshalTodos(v any) json.RawMessage {
 	}
 
 	return out
+}
+
+// todoWriteArgs is the observed TodoWrite input shape: {todos:[…]} (the
+// full list replaces the previous one — schema semantics).
+type todoWriteArgs struct {
+	Todos []TodoItem `json:"todos"`
+}
+
+// todoWriteEcho is the CAPTURED TodoWrite result: the camelCase JSON echo
+// (fixture: TodoWrite.results.echo). Field order pins the wire key order.
+type todoWriteEcho struct {
+	OldTodos []TodoItem  `json:"oldTodos"` //nolint:tagliatelle // captured echo key
+	Todos    []TodoItem  `json:"todos"`
+	Summary  TodoSummary `json:"summary"`
+}
+
+// TodoWriteExecute returns the TodoWrite catalog Stub over the per-session
+// store: swaps old→new and echoes {oldTodos, todos, summary} in the captured
+// camelCase shape (inProgress key spelling pinned). Empty lists marshal as
+// [], never null (shape fidelity).
+func TodoWriteExecute(store *TodoStore) toolcat.Stub {
+	return func(_ context.Context, args json.RawMessage) (json.RawMessage, error) {
+		if store == nil {
+			return structuredError("todoWrite: no todo store configured")
+		}
+
+		var a todoWriteArgs
+
+		err := json.Unmarshal(args, &a)
+		if err != nil {
+			return structuredError("todoWrite: invalid input: %v", err)
+		}
+
+		if a.Todos == nil {
+			a.Todos = []TodoItem{} // echo shape: [] not null
+		}
+
+		old := store.Swap(a.Todos)
+
+		if old == nil {
+			old = []TodoItem{}
+		}
+
+		echo := todoWriteEcho{OldTodos: old, Todos: a.Todos, Summary: Summarize(a.Todos)}
+
+		return marshalTodos(echo), nil
+	}
+}
+
+// todoReadResult is the TodoRead result: CORPUS-ABSENT form (no TodoRead
+// result observed in either harvest — fixture flags it), consistent with the
+// echo minus oldTodos.
+type todoReadResult struct {
+	Todos   []TodoItem  `json:"todos"`
+	Summary TodoSummary `json:"summary"`
+}
+
+// TodoReadExecute returns the TodoRead catalog Stub: the current list +
+// summary over the same per-session store (corpus-absent, flagged).
+func TodoReadExecute(store *TodoStore) toolcat.Stub {
+	return func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+		if store == nil {
+			return structuredError("todoRead: no todo store configured")
+		}
+
+		todos := store.Snapshot()
+		if todos == nil {
+			todos = []TodoItem{}
+		}
+
+		return marshalTodos(todoReadResult{Todos: todos, Summary: Summarize(todos)}), nil
+	}
 }

@@ -14,21 +14,32 @@ type Config struct {
 	Todos   *TodoStore
 }
 
-// RegisterCore sets Execute on the core catalog entries (08-08: Bash lands
-// in T2; Read/Write/Edit/TodoWrite/TodoRead join in T3 — one function, six
-// tools, idempotent). ONLY the Execute field is overridden: Name,
-// Description, InputSchema, and Mutability stay byte-identical to the
-// captured catalog entry (the 08-05 Skill-override discipline — the captured
-// schema is the mimicry target, never rewritten by an implementation). A
-// missing catalog entry is skipped, not fatal (forward-compat with catalog
-// revisions that rename tools).
+// RegisterCore sets Execute on the six core catalog entries (08-08's /opsx
+// working set: Bash, Read, Write, Edit, TodoWrite, TodoRead) — one function,
+// idempotent. ONLY the Execute field is overridden: Name, Description,
+// InputSchema, and Mutability stay byte-identical to the captured catalog
+// entry (the 08-05 Skill-override discipline — the captured schema is the
+// mimicry target, never rewritten by an implementation). A missing catalog
+// entry is skipped, not fatal (forward-compat with catalog revisions that
+// rename tools).
 func RegisterCore(catalog *toolcat.Catalog, cfg Config) {
 	if catalog == nil {
 		return
 	}
 
-	if tool, ok := catalog.Get("Bash"); ok {
-		tool.Execute = BashExecute(cfg)
-		catalog.Register(tool)
+	stubs := map[string]toolcat.Stub{
+		"Bash":      BashExecute(cfg),
+		"Read":      ReadExecute(cfg),
+		"Write":     WriteExecute(cfg),
+		"Edit":      EditExecute(cfg),
+		"TodoWrite": TodoWriteExecute(cfg.Todos),
+		"TodoRead":  TodoReadExecute(cfg.Todos),
+	}
+
+	for name, exec := range stubs {
+		if tool, ok := catalog.Get(name); ok {
+			tool.Execute = exec
+			catalog.Register(tool)
+		}
 	}
 }

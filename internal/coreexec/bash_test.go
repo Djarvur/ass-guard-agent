@@ -1,4 +1,4 @@
-package coreexec
+package coreexec //nolint:testpackage // internal package test (decodeJSONString/loadFixture helpers)
 
 import (
 	"context"
@@ -17,7 +17,9 @@ func decodeJSONString(t *testing.T, raw json.RawMessage) string {
 	t.Helper()
 
 	var s string
-	if err := json.Unmarshal(raw, &s); err != nil {
+
+	err := json.Unmarshal(raw, &s)
+	if err != nil {
 		t.Fatalf("Output is not a JSON string: %v (%s)", err, raw)
 	}
 
@@ -54,7 +56,7 @@ func TestBash_EmptyOutputSentinel(t *testing.T) {
 		t.Fatalf("err = %v; want nil", err)
 	}
 
-	if got := decodeJSONString(t, out); got != "(Bash completed with no output)" {
+	if got := decodeJSONString(t, out); got != bashSentinel {
 		t.Errorf("Output = %q; want the captured sentinel byte-for-byte", got)
 	}
 }
@@ -105,7 +107,8 @@ func TestBash_Timeout(t *testing.T) {
 		Error string `json:"error"`
 	}
 
-	if uerr := json.Unmarshal(out, &structured); uerr != nil || structured.Error == "" {
+	uerr := json.Unmarshal(out, &structured)
+	if uerr != nil || structured.Error == "" {
 		t.Errorf("Output = %s; want the structured {\"error\":…} timeout form", out)
 	}
 
@@ -213,16 +216,25 @@ func TestBash_ProcessGroupKill(t *testing.T) { //nolint:paralleltest // PATH-sco
 		t.Errorf("second command Output = %q; want the sentinel", got)
 	}
 
-	// No orphan: the group kill must have taken the grandchild sleep too
-	// (best-effort pgrep; a no-op where ps tooling is unavailable — the
-	// 08-03 convention).
-	if _, perr := exec.LookPath("pgrep"); perr == nil {
-		time.Sleep(150 * time.Millisecond) // give the OS a moment to reap
+	// No orphan: the group kill (+ the reapGroup straggler loop) must have
+	// taken the grandchild sleep too (best-effort pgrep; a no-op where ps
+	// tooling is unavailable — the 08-03 convention). The kernel reaps the
+	// re-parented straggler asynchronously, so poll briefly: only a
+	// PERSISTENT survivor fails.
+	_, perr := exec.LookPath("pgrep")
+	if perr == nil {
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			pout, _ := exec.CommandContext(context.Background(), "pgrep", "-f", "sleep 2999").Output()
+			if strings.TrimSpace(string(pout)) == "" {
+				return // reaped — no orphan
+			}
+
+			time.Sleep(100 * time.Millisecond)
+		}
 
 		pout, _ := exec.CommandContext(context.Background(), "pgrep", "-f", "sleep 2999").Output()
-		if strings.TrimSpace(string(pout)) != "" {
-			t.Errorf("orphaned grandchild after group kill: %s", pout)
-		}
+		t.Errorf("orphaned grandchild after group kill: %s", pout)
 	}
 }
 
@@ -282,7 +294,8 @@ func TestBash_FixtureConformance(t *testing.T) {
 		t.Errorf("error form = %q; want the fixture prefix %q", got, bash["error"].LiteralPrefix)
 	}
 
-	if m := exitCodeRe.FindStringSubmatch(got); m == nil || m[1] != "7" {
+	m := exitCodeRe.FindStringSubmatch(got)
+	if len(m) != 2 || m[1] != "7" {
 		t.Errorf("error form = %q; want the Exit code <N> header", got)
 	}
 

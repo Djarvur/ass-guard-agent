@@ -247,7 +247,8 @@ func TestScrubError_NilReturnsEmpty(t *testing.T) {
 func TestRedact_StringValueTokenScrubbed(t *testing.T) {
 	t.Parallel()
 
-	in := `{"type":"tool_result","output":"env shows KEY=sk-livesecretvalue123 plus Bearer sk-abc123def456 and plain words"}`
+	in := `{"type":"tool_result","output":"env shows KEY=sk-livesecretvalue123` +
+		` plus Bearer sk-abc123def456 and plain words"}`
 
 	got, err := Redact([]byte(in))
 	if err != nil {
@@ -263,13 +264,16 @@ func TestRedact_StringValueTokenScrubbed(t *testing.T) {
 		t.Errorf("Redact did not scrub the embedded tokens:\n got %s", s)
 	}
 
-	if !strings.Contains(s, "env shows") || !strings.Contains(s, "plus") || !strings.Contains(s, `"output"`) {
-		t.Errorf("Redact mangled surrounding text or key names:\n got %s", s)
+	for _, want := range []string{"env shows", "plus", `"output"`} {
+		if !strings.Contains(s, want) {
+			t.Errorf("Redact mangled surrounding text or key names (missing %q):\n got %s", want, s)
+		}
 	}
 
 	// A string with no token shape passes through verbatim (structure and
 	// non-secret content are the transcript's fidelity contract).
 	plain := `{"text":"the task-123 notes say hi"}`
+
 	gotPlain, err := Redact([]byte(plain))
 	if err != nil {
 		t.Fatalf("Redact plain unexpected error: %v", err)

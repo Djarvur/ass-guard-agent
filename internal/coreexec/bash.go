@@ -33,6 +33,10 @@ const (
 	bashExitPrefix = "Exit code "
 )
 
+// keyError is the structured-error convention's map key (the shipped
+// corpus-absent failure convention — {"error":…}).
+const keyError = "error"
+
 // Timeout bounds (SCHEMA-DECLARED in coretools.json's Bash description:
 // "timeout is in milliseconds: default 120000, max 600000" — the corpus
 // itself shows only explicit 60000–660000 ms values in the subagent sessions
@@ -55,7 +59,7 @@ type bashArgs struct {
 	Description               string  `json:"description"`
 	Timeout                   float64 `json:"timeout"`
 	RunInBackground           bool    `json:"run_in_background"`
-	DangerouslyDisableSandbox bool    `json:"dangerouslyDisableSandbox"`
+	DangerouslyDisableSandbox bool    `json:"dangerouslyDisableSandbox"` //nolint:tagliatelle // captured input key
 }
 
 // resolveBashTimeout maps the model-supplied timeout (ms) to the effective
@@ -96,6 +100,35 @@ func killGroupOnCtx(cmd *exec.Cmd) {
 	}
 }
 
+// reapGroup closes the fork-vs-kill race the single Cancel kill leaves open:
+// a wrapper shell that forks a child in the SAME process group a hair AFTER
+// the SIGKILL is delivered produces a straggler that inherits the pgid but
+// never receives the (already-delivered) signal. Looping kill(-pid) until
+// ESRCH proves the group EMPTY — the only state with no survivor — bounded
+// so a pathological forker cannot pin the executor.
+func reapGroup(pid int) {
+	deadline := time.Now().Add(reapGroupBudget)
+
+	for {
+		err := syscall.Kill(-pid, syscall.SIGKILL)
+		if errors.Is(err, syscall.ESRCH) {
+			return // group provably empty
+		}
+
+		if time.Now().After(deadline) {
+			return // bounded — a pathological forker cannot pin the executor
+		}
+
+		time.Sleep(reapGroupTick)
+	}
+}
+
+// reapGroup pacing constants (total worst-case ≈ 300ms past the kill).
+const (
+	reapGroupBudget = 250 * time.Millisecond
+	reapGroupTick   = 25 * time.Millisecond
+)
+
 // trimCaptured applies the observed trailing-trim: 0/105 text and 0/2
 // error-text captured results end with a newline or any trailing whitespace
 // (fixture: Bash.results.success_with_output.trailing_trim_observed) —
@@ -134,13 +167,19 @@ func BashExecute(cfg Config) toolcat.Stub {
 		tctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMS)*time.Millisecond)
 		defer cancel()
 
+		// T-8-33 accepted-and-bound: the model's command IS the input (the
+		// locked no-confirmation-tier safety model — no allowlist by design).
+		//nolint:gosec // T-8-33: model-authored command is the product
 		cmd := exec.CommandContext(tctx, "sh", "-c", a.Command)
+
 		killGroupOnCtx(cmd)
+
 		if cfg.WorkDir != "" {
 			cmd.Dir = cfg.WorkDir
 		}
 
 		var stdout, stderr bytes.Buffer
+
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
 		// nil Stdin: reads hit immediate EOF (prompt-hang guard).
@@ -150,46 +189,62 @@ func BashExecute(cfg Config) toolcat.Stub {
 			waitErr = cmd.Wait()
 		}
 
+		// Close the fork-vs-kill straggler race on the timed-out path (see
+		// reapGroup) before the executor returns.
+		if tctx.Err() != nil && cmd.Process != nil {
+			reapGroup(cmd.Process.Pid)
+		}
+
 		// Captured combination order: stdout before stderr (fixture-pinned).
 		combined := trimCaptured(stdout.String() + stderr.String())
 
 		if waitErr != nil {
-			if tctx.Err() != nil {
-				// CORPUS-ABSENT: the timeout error form (structured convention).
-				msg := "bash: command timed out after " + strconv.Itoa(timeoutMS) + "ms"
-
-				out, mErr := json.Marshal(map[string]string{"error": msg})
-				if mErr != nil {
-					return nil, fmt.Errorf("coreexec: %s (marshal failed: %w)", msg, mErr) //nolint:err113
-				}
-
-				return out, fmt.Errorf("coreexec: %s: %w", msg, tctx.Err())
-			}
-
-			var exitErr *exec.ExitError
-			if errors.As(waitErr, &exitErr) {
-				// The captured error form, byte-pinned to the fixture.
-				out, mErr := json.Marshal(bashExitPrefix + strconv.Itoa(exitErr.ExitCode()) + "\n" + combined)
-				if mErr != nil {
-					return nil, fmt.Errorf("coreexec: marshal bash exit form: %w", mErr) //nolint:err113
-				}
-
-				return out, fmt.Errorf("coreexec: bash: exit code %d", exitErr.ExitCode())
-			}
-
-			// Start failure (missing shell, permission, …) — corpus-absent.
-			out, mErr := json.Marshal(map[string]string{"error": "bash: " + waitErr.Error()})
-			if mErr != nil {
-				return nil, fmt.Errorf("coreexec: %w (marshal failed: %v)", waitErr, mErr) //nolint:err113
-			}
-
-			return out, fmt.Errorf("coreexec: bash: %w", waitErr)
+			return bashFailure(tctx, waitErr, timeoutMS, combined)
 		}
 
 		if combined == "" {
-			return json.Marshal(bashSentinel) //nolint:wrapcheck // marshaling a constant cannot fail
+			return json.Marshal(bashSentinel)
 		}
 
-		return json.Marshal(combined) //nolint:wrapcheck // string marshal cannot fail
+		return json.Marshal(combined)
 	}
+}
+
+// bashFailure renders the failure forms for a finished command (extracted
+// from BashExecute to keep its nesting bounded): the corpus-absent structured
+// timeout form, the CAPTURED `Exit code <N>` form, and the corpus-absent
+// structured start-failure form.
+func bashFailure(tctx context.Context, waitErr error, timeoutMS int, combined string) (json.RawMessage, error) {
+	if tctx.Err() != nil {
+		// CORPUS-ABSENT: the timeout error form (structured convention).
+		msg := "bash: command timed out after " + strconv.Itoa(timeoutMS) + "ms"
+
+		return marshalStructured(msg, fmt.Errorf("coreexec: %s: %w", msg, tctx.Err()))
+	}
+
+	var exitErr *exec.ExitError
+	if errors.As(waitErr, &exitErr) {
+		// The captured error form, byte-pinned to the fixture.
+		out, mErr := json.Marshal(bashExitPrefix + strconv.Itoa(exitErr.ExitCode()) + "\n" + combined)
+		if mErr != nil {
+			return nil, fmt.Errorf("coreexec: marshal bash exit form: %w", mErr)
+		}
+
+		//nolint:err113 // the exit code IS the message
+		return out, fmt.Errorf("coreexec: bash: exit code %d", exitErr.ExitCode())
+	}
+
+	// Start failure (missing shell, permission, …) — corpus-absent.
+	return marshalStructured("bash: "+waitErr.Error(), fmt.Errorf("coreexec: bash: %w", waitErr))
+}
+
+// marshalStructured renders the {"error":…} convention with the given Go
+// error (IsError) carried alongside.
+func marshalStructured(msg string, err error) (json.RawMessage, error) {
+	out, mErr := json.Marshal(map[string]string{keyError: msg})
+	if mErr != nil {
+		return nil, fmt.Errorf("coreexec: %w (marshal failed: %w)", err, mErr)
+	}
+
+	return out, err
 }

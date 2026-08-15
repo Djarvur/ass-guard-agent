@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,39 +14,50 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/session"
 )
 
+// Test-local tool names + final text (goconst: values intentionally distinct
+// from the chunk-type constants that share some literals).
+const (
+	wiringToolBash  = "Bash"
+	wiringToolTodo  = "TodoWrite"
+	wiringFinalText = "finished"
+)
+
 // TestCoreExec_BashThroughSession (08-08 T2 Test 10, catalog path): through the
 // real sessionFor wiring + RealExecutor + DispatchBatch, a fake-provider turn
 // whose tool_call is Bash `echo hi` records a transcript tool_result whose
 // PROJECTED Content (T1's plainContent rule) is the plain text `hi`. Pre-fix
 // RED: the result is the `{"error":"tool Bash has no implementation yet …"}`
 // structured wall — the exact string the 08-07 E2E observed 88×.
-func TestCoreExec_BashThroughSession(t *testing.T) {
+func TestCoreExec_BashThroughSession(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen // flat battery
 	t.Parallel()
 
 	r, _ := newExpansionRunner(t, true,
 		scriptedResp{toolCalls: []provider.ToolCall{{
-			ID: "call_bash_1", Name: "Bash",
+			ID: "call_bash_1", Name: wiringToolBash,
 			Input: json.RawMessage(`{"command":"echo hi","description":"say hi"}`),
 		}}},
-		scriptedResp{text: "done"},
+		scriptedResp{text: wiringFinalText},
 	)
 
-	if _, err := r.Run(context.Background(), "sess-coreexec-1", &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: "run echo"}}); err != nil {
-		t.Fatalf("Run err = %v", err)
+	blocksRun := []acp.ContentBlock{{Type: blockText, Text: "run echo"}}
+
+	_, err := r.Run(context.Background(), "sess-coreexec-1", &noopEmitter{}, blocksRun)
+	if err != nil {
+		t.Fatalf("Run err: %v", err)
 	}
 
 	sess := r.sessions["sess-coreexec-1"]
+
 	lines, err := sess.Manager.ReadAll()
 	if err != nil {
 		t.Fatalf("ReadAll: %v", err)
 	}
 
 	var (
-		turnID   string
-		rawOut   json.RawMessage
-		isErr    bool
-		found    bool
+		turnID string
+		rawOut json.RawMessage
+		isErr  bool
+		found  bool
 	)
 
 	for i := range lines {
@@ -54,7 +66,7 @@ func TestCoreExec_BashThroughSession(t *testing.T) {
 			// Find the preceding Bash tool_call with the same id.
 			for j := i - 1; j >= 0; j-- {
 				if lines[j].Type == session.TypeToolCall && lines[j].ToolCallID == lines[i].ToolCallID {
-					if lines[j].Name != "Bash" {
+					if lines[j].Name != wiringToolBash {
 						break
 					}
 
@@ -75,7 +87,9 @@ func TestCoreExec_BashThroughSession(t *testing.T) {
 	}
 
 	var decoded string
-	if err := json.Unmarshal(rawOut, &decoded); err != nil {
+
+	err = json.Unmarshal(rawOut, &decoded)
+	if err != nil {
 		t.Fatalf("Bash Output is not a JSON string: %v (%s)", err, rawOut)
 	}
 
@@ -95,7 +109,8 @@ func TestCoreExec_BashThroughSession(t *testing.T) {
 
 	for i := range msgs {
 		if msgs[i].Role == "tool" {
-			t.Errorf("projection[%d] carries a tool message past the Bash boundary (D-11 reset violated): %+v", i, msgs[i])
+			t.Errorf("projection[%d] carries a tool message past the Bash boundary (D-11 reset violated): %s",
+				i, msgSummaryACP(&msgs[i]))
 		}
 	}
 
@@ -103,7 +118,7 @@ func TestCoreExec_BashThroughSession(t *testing.T) {
 	foundText := false
 
 	for i := range msgs {
-		if msgs[i].Role == "assistant" && msgs[i].Content == "done" {
+		if msgs[i].Role == "assistant" && msgs[i].Content == wiringFinalText {
 			foundText = true
 		}
 	}
@@ -127,17 +142,19 @@ func TestCoreExec_BashBatchSerializes(t *testing.T) {
 
 	r, _ := newExpansionRunner(t, true,
 		scriptedResp{toolCalls: []provider.ToolCall{
-			{ID: "call_b1", Name: "Bash", Input: json.RawMessage(
+			{ID: "call_b1", Name: wiringToolBash, Input: json.RawMessage(
 				`{"command":` + jsonString(t, markerCmd("A")) + `}`)},
-			{ID: "call_b2", Name: "Bash", Input: json.RawMessage(
+			{ID: "call_b2", Name: wiringToolBash, Input: json.RawMessage(
 				`{"command":` + jsonString(t, markerCmd("B")) + `}`)},
 		}},
-		scriptedResp{text: "done"},
+		scriptedResp{text: wiringFinalText},
 	)
 
-	if _, err := r.Run(context.Background(), "sess-coreexec-2", &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: "run both"}}); err != nil {
-		t.Fatalf("Run err = %v", err)
+	blocksBoth := []acp.ContentBlock{{Type: blockText, Text: "run both"}}
+
+	_, err := r.Run(context.Background(), "sess-coreexec-2", &noopEmitter{}, blocksBoth)
+	if err != nil {
+		t.Fatalf("Run err: %v", err)
 	}
 
 	raw, err := os.ReadFile(filepath.Join(r.workDir, "batch.log"))
@@ -146,6 +163,7 @@ func TestCoreExec_BashBatchSerializes(t *testing.T) {
 	}
 
 	got := strings.TrimSpace(string(raw))
+
 	want := "A-start\nA-end\nB-start\nB-end"
 	if got != want {
 		t.Errorf("batch.log = %q; want %q (mutating calls serialized, never overlapping)", got, want)
@@ -169,13 +187,15 @@ func jsonString(t *testing.T, s string) string {
 // batch) returns all four results in ARRIVAL ORDER with the mutating
 // Write/Edit alone-in-slot (their boundaries carry mutating-command:<tool>;
 // the read-only pair carries none).
-func TestCoreExec_FileTodoMixedBatch(t *testing.T) {
+func TestCoreExec_FileTodoMixedBatch(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen // flat battery
 	t.Parallel()
 
 	r, prov := newExpansionRunner(t, true)
 
 	target := filepath.Join(r.workDir, "target.txt")
-	if err := os.WriteFile(target, []byte("alpha beta\n"), 0o600); err != nil {
+
+	err := os.WriteFile(target, []byte("alpha beta\n"), 0o600)
+	if err != nil {
 		t.Fatalf("seed target: %v", err)
 	}
 
@@ -183,23 +203,26 @@ func TestCoreExec_FileTodoMixedBatch(t *testing.T) {
 
 	prov.queue(
 		scriptedResp{toolCalls: []provider.ToolCall{
-			{ID: "c_read", Name: "Read", Input: json.RawMessage(`{"file_path":` + jsonString(t, target) + `}`)},
-			{ID: "c_todo", Name: "TodoWrite", Input: json.RawMessage(
+			{ID: "c_read", Name: tracerReadTool, Input: json.RawMessage(`{"file_path":` + jsonString(t, target) + `}`)},
+			{ID: "c_todo", Name: wiringToolTodo, Input: json.RawMessage(
 				`{"todos":[{"content":"do it","status":"in_progress","priority":"high"}]}`)},
 			{ID: "c_write", Name: "Write", Input: json.RawMessage(
 				`{"file_path":` + jsonString(t, newFile) + `,"content":"body\n"}`)},
 			{ID: "c_edit", Name: "Edit", Input: json.RawMessage(
 				`{"file_path":` + jsonString(t, target) + `,"old_string":"beta","new_string":"BETA"}`)},
 		}},
-		scriptedResp{text: "done"},
+		scriptedResp{text: wiringFinalText},
 	)
 
-	if _, err := r.Run(context.Background(), "sess-coreexec-3", &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: "mix them"}}); err != nil {
-		t.Fatalf("Run err = %v", err)
+	blocksMix := []acp.ContentBlock{{Type: blockText, Text: "mix them"}}
+
+	_, err = r.Run(context.Background(), "sess-coreexec-3", &noopEmitter{}, blocksMix)
+	if err != nil {
+		t.Fatalf("Run err: %v", err)
 	}
 
 	sess := r.sessions["sess-coreexec-3"]
+
 	lines, err := sess.Manager.ReadAll()
 	if err != nil {
 		t.Fatalf("ReadAll: %v", err)
@@ -218,6 +241,7 @@ func TestCoreExec_FileTodoMixedBatch(t *testing.T) {
 		for j := i - 1; j >= 0; j-- {
 			if lines[j].Type == session.TypeToolCall && lines[j].ToolCallID == lines[i].ToolCallID {
 				order = append(order, lines[j].Name)
+
 				var s string
 				if json.Unmarshal(lines[i].Output, &s) == nil {
 					outputs[lines[j].Name] = s
@@ -230,7 +254,8 @@ func TestCoreExec_FileTodoMixedBatch(t *testing.T) {
 		}
 	}
 
-	wantOrder := []string{"Read", "TodoWrite", "Write", "Edit"}
+	wantOrder := []string{tracerReadTool, wiringToolTodo, "Write", "Edit"}
+
 	if len(order) != len(wantOrder) {
 		t.Fatalf("tool_result order = %v; want %v", order, wantOrder)
 	}
@@ -241,7 +266,7 @@ func TestCoreExec_FileTodoMixedBatch(t *testing.T) {
 		}
 	}
 
-	if got := outputs["Read"]; got != "1\talpha beta" {
+	if got := outputs[tracerReadTool]; got != "1\talpha beta" {
 		t.Errorf("Read output = %q; want the line-numbered captured form", got)
 	}
 
@@ -253,12 +278,13 @@ func TestCoreExec_FileTodoMixedBatch(t *testing.T) {
 		t.Errorf("Edit output = %q; want the captured updated form", outputs["Edit"])
 	}
 
-	if !strings.Contains(outputs["TodoWrite"], `"inProgress":1`) {
-		t.Errorf("TodoWrite output = %q; want the camelCase echo", outputs["TodoWrite"])
+	if !strings.Contains(outputs[wiringToolTodo], `"inProgress":1`) {
+		t.Errorf("TodoWrite output = %q; want the camelCase echo", outputs[wiringToolTodo])
 	}
 
 	// Effects landed.
-	if body, rerr := os.ReadFile(newFile); rerr != nil || string(body) != "body\n" {
+	body, rerr := os.ReadFile(newFile)
+	if rerr != nil || string(body) != "body\n" {
 		t.Errorf("created file = %q (%v)", body, rerr)
 	}
 
@@ -288,28 +314,34 @@ func TestCoreExec_FileTodoMixedBatch(t *testing.T) {
 // TodoWrite echo as its verbatim JSON (wire-equivalent to the captured plain
 // text). The mutating-tool projection is boundary-reset by D-11 and is
 // asserted in TestCoreExec_BashThroughSession.
-func TestCoreExec_ReadOnlyProjection(t *testing.T) {
+func TestCoreExec_ReadOnlyProjection(t *testing.T) { //nolint:cyclop,funlen // flat battery
 	t.Parallel()
 
 	r, prov := newExpansionRunner(t, true)
 
 	target := filepath.Join(r.workDir, "proj.txt")
-	if err := os.WriteFile(target, []byte("one\ntwo\n"), 0o600); err != nil {
+
+	err := os.WriteFile(target, []byte("one\ntwo\n"), 0o600)
+	if err != nil {
 		t.Fatalf("seed target: %v", err)
 	}
 
 	prov.queue(
 		scriptedResp{toolCalls: []provider.ToolCall{
-			{ID: "c_pread", Name: "Read", Input: json.RawMessage(`{"file_path":` + jsonString(t, target) + `}`)},
-			{ID: "c_ptodo", Name: "TodoWrite", Input: json.RawMessage(
+			{
+				ID: "c_pread", Name: tracerReadTool,
+				Input: json.RawMessage(`{"file_path":` + jsonString(t, target) + `}`)},
+			{ID: "c_ptodo", Name: wiringToolTodo, Input: json.RawMessage(
 				`{"todos":[{"content":"step","status":"pending","priority":"medium"}]}`)},
 		}},
-		scriptedResp{text: "done"},
+		scriptedResp{text: wiringFinalText},
 	)
 
-	if _, err := r.Run(context.Background(), "sess-coreexec-4", &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: "read then list"}}); err != nil {
-		t.Fatalf("Run err = %v", err)
+	blocksProj := []acp.ContentBlock{{Type: blockText, Text: "read then list"}}
+
+	_, err = r.Run(context.Background(), "sess-coreexec-4", &noopEmitter{}, blocksProj)
+	if err != nil {
+		t.Fatalf("Run err: %v", err)
 	}
 
 	sess := r.sessions["sess-coreexec-4"]
@@ -348,9 +380,9 @@ func TestCoreExec_ReadOnlyProjection(t *testing.T) {
 		}
 
 		switch msgs[i].ToolName {
-		case "Read":
+		case tracerReadTool:
 			readContent, readSeen = msgs[i].Content, true
-		case "TodoWrite":
+		case wiringToolTodo:
 			todoContent, todoSeen = msgs[i].Content, true
 		}
 	}
@@ -366,4 +398,9 @@ func TestCoreExec_ReadOnlyProjection(t *testing.T) {
 	if !strings.Contains(todoContent, `"inProgress":0`) || !strings.HasPrefix(todoContent, "{") {
 		t.Errorf("projected TodoWrite content = %q; want the verbatim echo JSON", todoContent)
 	}
+}
+
+// msgSummaryACP renders a provider.Message compactly for failure messages.
+func msgSummaryACP(m *provider.Message) string {
+	return fmt.Sprintf("%s{content:%q isError:%v toolCallID:%s}", m.Role, m.Content, m.IsError, m.ToolCallID)
 }

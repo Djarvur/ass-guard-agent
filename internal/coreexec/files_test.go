@@ -1,4 +1,4 @@
-package coreexec
+package coreexec //nolint:testpackage // internal package test (decodeJSONString/loadFixture helpers)
 
 import (
 	"context"
@@ -15,7 +15,9 @@ func writeFileForTest(t *testing.T, dir, name, content string) string {
 	t.Helper()
 
 	p := filepath.Join(dir, name)
-	if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+
+	err := os.WriteFile(p, []byte(content), 0o600)
+	if err != nil {
 		t.Fatalf("write %s: %v", p, err)
 	}
 
@@ -97,7 +99,8 @@ func TestRead_Failures(t *testing.T) {
 		Error string `json:"error"`
 	}
 
-	if uerr := json.Unmarshal(out, &structured); uerr != nil || structured.Error == "" {
+	uerr := json.Unmarshal(out, &structured)
+	if uerr != nil || structured.Error == "" {
 		t.Errorf("directory Output = %s; want the structured corpus-absent error form", out)
 	}
 }
@@ -218,7 +221,8 @@ func TestEdit_NotUniqueAndReplaceAll(t *testing.T) {
 		Error string `json:"error"`
 	}
 
-	if uerr := json.Unmarshal(out, &structured); uerr != nil || !strings.Contains(structured.Error, "replace_all") {
+	uerr := json.Unmarshal(out, &structured)
+	if uerr != nil || !strings.Contains(structured.Error, "replace_all") {
 		t.Errorf("not-unique Output = %s; want the structured corpus-absent error naming replace_all", out)
 	}
 
@@ -260,7 +264,9 @@ func TestFileFixtureConformance(t *testing.T) {
 	// Write: the created template with the absolute path substituted.
 	wp := filepath.Join(dir, "w.txt")
 
-	wOut, err := WriteExecute(Config{WorkDir: dir})(ctx,
+	writeExec := WriteExecute(Config{WorkDir: dir})
+
+	wOut, err := writeExec(ctx,
 		json.RawMessage(`{"file_path":`+jsonStringT(wp)+`,"content":"c"}`))
 	if err != nil {
 		t.Fatalf("write err = %v", err)
@@ -268,12 +274,15 @@ func TestFileFixtureConformance(t *testing.T) {
 
 	tpl := f.Tools["Write"].Results["success_created"].Template
 	want := strings.ReplaceAll(tpl, "<absolute path>", wp)
+
 	if got := decodeJSONString(t, wOut); got != want {
 		t.Errorf("write form = %q; want fixture template %q", got, want)
 	}
 
 	// Edit: the success template with the absolute path substituted.
-	eOut, err := EditExecute(Config{WorkDir: dir})(ctx,
+	editExec := EditExecute(Config{WorkDir: dir})
+
+	eOut, err := editExec(ctx,
 		json.RawMessage(`{"file_path":`+jsonStringT(wp)+`,"old_string":"c","new_string":"d"}`))
 	if err != nil {
 		t.Fatalf("edit err = %v", err)
@@ -281,14 +290,19 @@ func TestFileFixtureConformance(t *testing.T) {
 
 	etpl := f.Tools["Edit"].Results["success"].Template
 	ewant := strings.ReplaceAll(etpl, "<absolute path>", wp)
+
 	if got := decodeJSONString(t, eOut); got != ewant {
 		t.Errorf("edit form = %q; want fixture template %q", got, ewant)
 	}
 }
 
-// jsonStringT marshals s as a JSON string literal (test-side helper).
+// jsonStringT marshals s as a JSON string literal (test-side helper;
+// marshal of a string cannot fail — errchkjson satisfied by the checked path).
 func jsonStringT(s string) string {
-	b, _ := json.Marshal(s)
+	b, err := json.Marshal(s)
+	if err != nil {
+		panic("marshal string: " + err.Error())
+	}
 
 	return string(b)
 }

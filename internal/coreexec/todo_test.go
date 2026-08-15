@@ -1,9 +1,16 @@
-package coreexec
+package coreexec //nolint:testpackage // internal package test (decodeJSONString/loadFixture helpers)
 
 import (
 	"context"
 	"encoding/json"
 	"testing"
+)
+
+// Test-local priority literals (goconst).
+const (
+	priorityHigh   = "high"
+	priorityMedium = "medium"
+	priorityLow    = "low"
 )
 
 // todoInput builds a TodoWrite input over item triples.
@@ -22,22 +29,25 @@ func todoInput(items ...[3]string) json.RawMessage {
 		in.Todos = append(in.Todos, item{Content: it[0], Status: it[1], Priority: it[2]})
 	}
 
-	b, _ := json.Marshal(in)
+	b, err := json.Marshal(in)
+	if err != nil {
+		panic("marshal todo input: " + err.Error())
+	}
 
 	return b
 }
 
 // todoEcho is the decoded TodoWrite echo / TodoRead result shape.
 type todoEcho struct {
-	OldTodos []TodoItem `json:"oldTodos"`
-	Todos    []TodoItem `json:"todos"`
+	OldTodos []TodoItem  `json:"oldTodos"` //nolint:tagliatelle // captured echo key
+	Todos    []TodoItem  `json:"todos"`
 	Summary  TodoSummary `json:"summary"`
 }
 
 // TestTodoWrite_Echo (T3 Test 6): an empty store + a 4-item list returns the
 // camelCase echo; a SECOND call's oldTodos equals the first call's todos
 // (the store advances). Key order pinned by struct decode, not string-compare.
-func TestTodoWrite_Echo(t *testing.T) {
+func TestTodoWrite_Echo(t *testing.T) { //nolint:cyclop,funlen // flat battery
 	t.Parallel()
 
 	store := NewTodoStore()
@@ -45,10 +55,10 @@ func TestTodoWrite_Echo(t *testing.T) {
 	ctx := context.Background()
 
 	first := todoInput(
-		[3]string{"t1", "pending", "high"},
-		[3]string{"t2", "pending", "high"},
-		[3]string{"t3", "in_progress", "medium"},
-		[3]string{"t4", "completed", "low"},
+		[3]string{"t1", statusPending, priorityHigh},
+		[3]string{"t2", statusPending, priorityHigh},
+		[3]string{"t3", statusInProgress, priorityMedium},
+		[3]string{"t4", statusCompleted, priorityLow},
 	)
 
 	out, err := exec(ctx, first)
@@ -57,7 +67,9 @@ func TestTodoWrite_Echo(t *testing.T) {
 	}
 
 	var echo todoEcho
-	if uerr := json.Unmarshal(out, &echo); uerr != nil {
+
+	uerr := json.Unmarshal(out, &echo)
+	if uerr != nil {
 		t.Fatalf("echo is not JSON: %v (%s)", uerr, out)
 	}
 
@@ -69,7 +81,7 @@ func TestTodoWrite_Echo(t *testing.T) {
 		t.Fatalf("todos = %v; want the 4 items verbatim", echo.Todos)
 	}
 
-	if echo.Todos[2].Status != "in_progress" || echo.Todos[0].Content != "t1" {
+	if echo.Todos[2].Status != statusInProgress || echo.Todos[0].Content != "t1" {
 		t.Errorf("todos items not verbatim: %+v", echo.Todos)
 	}
 
@@ -78,14 +90,24 @@ func TestTodoWrite_Echo(t *testing.T) {
 		t.Errorf("summary = %+v; want %+v (camelCase inProgress key)", echo.Summary, wantSum)
 	}
 
-	// The raw echo carries the camelCase key (fixture-pinned).
-	if !jsonKeyPresent(t, out, "inProgress") {
-		t.Errorf("echo = %s; want the literal inProgress key", out)
+	// The raw echo carries the camelCase key (fixture-pinned; nested inside
+	// summary — decode the nested object for the literal-key assertion).
+	var top struct {
+		Summary json.RawMessage `json:"summary"`
+	}
+
+	uerr2 := json.Unmarshal(out, &top)
+	if uerr2 != nil {
+		t.Fatalf("echo top-level decode: %v", uerr2)
+	}
+
+	if !jsonKeyPresent(t, top.Summary, "inProgress") {
+		t.Errorf("echo = %s; want the literal inProgress key inside summary", out)
 	}
 
 	second := todoInput(
-		[3]string{"t1", "completed", "high"},
-		[3]string{"t3", "in_progress", "medium"},
+		[3]string{"t1", statusCompleted, priorityHigh},
+		[3]string{"t3", statusInProgress, priorityMedium},
 	)
 
 	out2, err := exec(ctx, second)
@@ -94,11 +116,13 @@ func TestTodoWrite_Echo(t *testing.T) {
 	}
 
 	var echo2 todoEcho
-	if uerr := json.Unmarshal(out2, &echo2); uerr != nil {
+
+	uerr = json.Unmarshal(out2, &echo2)
+	if uerr != nil {
 		t.Fatalf("second echo is not JSON: %v (%s)", uerr, out2)
 	}
 
-	if len(echo2.OldTodos) != 4 || echo2.OldTodos[0].Content != "t1" || echo2.OldTodos[2].Status != "in_progress" {
+	if len(echo2.OldTodos) != 4 || echo2.OldTodos[0].Content != "t1" || echo2.OldTodos[2].Status != statusInProgress {
 		t.Errorf("second oldTodos = %+v; want the FIRST call's todos (store advances)", echo2.OldTodos)
 	}
 
@@ -112,7 +136,9 @@ func jsonKeyPresent(t *testing.T, raw json.RawMessage, key string) bool {
 	t.Helper()
 
 	var m map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &m); err != nil {
+
+	err := json.Unmarshal(raw, &m)
+	if err != nil {
 		t.Fatalf("not an object: %v (%s)", err, raw)
 	}
 
@@ -129,8 +155,8 @@ func TestTodoRead(t *testing.T) {
 	store := NewTodoStore()
 
 	_, err := TodoWriteExecute(store)(context.Background(), todoInput(
-		[3]string{"a", "pending", "high"},
-		[3]string{"b", "in_progress", "low"},
+		[3]string{"a", statusPending, priorityHigh},
+		[3]string{"b", statusInProgress, priorityLow},
 	))
 	if err != nil {
 		t.Fatalf("seed write err = %v", err)
@@ -142,15 +168,16 @@ func TestTodoRead(t *testing.T) {
 	}
 
 	var res struct {
-		Todos   []TodoItem `json:"todos"`
+		Todos   []TodoItem  `json:"todos"`
 		Summary TodoSummary `json:"summary"`
 	}
 
-	if uerr := json.Unmarshal(out, &res); uerr != nil {
+	uerr := json.Unmarshal(out, &res)
+	if uerr != nil {
 		t.Fatalf("result is not JSON: %v (%s)", uerr, out)
 	}
 
-	if len(res.Todos) != 2 || res.Todos[1].Status != "in_progress" {
+	if len(res.Todos) != 2 || res.Todos[1].Status != statusInProgress {
 		t.Errorf("todos = %+v; want the current list", res.Todos)
 	}
 
@@ -186,7 +213,8 @@ func TestTodoStore_PerSessionIsolation(t *testing.T) {
 		Todos []TodoItem `json:"todos"`
 	}
 
-	if uerr := json.Unmarshal(out, &res); uerr != nil {
+	uerr := json.Unmarshal(out, &res)
+	if uerr != nil {
 		t.Fatalf("s2 result is not JSON: %v", uerr)
 	}
 

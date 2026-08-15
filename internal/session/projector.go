@@ -196,7 +196,9 @@ func plainContent(raw json.RawMessage) string {
 	// with '{', arrays with '[', so the first-byte check is the discriminator.
 	if len(raw) > 0 && raw[0] == '"' {
 		var s string
-		if err := json.Unmarshal(raw, &s); err == nil {
+
+		err := json.Unmarshal(raw, &s)
+		if err == nil {
 			return s
 		}
 	}

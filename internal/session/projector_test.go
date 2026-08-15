@@ -725,11 +725,14 @@ func TestPlainContent_ObjectsVerbatim(t *testing.T) {
 	}
 
 	var got, want any
-	if err := json.Unmarshal([]byte(toolMsg.Content), &got); err != nil {
+
+	err = json.Unmarshal([]byte(toolMsg.Content), &got)
+	if err != nil {
 		t.Fatalf("tool content is not valid JSON: %v", err)
 	}
 
-	if err := json.Unmarshal([]byte(objOut), &want); err != nil {
+	err = json.Unmarshal([]byte(objOut), &want)
+	if err != nil {
 		t.Fatalf("fixture output is not valid JSON: %v", err)
 	}
 
