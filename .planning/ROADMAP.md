@@ -9,7 +9,7 @@ v1.1 makes the hands-off OpenSpec promise real end-to-end. The milestone's reaso
 ## Milestones
 
 - ✅ **v1.0 MVP** — Phases 0–7 (shipped 2026-08-14; full detail: `.planning/milestones/v1.0-ROADMAP.md`, artifacts in `.planning/milestones/v1.0-phases/`, record in `.planning/MILESTONES.md`)
-- 🚧 **v1.1 Kickoff & Peers** — Phases 8–11 (in planning)
+- 🚧 **v1.1 Kickoff & Peers** — Phases 8–11 (1/4 complete)
 
 <details>
 <summary>✅ v1.0 MVP (Phases 0–7) — SHIPPED 2026-08-14</summary>
@@ -27,7 +27,7 @@ v1.1 makes the hands-off OpenSpec promise real end-to-end. The milestone's reaso
 
 ## Phases
 
-- [x] **Phase 8: Slash-Command Kickoff** - `/namespace:name` discovery + zcode-semantics expansion + OpenSpec adapter reconciled to the real binary; the zero-continue product proof (completed 2026-08-14)
+- [x] **Phase 8: Slash-Command Kickoff** - `/namespace:name` discovery + zcode-semantics expansion + OpenSpec adapter reconciled to the real binary; the zero-continue product proof (completed 2026-08-16, operator witness accepted; execution + evidence 2026-08-15)
 - [ ] **Phase 9: Serve-Path Audit + zcode Parity Re-capture** - redacted, bounded, decision-explaining audit on `acp serve`; stability test re-grounded on a pinned capture session
 - [ ] **Phase 10: Telegram Peer (Text + Voice)** - the same engine drivable from a Telegram chat, voice STT, context-first shutdown beside ACP stdio
 - [ ] **Phase 11: dsh Mimicry Profile #2** - DeepSeek-model turns structurally indistinguishable from deepseek-harness; N profiles, no target-specific code paths
@@ -36,7 +36,7 @@ v1.1 makes the hands-off OpenSpec promise real end-to-end. The milestone's reaso
 
 | # | Phase | Goal | Requirements | Success Criteria |
 |---|-------|------|--------------|------------------|
-| 8 | Slash-Command Kickoff | 8/9 | Gate-ready, awaiting operator witness (2026-08-15 — findings 5+6 dispositions executed: hybrid provenance chaining + D-10 capture-faithful reshape; BOTH gated E2E legs green — zero-continue full chain + fixable recovery; full guard green; UAT 10 pass/1 partial/0 blocked) | 2026-08-15 |
+| 8 | Slash-Command Kickoff | 8/9 | Completed 2026-08-16 — operator witness accepted; findings 5+6 dispositions confirmed (hybrid provenance chaining + D-10 capture-faithful reshape); full guard green; gated E2E: fixable green + zero-continue 2/3 (one stage-4 model-variance fail recorded as known residual, same class as UAT check 3); UAT 10 pass/1 partial/0 blocked | 2026-08-16 |
 | 9 | Serve-Path Audit + zcode Parity Re-capture | Every serve-path session leaves a redacted, bounded audit trail that explains the engine's decisions; the parity stability test runs green on a newly pinned session | AUD-01, AUD-02, AUD-03, AUD-04, AUD-05 | 5 |
 | 10 | Telegram Peer (Text + Voice) | A user drives the same engine from a Telegram chat — full SDD scenarios, voice input, disciplined shutdown | TG-01, TG-02, TG-03, TG-04, TG-05, TG-06 | 5 |
 | 11 | dsh Mimicry Profile #2 | DeepSeek-model turns are structurally indistinguishable from deepseek-harness, captured not hand-written | DSH-01, DSH-02, DSH-03, DSH-04, DSH-05 | 5 |

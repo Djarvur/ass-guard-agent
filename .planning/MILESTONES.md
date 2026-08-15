@@ -1,5 +1,15 @@
 # Milestones
 
+## v1.1 Kickoff & Peers (in progress)
+
+**Phases:** 4 (8–11) · 1 complete
+**Started:** 2026-08-14 (continues from v1.0's Phase 7 numbering)
+
+- [x] Phase 8: Slash-Command Kickoff — completed 2026-08-16 (operator witness accepted; zero-continue product proof green — `/opsx:explore → propose → apply → archive` chained by the engine with zero manual continues, verified against the real openspec binary; findings 5+6 confirmed; known residuals: UAT check 3 hook live-leg + one stage-4 model-variance fail in the 2/3 zero-continue tally)
+- [ ] Phase 9: Serve-Path Audit + zcode Parity Re-capture — executed; 09-04 blocked-on-harvest, operator to run the scripted re-capture workload (docs/recapture-runbook.md §3), then automated legs + verification
+- [ ] Phase 10: Telegram Peer (Text + Voice)
+- [ ] Phase 11: dsh Mimicry Profile #2 — needs replanning against source-analysis (dsh wire capture impossible; operator constraint 2026-08-15)
+
 ## v1.0 MVP (Shipped: 2026-08-14)
 
 **Phases completed:** 8 phases (0–7), 36 plans
