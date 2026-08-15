@@ -412,12 +412,17 @@ func TestProjector_MidTurnBatchGrouping(t *testing.T) {
 	}
 }
 
-// TestProjector_MidTurnBoundaryReset (08-07 T2 Test 5, NEW): a mid-turn
-// boundary resets the accumulation — the projection shows the lean seed + only
-// POST-boundary exchanges (D-11 within-turn semantics). Pre-boundary exchanges
-// are never carried (D-01), and an orphaned tool_result (its batch cut off by
-// the boundary) is dropped — pair-safety.
-func TestProjector_MidTurnBoundaryReset(t *testing.T) {
+// TestProjector_MidTurnBoundaryCarry (08-09 T1 Test 1, re-pins 08-07 T2 Test 5
+// `TestProjector_MidTurnBoundaryReset`): a mid-turn boundary NO LONGER resets
+// the producing turn's own accumulation — the projection carries BOTH the
+// pre-boundary and post-boundary exchanges of the SAME turn (capture-faithful:
+// the zcode corpus never resets on tool results — 46/46 tail records, 579
+// same-turn toolCallId persistences, session 4440f5a7). The boundary line is
+// still recorded (writer unchanged, SESS-02/03 audit) and fires as the NEXT
+// turn's reset boundary (asserted in TestProjector_BetweenTurnResetAfterMidTurn
+// Boundary). An orphaned tool_result (its call never entered the window) is
+// still dropped — pair-safety is boundary-independent.
+func TestProjector_MidTurnBoundaryCarry(t *testing.T) {
 	t.Parallel()
 
 	m := newTestManager(t, "s1")
@@ -427,10 +432,10 @@ func TestProjector_MidTurnBoundaryReset(t *testing.T) {
 	_ = m.AppendToolCall("turnT", "pre_1", toolBash, json.RawMessage(`{"command":"ls"}`))
 	_ = m.AppendToolResult("turnT", "pre_1", json.RawMessage(`{"o":"x"}`), false)
 	_ = m.AppendBoundary(mutatingCommandBash, "pre_1", "turnT")
-	// Post-boundary exchange.
+	// Post-boundary exchange, same turn.
 	_ = m.AppendToolCall("turnT", "post_1", toolRead, json.RawMessage(`{"file_path":"a"}`))
 	_ = m.AppendToolResult("turnT", "post_1", json.RawMessage(`{"o":"y"}`), false)
-	// An orphaned result: its call was recorded BEFORE the boundary.
+	// An orphaned result: its call was never recorded in the window.
 	_ = m.AppendToolResult("turnT", "pre_2", json.RawMessage(`{"o":"z"}`), false)
 
 	msgs, err := p.Project("turnT")
@@ -438,18 +443,195 @@ func TestProjector_MidTurnBoundaryReset(t *testing.T) {
 		t.Fatalf("Project: %v", err)
 	}
 
-	// Seed + post-boundary batch + post-boundary result ONLY. The pre_2 orphan
-	// is dropped (no in-window batch), pre_1's exchange was reset away.
-	if len(msgs) != 3 {
-		t.Fatalf("len(msgs) = %d, want 3 (post-boundary only):\n%s", len(msgs), msgSummaryList(msgs))
+	// Seed + BOTH exchanges (pre-boundary AND post-boundary). The pre_2 orphan
+	// is dropped (no in-window batch — pair-safety, boundary-independent).
+	if len(msgs) != 5 {
+		t.Fatalf("len(msgs) = %d, want 5 (seed + pre_1 batch + pre_1 result + post_1 batch + post_1 result):\n%s",
+			len(msgs), msgSummaryList(msgs))
 	}
 
-	if msgs[1].Role != roleAssistant || len(msgs[1].ToolCalls) != 1 || msgs[1].ToolCalls[0].ID != "post_1" {
-		t.Errorf("msgs[1] = %s; want post_1 batch only", msgSummary(&msgs[1]))
+	if msgs[1].Role != roleAssistant || len(msgs[1].ToolCalls) != 1 || msgs[1].ToolCalls[0].ID != "pre_1" {
+		t.Errorf("msgs[1] = %s; want the pre-boundary pre_1 batch carried", msgSummary(&msgs[1]))
 	}
 
-	if msgs[2].Role != roleToolMsg || msgs[2].ToolCallID != "post_1" {
-		t.Errorf("msgs[2] = %s; want post_1 result", msgSummary(&msgs[2]))
+	if msgs[2].Role != roleToolMsg || msgs[2].ToolCallID != "pre_1" {
+		t.Errorf("msgs[2] = %s; want the pre-boundary pre_1 result carried", msgSummary(&msgs[2]))
+	}
+
+	if msgs[3].Role != roleAssistant || len(msgs[3].ToolCalls) != 1 || msgs[3].ToolCalls[0].ID != "post_1" {
+		t.Errorf("msgs[3] = %s; want the post-boundary post_1 batch carried", msgSummary(&msgs[3]))
+	}
+
+	if msgs[4].Role != roleToolMsg || msgs[4].ToolCallID != "post_1" {
+		t.Errorf("msgs[4] = %s; want the post-boundary post_1 result carried", msgSummary(&msgs[4]))
+	}
+
+	for i, mm := range msgs {
+		if mm.Role == roleToolMsg && mm.ToolCallID == "pre_2" {
+			t.Errorf("msgs[%d] carries the orphaned pre_2 result (pair-safety violated):\n%s", i, msgSummaryList(msgs))
+		}
+	}
+
+	// The boundary line is still in the transcript (writer unchanged — the
+	// audit half of the revised invariant).
+	lines, err := m.ReadAll()
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+
+	sawBoundary := false
+
+	for i := range lines {
+		if lines[i].Type == TypeBoundary && lines[i].Cause == mutatingCommandBash &&
+			lines[i].TurnID == "turnT" && lines[i].CommandRef == "pre_1" {
+			sawBoundary = true
+		}
+	}
+
+	if !sawBoundary {
+		t.Error("no mutating-command:Bash boundary line in the transcript (SESS-02/03 writer half violated)")
+	}
+}
+
+// TestProjector_BetweenTurnResetAfterMidTurnBoundary (08-09 T1 Test 2): the
+// between-turn half of the revised invariant — the boundary recorded MID-turn N
+// is turn N+1's reset boundary: the NEXT turn's projection is the lean seed
+// ONLY (no assistant/tool messages), and its summary names the prior turn's
+// content (the last user text before the boundary).
+func TestProjector_BetweenTurnResetAfterMidTurnBoundary(t *testing.T) {
+	t.Parallel()
+
+	m := newTestManager(t, "s1")
+	p := NewProjector(fakeProfile("sys"), m)
+
+	_ = m.AppendUserMessage("turnT", []ContentBlock{{Type: blockText, Text: "do several"}})
+	_ = m.AppendToolCall("turnT", "pre_1", toolBash, json.RawMessage(`{"command":"ls"}`))
+	_ = m.AppendToolResult("turnT", "pre_1", json.RawMessage(`{"o":"x"}`), false)
+	_ = m.AppendBoundary(mutatingCommandBash, "pre_1", "turnT")
+	_ = m.AppendToolCall("turnT", "post_1", toolRead, json.RawMessage(`{"file_path":"a"}`))
+	_ = m.AppendToolResult("turnT", "post_1", json.RawMessage(`{"o":"y"}`), false)
+	// The NEXT turn's user message arrives after the mutating work.
+	_ = m.AppendUserMessage("turnN1", []ContentBlock{{Type: blockText, Text: "next please"}})
+
+	msgs, err := p.Project("turnN1")
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+
+	for i, mm := range msgs {
+		if mm.Role == roleAssistant || mm.Role == roleToolMsg {
+			t.Errorf("next-turn projection[%d] = %s; want the lean seed ONLY (between-turn reset violated):\n%s",
+				i, msgSummary(&mm), msgSummaryList(msgs))
+		}
+	}
+
+	if len(msgs) > 3 {
+		t.Errorf("next-turn projection has %d messages; want the lean seed (<=3):\n%s", len(msgs), msgSummaryList(msgs))
+	}
+
+	var combinedSb strings.Builder
+
+	for _, mm := range msgs {
+		combinedSb.WriteString(mm.Content + "\n")
+	}
+
+	combined := combinedSb.String()
+
+	if !strings.Contains(combined, "next please") {
+		t.Errorf("next-turn seed missing the current intent:\n%s", combined)
+	}
+
+	if !strings.Contains(combined, "do several") {
+		t.Errorf("next-turn seed summary does not name the prior turn's content:\n%s", combined)
+	}
+}
+
+// TestProjector_SeedStabilityWithinTurn (08-09 T1 Test 3): with NO prior
+// boundary (the first mutating turn of a session), the seed message is
+// BYTE-IDENTICAL across the turn's iterations — the summary scope is the lines
+// BEFORE the turn's user message, so the current turn's accumulating exchanges
+// never churn the seed (today's all-lines fallback dragged them into the
+// summary and duplicated the intent).
+func TestProjector_SeedStabilityWithinTurn(t *testing.T) {
+	t.Parallel()
+
+	m := newTestManager(t, "s1")
+	p := NewProjector(fakeProfile("sys"), m)
+
+	_ = m.AppendUserMessage("turnS", []ContentBlock{{Type: blockText, Text: "stable seed"}})
+	_ = m.AppendToolCall("turnS", "s_a", toolRead, json.RawMessage(`{"file_path":"a"}`))
+	_ = m.AppendToolResult("turnS", "s_a", json.RawMessage(`{"o":"1"}`), false)
+
+	early, err := p.Project("turnS")
+	if err != nil {
+		t.Fatalf("Project (early): %v", err)
+	}
+
+	// Two more exchanges accumulate within the same turn.
+	_ = m.AppendToolCall("turnS", "s_b", toolRead, json.RawMessage(`{"file_path":"b"}`))
+	_ = m.AppendToolResult("turnS", "s_b", json.RawMessage(`{"o":"2"}`), false)
+	_ = m.AppendToolCall("turnS", "s_c", toolBash, json.RawMessage(`{"command":"ls"}`))
+	_ = m.AppendToolResult("turnS", "s_c", json.RawMessage(`{"o":"3"}`), false)
+
+	late, err := p.Project("turnS")
+	if err != nil {
+		t.Fatalf("Project (late): %v", err)
+	}
+
+	if early[0].Content != late[0].Content {
+		t.Errorf("seed CHURNED across the turn's iterations:\nearly=%q\nlate=%q", early[0].Content, late[0].Content)
+	}
+
+	if len(early) != 3 || len(late) != 7 {
+		t.Errorf("window sizes = early %d / late %d; want 3 / 7 (the accumulation grows):\n%s\n%s",
+			len(early), len(late), msgSummaryList(early), msgSummaryList(late))
+	}
+
+	if strings.Contains(late[0].Content, "s_b") || strings.Count(late[0].Content, "stable seed") != 1 {
+		t.Errorf("late seed includes the current turn's exchanges (summary churn):\n%s", late[0].Content)
+	}
+}
+
+// TestProjector_RepeatedMidTurnBoundaries (08-09 T1 Test 4): three mutating
+// exchanges in ONE turn, a boundary after each — the projection still carries
+// ALL THREE exchanges (today only the post-last-boundary tail survived, the
+// 42/42 E2E signature). The 64-message bound itself is pinned separately by
+// TestProjector_MidTurnWindowBound (unmodified).
+func TestProjector_RepeatedMidTurnBoundaries(t *testing.T) {
+	t.Parallel()
+
+	m := newTestManager(t, "s1")
+	p := NewProjector(fakeProfile("sys"), m)
+
+	_ = m.AppendUserMessage("turnR", []ContentBlock{{Type: blockText, Text: "mutate thrice"}})
+
+	for i, id := range []string{"m_1", "m_2", "m_3"} {
+		_ = m.AppendToolCall("turnR", id, toolBash, json.RawMessage(`{"command":"cmd"}`))
+		_ = m.AppendToolResult("turnR", id, json.RawMessage(`{"o":`+fmt.Sprint(i)+`}`), false)
+		_ = m.AppendBoundary(mutatingCommandBash, id, "turnR")
+	}
+
+	msgs, err := p.Project("turnR")
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+
+	if len(msgs) != 7 {
+		t.Fatalf("len(msgs) = %d, want 7 (seed + 3 exchanges x batch+result):\n%s", len(msgs), msgSummaryList(msgs))
+	}
+
+	for wantIdx, wantID := range []string{"m_1", "m_2", "m_3"} {
+		batch := msgs[1+wantIdx*2]
+		if batch.Role != roleAssistant || len(batch.ToolCalls) != 1 || batch.ToolCalls[0].ID != wantID {
+			t.Errorf("msgs[%d] = %s; want the %s batch carried past its boundary",
+				1+wantIdx*2, msgSummary(&batch), wantID)
+		}
+
+		res := msgs[2+wantIdx*2]
+		if res.Role != roleToolMsg || res.ToolCallID != wantID {
+			t.Errorf("msgs[%d] = %s; want the %s result carried past its boundary",
+				2+wantIdx*2, msgSummary(&res), wantID)
+		}
 	}
 }
 

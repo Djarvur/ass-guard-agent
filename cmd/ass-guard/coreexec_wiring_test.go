@@ -97,24 +97,48 @@ func TestCoreExec_BashThroughSession(t *testing.T) { //nolint:gocognit,gocyclo,c
 		t.Errorf("Bash Output = %q; want the plain captured form %q", decoded, "hi")
 	}
 
-	// D-11 boundary discipline preserved: Bash is mutating, so a context
-	// boundary opens right after the result and the NEXT projection is the
-	// lean seed (the tool exchange is deliberately NOT carried past the
-	// boundary — the projected plainContent rendering of a read-only core
-	// tool is proven in T3's mixed-batch test, which has no boundary).
+	// D-11 boundary discipline, re-pinned 08-09 (BOTH halves): the writer half
+	// — Bash is mutating, so a context boundary line with the recorded cause +
+	// toolCallID is appended after the result (SESS-02/03, unchanged); the
+	// reader half — the boundary does NOT reset the PRODUCING turn's mid-turn
+	// window (between-turn reset, SESS-04 as revised 08-09): the projection
+	// CARRIES the Bash tool message with the plain captured form `hi`, so the
+	// next iteration of the SAME turn sees its own prior exchange (the
+	// convergence fix for the 08-08 T4 maxIterations finding).
+	sawBoundary := false
+
+	for i := range lines {
+		if lines[i].Type == session.TypeBoundary && lines[i].Cause == "mutating-command:"+wiringToolBash {
+			sawBoundary = true
+		}
+	}
+
+	if !sawBoundary {
+		t.Fatal("no mutating-command:Bash boundary line in the transcript (SESS-02/03 writer half violated)")
+	}
+
 	msgs, err := sess.Projector.Project(turnID)
 	if err != nil {
 		t.Fatalf("Project: %v", err)
 	}
 
+	carried := false
+
 	for i := range msgs {
-		if msgs[i].Role == "tool" {
-			t.Errorf("projection[%d] carries a tool message past the Bash boundary (D-11 reset violated): %s",
-				i, msgSummaryACP(&msgs[i]))
+		if msgs[i].Role == "tool" && msgs[i].ToolCallID == "call_bash_1" {
+			carried = true
+
+			if msgs[i].Content != "hi" {
+				t.Errorf("carried Bash tool content = %q; want the plain captured form %q", msgs[i].Content, "hi")
+			}
 		}
 	}
 
-	// The turn still completes: the final assistant text lands post-boundary.
+	if !carried {
+		t.Errorf("projection carries no Bash tool message past the boundary (between-turn reset re-scope violated):\n%v", msgs)
+	}
+
+	// The turn still completes: the final assistant text lands in the window.
 	foundText := false
 
 	for i := range msgs {
@@ -124,7 +148,33 @@ func TestCoreExec_BashThroughSession(t *testing.T) { //nolint:gocognit,gocyclo,c
 	}
 
 	if !foundText {
-		t.Errorf("projection missing the final assistant text post-boundary:\n%v", msgs)
+		t.Errorf("projection missing the final assistant text:\n%v", msgs)
+	}
+
+	// The BETWEEN-turn reset half: after a NEXT turn's user message arrives,
+	// that turn's projection is the lean seed (no tool/assistant messages) —
+	// the mid-turn boundary recorded above is the next turn's reset boundary.
+	const nextTurn = "sess-coreexec-1-next"
+
+	err = sess.Manager.AppendUserMessage(nextTurn, []session.ContentBlock{{Type: blockText, Text: "and then"}})
+	if err != nil {
+		t.Fatalf("AppendUserMessage (next turn): %v", err)
+	}
+
+	nextMsgs, err := sess.Projector.Project(nextTurn)
+	if err != nil {
+		t.Fatalf("Project (next turn): %v", err)
+	}
+
+	if len(nextMsgs) > 3 {
+		t.Errorf("next-turn projection has %d messages; want the lean seed (<=3)", len(nextMsgs))
+	}
+
+	for i := range nextMsgs {
+		if nextMsgs[i].Role == "tool" || nextMsgs[i].Role == "assistant" {
+			t.Errorf("next-turn projection[%d] = %s; want NO tool/assistant messages (between-turn reset violated)",
+				i, msgSummaryACP(&nextMsgs[i]))
+		}
 	}
 }
 
