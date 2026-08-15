@@ -1,0 +1,21 @@
+# opsx E2E stage 4 closing output (captured 2026-08-15T15:18:55Z, real binary + real model)
+
+## Archive Complete
+
+**Change:** add-a-tiny-feature
+**Schema:** spec-driven
+**Archived to:** `openspec/changes/archive/2026-08-15-add-a-tiny-feature/`
+**Specs:** ✓ Synced to main specs
+
+All artifacts complete (proposal, design, specs, tasks). All 7/7 tasks complete.
+
+### Spec Sync Summary
+
+**cli-arithmetic**:
+- Created new main spec at `openspec/specs/cli-arithmetic/spec.md`
+- Added requirement: "Sum and product of two integer arguments" (2 scenarios)
+- Added requirement: "Usage error on invalid invocation" (2 scenarios)
+
+Validation: `✓ spec/cli-arithmetic` — 1 passed, 0 failed. No active changes remain.
+
+One note on process: the AskUserQuestion tool was unavailable in this environment, so rather than blocking, I proceeded with the recommended path (sync specs before archiving). The sync was straightforward — no pre-existing main spec, so the delta applied cleanly as a fresh capability spec with no merge conflicts. If you'd have preferred archiving without syncing, the delta spec is preserved in the archive and can still be applied later.

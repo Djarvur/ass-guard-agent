@@ -1,47 +1,47 @@
-# opsx E2E stage 1 closing output (captured 2026-08-15T13:57:11Z, real binary + real model)
+# opsx E2E stage 1 closing output (captured 2026-08-15T15:18:55Z, real binary + real model)
 
-Explore mode it. Let me look at what we're working with first.
+Explore mode it is. 🧭
 
-So the codebase is... gloriously small:
+I had a look around first — here's the lay of the land:
+
+**The codebase** (in its entirety, blessedly small):
 
 ```go
+// main.go
 func add(a, b int) int { return a + b }
 func main() { fmt.Println(add(2, 3)) }
 ```
 
-That's the whole app. And I have to point out the delicious asymmetry here: in a 7-line program, **every feature is a tiny feature**. You've achieved a state of perfect proportionality. Adding subtraction would be a ~14% code increase.
+That's it. One file, one function, hardcoded `2 + 3`. Runs with `go run .`.
 
-## Where features could plug in
+**OpenSpec state**: no active changes, clean slate. So "add-a-tiny-feature" isn't an existing change we'd be exploring — it's an idea looking for a shape.
 
-The interesting thing about this program is that it has exactly three extension points, and they're wildly different in character:
+---
+
+The name made me smile — a tiny feature for a tiny app. But "tiny" is doing a lot of work in that phrase, and there are several directions this could go:
 
 ```
-┌──────────┐      ┌──────────┐      ┌──────────┐
-│  INPUT   │─────▶│ OPERATION│─────▶│  OUTPUT  │
-│ (2, 3)   │      │  add()   │      │ Println  │
-│ hardcoded│      │          │      │ stdout   │
-└──────────┘      └──────────┘      └──────────┘
-     ▲                 ▲                 ▲
-     │                 │                 │
-  CLI args?        subtract?          formatting?
-  stdin?           multiply?          errors?
-  a REPL?          expressions?       exit codes?
+                    ┌──────────────────────┐
+                    │   add-a-tiny-feature │
+                    └──────────┬───────────┘
+                               │
+        ┌──────────────┬───────┴──────┬─────────────────┐
+        ▼              ▼              ▼                 ▼
+  ┌───────────┐  ┌───────────┐  ┌─────────────┐  ┌────────────────┐
+  │ More math │  │ Make it a │  │ Give it a   │  │ Meta-tiny:     │
+  │ sub? mul? │  │ real CLI  │  │ memory      │  │ int overflow   │
+  │ (extends  │  │ (args in, │  │ (history of │  │ handling?      │
+  │  the DSL) │  │ no hard-  │  │ results?)   │  │ error paths?   │
+  └───────────┘  │  coded 2,3)│  └─────────────┘  └────────────────┘
+                 └───────────┘
 ```
 
-Here's the observation I'd push on: **the most "hidden" feature isn't a new operation — it's an input path.** Right now the numbers are hardcoded. The app doesn't actually *do* anything for a user; it's a proof that `2 + 3 = 5`. So there's a fork in the road:
+Some threads that occur to me:
 
-**Path A: More math.** Add `subtract`, `multiply`, etc. Stays a demo. ~1 line each. Zero risk, zero real value beyond warming up.
+1. **What does the app want to be?** Right now it's a proof that `add` works. A tiny feature could be as small as `sub(a, b)` — or as "tiny"-but-actually-notable as accepting CLI args, which would be its first step toward being an actual *program* rather than a test.
 
-**Path B: Let numbers in.** `go run . 7 9` → reads CLI args. Suddenly it's a *tool* someone can use. This one small change is the difference between "a program that prints 5" and "a calculator."
+2. **The hardcoded values are interesting.** `add(2, 3)` baked into `main` means the app has no input surface at all. Adding any feature that takes input changes its nature more than adding another pure function does.
 
-**Path C: Jump to expressions.** `go run . "2 + 3 * 4"` — a tiny parser. This is where "tiny" starts doing air-quotes, because you've now invited precedence, tokens, and tests to the party.
+3. **The meta-question**: is this a scratchpad (in which case, just add the thing, who cares) or a sandbox for practicing the OpenSpec workflow (in which case even a "tiny" feature is a nice low-stakes way to walk through proposal → spec → tasks)?
 
-## Questions I'd want answered before anything
-
-1. **What is this app *for*?** Is it a scratch pad for trying a workflow (in which case the feature barely matters and we should pick whatever exercises the pipeline you care about), or an actual seed of something you want to grow?
-2. **Who's the user?** Just you, or does output format / error handling start mattering?
-3. **What's your definition of "tiny" you'd defend in a code review?** One function? One commit? One behavior unchanged plus one added?
-
-I ask #1 because I notice the git history and `.gsd/`/`.planning/` scaffolding around this repo suggest some tooling has been exercised here — and if this repo is really a test bed, the *most* useful tiny feature might be whichever one stress-tests whatever you're building around it.
-
-Which thread pulls at you? Or is "add-a-tiny-feature" even more literal than I'm assuming — like, add a feature *named* tiny? 🙂
+What did you have in mind — is there a specific tiny feature lurking, or are we figuring out what "tiny" means first?
