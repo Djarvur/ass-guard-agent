@@ -18,6 +18,8 @@ const (
 	idPostExploreHandoff = "post-explore-handoff"
 	nextProposeCmd       = "/opsx:propose"
 	stageApply           = "apply"
+	keyOpsxExplore       = "opsx:explore"
+	keyOpsxPropose       = "opsx:propose"
 )
 
 // TestNextPrompt_ConfigParsesNextField (08-06 Test 1): a [[patterns]] entry
@@ -89,9 +91,12 @@ func TestNextPrompt_TableAnswersNextPromptFor(t *testing.T) {
 // cmd/ass-guard/testdata/opsx-e2e/stage-{1,2,3}-output-capture.txt (the
 // 2026-08-15T13:29Z gated run: real openspec 1.5.0 binary + real GLM-5.2 model
 // through the full explore→propose→apply→archive scenario, 505s, all four
-// stages' closing outputs captured). Each stage's REAL closing text selects its
-// own handoff row + next command; the archive closing selects NOTHING (the
-// chain ends naturally). Excerpts are verbatim from the capture files.
+// stages' closing outputs captured). The propose/apply stages' REAL closing
+// text selects its own handoff row + next command; the archive closing selects
+// NOTHING (the chain ends naturally); the EXPLORE closings match NO text row —
+// that boundary chains on command provenance (the hybrid mechanism, findings-6
+// disposition — see TestSeeded_ExploreChainsOnProvenance). Excerpts are
+// verbatim from the capture files.
 func TestSeeded_ChainingRowsFromRealCapture(t *testing.T) { //nolint:funlen // four-stage excerpt battery
 	t.Parallel()
 
@@ -111,33 +116,6 @@ func TestSeeded_ChainingRowsFromRealCapture(t *testing.T) { //nolint:funlen // f
 		wantID  string
 		wantNxt string
 	}{
-		{
-			// Run 1 (13:29Z capture) explore closing phrasing.
-			stage:   "explore (run 1)",
-			excerpt: "When something crystallizes, I can spin up an OpenSpec change proposal for it. But no rush",
-			wantID:  idPostExploreHandoff,
-			wantNxt: nextProposeCmd,
-		},
-		{
-			// Run 2 (13:40Z product run) explore closing phrasing — the anchor
-			// is the FAMILY (the proposal reference), never one run's wording.
-			stage: "explore (run 2)",
-			excerpt: "what does the smallest meaningful spec-driven change look like here? " +
-				"A calibration run — proposal → spec → tasks — implement → archive.",
-			wantID:  idPostExploreHandoff,
-			wantNxt: nextProposeCmd,
-		},
-		{
-			// Run 3 (16:49Z product run) explore closing phrasing — an open
-			// question to the user, carrying only the "Proposed" stem mid-text
-			// (the reason the anchor is the STEM, not the noun).
-			stage: "explore (run 3)",
-			excerpt: "since `openspec/specs` is empty, whatever we pick becomes the first " +
-				"capability spec in the project. So — what did you have in mind by " +
-				"\"tiny feature\"? One option Proposed earlier was the CLI-args thread.",
-			wantID:  idPostExploreHandoff,
-			wantNxt: nextProposeCmd,
-		},
 		{
 			stage:   "propose",
 			excerpt: "Run `/opsx:apply` (or just ask me to implement) to start working on the tasks.",
@@ -169,9 +147,7 @@ func TestSeeded_ChainingRowsFromRealCapture(t *testing.T) { //nolint:funlen // f
 		}
 	}
 
-	// The archive closing ends the chain via the TERMINAL SHIELD — pinned with
-	// the word "proposal" PRESENT (the real closing's artifact list carries it,
-	// which is exactly why the shield row must precede post-explore).
+	// The archive closing ends the chain via the TERMINAL SHIELD.
 	archiveClosing := "## Archive Complete\n\n**Change:** `add-a-tiny-feature`\n" +
 		"**Archived to:** `openspec/changes/archive/2026-08-15-add-a-tiny-feature/`\n" +
 		"All artifacts complete (proposal, design, specs, tasks). " +
@@ -184,5 +160,82 @@ func TestSeeded_ChainingRowsFromRealCapture(t *testing.T) { //nolint:funlen // f
 
 	if m.Action != engine.ActionWait {
 		t.Errorf("archive closing action = %q; want wait (no injection — the chain ends)", m.Action)
+	}
+}
+
+// The FOUR live explore closings (2026-08-15 gated runs — the 6th finding's
+// evidence): structurally different free-form texts, two with NO propos* stem.
+// They are the reason the explore boundary chains on COMMAND PROVENANCE, never
+// on a text regex.
+var exploreClosingExcerpts = []string{
+	// Run 1 (13:29Z capture).
+	"When something crystallizes, I can spin up an OpenSpec change proposal for it. But no rush",
+	// Run 2 (13:40Z product run).
+	"what does the smallest meaningful spec-driven change look like here? " +
+		"A calibration run — proposal → spec → tasks — implement → archive.",
+	// Run 3 (16:49Z product run) — open question, only the "Proposed" stem mid-text.
+	"since `openspec/specs` is empty, whatever we pick becomes the first " +
+		"capability spec in the project. So — what did you have in mind by " +
+		"\"tiny feature\"? One option Proposed earlier was the CLI-args thread.",
+	// Run 4 (17:0x product run) — pure Socratic close, zero propos* occurrences.
+	"Which thread pulls at you?",
+}
+
+// TestSeeded_ExploreChainsOnProvenance (hybrid chaining, findings-6
+// disposition): the embedded table's explore row is a COMMAND-PROVENANCE row —
+// MatchCommand("opsx:explore") yields post-explore-handoff with next
+// /opsx:propose — while EVERY observed explore closing matches NO text row
+// (the free-form closing cannot be regex-chained honestly; four live forms
+// prove it). The other stage keys carry NO command rows: propose/apply/archive
+// stay chained by the capture-seeded TEXT rows (regex authoritative there).
+func TestSeeded_ExploreChainsOnProvenance(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := openspec.DefaultConfig()
+	if err != nil {
+		t.Fatalf("DefaultConfig: %v", err)
+	}
+
+	pt, err := openspec.FromConfig(cfg)
+	if err != nil {
+		t.Fatalf("FromConfig: %v", err)
+	}
+
+	// The provenance row: explore → propose.
+	cm := pt.MatchCommand(keyOpsxExplore)
+	if cm.ID != idPostExploreHandoff {
+		t.Fatalf("MatchCommand(%s) = %q; want %q (the seeded provenance row)", keyOpsxExplore, cm.ID, idPostExploreHandoff)
+	}
+
+	if cm.Action != engine.ActionContinue {
+		t.Errorf("explore provenance action = %q; want continue", cm.Action)
+	}
+
+	if cm.Span != keyOpsxExplore {
+		t.Errorf("explore provenance span = %q; want the command key %q", cm.Span, keyOpsxExplore)
+	}
+
+	if got := pt.NextPromptFor(cm.ID); got != nextProposeCmd {
+		t.Errorf("NextPromptFor(%s) = %q; want %q", cm.ID, got, nextProposeCmd)
+	}
+
+	if cm.ConfigSource != "openspec.toml command_patterns/"+idPostExploreHandoff {
+		t.Errorf("ConfigSource = %q; want the command_patterns entry source", cm.ConfigSource)
+	}
+
+	// The regex boundaries stay authoritative: no command rows for the other
+	// stages — their closings chain on the capture-seeded TEXT rows.
+	for _, key := range []string{keyOpsxPropose, "opsx:apply", "opsx:archive"} {
+		if d := pt.MatchCommand(key); d.Action != engine.ActionNothing {
+			t.Errorf("MatchCommand(%s) = %+v; want the zero value (text rows own that boundary)", key, d)
+		}
+	}
+
+	// Every observed explore closing matches NO text row.
+	for i, excerpt := range exploreClosingExcerpts {
+		if d := pt.MatchText(excerpt); d.Action != engine.ActionNothing {
+			t.Errorf("explore closing %d matched text row %q (%q); want NO text match — "+
+				"the boundary chains on provenance, not regex", i+1, d.ID, d.Span)
+		}
 	}
 }

@@ -289,3 +289,77 @@ func TestMutability_CommandTable(t *testing.T) {
 		t.Errorf("overlay opsx:explore mutability = %q; want flipped to mutating", got)
 	}
 }
+
+// TestCommandPatterns_ConfigParsesRows (hybrid chaining, findings-6
+// disposition): a [[command_patterns]] row — id/command/action/next — parses
+// with every field preserved.
+func TestCommandPatterns_ConfigParsesRows(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "openspec.toml")
+
+	body := "[[command_patterns]]\nid = \"post-explore-handoff\"\n" +
+		"command = \"opsx:explore\"\naction = \"continue\"\nnext = \"/opsx:propose\"\n"
+
+	err := os.WriteFile(path, []byte(body), 0o600)
+	if err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := openspec.LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+
+	if len(cfg.CommandPatterns) != 1 {
+		t.Fatalf("command_patterns = %d; want 1", len(cfg.CommandPatterns))
+	}
+
+	p := cfg.CommandPatterns[0]
+	if p.ID != idPostExploreHandoff {
+		t.Errorf("id = %q; want post-explore-handoff", p.ID)
+	}
+
+	if p.Command != keyOpsxExplore {
+		t.Errorf("command = %q; want opsx:explore", p.Command)
+	}
+
+	if p.Action != stopContinue {
+		t.Errorf("action = %q; want continue", p.Action)
+	}
+
+	if p.Next != nextProposeCmd {
+		t.Errorf("next = %q; want /opsx:propose", p.Next)
+	}
+}
+
+// TestCommandPatterns_ValidationCollectAll: an unknown action or an empty
+// command key in a [[command_patterns]] row is a ConfigError naming the row.
+func TestCommandPatterns_ValidationCollectAll(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bad.toml")
+
+	body := "[[command_patterns]]\nid = \"bad-action\"\ncommand = \"opsx:x\"\naction = \"explode\"\n" +
+		"[[command_patterns]]\nid = \"empty-command\"\ncommand = \"\"\naction = \"continue\"\n"
+
+	err := os.WriteFile(path, []byte(body), 0o600)
+	if err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	_, err = openspec.LoadConfig(path)
+	if err == nil {
+		t.Fatal("LoadConfig returned nil; want ConfigError for the bad command_patterns rows")
+	}
+
+	if !contains(err.Error(), "bad-action") || !contains(err.Error(), "explode") {
+		t.Errorf("err = %v; want it to name the bad action row", err)
+	}
+
+	if !contains(err.Error(), "empty-command") {
+		t.Errorf("err = %v; want it to name the empty-command row", err)
+	}
+}
