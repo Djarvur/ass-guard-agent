@@ -289,9 +289,9 @@ func runACPServe(ctx context.Context, in io.Reader, out, stderr io.Writer, opts 
 		serveCtx:    ctx,
 		makeProvider: func(capturer provider.RequestCapturer) provider.Provider {
 			// 09-01: the SINGLE factory seam — the same construction the
-			// tracer uses (tracerProvider is deleted; Pitfall 8). Construction
-			// errors keep the existing degradation semantics (ignore, the
-			// no-provider path surfaces at first use).
+			// tracer uses (the divergent copy is gone; Pitfall 8).
+			// Construction errors keep the existing degradation semantics
+			// (ignore, the no-provider path surfaces at first use).
 			p, _ := factory.BuildWithCapturer(providerName, shaper.New(), capturer)
 
 			return p

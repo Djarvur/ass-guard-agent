@@ -125,8 +125,8 @@ func runTrace(ctx context.Context, prompt, name, dir, auditLogPath string) error
 
 	// Phase 7 (D-08) + 09-01: the tracer builds its provider through the SAME
 	// factory seam as the serve path — BuildWithCapturer attaches the
-	// RequestCapturer for both shapes with factory-RESOLVED base_url+key (the
-	// old hand-rebuilt tracerProvider is deleted; Pitfall 8). An
+	// RequestCapturer for both shapes with factory-RESOLVED base_url+key. The
+	// pre-09-01 hand-rebuilt construction path is gone (Pitfall 8). An
 	// uncredentialed build keeps the lazy noCredentialProvider wrapper (D-07).
 	factory, providerName, ferr := setupProviderFactory("", os.Stderr)
 	if ferr != nil {
