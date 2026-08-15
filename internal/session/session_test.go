@@ -793,3 +793,65 @@ func TestCurrentTurnID(t *testing.T) {
 		t.Errorf("nextTurnID after one turn = %q; want s-ctid-turn-002 (CurrentTurnID must not increment)", next)
 	}
 }
+
+// TestToolCallExactlyOnceWithWriter pins the duplicate-tool_use finding at its
+// TRUE root (STATE.md 08-09, live transcripts: every call id exactly 2x, ms
+// apart): the SESSION is the sole writer of tool_call lines (its documented
+// contract), and the async TranscriptWriter rides the same bus (the sessionFor
+// wiring) — one model tool call must produce exactly ONE tool_call transcript
+// line, not one per writer.
+func TestToolCallExactlyOnceWithWriter(t *testing.T) { //nolint:paralleltest // async writer drain window
+	bus := event.NewBus()
+	s, m, _ := newTestSession(t, bus, []provider.Response{
+		{
+			FinishReason: blockToolUse,
+			ToolCalls: []provider.ToolCall{{
+				ID: "call_once_1", Name: toolBash, Input: json.RawMessage(`{"command":"echo hi"}`),
+			}},
+		},
+		{FinishReason: stopEndTurn},
+	})
+
+	tw := NewTranscriptWriter(m, bus, nil)
+
+	writerCtx, cancelWriter := context.WithCancel(context.Background())
+
+	defer cancelWriter()
+
+	go tw.Run(writerCtx)
+
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "run hi"}})
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+
+	// Let the async writer drain its subscriptions before asserting.
+	deadline := time.Now().Add(2 * time.Second)
+
+	for time.Now().Before(deadline) {
+		lines, rerr := m.ReadAll()
+		if rerr != nil {
+			t.Fatalf("ReadAll: %v", rerr)
+		}
+
+		count := 0
+
+		for i := range lines {
+			if lines[i].Type == TypeToolCall && lines[i].ToolCallID == "call_once_1" {
+				count++
+			}
+		}
+
+		if count > 1 {
+			t.Fatalf("tool_call lines for call_once_1 = %d; want exactly 1 (double writer: session loop + TranscriptWriter bus event)", count)
+		}
+
+		if count == 1 {
+			return // good
+		}
+
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	t.Fatal("no tool_call line observed within 2s")
+}
