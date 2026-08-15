@@ -64,8 +64,15 @@ func (w *TranscriptWriter) appendRequestShaped(rs *event.RequestShaped) {
 	}
 }
 
-// Run drains all 7 subscribed event channels until ctx is cancelled. Each event
+// Run drains the subscribed event channels until ctx is cancelled. Each event
 // is appended to the transcript via the matching Manager.Append*.
+//
+// ToolCall events are deliberately NOT written here: the Session is the SOLE
+// writer of tool_call lines (its documented contract — the sync loop over
+// resp.ToolCalls). Writing them here too duplicated every call into the
+// transcript (the 08-09 duplicate-tool_use finding: every id exactly 2x in
+// live transcripts; the Projector folds each line into the carried assistant
+// batch, so the duplicates were a request-shape divergence).
 //
 //nolint:gocognit,cyclop,gocyclo,funlen // async writer complexity is inherent
 func (w *TranscriptWriter) Run(ctx context.Context) {
@@ -91,14 +98,14 @@ func (w *TranscriptWriter) Run(ctx context.Context) {
 			if c, ok := e.(event.AgentMessageChunk); ok {
 				_ = w.manager.AppendAgentMessageChunk(c.TurnID, c.MessageID, c.Content)
 			}
-		case e, ok := <-subs.toolCalls:
+		case _, ok := <-subs.toolCalls:
 			if !ok {
 				return
 			}
 
-			if tc, ok := e.(event.ToolCall); ok {
-				_ = w.manager.AppendToolCall(tc.TurnID, tc.ToolCallID, tc.Name, tc.Input)
-			}
+			// Drain-and-drop (see the comment above): the tool_call line is
+			// written by the Session's sync loop; a second write here would
+			// duplicate the call into every consumer of the transcript.
 		case e, ok := <-subs.usage:
 			if !ok {
 				return
