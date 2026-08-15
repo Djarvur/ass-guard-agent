@@ -68,12 +68,15 @@ action = "continue"
 next = "/opsx:archive"
 
 # Explore closings are free-form thinking summaries; the stable family signal
-# across observed runs is the reference to the upcoming proposal (run 1: "spin
+# across ALL THREE observed 2026-08-15 runs is the propos* stem (run 1: "spin
 # up an OpenSpec change proposal"; run 2: "calibration run — proposal → spec →
-# tasks"). Unfamiliar phrasings fall to the learning mode (ask-once-remembered).
+# tasks"; run 3: ends with an open question but carries "Proposed" mid-text).
+# The regex matches the STEM so every observed form fires; genuinely
+# unfamiliar phrasings fall to the learning mode (ask-once-remembered) — the
+# designed fallback, never a silent stop.
 [[patterns]]
 id = "post-explore-handoff"
-regex = "(?i)proposal"
+regex = "(?i)propos"
 action = "continue"
 next = "/opsx:propose"
 

@@ -15,6 +15,8 @@ const nextApplyCmd = "/opsx:apply"
 // Seeded-row literals shared by the capture-pinning test (goconst).
 const (
 	idPostProposeHandoff = "post-propose-handoff"
+	idPostExploreHandoff = "post-explore-handoff"
+	nextProposeCmd       = "/opsx:propose"
 	stageApply           = "apply"
 )
 
@@ -113,8 +115,8 @@ func TestSeeded_ChainingRowsFromRealCapture(t *testing.T) { //nolint:funlen // f
 			// Run 1 (13:29Z capture) explore closing phrasing.
 			stage:   "explore (run 1)",
 			excerpt: "When something crystallizes, I can spin up an OpenSpec change proposal for it. But no rush",
-			wantID:  "post-explore-handoff",
-			wantNxt: "/opsx:propose",
+			wantID:  idPostExploreHandoff,
+			wantNxt: nextProposeCmd,
 		},
 		{
 			// Run 2 (13:40Z product run) explore closing phrasing — the anchor
@@ -122,8 +124,19 @@ func TestSeeded_ChainingRowsFromRealCapture(t *testing.T) { //nolint:funlen // f
 			stage: "explore (run 2)",
 			excerpt: "what does the smallest meaningful spec-driven change look like here? " +
 				"A calibration run — proposal → spec → tasks — implement → archive.",
-			wantID:  "post-explore-handoff",
-			wantNxt: "/opsx:propose",
+			wantID:  idPostExploreHandoff,
+			wantNxt: nextProposeCmd,
+		},
+		{
+			// Run 3 (16:49Z product run) explore closing phrasing — an open
+			// question to the user, carrying only the "Proposed" stem mid-text
+			// (the reason the anchor is the STEM, not the noun).
+			stage: "explore (run 3)",
+			excerpt: "since `openspec/specs` is empty, whatever we pick becomes the first " +
+				"capability spec in the project. So — what did you have in mind by " +
+				"\"tiny feature\"? One option Proposed earlier was the CLI-args thread.",
+			wantID:  idPostExploreHandoff,
+			wantNxt: nextProposeCmd,
 		},
 		{
 			stage:   "propose",
