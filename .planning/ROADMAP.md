@@ -1,15 +1,16 @@
 # Roadmap: ass-guard-agent (working name)
 
 **Project mode:** mvp (vertical slices — each phase delivers an end-to-end user capability)
-**Milestone:** v1.1 Kickoff & Peers (Phases 8–11; numbering continues from v1.0's Phase 7 — never reset)
-**Requirements mapped:** 23/23 v1.1 ✓
+**Milestone:** v1.1 ACP Completion (Phases 8, 9, 12; numbering continues from v1.0's Phase 7 — never reset)
+**Requirements mapped:** 22/22 v1.1 ✓
 
-v1.1 makes the hands-off OpenSpec promise real end-to-end. The milestone's reason to exist is Phase 8: closing the kickoff loop (`/opsx:explore → propose → apply → archive` chained by the engine with zero manual continues, verified against the real openspec binary) is the product's proof — v1.0 shipped with this as its major known gap. Phases 9–11 then close the v1.0 operational gaps (audit on `acp serve`, parity re-capture) and add the two peer surfaces (Telegram, dsh profile #2), strictly in the operator's priority chain. Scope discipline: two new deps only (`go-telegram/bot` v1.23.0, `klauspost/compress/zstd` v1.19.2), one structural refactor (`internal/runtime` extraction, Phase 10), and the generalized v1.0 lesson as a cross-phase invariant — **no feature closes with stub-only evidence; every external surface carries a real-binary/live-service gate**.
+v1.1 makes the agent fully functional on ACP. Phase 8 closed the kickoff loop (`/opsx:explore → propose → apply → archive` chained by the engine with zero manual continues, verified against the real openspec binary) — v1.0's major known gap. **Operator re-scope 2026-08-16:** Telegram (ex-Phase 10) and the dsh profile (ex-Phase 11) are lowered to the v1.2 planning pool in favor of a new Phase 12 — ACP Functional Completeness: every built-in catalog tool executes for real (9 of 19 still return "no implementation yet"), result forms capture-pinned, a behavioral-eval regression net, the expanded OpenSpec command matrix E2E, and plugin-install discovery. Phase 9 stays next (it *is* ACP-surface work: serve-path audit + parity re-capture). Scope discipline after the re-scope: **zero new dependencies in v1.1** (go-telegram/bot, zstd, and the `internal/runtime` refactor move to v1.2 with their phases), and the generalized v1.0 lesson holds as a cross-phase invariant — **no feature closes with stub-only evidence; every external surface carries a real-binary/live-service gate**.
 
 ## Milestones
 
 - ✅ **v1.0 MVP** — Phases 0–7 (shipped 2026-08-14; full detail: `.planning/milestones/v1.0-ROADMAP.md`, artifacts in `.planning/milestones/v1.0-phases/`, record in `.planning/MILESTONES.md`)
-- 🚧 **v1.1 Kickoff & Peers** — Phases 8–11 (1/4 complete)
+- 🚧 **v1.1 ACP Completion** — Phases 8, 9, 12 (1/3 complete; renamed from "Kickoff & Peers" at the 2026-08-16 re-scope)
+- 📋 **v1.2 pool (not yet a milestone)** — ex-Phases 10–11 (Telegram peer; dsh profile #2 — replan against source-analysis), SEED-001 agent-creation kit, ECOSYSTEM-AUDIT clusters PLUG (full lifecycle) / LSP / MEM
 
 <details>
 <summary>✅ v1.0 MVP (Phases 0–7) — SHIPPED 2026-08-14</summary>
@@ -29,8 +30,9 @@ v1.1 makes the hands-off OpenSpec promise real end-to-end. The milestone's reaso
 
 - [x] **Phase 8: Slash-Command Kickoff** - `/namespace:name` discovery + zcode-semantics expansion + OpenSpec adapter reconciled to the real binary; the zero-continue product proof (completed 2026-08-16, operator witness accepted; execution + evidence 2026-08-15)
 - [ ] **Phase 9: Serve-Path Audit + zcode Parity Re-capture** - redacted, bounded, decision-explaining audit on `acp serve`; stability test re-grounded on a pinned capture session
-- [ ] **Phase 10: Telegram Peer (Text + Voice)** - the same engine drivable from a Telegram chat, voice STT, context-first shutdown beside ACP stdio
-- [ ] **Phase 11: dsh Mimicry Profile #2** - DeepSeek-model turns structurally indistinguishable from deepseek-harness; N profiles, no target-specific code paths
+- [ ] **Phase 12: ACP Functional Completeness** - every built-in catalog tool executes for real (the 9 deferred tools + Bash background flags), capture-pinned result forms, the behavioral-eval regression net, expanded OpenSpec command E2E, plugin-install discovery *(added at the 2026-08-16 re-scope; executes directly after Phase 9)*
+- [ ] ~~**Phase 10: Telegram Peer (Text + Voice)**~~ - → **moved to the v1.2 pool** (operator 2026-08-16; plan preserved in `.planning/phases/10-telegram-peer-text-voice/`)
+- [ ] ~~**Phase 11: dsh Mimicry Profile #2**~~ - → **moved to the v1.2 pool** (operator 2026-08-16; needs replanning against source-analysis — plan preserved in `.planning/phases/11-dsh-mimicry-profile-2/`)
 
 ## Phase Overview
 
@@ -38,8 +40,9 @@ v1.1 makes the hands-off OpenSpec promise real end-to-end. The milestone's reaso
 |---|-------|------|--------------|------------------|
 | 8 | Slash-Command Kickoff | 8/9 | Completed 2026-08-16 — operator witness accepted; findings 5+6 dispositions confirmed (hybrid provenance chaining + D-10 capture-faithful reshape); full guard green; gated E2E: fixable green + zero-continue 2/3 (one stage-4 model-variance fail recorded as known residual, same class as UAT check 3); UAT 10 pass/1 partial/0 blocked | 2026-08-16 |
 | 9 | Serve-Path Audit + zcode Parity Re-capture | Every serve-path session leaves a redacted, bounded audit trail that explains the engine's decisions; the parity stability test runs green on a newly pinned session | AUD-01, AUD-02, AUD-03, AUD-04, AUD-05 | 5 |
-| 10 | Telegram Peer (Text + Voice) | A user drives the same engine from a Telegram chat — full SDD scenarios, voice input, disciplined shutdown | TG-01, TG-02, TG-03, TG-04, TG-05, TG-06 | 5 |
-| 11 | dsh Mimicry Profile #2 | DeepSeek-model turns are structurally indistinguishable from deepseek-harness, captured not hand-written | DSH-01, DSH-02, DSH-03, DSH-04, DSH-05 | 5 |
+| 12 | ACP Functional Completeness | Every catalog tool the model can see on ACP executes for real, result forms are capture-pinned, a behavioral-eval regression net guards turn behavior, the expanded OpenSpec matrix runs E2E, and plugin installs widen discovery | ACP-01, ACP-02, ACP-03, ACP-04, ACP-05, ACP-06, ACP-07, ACP-08, ACP-09, ACP-10 | 10 |
+| 10 | ~~Telegram Peer (Text + Voice)~~ | *Moved to v1.2 pool (2026-08-16)* | TG-01..06 | - |
+| 11 | ~~dsh Mimicry Profile #2~~ | *Moved to v1.2 pool (2026-08-16); replan against source-analysis* | DSH-01..05 | - |
 
 ## Phase Details
 
@@ -96,7 +99,7 @@ Plans:
 
 **Goal:** As an operator of a hands-off agent, I want every `acp serve` session to leave a redacted, bounded audit trail that also records the engine's decisions, and the zcode parity stability test re-grounded on a newly pinned capture session, so that I can answer "what did the agent do, and why did it continue" from the log alone and trust that the mimicry hasn't drifted.
 **Mode:** mvp
-**Depends on:** Phase 8 (operator priority chain; also the engine decisions recorded by AUD-04 observe Phase-8-hardened turns). AUD (audit) and AUD-05 (re-capture) are adjacent in the operator's chain and merged here by design: both are small, both land before Phase 10's `internal/runtime` extraction moves the wiring — the capturer factory seam reaches its final home here, written once, not re-wired. AUD-05 additionally unblocks the v1.0 Phase-1 within-session stability test (`eea3dc48` is absent on disk).
+**Depends on:** Phase 8 (operator priority chain; also the engine decisions recorded by AUD-04 observe Phase-8-hardened turns). AUD (audit) and AUD-05 (re-capture) are adjacent in the operator's chain and merged here by design. AUD-05 additionally unblocks the v1.0 Phase-1 within-session stability test (`eea3dc48` is absent on disk), and its newly pinned session is the ground truth ACP-07's corpus-absent result forms re-pin against in Phase 12.
 **Requirements:** AUD-01, AUD-02, AUD-03, AUD-04, AUD-05
 **Success Criteria** (what must be TRUE):
 
@@ -124,7 +127,9 @@ Plans:
 
 - [ ] 09-06-PLAN.md — the per-session audit mirror under `.ass-guard/audit/` (default ON), `--audit-log` override on serve, shared stdout-rejecting sink opener, header-NAME discipline, automated secret canary (D-02) [AUD-02]
 
-### Phase 10: Telegram Peer (Text + Voice)
+### Phase 10: Telegram Peer (Text + Voice) — MOVED TO v1.2 (operator 2026-08-16)
+
+> **Status: lowered to the v1.2 planning pool.** The operator re-prioritized ACP functional completeness (Phase 12) ahead of the peer surfaces. This phase's approved plans are preserved verbatim in `.planning/phases/10-telegram-peer-text-voice/` for v1.2 re-ingestion; requirements TG-01..06 moved with it. When re-planned, re-verify the "Depends on" lines below against whatever has landed in the meantime (Phase 12 adds no `internal/runtime` extraction — that refactor now belongs to this phase again whenever it executes).
 
 **Goal:** As a developer away from my IDE, I want to drive ass-guard from a Telegram chat — full SDD scenarios over text and voice, on the same engine ACP uses — so that the agent keeps working wherever I am as a peer surface, not a stripped-down remote.
 **Mode:** mvp
@@ -162,7 +167,9 @@ Plans:
 
 **UI hint**: yes
 
-### Phase 11: dsh Mimicry Profile #2
+### Phase 11: dsh Mimicry Profile #2 — MOVED TO v1.2 (operator 2026-08-16; replan required)
+
+> **Status: lowered to the v1.2 planning pool.** Two independent reasons: the operator's 2026-08-16 priority call (ACP first), and the standing 2026-08-15 operator constraint — dsh wire capture is impossible, so ground truth must come from **source analysis of the pinned dsh commit**. As written below, this phase's method (recording-proxy wire capture, DSH-03) and the DSH-05 live-A/B bar are dead as designed; plans 11-03, 11-06, and the capture-dependent parts of 11-02/11-05/11-07 must be replanned before this phase can execute in v1.2. The text below is preserved as the last approved shape, not the method going forward.
 
 **Goal:** As an operator routing DeepSeek-model turns, I want a second mimicry profile whose content is captured from deepseek-harness's real wire traffic, so that ass-guard's requests are structurally indistinguishable from dsh's — proving the N-profile thesis with no target-specific code paths.
 **Mode:** mvp
@@ -198,32 +205,55 @@ Plans:
 
 - [ ] 11-07-PLAN.md — the proof: per-profile capture loaders for `profile check dsh`, the dsh parity suite extractor, A/B parity run (fresh baseline; credential-gated loud-skip), live probe per routed model, traceability audit, the full phase-gate close-out [DSH-04, DSH-05]
 
+### Phase 12: ACP Functional Completeness
+
+**Goal:** As a developer driving ass-guard from an ACP editor, I want every tool in the captured catalog to execute for real with capture-pinned result forms, and turn behavior guarded by a behavioral-eval regression net, so that "fully functional on ACP" is literally true — the model never hits a `no implementation yet` dead end mid-task.
+**Mode:** mvp
+**Depends on:** Phase 9 (AUD-05's newly pinned capture session is the ground truth ACP-07 re-pins the corpus-absent result forms against; the eval scenarios ride the Phase-8-proven real-binary gate pattern). Builds on shipped v1.0 + Phases 8–9: the 08-08 core-executor pattern (RegisterCore, captured result forms, catalog-schema-never-rewritten discipline) is the template every new executor follows. **Added at the 2026-08-16 operator re-scope** — the 08-08 deferred-tools table (never dispositioned) plus the ECOSYSTEM-AUDIT's "biggest methodological hole" finding (no behavioral eval net) define the gap.
+**Requirements:** ACP-01, ACP-02, ACP-03, ACP-04, ACP-05, ACP-06, ACP-07, ACP-08, ACP-09, ACP-10
+**Success Criteria** (what must be TRUE):
+
+  1. The model invoking `AskUserQuestion` gets a real question surface on ACP — question + options reach the client in the captured shape, the turn suspends on the engine's ask path, the operator's reply lands as the tool result; capture-grounded result form; the no-confirmation-tier safety model untouched (a model-initiated question, not a tool-execution gate) (ACP-01)
+  2. `EnterPlanMode` / `ExitPlanMode` execute with captured result forms, plan-mode state visible in the transcript and respected by the turn loop, scope per capture (ACP-02)
+  3. `SendMessage` and `ReadSessionContext` execute for real — cross-agent messaging and prior-session context reads in capture-grounded forms (ACP-03)
+  4. `CronCreate` / `CronList` / `CronDelete` execute against a real persisted schedule, and a due scheduled prompt fires as an engine-driven turn while the agent runs — no daemon, no network port, firing semantics within the editor-owned lifecycle (ACP-04)
+  5. `TaskStop` executes for real — cancels the targeted in-flight task/background work with the captured result form (ACP-05)
+  6. Bash `run_in_background` and `dangerouslyDisableSandbox` execute faithfully per captured semantics, with background-shell output retrieval working in the captured form (ACP-06)
+  7. The corpus-absent result forms — truncation markers, Bash timeout form, Bash default timeout, file-tool failure forms — are re-pinned against the Phase-9 pinned session and implemented where the corpus shows them (ACP-07, depends on AUD-05)
+  8. A behavioral-eval regression net exists and gates: deterministic tool-unit tests, `/opsx` scenario suites (pass@k, real binary, scratch project), re-run gate on profile / model / turn-behavior changes (ACP-08, ECOSYSTEM-AUDIT §4.4 EVAL-01..03)
+  9. The expanded OpenSpec command matrix — `new / continue / ff / verify / bulk-archive / onboard` — drives E2E through ass-guard against the real openspec binary (ACP-09)
+  10. Command + skill discovery reads Claude-Code-compatible plugin installs (`installed_plugins.json` + cache layout, PLUG-05 carve-out), merging plugin skills/commands with documented precedence; reads span `~/.claude/plugins/` and `~/.zcode/cli/plugins/`, writes stay under the ass-guard root (ACP-10)
+
+**Phase gate:** `mise ci` clean AND a live-serve session exercising `AskUserQuestion` end-to-end (operator answers a real model question) AND zero `no implementation yet` strings reachable from the 19-tool built-in catalog on any turn (grep-gated) AND the `/opsx` expanded-command E2E green against the real binary AND the eval suites green in CI. No stub-only evidence closes this phase.
+**Plans:** TBD — dispatch `/gsd:plan-phase 12` after Phase 9 closes (context gathering should consume this section + ECOSYSTEM-AUDIT §4/§5 + the 08-08 deferred-tools table in 08-08-SUMMARY + the rollout corpus for captured AskUserQuestion/plan-mode/cron forms).
+
 ## Dependency Chains
 
-- **Phase 8 gates the milestone.** It closes v1.0's major known gap (the Phase-4 UAT kickoff diagnosis) and carries the only structural blocker (`discoverCommands` flat-scan) as its first task. Its expansion must land at the turn runner, not the ACP handler — surface-agnosticity is why Phase 10 inherits `/opsx:*` without rework.
-- **Phase 9 follows Phase 8** per the operator chain, with audit + re-capture merged (adjacent, both small). The deliberate sequencing judgment: landing the capturer factory seam in its final home BEFORE Phase 10's runtime extraction moves the wiring — written once, not re-wired. AUD-05 is technically independent of Phase 8 but rides this phase's operator-runbook design.
-- **Phase 10 needs Phases 8–9.** Telegram needs the session-layer command expansion (Phase 8) and the landed capturer seam (Phase 9), and itself performs the `internal/runtime` extraction both frontends then share. The bot-token redactor + canary must land before the first Telegram HTTP call.
-- **Phase 11 needs Phase 9's genericized capture provenance** and follows Phase 10 per the operator chain. It is the only phase with genuine unknowns left (wire capture runbook, zstd decode, system-message mapping form) — expect a research/capture spike at phase start.
+- **Phase 8 gated the milestone** and is complete (2026-08-16). Its session-layer command expansion is what any future peer surface (v1.2 Telegram) inherits for free.
+- **Phase 9 follows Phase 8** per the operator chain, with audit + re-capture merged (adjacent, both small). Its operator blocker stands: the scripted 5-turn capture workload (`docs/recapture-runbook.md` §3) must be run once by the operator; the automated 09-04 legs + phase verification follow. AUD-05's pinned session is also Phase 12's ACP-07 ground truth.
+- **Phase 12 needs Phase 9.** The corpus-absent result forms re-pin against AUD-05's newly pinned session, and the eval scenarios reuse the Phase-8/9 real-binary gate pattern. Everything else in Phase 12 builds directly on shipped 08-08 machinery (RegisterCore + captured result forms).
+- **Phases 10–11 moved to the v1.2 pool (2026-08-16).** Their former ordering constraints are recorded for the v1.2 replan: Telegram wants Phase 8's session-layer expansion (already shipped) and performs the `internal/runtime` extraction itself; dsh needs full replanning against source-analysis ground truth. Nothing in v1.1 depends on either.
 - **Cross-phase invariants:** `mise ci` clean at every phase gate; stdout = ACP frames only; no daemon, no network port, single static binary (CGO_ENABLED=0); `.claude/` strictly read-only; no feature closes with stub-only evidence.
 
 ## Research Flags by Phase
 
-- **Phase 8:** ground truth already in-repo (installed-binary surface table in STACK.md, zcode substitution semantics from the shipped diagnostics skill, real `openspec init` fixture layout) — plan directly, no research phase.
-- **Phase 9:** not library research but operator-procedure design — the divergence-prone workload spec, session pinning, and re-baselining steps should be written into the phase plan verbatim from research Pitfalls 17/18. Also decide the `CurrentTurnID()` accessor vs empty-TurnID fallback.
-- **Phase 10:** standard patterns (go-telegram/bot usage, Bot API limits, STT endpoints documented; pitfalls enumerated) — skip research phase. Resolve the telegram-only-mode vs "no standalone CLI surface" PROJECT.md tension deliberately at planning, not via a hack.
-- **Phase 11 (highest research depth):** the recording-proxy capture runbook (baseURL swap against a real dsh install), the zstd decode spike, the exact system-message mapping form (answerable only from the capture), and DeepSeek dialect quirks against the captured wire. Recommend `/gsd:plan-phase --research-phase 11`.
+- **Phase 8:** ground truth already in-repo (installed-binary surface table in STACK.md, zcode substitution semantics from the shipped diagnostics skill, real `openspec init` fixture layout) — plan directly, no research phase. *(Complete.)*
+- **Phase 9:** not library research but operator-procedure design — the divergence-prone workload spec, session pinning, and re-baselining steps should be written into the phase plan verbatim from research Pitfalls 17/18. Also decide the `CurrentTurnID()` accessor vs empty-TurnID fallback. *(Plans done; executing.)*
+- **Phase 12 (new):** mostly in-repo ground truth — the 08-08 deferred-tools table (08-08-SUMMARY), the rollout corpus for captured AskUserQuestion/plan-mode/cron/SendMessage forms, ECOSYSTEM-AUDIT §4.1 (PLUG plugin layout ground truth: `installed_plugins.json` + cache layout measured live), §4.4 (EVAL pyramid), §5 (near-term folds). One design unknown to resolve at planning: ACP-01's ask-path suspension semantics (how a model-initiated AskUserQuestion suspends and resumes within ACP's turn model without becoming a confirmation tier) and ACP-04's cron firing semantics under the editor-owned lifecycle. Recommend `/gsd:plan-phase 12` with a light research pass over the corpus forms only if the harvested shapes prove insufficient.
+- **Phase 11 (moved to v1.2, replan required):** the original research flags (recording-proxy runbook, zstd decode, system-message form from capture) are superseded by the source-analysis method — the v1.2 replan re-scopes them (derive runtime-composed content from dsh's source composition logic; re-scope the A/B bar per the 2026-08-15 STATE.md constraint entry).
 
 ## Progress
 
-**Execution order:** 8 → 9 → 10 → 11 (strict operator priority chain; no parallelism across phases).
+**Execution order:** 8 → 9 → 12 (v1.1; strict operator priority chain; no parallelism across phases). Phases 10–11 moved to the v1.2 pool 2026-08-16.
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 8. Slash-Command Kickoff | v1.1 | 0/TBD | Not started | - |
-| 9. Serve-Path Audit + zcode Parity Re-capture | v1.1 | 0/TBD | Not started | - |
-| 10. Telegram Peer (Text + Voice) | v1.1 | 0/TBD | Not started | - |
-| 11. dsh Mimicry Profile #2 | v1.1 | 0/TBD | Not started | - |
+| 8. Slash-Command Kickoff | v1.1 | 9/9 | Complete (operator witness accepted; 2 known residuals documented) | 2026-08-16 |
+| 9. Serve-Path Audit + zcode Parity Re-capture | v1.1 | 5/6 code plans done; 09-04 blocked-on-harvest (operator workload) | Executing | - |
+| 12. ACP Functional Completeness | v1.1 | 0 (planning dispatches when Phase 9 closes) | Not started | - |
+| 10. Telegram Peer (Text + Voice) | v1.2 pool | 0/7 (plans preserved) | Moved to v1.2 (2026-08-16) | - |
+| 11. dsh Mimicry Profile #2 | v1.2 pool | 0/7 (plans stale — replan required) | Moved to v1.2 (2026-08-16) | - |
 
 ---
-*Roadmap created: 2026-08-14*
-*Derived from: PROJECT.md (v1.1 milestone), REQUIREMENTS.md (21 v1.1 REQ-IDs), research/SUMMARY.md (4-phase proposal matching the operator chain)*
+*Roadmap created: 2026-08-14 · Re-scoped: 2026-08-16 (operator — phases 10/11 lowered to the v1.2 pool; Phase 12 ACP Functional Completeness added; milestone renamed v1.1 ACP Completion)*
+*Derived from: PROJECT.md (v1.1 milestone), REQUIREMENTS.md (22 v1.1 REQ-IDs after re-scope), research/SUMMARY.md, research/ECOSYSTEM-AUDIT.md (Phase 12)*

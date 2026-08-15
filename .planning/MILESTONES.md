@@ -1,14 +1,19 @@
 # Milestones
 
-## v1.1 Kickoff & Peers (in progress)
+## v1.1 ACP Completion (in progress)
 
-**Phases:** 4 (8–11) · 1 complete
+**Phases:** 3 (8, 9, 12) · 1 complete · **Re-scoped 2026-08-16** (operator — renamed from "Kickoff & Peers"; Telegram and dsh lowered to the v1.2 pool in favor of ACP functional completeness; v1.1 adds zero new dependencies)
 **Started:** 2026-08-14 (continues from v1.0's Phase 7 numbering)
 
 - [x] Phase 8: Slash-Command Kickoff — completed 2026-08-16 (operator witness accepted; zero-continue product proof green — `/opsx:explore → propose → apply → archive` chained by the engine with zero manual continues, verified against the real openspec binary; findings 5+6 confirmed; known residuals: UAT check 3 hook live-leg + one stage-4 model-variance fail in the 2/3 zero-continue tally)
 - [ ] Phase 9: Serve-Path Audit + zcode Parity Re-capture — executed; 09-04 blocked-on-harvest, operator to run the scripted re-capture workload (docs/recapture-runbook.md §3), then automated legs + verification
-- [ ] Phase 10: Telegram Peer (Text + Voice)
-- [ ] Phase 11: dsh Mimicry Profile #2 — needs replanning against source-analysis (dsh wire capture impossible; operator constraint 2026-08-15)
+- [ ] Phase 12: ACP Functional Completeness — added 2026-08-16; the 9 deferred catalog tools execute for real (AskUserQuestion as engine-ask, plan mode, session interop, cron, TaskStop), Bash background flags, corpus-absent result forms re-pinned on the Phase-9 capture, the EVAL behavioral regression net, expanded `/opsx` command E2E, plugin-install discovery (ACP-01..10); planning dispatches when Phase 9 closes
+
+**Moved to the v1.2 pool (2026-08-16, operator):**
+
+- Phase 10: Telegram Peer (Text + Voice) — plans preserved in `.planning/phases/10-telegram-peer-text-voice/`; carries go-telegram/bot + the `internal/runtime` extraction to v1.2
+- Phase 11: dsh Mimicry Profile #2 — needs replanning against source-analysis (dsh wire capture impossible; operator constraint 2026-08-15); carries zstd to v1.2
+- v1.2 pool also holds: SEED-001 (agent-creation kit library), ECOSYSTEM-AUDIT clusters PLUG (full lifecycle) / LSP / MEM
 
 ## v1.0 MVP (Shipped: 2026-08-14)
 
