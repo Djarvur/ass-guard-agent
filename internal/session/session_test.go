@@ -750,3 +750,45 @@ func TestConverge_ModelSeesOwnToolResults(t *testing.T) {
 		t.Error("iteration 2 messages missing the tool result (call_conv_1)")
 	}
 }
+// --- 09-01 T2: CurrentTurnID (AUD-02 turn correlation) ---
+
+// TestCurrentTurnID (09-01 T2 Test 6): a fresh session reports "" (no turn
+// started); after a Prompt that ran turn 1, CurrentTurnID returns
+// "<sessionID>-turn-001" WITHOUT incrementing (idempotent read; the next
+// nextTurnID still returns -turn-002).
+func TestCurrentTurnID(t *testing.T) {
+	t.Parallel()
+
+	m := newTestManager(t, "s-ctid")
+	s := &Session{
+		Manager:   m,
+		Projector: NewProjector(fakeProfile("sys"), m),
+		Provider:  &fakeProvider{},
+		Bus:       event.NewBus(),
+		Profile:   *fakeProfile("sys"),
+		WorkDir:   t.TempDir(),
+		SessionID: "s-ctid",
+	}
+
+	if got := s.CurrentTurnID(); got != "" {
+		t.Errorf("fresh session CurrentTurnID = %q; want empty", got)
+	}
+
+	_, err := s.Prompt(context.Background(), "run")
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+
+	first := s.CurrentTurnID()
+	if first != "s-ctid-turn-001" {
+		t.Errorf("CurrentTurnID after turn 1 = %q; want s-ctid-turn-001", first)
+	}
+
+	if again := s.CurrentTurnID(); again != first {
+		t.Errorf("CurrentTurnID is not a stable read: %q then %q", first, again)
+	}
+
+	if next := s.nextTurnID(); next != "s-ctid-turn-002" {
+		t.Errorf("nextTurnID after one turn = %q; want s-ctid-turn-002 (CurrentTurnID must not increment)", next)
+	}
+}
