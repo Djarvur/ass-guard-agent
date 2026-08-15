@@ -3,7 +3,7 @@ phase: 08-slash-command-kickoff
 plan: 06
 subsystem: opsx-e2e-gate
 tags: [e2e, real-binary, real-model, chaining, pattern-reseed, uat, blocker]
-status: checkpoint-blocked   # overnight addendum below: carry blocker closed by 08-07; gate re-blocked on core tool execution
+status: checkpoint-blocked   # 2nd addendum: 08-09 closed convergence; capture leg blocked on the SSE-stall finding, D-10 leg on the tool-surface finding — phase gate OPEN for the operator
 
 # Dependency graph
 requires:
@@ -165,3 +165,43 @@ Score: 6 pass, 4 partial (mechanism green, real-run leg blocked), 1 blocked — 
 - Gated E2E — **BLOCKED** (core tool execution; STATE.md)
 
 **The gate stays open; the blocker is superseded by the core-tool-execution finding.** Morning disposition needed on that gap; this plan's T3 + gate legs resume after it closes.
+
+---
+
+# Second Addendum (2026-08-15, the 08-09 handback execution)
+
+08-09 executed and closed the convergence blocker at its root (its SUMMARY carries the evidence: both gated legs converge, real archives on disk, full guard green). This plan's remainder was then resumed per the handback: probe hardening, the capture → re-seed → product-proof chain, the UAT legs, the phase gate. Outcome — executed to its HONEST STOP on two new findings (the no-hollow-greens precedent; both recorded in STATE.md with diagnoses + dispositions):
+
+## What ran
+
+- **Probe hardening** (`43efbcf`): the D-10 probe's first attempt is pinned to the `openspec:archive` TOOL (not Bash, not Skill, no --yes/--json).
+- **Capture-mode E2E — attempt 1 STOPPED**: explore completed (~2.5 min, engine decision recorded); propose's SSE stream froze mid-sentence at request ~6 (frozen 14:00:02Z, no chunks/errors afterward, NOT unblocked by the turn ctx's 20m deadline — killed at ~14:26; evidence `live/stalled-capture-attempt1/`).
+- **Capture-mode E2E — attempt 2 STOPPED**: explore healthy; propose ran 35 real tool calls across 20 requests (416KB transcript — Write/Edit artifacts in motion) then froze mid-sentence at 11:32:17Z; 6+ min past the propose ctx deadline: zero unblocking, zero canceled lines (killed; evidence `live/stalled-capture-attempt2/`). **The 4th architectural-class finding** (see STATE.md): the provider SSE drain wedges on server-side mid-stream silence — `httpClient` has no timeout and the drain loop's only liveness check runs between reads; ctx cancel never reaches the blocked `ReadString`. Correlates with long-window turns (payload growth doubled by the duplicate-tool_use finding).
+- **Hardened fixable probe — FAILED by construction**: the model STILL routes via Skill + Bash (it even `mv`d the archive directory in the last attempt). Root cause — **the 5th finding**: the shaper sends only the profile's 103 zcode tools; `openspec:*` is registered for EXECUTION/boundaries, never for the request's tool list — and the capture itself routes openspec work via Skill+Bash, so the probe's premise (model calls the openspec tool, reads the structured classification) is architecturally at odds with the capture-faithful shape. The `classification:"fixable"` assertion has NEVER fired in a live run (0 in 08-08's fixable transcript too — its D-10 claim was Bash-CLI-level recovery, not the structured path).
+- **Non-LLM gate legs — GREEN**: `mise run ci` (re-verified after the probe-prompt funlen fix) + `ASSGUARD_OPENSPEC_BIN=1 go test ./internal/openspec/ ./internal/ecosys/ -count=1` (three-path adapter + surface suites) + clean-skip without gates.
+- **Real stage capture committed**: `cmd/ass-guard/testdata/opsx-e2e/stage-1-output.txt` (the 08-09 explore closing report — D-12 raw material for whenever the capture leg unblocks).
+
+## The 11 UAT checks — re-walked with the new evidence
+
+| # | Check | Evidence | Status (was) |
+|---|-------|----------|--------------|
+| 2 | Zero "continue" taps | Plumbing green (TestNextPrompt_*, TestChain_*); the real chain still not evidenced — the capture (and hence the re-seed + product-proof) is blocked on the SSE stall | partial (partial) |
+| 3 | Forgotten routine post-implement | hookdag suite green (OnFailure semantics); stage-end hook firing in the real run still pending the chain | partial (partial) |
+| 4 | Unfamiliar → asked once, remembered | learning suite green; the real-run ask/remember cycle still pending the chain | partial (partial) |
+| 5 | Completes unattended | **TURN-LEVEL now proven live**: single agentic turns complete unattended with real work (08-09: explore 118.60s with a real closing report; fixable 83/151s with real archives on disk). Scenario-level completion (4 chained stages) blocked on the SSE stall | partial (blocked) — improved |
+| 6 | Unmatched output triggers nothing | TestDecide_UnmatchedIsNothing, TestObserve_UnmatchedZeroInjections, TestEngine_ToolResultContentIgnored (re-run green this session) | pass (pass) |
+| 7 | Engine failure degrades | TestObserve_*Degradation suites green in the full-guard re-run | pass (pass) |
+| 8 | Hook on-failure + loop prevention | hookdag config_test + TestObserve_ReFireBudget green | pass (pass) |
+| 9 | Cancel-drain | TestObserve_CancelDrain, TestCancelDrainsInjections green | pass (pass) |
+| 10 | Concurrency + swappable backends | TestDispatchBatch_* + backend-swap suites green | pass (pass) |
+| 11 | Learning inspectable + revertible | TestStore_List/Revert* green | pass (pass) |
+| 12 | Coverage — outcome observably true | Mechanism suites + (new) turn-level live convergence; the scenario leg still pending | partial (partial) |
+
+Score: 6 pass, 5 partial (2, 3, 4, 12 unchanged-partial; 5 improved blocked→partial on the turn-level proof), 0 hard-blocked. The phase gate CANNOT close: the gated E2E (zero-continue chain) is blocked on the SSE-stall finding, and the D-10 leg is blocked on the surface decision — both need the operator's morning disposition (STATE.md carries the recommended paths: idle-watchdog + ctx-unblock fix folding the duplicate-tool_use dedupe; then D-10 route decision (a)/(b)/(c)).
+
+## Phase gate status (final for this session)
+
+- `mise run ci` — GREEN (exit 0)
+- `ASSGUARD_OPENSPEC_BIN=1 go test ./internal/openspec/ ./internal/ecosys/ -count=1` — GREEN
+- Gated E2E (product-proof + fixable) — BLOCKED (SSE stall: capture impossible; D-10 surface: assertion unreachable by construction)
+- **Phase 8 stays OPEN.** The 08-06 operator checkpoint (T4) remains the gate; this addendum + STATE.md are the evidence for that conversation.
