@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Kickoff & Peers
-status: executing
+status: "core tool execution is REAL (six-tool working set, capture-grounded forms, zero "no implementation" in the live E2E, real archive artifacts on disk) — but BOTH gated E2E turns exhausted maxIterations: every mutating result is followed by a D-11 context boundary that resets the mid-turn window, so the model cannot see its own progress within a turn. New blocker recorded below; needs an operator disposition (gap-closure plan; it changes a LOCKED safety invariant)."
 stopped_at: Phase 11 context gathered
-last_updated: "2026-08-15T08:02:31.000Z"
-last_activity: 2026-08-15 -- Gap-closure plan 08-08 staged + checker-passed (capture-grounded core tool execution)
+last_updated: "2026-08-15T09:49:52.891Z"
+last_activity: 2026-08-15 -- 08-08 executed (T1-T3 TDD green, mise ci green; T4 delegated E2E with evidence preserved under /tmp/e2e-08-08-evidence/)
 progress:
   total_phases: 4
   completed_phases: 0
@@ -24,11 +24,11 @@ See: .planning/PROJECT.md (updated 2026-08-14)
 
 ## Current Position
 
-Phase: 9 (serve-path-audit + zcode-parity re-capture) — EXECUTED overnight (delegated); 08-07 COMPLETE, 08-06 gate re-blocked, Phase-9 code plans 09-01..03/05/06 COMPLETE, 09-04 harvest finding recorded
-Plan: 09-01..06 all dispositioned (09-04 stopped on the harvest finding); Phase-8 gap-closure plan 08-08 STAGED (8th Phase-8 plan, checker-passed, awaiting operator approval)
-Status: Phase 9's automated legs green (mise ci + in-process live-serve audit + canary); the stability-on-new-pin leg is BLOCKED on the 09-04 finding; the 08-06/Phase-8 gate is blocked on core tool execution — gap-closure plan 08-08 staged + checker-passed, NOT yet approved. STOPPED after Phase 9 per the delegation — Phase 10 NOT started.
-Last activity: 2026-08-15 -- Gap-closure plan 08-08 staged + checker-passed (capture-grounded core tool execution)
-Next action: operator morning dispositions — (1) approve + execute 08-08 (the core-tool-execution gap-closure plan; then 08-06 resumes T3 + UAT + gate), (2) the 09-04 capture path (scripted 15-min workload per docs/recapture-runbook.md, or re-scope)
+Phase: 8 (slash-command-kickoff) — 08-01..08-07 + gap-closure 08-08 COMPLETE; 08-06 gate re-blocked on a NEW structural finding (D-11 boundary reset vs within-turn carry)
+Plan: 08-08 COMPLETE (executors + rendering seam + E2E run per the delegated approval); 08-06 T3/UAT/gate BLOCKED on the new finding; Phase-9 code plans 09-01..03/05/06 COMPLETE, 09-04 harvest finding recorded
+Status: core tool execution is REAL (six-tool working set, capture-grounded forms, zero "no implementation" in the live E2E, real archive artifacts on disk) — but BOTH gated E2E turns exhausted maxIterations: every mutating result is followed by a D-11 context boundary that resets the mid-turn window, so the model cannot see its own progress within a turn. New blocker recorded below; needs an operator disposition (gap-closure plan; it changes a LOCKED safety invariant).
+Last activity: 2026-08-15 -- 08-08 executed (T1-T3 TDD green, mise ci green; T4 delegated E2E with evidence preserved under /tmp/e2e-08-08-evidence/)
+Next action: operator morning disposition — (1) the D-11 finding: approve a gap-closure plan re-scoping the boundary discipline (recommended: boundaries reset BETWEEN turns; within-turn accumulation survives, bounded by the capture-pinned 64-tail + pair-safety — matches the zcode capture, which never resets on tool results), then 08-06 resumes T3 + UAT + gate; (2) the 09-04 capture path (scripted workload per docs/recapture-runbook.md, or re-scope)
 
 Progress: [██░░░░░░░░] 17%
 
@@ -64,6 +64,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 None yet.
 
 ### Blockers/Concerns
+
+- [Phase 8 / E2E gate, BLOCKING — surfaced by the delegated 08-08 T4 run 2026-08-15]: **the D-11 per-mutating-call context-boundary reset makes real agentic turns structurally non-convergent.** With core tools now REAL (08-08 complete), both gated E2E turns exhausted maxIterations: every Bash/Write/Edit result is immediately followed by a D-11 boundary (42/42 Bash results in the fixable transcript; 75/77 in the explore turn), and the boundary resets the mid-turn window to the lean seed — the model cannot see its own prior exchanges within the turn, so it re-starts every iteration (Skill re-read with the IDENTICAL input 60 consecutive times; 64 Skill calls / 2 unique). The model COMPLETED real work mid-turn (a real `openspec archive` via Bash, artifacts on disk) but could not see that it had, so the turn never ended. 08-07's "the model sees its tool results and adapts" inference is hereby corrected: input variety was equally explained by sampling temperature. NOTE the mimicry angle: the captured zcode corpus carries the last 64 messages of the conversation and never resets on tool results — D-11's per-mutating-call reset is itself a request-shape DIVERGENCE from the mimicry target (mid-turn requests are structurally distinguishable from zcode's). **Disposition needed:** a gap-closure plan re-scoping the boundary discipline (recommended: boundaries reset the BETWEEN-turn window; within-turn accumulation survives boundaries, bounded by the capture-pinned MidTurnWindowMessages=64 tail + pair-safety — matches the capture). NOT worked around here: D-11/SESS-02 is a locked safety invariant (the 08-08 plan's own truths preserve it) and changing it without a plan→checker→approve cycle would be exactly the hollow green the gates exist to prevent. Evidence: 08-08-SUMMARY T4 + /tmp/e2e-08-08-evidence/ (fixable transcript + scratch incl. the real archive artifacts + run.log; the explore leg's scratch was reaped before copying — live-poll stats recorded in the SUMMARY).
+
+- [Phase 8 / 08-06, prior blocker — product half RESOLVED by 08-08, 2026-08-15]: the core-tool-execution gap is CLOSED — Bash/Read/Write/Edit/TodoWrite/TodoRead execute for real in capture-grounded forms (committed fixture, conformance tests, RegisterCore at the sessionFor site, plainContent rendering, string-value redaction at the chokepoint; zero `no implementation yet` results in the live E2E). This entry's convergence half is superseded by the D-11 finding above; it closes when the E2E gate genuinely passes.
 
 - [Phase 9 / 09-04, FINDING — delegated harvest 2026-08-15 (overnight)]: **no existing zcode session meets the AUD-05 selection thresholds** — every session in ~/.zcode/cli/rollout/ has a STABLE tool catalog (0 mid-session MCP attach/detach events; 34/34, 185/185, 63/63 request records agree on one tool-set). Turns/tools/subagent thresholds ARE met by the main session (34 turns, 105 tools). Natural usage never toggles MCP mid-session, so waiting will not produce a qualifying capture. Per the delegation's stop rule: drift-report/re-pin/stability-green/parity-rebaseline legs STOPPED (no qualifying subject; pinning the stable session would be the vacuous re-grounding Pitfall 17 forbids). Morning options: (a) the operator runs the scripted 5-turn workload per docs/recapture-runbook.md §3 (~15 min; only Turns 4/5 are what natural usage lacks) — then all automated legs run end-to-end (09-03 machinery green); (b) re-scope AUD-05. Evidence: 09-04-SUMMARY.md's harvest table.
 

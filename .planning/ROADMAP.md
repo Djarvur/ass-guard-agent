@@ -36,7 +36,7 @@ v1.1 makes the hands-off OpenSpec promise real end-to-end. The milestone's reaso
 
 | # | Phase | Goal | Requirements | Success Criteria |
 |---|-------|------|--------------|------------------|
-| 8 | Slash-Command Kickoff | 6/7 | Blocked (08-06 checkpoint; gap-closure plan 08-08 staged 2026-08-15 — 08-07 complete, core-tool gap remains) | 2026-08-14 |
+| 8 | Slash-Command Kickoff | 8/8 | Complete   | 2026-08-15 |
 | 9 | Serve-Path Audit + zcode Parity Re-capture | Every serve-path session leaves a redacted, bounded audit trail that explains the engine's decisions; the parity stability test runs green on a newly pinned session | AUD-01, AUD-02, AUD-03, AUD-04, AUD-05 | 5 |
 | 10 | Telegram Peer (Text + Voice) | A user drives the same engine from a Telegram chat — full SDD scenarios, voice input, disciplined shutdown | TG-01, TG-02, TG-03, TG-04, TG-05, TG-06 | 5 |
 | 11 | dsh Mimicry Profile #2 | DeepSeek-model turns are structurally indistinguishable from deepseek-harness, captured not hand-written | DSH-01, DSH-02, DSH-03, DSH-04, DSH-05 | 5 |
@@ -60,7 +60,7 @@ v1.1 makes the hands-off OpenSpec promise real end-to-end. The milestone's reaso
   7. WebSearch ships a real DDG-HTML default backend (zero key) on the swappable seam and WebFetch returns fetch + html→markdown — at minimum sufficient for `/opsx:explore` workflows; zero-config first run unaffected (CMD-07, added at Phase-8 discussion)
 
 **Phase gate:** `mise ci` clean AND the operator-gated real-binary test (`ASSGUARD_OPENSPEC_BIN=1` against real openspec v1.5.0, all three paths) AND a real `/opsx` E2E in a scratch project AND the 11 deferred UAT checks green. No stub-only evidence closes this phase.
-**Plans:** 8 plans (6 complete + 08-07 gap-closure complete + 08-08 gap-closure staged)
+**Plans:** 8/8 plans complete
 Plans:
 **Wave 1**
 
@@ -78,7 +78,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 08-06-PLAN.md — the gate: real /opsx E2E in a scratch project, pattern re-seed from real output, 11 UAT checks, operator witness [CMD-04] — **CHECKPOINT-BLOCKED**: T1 chaining plumbing green + the double-gated FAIL-LOUD harness committed; the real-model run surfaced a blocking architectural gap (within-turn tool-result carry missing — see STATE.md Blockers + 08-06-SUMMARY). T3 + the phase gate resume after 08-07 AND 08-08 close the two stacked gaps.
+- [x] 08-06-PLAN.md — the gate: real /opsx E2E in a scratch project, pattern re-seed from real output, 11 UAT checks, operator witness [CMD-04] — **CHECKPOINT-BLOCKED**: T1 chaining plumbing green + the double-gated FAIL-LOUD harness committed; the real-model run surfaced a blocking architectural gap (within-turn tool-result carry missing — see STATE.md Blockers + 08-06-SUMMARY). T3 + the phase gate resume after 08-07 AND 08-08 close the two stacked gaps.
 
 **Wave 5** *(blocked on Wave 4 completion — gap closure for the 08-06 blocking finding)*
 
@@ -86,7 +86,7 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion — gap closure for the core-tool-execution blocker)*
 
-- [ ] 08-08-PLAN.md — gap closure: capture-grounded core tool execution for the /opsx working set — real Bash (workdir, model ms timeouts, process-group kill, captured `Exit code <N>`/sentinel forms), Read/Write/Edit/TodoWrite/TodoRead executors in captured result forms (line-numbered Reads, captured success texts, camelCase todo echo), committed result-shape fixture + plain-text rendering rule in the Projector, single RegisterCore wiring site, operator-witnessed gated E2E re-run proving ≥1 full stage of real work, handback to 08-06 T3 [CMD-04] — staged 2026-08-15, checker-passed, awaiting operator approval (the 08-06 checkpoint remains HELD; deferred-tools remainder tabled in-plan).
+- [x] 08-08-PLAN.md — gap closure: capture-grounded core tool execution for the /opsx working set — real Bash (workdir, model ms timeouts, process-group kill, captured `Exit code <N>`/sentinel forms), Read/Write/Edit/TodoWrite/TodoRead executors in captured result forms (line-numbered Reads, captured success texts, camelCase todo echo), committed result-shape fixture + plain-text rendering rule in the Projector, single RegisterCore wiring site, operator-witnessed gated E2E re-run proving ≥1 full stage of real work, handback to 08-06 T3 [CMD-04] — staged 2026-08-15, checker-passed, awaiting operator approval (the 08-06 checkpoint remains HELD; deferred-tools remainder tabled in-plan).
 
 ### Phase 9: Serve-Path Audit + zcode Parity Re-capture
 
