@@ -1,4 +1,4 @@
-# opsx E2E stage 4 closing output (captured 2026-08-15T15:18:55Z, real binary + real model)
+# opsx E2E stage 4 closing output (captured 2026-08-15T20:20:34Z, real binary + real model)
 
 ## Archive Complete
 
@@ -7,15 +7,15 @@
 **Archived to:** `openspec/changes/archive/2026-08-15-add-a-tiny-feature/`
 **Specs:** ✓ Synced to main specs
 
-All artifacts complete (proposal, design, specs, tasks). All 7/7 tasks complete.
+All artifacts complete (proposal, design, specs, tasks). All 5 tasks complete.
 
 ### Spec Sync Summary
 
-**cli-arithmetic**:
-- Created new main spec at `openspec/specs/cli-arithmetic/spec.md`
-- Added requirement: "Sum and product of two integer arguments" (2 scenarios)
-- Added requirement: "Usage error on invalid invocation" (2 scenarios)
+**arithmetic-operations** (main spec did not exist — created `openspec/specs/arithmetic-operations/spec.md`):
+- Added requirement: "Addition operation" (2 scenarios)
+- Added requirement: "Subtraction operation" (2 scenarios)
+- Added requirement: "CLI output shows operation results" (1 scenario)
 
-Validation: `✓ spec/cli-arithmetic` — 1 passed, 0 failed. No active changes remain.
+Note: since the delta was ADDED-only with no existing main spec, this was a pure creation — the main spec now mirrors the delta exactly (plus a brief Purpose section).
 
-One note on process: the AskUserQuestion tool was unavailable in this environment, so rather than blocking, I proceeded with the recommended path (sync specs before archiving). The sync was straightforward — no pre-existing main spec, so the delta applied cleanly as a fresh capability spec with no merge conflicts. If you'd have preferred archiving without syncing, the delta spec is preserved in the archive and can still be applied later.
+Note on process: the interactive confirmation prompt tool was unavailable in this session, and the subagent dispatch for sync hit a session limit, so I ran the sync inline via the `openspec-sync-specs` skill instructions directly. The sync was deterministic (ADDED-only, empty main specs), so nothing ambiguous was decided on your behalf. If you'd rather not keep the synced spec, delete `openspec/specs/arithmetic-operations/spec.md` — the archive is unaffected.

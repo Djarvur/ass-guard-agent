@@ -1,47 +1,34 @@
-# opsx E2E stage 1 closing output (captured 2026-08-15T15:18:55Z, real binary + real model)
+# opsx E2E stage 1 closing output (captured 2026-08-15T20:20:34Z, real binary + real model)
 
-Explore mode it is. 🧭
+No active changes — clean slate. Let me look at what we're working with.
 
-I had a look around first — here's the lay of the land:
-
-**The codebase** (in its entirety, blessedly small):
-
-```go
-// main.go
-func add(a, b int) int { return a + b }
-func main() { fmt.Println(add(2, 3)) }
-```
-
-That's it. One file, one function, hardcoded `2 + 3`. Runs with `go run .`.
-
-**OpenSpec state**: no active changes, clean slate. So "add-a-tiny-feature" isn't an existing change we'd be exploring — it's an idea looking for a shape.
-
----
-
-The name made me smile — a tiny feature for a tiny app. But "tiny" is doing a lot of work in that phrase, and there are several directions this could go:
+## The lay of the land
 
 ```
-                    ┌──────────────────────┐
-                    │   add-a-tiny-feature │
-                    └──────────┬───────────┘
-                               │
-        ┌──────────────┬───────┴──────┬─────────────────┐
-        ▼              ▼              ▼                 ▼
-  ┌───────────┐  ┌───────────┐  ┌─────────────┐  ┌────────────────┐
-  │ More math │  │ Make it a │  │ Give it a   │  │ Meta-tiny:     │
-  │ sub? mul? │  │ real CLI  │  │ memory      │  │ int overflow   │
-  │ (extends  │  │ (args in, │  │ (history of │  │ handling?      │
-  │  the DSL) │  │ no hard-  │  │ results?)   │  │ error paths?   │
-  └───────────┘  │  coded 2,3)│  └─────────────┘  └────────────────┘
-                 └───────────┘
+scratch-app/
+├── main.go      ──▶  add(a, b int) int
+├── README.md    ──▶  "Features: add two numbers"
+└── openspec/    ──▶  initialized, zero changes
 ```
 
-Some threads that occur to me:
+The entire universe of this app is one function:
 
-1. **What does the app want to be?** Right now it's a proof that `add` works. A tiny feature could be as small as `sub(a, b)` — or as "tiny"-but-actually-notable as accepting CLI args, which would be its first step toward being an actual *program* rather than a test.
+```
+        ┌─────────────────────┐
+stdin ─▶│                     │
+ (none) │   add(a, b) int     │────▶ stdout: "5"
+        │   hardcoded (2, 3)  │
+        └─────────────────────┘
+```
 
-2. **The hardcoded values are interesting.** `add(2, 3)` baked into `main` means the app has no input surface at all. Adding any feature that takes input changes its nature more than adding another pure function does.
+So when you say **"add-a-tiny-feature"** — the name reads like a change ID, but the content is wide open. A few threads we could pull:
 
-3. **The meta-question**: is this a scratchpad (in which case, just add the thing, who cares) or a sandbox for practicing the OpenSpec workflow (in which case even a "tiny" feature is a nice low-stakes way to walk through proposal → spec → tasks)?
+**Thread 1 — Grow the arithmetic family.** `subtract`, `multiply`, `divide` (with the classic divide-by-zero edge case as the only real design question). This is the most "tiny feature" shaped option — it's `add`'s sibling.
 
-What did you have in mind — is there a specific tiny feature lurking, or are we figuring out what "tiny" means first?
+**Thread 2 — Change how input arrives.** Right now the operands are hardcoded. Reading from CLI args (`go run . 2 3`) or stdin turns this from a demo into... an actual *app*, arguably. That's a slightly different kind of feature — it changes the shape of the program's boundary, not its internals.
+
+**Thread 3 — Something orthogonal entirely.** A flag (`--verbose`), a history of operations, exit codes on error. Features about *behavior around* the calculation rather than new math.
+
+Worth noticing: **Thread 2 has a hidden reach.** If input becomes dynamic, suddenly you need error handling (what if args are missing? non-numeric?), and *that* drags in questions like "what does failure look like?" — exit codes, stderr vs stdout. The divide-by-zero question in Thread 1 lands in the same spot. Tiny features have a way of converging on "how do we handle errors" as the first real design decision.
+
+What did you have in mind — one of these directions, or a tiny feature of a different flavor entirely? (And if you already know exactly what feature you want, just describe it and we'll think through its shape together.)

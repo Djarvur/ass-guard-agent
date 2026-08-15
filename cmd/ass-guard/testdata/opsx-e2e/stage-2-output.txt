@@ -1,14 +1,18 @@
-# opsx E2E stage 2 closing output (captured 2026-08-15T15:18:55Z, real binary + real model)
-
-Change **`add-a-tiny-feature`** created at `openspec/changes/add-a-tiny-feature/` — 4/4 artifacts complete.
-
-| Artifact | What it covers |
-|---|---|
-| `proposal.md` | Why: replace hardcoded `add(2, 3)` with a real CLI surface — two integer args in, sum + product out. New capability: `cli-arithmetic` |
-| `design.md` | How: positional args via `strconv.Atoi` + `os.Args` (stdlib only), validate-before-compute, single `usage()` failure path. Notes the intended breaking change (no-arg `5` output is gone) |
-| `specs/cli-arithmetic/spec.md` | 2 requirements, 4 scenarios: positive ints (`2 3` → `5`/`6`), negative/zero operands, wrong arg count, non-integer input |
-| `tasks.md` | 7 tasks in 2 groups: core implementation (multiply fn, arg parsing, output) + verification (build/vet, all spec scenarios) |
+# opsx E2E stage 2 closing output (captured 2026-08-15T20:20:34Z, real binary + real model)
 
 All artifacts created! Ready for implementation.
+
+## Change: `add-a-tiny-feature`
+
+**Location:** `openspec/changes/add-a-tiny-feature/`
+
+| Artifact | Description |
+|----------|-------------|
+| `proposal.md` | Adds `subtract(a, b int) int` alongside existing `add`, prints both results from `main()`, updates README |
+| `specs/arithmetic-operations/spec.md` | New capability spec — addition, subtraction, and CLI output requirements with testable scenarios |
+| `design.md` | Mirrors `add`'s style exactly; explicitly rejects over-abstraction (no interfaces, no op tables) |
+| `tasks.md` | 5 tasks in 3 groups: implementation (2), docs (1), verification (2) |
+
+**Scope fence:** Non-Goals exclude CLI parsing, new operations (multiply/divide), and file restructuring — this stays a two-function program.
 
 Run `/opsx:apply` to start implementing.

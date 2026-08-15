@@ -1,26 +1,40 @@
-# opsx E2E stage 3 closing output (captured 2026-08-15T15:18:55Z, real binary + real model)
+# opsx E2E stage 3 closing output (captured 2026-08-15T20:20:34Z, real binary + real model)
 
 ## Implementation Complete
 
 **Change:** add-a-tiny-feature
 **Schema:** spec-driven
-**Progress:** 7/7 tasks complete ✓
+**Progress:** 5/5 tasks complete ✓
 
 ### Completed This Session
 
-**Core Implementation**
-- [x] 1.1 Added `multiply(a, b int) int` mirroring `add` (`main.go:11`)
-- [x] 1.2 `main()` checks `len(os.Args) != 3` → `usage()` helper (stderr + exit 1)
-- [x] 1.3 Both operands parsed with `strconv.Atoi`; parse failure routes to `usage()` before any stdout output
-- [x] 1.4 Success path prints `add(a, b)` then `multiply(a, b)`, one per line
+- [x] 1.1 Added `subtract(a, b int) int` to `main.go` with doc comment, mirroring `add` style
+- [x] 1.2 Added `fmt.Println(subtract(5, 3))` to `main()` after the existing addition line
+- [x] 2.1 Updated `README.md` feature line to "Features: add and subtract two numbers"
+- [x] 3.1 `go build ./...` — compiles cleanly
+- [x] 3.2 `go run .` — stdout contains `5` and `2` per the spec scenarios ✓
 
-**Verification** (all observed passing)
-- [x] 2.1 `go build` + `go vet ./...` clean
-- [x] 2.2 `2 3` → `5`/`6` exit 0; `-4 0` → `-4`/`0` exit 0
-- [x] 2.3 No args / 1 arg / 3 args / `abc 3` → usage on stderr, exit 1, empty stdout
+### Note
 
-### Notes
-- One deviation outside the task list: the repo had no `go.mod`, so I ran `go mod init cliarith` to make the module buildable at all. `go build`/`go vet` were impossible without it — flagging in case you'd rather vendor this differently.
-- Temporary build binary was removed after verification.
+The project had no `go.mod`, so `go build ./...` initially failed with *"directory prefix . does not contain main module"*. I ran `go mod init scratch-app` to initialize the module (standard-library-only, `go mod tidy` reports nothing to add). This was a minimal prerequisite fix, not a scope change.
+
+### Final `main.go`
+
+```go
+package main
+
+import "fmt"
+
+// add returns the sum of a and b.
+func add(a, b int) int { return a + b }
+
+// subtract returns the difference of a and b.
+func subtract(a, b int) int { return a - b }
+
+func main() {
+	fmt.Println(add(2, 3))
+	fmt.Println(subtract(5, 3))
+}
+```
 
 All tasks complete! You can archive this change with `/opsx:archive`.
