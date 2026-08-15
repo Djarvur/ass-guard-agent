@@ -413,3 +413,73 @@ func (e *errorRunner) LastTurnOutput() engine.TurnOutput { return engine.TurnOut
 
 // ensure unused imports are referenced (time used in cancel-after-first path).
 var _ = time.Second
+
+// TestObserve_EmitsProvenance (09-02 T2 Tests 7-9, AUD-04): a matching turn
+// publishes an EngineDecision event + transcript line carrying MatchedSpan +
+// ConfigSource; an unmatched turn still writes exactly ONE nothing-decision
+// with EMPTY provenance (the Phase-4 cadence invariant — enrich fields, never
+// cadence).
+func TestObserve_EmitsProvenance(t *testing.T) {
+	t.Parallel()
+
+	runner := &scriptedRunner{outputs: []engine.TurnOutput{
+		{TurnID: "p1", Text: "The change is ready to implement now."},
+	}}
+	bus := event.NewBus()
+	capturing := &capturingManager{}
+	eng := &engine.Engine{Bus: bus, Manager: capturing}
+
+	events := bus.Subscribe("EngineDecision", event.BufBoundary)
+
+	_, err := eng.Observe(context.Background(), runner, spanTable{},
+		[]session.ContentBlock{{Type: blockText, Text: "go"}})
+	if err != nil {
+		t.Fatalf("Observe: %v", err)
+	}
+
+	select {
+	case e := <-events:
+		ed, ok := e.(event.EngineDecision)
+		if !ok {
+			t.Fatalf("event type = %T; want event.EngineDecision", e)
+		}
+
+		if ed.Action != "continue" || ed.Signal != "text:impl-complete" {
+			t.Errorf("event action/signal = %q/%q; want continue/text:impl-complete", ed.Action, ed.Signal)
+		}
+
+		if ed.MatchedSpan != "ready to implement" {
+			t.Errorf("event MatchedSpan = %q; want the matched span", ed.MatchedSpan)
+		}
+
+		if ed.ConfigSource != "openspec.toml patterns/impl-complete" {
+			t.Errorf("event ConfigSource = %q; want the entry source", ed.ConfigSource)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("no EngineDecision event within 3s")
+	}
+
+	if len(capturing.decisions) == 0 {
+		t.Fatal("no decision written to the transcript seam")
+	}
+
+	// Unmatched turn: exactly one nothing-decision, empty provenance.
+	runner2 := &scriptedRunner{outputs: []engine.TurnOutput{{TurnID: "p2", Text: "plain"}}}
+	capturing2 := &capturingManager{}
+	eng2 := &engine.Engine{Manager: capturing2}
+
+	_, err = eng2.Observe(context.Background(), runner2, spanTable{},
+		[]session.ContentBlock{{Type: blockText, Text: "go"}})
+	if err != nil {
+		t.Fatalf("Observe(unmatched): %v", err)
+	}
+
+	if len(capturing2.decisions) != 1 {
+		t.Fatalf("nothing-turn decisions = %d; want exactly 1 (cadence invariant)", len(capturing2.decisions))
+	}
+
+	d := capturing2.decisions[0]
+	if d.Action != engine.ActionNothing || d.Signal != "unmatched" || d.MatchedSpan != "" || d.ConfigSource != "" {
+		t.Errorf("nothing decision = %+v; want unmatched with empty provenance", d)
+	}
+}

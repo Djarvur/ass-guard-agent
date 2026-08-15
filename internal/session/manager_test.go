@@ -356,3 +356,52 @@ func readFile(t *testing.T, path string) string {
 
 	return string(b)
 }
+
+// TestAppendEngineDecisionProvenance (09-02 T2 Test 8 — the AUD-04
+// acceptance): the engine_decision line carries FULL provenance — action,
+// signal, matched span, config source, source turn — so ONE line answers
+// "why did it continue" without transcript cross-referencing (D-03).
+func TestAppendEngineDecisionProvenance(t *testing.T) {
+	t.Parallel()
+
+	m := newTestManager(t, "s-prov")
+
+	err := m.AppendEngineDecision("turn_9", "continue", "text:impl-complete",
+		"ready to implement", "openspec.toml patterns/impl-complete", "text-pattern matched")
+	if err != nil {
+		t.Fatalf("AppendEngineDecision: %v", err)
+	}
+
+	lines, err := m.ReadAll()
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+
+	var found *Line
+
+	for i := range lines {
+		if lines[i].Type == TypeEngineDecision {
+			found = &lines[i]
+		}
+	}
+
+	if found == nil {
+		t.Fatal("no engine_decision line")
+	}
+
+	if found.TurnID != "turn_9" || found.Name != "continue" {
+		t.Errorf("turn/action = %q/%q; want turn_9/continue", found.TurnID, found.Name)
+	}
+
+	if got := string(found.Input); got != `"text:impl-complete"` {
+		t.Errorf("signal = %s; want text:impl-complete", got)
+	}
+
+	if found.MatchedSpan != "ready to implement" {
+		t.Errorf("MatchedSpan = %q; want the matched text", found.MatchedSpan)
+	}
+
+	if found.ConfigSource != "openspec.toml patterns/impl-complete" {
+		t.Errorf("ConfigSource = %q; want the entry that fired", found.ConfigSource)
+	}
+}
