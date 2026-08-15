@@ -3,7 +3,7 @@ phase: 09-serve-path-audit-zcode-parity-re-capture
 plan: 04
 subsystem: zcode-parity-recapture
 tags: [aud-05, harvest, thresholds, finding, delegated-checkpoint]
-status: blocked-on-harvest   # the delegated selection found NO qualifying session — finding recorded; capture-dependent legs stopped per the delegation
+status: complete-with-finding   # 2026-08-16 overnight: the capture happened (autonomous app-server driver, operator-directed), all legs ran; the parity gate's recalibration (stale v1.0-era expectations, profile-independent) is the recorded finding awaiting disposition
 ---
 
 # Phase 9 Plan 04: zcode parity re-capture Summary (delegated harvest run)
