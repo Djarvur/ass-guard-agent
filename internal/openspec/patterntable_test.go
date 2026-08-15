@@ -110,8 +110,18 @@ func TestSeeded_ChainingRowsFromRealCapture(t *testing.T) { //nolint:funlen // f
 		wantNxt string
 	}{
 		{
-			stage:   "explore",
+			// Run 1 (13:29Z capture) explore closing phrasing.
+			stage:   "explore (run 1)",
 			excerpt: "When something crystallizes, I can spin up an OpenSpec change proposal for it. But no rush",
+			wantID:  "post-explore-handoff",
+			wantNxt: "/opsx:propose",
+		},
+		{
+			// Run 2 (13:40Z product run) explore closing phrasing — the anchor
+			// is the FAMILY (the proposal reference), never one run's wording.
+			stage: "explore (run 2)",
+			excerpt: "what does the smallest meaningful spec-driven change look like here? " +
+				"A calibration run — proposal → spec → tasks — implement → archive.",
 			wantID:  "post-explore-handoff",
 			wantNxt: "/opsx:propose",
 		},
@@ -146,12 +156,20 @@ func TestSeeded_ChainingRowsFromRealCapture(t *testing.T) { //nolint:funlen // f
 		}
 	}
 
-	// The archive closing ends the chain: no row matches (verbatim excerpt).
+	// The archive closing ends the chain via the TERMINAL SHIELD — pinned with
+	// the word "proposal" PRESENT (the real closing's artifact list carries it,
+	// which is exactly why the shield row must precede post-explore).
 	archiveClosing := "## Archive Complete\n\n**Change:** `add-a-tiny-feature`\n" +
 		"**Archived to:** `openspec/changes/archive/2026-08-15-add-a-tiny-feature/`\n" +
+		"All artifacts complete (proposal, design, specs, tasks). " +
 		"no active changes remain under `openspec/changes/`."
 
-	if m := pt.MatchText(archiveClosing); m.ID != "" {
-		t.Errorf("archive closing matched %q; want NO match (the chain ends naturally)", m.ID)
+	m := pt.MatchText(archiveClosing)
+	if m.ID != "post-archive-terminal" {
+		t.Fatalf("archive closing matched %q; want post-archive-terminal (the shield)", m.ID)
+	}
+
+	if m.Action != engine.ActionWait {
+		t.Errorf("archive closing action = %q; want wait (no injection — the chain ends)", m.Action)
 	}
 }

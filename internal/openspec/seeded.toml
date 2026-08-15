@@ -38,15 +38,22 @@
 # Source: cmd/ass-guard/testdata/opsx-e2e/stage-{1,2,3}-output-capture.txt
 # Capture run: 2026-08-15T13:29Z, gated E2E capture mode (real openspec 1.5.0
 # binary + real GLM-5.2 via the Z.ai Anthropic endpoint), full
-# explore→propose→apply→archive scenario, 505s, all four stages' closing
-# outputs captured; zero manual continues below is proven by the product-proof
-# re-run on these rows. Regexes anchor on the stable phrase family the model
-# REALLY emits (the next-stage command it names / the proposal handoff), never
-# command-file prose. Row order is load-bearing: each row's anchor appears only
-# in its own stage's closing (propose names /opsx:apply; apply names
-# /opsx:archive; only explore says "change proposal"), so first-match-wins can
-# never loop a stage. The archive closing matches NOTHING (chain ends
-# naturally). Operator overlays adjust without code (D-12).
+# explore→propose→apply→archive scenario, 505s. Regexes anchor on the stable
+# phrase FAMILY the model emits across runs (verified against BOTH 2026-08-15
+# gated runs' closings): propose names `/opsx:apply`, apply names
+# `/opsx:archive`, explore closings reference the upcoming `proposal` — never
+# command-file prose. Row ORDER is load-bearing (first match wins): the
+# archive-terminal shield must precede post-explore because the ARCHIVE closing
+# also contains the word "proposal" (its artifact list) — the shield ends the
+# chain there; post-propose/post-apply precede post-explore because those
+# closings also say "proposal". Operator overlays adjust without code (D-12).
+
+# The terminal shield: the archive closing ends the chain (wait = no injection,
+# flows through unchanged).
+[[patterns]]
+id = "post-archive-terminal"
+regex = "(?i)archive complete"
+action = "wait"
 
 [[patterns]]
 id = "post-propose-handoff"
@@ -60,9 +67,13 @@ regex = "/opsx:archive"
 action = "continue"
 next = "/opsx:archive"
 
+# Explore closings are free-form thinking summaries; the stable family signal
+# across observed runs is the reference to the upcoming proposal (run 1: "spin
+# up an OpenSpec change proposal"; run 2: "calibration run — proposal → spec →
+# tasks"). Unfamiliar phrasings fall to the learning mode (ask-once-remembered).
 [[patterns]]
 id = "post-explore-handoff"
-regex = "(?i)change proposal"
+regex = "(?i)proposal"
 action = "continue"
 next = "/opsx:propose"
 
