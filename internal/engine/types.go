@@ -4,6 +4,41 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/session"
 )
 
+// PatternTable is the dual-signal source the engine consults (D-02). The
+// engine depends only on this interface so it stays fully table-testable with
+// tiny in-memory fakes; the concrete OpenSpec table lives in
+// internal/openspec (dependency direction: openspec -> engine, never the
+// reverse).
+type PatternTable interface {
+	// MatchText scans assistant text for a known handoff pattern. Returns the
+	// match detail; the ZERO VALUE (Action == ActionNothing) means no match.
+	MatchText(text string) MatchDetail
+	// MatchTool reports whether name is a known handoff tool-call (D-02 second
+	// signal — the model invoked a known handoff tool). Same zero-value
+	// convention.
+	MatchTool(name string) MatchDetail
+}
+
+// MatchDetail is one pattern-table match with FULL provenance (09-02, AUD-04 /
+// D-03): what matched (ID), what to do (Action), the literal matched text
+// (Span), and which config entry fired (ConfigSource — supplied by the TABLE
+// implementation, keeping the engine table-agnostic). The zero value is "no
+// match". For tool signals the Span slot carries the tool-call NAME —
+// TurnOutput carries names, not inputs, so the name IS the matched signal
+// text.
+type MatchDetail struct {
+	// ID is the matched entry's id (pattern id or handoff-tool id).
+	ID string
+	// Action is the matched entry's action.
+	Action Action
+	// Span is the literal matched substring (text signals) or the tool-call
+	// name (tool signals).
+	Span string
+	// ConfigSource names the config entry that fired, e.g.
+	// "openspec.toml patterns/<id>" — identifiers only, never file contents.
+	ConfigSource string
+}
+
 // Action is the engine's decision vocabulary (D-02 dual-signal + D-08 step
 // kinds the engine can dispatch). Plan 04-01 implements ActionContinue +
 // ActionNothing; hook/ask/wait are carried as enum values dispatched by the
@@ -59,6 +94,14 @@ type Decision struct {
 	// Signal identifies what matched: "text:<patternID>", "tool:<toolID>", or
 	// "unmatched". This is the investigate-and-fix-ready attribution.
 	Signal string
+	// MatchedSpan is the literal matched text (AUD-04 / D-03 full
+	// provenance): the exact substring for text signals, the tool-call NAME
+	// for tool signals (TurnOutput carries names). Empty when unmatched.
+	MatchedSpan string
+	// ConfigSource names the config entry that fired (table-supplied, e.g.
+	// "openspec.toml patterns/<id>") — identifiers only, never file contents.
+	// Empty when unmatched.
+	ConfigSource string
 	// NextPrompt is populated for ActionContinue — the prompt re-entered as a
 	// real turn. Plan 04-05 fills the real OpenSpec next-stage text via
 	// NextStagePrompt; the tracer (04-01) injects a literal "continue".

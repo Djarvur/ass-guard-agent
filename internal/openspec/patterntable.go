@@ -80,17 +80,32 @@ func FromConfig(cfg *OpenSpecConfig) (*OpenSpecPatternTable, error) {
 	return pt, nil
 }
 
-// MatchText scans the patterns in declared order; the FIRST match wins (returns
-// its id + action). No match ⇒ ("", engine.ActionNothing) — the engine's
-// structural-safety cell (D-03).
-func (t *OpenSpecPatternTable) MatchText(text string) (string, engine.Action) {
+// configSourcePatterns / configSourceHandoffTools are the ConfigSource
+// prefixes the table supplies per match (09-02, AUD-04/D-03 — the engine is
+// table-agnostic; the TABLE names its own entries). Identifiers only, never
+// file contents.
+const (
+	configSourcePatterns     = "openspec.toml patterns/"
+	configSourceHandoffTools = "openspec.toml handoff_tools/"
+)
+
+// MatchText scans the patterns in declared order; the FIRST match wins. The
+// returned MatchDetail carries the LITERAL matched substring (FindString —
+// not the whole text, not a boolean) + the config source naming the entry.
+// No match ⇒ the zero value — the engine's structural-safety cell (D-03).
+func (t *OpenSpecPatternTable) MatchText(text string) engine.MatchDetail {
 	for _, p := range t.textPatterns {
-		if p.regex.MatchString(text) {
-			return p.id, p.action
+		if span := p.regex.FindString(text); span != "" {
+			return engine.MatchDetail{
+				ID:           p.id,
+				Action:       p.action,
+				Span:         span,
+				ConfigSource: configSourcePatterns + p.id,
+			}
 		}
 	}
 
-	return "", engine.ActionNothing
+	return engine.MatchDetail{}
 }
 
 // NextPromptFor returns the next-command text configured for a pattern id
@@ -100,14 +115,21 @@ func (t *OpenSpecPatternTable) NextPromptFor(patternID string) string {
 	return t.nextFor[patternID]
 }
 
-// MatchTool reports whether name is a known handoff tool-call + returns its id +
-// action (exact-name match — D-02 second signal). Unknown ⇒ ActionNothing.
-func (t *OpenSpecPatternTable) MatchTool(name string) (string, engine.Action) {
+// MatchTool reports whether name is a known handoff tool-call (exact-name
+// match — D-02 second signal). The returned MatchDetail carries the tool NAME
+// as the Span (TurnOutput carries names, not inputs — the name IS the matched
+// signal text) + the handoff entry's config source. Unknown ⇒ zero value.
+func (t *OpenSpecPatternTable) MatchTool(name string) engine.MatchDetail {
 	if e, ok := t.handoffTools[name]; ok {
-		return e.id, e.action
+		return engine.MatchDetail{
+			ID:           e.id,
+			Action:       e.action,
+			Span:         name,
+			ConfigSource: configSourceHandoffTools + e.id,
+		}
 	}
 
-	return "", engine.ActionNothing
+	return engine.MatchDetail{}
 }
 
 // parseAction maps a TOML action string to the engine.Action enum. An unknown

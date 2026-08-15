@@ -88,18 +88,18 @@ func TestPatternTable_MatchTextFirstWins(t *testing.T) {
 		t.Fatalf("FromConfig: %v", err)
 	}
 
-	if id, act := pt.MatchText("... Implementation Complete — ready for review ..."); id != statusImplComplete ||
-		act != engine.ActionContinue {
-		t.Errorf("MatchText(impl) = (%q,%v); want (impl-complete, continue)", id, act)
+	if d := pt.MatchText("... Implementation Complete — ready for review ..."); d.ID != statusImplComplete ||
+		d.Action != engine.ActionContinue {
+		t.Errorf("MatchText(impl) = (%q,%v); want (impl-complete, continue)", d.ID, d.Action)
 	}
 
-	if id, act := pt.MatchText("the Specification is now finalized"); id != "spec-done" ||
-		act != engine.ActionContinue {
-		t.Errorf("MatchText(spec) = (%q,%v); want (spec-done, continue)", id, act)
+	if d := pt.MatchText("the Specification is now finalized"); d.ID != "spec-done" ||
+		d.Action != engine.ActionContinue {
+		t.Errorf("MatchText(spec) = (%q,%v); want (spec-done, continue)", d.ID, d.Action)
 	}
 
-	if id, act := pt.MatchText("totally unrelated text"); id != "" || act != engine.ActionNothing {
-		t.Errorf("MatchText(unmatched) = (%q,%v); want (\"\", Nothing)", id, act)
+	if d := pt.MatchText("totally unrelated text"); d.ID != "" || d.Action != engine.ActionNothing {
+		t.Errorf("MatchText(unmatched) = (%q,%v); want (\"\", Nothing)", d.ID, d.Action)
 	}
 }
 
@@ -119,12 +119,12 @@ func TestPatternTable_MatchTool(t *testing.T) {
 		t.Fatalf("FromConfig: %v", err)
 	}
 
-	if id, act := pt.MatchTool("openspec_handoff"); id != "os-handoff" || act != engine.ActionContinue {
-		t.Errorf("MatchTool(handoff) = (%q,%v); want (os-handoff, continue)", id, act)
+	if d := pt.MatchTool("openspec_handoff"); d.ID != "os-handoff" || d.Action != engine.ActionContinue {
+		t.Errorf("MatchTool(handoff) = (%q,%v); want (os-handoff, continue)", d.ID, d.Action)
 	}
 
-	if id, act := pt.MatchTool("Read"); id != "" || act != engine.ActionNothing {
-		t.Errorf("MatchTool(Read) = (%q,%v); want (\"\", Nothing)", id, act)
+	if d := pt.MatchTool("Read"); d.ID != "" || d.Action != engine.ActionNothing {
+		t.Errorf("MatchTool(Read) = (%q,%v); want (\"\", Nothing)", d.ID, d.Action)
 	}
 }
 
@@ -167,7 +167,7 @@ func TestPatternTable_ActionMapping(t *testing.T) {
 		"q": engine.ActionWait,
 	}
 	for text, wantAct := range cases {
-		if _, got := pt.MatchText(text); got != wantAct {
+		if got := pt.MatchText(text).Action; got != wantAct {
 			t.Errorf("MatchText(%q) action = %v; want %v", text, got, wantAct)
 		}
 	}
@@ -186,5 +186,62 @@ func TestRegisterTools_NilArgs(t *testing.T) {
 	err = openspec.RegisterTools(toolcat.NewCatalog(), nil)
 	if err == nil {
 		t.Error("RegisterTools(nil cfg) = nil; want error")
+	}
+}
+
+// TestPatternTable_MatchDetailSpan (09-02 T1 Test 5): MatchText returns the
+// LITERAL matched substring via FindString — not the whole text, not a boolean.
+func TestPatternTable_MatchDetailSpan(t *testing.T) {
+	t.Parallel()
+
+	cfg := &openspec.OpenSpecConfig{
+		Patterns: []openspec.PatternEntry{
+			{ID: "ready-next", Regex: "ready to (implement|apply)", Action: stopContinue},
+		},
+	}
+
+	pt, err := openspec.FromConfig(cfg)
+	if err != nil {
+		t.Fatalf("FromConfig: %v", err)
+	}
+
+	text := "prefix noise … ready to implement … suffix noise"
+	d := pt.MatchText(text)
+
+	if d.Span != "ready to implement" {
+		t.Errorf("Span = %q; want the literal matched substring (FindString), not %q", d.Span, text)
+	}
+}
+
+// TestPatternTable_MatchDetailConfigSource (09-02 T1 Test 6): the table names
+// its own entries — patterns/… for text matches, handoff_tools/… for tools.
+func TestPatternTable_MatchDetailConfigSource(t *testing.T) {
+	t.Parallel()
+
+	cfg := &openspec.OpenSpecConfig{
+		Patterns: []openspec.PatternEntry{
+			{ID: "spec-done", Regex: "specification finalized", Action: stopContinue},
+		},
+		HandoffTools: []openspec.HandoffToolEntry{
+			{ID: "os-handoff", Tool: "openspec_handoff", Action: stopContinue},
+		},
+	}
+
+	pt, err := openspec.FromConfig(cfg)
+	if err != nil {
+		t.Fatalf("FromConfig: %v", err)
+	}
+
+	if d := pt.MatchText("the specification finalized ok"); d.ConfigSource != "openspec.toml patterns/spec-done" {
+		t.Errorf("MatchText ConfigSource = %q; want openspec.toml patterns/spec-done", d.ConfigSource)
+	}
+
+	d := pt.MatchTool("openspec_handoff")
+	if d.ConfigSource != "openspec.toml handoff_tools/os-handoff" {
+		t.Errorf("MatchTool ConfigSource = %q; want openspec.toml handoff_tools/os-handoff", d.ConfigSource)
+	}
+
+	if d.Span != "openspec_handoff" {
+		t.Errorf("MatchTool Span = %q; want the tool NAME as the span", d.Span)
 	}
 }

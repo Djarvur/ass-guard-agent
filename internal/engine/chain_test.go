@@ -17,16 +17,21 @@ const chainPatternID = "post-explore-handoff"
 // stage-bearing pattern id; everything else is unmatched.
 type continueTable struct{}
 
-func (continueTable) MatchText(text string) (string, engine.Action) {
+func (continueTable) MatchText(text string) engine.MatchDetail {
 	if strings.Contains(text, "handoff") {
-		return chainPatternID, engine.ActionContinue
+		return engine.MatchDetail{
+			ID:           chainPatternID,
+			Action:       engine.ActionContinue,
+			Span:         "handoff",
+			ConfigSource: "fake patterns/" + chainPatternID,
+		}
 	}
 
-	return "", engine.ActionNothing
+	return engine.MatchDetail{}
 }
 
-func (continueTable) MatchTool(string) (string, engine.Action) {
-	return "", engine.ActionNothing
+func (continueTable) MatchTool(string) engine.MatchDetail {
+	return engine.MatchDetail{}
 }
 
 // populatingDispatcher is a fakeDispatcher extended with ContinuePopulator:

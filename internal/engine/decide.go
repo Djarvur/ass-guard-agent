@@ -1,18 +1,5 @@
 package engine
 
-// PatternTable is the dual-signal source the engine consults (D-02). The
-// concrete loader (TOML, from the OpenSpec overlay) lands in Plan 04-02; the
-// engine depends only on this interface so the tracer (04-01) is dep-free and
-// fully table-testable with a tiny in-memory fake.
-type PatternTable interface {
-	// MatchText scans assistant text for a known handoff pattern. Returns the
-	// matched pattern's id + its action, or ("", ActionNothing) if no match.
-	MatchText(text string) (patternID string, action Action)
-	// MatchTool reports whether name is a known handoff tool-call and returns
-	// its action (D-02 second signal — the model invoked a known handoff tool).
-	MatchTool(name string) (toolID string, action Action)
-}
-
 // Decide is the PURE dual-signal detector (D-01 — a pure function of turn
 // output + pattern table; no I/O, no globals, no time). It returns the engine's
 // verdict for one finished turn:
@@ -28,33 +15,37 @@ type PatternTable interface {
 //
 // Every returned Decision carries TurnID = out.TurnID (D-05 provenance).
 func Decide(out TurnOutput, table PatternTable) Decision {
-	if pid, pAct := table.MatchText(out.Text); pAct != ActionNothing {
+	if d := table.MatchText(out.Text); d.Action != ActionNothing {
 		reason := "text-pattern matched"
 		// If a handoff tool is ALSO present, note it in the reason for the
 		// investigate-and-fix-ready audit (text still wins the attribution).
 		for _, name := range out.ToolCalls {
-			if tid, tAct := table.MatchTool(name); tAct != ActionNothing {
-				reason = "text-pattern matched (handoff tool " + tid + " also present; text wins attribution)"
+			if td := table.MatchTool(name); td.Action != ActionNothing {
+				reason = "text-pattern matched (handoff tool " + td.ID + " also present; text wins attribution)"
 
 				break
 			}
 		}
 
 		return Decision{
-			TurnID: out.TurnID,
-			Action: pAct,
-			Signal: "text:" + pid,
-			Reason: reason,
+			TurnID:       out.TurnID,
+			Action:       d.Action,
+			Signal:       "text:" + d.ID,
+			MatchedSpan:  d.Span,
+			ConfigSource: d.ConfigSource,
+			Reason:       reason,
 		}
 	}
 
 	for _, name := range out.ToolCalls {
-		if tid, tAct := table.MatchTool(name); tAct != ActionNothing {
+		if d := table.MatchTool(name); d.Action != ActionNothing {
 			return Decision{
-				TurnID: out.TurnID,
-				Action: tAct,
-				Signal: "tool:" + tid,
-				Reason: "handoff tool-call matched",
+				TurnID:       out.TurnID,
+				Action:       d.Action,
+				Signal:       "tool:" + d.ID,
+				MatchedSpan:  d.Span,
+				ConfigSource: d.ConfigSource,
+				Reason:       "handoff tool-call matched",
 			}
 		}
 	}

@@ -16,22 +16,32 @@ type fakeTable struct {
 	handoffTools map[string]engine.Action // tool name → action
 }
 
-func (f fakeTable) MatchText(text string) (string, engine.Action) {
+func (f fakeTable) MatchText(text string) engine.MatchDetail {
 	for lit, act := range f.textPatterns {
 		if strings.Contains(text, lit) {
-			return "pat:" + lit, act
+			return engine.MatchDetail{
+				ID:           "pat:" + lit,
+				Action:       act,
+				Span:         lit,
+				ConfigSource: "fake patterns/pat:" + lit,
+			}
 		}
 	}
 
-	return "", engine.ActionNothing
+	return engine.MatchDetail{}
 }
 
-func (f fakeTable) MatchTool(name string) (string, engine.Action) {
+func (f fakeTable) MatchTool(name string) engine.MatchDetail {
 	if act, ok := f.handoffTools[name]; ok {
-		return "tool:" + name, act
+		return engine.MatchDetail{
+			ID:           "tool:" + name,
+			Action:       act,
+			Span:         name,
+			ConfigSource: "fake handoff_tools/tool:" + name,
+		}
 	}
 
-	return "", engine.ActionNothing
+	return engine.MatchDetail{}
 }
 
 func seededTable() fakeTable {
@@ -248,6 +258,7 @@ func TestDecide_ProvenanceCarried(t *testing.T) {
 		}
 	}
 }
+
 // --- 09-02 T1: MatchDetail — span + config-source provenance (AUD-04) ---
 
 // spanTable is a fake table returning span/config-source details.
@@ -256,9 +267,9 @@ type spanTable struct{}
 func (spanTable) MatchText(text string) engine.MatchDetail {
 	if i := strings.Index(text, "ready to implement"); i >= 0 {
 		return engine.MatchDetail{
-			ID:          "impl-complete",
-			Action:      engine.ActionContinue,
-			Span:        "ready to implement",
+			ID:           "impl-complete",
+			Action:       engine.ActionContinue,
+			Span:         "ready to implement",
 			ConfigSource: "openspec.toml patterns/impl-complete",
 		}
 	}
@@ -269,9 +280,9 @@ func (spanTable) MatchText(text string) engine.MatchDetail {
 func (spanTable) MatchTool(name string) engine.MatchDetail {
 	if name == "Task" {
 		return engine.MatchDetail{
-			ID:          "os-handoff",
-			Action:      engine.ActionContinue,
-			Span:        "Task",
+			ID:           "os-handoff",
+			Action:       engine.ActionContinue,
+			Span:         "Task",
 			ConfigSource: "openspec.toml handoff_tools/os-handoff",
 		}
 	}

@@ -48,18 +48,20 @@ func (f *fakeDispatcher) Ask(_ context.Context, situation string) (string, error
 // routes through Dispatcher.Hook).
 type hookTable struct{}
 
-func (hookTable) MatchText(string) (string, engine.Action) {
-	return "proposal-ready", engine.ActionHook
+func (hookTable) MatchText(string) engine.MatchDetail {
+	return engine.MatchDetail{ID: "proposal-ready", Action: engine.ActionHook, Span: "trigger"}
 }
-func (hookTable) MatchTool(string) (string, engine.Action) { return "", engine.ActionNothing }
+
+func (hookTable) MatchTool(string) engine.MatchDetail { return engine.MatchDetail{} }
 
 // askTable yields ActionAsk on every text match.
 type askTable struct{}
 
-func (askTable) MatchText(string) (string, engine.Action) {
-	return "unmatched-launch", engine.ActionAsk
+func (askTable) MatchText(string) engine.MatchDetail {
+	return engine.MatchDetail{ID: "unmatched-launch", Action: engine.ActionAsk, Span: "trigger"}
 }
-func (askTable) MatchTool(string) (string, engine.Action) { return "", engine.ActionNothing }
+
+func (askTable) MatchTool(string) engine.MatchDetail { return engine.MatchDetail{} }
 
 // TestDispatch_HookCallsDispatcher verifies ActionHook dispatches through
 // Dispatcher.Hook + the EngineDecision carries the hook status (T1).
@@ -141,16 +143,17 @@ type askOnceTable struct {
 	called bool
 }
 
-func (a *askOnceTable) MatchText(_ string) (string, engine.Action) {
+func (a *askOnceTable) MatchText(_ string) engine.MatchDetail {
 	if a.called {
-		return "", engine.ActionNothing
+		return engine.MatchDetail{}
 	}
 
 	a.called = true
 
-	return "unmatched-launch", engine.ActionAsk
+	return engine.MatchDetail{ID: "unmatched-launch", Action: engine.ActionAsk, Span: "trigger"}
 }
-func (a *askOnceTable) MatchTool(string) (string, engine.Action) { return "", engine.ActionNothing }
+
+func (a *askOnceTable) MatchTool(string) engine.MatchDetail { return engine.MatchDetail{} }
 
 // TestDispatch_AskPendingBreaksLoop verifies ActionAsk with no stored answer
 // (ErrAskPending) ⇒ an ask EngineDecision is emitted + the loop breaks (Run

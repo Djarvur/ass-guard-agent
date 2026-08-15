@@ -262,8 +262,8 @@ func TestObserve_DecidePanicDegradation(t *testing.T) {
 
 type panickingTable struct{}
 
-func (panickingTable) MatchText(string) (string, engine.Action) { panic("simulated MatchText panic") }
-func (panickingTable) MatchTool(string) (string, engine.Action) { return "", engine.ActionNothing }
+func (panickingTable) MatchText(string) engine.MatchDetail { panic("simulated MatchText panic") }
+func (panickingTable) MatchTool(string) engine.MatchDetail { return engine.MatchDetail{} }
 
 // TestObserve_ReFireBudget verifies an always-matching fake ⇒ exactly
 // MaxContinueInjections+1 Run calls, then stops with a budget Reason (not an
