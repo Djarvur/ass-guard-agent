@@ -29,8 +29,8 @@ const (
 // signals are never set (the dual signals miss by construction here).
 type provenanceTable struct{}
 
-func (provenanceTable) MatchText(string) engine.MatchDetail   { return engine.MatchDetail{} }
-func (provenanceTable) MatchTool(string) engine.MatchDetail   { return engine.MatchDetail{} }
+func (provenanceTable) MatchText(string) engine.MatchDetail { return engine.MatchDetail{} }
+func (provenanceTable) MatchTool(string) engine.MatchDetail { return engine.MatchDetail{} }
 func (provenanceTable) MatchCommand(key string) engine.MatchDetail {
 	if key == exploreKey {
 		return engine.MatchDetail{

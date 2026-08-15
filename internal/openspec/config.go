@@ -41,6 +41,26 @@ type HandoffToolEntry struct {
 	Action string `toml:"action"`
 }
 
+// CommandPatternEntry is one [[command_patterns]] row (hybrid chaining — the
+// findings-6 disposition, 2026-08-15): a registry command key whose EXPANSION
+// started a turn carries a configured action when the turn completes — the
+// deterministic chaining mechanism for boundaries whose closing text is
+// architecturally free-form (the /opsx:explore close; the toolkit's own command
+// guardrails mandate it). Consulted by engine.Decide ONLY after the text/tool
+// signals miss: the capture-seeded regex rows stay authoritative for the
+// deterministic boundaries.
+//
+// Ids are stage-bearing ("post-<stage>-handoff") so hooks fire per stage, and
+// Next is the /opsx:* command injected on match (consumed through the same
+// NextPromptFor field the [[patterns]] rows use); empty means the engine's
+// generic continue prompt applies.
+type CommandPatternEntry struct {
+	ID      string `toml:"id"`
+	Command string `toml:"command"`
+	Action  string `toml:"action"`
+	Next    string `toml:"next"`
+}
+
 // CommandShape declares one OpenSpec command's classification + subprocess
 // guards (D-15 / OPEN-03 — the single source of truth for context boundaries; a
 // mutating command IS a boundary via the existing toolcat.IsBoundary floor).
@@ -78,6 +98,10 @@ type OpenSpecConfig struct {
 	Patterns     []PatternEntry          `toml:"patterns"`
 	HandoffTools []HandoffToolEntry      `toml:"handoff_tools"`
 	Commands     map[string]CommandShape `toml:"commands"`
+
+	// CommandPatterns are the command-provenance chaining rows (hybrid
+	// chaining, findings-6 disposition) — see CommandPatternEntry.
+	CommandPatterns []CommandPatternEntry `toml:"command_patterns"`
 
 	// CommandMutability classifies DISCOVERED slash-commands (08-04 D-11 —
 	// the v1.0 mutability discipline extended from tools to commands): a
@@ -184,6 +208,19 @@ func validate(cfg *OpenSpecConfig) error {
 
 		if h.Tool == "" {
 			v = append(v, fmt.Sprintf("handoff_tools[%d] %q: empty tool", i, h.ID))
+		}
+	}
+
+	for i := range cfg.CommandPatterns {
+		c := &cfg.CommandPatterns[i]
+		if !validAction(c.Action) {
+			v = append(v, fmt.Sprintf(
+				"command_patterns[%d] %q: unknown action %q (want continue/hook/ask/wait)",
+				i, c.ID, c.Action))
+		}
+
+		if c.Command == "" {
+			v = append(v, fmt.Sprintf("command_patterns[%d] %q: empty command", i, c.ID))
 		}
 	}
 

@@ -19,6 +19,17 @@
 #   next = "/opsx:apply"                 # empty = the generic continue prompt
 #
 #   The final archive stage matches NOTHING (the chain ends naturally).
+#
+#   [[command_patterns]] — hybrid chaining (findings-6 disposition): a registry
+#   command key whose expansion STARTED a turn carries an action when the turn
+#   completes. Consulted ONLY after the text/tool signals miss — the
+#   deterministic boundaries stay regex-chained. Same id/next conventions:
+#
+#   [[command_patterns]]
+#   id = "post-explore-handoff"       # stage-bearing; selects the hook stage
+#   command = "opsx:explore"          # the registry key that started the turn
+#   action = "continue"
+#   next = "/opsx:propose"
 # [[handoff_tools]] — tool-call name → action (the dual-signal tool half).
 # [commands] — command → classification (D-15 / OPEN-03, the boundary source of
 #   truth). Every entry runs as a subprocess via the Adapter with
@@ -38,15 +49,13 @@
 # Source: cmd/ass-guard/testdata/opsx-e2e/stage-{1,2,3}-output-capture.txt
 # Capture run: 2026-08-15T13:29Z, gated E2E capture mode (real openspec 1.5.0
 # binary + real GLM-5.2 via the Z.ai Anthropic endpoint), full
-# explore→propose→apply→archive scenario, 505s. Regexes anchor on the stable
-# phrase FAMILY the model emits across runs (verified against BOTH 2026-08-15
-# gated runs' closings): propose names `/opsx:apply`, apply names
-# `/opsx:archive`, explore closings reference the upcoming `proposal` — never
-# command-file prose. Row ORDER is load-bearing (first match wins): the
-# archive-terminal shield must precede post-explore because the ARCHIVE closing
-# also contains the word "proposal" (its artifact list) — the shield ends the
-# chain there; post-propose/post-apply precede post-explore because those
-# closings also say "proposal". Operator overlays adjust without code (D-12).
+# explore→propose→apply→archive scenario, 505s. The propose/apply TEXT rows
+# anchor on the stable phrase the model emits across runs (propose names
+# `/opsx:apply`, apply names `/opsx:archive` — verified against BOTH 2026-08-15
+# gated runs' closings); the explore boundary chains on COMMAND PROVENANCE (see
+# [[command_patterns]] below). Row ORDER among the text rows is first-match-
+# wins; the archive-terminal shield leads so an archive closing can never chain.
+# Operator overlays adjust without code (D-12).
 
 # The terminal shield: the archive closing ends the chain (wait = no injection,
 # flows through unchanged).
@@ -67,16 +76,26 @@ regex = "/opsx:archive"
 action = "continue"
 next = "/opsx:archive"
 
-# Explore closings are free-form thinking summaries; the stable family signal
-# across ALL THREE observed 2026-08-15 runs is the propos* stem (run 1: "spin
-# up an OpenSpec change proposal"; run 2: "calibration run — proposal → spec →
-# tasks"; run 3: ends with an open question but carries "Proposed" mid-text).
-# The regex matches the STEM so every observed form fires; genuinely
-# unfamiliar phrasings fall to the learning mode (ask-once-remembered) — the
-# designed fallback, never a silent stop.
-[[patterns]]
+# ---- hybrid chaining: the explore boundary (findings-6 disposition,
+# 2026-08-15) ----
+# The /opsx:explore closing is architecturally FREE-FORM — the toolkit's own
+# command guardrails mandate it ("Don't force structure — let patterns emerge
+# naturally"). Four live gated closings took four structurally different forms
+# (proposal-handoff / calibration-run / open-question-with-"Proposed" / pure
+# Socratic question with ZERO propos* occurrences — evidence: the four runs
+# cited in STATE.md's 6th finding); no text regex chains them honestly, and
+# widening further was the hollow green the gates exist to prevent. The former
+# `(?i)propos` text row is therefore REPLACED by a COMMAND-PROVENANCE row: a
+# turn STARTED by the expanded opsx:explore command chains to /opsx:propose on
+# completion — deterministic (the command key is recorded by the 08-04
+# expansion seam), mirrors D-11's command vocabulary, and is structurally
+# unspoofable from model-visible content (the key never comes from
+# assistant/tool text). The engine consults provenance ONLY after the text/tool
+# signals miss; the capture-seeded rows above stay authoritative for
+# propose/apply/archive (no command rows exist for those keys).
+[[command_patterns]]
 id = "post-explore-handoff"
-regex = "(?i)propos"
+command = "opsx:explore"
 action = "continue"
 next = "/opsx:propose"
 

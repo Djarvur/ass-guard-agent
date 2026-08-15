@@ -20,14 +20,22 @@ type compiledPattern struct {
 // OpenSpecPatternTable bridges the openspec.toml config to the engine's
 // PatternTable interface (D-02). It compiles each pattern's regex once at
 // construction (FromConfig) so MatchText is a cheap scan, never a recompile.
-// It satisfies engine.PatternTable (the compile-time assertion below).
+// It satisfies engine.PatternTable (the compile-time assertion below) AND the
+// optional engine.CommandMatcher capability (hybrid chaining — the
+// command-provenance rows).
 type OpenSpecPatternTable struct {
 	textPatterns []compiledPattern // declared order; first match wins
 	handoffTools map[string]toolEntry
 
+	// commandPatterns maps a registry command key → its chaining row (hybrid
+	// chaining, findings-6 disposition). Keyed by the COMMAND KEY (e.g.
+	// "opsx:explore"), not the row id.
+	commandPatterns map[string]toolEntry
+
 	// nextFor maps pattern id → the next /opsx:* command text (08-06 chaining,
 	// D-12). Consumed by the dispatcher's ContinuePopulator — NOT part of the
-	// engine.PatternTable interface (which stays unwidened).
+	// engine.PatternTable interface (which stays unwidened). Shared by
+	// [[patterns]] and [[command_patterns]] rows.
 	nextFor map[string]string
 }
 
@@ -44,7 +52,10 @@ func FromConfig(cfg *OpenSpecConfig) (*OpenSpecPatternTable, error) {
 		return nil, errFromconfigRequiresA
 	}
 
-	pt := &OpenSpecPatternTable{handoffTools: map[string]toolEntry{}}
+	pt := &OpenSpecPatternTable{
+		handoffTools:    map[string]toolEntry{},
+		commandPatterns: map[string]toolEntry{},
+	}
 
 	for _, p := range cfg.Patterns {
 		act, err := parseAction(p.Action)
@@ -77,16 +88,36 @@ func FromConfig(cfg *OpenSpecConfig) (*OpenSpecPatternTable, error) {
 		pt.handoffTools[h.Tool] = toolEntry{id: h.ID, action: act}
 	}
 
+	for _, c := range cfg.CommandPatterns {
+		act, err := parseAction(c.Action)
+		if err != nil {
+			return nil, fmt.Errorf("openspec: command pattern %q: %w", c.ID, err)
+		}
+
+		// Duplicate command keys: LAST row wins (operator overlays append; the
+		// BurntSushi decode preserves declaration order).
+		pt.commandPatterns[c.Command] = toolEntry{id: c.ID, action: act}
+
+		if c.Next != "" {
+			if pt.nextFor == nil {
+				pt.nextFor = map[string]string{}
+			}
+
+			pt.nextFor[c.ID] = c.Next
+		}
+	}
+
 	return pt, nil
 }
 
-// configSourcePatterns / configSourceHandoffTools are the ConfigSource
-// prefixes the table supplies per match (09-02, AUD-04/D-03 — the engine is
-// table-agnostic; the TABLE names its own entries). Identifiers only, never
-// file contents.
+// configSourcePatterns / configSourceHandoffTools / configSourceCommandPatterns
+// are the ConfigSource prefixes the table supplies per match (09-02, AUD-04/D-03
+// — the engine is table-agnostic; the TABLE names its own entries). Identifiers
+// only, never file contents.
 const (
-	configSourcePatterns     = "openspec.toml patterns/"
-	configSourceHandoffTools = "openspec.toml handoff_tools/"
+	configSourcePatterns        = "openspec.toml patterns/"
+	configSourceHandoffTools    = "openspec.toml handoff_tools/"
+	configSourceCommandPatterns = "openspec.toml command_patterns/"
 )
 
 // MatchText scans the patterns in declared order; the FIRST match wins. The
@@ -132,6 +163,27 @@ func (t *OpenSpecPatternTable) MatchTool(name string) engine.MatchDetail {
 	return engine.MatchDetail{}
 }
 
+// MatchCommand satisfies the optional engine.CommandMatcher capability (hybrid
+// chaining, findings-6 disposition): it reports whether key — the registry
+// command key whose EXPANSION started the turn (e.g. "opsx:explore") — carries
+// a configured chaining row. The Span slot carries the command KEY (the matched
+// signal text, mirroring MatchTool's name-as-span convention). Unknown ⇒ zero
+// value. The engine consults this ONLY after the text/tool signals miss, and
+// only for turns actually started by an expansion — a plain-text turn can never
+// reach a provenance row.
+func (t *OpenSpecPatternTable) MatchCommand(key string) engine.MatchDetail {
+	if e, ok := t.commandPatterns[key]; ok {
+		return engine.MatchDetail{
+			ID:           e.id,
+			Action:       e.action,
+			Span:         key,
+			ConfigSource: configSourceCommandPatterns + e.id,
+		}
+	}
+
+	return engine.MatchDetail{}
+}
+
 // parseAction maps a TOML action string to the engine.Action enum. An unknown
 // verb yields a structured error (the load-time validate catches these first,
 // but FromConfig is defensive against programmatic configs).
@@ -151,6 +203,11 @@ func parseAction(s string) (engine.Action, error) {
 	}
 }
 
-// Compile-time assertion: OpenSpecPatternTable satisfies engine.PatternTable
-// (D-02 — the bridge to the engine's dual-signal detector).
-var _ engine.PatternTable = (*OpenSpecPatternTable)(nil)
+// Compile-time assertions: OpenSpecPatternTable satisfies engine.PatternTable
+// (D-02 — the bridge to the engine's dual-signal detector) AND the optional
+// engine.CommandMatcher capability (hybrid chaining — the command-provenance
+// rows).
+var (
+	_ engine.PatternTable   = (*OpenSpecPatternTable)(nil)
+	_ engine.CommandMatcher = (*OpenSpecPatternTable)(nil)
+)
