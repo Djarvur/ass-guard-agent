@@ -3,7 +3,7 @@ phase: 08-slash-command-kickoff
 plan: 06
 subsystem: opsx-e2e-gate
 tags: [e2e, real-binary, real-model, chaining, pattern-reseed, uat, blocker]
-status: checkpoint-blocked   # T4 operator checkpoint reached WITH a blocking finding — see Blockers
+status: checkpoint-blocked   # overnight addendum below: carry blocker closed by 08-07; gate re-blocked on core tool execution
 
 # Dependency graph
 requires:
@@ -127,3 +127,41 @@ RED `a4ce2d1` → GREEN `d2c4677` (T1, all six tests). T2 is an execute-type har
 ---
 *Phase: 08-slash-command-kickoff*
 *Checkpoint: 2026-08-15*
+
+---
+
+# Overnight Addendum (2026-08-15, delegated run)
+
+Per the overnight delegation (STATE.md 5f27c6e): 08-07 executed and completed (its blocker's carry half — see 08-07-SUMMARY), then this plan's remainder was attempted autonomously.
+
+## T3 (pattern re-seed): BLOCKED — no capture possible
+
+The re-seed needs COMPLETED stage outputs (D-12's raw material). The gated E2E re-run with the carry fixed still cannot complete a stage: **core tool execution is missing** (Bash/Read/Write/Edit have no Execute implementations — v1.0 shipped the catalog schema-only; only openspec:*/Skill/WebSearch/WebFetch are real). The model sees its tool results now (08-07 proven) but every file-read/CLI path fails structurally, so no stage produces closing output to capture. Recorded as the NEW blocking finding in STATE.md; T3 stays open pending the operator's disposition (recommended gap-closure plan for capture-grounded core tool execution).
+
+## The 11 UAT checks — walked with honest evidence (2026-08-15)
+
+Mechanism-level evidence re-verified green this session; scenario-level legs marked blocked. Per the no-stub-only-evidence rule, blocked checks stay pending rather than passing on mechanism alone where the check's wording demands the real run.
+
+| # | Check | Evidence | Status |
+|---|-------|----------|--------|
+| 2 | Zero "continue" taps | Plumbing green (TestNextPrompt_*, TestChain_*, engine TestDecide_*); the REAL chain blocked by the core-tool gap | partial |
+| 3 | Forgotten routine post-implement | hookdag suite green (OnFailure semantics, seeded steps); the E2E's stage-end hook firing blocked | partial |
+| 4 | Unfamiliar → asked once, remembered | learning suite green (TestProposeHooks_*, TestStore_*); real-run ask/remember cycle blocked | partial |
+| 5 | Completes unattended | THE gated E2E — blocked (core-tool gap) | blocked |
+| 6 | Unmatched output triggers nothing | **PASS**: TestDecide_UnmatchedIsNothing, TestDecide_QuickUnmatchedIsNothing, TestObserve_UnmatchedZeroInjections, + 08-07's TestEngine_ToolResultContentIgnored (assistant-role-only pinned structurally) | pass |
+| 7 | Engine failure degrades | **PASS**: TestObserve_LastTurnOutputPanicDegradation, TestObserve_DecidePanicDegradation, TestObserve_RealErrorStopsLoop | pass |
+| 8 | Hook on-failure + loop prevention | **PASS**: hookdag config_test (OnFailureHalt pinned), engine TestObserve_ReFireBudget (loop prevention) | pass |
+| 9 | Cancel-drain | **PASS**: TestObserve_CancelDrain, TestCancelDrainsInjections (cmd) | pass |
+| 10 | Concurrency + swappable backends | **PASS**: TestDispatchBatch_ReadOnlyParallelism, TestDispatchBatch_MutatingSerialization, TestBackend_SwappableWithoutCodeChange, TestBackendsFromConfig_Select | pass |
+| 11 | Learning inspectable + revertible | **PASS**: TestStore_ListDeterministicOrder, TestStore_RevertRemovesEntry, TestStore_RevertAtomicReadOnlyDir | pass |
+| 12 | Coverage — outcome observably true | Engine observe/decide + hookdag + learning exercised by the suites; the E2E leg pending | partial |
+
+Score: 6 pass, 4 partial (mechanism green, real-run leg blocked), 1 blocked — the phase gate CANNOT close tonight.
+
+## Phase gate status
+
+- `mise run ci` — GREEN (exit 0; one transient flake of the documented internal/profile stability test while a live zcode session writes rollout — re-run clean)
+- `ASSGUARD_OPENSPEC_BIN=1 go test ./internal/openspec/ ./internal/ecosys/ -count=1` — GREEN (real-binary three-path adapter + surface suites)
+- Gated E2E — **BLOCKED** (core tool execution; STATE.md)
+
+**The gate stays open; the blocker is superseded by the core-tool-execution finding.** Morning disposition needed on that gap; this plan's T3 + gate legs resume after it closes.
