@@ -24,11 +24,11 @@ See: .planning/PROJECT.md (updated 2026-08-14)
 
 ## Current Position
 
-Phase: 8 (slash-command-kickoff) — EXECUTING, 08-07 COMPLETE (delegated overnight run), 08-06 gate re-blocked by a NEW downstream finding
-Plan: 08-07 complete (T1-T4); 08-06 T3+gate blocked on core tool execution (below)
-Status: 08-07's within-turn carry is closed and PROVEN LIVE; the E2E gate surfaced the next masked gap — core tool execution (Bash/Read/Write/Edit) was never implemented; awaiting operator disposition (recommended: gap-closure plan, same discipline as 08-07)
-Last activity: 2026-08-15 (overnight) -- 08-07 completed + gated E2E run autonomously; new blocker recorded; Phase 9 next
-Next action: operator morning disposition of the core-tool-execution gap; executor continues with Phase 9 code plans overnight
+Phase: 9 (serve-path-audit + zcode-parity re-capture) — EXECUTED overnight (delegated); 08-07 COMPLETE, 08-06 gate re-blocked, Phase-9 code plans 09-01..03/05/06 COMPLETE, 09-04 harvest finding recorded
+Plan: 09-01..06 all dispositioned (09-04 stopped on the harvest finding)
+Status: Phase 9's automated legs green (mise ci + in-process live-serve audit + canary); the stability-on-new-pin leg is BLOCKED on the 09-04 finding; the 08-06/Phase-8 gate is blocked on core tool execution. STOPPED after Phase 9 per the delegation — Phase 10 NOT started.
+Last activity: 2026-08-15 (overnight) -- Phase 9 executed (09-01..06); two findings recorded for the morning
+Next action: operator morning dispositions — (1) the core-tool-execution gap-closure plan (08-06/Phase-8 gate), (2) the 09-04 capture path (scripted 15-min workload per docs/recapture-runbook.md, or re-scope)
 
 Progress: [██░░░░░░░░] 17%
 
