@@ -750,6 +750,7 @@ func TestConverge_ModelSeesOwnToolResults(t *testing.T) {
 		t.Error("iteration 2 messages missing the tool result (call_conv_1)")
 	}
 }
+
 // --- 09-01 T2: CurrentTurnID (AUD-02 turn correlation) ---
 
 // TestCurrentTurnID (09-01 T2 Test 6): a fresh session reports "" (no turn
@@ -774,7 +775,7 @@ func TestCurrentTurnID(t *testing.T) {
 		t.Errorf("fresh session CurrentTurnID = %q; want empty", got)
 	}
 
-	_, err := s.Prompt(context.Background(), "run")
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "run"}})
 	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}

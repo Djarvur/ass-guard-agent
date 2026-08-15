@@ -5,10 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -246,7 +250,7 @@ func newExpansionRunner(
 		profile:      fakeProfileACP(),
 		workDir:      dir,
 		maxConc:      4,
-		makeProvider: func() provider.Provider { return prov },
+		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return prov },
 	}
 
 	if engineOn {
@@ -608,7 +612,7 @@ func TestAssistantRoleOnly_InjectionGuard(t *testing.T) {
 		profile:      fakeProfileACP(),
 		workDir:      dir,
 		maxConc:      4,
-		makeProvider: func() provider.Provider { return prov },
+		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return prov },
 	}
 
 	err = r.setupEngine()
@@ -730,7 +734,7 @@ func newSkillRunner(t *testing.T, withSkills bool, script ...scriptedResp) (*ses
 		profile:      fakeProfileACP(),
 		workDir:      dir,
 		maxConc:      4,
-		makeProvider: func() provider.Provider { return prov },
+		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return prov },
 	}
 
 	err := r.setupEngine()
@@ -1127,4 +1131,465 @@ func TestEngine_ToolResultContentIgnored(t *testing.T) {
 		t.Errorf("Decide action = %v (%s); want nothing — tool-result content must not match",
 			dec.Action, dec.Signal)
 	}
+}
+
+// --- 09-01 T2/T3: serve-path capturer + TranscriptWriter wiring (AUD-01/02) ---
+
+// captureFiringProvider is a scripted provider that INVOKES the capturer it
+// was constructed with at the top of Stream — simulating exactly what the real
+// adapters do through BuildWithCapturer, so the runner wiring (sessionFor's
+// late-bound closure) is exercised without a live endpoint.
+type captureFiringProvider struct {
+	capturer provider.RequestCapturer
+}
+
+func (p *captureFiringProvider) Send(
+	_ context.Context, _ *profile.Profile, _ []provider.Message,
+) (provider.Response, error) {
+	return provider.Response{}, errNotUsed
+}
+
+func (p *captureFiringProvider) ToolResultMessage(_ string, _ json.RawMessage) (json.RawMessage, error) {
+	return json.RawMessage(`{"role":"user","content":"stub"}`), nil
+}
+
+func (p *captureFiringProvider) Stream(
+	ctx context.Context, _ *profile.Profile, _ []provider.Message,
+) (<-chan provider.StreamChunk, error) {
+	if p.capturer != nil {
+		p.capturer([]byte(`{"model":"wire","messages":[]}`), nil)
+	}
+
+	ch := make(chan provider.StreamChunk, 1)
+	go func() {
+		defer close(ch)
+
+		select {
+		case ch <- provider.StreamChunk{Type: blockText, Text: chunkDone}:
+		case <-ctx.Done():
+		}
+	}()
+
+	return ch, nil
+}
+
+// TestServeCapturer_PublishesWithTurnID (09-01 T2 Test 7): through the runner's
+// makeProvider(capturer) seam, a Stream fires the capturer and sessionFor's
+// closure publishes event.RequestShaped carrying the IN-FLIGHT turn id, the
+// profile name, and the verbatim body.
+func TestServeCapturer_PublishesWithTurnID(t *testing.T) {
+	t.Parallel()
+
+	bus := event.NewBus()
+	dir := t.TempDir()
+
+	r := &sessionTurnRunner{
+		bus:     bus,
+		profile: fakeProfileACP(),
+		workDir: dir,
+		maxConc: 2,
+		makeProvider: func(capturer provider.RequestCapturer) provider.Provider {
+			return &captureFiringProvider{capturer: capturer}
+		},
+	}
+
+	err := r.setupEngine()
+	if err != nil {
+		t.Fatalf("setupEngine: %v", err)
+	}
+
+	events := bus.Subscribe("RequestShaped", event.BufRequestShaped)
+
+	_, err = r.Run(context.Background(), "sess-cap", &noopEmitter{},
+		[]acp.ContentBlock{{Type: blockText, Text: "go"}})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	select {
+	case e := <-events:
+		rs, ok := e.(event.RequestShaped)
+		if !ok {
+			t.Fatalf("event type = %T; want event.RequestShaped", e)
+		}
+
+		if rs.TurnID != "sess-cap-turn-001" {
+			t.Errorf("TurnID = %q; want sess-cap-turn-001 (in-flight turn attribution)", rs.TurnID)
+		}
+
+		if rs.Profile == "" {
+			t.Error("Profile is empty; want the loaded profile name")
+		}
+
+		if !strings.Contains(string(rs.VerbatimRequest), `"model":"wire"`) {
+			t.Errorf("VerbatimRequest = %s; want the captured wire body", rs.VerbatimRequest)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("no RequestShaped event within 3s — the serve-path capturer is not wired")
+	}
+}
+
+// TestServeTranscriptWriter_OnePerSession (09-01 T2 Test 8): sessionFor starts
+// exactly ONE TranscriptWriter per session (Publish fan-outs to every
+// subscriber — duplicates would duplicate transcript lines); a second
+// sessionFor for the same id does NOT start another; Close cancels the writer
+// (a later publish lands NO new line).
+func TestServeTranscriptWriter_OnePerSession(t *testing.T) {
+	t.Parallel()
+
+	bus := event.NewBus()
+	dir := t.TempDir()
+
+	r := &sessionTurnRunner{
+		bus:     bus,
+		profile: fakeProfileACP(),
+		workDir: dir,
+		maxConc: 2,
+		makeProvider: func(capturer provider.RequestCapturer) provider.Provider {
+			return &captureFiringProvider{capturer: capturer}
+		},
+	}
+
+	err := r.setupEngine()
+	if err != nil {
+		t.Fatalf("setupEngine: %v", err)
+	}
+
+	const sid = "sess-tw"
+
+	s1 := r.sessionFor(context.Background(), sid)
+	s2 := r.sessionFor(context.Background(), sid)
+
+	if s1 != s2 {
+		t.Fatal("sessionFor returned different sessions for one id")
+	}
+
+	// Readiness barrier: the writer subscribes asynchronously inside its Run
+	// goroutine; a harmless usage event proves subscription BEFORE the turn
+	// (otherwise the turn's RequestShaped could drop in the startup window).
+	waitForWriterSubscribed(t, bus, r, sid)
+
+	// One turn through the (single) writer: exactly ONE request_shaped line.
+	_, err = r.Run(context.Background(), sid, &noopEmitter{},
+		[]acp.ContentBlock{{Type: blockText, Text: "once"}})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	waitForRequestShapedCount(t, r, sid, 1)
+
+	// Close reaps the writer: a later publish must land nothing.
+	closeErr := s1.Close()
+	if closeErr != nil {
+		t.Fatalf("Close: %v", closeErr)
+	}
+
+	time.Sleep(100 * time.Millisecond) // drain window
+
+	bus.Publish(event.RequestShaped{
+		TurnID:          "sess-tw-turn-002",
+		VerbatimRequest: []byte(`{"after":"close"}`),
+		Profile:         "p",
+		Timestamp:       time.Now(),
+	})
+
+	time.Sleep(200 * time.Millisecond)
+
+	lines := transcriptLinesOfType(t, r, sid, "request_shaped")
+	if len(lines) != 1 {
+		t.Fatalf("request_shaped lines after Close + publish = %d; want 1 (writer reaped)", len(lines))
+	}
+}
+
+// waitForWriterSubscribed proves the async TranscriptWriter has subscribed: it
+// RE-SENDS a harmless UsageUpdate every 10ms until the matching transcript
+// line appears (a single early publish could drop in the no-subscriber window
+// before the writer goroutine's Subscribe runs — the bus never replays).
+func waitForWriterSubscribed(t *testing.T, bus *event.Bus, r *sessionTurnRunner, sid string) {
+	t.Helper()
+
+	deadline := time.Now().Add(2 * time.Second)
+
+	for time.Now().Before(deadline) {
+		bus.Publish(event.UsageUpdate{TurnID: sid + "-turn-000", InputTokens: 1, OutputTokens: 0})
+
+		if len(transcriptLinesOfType(t, r, sid, "usage")) > 0 {
+			return
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatal("TranscriptWriter did not subscribe within 2s")
+}
+
+// waitForRequestShapedCount polls until the session transcript carries exactly
+// want request_shaped lines; MORE than want fails immediately (duplicate
+// writers).
+func waitForRequestShapedCount(t *testing.T, r *sessionTurnRunner, sid string, want int) {
+	t.Helper()
+
+	deadline := time.Now().Add(2 * time.Second)
+
+	for {
+		lines := transcriptLinesOfType(t, r, sid, "request_shaped")
+		if len(lines) == want {
+			return
+		}
+
+		if len(lines) > want {
+			t.Fatalf("request_shaped lines = %d; want exactly %d (duplicate writers)", len(lines), want)
+		}
+
+		if time.Now().After(deadline) {
+			t.Fatalf("request_shaped lines = %d after 2s; want %d — the writer is not wired", len(lines), want)
+		}
+
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// TestServeAudit_RequestShapedThroughRealSeam (09-01 T3 Tests 10-12, AUD-02 —
+// the Pitfall-8 closer): an in-process runACPServe drives initialize →
+// session/new → session/prompt against a REAL temp .ass-guard/scheduling.yaml
+// (anthropic shape pointing at an httptest SSE stub, synthetic canary key), so
+// the provider is constructed through setupProviderFactory →
+// BuildWithCapturer exactly as production. Asserts: (1) the per-session
+// transcript carries a request_shaped line with non-empty TurnID + the loaded
+// profile name, through the REAL seam; (2) the canary key value appears NOWHERE
+// in the transcript (redaction chokepoint); (3) stdout carries only JSON-RPC
+// frames.
+func TestServeAudit_RequestShapedThroughRealSeam(t *testing.T) {
+	t.Setenv("ZAI_API_KEY", "") // force the config literal (canary) to win
+
+	const canaryKey = "sk-test-canary-0123456789abcdef"
+
+	srv := serveAuditSSEStub()
+	defer srv.Close()
+
+	workDir := serveAuditWorkDir(t, srv.URL, canaryKey)
+
+	// syncBuffer: the serve goroutine writes frames while this test polls —
+	// bytes.Buffer is not concurrency-safe, so guard it.
+	stdout := &syncBuffer{}
+	stderr := &syncBuffer{}
+
+	//nolint:modernize // explicit cancel before the pipe close
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	inPipeR, inPipeW := io.Pipe()
+
+	go func() {
+		_ = runACPServe(ctx, inPipeR, stdout, stderr, &serveOptions{
+			Profile: profileZcode, MaxConcurrent: 2,
+			ProfilesDir: repoProfilesDir(t), WorkDir: workDir,
+		})
+	}()
+
+	writeFrame := func(line string) {
+		_, werr := inPipeW.Write([]byte(line + "\n"))
+		if werr != nil {
+			t.Fatalf("write frame: %v", werr)
+		}
+	}
+
+	writeFrame(`{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1}}`)
+	writeFrame(`{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"` + workDir + `"}}`)
+
+	// Poll stdout for the sessionId (the response to id 1).
+	sessionID := pollStdoutForSessionID(t, stdout)
+
+	writeFrame(`{"jsonrpc":"2.0","id":2,"method":"session/prompt","params":{"sessionId":"` +
+		sessionID + `","prompt":[{"type":"text","text":"hi"}]}}`)
+
+	// Poll the transcript FILE (the artifact is the deliverable).
+	shaped := pollTranscriptRequestShaped(t, workDir, sessionID, stderr.String())
+
+	if shaped[0].TurnID == "" {
+		t.Errorf("request_shaped.TurnID is empty; want real turn attribution")
+	}
+
+	if shaped[0].Profile != profileZcode {
+		t.Errorf("request_shaped.Profile = %q; want %q", shaped[0].Profile, profileZcode)
+	}
+
+	// Redaction canary (Pitfall 9 / T-9-01): the key VALUE must be absent from
+	// the whole transcript while the request line exists.
+	rawAll, rerr := os.ReadFile(filepath.Join(workDir, ".ass-guard", "transcript_"+sessionID+".jsonl"))
+	if rerr != nil {
+		t.Fatalf("read transcript: %v", rerr)
+	}
+
+	if strings.Contains(string(rawAll), canaryKey) {
+		t.Errorf("canary key leaked into the transcript (redaction chokepoint failed)")
+	}
+
+	// Transport discipline (T-9-04): stdout carries only JSON-RPC frames.
+	assertStdoutOnlyJSONFrames(t, stdout)
+}
+
+// serveAuditSSEStub replays a minimal valid Anthropic SSE stream (the fixture
+// shape from internal/provider tests: message_start + text block + end_turn).
+func serveAuditSSEStub() *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+
+		for _, frame := range []string{
+			`{"type":"message_start","message":{"usage":{"input_tokens":5,"output_tokens":1}}}`,
+			`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}`,
+			`{"type":"content_block_stop","index":0}`,
+			`{"type":"message_delta","delta":{"stop_reason":"end_turn"}}`,
+		} {
+			fmt.Fprintf(w, "data: %s\n\n", frame)
+
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+}
+
+// serveAuditWorkDir builds a temp workdir whose REAL .ass-guard/scheduling.yaml
+// points the anthropic provider at stubURL with the synthetic canary key.
+func serveAuditWorkDir(t *testing.T, stubURL, canaryKey string) string {
+	t.Helper()
+
+	workDir := t.TempDir()
+
+	err := os.MkdirAll(filepath.Join(workDir, ".ass-guard"), 0o750)
+	if err != nil {
+		t.Fatalf("mkdir .ass-guard: %v", err)
+	}
+
+	sched := fmt.Sprintf("providers:\n  anthropic:\n    base_url: %q\n    api_key: %q\n", stubURL, canaryKey)
+
+	err = os.WriteFile(filepath.Join(workDir, ".ass-guard", "scheduling.yaml"), []byte(sched), 0o600)
+	if err != nil {
+		t.Fatalf("write scheduling.yaml: %v", err)
+	}
+
+	return workDir
+}
+
+// pollTranscriptRequestShaped polls the transcript FILE until a request_shaped
+// line exists (the artifact — not the bus — is the deliverable).
+func pollTranscriptRequestShaped(t *testing.T, workDir, sessionID, stderrSnapshot string) []session.Line {
+	t.Helper()
+
+	transcriptPath := filepath.Join(workDir, ".ass-guard", "transcript_"+sessionID+".jsonl")
+
+	deadline := time.Now().Add(10 * time.Second)
+
+	for time.Now().Before(deadline) {
+		var shaped []session.Line
+
+		raw, rerr := os.ReadFile(transcriptPath)
+		if rerr == nil {
+			for line := range strings.SplitSeq(string(raw), "\n") {
+				if line == "" {
+					continue
+				}
+
+				var l session.Line
+
+				if json.Unmarshal([]byte(line), &l) == nil && l.Type == "request_shaped" {
+					shaped = append(shaped, l)
+				}
+			}
+		}
+
+		if len(shaped) > 0 {
+			return shaped
+		}
+
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	t.Fatalf("no request_shaped line in %s within 10s (stderr: %s)", transcriptPath, stderrSnapshot)
+
+	return nil
+}
+
+// assertStdoutOnlyJSONFrames pins the transport discipline: every non-empty
+// stdout line parses as a JSON-RPC frame.
+func assertStdoutOnlyJSONFrames(t *testing.T, stdout *syncBuffer) {
+	t.Helper()
+
+	i := 0
+
+	for line := range strings.SplitSeq(stdout.String(), "\n") {
+		if line == "" {
+			i++
+
+			continue
+		}
+
+		var m map[string]any
+
+		jerr := json.Unmarshal([]byte(line), &m)
+		if jerr != nil {
+			t.Errorf("stdout line %d is not valid JSON: %v (%q)", i, jerr, line)
+		}
+
+		i++
+	}
+}
+
+// pollStdoutForSessionID waits for the session/new response and extracts the
+// sessionId. The buffer is only appended to by the serve goroutine; reads here
+// are locked snapshot reads of the accumulated prefix.
+func pollStdoutForSessionID(t *testing.T, stdout *syncBuffer) string {
+	t.Helper()
+
+	deadline := time.Now().Add(10 * time.Second)
+
+	for time.Now().Before(deadline) {
+		for line := range strings.SplitSeq(stdout.String(), "\n") {
+			if !strings.Contains(line, `"sessionId"`) {
+				continue
+			}
+
+			var resp struct {
+				Result struct {
+					SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+				} `json:"result"`
+			}
+
+			if json.Unmarshal([]byte(line), &resp) == nil && resp.Result.SessionID != "" {
+				return resp.Result.SessionID
+			}
+		}
+
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	t.Fatalf("no session/new response within 10s (stdout so far: %s)", stdout.String())
+
+	return ""
+}
+
+// syncBuffer is a mutex-guarded bytes.Buffer for reading a live writer from
+// the test goroutine while the serve goroutine appends frames.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return b.buf.Write(p) //nolint:wrapcheck // test helper passthrough
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return b.buf.String()
 }

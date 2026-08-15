@@ -79,6 +79,22 @@ func (s *Session) nextTurnID() string { //nolint:funcorder // ordering groups re
 	return fmt.Sprintf("%s-turn-%03d", s.SessionID, n)
 }
 
+// CurrentTurnID returns the id of the most-recently STARTED turn, or "" when
+// no turn has started. It is a non-incrementing atomic read (09-01, AUD-02):
+// the serve-path capturer closure calls it when a RequestShaped event fires so
+// every request line carries real turn attribution — the correlation triple
+// (session-from-filename, turn, request). The rejected alternative (an
+// empty-TurnID fallback relying on append ordering) is documented in the
+// Phase-9 context; the accessor was chosen deliberately.
+func (s *Session) CurrentTurnID() string {
+	n := s.turnCounter.Load()
+	if n == 0 {
+		return ""
+	}
+
+	return fmt.Sprintf("%s-turn-%03d", s.SessionID, n)
+}
+
 // Prompt runs the D-18 turn cycle for one user prompt: project the lean window,
 // shape + send (capturer publishes RequestShaped), emit results, loop on
 // tool_calls (stubbed execution), and return the stopReason. ctx cancellation

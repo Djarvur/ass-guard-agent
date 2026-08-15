@@ -300,7 +300,7 @@ func TestProviderFactory_WireRoundTrip(t *testing.T) {
 
 	ch, err := p.Stream(context.Background(),
 		&profile.Profile{Model: "glm-5.2", MaxTokens: 100},
-		[]shaper.Message{{Role: "user", Content: "hi"}})
+		[]shaper.Message{{Role: roleUserMsg, Content: "hi"}})
 	require.NoError(t, err)
 	require.NotNil(t, ch)
 	drainStreamChannel(t, ch)
@@ -395,7 +395,7 @@ func TestBuildWithCapturer_AnthropicShape(t *testing.T) {
 
 	ch, err := p.Stream(context.Background(),
 		&profile.Profile{Model: "glm-5.2", MaxTokens: 100},
-		[]shaper.Message{{Role: "user", Content: "hi"}})
+		[]shaper.Message{{Role: roleUserMsg, Content: "hi"}})
 	require.NoError(t, err)
 
 	drainStreamChannel(t, ch)
@@ -439,7 +439,7 @@ func TestBuildWithCapturer_OpenAIShape(t *testing.T) {
 
 	_, err = p.Send(context.Background(),
 		&profile.Profile{Model: "gpt-test", MaxTokens: 100},
-		[]shaper.Message{{Role: "user", Content: "hi"}})
+		[]shaper.Message{{Role: roleUserMsg, Content: "hi"}})
 	require.NoError(t, err)
 
 	require.Equal(t, 1, fired, "capturer must fire exactly once per Send")
@@ -472,6 +472,8 @@ func TestBuildWithCapturer_Uncredentialed(t *testing.T) {
 // TestBuildWithCapturer_Undeclared (09-01 T1 Test 4): the undeclared-provider
 // error is identical to Build's.
 func TestBuildWithCapturer_Undeclared(t *testing.T) {
+	t.Parallel()
+
 	f := NewProviderFactory(&Config{Providers: map[string]ProviderConfig{}}, "", nil)
 
 	_, err := f.BuildWithCapturer("ghost", nil, nil)

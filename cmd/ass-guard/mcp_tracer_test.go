@@ -118,7 +118,7 @@ func newTracerRunner(t *testing.T, script []provider.Response, workDir string) *
 		profile: prof,
 		workDir: workDir,
 		maxConc: 2,
-		makeProvider: func() provider.Provider {
+		makeProvider: func(_ provider.RequestCapturer) provider.Provider {
 			return fp
 		},
 	}

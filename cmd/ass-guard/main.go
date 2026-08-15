@@ -23,6 +23,7 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/event"
 	"github.com/Djarvur/ass-guard-agent/internal/loop"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
+	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 	"github.com/Djarvur/ass-guard-agent/internal/version"
 )
 
@@ -122,18 +123,17 @@ func runTrace(ctx context.Context, prompt, name, dir, auditLogPath string) error
 		})
 	}
 
-	// Phase 7 (D-08): the tracer builds its provider through the scheduler
-	// factory so credential/base_url resolution is single-sourced. LOG-01 needs
-	// the RequestCapturer, which the factory's Build interface cannot attach —
-	// tracerProvider reconstructs the AnthropicProvider with factory-RESOLVED
-	// base_url+key (never hardcoded defaults) when credentialed; an
+	// Phase 7 (D-08) + 09-01: the tracer builds its provider through the SAME
+	// factory seam as the serve path — BuildWithCapturer attaches the
+	// RequestCapturer for both shapes with factory-RESOLVED base_url+key (the
+	// old hand-rebuilt tracerProvider is deleted; Pitfall 8). An
 	// uncredentialed build keeps the lazy noCredentialProvider wrapper (D-07).
 	factory, providerName, ferr := setupProviderFactory("", os.Stderr)
 	if ferr != nil {
 		return fmt.Errorf("setup provider factory: %w", ferr)
 	}
 
-	p, err := tracerProvider(factory, providerName, capturer)
+	p, err := factory.BuildWithCapturer(providerName, shaper.New(), capturer)
 	if err != nil {
 		return fmt.Errorf("build tracer provider: %w", err)
 	}

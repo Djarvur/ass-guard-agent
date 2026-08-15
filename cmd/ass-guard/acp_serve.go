@@ -286,8 +286,13 @@ func runACPServe(ctx context.Context, in io.Reader, out, stderr io.Writer, opts 
 		workDir:     opts.WorkDir,
 		maxConc:     opts.MaxConcurrent,
 		configAdded: opts.ConfigAddedBoundaries,
-		makeProvider: func() provider.Provider {
-			p, _ := factory.Build(providerName, shaper.New())
+		serveCtx:    ctx,
+		makeProvider: func(capturer provider.RequestCapturer) provider.Provider {
+			// 09-01: the SINGLE factory seam — the same construction the
+			// tracer uses (tracerProvider is deleted; Pitfall 8). Construction
+			// errors keep the existing degradation semantics (ignore, the
+			// no-provider path surfaces at first use).
+			p, _ := factory.BuildWithCapturer(providerName, shaper.New(), capturer)
 
 			return p
 		},
@@ -339,7 +344,15 @@ type sessionTurnRunner struct {
 	workDir      string
 	maxConc      int
 	configAdded  []string
-	makeProvider func() provider.Provider
+	makeProvider func(capturer provider.RequestCapturer) provider.Provider
+	// serveCtx is the server-lifetime context (set once in runACPServe from
+	// the ACP server ctx). Per-session TranscriptWriters derive from it — a
+	// writer bound to a per-TURN ctx would die after turn 1 (09-01 T2 Test 8's
+	// pitfall). Test runners may leave it nil; sessionFor falls back to
+	// context.Background() there.
+	//
+	//nolint:containedctx // deliberate serve-lifetime ctx storage (09-01 T2)
+	serveCtx context.Context
 
 	// Phase-4 engine wiring (Plan 04-05). Built once in setupEngine(); nil when
 	// the engine is disabled.
@@ -711,10 +724,26 @@ func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen // grouping ke
 		sCatalog.Register(core)
 	}
 
+	// 09-01 T2 (AUD-02): the late-bound capturer closure. sess is declared
+	// BEFORE the Session literal and assigned after — the closure reads
+	// CurrentTurnID() at FIRE time (mid-turn), so it sees the in-flight turn.
+	// Header VALUES are dropped at the closure (_ per Pitfall 9 discipline:
+	// values never enter audit artifacts; names ride 09-06 events only).
+	var sess *session.Session
+
+	capturer := func(body []byte, _ map[string]string) {
+		r.bus.Publish(event.RequestShaped{
+			TurnID:          sess.CurrentTurnID(),
+			VerbatimRequest: body,
+			Profile:         prof.Name,
+			Timestamp:       time.Now(),
+		})
+	}
+
 	s := &session.Session{
 		Manager:     mgr,
 		Projector:   session.NewProjector(&prof, mgr),
-		Provider:    r.makeProvider(),
+		Provider:    r.makeProvider(capturer),
 		Bus:         r.bus,
 		Semaphore:   provider.NewSemaphore(maxConc),
 		Profile:     prof,
@@ -723,6 +752,7 @@ func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen // grouping ke
 		Catalog:     sCatalog,
 		ConfigAdded: r.configAdded,
 	}
+	sess = s
 	// Phase-4 TOOL-04/05: inject the catalog-backed real executor (WebSearch/
 	// WebFetch delegate to the configured backend; others call catalog
 	// Tool.Execute). Phase 5 wraps it in toolcat.MCPExecutor so mcp__* calls
@@ -734,12 +764,41 @@ func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen // grouping ke
 		s.SetToolExecutor(toolcat.NewMCPExecutor(stubCatalogExec{}, mcpHost))
 	}
 
-	// Phase 5: reap MCP subprocesses on session end (logout/cancel/ctx-done).
-	s.OnClose = func() error { return mcpHost.Close() }
+	// 09-01 T2 (LOG-02/D-20): ONE TranscriptWriter per session, running for
+	// the session's lifetime on a context derived from the SERVE ctx (never
+	// the per-turn ctx — a writer bound to a turn dies after turn 1). Reaped
+	// via OnClose, chained ahead of the existing MCP-host reaper.
+	writerCtx, cancelWriter := context.WithCancel(r.serveCtxOrBackground())
+
+	tw := session.NewTranscriptWriter(mgr, r.bus)
+
+	//nolint:contextcheck // writerCtx inherits serveCtx (nil only in tests)
+	go tw.Run(writerCtx)
+
+	// Phase 5: reap MCP subprocesses on session end (logout/cancel/ctx-done) —
+	// composed with the writer's cancel (Close runs the chain exactly once).
+	s.OnClose = func() error {
+		cancelWriter()
+
+		return mcpHost.Close()
+	}
 
 	r.sessions[sessionID] = s
 
 	return s
+}
+
+// serveCtxOrBackground returns the serve-lifetime context, falling back to
+// context.Background() for test runners that never set one (the writer then
+// lives until OnClose — the observable contract Test 8 pins).
+//
+//nolint:funcorder // helper for sessionFor
+func (r *sessionTurnRunner) serveCtxOrBackground() context.Context {
+	if r.serveCtx != nil {
+		return r.serveCtx
+	}
+
+	return context.Background()
 }
 
 // spawnMCP loads the project .mcp.json from dir and starts the MCP host. It

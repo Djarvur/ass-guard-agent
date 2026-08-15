@@ -10,9 +10,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/scheduler"
-	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 )
 
 // loadSchedulingFactory is the D-08 wiring seam shared by acp serve / tracer /
@@ -78,34 +76,6 @@ func setupProviderFactory(workDir string, stderr io.Writer) (*scheduler.Provider
 	}
 
 	return factory, providerName, nil
-}
-
-// tracerProvider builds the LOG-01 tracer's provider through the factory
-// (D-08): a credentialed anthropic provider is reconstructed with
-// factory-RESOLVED base_url+key so the RequestCapturer can be attached (never
-// hardcoded defaults); anything else keeps the factory-built instance — the
-// uncredentialed noCredentialProvider fails lazily at first use (D-07).
-//
-//nolint:ireturn // factory seam: returns the provider.Provider abstraction
-func tracerProvider(
-	factory *scheduler.ProviderFactory, providerName string, capturer provider.RequestCapturer,
-) (provider.Provider, error) {
-	p, err := factory.Build(providerName, shaper.New())
-	if err != nil {
-		return nil, fmt.Errorf("build provider %q: %w", providerName, err)
-	}
-
-	if _, isAnthropic := p.(*provider.AnthropicProvider); isAnthropic {
-		if baseURL, key, ok := factory.Endpoint(providerName); ok {
-			return provider.NewAnthropicProvider(shaper.New(),
-				provider.WithAnthropicBaseURL(baseURL),
-				provider.WithAnthropicAPIKey(key),
-				provider.WithAnthropicRequestCapture(capturer),
-			), nil
-		}
-	}
-
-	return p, nil
 }
 
 // firstDeclaredProvider returns the first provider name in sorted order — the

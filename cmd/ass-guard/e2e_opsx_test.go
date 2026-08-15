@@ -146,7 +146,7 @@ func newOpsxRunner(t *testing.T) (*sessionTurnRunner, string) {
 		profile: prof,
 		workDir: scratch,
 		maxConc: 6,
-		makeProvider: func() provider.Provider {
+		makeProvider: func(_ provider.RequestCapturer) provider.Provider {
 			p, _ := factory.Build(providerName, shaper.New())
 
 			return p
@@ -249,27 +249,6 @@ func runStageTyped(t *testing.T, r *sessionTurnRunner, sessionID, text string) {
 	}
 }
 
-// startTranscriptWriter eagerly creates the session and subscribes the async
-// TranscriptWriter (LOG-02) to the runner's bus so request_shaped /
-// agent_message_chunk / usage lines land in the scratch transcript (LOG-01
-// mimicry evidence). Without this, bus events with no subscriber DROP — and
-// the production runner does not wire the writer (the audit wiring is Phase 9
-// AUD-01..04 scope); the E2E needs the evidence now (08-07 T4 step 4:
-// iteration-N+1 request_shaped must show the mid-turn carry). ONE call per
-// test (Publish fan-outs to every subscriber — a second writer would
-// duplicate transcript lines).
-func startTranscriptWriter(t *testing.T, r *sessionTurnRunner, sessionID string) {
-	t.Helper()
-
-	sess := r.sessionFor(context.Background(), sessionID)
-
-	ctx, cancel := context.WithCancel(context.Background())
-
-	t.Cleanup(cancel)
-
-	go session.NewTranscriptWriter(sess.Manager, r.bus).Run(ctx)
-}
-
 // TestOpsxEndToEnd_Gated is the milestone's product proof: the real
 // explore→propose→apply→archive scenario, zero manual continues, archive
 // directory present, every stage output captured.
@@ -279,8 +258,6 @@ func TestOpsxEndToEnd_Gated(t *testing.T) { //nolint:paralleltest,cyclop,funlen 
 	r, scratch := newOpsxRunner(t)
 
 	const sessionID = "sess-opsx-e2e"
-
-	startTranscriptWriter(t, r, sessionID)
 
 	if os.Getenv(e2eCaptureStage) == "1" {
 		// CAPTURE MODE (pre-re-seed): drive the four stages manually so each
@@ -387,7 +364,7 @@ func TestOpsxEndToEnd_Gated(t *testing.T) { //nolint:paralleltest,cyclop,funlen 
 // binary: a fixable openspec failure (archive's non-TTY confirmation prompt
 // reading nil stdin → EOF) reaches the model as a structured fixable result,
 // and the model ADAPTS (retries with --yes) — no halt, no silent swallow.
-func TestOpsxFixableRecovery_Gated(t *testing.T) { //nolint:paralleltest,funlen // real scratch + live model
+func TestOpsxFixableRecovery_Gated(t *testing.T) { //nolint:paralleltest // real scratch + live model
 	e2eGates(t)
 
 	r, scratch := newOpsxRunner(t)
@@ -410,8 +387,6 @@ func TestOpsxFixableRecovery_Gated(t *testing.T) { //nolint:paralleltest,funlen 
 	}
 
 	const sessionID = "sess-opsx-fixable"
-
-	startTranscriptWriter(t, r, sessionID)
 
 	prompt := "Use the openspec archive tool to archive the change named fixable-probe. " +
 		"IMPORTANT: your FIRST attempt must NOT pass --yes (observe the structured result you get back — " +

@@ -47,7 +47,7 @@ func (m *mockStreamProvider) Stream(
 		}
 
 		select {
-		case ch <- provider.StreamChunk{Type: "done", FinishReason: m.finish}:
+		case ch <- provider.StreamChunk{Type: chunkDone, FinishReason: m.finish}:
 		case <-ctx.Done():
 		}
 	}()
@@ -73,7 +73,7 @@ func driveACP(t *testing.T, mp provider.Provider) ( //nolint:nonamedreturns // n
 		profile:      prof,
 		workDir:      t.TempDir(),
 		maxConc:      2,
-		makeProvider: func() provider.Provider { return mp },
+		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return mp },
 	}
 	srvInR, cliW := io.Pipe()
 	cliR, srvOutW := io.Pipe()

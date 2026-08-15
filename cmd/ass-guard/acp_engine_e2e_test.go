@@ -91,7 +91,7 @@ func (p *scriptedACPProvider) Stream(
 		}
 
 		select {
-		case ch <- provider.StreamChunk{Type: "done", FinishReason: fin}:
+		case ch <- provider.StreamChunk{Type: chunkDone, FinishReason: fin}:
 		case <-ctx.Done():
 		}
 	}()
@@ -144,7 +144,7 @@ func newEngineRunner(t *testing.T, script ...scriptedResp) (*sessionTurnRunner, 
 		profile:      fakeProfileACP(),
 		workDir:      dir,
 		maxConc:      4,
-		makeProvider: func() provider.Provider { return prov },
+		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return prov },
 	}
 
 	err := r.setupEngine()
@@ -272,7 +272,7 @@ func TestEndToEnd_EngineDisabledBackwardCompat(t *testing.T) {
 		profile:      fakeProfileACP(),
 		workDir:      t.TempDir(),
 		maxConc:      4,
-		makeProvider: func() provider.Provider { return prov },
+		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return prov },
 		// engineEnabled stays false — no setupEngine call.
 	}
 
@@ -318,7 +318,7 @@ func TestRunACPServe_NoEngineFlag(t *testing.T) {
 		t.Fatalf("setupProviderFactory: %v", ferr)
 	}
 
-	r := &sessionTurnRunner{bus: bus, makeProvider: func() provider.Provider {
+	r := &sessionTurnRunner{bus: bus, makeProvider: func(_ provider.RequestCapturer) provider.Provider {
 		p, _ := factory.Build(providerName, shaper.New())
 
 		return p
