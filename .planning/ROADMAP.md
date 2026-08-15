@@ -60,7 +60,7 @@ v1.1 makes the hands-off OpenSpec promise real end-to-end. The milestone's reaso
   7. WebSearch ships a real DDG-HTML default backend (zero key) on the swappable seam and WebFetch returns fetch + html→markdown — at minimum sufficient for `/opsx:explore` workflows; zero-config first run unaffected (CMD-07, added at Phase-8 discussion)
 
 **Phase gate:** `mise ci` clean AND the operator-gated real-binary test (`ASSGUARD_OPENSPEC_BIN=1` against real openspec v1.5.0, all three paths) AND a real `/opsx` E2E in a scratch project AND the 11 deferred UAT checks green. No stub-only evidence closes this phase.
-**Plans:** 9 plans (8 complete + 08-09 gap-closure staged)
+**Plans:** 9/9 plans complete (verified 2026-08-16)
 Plans:
 **Wave 1**
 
@@ -78,7 +78,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [x] 08-06-PLAN.md — the gate: real /opsx E2E in a scratch project, pattern re-seed from real output, 11 UAT checks, operator witness [CMD-04] — **CHECKPOINT-BLOCKED**: T1 chaining plumbing green + the double-gated FAIL-LOUD harness committed; the real-model run surfaced THREE stacked blocking gaps in turn (within-turn carry → core tool execution → the D-11 boundary reset — see STATE.md Blockers + 08-06-SUMMARY). T3 + the phase gate resume after 08-07, 08-08 AND 08-09 close the three stacked gaps.
+- [x] 08-06-PLAN.md — the gate: real /opsx E2E in a scratch project, pattern re-seed from real output, 11 UAT checks, operator witness [CMD-04] — **CHECKPOINT RESOLVED — COMPLETE**: the three stacked gaps (within-turn carry → core tool execution → the D-11 boundary reset) closed via 08-07/08-08/08-09; T3 + the gated E2E green at the witness; phase accepted 2026-08-16.
 
 **Wave 5** *(blocked on Wave 4 completion — gap closure for the 08-06 blocking finding)*
 
@@ -90,7 +90,7 @@ Plans:
 
 **Wave 7** *(blocked on Wave 6 completion — gap closure for the D-11 boundary-reset finding)*
 
-- [ ] 08-09-PLAN.md — gap closure: boundary resets move BETWEEN turns — the Projector's reset point becomes the last boundary recorded BEFORE the projected turn's user message, mid-turn accumulation survives to the turn's end (rolling 64-tail + pair-safety, capture-pinned: 46/46 tail records, 579 same-turn persistences, zero tool-result resets), boundary writers + D-11 expansion-time semantics + between-turn lean reset + the no-confirmation-tier safety model all preserved, SESS-02-era tests re-pinned (both halves) not deleted, STATE.md revision record, operator-witnessed gated E2E re-run proving convergence + ≥1 full stage of real work, handback to 08-06 T3 [CMD-04] — staged 2026-08-15, checker-passed, awaiting operator approval (revises the SESS-04 reset-timing invariant — approval required; the 08-06 checkpoint remains HELD).
+- [x] 08-09-PLAN.md — gap closure: boundary resets move BETWEEN turns — the Projector's reset point becomes the last boundary recorded BEFORE the projected turn's user message, mid-turn accumulation survives to the turn's end (rolling 64-tail + pair-safety, capture-pinned: 46/46 tail records, 579 same-turn persistences, zero tool-result resets), boundary writers + D-11 expansion-time semantics + between-turn lean reset + the no-confirmation-tier safety model all preserved, SESS-02-era tests re-pinned (both halves) not deleted, STATE.md revision record, operator-witnessed gated E2E re-run proving convergence + ≥1 full stage of real work, handback to 08-06 T3 [CMD-04] — EXECUTED 2026-08-15 (SESS-04 revision recorded in STATE.md under the 08-09 execution authority; handed back to 08-06 T3; witness-accepted 2026-08-16).
 
 ### Phase 9: Serve-Path Audit + zcode Parity Re-capture
 
