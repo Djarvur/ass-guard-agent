@@ -168,7 +168,9 @@ func (m *Manager) AppendToolResult(turnID, toolCallID string, output json.RawMes
 }
 
 // AppendBoundary records a context-boundary (a mutating command completed,
-// D-08). The next projection resets the lean window.
+// D-08). The line is the audit marker + the reset point for the NEXT turn's
+// projection — never the producing turn's own mid-turn window (SESS-04,
+// revised 2026-08-15; evidence: 08-09 / 08-08 T4 / corpus session 4440f5a7).
 func (m *Manager) AppendBoundary(cause, commandRef, turnID string) error {
 	return m.appendLine(&Line{
 		Type: TypeBoundary, TurnID: turnID, Timestamp: now(),

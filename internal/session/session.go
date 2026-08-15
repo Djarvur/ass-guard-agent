@@ -207,7 +207,10 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 						_ = s.Manager.AppendToolResult(turnID, callID, json.RawMessage(`"`+result+`"`), false)
 					}
 					// SESS-02/03 boundary (subagent tools are read-only; only
-					// a config-added entry would fire).
+					// a config-added entry would fire). Same between-turn rule
+					// as the batch site: the line resets the NEXT turn's
+					// projection, never this turn's mid-turn window (SESS-04
+					// revised 2026-08-15; 08-09 / 08-08 T4 / corpus 4440f5a7).
 					_ = s.MaybeAppendBoundary(tc.Name, callID, turnID)
 
 					continue
@@ -236,7 +239,11 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 
 				_ = s.Manager.AppendToolResult(turnID, callID, res.Output, res.IsError)
 				// SESS-02/03: a mutating/config-added tool is a boundary. The
-				// next projection resets the lean window.
+				// line is the audit marker + the reset point for the NEXT
+				// turn's projection — the producing turn's mid-turn window
+				// survives it (SESS-04 revised 2026-08-15, between turns;
+				// capture: corpus session 4440f5a7, 46/46 rolling-64 tail
+				// records, zero tool-result resets — 08-09 / 08-08 T4).
 				_ = s.MaybeAppendBoundary(res.Name, callID, turnID)
 			}
 

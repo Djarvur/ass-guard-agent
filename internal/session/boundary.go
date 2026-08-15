@@ -10,8 +10,11 @@ import (
 // ("mutating-command:<Tool>") from config-added boundaries ("config-added:<Tool>")
 // so a human investigating the transcript can tell why a boundary fired.
 //
-// The NEXT projection's ReadLastBoundary finds this line and resets the lean
-// window to the lean seed (SESS-04).
+// The line is recorded per mutating call / config-added entry as the AUDIT
+// marker, and it resets the lean window for the NEXT turn's projection — never
+// the producing turn's own mid-turn window (SESS-04, revised 2026-08-15 —
+// between-turn reset; evidence: 08-09 / 08-08 T4 / corpus session 4440f5a7:
+// the zcode corpus's rolling 64-message tail never resets on tool results).
 func (s *Session) MaybeAppendBoundary(toolName, toolCallID, turnID string) error {
 	if s.Catalog == nil {
 		return nil // boundary detection not configured (tracer mode)
