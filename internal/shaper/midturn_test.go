@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -14,14 +15,17 @@ import (
 
 // midturn-test constants (goconst).
 const (
-	toolNameRead    = "Read"
-	toolNameBash    = "Bash"
-	callID1         = "call_1"
-	callID2         = "call_2"
-	callID9         = "call_9"
-	roleToolMidturn = "tool"
-	contentListOut  = "file_a\nfile_b"
-	contentReadOut  = "module x"
+	toolNameRead        = "Read"
+	toolNameBash        = "Bash"
+	callID1             = "call_1"
+	callID2             = "call_2"
+	callID9             = "call_9"
+	roleToolMidturn     = "tool"
+	roleAssistantMid    = "assistant"
+	contentListOut      = "file_a\nfile_b"
+	contentReadOut      = "module x"
+	wantFixtureMsgCnt   = 8 // fixture shape: [0..7]
+	wantFixtureParamCnt = 7 // see the rendered sequence in the golden test
 )
 
 // midTurnProfile is the minimal profile the mid-turn shaping tests use — the
@@ -75,7 +79,7 @@ func TestMidTurn_AnthropicToolUseRendering(t *testing.T) {
 	msgs := []shaper.Message{
 		{Role: roleUser, Content: "list the files"},
 		{
-			Role:    "assistant",
+			Role:    roleAssistantMid,
 			Content: "I will list them.",
 			ToolCalls: []shaper.ToolCall{
 				{ID: callID1, Name: toolNameBash, Input: json.RawMessage(`{"command":"ls"}`)},
@@ -144,7 +148,7 @@ func TestMidTurn_AnthropicToolResultGrouping(t *testing.T) {
 	msgs := []shaper.Message{
 		{Role: roleUser, Content: "go"},
 		{
-			Role: "assistant", ToolCalls: []shaper.ToolCall{
+			Role: roleAssistantMid, ToolCalls: []shaper.ToolCall{
 				{ID: callID1, Name: toolNameBash, Input: json.RawMessage(`{"command":"ls"}`)},
 				{ID: callID2, Name: toolNameRead, Input: json.RawMessage(`{"file_path":"go.mod"}`)},
 			},
@@ -237,15 +241,18 @@ func assertToolResultBlock(
 // --- 08-07 T3: the capture-grounded golden fixture + pairing invariant ---
 
 // midturnFixtureMessage is one fixture entry (the captured zcode-normalized
-// request.messages form — keys preserved verbatim per D-03).
+// request.messages form). The json tags stay camelCase VERBATIM per D-03 —
+// the capture's keys are the ground truth this fixture pins.
+//
+//nolint:tagliatelle // captured keys preserved verbatim (D-03 fixture discipline)
 type midturnFixtureMessage struct {
-	Role       string           `json:"role"`
-	Content    string           `json:"content"`
+	Role       string            `json:"role"`
+	Content    string            `json:"content"`
 	ToolCalls  []shaper.ToolCall `json:"toolCalls"`
-	ToolCallID string           `json:"toolCallId"`
-	ToolName   string           `json:"toolName"`
-	IsError    *bool            `json:"isError"`
-	ModelRef   string           `json:"modelRef"`
+	ToolCallID string            `json:"toolCallId"`
+	ToolName   string            `json:"toolName"`
+	IsError    *bool             `json:"isError"`
+	ModelRef   string            `json:"modelRef"`
 }
 
 type midturnFixture struct {
@@ -262,7 +269,9 @@ func loadMidTurnFixture(t *testing.T) midturnFixture {
 	}
 
 	var f midturnFixture
-	if err := json.Unmarshal(raw, &f); err != nil {
+
+	err = json.Unmarshal(raw, &f)
+	if err != nil {
 		t.Fatalf("parse fixture: %v", err)
 	}
 
@@ -273,11 +282,14 @@ func loadMidTurnFixture(t *testing.T) midturnFixture {
 // mid-turn forms; the modelRef key is runtime bookkeeping, not message shape).
 func fixtureMessages(f midturnFixture) []shaper.Message {
 	out := make([]shaper.Message, 0, len(f.Messages))
+
 	for _, m := range f.Messages {
 		sm := shaper.Message{Role: m.Role, Content: m.Content, ToolCalls: m.ToolCalls}
-		if m.Role == "tool" {
+
+		if m.Role == roleToolMidturn {
 			sm.ToolCallID = m.ToolCallID
 			sm.ToolName = m.ToolName
+
 			if m.IsError != nil {
 				sm.IsError = *m.IsError
 			}
@@ -301,11 +313,12 @@ func TestMidTurnCapture_GoldenShape(t *testing.T) {
 	t.Parallel()
 
 	f := loadMidTurnFixture(t)
-	if len(f.Messages) != 8 { //nolint:mnd // fixture shape: [0..7]
-		t.Fatalf("fixture messages = %d, want 8 (fixture edited?)", len(f.Messages))
+	if len(f.Messages) != wantFixtureMsgCnt {
+		t.Fatalf("fixture messages = %d, want %d (fixture edited?)", len(f.Messages), wantFixtureMsgCnt)
 	}
 
 	s := shaper.New()
+
 	params, _, err := s.Shape(midTurnProfile(), fixtureMessages(f))
 	if err != nil {
 		t.Fatalf("Shape over the capture fixture: %v", err)
@@ -319,46 +332,70 @@ func TestMidTurnCapture_GoldenShape(t *testing.T) {
 	//   [4] user: tool_result call_R2, call_R3 — grouped, ordered
 	//   [5] assistant: plain text
 	//   [6] user: mid-conversation system text (wire: user-role block)
-	if len(params.Messages) != 7 { //nolint:mnd // see sequence above
-		t.Fatalf("rendered params = %d, want 7", len(params.Messages))
+	if len(params.Messages) != wantFixtureParamCnt {
+		t.Fatalf("rendered params = %d, want %d", len(params.Messages), wantFixtureParamCnt)
 	}
 
-	assertParam := func(i int, role anthropic.MessageParamRole) anthropic.MessageParam {
-		t.Helper()
+	assertGoldenRoles(t, params.Messages)
+	assertGoldenFirstBatch(t, params.Messages)
+	assertGoldenSecondBatch(t, params.Messages)
+	assertGoldenTail(t, params.Messages)
+}
 
-		if params.Messages[i].Role != role {
-			t.Errorf("params[%d].Role = %v, want %v", i, params.Messages[i].Role, role)
+// assertGoldenRoles pins the role sequence of the rendered fixture window.
+func assertGoldenRoles(t *testing.T, msgs []anthropic.MessageParam) {
+	t.Helper()
+
+	want := []anthropic.MessageParamRole{
+		anthropic.MessageParamRoleUser,      // [0] prompt
+		anthropic.MessageParamRoleAssistant, // [1] tool_use call_R1
+		anthropic.MessageParamRoleUser,      // [2] tool_result call_R1
+		anthropic.MessageParamRoleAssistant, // [3] tool_use batch R2/R3
+		anthropic.MessageParamRoleUser,      // [4] grouped tool_results
+		anthropic.MessageParamRoleAssistant, // [5] plain text
+		anthropic.MessageParamRoleUser,      // [6] mid-conversation system text
+	}
+
+	for i, w := range want {
+		if msgs[i].Role != w {
+			t.Errorf("params[%d].Role = %v, want %v", i, msgs[i].Role, w)
 		}
-
-		return params.Messages[i]
 	}
+}
 
-	assertParam(0, anthropic.MessageParamRoleUser)
+// assertGoldenFirstBatch pins params[1..2]: ONE tool_use block (call_R1, Bash,
+// empty content → no leading text block) then its tool_result.
+func assertGoldenFirstBatch(t *testing.T, msgs []anthropic.MessageParam) {
+	t.Helper()
 
-	b1 := assertParam(1, anthropic.MessageParamRoleAssistant)
+	b1 := msgs[1]
 	if len(b1.Content) != 1 || b1.Content[0].OfToolUse == nil || b1.Content[0].OfToolUse.ID != "call_R1" {
 		t.Errorf("params[1] = %+v; want ONE tool_use block (call_R1, empty content → no text block)", b1.Content)
 	}
 
-	if b1.Content[0].OfToolUse != nil && b1.Content[0].OfToolUse.Name != "Bash" {
+	if b1.Content[0].OfToolUse != nil && b1.Content[0].OfToolUse.Name != toolNameBash {
 		t.Errorf("params[1] tool_use name = %q, want Bash (from the capture)", b1.Content[0].OfToolUse.Name)
 	}
+}
 
-	assertParam(2, anthropic.MessageParamRoleUser)
+// assertGoldenSecondBatch pins params[3..4]: the ordered two-call batch
+// (call_R2 Read, call_R3 Grep) and its two GROUPED tool_result blocks.
+func assertGoldenSecondBatch(t *testing.T, msgs []anthropic.MessageParam) {
+	t.Helper()
 
-	b2 := assertParam(3, anthropic.MessageParamRoleAssistant)
+	b2 := msgs[3]
 	if len(b2.Content) != 2 {
 		t.Fatalf("params[3] blocks = %d, want 2 tool_use blocks", len(b2.Content))
 	}
 
-	for i, want := range []struct{ id, name string }{{"call_R2", "Read"}, {"call_R3", "Grep"}} {
+	for i, want := range []struct{ id, name string }{{"call_R2", toolNameRead}, {"call_R3", "Grep"}} {
 		blk := b2.Content[i]
 		if blk.OfToolUse == nil || blk.OfToolUse.ID != want.id || blk.OfToolUse.Name != want.name {
 			t.Errorf("params[3][%d] = %+v; want tool_use {%s %s} in ORDER", i, blk, want.id, want.name)
 		}
 	}
 
-	r2 := assertParam(4, anthropic.MessageParamRoleUser)
+	r2 := msgs[4]
 	if len(r2.Content) != 2 {
 		t.Fatalf("params[4] blocks = %d, want 2 grouped tool_result blocks", len(r2.Content))
 	}
@@ -373,13 +410,19 @@ func TestMidTurnCapture_GoldenShape(t *testing.T) {
 	if r2.Content[1].OfToolResult != nil && r2.Content[1].OfToolResult.IsError.Value {
 		t.Error("params[4][1].is_error = true, want false (fixture isError:false)")
 	}
+}
 
-	b3 := assertParam(5, anthropic.MessageParamRoleAssistant)
+// assertGoldenTail pins params[5..6]: the end-of-batch assistant plain-text
+// message and the mid-conversation system text (wire: user-role text block).
+func assertGoldenTail(t *testing.T, msgs []anthropic.MessageParam) {
+	t.Helper()
+
+	b3 := msgs[5]
 	if len(b3.Content) != 1 || b3.Content[0].OfText == nil {
 		t.Errorf("params[5] = %+v; want a plain assistant text block", b3.Content)
 	}
 
-	sys := assertParam(6, anthropic.MessageParamRoleUser)
+	sys := msgs[6]
 	if len(sys.Content) != 1 || sys.Content[0].OfText == nil {
 		t.Errorf("params[6] = %+v; want the mid-conversation system text as a user-role text block", sys.Content)
 	}
@@ -398,20 +441,11 @@ func TestPairingInvariant_CaptureFixture(t *testing.T) {
 	for i, m := range f.Messages {
 		switch m.Role {
 		case roleToolMidturn:
-			found := false
-			for _, id := range batchIDs {
-				if id == m.ToolCallID {
-					found = true
-
-					break
-				}
-			}
-
-			if !found {
+			if !slices.Contains(batchIDs, m.ToolCallID) {
 				t.Errorf("fixture[%d] tool message toolCallId %q not in the preceding batch %v",
 					i, m.ToolCallID, batchIDs)
 			}
-		case "assistant":
+		case roleAssistantMid:
 			batchIDs = batchIDs[:0]
 			for _, tc := range m.ToolCalls {
 				batchIDs = append(batchIDs, tc.ID)

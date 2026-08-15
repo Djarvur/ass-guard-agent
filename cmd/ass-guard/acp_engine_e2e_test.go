@@ -193,7 +193,7 @@ func TestEndToEnd_ZeroContinue(t *testing.T) {
 		}
 	}
 
-	if len(decisions) != 2 || decisions[0] != "continue" || decisions[1] != "nothing" {
+	if len(decisions) != 2 || decisions[0] != actionContinue || decisions[1] != "nothing" {
 		t.Errorf("engine_decision actions = %v; want [continue nothing]", decisions)
 	}
 

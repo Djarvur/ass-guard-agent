@@ -56,11 +56,13 @@ func e2eGates(t *testing.T) {
 
 	if os.Getenv("ASSGUARD_OPENSPEC_BIN") != "1" || os.Getenv("ASSGUARD_E2E_LLM") != "1" {
 		t.Skip("set ASSGUARD_OPENSPEC_BIN=1 (real openspec binary on PATH) AND " +
-			"ASSGUARD_E2E_LLM=1 (live model; creds from the repo's .ass-guard/scheduling.yaml) to run the real /opsx E2E")
+			"ASSGUARD_E2E_LLM=1 (live model; creds from the repo's " +
+			".ass-guard/scheduling.yaml) to run the real /opsx E2E")
 	}
 
-	if _, err := exec.LookPath("openspec"); err != nil {
-		t.Fatalf("BLOCKER: ASSGUARD_OPENSPEC_BIN=1 but no openspec binary on PATH: %v", err)
+	_, lerr := exec.LookPath("openspec")
+	if lerr != nil {
+		t.Fatalf("BLOCKER: ASSGUARD_OPENSPEC_BIN=1 but no openspec binary on PATH: %v", lerr)
 	}
 }
 
@@ -105,6 +107,8 @@ func fileExists(path string) bool {
 // newOpsxRunner bootstraps a scratch project with the REAL binary and returns
 // a fully wired sessionTurnRunner (real profile + real provider + engine +
 // expansion) over it.
+//
+//nolint:gocritic // unnamed result vs nonamedreturns (house) conflict
 func newOpsxRunner(t *testing.T) (*sessionTurnRunner, string) {
 	t.Helper()
 
@@ -122,7 +126,7 @@ func newOpsxRunner(t *testing.T) (*sessionTurnRunner, string) {
 	scratch := t.TempDir()
 
 	// REAL binary: install the opsx command + skill files into scratch.
-	initCmd := exec.Command("openspec", "init", "--tools", "claude", "--force")
+	initCmd := exec.CommandContext(context.Background(), "openspec", "init", "--tools", "claude", "--force")
 	initCmd.Dir = scratch
 
 	out, err := initCmd.CombinedOutput()
@@ -138,11 +142,15 @@ func newOpsxRunner(t *testing.T) (*sessionTurnRunner, string) {
 	}
 
 	r := &sessionTurnRunner{
-		bus:          event.NewBus(),
-		profile:      prof,
-		workDir:      scratch,
-		maxConc:      6,
-		makeProvider: func() provider.Provider { p, _ := factory.Build(providerName, shaper.New()); return p },
+		bus:     event.NewBus(),
+		profile: prof,
+		workDir: scratch,
+		maxConc: 6,
+		makeProvider: func() provider.Provider {
+			p, _ := factory.Build(providerName, shaper.New())
+
+			return p
+		},
 	}
 
 	err = r.setupEngine()
@@ -162,7 +170,8 @@ func seedScratchCodebase(t *testing.T, scratch string) {
 
 	files := map[string]string{
 		"README.md": "# scratch-app\n\nA tiny app. Features: add two numbers.\n\nRun: go run .\n",
-		"main.go": "package main\n\nimport \"fmt\"\n\n// add returns the sum of a and b.\nfunc add(a, b int) int { return a + b }\n\n" +
+		"main.go": "package main\n\nimport \"fmt\"\n\n// add returns the sum of a and b.\n" +
+			"func add(a, b int) int { return a + b }\n\n" +
 			"func main() { fmt.Println(add(2, 3)) }\n",
 	}
 
@@ -243,7 +252,7 @@ func runStageTyped(t *testing.T, r *sessionTurnRunner, sessionID, text string) {
 // TestOpsxEndToEnd_Gated is the milestone's product proof: the real
 // explore→propose→apply→archive scenario, zero manual continues, archive
 // directory present, every stage output captured.
-func TestOpsxEndToEnd_Gated(t *testing.T) { //nolint:paralleltest // real scratch + live model
+func TestOpsxEndToEnd_Gated(t *testing.T) { //nolint:paralleltest,cyclop,funlen // real scratch + live model
 	e2eGates(t)
 
 	r, scratch := newOpsxRunner(t)
@@ -303,7 +312,7 @@ func TestOpsxEndToEnd_Gated(t *testing.T) { //nolint:paralleltest // real scratc
 	continues := 0
 
 	for _, a := range actions {
-		if a == "continue" {
+		if a == actionContinue {
 			continues++
 		}
 	}
@@ -325,7 +334,8 @@ func TestOpsxEndToEnd_Gated(t *testing.T) { //nolint:paralleltest // real scratc
 		}
 
 		if !found {
-			t.Errorf("no %s provenance — the stage did not arrive as an expanded injected turn (provenance=%v)", key, provenance)
+			t.Errorf("no %s provenance — the stage did not arrive as an expanded injected turn (provenance=%v)",
+				key, provenance)
 		}
 	}
 
@@ -361,11 +371,12 @@ func TestOpsxFixableRecovery_Gated(t *testing.T) { //nolint:paralleltest // real
 
 	// A complete tiny change so archive has something real to archive; the
 	// probe asks the model to first try WITHOUT --yes (the fixable path).
-	newCmd := exec.Command("openspec", "new", "change", "fixable-probe")
+	newCmd := exec.CommandContext(context.Background(), "openspec", "new", "change", "fixable-probe")
 	newCmd.Dir = scratch
 
-	if out, err := newCmd.CombinedOutput(); err != nil {
-		t.Fatalf("openspec new change: %v\n%s", err, out)
+	out, oerr := newCmd.CombinedOutput()
+	if oerr != nil {
+		t.Fatalf("openspec new change: %v\n%s", oerr, out)
 	}
 
 	tasks := filepath.Join(scratch, "openspec", "changes", "fixable-probe", "tasks.md")

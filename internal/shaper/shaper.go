@@ -238,9 +238,15 @@ func toMessageParamRole(role string) (anthropic.MessageParamRole, error) {
 		// to a user-role param carrying tool_result blocks at the grouping
 		// site. The case exists so the accepted-role set is explicit.
 		return anthropic.MessageParamRoleUser, nil
+	case "system":
+		// Mid-conversation system messages appear in the CAPTURED zcode
+		// request.messages (08-07 fixture). The Anthropic Messages API has no
+		// mid-conversation system role — the claude-code-compat convention
+		// rides the content as a user-role text block on the wire.
+		return anthropic.MessageParamRoleUser, nil
 	default:
 		//nolint:err113 // dynamic error message
-		return "", fmt.Errorf("unsupported message role %q (want user|assistant|tool)", role)
+		return "", fmt.Errorf("unsupported message role %q (want user|assistant|tool|system)", role)
 	}
 }
 

@@ -3,6 +3,7 @@ package session //nolint:testpackage // internal package test
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -584,16 +585,7 @@ func TestPairingInvariant_ProjectorWindow(t *testing.T) {
 				batchIDs = append(batchIDs, tc.ID)
 			}
 		case mm.Role == roleToolMsg:
-			found := false
-			for _, id := range batchIDs {
-				if id == mm.ToolCallID {
-					found = true
-
-					break
-				}
-			}
-
-			if !found {
+			if !slices.Contains(batchIDs, mm.ToolCallID) {
 				t.Fatalf("window[%d] tool message id %q not in the preceding batch %v — pairing violated:\n%s",
 					i, mm.ToolCallID, batchIDs, msgSummaryList(msgs))
 			}
@@ -630,6 +622,7 @@ func TestProjector_ToolResultRedactionCarry(t *testing.T) {
 	}
 
 	var toolMsg *provider.Message
+
 	for i := range msgs {
 		if msgs[i].Role == roleToolMsg {
 			toolMsg = &msgs[i]
