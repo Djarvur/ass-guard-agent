@@ -3,6 +3,7 @@ package session //nolint:testpackage // internal package test
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -639,5 +640,207 @@ func TestProjector_ToolResultRedactionCarry(t *testing.T) {
 
 	if !strings.Contains(toolMsg.Content, "[REDACTED]") {
 		t.Errorf("tool result content = %q; want the redacted placeholder", toolMsg.Content)
+	}
+}
+
+// --- 08-08 T1: plain-text rendering of captured tool-result forms ---
+
+// TestPlainContent_JSONStringUnquoted (08-08 T1 Test 2): a transcript
+// tool_result line whose Output is the JSON string "Exit code 1\nTraceback…"
+// projects to a tool-role Message whose Content is the UNQUOTED text — the
+// captured zcode Bash error form is PLAIN TEXT on the wire-normalized tool
+// message, so a marshaled JSON string must be decoded before it reaches the
+// shaper (RED pre-fix: string(l.Output) carried the quotes).
+func TestPlainContent_JSONStringUnquoted(t *testing.T) {
+	t.Parallel()
+
+	m := newTestManager(t, "s-plain1")
+	p := NewProjector(fakeProfile("sys"), m)
+
+	_ = m.AppendUserMessage("turnQ", []ContentBlock{{Type: blockText, Text: "run it"}})
+	_ = m.AppendToolCall("turnQ", "q1", toolBash, json.RawMessage(`{"command":"false"}`))
+	_ = m.AppendToolResult("turnQ", "q1", json.RawMessage(`"Exit code 1\nTraceback"`), true)
+
+	msgs, err := p.Project("turnQ")
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+
+	var toolMsg *provider.Message
+
+	for i := range msgs {
+		if msgs[i].Role == roleToolMsg {
+			toolMsg = &msgs[i]
+		}
+	}
+
+	if toolMsg == nil {
+		t.Fatal("no tool message in the projection")
+	}
+
+	if toolMsg.Content != "Exit code 1\nTraceback" {
+		t.Errorf("tool content = %q; want the UNQUOTED captured form \"Exit code 1\\nTraceback\"",
+			toolMsg.Content)
+	}
+}
+
+// TestPlainContent_ObjectsVerbatim (08-08 T1 Test 3): a tool_result whose
+// Output is a JSON OBJECT projects Content as the same JSON object (not a
+// decoded string) — the shipped openspec/Skill/subagent result rendering is
+// unchanged; only JSON-string outputs decode. NOTE: the Manager's redactor
+// parses + re-marshals object payloads (sorted key order, pre-existing 08-07
+// behavior), so the assertion is deep-equal on the decoded value + object
+// FORM (leading '{'), not raw byte order.
+func TestPlainContent_ObjectsVerbatim(t *testing.T) {
+	t.Parallel()
+
+	m := newTestManager(t, "s-plain2")
+	p := NewProjector(fakeProfile("sys"), m)
+
+	const objOut = `{"stdout":"files","stderr":"","exit_code":0,"classification":"ok"}`
+
+	_ = m.AppendUserMessage("turnO", []ContentBlock{{Type: blockText, Text: "go"}})
+	_ = m.AppendToolCall("turnO", "o1", "openspec:explore", json.RawMessage(`{"topic":"x"}`))
+	_ = m.AppendToolResult("turnO", "o1", json.RawMessage(objOut), false)
+
+	msgs, err := p.Project("turnO")
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+
+	var toolMsg *provider.Message
+
+	for i := range msgs {
+		if msgs[i].Role == roleToolMsg {
+			toolMsg = &msgs[i]
+		}
+	}
+
+	if toolMsg == nil {
+		t.Fatal("no tool message in the projection")
+	}
+
+	if !strings.HasPrefix(toolMsg.Content, "{") {
+		t.Fatalf("tool content = %q; want the JSON object form (not a decoded string)", toolMsg.Content)
+	}
+
+	var got, want any
+	if err := json.Unmarshal([]byte(toolMsg.Content), &got); err != nil {
+		t.Fatalf("tool content is not valid JSON: %v", err)
+	}
+
+	if err := json.Unmarshal([]byte(objOut), &want); err != nil {
+		t.Fatalf("fixture output is not valid JSON: %v", err)
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("tool object = %#v; want the object verbatim %#v", got, want)
+	}
+}
+
+// TestPlainContent_IsErrorPreserved (08-08 T1 Test 4): a tool_result line
+// with IsError=true projects a tool Message with IsError=true — the flag the
+// shaper renders as is_error (the captured `Exit code N` results carry it).
+func TestPlainContent_IsErrorPreserved(t *testing.T) {
+	t.Parallel()
+
+	m := newTestManager(t, "s-plain3")
+	p := NewProjector(fakeProfile("sys"), m)
+
+	_ = m.AppendUserMessage("turnE", []ContentBlock{{Type: blockText, Text: "go"}})
+	_ = m.AppendToolCall("turnE", "e1", toolBash, json.RawMessage(`{"command":"false"}`))
+	_ = m.AppendToolResult("turnE", "e1", json.RawMessage(`"Exit code 1\nboom"`), true)
+
+	msgs, err := p.Project("turnE")
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+
+	var toolMsg *provider.Message
+
+	for i := range msgs {
+		if msgs[i].Role == roleToolMsg {
+			toolMsg = &msgs[i]
+		}
+	}
+
+	if toolMsg == nil {
+		t.Fatal("no tool message in the projection")
+	}
+
+	if !toolMsg.IsError {
+		t.Error("tool message IsError = false; want true (the recorded line carries it)")
+	}
+}
+
+// TestPlainContent_RedactionCarryOnStringOutputs (08-08 T1 Test 5, extends
+// 08-07 T3 Test 4 to PLAIN-TEXT outputs): a JSON-string tool result containing
+// a redactable secret projects as the REDACTED text — the Manager redacts the
+// line before it lands on disk, and the plainContent decode of the redacted
+// (still-valid) JSON string carries the placeholder, never the secret.
+func TestPlainContent_RedactionCarryOnStringOutputs(t *testing.T) {
+	t.Parallel()
+
+	m := newTestManager(t, "s-plain4")
+	p := NewProjector(fakeProfile("sys"), m)
+
+	_ = m.AppendUserMessage("turnS", []ContentBlock{{Type: blockText, Text: "env"}})
+	_ = m.AppendToolCall("turnS", "s1", toolBash, json.RawMessage(`{"command":"env"}`))
+	_ = m.AppendToolResult("turnS", "s1",
+		json.RawMessage(`"KEY=sk-livesecretvalue123 done"`), false)
+
+	msgs, err := p.Project("turnS")
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+
+	var toolMsg *provider.Message
+
+	for i := range msgs {
+		if msgs[i].Role == roleToolMsg {
+			toolMsg = &msgs[i]
+		}
+	}
+
+	if toolMsg == nil {
+		t.Fatal("no tool message in the projection")
+	}
+
+	if strings.Contains(toolMsg.Content, "sk-livesecretvalue123") {
+		t.Errorf("plain-text tool result leaked the secret: %q", toolMsg.Content)
+	}
+
+	if !strings.Contains(toolMsg.Content, "[REDACTED]") {
+		t.Errorf("plain-text tool result = %q; want the redacted placeholder", toolMsg.Content)
+	}
+}
+
+// TestPlainContent_InvalidJSONFallback (08-08 T1 Test 6): an Output that is
+// not valid JSON falls back to string(raw) unchanged — plainContent must
+// never panic or drop results on undecodable bytes. NOTE: tested directly
+// against plainContent because the Manager's appendLine MARSHALS the line
+// (a json.RawMessage holding invalid JSON fails json.Marshal), so a
+// non-JSON Output can never enter the transcript through AppendToolResult —
+// the fallback guards the decode seam itself.
+func TestPlainContent_InvalidJSONFallback(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{"json string decodes", `"Exit code 1\nboom"`, "Exit code 1\nboom"},
+		{"object verbatim", `{"a":"b"}`, `{"a":"b"}`},
+		{"number verbatim", `42`, `42`},
+		{"invalid json raw fallback", `raw not-json text`, `raw not-json text`},
+		{"lone quote raw fallback", `"unterminated`, `"unterminated`},
+		{"empty verbatim", ``, ``},
+	}
+
+	for _, tc := range cases {
+		if got := plainContent(json.RawMessage(tc.raw)); got != tc.want {
+			t.Errorf("%s: plainContent(%q) = %q; want %q", tc.name, tc.raw, got, tc.want)
+		}
 	}
 }
