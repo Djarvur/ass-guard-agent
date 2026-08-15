@@ -615,7 +615,7 @@ func firstTextBlockIndex(blocks []session.ContentBlock) int {
 // PROMPT-side invocation only, never from assistant/tool content) and the
 // scenario-subject forwarding rule consume; it is exactly the resolution
 // expandUserBlocks acts on.
-func (r *sessionTurnRunner) invocationFor( //nolint:funcorder,nonamedreturns,lll // sibling of expandUserBlocks
+func (r *sessionTurnRunner) invocationFor( //nolint:funcorder,nonamedreturns // sibling of expandUserBlocks
 	blocks []session.ContentBlock,
 ) (key, args string, ok bool) {
 	idx := firstTextBlockIndex(blocks)
