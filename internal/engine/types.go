@@ -19,6 +19,22 @@ type PatternTable interface {
 	MatchTool(name string) MatchDetail
 }
 
+// CommandMatcher is an OPTIONAL PatternTable capability (hybrid chaining — the
+// findings-6 disposition, 2026-08-15): tables that support command-provenance
+// rows answer whether the command key that STARTED a turn carries a configured
+// action. Consulted only AFTER the dual signals miss (text/tool stay
+// authoritative — the capture-seeded rows own the deterministic boundaries) and
+// only for turns actually started by an expansion (TurnOutput.StartedBy). The
+// capability is purely additive: tables that don't implement it are unaffected
+// (Decide skips the provenance input entirely).
+type CommandMatcher interface {
+	// MatchCommand reports whether key — the registry command key whose
+	// expansion started the turn (e.g. "opsx:explore") — is a configured
+	// chaining row. The Span slot carries the command KEY (the matched signal
+	// text, mirroring the tool-name convention). Zero value ⇒ no row.
+	MatchCommand(key string) MatchDetail
+}
+
 // MatchDetail is one pattern-table match with FULL provenance (09-02, AUD-04 /
 // D-03): what matched (ID), what to do (Action), the literal matched text
 // (Span), and which config entry fired (ConfigSource — supplied by the TABLE
@@ -125,6 +141,15 @@ type TurnOutput struct {
 	// ToolCalls is the ordered list of tool-call NAMES in this turn (D-02
 	// second signal: a known handoff tool ⇒ continue).
 	ToolCalls []string
+	// StartedBy is the registry command key whose EXPANSION started this turn
+	// (hybrid chaining, findings-6 disposition) — e.g. "opsx:explore" when the
+	// user (or an engine injection) invoked /opsx:explore and the 08-04 seam
+	// expanded it; "" for plain-text turns. It is sourced EXCLUSIVELY from the
+	// expansion seam (the user-side invocation record — the same lookup that
+	// writes the command_provenance line), NEVER from assistant/tool content:
+	// the assistant-role-only safety property is untouched (model-visible text
+	// cannot fabricate a provenance key).
+	StartedBy string
 }
 
 // MaxContinueInjections is the re-fire budget — the second infinite-loop bar

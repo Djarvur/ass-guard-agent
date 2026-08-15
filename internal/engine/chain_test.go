@@ -45,7 +45,13 @@ type populatingDispatcher struct {
 }
 
 func (p *populatingDispatcher) PopulateContinue(dec *engine.Decision) {
-	id := strings.TrimPrefix(dec.Signal, "text:")
+	// Strip any signal prefix ("text:" / "tool:" / "command:") to the bare
+	// pattern id — the same contract the real acpDispatcher.PopulateContinue
+	// implements (08-06 chaining + the hybrid provenance signal).
+	id := dec.Signal
+	for _, prefix := range []string{"text:", "tool:", "command:"} {
+		id = strings.TrimPrefix(id, prefix)
+	}
 
 	if next, ok := p.next[id]; ok {
 		dec.NextPrompt = []session.ContentBlock{{Type: blockText, Text: next}}
