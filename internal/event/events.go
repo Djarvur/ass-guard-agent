@@ -29,6 +29,12 @@ type RequestShaped struct {
 	VerbatimRequest json.RawMessage
 	Profile         string
 	Timestamp       time.Time
+
+	// HeaderNames carries the outgoing request's header NAMES (sorted) —
+	// shape evidence (the 12 identity headers are a TIER-2 mimicry invariant).
+	// NAMES ONLY (Pitfall 9 audit-path discipline): values are dropped at the
+	// capture site and can never enter any artifact via this field.
+	HeaderNames []string
 }
 
 // Kind returns the event discriminator.

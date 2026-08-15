@@ -20,12 +20,12 @@ func TestOpenFileSink(t *testing.T) {
 
 	w, closeFn, err := audit.OpenFileSink("")
 	if err != nil || w != os.Stderr || closeFn != nil {
-		t.Errorf("empty path = (%v, %v, %v); want (stderr, nil, nil)", w, closeFn, err)
+		t.Errorf("empty path = (w=%v, err=%v); want (stderr, nil) with nil closer", w, err)
 	}
 
 	w, closeFn, err = audit.OpenFileSink("-")
 	if err != nil || w != os.Stderr || closeFn != nil {
-		t.Errorf("'-' = (%v, %v, %v); want (stderr, nil, nil)", w, closeFn, err)
+		t.Errorf("'-' = (w=%v, err=%v); want (stderr, nil) with nil closer", w, err)
 	}
 
 	path := filepath.Join(t.TempDir(), "sink.jsonl")
@@ -260,7 +260,7 @@ func TestMirror_SingleFileMode(t *testing.T) {
 
 	defer func() { _ = closeFn() }()
 
-	m := audit.NewMirrorFile(bus, w, nil)
+	_ = audit.NewMirrorFile(bus, w, nil)
 
 	deadline := time.Now().Add(2 * time.Second)
 

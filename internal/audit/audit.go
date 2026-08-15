@@ -27,6 +27,29 @@ type AuditLogger struct {
 // NOTE: Plan 02-07 folds this AuditLogger into the unified TranscriptWriter
 // (D-20 — one artifact). Until then this keeps the Phase-1 LOG-01 path working
 // against the Phase-2 typed-channel bus.
+// OpenFileSink resolves the audit sink (09-06, the SHARED opener — Pitfall 8:
+// no os.OpenFile for audit anywhere else). Empty path or "-" → os.Stderr with
+// a nil closer; the literal stdout TARGETS ("stdout", "/dev/stdout") are
+// REJECTED (the locked AUD-02 guard, enforced for file targets too — stdout is
+// reserved for ACP frames); any other path opens append-only at 0600.
+func OpenFileSink(path string) (io.Writer, func() error, error) {
+	if path == "" || path == "-" {
+		return os.Stderr, nil, nil
+	}
+
+	if path == "stdout" || path == "/dev/stdout" {
+		//nolint:err113 // dynamic error message
+		return nil, nil, fmt.Errorf("audit sink must not be stdout (transport discipline)")
+	}
+
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open audit-log: %w", err)
+	}
+
+	return f, func() error { return f.Close() }, nil
+}
+
 func NewAuditLogger(bus *event.Bus, sink io.Writer) *AuditLogger {
 	if sink == os.Stdout {
 		panic("audit: sink must not be os.Stdout (transport discipline — stdout is reserved for ACP frames)")
