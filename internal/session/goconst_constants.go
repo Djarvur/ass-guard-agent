@@ -3,6 +3,7 @@ package session
 // Repeated string literals extracted to constants (goconst).
 const blockText = "text"
 const blockToolUse = "tool_use"
+const chunkErrorType = "error"
 const stopEndTurn = "end_turn"
 const stopCancelled = "cancelled"
 const stopDone = "done"

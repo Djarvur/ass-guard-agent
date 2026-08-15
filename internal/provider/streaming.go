@@ -37,6 +37,18 @@ var httpClient = &http.Client{} //nolint:gochecknoglobals // shared HTTP client 
 // terminates with a retryable (KindTransient) error instead of wedging.
 const sseIdleTimeoutDefault = 5 * time.Minute
 
+// errSSEIdleTimeout and errSSECancelled are the watchdog's static abort causes
+// (wrapped with per-abort detail at the abort site).
+var errSSEIdleTimeout = errors.New("sse idle timeout: server stalled mid-stream")
+var errSSECancelled = errors.New("sse stream cancelled")
+
+// Watchdog tick bound derivation: tick = idle/divisor clamped to
+// [watchdogTickLowerBound, watchdogTickUpperBound] so short test idles check
+// often enough and production idles do not spin.
+const watchdogTickDivisor = 10
+const watchdogTickLowerBound = 10 * time.Millisecond
+const watchdogTickUpperBound = time.Second
+
 // sseBody wraps the response body with idle tracking. Every successful Read
 // refreshes lastActivity; the watchdog closes the underlying body (unblocking a
 // wedged Read) when the ctx cancels or the idle deadline passes, recording the
@@ -65,7 +77,11 @@ func (b *sseBody) Read(p []byte) (int, error) {
 		b.mu.Unlock()
 	}
 
-	return n, err
+	if err != nil {
+		return n, fmt.Errorf("sse body read: %w", err)
+	}
+
+	return n, nil
 }
 
 // idleFor returns the time since the last successful read.
@@ -108,14 +124,7 @@ func sseWatchdog(ctx context.Context, b *sseBody, idle time.Duration, stop <-cha
 		idle = sseIdleTimeoutDefault
 	}
 
-	tick := idle / 10
-	if tick < 10*time.Millisecond {
-		tick = 10 * time.Millisecond
-	}
-
-	if tick > time.Second {
-		tick = time.Second
-	}
+	tick := min(max(idle/watchdogTickDivisor, watchdogTickLowerBound), watchdogTickUpperBound)
 
 	t := time.NewTicker(tick)
 	defer t.Stop()
@@ -125,12 +134,12 @@ func sseWatchdog(ctx context.Context, b *sseBody, idle time.Duration, stop <-cha
 		case <-stop:
 			return
 		case <-ctx.Done():
-			b.abort(fmt.Errorf("sse stream cancelled: %w", ctx.Err()))
+			b.abort(fmt.Errorf("%w: %w", errSSECancelled, ctx.Err()))
 
 			return
 		case <-t.C:
 			if b.idleFor() >= idle {
-				b.abort(fmt.Errorf("sse idle timeout: no data for %s (server stalled mid-stream)", idle))
+				b.abort(fmt.Errorf("%w: no data for %s", errSSEIdleTimeout, idle))
 
 				return
 			}
@@ -270,10 +279,10 @@ func (p *AnthropicProvider) drainSSE(ctx context.Context, body *sseBody, ch chan
 	// tool_use block twice — the 08-09 finding: every call id appeared exactly
 	// 2x in live transcripts): one emission per provider id per response.
 	var (
-		tuName, tuID  string
-		tuInput       strings.Builder
-		inToolUse     bool
-		emittedTools  = map[string]struct{}{}
+		tuName, tuID string
+		tuInput      strings.Builder
+		inToolUse    bool
+		emittedTools = map[string]struct{}{}
 	)
 
 	for {
@@ -343,7 +352,8 @@ func (p *AnthropicProvider) drainSSE(ctx context.Context, body *sseBody, ch chan
 			cb, _ := ev["content_block"].(map[string]any)
 			if cb != nil {
 				if t, _ := cb[keyType].(string); t == blockToolUse {
-					flushToolUse(ctx, &tuName, &tuID, &tuInput, &inToolUse, emittedTools, ch) // flush previous if unclosed
+					// flush previous if unclosed
+					flushToolUse(ctx, &tuName, &tuID, &tuInput, &inToolUse, emittedTools, ch)
 					tuName, _ = cb["name"].(string)
 					tuID, _ = cb["id"].(string)
 

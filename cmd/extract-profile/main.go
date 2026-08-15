@@ -157,12 +157,22 @@ func writeArtifact(out, name string, res *profile.ExtractResult, paritySession, 
 	if err != nil {
 		return fmt.Errorf("call: %w", err)
 	}
-	// profile.yaml
-	profileYAML, err := yaml.Marshal(map[string]any{
+	// profile.yaml — capture_work_dir records the cwd the capture's env block
+	// actually carried (derived from the extracted system text; empty when the
+	// source shapes no such line). The Shaper substitutes the RUNTIME session
+	// cwd for it at composition time (the 08-09 profile-fidelity finding — the
+	// mimicry target composes the env block per session, so the profile must
+	// not replay the captured value statically).
+	profileMap := map[string]any{
 		"name":       name,
 		"model":      res.Model,
 		"max_tokens": res.MaxTokens,
-	})
+	}
+	if cwd := capturedWorkDir(res.System); cwd != "" {
+		profileMap["capture_work_dir"] = cwd
+	}
+
+	profileYAML, err := yaml.Marshal(profileMap)
 	if err != nil {
 		return fmt.Errorf("call: %w", err)
 	}
@@ -217,6 +227,26 @@ func headersToYAML(hs []profile.Header) []map[string]string {
 	}
 
 	return out
+}
+
+// capturedWorkDir scans the extracted system blocks for the env block's
+// working-directory line (the zcode form: "- Primary working directory: <path>")
+// and returns the captured value — the content the runtime composes from the
+// session cwd. Empty when no block carries the line.
+func capturedWorkDir(blocks []profile.TextBlock) string {
+	const marker = "- Primary working directory: "
+
+	for _, b := range blocks {
+		for line := range strings.SplitSeq(b.Text, "\n") {
+			if cwd, ok := strings.CutPrefix(line, marker); ok {
+				if cwd = strings.TrimSpace(cwd); cwd != "" {
+					return cwd
+				}
+			}
+		}
+	}
+
+	return ""
 }
 
 func buildManifest(name string, res *profile.ExtractResult) profile.CoverageManifest {

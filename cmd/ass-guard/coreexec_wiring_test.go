@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
+	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
 )
@@ -454,4 +455,57 @@ func TestCoreExec_ReadOnlyProjection(t *testing.T) { //nolint:cyclop,funlen // f
 // msgSummaryACP renders a provider.Message compactly for failure messages.
 func msgSummaryACP(m *provider.Message) string {
 	return fmt.Sprintf("%s{content:%q isError:%v toolCallID:%s}", m.Role, m.Content, m.IsError, m.ToolCallID)
+}
+
+// TestSessionFor_ComposesRuntimeWorkDir (the 08-09 profile-fidelity finding at
+// the WIRING level): the per-session profile every request of the session is
+// shaped from must carry the SESSION's working directory in the composed env
+// block — never the captured repo's (the live E2E's explore leg read the REAL
+// repo because the static capture claimed it stood there) — while the shared
+// runner profile stays byte-untouched (the parity path composes the capture).
+func TestSessionFor_ComposesRuntimeWorkDir(t *testing.T) {
+	t.Parallel()
+
+	r, _ := newExpansionRunner(t, false, scriptedResp{text: "ok"})
+
+	const capturedCwd = "/captured/repo-root"
+
+	r.profile.CaptureWorkDir = capturedCwd
+	r.profile.System = []profile.TextBlock{{
+		Type: blockText,
+		Text: "Environment\n- Primary working directory: " + capturedCwd + "\n",
+	}}
+
+	_, err := r.Run(context.Background(), "sess-cwd-1", &noopEmitter{},
+		[]acp.ContentBlock{{Type: blockText, Text: "hi"}})
+	if err != nil {
+		t.Fatalf("Run err: %v", err)
+	}
+
+	sess := r.sessions["sess-cwd-1"]
+	if sess == nil {
+		t.Fatal("no session created")
+	}
+
+	composed := false
+
+	for _, b := range sess.Profile.System {
+		if strings.Contains(b.Text, r.workDir) {
+			composed = true
+		}
+
+		if strings.Contains(b.Text, capturedCwd) {
+			t.Errorf("session profile block still carries the CAPTURED cwd: %q", b.Text)
+		}
+	}
+
+	if !composed {
+		t.Errorf("session profile carries no session cwd %q (blocks: %v)", r.workDir, sess.Profile.System)
+	}
+
+	for _, b := range r.profile.System {
+		if !strings.Contains(b.Text, capturedCwd) {
+			t.Errorf("shared runner profile was mutated by composition: %q", b.Text)
+		}
+	}
 }

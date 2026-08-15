@@ -34,7 +34,8 @@ func shapedSystemTexts(t *testing.T, prof *profile.Profile) []string {
 		} `json:"system"`
 	}
 
-	if err := json.Unmarshal(raw, &got); err != nil {
+	err = json.Unmarshal(raw, &got)
+	if err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
@@ -61,11 +62,13 @@ func TestComposeRuntimeWorkDir_SessionCwdInComposedBlock(t *testing.T) {
 	}
 
 	capturedBefore := 0
+
 	for _, b := range shapedSystemTexts(t, &prof) {
 		if strings.Contains(b, prof.CaptureWorkDir) {
 			capturedBefore++
 		}
 	}
+
 	if capturedBefore == 0 {
 		t.Fatal("precondition: no system block carries the captured cwd — the test would be vacuous")
 	}
@@ -83,6 +86,7 @@ func TestComposeRuntimeWorkDir_SessionCwdInComposedBlock(t *testing.T) {
 	}
 
 	sawSession, sawCaptured := false, false
+
 	for i, b := range after {
 		if strings.Contains(b, sessionDir) {
 			sawSession = true
@@ -133,13 +137,13 @@ func TestComposeRuntimeWorkDir_NoopWithoutDeclaration(t *testing.T) {
 	}
 
 	// Same-dir session: nothing to substitute.
-	real := loadProfileFromRoot(t, profilesRoot(t), profileZcode)
+	zcodeProf := loadProfileFromRoot(t, profilesRoot(t), profileZcode)
 
-	same := shapedSystemTexts(t, &real)
+	same := shapedSystemTexts(t, &zcodeProf)
 
-	shaper.ComposeRuntimeWorkDir(&real, real.CaptureWorkDir)
+	shaper.ComposeRuntimeWorkDir(&zcodeProf, zcodeProf.CaptureWorkDir)
 
-	for i, b := range shapedSystemTexts(t, &real) {
+	for i, b := range shapedSystemTexts(t, &zcodeProf) {
 		if same[i] != b {
 			t.Errorf("block %d changed when session cwd == captured cwd (no-op case violated)", i)
 		}

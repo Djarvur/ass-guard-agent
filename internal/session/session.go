@@ -322,6 +322,8 @@ func (s *Session) toolExecOrStub() toolcat.ToolExecutor { //nolint:ireturn // To
 // step 4 — ACP-04 streaming, NO full-turn buffering). It returns the assembled
 // Response (tool_calls + FinishReason) + the concatenated assistant text. ctx
 // cancellation closes the stream (the provider aborts the in-flight request).
+//
+//nolint:cyclop // one switch over the full chunk-type vocabulary (text/tool/usage/done/error)
 func (s *Session) streamAndEmit(
 	ctx context.Context, turnID string, messages []provider.Message,
 ) (provider.Response, string, error) {
@@ -372,7 +374,7 @@ func (s *Session) streamAndEmit(
 		case stopDone:
 			resp.FinishReason = chunk.FinishReason
 			resp.Raw = chunk.Raw
-		case "error":
+		case chunkErrorType:
 			// Mid-stream abort (the SSE idle watchdog — 08-09 finding): surface
 			// the retryable error; the turn records it and returns instead of
 			// fabricating a completed response from a truncated body.

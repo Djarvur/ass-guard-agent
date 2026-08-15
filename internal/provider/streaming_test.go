@@ -244,7 +244,7 @@ func TestStream_NoAPIKey(t *testing.T) {
 // chunks, zero errors, the connection stays open until forced). The handler
 // deliberately does NOT watch r.Context(): a server that never notices the
 // client's cancel is the wedge the 08-09 finding documented.
-func stalledSSEHandler() (http.HandlerFunc, chan struct{}) {
+func stalledSSEHandler() (http.HandlerFunc, chan struct{}) { //nolint:gocritic // conflicts w/ nonamedreturns (house)
 	release := make(chan struct{})
 
 	return func(w http.ResponseWriter, _ *http.Request) {
@@ -270,6 +270,7 @@ func TestStream_IdleWatchdogAbortsStalledStream(t *testing.T) {
 	t.Parallel()
 
 	handler, release := stalledSSEHandler()
+
 	srv := httptest.NewServer(handler)
 	defer srv.Close()
 	defer close(release)
@@ -310,7 +311,8 @@ func TestStream_IdleWatchdogAbortsStalledStream(t *testing.T) {
 				}
 			}
 		case <-deadline:
-			t.Fatal("stalled stream did not abort within 5s — the idle watchdog is missing (the drain blocks in ReadString forever)")
+			t.Fatal("stalled stream did not abort within 5s — the idle watchdog is missing " +
+				"(the drain blocks in ReadString forever)")
 		}
 	}
 }
@@ -322,6 +324,7 @@ func TestStream_SendSurfacesIdleTimeoutAsError(t *testing.T) {
 	t.Parallel()
 
 	handler, release := stalledSSEHandler()
+
 	srv := httptest.NewServer(handler)
 	defer srv.Close()
 	defer close(release)
@@ -368,6 +371,7 @@ func TestStream_CancelUnblocksStalledBodyRead(t *testing.T) {
 	t.Parallel()
 
 	handler, release := stalledSSEHandler()
+
 	srv := httptest.NewServer(handler)
 	defer srv.Close()
 	defer close(release)
@@ -404,7 +408,8 @@ func TestStream_CancelUnblocksStalledBodyRead(t *testing.T) {
 				return // good: closed
 			}
 		case <-deadline:
-			t.Fatal("channel did not close within 3s of cancelling a stalled stream — the blocked Read was not force-unblocked")
+			t.Fatal("channel did not close within 3s of cancelling a stalled stream — " +
+				"the blocked Read was not force-unblocked")
 		}
 	}
 }
@@ -419,11 +424,13 @@ func TestStream_CancelUnblocksStalledBodyRead(t *testing.T) {
 func TestStream_ToolUseReplayedBlockEmitsOnce(t *testing.T) {
 	t.Parallel()
 
-	const frameStart = `{"type":"content_block_start","index":0,` +
-		`"content_block":{"type":"tool_use","id":"call_dup","name":"Bash","input":{}}}`
-	const frameDelta = `{"type":"content_block_delta","index":0,` +
-		`"delta":{"type":"input_json_delta","partial_json":"{\"command\":\"ls\"}"}}`
-	const frameStop = `{"type":"content_block_stop","index":0}`
+	const (
+		frameStart = `{"type":"content_block_start","index":0,` +
+			`"content_block":{"type":"tool_use","id":"call_dup","name":"Bash","input":{}}}`
+		frameDelta = `{"type":"content_block_delta","index":0,` +
+			`"delta":{"type":"input_json_delta","partial_json":"{\"command\":\"ls\"}"}}`
+		frameStop = `{"type":"content_block_stop","index":0}`
+	)
 
 	srv := httptest.NewServer(sseHandler(
 		frameStart, frameDelta, frameStop,
@@ -463,11 +470,13 @@ func TestStream_ToolUseReplayedBlockEmitsOnce(t *testing.T) {
 func TestSend_ToolUseReplayedBlockSingleCall(t *testing.T) {
 	t.Parallel()
 
-	const frameStart = `{"type":"content_block_start","index":0,` +
-		`"content_block":{"type":"tool_use","id":"call_dup2","name":"Bash","input":{}}}`
-	const frameDelta = `{"type":"content_block_delta","index":0,` +
-		`"delta":{"type":"input_json_delta","partial_json":"{\"command\":\"pwd\"}"}}`
-	const frameStop = `{"type":"content_block_stop","index":0}`
+	const (
+		frameStart = `{"type":"content_block_start","index":0,` +
+			`"content_block":{"type":"tool_use","id":"call_dup2","name":"Bash","input":{}}}`
+		frameDelta = `{"type":"content_block_delta","index":0,` +
+			`"delta":{"type":"input_json_delta","partial_json":"{\"command\":\"pwd\"}"}}`
+		frameStop = `{"type":"content_block_stop","index":0}`
+	)
 
 	srv := httptest.NewServer(sseHandler(
 		frameStart, frameDelta, frameStop,
@@ -489,7 +498,8 @@ func TestSend_ToolUseReplayedBlockSingleCall(t *testing.T) {
 	}
 
 	if len(resp.ToolCalls) != 1 {
-		t.Fatalf("Response.ToolCalls = %d entries; want exactly 1 (duplicates: %+v)", len(resp.ToolCalls), resp.ToolCalls)
+		t.Fatalf("Response.ToolCalls = %d entries; want exactly 1 (duplicates: %+v)",
+			len(resp.ToolCalls), resp.ToolCalls)
 	}
 
 	if resp.ToolCalls[0].ID != "call_dup2" {
