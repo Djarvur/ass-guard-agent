@@ -99,7 +99,7 @@ func TestBodyStore_Dedup(t *testing.T) {
 func TestBodyStore_CapEvictionOldest(t *testing.T) {
 	t.Parallel()
 
-	s := audit.NewBodyStore(t.TempDir(), 8*1024)
+	s := audit.NewBodyStore(t.TempDir(), 10*1024) // A+B+C ~12.4 KiB > cap; evicting A (~4.1 KiB) lands under
 
 	mkB := func(fill string) []byte {
 		b, _ := json.Marshal(map[string]any{"model": "m", "fill": strings.Repeat(fill, 4096)})
@@ -145,11 +145,19 @@ func TestBodyStore_CapEvictionOldest(t *testing.T) {
 func TestBodyStore_UnwritableNeverFatal(t *testing.T) {
 	t.Parallel()
 
-	s := audit.NewBodyStore(filepath.Join(t.TempDir(), "no", "such", "dir"), 0)
+	// A FILE where the store root's parent must be — MkdirAll fails (ENOTDIR),
+	// which is the portable "unwritable location" fixture.
+	blocker := filepath.Join(t.TempDir(), "blocker")
+
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatalf("plant blocker: %v", err)
+	}
+
+	s := audit.NewBodyStore(filepath.Join(blocker, "sub", "bodies"), 0)
 
 	_, err := s.Put(secretBody())
 	if err == nil {
-		t.Fatal("Put over an unwritable dir must return an error (loud, never silent)")
+		t.Fatal("Put over an unwritable location must return an error (loud, never silent)")
 	}
 }
 
