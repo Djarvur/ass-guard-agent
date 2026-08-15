@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -327,4 +328,174 @@ func drainStreamChannel(t *testing.T, ch <-chan provider.StreamChunk) {
 			t.Fatal("stream channel did not close within 3s")
 		}
 	}
+}
+
+// --- 09-01 T1: BuildWithCapturer — the single factory-seam capturer (AUD-01) ---
+
+// captureRecord is what a test capturer observed: the verbatim body bytes +
+// the header map the adapter passed (nil for the OpenAI Send path).
+type captureRecord struct {
+	body    []byte
+	headers map[string]string
+}
+
+// anthropicCaptureStub is an httptest server speaking the minimal Anthropic
+// SSE stream (same shape as TestProviderFactory_WireRoundTrip's).
+func anthropicCaptureStub(got *captureRecord) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+
+		got.body = body
+		got.headers = map[string]string{"X-Api-Key": r.Header.Get("X-Api-Key")}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+
+		for _, frame := range []string{
+			`{"type":"message_start","message":{"usage":{"input_tokens":5,"output_tokens":1}}}`,
+			`{"type":"message_delta","delta":{"stop_reason":"end_turn"}}`,
+		} {
+			fmt.Fprintf(w, "data: %s\n\n", frame)
+
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+}
+
+// TestBuildWithCapturer_AnthropicShape (09-01 T1 Test 1, AUD-01): a
+// credentialed anthropic-shape provider built through BuildWithCapturer fires
+// the capturer EXACTLY ONCE with the verbatim wire body + headers during a
+// Stream — today only the tracer's hand-rebuilt path could do this.
+func TestBuildWithCapturer_AnthropicShape(t *testing.T) {
+	t.Setenv(testZAIEnv, "") // no ambient key interference
+
+	var got captureRecord
+
+	srv := anthropicCaptureStub(&got)
+	defer srv.Close()
+
+	cfg := &Config{Providers: map[string]ProviderConfig{
+		"anthropic": {BaseURL: srv.URL, Shape: providerAnthropic, APIKey: "sk-cap-anthropic"},
+	}}
+
+	f := NewProviderFactory(cfg, "", nil)
+
+	var fired int
+
+	p, err := f.BuildWithCapturer("anthropic", shaper.New(), func(body []byte, headers map[string]string) {
+		fired++
+		got.body = body
+		got.headers = headers
+	})
+	require.NoError(t, err)
+
+	ch, err := p.Stream(context.Background(),
+		&profile.Profile{Model: "glm-5.2", MaxTokens: 100},
+		[]shaper.Message{{Role: "user", Content: "hi"}})
+	require.NoError(t, err)
+
+	drainStreamChannel(t, ch)
+
+	require.Equal(t, 1, fired, "capturer must fire exactly once per Stream")
+	require.NotEmpty(t, got.body, "captured body must be the verbatim wire bytes")
+	require.Contains(t, string(got.body), `"model":"glm-5.2"`, "body is the shaped request")
+	require.Contains(t, got.headers["X-Api-Key"], "sk-cap-anthropic", "headers carry the resolved key")
+}
+
+// TestBuildWithCapturer_OpenAIShape (09-01 T1 Test 2, AUD-01): the SAME seam
+// attaches the capturer on the openai shape — a Send against a chat-completions
+// stub fires the capturer with the marshaled OpenAI wire body.
+func TestBuildWithCapturer_OpenAIShape(t *testing.T) {
+	t.Setenv("OPENAI_API_KEY", "")
+
+	var got captureRecord
+
+	var fired int
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"chatcmpl-1","object":"chat.completion","created":1,` +
+			`"model":"gpt-test","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},` +
+			`"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`))
+	}))
+	defer srv.Close()
+
+	cfg := &Config{Providers: map[string]ProviderConfig{
+		"oai": {BaseURL: srv.URL, Shape: providerOpenAI, APIKey: "sk-cap-openai"},
+	}}
+
+	f := NewProviderFactory(cfg, "", nil)
+
+	p, err := f.BuildWithCapturer("oai", nil, func(body []byte, headers map[string]string) {
+		fired++
+		got.body = body
+		got.headers = headers
+	})
+	require.NoError(t, err)
+
+	_, err = p.Send(context.Background(),
+		&profile.Profile{Model: "gpt-test", MaxTokens: 100},
+		[]shaper.Message{{Role: "user", Content: "hi"}})
+	require.NoError(t, err)
+
+	require.Equal(t, 1, fired, "capturer must fire exactly once per Send")
+	require.Contains(t, string(got.body), `"model":"gpt-test"`, "captured body is the OpenAI wire request")
+}
+
+// TestBuildWithCapturer_Uncredentialed (09-01 T1 Test 3, D-07): the lazy
+// noCredentialProvider semantics are unchanged — the capturer NEVER fires
+// because nothing is ever shaped.
+func TestBuildWithCapturer_Uncredentialed(t *testing.T) {
+	t.Setenv(testNoKeyEnv, "")
+
+	cfg := &Config{Providers: map[string]ProviderConfig{
+		testNoKeySlug: {Shape: providerAnthropic},
+	}}
+
+	f := NewProviderFactory(cfg, "", nil)
+
+	fired := false
+
+	p, err := f.BuildWithCapturer(testNoKeySlug, nil, func([]byte, map[string]string) { fired = true })
+	require.NoError(t, err, "uncredentialed must stay lazy, not a Build error")
+
+	_, err = p.Send(context.Background(), &profile.Profile{}, nil)
+	require.Error(t, err)
+
+	require.False(t, fired, "nothing is shaped — the capturer must never fire")
+}
+
+// TestBuildWithCapturer_Undeclared (09-01 T1 Test 4): the undeclared-provider
+// error is identical to Build's.
+func TestBuildWithCapturer_Undeclared(t *testing.T) {
+	f := NewProviderFactory(&Config{Providers: map[string]ProviderConfig{}}, "", nil)
+
+	_, err := f.BuildWithCapturer("ghost", nil, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not declared in providers")
+}
+
+// TestBuildWithCapturer_Delegation (09-01 T1 Test 5): Build(name, sh) and
+// BuildWithCapturer(name, sh, nil) construct indistinguishable providers — the
+// nil capturer is a no-op inside the adapters (verified at their capture sites).
+func TestBuildWithCapturer_Delegation(t *testing.T) {
+	t.Setenv(testZAIEnv, "env-key-for-zai")
+
+	cfg, err := Load("testdata/providers-cred.yaml")
+	require.NoError(t, err)
+
+	f := NewProviderFactory(cfg, "", nil)
+
+	viaBuild, err := f.Build(testZaiSlug, shaper.New())
+	require.NoError(t, err)
+
+	viaSeam, err := f.BuildWithCapturer(testZaiSlug, shaper.New(), nil)
+	require.NoError(t, err)
+
+	require.IsType(t, viaBuild, viaSeam)
+	require.Equal(t, fmt.Sprintf("%T", viaBuild), fmt.Sprintf("%T", viaSeam))
 }
