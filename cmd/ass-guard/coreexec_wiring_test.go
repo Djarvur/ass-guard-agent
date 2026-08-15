@@ -8,8 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
+	"github.com/Djarvur/ass-guard-agent/internal/event"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
@@ -507,5 +509,42 @@ func TestSessionFor_ComposesRuntimeWorkDir(t *testing.T) {
 		if !strings.Contains(b.Text, capturedCwd) {
 			t.Errorf("shared runner profile was mutated by composition: %q", b.Text)
 		}
+	}
+}
+
+// TestRun_DoesNotLeakChunkForwarder pins the TRUE root cause of the "SSE-stall"
+// finding (stack-proven 2026-08-15: the turn goroutine wedged 21m in
+// Bus.Publish's chan send, NOT in any SSE read): Run subscribes a chunk-
+// forwarder per call and must REMOVE it when the turn ends — a leaked dead
+// subscriber's 128-event buffer fills and wedges every later turn's publishes
+// (the multi-stage capture runs stalled exactly here: stage 2, chunk #129).
+func TestRun_DoesNotLeakChunkForwarder(t *testing.T) { //nolint:paralleltest // bus is runner-global
+	r, _ := newExpansionRunner(t, true, scriptedResp{text: "ok"})
+
+	_, err := r.Run(context.Background(), "sess-leak", &noopEmitter{},
+		[]acp.ContentBlock{{Type: blockText, Text: "hi"}})
+	if err != nil {
+		t.Fatalf("Run err: %v", err)
+	}
+
+	// The turn is over; >BufAgentMessageChunk publishes must all drain (dropped
+	// is fine — no subscriber) — never block on a dead forwarder's full buffer.
+	published := make(chan struct{})
+
+	go func() {
+		defer close(published)
+
+		for i := 0; i < event.BufAgentMessageChunk+32; i++ {
+			r.bus.Publish(event.AgentMessageChunk{
+				TurnID: "sess-leak", MessageID: "sess-leak", Content: "x",
+			})
+		}
+	}()
+
+	select {
+	case <-published:
+		return // good
+	case <-time.After(5 * time.Second):
+		t.Fatal("bus publish blocked after Run returned — the chunk-forwarder subscription leaked")
 	}
 }
