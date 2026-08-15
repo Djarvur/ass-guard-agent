@@ -1082,15 +1082,15 @@ func TestStageVocab_TriggerFromSignal(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]string{
-		"text:post-explore-handoff": "post-explore",
-		"text:post-propose-handoff": "post-propose",
+		"text:post-explore-handoff": stagePostExplore,
+		"text:post-propose-handoff": stagePostPropose,
 		"text:post-apply-handoff":   "post-apply",
 		"text:post-archive-handoff": "post-archive",
-		"hook:post-propose-handoff": "post-propose",
+		"hook:post-propose-handoff": stagePostPropose,
 		// Hybrid chaining (findings-6): the provenance rows carry the same
 		// stage-bearing ids behind the "command:" signal prefix.
-		"command:post-explore-handoff": "post-explore",
-		"command:post-propose-handoff": "post-propose",
+		"command:post-explore-handoff": stagePostExplore,
+		"command:post-propose-handoff": stagePostPropose,
 		"text:impl-complete":           "post-implement",
 		"text:changes-proposed":        "post-phase",
 		"text:something-unstaged":      "post-implement",

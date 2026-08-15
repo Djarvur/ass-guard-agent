@@ -212,16 +212,7 @@ func validate(cfg *OpenSpecConfig) error {
 	}
 
 	for i := range cfg.CommandPatterns {
-		c := &cfg.CommandPatterns[i]
-		if !validAction(c.Action) {
-			v = append(v, fmt.Sprintf(
-				"command_patterns[%d] %q: unknown action %q (want continue/hook/ask/wait)",
-				i, c.ID, c.Action))
-		}
-
-		if c.Command == "" {
-			v = append(v, fmt.Sprintf("command_patterns[%d] %q: empty command", i, c.ID))
-		}
+		v = append(v, validateCommandPattern(i, cfg.CommandPatterns[i])...)
 	}
 
 	for name, shape := range cfg.Commands {
@@ -263,6 +254,25 @@ func validateCommand(name string, shape CommandShape) []string {
 	if shape.TimeoutSecs < 0 {
 		v = append(v, fmt.Sprintf(
 			"commands.%s: negative timeout_secs %d", name, shape.TimeoutSecs))
+	}
+
+	return v
+}
+
+// validateCommandPattern returns the violations for one [[command_patterns]]
+// entry (index for the collect-all message): a known action verb + a non-empty
+// command key.
+func validateCommandPattern(i int, c CommandPatternEntry) []string {
+	var v []string
+
+	if !validAction(c.Action) {
+		v = append(v, fmt.Sprintf(
+			"command_patterns[%d] %q: unknown action %q (want continue/hook/ask/wait)",
+			i, c.ID, c.Action))
+	}
+
+	if c.Command == "" {
+		v = append(v, fmt.Sprintf("command_patterns[%d] %q: empty command", i, c.ID))
 	}
 
 	return v

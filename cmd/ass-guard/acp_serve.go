@@ -57,6 +57,7 @@ const (
 	// Hook-stage vocabulary (08-06): stage-bearing pattern ids select their
 	// own hook stage; un-staged ids keep the v1.0 default.
 	stagePostImplement = "post-implement"
+	stagePostExplore   = "post-explore"
 	stagePostPropose   = "post-propose"
 )
 
@@ -614,7 +615,9 @@ func firstTextBlockIndex(blocks []session.ContentBlock) int {
 // the key comes from the PROMPT-side invocation only (the same lookup whose
 // success writes the command_provenance line), never from assistant/tool
 // content.
-func (r *sessionTurnRunner) commandKeyFor(blocks []session.ContentBlock) string { //nolint:funcorder // sibling of expandUserBlocks
+func (r *sessionTurnRunner) commandKeyFor( //nolint:funcorder // sibling of expandUserBlocks
+	blocks []session.ContentBlock,
+) string {
 	idx := firstTextBlockIndex(blocks)
 	if idx < 0 {
 		return ""
@@ -1171,7 +1174,7 @@ func triggerFromSignal(hookSignal string) string {
 
 	// 08-06 stage vocabulary: stage-bearing pattern ids ("post-<stage>-...")
 	// select their own hook stage; un-staged ids keep the v1.0 default.
-	for _, stage := range []string{"post-explore", stagePostPropose, "post-apply", "post-archive"} {
+	for _, stage := range []string{stagePostExplore, stagePostPropose, "post-apply", "post-archive"} {
 		if strings.HasPrefix(id, stage) {
 			return stage
 		}

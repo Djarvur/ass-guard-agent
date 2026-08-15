@@ -385,6 +385,37 @@ func seedIncompleteChange(t *testing.T, scratch, name string) {
 	}
 }
 
+// scanFixableRecovery walks the transcript's tool results and returns the
+// line indexes of the FIRST fixable failure + the first recovery AFTER it
+// (-1 when absent). Fixable signatures cover both routes the model might take
+// on a no---yes first attempt: the interactive force-close (plain route) and
+// the structured archive_tasks_incomplete (--json route). Recovery = a result
+// reporting the archive completed.
+func scanFixableRecovery(lines []session.Line) (int, int) { //nolint:gocritic // conflicts w/ nonamedreturns
+	failIdx, recoverIdx := -1, -1
+
+	for i := range lines {
+		if lines[i].Type != session.TypeToolResult {
+			continue
+		}
+
+		out := string(lines[i].Output)
+
+		isFixableFailure := strings.Contains(out, "force closed the prompt") ||
+			strings.Contains(out, "archive_tasks_incomplete")
+
+		if isFixableFailure && failIdx == -1 {
+			failIdx = i
+		}
+
+		if failIdx != -1 && recoverIdx == -1 && strings.Contains(out, "archived") {
+			recoverIdx = i
+		}
+	}
+
+	return failIdx, recoverIdx
+}
+
 // TestOpsxFixableRecovery_Gated proves D-10 with the real model + real
 // binary, CAPTURE-FAITHFUL (the findings-5 disposition, 2026-08-15): the
 // model meets openspec via Skill+Bash — the request catalog carries the
@@ -432,29 +463,8 @@ func TestOpsxFixableRecovery_Gated(t *testing.T) { //nolint:paralleltest,funlen 
 	}
 
 	// The model-visible behavior, asserted where it happens: a FAILED first
-	// attempt (either fixable signature — the interactive force-close on the
-	// plain route, or the structured archive_tasks_incomplete on --json),
-	// then a recovery attempt that archives.
-	failIdx, recoverIdx := -1, -1
-
-	for i := range lines {
-		if lines[i].Type != session.TypeToolResult {
-			continue
-		}
-
-		out := string(lines[i].Output)
-
-		isFixableFailure := strings.Contains(out, "force closed the prompt") ||
-			strings.Contains(out, "archive_tasks_incomplete")
-
-		if isFixableFailure && failIdx == -1 {
-			failIdx = i
-		}
-
-		if failIdx != -1 && recoverIdx == -1 && strings.Contains(out, "archived") {
-			recoverIdx = i
-		}
-	}
+	// attempt, then a recovery attempt that archives.
+	failIdx, recoverIdx := scanFixableRecovery(lines)
 
 	if failIdx == -1 {
 		t.Error("no fixable-failure result observed — the model's first archive attempt did not " +
@@ -513,7 +523,8 @@ func TestOpsxFixableRecovery_Gated(t *testing.T) { //nolint:paralleltest,funlen 
 		Stderr         string `json:"stderr"`
 	}
 
-	if jerr := json.Unmarshal(out, &res); jerr != nil {
+	jerr := json.Unmarshal(out, &res)
+	if jerr != nil {
 		t.Fatalf("openspec:archive result not structured JSON: %v (%s)", jerr, out)
 	}
 

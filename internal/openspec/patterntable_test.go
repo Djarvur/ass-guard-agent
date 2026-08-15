@@ -163,22 +163,24 @@ func TestSeeded_ChainingRowsFromRealCapture(t *testing.T) { //nolint:funlen // f
 	}
 }
 
-// The FOUR live explore closings (2026-08-15 gated runs — the 6th finding's
-// evidence): structurally different free-form texts, two with NO propos* stem.
-// They are the reason the explore boundary chains on COMMAND PROVENANCE, never
-// on a text regex.
-var exploreClosingExcerpts = []string{
-	// Run 1 (13:29Z capture).
-	"When something crystallizes, I can spin up an OpenSpec change proposal for it. But no rush",
-	// Run 2 (13:40Z product run).
-	"what does the smallest meaningful spec-driven change look like here? " +
-		"A calibration run — proposal → spec → tasks — implement → archive.",
-	// Run 3 (16:49Z product run) — open question, only the "Proposed" stem mid-text.
-	"since `openspec/specs` is empty, whatever we pick becomes the first " +
-		"capability spec in the project. So — what did you have in mind by " +
-		"\"tiny feature\"? One option Proposed earlier was the CLI-args thread.",
-	// Run 4 (17:0x product run) — pure Socratic close, zero propos* occurrences.
-	"Which thread pulls at you?",
+// exploreClosingExcerpts returns the FOUR live explore closings (2026-08-15
+// gated runs — the 6th finding's evidence): structurally different free-form
+// texts, two with NO propos* stem. They are the reason the explore boundary
+// chains on COMMAND PROVENANCE, never on a text regex.
+func exploreClosingExcerpts() []string {
+	return []string{
+		// Run 1 (13:29Z capture).
+		"When something crystallizes, I can spin up an OpenSpec change proposal for it. But no rush",
+		// Run 2 (13:40Z product run).
+		"what does the smallest meaningful spec-driven change look like here? " +
+			"A calibration run — proposal → spec → tasks — implement → archive.",
+		// Run 3 (16:49Z product run) — open question, only the "Proposed" stem mid-text.
+		"since `openspec/specs` is empty, whatever we pick becomes the first " +
+			"capability spec in the project. So — what did you have in mind by " +
+			"\"tiny feature\"? One option Proposed earlier was the CLI-args thread.",
+		// Run 4 (17:0x product run) — pure Socratic close, zero propos* occurrences.
+		"Which thread pulls at you?",
+	}
 }
 
 // TestSeeded_ExploreChainsOnProvenance (hybrid chaining, findings-6
@@ -204,7 +206,8 @@ func TestSeeded_ExploreChainsOnProvenance(t *testing.T) {
 	// The provenance row: explore → propose.
 	cm := pt.MatchCommand(keyOpsxExplore)
 	if cm.ID != idPostExploreHandoff {
-		t.Fatalf("MatchCommand(%s) = %q; want %q (the seeded provenance row)", keyOpsxExplore, cm.ID, idPostExploreHandoff)
+		t.Fatalf("MatchCommand(%s) = %q; want the seeded provenance row %q",
+			keyOpsxExplore, cm.ID, idPostExploreHandoff)
 	}
 
 	if cm.Action != engine.ActionContinue {
@@ -232,7 +235,7 @@ func TestSeeded_ExploreChainsOnProvenance(t *testing.T) {
 	}
 
 	// Every observed explore closing matches NO text row.
-	for i, excerpt := range exploreClosingExcerpts {
+	for i, excerpt := range exploreClosingExcerpts() {
 		if d := pt.MatchText(excerpt); d.Action != engine.ActionNothing {
 			t.Errorf("explore closing %d matched text row %q (%q); want NO text match — "+
 				"the boundary chains on provenance, not regex", i+1, d.ID, d.Span)

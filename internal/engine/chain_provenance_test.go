@@ -126,7 +126,7 @@ func TestDecide_NonCommandTurnTriggersNothing(t *testing.T) {
 		t.Errorf("Action = %v; want nothing (non-command turn — provenance path must stay silent)", dec.Action)
 	}
 
-	if dec.Signal != "unmatched" {
+	if dec.Signal != resultUnmatched {
 		t.Errorf("Signal = %q; want unmatched", dec.Signal)
 	}
 }
