@@ -1,56 +1,47 @@
-# opsx E2E stage 1 closing output (captured 2026-08-15T10:44:40Z, real binary + real model)
+# opsx E2E stage 1 closing output (captured 2026-08-15T13:57:11Z, real binary + real model)
 
-Explore mode it is. Let me set the scene with what I found.
+Explore mode it. Let me look at what we're working with first.
 
-## Where we're standing
+So the codebase is... gloriously small:
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  ass-guard-agent  (Go, mimicry-first ACP agent)             │
-│                                                             │
-│  Milestone: v1.1 "Kickoff & Peers"  —  ~17%                 │
-│  Phase 8: slash-command-kickoff  ⚠ BLOCKED                  │
-│    └─ gap-closure plan 08-09 staged, awaiting operator OK   │
-│  Phase 9: audit + re-capture  (09-01..03/05/06 done)        │
-│  Phase 10: Telegram peer   •  Phase 11: dsh profile         │
-└─────────────────────────────────────────────────────────────┘
+```go
+func add(a, b int) int { return a + b }
+func main() { fmt.Println(add(2, 3)) }
 ```
 
-OpenSpec side: **no active changes** in this root — so `add-a-tiny-feature` isn't an existing change to explore; it reads more like a *name you'd want to give a change once we figure out what the feature is*. Which is a great explore-mode starting point, because right now the name is the most specific thing about it. 😄
+That's the whole app. And I have to point out the delicious asymmetry here: in a 7-line program, **every feature is a tiny feature**. You've achieved a state of perfect proportionality. Adding subtraction would be a ~14% code increase.
 
-## What "tiny" could mean here
+## Where features could plug in
 
-I looked around the codebase for what a genuinely tiny feature might look like, to calibrate. A few observations:
-
-| Candidate | Size | Notes |
-|---|---|---|
-| `README.md` is literally one line (`# ass-guard-agent`) | tiny | Docs, zero code risk |
-| `--version` prints to stderr (correct per transport discipline, but unusual for scripts) | tiny | Any change here touches the stdout-purity invariant — interesting to think about |
-| New cobra subcommand (there are already `parity`, `profile check`, `scheduling resolve`, `learning list/revert`) | small | There's an established pattern to follow |
-| Anything near Phase 8's blocked gate | **not tiny** | D-11 boundary-reset territory — locked invariants, operator approval needed |
-
-That last row matters: this project has a strong culture of *tiny ≠ safe*. The STATE.md is full of decisions where a small-looking thing (like when tool-result resets happen) turned out to touch locked mimicry invariants.
-
-## The shape of the question
+The interesting thing about this program is that it has exactly three extension points, and they're wildly different in character:
 
 ```
-      "add a tiny feature"
-              │
-      ┌───────┴────────┐
-      ▼                ▼
-  WHAT is it?      WHERE does it live?
-  user-facing?        CLI surface?      → cmd/ass-guard/*.go
-  agent behavior?     turn loop?        → internal/loop, internal/engine
-  mimicry-adjacent?   profile/shaper?   → ⚠ parity blast radius
-  ops/diagnostics?    stderr logging?   → safe harbor
+┌──────────┐      ┌──────────┐      ┌──────────┐
+│  INPUT   │─────▶│ OPERATION│─────▶│  OUTPUT  │
+│ (2, 3)   │      │  add()   │      │ Println  │
+│ hardcoded│      │          │      │ stdout   │
+└──────────┘      └──────────┘      └──────────┘
+     ▲                 ▲                 ▲
+     │                 │                 │
+  CLI args?        subtract?          formatting?
+  stdin?           multiply?          errors?
+  a REPL?          expressions?       exit codes?
 ```
 
-The mimicry-adjacent branch is the one worth respecting a priori — if the feature changes anything the model provider can *see* (tool catalog, message shape, system prompt), it's not tiny anymore, it's a parity event.
+Here's the observation I'd push on: **the most "hidden" feature isn't a new operation — it's an input path.** Right now the numbers are hardcoded. The app doesn't actually *do* anything for a user; it's a proof that `2 + 3 = 5`. So there's a fork in the road:
 
-## So — opening threads
+**Path A: More math.** Add `subtract`, `multiply`, etc. Stays a demo. ~1 line each. Zero risk, zero real value beyond warming up.
 
-1. **What's the feature?** Even a one-liner. "I want `ass-guard` to ___" is enough to start pulling on.
-2. **Who's it for** — you as operator debugging the agent, or the end user in Zed/Telegram? (Ops-facing things are nearly always tiny-safe in this codebase; model-facing things never are.)
-3. **Is this a side-quest or does it belong in the v1.1 milestone?** There's a serious GSD pipeline mid-flight (Phase 8 gate blocked on your morning disposition). A tiny feature could be a deliberate palate cleanser, or it could be scope creep in disguise — worth being honest about which.
+**Path B: Let numbers in.** `go run . 7 9` → reads CLI args. Suddenly it's a *tool* someone can use. This one small change is the difference between "a program that prints 5" and "a calculator."
 
-What's the tiny feature you have in mind? Or if you don't have one yet and want to browse candidates, I can dig deeper into any corner of the codebase — the CLI surface, the ACP server, the scheduler — and we can see what wants to be built.
+**Path C: Jump to expressions.** `go run . "2 + 3 * 4"` — a tiny parser. This is where "tiny" starts doing air-quotes, because you've now invited precedence, tokens, and tests to the party.
+
+## Questions I'd want answered before anything
+
+1. **What is this app *for*?** Is it a scratch pad for trying a workflow (in which case the feature barely matters and we should pick whatever exercises the pipeline you care about), or an actual seed of something you want to grow?
+2. **Who's the user?** Just you, or does output format / error handling start mattering?
+3. **What's your definition of "tiny" you'd defend in a code review?** One function? One commit? One behavior unchanged plus one added?
+
+I ask #1 because I notice the git history and `.gsd/`/`.planning/` scaffolding around this repo suggest some tooling has been exercised here — and if this repo is really a test bed, the *most* useful tiny feature might be whichever one stress-tests whatever you're building around it.
+
+Which thread pulls at you? Or is "add-a-tiny-feature" even more literal than I'm assuming — like, add a feature *named* tiny? 🙂
