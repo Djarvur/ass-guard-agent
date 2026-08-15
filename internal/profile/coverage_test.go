@@ -1,6 +1,8 @@
 package profile_test
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
@@ -118,5 +120,34 @@ func TestCoverageManifest_Validate(t *testing.T) {
 	err = m.Validate(map[string]int{covRequestBodyTools: 50})
 	if err == nil {
 		t.Error("drifted capture passed Validate; want error")
+	}
+}
+
+// TestCoverageZcodeVersionRoundTrip (09-03 T2, Pitfall 18): the capture-time
+// zcode version round-trips through the manifest yaml.
+func TestCoverageZcodeVersionRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "coverage.yaml")
+
+	yamlSrc := "profile: zcode\n" +
+		"target_capture_ref:\n" +
+		"  sessions:\n    - id: sess-x\n      role: main\n" +
+		"  zcode_version: zcode 1.2.3\n" +
+		"  extractor_version: extract-profile/01-02\n"
+
+	err := os.WriteFile(path, []byte(yamlSrc), 0o600)
+	if err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	m, err := profile.LoadCoverage(path)
+	if err != nil {
+		t.Fatalf("LoadCoverage: %v", err)
+	}
+
+	if m.TargetCaptureRef.ZcodeVersion != "zcode 1.2.3" {
+		t.Errorf("ZcodeVersion = %q; want zcode 1.2.3 (round-trip)", m.TargetCaptureRef.ZcodeVersion)
 	}
 }

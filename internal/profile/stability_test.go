@@ -44,9 +44,9 @@ func rolloutDir(t *testing.T) string {
 func TestStability_WithinSessionExtractionSource(t *testing.T) {
 	t.Parallel()
 
-	manifest, err := profile.LoadCoverage(filepath.Join("..", "..", "profiles", "zcode", "coverage.yaml"))
-	if err != nil {
-		t.Skipf("shipped coverage manifest unavailable (repo layout?): %v", err)
+	manifest, lerr := profile.LoadCoverage(filepath.Join("..", "..", "profiles", "zcode", "coverage.yaml"))
+	if lerr != nil {
+		t.Skipf("shipped coverage manifest unavailable (repo layout?): %v", lerr)
 	}
 
 	if len(manifest.TargetCaptureRef.Sessions) == 0 {
@@ -57,18 +57,19 @@ func TestStability_WithinSessionExtractionSource(t *testing.T) {
 
 	dir := rolloutDir(t)
 	if dir == "" {
-		t.Skipf("rollout dir unavailable — pinned session %s cannot be checked (see docs/recapture-runbook.md)", pinned.ID)
+		t.Skipf("rollout dir unavailable — pinned %s unchecked (see docs/recapture-runbook.md)", pinned.ID)
 	}
 
 	path := filepath.Join(dir, "model-io-sess_"+pinned.ID+".jsonl")
 
-	if _, statErr := os.Stat(path); statErr != nil {
-		t.Skipf("pinned session %s absent from the rollout dir — re-ground per docs/recapture-runbook.md", pinned.ID)
+	_, statErr := os.Stat(path)
+	if statErr != nil {
+		t.Skipf("pinned session %s absent — re-ground per docs/recapture-runbook.md", pinned.ID)
 	}
 
-	_, err = profile.ExtractFromRollout(path)
-	if err != nil {
-		t.Fatalf("within-session stability failed for the pinned session %s: %v", pinned.ID, err)
+	_, xerr := profile.ExtractFromRollout(path)
+	if xerr != nil {
+		t.Fatalf("within-session stability failed for the pinned session %s: %v", pinned.ID, xerr)
 	}
 }
 

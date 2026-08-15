@@ -41,10 +41,14 @@ func main() {
 		"optional disjoint session id recorded as the held-out parity reference (D-16)",
 	)
 	profileName := flag.String("name", "zcode", "profile name")
+	zcodeVersion := flag.String(
+		"zcode-version", "",
+		"verbatim output of `zcode --version` at capture time (Pitfall 18: record BOTH versions)",
+	)
 
 	flag.Parse()
 
-	err := run(*sessions, *rolloutDir, *out, *profileName, *paritySession)
+	err := run(*sessions, *rolloutDir, *out, *profileName, *paritySession, *zcodeVersion)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "extract-profile: %v\n", err)
 		os.Exit(1)
@@ -60,7 +64,7 @@ func defaultRolloutDir() string {
 	return ".zcode/cli/rollout"
 }
 
-func run(sessions, rolloutDir, out, name, paritySession string) error {
+func run(sessions, rolloutDir, out, name, paritySession, zcodeVersion string) error {
 	stats, err := profile.ScanRolloutDir(rolloutDir)
 	if err != nil {
 		return fmt.Errorf("scan %q: %w", rolloutDir, err)
@@ -85,7 +89,7 @@ func run(sessions, rolloutDir, out, name, paritySession string) error {
 		return fmt.Errorf("extract: %w", err)
 	}
 
-	err = writeArtifact(out, name, &res, paritySession)
+	err = writeArtifact(out, name, &res, paritySession, zcodeVersion)
 	if err != nil {
 		return fmt.Errorf("write artifact: %w", err)
 	}
@@ -119,7 +123,7 @@ func chooseSession(stats []profile.SessionStat, sessions string) (profile.Sessio
 }
 
 //nolint:cyclop,funlen // domain complexity is inherent
-func writeArtifact(out, name string, res *profile.ExtractResult, paritySession string) error {
+func writeArtifact(out, name string, res *profile.ExtractResult, paritySession, zcodeVersion string) error {
 	err := os.MkdirAll(filepath.Join(out, "system"), dirPerm)
 	if err != nil {
 		return fmt.Errorf("call: %w", err)
@@ -181,6 +185,7 @@ func writeArtifact(out, name string, res *profile.ExtractResult, paritySession s
 	}
 	// coverage.yaml (PROF-05 manifest)
 	manifest := buildManifest(name, res)
+	manifest.TargetCaptureRef.ZcodeVersion = zcodeVersion
 
 	covYAML, err := yaml.Marshal(manifest)
 	if err != nil {
@@ -192,7 +197,7 @@ func writeArtifact(out, name string, res *profile.ExtractResult, paritySession s
 		return fmt.Errorf("call: %w", err)
 	}
 	// meta.yaml (PROF-03 target_capture_ref)
-	meta, err := yaml.Marshal(buildMeta(name, res, paritySession))
+	meta, err := yaml.Marshal(buildMeta(name, res, paritySession, zcodeVersion))
 	if err != nil {
 		return fmt.Errorf("call: %w", err)
 	}
@@ -240,7 +245,7 @@ func buildManifest(name string, res *profile.ExtractResult) profile.CoverageMani
 	}
 }
 
-func buildMeta(name string, res *profile.ExtractResult, paritySession string) map[string]any {
+func buildMeta(name string, res *profile.ExtractResult, paritySession, zcodeVersion string) map[string]any {
 	m := map[string]any{
 		"profile":            name,
 		"extractor_version":  extractorVersion,
@@ -249,6 +254,10 @@ func buildMeta(name string, res *profile.ExtractResult, paritySession string) ma
 		"data_source_strategy": "D-16: scan rollout dir at extraction time; " +
 			"tool count = source-declared (not hardcoded)",
 	}
+	if zcodeVersion != "" {
+		m["zcode_version"] = zcodeVersion
+	}
+
 	if paritySession != "" {
 		m["parity_reference_session_id"] = paritySession
 		m["parity_note"] = "disjoint session supplying divergence-prone multi-tool turns " +
@@ -262,6 +271,8 @@ func buildTargetCaptureRef(res *profile.ExtractResult) profile.TargetCaptureRef 
 	ref := profile.TargetCaptureRef{
 		ExtractedAt:      time.Now().UTC(),
 		ExtractorVersion: extractorVersion,
+		// ZcodeVersion is stamped by the caller (run) from the flag — kept out
+		// of this helper so the manifest and meta write the same single value.
 		Sessions: []profile.SessionRef{{
 			ID:   res.SessionID,
 			Path: res.SourcePath,

@@ -73,6 +73,21 @@ func runProfileCheck(name, profilesDir, captureFile string) error {
 	drifts := drift.Detect(&manifest, captured)
 	reportProfileCheck(name, drifts, len(manifest.Fields))
 
+	// Capture provenance (09-03, Pitfall 18 "record BOTH versions"): every
+	// drift report is self-describing — the versions that PRODUCED the current
+	// profile ride the footer.
+	zv := manifest.TargetCaptureRef.ZcodeVersion
+	if zv == "" {
+		zv = "unrecorded"
+	}
+
+	ev := manifest.TargetCaptureRef.ExtractorVersion
+	if ev == "" {
+		ev = "unrecorded"
+	}
+
+	fmt.Fprintf(os.Stderr, "capture provenance: zcode %s, extractor %s\n", zv, ev)
+
 	if len(drifts) > 0 {
 		//nolint:err113 // dynamic error message
 		return fmt.Errorf("drift detected: %d TIER-1/2 field(s) changed", len(drifts))

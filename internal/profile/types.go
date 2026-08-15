@@ -112,9 +112,14 @@ type SessionRef struct {
 // TargetCaptureRef records the provenance of a profile extraction (PROF-03):
 // the session(s) and corrected on-disk path the profile fields were read from.
 type TargetCaptureRef struct {
-	Sessions         []SessionRef `json:"sessions"          yaml:"sessions"`
-	ExtractedAt      time.Time    `json:"extracted_at"      yaml:"extracted_at"`
-	ExtractorVersion string       `json:"extractor_version" yaml:"extractor_version"`
+	Sessions []SessionRef `json:"sessions" yaml:"sessions"`
+	// ZcodeVersion is the verbatim `zcode --version` output at capture time
+	// (09-03, Pitfall 18 "record BOTH versions" — extraction comparability
+	// needs the capture-side version alongside ExtractorVersion). Empty means
+	// captured before the field existed.
+	ZcodeVersion     string    `json:"zcode_version"     yaml:"zcode_version"`
+	ExtractedAt      time.Time `json:"extracted_at"      yaml:"extracted_at"`
+	ExtractorVersion string    `json:"extractor_version" yaml:"extractor_version"`
 }
 
 // CoverageManifest is the machine-readable coverage manifest shipped with the

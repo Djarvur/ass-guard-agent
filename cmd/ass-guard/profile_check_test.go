@@ -173,3 +173,52 @@ func TestProfileCheck_ReportContainsStructuredFooter(t *testing.T) { //nolint:pa
 		}
 	}
 }
+
+// TestProfileCheck_CaptureProvenanceFooter (09-03 T2, Pitfall 18): the drift
+// report footer names BOTH capture-time versions — the report is
+// self-describing.
+func TestProfileCheck_CaptureProvenanceFooter(t *testing.T) { //nolint:paralleltest // swaps global os.Stderr
+	profilesDir := writeCoverageFixture(t, profileZcode, 3, 103, 12)
+	capture := writeCaptureFixture(t, 3, 103, 12)
+
+	// Stamp both versions into the fixture manifest.
+	covPath := filepath.Join(profilesDir, profileZcode, "coverage.yaml")
+
+	raw, err := os.ReadFile(covPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stamped := string(raw) +
+		"target_capture_ref:\n" +
+		"  zcode_version: 9.9.9-test-build\n" +
+		"  extractor_version: extract-profile/01-02\n"
+
+	err = os.WriteFile(covPath, []byte(stamped), 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var stderr bytes.Buffer
+
+	oldStderr := os.Stderr
+	r, w, _ := os.Pipe()
+	os.Stderr = w
+	done := make(chan struct{})
+
+	go func() { _, _ = stderr.ReadFrom(r); close(done) }()
+
+	_ = runProfileCheck(profileZcode, profilesDir, capture)
+
+	_ = w.Close()
+
+	os.Stderr = oldStderr
+
+	<-done
+
+	for _, want := range []string{"capture provenance:", "zcode 9.9.9-test-build", "extractor extract-profile/01-02"} {
+		if !bytes.Contains(stderr.Bytes(), []byte(want)) {
+			t.Errorf("stderr missing %q:\n%s", want, stderr.String())
+		}
+	}
+}
