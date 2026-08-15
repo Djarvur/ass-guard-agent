@@ -60,9 +60,18 @@ type Line struct {
 	Text      string          `json:"text,omitempty"`
 	MessageID string          `json:"messageID,omitempty"` //nolint:tagliatelle // on-disk format
 
-	// request_shaped (the verbatim outgoing request, LOG-01 mimicry evidence)
-	VerbatimRequest json.RawMessage `json:"verbatimRequest,omitempty"` //nolint:tagliatelle // on-disk format
-	Profile         string          `json:"profile,omitempty"`
+	// request_shaped — METADATA-ONLY (09-05, AUD-03/D-01): the line carries
+	// the correlation triple (session-from-filename, turn, request=Ref) + the
+	// shape fingerprint; the full REDACTED body lives in the capped audit body
+	// store, retrievable by Ref. This SUPERSEDES v1.0 D-20's inline-verbatim
+	// request line (~80 KB × hands-off multiplication — Pitfall 10); do NOT
+	// restore inline bodies.
+	Profile      string `json:"profile,omitempty"`
+	Ref          string `json:"ref,omitempty"`
+	SystemBlocks int    `json:"systemBlocks,omitempty"` //nolint:tagliatelle // on-disk format (camelCase, matches Line)
+	Tools        int    `json:"tools,omitempty"`
+	Model        string `json:"model,omitempty"`
+	Bytes        int    `json:"bytes,omitempty"`
 
 	// tool_call / tool_result
 	ToolCallID string          `json:"toolCallID,omitempty"` //nolint:tagliatelle // on-disk format

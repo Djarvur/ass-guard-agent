@@ -8,6 +8,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/Djarvur/ass-guard-agent/internal/audit"
 )
 
 var errNewmanagerRequiresA = errors.New("session: NewManager requires a non-nil Redactor")
@@ -135,12 +137,17 @@ func (m *Manager) AppendAgentMessageChunk(turnID, messageID, text string) error 
 	})
 }
 
-// AppendRequestShaped records the verbatim shaped outgoing request (LOG-01),
-// redacted per-line (LOG-03).
-func (m *Manager) AppendRequestShaped(turnID string, verbatim json.RawMessage, profileName string, ts time.Time) error {
+// AppendRequestShaped records the METADATA-ONLY shaped-request index line
+// (09-05, AUD-03/D-01): correlation triple + shape fingerprint + the body
+// store ref. The full redacted body lives in the capped audit body store —
+// retrievable by meta.Ref. Supersedes v1.0 D-20's inline-verbatim line
+// (documented at the Line struct; do not restore inline bodies).
+func (m *Manager) AppendRequestShaped(turnID, profileName string, ts time.Time, meta audit.RequestMeta) error {
 	return m.appendLine(&Line{
 		Type: TypeRequestShaped, TurnID: turnID, Timestamp: ts,
-		VerbatimRequest: verbatim, Profile: profileName,
+		Profile: profileName, Ref: meta.Ref,
+		SystemBlocks: meta.SystemBlocks, Tools: meta.Tools,
+		Model: meta.Model, Bytes: meta.Bytes,
 	})
 }
 

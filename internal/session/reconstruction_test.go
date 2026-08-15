@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Djarvur/ass-guard-agent/internal/audit"
 	"github.com/Djarvur/ass-guard-agent/internal/event"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
@@ -46,7 +47,7 @@ func TestTranscriptReconstructsSession(t *testing.T) { //nolint:cyclop,funlen //
 		Catalog: toolcat.NewCatalog(),
 	}
 	// Start the async TranscriptWriter (the one session-path audit writer, D-20).
-	tw := NewTranscriptWriter(m, bus)
+	tw := NewTranscriptWriter(m, bus, nil)
 
 	twCtx, twCancel := context.WithCancel(context.Background())
 	defer twCancel()
@@ -74,10 +75,12 @@ func TestTranscriptReconstructsSession(t *testing.T) { //nolint:cyclop,funlen //
 	// TestCancelTurn; here we verify the transcript reconstructs a canceled state).
 	_ = m.AppendCanceled("turn-cancel", time.Now(), "user cancelled via session/cancel")
 
-	// Inject a secret-bearing request_shaped line to verify LOG-03 redaction on
-	// disk (the reconProvider publishes RequestShaped too, but this is explicit).
+	// Inject a secret-bearing request's METADATA line (09-05: lines are
+	// metadata-only; the body's redaction lives in the body store's Put).
 	secret := json.RawMessage(`{"authorization":"Bearer sk-recon-secret"}`)
-	_ = m.AppendRequestShaped("turn-x", secret, "test", time.Now())
+
+	secretMeta, _ := audit.SummarizeRequest(secret)
+	_ = m.AppendRequestShaped("turn-x", "test", time.Now(), secretMeta)
 
 	// Let the async writer flush.
 	flushDeadline := time.Now().Add(1 * time.Second)
@@ -153,12 +156,11 @@ func TestTranscriptReconstructsSession(t *testing.T) { //nolint:cyclop,funlen //
 		t.Error("transcript leaked the secret token on disk (LOG-03)")
 	}
 
-	if !strings.Contains(raw, "[REDACTED]") {
-		t.Error("transcript did not redact the auth value (LOG-03)")
-	}
-
-	if !strings.Contains(raw, "authorization") {
-		t.Error("transcript dropped the field name (must preserve names)")
+	// 09-05: request lines are metadata-only (no inline body), so the value is
+	// absent by construction; redaction-at-Put for stored bodies is pinned in
+	// internal/audit. The metadata line's ref still correlates the request.
+	if !strings.Contains(raw, "ref") {
+		t.Error("request metadata line lost its ref correlation")
 	}
 }
 

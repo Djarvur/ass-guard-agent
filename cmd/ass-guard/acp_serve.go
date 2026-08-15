@@ -20,6 +20,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
+	"github.com/Djarvur/ass-guard-agent/internal/audit"
 	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/internal/engine"
 	"github.com/Djarvur/ass-guard-agent/internal/event"
@@ -280,8 +281,13 @@ func runACPServe(ctx context.Context, in io.Reader, out, stderr io.Writer, opts 
 	// hygiene, T-07-05). Advisory only; the seed itself stays 0644 (D-06).
 	warnLooseConfigPerm(filepath.Join(opts.WorkDir, ".ass-guard", "scheduling.yaml"), stderr)
 
+	// 09-05: one capped body store per serve process (construction is lazy —
+	// Put reports errors; a broken store degrades audit, never the serve).
+	bodyStore := audit.NewBodyStore(filepath.Join(opts.WorkDir, ".ass-guard", "audit", "bodies"), 0)
+
 	runner := &sessionTurnRunner{
 		bus:         bus,
+		bodyStore:   bodyStore,
 		profile:     prof,
 		workDir:     opts.WorkDir,
 		maxConc:     opts.MaxConcurrent,
@@ -353,6 +359,10 @@ type sessionTurnRunner struct {
 	//
 	//nolint:containedctx // deliberate serve-lifetime ctx storage (09-01 T2)
 	serveCtx context.Context
+	// bodyStore is the process-wide capped audit body store (09-05, AUD-03):
+	// ONE store per serve process, shared by every session's writer. nil in
+	// test runners → metadata lines with refs but no persisted bodies.
+	bodyStore *audit.BodyStore
 
 	// Phase-4 engine wiring (Plan 04-05). Built once in setupEngine(); nil when
 	// the engine is disabled.
@@ -770,7 +780,7 @@ func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen // grouping ke
 	// via OnClose, chained ahead of the existing MCP-host reaper.
 	writerCtx, cancelWriter := context.WithCancel(r.serveCtxOrBackground())
 
-	tw := session.NewTranscriptWriter(mgr, r.bus)
+	tw := session.NewTranscriptWriter(mgr, r.bus, r.bodyStore)
 
 	//nolint:contextcheck // writerCtx inherits serveCtx (nil only in tests)
 	go tw.Run(writerCtx)

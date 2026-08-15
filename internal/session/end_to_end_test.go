@@ -36,7 +36,7 @@ func TestEndToEndSession(t *testing.T) { //nolint:funlen // comprehensive test s
 		Profile: *fakeProfile("test agent"), WorkDir: t.TempDir(), SessionID: "sess-e2e",
 		Catalog: toolcat.NewCatalog(),
 	}
-	tw := NewTranscriptWriter(m, bus)
+	tw := NewTranscriptWriter(m, bus, nil)
 
 	twCtx, twCancel := context.WithCancel(context.Background())
 	defer twCancel()

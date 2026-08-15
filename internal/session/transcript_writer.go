@@ -2,7 +2,9 @@ package session
 
 import (
 	"context"
+	"log/slog"
 
+	"github.com/Djarvur/ass-guard-agent/internal/audit"
 	"github.com/Djarvur/ass-guard-agent/internal/event"
 )
 
@@ -21,12 +23,45 @@ import (
 type TranscriptWriter struct {
 	manager *Manager
 	bus     *event.Bus
+	// store is the capped audit body store (09-05, AUD-03/D-01): full
+	// REDACTED bodies land here; the transcript line carries metadata + ref.
+	// nil → metadata lines with the ref but no persisted body (degraded, never
+	// broken — the hash exists via SummarizeRequest regardless).
+	store *audit.BodyStore
 }
 
-// NewTranscriptWriter returns a TranscriptWriter over the given Manager + bus.
-// Callers MUST call Run(ctx) in a goroutine to start draining.
-func NewTranscriptWriter(manager *Manager, bus *event.Bus) *TranscriptWriter {
-	return &TranscriptWriter{manager: manager, bus: bus}
+// NewTranscriptWriter returns a TranscriptWriter over the given Manager + bus
+// (+ optional body store). Callers MUST call Run(ctx) in a goroutine to start
+// draining.
+func NewTranscriptWriter(manager *Manager, bus *event.Bus, store *audit.BodyStore) *TranscriptWriter {
+	return &TranscriptWriter{manager: manager, bus: bus, store: store}
+}
+
+// appendRequestShaped converts one RequestShaped event into the metadata-only
+// index line (09-05): SummarizeRequest → Put (best-effort; a store failure is
+// slog'd to stderr and the line keeps the ref — loud, never turn-fatal,
+// Pitfall 10) → AppendRequestShaped.
+//
+//nolint:funcorder // helper beside the case that calls it
+func (w *TranscriptWriter) appendRequestShaped(rs *event.RequestShaped) {
+	meta, err := audit.SummarizeRequest(rs.VerbatimRequest)
+	if err != nil {
+		slog.Error("audit: summarize request failed (line written with zero fingerprint)",
+			"error", err.Error())
+	}
+
+	if w.store != nil {
+		_, putErr := w.store.Put(rs.VerbatimRequest)
+		if putErr != nil {
+			slog.Error("audit: body store Put failed (ref kept, body not persisted)",
+				"error", putErr.Error(), "ref", meta.Ref)
+		}
+	}
+
+	appErr := w.manager.AppendRequestShaped(rs.TurnID, rs.Profile, rs.Timestamp, meta)
+	if appErr != nil {
+		slog.Error("audit: AppendRequestShaped failed", "error", appErr.Error())
+	}
 }
 
 // Run drains all 7 subscribed event channels until ctx is cancelled. Each event
@@ -46,7 +81,7 @@ func (w *TranscriptWriter) Run(ctx context.Context) {
 			}
 
 			if rs, ok := e.(event.RequestShaped); ok {
-				_ = w.manager.AppendRequestShaped(rs.TurnID, rs.VerbatimRequest, rs.Profile, rs.Timestamp)
+				w.appendRequestShaped(&rs)
 			}
 		case e, ok := <-subs.chunks:
 			if !ok {

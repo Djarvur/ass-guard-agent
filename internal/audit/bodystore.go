@@ -1,8 +1,4 @@
-// Package audit additions (09-05, AUD-03/D-01): the capped body store behind
-// metadata-only audit events. Full redacted request bodies land HERE, keyed by
-// content hash; events/lines carry the correlation triple + shape fingerprint
-// + the hash (the body_ref pattern, PITFALLS Pitfall 10).
-package audit
+package audit // (09-05, AUD-03/D-01: the capped body store — see audit.go's package doc)
 
 import (
 	"crypto/sha256"
@@ -75,6 +71,7 @@ func bodyRef(redacted []byte) string {
 func (s *BodyStore) Put(body []byte) (string, error) {
 	redacted, err := redact.Redact(body)
 	if err != nil {
+		//nolint:err113 // dynamic error message
 		redacted = []byte(redact.ScrubError(fmt.Errorf("%s", string(body))))
 	}
 
@@ -84,19 +81,22 @@ func (s *BodyStore) Put(body []byte) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if _, statErr := os.Stat(path); statErr == nil {
+	if _, statErr := os.Stat(path); statErr == nil { //nolint:noinlineerr // boolean guard, not error flow
 		return ref, s.evictLocked() // dedup: content already stored
 	}
 
-	if mkErr := os.MkdirAll(filepath.Dir(path), bodyStoreDirPerm); mkErr != nil {
+	mkErr := os.MkdirAll(filepath.Dir(path), bodyStoreDirPerm)
+	if mkErr != nil {
 		return ref, fmt.Errorf("audit: body store mkdir: %w", mkErr)
 	}
 
-	if wErr := os.WriteFile(path, redacted, bodyStoreFilePerm); wErr != nil {
+	wErr := os.WriteFile(path, redacted, bodyStoreFilePerm)
+	if wErr != nil {
 		return ref, fmt.Errorf("audit: body store write: %w", wErr)
 	}
 
-	if evErr := s.evictLocked(); evErr != nil {
+	evErr := s.evictLocked()
+	if evErr != nil {
 		return ref, fmt.Errorf("audit: body store evict: %w", evErr)
 	}
 
@@ -106,7 +106,10 @@ func (s *BodyStore) Put(body []byte) (string, error) {
 // Get returns the stored (redacted) body for ref. ErrBodyNotFound when the ref
 // was evicted or never written.
 func (s *BodyStore) Get(ref string) ([]byte, error) {
-	if len(ref) < 3 { // defensive: ref[:2] slicing below
+	// minRefLen guards the ref[:2] shard slicing below (a "xx…" prefix).
+	const minRefLen = 3
+
+	if len(ref) < minRefLen {
 		return nil, ErrBodyNotFound
 	}
 
@@ -143,7 +146,7 @@ func (s *BodyStore) evictLocked() error {
 
 		info, infoErr := d.Info()
 		if infoErr != nil {
-			return infoErr
+			return fmt.Errorf("stat %s: %w", path, infoErr)
 		}
 
 		entries = append(entries, entry{path: path, size: info.Size(), mod: info.ModTime().UnixNano()})
@@ -166,7 +169,8 @@ func (s *BodyStore) evictLocked() error {
 			break
 		}
 
-		if rmErr := os.Remove(e.path); rmErr != nil && !os.IsNotExist(rmErr) {
+		rmErr := os.Remove(e.path)
+		if rmErr != nil && !os.IsNotExist(rmErr) {
 			return fmt.Errorf("remove %s: %w", e.path, rmErr)
 		}
 
@@ -182,7 +186,8 @@ func (s *BodyStore) evictLocked() error {
 // count, tool count, model), so parity drift is visible by eyeballing
 // consecutive lines.
 type RequestMeta struct {
-	Ref          string `json:"ref"`
+	Ref string `json:"ref"`
+	//nolint:tagliatelle // on-disk format: camelCase matches the transcript's Line convention
 	SystemBlocks int    `json:"systemBlocks"`
 	Tools        int    `json:"tools"`
 	Model        string `json:"model"`
@@ -194,8 +199,9 @@ type RequestMeta struct {
 // (one shared helper, bodyRef) — so the line's ref and the store key cannot
 // diverge even when the store write itself fails (the hash exists regardless).
 func SummarizeRequest(body []byte) (RequestMeta, error) {
-	redacted, err := redact.Redact(body)
-	if err != nil {
+	redacted, rerr := redact.Redact(body)
+	if rerr != nil {
+		//nolint:err113 // dynamic error message
 		redacted = []byte(redact.ScrubError(fmt.Errorf("%s", string(body))))
 	}
 

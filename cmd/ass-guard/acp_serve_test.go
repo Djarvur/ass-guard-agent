@@ -19,6 +19,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
+	"github.com/Djarvur/ass-guard-agent/internal/audit"
 	"github.com/Djarvur/ass-guard-agent/internal/engine"
 	"github.com/Djarvur/ass-guard-agent/internal/event"
 	"github.com/Djarvur/ass-guard-agent/internal/openspec"
@@ -1359,7 +1360,7 @@ func waitForRequestShapedCount(t *testing.T, r *sessionTurnRunner, sid string, w
 // profile name, through the REAL seam; (2) the canary key value appears NOWHERE
 // in the transcript (redaction chokepoint); (3) stdout carries only JSON-RPC
 // frames.
-func TestServeAudit_RequestShapedThroughRealSeam(t *testing.T) {
+func TestServeAudit_RequestShapedThroughRealSeam(t *testing.T) { //nolint:funlen // end-to-end audit proof
 	t.Setenv("ZAI_API_KEY", "") // force the config literal (canary) to win
 
 	const canaryKey = "sk-test-canary-0123456789abcdef"
@@ -1414,8 +1415,18 @@ func TestServeAudit_RequestShapedThroughRealSeam(t *testing.T) {
 		t.Errorf("request_shaped.Profile = %q; want %q", shaped[0].Profile, profileZcode)
 	}
 
+	// 09-05: the line is METADATA-ONLY — ref + fingerprint present, and the
+	// marshaled line stays far under 1 KiB even for ~80 KB-class bodies.
+	if shaped[0].Ref == "" {
+		t.Error("request_shaped.Ref is empty; want the body-store ref (correlation request leg)")
+	}
+
+	if shaped[0].Model == "" || shaped[0].Bytes == 0 {
+		t.Errorf("fingerprint missing: model=%q bytes=%d", shaped[0].Model, shaped[0].Bytes)
+	}
+
 	// Redaction canary (Pitfall 9 / T-9-01): the key VALUE must be absent from
-	// the whole transcript while the request line exists.
+	// the whole transcript AND the body store while the request line exists.
 	rawAll, rerr := os.ReadFile(filepath.Join(workDir, ".ass-guard", "transcript_"+sessionID+".jsonl"))
 	if rerr != nil {
 		t.Fatalf("read transcript: %v", rerr)
@@ -1424,6 +1435,8 @@ func TestServeAudit_RequestShapedThroughRealSeam(t *testing.T) {
 	if strings.Contains(string(rawAll), canaryKey) {
 		t.Errorf("canary key leaked into the transcript (redaction chokepoint failed)")
 	}
+
+	assertBodyStoreRoundTrip(t, workDir, shaped[0].Ref, canaryKey)
 
 	// Transport discipline (T-9-04): stdout carries only JSON-RPC frames.
 	assertStdoutOnlyJSONFrames(t, stdout)
@@ -1592,4 +1605,25 @@ func (b *syncBuffer) String() string {
 	defer b.mu.Unlock()
 
 	return b.buf.String()
+}
+
+// assertBodyStoreRoundTrip (09-05 T2 Test 8 + the store canary): the body is
+// retrievable by the line's ref, carries no secret, keeps non-secret content.
+func assertBodyStoreRoundTrip(t *testing.T, workDir, ref, canaryKey string) {
+	t.Helper()
+
+	store := audit.NewBodyStore(filepath.Join(workDir, ".ass-guard", "audit", "bodies"), 0)
+
+	body, gerr := store.Get(ref)
+	if gerr != nil {
+		t.Fatalf("body retrievable by the line's ref (Test 8): %v", gerr)
+	}
+
+	if strings.Contains(string(body), canaryKey) {
+		t.Error("canary key leaked into the STORED body (redact-before-store failed)")
+	}
+
+	if !strings.Contains(string(body), "GLM-5.2") {
+		t.Errorf("stored body lost non-secret content: %.80s", string(body))
+	}
 }

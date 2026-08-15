@@ -269,7 +269,7 @@ func TestTranscriptWriterAsync(t *testing.T) { //nolint:paralleltest // timing-s
 	bus := event.NewBus()
 	s, m, fp := newTestSession(t, bus, []provider.Response{{FinishReason: stopEndTurn}})
 	fp.delay = 30 * time.Millisecond // baseline Send latency
-	tw := NewTranscriptWriter(m, bus)
+	tw := NewTranscriptWriter(m, bus, nil)
 
 	ctx := t.Context()
 

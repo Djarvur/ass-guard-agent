@@ -183,16 +183,24 @@ func TestAppendErrorScrubsMessage(t *testing.T) {
 	}
 }
 
-// TestRedactionOnRequestShaped verifies a request_shaped line whose verbatim
-// request carries an auth token is redacted on disk (LOG-03) — auth value
-// becomes [REDACTED], the field NAME + structure preserved.
+// TestRedactionOnRequestShaped verifies the request path never leaks an auth
+// token on disk (LOG-03): since 09-05 the request_shaped line is METADATA-ONLY
+// (no inline body at all), and the full body's redaction happens inside the
+// body store's Put (pinned in internal/audit). Here: a secret-bearing body's
+// metadata line carries nothing but hashes/counts; the store-held body (when a
+// store is wired) is redacted.
 func TestRedactionOnRequestShaped(t *testing.T) {
 	t.Parallel()
 	m := newTestManager(t, "sess-1")
 
 	body := json.RawMessage(`{"authorization":"Bearer sk-test","headers":{"x-request-id":"abc"}}`)
 
-	err := m.AppendRequestShaped("turn_1", body, "zcode", time.Now())
+	meta, err := audit.SummarizeRequest(body)
+	if err != nil {
+		t.Fatalf("SummarizeRequest: %v", err)
+	}
+
+	err = m.AppendRequestShaped("turn_1", "zcode", time.Now(), meta)
 	if err != nil {
 		t.Fatalf("AppendRequestShaped: %v", err)
 	}
@@ -202,12 +210,11 @@ func TestRedactionOnRequestShaped(t *testing.T) {
 		t.Errorf("transcript leaked the secret token on disk:\n%s", raw)
 	}
 
-	if !strings.Contains(raw, "[REDACTED]") {
-		t.Errorf("transcript did not redact the auth value:\n%s", raw)
-	}
-
-	if !strings.Contains(raw, "authorization") {
-		t.Errorf("transcript dropped the field name (must preserve names):\n%s", raw)
+	// 09-05: the line is metadata-only — the leak SURFACE is gone (no body on
+	// disk to redact); the body's redaction-at-Put is pinned in internal/audit
+	// (TestBodyStore_PutRetrieveRedacted). The line still names the profile.
+	if !strings.Contains(raw, "zcode") {
+		t.Errorf("metadata line lost the profile correlation:\n%s", raw)
 	}
 }
 
@@ -453,7 +460,7 @@ func TestAppendRequestShapedMetadataOnly(t *testing.T) {
 			found.Ref, found.SystemBlocks, found.Tools, found.Model, found.Bytes, meta)
 	}
 
-	if len(found.VerbatimRequest) != 0 {
-		t.Error("line still carries an inline verbatim body (D-01 forbids)")
+	if found.Ref == "" {
+		t.Error("line carries no body ref (the correlation request leg)")
 	}
 }

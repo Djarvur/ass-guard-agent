@@ -102,7 +102,10 @@ func TestBodyStore_CapEvictionOldest(t *testing.T) {
 	s := audit.NewBodyStore(t.TempDir(), 10*1024) // A+B+C ~12.4 KiB > cap; evicting A (~4.1 KiB) lands under
 
 	mkB := func(fill string) []byte {
-		b, _ := json.Marshal(map[string]any{"model": "m", "fill": strings.Repeat(fill, 4096)})
+		b, merr := json.Marshal(map[string]any{"model": "m", "fill": strings.Repeat(fill, 4096)})
+		if merr != nil {
+			t.Fatalf("marshal: %v", merr)
+		}
 
 		return b
 	}
@@ -127,15 +130,18 @@ func TestBodyStore_CapEvictionOldest(t *testing.T) {
 		t.Fatalf("Put C: %v", err)
 	}
 
-	if _, err := s.Get(refC); err != nil {
-		t.Errorf("newest not retrievable after eviction: %v", err)
+	_, gerrC := s.Get(refC)
+	if gerrC != nil {
+		t.Errorf("newest not retrievable after eviction: %v", gerrC)
 	}
 
-	if _, err := s.Get(refB); err != nil {
-		t.Errorf("B should survive (A is older): %v", err)
+	_, gerrB := s.Get(refB)
+	if gerrB != nil {
+		t.Errorf("B should survive (A is older): %v", gerrB)
 	}
 
-	if _, err := s.Get(refA); err == nil {
+	_, gerrA := s.Get(refA)
+	if gerrA == nil {
 		t.Error("oldest (A) was not evicted under the cap")
 	}
 }
@@ -149,8 +155,9 @@ func TestBodyStore_UnwritableNeverFatal(t *testing.T) {
 	// which is the portable "unwritable location" fixture.
 	blocker := filepath.Join(t.TempDir(), "blocker")
 
-	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
-		t.Fatalf("plant blocker: %v", err)
+	perr := os.WriteFile(blocker, []byte("x"), 0o600)
+	if perr != nil {
+		t.Fatalf("plant blocker: %v", perr)
 	}
 
 	s := audit.NewBodyStore(filepath.Join(blocker, "sub", "bodies"), 0)
@@ -178,7 +185,13 @@ func TestBodyStore_ConcurrentPuts(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 
-			body, _ := json.Marshal(map[string]any{"model": "m", "i": i})
+			body, merr := json.Marshal(map[string]any{"model": "m", "i": i})
+			if merr != nil {
+				t.Errorf("marshal %d: %v", i, merr)
+
+				return
+			}
+
 			ref, err := s.Put(body)
 			if err != nil {
 				t.Errorf("Put %d: %v", i, err)
@@ -202,8 +215,9 @@ func TestBodyStore_ConcurrentPuts(t *testing.T) {
 
 		seen[ref] = true
 
-		if _, err := s.Get(ref); err != nil {
-			t.Errorf("Get %s after concurrent Puts: %v", ref, err)
+		_, gerr := s.Get(ref)
+		if gerr != nil {
+			t.Errorf("Get %s after concurrent Puts: %v", ref, gerr)
 		}
 	}
 }
