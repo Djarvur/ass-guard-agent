@@ -1,0 +1,14 @@
+# opsx E2E stage 4 closing output (captured 2026-08-15T13:29:02Z, real binary + real model)
+
+## Archive Complete
+
+**Change:** `add-a-tiny-feature`
+**Schema:** spec-driven
+**Archived to:** `openspec/changes/archive/2026-08-15-add-a-tiny-feature/`
+**Specs:** ✓ Synced to main specs (`openspec/specs/arithmetic-operations/spec.md` — 3 requirements: Addition, Subtraction, Demonstrate on startup)
+
+All artifacts complete (proposal, design, specs, tasks). All 5 tasks complete (implementation, docs, verification).
+
+**Notes:**
+- The interactive prompt tool was unavailable in this environment, so I proceeded with the recommended path: sync delta specs first, then archive. The delta spec contained only `## ADDED Requirements` and no main spec existed previously, so the sync was a clean apply with no conflicts.
+- The archived directory retains all artifacts including `.openspec.yaml` and the delta specs, and no active changes remain under `openspec/changes/`.

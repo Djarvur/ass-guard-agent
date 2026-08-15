@@ -1,0 +1,81 @@
+# opsx E2E stage 1 closing output (captured 2026-08-15T13:29:02Z, real binary + real model)
+
+Explore mode it is. Let me look at what we're working with first.
+
+**The lay of the land** — no active OpenSpec changes, and the codebase is gloriously minimal:
+
+```
+scratch-app/
+├── README.md      # "A tiny app. Features: add two numbers."
+├── main.go        # the entire universe
+└── openspec/
+```
+
+And the universe is:
+
+```go
+// add returns the sum of a and b.
+func add(a, b int) int { return a + b }
+
+func main() { fmt.Println(add(2, 3)) }
+```
+
+So — "add a tiny feature." I love the openness here, because there are a few fun threads to pull.
+
+---
+
+## Thread 1: What does "tiny" actually mean?
+
+There's a subtle distinction worth savoring:
+
+| Kind of tiny | Example | What it costs you |
+|---|---|---|
+| **Tiny code, tiny scope** | Add a `subtract` function | Nothing. Boring. Perfect. |
+| **Tiny code, big implications** | Read args from `os.Args` instead of hardcoding `2, 3` | Suddenly it's a *real program* — input validation, usage errors, exit codes |
+| **Big code, tiny scope** | Add `add(a, b float64)` with proper epsilon comparison | One requirement, surprisingly deep rabbit hole |
+
+The second row is the interesting one to me. Right now `main` is a demo, not a tool. The moment it takes input, it crosses a line:
+
+```
+         ┌──────────────────┐
+         │  Hardcoded demo  │   ← you are here
+         │  add(2, 3) → 5   │
+         └────────┬─────────┘
+                  │ tiny feature: "use CLI args"
+                  ▼
+         ┌──────────────────┐
+         │  Actual tool     │   ← usage strings, errors,
+         │  ./app 2 3 → 5   │     "what if they pass 'abc'?"
+         └────────┬─────────┘
+                  │ tiny feature: "add subtract"
+                  ▼
+         ┌──────────────────┐
+         │  Calculator-ish  │   ← which op? dispatch?
+         │  ./app 2 - 3     │     argparse territory
+         └────────┬─────────┘
+                  │ tiny feature: "keep a history"
+                  ▼
+         ┌──────────────────┐
+         │  Stateful thing  │   ← persistence? sessions?
+         └──────────────────┘
+```
+
+Every arrow is "a tiny feature." The compound effect is a project.
+
+## Thread 2: The hidden edges already lurking
+
+Even the current `add` has a latent bug-ish quality: `int` overflow. `add(9223372036854775807, 1)` silently wraps. Nobody cares in a scratch app — but if the tiny feature is "make it handle big numbers," that's the whole feature right there.
+
+## Thread 3: Test-ability
+
+There are zero tests. A truly tiny feature could just be: *"make `add` testable and tested"* — extract logic, add one test file. Meta, but it changes the character of the repo from scratch to project.
+
+---
+
+So, what did you have in mind?
+
+- **A specific tiny feature** you're itching to add (tell me, we'll poke at it)?
+- **Exploring what fits** — in which case my vote for best tiny-feature-per-dollar is the CLI-args one, since it transforms demo → tool?
+- Or is this more of a *philosophical* "add-a-tiny-feature" — thinking about how tiny features accumulate into architecture?
+
+When something crystallizes, I can spin up an OpenSpec change proposal for it. But no rush — this is thinking time.

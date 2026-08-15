@@ -1,0 +1,18 @@
+# opsx E2E stage 2 closing output (captured 2026-08-15T13:29:02Z, real binary + real model)
+
+All artifacts created and validated ✅
+
+**Change: `add-a-tiny-feature`** — `openspec/changes/add-a-tiny-feature/`
+
+Since scratch-app is a minimal "add two numbers" Go app, I interpreted this as the tiniest sensible feature: **subtraction**.
+
+| Artifact | Description |
+|---|---|
+| `proposal.md` | Why & what: add `subtract(a, b int) int`, demo it in `main()`, update README. Introduces one new capability: `arithmetic-operations` |
+| `design.md` | How: mirror `add`'s style (no premature abstraction), Go `int` wraparound semantics, bare unlabeled output, README updated in the same change |
+| `specs/arithmetic-operations/spec.md` | 3 requirements with testable WHEN/THEN scenarios: addition (formalized), subtraction (new), startup demo output (`5` then `2`) |
+| `tasks.md` | 6 checkbox tasks in 3 groups: Implementation → Documentation → Verification (`go run .`, `go vet ./...`) |
+
+**Status:** 4/4 artifacts complete — validation passed: *"Change 'add-a-tiny-feature' is valid"*. Ready for implementation.
+
+Run `/opsx:apply` (or just ask me to implement) to start working on the tasks.
