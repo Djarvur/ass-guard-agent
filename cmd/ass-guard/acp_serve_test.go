@@ -272,19 +272,38 @@ func newExpansionRunner(
 func lastUserMessageText(t *testing.T, r *sessionTurnRunner, sessionID string) string {
 	t.Helper()
 
+	return userMessageTextAt(t, r, sessionID, false)
+}
+
+// firstUserMessageText returns the text of the FIRST user_message line — the
+// assertion lens for the TYPED turn's expansion once the engine may chain
+// further turns after it (hybrid chaining: an explore-started turn injects
+// /opsx:propose, so the LAST user message is the injection, not the typed
+// stage).
+func firstUserMessageText(t *testing.T, r *sessionTurnRunner, sessionID string) string {
+	t.Helper()
+
+	return userMessageTextAt(t, r, sessionID, true)
+}
+
+// userMessageTextAt scans the transcript's user_message lines (first when
+// fromStart, else last) and returns the matched line's assembled text.
+func userMessageTextAt(t *testing.T, r *sessionTurnRunner, sessionID string, fromStart bool) string {
+	t.Helper()
+
 	lines, err := r.sessions[sessionID].Manager.ReadAll()
 	if err != nil {
 		t.Fatalf("ReadAll: %v", err)
 	}
 
-	for i := len(lines) - 1; i >= 0; i-- { //nolint:modernize // mirror of Manager.ReadLastBoundary convention
+	scan := func(i int) (string, bool) {
 		if lines[i].Type != session.TypeUserMessage {
-			continue
+			return "", false
 		}
 
 		var blocks []session.ContentBlock
 
-		err = json.Unmarshal(lines[i].Content, &blocks)
+		err := json.Unmarshal(lines[i].Content, &blocks)
 		if err != nil {
 			t.Fatalf("unmarshal user content: %v", err)
 		}
@@ -295,7 +314,21 @@ func lastUserMessageText(t *testing.T, r *sessionTurnRunner, sessionID string) s
 			sb.WriteString(b.Text)
 		}
 
-		return sb.String()
+		return sb.String(), true
+	}
+
+	if fromStart {
+		for i := range lines {
+			if text, ok := scan(i); ok {
+				return text
+			}
+		}
+	} else {
+		for i := len(lines) - 1; i >= 0; i-- { //nolint:modernize // mirror of Manager.ReadLastBoundary convention
+			if text, ok := scan(i); ok {
+				return text
+			}
+		}
 	}
 
 	t.Fatal("no user_message line in transcript")
@@ -350,8 +383,12 @@ func TestExpansion_EngineOffPathExpanded(t *testing.T) {
 	}
 }
 
-// TestExpansion_EngineOnPathExpanded (Test 10): same on the engine-on path —
-// the first prompt through engine.Observe is already expanded.
+// TestExpansion_EngineOnPathExpanded (Test 10): same on the engine path —
+// the typed prompt's turn runs with the EXPANDED body as its user message.
+// Re-pinned to the FIRST user message: hybrid chaining (findings-6
+// disposition) makes an explore-started turn chain /opsx:propose afterward,
+// so the LAST user message is the injection (pinned separately by
+// TestProvenanceChain_ExploreChainsWithoutTextAnchor).
 func TestExpansion_EngineOnPathExpanded(t *testing.T) {
 	t.Parallel()
 	r, _ := newExpansionRunner(t, true,
@@ -363,7 +400,7 @@ func TestExpansion_EngineOnPathExpanded(t *testing.T) {
 		t.Fatalf("Run err = %v", err)
 	}
 
-	got := lastUserMessageText(t, r, "sess-x-on")
+	got := firstUserMessageText(t, r, "sess-x-on")
 	if !strings.Contains(got, "Explore the change: fix-it") {
 		t.Errorf("user_message = %q; want the EXPANDED body on the engine path", got)
 	}
@@ -923,9 +960,10 @@ func TestSkill_OpsxTriggerSeesListing(t *testing.T) { //nolint:paralleltest // H
 		t.Error("expanded /opsx:explore context lacks the listing — the model cannot trigger the skill")
 	}
 
-	// The user message is the EXPANDED command body (no skill auto-injection —
-	// the body itself is the trigger surface).
-	if got := lastUserMessageText(t, r, "sess-sk4"); !strings.Contains(got, "Explore the change: fix-it") {
+	// The TYPED turn's user message is the EXPANDED command body (no skill
+	// auto-injection — the body itself is the trigger surface). First message,
+	// not last: hybrid chaining injects /opsx:propose after the explore turn.
+	if got := firstUserMessageText(t, r, "sess-sk4"); !strings.Contains(got, "Explore the change: fix-it") {
 		t.Errorf("user_message = %q; want the expanded command body", got)
 	}
 }
@@ -1049,9 +1087,13 @@ func TestStageVocab_TriggerFromSignal(t *testing.T) {
 		"text:post-apply-handoff":   "post-apply",
 		"text:post-archive-handoff": "post-archive",
 		"hook:post-propose-handoff": "post-propose",
-		"text:impl-complete":        "post-implement",
-		"text:changes-proposed":     "post-phase",
-		"text:something-unstaged":   "post-implement",
+		// Hybrid chaining (findings-6): the provenance rows carry the same
+		// stage-bearing ids behind the "command:" signal prefix.
+		"command:post-explore-handoff": "post-explore",
+		"command:post-propose-handoff": "post-propose",
+		"text:impl-complete":           "post-implement",
+		"text:changes-proposed":        "post-phase",
+		"text:something-unstaged":      "post-implement",
 	}
 
 	for signal, want := range cases {

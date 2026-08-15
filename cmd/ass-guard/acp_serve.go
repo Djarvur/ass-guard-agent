@@ -607,6 +607,31 @@ func firstTextBlockIndex(blocks []session.ContentBlock) int {
 	return -1
 }
 
+// commandKeyFor reports the registry command key the FIRST text block of
+// blocks invokes ("" unless it parses as an invocation AND the key is in the
+// registry) — exactly the resolution expandUserBlocks acts on. The hybrid
+// chaining seam (findings-6 disposition) uses it to answer TurnOutput.StartedBy:
+// the key comes from the PROMPT-side invocation only (the same lookup whose
+// success writes the command_provenance line), never from assistant/tool
+// content.
+func (r *sessionTurnRunner) commandKeyFor(blocks []session.ContentBlock) string { //nolint:funcorder // sibling of expandUserBlocks
+	idx := firstTextBlockIndex(blocks)
+	if idx < 0 {
+		return ""
+	}
+
+	key, _, ok := ecosys.ParseInvocation(blocks[idx].Text)
+	if !ok {
+		return ""
+	}
+
+	if _, found := r.reg.Commands[key]; !found {
+		return ""
+	}
+
+	return key
+}
+
 // Run drives one session/prompt through the real Session Core.
 func (r *sessionTurnRunner) Run(
 	ctx context.Context, sessionID string,
@@ -658,10 +683,15 @@ func (r *sessionTurnRunner) Run(
 
 	blocks := toContentBlocks(prompt)
 	// Slash-command expansion (08-04): a leading /opsx:* invocation becomes
-	// the command's expanded body BEFORE the turn runs — on BOTH engine paths
-	// (the expansion result flows into runOneTurn → sess.Prompt /
-	// engine.Observe unchanged).
-	blocks = r.expandUserBlocks(sess, blocks)
+	// the command's expanded body BEFORE the turn runs. On the ENGINE path the
+	// adapter expands inside its Run (see engineTurnRunnerAdapter.Run — it must
+	// see the RAW invocation to answer TurnOutput.StartedBy, the hybrid
+	// chaining input); on the engine-off path (and when the engine degraded at
+	// startup) Run expands here. The expansion semantics (body + provenance +
+	// boundary before sess.Prompt) are identical on both paths.
+	if !r.engineEnabled || r.eng == nil || r.patternTable == nil {
+		blocks = r.expandUserBlocks(sess, blocks)
+	}
 
 	stop, err := r.runOneTurn(ctx, sess, blocks)
 
@@ -962,18 +992,32 @@ func toContentBlocks(in []acp.ContentBlock) []session.ContentBlock {
 // (Plan 04-05 D-01). Run delegates to sess.Prompt (a real turn) after applying
 // slash-command expansion (08-04: the engine's continue-injections re-enter
 // here, so an injected "/opsx:propose …" gets identical expansion + provenance
-// + boundary treatment as a user-typed command); LastTurnOutput reads the
-// transcript via Manager.ReadAll to extract the most-recent assistant_message
-// text + the turn's tool-call names.
+// + boundary treatment as a user-typed command — and the USER prompt also
+// arrives raw here, because sessionTurnRunner.Run defers engine-path expansion
+// to this adapter); LastTurnOutput reads the transcript via Manager.ReadAll to
+// extract the most-recent assistant_message text + the turn's tool-call names.
 type engineTurnRunnerAdapter struct {
 	sess *session.Session
 	mgr  *session.Manager
 	r    *sessionTurnRunner // the expansion owner (nil-safe: expansion no-ops)
+
+	// startedBy is the registry command key whose invocation the LAST Run call
+	// expanded (hybrid chaining, findings-6 disposition — TurnOutput.StartedBy).
+	// Set from the RAW prompt inside Run, before expansion; a plain-text turn
+	// leaves it "". Single-threaded by construction: the engine's Observe loop
+	// calls Run and LastTurnOutput sequentially.
+	startedBy string
 }
 
 // Run drives one turn through the Session Core.
 func (a *engineTurnRunnerAdapter) Run(ctx context.Context, prompt []session.ContentBlock) (string, error) {
+	a.startedBy = ""
 	if a.r != nil {
+		// Resolve the starting command from the RAW prompt (the same lookup
+		// expandUserBlocks acts on) BEFORE expansion — an already-expanded body
+		// carries no invocation. Prompt-side only: assistant/tool content can
+		// never set this.
+		a.startedBy = a.r.commandKeyFor(prompt)
 		prompt = a.r.expandUserBlocks(a.sess, prompt)
 	}
 
@@ -1008,7 +1052,7 @@ func (a *engineTurnRunnerAdapter) LastTurnOutput() engine.TurnOutput {
 		return engine.TurnOutput{}
 	}
 
-	out := engine.TurnOutput{TurnID: lastAssistant.TurnID, Text: lastAssistant.Text}
+	out := engine.TurnOutput{TurnID: lastAssistant.TurnID, Text: lastAssistant.Text, StartedBy: a.startedBy}
 	for i := range lines {
 		if lines[i].TurnID == lastAssistant.TurnID && lines[i].Type == session.TypeToolCall {
 			out.ToolCalls = append(out.ToolCalls, lines[i].Name)
@@ -1040,14 +1084,16 @@ type acpDispatcher struct {
 // PopulateContinue satisfies engine.ContinuePopulator (08-06): a continue
 // decision with an empty NextPrompt gets the matched pattern's next /opsx:*
 // command — the injection then flows through the 08-04 expansion seam
-// (expand + provenance + boundary) like a typed command.
+// (expand + provenance + boundary) like a typed command. Handles all three
+// signal vocabularies: text:/tool: (the dual signals) and command: (hybrid
+// chaining — the provenance rows share the same next field).
 func (d *acpDispatcher) PopulateContinue(dec *engine.Decision) {
 	if d.nextPromptFor == nil {
 		return
 	}
 
 	id := dec.Signal
-	for _, p := range []string{"text:", "tool:"} {
+	for _, p := range []string{"text:", "tool:", "command:"} {
 		if len(id) > len(p) && id[:len(p)] == p {
 			id = id[len(p):]
 		}
@@ -1106,12 +1152,14 @@ type patternNextPrompter interface {
 }
 
 // triggerFromSignal extracts the trigger stage from an engine signal string.
-// The signal shape is "hook:<id>" (the OpenSpec pattern id) or "text:<id>";
-// v1 defaults to "post-implement" unless the id carries an explicit stage.
+// The signal shape is "hook:<id>" (the OpenSpec pattern id), "text:<id>", or
+// "command:<id>" (hybrid chaining — the provenance rows carry the same
+// stage-bearing ids); v1 defaults to "post-implement" unless the id carries an
+// explicit stage.
 func triggerFromSignal(hookSignal string) string {
-	// Strip a "hook:" / "text:" prefix.
+	// Strip a "hook:" / "text:" / "command:" prefix.
 	id := hookSignal
-	for _, p := range []string{"hook:", "text:"} {
+	for _, p := range []string{"hook:", "text:", "command:"} {
 		if len(id) > len(p) && id[:len(p)] == p {
 			id = id[len(p):]
 		}
