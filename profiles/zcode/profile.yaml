@@ -1,8 +1,4 @@
+capture_work_dir: /tmp/zcode-recapture-ws
+max_tokens: 128000
+model: GLM-5.3
 name: zcode
-model: GLM-5.2
-max_tokens: 32001
-# The CAPTURED session's absolute working directory (the value the env block's
-# "Primary working directory" line carried at capture time). The mimicry target
-# composes that line from the RUNTIME cwd per session; the Shaper substitutes
-# the session's actual workDir for this value (form identical to the capture).
-capture_work_dir: /Users/nil/DiskD/W/Djarvur/ass-guard-agent
