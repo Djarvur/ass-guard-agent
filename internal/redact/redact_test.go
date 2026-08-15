@@ -238,3 +238,44 @@ func TestScrubError_NilReturnsEmpty(t *testing.T) {
 		t.Errorf("ScrubError(nil) = %q, want empty", got)
 	}
 }
+
+// TestRedact_StringValueTokenScrubbed (08-08 T1 Test 5 support): a token
+// embedded in a PLAIN STRING value under a non-secret key (the tool-result
+// output shape — e.g. Bash stdout "KEY=sk-livesecret…") is scrubbed by the
+// JSON walker's belt-and-suspenders pass, while surrounding text and the key
+// name are preserved.
+func TestRedact_StringValueTokenScrubbed(t *testing.T) {
+	t.Parallel()
+
+	in := `{"type":"tool_result","output":"env shows KEY=sk-livesecretvalue123 plus Bearer sk-abc123def456 and plain words"}`
+
+	got, err := Redact([]byte(in))
+	if err != nil {
+		t.Fatalf("Redact unexpected error: %v", err)
+	}
+
+	s := string(got)
+	if strings.Contains(s, "sk-livesecretvalue123") || strings.Contains(s, "sk-abc123def456") {
+		t.Errorf("Redact leaked a token inside a string value:\n got %s", s)
+	}
+
+	if !strings.Contains(s, "[REDACTED]") {
+		t.Errorf("Redact did not scrub the embedded tokens:\n got %s", s)
+	}
+
+	if !strings.Contains(s, "env shows") || !strings.Contains(s, "plus") || !strings.Contains(s, `"output"`) {
+		t.Errorf("Redact mangled surrounding text or key names:\n got %s", s)
+	}
+
+	// A string with no token shape passes through verbatim (structure and
+	// non-secret content are the transcript's fidelity contract).
+	plain := `{"text":"the task-123 notes say hi"}`
+	gotPlain, err := Redact([]byte(plain))
+	if err != nil {
+		t.Fatalf("Redact plain unexpected error: %v", err)
+	}
+
+	if string(gotPlain) != `{"text":"the task-123 notes say hi"}` {
+		t.Errorf("Redact altered a token-free string: %s", gotPlain)
+	}
+}

@@ -1,0 +1,156 @@
+{
+  "_provenance": {
+    "source": "zcode live rollout capture — request.body.messages tool-role blocks (type 'tool-result', fields toolCallId/toolName/output{type,value}), read from ~/.zcode/cli/rollout/. The rollout dir rotates; this committed fixture is the pinned ground truth (same convention as internal/shaper/testdata/zcode-midturn-messages.json).",
+    "sessions": {
+      "main": "model-io-sess_4440f5a7-3c7a-466b-b5e2-7bcd0bc21cab.jsonl (suffix 4440f5a7; harvested live 2026-08-15, both the 08-08 plan's morning harvest and the executor's same-day late harvest)",
+      "subagent": "model-io-sess_subagent_agent_8a003655-4770-4c70-9e11-cb644f0616fd.jsonl (suffix 8a003655; cited from the 08-08 plan's 2026-08-15 harvest — the file has since rotated out of the rollout dir; its Bash timeout observations (60000-660000 ms) and Write/TodoWrite volume are quoted in-plan)"
+    },
+    "harvestDate": "2026-08-15",
+    "redaction": "D-03 discipline: JSON keys, structural shape, enum values, and TEMPLATE TEXTS are preserved verbatim (they are the mimicry target); values (command text, file paths, output contents, todo item text) are redacted or replaced with shape-preserving stand-ins. Line numbers in Read samples are real (structure, not content).",
+    "observed_counts": {
+      "main_4440f5a7_late_harvest": {
+        "Bash_text": 105,
+        "Bash_error_text": 2,
+        "Read_text": 24,
+        "Read_error_text": 2,
+        "Write_text_created": 12,
+        "Write_text_updated": 2,
+        "Edit_text": 15,
+        "Edit_error_text": 4,
+        "TodoWrite_text": 10
+      },
+      "subagent_8a003655_plan_harvest": {
+        "Bash": 5613,
+        "Bash_errors": 137,
+        "Read": 141,
+        "Write": 208,
+        "TodoWrite": 118
+      }
+    },
+    "late_harvest_note": "the corpus grew between the 08-08 plan's morning harvest and this fixture commit (the live zcode session kept writing): forms the plan marked corpus-absent — Read file-missing, Edit not-found, Edit read-tracking, Write-overwrite — were observed in the late harvest and are pinned here as OBSERVED (marked lateHarvest). The plan's structured-{\"error\":…} convention applies only to forms still absent below.",
+    "corpus_absent": [
+      "bash_output_truncation_marker — no truncation marker in any observed result; largest observed result ~70 KB passes untruncated. No output cap is pinned; context safety rides MidTurnWindowMessages=64 + maxIterations=64. Phase-9 re-capture to pin the real cap.",
+      "bash_timeout_error_form — no timed-out Bash result observed (follows the shipped structured-{\"error\":…}+IsError convention, flagged in bash.go)",
+      "bash_default_timeout_value — the corpus shows only explicit timeouts (subagent: 60000-660000 ms; main session omits the field entirely). Default 120000 ms is SCHEMA-DECLARED (coretools.json Bash description: 'default 120000, max 600000') — corpus-informed via the schema, not an observation of the runtime default",
+      "edit_not_unique_failure_form — multiple-occurrence Edit failure unobserved (follows the structured convention, flagged in files.go)",
+      "read_directory_failure_form — reading a directory unobserved (follows the structured convention, flagged in files.go)",
+      "write_failure_forms — no Write failure observed at all (structured convention, flagged in files.go)",
+      "todoRead_result_form — no TodoRead result observed (TodoWrite-echo-minus-oldTodos shape, flagged in todo.go)",
+      "edit_write_read_tracking_enforcement — the read-tracking ERROR FORMS are observed (late harvest, pinned under Edit.results) but the STATEFUL read-before-edit tracking they imply is deliberately NOT implemented in 08-08 (cross-tool session state; recorded for the operator's next disposition — see the deferred note in 08-08-SUMMARY.md)"
+    ]
+  },
+  "tools": {
+    "Bash": {
+      "input_keys_observed": ["command", "description", "timeout"],
+      "input_note": "main session: {command, description} on 107/107 calls (timeout omitted ~100%); subagent corpus: explicit timeout 60000-660000 ms (schema max 600000). run_in_background and dangerouslyDisableSandbox appear in the schema but NEVER in any observed input (zero corpus usage — accepted-and-ignored, documented deferred in bash.go).",
+      "results": {
+        "success_with_output": {
+          "isError": false,
+          "template": "<combined command output as plain text>",
+          "sample_redacted": "---\n[REDACTED: directory listing lines]\n[REDACTED: file path]"
+        },
+        "success_no_output": {
+          "isError": false,
+          "template": "(Bash completed with no output)",
+          "literal": "(Bash completed with no output)",
+          "observed_count_main": 3
+        },
+        "error": {
+          "isError": true,
+          "template": "Exit code <N>\n<combined output, stdout before stderr>",
+          "literal_prefix": "Exit code ",
+          "sample_redacted": "Exit code 1\nzsh:3: no matches found: [REDACTED: glob pattern]"
+        }
+      }
+    },
+    "Read": {
+      "input_keys_observed": ["file_path", "offset", "limit"],
+      "input_note": "observed key sets: {file_path} 21x, {file_path,offset,limit} 4x, {file_path,limit} 1x. offset is 1-based (the rendered number of the first returned line equals offset).",
+      "results": {
+        "success": {
+          "isError": false,
+          "template": "<line-number><TAB><content> per line, 1-based, no padding",
+          "sample_redacted": "1\t[REDACTED: file line one]\n2\t\n3\t[REDACTED: file line three]"
+        },
+        "error_file_missing": {
+          "isError": true,
+          "lateHarvest": true,
+          "template": "File does not exist. Note: your current working directory is <workdir>.",
+          "literal_prefix": "File does not exist. Note: your current working directory is ",
+          "sample_redacted": "File does not exist. Note: your current working directory is [REDACTED: working directory]."
+        }
+      }
+    },
+    "Write": {
+      "input_keys_observed": ["file_path", "content"],
+      "results": {
+        "success_created": {
+          "isError": false,
+          "template": "File created successfully at: <absolute path> (file state is current in the context — no need to Read it back)",
+          "sample_redacted": "File created successfully at: [REDACTED: absolute path] (file state is current in the context — no need to Read it back)"
+        },
+        "success_updated": {
+          "isError": false,
+          "lateHarvest": true,
+          "template": "The file <absolute path> has been updated successfully. (file state is current in the context — no need to Read it back)",
+          "sample_redacted": "The file [REDACTED: absolute path] has been updated successfully. (file state is current in the context — no need to Read it back)",
+          "observed_count_main": 2
+        }
+      }
+    },
+    "Edit": {
+      "input_keys_observed": ["file_path", "old_string", "new_string"],
+      "input_note": "replace_all never observed (schema default false); the captured sessions edit one occurrence at a time.",
+      "results": {
+        "success": {
+          "isError": false,
+          "template": "The file <absolute path> has been updated successfully. (file state is current in the context — no need to Read it back)",
+          "sample_redacted": "The file [REDACTED: absolute path] has been updated successfully. (file state is current in the context — no need to Read it back)"
+        },
+        "error_not_found": {
+          "isError": true,
+          "lateHarvest": true,
+          "template": "<tool_use_error>String to replace not found in file.\nString: <old_string></tool_use_error>",
+          "sample_redacted": "<tool_use_error>String to replace not found in file.\nString: [REDACTED: old_string text]</tool_use_error>"
+        },
+        "error_not_read_yet": {
+          "isError": true,
+          "lateHarvest": true,
+          "template": "<tool_use_error>File has not been read yet. Read it first before writing to it.</tool_use_error>",
+          "implemented": false,
+          "note": "observed 2x; requires stateful read-tracking NOT implemented in 08-08 (see corpus_absent)"
+        },
+        "error_modified_since_read": {
+          "isError": true,
+          "lateHarvest": true,
+          "template": "<tool_use_error>File has been modified since read, either by the user or by a linter. Read it again before attempting to write it.</tool_use_error>",
+          "implemented": false,
+          "note": "observed 1x; requires stateful read-tracking NOT implemented in 08-08 (see corpus_absent)"
+        }
+      }
+    },
+    "TodoWrite": {
+      "input_keys_observed": ["todos"],
+      "input_note": "todos items carry {content, status, priority} in camelCase; status enum pending|in_progress|completed, priority high|medium|low.",
+      "results": {
+        "echo": {
+          "isError": false,
+          "template": "camelCase JSON echo: {\"oldTodos\":[<previous list verbatim>],\"todos\":[<new list verbatim>],\"summary\":{\"total\":N,\"pending\":N,\"inProgress\":N,\"completed\":N}}",
+          "sample_redacted": "{\"oldTodos\":[],\"todos\":[{\"content\":\"[REDACTED: todo text]\",\"status\":\"in_progress\",\"priority\":\"high\"},{\"content\":\"[REDACTED: todo text]\",\"status\":\"pending\",\"priority\":\"medium\"}],\"summary\":{\"total\":2,\"pending\":1,\"inProgress\":1,\"completed\":0}}"
+        }
+      }
+    },
+    "TodoRead": {
+      "input_keys_observed": [],
+      "input_note": "no TodoRead call observed in either harvest — entry exists to record the absence.",
+      "results": {
+        "current_list": {
+          "isError": false,
+          "template": "corpus-absent; follows the TodoWrite echo minus oldTodos: {\"todos\":[<current list>],\"summary\":{\"total\":N,\"pending\":N,\"inProgress\":N,\"completed\":N}}",
+          "sample_redacted": "",
+          "note": "flagged corpus-absent (see _provenance.corpus_absent)"
+        }
+      }
+    }
+  }
+}

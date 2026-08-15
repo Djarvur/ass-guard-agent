@@ -165,7 +165,7 @@ func accumulateMidTurn(lines []Line, turnID string) []provider.Message {
 
 			out = append(out, provider.Message{
 				Role: roleToolMsg, ToolCallID: l.ToolCallID, ToolName: name,
-				Content: string(l.Output), IsError: l.IsError,
+				Content: plainContent(l.Output), IsError: l.IsError,
 			})
 		case TypeAssistantMessage:
 			flushBatch()
@@ -177,6 +177,31 @@ func accumulateMidTurn(lines []Line, turnID string) []provider.Message {
 	flushBatch()
 
 	return out
+}
+
+// plainContent renders a tool-result Output as the model-visible Content
+// (08-08 T1, the rendering seam): executors return json.RawMessage per the
+// Stub contract, so a captured PLAIN-TEXT result (zcode renders Bash output,
+// `(Bash completed with no output)`, `Exit code <N>` errors, Read's
+// line-numbered text, and the Write/Edit success texts as plain text on the
+// wire-normalized tool message — see internal/coreexec/testdata/
+// zcode-core-results.json) is marshaled as a JSON STRING; decoding it here is
+// what makes the unquoted form reach the shaper. JSON OBJECTS pass through
+// verbatim (the shipped openspec {stdout,stderr,exit_code,classification},
+// Skill {"content":…}, subagent results, and TodoWrite's JSON echo are all
+// objects — byte-for-byte unchanged rendering). Anything that is not a valid
+// JSON string falls back to string(raw) (never panics, never drops results).
+func plainContent(raw json.RawMessage) string {
+	// A valid JSON document beginning with '"' IS a string — objects start
+	// with '{', arrays with '[', so the first-byte check is the discriminator.
+	if len(raw) > 0 && raw[0] == '"' {
+		var s string
+		if err := json.Unmarshal(raw, &s); err == nil {
+			return s
+		}
+	}
+
+	return string(raw)
 }
 
 // boundMidTurn keeps the MOST RECENT MidTurnWindowMessages messages, dropping

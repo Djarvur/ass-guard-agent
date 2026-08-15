@@ -92,12 +92,25 @@ func Redact(raw []byte) ([]byte, error) {
 
 // walkRedact recurses through the decoded JSON tree, replacing secret
 // values in place. Field names are preserved (the mimicry fingerprint).
+// String VALUES additionally get the Bearer/sk- belt-and-suspenders scrub
+// (08-08 T1 Test 5): a tool-result output like "KEY=sk-livesecret…" is a
+// plain JSON string under a non-secret key — the key-allowlist alone would
+// carry the credential into the transcript (and, via the projector's
+// plainContent decode, into the model-visible window). Scrubbing embedded
+// token-shaped substrings in string leaves matches the non-JSON fallback's
+// existing posture at the JSON chokepoint.
 func walkRedact(node any) {
 	switch v := node.(type) {
 	case map[string]any:
 		for k, val := range v {
 			if IsSecretKey(k) {
 				v[k] = redacted
+
+				continue
+			}
+
+			if s, ok := val.(string); ok {
+				v[k] = string(scrubBytes([]byte(s)))
 
 				continue
 			}

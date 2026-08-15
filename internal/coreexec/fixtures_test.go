@@ -108,8 +108,10 @@ func TestCoreResultsFixturePinned(t *testing.T) {
 		}
 	}
 
-	// One entry per tool with input shapes + result forms.
-	for _, tool := range []string{"Bash", "Read", "Write", "Edit", "TodoWrite", "TodoRead"} {
+	// One entry per tool with input shapes + result forms. TodoRead is the
+	// corpus-absent exception: no call was observed, so its input_keys list
+	// is legitimately empty (the entry exists to record the absence).
+	for _, tool := range []string{"Bash", "Read", "Write", "Edit", "TodoWrite"} {
 		entry, ok := f.Tools[tool]
 		if !ok {
 			t.Errorf("fixture missing a %q entry", tool)
@@ -124,6 +126,10 @@ func TestCoreResultsFixturePinned(t *testing.T) {
 		if len(entry.Results) == 0 {
 			t.Errorf("%s.results is empty", tool)
 		}
+	}
+
+	if _, ok := f.Tools["TodoRead"]; !ok {
+		t.Error("fixture missing a TodoRead entry (corpus-absent record)")
 	}
 
 	// The exact literal forms the executors' conformance tests pin against.
