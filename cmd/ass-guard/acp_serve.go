@@ -608,31 +608,31 @@ func firstTextBlockIndex(blocks []session.ContentBlock) int {
 	return -1
 }
 
-// commandKeyFor reports the registry command key the FIRST text block of
-// blocks invokes ("" unless it parses as an invocation AND the key is in the
-// registry) — exactly the resolution expandUserBlocks acts on. The hybrid
-// chaining seam (findings-6 disposition) uses it to answer TurnOutput.StartedBy:
-// the key comes from the PROMPT-side invocation only (the same lookup whose
-// success writes the command_provenance line), never from assistant/tool
-// content.
-func (r *sessionTurnRunner) commandKeyFor( //nolint:funcorder // sibling of expandUserBlocks
+// invocationFor resolves the first text block of blocks as a registry command
+// invocation: (key, args, true) when it parses AND the key is registered;
+// ("", "", false) otherwise. The single parse both the hybrid chaining seam
+// (TurnOutput.StartedBy — findings-6 disposition; the key comes from the
+// PROMPT-side invocation only, never from assistant/tool content) and the
+// scenario-subject forwarding rule consume; it is exactly the resolution
+// expandUserBlocks acts on.
+func (r *sessionTurnRunner) invocationFor( //nolint:funcorder,nonamedreturns,lll // sibling of expandUserBlocks
 	blocks []session.ContentBlock,
-) string {
+) (key, args string, ok bool) {
 	idx := firstTextBlockIndex(blocks)
 	if idx < 0 {
-		return ""
+		return "", "", false
 	}
 
-	key, _, ok := ecosys.ParseInvocation(blocks[idx].Text)
-	if !ok {
-		return ""
+	key, args, parsed := ecosys.ParseInvocation(blocks[idx].Text)
+	if !parsed {
+		return "", "", false
 	}
 
 	if _, found := r.reg.Commands[key]; !found {
-		return ""
+		return "", "", false
 	}
 
-	return key
+	return key, args, true
 }
 
 // Run drives one session/prompt through the real Session Core.
@@ -1010,17 +1010,47 @@ type engineTurnRunnerAdapter struct {
 	// leaves it "". Single-threaded by construction: the engine's Observe loop
 	// calls Run and LastTurnOutput sequentially.
 	startedBy string
+
+	// subject is the FIRST turn's typed invocation arguments ("add-login" for
+	// "/opsx:explore add-login") — the scenario subject. A later BARE injected
+	// command ("/opsx:propose" with no args) inherits it, mirroring the
+	// captured operator behavior (every stage invocation named the change; a
+	// bare propose would ask for a subject and the chain would die — live
+	// evidence: the first hybrid-chained E2E run). Sourced from the USER-side
+	// typed prompt only; empty when the first prompt was not an invocation
+	// with arguments.
+	subject   string
+	seenFirst bool
 }
 
 // Run drives one turn through the Session Core.
 func (a *engineTurnRunnerAdapter) Run(ctx context.Context, prompt []session.ContentBlock) (string, error) {
 	a.startedBy = ""
 	if a.r != nil {
+		key, args, ok := a.r.invocationFor(prompt)
+
 		// Resolve the starting command from the RAW prompt (the same lookup
 		// expandUserBlocks acts on) BEFORE expansion — an already-expanded body
 		// carries no invocation. Prompt-side only: assistant/tool content can
 		// never set this.
-		a.startedBy = a.r.commandKeyFor(prompt)
+		a.startedBy = key
+
+		if !a.seenFirst {
+			a.seenFirst = true
+			a.subject = args
+		} else if ok && key != "" && args == "" && a.subject != "" {
+			// Scenario-subject forwarding: a BARE injected command inherits the
+			// first invocation's arguments (an injection carrying its own args
+			// is left alone). Rebuild the invocation text with the subject and
+			// re-resolve so the expansion below sees it.
+			idx := firstTextBlockIndex(prompt)
+			withSubject := append([]session.ContentBlock(nil), prompt...)
+			withSubject[idx] = session.ContentBlock{
+				Type: blockText, Text: "/" + key + " " + a.subject,
+			}
+			prompt = withSubject
+		}
+
 		prompt = a.r.expandUserBlocks(a.sess, prompt)
 	}
 
