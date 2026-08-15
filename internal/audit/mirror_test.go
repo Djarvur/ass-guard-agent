@@ -35,7 +35,8 @@ func TestOpenFileSink(t *testing.T) {
 		t.Fatalf("file sink: %v", err)
 	}
 
-	if _, wErr := w.Write([]byte("{}\n")); wErr != nil {
+	_, wErr := w.Write([]byte("{}\n"))
+	if wErr != nil {
 		t.Fatalf("write: %v", wErr)
 	}
 
@@ -54,7 +55,8 @@ func TestOpenFileSink(t *testing.T) {
 	}
 
 	for _, target := range []string{"stdout", "/dev/stdout"} {
-		if _, _, err := audit.OpenFileSink(target); err == nil {
+		_, _, err := audit.OpenFileSink(target)
+		if err == nil {
 			t.Errorf("OpenFileSink(%q) must reject stdout targets", target)
 		}
 	}
@@ -71,7 +73,8 @@ func mirrorReady(t *testing.T, bus *event.Bus, m *audit.Mirror, dir, sid string)
 		bus.Publish(event.UsageUpdate{TurnID: sid + "-turn-000", InputTokens: 1})
 
 		if m.Dropped() >= 0 { // accessor live
-			if raw, err := os.ReadFile(filepath.Join(dir, sid+".jsonl")); err == nil && len(raw) > 0 {
+			raw, rerr := os.ReadFile(filepath.Join(dir, sid+".jsonl"))
+			if rerr == nil && len(raw) > 0 {
 				return
 			}
 		}
@@ -95,11 +98,11 @@ func TestMirror_PerSessionRouting(t *testing.T) {
 	mirrorReady(t, bus, m, dir, "sessA")
 
 	bus.Publish(event.RequestShaped{
-		TurnID: "sessA-turn-001", Profile: "zcode",
+		TurnID: "sessA-turn-001", Profile: profileZcode,
 		VerbatimRequest: []byte(`{"model":"m"}`), Timestamp: time.Now(),
 	})
 	bus.Publish(event.RequestShaped{
-		TurnID: "sessB-turn-001", Profile: "zcode",
+		TurnID: "sessB-turn-001", Profile: profileZcode,
 		VerbatimRequest: []byte(`{"model":"m"}`), Timestamp: time.Now(),
 	})
 
@@ -176,7 +179,7 @@ func TestMirror_RedactionChokepoint(t *testing.T) {
 	mirrorReady(t, bus, m, dir, "sessR")
 
 	bus.Publish(event.RequestShaped{
-		TurnID: "sessR-turn-001", Profile: "zcode",
+		TurnID: "sessR-turn-001", Profile: profileZcode,
 		VerbatimRequest: []byte(`{"api_key":"sk-live-secret-mirror-canary"}`), Timestamp: time.Now(),
 	})
 

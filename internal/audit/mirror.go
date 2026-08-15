@@ -1,9 +1,4 @@
-// The per-session audit mirror (09-06, AUD-02/D-02): a compact, operator-
-// tailable JSONL artifact per session under .ass-guard/audit/, complementing
-// — never duplicating — the transcript (v1.0 D-20: different schema, different
-// consumer, one bus). Every line passes the ONE redaction chokepoint before
-// the sink; write failures drop loudly with a counter and never block the bus.
-package audit
+package audit // 09-06, AUD-02/D-02: the per-session mirror (see doc.go)
 
 import (
 	"encoding/json"
@@ -30,18 +25,23 @@ type mirrorLine struct {
 	Kind      string    `json:"kind"`
 
 	// RequestShaped
-	Profile     string   `json:"profile,omitempty"`
+	Profile string `json:"profile,omitempty"`
+	//nolint:tagliatelle // on-disk format: camelCase matches the transcript's Line convention
 	HeaderNames []string `json:"headerNames,omitempty"`
 
 	// EngineDecision
-	Action       string `json:"action,omitempty"`
-	Signal       string `json:"signal,omitempty"`
-	MatchedSpan  string `json:"matchedSpan,omitempty"`
+	Action string `json:"action,omitempty"`
+	Signal string `json:"signal,omitempty"`
+	//nolint:tagliatelle // on-disk format: camelCase matches the transcript's Line convention
+	MatchedSpan string `json:"matchedSpan,omitempty"`
+	//nolint:tagliatelle // on-disk format: camelCase matches the transcript's Line convention
 	ConfigSource string `json:"configSource,omitempty"`
 	Reason       string `json:"reason,omitempty"`
 
 	// UsageUpdate
-	InputTokens  int64 `json:"inputTokens,omitempty"`
+	//nolint:tagliatelle // on-disk format: camelCase matches the transcript's Line convention
+	InputTokens int64 `json:"inputTokens,omitempty"`
+	//nolint:tagliatelle // on-disk format: camelCase matches the transcript's Line convention
 	OutputTokens int64 `json:"outputTokens,omitempty"`
 }
 
@@ -70,6 +70,11 @@ type Mirror struct {
 // via the shared OpenFileSink semantics — 0600 append-only; NEVER os.Create
 // default perms). A nil logger falls back to the slog default (stderr).
 func NewMirror(bus *event.Bus, dir string, log *slog.Logger) *Mirror {
+	// Best-effort root creation at construction: a missing dir would turn the
+	// first per-session open into a drop (the body store creates its own
+	// subtree lazily — the mirror must not depend on that ordering).
+	_ = os.MkdirAll(dir, dirPermOwnerOnly)
+
 	m := &Mirror{dir: dir, log: log, handles: map[string]io.Writer{}}
 	m.subscribe(bus)
 
@@ -166,7 +171,8 @@ func (m *Mirror) consume(e event.Event) {
 
 	red = append(red, '\n')
 
-	if werr := m.write(line.Session, red); werr != nil {
+	werr := m.write(line.Session, red)
+	if werr != nil {
 		m.fail(werr)
 	}
 }
@@ -186,7 +192,7 @@ func (m *Mirror) write(session string, red []byte) error {
 	w, ok := m.handles[session]
 	if !ok {
 		f, err := os.OpenFile(filepath.Join(m.dir, session+".jsonl"),
-			os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+			os.O_CREATE|os.O_WRONLY|os.O_APPEND, filePermOwnerOnly)
 		if err != nil {
 			return fmt.Errorf("open mirror %s: %w", session, err)
 		}

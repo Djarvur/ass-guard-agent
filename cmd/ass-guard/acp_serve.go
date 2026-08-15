@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -103,6 +104,11 @@ type serveOptions struct {
 	WorkDir               string
 	ConfigAddedBoundaries []string
 	EngineEnabled         bool
+
+	// AuditLogPath is the --audit-log operator override (09-06): "" → the
+	// default per-session mirror under <workdir>/.ass-guard/audit/; "-" →
+	// stderr; a path → the single-file mirror (D-02).
+	AuditLogPath string
 }
 
 // redactorAdapter adapts internal/redact to session.Redactor.
@@ -196,13 +202,50 @@ func runACPServeCmd(
 	// flag is default and that dir exists; else the dev ./profiles default.
 	resolvedProfilesDir := resolveProfilesDir(cmd, profilesDir, resolvedWorkDir)
 
+	// 09-06: the persistent --audit-log flag reaches the serve path (it was
+	// declared but never read — the dead-flag finding).
+	auditPath, _ := cmd.Flags().GetString("audit-log")
+
 	return runACPServe(ctx, os.Stdin, os.Stdout, os.Stderr, &serveOptions{
 		Profile:       profileName,
 		MaxConcurrent: maxConcurrent,
 		ProfilesDir:   resolvedProfilesDir,
 		WorkDir:       resolvedWorkDir,
 		EngineEnabled: engineEnabled,
+		AuditLogPath:  auditPath,
 	})
+}
+
+// startAuditMirror (09-06, AUD-02/D-02): the per-session mirror, DEFAULT ON;
+// the --audit-log override reroutes it ("-" → stderr; a path → single file).
+// Any construction failure degrades loudly (stderr log, mirror disabled) —
+// never a serve refusal.
+func startAuditMirror(ctx context.Context, bus *event.Bus, opts *serveOptions, stderr io.Writer) {
+	//nolint:staticcheck // QF1002: the switch is intentional documentation
+	switch {
+	case opts.AuditLogPath == "":
+		_ = audit.NewMirror(bus, filepath.Join(opts.WorkDir, ".ass-guard", "audit"), nil)
+	case opts.AuditLogPath == "-":
+		_ = audit.NewMirrorFile(bus, stderr, nil)
+	default:
+		mw, mclose, merr := audit.OpenFileSink(opts.AuditLogPath)
+		if merr != nil {
+			log.Printf("ass-guard: audit mirror disabled (%v): %v", opts.AuditLogPath, merr)
+
+			return
+		}
+
+		_ = audit.NewMirrorFile(bus, mw, nil)
+
+		go func() {
+			<-ctx.Done()
+
+			closeErr := mclose()
+			if closeErr != nil {
+				log.Printf("ass-guard: audit mirror sink close: %v", closeErr)
+			}
+		}()
+	}
 }
 
 // resolveWorkDir returns workDir, or the current working directory when the flag
@@ -284,6 +327,8 @@ func runACPServe(ctx context.Context, in io.Reader, out, stderr io.Writer, opts 
 	// 09-05: one capped body store per serve process (construction is lazy —
 	// Put reports errors; a broken store degrades audit, never the serve).
 	bodyStore := audit.NewBodyStore(filepath.Join(opts.WorkDir, ".ass-guard", "audit", "bodies"), 0)
+
+	startAuditMirror(ctx, bus, opts, stderr)
 
 	runner := &sessionTurnRunner{
 		bus:         bus,
@@ -741,11 +786,23 @@ func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen // grouping ke
 	// values never enter audit artifacts; names ride 09-06 events only).
 	var sess *session.Session
 
-	capturer := func(body []byte, _ map[string]string) {
+	capturer := func(body []byte, headers map[string]string) {
+		// 09-06 (Pitfall 9 audit-path discipline): header NAMES only — sorted,
+		// shape evidence for the TIER-2 identity invariant. VALUES are never
+		// referenced and can never enter an artifact via this path.
+		names := make([]string, 0, len(headers))
+
+		for k := range headers {
+			names = append(names, k)
+		}
+
+		slices.Sort(names)
+
 		r.bus.Publish(event.RequestShaped{
 			TurnID:          sess.CurrentTurnID(),
 			VerbatimRequest: body,
 			Profile:         prof.Name,
+			HeaderNames:     names,
 			Timestamp:       time.Now(),
 		})
 	}

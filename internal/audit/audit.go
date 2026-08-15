@@ -2,6 +2,7 @@ package audit
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -27,6 +28,16 @@ type AuditLogger struct {
 // NOTE: Plan 02-07 folds this AuditLogger into the unified TranscriptWriter
 // (D-20 — one artifact). Until then this keeps the Phase-1 LOG-01 path working
 // against the Phase-2 typed-channel bus.
+// errSinkStdout is the locked AUD-02 guard's rejection error.
+var errSinkStdout = errors.New("audit sink must not be stdout (transport discipline)")
+
+// filePermOwnerOnly / dirPermOwnerOnly match the sink permission discipline
+// (0600 files, 0700 dirs — owner-only, like the transcript + body store).
+const (
+	filePermOwnerOnly = 0o600
+	dirPermOwnerOnly  = 0o700
+)
+
 // OpenFileSink resolves the audit sink (09-06, the SHARED opener — Pitfall 8:
 // no os.OpenFile for audit anywhere else). Empty path or "-" → os.Stderr with
 // a nil closer; the literal stdout TARGETS ("stdout", "/dev/stdout") are
@@ -38,11 +49,10 @@ func OpenFileSink(path string) (io.Writer, func() error, error) {
 	}
 
 	if path == "stdout" || path == "/dev/stdout" {
-		//nolint:err113 // dynamic error message
-		return nil, nil, fmt.Errorf("audit sink must not be stdout (transport discipline)")
+		return nil, nil, errSinkStdout
 	}
 
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, filePermOwnerOnly)
 	if err != nil {
 		return nil, nil, fmt.Errorf("open audit-log: %w", err)
 	}
@@ -50,6 +60,9 @@ func OpenFileSink(path string) (io.Writer, func() error, error) {
 	return f, func() error { return f.Close() }, nil
 }
 
+// NewAuditLogger builds the Phase-1 tracer-path LOG-01 consumer: it
+// subscribes to RequestShaped and writes each redacted verbatim body to sink.
+// Panics when sink is os.Stdout (transport discipline).
 func NewAuditLogger(bus *event.Bus, sink io.Writer) *AuditLogger {
 	if sink == os.Stdout {
 		panic("audit: sink must not be os.Stdout (transport discipline — stdout is reserved for ACP frames)")

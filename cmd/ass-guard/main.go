@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -26,8 +25,6 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 	"github.com/Djarvur/ass-guard-agent/internal/version"
 )
-
-const filePermOwner = 0o600
 
 var errIsRequired = errors.New("--prompt is required")
 
@@ -104,13 +101,13 @@ func runTrace(ctx context.Context, prompt, name, dir, auditLogPath string) error
 	// capturer is the seam that publishes the verbatim shaped body.
 	bus := event.NewBus()
 
-	sink, sinkClose, err := openAuditSink(auditLogPath)
+	sink, sinkClose, err := audit.OpenFileSink(auditLogPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("open audit sink: %w", err)
 	}
 
 	if sinkClose != nil {
-		defer sinkClose()
+		defer func() { _ = sinkClose() }()
 	}
 
 	audit.NewAuditLogger(bus, sink)
@@ -151,21 +148,6 @@ func runTrace(ctx context.Context, prompt, name, dir, auditLogPath string) error
 	fmt.Fprintln(os.Stderr, string(out))
 
 	return nil
-}
-
-// openAuditSink resolves the audit sink. Empty path → stderr (default). stdout
-// is rejected (transport discipline).
-func openAuditSink(path string) (io.Writer, func(), error) {
-	if path == "" || path == "-" {
-		return os.Stderr, nil, nil
-	}
-
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, filePermOwner)
-	if err != nil {
-		return nil, nil, fmt.Errorf("open audit-log: %w", err)
-	}
-
-	return f, func() { _ = f.Close() }, nil
 }
 
 // defaultProfilesDir resolves the profiles directory relative to the working

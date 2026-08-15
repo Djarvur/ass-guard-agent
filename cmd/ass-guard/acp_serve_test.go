@@ -1375,7 +1375,7 @@ func TestServeAudit_RequestShapedThroughRealSeam(t *testing.T) { //nolint:funlen
 	stdout := &syncBuffer{}
 	stderr := &syncBuffer{}
 
-	//nolint:modernize // explicit cancel before the pipe close
+	//nolint:modernize,testingcontext // explicit cancel before the pipe close
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1437,6 +1437,12 @@ func TestServeAudit_RequestShapedThroughRealSeam(t *testing.T) { //nolint:funlen
 	}
 
 	assertBodyStoreRoundTrip(t, workDir, shaped[0].Ref, canaryKey)
+
+	// 09-06 T2 Test 9 (default mirror ON): the per-session mirror file exists
+	// under .ass-guard/audit/ carrying the request line (with header NAMES,
+	// never values) + T3 Test 12/13 (the secret canary over EVERY artifact +
+	// artifact-presence positive controls).
+	assertMirrorAndCanary(t, workDir, sessionID, canaryKey)
 
 	// Transport discipline (T-9-04): stdout carries only JSON-RPC frames.
 	assertStdoutOnlyJSONFrames(t, stdout)
@@ -1626,4 +1632,173 @@ func assertBodyStoreRoundTrip(t *testing.T, workDir, ref, canaryKey string) {
 	if !strings.Contains(string(body), "GLM-5.2") {
 		t.Errorf("stored body lost non-secret content: %.80s", string(body))
 	}
+}
+
+// assertMirrorAndCanary (09-06 T2 Test 8/9 + T3 Tests 12-13): the per-session
+// mirror exists non-empty with the request line's header NAMES (values never);
+// the FULL .ass-guard tree + the syncBuffer stderr carry ZERO canary bytes.
+func assertMirrorAndCanary(t *testing.T, workDir, sessionID, canaryKey string) {
+	t.Helper()
+
+	mirrorPath := filepath.Join(workDir, ".ass-guard", "audit", sessionID+".jsonl")
+
+	raw, err := os.ReadFile(mirrorPath)
+	if err != nil {
+		t.Fatalf("default per-session mirror missing (Test 9): %v", err)
+	}
+
+	if len(raw) == 0 {
+		t.Fatal("mirror file empty")
+	}
+
+	if !strings.Contains(string(raw), `"kind":"request_shaped"`) {
+		t.Errorf("mirror lacks the request line:\n%s", string(raw)[:min(200, len(raw))])
+	}
+
+	if !strings.Contains(string(raw), "headerNames") {
+		t.Error("mirror request line lacks headerNames (Test 8: names must flow)")
+	}
+
+	// Test 12 — the canary: zero occurrences across the ARTIFACT tree
+	// (.ass-guard/audit — mirror + body store) and the transcript file. The
+	// operator's scheduling.yaml is the credential SOURCE, not an artifact;
+	// scanning it would trivially contain the key by construction.
+	scanOne := func(path string) {
+		content, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return // absent artifacts have their own positive controls
+		}
+
+		if bytes.Contains(content, []byte(canaryKey)) {
+			t.Errorf("canary leaked into %s", path)
+		}
+	}
+
+	auditRoot := filepath.Join(workDir, ".ass-guard", "audit")
+
+	walkErr := filepath.WalkDir(auditRoot, func(path string, d os.DirEntry, werr error) error {
+		if werr != nil || d.IsDir() {
+			return werr
+		}
+
+		content, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return fmt.Errorf("canary read %s: %w", path, rerr)
+		}
+
+		if bytes.Contains(content, []byte(canaryKey)) {
+			t.Errorf("canary leaked into %s", path)
+		}
+
+		return nil
+	})
+	if walkErr != nil {
+		t.Fatalf("canary walk: %v", walkErr)
+	}
+
+	scanOne(filepath.Join(workDir, ".ass-guard", "transcript_"+sessionID+".jsonl"))
+
+	// Test 13 — positive controls (absence is not vacuity).
+	assertCanaryPositiveControls(t, workDir, sessionID)
+}
+
+// assertCanaryPositiveControls: transcript request line, stored body, and
+// mirror line all exist non-empty — the canary proves redaction, not
+// absence-by-nothing-written.
+func assertCanaryPositiveControls(t *testing.T, workDir, sessionID string) {
+	t.Helper()
+
+	transcript := filepath.Join(workDir, ".ass-guard", "transcript_"+sessionID+".jsonl")
+
+	tRaw, terr := os.ReadFile(transcript)
+	if terr != nil || len(tRaw) == 0 {
+		t.Errorf("transcript missing/empty (positive control): %v", terr)
+	}
+
+	bodiesDir := filepath.Join(workDir, ".ass-guard", "audit", "bodies")
+
+	entries, derr := os.ReadDir(bodiesDir)
+	if derr != nil || len(entries) == 0 {
+		t.Errorf("body store empty (positive control): %v", derr)
+	}
+}
+
+// driveServeFrames writes the initialize/session-new/session-prompt frame
+// sequence over the serve pipe and returns the session id.
+func driveServeFrames(t *testing.T, inPipeW *io.PipeWriter, stdout *syncBuffer, workDir string) string {
+	t.Helper()
+
+	write := func(line string) {
+		_, werr := inPipeW.Write([]byte(line + "\n"))
+		if werr != nil {
+			t.Fatalf("write frame: %v", werr)
+		}
+	}
+
+	write(`{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1}}`)
+	write(`{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"` + workDir + `"}}`)
+
+	sessionID := pollStdoutForSessionID(t, stdout)
+
+	write(`{"jsonrpc":"2.0","id":2,"method":"session/prompt","params":{"sessionId":"` +
+		sessionID + `","prompt":[{"type":"text","text":"hi"}]}}`)
+
+	return sessionID
+}
+
+// TestServeMirror_Override (09-06 T2 Test 10): with AuditLogPath set, every
+// session's lines land in the ONE operator file and NO per-session file
+// appears under .ass-guard/audit/.
+func TestServeMirror_Override(t *testing.T) {
+	t.Setenv("ZAI_API_KEY", "")
+
+	srv := serveAuditSSEStub()
+	defer srv.Close()
+
+	workDir := serveAuditWorkDir(t, srv.URL, "sk-override-canary-xyz")
+
+	overridePath := filepath.Join(t.TempDir(), "operator-audit.jsonl")
+
+	stdout := &syncBuffer{}
+	stderr := &syncBuffer{}
+
+	//nolint:modernize,testingcontext // explicit cancel before pipe close
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	inPipeR, inPipeW := io.Pipe()
+
+	go func() {
+		_ = runACPServe(ctx, inPipeR, stdout, stderr, &serveOptions{
+			Profile: profileZcode, MaxConcurrent: 2,
+			ProfilesDir: repoProfilesDir(t), WorkDir: workDir,
+			AuditLogPath: overridePath,
+		})
+	}()
+
+	sessionID := driveServeFrames(t, inPipeW, stdout, workDir)
+
+	deadline := time.Now().Add(10 * time.Second)
+
+	for time.Now().Before(deadline) {
+		raw, rerr := os.ReadFile(overridePath)
+
+		if rerr == nil && strings.Contains(string(raw), `"kind":"request_shaped"`) {
+			// the override file has the line; the per-session default must NOT exist
+			_, perr := os.Stat(filepath.Join(workDir, ".ass-guard", "audit", sessionID+".jsonl"))
+			if perr == nil {
+				t.Fatal("per-session mirror file exists despite the override (Test 10)")
+			}
+
+			if strings.Contains(string(raw), "sk-override-canary-xyz") {
+				t.Error("canary leaked into the override mirror")
+			}
+
+			return
+		}
+
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	t.Fatalf("override mirror did not land a request line within 10s (stderr: %s)", stderr.String())
 }
