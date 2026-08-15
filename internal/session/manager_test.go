@@ -68,7 +68,8 @@ func TestAppendEngineDecision(t *testing.T) {
 
 	m := newTestManager(t, "sess-1")
 
-	err := m.AppendEngineDecision("turn_7", "continue", "text:impl-complete", "text-pattern matched")
+	err := m.AppendEngineDecision("turn_7", "continue", "text:impl-complete",
+		"Implementation Complete", "openspec.toml patterns/impl-complete", "text-pattern matched")
 	if err != nil {
 		t.Fatalf("AppendEngineDecision: %v", err)
 	}
@@ -112,8 +113,8 @@ func TestAppendEngineDecisionNothing(t *testing.T) {
 
 	m := newTestManager(t, "sess-1")
 
-	err := m.AppendEngineDecision("turn_1", "nothing", "unmatched",
-		"no pattern or handoff tool matched")
+	err := m.AppendEngineDecision("turn_1", "nothing", "unmatched", "",
+		"", "no pattern or handoff tool matched")
 	if err != nil {
 		t.Fatalf("AppendEngineDecision: %v", err)
 	}

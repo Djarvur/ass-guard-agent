@@ -261,16 +261,25 @@ func TestDecide_ProvenanceCarried(t *testing.T) {
 
 // --- 09-02 T1: MatchDetail — span + config-source provenance (AUD-04) ---
 
+// span-test constants (goconst).
+const (
+	signalImplComplete = "text:impl-complete"
+	spanReadyText      = "ready to implement"
+	spanSourcePat      = "openspec.toml patterns/impl-complete"
+	spanToolNameT      = "Task"
+	spanSourceTool     = "openspec.toml handoff_tools/os-handoff"
+)
+
 // spanTable is a fake table returning span/config-source details.
 type spanTable struct{}
 
 func (spanTable) MatchText(text string) engine.MatchDetail {
-	if i := strings.Index(text, "ready to implement"); i >= 0 {
+	if strings.Contains(text, spanReadyText) {
 		return engine.MatchDetail{
 			ID:           "impl-complete",
 			Action:       engine.ActionContinue,
-			Span:         "ready to implement",
-			ConfigSource: "openspec.toml patterns/impl-complete",
+			Span:         spanReadyText,
+			ConfigSource: spanSourcePat,
 		}
 	}
 
@@ -283,7 +292,7 @@ func (spanTable) MatchTool(name string) engine.MatchDetail {
 			ID:           "os-handoff",
 			Action:       engine.ActionContinue,
 			Span:         "Task",
-			ConfigSource: "openspec.toml handoff_tools/os-handoff",
+			ConfigSource: spanSourceTool,
 		}
 	}
 
@@ -298,15 +307,15 @@ func TestDecide_TextMatchCarriesSpan(t *testing.T) {
 	out := engine.TurnOutput{TurnID: "t1", Text: "The change is ready to implement the next stage now."}
 	d := engine.Decide(out, spanTable{})
 
-	if d.Signal != "text:impl-complete" || d.Action != engine.ActionContinue {
+	if d.Signal != signalImplComplete || d.Action != engine.ActionContinue {
 		t.Fatalf("Signal/Action = %q/%v; want text:impl-complete/continue", d.Signal, d.Action)
 	}
 
-	if d.MatchedSpan != "ready to implement" {
+	if d.MatchedSpan != spanReadyText {
 		t.Errorf("MatchedSpan = %q; want the exact matched substring", d.MatchedSpan)
 	}
 
-	if d.ConfigSource != "openspec.toml patterns/impl-complete" {
+	if d.ConfigSource != spanSourcePat {
 		t.Errorf("ConfigSource = %q; want the table-supplied source", d.ConfigSource)
 	}
 }
@@ -316,18 +325,18 @@ func TestDecide_TextMatchCarriesSpan(t *testing.T) {
 func TestDecide_ToolMatchSpanIsName(t *testing.T) {
 	t.Parallel()
 
-	out := engine.TurnOutput{TurnID: "t2", Text: "done", ToolCalls: []string{"Read", "Task"}}
+	out := engine.TurnOutput{TurnID: "t2", Text: "done", ToolCalls: []string{"Read", spanToolNameT}}
 	d := engine.Decide(out, spanTable{})
 
 	if d.Signal != "tool:os-handoff" {
 		t.Fatalf("Signal = %q; want tool:os-handoff", d.Signal)
 	}
 
-	if d.MatchedSpan != "Task" {
+	if d.MatchedSpan != spanToolNameT {
 		t.Errorf("MatchedSpan = %q; want Task (the tool name IS the span)", d.MatchedSpan)
 	}
 
-	if d.ConfigSource != "openspec.toml handoff_tools/os-handoff" {
+	if d.ConfigSource != spanSourceTool {
 		t.Errorf("ConfigSource = %q; want the handoff entry source", d.ConfigSource)
 	}
 }
@@ -353,14 +362,14 @@ func TestDecide_UnmatchedStaysLean(t *testing.T) {
 func TestDecide_DualSignalSpanIsText(t *testing.T) {
 	t.Parallel()
 
-	out := engine.TurnOutput{TurnID: "t4", Text: "ready to implement", ToolCalls: []string{"Task"}}
+	out := engine.TurnOutput{TurnID: "t4", Text: spanReadyText, ToolCalls: []string{spanToolNameT}}
 	d := engine.Decide(out, spanTable{})
 
-	if d.Signal != "text:impl-complete" {
+	if d.Signal != signalImplComplete {
 		t.Fatalf("Signal = %q; want text:impl-complete (text wins)", d.Signal)
 	}
 
-	if d.MatchedSpan != "ready to implement" {
+	if d.MatchedSpan != spanReadyText {
 		t.Errorf("MatchedSpan = %q; want the TEXT span under dual signal", d.MatchedSpan)
 	}
 

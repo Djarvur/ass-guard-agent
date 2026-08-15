@@ -49,7 +49,7 @@ func (f *fakeDispatcher) Ask(_ context.Context, situation string) (string, error
 type hookTable struct{}
 
 func (hookTable) MatchText(string) engine.MatchDetail {
-	return engine.MatchDetail{ID: "proposal-ready", Action: engine.ActionHook, Span: "trigger"}
+	return engine.MatchDetail{ID: "proposal-ready", Action: engine.ActionHook, Span: triggerWord}
 }
 
 func (hookTable) MatchTool(string) engine.MatchDetail { return engine.MatchDetail{} }
@@ -58,7 +58,7 @@ func (hookTable) MatchTool(string) engine.MatchDetail { return engine.MatchDetai
 type askTable struct{}
 
 func (askTable) MatchText(string) engine.MatchDetail {
-	return engine.MatchDetail{ID: "unmatched-launch", Action: engine.ActionAsk, Span: "trigger"}
+	return engine.MatchDetail{ID: "unmatched-launch", Action: engine.ActionAsk, Span: triggerWord}
 }
 
 func (askTable) MatchTool(string) engine.MatchDetail { return engine.MatchDetail{} }
@@ -68,7 +68,7 @@ func (askTable) MatchTool(string) engine.MatchDetail { return engine.MatchDetail
 func TestDispatch_HookCallsDispatcher(t *testing.T) {
 	t.Parallel()
 
-	runner := &scriptedRunner{outputs: []engine.TurnOutput{{TurnID: "h1", Text: "trigger"}}}
+	runner := &scriptedRunner{outputs: []engine.TurnOutput{{TurnID: "h1", Text: triggerWord}}}
 	bus := event.NewBus()
 	d := &fakeDispatcher{hookStatus: "completed"}
 	eng := &engine.Engine{Bus: bus, Dispatcher: d}
@@ -150,7 +150,7 @@ func (a *askOnceTable) MatchText(_ string) engine.MatchDetail {
 
 	a.called = true
 
-	return engine.MatchDetail{ID: "unmatched-launch", Action: engine.ActionAsk, Span: "trigger"}
+	return engine.MatchDetail{ID: "unmatched-launch", Action: engine.ActionAsk, Span: triggerWord}
 }
 
 func (a *askOnceTable) MatchTool(string) engine.MatchDetail { return engine.MatchDetail{} }
@@ -194,7 +194,7 @@ func TestDispatch_AskPendingBreaksLoop(t *testing.T) {
 func TestDispatch_NilDispatcherDegradesToNothing(t *testing.T) {
 	t.Parallel()
 
-	runner := &scriptedRunner{outputs: []engine.TurnOutput{{TurnID: "h1", Text: "trigger"}}}
+	runner := &scriptedRunner{outputs: []engine.TurnOutput{{TurnID: "h1", Text: triggerWord}}}
 	bus := event.NewBus()
 	eng := &engine.Engine{Bus: bus} // no Dispatcher
 	collect := captureEvents(t, bus)

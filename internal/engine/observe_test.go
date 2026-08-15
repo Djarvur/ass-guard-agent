@@ -80,12 +80,15 @@ type capturingManager struct {
 	decisions []engine.Decision
 }
 
-func (c *capturingManager) AppendEngineDecision(turnID, action, signal, reason string) error {
+func (c *capturingManager) AppendEngineDecision(
+	turnID, action, signal, matchedSpan, configSource, reason string,
+) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	c.decisions = append(c.decisions, engine.Decision{
-		TurnID: turnID, Action: parseAction(action), Signal: signal, Reason: reason,
+		TurnID: turnID, Action: parseAction(action), Signal: signal,
+		MatchedSpan: matchedSpan, ConfigSource: configSource, Reason: reason,
 	})
 
 	return nil
@@ -429,7 +432,7 @@ func TestObserve_EmitsProvenance(t *testing.T) {
 	capturing := &capturingManager{}
 	eng := &engine.Engine{Bus: bus, Manager: capturing}
 
-	events := bus.Subscribe("EngineDecision", event.BufBoundary)
+	events := captureEvents(t, bus)
 
 	_, err := eng.Observe(context.Background(), runner, spanTable{},
 		[]session.ContentBlock{{Type: blockText, Text: "go"}})
@@ -437,26 +440,24 @@ func TestObserve_EmitsProvenance(t *testing.T) {
 		t.Fatalf("Observe: %v", err)
 	}
 
-	select {
-	case e := <-events:
-		ed, ok := e.(event.EngineDecision)
-		if !ok {
-			t.Fatalf("event type = %T; want event.EngineDecision", e)
-		}
+	got := events()
 
-		if ed.Action != "continue" || ed.Signal != "text:impl-complete" {
-			t.Errorf("event action/signal = %q/%q; want continue/text:impl-complete", ed.Action, ed.Signal)
-		}
+	if len(got) == 0 {
+		t.Fatal("no EngineDecision event — the provenance leg is not wired")
+	}
 
-		if ed.MatchedSpan != "ready to implement" {
-			t.Errorf("event MatchedSpan = %q; want the matched span", ed.MatchedSpan)
-		}
+	ed := got[0]
 
-		if ed.ConfigSource != "openspec.toml patterns/impl-complete" {
-			t.Errorf("event ConfigSource = %q; want the entry source", ed.ConfigSource)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("no EngineDecision event within 3s")
+	if ed.Action != "continue" || ed.Signal != signalImplComplete {
+		t.Errorf("event action/signal = %q/%q; want continue/text:impl-complete", ed.Action, ed.Signal)
+	}
+
+	if ed.MatchedSpan != "ready to implement" {
+		t.Errorf("event MatchedSpan = %q; want the matched span", ed.MatchedSpan)
+	}
+
+	if ed.ConfigSource != "openspec.toml patterns/impl-complete" {
+		t.Errorf("event ConfigSource = %q; want the entry source", ed.ConfigSource)
 	}
 
 	if len(capturing.decisions) == 0 {

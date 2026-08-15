@@ -236,14 +236,18 @@ func (m *Manager) AppendUsage(turnID string, input, output int64) error {
 // matched signal ("text:<id>", "tool:<id>", or "unmatched"); reason is the
 // investigate-and-fix-ready human note (PROJECT.md). The audit log therefore
 // proves the structural-safety property: unmatched output triggers nothing.
-func (m *Manager) AppendEngineDecision(turnID, action, signal, reason string) error {
+func (m *Manager) AppendEngineDecision(
+	turnID, action, signal, matchedSpan, configSource, reason string,
+) error {
 	return m.appendLine(&Line{
-		Type:      TypeEngineDecision,
-		TurnID:    turnID,
-		Timestamp: now(),
-		Name:      action,
-		Input:     json.RawMessage(`"` + signal + `"`),
-		Text:      reason,
+		Type:         TypeEngineDecision,
+		TurnID:       turnID,
+		Timestamp:    now(),
+		Name:         action,
+		Input:        json.RawMessage(`"` + signal + `"`),
+		MatchedSpan:  matchedSpan,
+		ConfigSource: configSource,
+		Text:         reason,
 	})
 }
 

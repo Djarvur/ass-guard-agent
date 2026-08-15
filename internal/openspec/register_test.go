@@ -79,7 +79,7 @@ func TestPatternTable_MatchTextFirstWins(t *testing.T) {
 	cfg := &openspec.OpenSpecConfig{
 		Patterns: []openspec.PatternEntry{
 			{ID: statusImplComplete, Regex: "Implementation Complete.*ready for review", Action: stopContinue},
-			{ID: "spec-done", Regex: "(?i)specification.*finalized", Action: stopContinue},
+			{ID: patternSpecDone, Regex: "(?i)specification.*finalized", Action: stopContinue},
 		},
 	}
 
@@ -93,7 +93,7 @@ func TestPatternTable_MatchTextFirstWins(t *testing.T) {
 		t.Errorf("MatchText(impl) = (%q,%v); want (impl-complete, continue)", d.ID, d.Action)
 	}
 
-	if d := pt.MatchText("the Specification is now finalized"); d.ID != "spec-done" ||
+	if d := pt.MatchText("the Specification is now finalized"); d.ID != patternSpecDone ||
 		d.Action != engine.ActionContinue {
 		t.Errorf("MatchText(spec) = (%q,%v); want (spec-done, continue)", d.ID, d.Action)
 	}
@@ -110,7 +110,7 @@ func TestPatternTable_MatchTool(t *testing.T) {
 
 	cfg := &openspec.OpenSpecConfig{
 		HandoffTools: []openspec.HandoffToolEntry{
-			{ID: "os-handoff", Tool: "openspec_handoff", Action: stopContinue},
+			{ID: handoffEntryID, Tool: handoffToolName, Action: stopContinue},
 		},
 	}
 
@@ -119,7 +119,7 @@ func TestPatternTable_MatchTool(t *testing.T) {
 		t.Fatalf("FromConfig: %v", err)
 	}
 
-	if d := pt.MatchTool("openspec_handoff"); d.ID != "os-handoff" || d.Action != engine.ActionContinue {
+	if d := pt.MatchTool(handoffToolName); d.ID != handoffEntryID || d.Action != engine.ActionContinue {
 		t.Errorf("MatchTool(handoff) = (%q,%v); want (os-handoff, continue)", d.ID, d.Action)
 	}
 
@@ -220,10 +220,10 @@ func TestPatternTable_MatchDetailConfigSource(t *testing.T) {
 
 	cfg := &openspec.OpenSpecConfig{
 		Patterns: []openspec.PatternEntry{
-			{ID: "spec-done", Regex: "specification finalized", Action: stopContinue},
+			{ID: patternSpecDone, Regex: "specification finalized", Action: stopContinue},
 		},
 		HandoffTools: []openspec.HandoffToolEntry{
-			{ID: "os-handoff", Tool: "openspec_handoff", Action: stopContinue},
+			{ID: handoffEntryID, Tool: handoffToolName, Action: stopContinue},
 		},
 	}
 
@@ -236,12 +236,12 @@ func TestPatternTable_MatchDetailConfigSource(t *testing.T) {
 		t.Errorf("MatchText ConfigSource = %q; want openspec.toml patterns/spec-done", d.ConfigSource)
 	}
 
-	d := pt.MatchTool("openspec_handoff")
+	d := pt.MatchTool(handoffToolName)
 	if d.ConfigSource != "openspec.toml handoff_tools/os-handoff" {
 		t.Errorf("MatchTool ConfigSource = %q; want openspec.toml handoff_tools/os-handoff", d.ConfigSource)
 	}
 
-	if d.Span != "openspec_handoff" {
+	if d.Span != handoffToolName {
 		t.Errorf("MatchTool Span = %q; want the tool NAME as the span", d.Span)
 	}
 }

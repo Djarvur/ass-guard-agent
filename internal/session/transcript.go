@@ -90,6 +90,11 @@ type Line struct {
 	// usage
 	InputTokens  int64 `json:"inputTokens,omitempty"`  //nolint:tagliatelle // on-disk format
 	OutputTokens int64 `json:"outputTokens,omitempty"` //nolint:tagliatelle // on-disk format
+
+	// engine_decision (09-02, AUD-04/D-03 full provenance — one line answers
+	// "why did it continue" without cross-referencing)
+	MatchedSpan  string `json:"matchedSpan,omitempty"`  //nolint:tagliatelle // on-disk format
+	ConfigSource string `json:"configSource,omitempty"` //nolint:tagliatelle // on-disk format
 }
 
 // selfGitignoreContent is the .ass-guard/.gitignore body (D-07): ignore

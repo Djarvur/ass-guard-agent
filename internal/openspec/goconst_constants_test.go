@@ -4,3 +4,6 @@ package openspec_test
 const stopContinue = "continue"
 const classMutating = "mutating"
 const statusImplComplete = "impl-complete"
+const patternSpecDone = "spec-done"
+const handoffToolName = "openspec_handoff"
+const handoffEntryID = "os-handoff"

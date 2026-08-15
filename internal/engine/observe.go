@@ -32,7 +32,7 @@ type TurnRunner interface {
 // (avoids a cycle: *session.Manager satisfies it; the engine is wrapped AROUND
 // a Session in 04-05 but never imports the type).
 type EngineDecisionWriter interface {
-	AppendEngineDecision(turnID, action, signal, reason string) error
+	AppendEngineDecision(turnID, action, signal, matchedSpan, configSource, reason string) error
 }
 
 // ActionDispatcher dispatches the engine's non-continue actions (hook/ask) to
@@ -306,15 +306,18 @@ func (e *Engine) applyDispatcher(ctx context.Context, dec *Decision) Decision {
 func (e *Engine) emit(dec *Decision) {
 	if e.Bus != nil {
 		e.Bus.Publish(event.EngineDecision{
-			TurnID: dec.TurnID,
-			Action: dec.Action.String(),
-			Signal: dec.Signal,
-			Reason: dec.Reason,
+			TurnID:       dec.TurnID,
+			Action:       dec.Action.String(),
+			Signal:       dec.Signal,
+			MatchedSpan:  dec.MatchedSpan,
+			ConfigSource: dec.ConfigSource,
+			Reason:       dec.Reason,
 		})
 	}
 
 	if e.Manager != nil {
-		werr := e.Manager.AppendEngineDecision(dec.TurnID, dec.Action.String(), dec.Signal, dec.Reason)
+		werr := e.Manager.AppendEngineDecision(dec.TurnID, dec.Action.String(), dec.Signal,
+			dec.MatchedSpan, dec.ConfigSource, dec.Reason)
 		if werr != nil {
 			e.logFailure("engine AppendEngineDecision failed", werr)
 		}

@@ -118,7 +118,14 @@ type EngineDecision struct {
 	TurnID string
 	Action string // "nothing" | "continue" | "hook" | "ask" | "wait"
 	Signal string // "text:<patternID>" | "tool:<toolID>" | "unmatched"
-	Reason string // human-readable, investigate-and-fix-ready (PROJECT.md)
+	// MatchedSpan is the literal matched text (text signals) or the tool-call
+	// name (tool signals) — D-03 full provenance (09-02, AUD-04). Empty when
+	// unmatched.
+	MatchedSpan string
+	// ConfigSource names the config entry that fired, e.g.
+	// "openspec.toml patterns/<id>" — identifiers only, never file contents.
+	ConfigSource string
+	Reason       string // human-readable, investigate-and-fix-ready (PROJECT.md)
 }
 
 // Kind returns the event discriminator.
