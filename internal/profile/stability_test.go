@@ -119,3 +119,33 @@ func TestStability_CrossSessionHeaderNames(t *testing.T) {
 		}
 	}
 }
+
+// --- 09-03 T1: pinned-session consumption + the divergence canary (AUD-05) ---
+
+// TestStability_CanaryDetectsDivergence (Pitfall 17): a synthetic session
+// whose tool catalog CHANGES mid-session MUST fail ExtractFromRollout — the
+// canary proving the stability assertion can fail, so a green run on the real
+// pinned session means something (non-vacuity).
+func TestStability_CanaryDetectsDivergence(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(".", "testdata", "divergent-session", "model-io-sess_testdivergent.jsonl")
+
+	_, err := profile.ExtractFromRollout(path)
+	if err == nil {
+		t.Fatal("ExtractFromRollout accepted a mid-session catalog change — the canary is broken (vacuous stability)")
+	}
+}
+
+// TestStability_HomogeneousPasses: a two-line session with the SAME catalog
+// extracts cleanly — the canary fires ONLY on real divergence.
+func TestStability_HomogeneousPasses(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(".", "testdata", "divergent-session", "model-io-sess_testhomogeneous.jsonl")
+
+	_, err := profile.ExtractFromRollout(path)
+	if err != nil {
+		t.Fatalf("ExtractFromRollout rejected a homogeneous session: %v", err)
+	}
+}
