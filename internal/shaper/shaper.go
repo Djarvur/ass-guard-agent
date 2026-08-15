@@ -84,8 +84,9 @@ func ComposeRuntimeWorkDir(p *profile.Profile, sessionWorkDir string) {
 		return
 	}
 
-	// RED stub: no substitution yet.
-	_ = p.System
+	for i := range p.System {
+		p.System[i].Text = strings.ReplaceAll(p.System[i].Text, p.CaptureWorkDir, sessionWorkDir)
+	}
 }
 
 // Shape builds an anthropic.MessageNewParams from the profile and messages, and
