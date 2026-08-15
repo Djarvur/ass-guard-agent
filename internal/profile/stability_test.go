@@ -33,23 +33,42 @@ func rolloutDir(t *testing.T) string {
 // line in the session must agree on system block count, the tool-NAME set, and
 // the 12 identity header names (RESEARCH §1.3). This is the load-bearing check
 // — the profile is extracted from this session, so its shape must be stable
-// across the session's turns. Skips cleanly when the rollout dir is absent.
+// across the session's turns.
+//
+// 09-03 (AUD-05 / Pitfall 17): the subject is the session PINNED in the
+// shipped coverage manifest — NEVER richest-session selection (richness-biased
+// picking yields a vacuous pass: a homogeneous session proves nothing) and
+// NEVER a wholesale dir scan (mixed zcode builds make sessions
+// incomparable). The test skips cleanly while the pinned capture is absent;
+// docs/recapture-runbook.md is the re-grounding procedure.
 func TestStability_WithinSessionExtractionSource(t *testing.T) {
 	t.Parallel()
-	// D-16: the extraction source is whatever main session the extractor picks.
-	stats, err := profile.ScanRolloutDir(rolloutDir(t))
+
+	manifest, err := profile.LoadCoverage(filepath.Join("..", "..", "profiles", "zcode", "coverage.yaml"))
 	if err != nil {
-		t.Skipf("rollout dir unavailable: %v", err)
+		t.Skipf("shipped coverage manifest unavailable (repo layout?): %v", err)
 	}
 
-	chosen, err := profile.PickRichestMain(stats)
-	if err != nil {
-		t.Skipf("no main session: %v", err)
+	if len(manifest.TargetCaptureRef.Sessions) == 0 {
+		t.Skip("coverage manifest pins no capture session (run docs/recapture-runbook.md)")
 	}
 
-	_, err = profile.ExtractFromRollout(chosen.Path)
+	pinned := manifest.TargetCaptureRef.Sessions[0]
+
+	dir := rolloutDir(t)
+	if dir == "" {
+		t.Skipf("rollout dir unavailable — pinned session %s cannot be checked (see docs/recapture-runbook.md)", pinned.ID)
+	}
+
+	path := filepath.Join(dir, "model-io-sess_"+pinned.ID+".jsonl")
+
+	if _, statErr := os.Stat(path); statErr != nil {
+		t.Skipf("pinned session %s absent from the rollout dir — re-ground per docs/recapture-runbook.md", pinned.ID)
+	}
+
+	_, err = profile.ExtractFromRollout(path)
 	if err != nil {
-		t.Fatalf("within-session stability failed for %s: %v", chosen.ID, err)
+		t.Fatalf("within-session stability failed for the pinned session %s: %v", pinned.ID, err)
 	}
 }
 
@@ -63,6 +82,11 @@ func TestStability_WithinSessionExtractionSource(t *testing.T) {
 // tools incl. RespondToCoordinator). Those differences are EXPECTED role-driven
 // variance, NOT drift — the cross-session test asserts ONLY the header-name
 // invariant (the part that is stable across roles).
+//
+// 09-03: this test KEEPS its directory scan deliberately — its invariant (the
+// 12 header names across roles) is version-insensitive, and Pitfall 17's
+// selection-bias critique targets the extraction-SOURCE selection (the
+// within-session test above), not this cross-role fingerprint check.
 func TestStability_CrossSessionHeaderNames(t *testing.T) {
 	t.Parallel()
 
