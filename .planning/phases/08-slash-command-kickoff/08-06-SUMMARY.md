@@ -3,7 +3,7 @@ phase: 08-slash-command-kickoff
 plan: 06
 subsystem: opsx-e2e-gate
 tags: [e2e, real-binary, real-model, chaining, pattern-reseed, uat, blocker]
-status: checkpoint-blocked   # 2nd addendum: 08-09 closed convergence; capture leg blocked on the SSE-stall finding, D-10 leg on the tool-surface finding — phase gate OPEN for the operator
+status: checkpoint-blocked   # 3rd addendum: all three diagnosed bugs FIXED (true roots stack/dedup-proven), capture E2E GREEN 4/4 stages, D-12 re-seed landed; product-proof leg blocked on the NEW 6th finding (explore-closing nondeterminism), D-10 leg on the operator route decision — phase gate staged open on those two decisions + the final witness
 
 # Dependency graph
 requires:
@@ -205,3 +205,56 @@ Score: 6 pass, 5 partial (2, 3, 4, 12 unchanged-partial; 5 improved blocked→pa
 - `ASSGUARD_OPENSPEC_BIN=1 go test ./internal/openspec/ ./internal/ecosys/ -count=1` — GREEN
 - Gated E2E (product-proof + fixable) — BLOCKED (SSE stall: capture impossible; D-10 surface: assertion unreachable by construction)
 - **Phase 8 stays OPEN.** The 08-06 operator checkpoint (T4) remains the gate; this addendum + STATE.md are the evidence for that conversation.
+
+---
+
+# Third Addendum (2026-08-15, the delegated fix run)
+
+The operator's morning disposition's recommended fix path executed: all three diagnosed bugs fixed RED→GREEN, the capture leg re-run to GREEN, the D-12 re-seed landed — and one NEW architectural-class finding (the 6th) recorded at its honest stop.
+
+## The three fixes (commits, tests, live proof)
+
+| Fix | Root cause (corrected where the stack proved otherwise) | Commits (RED → GREEN) | Live proof |
+|---|---|---|---|
+| "SSE-stall" | **Two layers.** The REAL wedge: `sessionTurnRunner.Run`'s per-turn chunk-forwarder bus subscription was never removed — on stage 2 of any multi-stage run the dead subscriber's 128-event buffer filled and `Bus.Publish`'s blocking send wedged the turn goroutine forever (a channel send has no ctx). Proven by SIGQUIT stack dump (goroutine 8: `chan send, 21 minutes` at session.go:351→bus.go:58). The originally-diagnosed transport half was also real: no httpClient timeout + the drain's liveness check never ran while blocked in ReadString. | `98619a6`→`952c428` (watchdog: idle force-close + ctx force-close + retryable "error" chunk), leak test→`b3753ea` (`Bus.Unsubscribe` + Run defers it) | The capture E2E that stalled TWICE now completes 4/4 stages in 505s; TestStream_IdleWatchdog/SendSurfacesIdleTimeout/CancelUnblocks/TestRun_DoesNotLeakChunkForwarder pin all paths |
+| Duplicate tool_use | **The transcript had TWO writers**: `Session.Prompt`'s sync loop AND the async TranscriptWriter's ToolCall bus subscription appended the same tool_call line (every id exactly 2×; the Projector folds each line into the carried batch → duplicate tool_use blocks in outgoing requests). The SSE-replay hypothesis was defense-only (also landed: drainSSE dedupes replayed blocks per id). | `e52487a`→`5a08935` (writer drains-and-drops; session is the sole tool_call writer), `98619a6`→`952c428` (SSE-level dedupe) | The capture run's transcript: 24 tool_call lines / 24 unique ids / 0 duplicates |
+| Profile cwd | Static capture embed of the real repo's cwd told the model it stood in the real repo. `Profile.CaptureWorkDir` + `shaper.ComposeRuntimeWorkDir` substitute the SESSION workDir at sessionFor's per-session copy (form identical; parity path composes the unmodified capture; the extractor now derives + writes capture_work_dir so the seam survives re-capture). | `245954f`→`b49e984` | The capture run read the SCRATCH exclusively (zero real-repo path mentions; `openspec list` root.path = the scratch) |
+
+## The capture leg: GREEN
+
+`ASSGUARD_OPENSPEC_BIN=1 ASSGUARD_E2E_LLM=1 ASSGUARD_E2E_CAPTURE=1 go test ./cmd/ass-guard/ -run TestOpsxEndToEnd_Gated -v -count=1 -timeout 40m` → **PASS, 505.04s** — all four stages (explore→propose→apply→archive) completed with real artifacts (`openspec/changes/archive/2026-08-15-add-a-tiny-feature/` in the scratch); the four closing outputs committed as `cmd/ass-guard/testdata/opsx-e2e/stage-{1..4}-output-capture.txt`. Attempt 1 (pre-bus-fix) wedged identically to 08-06's stalls — the SIGQUIT stack dump is the corrected root-cause evidence (`/tmp/e2e-fix-evidence/capture-run-attempt1-with-stacks.log`).
+
+## The re-seed (D-12): LANDED, 3 of 4 boundaries robust
+
+`internal/openspec/seeded.toml` carries `post-archive-terminal` (shield, action=wait), `post-propose-handoff` (`/opsx:apply`), `post-apply-handoff` (`/opsx:archive`), `post-explore-handoff` (`(?i)propos`) with capture provenance comments; `TestSeeded_ChainingRowsFromRealCapture` pins row selection + next-commands + the shield ordering against VERBATIM excerpts of all observed closings.
+
+## The honest stop: the 6th finding (explore-boundary nondeterminism)
+
+The product-proof re-run failed at decisions=[nothing] across THREE attempts — four live explore closings took four structurally different forms (proposal-handoff / calibration-run / open-question-with-"Proposed" / pure Socratic question with no propos* stem at all). The anchor was widened twice by the captured family and still misses; the root cause is the TOOLKIT's own command design: the installed `opsx/explore.md` guardrails MANDATE the free-form close ("Don't force structure — let patterns emerge naturally") while propose/apply induce stable stop-phrases. No text regex can chain this boundary honestly; overfitting further (e.g. matching any question mark) would be the hollow green the gates exist to prevent. Recorded as the 6th architectural-class finding (STATE.md) with four disposition options — recommended: command-provenance-driven chaining (the engine already records it; mirrors D-11's vocabulary). The D-10 probe leg remains separately blocked on the operator's route decision (finding 5, untouched; its `sawFixable` assertion still fails by construction, re-verified).
+
+## The 11 UAT checks — re-walked (2026-08-15, fix-run evidence)
+
+| # | Check | Evidence | Status (was) |
+|---|-------|----------|--------------|
+| 2 | Zero "continue" taps | Plumbing green (T1 tests + the new excerpt battery); the REAL chain unblocked at the capture level (4 stages run unattended, zero stall) but the ENGINE-driven zero-continue chain is blocked on the 6th finding (explore boundary) | partial (partial) |
+| 3 | Forgotten routine post-implement | hookdag suite green; the real stage-end hook chain still pending the zero-continue chain | partial (partial) |
+| 4 | Unfamiliar → asked once, remembered | learning suite green; the explore boundary is now the LIVE unfamiliar-handoff case — its ask-fallback behavior becomes observable once the operator picks the route | partial (partial) |
+| 5 | Completes unattended | **SCENARIO-LEVEL now proven**: the capture run completes the FULL 4-stage scenario unattended (505s, real archive artifacts; every prior blocker — convergence, core tools, the stall — closed). The zero-TYPED-continue variant (one prompt, engine chains) blocked on the 6th finding | **pass** (partial) — improved |
+| 6 | Unmatched output triggers nothing | TestDecide_UnmatchedIsNothing + the E2E's own decisions=[nothing] on unmatched explore closings (live proof, 3 runs) | pass (pass) |
+| 7 | Engine failure degrades | TestObserve_*Degradation suites green in the guard re-run | pass (pass) |
+| 8 | Hook on-failure + loop prevention | hookdag config_test + TestObserve_ReFireBudget green | pass (pass) |
+| 9 | Cancel-drain | TestObserve_CancelDrain, TestCancelDrainsInjections + the new TestStream_CancelUnblocksStalledBodyRead green | pass (pass) |
+| 10 | Concurrency + swappable backends | TestDispatchBatch_* + backend-swap suites green | pass (pass) |
+| 11 | Learning inspectable + revertible | TestStore_List/Revert* green | pass (pass) |
+| 12 | Coverage — outcome observably true | The scenario-level completion (check 5) + the corrected root-cause record (stack dump) + every fix live-proven; the zero-continue leg pending | partial (partial) |
+
+Score: 7 pass, 4 partial, 0 hard-blocked — every prior blocker on this plan's legs is either closed or has a named owner-decision; nothing is silently green.
+
+## Phase gate status (final for this session)
+
+- `mise run ci` — GREEN (re-verified after every fix; one transient load-flake of the pre-existing 08-08 Bash executor under mise's parallel tasks, 25+ re-runs green incl. under deliberate lint load)
+- `ASSGUARD_OPENSPEC_BIN=1 go test ./internal/openspec/ ./internal/ecosys/ -count=1` — GREEN
+- Capture-mode E2E — **GREEN** (4/4 stages, 505s)
+- Product-proof E2E — BLOCKED on the 6th finding (explore boundary; operator disposition)
+- Fixable probe — BLOCKED on the D-10 route decision (operator; untouched per the delegation)
+- **Phase 8 stays OPEN**, staged exactly as: open on (1) the operator's D-10 route decision (finding 5), (2) the operator's explore-boundary route decision (finding 6), (3) the final gate witness.
