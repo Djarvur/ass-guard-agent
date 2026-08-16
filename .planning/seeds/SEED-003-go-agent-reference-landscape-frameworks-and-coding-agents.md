@@ -63,6 +63,7 @@ Same triggers as SEED-002, plus: engine checkpoint/interrupt-resume design (→ 
 - `internal/parity/`, `internal/drift/` — cassette validation (adk-go httprr, fantasy vcr)
 - `internal/mcp/` — MCP-client-as-tool-converter comparison (goai)
 - Upstream: github.com/{cloudwego/eino, google/adk-go, zendev-sh/goai, mozilla-ai/any-llm-go, tmc/langchaingo, charmbracelet/crush, opencode-ai/opencode, plandex-ai/plandex}
+- **EXPANDED 2026-08-17:** the full 34-source landscape (this set + pi, Claudecourse, sst/anomalyco opencode, codex, cline, goose, OpenHands, gemini-cli, qwen-code, gh-aw, aider, SWE-agent, 5 vendor SDKs, 7 independent frameworks) with the implemented/planned/borrow/don't-need analysis lives in `.planning/research/IDEA-LANDSCAPE.md` — read that first; its ranked borrow list (checkpoints/undo, compaction verification, real sandboxing, steering queue) supersedes this seed as the adoption index
 
 ## Notes
 
