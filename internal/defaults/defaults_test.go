@@ -25,7 +25,7 @@ const (
 
 // TestWriteTree_MaterializesAllArtifacts asserts WriteTree lays down the full
 // runtime tree under root (D-01): the zcode profile (loader-required files),
-// openspec.toml, and scheduling.yaml.
+// openspec.toml, and config.yaml.
 func TestWriteTree_MaterializesAllArtifacts(t *testing.T) {
 	t.Parallel()
 
@@ -47,7 +47,7 @@ func TestWriteTree_MaterializesAllArtifacts(t *testing.T) {
 		"profiles/zcode/system/block-1.txt",
 		"profiles/zcode/system/block-2.txt",
 		"openspec.toml",
-		"scheduling.yaml",
+		"config.yaml",
 	} {
 		_, err := os.Stat(filepath.Join(tmp, rel))
 		if err != nil {
@@ -160,22 +160,22 @@ func TestSeedProfileLoads(t *testing.T) {
 	}
 }
 
-// TestDriftGuard_SchedulingYAML asserts the embedded seed scheduling.yaml is
+// TestDriftGuard_SchedulingYAML asserts the embedded seed config.yaml is
 // byte-identical to internal/scheduler's embedded default (the DIST-03 floor).
 // Both sides are build-time embed bytes (no filesystem lookup), so this is
 // robust under -trimpath. Run sync.sh if this fails.
 func TestDriftGuard_SchedulingYAML(t *testing.T) {
 	t.Parallel()
 
-	seedBytes, err := defaults.Seed.ReadFile("seed/scheduling.yaml")
+	seedBytes, err := defaults.Seed.ReadFile("seed/config.yaml")
 	if err != nil {
-		t.Fatalf("read embedded seed/scheduling.yaml: %v", err)
+		t.Fatalf("read embedded seed/config.yaml: %v", err)
 	}
 
 	schedulerBytes := scheduler.EmbeddedDefaultScheduling()
 
 	if !bytes.Equal(seedBytes, schedulerBytes) {
-		t.Errorf("scheduling.yaml drift: seed=%d bytes != scheduler=%d bytes — run ./internal/defaults/seed/sync.sh",
+		t.Errorf("config.yaml drift: seed=%d bytes != scheduler=%d bytes — run ./internal/defaults/seed/sync.sh",
 			len(seedBytes), len(schedulerBytes))
 	}
 }

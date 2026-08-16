@@ -35,7 +35,7 @@ func TestEnsure_SeedsFreshDir(t *testing.T) {
 		"profiles/zcode/tools.json",
 		"profiles/zcode/profile.yaml",
 		"openspec.toml",
-		"scheduling.yaml",
+		"config.yaml",
 	} {
 		_, err := os.Stat(filepath.Join(work, ".ass-guard", rel))
 		if err != nil {

@@ -107,7 +107,7 @@ func assertAssGuardSeeded(t *testing.T, project string) {
 		filepath.Join("profiles", "zcode", "tools.json"),
 		filepath.Join("profiles", "zcode", "profile.yaml"),
 		"openspec.toml",
-		"scheduling.yaml",
+		"config.yaml",
 	} {
 		_, err := os.Stat(filepath.Join(assGuard, rel))
 		if err != nil {
