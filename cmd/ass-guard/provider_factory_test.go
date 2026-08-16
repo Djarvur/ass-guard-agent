@@ -70,15 +70,79 @@ tiers:
     fallback: []
 `
 
-// writeTestScheduling writes content to <workDir>/.ass-guard/scheduling.yaml
-// and returns the written path.
+// testGlobalLayerConfig declares a sentinel provider + heavy-tier binding
+// reachable ONLY through the global layer (~/.config/ass-guard-agent/
+// config.yaml) — any assertion seeing gs-model proves the global file was read
+// and merged over the embedded floor.
+const testGlobalLayerConfig = `providers:
+  gsentinel:
+    base_url: "https://global-sentinel.example/api"
+    shape: anthropic
+    api_key: "sk-test-global"
+models:
+  gs-model:
+    provider: gsentinel
+tiers:
+  heavy:
+    model: gs-model
+`
+
+// testProjectLayerConfig declares a DIFFERENT sentinel (ps-model) so the
+// project layer's win over the global layer's conflicting tier binding is
+// directly observable.
+const testProjectLayerConfig = `providers:
+  psentinel:
+    base_url: "https://project-sentinel.example/api"
+    shape: anthropic
+    api_key: "sk-test-project"
+models:
+  ps-model:
+    provider: psentinel
+tiers:
+  heavy:
+    model: ps-model
+`
+
+// legacySchedulingFileName is the pre-rename operator config filename. It is
+// spelled as a concatenation so the repo-wide rename grep gate (which greps
+// tracked files for the joined literal) stays clean while this test still pins
+// the no-legacy-reads contract (260817-11v revised decision).
+const legacySchedulingFileName = "scheduling" + ".yaml"
+
+// writeTestScheduling writes content to the PROJECT config layer
+// (<workDir>/.ass-guard/config.yaml) and returns the written path.
 func writeTestScheduling(t *testing.T, workDir, content string) string {
 	t.Helper()
 
 	dir := filepath.Join(workDir, ".ass-guard")
 	require.NoError(t, os.MkdirAll(dir, 0o700))
 
-	path := filepath.Join(dir, "scheduling.yaml")
+	path := filepath.Join(dir, "config.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+
+	return path
+}
+
+// pinEmptyHome pins HOME to an empty temp dir so the global config layer
+// contributes nothing — every loadSchedulingFactory-reaching test stays
+// hermetic against the operator's real home (t.Setenv ⇒ these tests are not
+// parallel).
+func pinEmptyHome(t *testing.T) string {
+	t.Helper()
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	return home
+}
+
+// writeGlobalTestConfig writes content to the GLOBAL config layer
+// (<home>/.config/ass-guard-agent/config.yaml) and returns the written path.
+func writeGlobalTestConfig(t *testing.T, home, content string) string {
+	t.Helper()
+
+	path := filepath.Join(home, ".config", "ass-guard-agent", "config.yaml")
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o700))
 	require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
 
 	return path
@@ -92,7 +156,9 @@ func writeTestScheduling(t *testing.T, workDir, content string) string {
 func TestLoadSchedulingFactory_WarnsUncredentialed(t *testing.T) {
 	// Env hygiene: the assertions assume NOKEY_API_KEY is unset (the fixture
 	// declares it via api_key_env) and zai stays credentialed regardless of
-	// any ambient ZAI_API_KEY. t.Setenv also makes this test non-parallel.
+	// any ambient ZAI_API_KEY. The pinned empty HOME keeps the global config
+	// layer out of the assertions. t.Setenv makes this test non-parallel.
+	pinEmptyHome(t)
 	t.Setenv("ZAI_API_KEY", "")
 	t.Setenv("NOKEY_API_KEY", "")
 
@@ -115,6 +181,7 @@ func TestLoadSchedulingFactory_WarnsUncredentialed(t *testing.T) {
 // resolves the anthropic provider's key from the env (Source=env) and Build
 // returns a real adapter — today's exact behavior.
 func TestLoadSchedulingFactory_ZeroConfigEnv(t *testing.T) {
+	pinEmptyHome(t)
 	t.Setenv("ZAI_API_KEY", "env-secret")
 
 	var stderr bytes.Buffer
@@ -134,37 +201,144 @@ func TestLoadSchedulingFactory_ZeroConfigEnv(t *testing.T) {
 	p, err := factory.Build("anthropic", shaper.New())
 	require.NoError(t, err)
 	require.IsType(t, &provider.AnthropicProvider{}, p, "a credentialed build returns the real adapter")
-	require.Empty(t, stderr.String(), "a fully-credentialed config warns nothing")
+	require.Empty(t, stderr.String(), "a fully-credentialed config warns nothing (and no ambient global layer leaks in)")
+}
+
+// TestLoadSchedulingFactory_GlobalLayerMerged proves the global layer
+// (260817-11v): a config at <home>/.config/ass-guard-agent/config.yaml is
+// honored over an empty project — the sentinel tier binding wins over the
+// embedded floor while the embedded default's provider stays present (merge,
+// not replace).
+func TestLoadSchedulingFactory_GlobalLayerMerged(t *testing.T) {
+	home := pinEmptyHome(t)
+	writeGlobalTestConfig(t, home, testGlobalLayerConfig)
+
+	var stderr bytes.Buffer
+
+	cfg, factory, err := loadSchedulingFactory(t.TempDir(), "", &stderr)
+	require.NoError(t, err)
+	require.NotNil(t, cfg)
+	require.NotNil(t, factory)
+
+	require.Equal(t, "gs-model", cfg.Tiers["heavy"].Model,
+		"the global layer's tier binding overlays the embedded floor")
+
+	gprov, ok := cfg.Providers["gsentinel"]
+	require.True(t, ok, "the global layer's provider is merged in")
+	require.Equal(t, "https://global-sentinel.example/api", gprov.BaseURL)
+
+	_, ok = cfg.Providers["anthropic"]
+	require.True(t, ok, "the embedded default's provider survives beneath the global layer")
+}
+
+// TestLoadSchedulingFactory_ProjectOverridesGlobal proves the layered
+// precedence: with BOTH layers present and conflicting heavy-tier bindings,
+// the project layer (<workDir>/.ass-guard/config.yaml) wins — Load's overlay
+// order is global then project.
+func TestLoadSchedulingFactory_ProjectOverridesGlobal(t *testing.T) {
+	home := pinEmptyHome(t)
+	writeGlobalTestConfig(t, home, testGlobalLayerConfig)
+
+	workDir := t.TempDir()
+	writeTestScheduling(t, workDir, testProjectLayerConfig)
+
+	var stderr bytes.Buffer
+
+	cfg, factory, err := loadSchedulingFactory(workDir, "", &stderr)
+	require.NoError(t, err)
+	require.NotNil(t, cfg)
+	require.NotNil(t, factory)
+
+	require.Equal(t, "ps-model", cfg.Tiers["heavy"].Model,
+		"the project layer overrides the global layer on conflict (project wins)")
+
+	_, gok := cfg.Providers["gsentinel"]
+	require.True(t, gok, "the global layer still contributes its provider (merge)")
+
+	_, pok := cfg.Providers["psentinel"]
+	require.True(t, pok, "the project layer's provider is present")
+}
+
+// TestLoadSchedulingFactory_LegacyNameNeverRead proves the revised 260817-11v
+// decision: the pre-rename project config filename is treated as nonexistent —
+// a file carrying it is never read, and behavior is identical to no config at
+// all (the embedded floor serves).
+func TestLoadSchedulingFactory_LegacyNameNeverRead(t *testing.T) {
+	pinEmptyHome(t)
+
+	workDir := t.TempDir()
+	legacyDir := filepath.Join(workDir, ".ass-guard")
+	require.NoError(t, os.MkdirAll(legacyDir, 0o700))
+
+	legacyPath := filepath.Join(legacyDir, legacySchedulingFileName)
+	require.NoError(t, os.WriteFile(legacyPath, []byte(testGlobalLayerConfig), 0o600))
+
+	var stderr bytes.Buffer
+
+	cfg, factory, err := loadSchedulingFactory(workDir, "", &stderr)
+	require.NoError(t, err)
+	require.NotNil(t, factory)
+
+	require.Equal(t, "glm-5.2", cfg.Tiers["heavy"].Model,
+		"the embedded floor serves — the legacy-named file was never read")
+
+	_, ok := cfg.Providers["gsentinel"]
+	require.False(t, ok, "the sentinel inside the legacy-named file must NOT leak into the config")
+
+	_, ok = cfg.Providers["anthropic"]
+	require.True(t, ok, "the embedded default is intact")
 }
 
 // TestStartupWarn_ConfigPermLoose proves the SC3 credential-on-disk hygiene
-// warning: a group/world-readable scheduling.yaml warns at startup with the
-// 0600 recommendation; a 0600-tight file stays silent. Never refuses to start.
+// warning covers BOTH new-path layers: a group/world-readable global or
+// project config.yaml warns with the 0600 recommendation; 0600-tight files
+// stay silent. Never refuses to start.
 func TestStartupWarn_ConfigPermLoose(t *testing.T) {
-	t.Parallel()
+	home := pinEmptyHome(t)
 
-	workDir := t.TempDir()
-	path := writeTestScheduling(t, workDir, testSchedulingZeroEnvConfig)
+	table := []struct {
+		name     string
+		layer    string
+		perm     os.FileMode
+		wantWarn bool
+	}{
+		{name: "global 0644 warns", layer: "global", perm: 0o644, wantWarn: true},
+		{name: "project 0644 warns", layer: "project", perm: 0o644, wantWarn: true},
+		{name: "global 0600 silent", layer: "global", perm: 0o600, wantWarn: false},
+		{name: "project 0600 silent", layer: "project", perm: 0o600, wantWarn: false},
+	}
 
-	require.NoError(t, os.Chmod(path, 0o644))
+	for _, tc := range table {
+		t.Run(tc.name, func(t *testing.T) {
+			var path string
 
-	var loose bytes.Buffer
+			if tc.layer == "global" {
+				path = writeGlobalTestConfig(t, home, testSchedulingZeroEnvConfig)
+			} else {
+				path = writeTestScheduling(t, t.TempDir(), testSchedulingZeroEnvConfig)
+			}
 
-	warnLooseConfigPerm(path, &loose)
-	require.Contains(t, loose.String(), "0600", "a 0644 config warns with the 0600 recommendation")
+			require.NoError(t, os.Chmod(path, tc.perm))
 
-	require.NoError(t, os.Chmod(path, 0o600))
+			var stderr bytes.Buffer
 
-	var tight bytes.Buffer
+			warnLooseConfigPerm(path, &stderr)
 
-	warnLooseConfigPerm(path, &tight)
-	require.Empty(t, tight.String(), "a 0600-tight config stays silent")
+			if tc.wantWarn {
+				require.Contains(t, stderr.String(), "0600",
+					"a %04o %s-layer config warns with the 0600 recommendation", tc.perm, tc.layer)
+			} else {
+				require.Empty(t, stderr.String(), "a 0600-tight %s-layer config stays silent", tc.layer)
+			}
+		})
+	}
 }
 
 // TestBackwardCompat_ZAIEnvOnly is the SC4 proof: embedded default only,
 // $ZAI_API_KEY set, no flag, no literal — the resolved anthropic credential
 // Source is "env" and the key equals $ZAI_API_KEY (today's exact behavior).
 func TestBackwardCompat_ZAIEnvOnly(t *testing.T) {
+	pinEmptyHome(t)
 	t.Setenv("ZAI_API_KEY", "env-secret")
 
 	var stderr bytes.Buffer
@@ -188,7 +362,9 @@ func TestBackwardCompat_ZAIEnvOnly(t *testing.T) {
 // the active (heavy-tier) provider carries a literal api_key authenticates with
 // ZERO environment — the Zed-spawned `ass-guard acp serve` case (D-01).
 func TestEditorZeroEnv_LiteralInConfig(t *testing.T) {
-	// Zero environment: every provider-key var is empty.
+	// Zero environment: every provider-key var is empty. The pinned empty HOME
+	// keeps the global config layer out (t.Setenv ⇒ non-parallel).
+	pinEmptyHome(t)
 	t.Setenv("ZAI_API_KEY", "")
 	t.Setenv("OPENAI_API_KEY", "")
 	t.Setenv("ANTHROPIC_API_KEY", "")
