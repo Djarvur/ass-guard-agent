@@ -1,37 +1,19 @@
 ---
 phase: 09-serve-path-audit-zcode-parity-re-capture
-verified: 2026-08-15T23:09:17Z
-status: gaps_found
-score: 5/7 must-haves verified
+verified: 2026-08-16T07:26:11Z
+status: human_needed
+score: 6/7 must-haves verified
 behavior_unverified: 1 # truths present + wired but whose acceptance is a recorded operator disposition, not provable by grep/test
 overrides_applied: 0
-gaps:
-  - truth: "Phase gate: `mise ci` clean (test leg `go test -race -count=1 ./...` green at HEAD)"
-    status: failed
-    reason: >-
-      The AUD-05 re-pin (3a250b5: profile model GLM-5.2 -> GLM-5.3, thinking field dropped per
-      the zcode-0.16.3 drift classification) landed WITHOUT updating four tests that load the
-      repo profile bundle and pin the OLD expectations. Four deterministic failures at HEAD
-      (verified 2026-08-15T23Z, working tree clean at 25146f8): cmd/ass-guard
-      TestServeAudit_RequestShapedThroughRealSeam ("stored body lost non-secret content" --
-      asserts substring "GLM-5.2", body now carries GLM-5.3), internal/profile
-      TestLoader_ZcodeProfile ("Model = GLM-5.3, want GLM-5.2"), internal/shaper
-      TestShape_ZcodeProfile + TestFidelity_ToolCountAndThinking (thinking-budget assertions
-      + GLM-5.2). Root cause is one stale-expectation class, not a functional defect: every
-      audit-trail assertion in the e2e test around the failure (TurnID, Profile, Ref,
-      fingerprint, transcript canary, mirror, stdout-only-frames) passed.
-    artifacts:
-      - path: cmd/ass-guard/acp_serve_test.go
-        issue: "line ~1806 assertBodyStoreRoundTrip hardcodes \"GLM-5.2\"; re-pinned bundle is GLM-5.3"
-      - path: internal/profile/loader_test.go
-        issue: "line ~110 TestLoader_ZcodeProfile asserts p.Model == \"GLM-5.2\""
-      - path: internal/shaper/shaper_test.go
-        issue: "TestShape_ZcodeProfile asserts thinking-budget reproduction + GLM-5.2 against the repo bundle"
-      - path: internal/shaper/fidelity_test.go
-        issue: "TestFidelity_ToolCountAndThinking asserts thinking budget byte-faithful + GLM-5.2"
-    missing:
-      - "Re-pin the four model-slug/thinking expectations to the GLM-5.3 bundle (or make them read the bundle's model instead of a literal)"
-      - "Re-run `go test ./...` (then `mise ci`) after any profile re-pin -- the 09-04 legs reported green, but these suites were evidently not re-run post 3a250b5"
+re_verification:
+  previous_status: gaps_found
+  previous_score: 5/7
+  prior_report: verified 2026-08-15T23:09:17Z at HEAD 25146f8 (committed by cfababa)
+  trigger: cfababa ("test(profile): refresh re-pin-stale expectations...") claims to close the single prior gap and claims "Full mise ci green"
+  gaps_closed:
+    - "Phase gate: `mise ci` clean (test leg `go test -race -count=1 ./...` green at HEAD) — the four stale GLM-5.2/thinking expectations were refreshed by cfababa; all four previously-failing tests re-run PASS by this verifier; full race suite green on an unloaded machine (25/25 pkgs, exit 0); vet+build+lint legs also PASS"
+  gaps_remaining: []
+  regressions: [] # no verified truth regressed; two non-regression observations recorded in the report body: (a) Phase-6 TestZeroConfigFirstRun is load-sensitive (15s stdin-EOF deadline) — failed once under verifier-induced concurrent CPU load, passes isolated AND in the unloaded full run; (b) the pinned rollout file rotated off ~/.zcode/cli/rollout, so the stability test now SKIPs locally (designed degradation; machinery unchanged, cfababa's extract.go delta is comment-whitespace only)
 behavior_unverified_items:
   - truth: "AUD-05 parity clause: thresholds explicitly re-baselined"
     test: "Operator disposes the recorded re-baseline finding in profiles/zcode/drift-reports/2026-08-16-recapture.md"
@@ -43,17 +25,29 @@ behavior_unverified_items:
       (re-record curated expectations from current live zcode; ExtractTurnsFromRollout
       delta-record handling + per-turn workspace fixtures), OR reject and re-open the leg.
     why_human: "The plan itself closed as complete-with-finding pending this disposition; no grep or test can make an operator acceptance decision"
+human_verification:
+  - test: "Read profiles/zcode/drift-reports/2026-08-16-recapture.md §'Parity re-baseline' and decide: accept the fresh numbers as the new recorded reference + schedule the two follow-ups, or reject and re-open the leg"
+    expected: "Explicit operator acceptance or rejection of the re-baseline (curated FAIL 1/8 identically on OLD and NEW bundles -- control-proven stale v1.0-era expectations, profile-independent; from-rollout 1/13 with documented artifacts; Phase-1 baseline SUPERSEDED)"
+    why_human: "An acceptance decision on a control-experiment finding; no automated check can make it. Phase 12 SC-8 is adjacent but does not explicitly cover the curated-suite re-recording"
+  - test: "Run a real `ass-guard acp serve` against the live provider (needs ZAI_API_KEY); observe a redacted request_shaped line + an engine_decision line in .ass-guard/audit/<session>.jsonl"
+    expected: "Redacted lines present; no credential material anywhere in the artifact tree"
+    why_human: "The in-process e2e (TestServeAudit_RequestShapedThroughRealSeam) proves the machinery through the REAL factory — and now PASSES at HEAD — but 09-06-SUMMARY records the operator witness as pending and no witness record exists in STATE.md"
+  - test: "Confirm the operator-directed app-server stdio driver capture (drift report §'Capture method') stands in place of the runbook's interactive procedure, or formalize via override"
+    expected: "Acceptance as-is (drift report + STATE.md already record the operator direction) or a formal overrides: entry"
+    why_human: "Documented deviation from the runbook's literal procedure; substance preserved (scripted, divergence-prone, thresholds applied, not richest-session selection)"
+  - test: "(informational) User-story format: goal reads 'As an operator' / 'I want every ... session to leave' — user-story.validate regex wants literal 'As a ' / ', I want '"
+    expected: "Operator reformats via /gsd mvp-phase 9 or accepts as-is (role/capability/outcome all present substantively)"
+    why_human: "Format discrepancy only; verification proceeded against the obvious slots"
 ---
 
 # Phase 9: Serve-Path Audit + zcode Parity Re-capture Verification Report
 
 **Phase Goal:** As an operator of a hands-off agent, I want every `acp serve` session to leave a redacted, bounded audit trail that also records the engine's decisions, and the zcode parity stability test re-grounded on a newly pinned capture session, so that I can answer "what did the agent do, and why did it continue" from the log alone and trust that the mimicry hasn't drifted.
-**Verified:** 2026-08-15T23:09:17Z
-**Status:** gaps_found
-**Re-verification:** No — initial verification
-**Method:** Goal-backward against the codebase (not SUMMARY claims). Static wiring traces (grep/call-site) + targeted `go test` runs in fresh processes. NOT run per instructions: live parity A/B (needs ZAI_API_KEY; fresh numbers already recorded in the drift report), full race suite, `golangci-lint`. One full-package `go test ./cmd/ass-guard/` run performed to size the CI-red gap.
+**Verified:** 2026-08-16T07:26:11Z (re-verification at HEAD cfababa, clean tree)
+**Status:** human_needed
+**Re-verification:** Yes — after gap closure. Prior report: 2026-08-15T23:09:17Z @ 25146f8, gaps_found 5/7. This run re-verified the single failed truth (the phase gate / four stale-expectation tests) with real test runs, spot-re-confirmed the stability leg, and regression-checked the audit-chain wiring. Diff scope `25146f8..HEAD` is exactly one commit (cfababa): the four claimed test files + `internal/profile/extract.go` (comment-whitespace-only nolint alignment — zero functional delta; the commit message's "four tests" claim is accurate in substance) + two planning docs.
 
-**Verdict: GOAL largely achieved in substance; one narrow, mechanically fixable gap (red CI from stale post-re-pin test expectations) blocks the phase gate, and one recorded finding (parity re-baseline) awaits operator disposition.**
+**Verdict: the prior gap is CLOSED — all automated truths now verified at HEAD. What remains is exactly what cannot be closed by code or tests: the operator disposition of the parity re-baseline, the live-serve witness, and two acceptance/format notes. One new environmental observation (pinned rollout file rotated off disk) is recorded for the operator — it invalidates nothing verified, but Phase 12's ACP-07 depends on that pin.**
 
 ## User Flow Coverage (MVP mode)
 
@@ -61,11 +55,11 @@ User story: «As an operator of a hands-off agent, I want every `acp serve` sess
 
 | Step | Expected | Evidence | Status |
 |------|----------|----------|--------|
-| Serve a session | A turn on `acp serve` leaves per-session artifacts: transcript + audit mirror under `.ass-guard/audit/` (default ON) | `cmd/ass-guard/acp_serve.go:222-249` (startAuditMirror), `:330-331` (bodyStore + mirror startup); e2e test `TestServeAudit_RequestShapedThroughRealSeam` drives the REAL `runACPServe` over pipes through the REAL factory — mirror-presence + headerNames + canary assertions all passed | ✓ |
-| Ask "what did it do" | The transcript carries per-event lines with the correlation triple (session/turn/request) incl. `request_shaped` | `internal/session/transcript.go:63-77` (metadata-only request_shaped: Ref + fingerprint), `internal/session/manager.go:145` (AppendRequestShaped); e2e assertions TurnID/Profile/Ref/Model/Bytes passed | ✓ |
-| Ask "why did it continue" | One `engine_decision` line answers it: action + signal + matched span + config source | `internal/event/events.go:123-138` (EngineDecision{Action,Signal,MatchedSpan,ConfigSource,Reason}), `internal/engine/decide.go:41-48`, `internal/engine/observe.go:319` → `internal/session/manager.go:248`; `internal/engine/integration_test.go:96-102` asserts 2 REAL engine_decision transcript lines | ✓ |
-| Debug a body on demand | Full redacted body retrievable by hash from a capped store | `internal/audit/bodystore.go` (sha256 content-addressed, redact-inside-Put, 64 MiB cap, oldest-mtime eviction, dedup); `TestBodyStore_PutRetrieveRedacted/Dedup/CapEvictionOldest/UnwritableNeverFatal` PASS | ✓ |
-| Trust the mimicry | Stability test green on the newly pinned divergence-prone session; drift reported before the profile moved | `TestStability_WithinSessionExtractionSource` **PASS (0.04s, run by verifier)** consuming `sess_3cee56ae` from `profiles/zcode/coverage.yaml`; commit order 5a2c7f5 (drift) → d3fcfa1 → 3a250b5 (re-pin); parity numbers recorded but FAIL 1/8 (stale expectations, control-proven) — disposition pending | ◐ |
+| Serve a session | A turn on `acp serve` leaves per-session artifacts: transcript + audit mirror under `.ass-guard/audit/` (default ON) | `cmd/ass-guard/acp_serve.go:222-249` (startAuditMirror), `:330-331`; e2e `TestServeAudit_RequestShapedThroughRealSeam` drives the REAL `runACPServe` over pipes through the REAL factory — **PASS re-run by this verifier at cfababa (0.12s)**; prior run's stale GLM-5.2 substring fixed → whole test now green incl. body-store roundtrip | ✓ |
+| Ask "what did it do" | Per-event transcript lines with the correlation triple (session/turn/request) incl. `request_shaped` | `internal/session/transcript.go:63-77`, `manager.go:145`; e2e assertions TurnID/Profile/Ref/Model/Bytes pass (part of the green e2e above) | ✓ |
+| Ask "why did it continue" | One `engine_decision` line: action + signal + matched span + config source | `internal/event/events.go:123-138`, `engine/decide.go:41-48`, `engine/observe.go:319` → `manager.go:248`; engine + session packages green in the full race run | ✓ |
+| Debug a body on demand | Full redacted body retrievable by hash from a capped store | `internal/audit/bodystore.go`; `ok internal/audit 4.436s` in the full race run; e2e body-store roundtrip assertion green | ✓ |
+| Trust the mimicry | Stability test green on the pinned divergence-prone session; drift reported before the profile moved | Machinery intact and previously behaviorally PROVEN (verifier-run PASS at 25146f8; cfababa touched only comment whitespace on this path). NOTE: a fresh run now SKIPs by design — the pinned rollout file rotated off `~/.zcode/cli/rollout` (dir now holds only Aug-16-02:21+ sessions); test source documents this exact degradation path ("skips cleanly while the pinned capture is absent; runbook is the re-grounding procedure"). Parity numbers recorded; disposition pending operator | ◐ |
 
 ## Goal Achievement
 
@@ -73,58 +67,64 @@ User story: «As an operator of a hands-off agent, I want every `acp serve` sess
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | AUD-01: single-sourced factory-seam capturer, both protocol shapes; tracer refactored onto the seam; no divergent copies (`tracerProvider` banned) | ✓ VERIFIED | `internal/scheduler/factory.go:142` `BuildWithCapturer` — anthropic attaches `WithAnthropicRequestCapture` (per Stream), openai `WithOpenAIRequestCapture` (per Send); `Build` delegates with nil (`:125`); `grep -rn tracerProvider --include="*.go"` → ZERO matches (deleted everywhere incl. tests); tracer path `cmd/ass-guard/main.go:133` and serve path `cmd/ass-guard/acp_serve.go:348` BOTH construct through the seam |
-| 2 | AUD-02: every serve-path session writes a redacted audit trail — correlation IDs (session/turn/request) incl. `RequestShaped` + optional `--audit-log` mirror (0600, append-only JSONL, rejects stdout) | ✓ VERIFIED | request_shaped line carries session-from-filename + TurnID + request=Ref (`internal/session/transcript.go:63`); `audit.OpenFileSink` (`internal/audit/audit.go:46-61`): 0600, O_APPEND, literal `stdout`/`/dev/stdout` targets REJECTED; `NewAuditLogger`/`NewMirrorFile` panic on os.Stdout; `--audit-log` read on serve (`acp_serve.go:209`), default = per-session mirror under `.ass-guard/audit` DEFAULT ON; `TestOpenFileSink`, `TestMirror_StdoutRejection`, `TestMirror_PerSessionRouting`, `TestServeMirror_Override` all PASS; e2e-through-real-seam audit assertions passed (see Gap 1 for the one stale-substring failure in that test) |
-| 3 | AUD-03: audit volume bounded via body_ref (hash in event, full body in capped store); write failures loud, never fatal | ✓ VERIFIED | `internal/audit/bodystore.go`: `bodyRef` = sha256 of REDACTED bytes, one helper for line ref AND store key (cannot diverge); 64 MiB default cap, oldest-mtime eviction, content dedup; `Mirror.fail` counts + logs once per distinct error, never blocks (`mirror.go:211-223`); `TestBodyStore_*` (incl. `UnwritableNeverFatal`) + `TestMirror_DropWithCounter` PASS |
-| 4 | AUD-04: audit records engine decisions (continue/hook/ask/wait + matched signal) — "why did it continue" answerable from the log alone | ✓ VERIFIED | Full provenance chain: `engine.MatchDetail{ID,Action,Span,ConfigSource}` (`internal/engine/types.go:45`) → `Decide` threads MatchedSpan+ConfigSource into `Decision` (`decide.go:45-46`) → `EngineDecision` event (`events.go:123`) → `Manager.AppendEngineDecision` transcript line (`manager.go:248`) + mirror formats the same fields; `internal/engine/integration_test.go:96-102` proves 2 REAL engine_decision lines in a real transcript; engine + session packages PASS |
-| 5 | AUD-05 (machinery legs): stability test green on the newly pinned divergence-prone session; pinned session ID consumed by the test; zcode + extractor versions recorded; drift report committed before any profile update | ✓ VERIFIED | `TestStability_WithinSessionExtractionSource` **PASS — run by this verifier** (0.04s) on `sess_3cee56ae-cc6a-43a6-8f00-a08eb266e1aa` read from `profiles/zcode/coverage.yaml` (`zcode_version: 0.16.3`, `extractor_version: extract-profile/01-02`); the double-prefix filename fix (`stability_test.go:64-68`) proves genuine pinned-file consumption; git order verified: 5a2c7f5 (drift report) → d3fcfa1 (extractor) → 3a250b5 (profile re-pin); `TestStability_CanaryDetectsDivergence` PASS (non-vacuity); runbook `docs/recapture-runbook.md` in-repo; threshold scorecard all-PASS in the drift report (13 records, 81 tools, 1 subagent, catalog 79→80→79 with attach AND detach) |
-| 6 | AUD-05 (parity clause): thresholds explicitly re-baselined | ⚠ PRESENT_BEHAVIOR_UNVERIFIED | Fresh numbers recorded in `profiles/zcode/drift-reports/2026-08-16-recapture.md` §"Parity re-baseline": curated FAIL 1/8 IDENTICALLY on old AND new bundles (control run proves profile-independent stale v1.0-era expectations), from-rollout 1/13 with documented harness artifacts (6 empty-expected delta-records, 4 workspace-pollution, 1 by-design-absent runtime MCP tool); Phase-1 baseline marked SUPERSEDED; no silent threshold movement. The plan closed `complete-with-finding` — the acceptance of this re-baseline is an OPERATOR DECISION (see Human Verification) |
-| 7 | Phase gate: `mise ci` clean | ✗ FAILED | `.mise.toml` ci = vet+lint+build+`go test -race -count=1 ./...`; 4 deterministic test failures at HEAD 25146f8 (clean tree), all one root cause: stale GLM-5.2/thinking expectations vs the re-pinned GLM-5.3 bundle. See Gaps Summary |
+| 1 | AUD-01: single-sourced factory-seam capturer, both protocol shapes; tracer refactored onto the seam; no divergent copies (`tracerProvider` banned) | ✓ VERIFIED (regression-checked) | `grep -rn tracerProvider --include="*.go"` → 0 matches at cfababa; `BuildWithCapturer` still the single seam — `main.go:133` and `acp_serve.go:348` both construct through it, `Build` delegates with nil (`factory.go:125`); untouched by cfababa |
+| 2 | AUD-02: every serve-path session writes a redacted audit trail — correlation IDs incl. `RequestShaped` + optional `--audit-log` mirror (0600, append-only JSONL, rejects stdout) | ✓ VERIFIED (regression-checked) | `OpenFileSink` stdout-rejection intact (`audit.go:32,46`); transcript correlation triple unchanged; `ok internal/audit` + `ok internal/session` in the full race run; the previously-red e2e now fully GREEN |
+| 3 | AUD-03: audit volume bounded via body_ref (hash in event, full body in capped store); write failures loud, never fatal | ✓ VERIFIED (regression-checked) | `bodystore.go` unchanged since prior verification (sha256 of redacted bytes, 64 MiB cap, oldest-eviction, dedup); `ok internal/audit 4.436s` |
+| 4 | AUD-04: audit records engine decisions (continue/hook/ask/wait + matched signal) — "why did it continue" answerable from the log alone | ✓ VERIFIED (regression-checked) | MatchDetail → Decision → EngineDecision event → `Manager.AppendEngineDecision` (`manager.go:248`) all present at cfababa; `ok internal/engine 16.249s` in the full race run |
+| 5 | AUD-05 (machinery legs): stability test green on the newly pinned divergence-prone session; pinned session ID consumed; zcode + extractor versions recorded; drift report committed before any profile update | ✓ VERIFIED | Machinery + ordering verified at 25146f8 (verifier-run PASS 0.04s on `sess_3cee56ae` from `coverage.yaml`; commit order 5a2c7f5 drift → d3fcfa1 extractor → 3a250b5 re-pin; canary PASS = non-vacuity). cfababa's only change on this path is comment whitespace in `extract.go`. CAVEAT (environment, not code): the pinned rollout file has since rotated off `~/.zcode/cli/rollout/`, so a fresh run now SKIPs with the designed message ("pinned session ... absent — re-ground per docs/recapture-runbook.md"); the PASS was real when the capture existed and nothing that produced it changed. See Info note below re Phase-12 ACP-07 |
+| 6 | AUD-05 (parity clause): thresholds explicitly re-baselined | ⚠ PRESENT_BEHAVIOR_UNVERIFIED | Fresh numbers recorded in `profiles/zcode/drift-reports/2026-08-16-recapture.md` §"Parity re-baseline" (curated FAIL 1/8 IDENTICALLY on old AND new bundles — control run proves profile-independent stale v1.0-era expectations; from-rollout 1/13 with documented artifacts: 6 empty-expected delta-records, 4 workspace-pollution, 1 by-design-absent runtime MCP tool; Phase-1 baseline SUPERSEDED; follow-up items listed §55-57). The plan closed `complete-with-finding` — acceptance is an OPERATOR DECISION (Human Verification item 1) |
+| 7 | Phase gate: `mise ci` clean (test leg `go test -race -count=1 ./...` green at HEAD) | ✓ VERIFIED | All four legs re-run by this verifier at cfababa: `go vet ./...` exit 0; `CGO_ENABLED=0 go build ./...` exit 0; `golangci-lint run` 0 issues; `go test -race -count=1 ./...` **exit 0, 25/25 packages ok** (unloaded run). First full-suite attempt showed one failure — `TestZeroConfigFirstRun` (Phase-6 test, zeroconfig_test.go:32 "did not exit within 15s after stdin EOF", 18.34s elapsed) — caused by this verifier's own concurrent golangci-lint run starving the timing deadline; it passes isolated under `-race` (3.95s) and in the unloaded full run. Not a Phase-9 artifact; recorded as a load-sensitivity note |
 
-**Score:** 5/7 truths verified (1 present/behavior-unverified, 1 failed)
+**Score:** 6/7 truths verified (1 present/behavior-unverified — the operator-disposition item)
+
+### Gap Closure (re-verification focus)
+
+The prior report's only failed truth was the phase gate: commit 3a250b5 (GLM-5.3 / no-thinking re-pin) landed with four tests still pinning GLM-5.2 / thinking-budget 32000 expectations. Commit cfababa claims to fix exactly this. Verified:
+
+1. **Commit scope** (`git show cfababa --stat`): the four claimed test files changed — `cmd/ass-guard/acp_serve_test.go` (GLM-5.2→GLM-5.3 substring), `internal/profile/loader_test.go` (model expectation), `internal/shaper/shaper_test.go` + `internal/shaper/fidelity_test.go` (model + thinking assertions inverted: "must emit budget 32000" → "must NOT emit thinking"). It also touched `internal/profile/extract.go` — **comment-whitespace only** (nolint directive alignment), zero functional delta, unmentioned in the commit message but harmless.
+2. **Not test-weakening:** the inverted thinking assertions match the actual pinned bundle — `profiles/zcode/profile.yaml` is `model: GLM-5.3` and carries NO thinking key (grep: 0 matches); "thinking" appears only in coverage/drift docs and prompt prose (system/block-2.txt). The `len(opts) != 12` identity-header assertions were retained in both shaper tests.
+3. **Re-run of the four previously-failing tests** (`-count=1`): all PASS — see Behavioral Spot-Checks.
 
 ### Required Artifacts
 
+All previously verified; cfababa touched none of them functionally. Regression checks: tracerProvider 0 matches, seam call-sites intact (main.go:133, acp_serve.go:348, factory.go:125), EngineDecision chain intact (events.go:117, manager.go:248), stdout-rejection guard intact (audit.go:32), bodystore/mirror/transcript unchanged by the diff scope.
+
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `internal/scheduler/factory.go` | BuildWithCapturer seam, both shapes | ✓ VERIFIED | Single seam; Build delegates with nil; both capture options attached per shape |
-| `internal/audit/audit.go` | shared sink opener, stdout-reject | ✓ VERIFIED | OpenFileSink: 0600/append-only; `stdout`+`/dev/stdout` rejected; NewAuditLogger panics on os.Stdout |
-| `internal/audit/bodystore.go` | capped redacted body store | ✓ VERIFIED | sha256-keyed, redact-inside-Put, 64 MiB cap, oldest-eviction, dedup; 5 tests PASS |
-| `internal/audit/mirror.go` | per-session JSONL mirror | ✓ VERIFIED | Default-ON dir mode + `--audit-log` single-file mode; drop-with-counter failures; redaction chokepoint |
-| `internal/event/events.go` | RequestShaped + EngineDecision events | ✓ VERIFIED | HeaderNames (names only — Pitfall 9); EngineDecision full provenance fields |
-| `internal/engine/{types,decide,observe}.go` | MatchDetail → Decision → writer | ✓ VERIFIED | Span + ConfigSource threaded end-to-end; wired to Manager.AppendEngineDecision |
-| `internal/session/{transcript,manager,transcript_writer}.go` | metadata-only request_shaped + engine_decision lines; body_ref | ✓ VERIFIED | Correlation triple + fingerprint + Ref; SummarizeRequest → Put on the writer path |
-| `cmd/ass-guard/{main,acp_serve}.go` | serve + tracer wiring through the seam; --audit-log | ✓ VERIFIED | runTrace + makeProvider both via BuildWithCapturer; startAuditMirror default ON |
-| `internal/profile/stability_test.go` | consumes the pinned session, never PickRichestMain | ✓ VERIFIED | Reads coverage.yaml pin; skips clean when absent; double-prefix bug fixed; PASS on current pin |
-| `docs/recapture-runbook.md` | operator procedure (Pitfalls 17/18 verbatim) | ✓ VERIFIED | 5.4 KB; workload, thresholds, pinning procedure, drift-before-update ordering |
-| `profiles/zcode/coverage.yaml` | pinned session + versions | ✓ VERIFIED | sess_3cee56ae, zcode_version 0.16.3, extractor extract-profile/01-02 |
-| `profiles/zcode/drift-reports/2026-08-16-recapture.md` | drift report + parity re-baseline record | ✓ VERIFIED | 6.6 KB; threshold table, drift classification, parity fresh numbers, follow-ups; committed BEFORE the profile update |
+| `internal/scheduler/factory.go` | BuildWithCapturer seam, both shapes | ✓ VERIFIED | unchanged since prior report |
+| `internal/audit/{audit,bodystore,mirror}.go` | sink/bounded-store/mirror | ✓ VERIFIED | unchanged; `ok internal/audit` in race run |
+| `internal/event/events.go` | RequestShaped + EngineDecision | ✓ VERIFIED | unchanged |
+| `internal/engine/{types,decide,observe}.go` | MatchDetail → Decision → writer | ✓ VERIFIED | unchanged; `ok internal/engine` |
+| `internal/session/{transcript,manager,transcript_writer}.go` | correlation triple + body_ref | ✓ VERIFIED | unchanged; `ok internal/session` |
+| `cmd/ass-guard/{main,acp_serve}.go` | seam wiring; --audit-log | ✓ VERIFIED | unchanged |
+| `internal/profile/stability_test.go` | consumes the pinned session | ✓ VERIFIED | unchanged; SKIPs by design now that the rollout file rotated (see Info) |
+| `docs/recapture-runbook.md` | operator procedure | ✓ VERIFIED | unchanged |
+| `profiles/zcode/coverage.yaml` | pinned session + versions | ✓ VERIFIED | unchanged (sess_3cee56ae, zcode 0.16.3) |
+| `profiles/zcode/drift-reports/2026-08-16-recapture.md` | drift + parity re-baseline record | ✓ VERIFIED | unchanged; disposition pending |
 
 ### Key Link Verification
 
-| From | To | Via | Status | Details |
-|------|----|----|--------|---------|
-| `cmd/ass-guard/acp_serve.go` makeProvider | `internal/scheduler.BuildWithCapturer` | closure at acp_serve.go:348 | ✓ WIRED | serve path constructs through the seam |
-| `cmd/ass-guard/main.go` runTrace | `internal/scheduler.BuildWithCapturer` | main.go:133 | ✓ WIRED | tracer path on the same seam (divergent copy gone) |
-| `internal/session/transcript_writer.go` | `audit.SummarizeRequest` + `BodyStore.Put` | writer path (transcript_writer.go:41-47) | ✓ WIRED | request_shaped metadata + best-effort store (failure degrades loudly) |
-| `cmd/ass-guard/acp_serve.go` startAuditMirror | `audit.NewMirror` / `OpenFileSink` | acp_serve.go:222-249 | ✓ WIRED | default per-session dir; `--audit-log` override; close on ctx done |
-| `internal/engine/observe.go` | `Manager.AppendEngineDecision` | observe.go:319 | ✓ WIRED | engine verdict → transcript engine_decision line (integration test asserts real lines) |
-| `internal/profile/stability_test.go` | `profiles/zcode/coverage.yaml` pin → rollout file | stability_test.go:48-77 | ✓ WIRED | pinned ID consumed; PASS proves the file was read and extracted |
+Regression-checked via grep at cfababa (all intact; none touched by the diff scope):
 
-### Behavioral Spot-Checks
+| From | To | Via | Status |
+|------|----|----|--------|
+| `cmd/ass-guard/acp_serve.go` makeProvider | `scheduler.BuildWithCapturer` | acp_serve.go:348 | ✓ WIRED |
+| `cmd/ass-guard/main.go` runTrace | `scheduler.BuildWithCapturer` | main.go:133 | ✓ WIRED |
+| `internal/engine/observe.go` | `Manager.AppendEngineDecision` | observe.go:319 → manager.go:248 | ✓ WIRED |
+| `internal/profile/stability_test.go` | coverage.yaml pin → rollout file | stability_test.go:48-77 | ✓ WIRED (SKIPs cleanly while the pinned file is absent — designed) |
+
+### Behavioral Spot-Checks (this re-verification)
 
 | Behavior | Command | Result | Status |
-|----------|---------|--------|--------|
-| Within-session stability on the new pin | `go test ./internal/profile/ -run TestStability_WithinSessionExtractionSource -v` | `--- PASS (0.04s)` | ✓ PASS |
-| Divergence canary (non-vacuity) | `go test ./internal/profile/ -run TestStability_CanaryDetectsDivergence -v` | `--- PASS` | ✓ PASS |
-| Audit package (sink/mirror/bodystore) | `go test ./internal/audit/` | `ok ... 0.798s` | ✓ PASS |
-| Serve audit e2e through the REAL seam | `go test ./cmd/ass-guard/ -run TestServeAudit_RequestShapedThroughRealSeam -v` | `--- FAIL` at acp_serve_test.go:1613 | ✗ FAIL (stale "GLM-5.2" substring; ALL other audit assertions in the same test passed — TurnID/Profile/Ref/fingerprint/transcript-canary/mirror/stdout-frames) |
-| Mirror override | `go test ./cmd/ass-guard/ -run TestServeMirror_Override -v` | `--- PASS` | ✓ PASS |
-| Engine + session + openspec packages | `go test ./internal/session/ ./internal/engine/ ./internal/openspec/` | all `ok` | ✓ PASS |
-| Profile loader against repo bundle | `go test ./internal/profile/` | `FAIL: TestLoader_ZcodeProfile ("Model = GLM-5.3, want GLM-5.2")` | ✗ FAIL |
-| Shaper against repo bundle | `go test ./internal/shaper/` | `FAIL: TestShape_ZcodeProfile, TestFidelity_ToolCountAndThinking` | ✗ FAIL |
-| Full cmd package (one run) | `go test ./cmd/ass-guard/` | single failure: TestServeAudit_RequestShapedThroughRealSeam | ✗ FAIL |
-| Secret canary grep over committed artifacts | `grep -rn "sk-…|Bearer …" profiles/ docs/ phase dir` | zero matches | ✓ PASS |
+|--------|---------|--------|--------|
+| Previously-failing e2e (serve audit through REAL seam) | `go test ./cmd/ass-guard/ -run '^TestServeAudit_RequestShapedThroughRealSeam$' -count=1 -v` | `--- PASS (0.12s)` | ✓ PASS |
+| Previously-failing loader test | `go test ./internal/profile/ -run '^TestLoader_ZcodeProfile$' -count=1 -v` | `--- PASS (0.00s)` | ✓ PASS |
+| Previously-failing shaper tests | `go test ./internal/shaper/ -run '^TestShape_ZcodeProfile$\|^TestFidelity_ToolCountAndThinking$' -count=1 -v` | both `--- PASS (0.01s)` | ✓ PASS |
+| Stability test on the pinned session | `go test ./internal/profile/ -run '^TestStability_WithinSessionExtractionSource$' -count=1 -v` | `--- SKIP (0.00s)`: "pinned session sess_3cee56ae... absent — re-ground per docs/recapture-runbook.md" | ◐ SKIP-by-design (rollout file rotated off disk; PASS was verifier-proven at 25146f8; code path unchanged) |
+| Full race suite (gate test leg), unloaded | `go test -race -count=1 ./...` | exit 0, 25/25 `ok` (profile 114.6s, openspec 85.8s heaviest) | ✓ PASS |
+| Full race suite, verifier-loaded machine (first attempt) | same | 1 FAIL: `TestZeroConfigFirstRun` (Phase-6; "did not exit within 15s after stdin EOF" at 18.34s) while golangci-lint ran concurrently | ◐ load flake (see below) |
+| TestZeroConfigFirstRun isolated | `go test ./cmd/ass-guard/ -run '^TestZeroConfigFirstRun$' -race -count=1 -v` | `--- PASS (3.95s)` | ✓ PASS |
+| vet / build / lint legs | `go vet ./...` · `CGO_ENABLED=0 go build ./...` · `golangci-lint run` | exit 0 · exit 0 · 0 issues | ✓ PASS |
 
 ### Probe Execution
 
@@ -133,59 +133,50 @@ No `scripts/*/tests/probe-*.sh` probes declared by this phase's plans; not a mig
 ### Requirements Coverage
 
 | Requirement | Source Plan | Description | Status | Evidence |
-|-------------|------------|---------------------|----------|
-| AUD-01 | 09-01 | single-sourced factory-seam capturer both shapes | ✓ SATISFIED | factory.go:142; tracerProvider zero matches; both paths on the seam |
-| AUD-02 | 09-01, 09-05, 09-06 | redacted serve-path audit trail + `--audit-log` mirror | ✓ SATISFIED | transcript/mirror/bodystore wiring + passing unit tests + e2e audit assertions (one stale-substring failure cross-listed under the CI gap) |
-| AUD-03 | 09-05 | body_ref bounding + loud-never-fatal | ✓ SATISFIED | bodystore.go + TestBodyStore_UnwritableNeverFatal + Mirror.drop-with-counter |
-| AUD-04 | 09-02 | engine decisions with matched signal in the log | ✓ SATISFIED | MatchDetail→Decision→event→transcript chain; engine integration test asserts real lines |
-| AUD-05 | 09-03, 09-04 | stability green on newly pinned runbook-produced session, pin consumed, versions recorded, thresholds re-baselined, drift-before-update | ◐ PARTIAL | machinery/capture/pin/stability/ordering VERIFIED (verifier-run test PASS); parity re-baseline recorded-with-finding pending operator disposition; capture produced via operator-directed app-server stdio driver (documented deviation from the runbook's interactive procedure — substance preserved: scripted, divergence-prone, threshold scorecard applied, NOT richest-session selection) |
+|-------------|------------|---------------------|----------|----------|
+| AUD-01 | 09-01 | single-sourced factory-seam capturer both shapes | ✓ SATISFIED | regression-checked at cfababa (truth 1) |
+| AUD-02 | 09-01, 09-05, 09-06 | redacted serve-path audit trail + `--audit-log` mirror | ✓ SATISFIED | regression-checked; e2e now fully green |
+| AUD-03 | 09-05 | body_ref bounding + loud-never-fatal | ✓ SATISFIED | unchanged; audit pkg green in race run |
+| AUD-04 | 09-02 | engine decisions with matched signal in the log | ✓ SATISFIED | unchanged; engine pkg green in race run |
+| AUD-05 | 09-03, 09-04 | stability green on newly pinned runbook-produced session, pin consumed, versions recorded, thresholds re-baselined, drift-before-update | ◐ PARTIAL | machinery/capture/pin/stability/ordering VERIFIED (behaviorally proven at prior HEAD; code unchanged since; fresh runs now SKIP because the rollout file rotated — designed degradation); parity re-baseline recorded-with-finding pending operator disposition; capture via operator-directed app-server stdio driver (documented deviation, acceptance item 3) |
 
 No orphaned requirements: REQUIREMENTS.md maps exactly AUD-01..05 to Phase 9, all claimed by plans.
 
 ### Anti-Patterns Found
 
-| File | Line | Pattern | Severity | Impact |
-|------|------|---------|----------|--------|
-| cmd/ass-guard/acp_serve_test.go | ~1806 | stale pinned expectation "GLM-5.2" vs re-pinned GLM-5.3 bundle | 🛑 Blocker (breaks `mise ci` test leg) | e2e audit proof red at HEAD |
-| internal/profile/loader_test.go | ~110 | stale pinned expectation "GLM-5.2" | 🛑 Blocker (same class) | loader test red at HEAD |
-| internal/shaper/shaper_test.go | 139,147 | stale thinking-budget + GLM-5.2 expectations | 🛑 Blocker (same class) | shaper tests red at HEAD |
-| internal/shaper/fidelity_test.go | 100,107 | stale thinking-budget + model expectations | 🛑 Blocker (same class) | fidelity test red at HEAD |
+The prior report's four blocker rows (stale GLM-5.2/thinking expectations) are RESOLVED by cfababa — verified against the actual bundle (GLM-5.3, no thinking key in profile.yaml) and by passing tests. No TBD/FIXME/XXX markers in any file cfababa touched (grep: 0 matches).
 
-No TBD/FIXME/XXX/TODO/HACK/PLACEHOLDER debt markers in any phase-modified file scanned (internal/audit/*, internal/session/{transcript,manager,transcript_writer}.go, internal/scheduler/factory.go, internal/engine/{types,decide,observe}.go, internal/event/events.go, internal/profile/stability_test.go, cmd/ass-guard/{main,acp_serve}.go, docs/recapture-runbook.md).
+| Item | Pattern | Severity | Impact / Disposition |
+|------|---------|----------|---------------------|
+| Pinned rollout source rotated off `~/.zcode/cli/rollout/` | stability test input no longer on disk; test SKIPs (designed) | ℹ️ Info (operator action recommended) | Derivable artifacts ARE committed (profile bundle, coverage.yaml, drift report); only the raw 56-MB-class source is gone. RECOMMEND archiving the rollout file (or a distilled fixture) into durable storage before Phase 12 — ACP-07 "re-pinned against the newly pinned Phase-9 capture session (depends on AUD-05's pin)" needs that session; otherwise re-ground via docs/recapture-runbook.md |
+| `TestZeroConfigFirstRun` (Phase-6) exceeded its 15s stdin-EOF deadline under concurrent CPU load | load-sensitive timing test | ℹ️ Info | Not a Phase-9 artifact (added 591fa7a, plan 06-01); passes isolated (3.95s) and in the unloaded full suite. `mise ci` runs legs sequentially so the claim "Full mise ci green" reproduces; worth knowing for parallel-CI futures |
 
 ### Human Verification Required
 
 **1. Parity re-baseline disposition (AUD-05 clause — the plan's own recorded finding)**
 **Test:** Read `profiles/zcode/drift-reports/2026-08-16-recapture.md` §"Parity re-baseline" and decide.
 **Expected:** Explicit operator acceptance (fresh numbers = new recorded reference; schedule follow-ups: re-record curated expectations from current live zcode; `ExtractTurnsFromRollout` delta-record handling + per-turn workspace fixtures) or rejection with a re-opened leg.
-**Why human:** An acceptance decision on a control-experiment finding; no automated check can make it. Note: Phase 12 SC-8 (behavioral-eval regression net, re-run gate on profile/model changes) is adjacent but does NOT explicitly cover the zcode-parity curated-suite re-recording — conservatively NOT deferred.
+**Why human:** An acceptance decision on a control-experiment finding; no automated check can make it. Phase 12 SC-8 (behavioral-eval regression net) is adjacent but does not explicitly cover the curated-suite re-recording.
 
 **2. Live-serve redacted-audit witness (phase-gate leg)**
 **Test:** Run a real `ass-guard acp serve` against the live provider; observe a redacted `request_shaped` line + an `engine_decision` line in `.ass-guard/audit/<session>.jsonl`.
 **Expected:** Redacted lines present; no credential material anywhere in the artifact tree.
-**Why human:** The in-process e2e (`TestServeAudit_RequestShapedThroughRealSeam`) proves the machinery through the REAL factory against an httptest SSE stub — all its audit assertions passed — but 09-06-SUMMARY records the operator witness as "pending morning" and no witness record was found in STATE.md. Requires ZAI_API_KEY; excluded from this verification per instructions.
+**Why human:** The in-process e2e proves the machinery through the REAL factory and now PASSES at HEAD — but 09-06-SUMMARY still records the operator witness as "pending morning" and no witness record was found in STATE.md. Requires ZAI_API_KEY.
 
 **3. Capture-method deviation acceptance (optional, to make the record airtight)**
-**Test:** Confirm the operator-directed app-server stdio driver capture (documented in the drift report §"Capture method") stands in place of the runbook's interactive procedure.
-**Expected:** Either accept as-is (drift report + STATE.md already record the operator direction) or add a formal override. Suggested override if formalized:
+**Test:** Confirm the operator-directed app-server stdio driver capture (drift report §"Capture method") stands in place of the runbook's interactive procedure.
+**Expected:** Accept as-is (drift report + STATE.md already record the operator direction) or add a formal `overrides:` entry (suggested text in the prior report, carried forward unchanged).
 
-```yaml
-overrides:
-  - must_have: "capture session produced via the operator runbook"
-    reason: "Operator directed the app-server stdio driver on 2026-08-16 (premise 'no CLI/API path' disproven); workload stayed scripted + divergence-prone, runbook §3 thresholds applied, not richest-session selection"
-    accepted_by: "operator"
-    accepted_at: "2026-08-16T00:00:00Z"
-```
-
-**4. User-story format discrepancy (informational).** `gsd-tools query user-story.validate` returns `valid: false` for the ROADMAP goal — the canonical regex requires literal "As a " / ", I want to " but the goal reads "As **an** operator" and "I want **every … session to** leave". Substantively a user story (role/capability/outcome all present); verification proceeded against the obvious slots. Operator may reformat via `/gsd mvp-phase 9` or accept as-is.
+**4. User-story format discrepancy (informational).** `user-story.validate` wants literal "As a " / ", I want to "; the goal reads "As an operator" / "I want every … session to leave". Substantively a user story; operator may reformat via `/gsd mvp-phase 9` or accept as-is.
 
 ### Gaps Summary
 
-One gap, one root cause, four symptoms: **the AUD-05 profile re-pin (3a250b5) landed without refreshing the pinned test expectations that consume the repo profile bundle.** `mise ci`'s test leg is red at HEAD (25146f8, clean tree) via four deterministic failures — `cmd/ass-guard TestServeAudit_RequestShapedThroughRealSeam`, `internal/profile TestLoader_ZcodeProfile`, `internal/shaper TestShape_ZcodeProfile` + `TestFidelity_ToolCountAndThinking` — all asserting the OLD bundle's GLM-5.2 model slug / thinking budget against the NEW GLM-5.3 / no-thinking bundle the drift report itself classified as zcode-changed. This falsifies the phase-gate leg "`mise ci` clean" and shows the 09-04 "stability green" claim was made without re-running the affected suites post-re-pin. The fix is mechanical (update four expectations, or derive them from the bundle); no functional audit/parity defect is implicated — every audit-behavior assertion inside the failing e2e test passed around the stale substring.
+No gaps remain. The single prior gap (phase gate red from four stale post-re-pin expectations) is closed by cfababa and independently confirmed: the four tests re-run PASS, the expectations match the actual pinned bundle (not weakened — the no-thinking assertions mirror the bundle's lack of a thinking config), and the full gate reproduces green (vet, lint, build, race suite 25/25 on an unloaded machine; the one first-attempt failure was this verifier's own concurrent lint run starving a Phase-6 timing test, which passes isolated and unloaded).
 
-Everything else the goal promised is verified in code and by verifier-run tests: the single factory seam (tracer copy deleted), the redacted default-ON audit mirror with correlation triples, the body_ref bounding with capped retrievable store, the engine-decision provenance line ("why did it continue" answerable from the log), and the stability test green on the newly pinned divergence-prone session with drift-before-update ordering intact. The parity re-baseline remains a recorded finding awaiting the operator's disposition, exactly as the plan closed it.
+Everything the goal promised is verified in code and by tests: the single factory seam, the redacted default-ON audit mirror with correlation triples, body_ref bounding with a capped retrievable store, the engine-decision provenance line, and the parity machinery with drift-before-update ordering. Two operator-facing items remain open by nature, not by defect: the parity re-baseline disposition (recorded finding) and the live-serve witness. One environmental note for the operator: the pinned capture session's rollout file has rotated off disk — archive it or plan a re-ground before Phase 12 consumes the pin (ACP-07).
 
 ---
 
-_Verified: 2026-08-15T23:09:17Z_
+_Verified: 2026-08-16T07:26:11Z (re-verification)_
+_Previous: 2026-08-15T23:09:17Z @ 25146f8 (gaps_found 5/7)_
 _Verifier: Claude (gsd-verifier)_
