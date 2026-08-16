@@ -1,7 +1,7 @@
 # seeded.yaml — the embedded zero-config hook floor (HOOK-02). The engine loads
 # this default when no operator overlay is present; operators override/add/remove
 # hooks via the layered YAML loader (D-06 — embedded default → operator overlay,
-# matching internal/scheduler's scheduling.yaml convention).
+# matching internal/scheduler's config.yaml convention).
 #
 # The seeded set ships the "forgotten routine":
 #   - post-implement runs after every implementation stage — test + lint + a

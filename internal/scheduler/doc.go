@@ -8,7 +8,7 @@
 // promise: "the developer never thinks about which concrete model is running;
 // the operator manages cost/reliability via config").
 //
-// Layering: the operator authors a declarative scheduling.yaml (D-01); the
+// Layering: the operator authors a declarative config.yaml (D-01); the
 // loader (load.go) merges it layered (embedded default → global → per-project)
 // and validates it at load time (D-10 — inconsistent configs are REJECTED with
 // a named, collect-all *ConfigError before any request is served). The resolver

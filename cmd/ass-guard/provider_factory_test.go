@@ -201,7 +201,7 @@ func TestLoadSchedulingFactory_ZeroConfigEnv(t *testing.T) {
 	p, err := factory.Build("anthropic", shaper.New())
 	require.NoError(t, err)
 	require.IsType(t, &provider.AnthropicProvider{}, p, "a credentialed build returns the real adapter")
-	require.Empty(t, stderr.String(), "a fully-credentialed config warns nothing (and no ambient global layer leaks in)")
+	require.Empty(t, stderr.String(), "a fully-credentialed config warns nothing (no ambient global layer)")
 }
 
 // TestLoadSchedulingFactory_GlobalLayerMerged proves the global layer
@@ -209,7 +209,7 @@ func TestLoadSchedulingFactory_ZeroConfigEnv(t *testing.T) {
 // honored over an empty project — the sentinel tier binding wins over the
 // embedded floor while the embedded default's provider stays present (merge,
 // not replace).
-func TestLoadSchedulingFactory_GlobalLayerMerged(t *testing.T) {
+func TestLoadSchedulingFactory_GlobalLayerMerged(t *testing.T) { //nolint:paralleltest // HOME pinned — serial
 	home := pinEmptyHome(t)
 	writeGlobalTestConfig(t, home, testGlobalLayerConfig)
 
@@ -235,7 +235,7 @@ func TestLoadSchedulingFactory_GlobalLayerMerged(t *testing.T) {
 // precedence: with BOTH layers present and conflicting heavy-tier bindings,
 // the project layer (<workDir>/.ass-guard/config.yaml) wins — Load's overlay
 // order is global then project.
-func TestLoadSchedulingFactory_ProjectOverridesGlobal(t *testing.T) {
+func TestLoadSchedulingFactory_ProjectOverridesGlobal(t *testing.T) { //nolint:paralleltest // HOME pinned — serial
 	home := pinEmptyHome(t)
 	writeGlobalTestConfig(t, home, testGlobalLayerConfig)
 
@@ -263,7 +263,7 @@ func TestLoadSchedulingFactory_ProjectOverridesGlobal(t *testing.T) {
 // decision: the pre-rename project config filename is treated as nonexistent —
 // a file carrying it is never read, and behavior is identical to no config at
 // all (the embedded floor serves).
-func TestLoadSchedulingFactory_LegacyNameNeverRead(t *testing.T) {
+func TestLoadSchedulingFactory_LegacyNameNeverRead(t *testing.T) { //nolint:paralleltest // HOME pinned — serial
 	pinEmptyHome(t)
 
 	workDir := t.TempDir()
@@ -293,7 +293,13 @@ func TestLoadSchedulingFactory_LegacyNameNeverRead(t *testing.T) {
 // warning covers BOTH new-path layers: a group/world-readable global or
 // project config.yaml warns with the 0600 recommendation; 0600-tight files
 // stay silent. Never refuses to start.
-func TestStartupWarn_ConfigPermLoose(t *testing.T) {
+// Layer tags for the perm-warning table (goconst: the literals repeat).
+const (
+	layerGlobal  = "global"
+	layerProject = "project"
+)
+
+func TestStartupWarn_ConfigPermLoose(t *testing.T) { //nolint:paralleltest // HOME pinned — serial
 	home := pinEmptyHome(t)
 
 	table := []struct {
@@ -302,17 +308,17 @@ func TestStartupWarn_ConfigPermLoose(t *testing.T) {
 		perm     os.FileMode
 		wantWarn bool
 	}{
-		{name: "global 0644 warns", layer: "global", perm: 0o644, wantWarn: true},
-		{name: "project 0644 warns", layer: "project", perm: 0o644, wantWarn: true},
-		{name: "global 0600 silent", layer: "global", perm: 0o600, wantWarn: false},
-		{name: "project 0600 silent", layer: "project", perm: 0o600, wantWarn: false},
+		{name: "global 0644 warns", layer: layerGlobal, perm: 0o644, wantWarn: true},
+		{name: "project 0644 warns", layer: layerProject, perm: 0o644, wantWarn: true},
+		{name: "global 0600 silent", layer: layerGlobal, perm: 0o600, wantWarn: false},
+		{name: "project 0600 silent", layer: layerProject, perm: 0o600, wantWarn: false},
 	}
 
-	for _, tc := range table {
+	for _, tc := range table { //nolint:paralleltest // subtests share the pinned HOME — serial
 		t.Run(tc.name, func(t *testing.T) {
 			var path string
 
-			if tc.layer == "global" {
+			if tc.layer == layerGlobal {
 				path = writeGlobalTestConfig(t, home, testSchedulingZeroEnvConfig)
 			} else {
 				path = writeTestScheduling(t, t.TempDir(), testSchedulingZeroEnvConfig)

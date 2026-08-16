@@ -81,7 +81,7 @@ var embeddedSeeded []byte
 
 // Load decodes the embedded default, then each path in order (layered: later
 // paths overlay earlier ones — operator over default — D-06 mirrors
-// internal/scheduler's scheduling.yaml convention, using gopkg.in/yaml.v3
+// internal/scheduler's config.yaml convention, using gopkg.in/yaml.v3
 // directly so dotted keys are preserved). The merged config is re-decoded into
 // typed Hooks + validated. A *ConfigError (collect-all) is returned if any
 // violation is found; the config is NOT executed.

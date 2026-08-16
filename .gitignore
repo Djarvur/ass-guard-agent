@@ -53,7 +53,7 @@ spikes/bin/
 /dist/
 
 # .ass-guard/ is the per-machine runtime dir (Phase-6 first-run seed:
-# materialized profiles + openspec.toml + scheduling.yaml + learned.yaml).
+# materialized profiles + openspec.toml + config.yaml + learned.yaml).
 # It also holds local secrets — e.g. api_key, config.yaml with a provider key.
 # Never commit: generated from embedded defaults + may carry credentials.
 .ass-guard/

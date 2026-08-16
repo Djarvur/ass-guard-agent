@@ -201,7 +201,7 @@ func (f *ProviderFactory) WarnUncredentialed(w io.Writer) {
 		prov := f.cfg.Providers[name]
 		if ResolveCredential(prov, name, f.flagKey).Key == "" {
 			_, _ = fmt.Fprintf(w,
-				"scheduler: provider %q has no resolvable credential — set api_key in scheduling.yaml or $%s\n",
+				"scheduler: provider %q has no resolvable credential — set api_key in config.yaml or $%s\n",
 				name, credentialEnvName(prov, name))
 		}
 	}
@@ -237,6 +237,6 @@ func (p noCredentialProvider) noCredentialError() error {
 	return &provider.ProviderError{
 		Kind:     provider.KindStructural,
 		Provider: p.name,
-		Reason:   "no credential configured — set api_key in scheduling.yaml or $" + p.envName,
+		Reason:   "no credential configured — set api_key in config.yaml or $" + p.envName,
 	}
 }

@@ -114,7 +114,7 @@ func deepMerge(dst, src map[string]any) {
 }
 
 // applyDefaults fills zero-valued config fields with the documented D-07/D-08
-// defaults (RESEARCH §1.3). Operators override any of these via scheduling.yaml.
+// defaults (RESEARCH §1.3). Operators override any of these via config.yaml.
 func applyDefaults(cfg *Config) {
 	if cfg.Timezone == "" {
 		cfg.Timezone = "UTC"
@@ -351,7 +351,7 @@ func ValidateWithWarnings(cfg *Config) ([]string, error) {
 		// enough to stay silent; the startup warn (Plan 07-02) checks resolvability.
 		if p.APIKey == "" && p.APIKeyEnv == "" {
 			warnings = append(warnings, fmt.Sprintf(
-				"provider %q: no api_key or api_key_env declared — set api_key in scheduling.yaml", slug))
+				"provider %q: no api_key or api_key_env declared — set api_key in config.yaml", slug))
 		}
 	}
 

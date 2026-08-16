@@ -28,7 +28,7 @@ import (
 //   - ASSGUARD_OPENSPEC_BIN=1 — the real openspec binary must be on PATH
 //     (the adapter + init/new/archive run for real);
 //   - ASSGUARD_E2E_LLM=1 — the live model dependency (provider creds come
-//     from the repo's .ass-guard/scheduling.yaml — located by walking up
+//     from the repo's .ass-guard/config.yaml — located by walking up
 //     from the test working directory; missing creds FAIL LOUD, never skip).
 //
 // Modes:
@@ -57,7 +57,7 @@ func e2eGates(t *testing.T) {
 	if os.Getenv("ASSGUARD_OPENSPEC_BIN") != "1" || os.Getenv("ASSGUARD_E2E_LLM") != "1" {
 		t.Skip("set ASSGUARD_OPENSPEC_BIN=1 (real openspec binary on PATH) AND " +
 			"ASSGUARD_E2E_LLM=1 (live model; creds from the repo's " +
-			".ass-guard/scheduling.yaml) to run the real /opsx E2E")
+			".ass-guard/config.yaml) to run the real /opsx E2E")
 	}
 
 	_, lerr := exec.LookPath("openspec")
@@ -67,7 +67,7 @@ func e2eGates(t *testing.T) {
 }
 
 // findRepoRoot walks up from the test cwd until a directory carrying both
-// .ass-guard/scheduling.yaml (provider creds) and profiles/ (the zcode
+// .ass-guard/config.yaml (provider creds) and profiles/ (the zcode
 // bundle) is found.
 func findRepoRoot(t *testing.T) string {
 	t.Helper()
@@ -78,7 +78,7 @@ func findRepoRoot(t *testing.T) string {
 	}
 
 	for range 16 {
-		if fileExists(filepath.Join(dir, ".ass-guard", "scheduling.yaml")) &&
+		if fileExists(filepath.Join(dir, ".ass-guard", "config.yaml")) &&
 			fileExists(filepath.Join(dir, "profiles")) {
 			return dir
 		}
@@ -91,7 +91,7 @@ func findRepoRoot(t *testing.T) string {
 		dir = parent
 	}
 
-	t.Fatal("BLOCKER: cannot locate the repo root (provider creds .ass-guard/scheduling.yaml + profiles/) — " +
+	t.Fatal("BLOCKER: cannot locate the repo root (provider creds .ass-guard/config.yaml + profiles/) — " +
 		"the E2E needs the real model; run from a checkout that has them")
 
 	return ""

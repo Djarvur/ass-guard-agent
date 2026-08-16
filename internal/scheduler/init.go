@@ -21,7 +21,7 @@ const mnd24 = 24
 // defaultBreaker holds the documented D-07 circuit-breaker defaults applied when
 // a loaded config has a zero-valued circuit_breaker block (RESEARCH §1.3). These
 // are the tunable parameters with documented defaults; operators override via
-// scheduling.yaml.
+// config.yaml.
 var defaultBreaker = CircuitBreakerConfig{ //nolint:gochecknoglobals // process-wide default singleton
 	ConsecutiveFailures: mnd5,
 	ErrorRateWindow:     mnd20,

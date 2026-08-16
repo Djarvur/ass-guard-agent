@@ -70,7 +70,8 @@ func loadSchedulingFactory(
 	existing := make([]string, 0, len(candidates))
 
 	for _, path := range candidates {
-		if _, statErr := os.Stat(path); statErr == nil {
+		_, statErr := os.Stat(path)
+		if statErr == nil {
 			existing = append(existing, path)
 		}
 	}

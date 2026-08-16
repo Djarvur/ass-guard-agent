@@ -57,10 +57,25 @@ exist and seeds it with the embedded defaults (DIST-03):
 - `profiles/zcode/` — the pre-seeded zcode mimicry profile (system prompts,
   tool catalog, identity headers, thinking + tool_choice).
 - `openspec.toml` — the OpenSpec handoff patterns skeleton.
-- `scheduling.yaml` — the default model config (GLM-5.2 via the Z.ai
+- `config.yaml` — the default model config (GLM-5.2 via the Z.ai
   Anthropic endpoint).
 - `.gitignore` — a self-gitignoring file (`*\n!.gitignore\n`) so the seeded
   tree does not pollute your project's git status.
+
+The model scheduling config resolves in two operator layers on top of the
+embedded default (later layers win on conflict):
+
+1. the **embedded default** — the seeded `.ass-guard/config.yaml` content,
+   always the floor;
+2. the **global layer** — `~/.config/ass-guard-agent/config.yaml`, your
+   machine-wide operator config;
+3. the **project layer** — `<project>/.ass-guard/config.yaml`, seeded on
+   first run and yours to edit (it overrides the global layer on conflict).
+
+The YAML schema is scheduler-only (`providers` / `models` / `tiers` /
+`time_windows` / `circuit_breaker` / `cost_ceiling`). Because the config may
+carry a literal `api_key`, ass-guard warns at startup when either layer's
+file is looser than `chmod 0600`.
 
 Seeding is **non-clobbering**: if `.ass-guard/` already exists (including a
 partial or operator-customized one), ass-guard leaves it untouched. Your edits

@@ -1526,7 +1526,7 @@ func waitForRequestShapedCount(t *testing.T, r *sessionTurnRunner, sid string, w
 
 // TestServeAudit_RequestShapedThroughRealSeam (09-01 T3 Tests 10-12, AUD-02 —
 // the Pitfall-8 closer): an in-process runACPServe drives initialize →
-// session/new → session/prompt against a REAL temp .ass-guard/scheduling.yaml
+// session/new → session/prompt against a REAL temp .ass-guard/config.yaml
 // (anthropic shape pointing at an httptest SSE stub, synthetic canary key), so
 // the provider is constructed through setupProviderFactory →
 // BuildWithCapturer exactly as production. Asserts: (1) the per-session
@@ -1647,7 +1647,7 @@ func serveAuditSSEStub() *httptest.Server {
 	}))
 }
 
-// serveAuditWorkDir builds a temp workdir whose REAL .ass-guard/scheduling.yaml
+// serveAuditWorkDir builds a temp workdir whose REAL .ass-guard/config.yaml
 // points the anthropic provider at stubURL with the synthetic canary key.
 func serveAuditWorkDir(t *testing.T, stubURL, canaryKey string) string {
 	t.Helper()
@@ -1661,9 +1661,9 @@ func serveAuditWorkDir(t *testing.T, stubURL, canaryKey string) string {
 
 	sched := fmt.Sprintf("providers:\n  anthropic:\n    base_url: %q\n    api_key: %q\n", stubURL, canaryKey)
 
-	err = os.WriteFile(filepath.Join(workDir, ".ass-guard", "scheduling.yaml"), []byte(sched), 0o600)
+	err = os.WriteFile(filepath.Join(workDir, ".ass-guard", "config.yaml"), []byte(sched), 0o600)
 	if err != nil {
-		t.Fatalf("write scheduling.yaml: %v", err)
+		t.Fatalf("write config.yaml: %v", err)
 	}
 
 	return workDir
@@ -1835,7 +1835,7 @@ func assertMirrorAndCanary(t *testing.T, workDir, sessionID, canaryKey string) {
 
 	// Test 12 — the canary: zero occurrences across the ARTIFACT tree
 	// (.ass-guard/audit — mirror + body store) and the transcript file. The
-	// operator's scheduling.yaml is the credential SOURCE, not an artifact;
+	// operator's config.yaml is the credential SOURCE, not an artifact;
 	// scanning it would trivially contain the key by construction.
 	scanOne := func(path string) {
 		content, rerr := os.ReadFile(path)

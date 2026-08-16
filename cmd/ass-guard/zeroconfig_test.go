@@ -202,9 +202,11 @@ func driveServeInit(t *testing.T, bin, dir string) (stdout, stderr string) {
 	return string(stdoutBytes), stderrBuf.String()
 }
 
-// drainServeStdout reads stdout to EOF (child exit), bounded by a timeout so a
-// hung server cannot stall the suite. Must complete BEFORE cmd.Wait (Wait closes
-// the pipe).
+// drainServeStdout reads stdout to EOF (child exit), bounded by a generous
+// wall-clock timeout so a genuinely hung server cannot stall the suite. The
+// bound must tolerate a loaded machine (full `go test ./...` plus an active
+// IDE can starve the child well past 15s while it is merely slow, not hung —
+// 260817-11v). Must complete BEFORE cmd.Wait (Wait closes the pipe).
 func drainServeStdout(t *testing.T, cmd *exec.Cmd, stdoutPipe io.ReadCloser) []byte {
 	t.Helper()
 
@@ -222,11 +224,11 @@ func drainServeStdout(t *testing.T, cmd *exec.Cmd, stdoutPipe io.ReadCloser) []b
 	select {
 	case r := <-stdoutCh:
 		captured = r.b
-	case <-time.After(15 * time.Second):
+	case <-time.After(60 * time.Second):
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
 
-		t.Fatalf("acp serve did not exit within 15s after stdin EOF")
+		t.Fatalf("acp serve did not exit within 60s after stdin EOF")
 
 		return nil
 	}
