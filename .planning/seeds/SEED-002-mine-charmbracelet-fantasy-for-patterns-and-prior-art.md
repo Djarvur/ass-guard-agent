@@ -90,6 +90,7 @@ Natural moments: `/gsd:new-milestone` scans (v1.2 pool contains Phases 10/11 —
 - `internal/loop/`, `internal/engine/`, `internal/session/` — stop-condition/PrepareStep/StopTurn pattern comparison (§3)
 - `go.mod` — `anthropics/anthropic-sdk-go v1.63.0` (matches fantasy; STACK.md's v1.62.0 already stale)
 - `.planning/seeds/SEED-001-agent-creation-kit-library-with-ass-guard-as-first-app.md` — kit extraction; fantasy is its prior art (§7)
+- `.planning/seeds/SEED-003-go-agent-reference-landscape-frameworks-and-coding-agents.md` — the surrounding landscape (eino, adk-go, goai, any-llm-go, opencode→crush lineage, plandex); enriches §6 with the verified opencode→crush continuation and crush's FSL-1.1-MIT license trap
 - `.planning/research/STACK.md` — provider-client decisions this seed amends (openai-go official SDK, anthropic-sdk version)
 - Upstream: `github.com/charmbracelet/fantasy` @ main (analysed 2026-08-17): `agent.go`, `model.go`, `tool.go`, `retry.go`, `jsonrepair/`, `schema/`, `providers/anthropic/{anthropic,sanitize,call_useragent}.go`, `providers/internal/httpheaders/`, `providertests/` + `testdata/`, `go.mod`
 
