@@ -1,6 +1,6 @@
-# defaults/scheduling.yaml — the embedded zero-config floor (DIST-03). Loaded
+# defaults/config.yaml — the embedded zero-config floor (DIST-03). Loaded
 # first by Load(); global + per-project configs overlay it. Minimal-but-valid so
-# a fresh install with no scheduling.yaml still resolves a tier (heavy → glm-5.2
+# a fresh install with no config.yaml still resolves a tier (heavy → glm-5.2
 # via the Z.ai Anthropic endpoint, VERIFIED-FACTS #1).
 timezone: "UTC"
 

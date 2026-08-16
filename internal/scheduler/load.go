@@ -15,10 +15,10 @@ import (
 // Load decodes it first; every caller-provided path overlays it (project over
 // global over default). RESEARCH §1.1.
 //
-//go:embed defaults/scheduling.yaml
+//go:embed defaults/config.yaml
 var embeddedDefault []byte
 
-// EmbeddedDefaultScheduling returns the embedded zero-config scheduling.yaml
+// EmbeddedDefaultScheduling returns the embedded zero-config config.yaml
 // floor (DIST-03). Exposed so cross-package drift guards can assert the seed
 // copy (internal/defaults) stays byte-identical to this floor WITHOUT a
 // filesystem path lookup — robust under -trimpath (both sides are build-time

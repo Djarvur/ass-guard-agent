@@ -46,10 +46,10 @@ sed 's#/Users/nil/DiskD/W/Djarvur/ass-guard-agent#<working_directory>#g' \
 sed 's#/Users/nil/.zcode/cli/rollout/#~/.zcode/cli/rollout/#g' \
 	"$ZCODE_DST/meta.yaml" > "$ZCODE_DST/meta.yaml.tmp" && mv "$ZCODE_DST/meta.yaml.tmp" "$ZCODE_DST/meta.yaml"
 
-# (b) scheduling.yaml — byte-for-byte copy of the scheduler's embedded floor
+# (b) config.yaml — byte-for-byte copy of the scheduler's embedded floor
 # (DIST-03 zero-config floor). The drift-guard test in defaults_test.go asserts
 # these two stay identical.
-cp "$REPO_ROOT/internal/scheduler/defaults/scheduling.yaml" "$SEED/scheduling.yaml"
+cp "$REPO_ROOT/internal/scheduler/defaults/config.yaml" "$SEED/config.yaml"
 
 # (c) openspec.toml — authored by hand (schema skeleton); NOT regenerated here.
 # Edit internal/defaults/seed/openspec.toml directly when the schema changes.
@@ -57,7 +57,7 @@ cp "$REPO_ROOT/internal/scheduler/defaults/scheduling.yaml" "$SEED/scheduling.ya
 # Leak guard: fail loudly if any absolute home path survived sanitization. Only
 # check the embeddable artifacts (sync.sh is not embedded — it legitimately
 # contains the literal patterns it rewrites, so it is excluded).
-if grep -rn '/Users/\|/home/' "$SEED/profiles" "$SEED/scheduling.yaml" "$SEED/openspec.toml"; then
+if grep -rn '/Users/\|/home/' "$SEED/profiles" "$SEED/config.yaml" "$SEED/openspec.toml"; then
 	echo "ERROR: absolute home path leaked into the seed (T-06-01)" >&2
 	exit 1
 fi

@@ -1,6 +1,6 @@
 // Package defaults embeds the zero-config default artifacts (D-01) into the
 // binary via go:embed: a pre-seeded zcode profile, a pre-seeded openspec.toml
-// (OpenSpec handoff schema skeleton), and a default scheduling.yaml (the
+// (OpenSpec handoff schema skeleton), and a default config.yaml (the
 // DIST-03 zero-config floor). WriteTree materializes them onto disk under a
 // root directory (used by internal/firstrun on first launch).
 //
@@ -22,9 +22,9 @@ import (
 // Seed is the embedded zero-config default tree (D-01). It carries the runtime
 // artifacts only (sync.sh is a build tool and is intentionally NOT embedded).
 // The embed reaches seed/profiles (the whole zcode profile subtree, including
-// system/block-*.txt), seed/openspec.toml, and seed/scheduling.yaml.
+// system/block-*.txt), seed/openspec.toml, and seed/config.yaml.
 //
-//go:embed seed/profiles seed/openspec.toml seed/scheduling.yaml
+//go:embed seed/profiles seed/openspec.toml seed/config.yaml
 var Seed embed.FS
 
 // seedRoot is the embed.FS subtree WriteTree walks. Every embedded path begins
@@ -42,7 +42,7 @@ const filePerm = 0o644
 
 // WriteTree walks the embedded Seed and writes every file under root, stripping
 // the seed/ prefix so the runtime tree lands as
-// <root>/{profiles/zcode/..., openspec.toml, scheduling.yaml}. When overwrite
+// <root>/{profiles/zcode/..., openspec.toml, config.yaml}. When overwrite
 // is false, any path that already exists is skipped (non-clobbering — D-04: an
 // operator's edits survive restarts). When overwrite is true, existing files
 // are replaced. Directories are created as needed (mode 0o755); files are

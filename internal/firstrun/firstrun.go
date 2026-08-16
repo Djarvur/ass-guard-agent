@@ -2,7 +2,7 @@
 // flow (D-04). When the registry entrypoint (ass-guard acp serve) starts in a
 // directory with no .ass-guard/, Ensure creates it with a self-gitignoring
 // .gitignore (D-07) and writes the embedded default tree (profiles/zcode,
-// openspec.toml, scheduling.yaml) via internal/defaults. The flow is
+// openspec.toml, config.yaml) via internal/defaults. The flow is
 // non-clobbering and idempotent: an existing .ass-guard/ is left untouched.
 package firstrun
 
