@@ -312,19 +312,26 @@ func runACPServe(ctx context.Context, in io.Reader, out, stderr io.Writer, opts 
 	}
 
 	// Phase 7 (D-08): build the provider factory ONCE at startup from the
-	// operator's .ass-guard/scheduling.yaml overlaid on the embedded default.
-	// The heavy-tier provider is resolved through the validated scheduler
-	// resolver; the session's provider is the factory-built credentialed
-	// instance (T-07-07 — resolution is deterministic + validated).
+	// operator's layered config.yaml (global ~/.config/ass-guard-agent/,
+	// then project .ass-guard/ — project wins) overlaid on the embedded
+	// default. The heavy-tier provider is resolved through the validated
+	// scheduler resolver; the session's provider is the factory-built
+	// credentialed instance (T-07-07 — resolution is deterministic +
+	// validated).
 	factory, providerName, ferr := setupProviderFactory(opts.WorkDir, stderr)
 	if ferr != nil {
 		return fmt.Errorf("setup provider factory: %w", ferr)
 	}
 
-	// SC3 (Phase 7): warn once at startup when the operator's scheduling.yaml
-	// is looser than 0600 — it may carry a literal api_key (credential-on-disk
-	// hygiene, T-07-05). Advisory only; the seed itself stays 0644 (D-06).
-	warnLooseConfigPerm(filepath.Join(opts.WorkDir, ".ass-guard", "scheduling.yaml"), stderr)
+	// SC3 (Phase 7, extended by 260817-11v): warn once at startup when an
+	// operator config.yaml (global or project layer) is looser than 0600 —
+	// either may carry a literal api_key (credential-on-disk hygiene,
+	// T-07-05). Advisory only; the seed itself stays 0644 (D-06).
+	if globalPath, gerr := globalConfigPath(); gerr == nil {
+		warnLooseConfigPerm(globalPath, stderr)
+	}
+
+	warnLooseConfigPerm(projectConfigPath(opts.WorkDir), stderr)
 
 	// 09-05: one capped body store per serve process (construction is lazy —
 	// Put reports errors; a broken store degrades audit, never the serve).

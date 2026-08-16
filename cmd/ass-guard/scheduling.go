@@ -58,7 +58,7 @@ func newSchedulingValidateCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&configPath, "config", "", "path to scheduling.yaml (default: embedded zero-config floor)")
+	cmd.Flags().StringVar(&configPath, "config", "", "path to config.yaml (default: embedded zero-config floor)")
 
 	return cmd
 }
@@ -117,7 +117,7 @@ func newSchedulingResolveCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&configPath, "config", "", "path to scheduling.yaml (default: embedded zero-config floor)")
+	cmd.Flags().StringVar(&configPath, "config", "", "path to config.yaml (default: embedded zero-config floor)")
 	cmd.Flags().StringVar(&tier, "tier", "", "tier to resolve (heavy|good|light) — required")
 	cmd.Flags().StringVar(&project, "project", "", "per-project key (default: global)")
 	cmd.Flags().StringVar(&atStr, "at", "", "RFC3339 time to resolve at (default: now)")

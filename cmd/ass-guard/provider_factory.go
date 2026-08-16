@@ -13,31 +13,69 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/scheduler"
 )
 
+// globalConfigPath resolves the GLOBAL operator config layer (260817-11v):
+// <home>/.config/ass-guard-agent/config.yaml. os.UserHomeDir-based — the
+// codebase has no XDG helper convention (profile_check.go and
+// internal/ecosys/loader.go use os.UserHomeDir directly).
+func globalConfigPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home: %w", err)
+	}
+
+	return filepath.Join(home, ".config", "ass-guard-agent", "config.yaml"), nil
+}
+
+// projectConfigPath resolves the PROJECT operator config layer (260817-11v):
+// <workDir>/.ass-guard/config.yaml — the same runtime directory as the rest
+// of the .ass-guard/ tree, under the renamed filename. An empty workDir stays
+// CWD-relative by join semantics (parity.go / main.go call
+// setupProviderFactory("", ...) and inherit the layering through this seam).
+func projectConfigPath(workDir string) string {
+	return filepath.Join(workDir, ".ass-guard", "config.yaml")
+}
+
 // loadSchedulingFactory is the D-08 wiring seam shared by acp serve / tracer /
-// parity: it loads the operator's .ass-guard/scheduling.yaml (when present)
-// overlaid on the embedded default, builds the scheduler.ProviderFactory, and
+// parity: it loads the operator's layered config.yaml (global
+// ~/.config/ass-guard-agent/config.yaml, then project
+// <workDir>/.ass-guard/config.yaml — each when present) overlaid on the
+// embedded default (project wins), builds the scheduler.ProviderFactory, and
 // emits the D-07 startup uncredentialed-provider warnings to stderr (transport
 // discipline — stdout stays ACP-only). A load error is returned for the caller
-// to degrade gracefully (T-07-08); the factory never refuses to build.
+// to degrade gracefully (T-07-08); the factory never refuses to build. The
+// pre-rename filename is treated as nonexistent — it is never read
+// (260817-11v: no existing installs, no migration).
 //
 //nolint:unparam // apiKeyFlag is the D-05 flag-precedence seam (07-CONTEXT D-05), kept per the plan contract
 func loadSchedulingFactory(
 	workDir, apiKeyFlag string, stderr io.Writer,
 ) (*scheduler.Config, *scheduler.ProviderFactory, error) {
-	overlayPath := filepath.Join(workDir, ".ass-guard", "scheduling.yaml")
+	var candidates []string
 
-	var (
-		cfg *scheduler.Config
-		err error
-	)
-
-	_, statErr := os.Stat(overlayPath)
-	if statErr == nil {
-		cfg, err = scheduler.Load(overlayPath)
+	globalPath, gerr := globalConfigPath()
+	if gerr != nil {
+		// Degrade, never refuse — mirror setupProviderFactory's degradation:
+		// continue without the global layer, one stderr line.
+		_, _ = fmt.Fprintf(stderr,
+			"ass-guard: global config layer unavailable (continuing without it): %v\n", gerr)
 	} else {
-		cfg, err = scheduler.Load()
+		candidates = append(candidates, globalPath)
 	}
 
+	candidates = append(candidates, projectConfigPath(workDir))
+
+	// scheduler.Load errors on a passed-but-missing path — stat-gate each
+	// candidate and pass only the existing ones, in overlay order (global
+	// then project; an empty list loads the embedded floor alone).
+	existing := make([]string, 0, len(candidates))
+
+	for _, path := range candidates {
+		if _, statErr := os.Stat(path); statErr == nil {
+			existing = append(existing, path)
+		}
+	}
+
+	cfg, err := scheduler.Load(existing...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("load scheduling config: %w", err)
 	}
@@ -96,10 +134,11 @@ func firstDeclaredProvider(cfg *scheduler.Config) string {
 }
 
 // warnLooseConfigPerm implements the SC3 credential-on-disk hygiene warning: a
-// scheduling.yaml that is group/world-readable (mode not 0600-tight) may carry
-// a literal api_key, so warn once at startup recommending chmod 0600. Advisory
-// only — never refuses to start. Transport discipline: stderr only (T-07-06:
-// names only the path + the recommended mode, never a key).
+// config.yaml (global or project layer) that is group/world-readable (mode not
+// 0600-tight) may carry a literal api_key, so warn once at startup recommending
+// chmod 0600. Advisory only — never refuses to start. Transport discipline:
+// stderr only (T-07-06: names only the path + the recommended mode, never a
+// key).
 func warnLooseConfigPerm(path string, stderr io.Writer) {
 	info, err := os.Stat(path)
 	if err != nil {
