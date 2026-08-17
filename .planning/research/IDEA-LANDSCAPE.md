@@ -200,5 +200,24 @@ borrowable without violating a single invariant.**
   mcp/parity/drift/audit/redact/learning/hookdag/ecosys/openspec/coreexec/acp et al.)
 - Plan evidence: `.planning/ROADMAP.md` (Phases 9/12/13, v1.2 pool), `.planning/STATE.md`,
   REQUIREMENTS.md backlog, FEATURES.md post-v1.1 list
-- Companion seeds: SEED-001 (kit), SEED-002 (fantasy), SEED-003 (Go landscape)
-- Upstream sources: repos listed in the tables above (all fetched 2026-08-17)
+- Companion seeds: SEED-001 (kit), SEED-002 (fantasy), SEED-003 (Go landscape),
+  **SEED-004 (this doc's borrow list + surfacing triggers — the doc is truth, the seed is the reminder)**
+
+## Extension protocol (for future updates to this doc)
+
+This is a **living reference** — the operator intends to extend it. Rules to keep it coherent:
+
+1. **Adding a source:** repo-verify before adding (language, ★, activity date, license, real
+   mechanisms — no marketing). Add to the new-finds table OR a followup table with the
+   verification date; give it a row in the appropriate ✅/📋/🧲/🚫 table. Mark unverified claims.
+2. **License discipline:** keep the vendorable (Apache-2.0/MIT) vs read-only (FSL etc.)
+   distinction explicit in every new row — it gates code reuse.
+3. **Re-ranking the borrow list:** when a gap is adopted into a roadmap phase, strike it from
+   §borrow-list and note the phase; when a new gap emerges, insert with rank + rationale.
+   Never silently delete — note supersessions.
+4. **Refreshing stats:** on any significant edit, bump a "last verified" note; star counts and
+   activity go stale fast. Full re-verification pass: at each new-milestone scan (SEED-004
+   trigger d).
+5. **Verdict section:** update only with evidence — it is the doc's most load-bearing claim.
+6. **Cross-links:** any new seed or phase plan that draws on this doc must breadcrumb back here,
+   and this doc's Breadcrumbs section must reference them.
