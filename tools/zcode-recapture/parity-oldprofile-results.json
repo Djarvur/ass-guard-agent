@@ -1,0 +1,261 @@
+{
+  "summary": {
+    "suite_size": 8,
+    "layer1_pass_rate": 0.375,
+    "layer2_pass_rate": 0.125,
+    "overall_pass": false
+  },
+  "config": {
+    "model": "GLM-5.2",
+    "temp": 0,
+    "timestamp": "2026-08-15T22:59:08.014764Z",
+    "suite_size": 8
+  },
+  "turns": [
+    {
+      "turn_id": "div-01-multi-read-parallel",
+      "ass_guard_calls": [
+        {
+          "name": "Read",
+          "input": {
+            "file_path": "/Users/nil/DiskD/W/Djarvur/ass-guard-agent/go.mod"
+          }
+        },
+        {
+          "name": "Read",
+          "input": {
+            "file_path": "/Users/nil/DiskD/W/Djarvur/ass-guard-agent/README.md"
+          }
+        },
+        {
+          "name": "Read",
+          "input": {
+            "file_path": "/Users/nil/DiskD/W/Djarvur/ass-guard-agent/AGENTS.md"
+          }
+        }
+      ],
+      "zcode_calls": [
+        {
+          "name": "Read",
+          "input": {
+            "file_path": "go.mod"
+          }
+        },
+        {
+          "name": "Read",
+          "input": {
+            "file_path": "README.md"
+          }
+        },
+        {
+          "name": "Read",
+          "input": {
+            "file_path": "AGENTS.md"
+          }
+        }
+      ],
+      "layer1_match": true,
+      "layer2_mismatches": 3
+    },
+    {
+      "turn_id": "div-02-read-then-bash",
+      "ass_guard_calls": [
+        {
+          "name": "Read",
+          "input": {
+            "file_path": "/Users/nil/DiskD/W/Djarvur/ass-guard-agent/go.mod"
+          }
+        }
+      ],
+      "zcode_calls": [
+        {
+          "name": "Read",
+          "input": {
+            "file_path": "go.mod"
+          }
+        },
+        {
+          "name": "Read",
+          "input": {
+            "file_path": "\u003ctest-file\u003e"
+          }
+        },
+        {
+          "name": "Bash",
+          "input": {
+            "command": "go test"
+          }
+        }
+      ],
+      "layer1_match": false,
+      "layer2_mismatches": 0
+    },
+    {
+      "turn_id": "div-03-plan-plus-reads-plus-build",
+      "ass_guard_calls": [
+        {
+          "name": "Bash",
+          "input": {
+            "command": "ls -la /Users/nil/DiskD/W/Djarvur/ass-guard-agent \u0026\u0026 ls -la /Users/nil/DiskD/W/Djarvur/ass-guard-agent/.planning 2\u003e/dev/null",
+            "description": "List project root and .planning directory"
+          }
+        }
+      ],
+      "zcode_calls": [
+        {
+          "name": "TodoWrite",
+          "input": {
+            "todos": []
+          }
+        },
+        {
+          "name": "Read",
+          "input": {
+            "file_path": "\u003cctx-1\u003e"
+          }
+        },
+        {
+          "name": "Read",
+          "input": {
+            "file_path": "\u003cctx-2\u003e"
+          }
+        },
+        {
+          "name": "Bash",
+          "input": {
+            "command": "go build"
+          }
+        }
+      ],
+      "layer1_match": false,
+      "layer2_mismatches": 0
+    },
+    {
+      "turn_id": "div-04-ambiguous-read-vs-grep",
+      "ass_guard_calls": [
+        {
+          "name": "Bash",
+          "input": {
+            "command": "grep -rn --include='*.go' -iE 'allowlist|allowed[_-]?keys|secret[_-]?keys' /Users/nil/DiskD/W/Djarvur/ass-guard-agent --exclude-dir=node_modules -l | head -20",
+            "description": "Search Go files for allowlist-related identifiers"
+          }
+        },
+        {
+          "name": "Bash",
+          "input": {
+            "command": "grep -rn --include='*.go' -iE 'redact' /Users/nil/DiskD/W/Djarvur/ass-guard-agent --exclude-dir=node_modules -l | head -20",
+            "description": "Search Go files for redaction-related identifiers"
+          }
+        }
+      ],
+      "zcode_calls": [
+        {
+          "name": "Grep",
+          "input": {
+            "pattern": "IsSecretKey"
+          }
+        }
+      ],
+      "layer1_match": false,
+      "layer2_mismatches": 0
+    },
+    {
+      "turn_id": "div-05-single-bash-mutating",
+      "ass_guard_calls": [
+        {
+          "name": "Bash",
+          "input": {
+            "command": "ls /Users/nil/DiskD/W/Djarvur/ass-guard-agent \u0026\u0026 cat /Users/nil/DiskD/W/Djarvur/ass-guard-agent/go.mod 2\u003e/dev/null | head -20",
+            "description": "List project files and show go.mod"
+          }
+        }
+      ],
+      "zcode_calls": [
+        {
+          "name": "Bash",
+          "input": {
+            "command": "CGO_ENABLED=0 go build ./..."
+          }
+        }
+      ],
+      "layer1_match": true,
+      "layer2_mismatches": 1
+    },
+    {
+      "turn_id": "div-06-skill-dispatch",
+      "ass_guard_calls": [
+        {
+          "name": "Bash",
+          "input": {
+            "command": "ls .claude/skills 2\u003e/dev/null; ls ~/.claude/skills 2\u003e/dev/null; find . ~/.claude -maxdepth 4 -iname \"*go-ultimate*\" 2\u003e/dev/null | head -20",
+            "description": "Search for a go-ultimate skill definition on disk"
+          }
+        }
+      ],
+      "zcode_calls": [
+        {
+          "name": "Skill",
+          "input": {
+            "skill": "go-ultimate"
+          }
+        },
+        {
+          "name": "Read",
+          "input": {
+            "file_path": "\u003cskill-md\u003e"
+          }
+        }
+      ],
+      "layer1_match": false,
+      "layer2_mismatches": 0
+    },
+    {
+      "turn_id": "div-07-zero-tool-direct-answer",
+      "ass_guard_calls": [],
+      "zcode_calls": [],
+      "layer1_match": true,
+      "layer2_mismatches": 0
+    },
+    {
+      "turn_id": "div-08-bash-reads-inspection",
+      "ass_guard_calls": [
+        {
+          "name": "Bash",
+          "input": {
+            "command": "find /Users/nil/DiskD/W/Djarvur/ass-guard-agent -type d -name internal -not -path \"*/node_modules/*\" 2\u003e/dev/null",
+            "description": "Find internal package directories"
+          }
+        },
+        {
+          "name": "Bash",
+          "input": {
+            "command": "ls /Users/nil/DiskD/W/Djarvur/ass-guard-agent",
+            "description": "List repository root contents"
+          }
+        }
+      ],
+      "zcode_calls": [
+        {
+          "name": "Bash",
+          "input": {
+            "command": "ls internal/"
+          }
+        },
+        {
+          "name": "Read",
+          "input": {
+            "file_path": "\u003clarge-1\u003e"
+          }
+        },
+        {
+          "name": "Read",
+          "input": {
+            "file_path": "\u003clarge-2\u003e"
+          }
+        }
+      ],
+      "layer1_match": false,
+      "layer2_mismatches": 0
+    }
+  ]
+}

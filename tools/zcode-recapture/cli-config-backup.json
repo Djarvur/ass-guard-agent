@@ -1,0 +1,217 @@
+{
+  "skills": {
+    "/Users/nil/.claude/skills/gsd-add-tests/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-ai-integration-phase/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-audit-fix/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-audit-milestone/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-audit-uat/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-autonomous/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-capture/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-cleanup/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-code-review/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-complete-milestone/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-config/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-debug/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-discuss-phase/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-docs-update/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-eval-review/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-execute-phase/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-explore/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-extract-learnings/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-fast/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-forensics/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-graphify/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-health/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-help/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-import/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-inbox/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-ingest-docs/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-manager/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-map-codebase/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-milestone-summary/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-mvp-phase/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-new-milestone/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-new-project/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-ns-context/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-ns-ideate/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-ns-manage/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-ns-project/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-ns-review/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-ns-workflow/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-pause-work/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-workstreams/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-workspace/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-verify-work/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-validate-phase/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-update/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-undo/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-ultraplan-phase/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-ui-review/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-ui-phase/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-thread/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-surface/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-stats/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-spike/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-spec-phase/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-sketch/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-ship/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-settings/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-secure-phase/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-review-backlog/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-review/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-resume-work/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-quick/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-progress/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-profile-user/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-pr-branch/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-plan-review-convergence/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-plan-phase/SKILL.md": {
+      "enable": false
+    },
+    "/Users/nil/.claude/skills/gsd-phase/SKILL.md": {
+      "enable": false
+    }
+  },
+  "plugins": {
+    "enabledPlugins": {
+      "context7@claude-plugins-official": true,
+      "playwright@claude-plugins-official": true,
+      "commit-commands@claude-plugins-official": true,
+      "code-review@claude-plugins-official": true,
+      "feature-dev@claude-plugins-official": true,
+      "superpowers@claude-plugins-official": true,
+      "chrome-devtools-mcp@claude-plugins-official": true
+    },
+    "options": {}
+  }
+}
