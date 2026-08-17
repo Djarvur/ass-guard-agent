@@ -122,6 +122,7 @@ None yet.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260817-11v | Relocate scheduling config: .ass-guard/scheduling.yaml → config.yaml (global ~/.config/ass-guard-agent/ + project .ass-guard/ layers, no migration, same schema) | 2026-08-17 | 715f575 | [260817-11v-relocate-scheduling-config-ass-guard-sch](./quick/260817-11v-relocate-scheduling-config-ass-guard-sch/) |
+| 260817-uv3 | Archive /tmp/zcode-recapture driver kit → tools/zcode-recapture (protects the only re-capture mechanism + surviving capture records before /tmp reaping; Phase-12 discuss D-04; the pinned rollout file itself was already lost — rotated off ~/.zcode/cli/rollout/) | 2026-08-17 | 32234f4 | [260817-uv3-archive-the-tmp-zcode-recapture-driver-k](./quick/260817-uv3-archive-the-tmp-zcode-recapture-driver-k/) |
 
 ## Deferred Items
 
