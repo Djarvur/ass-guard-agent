@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Kickoff & Peers
-status: "PHASE 9 CODE+RECAPTURE LEGS COMPLETE (2026-08-16 overnight): AUD-05 executed — the qualifying capture session EXISTS (sess_3cee56ae, zcode 0.16.3: 13 request records, 81 tools, 1 subagent, catalog timeline 79→80(mcp__recapture_probe)→79), produced AUTONOMOUSLY via the app-server stdio driver under the operator's explicit direction (the plan's 'no CLI/API path' premise was wrong — deviation recorded); drift report committed BEFORE the profile update (Pitfall 18 ✓); profile re-pinned (3a250b5); within-session stability test RUNS GREEN on the new pin (a latent double-prefix SKIP bug fixed — it had never actually run); parity numbers recorded fresh (curated 1/8 BOTH profiles — profile-independent stale expectations, control-proven; from-rollout 1/13 with documented harness artifacts) — the parity gate's recalibration is the OPEN OPERATOR DISPOSITION. Phase-9 verification is the next step; per the 2026-08-16 re-scope + split, Phase 12 (Product Functional Completeness) releases when Phase 9 closes and Phase 13 (OpenSpec Workflow Completion) follows; Phases 10/11 sit in the v1.2 pool."
-stopped_at: 09-04 legs complete; awaiting Phase-9 verification + the parity-recalibration disposition
-last_updated: "2026-08-16T02:15:00.000Z"
-last_activity: 2026-08-16 overnight -- autonomous re-capture (driver + probe + resume-boundary mechanism), extractor divergence-class fixes (d3fcfa1), profile re-pin (3a250b5), stability green, parity fresh numbers + stale-expectations finding
+status: executing
+stopped_at: Phase 12 context gathered
+last_updated: "2026-08-17T19:06:43.493Z"
+last_activity: 2026-08-17 -- Phase 10 execution started
 progress:
-  total_phases: 4
-  completed_phases: 1
-  total_plans: 15
+  total_phases: 6
+  completed_phases: 2
+  total_plans: 29
   completed_plans: 15
-  percent: 25
+  percent: 33
 ---
 
 # State: ass-guard-agent (working name)
@@ -20,14 +20,14 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-08-14)
 **Core value:** Outgoing requests to the model provider must be structurally indistinguishable from the mimicked agent's (zcode first) — *validated v1.0 (Phase-1 A/B parity)*
-**Current focus:** Phase 9 — serve-path audit + zcode parity re-capture (09-04 legs + verification)
+**Current focus:** Phase 10 — telegram-peer-text-voice
 
 ## Current Position
 
-Phase: 9 (serve-path-audit-zcode-parity-re-capture) — ALL PLANS EXECUTED: 09-01..03/05/06 complete; 09-04 COMPLETE (2026-08-16 overnight): the qualifying re-capture session exists (sess_3cee56ae, zcode 0.16.3 — produced autonomously via the app-server stdio driver under the operator's explicit direction; the mid-session MCP attach/detach came from config-change + session/resume boundaries, the only headless-reachable mechanism), drift report committed before the profile update, profile re-pinned, stability test green on the new pin, run record appended.
-Plan: Phase-9 verification is next (the verifier was held until 09-04's legs landed). The parity gate's fresh numbers are recorded (drift report) with a control-proven finding: the curated suite's v1.0-era expectations are stale against current live behavior REGARDLESS of profile (old and new bundles fail identically 1/8) — the gate needs its expectations re-recorded from current zcode before it can meaningfully gate again.
-Status: full guard green after the extractor changes (go test ./... -race; profile package incl. the previously-eternal-SKIP stability test now running green). Two extractor gaps found and fixed TDD (d3fcfa1): aux subrequest filtering (querySource) + mcp__-only catalog-transition tolerance. Parity leg executed with fresh numbers; no silent threshold movement (Phase-1 baseline marked superseded in the drift report).
-Last activity: 2026-08-17 - Completed quick task 260817-11v: scheduling config relocated to config.yaml with global ~/.config/ass-guard-agent/ + project .ass-guard/ layered merge (branch quick/260817-11v-relocate-scheduling-config, tip 715f575; rename grep gate + mise run ci green). Prior: 2026-08-16 overnight autonomous re-capture end-to-end (driver + probe + resume-boundary attach/detach), drift report (5a2c7f5), extractor fixes (d3fcfa1), profile re-pin (3a250b5), stability green, parity fresh numbers + the stale-expectations control experiment
+Phase: 10 (telegram-peer-text-voice) — EXECUTING
+Plan: 1 of 7
+Status: Executing Phase 10
+Last activity: 2026-08-17 -- Phase 10 execution started
 Next action: (1) OPERATOR DISPOSITION on the parity recalibration — re-record curated-suite expectations from current live zcode (the driver in /tmp/zcode-recapture/ can do it) + fix ExtractTurnsFromRollout's delta-record/state-pollution artifacts, or accept the recorded numbers as the new reference pending that work; (2) run Phase-9 verification (/gsd-execute-phase 9 or the manager's verifier dispatch) — the AUD-05 stability goal is green; the parity goal is re-baselined-with-findings; (3) per the 2026-08-16 re-scope + split: Phase 12 (Product Functional Completeness — includes re-pinning ACP-07's corpus-absent result forms against tonight's Phase-9 pin) releases the moment Phase 9 closes, Phase 13 (OpenSpec Workflow Completion — routes the Phase-8 stage-4 question residual through AskUserQuestion) follows; Phases 10/11 live in the v1.2 pool.
 
 Progress: [███░░░░░░░] 25%
@@ -137,6 +137,6 @@ Carried from v1.0 close — dispositioned into v1.1 scope:
 
 ## Session Continuity
 
-Last session: 2026-08-14T19:24:55.019Z
-Stopped at: Phase 11 context gathered
-Resume file: None
+Last session: 2026-08-17T19:06:43.463Z
+Stopped at: Phase 12 context gathered
+Resume file: .planning/phases/12-product-functional-completeness/12-CONTEXT.md
