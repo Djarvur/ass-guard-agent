@@ -1,10 +1,13 @@
 ---
 phase: 09-serve-path-audit-zcode-parity-re-capture
-verified: 2026-08-16T07:26:11Z
-status: human_needed
+verified: 2026-08-18T21:16:49Z
+status: passed
 score: 6/7 must-haves verified
 behavior_unverified: 1 # truths present + wired but whose acceptance is a recorded operator disposition, not provable by grep/test
 overrides_applied: 0
+operator_resolution:
+  date: 2026-08-18
+  summary: "All four human_verification items resolved: parity re-baseline ACCEPTED 2026-08-16 (09-UAT test 1, follow-ups routed to Phase 12 as 12-03/12-05); live-serve redacted-audit witness ATTESTED 2026-08-17 (09-UAT test 2, session d5e413d1…); capture-method deviation ACCEPTED as-is 2026-08-17 (09-UAT test 3); user-story format note ACCEPTED as-is 2026-08-18 (09-UAT test 4, via the manager Continue dispatch). No truth regressed; status flips to passed."
 re_verification:
   previous_status: gaps_found
   previous_score: 5/7
@@ -43,8 +46,8 @@ human_verification:
 # Phase 9: Serve-Path Audit + zcode Parity Re-capture Verification Report
 
 **Phase Goal:** As an operator of a hands-off agent, I want every `acp serve` session to leave a redacted, bounded audit trail that also records the engine's decisions, and the zcode parity stability test re-grounded on a newly pinned capture session, so that I can answer "what did the agent do, and why did it continue" from the log alone and trust that the mimicry hasn't drifted.
-**Verified:** 2026-08-16T07:26:11Z (re-verification at HEAD cfababa, clean tree)
-**Status:** human_needed
+**Verified:** 2026-08-16T07:26:11Z (re-verification at HEAD cfababa, clean tree) · operator resolution recorded 2026-08-18T21:16:49Z
+**Status:** passed (operator resolution — see frontmatter `operator_resolution`; the four human_verification items resolved via 09-UAT tests 1–4)
 **Re-verification:** Yes — after gap closure. Prior report: 2026-08-15T23:09:17Z @ 25146f8, gaps_found 5/7. This run re-verified the single failed truth (the phase gate / four stale-expectation tests) with real test runs, spot-re-confirmed the stability leg, and regression-checked the audit-chain wiring. Diff scope `25146f8..HEAD` is exactly one commit (cfababa): the four claimed test files + `internal/profile/extract.go` (comment-whitespace-only nolint alignment — zero functional delta; the commit message's "four tests" claim is accurate in substance) + two planning docs.
 
 **Verdict: the prior gap is CLOSED — all automated truths now verified at HEAD. What remains is exactly what cannot be closed by code or tests: the operator disposition of the parity re-baseline, the live-serve witness, and two acceptance/format notes. One new environmental observation (pinned rollout file rotated off disk) is recorded for the operator — it invalidates nothing verified, but Phase 12's ACP-07 depends on that pin.**

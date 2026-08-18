@@ -1,19 +1,14 @@
 ---
-status: testing
+status: passed
 phase: 09-serve-path-audit-zcode-parity-re-capture
 source: [09-VERIFICATION.md]
 started: 2026-08-16T08:45:09Z
-updated: 2026-08-16T08:45:09Z
+updated: 2026-08-18T21:16:49Z
 ---
 
 ## Current Test
 
-number: 4
-name: User-story format note (informational)
-expected: |
-  Operator reformats the ROADMAP goal via `/gsd mvp-phase 9` or accepts as-is
-  (role/capability/outcome all present substantively; only the canonical regex disagrees).
-awaiting: user response
+none: all tests resolved (test 4 accepted as-is by the operator 2026-08-18, via the manager Continue dispatch)
 
 ## Tests
 
@@ -34,14 +29,15 @@ resolution: ACCEPTED as-is 2026-08-17 — the app-server stdio driver capture (o
 
 ### 4. User-story format note (informational)
 expected: Operator reformats the ROADMAP goal via `/gsd mvp-phase 9` or accepts as-is (role/capability/outcome all present substantively; only the canonical regex disagrees).
-result: [pending]
+result: pass
+resolution: ACCEPTED as-is 2026-08-18 — operator, via the manager Continue dispatch; role/capability/outcome all present substantively, the canonical-regex disagreement is format-only.
 
 ## Summary
 
 total: 4
-passed: 3
+passed: 4
 issues: 0
-pending: 1
+pending: 0
 skipped: 0
 blocked: 0
 
