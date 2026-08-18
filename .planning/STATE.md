@@ -2,16 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: ACP Early Adoption
+current_phase: 12
+current_phase_name: product-functional-completeness
 status: executing
 stopped_at: Early-adoption re-order recorded (Phase 14 + adoption line)
-last_updated: "2026-08-18T18:45:00Z"
-last_activity: 2026-08-18 -- early-adoption re-order (planning artifacts)
+last_updated: "2026-08-18T21:18:35.738Z"
+last_activity: 2026-08-19
+last_activity_desc: Phase 12 execution started
 progress:
-  total_phases: 7
+  total_phases: 4
   completed_phases: 2
-  total_plans: 37
+  total_plans: 23
   completed_plans: 15
-  percent: 33
 ---
 
 # State: ass-guard-agent (working name)
@@ -20,15 +22,15 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-08-14)
 **Core value:** Outgoing requests to the model provider must be structurally indistinguishable from the mimicked agent's (zcode first) — *validated v1.0 (Phase-1 A/B parity)*
-**Current focus:** v1.1 ACP Early Adoption — dispatch 12-01 + 12-02, then Phase 14
+**Current focus:** Phase 12 — product-functional-completeness
 
 ## Current Position
 
-Phase: (none active) — Phase 10 execution ABORTED 2026-08-18 (operator: park + rearranging plans)
-Plan: —
-Status: Phase 9 CLOSED (2026-08-18: 6/6 plans, verifier PASS, UAT 3/4 accepted). Phase 12 planned (8 plans, checker-passed) and dependency-satisfied but NOT dispatched. Phase 13 context gathered. Phase 10's 2026-08-17 execution attempt died with its background agent (~15 min after spawn, client restart during the operator gap): RED test `ec2796d` + a half-done internal/runtime extraction, WIP-preserved at `47f10b4` on branch `gsd/phase-10-telegram-peer-text-voice` (untrusted — revert or resume deliberately at the v1.2 replan; that branch ALSO carries pre-untangle copies of the 08-18 docs commits — master's cherry-picked SHAs are canonical).
-Last activity: 2026-08-18 -- manager session: Phase-9 formal close + dep-field hygiene; Phase 12 planned (background planner, 8 plans/5 waves); Phase 13 context gathered (8 user decisions); quick task 260817-uv3 archived the zcode-recapture driver kit to tools/zcode-recapture (the pinned rollout file itself was already lost — rotated off ~/.zcode/cli/rollout); dead Phase-10 executor discovered + parked per operator
-Next action: (2026-08-18) Rearrangement COMPLETE — early-adoption re-order recorded in REQUIREMENTS/ROADMAP/MILESTONES (uncommitted; one docs commit when ratified). Dispatch order: (1) `/gsd-execute-phase 12` — 12-01 + 12-02 ONLY first, per the adoption split (12-01 lands in cmd/ass-guard + internal/coreexec; the parked 47f10b4 extraction is NOT a dependency — the plans reference wiring sites by symbol against both layouts); (2) `/gsd:plan-phase 14` (Adoption Readiness — EARLY-01..06: undo/checkpoints, compaction verify, cache probe, pi↔shaper cross-validation, token economics, tool contract; planning may overlap 12-01/02 execution); (3) 12-05 → 12-04 → 12-06; (4) **ADOPTION LINE** — the operator begins daily ACP use (v1.1 completes); (5) post-adoption: 12-03 → 12-08 → 12-07 → 13.
+Phase: 12 (product-functional-completeness) — EXECUTING
+Plan: 1 of 8 (12-01 — code tasks DONE, Task 3 operator checkpoint BLOCKING)
+Status: 12-01 Tasks 1+2 complete + `mise ci` green (commits 99663e0 RED, 8a909f2 T1 GREEN, 8ffe40a T2 RED, 4edd91a T2 GREEN, e45d2ae lint); Task 3 (live-serve AskUserQuestion witness) awaiting the operator — see Blockers/Concerns top entry for the exact legs + evidence commands. 12-01-SUMMARY.md deferred until the checkpoint resolves (the plan's own done criteria gate on it).
+Last activity: 2026-08-19 — 12-01 code execution complete; live checkpoint staged
+Next action: Operator runs the two live legs (Zed + ZAI_API_KEY; scratch at /tmp/ask-live-scratch, binary + evidence dir at /tmp/ask-live-evidence/). On "approved"/"approved-main": continuation collects evidence → SUMMARY → state advance → 12-02. Dispatch order after 12-01/12-02: `/gsd:plan-phase 14` → 12-05 → 12-04 → 12-06 → **ADOPTION LINE** → 12-03 → 12-08 → 12-07 → 13.
 
 Progress: [███░░░░░░░] 25%
 
@@ -80,6 +82,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 None yet.
 
 ### Blockers/Concerns
+
+- [Phase 12 / 12-01 Task 3, BLOCKING OPERATOR CHECKPOINT (live-serve AskUserQuestion witness — the phase gate's named leg), staged 2026-08-19]: all CODE work is done + `mise ci` green (RED `99663e0` → T1 GREEN `8a909f2` → T2 RED `8ffe40a` → T2 GREEN `4edd91a` → lint `e45d2ae`): AskBroker suspension/resume (D-01 timer default 10m, 0=block-forever), captured answered form + corpus-absent non-answer fixture, engine ActionAsk no-chain pin, sessionFor wiring, reply-as-tool-result routing, `--ask-timeout` flag. What offline proof CANNOT prove: a LIVE serve session where the real model asks, the OPERATOR answers from a real ACP client (Zed), and the reply lands as the tool result. AWAITED FROM THE OPERATOR: (leg 1) `export ZAI_API_KEY=<GLM Coding Plan key>`, connect Zed (or any ACP client) to `/tmp/ask-live-evidence/ass-guard acp serve --work-dir /tmp/ask-live-scratch` (binary prebuilt; registry/`docs/recapture-runbook.md` path also works), prompt: "I need to add a cache to this project — ask me which cache library to use before touching code", verify the question+options render in the client AND the turn's response completes (no stuck spinner), reply with an option in plain text, verify the model's next message acknowledges YOUR answer; (leg 2, optional D-01 hands-off proof) repeat with `--ask-timeout 30s` WITHOUT answering — after ~30s the model receives the non-answer and proceeds/declines on its own. EVIDENCE the continuation collects on resume: the scratch session's transcript lines under `/tmp/ask-live-scratch/.ass-guard/` (ask_suspended record + tool_result carrying the answer verbatim), the engine_decision line (action=ask), copied to `/tmp/ask-live-evidence/`; then SUMMARY + state advance. Resume signal per the plan: "approved" (both legs), "approved-main" (leg 1 only — record the timeout-leg residual), or a failure description.
 
 - [Phase 8 / chaining mechanism, RESOLVED-EXECUTED 2026-08-15 (the final leg) — the findings-6 disposition executed + LIVE-PROVEN]: the explore-boundary nondeterminism is closed by COMMAND-PROVENANCE chaining (the dispositioned route a): `TurnOutput.StartedBy` + the optional `engine.CommandMatcher` + the seeded `[[command_patterns]]` row `opsx:explore → /opsx:propose`, consulted ONLY after the dual signals miss. The mechanism's first live firing chained the boundary on run 1 of the final E2E (decision `continue command:post-explore-handoff`, span `opsx:explore`); the run then exposed ONE completion defect — the bare injected `/opsx:propose` carried no subject and the real propose command asked for one (chain dead at stage 2; evidence /tmp/e2e-final-evidence/gated-suite.log) — fixed by scenario-subject forwarding at the expansion seam (a bare injected command inherits the FIRST invocation's arguments, mirroring the capture's operator). Run 2 PASSED the full zero-continue chain (474.43s: 3 continues — 1 provenance + 2 text rows; all four stages' provenance carried `add-a-tiny-feature`; real archive dir on disk). The safety properties hold unchanged (non-command turns trigger nothing; provenance is unspoofable from model-visible content). Retroactive operator confirmation pending; revertible via 4967cb8..c84ab67.
 
