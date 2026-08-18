@@ -67,6 +67,18 @@ type Session struct {
 	// cycle on internal/mcp.
 	OnClose func() error
 
+	// ask is the per-session AskUserQuestion suspension broker (12-01, ACP-01).
+	// Nil = asks are not wired (an ErrSuspended result degrades to a structured
+	// error so the model is never silently dead-ended). Wired via SetAskBroker.
+	ask *AskBroker
+
+	// askResumeCtx is the context timer-driven ask resumes run under — the
+	// suspending turn's ctx dies with its prompt response, so the D-01 timer
+	// must resume under the serve-lifetime ctx.
+	//
+	//nolint:containedctx // deliberate serve-lifetime ctx storage (see SetAskBroker)
+	askResumeCtx context.Context
+
 	closeOnce sync.Once
 
 	turnCounter atomic.Int64
@@ -102,7 +114,11 @@ func (s *Session) CurrentTurnID() string {
 // the turn boundary and recorded as an investigate-and-fix-ready error line
 // (PROJECT.md, D-13 for the parent).
 //
-//nolint:gocognit,gocyclo,cyclop,funlen,nonamedreturns // domain complexity; err used by defer
+// An AskUserQuestion tool call SUSPENDS the turn (12-01, ACP-01/D-01): the
+// stop marker is stopAsk, no tool result is appended for the pending call, and
+// the pending ask lives in the session broker until the operator's reply
+// (ResolveAsk — the reply IS the tool result) or the D-01 timer resumes the
+// SAME turn's loop via runTurn.
 func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop string, err error) {
 	turnID := s.nextTurnID()
 	// Recover at the goroutine/turn boundary (D-13 parent-side): a panic becomes
@@ -121,6 +137,28 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 	if err != nil {
 		return "", err
 	}
+
+	return s.runTurn(ctx, turnID)
+}
+
+// runTurn is the D-18 model/tool loop core, shared by Prompt and the ask-resume
+// path (the reply or the D-01 timer re-enters here with the SUSPENDED turn's
+// id — no new user message; the resumed projection carries the answered tool
+// result alongside its original tool_use batch). Each entry gets its own
+// maxIterations budget: a suspension ENDS a client-visible turn (the client
+// controls the next prompt; T-12-01-03), so the runaway bound is per-entry.
+//
+//nolint:gocognit,gocyclo,cyclop,funlen,nonamedreturns // domain complexity; err used by defer
+func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			//nolint:err113 // dynamic error message
+			s.appendError(turnID, "session", fmt.Errorf("turn panic: %v", r), false)
+			//nolint:err113 // dynamic error message
+			err = fmt.Errorf("session turn panic recovered: %v", r)
+			stop = ""
+		}
+	}()
 
 	// maxIterations bounds the inner tool loop. 64 (raised from the stub-era
 	// 16 in Phase 8): a REAL model explore/apply turn routinely makes dozens of
@@ -229,12 +267,29 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 				s.appendError(turnID, "toolexec", batchErr, true)
 			}
 
+			var (
+				suspendedCallID string
+				suspendedOutput json.RawMessage
+			)
+
 			for _, res := range results {
 				// Key the result by the SAME call id the tool_call line
 				// recorded (pairing is consistent end-to-end, 08-07).
 				callID := res.Name
 				if res.CallIndex >= 0 && res.CallIndex < len(batchIDs) {
 					callID = batchIDs[res.CallIndex]
+				}
+
+				// 12-01 ask suspension: the AskUserQuestion executor returns
+				// ErrSuspended after parsing — NO tool result is appended for
+				// the suspended call (the reply or the D-01 timer appends it);
+				// the turn ends with the ask marker after the batch's other
+				// results are recorded.
+				if res.Err != nil && errors.Is(res.Err, ErrSuspended) {
+					suspendedCallID = callID
+					suspendedOutput = res.Output
+
+					continue
 				}
 
 				_ = s.Manager.AppendToolResult(turnID, callID, res.Output, res.IsError)
@@ -245,6 +300,26 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 				// capture: corpus session 4440f5a7, 46/46 rolling-64 tail
 				// records, zero tool-result resets — 08-09 / 08-08 T4).
 				_ = s.MaybeAppendBoundary(res.Name, callID, turnID)
+			}
+
+			if suspendedCallID != "" {
+				if s.ask != nil {
+					s.suspendForAsk(turnID, suspendedCallID, suspendedOutput)
+
+					return stopAsk, nil
+				}
+				// No broker wired (a bare session): degrade to the structured
+				// error convention — the model is never silently dead-ended.
+				errJSON, mErr := json.Marshal(map[string]string{
+					"error": "ask suspended but no broker is wired (question dropped)",
+				})
+				if mErr != nil {
+					errJSON = []byte(`{"error":"marshal error failed"}`)
+				}
+
+				_ = s.Manager.AppendToolResult(turnID, suspendedCallID, errJSON, true)
+
+				continue
 			}
 
 			continue // loop to project again with the results
@@ -259,6 +334,25 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 	s.appendError(turnID, "session", errToolLoopExceededMax, true)
 
 	return "", errToolLoopExceeded
+}
+
+// suspendForAsk records the suspension in the transcript + surfaces the
+// question through the broker (which fires the client-visible surface callback
+// and arms the D-01 timer). The executor's parsed questions ride the suspended
+// result's Output (the Stub seam carries no call identity; this is the one
+// place that knows both turnID and callID — T-12-01-01's keying).
+func (s *Session) suspendForAsk(turnID, callID string, output json.RawMessage) {
+	var qs []AskQuestion
+
+	_ = json.Unmarshal(output, &qs)
+
+	qJSON, mErr := json.Marshal(qs)
+	if mErr != nil {
+		qJSON = output
+	}
+
+	_ = s.Manager.AppendAskSuspended(turnID, callID, qJSON)
+	s.ask.Surface(PendingAsk{TurnID: turnID, CallID: callID, Questions: qs})
 }
 
 // toolCallIDOf returns the tool call's REAL provider id (T1's seam carry),
@@ -283,11 +377,16 @@ func (s *Session) SetToolExecutor(tx toolcat.ToolExecutor) { s.toolExec = tx }
 // MCP subprocesses are reaped, transcript managers flushed, etc. (Plan 05-01
 // T4). Safe to call multiple times; concurrent calls are serialized. A
 // mid-session turn panic does NOT call Close (the session survives for the next
-// turn); Close is session-end only.
+// turn); Close is session-end only. Any armed ask timer is disarmed first
+// (12-01: no goroutine leak; a pending ask dies with its session).
 func (s *Session) Close() error {
 	var firstErr error
 
 	s.closeOnce.Do(func() {
+		if s.ask != nil {
+			s.ask.Disarm()
+		}
+
 		if s.OnClose != nil {
 			firstErr = s.OnClose()
 		}

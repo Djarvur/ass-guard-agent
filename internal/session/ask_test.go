@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/coreexec"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
+	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 	"github.com/Djarvur/ass-guard-agent/internal/toolexec"
 )
 
@@ -20,8 +20,12 @@ const askInput = `{"questions":[{"question":"Which cache library should we use?"
 	`{"label":"bigcache","description":"simple disk-backed cache"}]}]}`
 
 // newAskSession builds a catalog-wired Session whose AskUserQuestion entry
-// carries the REAL executor (the 12-01 wiring shape), plus a broker whose
-// surface callback records every surfaced pending ask.
+// carries the suspension executor (a local twin of coreexec.AskUserQuestionExecute
+// — parse → questions on the Output → ErrSuspended; the layering keeps
+// internal/session's in-package tests free of the coreexec import — Go rejects
+// that cycle — and the REAL executor is proven end-to-end by coreexec's suite +
+// the cmd/ass-guard wiring test), plus a broker whose surface callback records
+// every surfaced pending ask.
 func newAskSession(
 	t *testing.T, responses []provider.Response, timeout time.Duration,
 ) (*Session, *AskBroker, *[]PendingAsk) {
@@ -36,7 +40,23 @@ func newAskSession(
 	})
 
 	s.SetAskBroker(broker, context.Background())
-	coreexec.RegisterAsk(s.Catalog, broker)
+
+	s.Catalog.Register(toolcat.Tool{
+		Name:        "AskUserQuestion",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"questions":{"type":"array"}}}`),
+		Execute: func(_ context.Context, args json.RawMessage) (json.RawMessage, error) {
+			var a struct {
+				Questions []AskQuestion `json:"questions"`
+			}
+
+			_ = json.Unmarshal(args, &a)
+
+			out, _ := json.Marshal(a.Questions)
+
+			return out, ErrSuspended //nolint:wrapcheck // the sentinel IS the contract
+		},
+	})
+
 	// The production dispatch path: the catalog-backed RealExecutor (an
 	// Execute-nil entry would return the canned no-implementation wall).
 	s.SetToolExecutor(&toolexec.RealExecutor{Catalog: s.Catalog})
@@ -324,19 +344,17 @@ func TestAsk_BrokerClaimRace(t *testing.T) {
 	b := NewAskBroker(time.Hour, nil)
 	b.Surface(PendingAsk{TurnID: "t", CallID: "c"})
 
-	reply := "the answer"
-
-	p1, ok1 := b.Claim(&reply)
+	p1, ok1 := b.Claim()
 	if !ok1 {
 		t.Fatal("first claim failed")
 	}
 
-	p2, ok2 := b.Claim(nil)
+	p2, ok2 := b.Claim()
 	if ok2 {
 		t.Fatal("second claim succeeded — double resume would inject into the same turn")
 	}
 
-	if p1.CallID != "c" || p2 != (PendingAsk{}) {
+	if p1.CallID != "c" || p2.CallID != "" || p2.TurnID != "" {
 		t.Errorf("claims = (%+v, %+v); want the first claimant to win with the payload", p1, p2)
 	}
 }

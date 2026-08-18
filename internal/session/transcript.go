@@ -38,6 +38,14 @@ const (
 	// user_message line holds the expanded body; provenance disambiguates
 	// typed-vs-expanded on replay).
 	TypeCommandProvenance = "command_provenance"
+
+	// TypeAskSuspended records an AskUserQuestion suspension (12-01, ACP-01):
+	// the turn ENDED at the ask (no tool result for the pending callID — the
+	// operator's reply or the D-01 timer appends it and resumes the SAME turn).
+	// The line carries the pending toolCallID + the surfaced questions payload;
+	// the engine_decision line (action=ask) records the decision-level view.
+	// The Projector skips this line type (an audit marker, like boundary).
+	TypeAskSuspended = "ask_suspended"
 )
 
 // ContentBlock is one entry of a user/assistant message's content (mirrors the

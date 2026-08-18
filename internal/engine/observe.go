@@ -275,6 +275,15 @@ func (e *Engine) applyDispatcher(ctx context.Context, dec *Decision) Decision {
 		// A hook launches its own DAG; the loop does not re-enter the runner.
 		dec.Action = ActionNothing
 	case ActionAsk:
+		// A TOOL-suspension ask (12-01) is a live user question with a pending
+		// tool call — the learning store is NOT consulted (a stored answer must
+		// never resume-chain a suspended turn; the broker owns the resume).
+		if dec.Signal == SignalAskSuspended {
+			dec.Reason = "ask suspended (AskUserQuestion): " + dec.Reason
+
+			return *dec
+		}
+
 		ans, aerr := e.Dispatcher.Ask(ctx, dec.Signal)
 		if aerr != nil {
 			// No stored answer / ask pending — surface the ask + stop the loop.

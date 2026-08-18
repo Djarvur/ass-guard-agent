@@ -4,6 +4,11 @@ package engine
 // output + pattern table; no I/O, no globals, no time). It returns the engine's
 // verdict for one finished turn:
 //
+//   - an ASK-SUSPENDED turn (out.AskSuspended — 12-01, ACP-01) ⇒ ActionAsk
+//     with Signal SignalAskSuspended and NO table lookup: a suspended turn
+//     must never chain (the Phase-8 pattern table would otherwise auto-continue
+//     a suspended stage — the chained-stage hazard the no-chain regression
+//     pins);
 //   - a TEXT-PATTERN match (table.MatchText returns a non-Nothing action) ⇒
 //     ActionContinue with Signal "text:<patternID>" (text wins attribution when
 //     both signals are present — D-02);
@@ -26,6 +31,18 @@ package engine
 // assistant-role-only safety property holds unchanged — a non-command turn's
 // end_turn triggers NOTHING even against a table carrying command rows.
 func Decide(out TurnOutput, table PatternTable) Decision {
+	// Ask suspension first, before any table consultation: the turn is waiting
+	// on the OPERATOR (a pending tool call), not on a pattern. ErrAskPending
+	// semantics — surface the ask + stop the loop.
+	if out.AskSuspended {
+		return Decision{
+			TurnID: out.TurnID,
+			Action: ActionAsk,
+			Signal: SignalAskSuspended,
+			Reason: "turn suspended on AskUserQuestion — surface the ask, stop the loop (never chain)",
+		}
+	}
+
 	if d := table.MatchText(out.Text); d.Action != ActionNothing {
 		reason := "text-pattern matched"
 		// If a handoff tool is ALSO present, note it in the reason for the

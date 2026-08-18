@@ -80,8 +80,9 @@ func (d *knowEverythingDispatcher) Ask(_ context.Context, _ string) (string, err
 func TestDispatcher_SuspendedAskSkipsLearningStore(t *testing.T) {
 	t.Parallel()
 
-	e := &Engine{}
 	d := &knowEverythingDispatcher{}
+
+	e := &Engine{Dispatcher: d}
 
 	dec := Decision{
 		TurnID: "t-ask",

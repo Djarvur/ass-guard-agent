@@ -150,6 +150,12 @@ type TurnOutput struct {
 	// the assistant-role-only safety property is untouched (model-visible text
 	// cannot fabricate a provenance key).
 	StartedBy string
+	// AskSuspended marks a turn that ENDED on an AskUserQuestion suspension
+	// (12-01, ACP-01): the model asked, the turn waits on the operator. Decide
+	// returns ActionAsk for such a turn with NO table lookup — a suspended
+	// turn must NEVER chain (the Phase-8 pattern table would otherwise
+	// auto-continue a suspended stage; the no-chain regression pin).
+	AskSuspended bool
 }
 
 // MaxContinueInjections is the re-fire budget — the second infinite-loop bar
@@ -159,3 +165,9 @@ type TurnOutput struct {
 // stop, not a failure). Default 8 covers a full SDD scenario's stage count
 // with headroom.
 const MaxContinueInjections = 8
+
+// SignalAskSuspended is the Decision.Signal for an ask-suspended turn
+// (12-01, ACP-01): a LIVE user question with a pending tool call. The
+// learning store is NOT consulted for this signal (applyDispatcher keeps
+// ActionAsk — a stored answer must never resume-chain a suspended turn).
+const SignalAskSuspended = "ask:suspended"

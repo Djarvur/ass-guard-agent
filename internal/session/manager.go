@@ -238,6 +238,17 @@ func (m *Manager) AppendUsage(turnID string, input, output int64) error {
 	})
 }
 
+// AppendAskSuspended records an AskUserQuestion suspension (12-01, ACP-01):
+// the turn ended at the ask; questions carries the surfaced payload (the
+// model-authored {questions:[…]} input, redacted by the chokepoint like every
+// other string value — T-12-01-02).
+func (m *Manager) AppendAskSuspended(turnID, toolCallID string, questions json.RawMessage) error {
+	return m.appendLine(&Line{
+		Type: TypeAskSuspended, TurnID: turnID, Timestamp: now(),
+		ToolCallID: toolCallID, Input: questions,
+	})
+}
+
 // AppendEngineDecision records the unified engine's verdict for one turn
 // (Phase-4 ENG-02 — the single provenance-tagged stream). The line type constant
 // TypeEngineDecision is already reserved in transcript.go. action is the

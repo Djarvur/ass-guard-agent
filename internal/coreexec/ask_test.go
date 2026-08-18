@@ -229,24 +229,25 @@ func TestAskExecute_NilBroker(t *testing.T) {
 func TestRegisterAsk_SchemaNeverRewritten(t *testing.T) {
 	t.Parallel()
 
-	capturedDesc := "Use this tool only when you are blocked on a decision"
-	capturedSchema := json.RawMessage(`{"type":"object","properties":{"questions":{"type":"array"}}}`)
-
+	// The REAL embedded captured catalog (toolcat pre-seeds coretools.json) —
+	// the discipline is asserted against the actual captured entry, not a
+	// hand-built stand-in.
 	catalog := toolcat.NewCatalog()
-	catalog.Register(toolcat.Tool{
-		Name:        "AskUserQuestion",
-		Description: capturedDesc,
-		InputSchema: capturedSchema,
-		Mutability:  toolcat.MutabilityReadOnly, // the captured entry is non-mutating (a question reads nothing)
-	})
 
-	before, _ := catalog.Get("AskUserQuestion")
+	before, ok := catalog.Get("AskUserQuestion")
+	if !ok {
+		t.Fatal("embedded coretools.json missing AskUserQuestion (fixture drift)")
+	}
 
 	RegisterAsk(catalog, session.NewAskBroker(time.Hour, nil))
 
 	after, ok := catalog.Get("AskUserQuestion")
 	if !ok {
 		t.Fatal("AskUserQuestion missing after RegisterAsk")
+	}
+
+	if before.Mutability != toolcat.MutabilityReadOnly {
+		t.Errorf("captured AskUserQuestion mutability = %v; want read-only (a question reads nothing)", before.Mutability)
 	}
 
 	if after.Name != before.Name {
@@ -275,7 +276,9 @@ func TestRegisterAsk_SchemaNeverRewritten(t *testing.T) {
 func TestRegisterAsk_MissingEntrySkipped(t *testing.T) {
 	t.Parallel()
 
-	catalog := toolcat.NewCatalog()
+	// A zero catalog (nil map) has no AskUserQuestion entry: RegisterAsk must
+	// skip without panicking or inventing an entry (the RegisterCore rule).
+	catalog := &toolcat.Catalog{}
 
 	RegisterAsk(catalog, session.NewAskBroker(time.Hour, nil)) // must not panic
 
