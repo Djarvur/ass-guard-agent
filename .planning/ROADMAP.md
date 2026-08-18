@@ -226,7 +226,30 @@ Plans:
   9. Command + skill discovery reads Claude-Code-compatible plugin installs (`installed_plugins.json` + cache layout, PLUG-05 carve-out), merging plugin skills/commands with documented precedence; reads span `~/.claude/plugins/` and `~/.zcode/cli/plugins/`, writes stay under the ass-guard root (ACP-10)
 
 **Phase gate:** `mise ci` clean AND a live-serve session exercising `AskUserQuestion` end-to-end (operator answers a real model question) AND zero `no implementation yet` strings reachable from the 19-tool built-in catalog on any turn (grep-gated) AND the eval suites green in CI. No stub-only evidence closes this phase.
-**Plans:** TBD — dispatch `/gsd:plan-phase 12` after Phase 9 closes (context gathering should consume this section + ECOSYSTEM-AUDIT §4/§5 + the 08-08 deferred-tools table in 08-08-SUMMARY + the rollout corpus for captured AskUserQuestion/plan-mode/cron forms).
+**Plans:** 8 plans
+Plans:
+**Wave 1**
+
+- [ ] 12-01-PLAN.md — AskUserQuestion end-to-end: the question surface, turn suspension on the engine ask path, reply-as-tool-result, the D-01 timeout policy + the live-serve operator witness (THE phase tracer) [ACP-01]
+- [ ] 12-02-PLAN.md — plugin-install discovery: `installed_plugins.json` + cache layout from `~/.claude/plugins/` AND `~/.zcode/cli/plugins/`, precedence merge, read-only boundary [ACP-10]
+- [ ] 12-03-PLAN.md — parity extractor fixes: `ExtractTurnsFromRollout` delta-record reconstruction + per-turn workspace isolation (the from-rollout A/B artifact classes, D-04 #2) [ACP-07]
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 12-04-PLAN.md — plan mode (EnterPlanMode/ExitPlanMode over the ask seam, no-gating design pinned) + SendMessage (agent mailbox) + ReadSessionContext (persisted-session reader) [ACP-02, ACP-03]
+- [ ] 12-05-PLAN.md — re-record from live zcode via the archived driver kit: the deferred-tools tour, the forms harvest, the committed re-pinned fixture, the ACP-07 families implemented (D-04 primary route)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 12-06-PLAN.md — background work: Bash `run_in_background` + the TaskRegistry, TaskOutput retrieval, TaskStop group-kill, session-close reaping, `dangerouslyDisableSandbox` by-design [ACP-05, ACP-06]
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 12-07-PLAN.md — cron: the persisted `.ass-guard/schedule/` store, the four executors, queue/fire-once engine-driven turns with missed-window notes, the FULL catalog-completeness test [ACP-04]
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 12-08-PLAN.md — the behavioral-eval regression net: extracted E2E harness, the scenario runner (pass@k, flagship suite), the `ASSGUARD_EVAL_GATE` gate + change-class detector + k=3 manual task (D-03) [ACP-08]
 
 ### Phase 13: OpenSpec Workflow Completion
 
@@ -268,7 +291,7 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 8. Slash-Command Kickoff | v1.1 | 9/9 | Complete (operator witness accepted; 2 known residuals documented) | 2026-08-16 |
 | 9. Serve-Path Audit + zcode Parity Re-capture | v1.1 | 5/6 code plans done; 09-04 blocked-on-harvest (operator workload) | Executing | - |
-| 12. Product Functional Completeness | v1.1 | 0 (planning dispatches when Phase 9 closes) | Not started | - |
+| 12. Product Functional Completeness | v1.1 | 8 plans approved (checker-passed 2026-08-17; awaiting execution dispatch after Phase 9 closes) | Planning complete | - |
 | 13. OpenSpec Workflow Completion | v1.1 | 0 (planning dispatches when Phase 12 closes) | Not started | - |
 | 10. Telegram Peer (Text + Voice) | v1.2 pool | 0/7 (plans preserved) | Moved to v1.2 (2026-08-16) | - |
 | 11. dsh Mimicry Profile #2 | v1.2 pool | 0/7 (plans stale — replan required) | Moved to v1.2 (2026-08-16) | - |
