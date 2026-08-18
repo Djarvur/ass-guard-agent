@@ -409,8 +409,9 @@ func parseInstalledPlugins(pluginsRoot, projectDir string) []installedPlugin {
 	for _, key := range keys {
 		for _, e := range v2.Plugins[key] {
 			// A project/local-scoped install applies only to ITS project —
-			// entries scoped elsewhere never leak into this load.
-			if e.ProjectPath != "" && projectDir != "" && !samePath(e.ProjectPath, projectDir) {
+			// entries scoped elsewhere (or when no project context exists)
+			// never leak into this load.
+			if e.ProjectPath != "" && (projectDir == "" || !samePath(e.ProjectPath, projectDir)) {
 				continue
 			}
 
@@ -609,6 +610,50 @@ func logPluginSkip(format string, args ...any) {
 	shadowWarnLogger.Warn("plugin skip: " + fmt.Sprintf(format, args...))
 }
 
+// toolsList is a frontmatter tools field accepting every documented form:
+// a YAML list (`[Read, Bash]` / block list), a SPACE-separated scalar
+// (`Read Edit Bash(git:*)` — Claude Code's allowed-tools syntax, measured live
+// in samber/cc-skills-golang 1.5.0), or a COMMA-separated scalar (`Read, Grep`
+// — the .claude/agents convention). A strict []string would drop the ENTIRE
+// skill/command on the scalar forms (live-proven 2026-08-18: 40 real skills
+// silently lost) — this is the native-consumer tolerance, not a divergence.
+type toolsList []string
+
+// UnmarshalYAML implements the tolerant list decoding.
+func (t *toolsList) UnmarshalYAML(node *yaml.Node) error { //nolint:cyclop // one switch over node kinds
+	switch node.Kind {
+	case yaml.SequenceNode:
+		out := make([]string, 0, len(node.Content))
+		for _, item := range node.Content {
+			out = append(out, strings.TrimSpace(item.Value))
+		}
+
+		*t = out
+
+		return nil
+	case yaml.ScalarNode:
+		// Commas and whitespace both separate; parens stay (Bash(git:*) is one tool spec).
+		fields := strings.FieldsFunc(node.Value, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' })
+
+		out := make([]string, 0, len(fields))
+		for _, f := range fields {
+			if f != "" {
+				out = append(out, f)
+			}
+		}
+
+		*t = out
+
+		return nil
+	case 0: // explicit null (`allowed-tools:` with no value)
+		*t = nil
+
+		return nil
+	default:
+		return fmt.Errorf("tools field is not a list or scalar")
+	}
+}
+
 // parseSkill parses a SKILL.md: YAML frontmatter (name/description/allowed-tools)
 // between `---` delimiters, then the body. The body is not stored (skills are
 // surfaced as discovered metadata; execution bridging is downstream).
@@ -616,9 +661,9 @@ func parseSkill(content, path string) (Skill, error) {
 	frontmatter, _ := splitFrontmatter(content)
 
 	var fm struct {
-		Name         string   `yaml:"name"`
-		Description  string   `yaml:"description"`
-		AllowedTools []string `yaml:"allowed-tools"` //nolint:tagliatelle // kebab-case frontmatter
+		Name         string    `yaml:"name"`
+		Description  string    `yaml:"description"`
+		AllowedTools toolsList `yaml:"allowed-tools"` //nolint:tagliatelle // kebab-case frontmatter
 	}
 
 	err := yaml.Unmarshal([]byte(frontmatter), &fm)

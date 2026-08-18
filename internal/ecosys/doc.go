@@ -15,14 +15,38 @@
 // `~/.ass-guard/` (user), covered by the existing self-gitignore (Phase 2
 // D-07).
 //
-// # Precedence (D-06)
+// # Precedence (D-06 + the 12-02 plugin tiers)
 //
-// Two-phase merge, unambiguous:
+// Two-phase merge over the four existing roots, unambiguous:
 //
 //  1. Within each tree: project-scope overlays user-scope (project wins).
 //  2. Across trees: `.claude/` overlays `.ass-guard/` (`.claude/` wins).
 //
-// Final: project-claude > {project-assguard, user-claude} > user-assguard.
+// 12-02 (operator revision 2026-08-19) appends the installed-plugin roots as
+// the two lowest tiers, so the full chain is:
+//
+//	project-claude > {project-assguard, user-claude} > user-assguard
+//	  > project `.claude/plugins/` > `~/.claude/plugins/`
+//
+// The existing chain keeps priority: user + project `.claude/skills/` and
+// `.claude/commands/` (and `.claude/agents/`, 12-02) stay first-class chain
+// entries that override every plugin contribution; the PROJECT plugin root
+// overlays the USER plugin root (project over user, mirroring the `.claude/`
+// ordering). Every same-key overwrite emits a stderr shadow warning naming
+// both files (CMD-05).
+//
+// The `~/.zcode/cli/plugins/` root is deliberately NOT probed (operator
+// 2026-08-19: plugins are installed FOR Claude Code and consumed as native —
+// no popular kit ships an ass-guard target; the skills/agents listing merge
+// is dynamic content inside the captured shape, so the request structure —
+// the mimicry contract — is unaffected).
+//
+// Installed-plugin parsing accepts BOTH on-disk registry shapes: the v1 array
+// and the v2 object (`{"version":2,"plugins":…}`, measured live). A missing,
+// malformed, or escaping artifact degrades to a stderr warning naming the
+// path — the registry keeps loading; discovery writes NOTHING anywhere (the
+// runtime write-boundary test pins content AND mtimes under every probed
+// root).
 //
 // # No viper convention
 //
