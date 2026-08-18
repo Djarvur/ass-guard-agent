@@ -154,12 +154,59 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 		}
 	}()
 
+	// 12-02 Task 4: the turn-entry hook seams. Prompt receives the
+	// POST-EXPANSION blocks (cmd expands slash-commands before calling), so
+	// UserPromptSubmit fires here with the expanded prompt. SessionStart
+	// fires lazily on the FIRST Prompt (the session-create seam — the runner
+	// is wired at sessionFor but the session's first activity is its turn).
+	// Context-bearing stdout (both events' documented role) is INJECTED as an
+	// appended content block on the user message — the transcript records
+	// exactly what the model saw (corpus-absent form: no captured session
+	// carries hook output; the inject follows Claude Code's documented
+	// context role, flagged for the re-capture).
+	if s.Hooks != nil {
+		if !s.sessionStartFired {
+			s.sessionStartFired = true
+
+			if out := s.Hooks.Fire(ctx, "SessionStart", nil); out.Message != "" {
+				userPrompt = appendContentBlock(userPrompt, out.Message)
+			}
+		}
+
+		if out := s.Hooks.Fire(ctx, "UserPromptSubmit", map[string]any{
+			"prompt": firstTextOf(userPrompt),
+		}); out.Message != "" {
+			userPrompt = appendContentBlock(userPrompt, out.Message)
+		}
+	}
+
 	err = s.Manager.AppendUserMessage(turnID, userPrompt)
 	if err != nil {
 		return "", err
 	}
 
 	return s.runTurn(ctx, turnID)
+}
+
+// appendContentBlock returns a COPY of blocks with one text block appended
+// (the caller's slice is never mutated — the ACP layer owns the original).
+func appendContentBlock(blocks []ContentBlock, text string) []ContentBlock {
+	out := make([]ContentBlock, 0, len(blocks)+1)
+	out = append(out, blocks...)
+
+	return append(out, ContentBlock{Type: blockText, Text: text})
+}
+
+// firstTextOf returns the first text block's text (the UserPromptSubmit
+// payload's prompt field).
+func firstTextOf(blocks []ContentBlock) string {
+	for _, b := range blocks {
+		if b.Type == blockText {
+			return b.Text
+		}
+	}
+
+	return ""
 }
 
 // toolCallIDOf returns the tool call's REAL provider id (T1's seam carry),
@@ -192,6 +239,12 @@ func (s *Session) Close() error {
 	s.closeOnce.Do(func() {
 		if s.ask != nil {
 			s.ask.Disarm()
+		}
+
+		// 12-02 Task 4: SessionEnd fires at session close (bounded by the
+		// per-hook timeout — Close carries no caller ctx).
+		if s.Hooks != nil {
+			_ = s.Hooks.Fire(context.Background(), "SessionEnd", nil)
 		}
 
 		if s.OnClose != nil {
@@ -398,6 +451,12 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 		// Step 6: end_turn — append the assembled assistant message + stopReason.
 		assistantText := textBuf
 		_ = s.Manager.AppendAssistantMessage(turnID, assistantText)
+
+		// 12-02 Task 4: Stop fires at PARENT turn end (after the assistant
+		// message; stop_hook_active=false — ass-guard never loops Stop).
+		if s.Hooks != nil {
+			_ = s.Hooks.Fire(ctx, "Stop", map[string]any{"stop_hook_active": false})
+		}
 
 		return mapStopReason(resp.FinishReason), nil
 	}

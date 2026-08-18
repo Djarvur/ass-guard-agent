@@ -89,18 +89,22 @@ func loadAll(claudeDir, assguardDir string) (Registry, map[string]ServerConfig, 
 	}
 
 	pluginMCP := map[string]ServerConfig{}
+	pluginHooks := []HookConfig(nil)
 
 	userPlug := newRegistry()
-	discoverInstalledPlugins(filepath.Join(userClaude, pluginsDirName), projectDir, userPlug, pluginMCP)
+	discoverInstalledPlugins(filepath.Join(userClaude, pluginsDirName), projectDir, userPlug, pluginMCP, &pluginHooks)
 
 	projPlug := newRegistry()
 	if claudeDir != "" {
 		// Project-root plugin servers overwrite user-root ones on name
 		// collision (project over user — the tier order).
-		discoverInstalledPlugins(filepath.Join(claudeDir, pluginsDirName), projectDir, projPlug, pluginMCP)
+		discoverInstalledPlugins(filepath.Join(claudeDir, pluginsDirName), projectDir, projPlug, pluginMCP, &pluginHooks)
 	}
 
-	return mergeRegistries(mergeRegistries(userPlug, projPlug), core), pluginMCP, nil
+	merged := mergeRegistries(mergeRegistries(userPlug, projPlug), core)
+	merged.Hooks = append(pluginHooks, merged.Hooks...)
+
+	return merged, pluginMCP, nil
 }
 
 // loadTreeMerged loads user-scope then overlays project-scope (project wins).
@@ -620,11 +624,16 @@ func resolveInstallPath(pluginsRoot, installPath string) string {
 // discoverInstalledPlugins walks one plugins root's installed_plugins.json
 // registry (12-02): for every entry it resolves the cache install path, reads
 // the `.claude-plugin/plugin.json` manifest, and merges the bundled
-// contributions (skills/, commands/, agents/, .mcp.json) into reg / mcpOut
-// with the plugin's provenance. Every degradation is a stderr warning naming
-// the path — never a load error (the registry keeps loading); nothing is
-// written anywhere.
-func discoverInstalledPlugins(pluginsRoot, projectDir string, reg Registry, mcpOut map[string]ServerConfig) {
+// contributions (skills/, commands/, agents/, .mcp.json, hooks/hooks.json)
+// into reg / mcpOut / hooksOut with the plugin's provenance. The out-params
+// exist because Registry's maps mutate through the by-value receiver but the
+// Hooks SLICE does not — callers pass their own accumulators. Every
+// degradation is a stderr warning naming the path — never a load error (the
+// registry keeps loading); nothing is written anywhere.
+func discoverInstalledPlugins(
+	pluginsRoot, projectDir string, reg Registry,
+	mcpOut map[string]ServerConfig, hooksOut *[]HookConfig,
+) {
 	if pluginsRoot == "" {
 		return
 	}
@@ -693,6 +702,11 @@ func discoverInstalledPlugins(pluginsRoot, projectDir string, reg Registry, mcpO
 		for serverName, sc := range parsePluginMCPJSON(install) {
 			mcpOut[serverName] = sc
 		}
+
+		// 12-02 Task 4: the bundled hooks/hooks.json (all events — mapped
+		// AND unmapped/observe-only; the runner decides firing).
+		*hooksOut = append(*hooksOut, parseHooksJSON(
+			filepath.Join(install, "hooks", "hooks.json"), install)...)
 
 		reg.Plugins[name] = Plugin{
 			Name: name,
@@ -1067,6 +1081,9 @@ func mergeRegistries(base, overlay Registry) Registry {
 	mergeSkillsWithShadowWarnings(out.Skills, base.Skills, overlay.Skills)
 	mergeCommandsWithShadowWarnings(out.Commands, base.Commands, overlay.Commands)
 	mergeAgentsWithShadowWarnings(out.Agents, base.Agents, overlay.Agents)
+
+	// Hooks accumulate (a slice — every tier's hooks fire; base tiers first).
+	out.Hooks = append(append([]HookConfig(nil), base.Hooks...), overlay.Hooks...)
 
 	maps.Copy(out.Plugins, base.Plugins)
 

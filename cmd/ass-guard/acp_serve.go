@@ -916,7 +916,14 @@ func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen // grouping ke
 	// the Skill override above: the per-session clone carries the WorkDir +
 	// a fresh per-session TodoStore (D-16 isolation); the shared engine
 	// catalog is never mutated.
-	coreexec.RegisterCore(sCatalog, coreexec.Config{WorkDir: dir, Todos: coreexec.NewTodoStore()})
+	//
+	// 12-02 Task 4: the SAME site is the PreToolUse/PostToolUse chokepoint —
+	// one HookRunner per session (discovered plugin hooks; the runner is
+	// nil-safe when none are installed) wraps every core executor.
+	hookRunner := ecosys.NewHookRunner(r.reg.Hooks, sessionID, dir, mgr.Path())
+	coreexec.RegisterCore(sCatalog, coreexec.Config{
+		WorkDir: dir, Todos: coreexec.NewTodoStore(), Hooks: hookRunner,
+	})
 
 	// 12-01 (ACP-01/D-01): the per-session AskUserQuestion surface. The
 	// broker holds the pending ask; its surface callback publishes the
@@ -978,6 +985,10 @@ func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen // grouping ke
 		// types (a subagent_type match applies the definition's Prompt + Tools
 		// on the existing PARA machinery — advisory listing, no new tier).
 		SubagentTypes: r.reg.Agents,
+
+		// 12-02 Task 4: the lifecycle hook seams (UserPromptSubmit at Prompt
+		// entry, Stop at turn end, SubagentStop, SessionStart/SessionEnd).
+		Hooks: hookRunner,
 	}
 	sess = s
 

@@ -105,6 +105,11 @@ func (s *Session) DispatchSubagent(
 			errMsg = o.err.Error()
 		}
 
+		// 12-02 Task 4: SubagentStop fires when the subagent turn completes.
+		if s.Hooks != nil {
+			_ = s.Hooks.Fire(ctx, "SubagentStop", map[string]any{"stop_hook_active": false})
+		}
+
 		_ = s.Manager.AppendSubagentResult(parentTurnID, subagentTurnID, o.result, errMsg)
 		if s.Bus != nil {
 			s.Bus.Publish(event.SubagentResult{

@@ -15,7 +15,7 @@ import (
 func TestReadOnlyNoWriteAPI(t *testing.T) {
 	t.Parallel()
 
-	sourceFiles := []string{"loader.go", "types.go", "doc.go", "goconst_constants.go"}
+	sourceFiles := []string{"loader.go", "types.go", "doc.go", "goconst_constants.go", "skills.go", "hooks.go"}
 
 	for _, name := range sourceFiles {
 		data, err := os.ReadFile(filepath.Join(".", name))
