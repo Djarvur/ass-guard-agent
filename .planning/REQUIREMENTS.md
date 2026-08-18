@@ -1,9 +1,11 @@
-# Requirements: ass-guard-agent (working name) — v1.1 Product Completion
+# Requirements: ass-guard-agent (working name) — v1.1 ACP Early Adoption
 
-**Defined:** 2026-08-14 · **Re-scoped:** 2026-08-16 (operator)
+**Defined:** 2026-08-14 · **Re-scoped:** 2026-08-16 (operator) · **Re-ordered:** 2026-08-18 (operator — early adoption)
 **Core Value:** Outgoing requests to the model provider must be structurally indistinguishable from the mimicked agent's (zcode first) — if the model can tell the requests apart, everything built on top is compromised.
 
-**v1.1 scope discipline (after the 2026-08-16 re-scope + phase split):** The milestone completes the product — Phase 8 closed the kickoff loop (done); Phase 9 closes audit + parity re-capture; **Phase 12 (Product Functional Completeness)** makes the machinery whole: every catalog tool executes for real, result forms capture-pinned, the behavioral-eval regression net, plugin-install discovery; **Phase 13 (OpenSpec Workflow Completion)** makes the flagship toolkit whole: the expanded OpenSpec command matrix runs E2E with zero-continue chaining and eval coverage. **Telegram (TG-01..06) and the dsh profile (DSH-01..05) are lowered to the v1.2 planning pool** (operator priority: the product fully functional as soon as possible) — their two deps (go-telegram/bot v1.23.0, klauspost/compress/zstd v1.19.2) and the `internal/runtime` structural refactor move with them; v1.1 adds zero new dependencies. No feature closes with stub-only evidence — every external surface carries a real-binary/live-service gate. Research: `.planning/research/SUMMARY.md` (2026-08-14), `.planning/research/ECOSYSTEM-AUDIT.md` (Phase 12: EVAL §4.4, PLUG-05 §4.1/§5).
+**v1.1 scope discipline (after the 2026-08-16 re-scope + phase split):** The milestone completes the product — Phase 8 closed the kickoff loop (done); Phase 9 closes audit + parity re-capture; **Phase 12 (Product Functional Completeness)** makes the machinery whole: every catalog tool executes for real, result forms capture-pinned, the behavioral-eval regression net, plugin-install discovery; **Phase 13 (OpenSpec Workflow Completion)** makes the flagship toolkit whole: the expanded OpenSpec command matrix runs E2E with zero-continue chaining and eval coverage. **Telegram (TG-01..06) and the dsh profile (DSH-01..05) are lowered to the v1.2 planning pool** (operator priority: the product fully functional as soon as possible) — their two deps (go-telegram/bot v1.23.0, klauspost/compress/zstd v1.19.2) and the `internal/runtime` structural refactor move with them; v1.1 adds zero new dependencies. No feature closes with stub-only evidence — every external surface carries a real-binary/live-service gate. Research: `.planning/research/SUMMARY.md` (2026-08-14), `.planning/research/ECOSYSTEM-AUDIT.md` (Phase 12: EVAL §4.4, PLUG-05 §4.1/§5; Phase 14: §3.3 + §4.4).
+
+**2026-08-18 re-order (early adoption):** the operator prioritizes starting daily ACP use ASAP — an explicit **adoption line** splits Phase 12's waves (12-01/02/05/04/06 pre-adoption; 12-03/07/08 post), Phase 13 continues post-adoption, and the dispositioned YES items of the other-agents analysis land as **Phase 14: Adoption Readiness** (EARLY-01..06 below — the operator confirmed the full six-item set 2026-08-18: "делаем все 1-6"). The milestone completes when daily use begins.
 
 ## v1.1 Requirements
 
@@ -25,6 +27,17 @@
 - [ ] **AUD-04**: The audit trail records engine decisions (continue / hook / ask / wait, with the matched signal) — the "why did the agent continue" question is answerable from the log alone
 - [ ] **AUD-05**: The zcode parity stability test runs green against a newly pinned divergence-prone capture session, produced via an operator runbook (scripted subagent/MCP-attach/tool-variety workload — not richest-session selection), with the pinned session ID consumed by the test, zcode + extractor versions recorded, thresholds explicitly re-baselined, and the drift report committed before any profile update
 
+### Adoption Readiness (priority 3 — added at the 2026-08-18 early-adoption re-order; Phase 14)
+
+*(Operator 2026-08-18: "as the first step I would like the things we've got from the other agents analysis must be processed: are there anything useful worth to be implemented before I start to use the agent." Disposition of `research/ECOSYSTEM-AUDIT.md` §3.3/§4.4 + `research/IDEA-LANDSCAPE.md` §borrow-list (SEED-004): six YES items — the operator took the full set ("делаем все 1-6"). The remaining NO items are recorded in ROADMAP Phase 14's added-at note and stay routed — nothing analyzed is dropped silently.)*
+
+- [ ] **EARLY-01**: A bad mutating turn is recoverable — ass-guard snapshots workspace file state at turn boundaries into a shadow-git store under the ass-guard root (external git; never touches the user's repo index/remotes/HEAD; no daemon, no port — invariant-clean per ECOSYSTEM-AUDIT §4.4 SNAP and IDEA-LANDSCAPE 🧲-1), and the operator can list and restore checkpoints from the terminal (`ass-guard checkpoint list|restore`) — the no-confirmation-tier safety model gains its reversibility backstop, both analyses' #1 borrow
+- [ ] **EARLY-02**: The compaction question is answered from evidence, not assumption — the Phase-9 pinned capture is analyzed for zcode auto-compact / context-eviction / `cache_control` breakpoint behavior; the finding is committed as a decision artifact, and either "the profile already delivers compaction via mimicry" is documented and closed or a scoped implementation requirement is issued to the post-adoption queue (IDEA-LANDSCAPE gap 2, verify-first)
+- [ ] **EARLY-03**: Cache-hit behavior is observable — the parity harness carries a probe asserting dynamic merges (skills, MCP tools) respect stable→volatile ordering and captured `cache_control` placement against the pin, wired into the existing parity run, so daily-use cache/cost drift is detectable rather than only structural divergence (ECOSYSTEM-AUDIT §4.4 CACHE)
+- [ ] **EARLY-04**: The shaper is cross-validated against pi's wire layer — a committed audit diffs `internal/shaper` behaviors against pi's `packages/ai/src/api/anthropic-messages.ts` + `transform-messages.ts` (cache_control placement, thinking-config mapping, header merge order, compat-flag catalog), using pi's 43k-line test suite as the behavioral spec; every divergence found is dispositioned — fixed, justified in-repo, or routed with rationale (ECOSYSTEM-AUDIT §5-1; hardens exactly the north-star component)
+- [ ] **EARLY-05**: Token economics are explicit — subagent turns route through the scheduler `light` tier by default (configurable), and a tool-output truncation policy (tail/bounded extraction in the captured result form) bounds oversized tool results before they enter the projected window (Claudecourse #27; ECOSYSTEM-AUDIT §4.4 ECON)
+- [ ] **EARLY-06**: The uniform tool contract holds across the catalog, capture-grounded — `is_error` in tool_result exactly where the zcode corpus shows it (mimicry discipline: forms stay capture-faithful), per-tool timeouts, retry-only-transient (429/5xx/timeout) at the provider/tool seam, and `isConcurrencySafe`/`isDestructive` flags feeding the engine + parallel dispatch; existing partial implementations (openspec per-command timeouts, SSE-layer transient classification) are inventoried and the gaps closed (Claudecourse #5/#30; ECOSYSTEM-AUDIT §4.4 TOOLCON)
+
 ### Product Functional Completeness (priority 3 — the re-scope's machinery half, Phase 12; split 2026-08-16)
 
 *(Operator re-scope 2026-08-16: "make the product fully functional as soon as possible"; split same day into the machinery half (this, Phase 12) and the OpenSpec-workflow half (Phase 13). Ground truth: 9 of the 19 built-in catalog tools still return "no implementation yet" — the 08-08 deferred-tools table never dispositioned; Bash background flags unimplemented; corpus-absent result forms routed to Phase 9's re-capture; zero behavioral-eval regression net — ECOSYSTEM-AUDIT §3.3 calls this the biggest methodological hole.)*
@@ -37,7 +50,7 @@
 - [ ] **ACP-06**: Bash `run_in_background` and `dangerouslyDisableSandbox` execute faithfully per captured semantics, with background-shell output retrieval working in the captured form
 - [ ] **ACP-07**: The corpus-absent result forms — truncation markers, Bash timeout form, Bash default timeout, file-tool failure forms — are re-pinned against the newly pinned Phase-9 capture session (depends on AUD-05's pin) and implemented where the corpus shows them
 - [ ] **ACP-08**: A behavioral-eval regression net exists (ECOSYSTEM-AUDIT §4.4 EVAL-01..03): deterministic tool-unit tests, scenario suites (pass@k against a scratch project with the real binary — the initial suite is the Phase-8-proven `explore → propose → apply → archive` scenario), and a re-run gate wired so profile / model / turn-behavior changes cannot land without the suites green. Phase 13 extends the suites across the expanded command matrix (OS-03)
-- [ ] **ACP-10**: Command + skill discovery reads Claude-Code-compatible plugin installs (`installed_plugins.json` + `<root>/plugins/cache/<marketplace>/<plugin>/<version>/` layout, PLUG-05 carve-out) and merges plugin skills/commands into the existing discovery with documented precedence; reads span `~/.claude/plugins/` and `~/.zcode/cli/plugins/`, writes stay under the ass-guard root only
+- [ ] **ACP-10**: Command + skill discovery reads Claude-Code-compatible plugin installs as native (`installed_plugins.json` + `<root>/plugins/cache/<marketplace>/<plugin>/<version>/` layout, PLUG-05 carve-out) — plugin-bundled `skills/`, `commands/`, `agents/`, `hooks/hooks.json`, and `.mcp.json` all merge into the existing surfaces with documented precedence (agents register as spawnable subagent types; hooks fire at the mapped lifecycle points with documented stdin/stdout/exit semantics; MCP servers register through the existing host as `mcp__<server>__<tool>`); roots are the PROJECT `.claude/plugins/` and USER `~/.claude/plugins/` (the `~/.zcode/cli/plugins/` root dropped by the operator 2026-08-19 — no kit ships an ass-guard target, so plugins are installed for Claude Code and consumed as native; the dynamic listing is content, not structure — mimicry unaffected); user + project `.claude/skills/`, `.claude/commands/`, `.claude/agents/` remain first-class chain entries; writes stay under the ass-guard root only *(revised by the operator 2026-08-19: "…поддержки ass-guard нет ни в одном популярном ките…, поддержать agents/, hooks/hooks.json, .mcp.json тоже")*
 
 ### OpenSpec Workflow Completion (priority 4 — the re-scope's workflow half, Phase 13; split 2026-08-16)
 
@@ -91,7 +104,7 @@
 
 ## Traceability
 
-Which phases cover which requirements. Filled during roadmap creation (2026-08-14 — 21/21 mapped, no orphans); re-scoped 2026-08-16 (24/24 mapped in v1.1: CMD→8, AUD→9, ACP→12, OS→13; TG/DSH moved to the v1.2 pool; ex-ACP-09 absorbed into OS-01).
+Which phases cover which requirements. Filled during roadmap creation (2026-08-14 — 21/21 mapped, no orphans); re-scoped 2026-08-16 (24/24 mapped in v1.1: CMD→8, AUD→9, ACP→12, OS→13; TG/DSH moved to the v1.2 pool; ex-ACP-09 absorbed into OS-01); re-ordered 2026-08-18 (30/30 mapped: EARLY→14).
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
@@ -116,7 +129,13 @@ Which phases cover which requirements. Filled during roadmap creation (2026-08-1
 | ACP-07 | Phase 12 | Pending (depends on AUD-05's pinned session) |
 | ACP-08 | Phase 12 | Pending |
 | ACP-10 | Phase 12 | Pending |
-| OS-01 | Phase 13 | Pending (absorbs ex-ACP-09) |
+| EARLY-01 | Phase 14 | Pending |
+| EARLY-02 | Phase 14 | Pending |
+| EARLY-03 | Phase 14 | Pending |
+| EARLY-04 | Phase 14 | Pending |
+| EARLY-05 | Phase 14 | Pending |
+| EARLY-06 | Phase 14 | Pending |
+| OS-01 | Phase 13 | Pending (absorbs ex-ACP-09; post-adoption continuation) |
 | OS-02 | Phase 13 | Pending |
 | OS-03 | Phase 13 | Pending |
 | TG-01 | v1.2 pool (ex-Phase 10) | Deferred |
@@ -133,4 +152,4 @@ Which phases cover which requirements. Filled during roadmap creation (2026-08-1
 
 ---
 *Requirements defined: 2026-08-14*
-*Last updated: 2026-08-16 — operator re-scope + phase split: Phases 10–11 lowered to the v1.2 pool; Phase 12 Product Functional Completeness (ACP-01..08, 10) and Phase 13 OpenSpec Workflow Completion (OS-01..03, ex-ACP-09 absorbed) added; milestone renamed v1.1 Product Completion*
+*Last updated: 2026-08-18 — early-adoption re-order: Phase 14 Adoption Readiness added (EARLY-01..06, the full other-agents-analysis disposition — operator confirmed all six); Phase 12's waves split around the adoption line (12-01/02/05/04/06 pre-adoption; 12-03/07/08 post); Phase 13 post-adoption; 30/30 mapped; milestone renamed v1.1 ACP Early Adoption*

@@ -1,19 +1,21 @@
 # Milestones
 
-## v1.1 Product Completion (in progress)
+## v1.1 ACP Early Adoption (in progress)
 
-**Phases:** 4 (8, 9, 12, 13) · 1 complete · **Re-scoped 2026-08-16** (operator — renamed "Kickoff & Peers" → "ACP Completion" → "Product Completion"; Telegram and dsh lowered to the v1.2 pool in favor of product completeness; the added phase then split into machinery + OpenSpec halves; v1.1 adds zero new dependencies)
+**Phases:** 5 (8, 9, 12, 14, 13) · 2 complete · **Re-scoped 2026-08-16** (operator — renamed "Kickoff & Peers" → "ACP Completion" → "Product Completion"; Telegram and dsh lowered to the v1.2 pool in favor of product completeness; the added phase then split into machinery + OpenSpec halves; v1.1 adds zero new dependencies) · **Re-ordered 2026-08-18** (operator — early adoption: Phase 14 added from the other-agents-analysis dispositions; Phase 12's waves split around an adoption line — 12-01/02/05/04/06 pre-adoption, 12-03/07/08 post; Phase 13 post-adoption; milestone completes when the operator begins daily ACP use)
 **Started:** 2026-08-14 (continues from v1.0's Phase 7 numbering)
 
 - [x] Phase 8: Slash-Command Kickoff — completed 2026-08-16 (operator witness accepted; zero-continue product proof green — `/opsx:explore → propose → apply → archive` chained by the engine with zero manual continues, verified against the real openspec binary; findings 5+6 confirmed; known residuals: UAT check 3 hook live-leg + one stage-4 model-variance fail in the 2/3 zero-continue tally)
-- [ ] Phase 9: Serve-Path Audit + zcode Parity Re-capture — executed; 09-04 blocked-on-harvest, operator to run the scripted re-capture workload (docs/recapture-runbook.md §3), then automated legs + verification
-- [ ] Phase 12: Product Functional Completeness — added 2026-08-16 (machinery half of the split); the 9 deferred catalog tools execute for real (AskUserQuestion as engine-ask, plan mode, session interop, cron, TaskStop), Bash background flags, corpus-absent result forms re-pinned on the Phase-9 capture, the EVAL behavioral regression net, plugin-install discovery (ACP-01..08, 10); planning dispatches when Phase 9 closes
-- [ ] Phase 13: OpenSpec Workflow Completion — added 2026-08-16 (workflow half of the split; absorbs ex-ACP-09); the expanded command matrix (`new / continue / ff / verify / bulk-archive / onboard`) runs E2E with zero-continue chaining (interactive dead-ends routed through AskUserQuestion) and per-command eval suites (OS-01..03); planning dispatches when Phase 12 closes
+- [x] Phase 9: Serve-Path Audit + zcode Parity Re-capture — completed 2026-08-18 (6/6 plans, verifier PASS, UAT 3/4 accepted — parity re-baseline disposition accepted; the two routed follow-ups live in Phase 12 as 12-03/12-05)
+- [ ] Phase 12: Product Functional Completeness — added 2026-08-16 (machinery half of the split); the 9+2 deferred catalog tools execute for real (AskUserQuestion as engine-ask, plan mode, session interop, cron, TaskStop), Bash background flags, corpus-absent result forms re-pinned on the Phase-9 capture, the EVAL behavioral regression net, plugin-install discovery (ACP-01..08, 10); 8 plans checker-passed — **adoption-split dispatch (2026-08-18): 12-01 + 12-02 FIRST, then 12-05/04/06 pre-adoption; 12-03/07/08 post-adoption**
+- [ ] Phase 14: Adoption Readiness (Analysis Dispositions) — added 2026-08-18 (the other-agents-analysis YES items, all six operator-confirmed "делаем все 1-6"): workspace undo/checkpoints via shadow-git (EARLY-01 — the no-confirmation safety backstop, both analyses' #1), compaction policy verified from the Phase-9 pin (EARLY-02), cache-hit probe in the parity harness (EARLY-03), pi↔shaper cross-validation (EARLY-04), token economics — light-tier subagents + truncation (EARLY-05), uniform tool contract (EARLY-06); planned alongside 12-01/02 execution
+- [ ] Phase 13: OpenSpec Workflow Completion — added 2026-08-16 (workflow half of the split; absorbs ex-ACP-09); the expanded command matrix (`new / continue / ff / verify / bulk-archive / onboard`) runs E2E with zero-continue chaining (interactive dead-ends routed through AskUserQuestion) and per-command eval suites (OS-01..03); post-adoption continuation — planning dispatches when Phase 12 closes
 
 **Moved to the v1.2 pool (2026-08-16, operator):**
 
-- Phase 10: Telegram Peer (Text + Voice) — plans preserved in `.planning/phases/10-telegram-peer-text-voice/`; carries go-telegram/bot + the `internal/runtime` extraction to v1.2
+- Phase 10: Telegram Peer (Text + Voice) — plans preserved in `.planning/phases/10-telegram-peer-text-voice/`; carries go-telegram/bot + the `internal/runtime` extraction to v1.2 (the 2026-08-17 execution attempt died with its agent; partial WIP preserved at `47f10b4` on the phase branch, untrusted — resume or revert deliberately at the replan)
 - Phase 11: dsh Mimicry Profile #2 — needs replanning against source-analysis (dsh wire capture impossible; operator constraint 2026-08-15); carries zstd to v1.2
+- Steering / input queue during a running turn (IDEA-LANDSCAPE gap 4) — tagged onto the Phase 10 Telegram replan (prerequisite-quality for a chat peer)
 - v1.2 pool also holds: SEED-001 (agent-creation kit library), ECOSYSTEM-AUDIT clusters PLUG (full lifecycle) / LSP / MEM
 
 ## v1.0 MVP (Shipped: 2026-08-14)

@@ -46,7 +46,7 @@ consumes ACP-01's AskUserQuestion route.
 
 ### Claude's Discretion
 - Executor grouping/wave structure for the 9 tools (planner territory; note ACP-05 TaskStop and ACP-06 Bash background flags are coupled — both target background work)
-- Plugin-discovery precedence details (ACP-10): default to the existing `.ass-guard` > project `.claude` > user `.claude` chain with plugin roots merging per PLUG-05's documented-precedence requirement; the zcode root (`~/.zcode/cli/plugins/`) is a read source per the requirement
+- Plugin-discovery precedence details (ACP-10): default to the existing `.ass-guard` > project `.claude` > user `.claude` chain with plugin roots merging per PLUG-05's documented-precedence requirement — **REVISED by the operator 2026-08-19**: the zcode root (`~/.zcode/cli/plugins/`) is DROPPED (plugins are installed FOR Claude Code and consumed as native — no kit ships an ass-guard target; the listing merge is dynamic content inside the captured shape, so no structural mimicry divergence); the plugin roots are PROJECT `.claude/plugins/` then USER `~/.claude/plugins/`; user + project `.claude/skills|commands|agents/` are explicitly first-class; and plugin contributions widen to ALL FIVE bundle kinds — `skills/`, `commands/`, `agents/`, `hooks/hooks.json`, `.mcp.json` (the operator: "необходимо поддержать agents/, hooks/hooks.json, .mcp.json тоже")
 - The D-01 timeout default fine-tuning if the corpus shows a different convention
 - Schedule-store file naming/rotation details under `.ass-guard/schedule/`
 - Whether the `agents/`/`artifacts/`/`exec/` sess_3cee56ae side-dirs hold salvageable content for ACP-07 (planner/researcher check)

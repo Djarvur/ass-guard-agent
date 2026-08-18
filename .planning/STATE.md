@@ -1,13 +1,13 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.1
-milestone_name: Kickoff & Peers
+milestone_name: ACP Early Adoption
 status: executing
-stopped_at: Phase 13 context gathered
-last_updated: "2026-08-18T14:58:07.302Z"
-last_activity: 2026-08-17 -- Phase 10 execution started
+stopped_at: Early-adoption re-order recorded (Phase 14 + adoption line)
+last_updated: "2026-08-18T18:45:00Z"
+last_activity: 2026-08-18 -- early-adoption re-order (planning artifacts)
 progress:
-  total_phases: 6
+  total_phases: 7
   completed_phases: 2
   total_plans: 37
   completed_plans: 15
@@ -20,7 +20,7 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-08-14)
 **Core value:** Outgoing requests to the model provider must be structurally indistinguishable from the mimicked agent's (zcode first) — *validated v1.0 (Phase-1 A/B parity)*
-**Current focus:** Phase 10 — telegram-peer-text-voice
+**Current focus:** v1.1 ACP Early Adoption — dispatch 12-01 + 12-02, then Phase 14
 
 ## Current Position
 
@@ -28,7 +28,7 @@ Phase: (none active) — Phase 10 execution ABORTED 2026-08-18 (operator: park +
 Plan: —
 Status: Phase 9 CLOSED (2026-08-18: 6/6 plans, verifier PASS, UAT 3/4 accepted). Phase 12 planned (8 plans, checker-passed) and dependency-satisfied but NOT dispatched. Phase 13 context gathered. Phase 10's 2026-08-17 execution attempt died with its background agent (~15 min after spawn, client restart during the operator gap): RED test `ec2796d` + a half-done internal/runtime extraction, WIP-preserved at `47f10b4` on branch `gsd/phase-10-telegram-peer-text-voice` (untrusted — revert or resume deliberately at the v1.2 replan; that branch ALSO carries pre-untangle copies of the 08-18 docs commits — master's cherry-picked SHAs are canonical).
 Last activity: 2026-08-18 -- manager session: Phase-9 formal close + dep-field hygiene; Phase 12 planned (background planner, 8 plans/5 waves); Phase 13 context gathered (8 user decisions); quick task 260817-uv3 archived the zcode-recapture driver kit to tools/zcode-recapture (the pinned rollout file itself was already lost — rotated off ~/.zcode/cli/rollout); dead Phase-10 executor discovered + parked per operator
-Next action: OPERATOR IS REARRANGING PLANS (2026-08-18, explicit stop). No dispatches until the operator re-engages. Standing facts for the rearrangement: Phase 12 is fully planned and unblocked (deps: 9 ✓); its 12-01 lands in cmd/ass-guard + internal/coreexec — coordinate with the parked Phase-10 runtime extraction before executing; the two routed Phase-9 follow-ups (re-record curated expectations via tools/zcode-recapture; ExtractTurnsFromRollout delta-record fixes) are scoped as 12-03/12-05.
+Next action: (2026-08-18) Rearrangement COMPLETE — early-adoption re-order recorded in REQUIREMENTS/ROADMAP/MILESTONES (uncommitted; one docs commit when ratified). Dispatch order: (1) `/gsd-execute-phase 12` — 12-01 + 12-02 ONLY first, per the adoption split (12-01 lands in cmd/ass-guard + internal/coreexec; the parked 47f10b4 extraction is NOT a dependency — the plans reference wiring sites by symbol against both layouts); (2) `/gsd:plan-phase 14` (Adoption Readiness — EARLY-01..06: undo/checkpoints, compaction verify, cache probe, pi↔shaper cross-validation, token economics, tool contract; planning may overlap 12-01/02 execution); (3) 12-05 → 12-04 → 12-06; (4) **ADOPTION LINE** — the operator begins daily ACP use (v1.1 completes); (5) post-adoption: 12-03 → 12-08 → 12-07 → 13.
 
 Progress: [███░░░░░░░] 25%
 
@@ -43,6 +43,10 @@ Progress: [███░░░░░░░] 25%
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecting current work:
+
+- **[12-02 SCOPE REVISION, 2026-08-19, operator — "~/.zcode/cli/plugins/ можно игнорировать… есть еще проектный ./.claude/plugins/… обязательно учесть ~/.claude/commands|skills и ./.claude/commands|skills… поддержки ass-guard нет ни в одном популярном ките, поэтому мы будем ставить их для claude code, и должны с ними работать, как с родными… необходимо поддержать agents/, hooks/hooks.json, .mcp.json тоже"]:** ACP-10/12-02 re-scoped. (1) Plugin roots: PROJECT `.claude/plugins/` + USER `~/.claude/plugins/` ONLY — the zcode root is dropped (plugins are installed for Claude Code and consumed as native; the skills/agents listing is dynamic content merged into the captured shape, so the mimicry contract — request structure — is unaffected). (2) Plugin contributions widened from skills/commands to ALL FIVE kinds: skills/, commands/, agents/ (register as spawnable subagent types on the existing PARA machinery; `.claude/agents/` project+user also discovered), hooks/hooks.json (fire at the mapped lifecycle seams — UserPromptSubmit/PreToolUse/PostToolUse/Stop/SubagentStop/SessionStart/SessionEnd — with documented stdin-JSON/stdout/exit-2 semantics; Notification/PreCompact degrade observe-only), .mcp.json (servers through the existing MCP host, lowest merge layer). (3) User + project `.claude/skills|commands|agents/` explicitly first-class in the precedence matrix. Precedence chain: ass-guard root > project `.claude/` > user `.claude/` > project `.claude/plugins/` > user `~/.claude/plugins/`. Still read-only everywhere, zero new deps, no lifecycle (PLUG-03 stays v1.2). 12-02-PLAN.md rewritten (4 tasks, ~95k tokens est.); ACP-10, ROADMAP criterion 9 + wave line, 12-CONTEXT D-49 discretion note updated. Re-run the plan-checker at dispatch time (scope grew past the checker-passed 2026-08-17 shape).
+
+- **[EARLY-ADOPTION RE-ORDER, 2026-08-18, operator — "I want to start use this agent ASAP" + "everything not necessary to start agent with ACP must be postponed" + "first process the other-agents analysis"]:** execution re-ordered around an explicit ADOPTION LINE — [12-01, 12-02] → Phase 14 (NEW: Adoption Readiness) → [12-05, 12-04, 12-06] → LINE → [12-03, 12-08, 12-07] → 13. Milestone renamed v1.1 ACP Early Adoption; it completes when the operator begins daily ACP use. Phase 14 = the dispositioned YES items of the cross-agent analyses (ECOSYSTEM-AUDIT + IDEA-LANDSCAPE via SEED-004): EARLY-01 checkpoints/undo (both analyses' #1 — the no-confirmation agent's reversibility backstop; shadow-git, invariant-clean), EARLY-02 compaction verified from the Phase-9 pin (verify-first, implement only on evidence), EARLY-03 cache-hit probe in the parity harness (daily-use cost-drift detection). NO items recorded, not dropped: steering queue → v1.2 Telegram replan tag; real sandbox → 12-06 (SEED-004's existing tag); LSP/MEM/TREE/OTEL/HEART/marketplace → v1.2+ unchanged. **Scope expanded same day (operator: "делаем все 1-6"):** EARLY-04 pi↔shaper cross-validation, EARLY-05 token economics (light-tier subagent routing + tool-output truncation), and EARLY-06 uniform tool contract (capture-grounded is_error, per-tool timeouts, retry-only-transient, concurrency/destructive flags) moved from the NO-list INTO Phase 14 — 30/30 requirements mapped. The parked Phase-10 WIP (47f10b4) stays parked — not a v1.1 dependency. Planning artifacts updated: REQUIREMENTS.md (EARLY-01..06, 30/30), ROADMAP.md (Phase 14 section + adoption split + dependency chains), MILESTONES.md.
 
 - **[AUD-05 parity re-baseline DISPOSITION, 2026-08-16, operator — ACCEPTED at Phase-9 UAT]:** the fresh parity numbers in `profiles/zcode/drift-reports/2026-08-16-recapture.md` are the new recorded reference (curated 1/8 on BOTH old and new bundles — the control run proves profile-independent stale v1.0-era expectations; from-rollout 1/13 with documented harness artifacts; Phase-1 baseline SUPERSEDED, no silent threshold movement). The re-pin is NOT the cause. Two follow-ups ACCEPTED and ROUTED into Phase 12's discuss scope: (1) re-record curated-suite expectations from current live zcode (the /tmp/zcode-recapture/ driver can produce them — ARCHIVE the driver + the pinned rollout file `model-io-sess_3cee56ae…`, which has already rotated off ~/.zcode/cli/rollout/, before /tmp reaps them; Phase 12's ACP-07 needs that pin as ground truth); (2) fix `ExtractTurnsFromRollout` messagesKind=delta reconstruction + per-turn workspace fixtures to kill the from-rollout harness-artifact classes. Recorded via 09-UAT.md test 1 pass.
 
