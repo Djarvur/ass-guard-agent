@@ -403,7 +403,7 @@ func TestLiveInstalledPluginsProbe(t *testing.T) {
 	cwd, _ := os.Getwd()
 
 	reg := newRegistry()
-	discoverInstalledPlugins(root, cwd, reg)
+	discoverInstalledPlugins(root, cwd, reg, map[string]ServerConfig{})
 
 	require.NotEmpty(t, reg.Plugins,
 		"live root exists with a registry — at least the user-scope installs must parse")

@@ -450,6 +450,12 @@ type sessionTurnRunner struct {
 	reg           ecosys.Registry
 	cmdMutability map[string]string
 
+	// mcpServers is the NON-project MCP set from ecosys.Discover (12-02:
+	// user-scope ~/.claude.json OVER plugin-bundled .mcp.json — the two lowest
+	// MCP layers). spawnMCP merges it BELOW the project .mcp.json (project
+	// wins on name collision — the chain direction).
+	mcpServers []ecosys.ServerConfig
+
 	sessions map[string]*session.Session
 }
 
@@ -539,7 +545,7 @@ func (r *sessionTurnRunner) workDirOrDefault() string { //nolint:funcorder // or
 // error). Tests call it explicitly after planting fixtures; production calls
 // it from runACPServe.
 func (r *sessionTurnRunner) loadCommandRegistry() { //nolint:funcorder // startup helper grouped with engine wiring
-	reg, _, err := ecosys.Discover(r.workDirOrDefault())
+	reg, servers, err := ecosys.Discover(r.workDirOrDefault())
 	if err != nil {
 		// Drop to zero (do NOT serve a stale registry): the registry mirrors
 		// the on-disk command tree, and an unreadable tree means expansion is
@@ -548,11 +554,13 @@ func (r *sessionTurnRunner) loadCommandRegistry() { //nolint:funcorder // startu
 
 		r.reg = ecosys.Registry{}
 		r.cmdMutability = nil
+		r.mcpServers = nil
 
 		return
 	}
 
 	r.reg = reg
+	r.mcpServers = servers
 
 	oscfg, cerr := openspec.DefaultConfig()
 	if cerr != nil {
@@ -874,6 +882,15 @@ func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen // grouping ke
 			profile.TextBlock{Type: blockText, Text: listing})
 	}
 
+	// 12-02 (Task 3): the agent-type listing — the same dedicated-system-block
+	// dynamic merge as the skills listing, in the captured Agent-tool
+	// type-entry shape. Discovered definitions (plugin-bundled AND first-class
+	// `.claude/agents/`) surface here AND as spawnable types below.
+	if agentListing := ecosys.AgentListing(r.reg); agentListing != "" {
+		prof.System = append(append([]profile.TextBlock(nil), prof.System...),
+			profile.TextBlock{Type: blockText, Text: agentListing})
+	}
+
 	// Per-session catalog: clone the shared engine catalog (OpenSpec + core) so
 	// MCP tools never leak across sessions or back into r.catalog (D-16).
 	var sCatalog *toolcat.Catalog
@@ -956,6 +973,11 @@ func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen // grouping ke
 		SessionID:   sessionID,
 		Catalog:     sCatalog,
 		ConfigAdded: r.configAdded,
+
+		// 12-02: discovered agent definitions register as spawnable subagent
+		// types (a subagent_type match applies the definition's Prompt + Tools
+		// on the existing PARA machinery — advisory listing, no new tier).
+		SubagentTypes: r.reg.Agents,
 	}
 	sess = s
 
@@ -1020,6 +1042,10 @@ func (r *sessionTurnRunner) spawnMCP( //nolint:funcorder // shutdown helper grou
 	ctx context.Context, dir string,
 ) (*mcp.Host, []toolcat.Decl) {
 	cfg, err := mcp.LoadConfig(dir)
+	if err == nil {
+		cfg = mergeMCPServers(cfg, r.mcpServers)
+	}
+
 	if err != nil || len(cfg.Servers) == 0 {
 		return nopHost(), nil
 	}
@@ -1034,6 +1060,31 @@ func (r *sessionTurnRunner) spawnMCP( //nolint:funcorder // shutdown helper grou
 	}
 
 	return host, decls
+}
+
+// mergeMCPServers merges the non-project server set (user ~/.claude.json OVER
+// plugin-bundled .mcp.json — ecosys.Discover's output, 12-02) BELOW the
+// project .mcp.json: project entries win on name collision, non-colliding
+// lower-layer servers join the spawn set. The result feeds the EXISTING host
+// unchanged — same spawn discipline, same mcp__<server>__<tool> naming,
+// per-connection tools/list (ECOS-02/03).
+func mergeMCPServers(project mcp.Config, lower []ecosys.ServerConfig) mcp.Config {
+	taken := make(map[string]bool, len(project.Servers))
+	for _, s := range project.Servers {
+		taken[s.Name] = true
+	}
+
+	for _, sc := range lower {
+		if taken[sc.Name] {
+			continue // project wins on collision — the chain direction
+		}
+
+		project.Servers = append(project.Servers, mcp.ServerConfig{
+			Name: sc.Name, Command: sc.Command, Args: sc.Args, Env: sc.Env, Cwd: sc.Cwd,
+		})
+	}
+
+	return project
 }
 
 // closeAllSessions closes every live session's host (the ctx-done path — Plan

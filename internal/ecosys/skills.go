@@ -67,6 +67,42 @@ func truncateSkillDesc(desc string) string {
 	return string(r[:skillDescMax]) + skillEllipsis
 }
 
+// agentListingHeader heads the agent-type listing. CORPUS-ABSENT header text:
+// no captured zcode session on this machine carries ass-guard's discovered
+// plugin/agents entries — the captured Agent tool description lists only
+// zcode's own built-in types. The listing follows the SAME dedicated-system-
+// block merge as the skills listing (the established dynamic-merge pattern)
+// and is flagged for the re-capture to pin the native placement.
+const agentListingHeader = "The following specialized agent types are available for use with the Agent tool:"
+
+// AgentListing renders every discovered agent definition (12-02) in the
+// captured Agent-tool type-listing entry shape:
+//
+//	- <name>: <description> (Tools: <comma-joined tools>)
+//
+// An empty registry yields "" (the caller skips the merge — zero-agent
+// degradation leaves the profile copy untouched). Tool lists reuse the
+// captured "(Tools: …)" suffix form; an empty Tools list renders "(Tools: *)"
+// (the captured unrestricted-entry convention).
+func AgentListing(reg Registry) string {
+	agents := reg.AllAgents()
+	if len(agents) == 0 {
+		return ""
+	}
+
+	entries := make([]string, 0, len(agents))
+	for _, a := range agents {
+		tools := strings.Join(a.Tools, ", ")
+		if tools == "" {
+			tools = "*"
+		}
+
+		entries = append(entries, "- "+a.Name+": "+truncateSkillDesc(a.Description)+" (Tools: "+tools+")")
+	}
+
+	return agentListingHeader + "\n\n" + strings.Join(entries, "\n")
+}
+
 // ResolveSkill returns the SKILL.md BODY (after frontmatter — the same
 // splitFrontmatter semantics the loader applies to commands) for a registry
 // key. ok=false when the name is not in the registry or the body cannot be

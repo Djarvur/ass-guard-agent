@@ -53,6 +53,14 @@ const assguardDirName = ".ass-guard"
 // yields an empty contribution (the common case where the user has no `.claude/`
 // or `.ass-guard/` extensions yet).
 func Load(claudeDir, assguardDir string) (Registry, error) {
+	reg, _, err := loadAll(claudeDir, assguardDir)
+	return reg, err //nolint:wrapcheck // thin delegation
+}
+
+// loadAll is Load plus the plugin-bundled MCP server set (the lowest MCP
+// layer, below LoadUserMCPConfig — Discover consumes both; Load's public
+// signature stays Registry-only).
+func loadAll(claudeDir, assguardDir string) (Registry, map[string]ServerConfig, error) {
 	home, _ := os.UserHomeDir()
 	userClaude := filepath.Join(home, claudeDirName)
 	userAssguard := filepath.Join(home, assguardDirName)
@@ -60,12 +68,12 @@ func Load(claudeDir, assguardDir string) (Registry, error) {
 	// Phase 1: within each tree, user → project.
 	claudeReg, err := loadTreeMerged(userClaude, claudeDir)
 	if err != nil {
-		return Registry{}, err
+		return Registry{}, nil, err
 	}
 
 	assguardReg, err := loadTreeMerged(userAssguard, assguardDir)
 	if err != nil {
-		return Registry{}, err
+		return Registry{}, nil, err
 	}
 
 	// Phase 2: across trees, `.claude/` wins over `.ass-guard/`.
@@ -80,15 +88,19 @@ func Load(claudeDir, assguardDir string) (Registry, error) {
 		projectDir = filepath.Dir(claudeDir)
 	}
 
+	pluginMCP := map[string]ServerConfig{}
+
 	userPlug := newRegistry()
-	discoverInstalledPlugins(filepath.Join(userClaude, pluginsDirName), projectDir, userPlug)
+	discoverInstalledPlugins(filepath.Join(userClaude, pluginsDirName), projectDir, userPlug, pluginMCP)
 
 	projPlug := newRegistry()
 	if claudeDir != "" {
-		discoverInstalledPlugins(filepath.Join(claudeDir, pluginsDirName), projectDir, projPlug)
+		// Project-root plugin servers overwrite user-root ones on name
+		// collision (project over user — the tier order).
+		discoverInstalledPlugins(filepath.Join(claudeDir, pluginsDirName), projectDir, projPlug, pluginMCP)
 	}
 
-	return mergeRegistries(mergeRegistries(userPlug, projPlug), core), nil
+	return mergeRegistries(mergeRegistries(userPlug, projPlug), core), pluginMCP, nil
 }
 
 // loadTreeMerged loads user-scope then overlays project-scope (project wins).
@@ -147,7 +159,107 @@ func loadTree(root string) (Registry, error) {
 		return reg, err
 	}
 
+	err = discoverAgents(root, reg)
+	if err != nil {
+		return reg, err
+	}
+
 	return reg, nil
+}
+
+// discoverAgents walks root/agents/*.md — the first-class `.claude/agents/`
+// chain entry (project + user; 12-02). The filename stem is the fallback
+// name; frontmatter supplies name/description/tools/model; the body is the
+// system prompt. Unreadable/malformed files are silently skipped (the same
+// `.claude/`-tree semantics as skills/commands).
+func discoverAgents(root string, reg Registry) error {
+	return discoverAgentsDir(filepath.Join(root, "agents"), reg, false)
+}
+
+// discoverAgentsDir walks one agents/ directory — the shared reader for the
+// first-class `.claude|ass-guard/agents/` trees AND plugin-bundled `agents/`
+// directories. warnSkips routes degradation through the stderr skip seam
+// (plugin bundles warn; `.claude/` trees stay silent — the established
+// split).
+func discoverAgentsDir(agentsDir string, reg Registry, warnSkips bool) error {
+	entries, err := os.ReadDir(agentsDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+
+		return fmt.Errorf("read agents dir: %w", err)
+	}
+
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), markdownExt) {
+			continue
+		}
+
+		agentPath := filepath.Join(agentsDir, e.Name())
+
+		ag, err := loadAgentFile(agentPath, strings.TrimSuffix(e.Name(), markdownExt))
+		if err != nil {
+			if warnSkips {
+				logPluginSkip("agent definition %s skipped: %v", agentPath, err)
+			}
+
+			continue
+		}
+
+		reg.Agents[ag.Name] = ag
+	}
+
+	return nil
+}
+
+// loadAgentFile reads and parses one agent markdown file into an Agent.
+func loadAgentFile(agentPath, fallbackName string) (Agent, error) {
+	data, err := os.ReadFile(agentPath)
+	if err != nil {
+		return Agent{}, fmt.Errorf("read: %w", err)
+	}
+
+	return parseAgent(string(data), agentPath, fallbackName)
+}
+
+// parseAgent parses an agents/<name>.md: YAML frontmatter
+// (name/description/tools/model) between `---` delimiters, then the body —
+// the agent's system prompt. An empty description falls back to the first
+// non-empty body line (the command precedent); neither drops the definition.
+func parseAgent(content, path, fallbackName string) (Agent, error) {
+	frontmatter, body := splitFrontmatter(content)
+
+	var fm struct {
+		Name        string    `yaml:"name"`
+		Description string    `yaml:"description"`
+		Tools       toolsList `yaml:"tools"`
+		Model       string    `yaml:"model"`
+	}
+
+	err := yaml.Unmarshal([]byte(frontmatter), &fm)
+	if err != nil {
+		return Agent{}, fmt.Errorf("parse agent frontmatter %s: %w", path, err)
+	}
+
+	name := fm.Name
+	if name == "" {
+		name = fallbackName
+	}
+
+	desc := fm.Description
+	if desc == "" {
+		desc = firstNonEmptyLine(body)
+	}
+
+	if name == "" || desc == "" {
+		return Agent{}, fmt.Errorf("%s: no name or description", path)
+	}
+
+	return Agent{
+		Name: name, Description: desc, Tools: fm.Tools, Model: fm.Model,
+		Prompt: body, Path: path,
+	}, nil
 }
 
 // discoverSkills walks root/skills/*/SKILL.md, parsing YAML frontmatter.
@@ -508,10 +620,11 @@ func resolveInstallPath(pluginsRoot, installPath string) string {
 // discoverInstalledPlugins walks one plugins root's installed_plugins.json
 // registry (12-02): for every entry it resolves the cache install path, reads
 // the `.claude-plugin/plugin.json` manifest, and merges the bundled
-// contributions (skills/, commands/) into reg with the plugin's provenance.
-// Every degradation is a stderr warning naming the path — never a load error
-// (the registry keeps loading); nothing is written anywhere.
-func discoverInstalledPlugins(pluginsRoot, projectDir string, reg Registry) {
+// contributions (skills/, commands/, agents/, .mcp.json) into reg / mcpOut
+// with the plugin's provenance. Every degradation is a stderr warning naming
+// the path — never a load error (the registry keeps loading); nothing is
+// written anywhere.
+func discoverInstalledPlugins(pluginsRoot, projectDir string, reg Registry, mcpOut map[string]ServerConfig) {
 	if pluginsRoot == "" {
 		return
 	}
@@ -563,6 +676,7 @@ func discoverInstalledPlugins(pluginsRoot, projectDir string, reg Registry) {
 
 		_ = discoverSkillsDir(filepath.Join(install, "skills"), pluginReg)
 		_ = discoverCommandsDir(filepath.Join(install, "commands"), pluginReg)
+		_ = discoverAgentsDir(filepath.Join(install, "agents"), pluginReg, true)
 
 		for key, sk := range pluginReg.Skills {
 			reg.Skills[key] = sk
@@ -570,6 +684,14 @@ func discoverInstalledPlugins(pluginsRoot, projectDir string, reg Registry) {
 
 		for key, cmd := range pluginReg.Commands {
 			reg.Commands[key] = cmd
+		}
+
+		for key, ag := range pluginReg.Agents {
+			reg.Agents[key] = ag
+		}
+
+		for serverName, sc := range parsePluginMCPJSON(install) {
+			mcpOut[serverName] = sc
 		}
 
 		reg.Plugins[name] = Plugin{
@@ -601,6 +723,41 @@ func discoverInstalledPlugins(pluginsRoot, projectDir string, reg Registry) {
 			InstallPath: install,
 		}
 	}
+}
+
+// parsePluginMCPJSON reads a plugin bundle's .mcp.json (the same
+// {"mcpServers":{…}} shape as the project file / ~/.claude.json) into neutral
+// ServerConfigs. A missing file yields nil; a malformed file warns and yields
+// nil (skip-with-warning — the rest of the bundle still loaded).
+func parsePluginMCPJSON(install string) map[string]ServerConfig {
+	data, ok := readCapped(filepath.Join(install, mcpJSONName), pluginArtifactMaxBytes)
+	if !ok {
+		return nil
+	}
+
+	var raw struct {
+		McpServers map[string]struct {
+			Command string            `json:"command"`
+			Args    []string          `json:"args"`
+			Env     map[string]string `json:"env"`
+			Cwd     string            `json:"cwd"`
+		} `json:"mcpServers"` //nolint:tagliatelle // .mcp.json camelCase wire field
+	}
+
+	if json.Unmarshal(data, &raw) != nil {
+		logPluginSkip("malformed %s in %s (skipped)", mcpJSONName, install)
+
+		return nil
+	}
+
+	out := make(map[string]ServerConfig, len(raw.McpServers))
+	for serverName, s := range raw.McpServers {
+		out[serverName] = ServerConfig{
+			Name: serverName, Command: s.Command, Args: s.Args, Env: s.Env, Cwd: s.Cwd,
+		}
+	}
+
+	return out
 }
 
 // logPluginSkip emits one stderr warning line for a degraded plugin artifact
@@ -909,12 +1066,28 @@ func mergeRegistries(base, overlay Registry) Registry {
 
 	mergeSkillsWithShadowWarnings(out.Skills, base.Skills, overlay.Skills)
 	mergeCommandsWithShadowWarnings(out.Commands, base.Commands, overlay.Commands)
+	mergeAgentsWithShadowWarnings(out.Agents, base.Agents, overlay.Agents)
 
 	maps.Copy(out.Plugins, base.Plugins)
 
 	maps.Copy(out.Plugins, overlay.Plugins)
 
 	return out
+}
+
+// mergeAgentsWithShadowWarnings copies base then overlay into out, warning on
+// each same-key agent-definition overwrite (the shared mechanism; agent keys
+// shadow across the full chain incl. plugin bundles).
+func mergeAgentsWithShadowWarnings(out, base, overlay map[string]Agent) {
+	maps.Copy(out, base)
+
+	for key, ov := range overlay {
+		if bv, shadowed := base[key]; shadowed {
+			logShadowWarning("agent", key, ov.Path, bv.Path)
+		}
+
+		out[key] = ov
+	}
 }
 
 // mergeSkillsWithShadowWarnings copies base then overlay into out, warning on
@@ -955,8 +1128,22 @@ func logShadowWarning(kind, key, winningPath, shadowedPath string) {
 // newRegistry returns a Registry with initialized maps.
 func newRegistry() Registry {
 	return Registry{
-		Skills: map[string]Skill{}, Commands: map[string]Command{}, Plugins: map[string]Plugin{},
+		Skills: map[string]Skill{}, Commands: map[string]Command{},
+		Plugins: map[string]Plugin{}, Agents: map[string]Agent{},
 	}
+}
+
+// AllAgents returns the registry's agent definitions sorted by name
+// (deterministic — the type-listing order).
+func (r Registry) AllAgents() []Agent {
+	out := make([]Agent, 0, len(r.Agents))
+	for _, a := range r.Agents {
+		out = append(out, a)
+	}
+
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+
+	return out
 }
 
 // AllSkills returns the registry's skills sorted by name (deterministic).
@@ -1037,13 +1224,16 @@ func LoadUserMCPConfig() (map[string]ServerConfig, error) {
 	return out, nil
 }
 
-// Discover ties the loader together: resolves the four roots from projectDir,
-// calls Load + LoadUserMCPConfig, and returns the precedence-resolved registry
-// plus the user-scope MCP configs. The project .mcp.json merge happens in the
-// MCP host (internal/mcp) — Discover returns ONLY user-scope MCP configs to keep
-// the package cycle-free (internal/ecosys does not import internal/mcp).
+// Discover ties the loader together: resolves the roots from projectDir, calls
+// loadAll + LoadUserMCPConfig, and returns the precedence-resolved registry
+// plus the non-project MCP server set — user-scope (~/.claude.json) OVER the
+// plugin-bundled .mcp.json servers (the plugin set is the LOWEST layer: a
+// same-name collision resolves to the non-plugin entry; 12-02 Task 3). The
+// PROJECT .mcp.json merge happens at the host seam (cmd/ass-guard's spawnMCP —
+// project wins over this whole set) to keep the package cycle-free
+// (internal/ecosys does not import internal/mcp).
 func Discover(projectDir string) (Registry, []ServerConfig, error) {
-	reg, err := Load(filepath.Join(projectDir, claudeDirName), filepath.Join(projectDir, assguardDirName))
+	reg, pluginMCP, err := loadAll(filepath.Join(projectDir, claudeDirName), filepath.Join(projectDir, assguardDirName))
 	if err != nil {
 		return Registry{}, nil, fmt.Errorf("load ecosystem: %w", err)
 	}
@@ -1053,8 +1243,18 @@ func Discover(projectDir string) (Registry, []ServerConfig, error) {
 		return Registry{}, nil, fmt.Errorf("load user mcp config: %w", err)
 	}
 
-	servers := make([]ServerConfig, 0, len(userMCP))
-	for _, sc := range userMCP {
+	// Merge: plugin servers first (lowest), user-scope over them.
+	merged := make(map[string]ServerConfig, len(pluginMCP)+len(userMCP))
+	for name, sc := range pluginMCP {
+		merged[name] = sc
+	}
+
+	for name, sc := range userMCP {
+		merged[name] = sc
+	}
+
+	servers := make([]ServerConfig, 0, len(merged))
+	for _, sc := range merged {
 		servers = append(servers, sc)
 	}
 

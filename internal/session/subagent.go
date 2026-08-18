@@ -7,7 +7,9 @@ import (
 	"runtime/debug"
 	"strings"
 
+	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/internal/event"
+	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 )
@@ -21,24 +23,29 @@ var subagentRestrictedDefault = []string{ //nolint:gochecknoglobals // immutable
 
 // subagentRunner is the seam that runs the nested turn loop. Production uses the
 // real nested loop; tests inject a fake to simulate panics / canned results.
+// agentDef is the discovered agent definition the dispatch was typed with
+// (12-02), or nil for the default subagent.
 type subagentRunner interface {
 	Run(ctx context.Context, s *Session, subagentTurnID, parentTurnID, prompt string,
-		restricted []string) (string, error)
+		restricted []string, agentDef *ecosys.Agent) (string, error)
 }
 
 // DispatchSubagent spawns an isolated goroutine running a nested turn loop with
 // a restricted tool subset (PARA-01, D-10). It appends a subagent_dispatch line,
 // waits for the subagent to complete (streamed progress flows via the bus tagged
-// with parent-turn-id, PARA-02), and returns the final result. A panic is
-// recovered at the goroutine boundary (D-13) → SubagentResult error +
-// investigate-and-fix-ready error line; the process NEVER crashes.
+// with parent-turn-id, PARA-02), and returns the final result. agentDef (12-02,
+// may be nil) applies the discovered type's Tools as the restricted set and its
+// Prompt as a per-dispatch system block. A panic is recovered at the goroutine
+// boundary (D-13) → SubagentResult error + investigate-and-fix-ready error
+// line; the process NEVER crashes.
 //
 //nolint:funlen // domain complexity is inherent
 func (s *Session) DispatchSubagent(
-	ctx context.Context, parentTurnID, toolCallID, prompt string, restricted []string,
+	ctx context.Context, parentTurnID, toolCallID, prompt string, agentDef *ecosys.Agent,
 ) (string, error) {
-	if restricted == nil {
-		restricted = subagentRestrictedDefault
+	restricted := subagentRestrictedDefault
+	if agentDef != nil && len(agentDef.Tools) > 0 {
+		restricted = agentDef.Tools
 	}
 
 	subagentTurnID := s.nextTurnID()
@@ -75,7 +82,7 @@ func (s *Session) DispatchSubagent(
 			}
 		}()
 
-		result, err := runner.Run(ctx, s, subagentTurnID, parentTurnID, prompt, restricted)
+		result, err := runner.Run(ctx, s, subagentTurnID, parentTurnID, prompt, restricted, agentDef)
 		resCh <- outcome{result: result, err: err}
 	}()
 
@@ -118,12 +125,12 @@ type defaultSubagentRunner struct{}
 
 func (defaultSubagentRunner) Run(
 	ctx context.Context, s *Session,
-	subagentTurnID, parentTurnID, prompt string, restricted []string,
+	subagentTurnID, parentTurnID, prompt string, restricted []string, agentDef *ecosys.Agent,
 ) (string, error) {
 	// Append the subagent's user message (subagent-tagged).
 	_ = s.Manager.AppendUserMessage(subagentTurnID, []ContentBlock{{Type: blockText, Text: prompt}})
 
-	// One nested provider call (Phase-2 stubs tool execution; a full subagent
+	// One nested provider call (Phase-2 stubs tools execution; a full subagent
 	// tool-loop is Phase 4). The RestrictedExecutor wraps the session toolExec.
 	var inner = s.toolExec
 	if s.toolExec != nil {
@@ -131,6 +138,17 @@ func (defaultSubagentRunner) Run(
 	}
 
 	_ = inner // restricted executor is wired; real subagent tool-loop is Phase 4
+
+	// 12-02: a typed dispatch (agentDef != nil) shapes the subagent's request
+	// from a COPY of the session profile carrying the definition's Prompt as
+	// an additional system block (the dynamic-merge-into-captured-shape
+	// pattern, applied per dispatch; the shared s.Profile is never mutated).
+	prof := s.Profile
+	if agentDef != nil && agentDef.Prompt != "" {
+		prof = *(&s.Profile)
+		prof.System = append(append([]profile.TextBlock(nil), s.Profile.System...),
+			profile.TextBlock{Type: blockText, Text: agentDef.Prompt})
+	}
 
 	const maxIter = 8
 
@@ -149,7 +167,7 @@ func (defaultSubagentRunner) Run(
 			}
 		}
 
-		resp, textBuf, streamErr := s.streamAndEmitTagged(ctx, subagentTurnID, parentTurnID, messages)
+		resp, textBuf, streamErr := s.streamAndEmitTaggedProf(ctx, subagentTurnID, parentTurnID, &prof, messages)
 		if s.Semaphore != nil {
 			s.Semaphore.Release()
 		}
@@ -190,7 +208,17 @@ func (s *Session) streamAndEmitTagged(
 	ctx context.Context, subagentTurnID, parentTurnID string,
 	messages []provider.Message,
 ) (provider.Response, string, error) {
-	ch, err := s.Provider.Stream(ctx, &s.Profile, messages)
+	return s.streamAndEmitTaggedProf(ctx, subagentTurnID, parentTurnID, &s.Profile, messages)
+}
+
+// streamAndEmitTaggedProf is streamAndEmitTagged over an explicit profile —
+// the 12-02 per-dispatch agent-prompt copy shapes the subagent's request
+// without touching the session profile.
+func (s *Session) streamAndEmitTaggedProf(
+	ctx context.Context, subagentTurnID, parentTurnID string,
+	prof *profile.Profile, messages []provider.Message,
+) (provider.Response, string, error) {
+	ch, err := s.Provider.Stream(ctx, prof, messages)
 	if err != nil {
 		return provider.Response{}, "", fmt.Errorf("call: %w", err)
 	}
@@ -252,6 +280,28 @@ func (s *Session) executeRestricted(
 // isSubagentTool reports whether the tool name dispatches a subagent (PARA-01).
 func isSubagentTool(name string) bool {
 	return name == toolTask || name == "Agent"
+}
+
+// agentDefFor resolves a Task/Agent tool call's subagent_type against the
+// session's discovered agent definitions (12-02). ok=false for an absent
+// input, an unknown type, or no definitions wired — the caller falls back to
+// the default restricted subagent (the listing is advisory).
+func (s *Session) agentDefFor(input json.RawMessage) (ecosys.Agent, bool) {
+	if len(s.SubagentTypes) == 0 || len(input) == 0 {
+		return ecosys.Agent{}, false
+	}
+
+	var in struct {
+		SubagentType string `json:"subagent_type"` //nolint:tagliatelle // captured input key
+	}
+
+	if json.Unmarshal(input, &in) != nil || in.SubagentType == "" {
+		return ecosys.Agent{}, false
+	}
+
+	def, ok := s.SubagentTypes[in.SubagentType]
+
+	return def, ok
 }
 
 // extractSubagentPrompt pulls the prompt field from a Task/Agent tool-call input

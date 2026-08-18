@@ -284,7 +284,17 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 			for _, tc := range resp.ToolCalls {
 				callID := toolCallIDOf(tc)
 				if isSubagentTool(tc.Name) {
-					result, derr := s.DispatchSubagent(ctx, turnID, tc.Name, extractSubagentPrompt(tc.Input), nil)
+					// 12-02: a subagent_type matching a discovered agent
+					// definition dispatches with the definition's Prompt (a
+					// per-dispatch system block) and Tools (the restricted
+					// set); an unknown type keeps the defaults (advisory
+					// listing — graceful degradation, no confirmation tier).
+					var agentDef *ecosys.Agent
+					if def, ok := s.agentDefFor(tc.Input); ok {
+						agentDef = &def
+					}
+
+					result, derr := s.DispatchSubagent(ctx, turnID, tc.Name, extractSubagentPrompt(tc.Input), agentDef)
 					if derr != nil {
 						errJSON, mErr := json.Marshal(map[string]string{mapKeyError: derr.Error()})
 						if mErr != nil {

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/internal/event"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
@@ -232,7 +233,7 @@ type panickingSubagentRunner struct{}
 
 func (panickingSubagentRunner) Run(
 	ctx context.Context, s *Session,
-	subagentTurnID, parentTurnID, prompt string, restricted []string,
+	subagentTurnID, parentTurnID, prompt string, restricted []string, agentDef *ecosys.Agent,
 ) (string, error) {
 	panic("panickingSubagentRunner: injected panic")
 }
