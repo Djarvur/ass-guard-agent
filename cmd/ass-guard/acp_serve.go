@@ -98,7 +98,8 @@ func (stubCatalogExec) Execute(_ context.Context, _ string, _ json.RawMessage) (
 // (PARA-04, default 6). WorkDir is where .ass-guard/ transcripts live (default
 // cwd). ConfigAddedBoundaries lets a project ADD boundaries (SESS-02).
 // EngineEnabled (default true; --no-engine disables) wires the Phase-4 unified
-// engine + hook-DAG + OpenSpec + learning (Plan 04-05).
+// engine + hook-DAG + OpenSpec + learning (Plan 04-05). AskTimeout is the D-01
+// AskUserQuestion wait (default 10m; 0 = block forever — interactive mode).
 type serveOptions struct {
 	Profile               string
 	MaxConcurrent         int
@@ -106,6 +107,7 @@ type serveOptions struct {
 	WorkDir               string
 	ConfigAddedBoundaries []string
 	EngineEnabled         bool
+	AskTimeout            time.Duration
 
 	// AuditLogPath is the --audit-log operator override (09-06): "" → the
 	// default per-session mirror under <workdir>/.ass-guard/audit/; "-" →
@@ -151,6 +153,7 @@ func newACPServeCmd() *cobra.Command {
 		profilesDir   string
 		workDir       string
 		noEngine      bool
+		askTimeout    time.Duration
 	)
 
 	c := &cobra.Command{
@@ -167,7 +170,7 @@ func newACPServeCmd() *cobra.Command {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 
-			return runACPServeCmd(ctx, cmd, profileName, maxConcurrent, profilesDir, workDir, !noEngine)
+			return runACPServeCmd(ctx, cmd, profileName, maxConcurrent, profilesDir, workDir, !noEngine, askTimeout)
 		},
 	}
 	c.Flags().StringVar(&profileName, "profile", profileZcode, "profile name to load (PROF-01)")
@@ -177,6 +180,9 @@ func newACPServeCmd() *cobra.Command {
 	c.Flags().StringVar(&workDir, "work-dir", "", "working directory for .ass-guard/ transcripts (default: cwd)")
 	c.Flags().BoolVar(&noEngine, "no-engine", false,
 		"disable the Phase-4 unified engine (fall back to manual continue — D-04)")
+	c.Flags().DurationVar(&askTimeout, "ask-timeout", session.DefaultAskTimeout,
+		"how long an unanswered AskUserQuestion waits before the turn resumes with the "+
+			"non-answer form (D-01); 0 = block forever (interactive mode)")
 
 	return c
 }
@@ -188,6 +194,7 @@ func newACPServeCmd() *cobra.Command {
 func runACPServeCmd(
 	ctx context.Context, cmd *cobra.Command,
 	profileName string, maxConcurrent int, profilesDir, workDir string, engineEnabled bool,
+	askTimeout time.Duration,
 ) error {
 	log.SetOutput(os.Stderr)
 
@@ -214,6 +221,7 @@ func runACPServeCmd(
 		ProfilesDir:   resolvedProfilesDir,
 		WorkDir:       resolvedWorkDir,
 		EngineEnabled: engineEnabled,
+		AskTimeout:    askTimeout,
 		AuditLogPath:  auditPath,
 	})
 }
@@ -347,6 +355,7 @@ func runACPServe(ctx context.Context, in io.Reader, out, stderr io.Writer, opts 
 		workDir:     opts.WorkDir,
 		maxConc:     opts.MaxConcurrent,
 		configAdded: opts.ConfigAddedBoundaries,
+		askTimeout:  opts.AskTimeout,
 		serveCtx:    ctx,
 		makeProvider: func(capturer provider.RequestCapturer) provider.Provider {
 			// 09-01: the SINGLE factory seam — the same construction the
@@ -406,6 +415,11 @@ type sessionTurnRunner struct {
 	maxConc      int
 	configAdded  []string
 	makeProvider func(capturer provider.RequestCapturer) provider.Provider
+	// askTimeout is the D-01 AskUserQuestion wait threaded to every
+	// sessionFor-built broker (12-01). runACPServe always sets it from the
+	// --ask-timeout flag (default 10m; 0 = block forever); zero-value test
+	// runners arm no timer (block-forever — safe for tests).
+	askTimeout time.Duration
 	// serveCtx is the server-lifetime context (set once in runACPServe from
 	// the ACP server ctx). Per-session TranscriptWriters derive from it — a
 	// writer bound to a per-TURN ctx would die after turn 1 (09-01 T2 Test 8's
@@ -693,6 +707,26 @@ func (r *sessionTurnRunner) Run(
 	}()
 
 	blocks := toContentBlocks(prompt)
+
+	// 12-01 reply routing (ACP-01): a prompt arriving while an ask is pending
+	// is the OPERATOR'S ANSWER, not a new turn — the reply text resolves the
+	// broker, lands as the pending call's tool result (the captured answered
+	// form), and the SUSPENDED turn's model loop resumes under THIS request's
+	// ctx (cancellation of the reply request cancels the resume). A non-text
+	// prompt or a lost race (the D-01 timer already resumed the turn) falls
+	// through to an ordinary turn.
+	if sess.HasPendingAsk() {
+		if idx := firstTextBlockIndex(blocks); idx >= 0 && blocks[idx].Text != "" {
+			stop, rerr := sess.ResolveAsk(ctx, blocks[idx].Text)
+			if rerr == nil {
+				close(promptDone)
+				<-done
+
+				return mapAskStop(stop), nil
+			}
+		}
+	}
+
 	// Slash-command expansion (08-04): a leading /opsx:* invocation becomes
 	// the command's expanded body BEFORE the turn runs. On the ENGINE path the
 	// adapter expands inside its Run (see engineTurnRunnerAdapter.Run — it must
@@ -709,8 +743,25 @@ func (r *sessionTurnRunner) Run(
 	close(promptDone)
 	<-done
 
-	return stop, err
+	return mapAskStop(stop), err
 }
+
+// mapAskStop maps the INTERNAL ask-suspension stop marker to the ACP-facing
+// stopReason of a completed turn (12-01, ACP-01): the client received its
+// prompt response — the question arrived just before as a client-visible
+// update, and the pending ask lives in the session broker. Every other stop
+// reason passes through unchanged.
+func mapAskStop(stop string) string {
+	if stop == stopAskACP {
+		return stopEndTurn
+	}
+
+	return stop
+}
+
+// stopAskACP mirrors session's ask stop marker (kept local: internal/session
+// owns the vocabulary; the ACP layer only needs the one mapping).
+const stopAskACP = "ask"
 
 // runOneTurn drives ONE ACP session/prompt through the Session Core, wrapping it
 // with the Phase-4 engine when enabled (Plan 04-05 D-01). The engine runs AFTER
@@ -847,6 +898,22 @@ func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen // grouping ke
 	// catalog is never mutated.
 	coreexec.RegisterCore(sCatalog, coreexec.Config{WorkDir: dir, Todos: coreexec.NewTodoStore()})
 
+	// 12-01 (ACP-01/D-01): the per-session AskUserQuestion surface. The
+	// broker holds the pending ask; its surface callback publishes the
+	// rendered question to the BUS as an AgentMessageChunk — Run's chunk
+	// forwarder turns it into the client-visible session/update JUST BEFORE
+	// the suspended turn's response. Timer-driven resumes run under the
+	// serve-lifetime ctx (the suspending turn's ctx dies with its response).
+	// The executor registration is the SAME Execute-only override discipline
+	// as RegisterCore (the captured schema is never rewritten).
+	askBroker := session.NewAskBroker(r.askTimeout, func(p session.PendingAsk) {
+		r.bus.Publish(event.AgentMessageChunk{
+			TurnID: p.TurnID, MessageID: p.TurnID,
+			Content: coreexec.RenderAskSurface(p.Questions),
+		})
+	})
+	coreexec.RegisterAsk(sCatalog, askBroker)
+
 	// 09-01 T2 (AUD-02): the late-bound capturer closure. sess is declared
 	// BEFORE the Session literal and assigned after — the closure reads
 	// CurrentTurnID() at FIRE time (mid-turn), so it sees the in-flight turn.
@@ -888,6 +955,10 @@ func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen // grouping ke
 		ConfigAdded: r.configAdded,
 	}
 	sess = s
+
+	// 12-01: wire the ask broker (suspension + reply routing + the D-01
+	// timer; resumes run under the serve-lifetime ctx).
+	s.SetAskBroker(askBroker, r.serveCtxOrBackground())
 	// Phase-4 TOOL-04/05: inject the catalog-backed real executor (WebSearch/
 	// WebFetch delegate to the configured backend; others call catalog
 	// Tool.Execute). Phase 5 wraps it in toolcat.MCPExecutor so mcp__* calls
@@ -1069,6 +1140,12 @@ func (a *engineTurnRunnerAdapter) Run(ctx context.Context, prompt []session.Cont
 // recent turn: the last assistant_message's TurnID + Text + the tool-call names
 // recorded under that TurnID (D-02 second signal). A missing assistant_message
 // yields an empty TurnOutput (the engine treats it as unmatched ⇒ nothing).
+//
+// 12-01 (ACP-01): the turn-TERMINAL line is the last of assistant_message |
+// ask_suspended — a suspended turn has NO assistant_message (it ended at the
+// tool loop), so scanning only assistant lines would attribute the suspension
+// to the PREVIOUS turn. An ask_suspended terminal line yields
+// TurnOutput with AskSuspended set (Decide → ActionAsk, never Continue).
 func (a *engineTurnRunnerAdapter) LastTurnOutput() engine.TurnOutput {
 	if a.mgr == nil {
 		return engine.TurnOutput{}
@@ -1081,12 +1158,36 @@ func (a *engineTurnRunnerAdapter) LastTurnOutput() engine.TurnOutput {
 
 	var lastAssistant *session.Line
 
-	for i := len(lines) - 1; i >= 0; i-- { //nolint:modernize // conflicts with gocritic rangeValCopy
-		if lines[i].Type == session.TypeAssistantMessage {
-			lastAssistant = &lines[i]
+	var askSuspended *session.Line
 
+	for i := len(lines) - 1; i >= 0; i-- { //nolint:modernize // conflicts with gocritic rangeValCopy
+		switch lines[i].Type {
+		case session.TypeAssistantMessage:
+			lastAssistant = &lines[i]
+		case session.TypeAskSuspended:
+			// Only terminal while unresolved: a LATER assistant_message (the
+			// resumed turn's closing text) outranks it — the scan from the end
+			// guarantees the newest terminal line wins.
+			askSuspended = &lines[i]
+		}
+
+		if lastAssistant != nil || askSuspended != nil {
 			break
 		}
+	}
+
+	if askSuspended != nil {
+		out := engine.TurnOutput{
+			TurnID: askSuspended.TurnID, StartedBy: a.startedBy,
+			AskSuspended: true,
+		}
+		for i := range lines {
+			if lines[i].TurnID == askSuspended.TurnID && lines[i].Type == session.TypeToolCall {
+				out.ToolCalls = append(out.ToolCalls, lines[i].Name)
+			}
+		}
+
+		return out
 	}
 
 	if lastAssistant == nil {
