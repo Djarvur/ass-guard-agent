@@ -19,6 +19,13 @@ const askInput = `{"questions":[{"question":"Which cache library should we use?"
 	`"options":[{"label":"ristretto","description":"fast in-memory cache"},` +
 	`{"label":"bigcache","description":"simple disk-backed cache"}]}]}`
 
+// Test-local tool + call ids (goconst).
+const (
+	askToolNameTest = "AskUserQuestion"
+	askCallID1      = "call_ask_1"
+	askCallID2      = "call_ask_2"
+)
+
 // newAskSession builds a catalog-wired Session whose AskUserQuestion entry
 // carries the suspension executor (a local twin of coreexec.AskUserQuestionExecute
 // — parse → questions on the Output → ErrSuspended; the layering keeps
@@ -39,10 +46,10 @@ func newAskSession(
 		*surfaced = append(*surfaced, p)
 	})
 
-	s.SetAskBroker(broker, context.Background())
+	s.SetAskBroker(context.Background(), broker)
 
 	s.Catalog.Register(toolcat.Tool{
-		Name:        "AskUserQuestion",
+		Name:        askToolNameTest,
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"questions":{"type":"array"}}}`),
 		Execute: func(_ context.Context, args json.RawMessage) (json.RawMessage, error) {
 			var a struct {
@@ -53,7 +60,7 @@ func newAskSession(
 
 			out, _ := json.Marshal(a.Questions)
 
-			return out, ErrSuspended //nolint:wrapcheck // the sentinel IS the contract
+			return out, ErrSuspended
 		},
 	})
 
@@ -71,12 +78,14 @@ func newAskSession(
 // D-01 timer (50ms here) fires, the turn RESUMES, the pending callID receives
 // the corpus-absent-flagged non-answer form as its tool result, and the model's
 // continuation completes the turn normally.
-func TestAsk_SuspendsAndTimesOutEndToEnd(t *testing.T) { //nolint:gocognit,funlen // flat battery
+func TestAsk_SuspendsAndTimesOutEndToEnd(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen // flat battery
+	t.Parallel()
+
 	s, broker, surfaced := newAskSession(t, []provider.Response{
 		{
 			FinishReason: blockToolUse,
 			ToolCalls: []provider.ToolCall{{
-				ID: "call_ask_1", Name: "AskUserQuestion",
+				ID: askCallID1, Name: askToolNameTest,
 				Input: json.RawMessage(askInput),
 			}},
 		},
@@ -118,11 +127,11 @@ func TestAsk_SuspendsAndTimesOutEndToEnd(t *testing.T) { //nolint:gocognit,funle
 	sawResult := false
 
 	for _, l := range lines {
-		if l.Type == TypeAskSuspended && l.ToolCallID == "call_ask_1" {
+		if l.Type == TypeAskSuspended && l.ToolCallID == askCallID1 {
 			sawSuspension = true
 		}
 
-		if l.Type == TypeToolResult && l.ToolCallID == "call_ask_1" {
+		if l.Type == TypeToolResult && l.ToolCallID == askCallID1 {
 			sawResult = true
 		}
 	}
@@ -132,7 +141,8 @@ func TestAsk_SuspendsAndTimesOutEndToEnd(t *testing.T) { //nolint:gocognit,funle
 	}
 
 	if sawResult {
-		t.Fatal("tool result appended for the suspended callID before the resume (the suspension must NOT append a result)")
+		t.Fatal("tool result appended for the suspended callID before the resume " +
+			"(the suspension must NOT append a result)")
 	}
 
 	// The D-01 timer fires autonomously and drives the SAME turn's resume: the
@@ -165,13 +175,14 @@ func TestAsk_SuspendsAndTimesOutEndToEnd(t *testing.T) { //nolint:gocognit,funle
 	}
 
 	for _, l := range linesOf(s) {
-		if l.Type != TypeToolResult || l.ToolCallID != "call_ask_1" {
+		if l.Type != TypeToolResult || l.ToolCallID != askCallID1 {
 			continue
 		}
 
 		var got string
 
-		if err := json.Unmarshal(l.Output, &got); err != nil {
+		err := json.Unmarshal(l.Output, &got)
+		if err != nil {
 			t.Fatalf("non-answer output is not a JSON string: %v (%s)", err, l.Output)
 		}
 
@@ -193,12 +204,14 @@ func TestAsk_SuspendsAndTimesOutEndToEnd(t *testing.T) { //nolint:gocognit,funle
 // after a suspension, ResolveAsk embeds the operator's reply verbatim in the
 // captured answered form as the pending call's tool result and re-enters the
 // SAME turn's model loop — the reply IS the tool result; no new user message.
-func TestAsk_ReplyResumesSameTurn(t *testing.T) {
+func TestAsk_ReplyResumesSameTurn(t *testing.T) { //nolint:cyclop,funlen // flat battery
+	t.Parallel()
+
 	s, broker, _ := newAskSession(t, []provider.Response{
 		{
 			FinishReason: blockToolUse,
 			ToolCalls: []provider.ToolCall{{
-				ID: "call_ask_2", Name: "AskUserQuestion",
+				ID: askCallID2, Name: askToolNameTest,
 				Input: json.RawMessage(askInput),
 			}},
 		},
@@ -237,13 +250,14 @@ func TestAsk_ReplyResumesSameTurn(t *testing.T) {
 
 	// The reply lands as the tool result in the captured answered form.
 	for _, l := range linesOf(s) {
-		if l.Type != TypeToolResult || l.ToolCallID != "call_ask_2" {
+		if l.Type != TypeToolResult || l.ToolCallID != askCallID2 {
 			continue
 		}
 
 		var got string
 
-		if err := json.Unmarshal(l.Output, &got); err != nil {
+		err := json.Unmarshal(l.Output, &got)
+		if err != nil {
 			t.Fatalf("answered output is not a JSON string: %v (%s)", err, l.Output)
 		}
 
@@ -275,6 +289,8 @@ func TestAsk_ReplyResumesSameTurn(t *testing.T) {
 // pending reports false — a stray prompt after a timeout resume is an ordinary
 // new turn, never a cross-turn injection.
 func TestAsk_ResolveWithoutPending(t *testing.T) {
+	t.Parallel()
+
 	s, _, _ := newAskSession(t, []provider.Response{{FinishReason: stopEndTurn}}, time.Hour)
 
 	_, err := s.ResolveAsk(context.Background(), "orphan reply")
@@ -287,6 +303,8 @@ func TestAsk_ResolveWithoutPending(t *testing.T) {
 // timeout normalizes to the 10-minute default; ZERO arms NO timer — the pending
 // ask survives until a reply or session close (block-forever interactive mode).
 func TestAsk_TimeoutDefaults(t *testing.T) {
+	t.Parallel()
+
 	if DefaultAskTimeout != 10*time.Minute {
 		t.Errorf("DefaultAskTimeout = %v; want 10m (D-01)", DefaultAskTimeout)
 	}
@@ -314,6 +332,8 @@ func TestAsk_TimeoutDefaults(t *testing.T) {
 // session level): closing a session with an armed ask timer disarms it — the
 // timeout hook never runs after Close.
 func TestAsk_CloseDisarmsTimer(t *testing.T) {
+	t.Parallel()
+
 	s := newTestSessionWithCatalog(t, []provider.Response{{FinishReason: stopEndTurn}})
 
 	fired := make(chan struct{}, 1)
@@ -321,11 +341,12 @@ func TestAsk_CloseDisarmsTimer(t *testing.T) {
 	b := NewAskBroker(20*time.Millisecond, nil)
 	b.SetOnTimeout(func(PendingAsk) { fired <- struct{}{} })
 
-	s.SetAskBroker(b, context.Background())
+	s.SetAskBroker(context.Background(), b)
 
 	b.Surface(PendingAsk{TurnID: "t", CallID: "c"})
 
-	if err := s.Close(); err != nil {
+	err := s.Close()
+	if err != nil {
 		t.Fatalf("Close: %v", err)
 	}
 
@@ -341,6 +362,8 @@ func TestAsk_CloseDisarmsTimer(t *testing.T) {
 // a pending ask — the loser observes no pending and must not inject into the
 // resumed turn.
 func TestAsk_BrokerClaimRace(t *testing.T) {
+	t.Parallel()
+
 	b := NewAskBroker(time.Hour, nil)
 	b.Surface(PendingAsk{TurnID: "t", CallID: "c"})
 

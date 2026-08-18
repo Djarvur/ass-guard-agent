@@ -1,3 +1,16 @@
+package coreexec
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/Djarvur/ass-guard-agent/internal/session"
+	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
+)
+
 // AskUserQuestion execution (12-01, ACP-01 + D-01): the interactive-tool class
 // of the core-executor template. The executor PARSES the captured
 // {questions:[…]} shape and returns session.ErrSuspended with the parsed
@@ -14,17 +27,10 @@
 // 12-05's re-record. The renderers live in internal/session/ask.go (the
 // resume path is session-level; coreexec's conformance test pins them to the
 // fixture so the form is defined exactly once).
-package coreexec
 
-import (
-	"context"
-	"encoding/json"
-	"fmt"
-	"strings"
-
-	"github.com/Djarvur/ass-guard-agent/internal/session"
-	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
-)
+// errAskNilBroker is the static nil-broker error (a suspension nobody can
+// resolve is the dead end this plan removes — degrade to the structured form).
+var errAskNilBroker = errors.New("coreexec: ask: nil broker")
 
 // askToolName is the captured catalog entry this executor fills in behind.
 const askToolName = "AskUserQuestion"
@@ -45,8 +51,7 @@ type askArgs struct {
 func AskUserQuestionExecute(b *session.AskBroker) toolcat.Stub {
 	return func(_ context.Context, args json.RawMessage) (json.RawMessage, error) {
 		if b == nil {
-			return marshalStructured("ask: no broker configured for this session",
-				fmt.Errorf("coreexec: ask: nil broker")) //nolint:wrapcheck // marshalStructured convention
+			return marshalStructured("ask: no broker configured for this session", errAskNilBroker)
 		}
 
 		var a askArgs
@@ -58,7 +63,7 @@ func AskUserQuestionExecute(b *session.AskBroker) toolcat.Stub {
 			return marshalStructured("ask: marshal questions failed", fmt.Errorf("coreexec: %w", err))
 		}
 
-		return out, session.ErrSuspended //nolint:wrapcheck // the sentinel IS the contract
+		return out, session.ErrSuspended
 	}
 }
 

@@ -1,4 +1,4 @@
-package engine // internal test package: reaches the unexported applyDispatcher
+package engine //nolint:testpackage // internal test: reaches the unexported applyDispatcher
 
 import (
 	"context"
@@ -18,7 +18,7 @@ func TestDecide_AskSuspendedNeverChains(t *testing.T) {
 	table := allContinueTable{}
 
 	out := TurnOutput{
-		TurnID:       "t-ask",
+		TurnID:       askTestTurnID,
 		Text:         "done. ## Implementation Complete — ready for review",
 		ToolCalls:    []string{"OpenSpecHandoff"},
 		StartedBy:    "opsx:explore", // provenance rows would also fire
@@ -35,25 +35,31 @@ func TestDecide_AskSuspendedNeverChains(t *testing.T) {
 		t.Errorf("Signal = %q; want %q", dec.Signal, SignalAskSuspended)
 	}
 
-	if dec.TurnID != "t-ask" {
+	if dec.TurnID != askTestTurnID {
 		t.Errorf("TurnID = %q; want t-ask (provenance)", dec.TurnID)
 	}
 }
+
+// askTestTurnID is the canned suspended-turn id (goconst).
+const askTestTurnID = "t-ask"
+
+// askTestAlways is the canned matched-span text (goconst).
+const askTestAlways = "always"
 
 // allContinueTable is a PatternTable + CommandMatcher whose every lookup
 // returns ActionContinue — the adversarial table for the no-chain pin.
 type allContinueTable struct{}
 
 func (allContinueTable) MatchText(string) MatchDetail {
-	return MatchDetail{ID: "always", Action: ActionContinue, Span: "always"}
+	return MatchDetail{ID: askTestAlways, Action: ActionContinue, Span: askTestAlways}
 }
 
 func (allContinueTable) MatchTool(string) MatchDetail {
-	return MatchDetail{ID: "always-tool", Action: ActionContinue, Span: "always"}
+	return MatchDetail{ID: "always-tool", Action: ActionContinue, Span: askTestAlways}
 }
 
 func (allContinueTable) MatchCommand(string) MatchDetail {
-	return MatchDetail{ID: "always-cmd", Action: ActionContinue, Span: "always"}
+	return MatchDetail{ID: "always-cmd", Action: ActionContinue, Span: askTestAlways}
 }
 
 // knowEverythingDispatcher is an ActionDispatcher whose Ask ALWAYS returns a
@@ -62,6 +68,7 @@ func (allContinueTable) MatchCommand(string) MatchDetail {
 // store for a tool-suspension ask).
 type knowEverythingDispatcher struct {
 	ActionDispatcher
+
 	askCalls int
 }
 
@@ -85,7 +92,7 @@ func TestDispatcher_SuspendedAskSkipsLearningStore(t *testing.T) {
 	e := &Engine{Dispatcher: d}
 
 	dec := Decision{
-		TurnID: "t-ask",
+		TurnID: askTestTurnID,
 		Action: ActionAsk,
 		Signal: SignalAskSuspended,
 		Reason: "turn suspended on AskUserQuestion",

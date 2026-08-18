@@ -675,56 +675,17 @@ func (r *sessionTurnRunner) Run(
 	done := make(chan struct{})
 	promptDone := make(chan struct{})
 
-	go func() {
-		defer func() { done <- struct{}{} }()
-
-		for {
-			select {
-			case e, ok := <-ch:
-				if !ok {
-					return
-				}
-
-				if c, ok := e.(event.AgentMessageChunk); ok {
-					_ = emit.AgentMessageChunk(c.MessageID, c.Content)
-				}
-			case <-ctx.Done():
-				return
-			case <-promptDone:
-				// Prompt returned; drain any buffered chunks, then exit.
-				for {
-					select {
-					case e := <-ch:
-						if c, ok := e.(event.AgentMessageChunk); ok {
-							_ = emit.AgentMessageChunk(c.MessageID, c.Content)
-						}
-					default:
-						return
-					}
-				}
-			}
-		}
-	}()
+	startChunkForwarder(ctx, ch, emit, promptDone, done)
 
 	blocks := toContentBlocks(prompt)
 
 	// 12-01 reply routing (ACP-01): a prompt arriving while an ask is pending
-	// is the OPERATOR'S ANSWER, not a new turn — the reply text resolves the
-	// broker, lands as the pending call's tool result (the captured answered
-	// form), and the SUSPENDED turn's model loop resumes under THIS request's
-	// ctx (cancellation of the reply request cancels the resume). A non-text
-	// prompt or a lost race (the D-01 timer already resumed the turn) falls
-	// through to an ordinary turn.
-	if sess.HasPendingAsk() {
-		if idx := firstTextBlockIndex(blocks); idx >= 0 && blocks[idx].Text != "" {
-			stop, rerr := sess.ResolveAsk(ctx, blocks[idx].Text)
-			if rerr == nil {
-				close(promptDone)
-				<-done
+	// is the OPERATOR'S ANSWER, not a new turn (see routeAskReply).
+	if stop, handled := r.routeAskReply(ctx, sess, blocks); handled {
+		close(promptDone)
+		<-done
 
-				return mapAskStop(stop), nil
-			}
-		}
+		return stop, nil
 	}
 
 	// Slash-command expansion (08-04): a leading /opsx:* invocation becomes
@@ -762,6 +723,48 @@ func mapAskStop(stop string) string {
 // stopAskACP mirrors session's ask stop marker (kept local: internal/session
 // owns the vocabulary; the ACP layer only needs the one mapping).
 const stopAskACP = "ask"
+
+// startChunkForwarder spawns the per-Run chunk forwarder: streamed
+// AgentMessageChunk events become session/update notifications until the turn
+// completes, then any buffered chunks drain before the goroutine exits (the
+// caller signals promptDone + waits on done).
+func startChunkForwarder(
+	ctx context.Context,
+	ch <-chan event.Event,
+	emit acp.ChunkEmitter,
+	promptDone, done chan struct{},
+) {
+	go func() {
+		defer func() { done <- struct{}{} }()
+
+		for {
+			select {
+			case e, ok := <-ch:
+				if !ok {
+					return
+				}
+
+				if c, ok := e.(event.AgentMessageChunk); ok {
+					_ = emit.AgentMessageChunk(c.MessageID, c.Content)
+				}
+			case <-ctx.Done():
+				return
+			case <-promptDone:
+				// Prompt returned; drain any buffered chunks, then exit.
+				for {
+					select {
+					case e := <-ch:
+						if c, ok := e.(event.AgentMessageChunk); ok {
+							_ = emit.AgentMessageChunk(c.MessageID, c.Content)
+						}
+					default:
+						return
+					}
+				}
+			}
+		}
+	}()
+}
 
 // runOneTurn drives ONE ACP session/prompt through the Session Core, wrapping it
 // with the Phase-4 engine when enabled (Plan 04-05 D-01). The engine runs AFTER
@@ -958,7 +961,8 @@ func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen // grouping ke
 
 	// 12-01: wire the ask broker (suspension + reply routing + the D-01
 	// timer; resumes run under the serve-lifetime ctx).
-	s.SetAskBroker(askBroker, r.serveCtxOrBackground())
+	//nolint:contextcheck // the serve-lifetime ctx is a stored field, not derived here
+	s.SetAskBroker(r.serveCtxOrBackground(), askBroker)
 	// Phase-4 TOOL-04/05: inject the catalog-backed real executor (WebSearch/
 	// WebFetch delegate to the configured backend; others call catalog
 	// Tool.Execute). Phase 5 wraps it in toolcat.MCPExecutor so mcp__* calls
@@ -1058,6 +1062,32 @@ func (r *sessionTurnRunner) CloseSession(sessionID string) error {
 	}
 
 	return nil
+}
+
+// routeAskReply routes a pending-ask reply (12-01, ACP-01): the reply text
+// resolves the broker, lands as the pending call's tool result (the captured
+// answered form), and the SUSPENDED turn's model loop resumes under THIS
+// request's ctx (cancellation of the reply request cancels the resume). A
+// non-text prompt or a lost race (the D-01 timer already resumed the turn)
+// falls through to an ordinary turn (handled=false).
+func (r *sessionTurnRunner) routeAskReply(
+	ctx context.Context, sess *session.Session, blocks []session.ContentBlock,
+) (string, bool) {
+	if !sess.HasPendingAsk() {
+		return "", false
+	}
+
+	idx := firstTextBlockIndex(blocks)
+	if idx < 0 || blocks[idx].Text == "" {
+		return "", false
+	}
+
+	stop, rerr := sess.ResolveAsk(ctx, blocks[idx].Text)
+	if rerr != nil {
+		return "", false // the D-01 timer won the race — an ordinary turn
+	}
+
+	return mapAskStop(stop), true
 }
 
 // toContentBlocks converts the ACP content blocks to session content blocks.
@@ -1177,31 +1207,35 @@ func (a *engineTurnRunnerAdapter) LastTurnOutput() engine.TurnOutput {
 	}
 
 	if askSuspended != nil {
-		out := engine.TurnOutput{
+		return engine.TurnOutput{
 			TurnID: askSuspended.TurnID, StartedBy: a.startedBy,
 			AskSuspended: true,
+			ToolCalls:    toolCallNamesUnder(lines, askSuspended.TurnID),
 		}
-		for i := range lines {
-			if lines[i].TurnID == askSuspended.TurnID && lines[i].Type == session.TypeToolCall {
-				out.ToolCalls = append(out.ToolCalls, lines[i].Name)
-			}
-		}
-
-		return out
 	}
 
 	if lastAssistant == nil {
 		return engine.TurnOutput{}
 	}
 
-	out := engine.TurnOutput{TurnID: lastAssistant.TurnID, Text: lastAssistant.Text, StartedBy: a.startedBy}
+	return engine.TurnOutput{
+		TurnID: lastAssistant.TurnID, Text: lastAssistant.Text,
+		StartedBy: a.startedBy, ToolCalls: toolCallNamesUnder(lines, lastAssistant.TurnID),
+	}
+}
+
+// toolCallNamesUnder collects the tool-call NAMES recorded under turnID (D-02
+// second signal; shared by the assistant-terminal + ask-suspended paths).
+func toolCallNamesUnder(lines []session.Line, turnID string) []string {
+	var names []string
+
 	for i := range lines {
-		if lines[i].TurnID == lastAssistant.TurnID && lines[i].Type == session.TypeToolCall {
-			out.ToolCalls = append(out.ToolCalls, lines[i].Name)
+		if lines[i].TurnID == turnID && lines[i].Type == session.TypeToolCall {
+			names = append(names, lines[i].Name)
 		}
 	}
 
-	return out
+	return names
 }
 
 // acpDispatcher implements engine.ActionDispatcher, routing the engine's

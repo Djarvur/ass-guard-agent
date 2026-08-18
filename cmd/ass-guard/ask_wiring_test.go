@@ -13,9 +13,14 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/session"
 )
 
-// wiringAskTool is the interactive tool under test (local alias: the captured
-// catalog name).
-const wiringAskTool = "AskUserQuestion"
+// Test-local constants (goconst): the interactive tool under test, its wiring
+// call id, and the canned prompt texts.
+const (
+	wiringAskTool  = "AskUserQuestion"
+	wiringAskCall  = "call_ask_w1"
+	wiringAskMe    = "ask me"
+	wiringAskCache = "ask me which library"
+)
 
 // wiringAskInput is the plan's Test-1 question shape (one question, two
 // labelled options).
@@ -32,7 +37,7 @@ func newAskWiringRunner(t *testing.T, timeout time.Duration) (*sessionTurnRunner
 
 	r, prov := newExpansionRunner(t, true,
 		scriptedResp{toolCalls: []provider.ToolCall{{
-			ID: "call_ask_w1", Name: wiringAskTool,
+			ID: wiringAskCall, Name: wiringAskTool,
 			Input: json.RawMessage(wiringAskInput),
 		}}},
 		scriptedResp{text: "acknowledged your answer"},
@@ -51,7 +56,7 @@ func newAskWiringRunner(t *testing.T, timeout time.Duration) (*sessionTurnRunner
 // (verbatim), and the second Run returns the RESUMED turn's stop reason — the
 // model's continuation acknowledges the answer — with exactly two provider
 // stream calls (no new turn was started).
-func TestAskWiring_ReplyRouting(t *testing.T) { //nolint:gocognit,funlen // flat battery
+func TestAskWiring_ReplyRouting(t *testing.T) { //nolint:gocyclo,cyclop,funlen // flat battery
 	t.Parallel()
 
 	r, prov := newAskWiringRunner(t, time.Hour)
@@ -65,7 +70,8 @@ func TestAskWiring_ReplyRouting(t *testing.T) { //nolint:gocognit,funlen // flat
 	}
 
 	if stop1 != stopEndTurn {
-		t.Fatalf("Run 1 stop = %q; want end_turn (the ask marker is internal; the suspended turn maps to a completed turn)", stop1)
+		t.Fatalf("Run 1 stop = %q; want end_turn (the ask marker is internal; "+
+			"the suspended turn maps to a completed turn)", stop1)
 	}
 
 	sess := r.sessions["sess-ask-w1"]
@@ -84,7 +90,7 @@ func TestAskWiring_ReplyRouting(t *testing.T) { //nolint:gocognit,funlen // flat
 	sawSuspension, sawEngineAsk := false, false
 
 	for _, l := range lines {
-		if l.Type == session.TypeAskSuspended && l.ToolCallID == "call_ask_w1" {
+		if l.Type == session.TypeAskSuspended && l.ToolCallID == wiringAskCall {
 			sawSuspension = true
 		}
 
@@ -128,13 +134,14 @@ func TestAskWiring_ReplyRouting(t *testing.T) { //nolint:gocognit,funlen // flat
 	}
 
 	for _, l := range lines {
-		if l.Type != session.TypeToolResult || l.ToolCallID != "call_ask_w1" {
+		if l.Type != session.TypeToolResult || l.ToolCallID != wiringAskCall {
 			continue
 		}
 
 		var got string
 
-		if uerr := json.Unmarshal(l.Output, &got); uerr != nil {
+		uerr := json.Unmarshal(l.Output, &got)
+		if uerr != nil {
 			t.Fatalf("answered output is not a JSON string: %v (%s)", uerr, l.Output)
 		}
 
@@ -162,7 +169,7 @@ func TestAskWiring_ClientSurface(t *testing.T) {
 	em := &noopEmitter{}
 
 	_, err := r.Run(context.Background(), "sess-ask-w2", em,
-		[]acp.ContentBlock{{Type: blockText, Text: "ask me which library"}})
+		[]acp.ContentBlock{{Type: blockText, Text: wiringAskCache}})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -197,16 +204,17 @@ func TestAskWiring_SurfaceMatchesRenderer(t *testing.T) {
 	em := &noopEmitter{}
 
 	_, err := r.Run(context.Background(), "sess-ask-w3", em,
-		[]acp.ContentBlock{{Type: blockText, Text: "ask me"}})
+		[]acp.ContentBlock{{Type: blockText, Text: wiringAskMe}})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
 	var qs []session.AskQuestion
 
-	if uerr := json.Unmarshal(json.RawMessage(wiringAskInput), &struct {
+	uerr := json.Unmarshal(json.RawMessage(wiringAskInput), &struct {
 		Questions *[]session.AskQuestion `json:"questions"`
-	}{Questions: &qs}); uerr != nil {
+	}{Questions: &qs})
+	if uerr != nil {
 		t.Fatalf("unmarshal ask input: %v", uerr)
 	}
 
@@ -229,7 +237,7 @@ func TestAskWiring_SurfaceMatchesRenderer(t *testing.T) {
 // configurable at the serve layer — the cobra flag exists with the 10m default
 // and block-forever documentation, and the value threads runner → sessionFor →
 // broker (7m propagates as 7m; 0 propagates as block-forever).
-func TestAskWiring_ConfigKnob(t *testing.T) { //nolint:gocognit // flat battery
+func TestAskWiring_ConfigKnob(t *testing.T) {
 	t.Parallel()
 
 	// The cobra flag: exists, default 10m, documents 0 = block forever.
@@ -262,7 +270,7 @@ func TestAskWiring_ConfigKnob(t *testing.T) { //nolint:gocognit // flat battery
 			r, _ := newAskWiringRunner(t, tc.val)
 
 			_, err := r.Run(context.Background(), "sess-ask-knob-"+tc.name, &noopEmitter{},
-				[]acp.ContentBlock{{Type: blockText, Text: "ask me"}})
+				[]acp.ContentBlock{{Type: blockText, Text: wiringAskMe}})
 			if err != nil {
 				t.Fatalf("Run: %v", err)
 			}
@@ -292,7 +300,7 @@ func TestAskWiring_SchemaDisciplineAtWiring(t *testing.T) {
 	r, _ := newAskWiringRunner(t, time.Hour)
 
 	_, err := r.Run(context.Background(), "sess-ask-w4", &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: "ask me"}})
+		[]acp.ContentBlock{{Type: blockText, Text: wiringAskMe}})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -316,7 +324,8 @@ func TestAskWiring_SchemaDisciplineAtWiring(t *testing.T) {
 	// entry the per-session clone copied BEFORE RegisterAsk overrode Execute.
 	captured, ok := r.catalog.Get(wiringAskTool)
 	if !ok {
-		t.Skip("shared runner catalog carries no AskUserQuestion (engine-off wiring); the coreexec suite pins the discipline")
+		t.Skip("shared runner catalog carries no AskUserQuestion (engine-off wiring); " +
+			"the coreexec suite pins the discipline")
 	}
 
 	if wired.Name != captured.Name ||

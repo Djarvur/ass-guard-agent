@@ -1,5 +1,51 @@
 package engine
 
+// askSuspendedDecision returns the ask-suspension verdict (ActionAsk with NO
+// table lookup — a suspended turn matches nothing; ErrAskPending semantics:
+// surface the ask + stop the loop) and suspended=true when out is suspended.
+func askSuspendedDecision(out TurnOutput) (Decision, bool) { //nolint:gocritic // hugeParam: value semantics
+	if !out.AskSuspended {
+		return Decision{}, false
+	}
+
+	return Decision{
+		TurnID: out.TurnID,
+		Action: ActionAsk,
+		Signal: SignalAskSuspended,
+		Reason: "turn suspended on AskUserQuestion — surface the ask, stop the loop (never chain)",
+	}, true
+}
+
+// provenanceContinue is the THIRD chaining signal (hybrid chaining,
+// findings-6 disposition): it fires only when the dual signals missed, the turn
+// was STARTED by an expansion (out.StartedBy), AND the table implements the
+// optional CommandMatcher with a non-Nothing row for that key — the
+// deterministic fallback for the architecturally free-form explore closing.
+func provenanceContinue(out TurnOutput, table PatternTable) (Decision, bool) { //nolint:gocritic // hugeParam
+	if out.StartedBy == "" {
+		return Decision{}, false
+	}
+
+	cm, ok := table.(CommandMatcher)
+	if !ok {
+		return Decision{}, false
+	}
+
+	d := cm.MatchCommand(out.StartedBy)
+	if d.Action == ActionNothing {
+		return Decision{}, false
+	}
+
+	return Decision{
+		TurnID:       out.TurnID,
+		Action:       d.Action,
+		Signal:       "command:" + d.ID,
+		MatchedSpan:  d.Span,
+		ConfigSource: d.ConfigSource,
+		Reason:       "command provenance matched (turn started by " + out.StartedBy + ")",
+	}, true
+}
+
 // Decide is the PURE dual-signal detector (D-01 — a pure function of turn
 // output + pattern table; no I/O, no globals, no time). It returns the engine's
 // verdict for one finished turn:
@@ -30,17 +76,11 @@ package engine
 // sourced from the expansion seam (never assistant/tool content), so the
 // assistant-role-only safety property holds unchanged — a non-command turn's
 // end_turn triggers NOTHING even against a table carrying command rows.
-func Decide(out TurnOutput, table PatternTable) Decision {
-	// Ask suspension first, before any table consultation: the turn is waiting
-	// on the OPERATOR (a pending tool call), not on a pattern. ErrAskPending
-	// semantics — surface the ask + stop the loop.
-	if out.AskSuspended {
-		return Decision{
-			TurnID: out.TurnID,
-			Action: ActionAsk,
-			Signal: SignalAskSuspended,
-			Reason: "turn suspended on AskUserQuestion — surface the ask, stop the loop (never chain)",
-		}
+func Decide(out TurnOutput, table PatternTable) Decision { //nolint:gocritic // hugeParam: pure-function value contract
+	// Ask suspension first, before any table consultation (askSuspendedDecision
+	// — ErrAskPending semantics: surface the ask + stop the loop).
+	if dec, suspended := askSuspendedDecision(out); suspended {
+		return dec
 	}
 
 	if d := table.MatchText(out.Text); d.Action != ActionNothing {
@@ -78,22 +118,10 @@ func Decide(out TurnOutput, table PatternTable) Decision {
 		}
 	}
 
-	// Third signal: command provenance (hybrid chaining). Fires only when the
-	// dual signals missed, the turn was started by an expansion, AND the table
-	// implements the optional CommandMatcher with a row for that key.
-	if out.StartedBy != "" {
-		if cm, ok := table.(CommandMatcher); ok {
-			if d := cm.MatchCommand(out.StartedBy); d.Action != ActionNothing {
-				return Decision{
-					TurnID:       out.TurnID,
-					Action:       d.Action,
-					Signal:       "command:" + d.ID,
-					MatchedSpan:  d.Span,
-					ConfigSource: d.ConfigSource,
-					Reason:       "command provenance matched (turn started by " + out.StartedBy + ")",
-				}
-			}
-		}
+	// Third signal: command provenance (hybrid chaining) — see
+	// provenanceContinue for the gating.
+	if dec, ok := provenanceContinue(out, table); ok {
+		return dec
 	}
 
 	return Decision{

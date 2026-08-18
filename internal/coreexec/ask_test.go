@@ -39,7 +39,7 @@ type interactiveFixture struct {
 // forms string-compare against the committed fixture templates; the non-answer
 // family carries corpus_absent + the D-01 provenance note + the 12-05 upgrade
 // pointer (the 08-08 fixtures_test.go pattern).
-func TestAskForms_ConformToFixture(t *testing.T) {
+func TestAskForms_ConformToFixture(t *testing.T) { //nolint:cyclop,funlen // flat battery
 	t.Parallel()
 
 	raw, err := os.ReadFile(interactiveFixturePath)
@@ -49,7 +49,8 @@ func TestAskForms_ConformToFixture(t *testing.T) {
 
 	var f interactiveFixture
 
-	if err := json.Unmarshal(raw, &f); err != nil {
+	err = json.Unmarshal(raw, &f)
+	if err != nil {
 		t.Fatalf("parse %s: %v", interactiveFixturePath, err)
 	}
 
@@ -154,7 +155,8 @@ func TestAskExecute_ParsesAndSuspends(t *testing.T) {
 
 	var qs []session.AskQuestion
 
-	if uerr := json.Unmarshal(out, &qs); uerr != nil {
+	uerr := json.Unmarshal(out, &qs)
+	if uerr != nil {
 		t.Fatalf("Output is not the parsed questions payload: %v (%s)", uerr, out)
 	}
 
@@ -218,7 +220,8 @@ func TestAskExecute_NilBroker(t *testing.T) {
 
 	var m map[string]string
 
-	if uerr := json.Unmarshal(out, &m); uerr != nil || m["error"] == "" {
+	uerr := json.Unmarshal(out, &m)
+	if uerr != nil || m["error"] == "" {
 		t.Errorf("nil-broker output = %s; want the structured {\"error\":…} convention", out)
 	}
 }
@@ -247,7 +250,8 @@ func TestRegisterAsk_SchemaNeverRewritten(t *testing.T) {
 	}
 
 	if before.Mutability != toolcat.MutabilityReadOnly {
-		t.Errorf("captured AskUserQuestion mutability = %v; want read-only (a question reads nothing)", before.Mutability)
+		t.Errorf("captured AskUserQuestion mutability = %v; want read-only (a question reads nothing)",
+			before.Mutability)
 	}
 
 	if after.Name != before.Name {

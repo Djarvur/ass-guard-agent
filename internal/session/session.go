@@ -119,6 +119,8 @@ func (s *Session) CurrentTurnID() string {
 // the pending ask lives in the session broker until the operator's reply
 // (ResolveAsk — the reply IS the tool result) or the D-01 timer resumes the
 // SAME turn's loop via runTurn.
+//
+//nolint:nonamedreturns // stop/err assigned by the panic-recovery defer
 func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop string, err error) {
 	turnID := s.nextTurnID()
 	// Recover at the goroutine/turn boundary (D-13 parent-side): a panic becomes
@@ -139,6 +141,46 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 	}
 
 	return s.runTurn(ctx, turnID)
+}
+
+// toolCallIDOf returns the tool call's REAL provider id (T1's seam carry),
+// falling back to the tool name when the call carries no id (legacy fake
+// providers and parity arms) so tool_call/tool_result pairing stays consistent
+// end-to-end either way.
+func toolCallIDOf(tc provider.ToolCall) string {
+	if tc.ID != "" {
+		return tc.ID
+	}
+
+	return tc.Name
+}
+
+// SetToolExecutor injects the real tool executor (Phase-4 TOOL-04/05 — a
+// catalog-backed toolexec.RealExecutor constructed at startup in Plan 04-05).
+// When not called, the session uses stubToolResult for every non-subagent tool
+// (the Phase-2 backward-compatible behavior — real execution is opt-in).
+func (s *Session) SetToolExecutor(tx toolcat.ToolExecutor) { s.toolExec = tx }
+
+// Close ends the session: it runs the OnClose hook exactly once (idempotent) so
+// MCP subprocesses are reaped, transcript managers flushed, etc. (Plan 05-01
+// T4). Safe to call multiple times; concurrent calls are serialized. A
+// mid-session turn panic does NOT call Close (the session survives for the next
+// turn); Close is session-end only. Any armed ask timer is disarmed first
+// (12-01: no goroutine leak; a pending ask dies with its session).
+func (s *Session) Close() error {
+	var firstErr error
+
+	s.closeOnce.Do(func() {
+		if s.ask != nil {
+			s.ask.Disarm()
+		}
+
+		if s.OnClose != nil {
+			firstErr = s.OnClose()
+		}
+	})
+
+	return firstErr
 }
 
 // runTurn is the D-18 model/tool loop core, shared by Prompt and the ask-resume
@@ -235,7 +277,7 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 				if isSubagentTool(tc.Name) {
 					result, derr := s.DispatchSubagent(ctx, turnID, tc.Name, extractSubagentPrompt(tc.Input), nil)
 					if derr != nil {
-						errJSON, mErr := json.Marshal(map[string]string{"error": derr.Error()})
+						errJSON, mErr := json.Marshal(map[string]string{mapKeyError: derr.Error()})
 						if mErr != nil {
 							errJSON = []byte(`{"error":"marshal error failed"}`)
 						}
@@ -311,7 +353,7 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 				// No broker wired (a bare session): degrade to the structured
 				// error convention — the model is never silently dead-ended.
 				errJSON, mErr := json.Marshal(map[string]string{
-					"error": "ask suspended but no broker is wired (question dropped)",
+					mapKeyError: "ask suspended but no broker is wired (question dropped)",
 				})
 				if mErr != nil {
 					errJSON = []byte(`{"error":"marshal error failed"}`)
@@ -353,46 +395,6 @@ func (s *Session) suspendForAsk(turnID, callID string, output json.RawMessage) {
 
 	_ = s.Manager.AppendAskSuspended(turnID, callID, qJSON)
 	s.ask.Surface(PendingAsk{TurnID: turnID, CallID: callID, Questions: qs})
-}
-
-// toolCallIDOf returns the tool call's REAL provider id (T1's seam carry),
-// falling back to the tool name when the call carries no id (legacy fake
-// providers and parity arms) so tool_call/tool_result pairing stays consistent
-// end-to-end either way.
-func toolCallIDOf(tc provider.ToolCall) string {
-	if tc.ID != "" {
-		return tc.ID
-	}
-
-	return tc.Name
-}
-
-// SetToolExecutor injects the real tool executor (Phase-4 TOOL-04/05 — a
-// catalog-backed toolexec.RealExecutor constructed at startup in Plan 04-05).
-// When not called, the session uses stubToolResult for every non-subagent tool
-// (the Phase-2 backward-compatible behavior — real execution is opt-in).
-func (s *Session) SetToolExecutor(tx toolcat.ToolExecutor) { s.toolExec = tx }
-
-// Close ends the session: it runs the OnClose hook exactly once (idempotent) so
-// MCP subprocesses are reaped, transcript managers flushed, etc. (Plan 05-01
-// T4). Safe to call multiple times; concurrent calls are serialized. A
-// mid-session turn panic does NOT call Close (the session survives for the next
-// turn); Close is session-end only. Any armed ask timer is disarmed first
-// (12-01: no goroutine leak; a pending ask dies with its session).
-func (s *Session) Close() error {
-	var firstErr error
-
-	s.closeOnce.Do(func() {
-		if s.ask != nil {
-			s.ask.Disarm()
-		}
-
-		if s.OnClose != nil {
-			firstErr = s.OnClose()
-		}
-	})
-
-	return firstErr
 }
 
 // stubExecutor returns the Phase-2 canned stub for every tool (D-15 — execution

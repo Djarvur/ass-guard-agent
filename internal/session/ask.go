@@ -1,13 +1,3 @@
-// session ask suspension (12-01, ACP-01 + D-01): the AskUserQuestion surface.
-// A model-authored question mid-turn SUSPENDS the turn (the executor returns
-// ErrSuspended after parsing; the tool loop ends the turn WITHOUT appending a
-// tool result) and the pending ask lives in this per-session broker until the
-// operator's reply (routed as the pending call's tool result — the reply IS the
-// result, no new user message) or the D-01 timeout timer (configurable wait,
-// default 10 minutes; 0 = block forever, interactive mode) resolves it with the
-// capture-shaped non-answer form and drives the SAME resume path. This is a
-// model-INITIATED question surface, NOT a tool-execution gate — the
-// no-confirmation-tier safety model is untouched.
 package session
 
 import (
@@ -19,12 +9,25 @@ import (
 	"time"
 )
 
+// Ask suspension (12-01, ACP-01 + D-01): a model-authored question mid-turn
+// SUSPENDS the turn (the executor returns ErrSuspended after parsing; the tool
+// loop ends the turn WITHOUT appending a tool result) and the pending ask lives
+// in the per-session AskBroker until the operator's reply (routed as the
+// pending call's tool result — the reply IS the result, no new user message) or
+// the D-01 timeout timer (configurable wait, default 10 minutes; 0 = block
+// forever, interactive mode) resolves it with the capture-shaped non-answer
+// form and drives the SAME resume path. This is a model-INITIATED question
+// surface, NOT a tool-execution gate — the no-confirmation-tier safety model is
+// untouched.
+
 // ErrSuspended is the suspension sentinel the AskUserQuestion executor returns
 // after parsing the question payload. The session tool loop maps it to the ask
 // stop marker: the turn ends WITHOUT appending a tool result for the suspended
 // call; the reply (or the D-01 timer) appends the result and resumes the SAME
 // turn's model loop.
-var ErrSuspended = errors.New("session: ask suspended — turn ends without a tool result; reply or D-01 timeout resumes it")
+var ErrSuspended = errors.New(
+	"session: ask suspended — turn ends without a tool result; reply or D-01 timeout resumes it",
+)
 
 // DefaultAskTimeout is the D-01 policy default: an unanswered AskUserQuestion
 // waits 10 minutes, then the turn resumes with the non-answer form. A timeout
@@ -55,7 +58,7 @@ type AskQuestion struct {
 	Question    string      `json:"question"`
 	Header      string      `json:"header"`
 	Options     []AskOption `json:"options"`
-	MultiSelect bool        `json:"multiSelect"`
+	MultiSelect bool        `json:"multiSelect"` //nolint:tagliatelle // captured input key
 }
 
 // PendingAsk is the per-session pending-ask record, keyed by the suspended
@@ -138,7 +141,7 @@ func (b *AskBroker) Snapshot() (PendingAsk, bool) {
 // loop — the only place that knows both turnID and callID (the executor's
 // parsed questions ride the suspended result's Output; the Stub seam carries
 // no call identity).
-func (b *AskBroker) Surface(p PendingAsk) {
+func (b *AskBroker) Surface(p PendingAsk) { //nolint:gocritic // hugeParam: 80-byte struct passed once per suspension
 	b.mu.Lock()
 
 	if p.SurfacedAt.IsZero() {
@@ -192,7 +195,7 @@ func (b *AskBroker) Claim() (PendingAsk, bool) {
 // suspension path uses Surface; this is the generic seam plan 12-07's cron
 // firing reuses). Any previously armed timer is stopped. The returned disarm
 // func stops the timer and is safe to call multiple times.
-func (b *AskBroker) ArmTimeout(when time.Duration, fire func()) (disarm func()) {
+func (b *AskBroker) ArmTimeout(when time.Duration, fire func()) func() {
 	b.mu.Lock()
 
 	b.stopTimerLocked()
@@ -247,12 +250,12 @@ func RenderAskNonAnswer(timeout time.Duration) string {
 // — the suspending turn's ctx dies with its prompt response, so the D-01 timer
 // must resume under the serve-lifetime ctx; nil falls back to
 // context.Background().
-func (s *Session) SetAskBroker(b *AskBroker, resumeCtx context.Context) {
+func (s *Session) SetAskBroker(resumeCtx context.Context, b *AskBroker) {
 	s.ask = b
 	s.askResumeCtx = resumeCtx
 
 	if b != nil {
-		b.SetOnTimeout(func(p PendingAsk) { s.resumeAskClaimed(p, nil) })
+		b.SetOnTimeout(func(p PendingAsk) { s.resumeAskClaimed(s.askResumeCtx, p, nil) })
 	}
 }
 
@@ -277,29 +280,44 @@ func (s *Session) ResolveAsk(ctx context.Context, reply string) (string, error) 
 		return "", errNoPendingAsk
 	}
 
-	return s.resumeAskClaimed(p, &reply), nil //nolint:wrapcheck // resume errors are recorded in the transcript
+	return s.resumeAskClaimed(ctx, p, &reply), nil
 }
 
 // resumeAskClaimed is the shared resume path (reply routing + the D-01 timer):
 // it appends the rendered tool result for the pending callID and re-enters the
-// SAME turn's model loop. A nil reply renders the non-answer form.
-func (s *Session) resumeAskClaimed(p PendingAsk, reply *string) string {
-	var out json.RawMessage
-
-	if reply != nil {
-		out, _ = json.Marshal(RenderAskAnswered(*reply))
-	} else {
-		out, _ = json.Marshal(RenderAskNonAnswer(s.ask.Timeout()))
-	}
-
-	_ = s.Manager.AppendToolResult(p.TurnID, p.CallID, out, false)
-
-	ctx := s.askResumeCtx
+// SAME turn's model loop. A nil reply renders the non-answer form. ctx governs
+// the resumed turn (the reply's request ctx, or the serve-lifetime ctx on the
+// timer path — the suspending turn's own ctx died with its response).
+func (s *Session) resumeAskClaimed( //nolint:contextcheck // the timer path passes the stored serve-lifetime ctx
+	ctx context.Context, p PendingAsk, reply *string, //nolint:gocritic // hugeParam: one-shot resume payload
+) string {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
+	var form string
+
+	if reply != nil {
+		form = RenderAskAnswered(*reply)
+	} else {
+		form = RenderAskNonAnswer(s.ask.Timeout())
+	}
+
+	_ = s.Manager.AppendToolResult(p.TurnID, p.CallID, marshalAskForm(form), false)
+
 	stop, _ := s.runTurn(ctx, p.TurnID)
 
 	return stop
+}
+
+// marshalAskForm marshals an ask result form (a plain string — the 08-08
+// plainContent seam renders JSON-string outputs unquoted). A string Marshal
+// cannot fail; the fallback keeps the transcript line valid regardless.
+func marshalAskForm(form string) json.RawMessage {
+	out, err := json.Marshal(form)
+	if err != nil {
+		return json.RawMessage(`"ask form render failed"`)
+	}
+
+	return out
 }

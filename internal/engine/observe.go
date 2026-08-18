@@ -229,7 +229,7 @@ func (e *Engine) lastTurnAndRecover( //nolint:nonamedreturns // err assigned by 
 // T3 Test 4). On panic the original (stop, err) are preserved by the caller
 // (Observe returns them unchanged); Decide itself never panics on valid input.
 func (e *Engine) decideAndRecover( //nolint:nonamedreturns // err assigned by panic-recovery defer
-	out TurnOutput,
+	out TurnOutput, //nolint:gocritic // hugeParam: pure-Decide value contract
 	table PatternTable,
 ) (dec Decision, err error) {
 	defer func() {
