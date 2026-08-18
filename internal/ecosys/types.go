@@ -30,14 +30,24 @@ type Command struct {
 	Model        string   // frontmatter `model`
 }
 
-// Plugin is one plugin discovered from `plugins/<name>/manifest.json` (D-07).
-// The manifest declares the plugin's contributed skill/command names. Path is
-// the on-disk manifest location.
+// Plugin is one plugin discovered from `plugins/<name>/manifest.json` (the
+// simple D-07 shape) or from an installed-plugin cache entry (12-02: the
+// `installed_plugins.json` registry + `plugins/cache/<marketplace>/<plugin>/<version>/`
+// layout with `.claude-plugin/plugin.json` manifests). The manifest declares
+// the plugin's contributed skill/command names. Path is the on-disk manifest
+// location. Installed-cache provenance (Source marketplace, Version, Scope,
+// InstallPath) is empty for the simple shape.
 type Plugin struct {
 	Name     string
 	Skills   []string
 	Commands []string
 	Path     string
+
+	// Installed-plugin provenance (12-02; zero for the simple shape).
+	Source      string // marketplace id parsed from the name@marketplace key
+	Version     string // installed version (dir name / registry field)
+	Scope       string // "user" | "project" | "local"
+	InstallPath string // resolved cache install path
 }
 
 // Registry aggregates discovered skills/commands/plugins by name. Load returns

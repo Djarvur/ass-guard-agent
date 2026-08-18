@@ -1,0 +1,14 @@
+[
+  {
+    "name": "skill-plugin@acme-market",
+    "installPath": "cache/acme-market/skill-plugin/1.0.0",
+    "scope": "user",
+    "version": "1.0.0"
+  },
+  {
+    "name": "ghost-plugin@acme-market",
+    "installPath": "cache/acme-market/ghost-plugin/9.9.9",
+    "scope": "user",
+    "version": "9.9.9"
+  }
+]

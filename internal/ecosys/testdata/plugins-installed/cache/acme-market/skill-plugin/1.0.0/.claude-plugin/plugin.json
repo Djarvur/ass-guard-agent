@@ -1,0 +1,5 @@
+{
+  "name": "skill-plugin",
+  "description": "Fixture plugin carrying one skill and one command (12-02 tracer).",
+  "version": "1.0.0"
+}

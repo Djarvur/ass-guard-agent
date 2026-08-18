@@ -453,6 +453,190 @@ func TestUnknownKeysIgnored(t *testing.T) {
 	assert.Equal(t, "Enter explore mode", cmd.Description)
 }
 
+// installedFixture is the committed installed-plugins fixture tree (12-02):
+// its CONTENTS are a `.claude/plugins/` root — an installed_plugins.json (v1
+// registry: one live entry + one deliberately disk-absent entry) plus the
+// cache/<marketplace>/<plugin>/<version>/ layout with a .claude-plugin
+// manifest, one bundled skill, and one bundled command. Later tasks extend the
+// same tree with agents/, hooks/hooks.json, and .mcp.json.
+const installedFixture = "testdata/plugins-installed"
+
+// copyTree recursively copies the fixture tree at src into dst (test-side
+// fixture planting; deterministic offline ground truth).
+func copyTree(t *testing.T, src, dst string) {
+	t.Helper()
+
+	err := filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return fmt.Errorf("walk %s: %w", path, err)
+		}
+
+		rel, rerr := filepath.Rel(src, path)
+		if rerr != nil {
+			return fmt.Errorf("rel %s: %w", path, rerr)
+		}
+
+		target := filepath.Join(dst, rel)
+
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+
+		data, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return fmt.Errorf("read %s: %w", path, rerr)
+		}
+
+		return os.WriteFile(target, data, 0o600)
+	})
+	require.NoError(t, err)
+}
+
+// plantProjectPlugins copies the committed fixture into <tmp>/.claude/plugins
+// and returns the project dir (the PROJECT plugin root per the 2026-08-19
+// revision).
+func plantProjectPlugins(t *testing.T) string {
+	t.Helper()
+
+	proj := t.TempDir()
+	copyTree(t, installedFixture, filepath.Join(proj, claudeDirName, "plugins"))
+
+	return proj
+}
+
+// TestInstalledPluginsDiscoveryE2E (Task 1, Test 1) verifies the installed-cache
+// shape end-to-end through the real Load: installed_plugins.json resolves the
+// cache installPath, the .claude-plugin/plugin.json manifest is read, and the
+// plugin's bundled skill + command land in the Registry with Paths inside the
+// cache — from BOTH root kinds (project `.claude/plugins/` here; the user root
+// is exercised by the precedence matrix + live probe tests).
+func TestInstalledPluginsDiscoveryE2E(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	proj := plantProjectPlugins(t)
+
+	reg, err := Load(filepath.Join(proj, claudeDirName), filepath.Join(proj, assguardDirName))
+	require.NoError(t, err)
+
+	sk, ok := reg.Skills["fixture-skill"]
+	require.True(t, ok, "plugin-bundled skill must be discovered through Load")
+
+	assert.Contains(t, sk.Description, "installed plugin cache")
+	assert.Contains(t, sk.Path, filepath.Join("cache", "acme-market", "skill-plugin", "1.0.0"))
+
+	cmd, ok := reg.Commands["fixture-cmd"]
+	require.True(t, ok, "plugin-bundled command must be discovered through Load")
+
+	assert.Contains(t, cmd.Description, "installed plugin cache")
+	assert.Contains(t, cmd.Path, filepath.Join("cache", "acme-market", "skill-plugin", "1.0.0"))
+	assert.Contains(t, cmd.Body, "$ARGUMENTS")
+
+	// The plugin itself carries installed-plugin provenance.
+	pl, ok := reg.Plugins["skill-plugin"]
+	require.True(t, ok, "installed plugin must be registered with provenance")
+
+	assert.Equal(t, "acme-market", pl.Source, "marketplace source must be recorded")
+	assert.Equal(t, "1.0.0", pl.Version, "version must be recorded")
+	assert.Equal(t, "user", pl.Scope, "scope must be recorded")
+	assert.Contains(t, pl.InstallPath, filepath.Join("skill-plugin", "1.0.0"))
+
+	// The listing (the model-visible surface) includes the plugin skill.
+	listing := SkillListing(reg)
+	assert.Contains(t, listing, "fixture-skill")
+	assert.Contains(t, listing, filepath.Join("cache", "acme-market", "skill-plugin", "1.0.0"))
+}
+
+// TestInstalledPluginsUserRoot (Task 1, Test 1b) verifies the SAME end-to-end
+// discovery through the USER root (~/.claude/plugins/) — both root kinds load.
+func TestInstalledPluginsUserRoot(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	copyTree(t, installedFixture, filepath.Join(tmpHome, claudeDirName, "plugins"))
+
+	proj := t.TempDir()
+
+	reg, err := Load(filepath.Join(proj, claudeDirName), filepath.Join(proj, assguardDirName))
+	require.NoError(t, err)
+
+	require.Contains(t, reg.Skills, "fixture-skill", "user-root plugin skill must be discovered")
+	require.Contains(t, reg.Commands, "fixture-cmd", "user-root plugin command must be discovered")
+	require.Contains(t, reg.Plugins, "skill-plugin")
+
+	pl := reg.Plugins["skill-plugin"]
+	assert.Equal(t, "acme-market", pl.Source)
+	assert.Contains(t, pl.Path, tmpHome, "user-root plugin provenance names the user cache path")
+}
+
+// TestInstalledPluginAbsentSkipped (Task 1, Test 2) verifies an entry whose
+// installPath points nowhere on disk is skipped with a warning (consumed by the
+// test's stderr sink) and the REST of the registry still loads.
+func TestInstalledPluginAbsentSkipped(t *testing.T) {
+	buf := captureShadowLogger(t)
+
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	proj := plantProjectPlugins(t)
+
+	reg, err := Load(filepath.Join(proj, claudeDirName), filepath.Join(proj, assguardDirName))
+	require.NoError(t, err)
+
+	assert.NotContains(t, reg.Plugins, "ghost-plugin", "disk-absent entry must be skipped")
+	assert.Contains(t, reg.Plugins, "skill-plugin", "the rest of the registry loads")
+
+	warned := buf.String()
+	assert.Contains(t, warned, "ghost-plugin", "skip warning must name the absent plugin")
+	assert.Contains(t, warned, "ghost-plugin/9.9.9", "skip warning must name the absent path")
+}
+
+// TestInstalledPluginMalformedManifest (Task 1, Test 3) verifies a malformed
+// plugin.json yields the same skip-with-warning behavior — never a load error.
+func TestInstalledPluginMalformedManifest(t *testing.T) {
+	buf := captureShadowLogger(t)
+
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	proj := t.TempDir()
+	plugRoot := filepath.Join(proj, claudeDirName, "plugins")
+	broken := filepath.Join(plugRoot, "cache", "mkt", "broken-plugin", "0.1.0")
+
+	require.NoError(t, os.MkdirAll(filepath.Join(broken, ".claude-plugin"), 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(broken, ".claude-plugin", "plugin.json"), []byte(`{"name": `), 0o600))
+
+	registry := []byte(`[{"name":"broken-plugin@mkt","installPath":"cache/mkt/broken-plugin/0.1.0","scope":"user"}]`)
+	require.NoError(t, os.WriteFile(filepath.Join(plugRoot, "installed_plugins.json"), registry, 0o600))
+
+	reg, err := Load(filepath.Join(proj, claudeDirName), filepath.Join(proj, assguardDirName))
+	require.NoError(t, err, "a malformed manifest must never fail the load")
+
+	assert.NotContains(t, reg.Plugins, "broken-plugin", "malformed-manifest plugin must be skipped")
+	assert.Contains(t, buf.String(), "plugin.json", "skip warning must name the malformed manifest path")
+}
+
+// TestInstalledPluginOldShapeStillWorks (Task 1 regression) verifies the
+// EXISTING simple plugins/<name>/manifest.json shape keeps working alongside
+// the installed-cache shape (no regression).
+func TestInstalledPluginOldShapeStillWorks(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	proj := t.TempDir()
+	writePlugin(t, filepath.Join(proj, claudeDirName), "simple-plugin", []string{"a"}, []string{"b"})
+
+	reg, err := Load(filepath.Join(proj, claudeDirName), filepath.Join(proj, assguardDirName))
+	require.NoError(t, err)
+
+	pl, ok := reg.Plugins["simple-plugin"]
+	require.True(t, ok, "the old simple-plugin shape must keep working")
+
+	assert.Equal(t, []string{"a"}, pl.Skills)
+	assert.Equal(t, []string{"b"}, pl.Commands)
+}
+
 // commandFrontmatterSet maps command file names → {name, description} parsed
 // from the file's YAML frontmatter (fixture-provenance comparison).
 func commandFrontmatterSet(commandsDir string) (map[string][2]string, error) {
