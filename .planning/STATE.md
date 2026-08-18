@@ -5,15 +5,15 @@ milestone_name: ACP Early Adoption
 current_phase: 12
 current_phase_name: product-functional-completeness
 status: executing
-stopped_at: Early-adoption re-order recorded (Phase 14 + adoption line)
-last_updated: "2026-08-18T21:18:35.738Z"
+stopped_at: Completed 12-02-PLAN.md (plugin-install discovery; live probe evidence + mise ci green)
+last_updated: "2026-08-18T22:43:11.902Z"
 last_activity: 2026-08-19
 last_activity_desc: Phase 12 execution started
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 23
-  completed_plans: 15
+  completed_plans: 16
 ---
 
 # State: ass-guard-agent (working name)
@@ -27,18 +27,23 @@ See: .planning/PROJECT.md (updated 2026-08-14)
 ## Current Position
 
 Phase: 12 (product-functional-completeness) — EXECUTING
-Plan: 1 of 8 (12-01 — code tasks DONE, Task 3 operator checkpoint BLOCKING)
+Plan: 2 of 8 (12-01 — code tasks DONE, Task 3 operator checkpoint BLOCKING)
 Status: 12-01 Tasks 1+2 complete + `mise ci` green (commits 99663e0 RED, 8a909f2 T1 GREEN, 8ffe40a T2 RED, 4edd91a T2 GREEN, e45d2ae lint); Task 3 (live-serve AskUserQuestion witness) awaiting the operator — see Blockers/Concerns top entry for the exact legs + evidence commands. 12-01-SUMMARY.md deferred until the checkpoint resolves (the plan's own done criteria gate on it).
 Last activity: 2026-08-19 — 12-01 code execution complete; live checkpoint staged
 Next action: Operator runs the two live legs (Zed + ZAI_API_KEY; scratch at /tmp/ask-live-scratch, binary + evidence dir at /tmp/ask-live-evidence/). On "approved"/"approved-main": continuation collects evidence → SUMMARY → state advance → 12-02. Dispatch order after 12-01/12-02: `/gsd:plan-phase 14` → 12-05 → 12-04 → 12-06 → **ADOPTION LINE** → 12-03 → 12-08 → 12-07 → 13.
 
-Progress: [███░░░░░░░] 25%
+Progress: [████░░░░░░] 43%
 
 ## Performance Metrics
 
 **Velocity (v1.0 history, for calibration):** 36 plans / 8 phases in 6 days (2026-08-09 → 2026-08-14); `mise ci` gate green at every phase close.
 
 **By Phase (v1.1):** no plans executed yet.
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 12 P02 | 40min | 4 tasks | 28 files |
 
 ## Accumulated Context
 
@@ -76,6 +81,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase ?]: [08-01] ecosys flat frontmatter view is authoritative even when strict YAML succeeds — multi-line values zcode drops are dropped (mimicry divergence rule, PITFALLS 6)
 - [Phase ?]: [08-01] shadow warnings via swappable slog stderr seam; precedence direction unchanged (D-06)
 - [Phase ?]: [08-02] DDG fixture strategy under anomaly wall: structure-contract fixture with real data + real anomaly capture + documented regeneration (clean-egress curl)
+- [Phase ?]: [12-02 EXECUTED, 2026-08-18] Claude-Code plugin installs consumed as native: BOTH installed_plugins.json shapes parse (v1 array + the live v2 object with projectPath gating); plugin roots are PROJECT .claude/plugins/ over USER ~/.claude/plugins/ as the two LOWEST precedence tiers (existing D-06 chain untouched; zcode root dropped); ALL FIVE contribution kinds merged — skills/, commands/ (same readers as .claude), agents/ (spawnable subagent types: Tools as restricted set, Prompt as per-dispatch system block; .claude/agents/ first-class), hooks/hooks.json (bounded runner: sanitized env PATH/HOME+CLAUDE_PLUGIN_ROOT, per-hook timeout, 30k caps, documented stdin JSON, exit-2 PreToolUse refusal as the policy channel, unmapped events observe-only), .mcp.json (lowest MCP layer through the existing host). Live-proven on the operator's real cache: 8 plugins, 42 cc-skills-golang skills recovered via the toolsList frontmatter fix; write-boundary mtime-proven; mise ci green. Commits a9d8a47..62c0a0d (TDD RED/GREEN per task).
 
 ### Pending Todos
 
@@ -147,6 +153,6 @@ Carried from v1.0 close — dispositioned into v1.1 scope:
 
 ## Session Continuity
 
-Last session: 2026-08-18T14:58:07.259Z
-Stopped at: Phase 13 context gathered
-Resume file: .planning/phases/13-openspec-workflow-completion/13-CONTEXT.md
+Last session: 2026-08-18T22:42:45.854Z
+Stopped at: Completed 12-02-PLAN.md (plugin-install discovery; live probe evidence + mise ci green)
+Resume file: None

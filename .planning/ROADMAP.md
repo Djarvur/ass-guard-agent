@@ -230,7 +230,7 @@ Builds on shipped v1.0 + Phases 8–9: the re-capture ground truth (the newly pi
   9. Command + skill discovery reads Claude-Code-compatible plugin installs as native (`installed_plugins.json` + cache layout, PLUG-05 carve-out widened 2026-08-19): plugin-bundled `skills/`, `commands/`, `agents/`, `hooks/hooks.json`, `.mcp.json` all merge with documented precedence (agents → spawnable subagent types; hooks → mapped lifecycle seams; MCP → the existing host); roots are project `.claude/plugins/` + user `~/.claude/plugins/` (zcode root dropped by the operator — plugins are installed for Claude Code and consumed as native); user + project `.claude/skills|commands|agents/` first-class; writes stay under the ass-guard root (ACP-10)
 
 **Phase gate:** `mise ci` clean AND a live-serve session exercising `AskUserQuestion` end-to-end (operator answers a real model question) AND zero `no implementation yet` strings reachable from the 19-tool built-in catalog on any turn (grep-gated) AND the eval suites green in CI. No stub-only evidence closes this phase.
-**Plans:** 8 plans
+**Plans:** 1/8 plans executed
 
 **Execution order (2026-08-18 adoption re-order):** PRE-ADOPTION = 12-01, 12-02 (dispatch immediately — checker-passed, zero planning latency) → Phase 14 (the analysis-disposition phase) → 12-05, 12-04, 12-06 — **ADOPTION LINE** (the operator begins daily ACP use; v1.1's completion bar) — POST-ADOPTION = 12-03, 12-08, 12-07. The wave blocking is re-read accordingly: 12-03's outputs (parity-extractor fixes) feed only the parity suite, so deferring it past the line breaks nothing downstream; 12-04 keeps its ask-seam dependency on 12-01; 12-06 keeps its forms dependency on 12-05.
 
@@ -238,7 +238,7 @@ Plans:
 **Wave 1**
 
 - [ ] 12-01-PLAN.md — AskUserQuestion end-to-end: the question surface, turn suspension on the engine ask path, reply-as-tool-result, the D-01 timeout policy + the live-serve operator witness (THE phase tracer) [ACP-01]
-- [ ] 12-02-PLAN.md — plugin-install discovery as native: `installed_plugins.json` + cache layout from project `.claude/plugins/` AND user `~/.claude/plugins/` (zcode root dropped), ALL contributions merged — skills/commands/agents/hooks/.mcp.json — with the five-tier precedence + read-only boundary [ACP-10] *(scope widened by the operator 2026-08-19; 4 tasks)*
+- [x] 12-02-PLAN.md — plugin-install discovery as native: `installed_plugins.json` + cache layout from project `.claude/plugins/` AND user `~/.claude/plugins/` (zcode root dropped), ALL contributions merged — skills/commands/agents/hooks/.mcp.json — with the five-tier precedence + read-only boundary [ACP-10] *(scope widened by the operator 2026-08-19; 4 tasks)*
 - [ ] 12-03-PLAN.md — parity extractor fixes: `ExtractTurnsFromRollout` delta-record reconstruction + per-turn workspace isolation (the from-rollout A/B artifact classes, D-04 #2) [ACP-07]
 
 **Wave 2** *(blocked on Wave 1 completion)*
@@ -321,7 +321,7 @@ The eval net its scenarios extend and the AskUserQuestion interactive-dead-end r
 |-------|-----------|----------------|--------|-----------|
 | 8. Slash-Command Kickoff | v1.1 | 9/9 | Complete (operator witness accepted; 2 known residuals documented) | 2026-08-16 |
 | 9. Serve-Path Audit + zcode Parity Re-capture | v1.1 | 6/6 | Complete (verifier PASS; UAT 3/4 — parity re-baseline disposition accepted, live-serve audit witnessed, capture-method deviation stands; test 4 informational) | 2026-08-18 |
-| 12. Product Functional Completeness | v1.1 | 8 plans approved (checker-passed; adoption-split dispatch: 12-01 + 12-02 FIRST per the 2026-08-18 re-order) | Planning complete | - |
+| 12. Product Functional Completeness | v1.1 | 1/8 | In Progress|  |
 | 14. Adoption Readiness (Analysis Dispositions) | v1.1 | 0 (small phase — planning dispatches alongside 12-01/02 execution) | Not started | - |
 | 13. OpenSpec Workflow Completion | v1.1 | 0 (planning dispatches when Phase 12 closes) | Not started (post-adoption) | - |
 | 10. Telegram Peer (Text + Voice) | v1.2 pool | 0/7 (plans preserved; 2026-08-17 execution attempt aborted — executor died ~15 min in, partial extraction WIP-preserved at 47f10b4 on the phase branch, untrusted) | Moved to v1.2 (2026-08-16) | - |
