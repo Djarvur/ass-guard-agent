@@ -1,0 +1,35 @@
+{
+  "description": "Fixture plugin hooks (12-02 Task 4): mapped events plus two unmapped observe-only events.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {"type": "command", "command": "echo fixture-pretool", "timeout": 5}
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {"type": "command", "command": "echo fixture-posttool"}
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {"type": "command", "command": "echo fixture-notification"}
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {"type": "command", "command": "echo fixture-precompact"}
+        ]
+      }
+    ]
+  }
+}

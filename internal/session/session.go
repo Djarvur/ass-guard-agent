@@ -61,6 +61,16 @@ type Session struct {
 	// (the listing is advisory — graceful degradation).
 	SubagentTypes map[string]ecosys.Agent
 
+	// Hooks is the Claude-Code lifecycle hook runner (12-02 Task 4): nil =
+	// no hooks wired (every seam no-ops). UserPromptSubmit fires at Prompt
+	// entry (post-expansion — cmd expands BEFORE calling Prompt), SessionStart
+	// lazily on the first Prompt (the session-create seam), Stop at parent
+	// turn end, SubagentStop at subagent completion, SessionEnd in Close.
+	Hooks *ecosys.HookRunner
+
+	// sessionStartFired pins the lazy SessionStart seam to exactly once.
+	sessionStartFired bool
+
 	// toolExec is the (stubbed) tool executor; Plan 02-06 wraps it in a
 	// RestrictedExecutor for subagents.
 	toolExec toolcat.ToolExecutor

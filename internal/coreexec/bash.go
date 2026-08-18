@@ -37,6 +37,11 @@ const (
 // corpus-absent failure convention — {"error":…}).
 const keyError = "error"
 
+// errHookRefused marks a PreToolUse exit-2 refusal (12-02): the hook's message
+// rides the structured result as the tool result — the operator-configured
+// policy channel, not a Go-level failure of the executor itself.
+var errHookRefused = errors.New("coreexec: tool call refused by PreToolUse hook")
+
 // Timeout bounds (SCHEMA-DECLARED in coretools.json's Bash description:
 // "timeout is in milliseconds: default 120000, max 600000" — the corpus
 // itself shows only explicit 60000–660000 ms values in the subagent sessions

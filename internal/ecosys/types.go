@@ -75,6 +75,11 @@ type Registry struct {
 	Commands map[string]Command
 	Plugins  map[string]Plugin
 	Agents   map[string]Agent
+
+	// Hooks carries every parsed plugin-bundled hook (12-02 Task 4), all
+	// events — mapped AND unmapped (observe-only). A slice, not a map: firing
+	// order follows merge order (base tiers then overlays).
+	Hooks []HookConfig
 }
 
 // ServerConfig is a neutral MCP server config (mirrors .mcp.json's per-server
