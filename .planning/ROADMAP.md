@@ -211,7 +211,9 @@ Plans:
 
 **Goal:** As a developer driving ass-guard from an ACP editor, I want every tool in the captured catalog to execute for real with capture-pinned result forms, and turn behavior guarded by a behavioral-eval regression net, so that the product machinery is complete — the model never hits a `no implementation yet` dead end mid-task.
 **Mode:** mvp
-**Depends on:** Phase 9 (see Dependency Chains for the full rationale). Builds on shipped v1.0 + Phases 8–9: the re-capture ground truth (the newly pinned capture session ACP-07 re-pins the corpus-absent result forms against; the eval scenarios ride the proven real-binary gate pattern) and the core-executor pattern (RegisterCore, captured result forms, catalog-schema-never-rewritten discipline) that every new executor follows. **Added at the 2026-08-16 operator re-scope, split same day** — this is the machinery half; the OpenSpec-workflow half is Phase 13 (which extends this phase's eval suites and consumes its AskUserQuestion route).
+**Depends on:** Phase 9 (see Dependency Chains for the full rationale).
+
+Builds on shipped v1.0 + Phases 8–9: the re-capture ground truth (the newly pinned capture session the corpus-absent result-form re-pin works against; the eval scenarios ride the proven real-binary gate pattern) and the core-executor pattern (RegisterCore, captured result forms, catalog-schema-never-rewritten discipline) that every new executor follows. **Added at the 2026-08-16 operator re-scope, split same day** — this is the machinery half; the OpenSpec-workflow half is Phase 13 (which extends this phase's eval suites and consumes its AskUserQuestion route).
 **Requirements:** ACP-01, ACP-02, ACP-03, ACP-04, ACP-05, ACP-06, ACP-07, ACP-08, ACP-10
 **Success Criteria** (what must be TRUE):
 
@@ -255,7 +257,9 @@ Plans:
 
 **Goal:** As a developer practicing SDD with OpenSpec, I want the toolkit's full command matrix — beyond the proven `explore → propose → apply → archive` loop — to run end-to-end through ass-guard with zero-continue chaining, so that the unmodified toolkit works hands-off, not just its flagship workflow.
 **Mode:** mvp
-**Depends on:** Phase 12 and Phase 8 (see Dependency Chains for the full rationale): the eval net its scenarios extend and the AskUserQuestion interactive-dead-end route, plus the proven loop's chaining machinery (`TurnOutput.StartedBy` + `CommandMatcher` + `[[command_patterns]]` seeds) and the probe-pinned adapter surface. **Added at the 2026-08-16 operator split** ("make it working with openspec"); absorbs the re-scoped matrix requirement formerly tracked as the ACP-09 slot.
+**Depends on:** Phase 12 and Phase 8 (see Dependency Chains for the full rationale).
+
+The eval net its scenarios extend and the AskUserQuestion interactive-dead-end route, plus the proven loop's chaining machinery (`TurnOutput.StartedBy` + `CommandMatcher` + `[[command_patterns]]` seeds) and the probe-pinned adapter surface. **Added at the 2026-08-16 operator split** ("make it working with openspec"); absorbs the re-scoped matrix requirement formerly tracked as the ACP-09 slot.
 **Requirements:** OS-01, OS-02, OS-03
 **Success Criteria** (what must be TRUE):
 
