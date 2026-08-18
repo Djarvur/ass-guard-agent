@@ -24,11 +24,11 @@ See: .planning/PROJECT.md (updated 2026-08-14)
 
 ## Current Position
 
-Phase: 10 (telegram-peer-text-voice) — EXECUTING
-Plan: 1 of 7
-Status: Executing Phase 10
-Last activity: 2026-08-17 -- Phase 10 execution started
-Next action: (1) OPERATOR DISPOSITION on the parity recalibration — re-record curated-suite expectations from current live zcode (the driver in /tmp/zcode-recapture/ can do it) + fix ExtractTurnsFromRollout's delta-record/state-pollution artifacts, or accept the recorded numbers as the new reference pending that work; (2) run Phase-9 verification (/gsd-execute-phase 9 or the manager's verifier dispatch) — the AUD-05 stability goal is green; the parity goal is re-baselined-with-findings; (3) per the 2026-08-16 re-scope + split: Phase 12 (Product Functional Completeness — includes re-pinning ACP-07's corpus-absent result forms against tonight's Phase-9 pin) releases the moment Phase 9 closes, Phase 13 (OpenSpec Workflow Completion — routes the Phase-8 stage-4 question residual through AskUserQuestion) follows; Phases 10/11 live in the v1.2 pool.
+Phase: (none active) — Phase 10 execution ABORTED 2026-08-18 (operator: park + rearranging plans)
+Plan: —
+Status: Phase 9 CLOSED (2026-08-18: 6/6 plans, verifier PASS, UAT 3/4 accepted). Phase 12 planned (8 plans, checker-passed) and dependency-satisfied but NOT dispatched. Phase 13 context gathered. Phase 10's 2026-08-17 execution attempt died with its background agent (~15 min after spawn, client restart during the operator gap): RED test `ec2796d` + a half-done internal/runtime extraction, WIP-preserved at `47f10b4` on branch `gsd/phase-10-telegram-peer-text-voice` (untrusted — revert or resume deliberately at the v1.2 replan; that branch ALSO carries pre-untangle copies of the 08-18 docs commits — master's cherry-picked SHAs are canonical).
+Last activity: 2026-08-18 -- manager session: Phase-9 formal close + dep-field hygiene; Phase 12 planned (background planner, 8 plans/5 waves); Phase 13 context gathered (8 user decisions); quick task 260817-uv3 archived the zcode-recapture driver kit to tools/zcode-recapture (the pinned rollout file itself was already lost — rotated off ~/.zcode/cli/rollout); dead Phase-10 executor discovered + parked per operator
+Next action: OPERATOR IS REARRANGING PLANS (2026-08-18, explicit stop). No dispatches until the operator re-engages. Standing facts for the rearrangement: Phase 12 is fully planned and unblocked (deps: 9 ✓); its 12-01 lands in cmd/ass-guard + internal/coreexec — coordinate with the parked Phase-10 runtime extraction before executing; the two routed Phase-9 follow-ups (re-record curated expectations via tools/zcode-recapture; ExtractTurnsFromRollout delta-record fixes) are scoped as 12-03/12-05.
 
 Progress: [███░░░░░░░] 25%
 

@@ -295,9 +295,9 @@ The eval net its scenarios extend and the AskUserQuestion interactive-dead-end r
 |-------|-----------|----------------|--------|-----------|
 | 8. Slash-Command Kickoff | v1.1 | 9/9 | Complete (operator witness accepted; 2 known residuals documented) | 2026-08-16 |
 | 9. Serve-Path Audit + zcode Parity Re-capture | v1.1 | 6/6 | Complete (verifier PASS; UAT 3/4 — parity re-baseline disposition accepted, live-serve audit witnessed, capture-method deviation stands; test 4 informational) | 2026-08-18 |
-| 12. Product Functional Completeness | v1.1 | 8 plans approved (checker-passed 2026-08-17; awaiting execution dispatch after Phase 9 closes) | Planning complete | - |
+| 12. Product Functional Completeness | v1.1 | 8 plans approved (checker-passed 2026-08-18; deps satisfied — NOT dispatched: operator rearranging plans 2026-08-18) | Planning complete | - |
 | 13. OpenSpec Workflow Completion | v1.1 | 0 (planning dispatches when Phase 12 closes) | Not started | - |
-| 10. Telegram Peer (Text + Voice) | v1.2 pool | 0/7 (plans preserved) | Moved to v1.2 (2026-08-16) | - |
+| 10. Telegram Peer (Text + Voice) | v1.2 pool | 0/7 (plans preserved; 2026-08-17 execution attempt aborted — executor died ~15 min in, partial extraction WIP-preserved at 47f10b4 on the phase branch, untrusted) | Moved to v1.2 (2026-08-16) | - |
 | 11. dsh Mimicry Profile #2 | v1.2 pool | 0/7 (plans stale — replan required) | Moved to v1.2 (2026-08-16) | - |
 
 ---
