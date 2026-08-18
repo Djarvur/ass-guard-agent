@@ -50,13 +50,31 @@ type Plugin struct {
 	InstallPath string // resolved cache install path
 }
 
-// Registry aggregates discovered skills/commands/plugins by name. Load returns
-// the precedence-resolved registry; accessors (AllSkills/AllCommands/AllPlugins)
-// return deterministically-ordered slices for the Shaper/Session to consume.
+// Agent is one subagent type definition (12-02): a YAML-frontmatter markdown
+// file — `agents/<name>.md` inside a plugin cache bundle or a first-class
+// `.claude/agents/<name>.md` (project + user). Frontmatter supplies
+// name/description/tools/model; the body after frontmatter is the agent's
+// system prompt. Discovered agents register as spawnable subagent types on the
+// existing PARA machinery (the type listing is dynamic content merged into the
+// captured shape; per-type prompts/tools apply at dispatch).
+type Agent struct {
+	Name        string
+	Description string
+	Tools       []string
+	Model       string
+	Prompt      string
+	Path        string
+}
+
+// Registry aggregates discovered skills/commands/plugins/agents by name. Load
+// returns the precedence-resolved registry; accessors (AllSkills/AllCommands/
+// AllPlugins/AllAgents) return deterministically-ordered slices for the
+// Shaper/Session to consume.
 type Registry struct {
 	Skills   map[string]Skill
 	Commands map[string]Command
 	Plugins  map[string]Plugin
+	Agents   map[string]Agent
 }
 
 // ServerConfig is a neutral MCP server config (mirrors .mcp.json's per-server

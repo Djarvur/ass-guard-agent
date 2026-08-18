@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
@@ -51,6 +52,14 @@ type Session struct {
 	// Catalog + configAdded drive boundary detection (wired in Plan 02-05).
 	Catalog     *toolcat.Catalog
 	ConfigAdded []string
+
+	// SubagentTypes maps discovered agent definitions (plugin-bundled AND
+	// first-class `.claude/agents/` project+user — 12-02) by type name. An
+	// Agent/Task tool call carrying subagent_type=<name> dispatches with the
+	// definition's Prompt (per-dispatch system block) and Tools (the restricted
+	// set); an unknown/absent type falls back to the default restricted set
+	// (the listing is advisory — graceful degradation).
+	SubagentTypes map[string]ecosys.Agent
 
 	// toolExec is the (stubbed) tool executor; Plan 02-06 wraps it in a
 	// RestrictedExecutor for subagents.

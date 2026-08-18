@@ -26,6 +26,16 @@ type fakeProvider struct {
 	callN     int
 	panicOn   int // 1-indexed; 0 = never
 	delay     time.Duration
+	streamed  []*profile.Profile // profiles seen by Stream, in call order (12-02)
+}
+
+// streamedProfiles returns a copy of the profiles Stream was called with
+// (test seam for per-dispatch system-block assertions).
+func (f *fakeProvider) streamedProfiles() []*profile.Profile {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return append([]*profile.Profile(nil), f.streamed...)
 }
 
 func (f *fakeProvider) Send(
@@ -88,6 +98,13 @@ func (f *fakeProvider) Stream(
 	f.mu.Lock()
 	f.callN++
 	n := f.callN
+
+	// Capture the profile copy this call was shaped from (12-02: per-dispatch
+	// agent-prompt system blocks assert through here).
+	if prof != nil {
+		cp := *prof
+		f.streamed = append(f.streamed, &cp)
+	}
 
 	resp := provider.Response{}
 	if len(f.responses) > 0 {

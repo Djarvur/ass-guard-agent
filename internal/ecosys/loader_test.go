@@ -637,6 +637,159 @@ func TestInstalledPluginOldShapeStillWorks(t *testing.T) {
 	assert.Equal(t, []string{"b"}, pl.Commands)
 }
 
+// TestInstalledPluginAgentsDiscovered (Task 3, Test 1) verifies plugin-bundled
+// agents/<name>.md parse into Registry.Agents with provenance, and a project
+// `.claude/agents/<name>.md` OVERSHADOWS a same-name plugin agent per the
+// chain (shadow warning naming both files).
+func TestInstalledPluginAgentsDiscovered(t *testing.T) {
+	buf := captureShadowLogger(t)
+
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	proj := plantProjectPlugins(t)
+
+	reg, err := Load(filepath.Join(proj, claudeDirName), filepath.Join(proj, assguardDirName))
+	require.NoError(t, err)
+
+	ag, ok := reg.Agents["fixture-agent"]
+	require.True(t, ok, "plugin-bundled agent must be discovered")
+
+	assert.Contains(t, ag.Description, "installed plugin cache")
+	assert.Equal(t, []string{"Read", "Grep", "Glob"}, ag.Tools)
+	assert.Equal(t, "sonnet", ag.Model)
+	assert.Contains(t, ag.Prompt, "fixture plugin agent")
+	assert.Contains(t, ag.Path, filepath.Join("cache", "acme-market", "skill-plugin", "1.0.0"))
+
+	// A project .claude/agents/ definition overshadows the plugin agent.
+	claudeAgents := filepath.Join(proj, claudeDirName, "agents")
+	require.NoError(t, os.MkdirAll(claudeAgents, 0o755))
+
+	local := "---\nname: fixture-agent\ndescription: local-version\ntools: Write\n---\nLocal agent prompt.\n"
+	require.NoError(t, os.WriteFile(filepath.Join(claudeAgents, "fixture-agent.md"), []byte(local), 0o600))
+
+	buf.Reset()
+
+	reg, err = Load(filepath.Join(proj, claudeDirName), filepath.Join(proj, assguardDirName))
+	require.NoError(t, err)
+
+	ag, ok = reg.Agents["fixture-agent"]
+	require.True(t, ok)
+	assert.Equal(t, "local-version", ag.Description, ".claude/agents/ must overshadow the plugin agent")
+	assert.Equal(t, "Local agent prompt.\n", ag.Prompt)
+
+	warned := buf.String()
+	assert.Contains(t, warned, "shadows", "agent overwrite must warn")
+	assert.Contains(t, warned, filepath.Join(claudeAgents, "fixture-agent.md"), "warning names the winning path")
+	assert.Contains(t, warned, filepath.Join("cache", "acme-market", "skill-plugin", "1.0.0", "agents", "fixture-agent.md"),
+		"warning names the shadowed plugin path")
+}
+
+// TestUserAgentsDirFirstClass (Task 3, Test 1b) verifies the USER
+// `~/.claude/agents/` dir is a first-class chain entry (and loses to the
+// project `.claude/agents/` on collision).
+func TestUserAgentsDirFirstClass(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	userAgents := filepath.Join(tmpHome, claudeDirName, "agents")
+	require.NoError(t, os.MkdirAll(userAgents, 0o755))
+
+	userDef := "---\nname: user-agent\ndescription: from user dir\n---\nUser agent prompt.\n"
+	require.NoError(t, os.WriteFile(filepath.Join(userAgents, "user-agent.md"), []byte(userDef), 0o600))
+
+	proj := t.TempDir()
+
+	reg, err := Load(filepath.Join(proj, claudeDirName), filepath.Join(proj, assguardDirName))
+	require.NoError(t, err)
+
+	ag, ok := reg.Agents["user-agent"]
+	require.True(t, ok, "user .claude/agents/ definitions are first-class")
+	assert.Equal(t, "from user dir", ag.Description)
+}
+
+// TestPluginMCPJSONMergesLowest (Task 3, Test 3) verifies a plugin-bundled
+// .mcp.json parses into the Discover server set and merges BELOW the user
+// ~/.claude.json scope: a same-name collision resolves to the non-plugin
+// (user) entry.
+func TestPluginMCPJSONMergesLowest(t *testing.T) {
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	proj := plantProjectPlugins(t)
+
+	// No user config: the plugin server surfaces alone.
+	reg, servers, err := Discover(proj)
+	require.NoError(t, err)
+	require.Contains(t, reg.Plugins, "skill-plugin")
+
+	var fixture *ServerConfig
+	for i := range servers {
+		if servers[i].Name == "fixture-mcp" {
+			fixture = &servers[i]
+		}
+	}
+
+	require.NotNil(t, fixture, "plugin .mcp.json server must surface in the Discover set")
+	assert.Equal(t, "/bin/echo", fixture.Command)
+	assert.Equal(t, []string{"fixture-mcp-ready"}, fixture.Args)
+
+	// User-scope collision: the USER entry wins (plugin MCP is the lowest layer).
+	userJSON := `{"mcpServers":{"fixture-mcp":{"command":"/usr/bin/true","args":["user-wins"]}}}`
+	require.NoError(t, os.WriteFile(filepath.Join(tmpHome, claudeJSONFile), []byte(userJSON), 0o600))
+
+	_, servers, err = Discover(proj)
+	require.NoError(t, err)
+
+	for i := range servers {
+		if servers[i].Name == "fixture-mcp" {
+			fixture = &servers[i]
+		}
+	}
+
+	require.NotNil(t, fixture, "collided server must still surface")
+	assert.Equal(t, "/usr/bin/true", fixture.Command, "user-scope config must win over the plugin server")
+	assert.Equal(t, []string{"user-wins"}, fixture.Args)
+}
+
+// TestAgentAndMCPTolerance (Task 3, Test 4) verifies malformed agent
+// frontmatter / .mcp.json degrade to skip-with-warning — the rest loads.
+func TestAgentAndMCPTolerance(t *testing.T) {
+	buf := captureShadowLogger(t)
+
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	proj := t.TempDir()
+	plugRoot := filepath.Join(proj, claudeDirName, "plugins")
+	install := filepath.Join(plugRoot, "cache", "mkt", "sick-plugin", "0.1.0")
+
+	require.NoError(t, os.MkdirAll(filepath.Join(install, ".claude-plugin"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(install, "agents"), 0o755))
+
+	manifest := `{"name":"sick-plugin"}`
+	require.NoError(t, os.WriteFile(filepath.Join(install, ".claude-plugin", "plugin.json"), []byte(manifest), 0o600))
+
+	// Agent with unparseable frontmatter (tab-indented garbage under strict YAML
+	// AND no name/description/body salvage) — skipped, not fatal.
+	require.NoError(t, os.WriteFile(
+		filepath.Join(install, "agents", "broken.md"), []byte("---\nname: [unclosed\n---\n"), 0o600))
+
+	// Malformed .mcp.json — skipped, not fatal.
+	require.NoError(t, os.WriteFile(filepath.Join(install, ".mcp.json"), []byte(`{"mcpServers": `), 0o600))
+
+	registry := `[{"name":"sick-plugin@mkt","installPath":"cache/mkt/sick-plugin/0.1.0","scope":"user"}]`
+	require.NoError(t, os.WriteFile(filepath.Join(plugRoot, installedPluginsFile), []byte(registry), 0o600))
+
+	reg, servers, err := Discover(proj)
+	require.NoError(t, err, "malformed agent frontmatter/.mcp.json must never fail the load")
+
+	assert.NotContains(t, reg.Agents, "broken", "malformed agent must be skipped")
+	assert.Empty(t, servers, "malformed .mcp.json must contribute no servers")
+	assert.Contains(t, reg.Plugins, "sick-plugin", "the plugin itself still loads")
+	assert.Contains(t, buf.String(), "agents", "warning names the agent artifact")
+}
+
 // commandFrontmatterSet maps command file names → {name, description} parsed
 // from the file's YAML frontmatter (fixture-provenance comparison).
 func commandFrontmatterSet(commandsDir string) (map[string][2]string, error) {
