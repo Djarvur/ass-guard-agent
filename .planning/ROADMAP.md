@@ -29,7 +29,7 @@ v1.1 completes the product. Phase 8 closed the kickoff loop (`/opsx:explore → 
 ## Phases
 
 - [x] **Phase 8: Slash-Command Kickoff** - `/namespace:name` discovery + zcode-semantics expansion + OpenSpec adapter reconciled to the real binary; the zero-continue product proof (completed 2026-08-16, operator witness accepted; execution + evidence 2026-08-15)
-- [ ] **Phase 9: Serve-Path Audit + zcode Parity Re-capture** - redacted, bounded, decision-explaining audit on `acp serve`; stability test re-grounded on a pinned capture session
+- [x] **Phase 9: Serve-Path Audit + zcode Parity Re-capture** - redacted, bounded, decision-explaining audit on `acp serve`; stability test re-grounded on a pinned capture session (completed 2026-08-18)
 - [ ] **Phase 12: Product Functional Completeness** - every built-in catalog tool executes for real (the 9 deferred tools + Bash background flags), capture-pinned result forms, the behavioral-eval regression net, plugin-install discovery *(added at the 2026-08-16 re-scope; split same day — machinery half; executes directly after Phase 9)*
 - [ ] **Phase 13: OpenSpec Workflow Completion** - the expanded OpenSpec command matrix (`new / continue / ff / verify / bulk-archive / onboard`) runs E2E with zero-continue chaining and eval coverage *(the 2026-08-16 split's workflow half; executes after Phase 12)*
 - [ ] ~~**Phase 10: Telegram Peer (Text + Voice)**~~ - → **moved to the v1.2 pool** (operator 2026-08-16; plan preserved in `.planning/phases/10-telegram-peer-text-voice/`)
@@ -40,7 +40,7 @@ v1.1 completes the product. Phase 8 closed the kickoff loop (`/opsx:explore → 
 | # | Phase | Goal | Requirements | Success Criteria |
 |---|-------|------|--------------|------------------|
 | 8 | Slash-Command Kickoff | 8/9 | Completed 2026-08-16 — operator witness accepted; findings 5+6 dispositions confirmed (hybrid provenance chaining + D-10 capture-faithful reshape); full guard green; gated E2E: fixable green + zero-continue 2/3 (one stage-4 model-variance fail recorded as known residual, same class as UAT check 3); UAT 10 pass/1 partial/0 blocked | 2026-08-16 |
-| 9 | Serve-Path Audit + zcode Parity Re-capture | Every serve-path session leaves a redacted, bounded audit trail that explains the engine's decisions; the parity stability test runs green on a newly pinned session | AUD-01, AUD-02, AUD-03, AUD-04, AUD-05 | 5 |
+| 9 | Serve-Path Audit + zcode Parity Re-capture | 6/6 | Complete   | 2026-08-18 |
 | 12 | Product Functional Completeness | Every catalog tool the model can see executes for real, result forms are capture-pinned, a behavioral-eval regression net guards turn behavior, and plugin installs widen discovery | ACP-01..08, ACP-10 | 9 |
 | 13 | OpenSpec Workflow Completion | The expanded OpenSpec command matrix runs E2E through ass-guard against the real binary, zero-continue chained, eval-covered | OS-01, OS-02, OS-03 | 3 |
 | 10 | ~~Telegram Peer (Text + Voice)~~ | *Moved to v1.2 pool (2026-08-16)* | TG-01..06 | - |
@@ -112,22 +112,22 @@ Plans:
   5. The zcode parity stability test runs green against a newly pinned divergence-prone capture session produced via the operator runbook (scripted subagent/MCP-attach/tool-variety workload — not richest-session selection), with the pinned session ID consumed by the test, zcode + extractor versions recorded, thresholds explicitly re-baselined, and the drift report committed before any profile update (AUD-05)
 
 **Phase gate:** `mise ci` clean AND live-serve redacted-audit verification (a redacted `RequestShaped` line observed on a real serve) AND the stability test green against the newly pinned session AND token/secret canary greps clean. No stub-only evidence closes this phase.
-**Plans:** 6 plans
+**Plans:** 6/6 plans complete
 Plans:
 **Wave 1**
 
-- [ ] 09-01-PLAN.md — factory capturer seam: `BuildWithCapturer` both shapes (anthropic + openai), tracer refactored onto the seam (`tracerProvider` deleted), serve-path RequestShaped + CurrentTurnID + per-session TranscriptWriter, redacted-line integration test [AUD-01, AUD-02]
-- [ ] 09-02-PLAN.md — engine-decision full provenance: matched text span + config source threaded PatternTable → Decide → EngineDecision event + engine_decision transcript line (D-03) [AUD-04]
-- [ ] 09-03-PLAN.md — re-capture machinery: stability test consumes the pinned session (never PickRichestMain), divergence canary fixture, zcode_version provenance, the operator runbook in-repo (verbatim from Pitfalls 17/18) [AUD-05]
+- [x] 09-01-PLAN.md — factory capturer seam: `BuildWithCapturer` both shapes (anthropic + openai), tracer refactored onto the seam (`tracerProvider` deleted), serve-path RequestShaped + CurrentTurnID + per-session TranscriptWriter, redacted-line integration test [AUD-01, AUD-02]
+- [x] 09-02-PLAN.md — engine-decision full provenance: matched text span + config source threaded PatternTable → Decide → EngineDecision event + engine_decision transcript line (D-03) [AUD-04]
+- [x] 09-03-PLAN.md — re-capture machinery: stability test consumes the pinned session (never PickRichestMain), divergence canary fixture, zcode_version provenance, the operator runbook in-repo (verbatim from Pitfalls 17/18) [AUD-05]
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 09-04-PLAN.md — the re-capture run: operator scripted divergence-prone workload (checkpoint), threshold verification, drift report committed BEFORE the profile update, re-extract + re-pin, stability green, parity re-baseline (ZAI_API_KEY-gated leg) [AUD-05]
-- [ ] 09-05-PLAN.md — bounded audit volume: the body_ref pattern — metadata-only request events (correlation triple + shape fingerprint), capped redacted body store retrievable by hash (D-01) [AUD-02, AUD-03]
+- [x] 09-04-PLAN.md — the re-capture run: operator scripted divergence-prone workload (checkpoint), threshold verification, drift report committed BEFORE the profile update, re-extract + re-pin, stability green, parity re-baseline (ZAI_API_KEY-gated leg) [AUD-05]
+- [x] 09-05-PLAN.md — bounded audit volume: the body_ref pattern — metadata-only request events (correlation triple + shape fingerprint), capped redacted body store retrievable by hash (D-01) [AUD-02, AUD-03]
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 09-06-PLAN.md — the per-session audit mirror under `.ass-guard/audit/` (default ON), `--audit-log` override on serve, shared stdout-rejecting sink opener, header-NAME discipline, automated secret canary (D-02) [AUD-02]
+- [x] 09-06-PLAN.md — the per-session audit mirror under `.ass-guard/audit/` (default ON), `--audit-log` override on serve, shared stdout-rejecting sink opener, header-NAME discipline, automated secret canary (D-02) [AUD-02]
 
 ### Phase 10: Telegram Peer (Text + Voice) — MOVED TO v1.2 (operator 2026-08-16)
 
@@ -290,7 +290,7 @@ Plans:
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 8. Slash-Command Kickoff | v1.1 | 9/9 | Complete (operator witness accepted; 2 known residuals documented) | 2026-08-16 |
-| 9. Serve-Path Audit + zcode Parity Re-capture | v1.1 | 5/6 code plans done; 09-04 blocked-on-harvest (operator workload) | Executing | - |
+| 9. Serve-Path Audit + zcode Parity Re-capture | v1.1 | 6/6 | Complete (verifier PASS; UAT 3/4 — parity re-baseline disposition accepted, live-serve audit witnessed, capture-method deviation stands; test 4 informational) | 2026-08-18 |
 | 12. Product Functional Completeness | v1.1 | 8 plans approved (checker-passed 2026-08-17; awaiting execution dispatch after Phase 9 closes) | Planning complete | - |
 | 13. OpenSpec Workflow Completion | v1.1 | 0 (planning dispatches when Phase 12 closes) | Not started | - |
 | 10. Telegram Peer (Text + Voice) | v1.2 pool | 0/7 (plans preserved) | Moved to v1.2 (2026-08-16) | - |
