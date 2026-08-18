@@ -41,6 +41,14 @@ const assguardDirName = ".ass-guard"
 //  1. Within each tree: project overlays user (project wins).
 //  2. Across trees: `.claude/` overlays `.ass-guard/` (`.claude/` wins).
 //
+// 12-02 adds the installed-plugin roots as the TWO LOWEST tiers (operator
+// 2026-08-19): the existing chain keeps priority and the PROJECT
+// `<project>/.claude/plugins/` root overlays the USER `~/.claude/plugins/`
+// root (project over user, mirroring the `.claude/` ordering). The
+// `~/.zcode/cli/plugins/` root is NOT probed (dropped — plugins are installed
+// FOR Claude Code and consumed as native; the listing merge is dynamic content
+// inside the captured shape, so no structural mimicry divergence).
+//
 // `.claude/` is read-only (D-05); Load never writes to it. A missing/empty dir
 // yields an empty contribution (the common case where the user has no `.claude/`
 // or `.ass-guard/` extensions yet).
@@ -61,7 +69,26 @@ func Load(claudeDir, assguardDir string) (Registry, error) {
 	}
 
 	// Phase 2: across trees, `.claude/` wins over `.ass-guard/`.
-	return mergeRegistries(assguardReg, claudeReg), nil
+	core := mergeRegistries(assguardReg, claudeReg)
+
+	// 12-02 phase 3: the installed-plugin roots (the two lowest tiers). The
+	// user root is the base; the project root overlays it. projectDir for the
+	// v2 registry's projectPath filter is the parent of the project `.claude/`
+	// dir (empty claudeDir → no project root).
+	projectDir := ""
+	if claudeDir != "" {
+		projectDir = filepath.Dir(claudeDir)
+	}
+
+	userPlug := newRegistry()
+	discoverInstalledPlugins(filepath.Join(userClaude, pluginsDirName), projectDir, userPlug)
+
+	projPlug := newRegistry()
+	if claudeDir != "" {
+		discoverInstalledPlugins(filepath.Join(claudeDir, pluginsDirName), projectDir, projPlug)
+	}
+
+	return mergeRegistries(mergeRegistries(userPlug, projPlug), core), nil
 }
 
 // loadTreeMerged loads user-scope then overlays project-scope (project wins).
@@ -125,8 +152,13 @@ func loadTree(root string) (Registry, error) {
 
 // discoverSkills walks root/skills/*/SKILL.md, parsing YAML frontmatter.
 func discoverSkills(root string, reg Registry) error {
-	skillsDir := filepath.Join(root, "skills")
+	return discoverSkillsDir(filepath.Join(root, "skills"), reg)
+}
 
+// discoverSkillsDir walks one skills/ directory (`<any-root>/skills/*/SKILL.md`)
+// — the shared reader for `.claude|ass-guard/skills/` trees AND plugin-bundled
+// `skills/` directories inside an installed cache (12-02).
+func discoverSkillsDir(skillsDir string, reg Registry) error {
 	entries, err := os.ReadDir(skillsDir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -168,7 +200,14 @@ func discoverSkills(root string, reg Registry) error {
 // colon not slash — the layout `openspec init --tools claude` installs). zcode
 // joins exactly one level; deeper trees are not flattened.
 func discoverCommands(root string, reg Registry) error {
-	cmdsDir := filepath.Join(root, "commands")
+	return discoverCommandsDir(filepath.Join(root, "commands"), reg)
+}
+
+// discoverCommandsDir walks one commands/ directory — the shared reader for
+// `.claude|ass-guard/commands/` trees AND plugin-bundled `commands/`
+// directories inside an installed cache (12-02; same flat + one-level-ns
+// rules, same command-name regex, same drop rules).
+func discoverCommandsDir(cmdsDir string, reg Registry) error {
 
 	entries, err := os.ReadDir(cmdsDir)
 	if err != nil {
@@ -296,6 +335,278 @@ func discoverPlugins(root string, reg Registry) error {
 	}
 
 	return nil
+}
+
+// installedPlugin is one entry of an installed_plugins.json registry (12-02,
+// ECOSYSTEM-AUDIT §4.1 PLUG-01): the `name@marketplace` key plus the resolved
+// install scope. Both on-disk shapes parse into this (measured live
+// 2026-08-18): the v1 array form and the v2 object form the operator's real
+// `~/.claude/plugins/` carries (`{"version":2,"plugins":{key:[entries]}}` —
+// a per-plugin LIST of scoped installs, from which the first entry whose
+// projectPath is empty or matches the active project is taken; entries scoped
+// to OTHER projects never leak in).
+type installedPlugin struct {
+	Key         string // full "name@marketplace"
+	Name        string // pre-@ plugin name
+	Source      string // marketplace id (post-@)
+	InstallPath string // as recorded (relative or absolute)
+	Scope       string // "user" | "project" | "local"
+	Version     string
+}
+
+// parseInstalledPlugins reads `<pluginsRoot>/installed_plugins.json` into the
+// neutral entry list. A missing file yields nil (plugins are opt-in). A
+// malformed file degrades to skip-with-warning + nil error (the registry keeps
+// loading — the graceful-degradation contract). projectDir gates the v2
+// project-scoped entries.
+func parseInstalledPlugins(pluginsRoot, projectDir string) []installedPlugin {
+	data, err := os.ReadFile(filepath.Join(pluginsRoot, installedPluginsFile))
+	if err != nil {
+		return nil // missing/unreadable registry — opt-in, not an error
+	}
+
+	// v1: a top-level array of {name, installPath, scope, version}.
+	var v1 []struct {
+		Name        string `json:"name"`
+		InstallPath string `json:"installPath"`
+		Scope       string `json:"scope"`
+		Version     string `json:"version"`
+	}
+
+	if json.Unmarshal(data, &v1) == nil && len(v1) > 0 {
+		out := make([]installedPlugin, 0, len(v1))
+		for _, e := range v1 {
+			out = append(out, installedPluginFromKey(e.Name, e.InstallPath, e.Scope, e.Version))
+		}
+
+		return out
+	}
+
+	// v2: {"version":2,"plugins":{"name@marketplace":[{scope,projectPath,installPath,version}]}}.
+	var v2 struct {
+		Plugins map[string][]struct {
+			Scope       string `json:"scope"`
+			ProjectPath string `json:"projectPath"`
+			InstallPath string `json:"installPath"`
+			Version     string `json:"version"`
+		} `json:"plugins"`
+	}
+
+	if jerr := json.Unmarshal(data, &v2); jerr != nil || len(v2.Plugins) == 0 {
+		logPluginSkip("unrecognized installed_plugins.json shape in %s (skipping plugins)", pluginsRoot)
+		return nil
+	}
+
+	keys := make([]string, 0, len(v2.Plugins))
+	for k := range v2.Plugins {
+		keys = append(keys, k)
+	}
+
+	sort.Strings(keys) // deterministic regardless of map order
+
+	out := make([]installedPlugin, 0, len(keys))
+
+	for _, key := range keys {
+		for _, e := range v2.Plugins[key] {
+			// A project/local-scoped install applies only to ITS project —
+			// entries scoped elsewhere never leak into this load.
+			if e.ProjectPath != "" && projectDir != "" && !samePath(e.ProjectPath, projectDir) {
+				continue
+			}
+
+			out = append(out, installedPluginFromKey(key, e.InstallPath, e.Scope, e.Version))
+
+			break // first applicable install wins
+		}
+	}
+
+	return out
+}
+
+// installedPluginFromKey splits the "name@marketplace" key and fills the
+// provenance fields.
+func installedPluginFromKey(key, installPath, scope, version string) installedPlugin {
+	name, source, _ := strings.Cut(key, "@")
+
+	return installedPlugin{
+		Key: key, Name: name, Source: source,
+		InstallPath: installPath, Scope: scope, Version: version,
+	}
+}
+
+// samePath compares two filesystem paths modulo symlink resolution (best
+// effort; on error the raw strings decide).
+func samePath(a, b string) bool {
+	ra, aerr := filepath.EvalSymlinks(a)
+	if aerr == nil {
+		a = ra
+	}
+
+	rb, berr := filepath.EvalSymlinks(b)
+	if berr == nil {
+		b = rb
+	}
+
+	return filepath.Clean(a) == filepath.Clean(b)
+}
+
+// pluginArtifactMaxBytes caps every plugin-artifact read (manifests, SKILL.md,
+// command files — threat T-12-02-01/T-12-02-03: untrusted filesystem content
+// cannot pin the loader on a pathological file).
+const pluginArtifactMaxBytes = 1 << 20
+
+// readCapped reads path when it exists and is at most max bytes; ok=false on
+// missing/oversized (the caller skips with a warning).
+func readCapped(path string, max int64) ([]byte, bool) {
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() || info.Size() > max {
+		return nil, false
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, false
+	}
+
+	return data, true
+}
+
+// resolveInstallPath resolves an entry's installPath against the plugins root
+// (relative → root-joined; absolute → as-is) and enforces the containment
+// invariant (threat T-12-02-01): the symlink-resolved result must stay UNDER
+// the symlink-resolved root. An escaping or nonexistent path returns ""
+// (the caller skips with a warning).
+func resolveInstallPath(pluginsRoot, installPath string) string {
+	if installPath == "" {
+		return ""
+	}
+
+	path := installPath
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(pluginsRoot, installPath)
+	}
+
+	rootReal, rerr := filepath.EvalSymlinks(pluginsRoot)
+	if rerr != nil {
+		rootReal = pluginsRoot
+	}
+
+	pathReal, perr := filepath.EvalSymlinks(path)
+	if perr != nil {
+		return "" // nonexistent — the caller's absent-entry skip
+	}
+
+	rel, relErr := filepath.Rel(rootReal, pathReal)
+	if relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "" // escapes the probed root — refuse (symlinked traversal)
+	}
+
+	return pathReal
+}
+
+// discoverInstalledPlugins walks one plugins root's installed_plugins.json
+// registry (12-02): for every entry it resolves the cache install path, reads
+// the `.claude-plugin/plugin.json` manifest, and merges the bundled
+// contributions (skills/, commands/) into reg with the plugin's provenance.
+// Every degradation is a stderr warning naming the path — never a load error
+// (the registry keeps loading); nothing is written anywhere.
+func discoverInstalledPlugins(pluginsRoot, projectDir string, reg Registry) {
+	if pluginsRoot == "" {
+		return
+	}
+
+	if _, err := os.Stat(pluginsRoot); err != nil {
+		return // missing root — opt-in
+	}
+
+	for _, entry := range parseInstalledPlugins(pluginsRoot, projectDir) {
+		install := resolveInstallPath(pluginsRoot, entry.InstallPath)
+		if install == "" {
+			logPluginSkip("installed plugin %s: install path %q not found under %s (skipped)",
+				entry.Key, entry.InstallPath, pluginsRoot)
+
+			continue
+		}
+
+		manifestPath := filepath.Join(install, pluginManifestRelPath)
+
+		data, ok := readCapped(manifestPath, pluginArtifactMaxBytes)
+		if !ok {
+			logPluginSkip("installed plugin %s: unreadable manifest %s (skipped)", entry.Key, manifestPath)
+
+			continue
+		}
+
+		var m struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+			Version     string `json:"version"`
+		}
+
+		if json.Unmarshal(data, &m) != nil || m.Name == "" && entry.Name == "" {
+			logPluginSkip("installed plugin %s: malformed manifest %s (skipped)", entry.Key, manifestPath)
+
+			continue
+		}
+
+		name := m.Name
+		if name == "" {
+			name = entry.Name
+		}
+
+		if entry.Version == "" {
+			entry.Version = m.Version
+		}
+
+		pluginReg := newRegistry()
+
+		_ = discoverSkillsDir(filepath.Join(install, "skills"), pluginReg)
+		_ = discoverCommandsDir(filepath.Join(install, "commands"), pluginReg)
+
+		for key, sk := range pluginReg.Skills {
+			reg.Skills[key] = sk
+		}
+
+		for key, cmd := range pluginReg.Commands {
+			reg.Commands[key] = cmd
+		}
+
+		reg.Plugins[name] = Plugin{
+			Name: name,
+			Skills: func() []string {
+				names := make([]string, 0, len(pluginReg.Skills))
+				for key := range pluginReg.Skills {
+					names = append(names, key)
+				}
+
+				sort.Strings(names)
+
+				return names
+			}(),
+			Commands: func() []string {
+				names := make([]string, 0, len(pluginReg.Commands))
+				for key := range pluginReg.Commands {
+					names = append(names, key)
+				}
+
+				sort.Strings(names)
+
+				return names
+			}(),
+			Path:        manifestPath,
+			Source:      entry.Source,
+			Version:     entry.Version,
+			Scope:       entry.Scope,
+			InstallPath: install,
+		}
+	}
+}
+
+// logPluginSkip emits one stderr warning line for a degraded plugin artifact
+// (the same swappable stderr seam as the shadow warnings — stderr NEVER
+// stdout, the ACP discipline).
+func logPluginSkip(format string, args ...any) {
+	shadowWarnLogger.Warn("plugin skip: " + fmt.Sprintf(format, args...))
 }
 
 // parseSkill parses a SKILL.md: YAML frontmatter (name/description/allowed-tools)
