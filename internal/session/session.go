@@ -159,25 +159,21 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 	// UserPromptSubmit fires here with the expanded prompt. SessionStart
 	// fires lazily on the FIRST Prompt (the session-create seam — the runner
 	// is wired at sessionFor but the session's first activity is its turn).
-	// Context-bearing stdout (both events' documented role) is INJECTED as an
-	// appended content block on the user message — the transcript records
-	// exactly what the model saw (corpus-absent form: no captured session
-	// carries hook output; the inject follows Claude Code's documented
-	// context role, flagged for the re-capture).
+	// Context-bearing stdout (both events' documented role) is INJECTED as a
+	// SYSTEM block on the session profile — the established
+	// dynamic-merge-into-captured-shape vehicle (the skills/agents listings
+	// use the same trailing-System-block form): the model sees it as context,
+	// the recorded user_message line stays byte-pure (corpus-absent form: no
+	// captured session carries hook output; flagged for the re-capture).
 	if s.Hooks != nil {
 		if !s.sessionStartFired {
 			s.sessionStartFired = true
-
-			if out := s.Hooks.Fire(ctx, "SessionStart", nil); out.Message != "" {
-				userPrompt = appendContentBlock(userPrompt, out.Message)
-			}
+			s.injectHookContext(s.Hooks.Fire(ctx, "SessionStart", nil))
 		}
 
-		if out := s.Hooks.Fire(ctx, "UserPromptSubmit", map[string]any{
+		s.injectHookContext(s.Hooks.Fire(ctx, "UserPromptSubmit", map[string]any{
 			"prompt": firstTextOf(userPrompt),
-		}); out.Message != "" {
-			userPrompt = appendContentBlock(userPrompt, out.Message)
-		}
+		}))
 	}
 
 	err = s.Manager.AppendUserMessage(turnID, userPrompt)
@@ -186,15 +182,6 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 	}
 
 	return s.runTurn(ctx, turnID)
-}
-
-// appendContentBlock returns a COPY of blocks with one text block appended
-// (the caller's slice is never mutated — the ACP layer owns the original).
-func appendContentBlock(blocks []ContentBlock, text string) []ContentBlock {
-	out := make([]ContentBlock, 0, len(blocks)+1)
-	out = append(out, blocks...)
-
-	return append(out, ContentBlock{Type: blockText, Text: text})
 }
 
 // firstTextOf returns the first text block's text (the UserPromptSubmit
@@ -242,7 +229,8 @@ func (s *Session) Close() error {
 		}
 
 		// 12-02 Task 4: SessionEnd fires at session close (bounded by the
-		// per-hook timeout — Close carries no caller ctx).
+		// per-hook timeout — Close carries no caller ctx by design; the
+		// per-hook timeout IS the bound).
 		if s.Hooks != nil {
 			_ = s.Hooks.Fire(context.Background(), "SessionEnd", nil)
 		}
@@ -253,6 +241,20 @@ func (s *Session) Close() error {
 	})
 
 	return firstErr
+}
+
+// injectHookContext appends a context-bearing hook's captured stdout to the
+// SESSION profile's System blocks (12-02 Task 4 — the documented context
+// role). Copy-on-append: the session's own System slice grows; a shared
+// backing array is never mutated.
+func (s *Session) injectHookContext(out ecosys.HookOutcome) {
+	if out.Message == "" {
+		return
+	}
+
+	s.Profile.System = append(s.Profile.System, profile.TextBlock{
+		Type: blockText, Text: out.Message,
+	})
 }
 
 // runTurn is the D-18 model/tool loop core, shared by Prompt and the ask-resume

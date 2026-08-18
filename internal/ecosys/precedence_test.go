@@ -247,7 +247,8 @@ func TestShadowWarningSkills(t *testing.T) {
 }
 
 // writeInstalledSkillPlugin plants one installed plugin carrying ONE skill
-// into a plugins root (12-02 precedence fixtures): cache/<marketplace>/<plugin>/<version>/
+// into a plugins root (12-02 precedence fixtures):
+// cache/<marketplace>/<plugin>/<version>/
 // with manifest + skills/<name>/SKILL.md, and its registry entry APPENDED to
 // the root's installed_plugins.json (repeat calls accumulate — one registry,
 // many plugins).
@@ -271,8 +272,10 @@ func writeInstalledSkillPlugin(t *testing.T, pluginsRoot, marketplace, plugin, v
 		"name": plugin + "@" + marketplace, "installPath": rel, "scope": scope, "version": version,
 	}
 
-	var entries []map[string]string
-	if prev, rerr := os.ReadFile(filepath.Join(pluginsRoot, installedPluginsFile)); rerr == nil {
+	var entries []map[string]string //nolint:prealloc // grows across calls by design
+
+	prev, rerr := os.ReadFile(filepath.Join(pluginsRoot, installedPluginsFile))
+	if rerr == nil {
 		_ = json.Unmarshal(prev, &entries)
 	}
 
@@ -290,6 +293,56 @@ func installedSkillPath(t *testing.T, pluginsRoot, marketplace, plugin, version,
 	return filepath.Join(pluginsRoot, "cache", marketplace, plugin, version, "skills", skill, "SKILL.md")
 }
 
+// cacheDirName is the cache layout's directory name (goconst).
+const cacheDirName = "cache"
+
+// matrixDirs names the tier dirs the precedence matrix plants.
+type matrixDirs struct {
+	userClaude   string
+	userPlugins  string
+	projClaude   string
+	projAssguard string
+	projPlugins  string
+}
+
+// plantMatrixLayers plants the overlapping five-tier fixture (called with the
+// redirected HOME root).
+func plantMatrixLayers(t *testing.T, tmpHome string) matrixDirs {
+	t.Helper()
+
+	d := matrixDirs{
+		userClaude:   filepath.Join(tmpHome, claudeDirName),
+		projClaude:   filepath.Join(t.TempDir(), claudeDirName),
+		projAssguard: "",
+	}
+	d.userPlugins = filepath.Join(d.userClaude, pluginsDirName)
+	d.projAssguard = filepath.Join(filepath.Dir(d.projClaude), assguardDirName)
+	d.projPlugins = filepath.Join(d.projClaude, pluginsDirName)
+
+	// "shared" exists in EVERY tier — the existing chain must win (D-06:
+	// project-claude is the top of the existing chain).
+	writeSkill(t, d.userClaude, "shared", "claude-user", nil)
+	writeSkill(t, d.projClaude, "shared", "claude-project", nil)
+	writeSkill(t, filepath.Join(tmpHome, assguardDirName), "shared", "assguard-user", nil)
+	writeSkill(t, d.projAssguard, "shared", "assguard-project", nil)
+	writeInstalledSkillPlugin(t, d.userPlugins, "mkt-u", "plug-u", "1.0.0", "user", "shared", "plugin-user")
+	writeInstalledSkillPlugin(t, d.projPlugins, "mkt-p", "plug-p", "1.0.0", "project", "shared", "plugin-project")
+
+	// "plugin-only" exists ONLY in the user plugin root → resolves to it.
+	writeInstalledSkillPlugin(t, d.userPlugins, "mkt-u", "plug-only", "1.0.0", "user", "plugin-only", "only-user")
+
+	// "plugin-both" exists in BOTH plugin roots → project plugin root wins.
+	writeInstalledSkillPlugin(t, d.userPlugins, "mkt-u", "plug-b", "1.0.0", "user", "plugin-both", "plugin-user")
+	writeInstalledSkillPlugin(t, d.projPlugins, "mkt-p", "plug-b2", "1.0.0", "project", "plugin-both", "plugin-project")
+
+	// First-class `.claude/commands/` chain positions inside the same matrix:
+	// project beats user (the plugin roots sit below both).
+	writeCommand(t, d.userClaude, "shared-cmd", "user-version", "user body")
+	writeCommand(t, d.projClaude, "shared-cmd", "project-version", "project body")
+
+	return d
+}
+
 // TestPrecedenceMatrixPlugins (12-02 Task 2, Test 1) pins the five-tier matrix
 // with overlapping fixture layers: the existing chain (D-06 unchanged —
 // project-claude > {project-assguard, user-claude} > user-assguard) keeps
@@ -303,39 +356,9 @@ func TestPrecedenceMatrixPlugins(t *testing.T) {
 	tmpHome := t.TempDir()
 	t.Setenv("HOME", tmpHome)
 
-	userClaude := filepath.Join(tmpHome, claudeDirName)
-	userAssguard := filepath.Join(tmpHome, assguardDirName)
-	userPlugins := filepath.Join(userClaude, pluginsDirName)
+	dirs := plantMatrixLayers(t, tmpHome)
 
-	proj := t.TempDir()
-	projClaude := filepath.Join(proj, claudeDirName)
-	projAssguard := filepath.Join(proj, assguardDirName)
-	projPlugins := filepath.Join(projClaude, pluginsDirName)
-
-	// "shared" exists in EVERY tier — the existing chain must win (D-06:
-	// project-claude is the top of the existing chain).
-	writeSkill(t, userClaude, "shared", "claude-user", nil)
-	writeSkill(t, projClaude, "shared", "claude-project", nil)
-	writeSkill(t, userAssguard, "shared", "assguard-user", nil)
-	writeSkill(t, projAssguard, "shared", "assguard-project", nil)
-	writeInstalledSkillPlugin(t, userPlugins, "mkt-u", "plug-u", "1.0.0", "user", "shared", "plugin-user")
-	writeInstalledSkillPlugin(t, projPlugins, "mkt-p", "plug-p", "1.0.0", "project", "shared", "plugin-project")
-
-	// "plugin-only" exists ONLY in the user plugin root → resolves to it.
-	writeInstalledSkillPlugin(t, userPlugins, "mkt-u", "plug-only", "1.0.0", "user", "plugin-only", "only-user")
-
-	// "plugin-both" exists in BOTH plugin roots → project plugin root wins.
-	writeInstalledSkillPlugin(t, userPlugins, "mkt-u", "plug-b", "1.0.0", "user", "plugin-both", "plugin-user")
-	writeInstalledSkillPlugin(t, projPlugins, "mkt-p", "plug-b2", "1.0.0", "project", "plugin-both", "plugin-project")
-
-	// First-class `.claude/commands/` chain positions inside the same matrix:
-	// project `.claude/commands/` beats user `.claude/commands/` AND both
-	// plugin roots (the plugin roots carry commands via their own bundles —
-	// the same plugin fixture mechanism, keyed by command below).
-	writeCommand(t, userClaude, "shared-cmd", "user-version", "user body")
-	writeCommand(t, projClaude, "shared-cmd", "project-version", "project body")
-
-	reg, err := Load(projClaude, projAssguard)
+	reg, err := Load(dirs.projClaude, dirs.projAssguard)
 	require.NoError(t, err)
 
 	// Existing chain keeps priority over every plugin tier.
@@ -366,10 +389,11 @@ func TestPrecedenceMatrixPlugins(t *testing.T) {
 	// .claude file and the shadowed plugin cache file.
 	warnings := buf.String()
 
-	projBothPath := installedSkillPath(t, projPlugins, "mkt-p", "plug-b2", "1.0.0", "plugin-both")
-	userBothPath := installedSkillPath(t, userPlugins, "mkt-u", "plug-b", "1.0.0", "plugin-both")
+	projBothPath := installedSkillPath(t, dirs.projPlugins, "mkt-p", "plug-b2", "1.0.0", "plugin-both")
+	userBothPath := installedSkillPath(t, dirs.userPlugins, "mkt-u", "plug-b", "1.0.0", "plugin-both")
 
 	pairLines := 0
+
 	for line := range strings.SplitSeq(warnings, "\n") {
 		if strings.Contains(line, projBothPath) && strings.Contains(line, userBothPath) {
 			pairLines++
@@ -379,10 +403,11 @@ func TestPrecedenceMatrixPlugins(t *testing.T) {
 	assert.Equal(t, 1, pairLines,
 		"the both-roots plugin overwrite must warn EXACTLY once naming both files")
 
-	assert.Contains(t, warnings, filepath.Join(projClaude, "skills", "shared", "SKILL.md"),
+	assert.Contains(t, warnings, filepath.Join(dirs.projClaude, "skills", "shared", "SKILL.md"),
 		"the winning .claude path must be named")
-	assert.Contains(t, warnings, filepath.Join(userPlugins, "cache", "mkt-u", "plug-u", "1.0.0", "skills", "shared", "SKILL.md"),
-		"the shadowed user-plugin path must be named")
+	userPlugSkill := filepath.Join(
+		dirs.userPlugins, "cache", "mkt-u", "plug-u", "1.0.0", "skills", "shared", "SKILL.md")
+	assert.Contains(t, warnings, userPlugSkill, "the shadowed user-plugin path must be named")
 }
 
 // TestLiveInstalledPluginsProbe (12-02 Task 2, Test 2 — LIVE, presence-gated)
@@ -391,12 +416,14 @@ func TestPrecedenceMatrixPlugins(t *testing.T) {
 // installs must surface with cache-internal paths. Skips cleanly (t.Skip,
 // never fails) on a machine without the roots. NEVER modifies the live roots.
 func TestLiveInstalledPluginsProbe(t *testing.T) {
+	t.Parallel()
+
 	home, err := os.UserHomeDir()
 	require.NoError(t, err)
 
 	root := filepath.Join(home, claudeDirName, pluginsDirName)
 
-	if _, rerr := os.Stat(filepath.Join(root, installedPluginsFile)); rerr != nil {
+	if _, rerr := os.Stat(filepath.Join(root, installedPluginsFile)); rerr != nil { //nolint:noinlineerr // skip-path
 		t.Skip("no live ~/.claude/plugins/installed_plugins.json — live probe skipped (presence-gated)")
 	}
 
@@ -412,11 +439,12 @@ func TestLiveInstalledPluginsProbe(t *testing.T) {
 		t.Logf("live installed plugin: %s@%s version=%s scope=%s skills=%v commands=%v install=%s",
 			p.Name, p.Source, p.Version, p.Scope, p.Skills, p.Commands, p.InstallPath)
 
-		for _, s := range p.Skills {
-			sk, ok := reg.Skills[s]
-			require.True(t, ok, "plugin %s lists skill %s — it must be in the registry", p.Name, s)
-			assert.Contains(t, sk.Path, filepath.Join("cache"),
-				"plugin-bundled skill path must be inside the cache layout")
+		for _, skill := range p.Skills {
+			sk, ok := reg.Skills[skill]
+			require.True(t, ok, "plugin %s lists skill %s — it must be in the registry", p.Name, skill)
+
+			// The cache-layout path check (one join, no suspicious single arg).
+			assert.Contains(t, sk.Path, cacheDirName, "plugin-bundled skill path must be inside the cache layout")
 		}
 	}
 }

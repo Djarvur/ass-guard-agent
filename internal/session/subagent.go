@@ -18,7 +18,7 @@ import (
 // use (D-10). The model sees the FULL catalog (parent mimicry); the
 // RestrictedExecutor enforces this subset at runtime.
 var subagentRestrictedDefault = []string{ //nolint:gochecknoglobals // immutable table
-	toolRead, "Glob", "Grep", toolWebFetch, "WebSearch",
+	toolRead, "Glob", toolGrep, toolWebFetch, "WebSearch",
 }
 
 // subagentRunner is the seam that runs the nested turn loop. Production uses the
@@ -136,24 +136,10 @@ func (defaultSubagentRunner) Run(
 	_ = s.Manager.AppendUserMessage(subagentTurnID, []ContentBlock{{Type: blockText, Text: prompt}})
 
 	// One nested provider call (Phase-2 stubs tools execution; a full subagent
-	// tool-loop is Phase 4). The RestrictedExecutor wraps the session toolExec.
-	var inner = s.toolExec
-	if s.toolExec != nil {
-		inner = toolcat.NewRestrictedExecutor(s.toolExec, restricted)
-	}
+	// tool-loop is Phase 4). The RestrictedExecutor wraps the session toolExec
+	// (wired at executeRestricted; noted here for the Phase-4 loop).
 
-	_ = inner // restricted executor is wired; real subagent tool-loop is Phase 4
-
-	// 12-02: a typed dispatch (agentDef != nil) shapes the subagent's request
-	// from a COPY of the session profile carrying the definition's Prompt as
-	// an additional system block (the dynamic-merge-into-captured-shape
-	// pattern, applied per dispatch; the shared s.Profile is never mutated).
-	prof := s.Profile
-	if agentDef != nil && agentDef.Prompt != "" {
-		prof = *(&s.Profile)
-		prof.System = append(append([]profile.TextBlock(nil), s.Profile.System...),
-			profile.TextBlock{Type: blockText, Text: agentDef.Prompt})
-	}
+	prof := subagentProfile(s, agentDef)
 
 	const maxIter = 8
 
@@ -207,16 +193,9 @@ func (defaultSubagentRunner) Run(
 	return "", errToolLoopExceeded
 }
 
-// streamAndEmitTagged is the subagent's streaming variant: it publishes events
-// tagged with ParentTurnID (PARA-02 — streamed progress for parent visibility).
-func (s *Session) streamAndEmitTagged(
-	ctx context.Context, subagentTurnID, parentTurnID string,
-	messages []provider.Message,
-) (provider.Response, string, error) {
-	return s.streamAndEmitTaggedProf(ctx, subagentTurnID, parentTurnID, &s.Profile, messages)
-}
-
-// streamAndEmitTaggedProf is streamAndEmitTagged over an explicit profile —
+// streamAndEmitTaggedProf is the subagent's streaming variant: it publishes
+// events tagged with ParentTurnID (PARA-02) and shapes the request from an
+// EXPLICIT profile —
 // the 12-02 per-dispatch agent-prompt copy shapes the subagent's request
 // without touching the session profile.
 func (s *Session) streamAndEmitTaggedProf(
@@ -282,9 +261,26 @@ func (s *Session) executeRestricted(
 	return re.Execute(ctx, tc.Name, tc.Input) //nolint:wrapcheck // thin delegation
 }
 
+// subagentProfile returns the profile a subagent dispatch shapes its request
+// from: the session profile unchanged for default dispatches, or a COPY
+// carrying a typed definition's Prompt as an additional system block (the
+// dynamic-merge-into-captured-shape pattern applied per dispatch — the shared
+// s.Profile and its System backing array are never mutated).
+func subagentProfile(s *Session, agentDef *ecosys.Agent) profile.Profile {
+	prof := s.Profile
+	if agentDef == nil || agentDef.Prompt == "" {
+		return prof
+	}
+
+	prof.System = append(append([]profile.TextBlock(nil), s.Profile.System...),
+		profile.TextBlock{Type: blockText, Text: agentDef.Prompt})
+
+	return prof
+}
+
 // isSubagentTool reports whether the tool name dispatches a subagent (PARA-01).
 func isSubagentTool(name string) bool {
-	return name == toolTask || name == "Agent"
+	return name == toolTask || name == toolAgent
 }
 
 // agentDefFor resolves a Task/Agent tool call's subagent_type against the
@@ -297,7 +293,7 @@ func (s *Session) agentDefFor(input json.RawMessage) (ecosys.Agent, bool) {
 	}
 
 	var in struct {
-		SubagentType string `json:"subagent_type"` //nolint:tagliatelle // captured input key
+		SubagentType string `json:"subagent_type"`
 	}
 
 	if json.Unmarshal(input, &in) != nil || in.SubagentType == "" {

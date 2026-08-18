@@ -1,6 +1,7 @@
 package ecosys //nolint:testpackage // internal package test (accesses unexported symbols)
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -178,12 +179,12 @@ func snapshotTree(t *testing.T, root string) map[string]string {
 
 		info, serr := d.Info()
 		if serr != nil {
-			return serr
+			return fmt.Errorf("stat %s: %w", path, serr)
 		}
 
 		data, rerr := os.ReadFile(path)
 		if rerr != nil {
-			return rerr
+			return fmt.Errorf("read %s: %w", path, rerr)
 		}
 
 		rel, _ := filepath.Rel(root, path)

@@ -3,6 +3,7 @@ package session //nolint:testpackage // internal package test (accesses unexport
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -24,7 +25,7 @@ func TestSubagentTypeUsesAgentDef(t *testing.T) {
 		{
 			FinishReason: blockToolUse,
 			ToolCalls: []provider.ToolCall{{
-				Name:  "Agent",
+				Name:  toolAgent,
 				Input: json.RawMessage(`{"subagent_type":"fixture-agent","prompt":"do the thing"}`),
 			}},
 		},
@@ -35,24 +36,27 @@ func TestSubagentTypeUsesAgentDef(t *testing.T) {
 		"fixture-agent": {
 			Name:        "fixture-agent",
 			Description: "fixture wiring agent",
-			Tools:       []string{toolRead, "Grep"},
+			Tools:       []string{toolRead, toolGrep},
 			Model:       "sonnet",
 			Prompt:      "You are the fixture plugin agent. Research thoroughly.",
 		},
 	}
 
-	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "dispatch"}})
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "typed-dispatch"}})
 	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 
 	// The dispatch line records the agent's restricted tool set.
 	found := false
+
+	want := []string{toolRead, toolGrep}
+
 	for _, l := range linesOf(s) {
 		if l.Type == TypeSubagentDispatch && l.RestrictedTools != nil {
 			found = true
-			want := []string{toolRead, "Grep"}
-			if strings.Join(l.RestrictedTools, ",") != strings.Join(want, ",") {
+
+			if !slices.Equal(l.RestrictedTools, want) {
 				t.Errorf("restricted tools = %v, want %v (the agent's declared Tools)", l.RestrictedTools, want)
 			}
 		}
@@ -64,6 +68,7 @@ func TestSubagentTypeUsesAgentDef(t *testing.T) {
 
 	// The subagent's provider call carried the agent's prompt as a system block.
 	promptSeen := false
+
 	for _, prof := range fp.streamedProfiles() {
 		for _, blk := range prof.System {
 			if strings.Contains(blk.Text, "fixture plugin agent") {
@@ -86,7 +91,7 @@ func TestSubagentTypeUnknownFallsBack(t *testing.T) {
 		{
 			FinishReason: blockToolUse,
 			ToolCalls: []provider.ToolCall{{
-				Name:  "Agent",
+				Name:  toolAgent,
 				Input: json.RawMessage(`{"subagent_type":"no-such-agent","prompt":"x"}`),
 			}},
 		},
@@ -95,17 +100,18 @@ func TestSubagentTypeUnknownFallsBack(t *testing.T) {
 
 	s.SubagentTypes = map[string]ecosys.Agent{}
 
-	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "dispatch"}})
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "typed-dispatch"}})
 	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 
 	found := false
+
 	for _, l := range linesOf(s) {
 		if l.Type == TypeSubagentDispatch {
 			found = true
-			want := strings.Join(subagentRestrictedDefault, ",")
-			if strings.Join(l.RestrictedTools, ",") != want {
+
+			if !slices.Equal(l.RestrictedTools, subagentRestrictedDefault) {
 				t.Errorf("restricted tools = %v, want the default %v", l.RestrictedTools, subagentRestrictedDefault)
 			}
 		}

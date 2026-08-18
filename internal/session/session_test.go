@@ -29,15 +29,6 @@ type fakeProvider struct {
 	streamed  []*profile.Profile // profiles seen by Stream, in call order (12-02)
 }
 
-// streamedProfiles returns a copy of the profiles Stream was called with
-// (test seam for per-dispatch system-block assertions).
-func (f *fakeProvider) streamedProfiles() []*profile.Profile {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	return append([]*profile.Profile(nil), f.streamed...)
-}
-
 func (f *fakeProvider) Send(
 	ctx context.Context, prof *profile.Profile, msgs []provider.Message,
 ) (provider.Response, error) {
@@ -183,6 +174,15 @@ func (f *fakeProvider) Stream(
 
 func (f *fakeProvider) ToolResultMessage(toolCallID string, result json.RawMessage) (json.RawMessage, error) {
 	return json.RawMessage(`{"role":"user","content":"stub"}`), nil
+}
+
+// streamedProfiles returns a copy of the profiles Stream was called with
+// (test seam for per-dispatch system-block assertions).
+func (f *fakeProvider) streamedProfiles() []*profile.Profile {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return append([]*profile.Profile(nil), f.streamed...)
 }
 
 // turnIDFromMessages is a no-op placeholder (the real capturer gets the turn id

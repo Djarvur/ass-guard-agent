@@ -66,7 +66,7 @@ func TestDiscoverSkill(t *testing.T) {
 	t.Parallel()
 
 	root := t.TempDir()
-	writeSkill(t, root, "research", "Research a topic", []string{"Read", "Grep"})
+	writeSkill(t, root, "research", "Research a topic", []string{toolRead, toolGrep})
 
 	reg, err := loadTree(root)
 	require.NoError(t, err)
@@ -407,6 +407,7 @@ func TestFrontmatterExtension(t *testing.T) {
 const (
 	toolBash = "Bash"
 	toolRead = "Read"
+	toolGrep = "Grep"
 )
 
 // TestFlatFallback (Test 9) verifies zcode's flat frontmatter semantics: a
@@ -681,7 +682,8 @@ func TestInstalledPluginAgentsDiscovered(t *testing.T) {
 	warned := buf.String()
 	assert.Contains(t, warned, "shadows", "agent overwrite must warn")
 	assert.Contains(t, warned, filepath.Join(claudeAgents, "fixture-agent.md"), "warning names the winning path")
-	assert.Contains(t, warned, filepath.Join("cache", "acme-market", "skill-plugin", "1.0.0", "agents", "fixture-agent.md"),
+	assert.Contains(t, warned,
+		filepath.Join("cache", "acme-market", "skill-plugin", "1.0.0", "agents", "fixture-agent.md"),
 		"warning names the shadowed plugin path")
 }
 
@@ -723,12 +725,7 @@ func TestPluginMCPJSONMergesLowest(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, reg.Plugins, "skill-plugin")
 
-	var fixture *ServerConfig
-	for i := range servers {
-		if servers[i].Name == "fixture-mcp" {
-			fixture = &servers[i]
-		}
-	}
+	fixture := findServer(servers, "fixture-mcp")
 
 	require.NotNil(t, fixture, "plugin .mcp.json server must surface in the Discover set")
 	assert.Equal(t, "/bin/echo", fixture.Command)
@@ -741,15 +738,23 @@ func TestPluginMCPJSONMergesLowest(t *testing.T) {
 	_, servers, err = Discover(proj)
 	require.NoError(t, err)
 
-	for i := range servers {
-		if servers[i].Name == "fixture-mcp" {
-			fixture = &servers[i]
-		}
-	}
+	fixture = findServer(servers, "fixture-mcp")
 
 	require.NotNil(t, fixture, "collided server must still surface")
 	assert.Equal(t, "/usr/bin/true", fixture.Command, "user-scope config must win over the plugin server")
 	assert.Equal(t, []string{"user-wins"}, fixture.Args)
+}
+
+// findServer returns a pointer to the named server in servers (nil when
+// absent).
+func findServer(servers []ServerConfig, name string) *ServerConfig {
+	for i := range servers {
+		if servers[i].Name == name {
+			return &servers[i]
+		}
+	}
+
+	return nil
 }
 
 // TestAgentAndMCPTolerance (Task 3, Test 4) verifies malformed agent

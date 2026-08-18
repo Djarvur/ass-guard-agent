@@ -78,7 +78,7 @@ const agentListingHeader = "The following specialized agent types are available 
 // AgentListing renders every discovered agent definition (12-02) in the
 // captured Agent-tool type-listing entry shape:
 //
-//	- <name>: <description> (Tools: <comma-joined tools>)
+//   - <name>: <description> (Tools: <comma-joined tools>)
 //
 // An empty registry yields "" (the caller skips the merge — zero-agent
 // degradation leaves the profile copy untouched). Tool lists reuse the

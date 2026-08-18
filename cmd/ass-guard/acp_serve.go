@@ -388,6 +388,8 @@ func runACPServe(ctx context.Context, in io.Reader, out, stderr io.Writer, opts 
 	// outlives the ass-guard process. Serve returns after ctx cancellation.
 	go func() {
 		<-ctx.Done()
+
+		//nolint:contextcheck // ctx-done drain path; Session.Close owns its bounded per-hook timeouts
 		runner.closeAllSessions()
 	}()
 

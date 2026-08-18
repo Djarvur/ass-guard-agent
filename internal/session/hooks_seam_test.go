@@ -11,6 +11,23 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 )
 
+// requireMarkers asserts each named marker file exists under work.
+func requireMarkers(t *testing.T, work string, names ...string) {
+	t.Helper()
+
+	for _, name := range names {
+		_, serr := os.Stat(filepath.Join(work, name))
+		if serr != nil {
+			t.Errorf("lifecycle hook marker %s missing: %v", name, serr)
+		}
+	}
+}
+
+// runTurn drives one plain prompt turn on s.
+func runTurn(s *Session) (string, error) {
+	return s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "run-agent"}})
+}
+
 // marker returns a hook command that leaves a marker file under dir.
 func marker(dir, name string) string {
 	return "touch " + filepath.Join(dir, name)
@@ -36,47 +53,52 @@ func TestHookSeamsFireAtLifecycle(t *testing.T) {
 		{Event: "SessionEnd", Command: marker(work, "se.marker")},
 	}, "s-hooks", work, filepath.Join(work, "audit.jsonl"))
 
-	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "hello"}})
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "hook-turn"}})
 	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 
-	for _, name := range []string{"ss.marker", "stop.marker"} {
-		if _, serr := os.Stat(filepath.Join(work, name)); serr != nil {
-			t.Errorf("lifecycle hook marker %s missing: %v", name, serr)
-		}
-	}
+	requireMarkers(t, work, "ss.marker", "stop.marker")
 
-	if _, serr := os.Stat(filepath.Join(work, "se.marker")); serr == nil {
+	_, serr := os.Stat(filepath.Join(work, "se.marker"))
+	if serr == nil {
 		t.Error("SessionEnd must NOT fire before Close")
 	}
 
 	// UserPromptSubmit stdout is captured and injected as turn context (the
-	// documented context role) — the appended user message records it.
+	// documented context role) via a SYSTEM block on the session profile —
+	// the dynamic-merge vehicle; the recorded user_message stays BYTE-PURE.
+	injected := false
+
+	for _, blk := range s.Profile.System {
+		if contains(blk.Text, "up-context-hook") {
+			injected = true
+		}
+	}
+
+	if !injected {
+		t.Error("UserPromptSubmit stdout must be captured and injected as a profile system block")
+	}
+
 	lines, rerr := m.ReadAll()
 	if rerr != nil {
 		t.Fatalf("ReadAll: %v", rerr)
 	}
 
-	injected := false
 	for _, l := range lines {
-		if l.Type == TypeUserMessage && string(l.Content) != "" && json.Valid(l.Content) {
-			if len(l.Content) > 0 && contains(string(l.Content), "up-context-hook") {
-				injected = true
-			}
+		if l.Type == TypeUserMessage && contains(string(l.Content), "up-context-hook") {
+			t.Error("the user_message line must stay byte-pure (hook context rides System blocks)")
 		}
 	}
 
-	if !injected {
-		t.Error("UserPromptSubmit stdout must be captured and injected as turn context")
-	}
-
 	// SessionEnd fires at Close.
-	if cerr := s.Close(); cerr != nil {
+	cerr := s.Close()
+	if cerr != nil {
 		t.Fatalf("Close: %v", cerr)
 	}
 
-	if _, serr := os.Stat(filepath.Join(work, "se.marker")); serr != nil {
+	_, serr = os.Stat(filepath.Join(work, "se.marker"))
+	if serr != nil {
 		t.Errorf("SessionEnd hook marker missing after Close: %v", serr)
 	}
 }
@@ -112,12 +134,13 @@ func TestHookSeamSubagentStop(t *testing.T) {
 		{Event: "SubagentStop", Command: marker(work, "sub.marker")},
 	}, "s-sub", work, "")
 
-	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "go"}})
+	_, err := runTurn(s)
 	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 
-	if _, serr := os.Stat(filepath.Join(work, "sub.marker")); serr != nil {
+	_, serr := os.Stat(filepath.Join(work, "sub.marker"))
+	if serr != nil {
 		t.Errorf("SubagentStop hook marker missing: %v", serr)
 	}
 }

@@ -1,4 +1,4 @@
-package coreexec
+package coreexec //nolint:testpackage // asserts the unexported keyError convention
 
 import (
 	"context"
@@ -16,7 +16,9 @@ type probeHooks struct {
 	lastOutput json.RawMessage
 }
 
-func (p *probeHooks) PreToolUse(_ context.Context, toolName string, _ json.RawMessage) (bool, string) {
+func (p *probeHooks) PreToolUse( //nolint:nonamedreturns // mirrors the seam pair
+	_ context.Context, toolName string, _ json.RawMessage,
+) (proceed bool, message string) {
 	p.preCalled = append(p.preCalled, toolName)
 	if p.refuse {
 		return false, "operator policy forbids this"
@@ -58,7 +60,9 @@ func TestRegisterCoreHookRefusal(t *testing.T) {
 	}
 
 	var parsed map[string]any
-	if uerr := json.Unmarshal(out, &parsed); uerr != nil {
+
+	uerr := json.Unmarshal(out, &parsed)
+	if uerr != nil {
 		t.Fatalf("parse refusal: %v", uerr)
 	}
 

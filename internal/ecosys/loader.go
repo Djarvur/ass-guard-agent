@@ -26,6 +26,8 @@ var (
 	errEmptyAssguardDir = errors.New("ecosys: EnsureGitignore requires a non-empty assguard dir")
 	errClaudeReadonly   = errors.New("ecosys: EnsureGitignore refuses a .claude/ path (read-only contract)")
 	errCommandDropped   = errors.New("ecosys: command dropped (neither description nor body)")
+	errAgentNoIdentity  = errors.New("ecosys: agent definition dropped (no name or description)")
+	errToolsFieldShape  = errors.New("ecosys: tools field is not a list or scalar")
 )
 
 // claudeDirName is the Claude-Code config directory name (read-only).
@@ -54,7 +56,8 @@ const assguardDirName = ".ass-guard"
 // or `.ass-guard/` extensions yet).
 func Load(claudeDir, assguardDir string) (Registry, error) {
 	reg, _, err := loadAll(claudeDir, assguardDir)
-	return reg, err //nolint:wrapcheck // thin delegation
+
+	return reg, err
 }
 
 // loadAll is Load plus the plugin-bundled MCP server set (the lowest MCP
@@ -98,11 +101,14 @@ func loadAll(claudeDir, assguardDir string) (Registry, map[string]ServerConfig, 
 	if claudeDir != "" {
 		// Project-root plugin servers overwrite user-root ones on name
 		// collision (project over user — the tier order).
-		discoverInstalledPlugins(filepath.Join(claudeDir, pluginsDirName), projectDir, projPlug, pluginMCP, &pluginHooks)
+		discoverInstalledPlugins(
+			filepath.Join(claudeDir, pluginsDirName), projectDir, projPlug, pluginMCP, &pluginHooks)
 	}
 
 	merged := mergeRegistries(mergeRegistries(userPlug, projPlug), core)
-	merged.Hooks = append(pluginHooks, merged.Hooks...)
+	hooks := make([]HookConfig, 0, len(pluginHooks)+len(merged.Hooks))
+	hooks = append(hooks, pluginHooks...)
+	merged.Hooks = append(hooks, merged.Hooks...)
 
 	return merged, pluginMCP, nil
 }
@@ -205,7 +211,7 @@ func discoverAgentsDir(agentsDir string, reg Registry, warnSkips bool) error {
 		ag, err := loadAgentFile(agentPath, strings.TrimSuffix(e.Name(), markdownExt))
 		if err != nil {
 			if warnSkips {
-				logPluginSkip("agent definition %s skipped: %v", agentPath, err)
+				logPluginSkipf("agent definition %s skipped: %v", agentPath, err)
 			}
 
 			continue
@@ -257,7 +263,7 @@ func parseAgent(content, path, fallbackName string) (Agent, error) {
 	}
 
 	if name == "" || desc == "" {
-		return Agent{}, fmt.Errorf("%s: no name or description", path)
+		return Agent{}, fmt.Errorf("%s: %w", path, errAgentNoIdentity)
 	}
 
 	return Agent{
@@ -324,7 +330,6 @@ func discoverCommands(root string, reg Registry) error {
 // directories inside an installed cache (12-02; same flat + one-level-ns
 // rules, same command-name regex, same drop rules).
 func discoverCommandsDir(cmdsDir string, reg Registry) error {
-
 	entries, err := os.ReadDir(cmdsDir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -484,7 +489,7 @@ func parseInstalledPlugins(pluginsRoot, projectDir string) []installedPlugin {
 	// v1: a top-level array of {name, installPath, scope, version}.
 	var v1 []struct {
 		Name        string `json:"name"`
-		InstallPath string `json:"installPath"`
+		InstallPath string `json:"installPath"` //nolint:tagliatelle // camelCase wire field
 		Scope       string `json:"scope"`
 		Version     string `json:"version"`
 	}
@@ -502,14 +507,16 @@ func parseInstalledPlugins(pluginsRoot, projectDir string) []installedPlugin {
 	var v2 struct {
 		Plugins map[string][]struct {
 			Scope       string `json:"scope"`
-			ProjectPath string `json:"projectPath"`
-			InstallPath string `json:"installPath"`
+			ProjectPath string `json:"projectPath"` //nolint:tagliatelle // camelCase wire field
+			InstallPath string `json:"installPath"` //nolint:tagliatelle // camelCase wire field
 			Version     string `json:"version"`
 		} `json:"plugins"`
 	}
 
-	if jerr := json.Unmarshal(data, &v2); jerr != nil || len(v2.Plugins) == 0 {
-		logPluginSkip("unrecognized installed_plugins.json shape in %s (skipping plugins)", pluginsRoot)
+	jerr := json.Unmarshal(data, &v2)
+	if jerr != nil || len(v2.Plugins) == 0 {
+		logPluginSkipf("unrecognized installed_plugins.json shape in %s (skipping plugins)", pluginsRoot)
+
 		return nil
 	}
 
@@ -572,11 +579,11 @@ func samePath(a, b string) bool {
 // cannot pin the loader on a pathological file).
 const pluginArtifactMaxBytes = 1 << 20
 
-// readCapped reads path when it exists and is at most max bytes; ok=false on
+// readCapped reads path when it exists and is at most maxBytes; ok=false on
 // missing/oversized (the caller skips with a warning).
-func readCapped(path string, max int64) ([]byte, bool) {
+func readCapped(path string, maxBytes int64) ([]byte, bool) {
 	info, err := os.Stat(path)
-	if err != nil || info.IsDir() || info.Size() > max {
+	if err != nil || info.IsDir() || info.Size() > maxBytes {
 		return nil, false
 	}
 
@@ -638,105 +645,119 @@ func discoverInstalledPlugins(
 		return
 	}
 
-	if _, err := os.Stat(pluginsRoot); err != nil {
+	if _, err := os.Stat(pluginsRoot); err != nil { //nolint:noinlineerr // skip-path
 		return // missing root — opt-in
 	}
 
-	for _, entry := range parseInstalledPlugins(pluginsRoot, projectDir) {
-		install := resolveInstallPath(pluginsRoot, entry.InstallPath)
-		if install == "" {
-			logPluginSkip("installed plugin %s: install path %q not found under %s (skipped)",
-				entry.Key, entry.InstallPath, pluginsRoot)
+	entries := parseInstalledPlugins(pluginsRoot, projectDir)
 
-			continue
-		}
-
-		manifestPath := filepath.Join(install, pluginManifestRelPath)
-
-		data, ok := readCapped(manifestPath, pluginArtifactMaxBytes)
-		if !ok {
-			logPluginSkip("installed plugin %s: unreadable manifest %s (skipped)", entry.Key, manifestPath)
-
-			continue
-		}
-
-		var m struct {
-			Name        string `json:"name"`
-			Description string `json:"description"`
-			Version     string `json:"version"`
-		}
-
-		if json.Unmarshal(data, &m) != nil || m.Name == "" && entry.Name == "" {
-			logPluginSkip("installed plugin %s: malformed manifest %s (skipped)", entry.Key, manifestPath)
-
-			continue
-		}
-
-		name := m.Name
-		if name == "" {
-			name = entry.Name
-		}
-
-		if entry.Version == "" {
-			entry.Version = m.Version
-		}
-
-		pluginReg := newRegistry()
-
-		_ = discoverSkillsDir(filepath.Join(install, "skills"), pluginReg)
-		_ = discoverCommandsDir(filepath.Join(install, "commands"), pluginReg)
-		_ = discoverAgentsDir(filepath.Join(install, "agents"), pluginReg, true)
-
-		for key, sk := range pluginReg.Skills {
-			reg.Skills[key] = sk
-		}
-
-		for key, cmd := range pluginReg.Commands {
-			reg.Commands[key] = cmd
-		}
-
-		for key, ag := range pluginReg.Agents {
-			reg.Agents[key] = ag
-		}
-
-		for serverName, sc := range parsePluginMCPJSON(install) {
-			mcpOut[serverName] = sc
-		}
-
-		// 12-02 Task 4: the bundled hooks/hooks.json (all events — mapped
-		// AND unmapped/observe-only; the runner decides firing).
-		*hooksOut = append(*hooksOut, parseHooksJSON(
-			filepath.Join(install, "hooks", "hooks.json"), install)...)
-
-		reg.Plugins[name] = Plugin{
-			Name: name,
-			Skills: func() []string {
-				names := make([]string, 0, len(pluginReg.Skills))
-				for key := range pluginReg.Skills {
-					names = append(names, key)
-				}
-
-				sort.Strings(names)
-
-				return names
-			}(),
-			Commands: func() []string {
-				names := make([]string, 0, len(pluginReg.Commands))
-				for key := range pluginReg.Commands {
-					names = append(names, key)
-				}
-
-				sort.Strings(names)
-
-				return names
-			}(),
-			Path:        manifestPath,
-			Source:      entry.Source,
-			Version:     entry.Version,
-			Scope:       entry.Scope,
-			InstallPath: install,
-		}
+	for i := range entries {
+		loadInstalledPlugin(pluginsRoot, &entries[i], reg, mcpOut, hooksOut)
 	}
+}
+
+// loadInstalledPlugin resolves, validates, and registers ONE installed-plugin
+// entry. Every degradation path skips THIS plugin with a stderr warning
+// naming the artifact — the registry keeps loading.
+func loadInstalledPlugin(
+	pluginsRoot string, entry *installedPlugin,
+	reg Registry, mcpOut map[string]ServerConfig, hooksOut *[]HookConfig,
+) {
+	install, name, version, manifestPath, ok := resolveInstalledPlugin(pluginsRoot, entry)
+	if !ok {
+		return
+	}
+
+	pluginReg := discoverPluginBundle(install)
+
+	maps.Copy(reg.Skills, pluginReg.Skills)
+	maps.Copy(reg.Commands, pluginReg.Commands)
+	maps.Copy(reg.Agents, pluginReg.Agents)
+	maps.Copy(mcpOut, parsePluginMCPJSON(install))
+
+	// 12-02 Task 4: the bundled hooks/hooks.json (all events — mapped AND
+	// unmapped/observe-only; the runner decides firing).
+	*hooksOut = append(*hooksOut, parseHooksJSON(
+		filepath.Join(install, "hooks", "hooks.json"), install)...)
+
+	reg.Plugins[name] = Plugin{
+		Name: name, Skills: sortedKeys(pluginReg.Skills), Commands: sortedKeys(pluginReg.Commands),
+		Path: manifestPath, Source: entry.Source, Version: version,
+		Scope: entry.Scope, InstallPath: install,
+	}
+}
+
+// resolveInstalledPlugin resolves the entry's install path, reads + validates
+// the .claude-plugin/plugin.json manifest, and returns the registration
+// identity (resolved install dir, plugin name, manifest path). ok=false on
+// every degradation (absent path, unreadable/malformed manifest) — warned by
+// the caller-visible seam, never fatal.
+func resolveInstalledPlugin( //nolint:nonamedreturns // five-string result clarity
+	pluginsRoot string, entry *installedPlugin,
+) (install, name, version, manifestPath string, ok bool) {
+	install = resolveInstallPath(pluginsRoot, entry.InstallPath)
+	if install == "" {
+		logPluginSkipf("installed plugin %s: install path %q not found under %s (skipped)",
+			entry.Key, entry.InstallPath, pluginsRoot)
+
+		return "", "", "", "", false
+	}
+
+	manifestPath = filepath.Join(install, pluginManifestRelPath)
+
+	data, readable := readCapped(manifestPath, pluginArtifactMaxBytes)
+	if !readable {
+		logPluginSkipf("installed plugin %s: unreadable manifest %s (skipped)", entry.Key, manifestPath)
+
+		return "", "", "", "", false
+	}
+
+	var m struct {
+		Name    string `json:"name"`
+		Version string `json:"version"`
+	}
+
+	if json.Unmarshal(data, &m) != nil || m.Name == "" && entry.Name == "" {
+		logPluginSkipf("installed plugin %s: malformed manifest %s (skipped)", entry.Key, manifestPath)
+
+		return "", "", "", "", false
+	}
+
+	name = m.Name
+	if name == "" {
+		name = entry.Name
+	}
+
+	version = entry.Version
+	if version == "" {
+		version = m.Version
+	}
+
+	return install, name, version, manifestPath, true
+}
+
+// discoverPluginBundle walks ONE cache install's bundled contribution dirs
+// (skills/, commands/, agents/) into a fresh registry.
+func discoverPluginBundle(install string) Registry {
+	pluginReg := newRegistry()
+
+	_ = discoverSkillsDir(filepath.Join(install, "skills"), pluginReg)
+	_ = discoverCommandsDir(filepath.Join(install, "commands"), pluginReg)
+	_ = discoverAgentsDir(filepath.Join(install, "agents"), pluginReg, true)
+
+	return pluginReg
+}
+
+// sortedKeys returns the map's keys sorted (the Plugin contribution lists).
+func sortedKeys[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for key := range m {
+		out = append(out, key)
+	}
+
+	sort.Strings(out)
+
+	return out
 }
 
 // parsePluginMCPJSON reads a plugin bundle's .mcp.json (the same
@@ -759,7 +780,7 @@ func parsePluginMCPJSON(install string) map[string]ServerConfig {
 	}
 
 	if json.Unmarshal(data, &raw) != nil {
-		logPluginSkip("malformed %s in %s (skipped)", mcpJSONName, install)
+		logPluginSkipf("malformed %s in %s (skipped)", mcpJSONName, install)
 
 		return nil
 	}
@@ -777,7 +798,7 @@ func parsePluginMCPJSON(install string) map[string]ServerConfig {
 // logPluginSkip emits one stderr warning line for a degraded plugin artifact
 // (the same swappable stderr seam as the shadow warnings — stderr NEVER
 // stdout, the ACP discipline).
-func logPluginSkip(format string, args ...any) {
+func logPluginSkipf(format string, args ...any) {
 	shadowWarnLogger.Warn("plugin skip: " + fmt.Sprintf(format, args...))
 }
 
@@ -791,7 +812,7 @@ func logPluginSkip(format string, args ...any) {
 type toolsList []string
 
 // UnmarshalYAML implements the tolerant list decoding.
-func (t *toolsList) UnmarshalYAML(node *yaml.Node) error { //nolint:cyclop // one switch over node kinds
+func (t *toolsList) UnmarshalYAML(node *yaml.Node) error {
 	switch node.Kind {
 	case yaml.SequenceNode:
 		out := make([]string, 0, len(node.Content))
@@ -820,8 +841,10 @@ func (t *toolsList) UnmarshalYAML(node *yaml.Node) error { //nolint:cyclop // on
 		*t = nil
 
 		return nil
+	case yaml.DocumentNode, yaml.MappingNode, yaml.AliasNode:
+		return errToolsFieldShape
 	default:
-		return fmt.Errorf("tools field is not a list or scalar")
+		return errToolsFieldShape
 	}
 }
 
@@ -1190,8 +1213,8 @@ func (r Registry) AllCommands() []Command {
 // AllPlugins returns the registry's plugins sorted by name (deterministic).
 func (r Registry) AllPlugins() []Plugin {
 	out := make([]Plugin, 0, len(r.Plugins))
-	for _, p := range r.Plugins {
-		out = append(out, p)
+	for name := range r.Plugins {
+		out = append(out, r.Plugins[name])
 	}
 
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
@@ -1262,13 +1285,8 @@ func Discover(projectDir string) (Registry, []ServerConfig, error) {
 
 	// Merge: plugin servers first (lowest), user-scope over them.
 	merged := make(map[string]ServerConfig, len(pluginMCP)+len(userMCP))
-	for name, sc := range pluginMCP {
-		merged[name] = sc
-	}
-
-	for name, sc := range userMCP {
-		merged[name] = sc
-	}
+	maps.Copy(merged, pluginMCP)
+	maps.Copy(merged, userMCP)
 
 	servers := make([]ServerConfig, 0, len(merged))
 	for _, sc := range merged {

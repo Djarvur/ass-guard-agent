@@ -1,10 +1,13 @@
-// The Claude-Code hook runner (12-02 Task 4): plugin-bundled hooks/hooks.json
-// entries fire at the mapped lifecycle seams with the documented stdin-JSON /
-// stdout / exit-code semantics. Hooks are operator-installed config executing
-// operator-chosen commands — the SAME trust tier as the hook-DAG (the standing
-// safety model); the exit-2 PreToolUse refusal is a policy channel, NOT a new
-// confirmation tier. Every firing is bounded and never fatal (AUD-03: a hook
-// failure is an audit-loud stderr skip, logged through the swappable seam).
+// The Claude-Code hook runner (12-02 Task 4) lives here: plugin-bundled
+// hooks/hooks.json entries fire at the mapped lifecycle seams with the
+// documented stdin-JSON / stdout / exit-code semantics. Hooks are
+// operator-installed config executing operator-chosen commands — the SAME
+// trust tier as the hook-DAG (the standing safety model); the exit-2
+// PreToolUse refusal is a policy channel, NOT a new confirmation tier. Every
+// firing is bounded and never fatal (AUD-03: a hook failure is an audit-loud
+// stderr skip, logged through the swappable seam). See the HookRunner doc and
+// doc.go (the package godoc) for the seam map.
+
 package ecosys
 
 import (
@@ -12,6 +15,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"regexp"
@@ -44,24 +49,40 @@ type HookOutcome struct {
 	Message string
 }
 
+// Hook event names and stdin-payload keys (goconst; the documented wire
+// vocabulary — never renamed).
+const (
+	hookEventPreToolUse       = "PreToolUse"
+	hookEventPostToolUse      = "PostToolUse"
+	hookEventUserPromptSubmit = "UserPromptSubmit"
+	hookEventStop             = "Stop"
+	hookEventSubagentStop     = "SubagentStop"
+	hookEventSessionStart     = "SessionStart"
+	hookEventSessionEnd       = "SessionEnd"
+
+	keyToolName     = "tool_name"
+	keyToolInput    = "tool_input"
+	keyToolResponse = "tool_response"
+)
+
 // hookEventsMapped is the set of Claude-Code hook events ass-guard has a seam
 // for (12-02). Every other event name (Notification, PreCompact, future
 // additions) is UNMAPPED: it parses, warns, and degrades to observe-only —
 // documented, never silently ignored.
 var hookEventsMapped = map[string]bool{ //nolint:gochecknoglobals // immutable table
-	"PreToolUse":       true,
-	"PostToolUse":      true,
-	"UserPromptSubmit": true,
-	"Stop":             true,
-	"SubagentStop":     true,
-	"SessionStart":     true,
-	"SessionEnd":       true,
+	hookEventPreToolUse:       true,
+	hookEventPostToolUse:      true,
+	hookEventUserPromptSubmit: true,
+	hookEventStop:             true,
+	hookEventSubagentStop:     true,
+	hookEventSessionStart:     true,
+	hookEventSessionEnd:       true,
 }
 
 // hookToolEvents are the events whose matcher is a tool-name regex.
 var hookToolEvents = map[string]bool{ //nolint:gochecknoglobals // immutable table
-	"PreToolUse":  true,
-	"PostToolUse": true,
+	hookEventPreToolUse:  true,
+	hookEventPostToolUse: true,
 }
 
 // Runner bounds (T-12-02-03/T-12-02-06): the per-hook default timeout
@@ -70,6 +91,9 @@ var hookToolEvents = map[string]bool{ //nolint:gochecknoglobals // immutable tab
 const (
 	hookDefaultTimeoutSec = 60
 	hookOutputCap         = 30000
+
+	// hookRefusalExitCode is the documented blocking-refusal exit code.
+	hookRefusalExitCode = 2
 )
 
 // HookRunner executes Registry.Hooks at the mapped lifecycle seams:
@@ -115,7 +139,7 @@ func parseHooksJSON(path, pluginRoot string) []HookConfig {
 	}
 
 	if json.Unmarshal(data, &raw) != nil || len(raw.Hooks) == 0 {
-		logPluginSkip("malformed or empty hooks file %s (skipped)", path)
+		logPluginSkipf("malformed or empty hooks file %s (skipped)", path)
 
 		return nil
 	}
@@ -131,13 +155,13 @@ func parseHooksJSON(path, pluginRoot string) []HookConfig {
 
 	for _, ev := range events {
 		if !hookEventsMapped[ev] {
-			logPluginSkip("hooks %s: event %s has no ass-guard seam — observe-only", path, ev)
+			logPluginSkipf("hooks %s: event %s has no ass-guard seam — observe-only", path, ev)
 		}
 
 		for _, group := range raw.Hooks[ev] {
 			for _, h := range group.Hooks {
 				if h.Type != "" && h.Type != "command" {
-					logPluginSkip("hooks %s: unsupported hook type %q (skipped)", path, h.Type)
+					logPluginSkipf("hooks %s: unsupported hook type %q (skipped)", path, h.Type)
 
 					continue
 				}
@@ -155,6 +179,75 @@ func parseHooksJSON(path, pluginRoot string) []HookConfig {
 	}
 
 	return out
+}
+
+// Fire executes every hook bound to event. fields carry the event-specific
+// payload entries (tool_name/tool_input/tool_response/prompt). Multiple
+// hooks' stdout concatenates into Message (context events); an exit-2
+// PreToolUse refusal flips Proceed to false with the hook's stderr as
+// Message. Never returns on the failure paths — every degradation is a
+// warned skip with Proceed intact.
+func (r *HookRunner) Fire(ctx context.Context, event string, fields map[string]any) HookOutcome {
+	if r == nil || len(r.Hooks) == 0 {
+		return HookOutcome{Proceed: true}
+	}
+
+	if !hookEventsMapped[event] {
+		logPluginSkipf("hook event %s is unmapped in ass-guard — observe-only (nothing fired)", event)
+
+		return HookOutcome{Proceed: true}
+	}
+
+	toolName, _ := fields[keyToolName].(string)
+
+	out := HookOutcome{Proceed: true}
+
+	var sb strings.Builder
+
+	matches := r.matchingHooks(event, toolName)
+
+	for i := range matches {
+		res := r.runOne(ctx, &matches[i], event, fields)
+
+		switch {
+		case res.refused && event == "PreToolUse":
+			// The ONE blocking semantic (operator policy channel): the call
+			// is refused with the hook's message as the tool result.
+			return HookOutcome{Proceed: false, Message: res.message}
+		case res.refused:
+			// Exit 2 on a non-tool event has no blocking seam — warn + proceed.
+			logPluginSkipf("hook [%s] exit 2 has no blocking seam here (ignored): %s", event, res.message)
+		case res.stdout != "":
+			sb.WriteString(res.stdout)
+		}
+	}
+
+	out.Message = sb.String()
+
+	return out
+}
+
+// PreToolUse implements the coreexec.ToolHooks seam: consults the hook table
+// BEFORE the tool runs; (false, message) refuses the call.
+func (r *HookRunner) PreToolUse( //nolint:nonamedreturns // implements the coreexec.ToolHooks pair
+	ctx context.Context, toolName string, input json.RawMessage,
+) (proceed bool, message string) {
+	out := r.Fire(ctx, hookEventPreToolUse, map[string]any{
+		keyToolName:  toolName,
+		keyToolInput: input,
+	})
+
+	return out.Proceed, out.Message
+}
+
+// PostToolUse implements the coreexec.ToolHooks seam: observes the completed
+// result (never blocks).
+func (r *HookRunner) PostToolUse(ctx context.Context, toolName string, input, output json.RawMessage) {
+	_ = r.Fire(ctx, hookEventPostToolUse, map[string]any{
+		keyToolName:     toolName,
+		keyToolInput:    input,
+		keyToolResponse: output,
+	})
 }
 
 // matchingHooks returns the hooks bound to event that match toolName (the
@@ -182,7 +275,7 @@ func (r *HookRunner) matchingHooks(event, toolName string) []HookConfig {
 
 		re, err := regexp.Compile(h.Matcher)
 		if err != nil {
-			logPluginSkip("hooks %s: invalid matcher %q (%v) — hook never fires", h.Path, h.Matcher, err)
+			logPluginSkipf("hooks %s: invalid matcher %q (%v) — hook never fires", h.Path, h.Matcher, err)
 
 			continue
 		}
@@ -193,71 +286,6 @@ func (r *HookRunner) matchingHooks(event, toolName string) []HookConfig {
 	}
 
 	return out
-}
-
-// Fire executes every hook bound to event. fields carry the event-specific
-// payload entries (tool_name/tool_input/tool_response/prompt). Multiple
-// hooks' stdout concatenates into Message (context events); an exit-2
-// PreToolUse refusal flips Proceed to false with the hook's stderr as
-// Message. Never returns on the failure paths — every degradation is a
-// warned skip with Proceed intact.
-func (r *HookRunner) Fire(ctx context.Context, event string, fields map[string]any) HookOutcome {
-	if r == nil || len(r.Hooks) == 0 {
-		return HookOutcome{Proceed: true}
-	}
-
-	if !hookEventsMapped[event] {
-		logPluginSkip("hook event %s is unmapped in ass-guard — observe-only (nothing fired)", event)
-
-		return HookOutcome{Proceed: true}
-	}
-
-	toolName, _ := fields["tool_name"].(string)
-
-	out := HookOutcome{Proceed: true}
-
-	var sb strings.Builder
-
-	for _, h := range r.matchingHooks(event, toolName) {
-		res := r.runOne(ctx, h, event, fields)
-
-		switch {
-		case res.refused && event == "PreToolUse":
-			// The ONE blocking semantic (operator policy channel): the call
-			// is refused with the hook's message as the tool result.
-			return HookOutcome{Proceed: false, Message: res.message}
-		case res.refused:
-			// Exit 2 on a non-tool event has no blocking seam — warn + proceed.
-			logPluginSkip("hook [%s] exit 2 has no blocking seam here (ignored): %s", event, res.message)
-		case res.stdout != "":
-			sb.WriteString(res.stdout)
-		}
-	}
-
-	out.Message = sb.String()
-
-	return out
-}
-
-// PreToolUse implements the coreexec.ToolHooks seam: consults the hook table
-// BEFORE the tool runs; (false, message) refuses the call.
-func (r *HookRunner) PreToolUse(ctx context.Context, toolName string, input json.RawMessage) (bool, string) {
-	out := r.Fire(ctx, "PreToolUse", map[string]any{
-		"tool_name":  toolName,
-		"tool_input": input,
-	})
-
-	return out.Proceed, out.Message
-}
-
-// PostToolUse implements the coreexec.ToolHooks seam: observes the completed
-// result (never blocks).
-func (r *HookRunner) PostToolUse(ctx context.Context, toolName string, input, output json.RawMessage) {
-	_ = r.Fire(ctx, "PostToolUse", map[string]any{
-		"tool_name":     toolName,
-		"tool_input":    input,
-		"tool_response": output,
-	})
 }
 
 // hookExecResult is one hook execution's classification.
@@ -273,7 +301,7 @@ type hookExecResult struct {
 // expansion vehicle for bundled scripts), the documented stdin JSON, a
 // per-hook timeout (default 60s), and capped output capture. Every failure
 // path warns through the stderr seam and proceeds (never fatal).
-func (r *HookRunner) runOne(ctx context.Context, h HookConfig, event string, fields map[string]any) hookExecResult {
+func (r *HookRunner) runOne(ctx context.Context, h *HookConfig, event string, fields map[string]any) hookExecResult {
 	timeoutSec := h.TimeoutSec
 	if timeoutSec <= 0 {
 		timeoutSec = hookDefaultTimeoutSec
@@ -284,7 +312,7 @@ func (r *HookRunner) runOne(ctx context.Context, h HookConfig, event string, fie
 
 	payload, err := r.buildPayload(event, fields)
 	if err != nil {
-		logPluginSkip("hook [%s] payload build failed (skipped): %v", event, err)
+		logPluginSkipf("hook [%s] payload build failed (skipped): %v", event, err)
 
 		return hookExecResult{}
 	}
@@ -300,6 +328,7 @@ func (r *HookRunner) runOne(ctx context.Context, h HookConfig, event string, fie
 	cmd.Stdin = bytes.NewReader(payload)
 
 	var stdout, stderr bytes.Buffer
+
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
@@ -310,36 +339,41 @@ func (r *HookRunner) runOne(ctx context.Context, h HookConfig, event string, fie
 	// parented to init and never blocks this path — the Wait already
 	// returned).
 	if tctx.Err() != nil {
-		logPluginSkip("hook [%s] timeout after %ds (skipped): %s", event, timeoutSec, h.Command)
+		logPluginSkipf("hook [%s] timeout after %ds (skipped): %s", event, timeoutSec, h.Command)
 
 		return hookExecResult{}
 	}
 
-	if runErr != nil {
-		var exitErr *exec.ExitError
-		if errors.As(runErr, &exitErr) {
-			switch exitErr.ExitCode() {
-			case 2:
-				msg := capHookOutput(stderr.String())
-				if msg == "" {
-					msg = capHookOutput(stdout.String())
-				}
+	return classifyHookRun(event, runErr, stdout.String(), stderr.String())
+}
 
-				return hookExecResult{refused: true, message: msg}
-			default:
-				logPluginSkip("hook [%s] exited %d (skipped): %s", event, exitErr.ExitCode(),
-					capHookOutput(stderr.String()))
+// classifyHookRun maps a finished hook command's outcome to the documented
+// semantics: exit 2 refuses (stderr as the message, stdout fallback); any
+// other failure warns and skips; success captures (capped) stdout.
+func classifyHookRun(event string, runErr error, stdout, stderr string) hookExecResult {
+	if runErr == nil {
+		return hookExecResult{stdout: capHookOutput(stdout)}
+	}
 
-				return hookExecResult{}
-			}
+	var exitErr *exec.ExitError
+	if !errors.As(runErr, &exitErr) {
+		logPluginSkipf("hook [%s] failed to start (skipped): %v", event, runErr)
+
+		return hookExecResult{}
+	}
+
+	if exitErr.ExitCode() == hookRefusalExitCode {
+		msg := capHookOutput(stderr)
+		if msg == "" {
+			msg = capHookOutput(stdout)
 		}
 
-		logPluginSkip("hook [%s] failed to start (skipped): %v", event, runErr)
-
-		return hookExecResult{}
+		return hookExecResult{refused: true, message: msg}
 	}
 
-	return hookExecResult{stdout: capHookOutput(stdout.String())}
+	logPluginSkipf("hook [%s] exited %d (skipped): %s", event, exitErr.ExitCode(), capHookOutput(stderr))
+
+	return hookExecResult{}
 }
 
 // buildPayload renders the documented stdin JSON: the base fields
@@ -353,11 +387,14 @@ func (r *HookRunner) buildPayload(event string, fields map[string]any) ([]byte, 
 		"hook_event_name": event,
 	}
 
-	for k, v := range fields {
-		payload[k] = v
+	maps.Copy(payload, fields)
+
+	out, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("ecosys: marshal hook payload: %w", err)
 	}
 
-	return json.Marshal(payload)
+	return out, nil
 }
 
 // sanitizedHookEnv is the minimal hook environment: PATH + HOME only, plus

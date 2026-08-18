@@ -31,14 +31,14 @@ func TestHooksParseFromFixture(t *testing.T) {
 		byEvent[h.Event] = append(byEvent[h.Event], h)
 	}
 
-	require.NotEmpty(t, byEvent["PreToolUse"], "PreToolUse hooks must parse")
+	require.NotEmpty(t, byEvent[hookEventPreToolUse], "PreToolUse hooks must parse")
 	pre := byEvent["PreToolUse"][0]
 	assert.Equal(t, "Bash", pre.Matcher)
 	assert.Equal(t, "echo fixture-pretool", pre.Command)
 	assert.Equal(t, 5, pre.TimeoutSec)
 	assert.Contains(t, pre.Path, "hooks", "provenance names the hooks.json")
 
-	require.NotEmpty(t, byEvent["PostToolUse"], "PostToolUse hooks must parse")
+	require.NotEmpty(t, byEvent[hookEventPostToolUse], "PostToolUse hooks must parse")
 	assert.Equal(t, ".*", byEvent["PostToolUse"][0].Matcher, "regex matcher preserved verbatim")
 
 	// Unmapped events parse (observe-only) and warn.
@@ -57,22 +57,22 @@ func TestHookMatcher(t *testing.T) {
 	t.Parallel()
 
 	r := NewHookRunner([]HookConfig{
-		{Event: "PreToolUse", Matcher: "Bash|^Edit", Command: "echo matched"},
-		{Event: "PreToolUse", Matcher: "", Command: "echo catchall"},
+		{Event: hookEventPreToolUse, Matcher: toolBash + "|^Edit", Command: "echo matched"},
+		{Event: hookEventPreToolUse, Matcher: "", Command: "echo catchall"},
 	}, "s", t.TempDir(), "")
 
 	cases := map[string]int{ // tool → matching hook count
-		"Bash":  2, // the regex AND the catchall
-		"Edit":  2,
-		"Read":  1, // catchall only
-		"Fetch": 1,
+		toolBash: 2, // the regex AND the catchall
+		"Edit":   2,
+		toolRead: 1, // catchall only
+		"Fetch":  1,
 	}
 
 	for tool, want := range cases {
-		assert.Len(t, r.matchingHooks("PreToolUse", tool), want, "tool %s", tool)
+		assert.Len(t, r.matchingHooks(hookEventPreToolUse, tool), want, "tool %s", tool)
 	}
 
-	assert.Empty(t, r.matchingHooks("UserPromptSubmit", ""),
+	assert.Empty(t, r.matchingHooks(hookEventUserPromptSubmit, ""),
 		"hooks bound to tool events do not fire on non-tool events")
 }
 
@@ -87,7 +87,7 @@ func TestPreToolUseStdinAndExitRouting(t *testing.T) {
 	work := t.TempDir()
 
 	r := NewHookRunner([]HookConfig{
-		{Event: "PreToolUse", Matcher: "Bash", Command: "cat"},
+		{Event: hookEventPreToolUse, Matcher: toolBash, Command: "cat"},
 	}, "sess-1", work, "/transcript/audit.jsonl")
 
 	proceed, payload := r.PreToolUse(context.Background(), toolBash, json.RawMessage(`{"command":"ls"}`))
@@ -96,8 +96,8 @@ func TestPreToolUseStdinAndExitRouting(t *testing.T) {
 
 	for _, field := range []string{
 		`"session_id":"sess-1"`,
-		`"hook_event_name":"PreToolUse"`,
-		`"tool_name":"Bash"`,
+		`"hook_event_name":"` + hookEventPreToolUse + `"`,
+		`"` + keyToolName + `":"` + toolBash + `"`,
 		`"command":"ls"`,
 		`"cwd":"` + work + `"`,
 		`"transcript_path":"/transcript/audit.jsonl"`,
@@ -107,7 +107,7 @@ func TestPreToolUseStdinAndExitRouting(t *testing.T) {
 
 	// Exit 2 → refusal with the hook's stderr as the message.
 	r2 := NewHookRunner([]HookConfig{
-		{Event: "PreToolUse", Matcher: "Bash", Command: `echo refuse-reason >&2; exit 2`},
+		{Event: hookEventPreToolUse, Matcher: toolBash, Command: `echo refuse-reason >&2; exit 2`},
 	}, "sess-1", work, "")
 
 	proceed, msg := r2.PreToolUse(context.Background(), toolBash, json.RawMessage(`{}`))
@@ -121,18 +121,18 @@ func TestPostToolUsePayload(t *testing.T) {
 	t.Parallel()
 
 	r := NewHookRunner([]HookConfig{
-		{Event: "PostToolUse", Matcher: "Bash", Command: "cat"},
+		{Event: hookEventPostToolUse, Matcher: toolBash, Command: "cat"},
 	}, "s", t.TempDir(), "")
 
-	out := r.Fire(context.Background(), "PostToolUse", map[string]any{
-		"tool_name":     toolBash,
-		"tool_input":    json.RawMessage(`{"command":"ls"}`),
-		"tool_response": json.RawMessage(`"file.txt"`),
+	out := r.Fire(context.Background(), hookEventPostToolUse, map[string]any{
+		keyToolName:     toolBash,
+		keyToolInput:    json.RawMessage(`{"command":"ls"}`),
+		keyToolResponse: json.RawMessage(`"file.txt"`),
 	})
 
 	assert.True(t, out.Proceed, "PostToolUse never blocks")
-	assert.Contains(t, out.Message, `"tool_name":"Bash"`)
-	assert.Contains(t, out.Message, `"tool_response":"file.txt"`,
+	assert.Contains(t, out.Message, `"`+keyToolName+`":"`+toolBash+`"`)
+	assert.Contains(t, out.Message, `"`+keyToolResponse+`":"file.txt"`,
 		"the payload carries the tool output as tool_response")
 }
 
@@ -149,29 +149,31 @@ func TestHookBoundaries(t *testing.T) {
 
 	// Env sanitized: `env` output lacks the planted var; CLAUDE_PLUGIN_ROOT set.
 	r := NewHookRunner([]HookConfig{
-		{Event: "UserPromptSubmit", Command: "env", PluginRoot: "/plug/root"},
+		{Event: hookEventUserPromptSubmit, Command: "env", PluginRoot: "/plug/root"},
 	}, "s", work, "")
 
-	out := r.Fire(context.Background(), "UserPromptSubmit", map[string]any{"prompt": "hi"})
+	out := r.Fire(context.Background(), hookEventUserPromptSubmit, map[string]any{"prompt": "hi"})
 	assert.NotContains(t, out.Message, "HOOKTEST_SECRET", "sanitized env must not leak parent vars")
 	assert.Contains(t, out.Message, "CLAUDE_PLUGIN_ROOT=/plug/root",
 		"CLAUDE_PLUGIN_ROOT must be exported to the hook env")
 
 	// cwd is the session workdir.
-	r2 := NewHookRunner([]HookConfig{{Event: "UserPromptSubmit", Command: "pwd"}}, "s", work, "")
-	assert.Contains(t, r2.Fire(context.Background(), "UserPromptSubmit", nil).Message, work,
+	r2 := NewHookRunner([]HookConfig{{Event: hookEventUserPromptSubmit, Command: "pwd"}}, "s", work, "")
+	assert.Contains(t, r2.Fire(context.Background(), hookEventUserPromptSubmit, nil).Message, work,
 		"the hook runs with cwd = the session workdir")
 
 	// Output size cap.
-	r3 := NewHookRunner([]HookConfig{{Event: "UserPromptSubmit", Command: "head -c 200000 /dev/zero"}}, "s", work, "")
-	capped := r3.Fire(context.Background(), "UserPromptSubmit", nil)
+	r3 := NewHookRunner(
+		[]HookConfig{{Event: hookEventUserPromptSubmit, Command: "head -c 200000 /dev/zero"}}, "s", work, "")
+	capped := r3.Fire(context.Background(), hookEventUserPromptSubmit, nil)
 	assert.LessOrEqual(t, len(capped.Message), hookOutputCap+2, "output must be size-capped")
 
 	// Timeout: a hanging hook is skipped with a warning, never fatal.
 	buf.Reset()
 
-	r4 := NewHookRunner([]HookConfig{{Event: "UserPromptSubmit", Command: "sleep 30", TimeoutSec: 1}}, "s", work, "")
-	timed := r4.Fire(context.Background(), "UserPromptSubmit", nil)
+	r4 := NewHookRunner(
+		[]HookConfig{{Event: hookEventUserPromptSubmit, Command: "sleep 30", TimeoutSec: 1}}, "s", work, "")
+	timed := r4.Fire(context.Background(), hookEventUserPromptSubmit, nil)
 
 	assert.True(t, timed.Proceed, "a timed-out hook must never block the turn")
 	assert.Contains(t, buf.String(), "timeout", "the timeout skip warns (audit-loud)")
@@ -179,8 +181,8 @@ func TestHookBoundaries(t *testing.T) {
 	// A failing hook (exit 1) also proceeds with a warning.
 	buf.Reset()
 
-	r5 := NewHookRunner([]HookConfig{{Event: "UserPromptSubmit", Command: "exit 1"}}, "s", work, "")
-	failed := r5.Fire(context.Background(), "UserPromptSubmit", nil)
+	r5 := NewHookRunner([]HookConfig{{Event: hookEventUserPromptSubmit, Command: "exit 1"}}, "s", work, "")
+	failed := r5.Fire(context.Background(), hookEventUserPromptSubmit, nil)
 
 	assert.True(t, failed.Proceed, "a failed hook must never block the turn")
 	assert.Contains(t, buf.String(), "hook", "the failure skip warns")
@@ -188,7 +190,7 @@ func TestHookBoundaries(t *testing.T) {
 
 // TestUnmappedEventObserveOnly verifies firing an unmapped event is a warned
 // no-op (parse + log + degrade — never silently ignored).
-func TestUnmappedEventObserveOnly(t *testing.T) {
+func TestUnmappedEventObserveOnly(t *testing.T) { //nolint:paralleltest // mutates the package logger seam
 	buf := captureShadowLogger(t)
 
 	r := NewHookRunner([]HookConfig{
@@ -204,7 +206,7 @@ func TestUnmappedEventObserveOnly(t *testing.T) {
 
 // TestFireNeverPanics verifies a hook whose binary is missing degrades to a
 // warning (the registry keeps loading; the turn proceeds).
-func TestFireNeverPanics(t *testing.T) {
+func TestFireNeverPanics(t *testing.T) { //nolint:paralleltest // mutates the package logger seam
 	buf := captureShadowLogger(t)
 
 	r := NewHookRunner([]HookConfig{
