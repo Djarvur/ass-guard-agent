@@ -159,3 +159,80 @@ func TestDiscoverAccessorsDeterministic(t *testing.T) {
 	assert.Equal(t, "zeta", skills[1].Name)
 	assert.Empty(t, servers) // no ~/.claude.json in the temp home
 }
+
+// snapshotTree records path → {content, modtime} for every regular file under
+// root (the write-boundary comparison base).
+func snapshotTree(t *testing.T, root string) map[string]string {
+	t.Helper()
+
+	out := map[string]string{}
+
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if d.IsDir() {
+			return nil
+		}
+
+		info, serr := d.Info()
+		if serr != nil {
+			return serr
+		}
+
+		data, rerr := os.ReadFile(path)
+		if rerr != nil {
+			return rerr
+		}
+
+		rel, _ := filepath.Rel(root, path)
+		out[rel] = string(data) + "|" + info.ModTime().String()
+
+		return nil
+	})
+	require.NoError(t, err)
+
+	return out
+}
+
+// TestDiscoverWritesNothing (12-02 Task 2, Test 3 — the write-boundary proof)
+// runs a FULL Discover over fixture plugin roots + temp `.claude`/`.ass-guard`
+// trees and asserts NOTHING is written under any probed root: every file's
+// content AND mtime are byte-identical after the pass, and no new files
+// appeared. Discovery is read-only everywhere — the ~/.claude redline extended
+// to the plugin pass (T-12-02-05).
+func TestDiscoverWritesNothing(t *testing.T) {
+	buf := captureShadowLogger(t) // keep warning output out of stderr noise
+
+	tmpHome := t.TempDir()
+	t.Setenv("HOME", tmpHome)
+
+	userClaude := filepath.Join(tmpHome, claudeDirName)
+	userPlugins := filepath.Join(userClaude, pluginsDirName)
+
+	proj := t.TempDir()
+	projClaude := filepath.Join(proj, claudeDirName)
+	projPlugins := filepath.Join(projClaude, pluginsDirName)
+
+	// Populate every root kind the pass probes.
+	writeSkill(t, userClaude, "u-skill", "user skill", nil)
+	writeCommand(t, userClaude, "u-cmd", "user cmd", "body")
+	writeInstalledSkillPlugin(t, userPlugins, "mkt-u", "plug-u", "1.0.0", "user", "u-skill", "user skill")
+	copyTree(t, installedFixture, projPlugins)
+	writeSkill(t, projClaude, "p-skill", "project skill", nil)
+	writeSkill(t, filepath.Join(proj, assguardDirName), "a-skill", "assguard skill", nil)
+
+	_ = buf
+
+	beforeHome := snapshotTree(t, tmpHome)
+	beforeProj := snapshotTree(t, proj)
+
+	_, _, err := Discover(proj)
+	require.NoError(t, err)
+
+	assert.Equal(t, beforeHome, snapshotTree(t, tmpHome),
+		"the user home tree (incl. ~/.claude/plugins/) must be untouched — content AND mtimes")
+	assert.Equal(t, beforeProj, snapshotTree(t, proj),
+		"the project tree (incl. .claude/plugins/) must be untouched — content AND mtimes")
+}
