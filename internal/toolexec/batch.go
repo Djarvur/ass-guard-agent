@@ -61,20 +61,24 @@ func MaxConcurrent(n int) BatchOpt {
 	}
 }
 
-// DispatchBatch runs the calls: read-only calls run concurrently (bounded by
-// MaxConcurrent), mutating calls run strictly sequentially relative to each
-// other (D-21 — the Phase-2 D-19 mutability field drives the classification).
-// Results are returned in ARRIVAL ORDER (CallIndex matches the input index).
+// DispatchBatch runs the calls: pool-eligible calls run concurrently (bounded
+// by MaxConcurrent), serialized calls run strictly sequentially relative to
+// each other. Serialization membership (14-06/EARLY-06): a MUTATING call
+// (D-21 — the Phase-2 D-19 mutability field) OR a read-only call DECLARED
+// concurrency_safe=false (the 14-06 annotation) runs alone-in-slot. Results
+// are returned in ARRIVAL ORDER (CallIndex matches the input index).
 //
-// A mutating call NEVER overlaps ANY other call (neither read-only nor
-// mutating) — it is alone in its serialization slot: DispatchBatch waits for
-// all read-only goroutines to drain, then runs mutating calls one at a time,
-// waiting for each to finish before the next.
+// A serialized call NEVER overlaps ANY other call (neither pooled nor
+// serialized) — it is alone in its slot: DispatchBatch waits for all pooled
+// goroutines to drain, then runs serialized calls one at a time, waiting for
+// each to finish before the next. The concurrency_safe declaration can only
+// REMOVE a read-only tool from the pool — it can never add a mutating one
+// (the D-21 floor is enforced independently of the flag, T-14-19).
 //
 // An unknown tool (not in the catalog, not config-added) is treated as
-// read-only by default and dispatched; its executor surfaces the error in the
-// result (IsError=true). ctx cancellation aborts in-flight calls (the read-only
-// semaphore acquire + the mutating loop both respect ctx).
+// read-only and pool-eligible by default and dispatched; its executor surfaces
+// the error in the result (IsError=true). ctx cancellation aborts in-flight
+// calls (the pool's semaphore acquire + the serialized loop both respect ctx).
 //
 // Every call — pooled or serialized — is wrapped in its OWN context deadline
 // derived from the tool's timeout_ms annotation (default
@@ -103,17 +107,17 @@ func DispatchBatch(
 		call provider.ToolCall
 	}
 
-	var readOnly, mutating []indexed
+	var readOnly, serialized []indexed
 
 	for i, c := range calls {
-		if isMutating(c.Name, catalog) {
-			mutating = append(mutating, indexed{idx: i, call: c})
+		if isAloneInSlot(c.Name, catalog) {
+			serialized = append(serialized, indexed{idx: i, call: c})
 		} else {
 			readOnly = append(readOnly, indexed{idx: i, call: c})
 		}
 	}
 
-	// Read-only calls: spawn all goroutines immediately; the semaphore bounds
+	// Pool calls: spawn all goroutines immediately; the semaphore bounds
 	// concurrency, not goroutine count (typical batches are small). Each
 	// goroutine acquires a slot (ctx-aware), executes, writes its OWN results
 	// slot, releases. No shared slot ⇒ no synchronization beyond the semaphore.
@@ -140,13 +144,14 @@ func DispatchBatch(
 		}(ro)
 	}
 
-	// Wait for all read-only calls to drain before the first mutating call so
-	// each mutating call is provably alone in its slot (D-21 invariant).
+	// Wait for all pool calls to drain before the first serialized call so
+	// each serialized call is provably alone in its slot (D-21 invariant).
 	wg.Wait()
 
-	// Mutating calls: strictly sequential, each one alone. ctx checked before
-	// every call so a cancel surfaces promptly without deadlock.
-	for _, m := range mutating {
+	// Serialized calls (mutating + declared concurrency_safe=false): strictly
+	// sequential, each one alone. ctx checked before every call so a cancel
+	// surfaces promptly without deadlock.
+	for _, m := range serialized {
 		err := ctx.Err()
 		if err != nil {
 			results[m.idx] = ToolResult{CallIndex: m.idx, Name: m.call.Name, Err: err, IsError: true}
@@ -159,6 +164,24 @@ func DispatchBatch(
 	}
 
 	return results, nil
+}
+
+// isAloneInSlot reports whether a call runs SERIALIZED (outside the parallel
+// pool): a mutating tool (the D-21 floor, enforced FIRST and independently of
+// any declaration) or a tool DECLARED concurrency_safe=false — the 14-06
+// annotation that removes a read-only tool from the pool (never adds a
+// mutating one, T-14-19). Unknown tools default to pool-eligible.
+func isAloneInSlot(name string, catalog *toolcat.Catalog) bool {
+	if catalog == nil {
+		return false
+	}
+
+	t, ok := catalog.Get(name)
+	if !ok {
+		return false
+	}
+
+	return t.IsMutating() || !t.IsConcurrencySafe()
 }
 
 // timeoutFor resolves a call's per-tool timeout backstop: the catalog entry's
@@ -250,20 +273,4 @@ func executeOne(ctx context.Context, exec toolcat.ToolExecutor, idx int, call pr
 	res.Output = out
 
 	return res
-}
-
-// isMutating reports whether name is a catalog-declared mutating tool. Unknown
-// tools default to read-only (D-21 — they cannot mutate anything ass-guard
-// tracks, and the model sees them in the catalog regardless).
-func isMutating(name string, catalog *toolcat.Catalog) bool {
-	if catalog == nil {
-		return false
-	}
-
-	t, ok := catalog.Get(name)
-	if !ok {
-		return false
-	}
-
-	return t.IsMutating()
 }

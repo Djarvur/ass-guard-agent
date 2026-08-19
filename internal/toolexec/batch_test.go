@@ -362,8 +362,11 @@ func (s *slowExec) snapshot() []execEvent {
 	return append([]execEvent(nil), s.events...)
 }
 
-// toolSlowRO is the fixture slow read-only tool name (14-06 timeout tests).
-const toolSlowRO = "SlowRO"
+// Fixture tool names (14-06 timeout/flag tests).
+const (
+	toolSlowRO  = "SlowRO"
+	toolFlagged = "FlaggedRO"
+)
 
 // annotatedCatalog registers tools carrying 14-06 contract annotations
 // (timeout_ms) beside the mutability field, the way coretools.json does.
@@ -554,16 +557,16 @@ func TestDispatchBatch_UsesConcurrencySafeFlag(t *testing.T) {
 
 	no := false
 	exec := &slowExec{sleep: map[string]time.Duration{
-		"FlaggedRO": 80 * time.Millisecond,
+		toolFlagged: 80 * time.Millisecond,
 		toolGrep:    80 * time.Millisecond,
 		toolRead:    80 * time.Millisecond,
 	}}
 	catalog := annotatedCatalog(
-		toolcat.Tool{Name: "FlaggedRO", Mutability: toolcat.MutabilityReadOnly, ConcurrencySafeOpt: &no},
+		toolcat.Tool{Name: toolFlagged, Mutability: toolcat.MutabilityReadOnly, ConcurrencySafeOpt: &no},
 		toolcat.Tool{Name: toolGrep, Mutability: toolcat.MutabilityReadOnly},
 		toolcat.Tool{Name: toolRead, Mutability: toolcat.MutabilityReadOnly},
 	)
-	calls := []provider.ToolCall{{Name: "FlaggedRO"}, {Name: toolGrep}, {Name: toolRead}}
+	calls := []provider.ToolCall{{Name: toolFlagged}, {Name: toolGrep}, {Name: toolRead}}
 
 	results, err := toolexec.DispatchBatch(context.Background(), exec, catalog, calls)
 	if err != nil {
@@ -585,7 +588,7 @@ func TestDispatchBatch_UsesConcurrencySafeFlag(t *testing.T) {
 
 	for i := range events {
 		switch events[i].name {
-		case "FlaggedRO":
+		case toolFlagged:
 			flagged = &events[i]
 		case toolGrep:
 			grep = &events[i]

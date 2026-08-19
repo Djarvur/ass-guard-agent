@@ -317,14 +317,17 @@ func TestIsErrorCorpusForm_ReadMissingFile(t *testing.T) {
 
 	dir := t.TempDir()
 
-	exec := ReadExecute(Config{WorkDir: dir})
-	out, err := exec(context.Background(), json.RawMessage(`{"file_path":"no-such-file.txt"}`))
+	stub := ReadExecute(Config{WorkDir: dir})
+
+	out, err := stub(context.Background(), json.RawMessage(`{"file_path":"no-such-file.txt"}`))
 	if err == nil {
 		t.Fatal("missing file must surface a non-nil error (IsError)")
 	}
 
 	var text string
-	if uErr := json.Unmarshal(out, &text); uErr != nil {
+
+	uErr := json.Unmarshal(out, &text)
+	if uErr != nil {
 		t.Fatalf("output not the captured plain-text form: %v (%s)", uErr, out)
 	}
 

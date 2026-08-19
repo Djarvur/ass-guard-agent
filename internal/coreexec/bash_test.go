@@ -319,14 +319,17 @@ func TestBash_FixtureConformance(t *testing.T) {
 func TestIsErrorCorpusForm_BashExitCode(t *testing.T) {
 	t.Parallel()
 
-	exec := BashExecute(Config{})
-	out, err := exec(context.Background(), json.RawMessage(`{"command":"exit 3"}`))
+	stub := BashExecute(Config{})
+
+	out, err := stub(context.Background(), json.RawMessage(`{"command":"exit 3"}`))
 	if err == nil {
 		t.Fatal("exit 3 must surface a non-nil error (IsError)")
 	}
 
 	var text string
-	if uErr := json.Unmarshal(out, &text); uErr != nil {
+
+	uErr := json.Unmarshal(out, &text)
+	if uErr != nil {
 		t.Fatalf("output not the captured plain-text form: %v (%s)", uErr, out)
 	}
 
