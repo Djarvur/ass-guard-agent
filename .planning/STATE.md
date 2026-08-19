@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: ACP Early Adoption
-current_phase: 14
-current_phase_name: adoption-readiness-analysis-dispositions
-status: executing
-stopped_at: Completed 14-06-PLAN.md (EARLY-06 tool contract — Phase 14 complete, 6/6)
-last_updated: "2026-08-19T22:05:08.541Z"
+current_phase: 12
+current_phase_name: product-functional-completeness
+status: ready
+stopped_at: Phase 14 closed 2026-08-19 (verification 39/39 — all four human items resolved: live rollback E2E PASS, shaper audit + compaction routing signed off, goal wording accepted; WINDOWS #4 fixed)
+last_updated: "2026-08-19T22:55:00.000Z"
 last_activity: 2026-08-19
-last_activity_desc: Replan — cb3ab50 new comparative data dispositioned against the adoption line (plan structure confirmed)
+last_activity_desc: Phase 14 close — operator session resolved the verification human items (live E2E + two sign-offs + format ruling)
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 33
   completed_plans: 23
 ---
@@ -22,17 +22,16 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-08-14)
 **Core value:** Outgoing requests to the model provider must be structurally indistinguishable from the mimicked agent's (zcode first) — *validated v1.0 (Phase-1 A/B parity)*
-**Current focus:** Phase 14 — adoption-readiness-analysis-dispositions
+**Current focus:** Phase 12 — product-functional-completeness (12-05 next; Phase 14 closed 2026-08-19)
 
 ## Current Position
 
-Phase: 14 (adoption-readiness-analysis-dispositions) — EXECUTING
-Plan: 6 of 6
-Status: Ready to execute
-Last activity: 2026-08-19 — Phase 14 execution started
-Next action: `/gsd:execute-phase 14` (6 plans checker-passed 2026-08-19: 0 blockers, revision `6b1d0fd` landed; wave 1 = 14-01 shadow-git checkpoints [tracer], 14-02 compaction verify, 14-03 pi↔shaper audit; wave 2 = 14-04 cache probe, 14-05 token economics, 14-06 tool contract), then 12-05 → 12-04 → 12-06 → **ADOPTION LINE** → 12-03 → 12-08 → 12-07 → 13. ONE residual open in WINDOWS.md + 12-*/deferred-items.md: timer-resume chunks not client-mirrored (route: 12-07).
+Phase: 12 (product-functional-completeness) — READY
+Plan: 12-05 next (2/8 executed: 12-01, 12-02 done)
+Status: Phase 14 CLOSED 2026-08-19 — verification pass 39/39; the four human items resolved in one operator session (gated live rollback E2E RUN+PASS with real GLM credentials — WINDOWS.md #4 fixed; pi↔shaper audit + compaction-decision routing signed off; MVP goal wording accepted as-is). Phase 13 already planned (4 plans checker-passed, 0 blockers — post-adoption).
+Next action: `/gsd:execute-phase 12` → 12-05 (re-record from live zcode via the archived driver kit — the forms harvest; consumes Phase 14's compaction-decision routing as confirmed) → 12-04 → 12-06 → **ADOPTION LINE** (the operator begins daily ACP use — v1.1's completion bar) → 12-03 → 12-08 → 12-07 → 13. Residuals open in WINDOWS.md: #3 timer-resume chunks not client-mirrored (route: 12-07), #5 standing cache-probe FAIL (flips green when the routed TextBlock cache_control fix lands — post-adoption).
 
-Progress: [█████░░░░░] 53%
+Progress: [███████░░░] 70% (23/33 plans · 4/5 phases)
 
 ## Performance Metrics
 

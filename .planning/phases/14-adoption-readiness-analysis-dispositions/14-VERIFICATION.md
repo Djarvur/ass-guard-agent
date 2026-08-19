@@ -1,15 +1,10 @@
 ---
 phase: 14-adoption-readiness-analysis-dispositions
 verified: 2026-08-19T21:21:36Z
-status: human_needed
-score: 38/39 must-haves verified
-behavior_unverified: 1 # Count of PRESENT_BEHAVIOR_UNVERIFIED truths (present + wired, behavior not exercised); detailed below
+status: pass
+score: 39/39 must-haves verified
+behavior_unverified: 0 # the live leg resolved 2026-08-19T22:41Z (see Human verification — resolved)
 overrides_applied: 0
-behavior_unverified_items:
-  - truth: "14-01 backstop truth: on the gated live demo leg, the user's .git is untouched by the shadow store across a REAL mutating model turn + restore (live evidence inspection)"
-    test: "Operator runs: ASSGUARD_CHECKPOINT_E2E=1 ZAI_API_KEY=<GLM key> go test ./cmd/ass-guard/... -run TestCheckpointLiveRollback_Gated -count=1 -v"
-    expected: "A real provider turn mutates a scratch git repo; Store.Restore returns the workspace byte-identical to pre-turn state; the user repo's HEAD ref, index bytes, and porcelain status are unchanged; evidence paths logged"
-    why_human: "Requires live operator credentials (ZAI_API_KEY) no verifier holds. The offline UserGitUntouched pair proves the invariant directly (ran green this verification), but the phase gate's 'live rollback demonstration' leg is dispositioned-not-run (WINDOWS.md #4, open) — presence checks cannot execute it"
 human_verification:
   - test: "Run the gated live rollback E2E (or explicitly accept the offline-evidence disposition already recorded in WINDOWS.md #4)"
     expected: "TestCheckpointLiveRollback_Gated PASSES with recorded evidence (transcript + ref list), closing WINDOWS.md entry #4 and the phase gate's 'live rollback demonstration' clause"
@@ -50,8 +45,8 @@ deferred:
 # Phase 14: Adoption Readiness (Analysis Dispositions) Verification Report
 
 **Phase Goal:** As the operator about to daily-drive ass-guard from an ACP editor, I want the one unrecoverable-risk backstop (workspace undo) and the two cheap evidence checks (compaction behavior, cache discipline) that the cross-agent analyses flagged, so that early adoption starts on a controllable, cost-predictable agent — not a leap of faith.
-**Verified:** 2026-08-19T21:21:36Z
-**Status:** human_needed
+**Verified:** 2026-08-19T21:21:36Z (human items resolved 2026-08-19T22:50Z — see the resolution addendum at the end)
+**Status:** pass (39/39) — human_needed items resolved by the operator; see "Human verification — resolved"
 **Re-verification:** No — initial verification
 
 ## MVP Mode Note
@@ -246,3 +241,23 @@ The phase goal — a controllable, cost-predictable agent, not a leap of faith �
 
 _Verified: 2026-08-19T21:21:36Z_
 _Verifier: ZCode (gsd-verifier)_
+
+## Human verification — resolved (2026-08-19T22:50Z, operator session)
+
+All four human items resolved; the report's `human_verification` list above is retained
+verbatim as the record of what was asked. Resolutions (detail in 14-UAT.md):
+
+1. **Gated live rollback E2E — RUN, PASS** (15.54s, exit 0). Real GLM turn mutated the
+   scratch repo; restore byte-identical; user `.git` HEAD/index/porcelain unchanged.
+   Evidence: `restoredRef=refs/checkpoints/sess-ckpt-live-turn-001`,
+   `transcript_sess-ckpt-live.jsonl` (entries=1), log `/tmp/ckpt-live-e2e.log`.
+   WINDOWS.md #4 → fixed. The 39th must-have is now behavior-verified.
+   (Environment note: the gated test stat-gates a project-layer `.ass-guard/config.yaml`;
+   an empty deep-merge-neutral marker was created — credentials still resolve from the
+   global layer + `$ZAI_API_KEY`, precedence unchanged.)
+2. **pi↔shaper audit** — ACCEPTED: classifications correct, zero-fix outcome legitimate.
+3. **Compaction-decision routing** — ACCEPTED: cache_control emission → post-adoption
+   queue (TIER-1); cross-turn span → 12-05; already-delivered dispositions stand.
+4. **MVP goal format** — ACCEPTED as-is (semantic slots present; validator over-literal).
+
+**Status:** pass (39/39) — Phase 14 closed 2026-08-19.
