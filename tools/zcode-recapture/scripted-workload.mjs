@@ -47,13 +47,14 @@ export const TOUR_TURNS = [
   {
     id: "tour_ask_non_answer",
     tools: ["AskUserQuestion"],
-    prefs: "autoResolve",
+    prefs: "holdPending",
     prompt: "Ask me ONE multiple-choice question about which logging library to add, wait for my selection, then act on it.",
   },
   {
     id: "tour_plan_mode",
     tools: ["EnterPlanMode", "ExitPlanMode"],
-    prompt: "Enter plan mode, then present a concise plan for adding a multiply(a, b) function to calc.js with a matching test, then exit plan mode.",
+    prefs: "answer",
+    prompt: "Use the EnterPlanMode tool NOW (do not answer in text), then explore briefly, then present a short plan for adding a multiply(a, b) function to calc.js via the ExitPlanMode tool.",
   },
   {
     id: "tour_subagent_message",
@@ -177,24 +178,31 @@ function seedWorkspace() {
   }
 }
 
-// Tour-pref driver options: "answer" answers user-input interactions with the
-// first option; "autoResolve" enables the runtime's ask auto-resolution (the
-// non-answer leg — the runtime itself renders the timeout result).
+// Tour-pref driver options. Interaction answers use the app-server's v4 answer
+// shape (verified live + in the 0.16.3 bundle: {action:"accept", content:{…}} —
+// anything else normalizes to decline/"Permission request failed"):
+//   "answer"      — accept user-input interactions with the first option's label
+//                   (answered-ask leg; plan approval accepts with empty content)
+//   "holdPending" — deliberately NEVER answer: the runtime's own 30s ask tool
+//                   timeout renders the non-answer form (the D-01 capture)
 function tourDriverOpts(prefs) {
-  if (prefs === "autoResolve") {
-    return { prefs: { askUserQuestionAutoResolutionEnabled: true }, env: { ZCODE_E2E_ASK_USER_QUESTION_CLOCK_SCALE: "0.05" } };
+  if (prefs === "holdPending") {
+    return {
+      prefs: { askUserQuestionAutoResolutionEnabled: false },
+      onUserInput: () => ({ __noreply: true }),
+    };
   }
   if (prefs === "answer") {
     return {
       prefs: { askUserQuestionAutoResolutionEnabled: false },
       onUserInput: (method, params) => {
-        console.log(`[tour] answering ${method}: ${JSON.stringify(params).slice(0, 300)}`);
-        // Best-effort first-option answer (the response schema is verified live;
-        // the log line above records the payload if the shape needs one fix).
-        const qs = params?.questions ?? params?.payload?.questions ?? [];
-        const q0 = qs[0]?.question ?? "";
-        const label = qs[0]?.options?.[0]?.label ?? "option 1";
-        return { answers: q0 ? { [q0]: label } : { 0: label } };
+        const s = JSON.stringify(params ?? {});
+        console.log(`[tour] answering ${method}: ${s.slice(0, 300)}`);
+        const isPlanApproval = (params?.schema?.interaction ?? "") === "plan_approval";
+        if (isPlanApproval) return { action: "accept", content: {} };
+        const qs = params?.questions ?? [];
+        const label = qs[0]?.options?.[0]?.label ?? "yes";
+        return { action: "accept", content: { answer: label } };
       },
     };
   }
@@ -223,8 +231,12 @@ async function resumeWithPin(sid, opts = {}) {
 }
 
 async function runTour(sid, t0) {
+  // --only id1,id2 filters the tour (the retry route for legs that missed).
+  const onlyIdx = process.argv.indexOf("--only");
+  const only = onlyIdx !== -1 ? new Set(process.argv[onlyIdx + 1].split(",")) : null;
   console.log("[tour] deferred-tools tour begins");
   for (const turn of TOUR_TURNS) {
+    if (only && !only.has(turn.id)) continue;
     const opts = tourDriverOpts(turn.prefs);
     const d = await resumeWithPin(sid, opts);
     try {
@@ -246,13 +258,41 @@ async function run() {
   const cfg = armConfigRestore();
   seedWorkspace();
 
+  // --session <sid>: retry mode — run ONLY the (--only-filtered) tour legs
+  // against an EXISTING session; the base workload + probe boundaries are
+  // skipped and the qualification check reads that session's rollout file.
+  const sessIdx = process.argv.indexOf("--session");
+  const retrySid = sessIdx !== -1 ? process.argv[sessIdx + 1] : null;
+
   const before = new Set(readdirSync(ROLLOUT));
   execSync("pkill -f probe-server.mjs || true");
-  cfg.setProbeServer(false); // leg A: clean catalog
-  console.log("[cfg] clean start (no probe)");
 
   const t0 = Date.now();
-  let sid;
+  let sid = retrySid;
+
+  if (retrySid) {
+    console.log(`[cfg] retry mode — tour legs only, session ${retrySid}`);
+  } else {
+    sid = await runBase(cfg);
+    if (!sid) throw new Error("base workload produced no session id");
+  }
+
+  // ---- Deferred-tools tour (12-05): same session, clean config ----
+  if (process.argv.includes("--tour")) {
+    await runTour(sid, t0);
+  }
+
+  cfg.restore();
+  execSync("pkill -f probe-server.mjs || true");
+
+  await finishQualification(before, sid);
+}
+
+// The 5-turn divergence-prone base workload + the attach/detach boundaries.
+async function runBase(cfg) {
+  cfg.setProbeServer(false); // leg A: clean catalog
+  console.log("[cfg] clean start (no probe)");
+  const t0 = Date.now();
   const a = new ZcodeDriver(WS, { onLog: () => {} });
   try {
     // ---- LEG A: clean catalog ----
@@ -298,14 +338,11 @@ async function run() {
     await c.stop();
   }
 
-  // ---- Deferred-tools tour (12-05): same session, clean config ----
-  if (process.argv.includes("--tour")) {
-    await runTour(sid, t0);
-  }
+  return sid;
+}
 
-  cfg.restore();
-  execSync("pkill -f probe-server.mjs || true");
-
+// The runbook §3 mechanical thresholds over the session's rollout file.
+async function finishQualification(before, sid) {
   // ---- Qualification check (harvest's mechanical thresholds) ----
   await new Promise((r) => setTimeout(r, 4000));
   const freshFiles = readdirSync(ROLLOUT).filter((f) => !before.has(f));

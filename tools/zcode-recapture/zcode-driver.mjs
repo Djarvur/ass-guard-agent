@@ -101,8 +101,14 @@ export class ZcodeDriver {
         this.send({ id, result: { nativeSearchEnhancementsEnabled: false, memoryEnabled: false, askUserQuestionAutoResolutionEnabled: false, ...this.prefs } });
       } else if (method === "interaction/requestUserInput" && this.onUserInput) {
         const result = this.onUserInput(method, msg.params ?? {});
-        this.onLog(`[driver] onUserInput replying ${method}: ${JSON.stringify(result).slice(0, 200)}`);
-        this.send({ id, result });
+        if (result && result.__noreply) {
+          // Deliberately leave the request pending (the ask-timeout leg: the
+          // runtime's own 30s tool timeout renders the non-answer form).
+          this.onLog(`[driver] onUserInput holding ${method} pending (no reply by design)`);
+        } else {
+          this.onLog(`[driver] onUserInput replying ${method}: ${JSON.stringify(result).slice(0, 200)}`);
+          this.send({ id, result });
+        }
       } else if (method.startsWith("interaction/")) {
         this.onLog(`[driver] auto-allowing ${method} ${JSON.stringify(msg.params).slice(0, 200)}`);
         this.send({ id, result: { outcome: { kind: "allow_once" } } });
