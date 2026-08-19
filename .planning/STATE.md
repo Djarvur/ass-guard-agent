@@ -5,15 +5,15 @@ milestone_name: ACP Early Adoption
 current_phase: 14
 current_phase_name: adoption-readiness-analysis-dispositions
 status: executing
-stopped_at: Completed 14-04-PLAN.md (EARLY-03 cache probe + drift warning)
-last_updated: "2026-08-19T19:12:48.743Z"
+stopped_at: "Completed 14-05-PLAN.md (EARLY-05 token economics: light-tier subagent routing + tool-output truncation)"
+last_updated: "2026-08-19T19:39:21.468Z"
 last_activity: 2026-08-19
 last_activity_desc: Replan — cb3ab50 new comparative data dispositioned against the adoption line (plan structure confirmed)
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 29
-  completed_plans: 21
+  completed_plans: 22
 ---
 
 # State: ass-guard-agent (working name)
@@ -27,12 +27,12 @@ See: .planning/PROJECT.md (updated 2026-08-14)
 ## Current Position
 
 Phase: 14 (adoption-readiness-analysis-dispositions) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 Status: Ready to execute
 Last activity: 2026-08-19 — Phase 14 execution started
 Next action: `/gsd:execute-phase 14` (6 plans checker-passed 2026-08-19: 0 blockers, revision `6b1d0fd` landed; wave 1 = 14-01 shadow-git checkpoints [tracer], 14-02 compaction verify, 14-03 pi↔shaper audit; wave 2 = 14-04 cache probe, 14-05 token economics, 14-06 tool contract), then 12-05 → 12-04 → 12-06 → **ADOPTION LINE** → 12-03 → 12-08 → 12-07 → 13. ONE residual open in WINDOWS.md + 12-*/deferred-items.md: timer-resume chunks not client-mirrored (route: 12-07).
 
-Progress: [█████░░░░░] 49%
+Progress: [█████░░░░░] 51%
 
 ## Performance Metrics
 
@@ -49,6 +49,7 @@ Progress: [█████░░░░░] 49%
 | Phase 14 P02 | 16min | 2 tasks | 6 files |
 | Phase 14 P03 | 12min | 3 tasks | 3 files |
 | Phase 14 P04 | 24min | 3 tasks | 5 files |
+| Phase 14 P05 | 25min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -165,6 +166,6 @@ Carried from v1.0 close — dispositioned into v1.1 scope:
 
 ## Session Continuity
 
-Last session: 2026-08-19T19:12:41.557Z
-Stopped at: Completed 14-04-PLAN.md (EARLY-03 cache probe + drift warning)
+Last session: 2026-08-19T19:39:21.409Z
+Stopped at: Completed 14-05-PLAN.md (EARLY-05 token economics: light-tier subagent routing + tool-output truncation)
 Resume file: None
