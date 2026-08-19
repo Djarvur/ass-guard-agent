@@ -166,7 +166,7 @@ Each task was committed atomically (TDD RED → GREEN):
 - **Fix:** extracted the table rows into named helpers; test consts for the repeated literals; U+20AC (€) instead of Han runes for the multibyte tail; index loop over Line; shortened messages; the house `//nolint:paralleltest // HOME pinned` pattern on the two wiring tests.
 - **Files modified:** internal/session/truncate_test.go, internal/session/subagent_test.go, cmd/ass-guard/subagent_tier_wiring_test.go
 - **Verification:** mise run ci exit 0
-- **Committed in:** 834c0d8 (Task 2 GREEN)
+- **Committed in:** 834c0d8 (Task 2 GREEN) + 1dfe00a (staging fix-up: the wiring test's final lint edits were initially left unstaged — caught by the post-plan tree check)
 
 ---
 
