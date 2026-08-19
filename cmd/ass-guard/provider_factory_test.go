@@ -279,7 +279,7 @@ func TestLoadSchedulingFactory_LegacyNameNeverRead(t *testing.T) { //nolint:para
 	require.NoError(t, err)
 	require.NotNil(t, factory)
 
-	require.Equal(t, "glm-5.2", cfg.Tiers["heavy"].Model,
+	require.Equal(t, "GLM-5.3", cfg.Tiers["heavy"].Model,
 		"the embedded floor serves — the legacy-named file was never read")
 
 	_, ok := cfg.Providers["gsentinel"]

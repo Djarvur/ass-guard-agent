@@ -57,8 +57,9 @@ exist and seeds it with the embedded defaults (DIST-03):
 - `profiles/zcode/` — the pre-seeded zcode mimicry profile (system prompts,
   tool catalog, identity headers, thinking + tool_choice).
 - `openspec.toml` — the OpenSpec handoff patterns skeleton.
-- `config.yaml` — the default model config (GLM-5.2 via the Z.ai
-  Anthropic endpoint).
+- `config.yaml` — the default model config (GLM-5.3 via the Z.ai
+  Anthropic endpoint, the pinned zcode capture's wire slug; glm-5.2 stays
+  as the declared heavy fallback).
 - `.gitignore` — a self-gitignoring file (`*\n!.gitignore\n`) so the seeded
   tree does not pollute your project's git status.
 

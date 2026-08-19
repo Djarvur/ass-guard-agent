@@ -1,7 +1,8 @@
 # defaults/config.yaml — the embedded zero-config floor (DIST-03). Loaded
 # first by Load(); global + per-project configs overlay it. Minimal-but-valid so
-# a fresh install with no config.yaml still resolves a tier (heavy → glm-5.2
-# via the Z.ai Anthropic endpoint, VERIFIED-FACTS #1).
+# a fresh install with no config.yaml still resolves a tier (heavy → GLM-5.3,
+# the pinned zcode capture's wire slug, via the Z.ai Anthropic endpoint,
+# VERIFIED-FACTS #1; profile re-pin 09-04/AUD-05, zcode 0.16.3).
 timezone: "UTC"
 
 providers:
@@ -11,6 +12,19 @@ providers:
     api_key_env: ZAI_API_KEY
 
 models:
+  # GLM-5.3 — the model the pinned zcode capture (09-04/AUD-05 re-pin) sends
+  # verbatim in request.body.model. The map key IS the wire slug the scheduler
+  # stamps onto the profile on Dispatch, so the casing is load-bearing
+  # (extract-profile records request.body.model verbatim — GLM-5.3, uppercase).
+  GLM-5.3:
+    provider: anthropic
+    # No verified public rate card for GLM-5.3 — priced 0.0 so cost accounting
+    # stays inert rather than fabricated; operators with a rate card override
+    # this in the global/project layer.
+    pricing: { input_per_mtoken: 0.0, output_per_mtoken: 0.0 }
+    # max_output_tokens = the pinned capture's request.body.max_tokens (128000).
+    # context_window carried over from the GLM-5.x family floor (glm-5.2: 200K).
+    capabilities: { context_window: 200000, max_output_tokens: 128000, tool_calling: true, streaming: true, extended_thinking: true }
   glm-5.2:
     provider: anthropic
     pricing: { input_per_mtoken: 0.60, output_per_mtoken: 2.20 }
@@ -18,8 +32,8 @@ models:
 
 tiers:
   heavy:
-    model: glm-5.2
-    fallback: []
+    model: GLM-5.3
+    fallback: [glm-5.2]
 
 circuit_breaker:
   consecutive_failures: 5

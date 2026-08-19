@@ -115,8 +115,14 @@ func TestLoadEmbeddedDefault(t *testing.T) {
 
 	cfg, err := Load()
 	require.NoError(t, err)
-	require.Equal(t, modelGLM52, cfg.Tiers[tierHeavy].Model)
-	require.Equal(t, providerAnthropic, cfg.Models[modelGLM52].Provider)
+	require.Equal(t, modelGLM53, cfg.Tiers[tierHeavy].Model,
+		"heavy primary must be the pinned capture's wire slug")
+	require.Equal(t, []string{modelGLM52}, cfg.Tiers[tierHeavy].Fallback,
+		"glm-5.2 stays as the declared fallback")
+	require.Equal(t, providerAnthropic, cfg.Models[modelGLM53].Provider)
+	require.Equal(t, 128000, cfg.Models[modelGLM53].Capabilities.MaxOutputTokens,
+		"max_output_tokens mirrors the pinned capture's request.body.max_tokens")
+	require.True(t, cfg.Models[modelGLM53].Capabilities.ToolCalling)
 }
 
 // TestValidateWarns_NoCredentialField asserts D-04's warn-not-reject: a
