@@ -273,7 +273,19 @@ The eval net its scenarios extend and the AskUserQuestion interactive-dead-end r
   3. The Phase-12 eval suites are extended with per-command scenario suites for the expanded matrix (pass@k, real binary, scratch project), running in the same re-run gate (OS-03)
 
 **Phase gate:** `mise ci` clean AND the expanded-matrix E2E green against the real binary (`ASSGUARD_OPENSPEC_BIN=1`, happy + fixable per command) AND chaining decisions evidenced in the audit trail (Phase-9 EngineDecision lines) AND the extended eval suites green in CI. No stub-only evidence closes this phase.
-**Plans:** TBD — dispatch `/gsd:plan-phase 13` after Phase 12 closes (context: this section, the Phase-8 chaining/provenance decisions in STATE.md, the openspec v1.5.0 installed-binary surface the Phase-8 adapter probe already pinned, and the 08-06 E2E harness as the template). Post-adoption continuation — follows the adoption line.
+**Plans:** 4 plans (planned 2026-08-19; PATTERNS ground truth + a planning-time live probe sharpened the profile bootstrap: the pinned v1.5.0 has NO named "expanded" preset — the switch is `profile: "custom"` + a `workflows` array in the global config, verified end-to-end in an isolated HOME with all 11 workflows installing)
+
+Plans:
+**Wave 1**
+
+- [ ] 13-01-PLAN.md — expanded-profile matrix E2E: the shared global-config guard in internal/evalharness (byte-exact save/restore, absent-key case), newOpsxMatrixRunner, all 6 happy legs with captured closings (D-03 pass 1) + all 6 fixable legs (D-01's 12-leg matrix; onboard idempotent re-run per D-08), the 6 [command_mutability] rows [OS-01] — THE phase tracer
+**Wave 2** *(13-02 blocked on 13-01's captures; 13-03 shares no files with 13-02 but the house runs sequential — no worktrees)*
+
+- [ ] 13-02-PLAN.md — zero-continue chaining pass 2: harvest-derived seed rows incl. the D-07 verify→fix handoff + terminal shields, per-chain zero-continue legs with audit-trail evidence (EngineDecision + CommandProvenance), structural-safety re-pin, D-06 flake policy [OS-02]
+- [ ] 13-03-PLAN.md — the D-02/D-05 advisory: question-shaped-ending classifier + Decide's unmatched cell (Action stays Nothing), post-turn session/update note from the in-hand emit (the timing hazard designed around), per-session+class dedupe on the ACP wrapper (engine stays stateless — the new-state disposition) [OS-02]
+**Wave 3** *(blocked on 13-02 — the suites assert chained flows)*
+
+- [ ] 13-04-PLAN.md — the six per-command eval suites (happy + fixable each, D-04) extending 12-08's net on the same re-run gate, with the expanded-profile guard wired into the scenario path + exact failure attribution [OS-03]
 
 ### Phase 14: Adoption Readiness (Analysis Dispositions)
 
@@ -336,7 +348,7 @@ Plans:
 | 9. Serve-Path Audit + zcode Parity Re-capture | v1.1 | 6/6 | Complete (verifier PASS; UAT 3/4 — parity re-baseline disposition accepted, live-serve audit witnessed, capture-method deviation stands; test 4 informational) | 2026-08-18 |
 | 12. Product Functional Completeness | v1.1 | 2/8 | In Progress|  |
 | 14. Adoption Readiness (Analysis Dispositions) | v1.1 | 6/6 | In Progress|  |
-| 13. OpenSpec Workflow Completion | v1.1 | 0 (planning dispatches when Phase 12 closes) | Not started (post-adoption) | - |
+| 13. OpenSpec Workflow Completion | v1.1 | 0/4 | Planned (2026-08-19; post-adoption — executes after Phase 12 closes) | - |
 | 10. Telegram Peer (Text + Voice) | v1.2 pool | 0/7 (plans preserved; 2026-08-17 execution attempt aborted — executor died ~15 min in, partial extraction WIP-preserved at 47f10b4 on the phase branch, untrusted) | Moved to v1.2 (2026-08-16) | - |
 | 11. dsh Mimicry Profile #2 | v1.2 pool | 0/7 (plans stale — replan required) | Moved to v1.2 (2026-08-16) | - |
 
