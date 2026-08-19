@@ -168,15 +168,24 @@ Legend: ✅ = we already implemented an equivalent · 📋 = in our plan (phase 
     a scheduled job polls the tracked target's release channel; on each new release it re-runs
     the full parity/EVAL gate and blocks on regression. One-shot capture becomes a living gate.
     Directly portable to Phase 8/12 EVAL-01..03. *(Cheapest high-value addition of the 2026-08-19
-    audit; source-verified in `ruvnet/open-claude-code/.github/workflows/nightly.yml`.)*
+    audit; source-verified in `ruvnet/open-claude-code/.github/workflows/nightly.yml`.
+    **Dispositioned 2026-08-19:** NOT pre-adoption — nothing here is a daily-use dead end; a
+    cheap target-version drift-warning slice enters Phase 14 as an EARLY-03 planning input
+    (the parity run already records `zcode_version` provenance); the full gate lands with
+    12-08's EVAL net (post-adoption); CI automation beyond that → v1.2.)*
 14. **Scheduler outcome store + feedback loop (occ cost-cascade).** Deterministic ladder
     (haiku→sonnet→opus with USD/MTok costs) + recorded per-task cost/latency/success; predictions
     blend stats over a complexity prior; quality bar 0.7; zero LLM calls — invariant-clean. Our
     audit bus already emits the needed events; this is a store + one engine hook (ECON extension).
+    *(**Dispositioned 2026-08-19:** v1.2 pool — needs accumulated usage data to matter, and the
+    pre-adoption economics slice is already EARLY-05.)*
 15. **Claude-Code surface census (occ + OpenClaude).** ~100 `CLAUDE_CODE_*` env vars
     (`v2/src/config/env.mjs`), 25 tool names, 6 permission-mode names, 4 MCP transport names —
     a free coverage manifest for toolcat/profile/config surfaces, companion to Claudecourse #11.
     Caveat: names are real (decompiled), behavioral depth varies (occ's LSP tool is an explicit stub).
+    *(**Dispositioned 2026-08-19:** ADOPTED as a verification input — Phase 14's EARLY-06 contract
+    inventory cross-checks it, and 12-06/12-07's catalog-completeness tests use it as a coverage
+    manifest; zero new requirement, zero scope growth.)*
 
 ## 🚫 Confirmations (the field validates our rejections)
 
