@@ -4,15 +4,15 @@ milestone: v1.1
 milestone_name: ACP Early Adoption
 current_phase: 14
 current_phase_name: adoption-readiness-analysis-dispositions
-status: verifying
+status: executing
 stopped_at: Completed 14-06-PLAN.md (EARLY-06 tool contract — Phase 14 complete, 6/6)
-last_updated: "2026-08-19T20:39:57.819Z"
+last_updated: "2026-08-19T22:05:08.541Z"
 last_activity: 2026-08-19
 last_activity_desc: Replan — cb3ab50 new comparative data dispositioned against the adoption line (plan structure confirmed)
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 29
+  total_plans: 33
   completed_plans: 23
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-08-14)
 
 Phase: 14 (adoption-readiness-analysis-dispositions) — EXECUTING
 Plan: 6 of 6
-Status: Phase complete — ready for verification
+Status: Ready to execute
 Last activity: 2026-08-19 — Phase 14 execution started
 Next action: `/gsd:execute-phase 14` (6 plans checker-passed 2026-08-19: 0 blockers, revision `6b1d0fd` landed; wave 1 = 14-01 shadow-git checkpoints [tracer], 14-02 compaction verify, 14-03 pi↔shaper audit; wave 2 = 14-04 cache probe, 14-05 token economics, 14-06 tool contract), then 12-05 → 12-04 → 12-06 → **ADOPTION LINE** → 12-03 → 12-08 → 12-07 → 13. ONE residual open in WINDOWS.md + 12-*/deferred-items.md: timer-resume chunks not client-mirrored (route: 12-07).
 
