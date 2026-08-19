@@ -91,13 +91,12 @@ func RegisterAsk(catalog *toolcat.Catalog, b *session.AskBroker) {
 // — the "(Recommended)" first-option convention is the MODEL's to author (the
 // captured schema's own usage notes), never injected here.
 //
-// The render is SINGLE-LINE (segments joined with " · "): the ACP Writer's
-// transport guard DROPS any frame whose decoded text carries an embedded
-// newline (framer.go containsDecodedNewline — the 12-01 live witness caught
-// the multi-line render vanishing between the bus and the client wire; the
-// transcript recorded it, the client never saw it). The captured client-side
-// form is corpus-absent (UI-side, not on the request/response wire — see the
-// fixture), so the single-line convention is the documented default.
+// The render is SINGLE-LINE (segments joined with " · "): the captured
+// client-side form is corpus-absent (UI-side, not on the request/response wire
+// — see the fixture), so the single-line convention is the documented default.
+// The transport accepts decoded newlines since 260819-nlg (the raw-byte check
+// is the actual wire invariant), so multi-line would now flow — the single-line
+// shape is retained as the pinned convention, not a transport necessity.
 func RenderAskSurface(qs []session.AskQuestion) string {
 	var sb strings.Builder
 

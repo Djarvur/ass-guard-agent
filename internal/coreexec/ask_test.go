@@ -321,11 +321,10 @@ func TestRenderAskSurface(t *testing.T) {
 		t.Errorf("surface render = %q; the renderer must NOT add (Recommended) — that is the model's convention", got)
 	}
 
-	// The 12-01 live-witness pin: the render MUST be single-line — the ACP
-	// Writer's transport guard silently drops frames whose decoded text
-	// carries an embedded newline (the multi-line render vanished between the
-	// bus and the client wire in the live session d9f98023).
+	// The render contract: single-line (documented default — the captured
+	// client-side form is corpus-absent; retained as the pinned convention after
+	// 260819-nlg relaxed the transport guard, which made multi-line flow).
 	if strings.ContainsAny(got, "\n\r") {
-		t.Errorf("surface render must be single-line (transport guard drops newline-carrying frames): %q", got)
+		t.Errorf("surface render must be single-line (documented default): %q", got)
 	}
 }

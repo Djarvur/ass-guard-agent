@@ -7,38 +7,27 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"slices"
-	"strings"
 	"sync"
 )
 
-var errFrameEmbeddedNewline = errors.New(
-	"frame value contains an embedded newline — ACP spec forbids it " +
-		"(transports.md: messages MUST NOT contain embedded newlines)")
 var errMarshaledFrameNewline = errors.New("marshaled frame contains a raw newline byte — internal invariant violated")
 var errEmptyFrameLine = errors.New("empty frame line")
 
 // writeFrame marshals v as a single JSON object followed by exactly one '\n'
-// (ACP v1 newline-delimited framing — VERIFIED-FACTS #3 / transports.md). It
-// rejects values whose DECODED form contains an embedded newline anywhere in a
-// string field: the ACP spec forbids embedded newlines at the protocol level
-// ("Messages MUST NOT contain embedded newlines"), and a peer using a naive
-// line scanner would otherwise split the frame. json.Marshal escapes '\n' to
-// the two-byte "\\n" sequence so the marshaled bytes themselves never carry a
-// raw 0x0A, but the spec rule is about the *decoded* value.
-//
-// The decoded-newline check marshals v, re-decodes it into a generic tree, and
-// walks for any string containing '\n'. This uniformly handles structs, maps,
-// slices, and json.RawMessage params.
+// (ACP v1 newline-delimited framing — VERIFIED-FACTS #3 / transports.md). The
+// spec's "MUST NOT contain embedded newlines" is a WIRE-BYTES framing rule: one
+// frame = one line. json.Marshal escapes '\n' inside strings to the two-byte
+// "\\n" sequence, so a DECODED newline (legal JSON string content — e.g. the
+// model's own streamed text chunks) can never split the frame on the wire.
+// writeFrame therefore does NOT reject decoded newlines; it rejects only a raw
+// 0x0A in the marshaled bytes (the actual invariant, checked below; the stdlib
+// never emits one, the check guards against a future marshaler regression).
 func writeFrame(w io.Writer, v any) error {
-	if containsDecodedNewline(v) {
-		return errFrameEmbeddedNewline
-	}
-
 	raw, err := json.Marshal(v)
 	if err != nil {
 		return fmt.Errorf("marshal frame: %w", err)
 	}
+
 	// Belt-and-suspenders: the marshaled bytes must not carry a raw newline.
 	// json.Marshal guarantees this; the check makes the invariant explicit and
 	// catches any future marshaler regression.
@@ -57,46 +46,6 @@ func writeFrame(w io.Writer, v any) error {
 	}
 
 	return nil
-}
-
-// containsDecodedNewline reports whether v's decoded JSON form carries a string
-// with a literal '\n'. It marshals v, decodes into a generic tree, and walks it.
-func containsDecodedNewline(v any) bool {
-	raw, err := json.Marshal(v)
-	if err != nil {
-		// Let writeFrame surface the marshal error.
-		return false
-	}
-
-	var node any
-
-	err = json.Unmarshal(raw, &node)
-	if err != nil {
-		return false
-	}
-
-	return walkDecodedNewline(node)
-}
-
-// walkDecodedNewline recurses through the decoded JSON tree looking for any
-// string value that contains a literal newline.
-func walkDecodedNewline(node any) bool {
-	switch v := node.(type) {
-	case string:
-		return strings.Contains(v, "\n")
-	case map[string]any:
-		for _, item := range v {
-			if walkDecodedNewline(item) {
-				return true
-			}
-		}
-	case []any:
-		if slices.ContainsFunc(v, walkDecodedNewline) {
-			return true
-		}
-	}
-
-	return false
 }
 
 // readFrame reads exactly one newline-delimited JSON object from r and returns

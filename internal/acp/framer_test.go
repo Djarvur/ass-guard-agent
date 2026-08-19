@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -43,11 +44,15 @@ func TestWriteFrameProducesMarshalPlusNewline(t *testing.T) {
 	}
 }
 
-// TestWriteFrameRejectsDecodedNewline verifies writeFrame returns an error (and
-// writes nothing) when a decoded string field carries an embedded newline. The
-// ACP spec forbids embedded newlines (transports.md); a peer using a naive line
-// scanner would otherwise split the frame. The error must mention the spec rule.
-func TestWriteFrameRejectsDecodedNewline(t *testing.T) {
+// TestWriteFrameAllowsDecodedNewline verifies writeFrame EMITS frames whose
+// decoded text carries an embedded newline. The ACP spec's "MUST NOT contain
+// embedded newlines" (transports.md) is a WIRE-BYTES framing rule: json.Marshal
+// escapes '\n' inside strings to the two-byte "\\n" sequence, so a decoded
+// newline can never split the frame. Rejecting decoded newlines silently dropped
+// the model's own newline-carrying text chunks from the live wire (12-01
+// witness session d9f98023: 450 transcript chunks vs 440 wire frames). Relaxed
+// by operator disposition 260819-nlg; the raw-byte check stays below.
+func TestWriteFrameAllowsDecodedNewline(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
@@ -59,8 +64,14 @@ func TestWriteFrameRejectsDecodedNewline(t *testing.T) {
 		{"RawMessage param whose decoded string carries a newline", Message{
 			JSONRPC: protocolVersion20, Method: "session/prompt",
 			// Valid JSON (the \n is the two-char escape); the decoded text value
-			// is "x<newline>y" — the decoded-newline check must catch it.
+			// is "x<newline>y".
 			Params: json.RawMessage(`{"prompt":[{"type":"text","text":"x\ny"}]}`),
+		}},
+		{"agent_message_chunk with multi-line text (the 12-01 drop class)", Message{
+			JSONRPC: protocolVersion20, Method: methodSessionUpdate,
+			Params: json.RawMessage(`{"sessionId":"s","update":{` +
+				`"sessionUpdate":"agent_message_chunk","messageId":"m",` +
+				`"content":{"type":"text","text":"first line\nsecond line"}}}`),
 		}},
 	}
 	for _, c := range cases {
@@ -70,19 +81,82 @@ func TestWriteFrameRejectsDecodedNewline(t *testing.T) {
 			var buf bytes.Buffer
 
 			err := writeFrame(&buf, c.v)
-			if err == nil {
-				t.Fatal("writeFrame returned nil error for a decoded embedded newline; want spec-rule error")
+			if err != nil {
+				t.Fatalf("writeFrame rejected a decoded embedded newline: %v", err)
 			}
 
-			if !strings.Contains(strings.ToLower(err.Error()), "newline") {
-				t.Errorf("error %q does not mention the newline spec rule", err.Error())
+			// Wire invariant (unchanged): exactly ONE newline, the trailing
+			// frame terminator; no raw newline byte inside the body.
+			if got := bytes.Count(buf.Bytes(), []byte{'\n'}); got != 1 {
+				t.Errorf("output has %d newline bytes; want exactly 1 (trailing)", got)
 			}
 
-			if buf.Len() != 0 {
-				t.Errorf("writeFrame wrote %d bytes before failing; must write nothing", buf.Len())
+			if bytes.Contains(buf.Bytes()[:len(buf.Bytes())-1], []byte{'\n'}) {
+				t.Errorf("frame body carries a raw newline byte: %q", buf.String())
+			}
+
+			// Content integrity: the decoded round-trip preserves the newline
+			// (the editor must receive the model's line breaks).
+			var node any
+
+			err = json.Unmarshal(buf.Bytes(), &node)
+			if err != nil {
+				t.Fatalf("output does not round-trip as JSON: %v", err)
+			}
+
+			if !treeHasNewline(node) {
+				t.Errorf("decoded frame lost the embedded newline; want it preserved: %q", buf.String())
 			}
 		})
 	}
+}
+
+// treeHasNewline reports whether any string in the decoded JSON tree contains a
+// literal newline (content-integrity check for the relax disposition).
+func treeHasNewline(node any) bool {
+	switch v := node.(type) {
+	case string:
+		return strings.Contains(v, "\n")
+	case map[string]any:
+		for _, item := range v {
+			if treeHasNewline(item) {
+				return true
+			}
+		}
+	case []any:
+		if slices.ContainsFunc(v, treeHasNewline) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// TestWriteFrameRejectsRawNewlineBytes verifies the belt-and-suspenders raw-byte
+// check stays: no raw 0x0A may reach the wire body. A Marshaler emitting a raw
+// newline inside a string literal is rejected by the stdlib scanner on compact
+// — writeFrame must error and write nothing, keeping the wire line-clean.
+func TestWriteFrameRejectsRawNewlineBytes(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+
+	err := writeFrame(&buf, rawNewlineMarshaler{})
+	if err == nil {
+		t.Fatal("writeFrame accepted a raw newline byte in the marshaled body; want error")
+	}
+
+	if buf.Len() != 0 {
+		t.Errorf("writeFrame wrote %d bytes before failing; must write nothing", buf.Len())
+	}
+}
+
+// rawNewlineMarshaler is a json.Marshaler whose output embeds a raw 0x0A inside
+// a string literal — invalid JSON the stdlib scanner rejects on compact.
+type rawNewlineMarshaler struct{}
+
+func (rawNewlineMarshaler) MarshalJSON() ([]byte, error) {
+	return []byte("\"x\ny\""), nil
 }
 
 // TestReadFrameParsesOneLine verifies readFrame reads exactly one newline-
