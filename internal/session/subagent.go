@@ -262,12 +262,21 @@ func (s *Session) executeRestricted(
 }
 
 // subagentProfile returns the profile a subagent dispatch shapes its request
-// from: the session profile unchanged for default dispatches, or a COPY
-// carrying a typed definition's Prompt as an additional system block (the
+// from: the session profile (with the light-tier Model override when
+// Session.SubagentModel is set — 14-05, EARLY-05), optionally a COPY carrying
+// a typed definition's Prompt as an additional system block (the
 // dynamic-merge-into-captured-shape pattern applied per dispatch — the shared
-// s.Profile and its System backing array are never mutated).
+// s.Profile and its System backing array are never mutated). The Model
+// override rides the SAME value-copy semantics: prof is a struct copy, so
+// assigning prof.Model never writes back to s.Profile. An empty SubagentModel
+// keeps the parent model exactly as today.
 func subagentProfile(s *Session, agentDef *ecosys.Agent) profile.Profile {
 	prof := s.Profile
+
+	if s.SubagentModel != "" {
+		prof.Model = s.SubagentModel
+	}
+
 	if agentDef == nil || agentDef.Prompt == "" {
 		return prof
 	}

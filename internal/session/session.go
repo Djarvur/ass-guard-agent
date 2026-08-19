@@ -77,6 +77,15 @@ type Session struct {
 	// inside the parent turn's recovery window.
 	Checkpointer Checkpointer
 
+	// SubagentModel is the scheduler light-tier model slug for SUBAGENT
+	// dispatches (14-05, EARLY-05 — the token-economics lever). Empty (the
+	// default) keeps the parent model exactly as before: the routing is
+	// config-conditional through the EXISTING tiers table, never a new
+	// surface. The override is applied on the per-dispatch profile COPY in
+	// subagentProfile — the shared session profile (and the main turn loop's
+	// request shape) is never touched.
+	SubagentModel string
+
 	// sessionStartFired pins the lazy SessionStart seam to exactly once.
 	sessionStartFired bool
 

@@ -35,6 +35,7 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/redact"
+	"github.com/Djarvur/ass-guard-agent/internal/scheduler"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
@@ -327,7 +328,11 @@ func runACPServe(ctx context.Context, in io.Reader, out, stderr io.Writer, opts 
 	// scheduler resolver; the session's provider is the factory-built
 	// credentialed instance (T-07-07 — resolution is deterministic +
 	// validated).
-	factory, providerName, ferr := setupProviderFactory(opts.WorkDir, stderr)
+	// 14-05 (EARLY-05): setupScheduling is setupProviderFactory's
+	// cfg-retaining twin — the serve path keeps the loaded scheduling config
+	// + the resolved session provider for the light-tier subagent routing at
+	// sessionFor (ONE load, no second config read, identical semantics).
+	schedCfg, factory, providerName, ferr := setupScheduling(opts.WorkDir, stderr)
 	if ferr != nil {
 		return fmt.Errorf("setup provider factory: %w", ferr)
 	}
@@ -350,14 +355,17 @@ func runACPServe(ctx context.Context, in io.Reader, out, stderr io.Writer, opts 
 	startAuditMirror(ctx, bus, opts, stderr)
 
 	runner := &sessionTurnRunner{
-		bus:         bus,
-		bodyStore:   bodyStore,
-		profile:     prof,
-		workDir:     opts.WorkDir,
-		maxConc:     opts.MaxConcurrent,
-		configAdded: opts.ConfigAddedBoundaries,
-		askTimeout:  opts.AskTimeout,
-		serveCtx:    ctx,
+		bus:          bus,
+		bodyStore:    bodyStore,
+		profile:      prof,
+		workDir:      opts.WorkDir,
+		maxConc:      opts.MaxConcurrent,
+		configAdded:  opts.ConfigAddedBoundaries,
+		askTimeout:   opts.AskTimeout,
+		serveCtx:     ctx,
+		schedCfg:     schedCfg,
+		providerName: providerName,
+		stderr:       stderr,
 		makeProvider: func(capturer provider.RequestCapturer) provider.Provider {
 			// 09-01: the SINGLE factory seam — the same construction the
 			// tracer uses (the divergent copy is gone; Pitfall 8).
@@ -435,6 +443,23 @@ type sessionTurnRunner struct {
 	// ONE store per serve process, shared by every session's writer. nil in
 	// test runners → metadata lines with refs but no persisted bodies.
 	bodyStore *audit.BodyStore
+
+	// schedCfg is the loaded scheduling config from startup (14-05, EARLY-05):
+	// the light-tier subagent routing at sessionFor resolves tiers.light
+	// through the SAME resolver that picked the session provider. nil in test
+	// runners → no subagent model override (the documented default).
+	schedCfg *scheduler.Config
+
+	// providerName is the session provider the factory builds (the heavy-tier
+	// resolution's pick, 14-05): the same-provider check for the light binding
+	// compares against it. Kept beside schedCfg so both come from the one
+	// startup load.
+	providerName string
+
+	// stderr is the serve-lifecycle diagnostics writer (transport discipline:
+	// stdout stays ACP-only). The 14-05 light-tier degrade warning lands here;
+	// nil (test runners that never set one) falls back to os.Stderr.
+	stderr io.Writer
 
 	// Phase-4 engine wiring (Plan 04-05). Built once in setupEngine(); nil when
 	// the engine is disabled.
@@ -999,6 +1024,11 @@ func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen // grouping ke
 		Catalog:     sCatalog,
 		ConfigAdded: r.configAdded,
 
+		// 14-05 (EARLY-05): the light-tier subagent model — resolved through
+		// the EXISTING scheduler tiers table (config-conditional; empty keeps
+		// the parent model exactly as today).
+		SubagentModel: resolveSubagentModel(r.schedCfg, r.providerName, time.Now(), r.stderrOrDefault()),
+
 		// 12-02: discovered agent definitions register as spawnable subagent
 		// types (a subagent_type match applies the definition's Prompt + Tools
 		// on the existing PARA machinery — advisory listing, no new tier).
@@ -1067,6 +1097,56 @@ func (r *sessionTurnRunner) serveCtxOrBackground() context.Context {
 	}
 
 	return context.Background()
+}
+
+// stderrOrDefault returns the serve-lifetime diagnostics writer, falling back
+// to os.Stderr for test runners that never set one (the 14-05 degrade warning
+// must stay LOUD even on the fallback path — transport discipline: stderr
+// only, stdout is reserved for ACP frames).
+//
+//nolint:funcorder // helper for sessionFor
+func (r *sessionTurnRunner) stderrOrDefault() io.Writer {
+	if r.stderr != nil {
+		return r.stderr
+	}
+
+	return os.Stderr
+}
+
+// resolveSubagentModel resolves the scheduler light tier for SUBAGENT
+// dispatches (14-05, EARLY-05 — the token-economics lever). It is the same
+// call shape setupScheduling uses for tierHeavy, on the EXISTING tiers table
+// (no new config surface):
+//
+//   - resolve error / absent binding → "" (silently: absence is the
+//     documented parent-model default, not a failure);
+//   - binding on the SESSION's provider → the light model slug (the override
+//     rides the per-dispatch profile copy in session.subagentProfile);
+//   - binding on a DIFFERENT provider → "" + exactly ONE loud degrade warning
+//     naming both providers: a second provider instance threaded through the
+//     subagent runner is ROUTED to the post-adoption queue (the override
+//     covers the tier's primary purpose — a cheaper model on the same wire
+//     shape); never a silent wrong-wire.
+func resolveSubagentModel(cfg *scheduler.Config, sessionProvider string, now time.Time, stderr io.Writer) string {
+	if cfg == nil {
+		return ""
+	}
+
+	primary, _, err := scheduler.NewResolver(cfg).Resolve(tierLight, "", now, scheduler.CapabilityReq{})
+	if err != nil {
+		return "" // no tiers.light binding — the documented default
+	}
+
+	if primary.Provider != sessionProvider {
+		_, _ = fmt.Fprintf(stderr,
+			"ass-guard: tiers.light is bound to provider %q but the session provider is %q — "+
+				"subagent model override SKIPPED (parent model kept; cross-provider light-tier "+
+				"routing is routed post-adoption)\n", primary.Provider, sessionProvider)
+
+		return ""
+	}
+
+	return primary.Model
 }
 
 // spawnMCP loads the project .mcp.json from dir and starts the MCP host. It

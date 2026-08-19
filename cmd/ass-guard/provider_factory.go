@@ -87,20 +87,22 @@ func loadSchedulingFactory(
 	return cfg, factory, nil
 }
 
-// setupProviderFactory builds the runtime factory + the provider to construct
-// for the heavy tier (D-08): it resolves the tier via the scheduler resolver
-// and defaults to the first declared provider (sorted) on resolve error. A
-// failed operator config degrades to the embedded default + a stderr log,
-// mirroring the engine/learning-store degradation pattern (T-07-08); only a
-// failure of the embedded default itself is returned.
-func setupProviderFactory(workDir string, stderr io.Writer) (*scheduler.ProviderFactory, string, error) {
+// setupScheduling is setupProviderFactory's cfg-retaining twin (14-05,
+// EARLY-05): the serve path needs the loaded scheduling config AFTER startup —
+// the light-tier subagent routing resolves tiers.light through the same
+// resolver at sessionFor. Semantics are IDENTICAL to the legacy shape (same
+// load, same degrade-to-embedded-default, same heavy-tier provider
+// resolution); only the cfg return is added. setupProviderFactory remains as a
+// thin wrapper because its 3-return shape is pinned by the parity/main call
+// sites.
+func setupScheduling(workDir string, stderr io.Writer) (*scheduler.Config, *scheduler.ProviderFactory, string, error) {
 	cfg, factory, err := loadSchedulingFactory(workDir, "", stderr)
 	if err != nil {
 		log.Printf("ass-guard: scheduling config load failed (continuing with embedded default): %v", err)
 
 		cfg, err = scheduler.Load()
 		if err != nil {
-			return nil, "", fmt.Errorf("load embedded scheduling default: %w", err)
+			return nil, nil, "", fmt.Errorf("load embedded scheduling default: %w", err)
 		}
 
 		factory = scheduler.NewProviderFactory(cfg, "", nil)
@@ -114,7 +116,19 @@ func setupProviderFactory(workDir string, stderr io.Writer) (*scheduler.Provider
 		providerName = primary.Provider
 	}
 
-	return factory, providerName, nil
+	return cfg, factory, providerName, nil
+}
+
+// setupProviderFactory builds the runtime factory + the provider to construct
+// for the heavy tier (D-08): it resolves the tier via the scheduler resolver
+// and defaults to the first declared provider (sorted) on resolve error. A
+// failed operator config degrades to the embedded default + a stderr log,
+// mirroring the engine/learning-store degradation pattern (T-07-08); only a
+// failure of the embedded default itself is returned.
+func setupProviderFactory(workDir string, stderr io.Writer) (*scheduler.ProviderFactory, string, error) {
+	_, factory, providerName, err := setupScheduling(workDir, stderr)
+
+	return factory, providerName, err
 }
 
 // firstDeclaredProvider returns the first provider name in sorted order — the
