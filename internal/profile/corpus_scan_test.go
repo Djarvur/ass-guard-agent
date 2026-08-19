@@ -66,7 +66,8 @@ func TestScanContextBehavior_CacheControlFixture(t *testing.T) {
 	}
 
 	if len(rep.CacheControlOther) != 1 {
-		t.Errorf("CacheControlOther has %d entries, want exactly 1: %v", len(rep.CacheControlOther), rep.CacheControlOther)
+		t.Errorf("CacheControlOther has %d entries, want exactly 1: %v",
+			len(rep.CacheControlOther), rep.CacheControlOther)
 	}
 
 	if rep.ScannedLines != 2 {
@@ -122,7 +123,7 @@ func TestScanContextBehavior_WindowShape(t *testing.T) {
 	// Continuation-only stream (inline): advancing offsets, growing counts —
 	// no reset, monotonic. Proves the negative side of the classification.
 	cont := strings.NewReader(strings.Join([]string{
-		windowLine("full", 0, 10, 4),
+		windowLine("full", 0, 4, 4),
 		windowLine("tail", 2, 6, 4),
 		windowLine("tail", 4, 8, 4),
 	}, "\n") + "\n")
@@ -140,10 +141,8 @@ func TestScanContextBehavior_WindowShape(t *testing.T) {
 	// Offset-regression probe WITHOUT a count regression (count keeps
 	// advancing): the window start moves backward — still a reset signal, and
 	// the offset chain is no longer monotonic.
-	reg := strings.NewReader(strings.Join([]string{
-		windowLine("tail", 2, 6, 4),
-		windowLine("tail", 0, 8, 4),
-	}, "\n") + "\n")
+	reg := strings.NewReader(
+		windowLine("tail", 2, 6, 4) + "\n" + windowLine("tail", 0, 8, 4) + "\n")
 
 	rrep, err := profile.ScanContextBehavior(reg)
 	if err != nil {
@@ -163,19 +162,19 @@ func TestScanContextBehavior_WindowShape(t *testing.T) {
 func TestScanContextBehavior_CompactionMarkers(t *testing.T) {
 	t.Parallel()
 
-	input := strings.NewReader(strings.Join([]string{
-		"{\"type\":\"model_io\",\"request\":{\"messagesKind\":\"full\",\"messageOffset\":0,\"messageCount\":2," +
-			"\"messages\":[" +
-			"{\"role\":\"user\",\"content\":\"<system-reminder>\\ncontext placeholder\\n</system-reminder>\"}," +
-			"{\"role\":\"assistant\",\"content\":\"ph\"}]," +
-			"\"body\":{\"system\":[]}}}",
-		"{\"type\":\"model_io\",\"request\":{\"messagesKind\":\"full\",\"messageOffset\":0,\"messageCount\":3," +
-			"\"messages\":[" +
-			"{\"role\":\"user\",\"content\":\"This session is being continued from a previous conversation that ran out of context. ph\"}," +
-			"{\"role\":\"user\",\"content\":\"lets talk about compaction and summary, ordinary text\"}," +
-			"{\"role\":\"system\",\"content\":\"inline system placeholder\"}]," +
-			"\"body\":{\"system\":[]}}}",
-	}, "\n") + "\n")
+	recordA := "{\"type\":\"model_io\",\"request\":{\"messagesKind\":\"full\",\"messageOffset\":0,\"messageCount\":2," +
+		"\"messages\":[" +
+		"{\"role\":\"user\",\"content\":\"<system-reminder>\\ncontext placeholder\\n</system-reminder>\"}," +
+		"{\"role\":\"assistant\",\"content\":\"ph\"}]," +
+		"\"body\":{\"system\":[]}}}"
+	recordB := "{\"type\":\"model_io\",\"request\":{\"messagesKind\":\"full\",\"messageOffset\":0,\"messageCount\":3," +
+		"\"messages\":[" +
+		"{\"role\":\"user\",\"content\":\"This session is being continued from a previous conversation. ph\"}," +
+		"{\"role\":\"user\",\"content\":\"lets talk about compaction and summary, ordinary text\"}," +
+		"{\"role\":\"system\",\"content\":\"inline system placeholder\"}]," +
+		"\"body\":{\"system\":[]}}}"
+
+	input := strings.NewReader(recordA + "\n" + recordB + "\n")
 
 	rep, err := profile.ScanContextBehavior(input)
 	if err != nil {
@@ -183,7 +182,7 @@ func TestScanContextBehavior_CompactionMarkers(t *testing.T) {
 	}
 
 	want := map[string]int{
-		"system-reminder":            1,
+		"system-reminder":             1,
 		"compact-continuation-header": 1,
 		"inline-system-message":       1,
 	}

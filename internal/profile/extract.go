@@ -37,6 +37,14 @@ type ModelIO struct {
 			ToolChoice json.RawMessage `json:"tool_choice"`
 		} `json:"body"`
 		Headers map[string]json.RawMessage `json:"headers"`
+		// Request-level window bookkeeping (14-02 context-behavior scan): the
+		// rollout carries the normalized messages array plus
+		// messagesKind/messageOffset/messageCount outside request.body. The
+		// extractor ignores them; ScanContextBehavior consumes them.
+		Messages      json.RawMessage `json:"messages"`
+		MessagesKind  string          `json:"messagesKind"`  //nolint:tagliatelle // model_io rollout format
+		MessageOffset *int            `json:"messageOffset"` //nolint:tagliatelle // model_io rollout format
+		MessageCount  *int            `json:"messageCount"`  //nolint:tagliatelle // model_io rollout format
 	} `json:"request"`
 }
 
