@@ -107,14 +107,14 @@ func tierWiringRunner(t *testing.T, fixture string) (*sessionTurnRunner, *bytes.
 // behavior at the wiring seam: a tiers.light binding on the SESSION's provider
 // sets Session.SubagentModel to the light model slug; the same fixture WITHOUT
 // the binding leaves it empty (parent model) — and neither case warns.
-func TestSessionFor_ResolvesLightTier(t *testing.T) {
+func TestSessionFor_ResolvesLightTier(t *testing.T) { //nolint:paralleltest // HOME pinned via pinEmptyHome — serial
 	// pinEmptyHome keeps the global config layer out (t.Setenv ⇒ non-parallel).
 	pinEmptyHome(t)
 
 	table := []struct {
-		name   string
+		name    string
 		fixture string
-		want   string
+		want    string
 	}{
 		{name: "binding routes the light model", fixture: lightTierSameProviderConfig, want: "glm-5.2-air"},
 		{name: "absent binding keeps the parent model", fixture: lightTierAbsentConfig, want: ""},
@@ -138,6 +138,8 @@ func TestSessionFor_ResolvesLightTier(t *testing.T) {
 // degrade: a tiers.light bound to a DIFFERENT provider than the session's
 // keeps SubagentModel empty (parent model) and emits EXACTLY ONE warning
 // naming both providers — never a silent wrong-wire.
+//
+//nolint:paralleltest // HOME pinned via pinEmptyHome — serial
 func TestSessionFor_LightTierCrossProviderWarns(t *testing.T) {
 	pinEmptyHome(t)
 
