@@ -4,16 +4,16 @@ milestone: v1.1
 milestone_name: ACP Early Adoption
 current_phase: 14
 current_phase_name: adoption-readiness-analysis-dispositions
-status: executing
-stopped_at: "Completed 14-05-PLAN.md (EARLY-05 token economics: light-tier subagent routing + tool-output truncation)"
-last_updated: "2026-08-19T19:39:21.468Z"
+status: verifying
+stopped_at: Completed 14-06-PLAN.md (EARLY-06 tool contract — Phase 14 complete, 6/6)
+last_updated: "2026-08-19T20:39:57.819Z"
 last_activity: 2026-08-19
 last_activity_desc: Replan — cb3ab50 new comparative data dispositioned against the adoption line (plan structure confirmed)
 progress:
   total_phases: 5
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 29
-  completed_plans: 22
+  completed_plans: 23
 ---
 
 # State: ass-guard-agent (working name)
@@ -28,11 +28,11 @@ See: .planning/PROJECT.md (updated 2026-08-14)
 
 Phase: 14 (adoption-readiness-analysis-dispositions) — EXECUTING
 Plan: 6 of 6
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-08-19 — Phase 14 execution started
 Next action: `/gsd:execute-phase 14` (6 plans checker-passed 2026-08-19: 0 blockers, revision `6b1d0fd` landed; wave 1 = 14-01 shadow-git checkpoints [tracer], 14-02 compaction verify, 14-03 pi↔shaper audit; wave 2 = 14-04 cache probe, 14-05 token economics, 14-06 tool contract), then 12-05 → 12-04 → 12-06 → **ADOPTION LINE** → 12-03 → 12-08 → 12-07 → 13. ONE residual open in WINDOWS.md + 12-*/deferred-items.md: timer-resume chunks not client-mirrored (route: 12-07).
 
-Progress: [█████░░░░░] 51%
+Progress: [█████░░░░░] 53%
 
 ## Performance Metrics
 
@@ -50,6 +50,7 @@ Progress: [█████░░░░░] 51%
 | Phase 14 P03 | 12min | 3 tasks | 3 files |
 | Phase 14 P04 | 24min | 3 tasks | 5 files |
 | Phase 14 P05 | 25min | 2 tasks | 9 files |
+| Phase 14 P06 | 45min | 3 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -94,6 +95,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 14]: [14-02 EXECUTED, 2026-08-19] EARLY-02 compaction verify-first closed by corpus evidence: the analyzed zcode corpus (228 records, live 2026-08-19 sessions — pinned sess_3cee56ae AND the planning-time 18/22MB mains all rotated off, ladder step 2) shows NO auto-compact and NO eviction; the target's entire observable context behavior = rolling last-64-message request window (176/176 tails len-64, advancing offsets, zero resets) + cache_control {"type":"ephemeral"} on EVERY system block (910/910 placements, other bucket empty). Mimicry already delivers the window (Projector MidTurnWindowMessages=64, 08-09 no-reset re-scope); cache_control EMISSION is the one routed gap (post-adoption; 14-04's probe consumes the placement facts only); cross-turn window span stays routed to the 12-05 re-record (today's corpus is single-turn per session). Mechanical scanner committed (ScanContextBehavior, RED d981add → GREEN 7931d30) + decision artifact docs/compaction-decision.md (a0789e1); zero implementation in-phase; mise ci green.
 - [Phase ?]: 14-03 pi↔shaper audit: cache_control emission stays ROUTED post-adoption (fix needs profile-bundle TextBlock format change, not shaper-local; 14-04 probe-only); zero in-phase fixes — all 29 audit rows dispositioned (24 justified by capture authority, 2 routed, 2 match, 1 absent-at-pin): the shaper already agrees with the captured zcode wire form; pi divergences are its N-provider generality (compat matrix, header layering, session repair) the single-capture shaper does not replicate
 - [Phase 14]: [14-04 EXECUTED, 2026-08-19] EARLY-03 cache probe + drift warning landed: every parity run now prints a target-version line (installed zcode via fixed-argv 3s-bounded exec vs the 09-03 coverage-manifest pin — loud drift WARNING naming both, provenance line on match, skip note on unresolvable; NEVER blocks) and a cache probe footer line (stable→volatile ordering: any volatile block or mcp__* tool spliced into the captured prefix fails with the offending indices named; placement-vs-pin: bidirectional class delta against a pin DERIVED from 14-02's committed fixture — corpus wins, the fixture's synthetic classifier probes excluded by the placements>=scanned-records rule). Standing wiring-time verdict: cache probe FAIL naming the system class = the routed 14-03 CC-1 emission gap made visible daily (flips green when the post-adoption TextBlock format fix lands — no probe change needed). Probe report-only (additive RunResult.CacheProbe; exit semantics untouched); --cache-pin flag mirrors --suite; parityRun/composeCacheProbeInput seams make runParity offline-testable. mise ci green; commits 4a22b33..042e83c (RED/GREEN per task).
+- [Phase 14]: [14-06 EXECUTED, 2026-08-19] EARLY-06 uniform tool contract closed: per-tool timeout BACKSTOP at DispatchBatch (every call own ctx deadline from timeout_ms, default DefaultToolTimeoutMS=120000 — Bash schema default == occ CLAUDE_CODE_TOOL_TIMEOUT default; inner deadlines always fire first — Bash annotated 600000 the schema max so the model-ms stays authoritative, deviating from the plan's literal 120s example to preserve its own precedence truth); is_error corpus-grounded (live scan 283 obs / 5 form classes — Bash Exit-code anchor + Read missing-file + Edit not-found match; read-tracking class 165 obs ROUTED per the 08-08 disposition); retry-only-transient pinned at both seams (classification table literal + scheduler walk Structural-never-retried; census: exactly ONE retry path, zero hidden loops); concurrency_safe/destructive annotations on all 19 coretools beside mutability (captured tools.json byte-unchanged), IsConcurrencySafe drives pool membership (flag only REMOVES from pool — T-14-19), engine gating ROUTED (unmatched⇒nothing unchanged, EARLY-01 restore the backstop); occ census INPUT ONLY (pin 5d007f09, 25 tools = 13 in-catalog + 12 documented-absent, 63 env vars/6 modes/4 transports recorded as context, determinism-pinned). Phase 14 COMPLETE 6/6.
 
 ### Pending Todos
 
@@ -166,6 +168,6 @@ Carried from v1.0 close — dispositioned into v1.1 scope:
 
 ## Session Continuity
 
-Last session: 2026-08-19T19:39:21.409Z
-Stopped at: Completed 14-05-PLAN.md (EARLY-05 token economics: light-tier subagent routing + tool-output truncation)
+Last session: 2026-08-19T20:39:57.753Z
+Stopped at: Completed 14-06-PLAN.md (EARLY-06 tool contract — Phase 14 complete, 6/6)
 Resume file: None

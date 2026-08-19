@@ -36,7 +36,7 @@
 - [x] **EARLY-03**: Cache-hit behavior is observable — the parity harness carries a probe asserting dynamic merges (skills, MCP tools) respect stable→volatile ordering and captured `cache_control` placement against the pin, wired into the existing parity run, so daily-use cache/cost drift is detectable rather than only structural divergence (ECOSYSTEM-AUDIT §4.4 CACHE)
 - [x] **EARLY-04**: The shaper is cross-validated against pi's wire layer — a committed audit diffs `internal/shaper` behaviors against pi's `packages/ai/src/api/anthropic-messages.ts` + `transform-messages.ts` (cache_control placement, thinking-config mapping, header merge order, compat-flag catalog), using pi's 43k-line test suite as the behavioral spec; every divergence found is dispositioned — fixed, justified in-repo, or routed with rationale (ECOSYSTEM-AUDIT §5-1; hardens exactly the north-star component)
 - [x] **EARLY-05**: Token economics are explicit — subagent turns route through the scheduler `light` tier by default (configurable), and a tool-output truncation policy (tail/bounded extraction in the captured result form) bounds oversized tool results before they enter the projected window (Claudecourse #27; ECOSYSTEM-AUDIT §4.4 ECON)
-- [ ] **EARLY-06**: The uniform tool contract holds across the catalog, capture-grounded — `is_error` in tool_result exactly where the zcode corpus shows it (mimicry discipline: forms stay capture-faithful), per-tool timeouts, retry-only-transient (429/5xx/timeout) at the provider/tool seam, and `isConcurrencySafe`/`isDestructive` flags feeding the engine + parallel dispatch; existing partial implementations (openspec per-command timeouts, SSE-layer transient classification) are inventoried and the gaps closed (Claudecourse #5/#30; ECOSYSTEM-AUDIT §4.4 TOOLCON)
+- [x] **EARLY-06**: The uniform tool contract holds across the catalog, capture-grounded — `is_error` in tool_result exactly where the zcode corpus shows it (mimicry discipline: forms stay capture-faithful), per-tool timeouts, retry-only-transient (429/5xx/timeout) at the provider/tool seam, and `isConcurrencySafe`/`isDestructive` flags feeding the engine + parallel dispatch; existing partial implementations (openspec per-command timeouts, SSE-layer transient classification) are inventoried and the gaps closed (Claudecourse #5/#30; ECOSYSTEM-AUDIT §4.4 TOOLCON)
 
 ### Product Functional Completeness (priority 3 — the re-scope's machinery half, Phase 12; split 2026-08-16)
 
@@ -134,7 +134,7 @@ Which phases cover which requirements. Filled during roadmap creation (2026-08-1
 | EARLY-03 | Phase 14 | Complete |
 | EARLY-04 | Phase 14 | Complete |
 | EARLY-05 | Phase 14 | Complete |
-| EARLY-06 | Phase 14 | Pending |
+| EARLY-06 | Phase 14 | Complete |
 | OS-01 | Phase 13 | Pending (absorbs ex-ACP-09; post-adoption continuation) |
 | OS-02 | Phase 13 | Pending |
 | OS-03 | Phase 13 | Pending |
