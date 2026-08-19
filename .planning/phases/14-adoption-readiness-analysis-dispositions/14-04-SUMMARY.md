@@ -220,6 +220,10 @@ None — no external service configuration required.
 - The standing `cache probe: FAIL` (system-class emission gap) is expected until the post-adoption emission fix lands (routed per 14-03 CC-1; needs the profile-bundle TextBlock format change).
 - 12-08's nightly gate can consume the probe line/report as-is when it lands.
 
+## Self-Check: PASSED
+
+All 5 key files exist on disk; all 7 commits (3 RED + 3 GREEN + SUMMARY docs) verified in git log; mise ci green; live offline run evidence recorded above.
+
 ---
 *Phase: 14-adoption-readiness-analysis-dispositions*
 *Completed: 2026-08-19*

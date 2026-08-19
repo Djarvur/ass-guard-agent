@@ -293,7 +293,7 @@ The eval net its scenarios extend and the AskUserQuestion interactive-dead-end r
   6. The uniform tool contract holds across the catalog, capture-grounded — `is_error` exactly where the zcode corpus shows it, per-tool timeouts, retry-only-transient at the provider/tool seam, `isConcurrencySafe`/`isDestructive` flags feeding engine + parallel dispatch; existing partial implementations inventoried, gaps closed (EARLY-06)
 
 **Phase gate:** `mise ci` clean AND a live rollback demonstration (real mutating turn → checkpoint restore → byte-identical workspace, user repo git untouched) AND the compaction decision artifact committed AND the cache probe wired into the parity run AND the shaper cross-validation audit committed with every divergence dispositioned AND the light-tier/truncation/tool-contract behaviors proven by tests. No stub-only evidence closes this phase.
-**Plans:** 3/6 plans executed
+**Plans:** 4/6 plans executed
 Plans:
 **Wave 1**
 
@@ -303,7 +303,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1: 14-04 consumes 14-02's corpus pin + 14-03's audit; 14-05 edits the session/serve sites 14-01 wires; 14-06 shares the .gitignore/tools-clone coordination with 14-03)*
 
-- [ ] 14-04-PLAN.md — cache-discipline probe + drift warning: stable→volatile merge-ordering assertions + cache_control placement-vs-pin wired into `ass-guard parity`, and the loud NON-BLOCKING installed-zcode-vs-pinned-capture version warning (borrow #13's cheap slice) [EARLY-03]
+- [x] 14-04-PLAN.md — cache-discipline probe + drift warning: stable→volatile merge-ordering assertions + cache_control placement-vs-pin wired into `ass-guard parity`, and the loud NON-BLOCKING installed-zcode-vs-pinned-capture version warning (borrow #13's cheap slice) [EARLY-03]
 - [ ] 14-05-PLAN.md — token economics: subagent model routing through the existing `tiers.light` config surface (same-provider override on the per-dispatch profile copy; cross-provider degrades loudly + routed) + tool-output truncation at the append chokepoint (128 KiB cap, corpus-scale results untouched, marker flagged corpus-absent → 12-05) [EARLY-05]
 - [ ] 14-06-PLAN.md — uniform tool contract: catalog-wide per-tool timeout backstop at DispatchBatch (inner deadlines win, siblings isolated), corpus-grounded is_error inventory + fixes, retry-only-transient pins, concurrency/destructive flags feeding dispatch (D-21 floor untouched), and the occ surface-census cross-check as INPUT ONLY (pinned clone, names-only fixture) [EARLY-06]
 
@@ -335,7 +335,7 @@ Plans:
 | 8. Slash-Command Kickoff | v1.1 | 9/9 | Complete (operator witness accepted; 2 known residuals documented) | 2026-08-16 |
 | 9. Serve-Path Audit + zcode Parity Re-capture | v1.1 | 6/6 | Complete (verifier PASS; UAT 3/4 — parity re-baseline disposition accepted, live-serve audit witnessed, capture-method deviation stands; test 4 informational) | 2026-08-18 |
 | 12. Product Functional Completeness | v1.1 | 2/8 | In Progress|  |
-| 14. Adoption Readiness (Analysis Dispositions) | v1.1 | 3/6 | In Progress|  |
+| 14. Adoption Readiness (Analysis Dispositions) | v1.1 | 4/6 | In Progress|  |
 | 13. OpenSpec Workflow Completion | v1.1 | 0 (planning dispatches when Phase 12 closes) | Not started (post-adoption) | - |
 | 10. Telegram Peer (Text + Voice) | v1.2 pool | 0/7 (plans preserved; 2026-08-17 execution attempt aborted — executor died ~15 min in, partial extraction WIP-preserved at 47f10b4 on the phase branch, untrusted) | Moved to v1.2 (2026-08-16) | - |
 | 11. dsh Mimicry Profile #2 | v1.2 pool | 0/7 (plans stale — replan required) | Moved to v1.2 (2026-08-16) | - |
