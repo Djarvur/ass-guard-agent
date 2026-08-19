@@ -268,6 +268,60 @@ func TestSnapshotRestore_ByteIdentical(t *testing.T) {
 	}
 }
 
+// TestRestoreNonLatest_RemovesLaterTurnFiles (CR-01): restoring a NON-latest
+// checkpoint must return the workspace to that snapshot's byte-state — files
+// created in later turns (staged into the shadow index by the LATER
+// snapshot's add -A) must be REMOVED. Overlay checkout never deletes
+// index entries absent from the target tree, and clean -fd only sweeps
+// UNtracked files — the multi-turn undo story (EARLY-01) is broken for every
+// restore except the newest checkpoint without this.
+func TestRestoreNonLatest_RemovesLaterTurnFiles(t *testing.T) {
+	t.Parallel()
+
+	work := t.TempDir()
+	seedWorkspace(t, work)
+
+	s := openStore(t, work)
+	snap(t, s, "sess-undo", "sess-undo-turn-001")
+
+	before := treeMap(t, work)
+
+	// Turn 2: create new files (staged into the shadow index by snapshot B)
+	// and mutate a tracked one.
+	writeTestFile(t, filepath.Join(work, "later.txt"), "created in turn 2\n")
+	writeTestFile(t, filepath.Join(work, "laterdir", "nested.txt"), "created in turn 2, new dir\n")
+	writeTestFile(t, filepath.Join(work, "readme.txt"), "mutated in turn 2\n")
+
+	snap(t, s, "sess-undo", "sess-undo-turn-002")
+
+	err := s.Restore(context.Background(), "sess-undo-turn-001")
+	if err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+
+	after := treeMap(t, work)
+
+	if reflect.DeepEqual(before, after) {
+		return
+	}
+
+	for path := range after {
+		if _, ok := before[path]; !ok {
+			t.Errorf("restore: path %q created in a LATER turn survived restoring turn-001", path)
+		}
+	}
+
+	for path, h := range before {
+		ah, ok := after[path]
+		switch {
+		case !ok:
+			t.Errorf("restore: path %q from turn-001 missing after restore", path)
+		case ah != h:
+			t.Errorf("restore: path %q content differs (want hash %s, got %s)", path, h, ah)
+		}
+	}
+}
+
 // TestSnapshot_UserGitUntouched (Task 1, Test 2 — the core EARLY-01
 // invariant): when the workspace IS a git repository, Snapshot leaves the
 // user's .git byte-identical: HEAD ref bytes, index bytes, porcelain status,
