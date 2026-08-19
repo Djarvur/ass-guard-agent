@@ -5,15 +5,15 @@ milestone_name: ACP Early Adoption
 current_phase: 12
 current_phase_name: product-functional-completeness
 status: executing
-stopped_at: Completed 12-02-PLAN.md (plugin-install discovery; live probe evidence + mise ci green)
-last_updated: "2026-08-18T22:43:11.902Z"
+stopped_at: Completed 12-01-PLAN.md (AskUserQuestion E2E; witness approved + finding fixed)
+last_updated: "2026-08-19T00:24:50.430Z"
 last_activity: 2026-08-19
 last_activity_desc: Phase 12 execution started
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 23
-  completed_plans: 16
+  completed_plans: 17
 ---
 
 # State: ass-guard-agent (working name)
@@ -27,12 +27,12 @@ See: .planning/PROJECT.md (updated 2026-08-14)
 ## Current Position
 
 Phase: 12 (product-functional-completeness) — EXECUTING
-Plan: 2 of 8 (12-01 — code tasks DONE, Task 3 operator checkpoint BLOCKING)
-Status: 12-01 Tasks 1+2 complete + `mise ci` green (commits 99663e0 RED, 8a909f2 T1 GREEN, 8ffe40a T2 RED, 4edd91a T2 GREEN, e45d2ae lint); Task 3 (live-serve AskUserQuestion witness) awaiting the operator — see Blockers/Concerns top entry for the exact legs + evidence commands. 12-01-SUMMARY.md deferred until the checkpoint resolves (the plan's own done criteria gate on it).
-Last activity: 2026-08-19 — 12-01 code execution complete; live checkpoint staged
-Next action: Operator runs the two live legs (Zed + ZAI_API_KEY; scratch at /tmp/ask-live-scratch, binary + evidence dir at /tmp/ask-live-evidence/). On "approved"/"approved-main": continuation collects evidence → SUMMARY → state advance → 12-02. Dispatch order after 12-01/12-02: `/gsd:plan-phase 14` → 12-05 → 12-04 → 12-06 → **ADOPTION LINE** → 12-03 → 12-08 → 12-07 → 13.
+Plan: 2 of 8 COMPLETE (12-01 AskUserQuestion + 12-02 plugin discovery; next unexecuted: 12-05 per the adoption split)
+Status: 12-01 CLOSED 2026-08-19 — operator live witness APPROVED (leg 1 reply-as-tool-result + leg 2 D-01 timeout both PASS); the witness's ONE finding (ask surface dropped on the live wire by the Writer's decoded-newline transport guard) root-caused, fixed (`1b38e3d`, single-line render + server-level regression pin), `mise ci` green; SUMMARY written.
+Last activity: 2026-08-19 — 12-01 witness verdict + fix + SUMMARY
+Next action: `/gsd:plan-phase 14` (Adoption Readiness — EARLY-01..06; may overlap), then 12-05 → 12-04 → 12-06 → **ADOPTION LINE** → 12-03 → 12-08 → 12-07 → 13. TWO residuals recorded in WINDOWS.md + 12-*/deferred-items.md: (1) timer-resume chunks not client-mirrored (route: 12-07); (2) PRE-EXISTING model newline-chunk drops on the live wire (the same transport guard — operator disposition).
 
-Progress: [████░░░░░░] 43%
+Progress: [█████░░░░░] 46%
 
 ## Performance Metrics
 
@@ -44,6 +44,7 @@ Progress: [████░░░░░░] 43%
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 12 P02 | 40min | 4 tasks | 28 files |
+| Phase 12 P01 | 183min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -82,6 +83,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase ?]: [08-01] shadow warnings via swappable slog stderr seam; precedence direction unchanged (D-06)
 - [Phase ?]: [08-02] DDG fixture strategy under anomaly wall: structure-contract fixture with real data + real anomaly capture + documented regeneration (clean-egress curl)
 - [Phase ?]: [12-02 EXECUTED, 2026-08-18] Claude-Code plugin installs consumed as native: BOTH installed_plugins.json shapes parse (v1 array + the live v2 object with projectPath gating); plugin roots are PROJECT .claude/plugins/ over USER ~/.claude/plugins/ as the two LOWEST precedence tiers (existing D-06 chain untouched; zcode root dropped); ALL FIVE contribution kinds merged — skills/, commands/ (same readers as .claude), agents/ (spawnable subagent types: Tools as restricted set, Prompt as per-dispatch system block; .claude/agents/ first-class), hooks/hooks.json (bounded runner: sanitized env PATH/HOME+CLAUDE_PLUGIN_ROOT, per-hook timeout, 30k caps, documented stdin JSON, exit-2 PreToolUse refusal as the policy channel, unmapped events observe-only), .mcp.json (lowest MCP layer through the existing host). Live-proven on the operator's real cache: 8 plugins, 42 cc-skills-golang skills recovered via the toolsList frontmatter fix; write-boundary mtime-proven; mise ci green. Commits a9d8a47..62c0a0d (TDD RED/GREEN per task).
+- [Phase ?]: 12-01: AskUserQuestion suspends (never blocks the prompt call); the reply arrives as the next session/prompt and IS the tool result (captured answered form); the D-01 timer (10m default, 0=block-forever) drives the same resume path; a suspended turn never chains (ActionAsk, no table lookup, learning store bypassed)
 
 ### Pending Todos
 
@@ -89,7 +91,7 @@ None yet.
 
 ### Blockers/Concerns
 
-- [Phase 12 / 12-01 Task 3, BLOCKING OPERATOR CHECKPOINT (live-serve AskUserQuestion witness — the phase gate's named leg), staged 2026-08-19]: all CODE work is done + `mise ci` green (RED `99663e0` → T1 GREEN `8a909f2` → T2 RED `8ffe40a` → T2 GREEN `4edd91a` → lint `e45d2ae`): AskBroker suspension/resume (D-01 timer default 10m, 0=block-forever), captured answered form + corpus-absent non-answer fixture, engine ActionAsk no-chain pin, sessionFor wiring, reply-as-tool-result routing, `--ask-timeout` flag. What offline proof CANNOT prove: a LIVE serve session where the real model asks, the OPERATOR answers from a real ACP client (Zed), and the reply lands as the tool result. AWAITED FROM THE OPERATOR: (leg 1) `export ZAI_API_KEY=<GLM Coding Plan key>`, connect Zed (or any ACP client) to `/tmp/ask-live-evidence/ass-guard acp serve --work-dir /tmp/ask-live-scratch` (binary prebuilt; registry/`docs/recapture-runbook.md` path also works), prompt: "I need to add a cache to this project — ask me which cache library to use before touching code", verify the question+options render in the client AND the turn's response completes (no stuck spinner), reply with an option in plain text, verify the model's next message acknowledges YOUR answer; (leg 2, optional D-01 hands-off proof) repeat with `--ask-timeout 30s` WITHOUT answering — after ~30s the model receives the non-answer and proceeds/declines on its own. EVIDENCE the continuation collects on resume: the scratch session's transcript lines under `/tmp/ask-live-scratch/.ass-guard/` (ask_suspended record + tool_result carrying the answer verbatim), the engine_decision line (action=ask), copied to `/tmp/ask-live-evidence/`; then SUMMARY + state advance. Resume signal per the plan: "approved" (both legs), "approved-main" (leg 1 only — record the timeout-leg residual), or a failure description.
+- [Phase 12 / 12-01 Task 3, RESOLVED 2026-08-19 — operator witness APPROVED (was the blocking live-serve checkpoint): both legs PASS (leg 1 session d9f98023: reply "ristretto" landed verbatim as the tool result `User has answered your questions: "ristretto"`, model proceeded on it with real work; leg 2 session e253bfbd: +30.000s timeout fired the non-answer form, the resumed turn correctly declined to touch code). The witness's ONE finding — the rendered ask surface never reached the live client wire — was fixed in `1b38e3d`: the Writer's decoded-newline transport guard (framer.go containsDecodedNewline, v1.0) silently drops newline-carrying frames; the surface now renders single-line, pinned by TestAskWiring_ServerLevelSurface through the REAL acp.Server. The same guard ALSO drops the model's own newline-carrying text chunks (pre-existing; 9 dropped in leg 1) — recorded in WINDOWS.md + deferred-items.md for the operator. Original checkpoint text retained below for archaeology]: all CODE work is done + `mise ci` green (RED `99663e0` → T1 GREEN `8a909f2` → T2 RED `8ffe40a` → T2 GREEN `4edd91a` → lint `e45d2ae`): AskBroker suspension/resume (D-01 timer default 10m, 0=block-forever), captured answered form + corpus-absent non-answer fixture, engine ActionAsk no-chain pin, sessionFor wiring, reply-as-tool-result routing, `--ask-timeout` flag. What offline proof CANNOT prove: a LIVE serve session where the real model asks, the OPERATOR answers from a real ACP client (Zed), and the reply lands as the tool result. AWAITED FROM THE OPERATOR: (leg 1) `export ZAI_API_KEY=<GLM Coding Plan key>`, connect Zed (or any ACP client) to `/tmp/ask-live-evidence/ass-guard acp serve --work-dir /tmp/ask-live-scratch` (binary prebuilt; registry/`docs/recapture-runbook.md` path also works), prompt: "I need to add a cache to this project — ask me which cache library to use before touching code", verify the question+options render in the client AND the turn's response completes (no stuck spinner), reply with an option in plain text, verify the model's next message acknowledges YOUR answer; (leg 2, optional D-01 hands-off proof) repeat with `--ask-timeout 30s` WITHOUT answering — after ~30s the model receives the non-answer and proceeds/declines on its own. EVIDENCE the continuation collects on resume: the scratch session's transcript lines under `/tmp/ask-live-scratch/.ass-guard/` (ask_suspended record + tool_result carrying the answer verbatim), the engine_decision line (action=ask), copied to `/tmp/ask-live-evidence/`; then SUMMARY + state advance. Resume signal per the plan: "approved" (both legs), "approved-main" (leg 1 only — record the timeout-leg residual), or a failure description.
 
 - [Phase 8 / chaining mechanism, RESOLVED-EXECUTED 2026-08-15 (the final leg) — the findings-6 disposition executed + LIVE-PROVEN]: the explore-boundary nondeterminism is closed by COMMAND-PROVENANCE chaining (the dispositioned route a): `TurnOutput.StartedBy` + the optional `engine.CommandMatcher` + the seeded `[[command_patterns]]` row `opsx:explore → /opsx:propose`, consulted ONLY after the dual signals miss. The mechanism's first live firing chained the boundary on run 1 of the final E2E (decision `continue command:post-explore-handoff`, span `opsx:explore`); the run then exposed ONE completion defect — the bare injected `/opsx:propose` carried no subject and the real propose command asked for one (chain dead at stage 2; evidence /tmp/e2e-final-evidence/gated-suite.log) — fixed by scenario-subject forwarding at the expansion seam (a bare injected command inherits the FIRST invocation's arguments, mirroring the capture's operator). Run 2 PASSED the full zero-continue chain (474.43s: 3 continues — 1 provenance + 2 text rows; all four stages' provenance carried `add-a-tiny-feature`; real archive dir on disk). The safety properties hold unchanged (non-command turns trigger nothing; provenance is unspoofable from model-visible content). Retroactive operator confirmation pending; revertible via 4967cb8..c84ab67.
 
@@ -153,6 +155,6 @@ Carried from v1.0 close — dispositioned into v1.1 scope:
 
 ## Session Continuity
 
-Last session: 2026-08-18T22:42:45.854Z
-Stopped at: Completed 12-02-PLAN.md (plugin-install discovery; live probe evidence + mise ci green)
+Last session: 2026-08-19T00:24:37.093Z
+Stopped at: Completed 12-01-PLAN.md (AskUserQuestion E2E; witness approved + finding fixed)
 Resume file: None

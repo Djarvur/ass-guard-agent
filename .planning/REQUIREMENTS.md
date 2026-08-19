@@ -42,7 +42,7 @@
 
 *(Operator re-scope 2026-08-16: "make the product fully functional as soon as possible"; split same day into the machinery half (this, Phase 12) and the OpenSpec-workflow half (Phase 13). Ground truth: 9 of the 19 built-in catalog tools still return "no implementation yet" — the 08-08 deferred-tools table never dispositioned; Bash background flags unimplemented; corpus-absent result forms routed to Phase 9's re-capture; zero behavioral-eval regression net — ECOSYSTEM-AUDIT §3.3 calls this the biggest methodological hole.)*
 
-- [ ] **ACP-01**: The model invoking `AskUserQuestion` gets a real question surface on ACP — question + options surface to the client in the captured shape, the turn suspends on the engine's ask path, and the operator's reply lands as the tool result; capture-grounded result form; the no-confirmation-tier safety model is untouched (a model-initiated question, not a tool-execution gate). Directly addresses the Phase-8 residual class where the model ends a terminal stage by asking a question in plain text and the engine correctly does nothing
+- [x] **ACP-01**: The model invoking `AskUserQuestion` gets a real question surface on ACP — question + options surface to the client in the captured shape, the turn suspends on the engine's ask path, and the operator's reply lands as the tool result; capture-grounded result form; the no-confirmation-tier safety model is untouched (a model-initiated question, not a tool-execution gate). Directly addresses the Phase-8 residual class where the model ends a terminal stage by asking a question in plain text and the engine correctly does nothing
 - [ ] **ACP-02**: `EnterPlanMode` / `ExitPlanMode` execute for real with captured result forms; plan-mode state is visible in the transcript and respected by the turn loop (scope per capture — design at plan-phase)
 - [ ] **ACP-03**: `SendMessage` and `ReadSessionContext` execute for real (cross-agent messaging + prior-session context reads), capture-grounded result forms
 - [ ] **ACP-04**: `CronCreate` / `CronList` / `CronDelete` execute against a real persisted schedule, and a due scheduled prompt fires as an engine-driven turn while the agent runs (no daemon, no network port — firing semantics designed at plan-phase within the editor-owned lifecycle)
@@ -120,7 +120,7 @@ Which phases cover which requirements. Filled during roadmap creation (2026-08-1
 | AUD-03 | Phase 9 | Pending (code-complete; phase not verified) |
 | AUD-04 | Phase 9 | Pending (code-complete; phase not verified) |
 | AUD-05 | Phase 9 | Pending (blocked on operator capture workload) |
-| ACP-01 | Phase 12 | Pending |
+| ACP-01 | Phase 12 | Complete |
 | ACP-02 | Phase 12 | Pending |
 | ACP-03 | Phase 12 | Pending |
 | ACP-04 | Phase 12 | Pending |
