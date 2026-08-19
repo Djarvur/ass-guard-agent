@@ -4,12 +4,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -407,3 +409,341 @@ func TestCheckpointListOrdering(t *testing.T) {
 		t.Errorf("List output unstable:\nfirst:  %+v\nsecond: %+v", first, second)
 	}
 }
+
+// --- Task 2: the invariant battery ---
+
+// TestSnapshot_NoChangesStillCommits (Test 6): a turn with zero workspace
+// changes still produces a checkpoint — two distinct refs exist, and both
+// restore to the same tree (every turn boundary stays restorable).
+func TestSnapshot_NoChangesStillCommits(t *testing.T) {
+	t.Parallel()
+
+	work := t.TempDir()
+	seedWorkspace(t, work)
+
+	s := openStore(t, work)
+	snap(t, s, "sess-nc", "sess-nc-turn-001")
+	snap(t, s, "sess-nc", "sess-nc-turn-002")
+
+	entries, err := s.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+
+	if len(entries) != 2 {
+		t.Fatalf("List returned %d entries; want 2 (zero-change turns still commit)", len(entries))
+	}
+
+	wantTree := treeMap(t, work)
+
+	for _, id := range []string{"sess-nc-turn-001", "sess-nc-turn-002"} {
+		err = s.Restore(context.Background(), id)
+		if err != nil {
+			t.Fatalf("Restore(%s): %v", id, err)
+		}
+
+		if got := treeMap(t, work); !reflect.DeepEqual(got, wantTree) {
+			t.Errorf("Restore(%s) changed the tree; want the identical empty-change tree", id)
+		}
+	}
+}
+
+// TestSnapshot_IdempotentSameTurn (Test 7): re-snapshotting the same
+// (sessionID, turnID) — the retry-after-transient-failure case — updates the
+// SAME ref: exactly one ref exists for the id, no duplicates, and both
+// restores yield identical trees.
+func TestSnapshot_IdempotentSameTurn(t *testing.T) {
+	t.Parallel()
+
+	work := t.TempDir()
+	seedWorkspace(t, work)
+
+	s := openStore(t, work)
+	snap(t, s, "sess-idem", "sess-idem-turn-001")
+	snap(t, s, "sess-idem", "sess-idem-turn-001")
+
+	entries, err := s.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+
+	for _, e := range entries {
+		if e.Ref != "refs/checkpoints/sess-idem-turn-001" {
+			t.Fatalf("duplicate ref %s; want exactly one ref for the re-snapshotted turn", e.Ref)
+		}
+	}
+
+	if len(entries) != 1 {
+		t.Fatalf("List returned %d entries; want 1 (same turn, updated ref)", len(entries))
+	}
+
+	wantTree := treeMap(t, work)
+
+	for range 2 {
+		err = s.Restore(context.Background(), "sess-idem-turn-001")
+		if err != nil {
+			t.Fatalf("Restore: %v", err)
+		}
+
+		if got := treeMap(t, work); !reflect.DeepEqual(got, wantTree) {
+			t.Error("repeated restores yield different trees; want the same tree both times")
+		}
+	}
+}
+
+// TestSnapshot_InterruptedNeverExposesPartialRef (Test 8): the commit-only
+// step leaves NO refs/checkpoints/ entry — the turn ref appears only after
+// update-ref runs (a ref exists only once its commit object does); and a
+// ctx-canceled Snapshot returns an error with the ref set unchanged.
+func TestSnapshot_InterruptedNeverExposesPartialRef(t *testing.T) {
+	t.Parallel()
+
+	work := t.TempDir()
+	seedWorkspace(t, work)
+
+	s := openStore(t, work)
+
+	// Drive the internal commit-only step directly: the commit object exists
+	// but no turn ref may.
+	sha, err := s.commitSnapshot(context.Background(), "sess-int-turn-001")
+	if err != nil {
+		t.Fatalf("commitSnapshot: %v", err)
+	}
+
+	if sha == "" {
+		t.Fatal("commitSnapshot returned an empty sha")
+	}
+
+	entries, err := s.List()
+	if err != nil {
+		t.Fatalf("List after commit-only step: %v", err)
+	}
+
+	if len(entries) != 0 {
+		t.Fatalf("commit-only step exposed %d refs; want 0 until update-ref runs", len(entries))
+	}
+
+	// The ref appears exactly when update-ref runs.
+	err = s.updateRef(context.Background(), "sess-int-turn-001", sha)
+	if err != nil {
+		t.Fatalf("updateRef: %v", err)
+	}
+
+	entries, err = s.List()
+	if err != nil {
+		t.Fatalf("List after update-ref: %v", err)
+	}
+
+	if len(entries) != 1 || entries[0].Ref != "refs/checkpoints/sess-int-turn-001" {
+		t.Fatalf("List = %+v; want exactly the just-updated ref", entries)
+	}
+
+	// A ctx-canceled Snapshot errors and leaves the ref set unchanged.
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	cerr := s.Snapshot(canceled, "sess-int", "sess-int-turn-002")
+	if cerr == nil {
+		t.Fatal("canceled-ctx Snapshot must return an error")
+	}
+
+	after, err := s.List()
+	if err != nil {
+		t.Fatalf("List after canceled snapshot: %v", err)
+	}
+
+	if len(after) != 1 || after[0].Ref != "refs/checkpoints/sess-int-turn-001" {
+		t.Fatalf("canceled snapshot changed the ref set: %+v", after)
+	}
+}
+
+// TestConcurrentSnapshotRestoreSerialize (Test 9): a concurrent Snapshot and
+// Restore against one store via the PUBLIC API both complete without index
+// corruption (run under -race); the store stays usable afterwards.
+func TestConcurrentSnapshotRestoreSerialize(t *testing.T) {
+	t.Parallel()
+
+	work := t.TempDir()
+	seedWorkspace(t, work)
+
+	s := openStore(t, work)
+	snap(t, s, "sess-conc", "sess-conc-turn-001")
+
+	writeTestFile(t, filepath.Join(work, "mutated.txt"), "changed between snapshot and restore\n")
+
+	var (
+		wg         sync.WaitGroup
+		snapErr    error
+		restoreErr error
+	)
+
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+
+		snapErr = s.Snapshot(context.Background(), "sess-conc", "sess-conc-turn-002")
+	}()
+
+	go func() {
+		defer wg.Done()
+
+		restoreErr = s.Restore(context.Background(), "sess-conc-turn-001")
+	}()
+
+	done := make(chan struct{})
+
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(30 * time.Second):
+		t.Fatal("concurrent Snapshot+Restore did not serialize within 30s (lock deadlock?)")
+	}
+
+	if snapErr != nil {
+		t.Errorf("concurrent Snapshot: %v", snapErr)
+	}
+
+	if restoreErr != nil {
+		t.Errorf("concurrent Restore: %v", restoreErr)
+	}
+
+	// A consistent ref list after the race (no index corruption).
+	assertEntryCount(t, s, 2)
+
+	// The store remains fully usable: one more snapshot round-trip.
+	snap(t, s, "sess-conc", "sess-conc-turn-003")
+	assertEntryCount(t, s, 3)
+}
+
+// assertEntryCount fails unless List returns exactly want entries.
+func assertEntryCount(t *testing.T, s *Store, want int) {
+	t.Helper()
+
+	entries, err := s.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+
+	if len(entries) != want {
+		t.Fatalf("List returned %d entries; want %d", len(entries), want)
+	}
+}
+
+// TestRetentionPrune (Test 10): DefaultKeep+5 snapshots leave exactly
+// DefaultKeep refs — the oldest pruned, the newest kept.
+func TestRetentionPrune(t *testing.T) {
+	t.Parallel()
+
+	work := t.TempDir()
+	writeTestFile(t, filepath.Join(work, "tiny.txt"), "tiny workspace\n")
+
+	s := openStore(t, work)
+
+	total := DefaultKeep + 5
+
+	for turn := range total {
+		snap(t, s, "sess-ret", fmt.Sprintf("sess-ret-turn-%03d", turn+1))
+	}
+
+	entries, err := s.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+
+	if len(entries) != DefaultKeep {
+		t.Fatalf("retention kept %d refs; want exactly DefaultKeep=%d", len(entries), DefaultKeep)
+	}
+
+	oldest := entries[0]
+	newest := entries[len(entries)-1]
+
+	if oldest.TurnNum != 6 {
+		t.Errorf("oldest surviving = turn %d; want turn 6 (turns 1-5 pruned)", oldest.TurnNum)
+	}
+
+	if newest.TurnNum != total {
+		t.Errorf("newest surviving = turn %d; want turn %d", newest.TurnNum, total)
+	}
+}
+
+// TestStorePerms (Test 11): after Open on a fresh workDir, the store dirs
+// are mode 0700 (T-14-02: the shadow store may carry workspace secrets).
+func TestStorePerms(t *testing.T) {
+	t.Parallel()
+
+	work := t.TempDir()
+	openStore(t, work)
+
+	for _, dir := range []string{
+		filepath.Join(work, ".ass-guard", "checkpoints"),
+		filepath.Join(work, ".ass-guard", "checkpoints", "shadow.git"),
+	} {
+		info, err := os.Stat(dir)
+		if err != nil {
+			t.Fatalf("stat %s: %v", dir, err)
+		}
+
+		if info.Mode().Perm() != 0o700 {
+			t.Errorf("%s mode = %v; want 0700", dir, info.Mode().Perm())
+		}
+	}
+}
+
+// TestRestore_RejectsBadIds (Test 12, T-14-01): malformed ids — option-like
+// strings, refspecs, traversal paths, the empty string — each return a
+// validation error WITHOUT spawning any git subprocess (asserted via the
+// gitRun seam); a well-formed but unknown id DOES reach git and errors.
+//
+// NOT parallel: it swaps the package gitRun seam (sequential tests run to
+// completion before paused parallel tests resume, so no interference).
+func TestRestore_RejectsBadIds(t *testing.T) { //nolint:paralleltest // swaps the package gitRun seam
+	work := t.TempDir()
+	seedWorkspace(t, work)
+
+	s := openStore(t, work)
+
+	spawns := 0
+	orig := gitRun
+
+	gitRun = func(context.Context, string, []string, string, ...string) ([]byte, error) {
+		spawns++
+
+		return nil, errFakeGit
+	}
+
+	defer func() { gitRun = orig }()
+
+	for _, id := range []string{"HEAD", "--help", "../../etc", "refs/heads/main", ""} {
+		err := s.Restore(context.Background(), id)
+		if err == nil {
+			t.Errorf("Restore(%q) must fail (malformed checkpoint id)", id)
+		}
+
+		if !strings.Contains(err.Error(), "invalid checkpoint id") {
+			t.Errorf("Restore(%q) err = %v; want the invalid-id validation error", id, err)
+		}
+	}
+
+	if spawns != 0 {
+		t.Fatalf("malformed ids spawned git %d times; validation must precede ANY exec", spawns)
+	}
+
+	// A well-formed but UNKNOWN id passes validation, reaches git, and
+	// surfaces the git failure as a structured error.
+	err := s.Restore(context.Background(), "sess-unknown-turn-999")
+	if err == nil {
+		t.Fatal("Restore of an unknown-but-valid id must fail")
+	}
+
+	if spawns != 1 {
+		t.Errorf("unknown-but-valid id spawned git %d times; want exactly 1", spawns)
+	}
+}
+
+// errFakeGit is the seam double's canned git failure.
+var errFakeGit = errors.New("fake git: always fails")
