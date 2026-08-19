@@ -36,6 +36,69 @@ Follow `docs/recapture-runbook.md`; this kit automates its scripted procedure. S
 discipline: the driver reads `ANTHROPIC_API_KEY`/`ZAI_API_KEY` from the environment;
 capture dumps pass through the redaction pipeline — never commit unredacted captures.
 
+## Freshness record (12-05 Task 1, 2026-08-20)
+
+- **Protocol drift: NONE.** Current `zcode.cjs --version` is still `0.16.3` (==
+  `zcode-version.txt`); `session/create` + `session/send` + config-change +
+  `session/resume` boundaries all worked unmodified.
+- **Kit-freshness fixes required after the archival** (the kit moved
+  `/tmp/zcode-recapture/` → `tools/zcode-recapture/`, and /tmp reaped the originals):
+  - `scripted-workload.mjs` pointed the probe server at `/tmp/zcode-recapture/probe-server.mjs`
+    (GONE) — now KIT-RELATIVE (`import.meta.url`).
+  - The config restore read `/tmp/zcode-recapture/cli-config-backup.json` (GONE) inside a
+    `catch {}` — a silent no-op that would have LEFT the probe entry in the operator's
+    `~/.zcode/cli/config.json`. Now the workload takes a FRESH backup to
+    `/tmp/zcode-recapture-run/cli-config-backup.json` BEFORE any touch and restores +
+    diff-verifies it in a process-`exit` handler (non-zero exit on diff — T-12-05-01).
+  - `zcode-driver.mjs --selftest` added: side-effect-free readiness probe (binary present,
+    enabled provider with key in `~/.zcode/v2/config.json`, kit files intact).
+  - The workload now SEEDS the scratch workspace (`/tmp/zcode-recapture-ws`: README.md,
+    calc.js, test.js, package.json) — the original run seeded it by hand.
+  - The archived mechanism probes (`hotreload*.mjs`, `kill-test.mjs`, `resume-test.mjs`)
+    still carry the dead `/tmp/zcode-recapture/` paths — left VERBATIM (archival copies,
+    not operative; do not run them as-is).
+- **Freshness proof run (2026-08-20, session `sess_0f01a95d-d56f-4cc4-9ba3-414597a0b853`):**
+  the 5-turn workload ran end-to-end against live zcode under the operator's logged-in
+  `builtin:zai-coding-plan`; RESULT: SESSION QUALIFIES — 14 request records (>=5), 81
+  distinct tools (>=10), 1 subagent file, tool-set timeline mechanically verified
+  79 → 80 (`mcp__recapture_probe__recapture_probe` attached) → 79 (detached); config
+  restore diff-empty. Log: `/tmp/zcode-recapture-run/task1-freshness-2026-08-20.txt` (in-kit copy; the live
+  rollout pair: main `model-io-sess_0f01a95d…jsonl` + subagent
+  `model-io-sess_subagent_agent_aabeb358…jsonl`). NOTE: one aux single-tool request
+  record appears inside T1 (harness artifact, same class as the drift report's); T5's
+  model SELF-REPORT claimed the probe was still attached — the wire timeline disproves
+  it (models cannot introspect their catalog; the request records are ground truth).
+- **Side-dirs salvage check (12-CONTEXT Discretion item, read-only):**
+  `~/.zcode/cli/{agents,artifacts,exec}/sess_3cee56ae…` survive but hold only the OLD
+  pin's ordinary machinery — `artifacts/` = 2 Edit-tool diff JSONs (scratch calc.js /
+  test.js before/after), `agents/` = 1 subagent transcript (5,908 streaming records,
+  Bash/find calls only), `exec/` = EMPTY. ZERO deferred-tool content (the old workload
+  never exercised them — the very gap 12-05's tour closes). Nothing folded into the
+  harvest; the fresh capture is the sole ground truth.
+
+## Runbook addendum: the deferred-tools tour + cleanup (12-05 Task 2)
+
+The scripted workload's tour legs (run AFTER the base 5 turns, same session — the
+capture then carries both the divergence thresholds AND the deferred-tool forms):
+
+1. **ask answered** — a turn instructing the model to ask a question before proceeding;
+   the driver answers via a follow-up `session/send` (or the app-server's ask
+   interaction) while the turn holds its question state.
+2. **ask non-answer (yolo)** — the same shape with NO answer sent; the runtime's
+   ask-timeout path produces the non-answer result.
+3. **plan mode** — EnterPlanMode then ExitPlanMode with a real plan text.
+4. **subagent + SendMessage** — a fan-out turn, then SendMessage to the spawned agent id.
+5. **ReadSessionContext** — targeting the capture session itself.
+6. **cron quartet** — CronCreate (delayMinutes ONLY — never recurring; bounded operator-env
+   footprint) → CronList → CronUpdate → CronDelete.
+7. **background bash** — Bash `run_in_background` of a sleep → TaskOutput (block + non-block)
+   → TaskStop.
+8. **Bash timeout leg** — timeout 10000 on a `sleep 30` (the timeout form hunt).
+9. **truncation hunt** — a command emitting ~200KB (yes/seq loop).
+10. **cleanup proof** — the final step proves CronList EMPTY after the deletes (the
+    workload exits non-zero otherwise), and the config restore diff-empty check runs on
+    every exit path.
+
 ## Provenance
 
 - Produced 2026-08-15→16 during Phase 9 AUD-05 (the operator-directed app-server stdio

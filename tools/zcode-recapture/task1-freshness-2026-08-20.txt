@@ -1,0 +1,24 @@
+[cfg] clean start (no probe)
+WORKLOAD session: sess_0f01a95d-d56f-4cc4-9ba3-414597a0b853
+T1 read/search (46s): - **Read**: README.md describes a tiny "calc" demo; calc.js exports an `add(a, b)` function.
+T2 mutation (95s): Done — all tests pass. Test output (run twice for good measure):
+T3 subagent (166s): The subagent's results across the two `*.js` files:
+[cfg] probe ADDED -> resume for attach
+T4 probe-attached (211s): YES 82 | recapture-probe-ok (probe server alive)
+[cfg] probe REMOVED -> resume for detach
+T5 mixed finale (246s): (1) YES — recapture_probe is still among my available tools. (2) Read package.json: it's `calc-scrat
+[cfg] restored; diff vs backup EMPTY
+
+WORKLOAD fresh rollout files: ["model-io-sess_0f01a95d-d56f-4cc4-9ba3-414597a0b853.jsonl","model-io-sess_subagent_agent_aabeb358-dc8d-448e-a140-7a398d989f1a.jsonl"]
+WORKLOAD main session file: model-io-sess_0f01a95d-d56f-4cc4-9ba3-414597a0b853.jsonl | subagent files: ["model-io-sess_subagent_agent_aabeb358-dc8d-448e-a140-7a398d989f1a.jsonl"]
+
+QUALIFICATION (runbook §3 thresholds):
+  request records (turns proxy): 14  PASS (>=5)
+  distinct tools: 81  PASS (>=10)
+  subagent dispatch: PASS (>=1)
+  tool-sets: 3 distinct -> n=79,probe=false -> n=1,probe=false -> n=80,probe=true  PASS (mid-session catalog change) (>=2)
+  attach AND detach directions: PASS
+
+WORKLOAD RESULT: SESSION QUALIFIES
+[cfg] restored; diff vs backup EMPTY
+EXIT=0

@@ -2,28 +2,75 @@
 // Thresholds: >=5 user turns, >=10 distinct tools, >=1 subagent dispatch, mid-session catalog
 // change with BOTH directions (attach + detach via config-change + session/resume boundaries —
 // the only headless-reachable mechanism; /mcp connect|disconnect are TUI-client-side).
+//
+// 2026-08-20 freshness fix (12-05 Task 1): the kit moved /tmp/zcode-recapture/ ->
+// tools/zcode-recapture/, so the probe-server path and the config-restore backup path are now
+// KIT-RELATIVE / RUN-SCOPED. The config backup is taken FRESH before any touch and restored +
+// diff-verified in a process 'exit' handler (T-12-05-01: restore must not depend on a /tmp file
+// that may not exist — the old catch{} silently left the probe entry in the operator's config).
 import { ZcodeDriver } from "./zcode-driver.mjs";
-import { readFileSync, writeFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, writeFileSync, readdirSync, mkdirSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
 
+const KIT_DIR = dirname(fileURLToPath(import.meta.url));
 const CLI_CFG = join(process.env.HOME, ".zcode", "cli", "config.json");
 const ROLLOUT = join(process.env.HOME, ".zcode", "cli", "rollout");
 const WS = "/tmp/zcode-recapture-ws";
+const RUN_DIR = "/tmp/zcode-recapture-run";
+const BACKUP = join(RUN_DIR, "cli-config-backup.json");
+const PROBE = join(KIT_DIR, "probe-server.mjs");
 const MODEL = { providerId: "builtin:zai-coding-plan", modelId: "GLM-5.3" };
+
+// T-12-05-01: backup BEFORE any touch; restore + diff-verify on every exit path.
+mkdirSync(RUN_DIR, { recursive: true });
+writeFileSync(BACKUP, readFileSync(CLI_CFG));
+let cfgDirty = false;
+function restoreConfigAndVerify() {
+  if (!cfgDirty) return;
+  try {
+    writeFileSync(CLI_CFG, readFileSync(BACKUP));
+    const clean = readFileSync(CLI_CFG).equals(readFileSync(BACKUP));
+    console.log(clean ? "[cfg] restored; diff vs backup EMPTY" : "[cfg] CONFIG DIFFERS FROM BACKUP — FAIL");
+    if (!clean) process.exitCode = 1;
+  } catch (e) {
+    console.log("[cfg] restore error:", e.message);
+    process.exitCode = 1;
+  }
+}
+process.on("exit", restoreConfigAndVerify);
+for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => { restoreConfigAndVerify(); process.exit(130); });
 
 function setProbeServer(add) {
   const c = JSON.parse(readFileSync(CLI_CFG, "utf8"));
+  cfgDirty = true;
   if (add) {
     c.mcp = c.mcp ?? {};
     c.mcp.servers = c.mcp.servers ?? {};
-    c.mcp.servers.recapture_probe = { type: "stdio", command: process.execPath, args: ["/tmp/zcode-recapture/probe-server.mjs"] };
+    c.mcp.servers.recapture_probe = { type: "stdio", command: process.execPath, args: [PROBE] };
   } else {
     if (c.mcp?.servers) delete c.mcp.servers.recapture_probe;
     if (c.mcp && Object.keys(c.mcp.servers ?? {}).length === 0) delete c.mcp;
   }
   writeFileSync(CLI_CFG, JSON.stringify(c, null, 2) + "\n");
 }
+
+// Seed the scratch workspace the runbook's turns assume (README/calc/test/package).
+function seedWorkspace() {
+  mkdirSync(WS, { recursive: true });
+  const f = {
+    "README.md": "# calc — tiny demo project\n\nAdd numbers. XYZZY_PLUGH marks the secret keyword location (see calc.js).\n",
+    "calc.js": "'use strict';\n// The XYZZY_PLUGH keyword lives on this line.\nfunction add(a, b) {\n  return a + b;\n}\n\nmodule.exports = { add };\n",
+    "test.js": "'use strict';\nconst assert = require('assert');\nconst { add } = require('./calc');\n\nassert.strictEqual(add(2, 3), 5);\nassert.strictEqual(add(-1, 1), 0);\nconsole.log('test.js: 2 passing');\n",
+    "package.json": '{\n  "name": "calc-scratch",\n  "version": "1.0.0",\n  "private": true,\n  "scripts": { "test": "node test.js" }\n}\n',
+  };
+  for (const [name, content] of Object.entries(f)) {
+    const p = join(WS, name);
+    try { readFileSync(p); } catch { writeFileSync(p, content); }
+  }
+}
+seedWorkspace();
 
 async function resumeWithPin(sid) {
   const d = new ZcodeDriver(WS, { onLog: () => {} });
@@ -98,7 +145,7 @@ try {
   await c.stop();
 }
 
-try { const orig = readFileSync("/tmp/zcode-recapture/cli-config-backup.json"); writeFileSync(CLI_CFG, orig); console.log("[cfg] config restored"); } catch {}
+restoreConfigAndVerify();
 execSync("pkill -f probe-server.mjs || true");
 
 // ---- Qualification check (harvest's mechanical thresholds) ----

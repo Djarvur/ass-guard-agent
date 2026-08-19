@@ -2,10 +2,32 @@
 // Protocol per github.com/william0wang/zcode-acp docs/PROTOCOL.md.
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, existsSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const ZCODE_BIN = "/Applications/ZCode.app/Contents/Resources/glm/zcode.cjs";
+
+// --selftest (12-05 Task 1): side-effect-free readiness check — binary present, operator plan
+// logged in (enabled provider with key), kit intact. Never spawns the app-server.
+if (process.argv[2] === "--selftest") {
+  const checks = [];
+  checks.push(["zcode app-server binary", existsSync(ZCODE_BIN)]);
+  let authed = false;
+  try {
+    const cfg = JSON.parse(readFileSync(join(process.env.HOME, ".zcode", "v2", "config.json"), "utf8"));
+    authed = Object.values(cfg.provider ?? {}).some((p) => p?.enabled && p?.options?.apiKey);
+  } catch {}
+  checks.push(["operator plan logged in (enabled provider + key)", authed]);
+  const kit = dirname(fileURLToPath(import.meta.url));
+  checks.push(["kit: probe-server.mjs", existsSync(join(kit, "probe-server.mjs"))]);
+  checks.push(["kit: scripted-workload.mjs", existsSync(join(kit, "scripted-workload.mjs"))]);
+  checks.push(["cli config readable (workload mutation target)", existsSync(join(process.env.HOME, ".zcode", "cli", "config.json"))]);
+  let ok = true;
+  for (const [name, pass] of checks) { console.log(`${pass ? "PASS" : "FAIL"}  ${name}`); ok = ok && pass; }
+  console.log(ok ? "SELFTEST OK" : "SELFTEST FAILED");
+  process.exit(ok ? 0 : 1);
+}
 
 /** Mirror zcode-acp credentials.ts: inject the first enabled provider from ~/.zcode/v2/config.json as env. */
 function modelEnv() {
