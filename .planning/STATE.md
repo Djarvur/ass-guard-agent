@@ -30,7 +30,7 @@ Phase: 12 (product-functional-completeness) — EXECUTING
 Plan: 2 of 8 COMPLETE (12-01 AskUserQuestion + 12-02 plugin discovery; next unexecuted: 12-05 per the adoption split)
 Status: 12-01 CLOSED 2026-08-19 — operator live witness APPROVED (leg 1 reply-as-tool-result + leg 2 D-01 timeout both PASS); the witness's ONE finding (ask surface dropped on the live wire by the Writer's decoded-newline transport guard) root-caused, fixed (`1b38e3d`, single-line render + server-level regression pin), `mise ci` green; SUMMARY written.
 Last activity: 2026-08-19 — replan: the cb3ab50 comparative-analysis amendment (borrows #13-15) dispositioned against the adoption line; plan structure confirmed unchanged
-Next action: `/gsd:plan-phase 14` (Adoption Readiness — EARLY-01..06; 2026-08-19 planning inputs added: occ surface census for EARLY-06, zcode-version drift-warning slice for EARLY-03), then 12-05 → 12-04 → 12-06 → **ADOPTION LINE** → 12-03 → 12-08 → 12-07 → 13. ONE residual open in WINDOWS.md + 12-*/deferred-items.md: timer-resume chunks not client-mirrored (route: 12-07).
+Next action: `/gsd:execute-phase 14` (6 plans checker-passed 2026-08-19: 0 blockers, revision `6b1d0fd` landed; wave 1 = 14-01 shadow-git checkpoints [tracer], 14-02 compaction verify, 14-03 pi↔shaper audit; wave 2 = 14-04 cache probe, 14-05 token economics, 14-06 tool contract), then 12-05 → 12-04 → 12-06 → **ADOPTION LINE** → 12-03 → 12-08 → 12-07 → 13. ONE residual open in WINDOWS.md + 12-*/deferred-items.md: timer-resume chunks not client-mirrored (route: 12-07).
 
 Progress: [█████░░░░░] 46%
 
@@ -158,5 +158,5 @@ Carried from v1.0 close — dispositioned into v1.1 scope:
 ## Session Continuity
 
 Last session: 2026-08-19T15:15:00.000Z
-Stopped at: Replan 2026-08-19 — cb3ab50 comparative-analysis data studied; borrows #13-15 dispositioned against the adoption line (plan structure confirmed; #15 census → EARLY-06/12-06/07 input, #13 drift-warning → EARLY-03 input + full gate → 12-08/v1.2, #14 outcome store → v1.2); planning docs updated + committed. Next: `/gsd:plan-phase 14`.
+Stopped at: Replan + Phase 14 PLANNED 2026-08-19 — cb3ab50 data dispositioned (borrows #13-15, adoption line unchanged); Phase 14 planned (6 plans, 2 waves, checker VERIFICATION PASSED after one revision; commits b9530bc, 6b1d0fd, 0bf7058). Next: `/gsd:execute-phase 14`.
 Resume file: None
