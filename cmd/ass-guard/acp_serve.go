@@ -22,6 +22,7 @@ import (
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/audit"
+	"github.com/Djarvur/ass-guard-agent/internal/checkpoint"
 	"github.com/Djarvur/ass-guard-agent/internal/coreexec"
 	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/internal/engine"
@@ -836,6 +837,21 @@ func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen // grouping ke
 		dir, _ = os.Getwd()
 	}
 
+	// 14-01 (EARLY-01): the shadow-git checkpoint store — DEFAULT ON, no
+	// flag in v1 (the reversibility backstop only works if it is always
+	// there; a disable knob is a post-adoption config option if the operator
+	// asks). One store per WORKSPACE; every parent turn snapshots at entry.
+	// An open failure degrades LOUDLY to a session without checkpointing
+	// (the AUD-03 audit-write discipline — never a serve refusal).
+	var ckptStore *checkpoint.Store
+
+	st, cerr := checkpoint.Open(dir) //nolint:contextcheck // plan-pinned signature: Store.Open carries no ctx
+	if cerr == nil {
+		ckptStore = st
+	} else {
+		log.Printf("ass-guard: checkpoint store disabled for %s (%v) — turns run WITHOUT undo snapshots", dir, cerr)
+	}
+
 	mgr, err := session.NewManager(dir, sessionID, redactorAdapter{})
 	if err != nil {
 		// Fall back to a no-op manager path; the error is surfaced via Prompt.
@@ -993,6 +1009,13 @@ func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen // grouping ke
 		Hooks: hookRunner,
 	}
 	sess = s
+
+	// 14-01: wire the checkpoint store (nil-guarded — a typed-nil *Store in
+	// the interface would satisfy != nil and panic on SnapshotTurn; an
+	// unwired field is the documented disabled state).
+	if ckptStore != nil {
+		s.Checkpointer = checkpointerAdapter{store: ckptStore}
+	}
 
 	// 12-01: wire the ask broker (suspension + reply routing + the D-01
 	// timer; resumes run under the serve-lifetime ctx).

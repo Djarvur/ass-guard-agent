@@ -335,15 +335,17 @@ func TestCheckpointLiveRollback_Gated(t *testing.T) { //nolint:paralleltest,funl
 		cmd := exec.CommandContext(context.Background(), "git", args...)
 		cmd.Dir = scratch
 
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v in scratch: %v\n%s", args, err, out)
+		out, gerr := cmd.CombinedOutput()
+		if gerr != nil {
+			t.Fatalf("git %v in scratch: %v\n%s", args, gerr, out)
 		}
 	}
 
 	seedFile := filepath.Join(scratch, "seed.txt")
 
-	if err := os.WriteFile(seedFile, []byte("pre-turn content\n"), 0o644); err != nil {
-		t.Fatalf("seed scratch: %v", err)
+	werr := os.WriteFile(seedFile, []byte("pre-turn content\n"), 0o644)
+	if werr != nil {
+		t.Fatalf("seed scratch: %v", werr)
 	}
 
 	prof, perr := profile.NewLoader(filepath.Join(repo, "profiles")).Load(profileZcode)
@@ -365,8 +367,9 @@ func TestCheckpointLiveRollback_Gated(t *testing.T) { //nolint:paralleltest,funl
 		},
 	}
 
-	if err := r.setupEngine(); err != nil {
-		t.Fatalf("setupEngine: %v", err)
+	serr := r.setupEngine()
+	if serr != nil {
+		t.Fatalf("setupEngine: %v", serr)
 	}
 
 	r.loadCommandRegistry()
@@ -389,13 +392,15 @@ func TestCheckpointLiveRollback_Gated(t *testing.T) { //nolint:paralleltest,funl
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	if _, err := r.Run(ctx, sessionID, &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: prompt}}); err != nil {
-		t.Fatalf("live turn: %v", err)
+	_, rerr := r.Run(ctx, sessionID, &noopEmitter{},
+		[]acp.ContentBlock{{Type: blockText, Text: prompt}})
+	if rerr != nil {
+		t.Fatalf("live turn: %v", rerr)
 	}
 
-	if _, err := os.Stat(filepath.Join(scratch, "notes-from-agent.md")); err != nil {
-		t.Fatalf("the live turn did not mutate the workspace (no notes-from-agent.md): %v", err)
+	_, serr2 := os.Stat(filepath.Join(scratch, "notes-from-agent.md"))
+	if serr2 != nil {
+		t.Fatalf("the live turn did not mutate the workspace (no notes-from-agent.md): %v", serr2)
 	}
 
 	// Restore the turn's checkpoint through the SAME store the serve path
@@ -416,8 +421,9 @@ func TestCheckpointLiveRollback_Gated(t *testing.T) { //nolint:paralleltest,funl
 
 	target := entries[len(entries)-1]
 
-	if rerr := store.Restore(context.Background(), strings.TrimPrefix(target.Ref, "refs/checkpoints/")); rerr != nil {
-		t.Fatalf("Restore(%s): %v", target.Ref, rerr)
+	resErr := store.Restore(context.Background(), strings.TrimPrefix(target.Ref, "refs/checkpoints/"))
+	if resErr != nil {
+		t.Fatalf("Restore(%s): %v", target.Ref, resErr)
 	}
 
 	// Byte-identical workspace (full recursive path set + per-file bytes).

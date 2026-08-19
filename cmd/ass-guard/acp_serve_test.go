@@ -1954,10 +1954,23 @@ func TestServeMirror_Override(t *testing.T) {
 
 	deadline := time.Now().Add(10 * time.Second)
 
+	// Wait for the turn's TERMINAL transcript line, not just the mid-turn
+	// request_shaped: the 14-01 turn-entry checkpoint lengthens the turn, and
+	// returning at request_shaped left the turn's async writers (audit
+	// body-store shards) racing t.TempDir's RemoveAll — a flake measured at
+	// 2/10 with the checkpoint wiring (baseline 0/10). The mirror never
+	// carries assistant_message (it subscribes request_shaped/
+	// engine_decision/usage only), so turn completion is observed on the
+	// SESSION TRANSCRIPT; the drain sleep lets the async TranscriptWriter
+	// finish (the TestEndToEndSession flush pattern).
+	transcriptPath := filepath.Join(workDir, ".ass-guard", "transcript_"+sessionID+".jsonl")
+
 	for time.Now().Before(deadline) {
 		raw, rerr := os.ReadFile(overridePath)
+		traw, terr := os.ReadFile(transcriptPath)
 
-		if rerr == nil && strings.Contains(string(raw), `"kind":"request_shaped"`) {
+		if rerr == nil && strings.Contains(string(raw), `"kind":"request_shaped"`) &&
+			terr == nil && strings.Contains(string(traw), `"type":"assistant_message"`) {
 			// the override file has the line; the per-session default must NOT exist
 			_, perr := os.Stat(filepath.Join(workDir, ".ass-guard", "audit", sessionID+".jsonl"))
 			if perr == nil {
@@ -1967,6 +1980,8 @@ func TestServeMirror_Override(t *testing.T) {
 			if strings.Contains(string(raw), "sk-override-canary-xyz") {
 				t.Error("canary leaked into the override mirror")
 			}
+
+			time.Sleep(150 * time.Millisecond) // async writer drain (house flush pattern)
 
 			return
 		}

@@ -15,6 +15,20 @@ import (
 // checkpointNoEntriesNote is the empty-store list note (exit 0).
 const checkpointNoEntriesNote = "no checkpoints"
 
+// checkpointerAdapter adapts *checkpoint.Store to session.Checkpointer: the
+// store's method is Snapshot, the seam speaks SnapshotTurn — the one-method
+// adapter lives at the wiring site so internal/session keeps no dependency
+// on internal/checkpoint (the OnClose func-seam pattern).
+type checkpointerAdapter struct {
+	store *checkpoint.Store
+}
+
+func (c checkpointerAdapter) SnapshotTurn(
+	ctx context.Context, sessionID, turnID string,
+) error {
+	return c.store.Snapshot(ctx, sessionID, turnID) //nolint:wrapcheck // thin delegation
+}
+
 // checkpointRestoredNote is the restore success line.
 const checkpointRestoredNote = "workspace restored to pre-turn state"
 
