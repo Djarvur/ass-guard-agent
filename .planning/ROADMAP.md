@@ -279,12 +279,12 @@ Plans:
 **Wave 1**
 
 - [ ] 13-01-PLAN.md — expanded-profile matrix E2E: the shared global-config guard in internal/evalharness (byte-exact save/restore, absent-key case), newOpsxMatrixRunner, all 6 happy legs with captured closings (D-03 pass 1) + all 6 fixable legs (D-01's 12-leg matrix; onboard idempotent re-run per D-08), the 6 [command_mutability] rows [OS-01] — THE phase tracer
-**Wave 2** *(13-02 blocked on 13-01's captures; 13-03 shares no files with 13-02 but the house runs sequential — no worktrees)*
+**Wave 2** *(13-02 blocked on 13-01's captures)*
 
 - [ ] 13-02-PLAN.md — zero-continue chaining pass 2: harvest-derived seed rows incl. the D-07 verify→fix handoff + terminal shields, per-chain zero-continue legs with audit-trail evidence (EngineDecision + CommandProvenance), structural-safety re-pin, D-06 flake policy [OS-02]
-- [ ] 13-03-PLAN.md — the D-02/D-05 advisory: question-shaped-ending classifier + Decide's unmatched cell (Action stays Nothing), post-turn session/update note from the in-hand emit (the timing hazard designed around), per-session+class dedupe on the ACP wrapper (engine stays stateless — the new-state disposition) [OS-02]
-**Wave 3** *(blocked on 13-02 — the suites assert chained flows)*
+**Wave 3** *(blocked on 13-02 — 13-03's conditional awareness lever edits one of its seeded rows and its dead-end evidence reads the real chaining table; 13-04's suites assert chained flows)*
 
+- [ ] 13-03-PLAN.md — the D-02/D-05 advisory: question-shaped-ending classifier + Decide's unmatched cell (Action stays Nothing), post-turn session/update note from the in-hand emit (the timing hazard designed around), per-session+class dedupe on the ACP wrapper (engine stays stateless — the new-state disposition) + mandatory-conditional dead-end evidence: advisory lines proven on matrix transcripts, gated onboard-tutorial re-proof when the awareness lever fires [OS-02]
 - [ ] 13-04-PLAN.md — the six per-command eval suites (happy + fixable each, D-04) extending 12-08's net on the same re-run gate, with the expanded-profile guard wired into the scenario path + exact failure attribution [OS-03]
 
 ### Phase 14: Adoption Readiness (Analysis Dispositions)
