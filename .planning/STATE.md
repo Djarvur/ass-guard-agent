@@ -5,10 +5,10 @@ milestone_name: ACP Early Adoption
 current_phase: 12
 current_phase_name: product-functional-completeness
 status: executing
-stopped_at: Completed 12-01-PLAN.md (AskUserQuestion E2E; witness approved + finding fixed)
-last_updated: "2026-08-19T00:24:50.430Z"
+stopped_at: Quick task 260819-nlg COMPLETE (guard relax + flake fix + ledger close; CI green)
+last_updated: "2026-08-19T07:15:30.000Z"
 last_activity: 2026-08-19
-last_activity_desc: Phase 12 execution started
+last_activity_desc: 260819-nlg — decoded-newline guard relaxed to the raw-byte check (WINDOWS #1/#2 fixed)
 progress:
   total_phases: 4
   completed_phases: 2
@@ -29,8 +29,8 @@ See: .planning/PROJECT.md (updated 2026-08-14)
 Phase: 12 (product-functional-completeness) — EXECUTING
 Plan: 2 of 8 COMPLETE (12-01 AskUserQuestion + 12-02 plugin discovery; next unexecuted: 12-05 per the adoption split)
 Status: 12-01 CLOSED 2026-08-19 — operator live witness APPROVED (leg 1 reply-as-tool-result + leg 2 D-01 timeout both PASS); the witness's ONE finding (ask surface dropped on the live wire by the Writer's decoded-newline transport guard) root-caused, fixed (`1b38e3d`, single-line render + server-level regression pin), `mise ci` green; SUMMARY written.
-Last activity: 2026-08-19 — 12-01 witness verdict + fix + SUMMARY
-Next action: `/gsd:plan-phase 14` (Adoption Readiness — EARLY-01..06; may overlap), then 12-05 → 12-04 → 12-06 → **ADOPTION LINE** → 12-03 → 12-08 → 12-07 → 13. TWO residuals recorded in WINDOWS.md + 12-*/deferred-items.md: (1) timer-resume chunks not client-mirrored (route: 12-07); (2) PRE-EXISTING model newline-chunk drops on the live wire (the same transport guard — operator disposition).
+Last activity: 2026-08-19 — 260819-nlg: decoded-newline guard relaxed to the raw-byte check (WINDOWS #1/#2 fixed); model chunks reach the editor
+Next action: `/gsd:plan-phase 14` (Adoption Readiness — EARLY-01..06; may overlap), then 12-05 → 12-04 → 12-06 → **ADOPTION LINE** → 12-03 → 12-08 → 12-07 → 13. ONE residual open in WINDOWS.md + 12-*/deferred-items.md: timer-resume chunks not client-mirrored (route: 12-07).
 
 Progress: [█████░░░░░] 46%
 
@@ -140,6 +140,7 @@ None yet.
 |---|-------------|------|--------|-----------|
 | 260817-11v | Relocate scheduling config: .ass-guard/scheduling.yaml → config.yaml (global ~/.config/ass-guard-agent/ + project .ass-guard/ layers, no migration, same schema) | 2026-08-17 | 715f575 | [260817-11v-relocate-scheduling-config-ass-guard-sch](./quick/260817-11v-relocate-scheduling-config-ass-guard-sch/) |
 | 260817-uv3 | Archive /tmp/zcode-recapture driver kit → tools/zcode-recapture (protects the only re-capture mechanism + surviving capture records before /tmp reaping; Phase-12 discuss D-04; the pinned rollout file itself was already lost — rotated off ~/.zcode/cli/rollout/) | 2026-08-17 | 32234f4 | [260817-uv3-archive-the-tmp-zcode-recapture-driver-k](./quick/260817-uv3-archive-the-tmp-zcode-recapture-driver-k/) |
+| 260819-nlg | Relax the ACP decoded-newline transport guard to the raw-byte check (operator disposition on the 12-01 witness finding, WINDOWS #1/#2): model newline-carrying chunks now reach the editor; single-line ask render kept as the documented convention; pre-existing 5s test flake widened to 30s (proven on baseline) | 2026-08-19 | f5f5b52, d6fa490, 3218572 | [260819-nlg-relax-newline-guard-to-raw-bytes](./quick/260819-nlg-relax-newline-guard-to-raw-bytes/) |
 
 ## Deferred Items
 
@@ -155,6 +156,6 @@ Carried from v1.0 close — dispositioned into v1.1 scope:
 
 ## Session Continuity
 
-Last session: 2026-08-19T00:24:37.093Z
-Stopped at: Completed 12-01-PLAN.md (AskUserQuestion E2E; witness approved + finding fixed)
+Last session: 2026-08-19T07:15:30.000Z
+Stopped at: Quick task 260819-nlg COMPLETE — ACP decoded-newline guard relaxed to the raw-byte check (WINDOWS #1/#2 fixed; model chunks reach the editor); CI green; open-claude-code deep-dive already present in ECOSYSTEM-AUDIT.md (external amendment) verified
 Resume file: None
