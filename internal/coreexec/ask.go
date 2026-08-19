@@ -90,37 +90,45 @@ func RegisterAsk(catalog *toolcat.Catalog, b *session.AskBroker) {
 // descriptions, multiSelect noted. The renderer emits STRUCTURE, not judgment
 // — the "(Recommended)" first-option convention is the MODEL's to author (the
 // captured schema's own usage notes), never injected here.
+//
+// The render is SINGLE-LINE (segments joined with " · "): the ACP Writer's
+// transport guard DROPS any frame whose decoded text carries an embedded
+// newline (framer.go containsDecodedNewline — the 12-01 live witness caught
+// the multi-line render vanishing between the bus and the client wire; the
+// transcript recorded it, the client never saw it). The captured client-side
+// form is corpus-absent (UI-side, not on the request/response wire — see the
+// fixture), so the single-line convention is the documented default.
 func RenderAskSurface(qs []session.AskQuestion) string {
 	var sb strings.Builder
 
 	for i, q := range qs {
 		if i > 0 {
-			sb.WriteString("\n\n")
+			sb.WriteString(" ··· ")
 		}
 
 		switch {
 		case q.Header != "" && len(qs) > 1:
-			fmt.Fprintf(&sb, "[%s] Question %d: %s\n", q.Header, i+1, q.Question)
+			fmt.Fprintf(&sb, "[%s] Question %d: %s", q.Header, i+1, q.Question)
 		case q.Header != "":
-			fmt.Fprintf(&sb, "[%s] %s\n", q.Header, q.Question)
+			fmt.Fprintf(&sb, "[%s] %s", q.Header, q.Question)
 		case len(qs) > 1:
-			fmt.Fprintf(&sb, "Question %d: %s\n", i+1, q.Question)
+			fmt.Fprintf(&sb, "Question %d: %s", i+1, q.Question)
 		default:
-			fmt.Fprintf(&sb, "%s\n", q.Question)
+			sb.WriteString(q.Question)
 		}
 
 		if q.MultiSelect {
-			sb.WriteString("(multiple selections allowed)\n")
+			sb.WriteString(" (multiple selections allowed)")
 		}
 
 		for j, o := range q.Options {
 			if o.Description != "" {
-				fmt.Fprintf(&sb, "%d. %s — %s\n", j+1, o.Label, o.Description)
+				fmt.Fprintf(&sb, " · %d. %s — %s", j+1, o.Label, o.Description)
 			} else {
-				fmt.Fprintf(&sb, "%d. %s\n", j+1, o.Label)
+				fmt.Fprintf(&sb, " · %d. %s", j+1, o.Label)
 			}
 		}
 	}
 
-	return strings.TrimRight(sb.String(), "\n")
+	return sb.String()
 }

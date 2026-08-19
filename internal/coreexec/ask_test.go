@@ -320,4 +320,12 @@ func TestRenderAskSurface(t *testing.T) {
 	if strings.Contains(got, "Recommended") {
 		t.Errorf("surface render = %q; the renderer must NOT add (Recommended) — that is the model's convention", got)
 	}
+
+	// The 12-01 live-witness pin: the render MUST be single-line — the ACP
+	// Writer's transport guard silently drops frames whose decoded text
+	// carries an embedded newline (the multi-line render vanished between the
+	// bus and the client wire in the live session d9f98023).
+	if strings.ContainsAny(got, "\n\r") {
+		t.Errorf("surface render must be single-line (transport guard drops newline-carrying frames): %q", got)
+	}
 }

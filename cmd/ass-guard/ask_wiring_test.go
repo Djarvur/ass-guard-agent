@@ -1,25 +1,34 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/coreexec"
+	"github.com/Djarvur/ass-guard-agent/internal/event"
+	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
 )
 
 // Test-local constants (goconst): the interactive tool under test, its wiring
-// call id, and the canned prompt texts.
+// call id, the canned prompt texts, and the ACP handshake frame literals
+// (shared counts with integration_test.go push these over the threshold).
 const (
-	wiringAskTool  = "AskUserQuestion"
-	wiringAskCall  = "call_ask_w1"
-	wiringAskMe    = "ask me"
-	wiringAskCache = "ask me which library"
+	methodInitialize = "initialize"
+	keyProtoVersion  = "protocolVersion"
+	keyMCPServers    = "mcpServers"
+	wiringAskTool    = "AskUserQuestion"
+	wiringAskCall    = "call_ask_w1"
+	wiringAskMe      = "ask me"
+	wiringAskCache   = "ask me which library"
 )
 
 // wiringAskInput is the plan's Test-1 question shape (one question, two
@@ -333,5 +342,218 @@ func TestAskWiring_SchemaDisciplineAtWiring(t *testing.T) {
 		string(wired.InputSchema) != string(captured.InputSchema) ||
 		wired.Mutability != captured.Mutability {
 		t.Error("wired entry differs from the captured entry beyond Execute (schema-never-rewritten violated)")
+	}
+}
+
+// askToolCallProvider is a provider whose first Stream emits the AskUserQuestion
+// tool call (text preamble + tool_use chunk), mirroring the live leg-1 model
+// behavior; subsequent calls stream plain text (the resumed turn).
+type askToolCallProvider struct {
+	calls int
+}
+
+func (p *askToolCallProvider) Send(
+	_ context.Context, _ *profile.Profile, _ []provider.Message,
+) (provider.Response, error) {
+	return provider.Response{}, errNotUsed
+}
+
+func (p *askToolCallProvider) Stream(
+	ctx context.Context, _ *profile.Profile, _ []provider.Message,
+) (<-chan provider.StreamChunk, error) {
+	p.calls++
+
+	ch := make(chan provider.StreamChunk, 6)
+
+	go func() {
+		defer close(ch)
+
+		if p.calls == 1 {
+			for _, c := range []string{"Let ", "me ", "ask."} {
+				select {
+				case ch <- provider.StreamChunk{Type: blockText, Text: c}:
+				case <-ctx.Done():
+					return
+				}
+			}
+
+			tc := provider.ToolCall{
+				ID: "call_srv_ask_1", Name: wiringAskTool,
+				Input: json.RawMessage(wiringAskInput),
+			}
+
+			select {
+			case ch <- provider.StreamChunk{Type: tracerToolUse, ToolCall: &tc, ToolCallID: tc.ID}:
+			case <-ctx.Done():
+				return
+			}
+		} else {
+			select {
+			case ch <- provider.StreamChunk{Type: blockText, Text: "acknowledged; proceeding"}:
+			case <-ctx.Done():
+				return
+			}
+		}
+
+		select {
+		case ch <- provider.StreamChunk{Type: chunkDone, FinishReason: stopEndTurn}:
+		case <-ctx.Done():
+		}
+	}()
+
+	return ch, nil
+}
+
+func (p *askToolCallProvider) ToolResultMessage(string, json.RawMessage) (json.RawMessage, error) {
+	return json.RawMessage(`{}`), nil
+}
+
+// TestAskWiring_ServerLevelSurface (the 12-01 live-witness finding, pinned):
+// through the REAL acp.Server (stdio frames, the adapter emitter, the Writer —
+// the exact live path), the rendered question surface MUST reach the client as
+// an agent_message_chunk session/update BEFORE the suspended turn's stopReason
+// response. The witness (leg 1, session d9f98023) caught the question missing
+// from the live stream while the transcript recorded it; the runner-level
+// emitter test alone could not see the gap.
+func TestAskWiring_ServerLevelSurface(t *testing.T) { //nolint:cyclop,funlen // comprehensive server scenario
+	t.Parallel()
+
+	// The live path: the REAL engine wiring (setupEngine — the RealExecutor
+	// executes AskUserQuestion; the engine-off driveACP stub never suspends).
+	bus := event.NewBus()
+
+	mp := &askToolCallProvider{}
+
+	dir := t.TempDir()
+
+	writeOpsxCommandFixtures(t, dir)
+
+	runner := &sessionTurnRunner{
+		bus:          bus,
+		profile:      fakeProfileACP(),
+		workDir:      dir,
+		maxConc:      2,
+		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return mp },
+	}
+
+	err := runner.setupEngine()
+	if err != nil {
+		t.Fatalf("setupEngine: %v", err)
+	}
+
+	runner.loadCommandRegistry()
+
+	srvInR, cliW := io.Pipe()
+
+	cliR, srvOutW := io.Pipe()
+
+	srv := acp.NewServer(srvInR, srvOutW, &bytes.Buffer{}, acp.WithTurnRunner(runner))
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	served := make(chan struct{})
+
+	go func() {
+		_ = srv.Serve(ctx)
+
+		close(served)
+	}()
+
+	defer func() {
+		cancel()
+
+		_ = cliW.Close()
+		_ = srvOutW.Close()
+		_ = srvInR.Close()
+
+		select {
+		case <-served:
+		case <-time.After(2 * time.Second):
+			t.Errorf("server did not exit")
+		}
+	}()
+
+	sendFrame(t, cliW, &acp.Message{
+		JSONRPC: protocolVersion20, ID: json.RawMessage("0"), Method: methodInitialize,
+		Params: rawJSON(map[string]any{keyProtoVersion: 1}),
+	})
+
+	sendFrame(t, cliW, &acp.Message{
+		JSONRPC: protocolVersion20, ID: json.RawMessage("1"), Method: "session/new",
+		Params: rawJSON(map[string]any{"cwd": "/tmp", keyMCPServers: []any{}}),
+	})
+
+	frames := readFrames(t, cliR, 2)
+
+	var snew struct {
+		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+	}
+
+	for _, f := range frames {
+		if strings.Contains(string(f.Result), "sessionId") {
+			_ = json.Unmarshal(f.Result, &snew)
+		}
+	}
+
+	if snew.SessionID == "" {
+		t.Fatalf("no sessionId from session/new: %+v", frames)
+	}
+
+	sendFrame(t, cliW, &acp.Message{
+		JSONRPC: protocolVersion20, ID: json.RawMessage("2"), Method: "session/prompt",
+		Params: rawJSON(map[string]any{
+			keySessionID: snew.SessionID,
+			"prompt":     []any{map[string]any{"type": blockText, "text": "ask me which library"}},
+		}),
+	})
+
+	// Read until the prompt response (id 2) arrives; collect every frame.
+	var (
+		gotResponse bool
+
+		all []*acp.Message
+	)
+
+	br := bufio.NewReader(cliR)
+
+	deadline := time.After(5 * time.Second)
+
+	for !gotResponse {
+		select {
+		case <-deadline:
+			t.Fatalf("no prompt response within 5s (frames so far: %d)", len(all))
+		default:
+		}
+
+		line, err := br.ReadBytes('\n')
+		if len(line) == 0 && err != nil {
+			time.Sleep(10 * time.Millisecond)
+
+			continue
+		}
+
+		var m acp.Message
+
+		jerr := json.Unmarshal(bytes.TrimRight(line, "\n"), &m)
+		if jerr == nil {
+			all = append(all, &m)
+
+			if string(m.ID) == "2" && m.Result != nil {
+				gotResponse = true
+			}
+		}
+	}
+
+	questionOnWire := false
+
+	for _, m := range all {
+		if m.Method == "session/update" && strings.Contains(string(m.Params), "Which cache library") {
+			questionOnWire = true
+		}
+	}
+
+	if !questionOnWire {
+		t.Errorf("the rendered question surface never reached the client wire "+
+			"(%d frames; the live-witness finding reproduced)", len(all))
 	}
 }
