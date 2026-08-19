@@ -293,12 +293,12 @@ The eval net its scenarios extend and the AskUserQuestion interactive-dead-end r
   6. The uniform tool contract holds across the catalog, capture-grounded — `is_error` exactly where the zcode corpus shows it, per-tool timeouts, retry-only-transient at the provider/tool seam, `isConcurrencySafe`/`isDestructive` flags feeding engine + parallel dispatch; existing partial implementations inventoried, gaps closed (EARLY-06)
 
 **Phase gate:** `mise ci` clean AND a live rollback demonstration (real mutating turn → checkpoint restore → byte-identical workspace, user repo git untouched) AND the compaction decision artifact committed AND the cache probe wired into the parity run AND the shaper cross-validation audit committed with every divergence dispositioned AND the light-tier/truncation/tool-contract behaviors proven by tests. No stub-only evidence closes this phase.
-**Plans:** 1/6 plans executed
+**Plans:** 2/6 plans executed
 Plans:
 **Wave 1**
 
 - [x] 14-01-PLAN.md — shadow-git checkpoints + undo: snapshot at parent-turn entry into `.ass-guard/checkpoints/shadow.git` (external git, isolated env, never the user's .git), `ass-guard checkpoint list|restore`, the invariant battery, the gated live rollback demonstration (THE phase tracer) [EARLY-01]
-- [ ] 14-02-PLAN.md — compaction verify-first: the committed context-behavior corpus scan (cache_control placement / compaction markers / window shape) + docs/compaction-decision.md with every form dispositioned — nothing implemented in-phase (corpus note: the Phase-9 pinned session rotated off disk; fallback ladder recorded in-plan) [EARLY-02]
+- [x] 14-02-PLAN.md — compaction verify-first: the committed context-behavior corpus scan (cache_control placement / compaction markers / window shape) + docs/compaction-decision.md with every form dispositioned — nothing implemented in-phase (corpus note: the Phase-9 pinned session rotated off disk; fallback ladder recorded in-plan) [EARLY-02]
 - [ ] 14-03-PLAN.md — pi↔shaper cross-validation: shallow re-clone at a pinned commit (gitignored, never vendored), the five-dimension audit (cache_control, thinking, headers, compat flags, message mapping), every divergence dispositioned, minimal capture-faithful fixes [EARLY-04]
 
 **Wave 2** *(blocked on Wave 1: 14-04 consumes 14-02's corpus pin + 14-03's audit; 14-05 edits the session/serve sites 14-01 wires; 14-06 shares the .gitignore/tools-clone coordination with 14-03)*
@@ -335,7 +335,7 @@ Plans:
 | 8. Slash-Command Kickoff | v1.1 | 9/9 | Complete (operator witness accepted; 2 known residuals documented) | 2026-08-16 |
 | 9. Serve-Path Audit + zcode Parity Re-capture | v1.1 | 6/6 | Complete (verifier PASS; UAT 3/4 — parity re-baseline disposition accepted, live-serve audit witnessed, capture-method deviation stands; test 4 informational) | 2026-08-18 |
 | 12. Product Functional Completeness | v1.1 | 2/8 | In Progress|  |
-| 14. Adoption Readiness (Analysis Dispositions) | v1.1 | 1/6 | In Progress|  |
+| 14. Adoption Readiness (Analysis Dispositions) | v1.1 | 2/6 | In Progress|  |
 | 13. OpenSpec Workflow Completion | v1.1 | 0 (planning dispatches when Phase 12 closes) | Not started (post-adoption) | - |
 | 10. Telegram Peer (Text + Voice) | v1.2 pool | 0/7 (plans preserved; 2026-08-17 execution attempt aborted — executor died ~15 min in, partial extraction WIP-preserved at 47f10b4 on the phase branch, untrusted) | Moved to v1.2 (2026-08-16) | - |
 | 11. dsh Mimicry Profile #2 | v1.2 pool | 0/7 (plans stale — replan required) | Moved to v1.2 (2026-08-16) | - |
