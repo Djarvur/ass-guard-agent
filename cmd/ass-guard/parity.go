@@ -3,8 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -12,6 +16,31 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 )
+
+// zcodeVersionTimeout bounds the `zcode --version` exec (T-14-12 DoS: a hung
+// binary must never hang the parity run; unresolvable -> skip note).
+const zcodeVersionTimeout = 3 * time.Second
+
+// zcodeInstalledVersion resolves the INSTALLED zcode's version: a fixed-argv
+// exec of `zcode --version` (T-14-11 Tampering: argv is the literal slice —
+// no shell, no user input, no interpolation) under a bounded timeout, output
+// trimmed. It is a package-level seam var so tests inject a fake installed
+// version without a live binary (offline CI); the default is the real exec.
+var zcodeInstalledVersion = func() (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), zcodeVersionTimeout)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, "zcode", "--version").Output()
+	if err != nil {
+		return "", fmt.Errorf("exec zcode --version: %w", err)
+	}
+
+	return strings.TrimSpace(string(out)), nil
+}
+
+// parityRun is the package-level seam over parity.Run (offline tests fake the
+// A/B arms — no live provider needed); the default drives the real harness.
+var parityRun = parity.Run
 
 func newParityCmd() *cobra.Command {
 	var (
@@ -83,6 +112,12 @@ func runParity(suitePath, rollout, name, dir, results, surprise string) error {
 		return fmt.Errorf("load profile %q: %w", name, err)
 	}
 
+	// 14-04 (EARLY-03, the 2026-08-19 borrow-#13 cheap slice): target-version
+	// drift visibility. The pinned side is the coverage manifest's recorded
+	// capture version (09-03 provenance); the installed side is the exec seam.
+	// LOUD on drift, NEVER blocking — exit semantics are untouched below.
+	emitVersionDriftWarning(os.Stderr, dir, name)
+
 	// Phase 7 (D-08): the parity arm builds its provider through the scheduler
 	// factory (zero-config $ZAI_API_KEY env resolution applies — the gate is
 	// operator-gated on the env var). The provider surfaces a clear typed error
@@ -97,7 +132,7 @@ func runParity(suitePath, rollout, name, dir, results, surprise string) error {
 		return fmt.Errorf("build provider %q: %w", providerName, ferr)
 	}
 
-	res, err := parity.Run(context.Background(), &parity.RunOptions{
+	res, err := parityRun(context.Background(), &parity.RunOptions{
 		Suite:       suite,
 		Profile:     prof,
 		Provider:    prov,
@@ -115,7 +150,7 @@ func runParity(suitePath, rollout, name, dir, results, surprise string) error {
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "parity: surprise-check suite did not load (%v); skipping\n", err)
 		} else {
-			sres, err := parity.Run(context.Background(), &parity.RunOptions{
+			sres, err := parityRun(context.Background(), &parity.RunOptions{
 				Suite: surpriseSuite, Profile: prof, Provider: prov,
 				ResultsPath: "", Model: prof.Model,
 			})
@@ -135,6 +170,47 @@ func runParity(suitePath, rollout, name, dir, results, surprise string) error {
 	}
 
 	return nil
+}
+
+// emitVersionDriftWarning compares the installed zcode (the exec seam) against
+// the coverage manifest's pinned capture version and prints exactly one line:
+// a loud drift warning naming BOTH versions on mismatch, an explicit
+// provenance line on match, or a skip note when either side is unresolvable
+// (binary absent, manifest missing/unreadable, pin unrecorded). It NEVER
+// returns an error — the drift warning is non-blocking by design (locked
+// prohibition: exit semantics are the parity gate's alone; the full nightly
+// gate is 12-08's scope per the 2026-08-19 disposition).
+func emitVersionDriftWarning(w io.Writer, profilesDir, name string) {
+	manifest, err := profile.LoadCoverage(filepath.Join(profilesDir, name, "coverage.yaml"))
+	if err != nil {
+		fmt.Fprintf(w, "zcode version check skipped: coverage manifest unavailable (%v)\n", err)
+
+		return
+	}
+
+	pinned := manifest.TargetCaptureRef.ZcodeVersion
+	if pinned == "" {
+		fmt.Fprintf(w, "zcode version check skipped: pinned zcode version unrecorded in the coverage manifest\n")
+
+		return
+	}
+
+	installed, ierr := zcodeInstalledVersion()
+	if ierr != nil {
+		fmt.Fprintf(w, "zcode version check skipped: installed zcode unresolvable (%v); pinned capture zcode %s\n",
+			ierr, pinned)
+
+		return
+	}
+
+	if installed != pinned {
+		fmt.Fprintf(w, "WARNING: zcode version drift — installed %s, pinned capture %s "+
+			"(the recorded parity reference ages as zcode updates; non-blocking)\n", installed, pinned)
+
+		return
+	}
+
+	fmt.Fprintf(w, "capture provenance: zcode %s matches installed\n", pinned)
 }
 
 func emitParityFooter(label string, res *parity.RunResult) {
