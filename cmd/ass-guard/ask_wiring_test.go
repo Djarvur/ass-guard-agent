@@ -516,12 +516,17 @@ func TestAskWiring_ServerLevelSurface(t *testing.T) { //nolint:cyclop,funlen // 
 
 	br := bufio.NewReader(cliR)
 
-	deadline := time.After(5 * time.Second)
+	// The 30s deadline (not 5s) is intentional: this orchestrated server test
+	// runs t.Parallel() with the rest of the suite under -race, and the full
+	// round-trip has repeatedly blown a 5s budget on loaded machines (observed
+	// 6.4–8.6s on baseline, pre-260819-nlg). The assertion is ordering-based,
+	// not timing-based — the deadline only bounds a hang.
+	deadline := time.After(30 * time.Second)
 
 	for !gotResponse {
 		select {
 		case <-deadline:
-			t.Fatalf("no prompt response within 5s (frames so far: %d)", len(all))
+			t.Fatalf("no prompt response within 30s (frames so far: %d)", len(all))
 		default:
 		}
 
