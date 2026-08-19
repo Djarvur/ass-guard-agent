@@ -3,34 +3,149 @@
 // snapshots the workspace's file state into ONE shadow git repository under
 // <workDir>/.ass-guard/checkpoints/shadow.git, addressed by turn
 // (refs/checkpoints/<sessionID>-turn-<NNN>), and `ass-guard checkpoint
-// list|restore` works on it from the terminal.
+// list|restore` operates on it from the terminal. One store per workspace —
+// `checkpoint list` therefore shows the workspace's full recovery history.
 //
 // Core invariants (all test-pinned):
 //
 //   - The USER's repository git state (index, HEAD, remotes, config, hooks)
-//     is NEVER touched: the shadow store is a separate git dir with its own
-//     index, neutralized global/system config, and disabled hooks.
-//   - A snapshot failure is loud but NEVER fatal to the turn (AUD-03
-//     discipline — the turn completes without a checkpoint).
-//   - A ref appears only AFTER its commit object exists (commit-then-ref
-//     ordering); an interrupted snapshot never exposes a partial ref.
+//     is NEVER touched: every git invocation runs with an explicit
+//     --git-dir/--work-tree pair, the store's OWN index file, neutralized
+//     global/system config, and a disabled hooks path.
+//   - A snapshot failure is loud but NEVER fatal to the turn (the session
+//     seam degrades per the AUD-03 discipline).
+//   - A checkpoint ref appears only AFTER its commit object exists
+//     (commit-then-update-ref ordering); an interrupted snapshot never
+//     exposes a partial ref.
+//   - A turn with zero workspace changes still commits (--allow-empty), so
+//     every turn boundary stays restorable.
 //
-// RED-phase stub: the API surface is final; every operation fails with
-// errNotImplemented until the GREEN implementation lands.
+// Snapshots are NOT redacted: the store must restore byte-identically, so
+// workspace secrets (e.g. .env) are copied into the store verbatim. The
+// mitigation is physical: the store directories are mode 0700, they live
+// under the ass-guard root, and no network path ever touches them
+// (T-14-02). Git ignore semantics apply: the user repo's own .gitignore
+// excludes files from snapshots (and therefore from restores), and the
+// worktree-root .git directory is never ingested.
 package checkpoint
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
 	"time"
 )
 
 // DefaultKeep is the retention bound: after each snapshot the store prunes
-// its oldest turn refs beyond this many (T-14-03 DoS mitigation).
+// its oldest turn refs beyond this many (T-14-03, unbounded-growth DoS).
 const DefaultKeep = 50
 
-// errNotImplemented is the RED-phase stub error (GREEN replaces every body).
-var errNotImplemented = errors.New("checkpoint: store not implemented yet") //nolint:err113,gochecknoglobals // RED-phase stub
+const (
+	// gitBinary is a pre-existing platform dependency (darwin/linux), NOT a
+	// module dependency — the zero-dep invariant holds (go.mod untouched).
+	gitBinary = "git"
+
+	// storeRootDir is the ass-guard root segment under the workspace.
+	storeRootDir = ".ass-guard"
+	// storeSubDir hosts the shadow git dir under <workDir>/.ass-guard/.
+	storeSubDir = "checkpoints"
+	// shadowGitDirName is the shadow git repository's directory name.
+	shadowGitDirName = "shadow.git"
+
+	// refPrefix is the turn-addressed ref namespace — the ONLY namespace
+	// Restore will ever name (refs confined here, T-14-01).
+	refPrefix = "refs/checkpoints/"
+	// lastRef is the symbolic convenience tip: the shadow repo's HEAD points
+	// here so every snapshot commit chains off the previous one. It is not a
+	// turn checkpoint and is excluded from List/prune.
+	lastRef = "refs/checkpoints/last"
+
+	// lockFileName is the whole-store lock file (create-with-O_EXCL under
+	// shadow.git; released by removal; stolen stale after lockStaleAfter).
+	lockFileName = "ass-guard.lock"
+
+	// infoExcludeCarried is the exclude entry keeping the store from
+	// snapshotting itself (the transcripts under .ass-guard/ ride along).
+	infoExcludeCarried = ".ass-guard/\n"
+
+	// initCommitMsg anchors the empty-tree root commit made on a fresh store
+	// so every snapshot commit has a parent-able HEAD.
+	initCommitMsg = "ass-guard checkpoint store init"
+
+	// hooksPathOff disables the shadow repo's hooks (-c core.hooksPath).
+	hooksPathOff = "/dev/null"
+	// neutralConfig stands in for the operator's gitconfig files.
+	neutralConfig = "/dev/null"
+
+	// dirPermOwnerOnly and lockPermOwnerOnly pin the store's physical
+	// secrecy (T-14-02): owner-only traversal and lock writes.
+	dirPermOwnerOnly  = 0o700
+	filePermOwnerOnly = 0o600
+	lockPermOwnerOnly = 0o600
+
+	// shadowIdentity isolates the shadow repo's commit identity from any
+	// user gitconfig (which is neutralized anyway).
+	shadowIdentityName  = "ass-guard"
+	shadowIdentityEmail = "ass-guard@localhost"
+
+	// refLineFieldCount is the field count of listRefs' for-each-ref format
+	// ("<refname> <unix-ts>").
+	refLineFieldCount = 2
+
+	// bareFalse is the core.bare value flipped onto the bare-layout store.
+	bareFalse = "false"
+)
+
+var (
+	// idPattern is the strict checkpoint-id grammar (T-14-01): a checkpoint
+	// id is ALWAYS <sessionID>-turn-<zero-padded number> — the only shape
+	// ever validated into a ref name. No user string reaches git as a
+	// refspec unvalidated.
+	idPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+-turn-(\d{3,})$`)
+
+	// lockStaleAfter bounds how long a crashed holder's lock survives before
+	// the next operation steals it (with a warning — T-14-06).
+	lockStaleAfter = 30 * time.Second //nolint:gochecknoglobals // immutable policy constant
+
+	// lockPollInterval is the file-lock retry cadence while another process
+	// holds the store lock.
+	lockPollInterval = 50 * time.Millisecond //nolint:gochecknoglobals // immutable policy constant
+
+	// errEmptyWorkDir guards Open against the empty workDir; errEmptySessionID
+	// guards Snapshot's session argument.
+	errEmptyWorkDir   = errors.New("checkpoint: Open requires a non-empty workDir")
+	errEmptySessionID = errors.New("checkpoint: empty session id")
+)
+
+// gitRun is the subprocess seam: every git invocation funnels through this
+// package var so tests can count/inject invocations (the ref-validation gate
+// asserts zero spawns for malformed ids).
+var gitRun = func( //nolint:gochecknoglobals // injectable test seam
+	ctx context.Context, dir string, env []string, name string, args ...string,
+) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir = dir
+	cmd.Env = env
+
+	var out bytes.Buffer
+
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+
+	err := cmd.Run()
+
+	return out.Bytes(), err
+}
 
 // Entry is one restorable turn checkpoint, as surfaced by List.
 type Entry struct {
@@ -40,28 +155,401 @@ type Entry struct {
 	CommittedAt time.Time
 }
 
-// Store is the per-workspace shadow-git checkpoint store.
-type Store struct{}
+// Store is the per-workspace shadow-git checkpoint store. All Snapshot and
+// Restore operations serialize on a whole-store lock (in-process mutex +
+// cross-process O_EXCL lock file), so a serve-loop snapshot and a terminal
+// restore racing on one store never interleave their git index writes.
+type Store struct {
+	gitDir  string
+	workDir string
+	mu      sync.Mutex
+}
 
 // Open resolves (and lazily initializes) the shadow store under
-// <workDir>/.ass-guard/checkpoints/shadow.git.
-func Open(_ string) (*Store, error) {
-	return nil, errNotImplemented
+// <workDir>/.ass-guard/checkpoints/shadow.git. Init is idempotent; the store
+// directories are pinned to mode 0700 (T-14-02). A fresh store immediately
+// carries an empty-tree root commit so every snapshot commit chains off a
+// parent-able HEAD (refs/checkpoints/last).
+func Open(workDir string) (*Store, error) {
+	if workDir == "" {
+		return nil, errEmptyWorkDir
+	}
+
+	abs, err := filepath.Abs(workDir)
+	if err != nil {
+		return nil, fmt.Errorf("checkpoint: resolve work dir: %w", err)
+	}
+
+	storeDir := filepath.Join(abs, storeRootDir, storeSubDir)
+	gitDir := filepath.Join(storeDir, shadowGitDirName)
+
+	err = os.MkdirAll(storeDir, dirPermOwnerOnly)
+	if err != nil {
+		return nil, fmt.Errorf("checkpoint: create store dir: %w", err)
+	}
+
+	err = os.Chmod(storeDir, dirPermOwnerOnly)
+	if err != nil {
+		return nil, fmt.Errorf("checkpoint: chmod store dir: %w", err)
+	}
+
+	s := &Store{gitDir: gitDir, workDir: abs}
+
+	_, serr := os.Stat(filepath.Join(gitDir, "objects"))
+	if serr != nil {
+		err = s.initStore(context.Background())
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	err = os.Chmod(gitDir, dirPermOwnerOnly)
+	if err != nil {
+		return nil, fmt.Errorf("checkpoint: chmod shadow git dir: %w", err)
+	}
+
+	return s, nil
 }
 
 // Snapshot records the workspace's current file state under the turn's
-// checkpoint ref. Re-snapshotting the same turn updates the SAME ref.
-func (*Store) Snapshot(_ context.Context, _, _ string) error {
-	return errNotImplemented
+// checkpoint ref. Re-snapshotting the same turn id updates the SAME ref
+// (retry-safe, no duplicates). Under the whole-store lock: stage, commit
+// (empty allowed), point the turn ref at the commit, prune retention.
+func (s *Store) Snapshot(ctx context.Context, sessionID, turnID string) error {
+	err := validateTurnID(sessionID, turnID)
+	if err != nil {
+		return err
+	}
+
+	return s.withLock(ctx, func() error {
+		sha, err := s.commitSnapshot(ctx, turnID)
+		if err != nil {
+			return err
+		}
+
+		err = s.updateRef(ctx, turnID, sha)
+		if err != nil {
+			return err
+		}
+
+		return s.prune(ctx)
+	})
 }
 
-// List returns the turn checkpoints, ascending by (sessionID, turn number).
-func (*Store) List() ([]Entry, error) {
-	return nil, errNotImplemented
+// List returns the turn checkpoints ascending by (sessionID, turn number).
+// The convenience tip (refs/checkpoints/last) is not a turn checkpoint and
+// never appears.
+func (s *Store) List() ([]Entry, error) {
+	return s.listRefs(context.Background())
 }
 
-// Restore returns the workspace to the checkpoint's recorded pre-turn state.
-// The id is validated against the strict grammar BEFORE any git invocation.
-func (*Store) Restore(_ context.Context, _ string) error {
-	return errNotImplemented
+// Restore returns the workspace to the checkpoint's recorded pre-turn state:
+// a force checkout of the ref's tree over the whole workspace, then a clean
+// that removes files created after the snapshot (never .ass-guard/, the
+// store itself). The id is validated against the strict grammar BEFORE any
+// git subprocess — no user string reaches git as a refspec unvalidated
+// (T-14-01). The user's repository git state is never touched (T-14-04).
+func (s *Store) Restore(ctx context.Context, id string) error {
+	if !idPattern.MatchString(id) {
+		return fmt.Errorf( //nolint:err113 // dynamic validation error
+			"checkpoint: invalid checkpoint id %q: want <sessionID>-turn-<NNN>", id)
+	}
+
+	return s.withLock(ctx, func() error {
+		_, err := s.git(ctx, "checkout", "-f", refPrefix+id, "--", ".")
+		if err != nil {
+			return fmt.Errorf("checkpoint: restore %q (unknown checkpoint id?): %w", id, err)
+		}
+
+		_, err = s.git(ctx, "clean", "-fd", "-e", storeRootDir+"/")
+		if err != nil {
+			return fmt.Errorf("checkpoint: clean restored workspace: %w", err)
+		}
+
+		return nil
+	})
+}
+
+// initStore creates the shadow repository: a bare-LAYOUT git dir at
+// shadow.git (a plain `git init <dir>.git` nests .git inside on current
+// git), immediately flipped to core.bare=false — with the explicit
+// --git-dir/--work-tree pair on every later invocation this is the classic
+// shadow-repo recipe (bare=true refuses worktree operations). HEAD points
+// at the turn-addressed namespace's convenience tip (never refs/heads/*,
+// never the user's repo), info/exclude carries .ass-guard/ (self-exclusion),
+// and the empty-tree root commit makes every snapshot commit parent-able.
+func (s *Store) initStore(ctx context.Context) error {
+	_, err := gitRun(ctx, s.workDir, s.gitEnv(), gitBinary, "init", "--quiet", "--bare", s.gitDir)
+	if err != nil {
+		return fmt.Errorf("checkpoint: init shadow store: %w", err)
+	}
+
+	_, err = s.git(ctx, "config", "core.bare", bareFalse)
+	if err != nil {
+		return fmt.Errorf("checkpoint: unset bare on shadow store: %w", err)
+	}
+
+	_, err = s.git(ctx, "symbolic-ref", "HEAD", lastRef)
+	if err != nil {
+		return fmt.Errorf("checkpoint: point HEAD at %s: %w", lastRef, err)
+	}
+
+	infoDir := filepath.Join(s.gitDir, "info")
+
+	err = os.MkdirAll(infoDir, dirPermOwnerOnly)
+	if err != nil {
+		return fmt.Errorf("checkpoint: create info dir: %w", err)
+	}
+
+	excludePath := filepath.Join(infoDir, "exclude")
+
+	err = os.WriteFile(excludePath, []byte(infoExcludeCarried), filePermOwnerOnly)
+	if err != nil {
+		return fmt.Errorf("checkpoint: write info/exclude: %w", err)
+	}
+
+	_, err = s.git(ctx, "commit", "--allow-empty", "-m", initCommitMsg)
+	if err != nil {
+		return fmt.Errorf("checkpoint: root commit: %w", err)
+	}
+
+	return nil
+}
+
+// gitEnv builds the isolation environment (T-14-01/T-14-04): the store's OWN
+// index, neutralized global+system gitconfig, no terminal prompting, and the
+// shadow identity. The operator's gitconfig, hooks, and index can never
+// influence — nor be influenced by — the shadow store.
+func (s *Store) gitEnv() []string {
+	return append(os.Environ(),
+		"GIT_INDEX_FILE="+filepath.Join(s.gitDir, "index"),
+		"GIT_CONFIG_GLOBAL="+neutralConfig,
+		"GIT_CONFIG_SYSTEM="+neutralConfig,
+		"GIT_TERMINAL_PROMPT=0",
+		"GIT_AUTHOR_NAME="+shadowIdentityName,
+		"GIT_AUTHOR_EMAIL="+shadowIdentityEmail,
+		"GIT_COMMITTER_NAME="+shadowIdentityName,
+		"GIT_COMMITTER_EMAIL="+shadowIdentityEmail,
+	)
+}
+
+// git runs one isolated git invocation against the shadow store, wrapping
+// any failure with the subcommand and its captured output.
+func (s *Store) git(ctx context.Context, args ...string) ([]byte, error) {
+	full := append([]string{
+		"--git-dir=" + s.gitDir,
+		"--work-tree=" + s.workDir,
+		"-c", "core.hooksPath=" + hooksPathOff,
+	}, args...)
+
+	out, err := gitRun(ctx, s.workDir, s.gitEnv(), gitBinary, full...)
+	if err != nil {
+		return out, fmt.Errorf("checkpoint: git %s: %w: %s", args[0], err, bytes.TrimSpace(out))
+	}
+
+	return out, nil
+}
+
+// validateTurnID enforces the strict id grammar and the session ownership
+// BEFORE any git subprocess: the checkpoint id is the only user input that
+// ever names a ref (T-14-01).
+func validateTurnID(sessionID, turnID string) error {
+	if sessionID == "" {
+		return errEmptySessionID
+	}
+
+	if !idPattern.MatchString(turnID) {
+		return fmt.Errorf( //nolint:err113 // dynamic validation error
+			"checkpoint: invalid turn id %q: want <sessionID>-turn-<NNN>", turnID)
+	}
+
+	if !strings.HasPrefix(turnID, sessionID+"-turn-") {
+		return fmt.Errorf( //nolint:err113 // dynamic validation error
+			"checkpoint: turn id %q does not belong to session %q", turnID, sessionID)
+	}
+
+	return nil
+}
+
+// commitSnapshot stages the whole workspace and commits it under the turn's
+// message, returning the commit sha. NO ref update happens here — the split
+// IS the partial-ref guarantee (T-14-06): a checkpoint ref appears only
+// after its commit object exists. Tests drive this step directly to pin
+// that ordering.
+func (s *Store) commitSnapshot(ctx context.Context, turnID string) (string, error) {
+	_, err := s.git(ctx, "add", "-A", "--", ".")
+	if err != nil {
+		return "", fmt.Errorf("checkpoint: stage workspace: %w", err)
+	}
+
+	_, err = s.git(ctx, "commit", "--allow-empty", "-m", turnID)
+	if err != nil {
+		return "", fmt.Errorf("checkpoint: commit snapshot: %w", err)
+	}
+
+	out, err := s.git(ctx, "rev-parse", "HEAD")
+	if err != nil {
+		return "", fmt.Errorf("checkpoint: resolve snapshot sha: %w", err)
+	}
+
+	sha := strings.TrimSpace(string(out))
+	if sha == "" {
+		return "", errors.New("checkpoint: rev-parse HEAD returned no sha") //nolint:err113 // static guard error
+	}
+
+	return sha, nil
+}
+
+// updateRef points the turn-addressed ref at the snapshot commit (the
+// ref-mutation step, always AFTER commitSnapshot).
+func (s *Store) updateRef(ctx context.Context, turnID, sha string) error {
+	_, err := s.git(ctx, "update-ref", refPrefix+turnID, sha)
+	if err != nil {
+		return fmt.Errorf("checkpoint: update %s%s: %w", refPrefix, turnID, err)
+	}
+
+	return nil
+}
+
+// listRefs parses refs/checkpoints/ into sorted Entries.
+func (s *Store) listRefs(ctx context.Context) ([]Entry, error) {
+	out, err := s.git(ctx, "for-each-ref", "--format=%(refname) %(committerdate:unix)", refPrefix)
+	if err != nil {
+		return nil, fmt.Errorf("checkpoint: list refs: %w", err)
+	}
+
+	entries := make([]Entry, 0, DefaultKeep)
+
+	for line := range strings.SplitSeq(string(out), "\n") {
+		e, ok := parseRefLine(line)
+		if !ok {
+			continue
+		}
+
+		entries = append(entries, e)
+	}
+
+	slices.SortFunc(entries, func(a, b Entry) int {
+		if a.SessionID != b.SessionID {
+			return strings.Compare(a.SessionID, b.SessionID)
+		}
+
+		return a.TurnNum - b.TurnNum
+	})
+
+	return entries, nil
+}
+
+// parseRefLine parses one for-each-ref output line
+// ("<refname> <unix-ts>") into an Entry, skipping the convenience tip and
+// any ref outside the strict id grammar.
+func parseRefLine(line string) (Entry, bool) {
+	fields := strings.Fields(line)
+	if len(fields) != refLineFieldCount {
+		return Entry{}, false
+	}
+
+	refName, ts := fields[0], fields[1]
+	if refName == lastRef {
+		return Entry{}, false
+	}
+
+	id := strings.TrimPrefix(refName, refPrefix)
+
+	m := idPattern.FindStringSubmatch(id)
+	if m == nil {
+		return Entry{}, false
+	}
+
+	turnNum, err := strconv.Atoi(m[1])
+	if err != nil {
+		return Entry{}, false
+	}
+
+	unixSec, err := strconv.ParseInt(ts, 10, 64)
+	if err != nil {
+		return Entry{}, false
+	}
+
+	return Entry{
+		SessionID:   strings.TrimSuffix(id, "-turn-"+m[1]),
+		TurnNum:     turnNum,
+		Ref:         refName,
+		CommittedAt: time.Unix(unixSec, 0).UTC(),
+	}, true
+}
+
+// prune enforces retention (T-14-03): after a snapshot, the oldest refs
+// beyond DefaultKeep are deleted. Ties on commit timestamp (same-second
+// snapshots are the common case) break by (sessionID, turn number), which
+// tracks snapshot sequence deterministically.
+func (s *Store) prune(ctx context.Context) error {
+	entries, err := s.listRefs(ctx)
+	if err != nil {
+		return err
+	}
+
+	for range max(len(entries)-DefaultKeep, 0) {
+		victim := entries[0]
+		entries = entries[1:]
+
+		_, derr := s.git(ctx, "update-ref", "-d", victim.Ref)
+		if derr != nil {
+			return fmt.Errorf("checkpoint: prune %s: %w", victim.Ref, derr)
+		}
+	}
+
+	return nil
+}
+
+// withLock serializes mutating store operations: an in-process mutex (the
+// serve loop's snapshots) plus a cross-process O_EXCL lock file under the
+// shadow git dir (a terminal restore racing a serve snapshot). A lock older
+// than lockStaleAfter is stolen with a warning (a crashed holder never
+// wedges the store — T-14-06); ctx cancellation aborts the wait.
+func (s *Store) withLock(ctx context.Context, fn func() error) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	release, err := s.acquireLock(ctx)
+	if err != nil {
+		return err
+	}
+
+	defer release()
+
+	return fn()
+}
+
+// acquireLock takes the whole-store file lock, returning the release func.
+// The lock file is created with O_EXCL (cross-process mutual exclusion); a
+// lock whose mtime exceeds lockStaleAfter is removed and retried once a
+// poll interval passes — a crashed holder never wedges the store.
+func (s *Store) acquireLock(ctx context.Context) (func(), error) {
+	lockPath := filepath.Join(s.gitDir, lockFileName)
+
+	for {
+		f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, lockPermOwnerOnly)
+		if err == nil {
+			_ = f.Close()
+
+			return func() { _ = os.Remove(lockPath) }, nil
+		}
+
+		fi, serr := os.Stat(lockPath)
+		if serr == nil && time.Since(fi.ModTime()) >= lockStaleAfter {
+			age := time.Since(fi.ModTime())
+			slog.Warn("checkpoint: stealing stale store lock", "lock", lockPath, "age", age.String())
+
+			_ = os.Remove(lockPath)
+
+			continue
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("checkpoint: acquire store lock: %w", ctx.Err())
+		case <-time.After(lockPollInterval):
+		}
+	}
 }

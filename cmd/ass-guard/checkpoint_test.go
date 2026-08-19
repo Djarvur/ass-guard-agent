@@ -16,11 +16,13 @@ import (
 func seedCheckpointStore(t *testing.T, work string) *checkpoint.Store {
 	t.Helper()
 
-	if err := os.MkdirAll(filepath.Join(work, "src"), 0o755); err != nil {
+	err := os.MkdirAll(filepath.Join(work, "src"), 0o755)
+	if err != nil {
 		t.Fatalf("mkdir src: %v", err)
 	}
 
-	if err := os.WriteFile(filepath.Join(work, "src", "app.txt"), []byte("original\n"), 0o644); err != nil {
+	err = os.WriteFile(filepath.Join(work, "src", "app.txt"), []byte("original\n"), 0o644)
+	if err != nil {
 		t.Fatalf("write src/app.txt: %v", err)
 	}
 
@@ -29,7 +31,8 @@ func seedCheckpointStore(t *testing.T, work string) *checkpoint.Store {
 		t.Fatalf("checkpoint.Open: %v", err)
 	}
 
-	if err := s.Snapshot(context.Background(), "sess-cli", "sess-cli-turn-001"); err != nil {
+	err = s.Snapshot(context.Background(), "sess-cli", "sess-cli-turn-001")
+	if err != nil {
 		t.Fatalf("Snapshot: %v", err)
 	}
 
@@ -61,13 +64,15 @@ func TestCheckpointListShowsSnapshots(t *testing.T) {
 	work := t.TempDir()
 	s := seedCheckpointStore(t, work)
 
-	if err := s.Snapshot(context.Background(), "sess-cli", "sess-cli-turn-002"); err != nil {
+	err := s.Snapshot(context.Background(), "sess-cli", "sess-cli-turn-002")
+	if err != nil {
 		t.Fatalf("Snapshot 2: %v", err)
 	}
 
 	var out bytes.Buffer
 
-	if err := runCheckpointList(&out, work); err != nil {
+	err = runCheckpointList(&out, work)
+	if err != nil {
 		t.Fatalf("runCheckpointList: %v", err)
 	}
 
@@ -93,13 +98,15 @@ func TestCheckpointRestoreRoundtripCLI(t *testing.T) {
 	work := t.TempDir()
 	seedCheckpointStore(t, work)
 
-	if err := os.WriteFile(filepath.Join(work, "src", "app.txt"), []byte("mutated by a bad turn\n"), 0o644); err != nil {
+	err := os.WriteFile(filepath.Join(work, "src", "app.txt"), []byte("mutated by a bad turn\n"), 0o644)
+	if err != nil {
 		t.Fatalf("mutate src/app.txt: %v", err)
 	}
 
 	var out bytes.Buffer
 
-	if err := runCheckpointRestore(context.Background(), &out, work, "sess-cli-turn-001"); err != nil {
+	err = runCheckpointRestore(context.Background(), &out, work, "sess-cli-turn-001")
+	if err != nil {
 		t.Fatalf("runCheckpointRestore: %v", err)
 	}
 
@@ -108,9 +115,9 @@ func TestCheckpointRestoreRoundtripCLI(t *testing.T) {
 		t.Errorf("output = %q; want the restored ref + the restored note", out.String())
 	}
 
-	data, err := os.ReadFile(filepath.Join(work, "src", "app.txt"))
-	if err != nil {
-		t.Fatalf("read src/app.txt: %v", err)
+	data, rerr := os.ReadFile(filepath.Join(work, "src", "app.txt"))
+	if rerr != nil {
+		t.Fatalf("read src/app.txt: %v", rerr)
 	}
 
 	if string(data) != "original\n" {

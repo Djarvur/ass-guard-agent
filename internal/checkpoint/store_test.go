@@ -2,7 +2,7 @@ package checkpoint //nolint:testpackage // internal package test (Task 2 drives 
 
 import (
 	"context"
-	"crypto/sha256" //nolint:gosec // test-only content fingerprinting
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -63,12 +63,13 @@ func treeMap(t *testing.T, dir string) map[string]string {
 	return out
 }
 
-// writeTestFile writes content (string or []byte) under path, creating parent
-// directories as needed.
+// writeTestFile writes content (string or []byte) under path, creating
+// parent directories as needed.
 func writeTestFile(t *testing.T, path string, content any) {
 	t.Helper()
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	err := os.MkdirAll(filepath.Dir(path), 0o755)
+	if err != nil {
 		t.Fatalf("mkdir %s: %v", path, err)
 	}
 
@@ -83,7 +84,8 @@ func writeTestFile(t *testing.T, path string, content any) {
 		t.Fatalf("writeTestFile: unsupported content type %T", content)
 	}
 
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	err = os.WriteFile(path, data, 0o644)
+	if err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}
 }
@@ -96,7 +98,9 @@ func seedWorkspace(t *testing.T, dir string) {
 
 	writeTestFile(t, filepath.Join(dir, "readme.txt"), "top level text\n")
 	writeTestFile(t, filepath.Join(dir, "src", "main.go"), "package main\n\nfunc main() {}\n")
-	writeTestFile(t, filepath.Join(dir, "src", "bin", "blob.bin"), []byte{0x00, 0x01, 0xff, 0xfe, 0x7f, 0x80, 0x00, 0x01})
+
+	binBlob := []byte{0x00, 0x01, 0xff, 0xfe, 0x7f, 0x80, 0x00, 0x01}
+	writeTestFile(t, filepath.Join(dir, "src", "bin", "blob.bin"), binBlob)
 	writeTestFile(t, filepath.Join(dir, "emptydir", ".keep"), "")
 }
 
@@ -116,7 +120,8 @@ func openStore(t *testing.T, workDir string) *Store {
 func snap(t *testing.T, s *Store, sessionID, turnID string) {
 	t.Helper()
 
-	if err := s.Snapshot(context.Background(), sessionID, turnID); err != nil {
+	err := s.Snapshot(context.Background(), sessionID, turnID)
+	if err != nil {
 		t.Fatalf("Snapshot(%s): %v", turnID, err)
 	}
 }
@@ -127,7 +132,7 @@ func gitUser(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 
 	full := append([]string{"-c", "user.name=t", "-c", "user.email=t@example.com"}, args...)
-	cmd := exec.Command("git", full...)
+	cmd := exec.CommandContext(context.Background(), "git", full...)
 	cmd.Dir = dir
 
 	out, err := cmd.CombinedOutput()
@@ -149,17 +154,15 @@ type userGitState struct {
 	gitTree   map[string]string
 }
 
-// captureUserGit warms the index stat-cache first (a first `git status` may
-// legitimately rewrite it), then captures every observable .git facet.
+// captureUserGit captures every observable .git facet. BYTE captures come
+// FIRST: a `git status` legitimately rewrites the user index (opportunistic
+// stat-cache refresh after restore rewrites worktree files), so status runs
+// LAST — the invariant under test is what snapshot/restore wrote, not what a
+// later status refreshes.
 func captureUserGit(t *testing.T, work string) userGitState {
 	t.Helper()
 
-	_ = gitUser(t, work, "status", "--porcelain")
-
-	st := userGitState{
-		resolved: strings.TrimSpace(gitUser(t, work, "rev-parse", "HEAD")),
-		status:   gitUser(t, work, "status", "--porcelain"),
-	}
+	st := userGitState{}
 
 	headBytes, err := os.ReadFile(filepath.Join(work, ".git", "HEAD"))
 	if err != nil {
@@ -176,6 +179,8 @@ func captureUserGit(t *testing.T, work string) userGitState {
 	sum := sha256.Sum256(indexBytes)
 	st.indexHash = hex.EncodeToString(sum[:])
 	st.gitTree = treeMap(t, filepath.Join(work, ".git"))
+	st.resolved = strings.TrimSpace(gitUser(t, work, "rev-parse", "HEAD"))
+	st.status = gitUser(t, work, "status", "--porcelain")
 
 	return st
 }
@@ -227,14 +232,16 @@ func TestSnapshotRestore_ByteIdentical(t *testing.T) {
 	// and existing directories.
 	writeTestFile(t, filepath.Join(work, "src", "main.go"), "package main\n\nfunc main() { mutated() }\n")
 
-	if err := os.Remove(filepath.Join(work, "readme.txt")); err != nil {
+	err := os.Remove(filepath.Join(work, "readme.txt"))
+	if err != nil {
 		t.Fatalf("remove readme.txt: %v", err)
 	}
 
 	writeTestFile(t, filepath.Join(work, "post-snapshot.txt"), "created after the snapshot")
 	writeTestFile(t, filepath.Join(work, "newdir", "nested.txt"), "created after the snapshot, new dir")
 
-	if err := s.Restore(context.Background(), "sess-bi-turn-001"); err != nil {
+	err = s.Restore(context.Background(), "sess-bi-turn-001")
+	if err != nil {
 		t.Fatalf("Restore: %v", err)
 	}
 
@@ -285,15 +292,16 @@ func TestSnapshot_UserGitUntouched(t *testing.T) {
 
 	// The snapshot must not have INGESTED the user's .git either: git's
 	// built-in worktree-root .git exclusion holds under the external git-dir.
-	lsTree := exec.Command("git", "--git-dir="+filepath.Join(work, ".ass-guard", "checkpoints", "shadow.git"),
-		"ls-tree", "-r", "--name-only", "refs/checkpoints/sess-gu-turn-001")
+	shadowDir := filepath.Join(work, ".ass-guard", "checkpoints", "shadow.git")
+	lsTree := exec.CommandContext(context.Background(), "git",
+		"--git-dir="+shadowDir, "ls-tree", "-r", "--name-only", "refs/checkpoints/sess-gu-turn-001")
 
 	out, err := lsTree.CombinedOutput()
 	if err != nil {
 		t.Fatalf("ls-tree the shadow snapshot: %v\n%s", err, out)
 	}
 
-	for _, line := range strings.Split(string(out), "\n") {
+	for line := range strings.SplitSeq(string(out), "\n") {
 		if strings.HasPrefix(line, ".git/") || line == ".git" {
 			t.Errorf("snapshot ingested the user's .git: %q", line)
 		}
@@ -322,7 +330,8 @@ func TestRestore_UserGitUntouched(t *testing.T) {
 	writeTestFile(t, filepath.Join(work, "src", "main.go"), "package main\n\nfunc main() { changed() }\n")
 	writeTestFile(t, filepath.Join(work, "mutated-turn.txt"), "a bad turn created this")
 
-	if err := s.Restore(context.Background(), "sess-ru-turn-001"); err != nil {
+	err := s.Restore(context.Background(), "sess-ru-turn-001")
+	if err != nil {
 		t.Fatalf("Restore: %v", err)
 	}
 
@@ -355,12 +364,15 @@ func TestCheckpointListOrdering(t *testing.T) {
 
 	snap(t, s, "sess-a", "sess-a-turn-001")
 
-	first, err := s.List()
-	if err != nil {
-		t.Fatalf("List: %v", err)
+	first, lerr := s.List()
+	if lerr != nil {
+		t.Fatalf("List: %v", lerr)
 	}
 
-	want := []struct{ sessionID string; turnNum int }{
+	want := []struct {
+		sessionID string
+		turnNum   int
+	}{
 		{"sess-a", 1}, {"sess-a", 2}, {"sess-b", 1},
 	}
 
@@ -386,9 +398,9 @@ func TestCheckpointListOrdering(t *testing.T) {
 	}
 
 	// Stable across repeated invocations.
-	second, err := s.List()
-	if err != nil {
-		t.Fatalf("List (repeat): %v", err)
+	second, lerr2 := s.List()
+	if lerr2 != nil {
+		t.Fatalf("List (repeat): %v", lerr2)
 	}
 
 	if !reflect.DeepEqual(first, second) {

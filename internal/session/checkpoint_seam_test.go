@@ -42,7 +42,7 @@ type recordingCheckpointer struct {
 func (c *recordingCheckpointer) SnapshotTurn(_ context.Context, sessionID, turnID string) error {
 	c.log.add("checkpoint:" + sessionID + ":" + turnID)
 
-	return c.err //nolint:wrapcheck // test double returns the configured error verbatim
+	return c.err
 }
 
 // observingProvider wraps the fake provider, recording every Stream call in
@@ -50,6 +50,7 @@ func (c *recordingCheckpointer) SnapshotTurn(_ context.Context, sessionID, turnI
 // turn's first provider call.
 type observingProvider struct {
 	*fakeProvider
+
 	log *seamEventLog
 }
 
@@ -58,7 +59,7 @@ func (p *observingProvider) Stream(
 ) (<-chan provider.StreamChunk, error) {
 	p.log.add("provider-stream")
 
-	return p.fakeProvider.Stream(ctx, prof, msgs) //nolint:wrapcheck // delegation to the wrapped fake
+	return p.fakeProvider.Stream(ctx, prof, msgs)
 }
 
 // TestPrompt_SnapshotsAtTurnEntry (Task 1, Test 4): Prompt calls the
@@ -97,7 +98,9 @@ func TestPrompt_CheckpointFailureNonFatal(t *testing.T) {
 	t.Parallel()
 
 	s, m, _ := newTestSession(t, nil, []provider.Response{{FinishReason: stopEndTurn}})
-	s.Checkpointer = &recordingCheckpointer{log: &seamEventLog{}, err: errors.New("shadow store unwritable")}
+	s.Checkpointer = &recordingCheckpointer{
+		log: &seamEventLog{}, err: errors.New("shadow store unwritable"), //nolint:err113 // test fixture error
+	}
 
 	stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "hi"}})
 	if err != nil {

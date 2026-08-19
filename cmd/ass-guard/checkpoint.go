@@ -2,27 +2,38 @@ package main
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"io"
+	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/Djarvur/ass-guard-agent/internal/checkpoint"
 )
 
-// errCheckpointStub is the RED-phase stub error (GREEN replaces the bodies).
-var errCheckpointStub = errors.New("checkpoint command not implemented yet") //nolint:err113,gochecknoglobals // RED-phase stub
+// checkpointNoEntriesNote is the empty-store list note (exit 0).
+const checkpointNoEntriesNote = "no checkpoints"
+
+// checkpointRestoredNote is the restore success line.
+const checkpointRestoredNote = "workspace restored to pre-turn state"
+
+// checkpointIDHint documents the id grammar in structured errors.
+const checkpointIDHint = "want <sessionID>-turn-<NNN>"
 
 // newCheckpointCmd builds the `ass-guard checkpoint` command group
 // (list | restore) — the EARLY-01 terminal surface over the shadow-git
 // store. EVERY byte of output goes to STDERR: the binary's stdout is
-// reserved for ACP frames and stays byte-clean (transport discipline).
+// reserved for ACP JSON-RPC frames and stays byte-clean (transport
+// discipline — this file references no stdout writer at all).
 func newCheckpointCmd() *cobra.Command {
 	checkpointCmd := &cobra.Command{
 		Use:   "checkpoint",
 		Short: "Shadow-git workspace checkpoints (EARLY-01): list and restore pre-turn snapshots",
 		Long: "Operates the per-workspace shadow-git checkpoint store under " +
 			".ass-guard/checkpoints/shadow.git. Every parent turn snapshots the workspace " +
-			"BEFORE its mutations; `checkpoint list` shows the recovery history and " +
-			"`checkpoint restore <sessionID-turn-NNN>` returns the workspace to that " +
+			"BEFORE its mutations; `checkpoint list` shows the workspace's recovery history " +
+			"and `checkpoint restore <sessionID-turn-NNN>` returns the workspace to that " +
 			"pre-turn state (the user's repository git state is never touched). All output " +
 			"is written to stderr — stdout stays reserved for ACP frames.",
 		SilenceUsage: true,
@@ -69,15 +80,53 @@ func newCheckpointCmd() *cobra.Command {
 	return checkpointCmd
 }
 
-// runCheckpointList prints the store's entries (ascending turn sequence) to
-// stderr. An empty or absent store prints "no checkpoints" and succeeds.
-func runCheckpointList(_ io.Writer, _ string) error {
-	return errCheckpointStub
+// runCheckpointList opens (lazily creating) the store over workDir and
+// prints its entries to stderr, ascending by (sessionID, turn number). An
+// empty or absent store prints "no checkpoints" and succeeds — an
+// uncheckpointed workspace is a normal state, not an error.
+func runCheckpointList(stderr io.Writer, workDir string) error {
+	store, err := checkpoint.Open(workDir)
+	if err != nil {
+		return fmt.Errorf("checkpoint list: %w", err)
+	}
+
+	entries, err := store.List()
+	if err != nil {
+		return fmt.Errorf("checkpoint list: %w", err)
+	}
+
+	if len(entries) == 0 {
+		_, _ = fmt.Fprintln(stderr, checkpointNoEntriesNote)
+
+		return nil
+	}
+
+	for _, e := range entries {
+		id := strings.TrimPrefix(e.Ref, "refs/checkpoints/")
+
+		_, _ = fmt.Fprintf(stderr, "%s\t%s\n", id, e.CommittedAt.Format(time.RFC3339))
+	}
+
+	return nil
 }
 
-// runCheckpointRestore restores the workspace to the named checkpoint and
-// prints the restored ref. An unknown or malformed id is a structured error
-// (exit 1).
-func runCheckpointRestore(_ context.Context, _ io.Writer, _, _ string) error {
-	return errCheckpointStub
+// runCheckpointRestore returns the workspace to the named checkpoint's
+// pre-turn state and reports the restored ref on stderr. A malformed or
+// unknown id is a structured error (cobra prints it, exit 1) — never a
+// silent success.
+func runCheckpointRestore(ctx context.Context, stderr io.Writer, workDir, id string) error {
+	//nolint:contextcheck // plan-pinned signature: Store.Open carries no ctx
+	store, err := checkpoint.Open(workDir)
+	if err != nil {
+		return fmt.Errorf("checkpoint restore: %w", err)
+	}
+
+	err = store.Restore(ctx, id)
+	if err != nil {
+		return fmt.Errorf("checkpoint restore %q (%s): %w", id, checkpointIDHint, err)
+	}
+
+	_, _ = fmt.Fprintf(stderr, "restored %s — %s\n", id, checkpointRestoredNote)
+
+	return nil
 }

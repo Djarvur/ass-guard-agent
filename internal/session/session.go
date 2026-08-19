@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -170,6 +171,22 @@ func (s *Session) Prompt(ctx context.Context, userPrompt []ContentBlock) (stop s
 			stop = ""
 		}
 	}()
+
+	// 14-01 (EARLY-01): shadow-git snapshot at PARENT turn start — BEFORE
+	// any turn work (hooks, user message, provider calls) — so the snapshot
+	// is exactly the PRE-turn state restore returns to ("undo this turn").
+	// Subagent turns never reach here (DispatchSubagent runs inside the
+	// parent turn's recovery window). A snapshot failure is LOUD (stderr +
+	// the investigate-and-fix-ready transcript line) but never turn-fatal —
+	// the AUD-03 audit-write failure discipline.
+	if s.Checkpointer != nil {
+		cerr := s.Checkpointer.SnapshotTurn(ctx, s.SessionID, turnID)
+		if cerr != nil {
+			slog.Error("checkpoint: snapshot failed (turn continues without a checkpoint)",
+				"turnID", turnID, "error", cerr.Error())
+			s.appendError(turnID, "checkpoint", cerr, true)
+		}
+	}
 
 	// 12-02 Task 4: the turn-entry hook seams. Prompt receives the
 	// POST-EXPANSION blocks (cmd expands slash-commands before calling), so
