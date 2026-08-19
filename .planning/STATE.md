@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: ACP Early Adoption
-current_phase: 12
-current_phase_name: product-functional-completeness
+current_phase: 14
+current_phase_name: adoption-readiness-analysis-dispositions
 status: executing
-stopped_at: "Replan 2026-08-19 complete — new-analysis dispositions recorded (borrows #13-15; adoption line unchanged); next: plan Phase 14"
-last_updated: "2026-08-19T15:41:18.629Z"
+stopped_at: Completed 14-01-PLAN.md (EARLY-01 checkpoints; gated live leg skipped loud — ZAI_API_KEY absent, operator command in testdata/checkpoint-e2e/README.md)
+last_updated: "2026-08-19T17:59:54.549Z"
 last_activity: 2026-08-19
 last_activity_desc: Replan — cb3ab50 new comparative data dispositioned against the adoption line (plan structure confirmed)
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 29
-  completed_plans: 17
+  completed_plans: 18
 ---
 
 # State: ass-guard-agent (working name)
@@ -22,17 +22,17 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-08-14)
 **Core value:** Outgoing requests to the model provider must be structurally indistinguishable from the mimicked agent's (zcode first) — *validated v1.0 (Phase-1 A/B parity)*
-**Current focus:** Phase 12 — product-functional-completeness
+**Current focus:** Phase 14 — adoption-readiness-analysis-dispositions
 
 ## Current Position
 
-Phase: 12 (product-functional-completeness) — EXECUTING
-Plan: 2 of 8 COMPLETE (12-01 AskUserQuestion + 12-02 plugin discovery; next unexecuted: 12-05 per the adoption split)
-Status: 12-01 CLOSED 2026-08-19 — operator live witness APPROVED (leg 1 reply-as-tool-result + leg 2 D-01 timeout both PASS); the witness's ONE finding (ask surface dropped on the live wire by the Writer's decoded-newline transport guard) root-caused, fixed (`1b38e3d`, single-line render + server-level regression pin), `mise ci` green; SUMMARY written.
-Last activity: 2026-08-19 — replan: the cb3ab50 comparative-analysis amendment (borrows #13-15) dispositioned against the adoption line; plan structure confirmed unchanged
+Phase: 14 (adoption-readiness-analysis-dispositions) — EXECUTING
+Plan: 2 of 6
+Status: Ready to execute
+Last activity: 2026-08-19 — Phase 14 execution started
 Next action: `/gsd:execute-phase 14` (6 plans checker-passed 2026-08-19: 0 blockers, revision `6b1d0fd` landed; wave 1 = 14-01 shadow-git checkpoints [tracer], 14-02 compaction verify, 14-03 pi↔shaper audit; wave 2 = 14-04 cache probe, 14-05 token economics, 14-06 tool contract), then 12-05 → 12-04 → 12-06 → **ADOPTION LINE** → 12-03 → 12-08 → 12-07 → 13. ONE residual open in WINDOWS.md + 12-*/deferred-items.md: timer-resume chunks not client-mirrored (route: 12-07).
 
-Progress: [█████░░░░░] 46%
+Progress: [████░░░░░░] 42%
 
 ## Performance Metrics
 
@@ -45,6 +45,7 @@ Progress: [█████░░░░░] 46%
 |------|----------|-------|-------|
 | Phase 12 P02 | 40min | 4 tasks | 28 files |
 | Phase 12 P01 | 183min | 3 tasks | 13 files |
+| Phase 14 P01 | 47min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -85,6 +86,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase ?]: [08-02] DDG fixture strategy under anomaly wall: structure-contract fixture with real data + real anomaly capture + documented regeneration (clean-egress curl)
 - [Phase ?]: [12-02 EXECUTED, 2026-08-18] Claude-Code plugin installs consumed as native: BOTH installed_plugins.json shapes parse (v1 array + the live v2 object with projectPath gating); plugin roots are PROJECT .claude/plugins/ over USER ~/.claude/plugins/ as the two LOWEST precedence tiers (existing D-06 chain untouched; zcode root dropped); ALL FIVE contribution kinds merged — skills/, commands/ (same readers as .claude), agents/ (spawnable subagent types: Tools as restricted set, Prompt as per-dispatch system block; .claude/agents/ first-class), hooks/hooks.json (bounded runner: sanitized env PATH/HOME+CLAUDE_PLUGIN_ROOT, per-hook timeout, 30k caps, documented stdin JSON, exit-2 PreToolUse refusal as the policy channel, unmapped events observe-only), .mcp.json (lowest MCP layer through the existing host). Live-proven on the operator's real cache: 8 plugins, 42 cc-skills-golang skills recovered via the toolsList frontmatter fix; write-boundary mtime-proven; mise ci green. Commits a9d8a47..62c0a0d (TDD RED/GREEN per task).
 - [Phase ?]: 12-01: AskUserQuestion suspends (never blocks the prompt call); the reply arrives as the next session/prompt and IS the tool result (captured answered form); the D-01 timer (10m default, 0=block-forever) drives the same resume path; a suspended turn never chains (ActionAsk, no table lookup, learning store bypassed)
+- [Phase ?]: [14-01 EXECUTED, 2026-08-19] EARLY-01 shadow-git checkpoints landed: ONE store per workspace at <workDir>/.ass-guard/checkpoints/shadow.git (bare-layout init + core.bare=false — plain `git init <dir>.git` nests .git on git ≥2.50), turn-addressed refs refs/checkpoints/<sessionID>-turn-<NNN> with a refs/checkpoints/last symbolic HEAD (excluded from List/prune); snapshot at Prompt entry BEFORE hooks/user message (restore = "undo this turn"; subagent turns never snapshot); serve wiring DEFAULT ON at sessionFor, store-open failure degrades loud to no-checkpointing (AUD-03); `ass-guard checkpoint list|restore` CLI stderr-only; every git invocation isolated (own GIT_INDEX_FILE, GIT_CONFIG_GLOBAL/SYSTEM=/dev/null, core.hooksPath=/dev/null) — the user repo's HEAD/index/status/.git-tree proven byte-identical across snapshot AND restore; retention DefaultKeep=50, O_EXCL store lock w/ 30s stale steal, strict id grammar validated BEFORE any exec (gitRun seam proves zero spawns for malformed ids). mise ci green; go.mod untouched. RESIDUAL: the gated live rollback (ZAI_API_KEY absent → loud skip; WINDOWS.md unrun-verify + testdata/checkpoint-e2e/README.md command); TestServeMirror_Override exit moved to the turn's terminal transcript line (the longer turns exposed its early-return race — 2/10 → 0/15).
 
 ### Pending Todos
 
@@ -157,6 +159,6 @@ Carried from v1.0 close — dispositioned into v1.1 scope:
 
 ## Session Continuity
 
-Last session: 2026-08-19T15:15:00.000Z
-Stopped at: Replan + Phase 14 PLANNED 2026-08-19 — cb3ab50 data dispositioned (borrows #13-15, adoption line unchanged); Phase 14 planned (6 plans, 2 waves, checker VERIFICATION PASSED after one revision; commits b9530bc, 6b1d0fd, 0bf7058). Next: `/gsd:execute-phase 14`.
+Last session: 2026-08-19T17:59:45.704Z
+Stopped at: Completed 14-01-PLAN.md (EARLY-01 checkpoints; gated live leg skipped loud — ZAI_API_KEY absent, operator command in testdata/checkpoint-e2e/README.md)
 Resume file: None
