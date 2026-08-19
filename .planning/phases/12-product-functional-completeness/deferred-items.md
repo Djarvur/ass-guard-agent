@@ -17,6 +17,22 @@ dedicated fix task or fold into 12-04/12-05 verification with the operator's
 call on the guard's spec reading (the raw-byte marshal check already enforces
 the actual wire invariant).
 
+**[RESOLVED 2026-08-19 — quick task 260819-nlg]** operator disposition (chose
+option 1): relax the guard to the raw-byte check. The spec's "MUST NOT contain
+embedded newlines" is a WIRE-BYTES framing rule (one frame = one line);
+`json.Marshal` escapes `\n` inside strings to `\\n`, so decoded newlines are
+legal JSON content and could never split the frame. Removed
+`containsDecodedNewline`/`walkDecodedNewline` from `internal/acp/framer.go`,
+kept the post-marshal raw-byte check, rewrote the framer tests (decoded
+newlines emit ONE single-line frame; round-trip preserves the newline; raw 0x0A
+from a hostile Marshaler still errors). Stale guard-citing comments in
+`coreexec/ask.go` + `ask_test.go` corrected (single-line render stays as the
+documented convention). Model newline-carrying chunks now reach the wire.
+Verification-collateral: widened the 5s deadline in
+`TestAskWiring_ServerLevelSurface` to 30s (proven pre-existing race-load flake
+on baseline, 6.4–8.6s observations). WINDOWS.md #1/#2 closed fixed; full
+`mise run ci` green.
+
 **Known limitation (12-01, by-design v1 scoping):** the D-01 timer-driven
 resume runs the resumed turn server-side (transcript + engine path fully
 recorded — live-proven in witness session `e253bfbd`), but its streamed chunks
