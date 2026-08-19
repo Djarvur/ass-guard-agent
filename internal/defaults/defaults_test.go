@@ -14,11 +14,11 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/scheduler"
 )
 
-// Seed-profile expectations. tools = 103 (catalog drift, STATE.md blocker): the
-// dev profiles/zcode/tools.json carries 103 tools, so the embedded seed mirrors
-// it byte-for-byte. The plan's stale "77" was superseded by the drift event.
+// Seed-profile expectations. tools = 79: the 09-04/AUD-05 re-pin (zcode
+// 0.16.3, GLM-5.3) superseded the old 103-tool catalog; the embedded seed
+// mirrors the re-pinned dev profiles/zcode byte-for-byte (sync.sh).
 const (
-	expectTools   = 103
+	expectTools   = 79
 	expectBlocks  = 3
 	expectHeaders = 12
 )

@@ -1,13 +1,13 @@
 data_source_strategy: 'D-16: scan rollout dir at extraction time; tool count = source-declared (not hardcoded)'
-extracted_at: "2026-08-11T19:03:28Z"
+extracted_at: "2026-08-15T22:46:22Z"
 extractor_version: extract-profile/01-02
-parity_note: disjoint session supplying divergence-prone multi-tool turns (RESEARCH-FLAG-01 held-out split)
-parity_reference_session_id: subagent_agent_5b30d6eb-825f-4452-bf1b-e440723d87c8
 profile: zcode
 target_capture_ref:
     sessions:
-        - id: sess_016eee8a-f2f0-44c3-abf9-9d57a2cf04a1
-          path: ~/.zcode/cli/rollout/model-io-sess_016eee8a-f2f0-44c3-abf9-9d57a2cf04a1.jsonl
+        - id: sess_3cee56ae-cc6a-43a6-8f00-a08eb266e1aa
+          path: ~/.zcode/cli/rollout/model-io-sess_3cee56ae-cc6a-43a6-8f00-a08eb266e1aa.jsonl
           role: main
-    extracted_at: 2026-08-11T19:03:28.859335Z
+    zcode_version: ""
+    extracted_at: 2026-08-15T22:46:22.744736Z
     extractor_version: extract-profile/01-02
+zcode_version: 0.16.3
