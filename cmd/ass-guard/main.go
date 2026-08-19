@@ -79,6 +79,7 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newACPCmd())
 	root.AddCommand(newSchedulingCmd())
 	root.AddCommand(newLearningCmd())
+	root.AddCommand(newCheckpointCmd())
 
 	return root
 }

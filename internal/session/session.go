@@ -68,6 +68,14 @@ type Session struct {
 	// turn end, SubagentStop at subagent completion, SessionEnd in Close.
 	Hooks *ecosys.HookRunner
 
+	// Checkpointer snapshots the workspace at PARENT turn start (14-01,
+	// EARLY-01): the snapshot taken BEFORE any turn work is what makes
+	// restore a pre-turn recovery point ("undo this turn"). Nil = disabled
+	// (tracer-mode compat). A snapshot failure is loud but never turn-fatal
+	// (the AUD-03 discipline). Subagent turns do NOT snapshot — they run
+	// inside the parent turn's recovery window.
+	Checkpointer Checkpointer
+
 	// sessionStartFired pins the lazy SessionStart seam to exactly once.
 	sessionStartFired bool
 
@@ -101,6 +109,15 @@ type Session struct {
 	closeOnce sync.Once
 
 	turnCounter atomic.Int64
+}
+
+// Checkpointer is the turn-boundary snapshot seam (14-01, EARLY-01): Prompt
+// calls SnapshotTurn at turn entry — BEFORE any turn work — so the recorded
+// snapshot is the pre-turn recovery point. The interface is defined HERE
+// (not by importing internal/checkpoint) so the session package keeps no
+// dependency on the store — the OnClose func-seam pattern.
+type Checkpointer interface {
+	SnapshotTurn(ctx context.Context, sessionID, turnID string) error
 }
 
 // nextTurnID returns a monotonically-increasing turn id for this session.
