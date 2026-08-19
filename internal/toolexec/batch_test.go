@@ -83,9 +83,9 @@ func TestDispatchBatch_ReadOnlyParallelism(t *testing.T) {
 	exec := &recordingExec{sleep: 30 * time.Millisecond}
 	catalog := newCatalog(map[string]toolcat.Mutability{
 		toolRead: toolcat.MutabilityReadOnly, toolGrep: toolcat.MutabilityReadOnly,
-		"Glob": toolcat.MutabilityReadOnly, "LS": toolcat.MutabilityReadOnly,
+		toolGlob: toolcat.MutabilityReadOnly, "LS": toolcat.MutabilityReadOnly,
 	})
-	calls := []provider.ToolCall{{Name: toolRead}, {Name: toolGrep}, {Name: "Glob"}, {Name: "LS"}}
+	calls := []provider.ToolCall{{Name: toolRead}, {Name: toolGrep}, {Name: toolGlob}, {Name: "LS"}}
 
 	t0 := time.Now()
 	results, err := toolexec.DispatchBatch(context.Background(), exec, catalog, calls)
@@ -123,9 +123,10 @@ func TestDispatchBatch_MutatingSerialization(t *testing.T) {
 
 	exec := &recordingExec{sleep: 30 * time.Millisecond}
 	catalog := newCatalog(map[string]toolcat.Mutability{
-		toolBash: toolcat.MutabilityMutating, toolWrite: toolcat.MutabilityMutating, "Edit": toolcat.MutabilityMutating,
+		toolBash: toolcat.MutabilityMutating, toolWrite: toolcat.MutabilityMutating,
+		toolEdit: toolcat.MutabilityMutating,
 	})
-	calls := []provider.ToolCall{{Name: toolBash}, {Name: toolWrite}, {Name: "Edit"}}
+	calls := []provider.ToolCall{{Name: toolBash}, {Name: toolWrite}, {Name: toolEdit}}
 
 	_, err := toolexec.DispatchBatch(context.Background(), exec, catalog, calls)
 	if err != nil {

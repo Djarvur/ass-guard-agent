@@ -1,0 +1,7 @@
+{"request":{"messages":[{"role":"user","content":"[REDACTED: prompt]"}]}}
+{"request":{"messages":[{"role":"tool","content":"Exit code 1\nzsh:3: no matches found: [REDACTED: glob]","toolCallId":"call_B1","toolName":"Bash","isError":true},{"role":"tool","content":"(Bash completed with no output)","toolCallId":"call_B2","toolName":"Bash","isError":false}]}}
+{"request":{"messages":[{"role":"tool","content":"File does not exist. Note: your current working directory is [REDACTED: dir].","toolCallId":"call_R1","toolName":"Read","isError":true}]}}
+{"request":{"messages":[{"role":"tool","content":"<tool_use_error>File has been modified since read, either by the user or by a linter. Read it again before editing.</tool_use_error>","toolCallId":"call_E1","toolName":"Edit","isError":true}]}}
+{"request":{"messages":[{"role":"tool","content":"File has been modified since read, either by the user or by linter. Read it again before writing.","toolCallId":"call_W1","toolName":"Write","isError":true}]}}
+{"request":{"messages":[{"role":"tool","content":"Exit code 137","toolCallId":"call_B3","toolName":"Bash","isError":true}]}}
+{"request":{"messages":[{"role":"assistant","content":[{"type":"text","text":"[REDACTED: assistant text]"}]},{"role":"tool","content":"<tool_use_error>File has not been read yet. Read it first before editing.</tool_use_error>","toolCallId":"call_E2","toolName":"Edit","isError":true}]}}

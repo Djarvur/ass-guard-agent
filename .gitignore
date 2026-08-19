@@ -63,3 +63,9 @@ spikes/bin/
 # read-only behavioral spec for docs/shaper-pi-audit.md. Never committed; re-clone
 # per the audit header. (14-06: extend tools/ ignores beside this entry, do not restructure.)
 tools/pi-audit/
+
+# Phase 14 / 14-06: pinned shallow clone of github.com/ruvnet/open-claude-code (occ)
+# used as the read-only surface census for docs/tool-contract-inventory.md. Never
+# committed; re-clone per the census fixture's provenance header (INPUT ONLY — the
+# committed artifact is internal/toolexec/testdata/occ-census.json, names only).
+tools/occ-census-clone/
