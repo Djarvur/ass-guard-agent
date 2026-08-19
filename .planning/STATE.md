@@ -5,15 +5,15 @@ milestone_name: ACP Early Adoption
 current_phase: 14
 current_phase_name: adoption-readiness-analysis-dispositions
 status: executing
-stopped_at: Completed 14-02-PLAN.md (EARLY-02 compaction decision artifact from corpus evidence)
-last_updated: "2026-08-19T18:24:00.628Z"
+stopped_at: Completed 14-03-PLAN.md (EARLY-04 pi↔shaper cross-validation audit)
+last_updated: "2026-08-19T18:39:17.993Z"
 last_activity: 2026-08-19
 last_activity_desc: Replan — cb3ab50 new comparative data dispositioned against the adoption line (plan structure confirmed)
 progress:
   total_phases: 5
   completed_phases: 2
   total_plans: 29
-  completed_plans: 19
+  completed_plans: 20
 ---
 
 # State: ass-guard-agent (working name)
@@ -27,12 +27,12 @@ See: .planning/PROJECT.md (updated 2026-08-14)
 ## Current Position
 
 Phase: 14 (adoption-readiness-analysis-dispositions) — EXECUTING
-Plan: 3 of 6
+Plan: 4 of 6
 Status: Ready to execute
 Last activity: 2026-08-19 — Phase 14 execution started
 Next action: `/gsd:execute-phase 14` (6 plans checker-passed 2026-08-19: 0 blockers, revision `6b1d0fd` landed; wave 1 = 14-01 shadow-git checkpoints [tracer], 14-02 compaction verify, 14-03 pi↔shaper audit; wave 2 = 14-04 cache probe, 14-05 token economics, 14-06 tool contract), then 12-05 → 12-04 → 12-06 → **ADOPTION LINE** → 12-03 → 12-08 → 12-07 → 13. ONE residual open in WINDOWS.md + 12-*/deferred-items.md: timer-resume chunks not client-mirrored (route: 12-07).
 
-Progress: [████░░░░░░] 44%
+Progress: [█████░░░░░] 47%
 
 ## Performance Metrics
 
@@ -47,6 +47,7 @@ Progress: [████░░░░░░] 44%
 | Phase 12 P01 | 183min | 3 tasks | 13 files |
 | Phase 14 P01 | 47min | 3 tasks | 10 files |
 | Phase 14 P02 | 16min | 2 tasks | 6 files |
+| Phase 14 P03 | 12min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -89,6 +90,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase ?]: 12-01: AskUserQuestion suspends (never blocks the prompt call); the reply arrives as the next session/prompt and IS the tool result (captured answered form); the D-01 timer (10m default, 0=block-forever) drives the same resume path; a suspended turn never chains (ActionAsk, no table lookup, learning store bypassed)
 - [Phase ?]: [14-01 EXECUTED, 2026-08-19] EARLY-01 shadow-git checkpoints landed: ONE store per workspace at <workDir>/.ass-guard/checkpoints/shadow.git (bare-layout init + core.bare=false — plain `git init <dir>.git` nests .git on git ≥2.50), turn-addressed refs refs/checkpoints/<sessionID>-turn-<NNN> with a refs/checkpoints/last symbolic HEAD (excluded from List/prune); snapshot at Prompt entry BEFORE hooks/user message (restore = "undo this turn"; subagent turns never snapshot); serve wiring DEFAULT ON at sessionFor, store-open failure degrades loud to no-checkpointing (AUD-03); `ass-guard checkpoint list|restore` CLI stderr-only; every git invocation isolated (own GIT_INDEX_FILE, GIT_CONFIG_GLOBAL/SYSTEM=/dev/null, core.hooksPath=/dev/null) — the user repo's HEAD/index/status/.git-tree proven byte-identical across snapshot AND restore; retention DefaultKeep=50, O_EXCL store lock w/ 30s stale steal, strict id grammar validated BEFORE any exec (gitRun seam proves zero spawns for malformed ids). mise ci green; go.mod untouched. RESIDUAL: the gated live rollback (ZAI_API_KEY absent → loud skip; WINDOWS.md unrun-verify + testdata/checkpoint-e2e/README.md command); TestServeMirror_Override exit moved to the turn's terminal transcript line (the longer turns exposed its early-return race — 2/10 → 0/15).
 - [Phase 14]: [14-02 EXECUTED, 2026-08-19] EARLY-02 compaction verify-first closed by corpus evidence: the analyzed zcode corpus (228 records, live 2026-08-19 sessions — pinned sess_3cee56ae AND the planning-time 18/22MB mains all rotated off, ladder step 2) shows NO auto-compact and NO eviction; the target's entire observable context behavior = rolling last-64-message request window (176/176 tails len-64, advancing offsets, zero resets) + cache_control {"type":"ephemeral"} on EVERY system block (910/910 placements, other bucket empty). Mimicry already delivers the window (Projector MidTurnWindowMessages=64, 08-09 no-reset re-scope); cache_control EMISSION is the one routed gap (post-adoption; 14-04's probe consumes the placement facts only); cross-turn window span stays routed to the 12-05 re-record (today's corpus is single-turn per session). Mechanical scanner committed (ScanContextBehavior, RED d981add → GREEN 7931d30) + decision artifact docs/compaction-decision.md (a0789e1); zero implementation in-phase; mise ci green.
+- [Phase ?]: 14-03 pi↔shaper audit: cache_control emission stays ROUTED post-adoption (fix needs profile-bundle TextBlock format change, not shaper-local; 14-04 probe-only); zero in-phase fixes — all 29 audit rows dispositioned (24 justified by capture authority, 2 routed, 2 match, 1 absent-at-pin): the shaper already agrees with the captured zcode wire form; pi divergences are its N-provider generality (compat matrix, header layering, session repair) the single-capture shaper does not replicate
 
 ### Pending Todos
 
@@ -161,6 +163,6 @@ Carried from v1.0 close — dispositioned into v1.1 scope:
 
 ## Session Continuity
 
-Last session: 2026-08-19T18:23:49.711Z
-Stopped at: Completed 14-02-PLAN.md (EARLY-02 compaction decision artifact from corpus evidence)
+Last session: 2026-08-19T18:39:10.704Z
+Stopped at: Completed 14-03-PLAN.md (EARLY-04 pi↔shaper cross-validation audit)
 Resume file: None
