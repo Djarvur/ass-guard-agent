@@ -22,9 +22,11 @@ The 2026-08-17 investigation (`.planning/research/IDEA-LANDSCAPE.md`) compared a
 
 Ranked tail (7 more, in the doc): buffer-then-apply hookdag steps (gh-aw/plandex), worktree isolation for fresh-context steps, eval corpus+format (pi HF sessions, ADK `.evalset.json`, gemini-cli behavioral-evals), event/transcript schema versioning + conformance (pi-telemetry, ADK 2.0), architect-mode scheduler recipe (aider), supply-chain min-release-age (pi), Claudecourse-as-profile-coverage-checklist.
 
+**2026-08-19 extension (ECOSYSTEM-AUDIT §3.3 items 12–14 ↔ IDEA-LANDSCAPE borrows #13–15):** three new borrows entered the landscape — **nightly upstream-parity gate** (occ ADR-001; re-run the EVAL/parity suite whenever the tracked target ships — the operational half of our parity harness), **scheduler outcome store + feedback loop** (occ `optimize/` cost-cascade; deterministic, zero LLM calls, invariant-clean; ECON extension), and the **Claude-Code surface census** (occ `env.mjs` ~100 env vars + 25 tool names + 6 permission-mode names + 4 MCP transports; free toolcat/profile/config coverage manifest). Triggers: Phase 8/12 planning (EVAL gate), scheduler work (feedback loop), any config-surface coverage pass.
+
 ## When to Surface
 
-**Triggers:** Phase 12 planning (items 2a/3 + tail 7/11) · Phase 13 planning (tail 7 eval suites) · v1.2 pool planning (item 4, tail 5/6 + MEM→letta/qwen study) · new-milestone scans (refresh pass) · any comparative research spike (read the doc before re-searching).
+**Triggers:** Phase 8/12 planning (EVAL gate run on target release; parity-harness operationalization) · Phase 12 planning (items 2a/3 + tail 7/11) · Phase 13 planning (tail 7 eval suites) · scheduler work (outcome-store feedback loop) · v1.2 pool planning (item 4, tail 5/6 + MEM→letta/qwen study) · new-milestone scans (refresh pass) · any comparative research spike (read the doc before re-searching).
 
 ## Scope Estimate
 
@@ -32,7 +34,8 @@ Ranked tail (7 more, in the doc): buffer-then-apply hookdag steps (gh-aw/plandex
 
 ## Breadcrumbs
 
-- `.planning/research/IDEA-LANDSCAPE.md` — the investigation itself: 34-source tables (✅/📋/🧲/🚫), ranked borrow list, rejections-validated section, verdict; now carries the **Extension protocol** section
+- `.planning/research/IDEA-LANDSCAPE.md` — the investigation itself: 34-source tables (✅/📋/🧲/🚫), ranked borrow list (#13–15 added 2026-08-19), rejections-validated section, verdict; now carries the **Extension protocol** section
+- `.planning/research/ECOSYSTEM-AUDIT.md` — §1.1 deep dives for OpenClaude + Open Claude Code (source-read 2026-08-19; redline 8: profile content derives only from the target's own wire traffic — fidelity rule; studying third-party code allowed per operator ruling 2026-08-19, with one guard: no mechanical porting from OpenClaude's unauthorized-redistribution tree)
 - `.planning/seeds/SEED-002-…fantasy…` and `.planning/seeds/SEED-003-…landscape…` — companion seeds (fantasy depth; Go landscape)
 - Phase 12/13 + v1.2 pool: `.planning/ROADMAP.md`; current position: `.planning/STATE.md`
 - Gap-2 verification target: `internal/profile/` coverage manifest vs zcode compaction/cache_control behavior; `internal/parity/` curated suite

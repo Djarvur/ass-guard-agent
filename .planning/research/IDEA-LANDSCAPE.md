@@ -4,6 +4,8 @@
 > Method: repo-verified survey of 34 sources (operator's list of 12 + fantasy + 21 new finds
 > + exclusions), cross-referenced against a codebase inventory of ass-guard's implemented
 > packages, roadmap phases, and rejected-items list. Star counts/activity are point-in-time.
+> **Last extended 2026-08-19** — added OpenClaude + Open Claude Code (both source-read via
+> shallow clones; deep dives in ECOSYSTEM-AUDIT.md §1.1; borrows #13–15 below).
 
 ## The source list (expanded from the operator's 12)
 
@@ -39,6 +41,10 @@ charmbracelet/crush (FSL-1.1-MIT — read-only!), plandex-ai/plandex. Plus charm
 | 19 | mastra-ai/mastra | TS | 27k | Apache-2.0/+EE | Typed workflow DSL; suspend/resume; MCP-server authoring |
 | 20 | agno-agi/agno | Py | 42k | Apache-2.0 | AgentOS: multi-tenant agent runtime; in-process cron; 50+ endpoint API |
 | 21 | crewAIInc/crewAI | Py | 57k | MIT | Role-based crews; Flows (deterministic pipeline vs crew execution) |
+| 22 | Gitlawb/openclaude | TS | 30.8k | MIT-on-mods (contains unlicensed Anthropic source) | Claude-Code-derived multi-provider CLI (684k-line TS); provider/UX surface; **redline-grade provenance caution** |
+| 23 | ruvnet/open-claude-code | JS | 0.5k | MIT | Clean-room Claude Code rebuild: 25 tools / 6 mode names / 4 MCP transports / ~100 `CLAUDE_CODE_*` env vars; nightly upstream-parity gate; deterministic cost-cascade router |
+
+*Rows 22–23 verified & source-read 2026-08-19 (shallow clones) — see ECOSYSTEM-AUDIT.md §1.1 for file-anchored deep dives.*
 
 **Checked and excluded:** autogen + swarm (stagnant, superseded), Semantic Kernel (merged into
 ms/agent-framework), Roo/Kilo Code (Cline duplicates), mentat (dead), vibe-kanban (orchestrator
@@ -63,6 +69,8 @@ Legend: ✅ = we already implemented an equivalent · 📋 = in our plan (phase 
 | **plandex-ai/plandex** | Post-stage verify loops ≈ hookdag; OpenSpec SDD ≈ its plan-first core (Phase 13 completes) | Zero-continue chaining (Phase 13) | Branch-per-attempt sandbox + buffer-then-apply (🧲-5/6) | 2M-token context mgmt (projected window is our answer); tree-sitter maps (🧲-note on parity risk); cloud service |
 | **earendil-works/pi** | Minimal-core philosophy (validated by our 24 small packages); no-permission position (validates our no-confirmation invariant!) | Extensions ≈ PLUG cluster (v1.2) | Telemetry contracts + conformance tests (🧲-8); compaction-as-extension (🧲-2); steering queue (🧲-4); supply-chain min-release-age (🧲-10); HF session corpus (🧲-7) | TUI; its own permission-free sandbox docs (ours: 🧲-3 does sandboxing) |
 | **justxor/Claudecourse** | Core-loop-+-harness thesis == our engine/loop split; JSONL persistence (session); retries (provider); streaming (provider) | Sub-agents (session.subagent ✓); plan mode (Phase 12); sessions; evals (Phase 12) | Use its 34-section harness list as a **profile-coverage QA checklist** (🧲-11); compaction + worktree-isolation items (🧲-2/5); verify prompt-cache breakpoints are captured (🧲-2a) | Permission modes/gates (rejected invariant) |
+| **Gitlawb/openclaude** (added 2026-08-19, source-read) | Tool-schema authority (toolcat); provider fallback/tiers (scheduler); `mcp__` naming (internal/mcp); child-process bg sessions (no-port lifecycle); DDG search fallback = our WebSearch plan | Per-agent model routing ≈ scheduler tier→agent (07/09); provider profiles ≈ 07; fork-session ≈ TREE (v1.2 pool); VCR record/replay ≈ parity cassettes (Phase 8/12) | OLLAMA-CTX 32k recipe (local tier); DuckDuckGo WebSearch fallback (CMD-07 validation); agent-routing `agentModels`/`maxSteps` (scheduler recipe); **callable-tool repo map** (tool-shaped only); cost/cache-stats UX (ECON) | Mechanical porting from this tree (unauthorized-redistribution lineage — the one scoped guard; reading/idea-borrowing explicitly fine); gRPC server (no-port); repo-map auto-injection (parity); `/buddy`; `~/.openclaude` divergence (we commit to `.claude/`) |
+| **ruvnet/open-claude-code** (added 2026-08-19, source-read) | Provider seam (internal/provider); agent loop (internal/session); tool registry (toolcat); headless default-allow ≈ our no-gate pole (validates no-confirmation against the gates school) | Behavioral evals (Phase 12 EVAL-01..03); MCP 4-transport (v1.2 `internal/mcp` ext); sessions/resume (SESS) | **Nightly upstream-parity gate (🧲-13)**; **cost-cascade outcome store (🧲-14, ECON feedback loop)**; **env/tool surface census (🧲-15)**; REGEN-WIRE-INS profile-bundle auto-update; PKCE/device OAuth (07 cred UX) | Stack (Node CLI, no ACP — ours is Go + ACP); 6 permission modes as a feature; copying its shaping (not wire-faithful — census only, a fidelity verdict); writes into `~/.claude` (redline 4) |
 
 ### Category 2 — Go frameworks (SEED-003 set)
 
@@ -156,6 +164,19 @@ Legend: ✅ = we already implemented an equivalent · 📋 = in our plan (phase 
     with no coverage answer is either a captured behavior or a gap.
 12. **Session export/share.** opencode `/share`, pi-share-hf. Cheap: render transcript JSONL to
     shareable Markdown; doubles as parity-corpus material. (Backlog-adjacent, tiny.)
+13. **Nightly upstream-parity gate (occ ADR-001).** The operational half of our parity harness:
+    a scheduled job polls the tracked target's release channel; on each new release it re-runs
+    the full parity/EVAL gate and blocks on regression. One-shot capture becomes a living gate.
+    Directly portable to Phase 8/12 EVAL-01..03. *(Cheapest high-value addition of the 2026-08-19
+    audit; source-verified in `ruvnet/open-claude-code/.github/workflows/nightly.yml`.)*
+14. **Scheduler outcome store + feedback loop (occ cost-cascade).** Deterministic ladder
+    (haiku→sonnet→opus with USD/MTok costs) + recorded per-task cost/latency/success; predictions
+    blend stats over a complexity prior; quality bar 0.7; zero LLM calls — invariant-clean. Our
+    audit bus already emits the needed events; this is a store + one engine hook (ECON extension).
+15. **Claude-Code surface census (occ + OpenClaude).** ~100 `CLAUDE_CODE_*` env vars
+    (`v2/src/config/env.mjs`), 25 tool names, 6 permission-mode names, 4 MCP transport names —
+    a free coverage manifest for toolcat/profile/config surfaces, companion to Claudecourse #11.
+    Caveat: names are real (decompiled), behavioral depth varies (occ's LSP tool is an explicit stub).
 
 ## 🚫 Confirmations (the field validates our rejections)
 
@@ -171,6 +192,18 @@ Legend: ✅ = we already implemented an equivalent · 📋 = in our plan (phase 
 - **No repo-map/context injection** — aider/plandex tree-sitter maps are the canonical
   big-repo answer for *autonomous* agents, but injecting them into prompts would break request
   parity; the profile owns context assembly. Revisit only for non-mimicked kit modes.
+  — Added 2026-08-19: OpenClaude's RepoMap (tree-sitter/PageRank, `context/repoMap/`) reaches the
+  same auto-injection design (env-gated) — same rejection. Only the *callable-tool* shape is
+  mimicry-compatible.
+- **Studying foreign code is allowed; profile ground truth stays target-only** — amended
+  2026-08-19 after operator review: reading and learning from any implementation (occ, OpenClaude,
+  anything else) is explicitly fine — copyright protects expression, not ideas/architecture, and we
+  reimplement in Go. Two rules stand: (a) mimicry *profile content* still comes only from zcode's own
+  wire traffic — PROJECT.md's log-extraction principle; a fidelity rule (foreign trees are the wrong
+  target or deliberately non-faithful), not a reading ban; (b) no mechanical line-by-line porting
+  from OpenClaude's tree specifically — its NOTICE declares unauthorized redistribution of Anthropic's
+  source, and derivative-work risk survives translation. Idea-level study everywhere, including
+  OpenClaude, is unaffected (ECOSYSTEM-AUDIT redline 8 as amended).
 - **No multi-tenant/RBAC/channels-beyond-Telegram/desktop/TUI** — all out of scope, correctly.
 
 ## Verdict: how good is the plan?
@@ -202,6 +235,10 @@ borrowable without violating a single invariant.**
   REQUIREMENTS.md backlog, FEATURES.md post-v1.1 list
 - Companion seeds: SEED-001 (kit), SEED-002 (fantasy), SEED-003 (Go landscape),
   **SEED-004 (this doc's borrow list + surfacing triggers — the doc is truth, the seed is the reminder)**
+- 2026-08-19 extension: source-read deep dives for OpenClaude + Open Claude Code live in
+  **ECOSYSTEM-AUDIT.md §1.1** (file-anchored evidence, redline 8 as amended — study-anything
+  ruling + no-mechanical-porting guard); borrows #13–15 here
+  mirror ECOSYSTEM-AUDIT §3.3 items 12–14.
 
 ## Extension protocol (for future updates to this doc)
 
