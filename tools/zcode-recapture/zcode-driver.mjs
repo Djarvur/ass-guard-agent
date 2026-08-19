@@ -48,10 +48,17 @@ function modelEnv() {
 }
 
 export class ZcodeDriver {
-  constructor(wsPath, { onLog = () => {}, timeoutMs = 600000 } = {}) {
+  // 12-05 Task 2 tour support: `prefs` overrides the requestRuntimePreferences
+  // reply (e.g. askUserQuestionAutoResolutionEnabled for the non-answer leg);
+  // `env` merges extra spawn env (e.g. the ask clock scale); `onUserInput`
+  // (method, params) => result answers interaction/requestUserInput server
+  // requests (the answered-ask leg) — null/absent falls back to auto-allow.
+  constructor(wsPath, { onLog = () => {}, timeoutMs = 600000, prefs = {}, env = {}, onUserInput = null } = {}) {
     this.wsPath = wsPath;
     this.onLog = onLog;
     this.defaultTimeout = timeoutMs;
+    this.prefs = prefs;
+    this.onUserInput = onUserInput;
     this.nextId = 1;
     this.pending = new Map(); // id -> {resolve, reject, timer}
     this.eventWaiters = []; // [{test, resolve}]
@@ -61,7 +68,7 @@ export class ZcodeDriver {
       cwd: wsPath,
       stdio: ["pipe", "pipe", "ignore"],
       detached: true, // own process group -> kill(-pid) reaps the tree
-      env: { ...process.env, ...modelEnv() },
+      env: { ...process.env, ...modelEnv(), ...env },
     });
     this.dead = false;
     this.proc.stdin.on("error", (err) => {
@@ -90,8 +97,12 @@ export class ZcodeDriver {
     if (id !== undefined && method !== undefined) {
       // server -> client request
       if (method === "session/requestRuntimePreferences") {
-        this.onLog(`[driver] replying ${method}`);
-        this.send({ id, result: { nativeSearchEnhancementsEnabled: false, memoryEnabled: false, askUserQuestionAutoResolutionEnabled: false } });
+        this.onLog(`[driver] replying ${method} prefs=${JSON.stringify(this.prefs)}`);
+        this.send({ id, result: { nativeSearchEnhancementsEnabled: false, memoryEnabled: false, askUserQuestionAutoResolutionEnabled: false, ...this.prefs } });
+      } else if (method === "interaction/requestUserInput" && this.onUserInput) {
+        const result = this.onUserInput(method, msg.params ?? {});
+        this.onLog(`[driver] onUserInput replying ${method}: ${JSON.stringify(result).slice(0, 200)}`);
+        this.send({ id, result });
       } else if (method.startsWith("interaction/")) {
         this.onLog(`[driver] auto-allowing ${method} ${JSON.stringify(msg.params).slice(0, 200)}`);
         this.send({ id, result: { outcome: { kind: "allow_once" } } });

@@ -8,6 +8,11 @@
 // KIT-RELATIVE / RUN-SCOPED. The config backup is taken FRESH before any touch and restored +
 // diff-verified in a process 'exit' handler (T-12-05-01: restore must not depend on a /tmp file
 // that may not exist — the old catch{} silently left the probe entry in the operator's config).
+//
+// 2026-08-20 tour extension (12-05 Task 2): run with --tour to append the deferred-tools
+// tour (the 12-05 forms harvest) to the same session. The module is IMPORT-SAFE (pure
+// exports until run as main): TOUR_TURNS / tourToolCoverage / assertCronCleanup power the
+// kit's node --test self-tests.
 import { ZcodeDriver } from "./zcode-driver.mjs";
 import { readFileSync, writeFileSync, readdirSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -18,42 +23,143 @@ const KIT_DIR = dirname(fileURLToPath(import.meta.url));
 const CLI_CFG = join(process.env.HOME, ".zcode", "cli", "config.json");
 const ROLLOUT = join(process.env.HOME, ".zcode", "cli", "rollout");
 const WS = "/tmp/zcode-recapture-ws";
-const RUN_DIR = "/tmp/zcode-recapture-run";
+const RUN_DIR = process.env.ZCODE_RECAPTURE_RUN_DIR ?? "/tmp/zcode-recapture-run";
 const BACKUP = join(RUN_DIR, "cli-config-backup.json");
 const PROBE = join(KIT_DIR, "probe-server.mjs");
 const MODEL = { providerId: "builtin:zai-coding-plan", modelId: "GLM-5.3" };
 
-// T-12-05-01: backup BEFORE any touch; restore + diff-verify on every exit path.
-mkdirSync(RUN_DIR, { recursive: true });
-writeFileSync(BACKUP, readFileSync(CLI_CFG));
-let cfgDirty = false;
-function restoreConfigAndVerify() {
-  if (!cfgDirty) return;
-  try {
-    writeFileSync(CLI_CFG, readFileSync(BACKUP));
-    const clean = readFileSync(CLI_CFG).equals(readFileSync(BACKUP));
-    console.log(clean ? "[cfg] restored; diff vs backup EMPTY" : "[cfg] CONFIG DIFFERS FROM BACKUP — FAIL");
-    if (!clean) process.exitCode = 1;
-  } catch (e) {
-    console.log("[cfg] restore error:", e.message);
-    process.exitCode = 1;
-  }
-}
-process.on("exit", restoreConfigAndVerify);
-for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => { restoreConfigAndVerify(); process.exit(130); });
+// ---------------------------------------------------------------------------
+// PURE EXPORTS (tour definitions + cleanup proof — no side effects on import)
+// ---------------------------------------------------------------------------
 
-function setProbeServer(add) {
-  const c = JSON.parse(readFileSync(CLI_CFG, "utf8"));
-  cfgDirty = true;
-  if (add) {
-    c.mcp = c.mcp ?? {};
-    c.mcp.servers = c.mcp.servers ?? {};
-    c.mcp.servers.recapture_probe = { type: "stdio", command: process.execPath, args: [PROBE] };
-  } else {
-    if (c.mcp?.servers) delete c.mcp.servers.recapture_probe;
-    if (c.mcp && Object.keys(c.mcp.servers ?? {}).length === 0) delete c.mcp;
+// The deferred-tools tour (12-05 Task 2, Behavior 1). Every deferred tool at
+// least once + the two ACP-07 hunts. Prompts are IMPERATIVE (the model obeys
+// its tool descriptions). "<SID>" is replaced with the live session id at run
+// time. delayMinutes-based crons ONLY (never recurring — a missed cleanup must
+// not persist forever in the operator's environment; T-12-05-02).
+export const TOUR_TURNS = [
+  {
+    id: "tour_ask_answered",
+    tools: ["AskUserQuestion"],
+    prefs: "answer",
+    prompt: "I want to add caching to this project. Ask me ONE multiple-choice question about which cache approach to use before doing anything, then implement the smallest possible version of the option I pick.",
+  },
+  {
+    id: "tour_ask_non_answer",
+    tools: ["AskUserQuestion"],
+    prefs: "autoResolve",
+    prompt: "Ask me ONE multiple-choice question about which logging library to add, wait for my selection, then act on it.",
+  },
+  {
+    id: "tour_plan_mode",
+    tools: ["EnterPlanMode", "ExitPlanMode"],
+    prompt: "Enter plan mode, then present a concise plan for adding a multiply(a, b) function to calc.js with a matching test, then exit plan mode.",
+  },
+  {
+    id: "tour_subagent_message",
+    tools: ["SendMessage"],
+    prompt: "Dispatch one subagent to count the *.js files in this project. After it returns, use SendMessage to send that agent a one-line thank-you message, and report the exact result you got back.",
+  },
+  {
+    id: "tour_read_session_context",
+    tools: ["ReadSessionContext"],
+    prompt: "Use ReadSessionContext with sessionId <SID> and query \"what changes were made to calc.js in this session\" to review this session's earlier work, then summarize the finding in one line.",
+  },
+  {
+    id: "tour_cron_create_list",
+    tools: ["CronCreate", "CronList"],
+    prompt: "Create a scheduled automation titled 'recapture tour marker' that fires ONCE, two minutes from now (use the delayMinutes field — do NOT use a cron expression), with the prompt 'echo hello from the recapture tour'. Then call CronList and report the new automation's id exactly.",
+  },
+  {
+    id: "tour_cron_update_delete",
+    tools: ["CronUpdate", "CronDelete", "CronList"],
+    prompt: "Update the automation titled 'recapture tour marker' to fire once five minutes from now instead. Then DELETE it by id. Then call CronList once more and reply with its verbatim output.",
+  },
+  {
+    id: "tour_bash_background",
+    tools: ["Bash:run_in_background", "TaskOutput", "TaskStop"],
+    prompt: "Start a background shell that runs `sleep 60 && echo bg-done` using run_in_background, then immediately retrieve its output ONCE without blocking, then stop the task with TaskStop. Report each result exactly.",
+  },
+  {
+    id: "tour_bash_timeout",
+    tools: ["Bash:timeout_form"],
+    prompt: "Run the command `sleep 30` with the Bash timeout parameter set to 10000 milliseconds. Report the exact result text you receive.",
+  },
+  {
+    id: "tour_bash_truncation",
+    tools: ["Bash:truncation"],
+    prompt: "Run a command that prints roughly 200000 bytes of output, for example `seq 1 25000`. Report the exact LAST line of output you receive, verbatim.",
+  },
+];
+
+/** The unique covered-tool set of the tour (Behavior 1 self-test surface). */
+export function tourToolCoverage() {
+  return [...new Set(TOUR_TURNS.flatMap((t) => t.tools))];
+}
+
+/**
+ * Cleanup proof (Behavior 2 / T-12-05-02): scan parsed rollout records for the
+ * LAST CronList tool-result; pass only when it shows NO automations. Throws
+ * with the offending value otherwise. Records use the CURRENT zcode shape
+ * (request.messages[] role:"tool" {toolName, content, isError}).
+ */
+export function assertCronCleanup(records) {
+  let last = null;
+  for (const rec of records ?? []) {
+    for (const m of rec?.request?.messages ?? []) {
+      if (m?.role === "tool" && m.toolName === "CronList") last = String(m.content ?? "");
+    }
+    for (const m of rec?.request?.body?.messages ?? []) {
+      for (const b of Array.isArray(m?.content) ? m.content : []) {
+        if (b?.type === "tool-result" && b.toolName === "CronList") last = String(b.output?.value ?? "");
+      }
+    }
   }
-  writeFileSync(CLI_CFG, JSON.stringify(c, null, 2) + "\n");
+  if (last === null) throw new Error("cleanup proof: no CronList result found in the capture");
+  const emptyish = /^\s*(\[\]|\{\})?\s*$/m.test(last) || /no (automations|scheduled tasks|cron)/i.test(last) || /^0 automations/i.test(last);
+  const hasEntry = /(^|\n)\s*\d+[.)]\s+\S/.test(last) || /\bcron_[a-z0-9]+\b/i.test(last) || /recapture tour marker/i.test(last) || /[{[]\s*{/.test(last);
+  if (!emptyish || hasEntry) throw new Error(`cleanup proof FAILED — CronList not empty: ${last.slice(0, 200)}`);
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// RUN PATH (main-guarded; everything below touches the operator environment)
+// ---------------------------------------------------------------------------
+
+function armConfigRestore() {
+  mkdirSync(RUN_DIR, { recursive: true });
+  writeFileSync(BACKUP, readFileSync(CLI_CFG));
+  let cfgDirty = false;
+  const restore = () => {
+    if (!cfgDirty) return;
+    try {
+      writeFileSync(CLI_CFG, readFileSync(BACKUP));
+      const clean = readFileSync(CLI_CFG).equals(readFileSync(BACKUP));
+      console.log(clean ? "[cfg] restored; diff vs backup EMPTY" : "[cfg] CONFIG DIFFERS FROM BACKUP — FAIL");
+      if (!clean) process.exitCode = 1;
+    } catch (e) {
+      console.log("[cfg] restore error:", e.message);
+      process.exitCode = 1;
+    }
+  };
+  process.on("exit", restore);
+  for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => { restore(); process.exit(130); });
+  return {
+    setProbeServer(add) {
+      const c = JSON.parse(readFileSync(CLI_CFG, "utf8"));
+      cfgDirty = true;
+      if (add) {
+        c.mcp = c.mcp ?? {};
+        c.mcp.servers = c.mcp.servers ?? {};
+        c.mcp.servers.recapture_probe = { type: "stdio", command: process.execPath, args: [PROBE] };
+      } else {
+        if (c.mcp?.servers) delete c.mcp.servers.recapture_probe;
+        if (c.mcp && Object.keys(c.mcp.servers ?? {}).length === 0) delete c.mcp;
+      }
+      writeFileSync(CLI_CFG, JSON.stringify(c, null, 2) + "\n");
+    },
+    restore,
+  };
 }
 
 // Seed the scratch workspace the runbook's turns assume (README/calc/test/package).
@@ -70,10 +176,33 @@ function seedWorkspace() {
     try { readFileSync(p); } catch { writeFileSync(p, content); }
   }
 }
-seedWorkspace();
 
-async function resumeWithPin(sid) {
-  const d = new ZcodeDriver(WS, { onLog: () => {} });
+// Tour-pref driver options: "answer" answers user-input interactions with the
+// first option; "autoResolve" enables the runtime's ask auto-resolution (the
+// non-answer leg — the runtime itself renders the timeout result).
+function tourDriverOpts(prefs) {
+  if (prefs === "autoResolve") {
+    return { prefs: { askUserQuestionAutoResolutionEnabled: true }, env: { ZCODE_E2E_ASK_USER_QUESTION_CLOCK_SCALE: "0.05" } };
+  }
+  if (prefs === "answer") {
+    return {
+      prefs: { askUserQuestionAutoResolutionEnabled: false },
+      onUserInput: (method, params) => {
+        console.log(`[tour] answering ${method}: ${JSON.stringify(params).slice(0, 300)}`);
+        // Best-effort first-option answer (the response schema is verified live;
+        // the log line above records the payload if the shape needs one fix).
+        const qs = params?.questions ?? params?.payload?.questions ?? [];
+        const q0 = qs[0]?.question ?? "";
+        const label = qs[0]?.options?.[0]?.label ?? "option 1";
+        return { answers: q0 ? { [q0]: label } : { 0: label } };
+      },
+    };
+  }
+  return {};
+}
+
+async function resumeWithPin(sid, opts = {}) {
+  const d = new ZcodeDriver(WS, { onLog: () => {}, ...opts });
   const resp = await d.rpc("session/resume", { sessionId: sid }, 60000);
   if (resp.error) { await d.stop(); throw new Error("resume failed: " + JSON.stringify(resp.error)); }
   const pin = await d.rpc("session/setModel", {
@@ -93,90 +222,138 @@ async function resumeWithPin(sid) {
   return d;
 }
 
-const before = new Set(readdirSync(ROLLOUT));
-execSync("pkill -f probe-server.mjs || true");
-setProbeServer(false); // leg A: clean catalog
-console.log("[cfg] clean start (no probe)");
-
-const t0 = Date.now();
-let sid;
-const a = new ZcodeDriver(WS, { onLog: () => {} });
-try {
-  // ---- LEG A: clean catalog ----
-  sid = await a.start("yolo");
-  console.log("WORKLOAD session:", sid);
-
-  const t1 = await a.prompt(
-    "Explore this tiny project with several different tools: Read README.md and calc.js; use Grep to find where the keyword XYZZY_PLUGH appears; use Glob to list the *.js files; and use WebSearch to find the current Node.js LTS version. Finish with a 3-line summary naming each tool you used.", 600000);
-  console.log(`T1 read/search (${((Date.now()-t0)/1000).toFixed(0)}s):`, (t1.done.payload.response ?? "").trim().split("\n")[0].slice(0, 100));
-
-  const t2 = await a.prompt(
-    "Make a small change with full verification: add a subtract(a, b) function to calc.js following the existing add() style, export it in module.exports, add a matching assertion to test.js, run the test suite with Bash, then Read calc.js back to verify the edit. Report the test output.", 600000);
-  console.log(`T2 mutation (${((Date.now()-t0)/1000).toFixed(0)}s):`, (t2.done.payload.response ?? "").trim().split("\n")[0].slice(0, 100));
-
-  const t3 = await a.prompt(
-    "Dispatch a subagent (your agent/Task tool) to independently count the total lines and total characters across all *.js files in this project, instructing it to use at least two different tools. When it returns, report its numbers and which tools the subagent said it used.", 600000);
-  console.log(`T3 subagent (${((Date.now()-t0)/1000).toFixed(0)}s):`, (t3.done.payload.response ?? "").trim().split("\n")[0].slice(0, 100));
-} finally {
-  await a.stop();
-}
-
-// ---- BOUNDARY 1: ATTACH the probe (config add + resume same session) ----
-setProbeServer(true);
-console.log("[cfg] probe ADDED -> resume for attach");
-let b = await resumeWithPin(sid);
-try {
-  const t4 = await b.prompt(
-    "You just got a new MCP tool. List your available tools to confirm recapture_probe is present (one line: YES <count>), then invoke the recapture_probe tool exactly once and include its raw output on a second line.", 600000);
-  console.log(`T4 probe-attached (${((Date.now()-t0)/1000).toFixed(0)}s):`, (t4.done.payload.response ?? "").trim().split("\n").slice(0, 2).join(" | ").slice(0, 160));
-} finally {
-  await b.stop();
-}
-
-// ---- BOUNDARY 2: DETACH the probe (config remove + resume same session) ----
-setProbeServer(false);
-console.log("[cfg] probe REMOVED -> resume for detach");
-let c = await resumeWithPin(sid);
-try {
-  const t5 = await c.prompt(
-    "Mixed finale: (1) list your tools and confirm in one line whether recapture_probe is still available; (2) Read package.json; (3) run the test suite once with Bash; (4) reply with a one-line summary of everything you did this turn.", 600000);
-  console.log(`T5 mixed finale (${((Date.now()-t0)/1000).toFixed(0)}s):`, (t5.done.payload.response ?? "").trim().split("\n")[0].slice(0, 100));
-} finally {
-  await c.stop();
-}
-
-restoreConfigAndVerify();
-execSync("pkill -f probe-server.mjs || true");
-
-// ---- Qualification check (harvest's mechanical thresholds) ----
-await new Promise((r) => setTimeout(r, 4000));
-const freshFiles = readdirSync(ROLLOUT).filter((f) => !before.has(f));
-console.log("\nWORKLOAD fresh rollout files:", JSON.stringify(freshFiles));
-const mainFile = freshFiles.find((f) => f.includes(sid.replace("sess_", "").slice(0, 8)));
-const subagentFiles = freshFiles.filter((f) => f.startsWith("subagent") || f.includes("subagent"));
-console.log("WORKLOAD main session file:", mainFile, "| subagent files:", JSON.stringify(subagentFiles));
-
-if (mainFile) {
-  const lines = readFileSync(join(ROLLOUT, mainFile), "utf8").split("\n").filter(Boolean);
-  const sets = new Map();
-  const toolUnion = new Set();
-  let requestRecords = 0;
-  for (const l of lines) {
-    let rec; try { rec = JSON.parse(l); } catch { continue; }
-    const tools = rec?.request?.body?.tools;
-    if (!Array.isArray(tools)) continue;
-    requestRecords++;
-    for (const t of tools) toolUnion.add(t.name);
-    const sig = tools.map((t) => t.name).sort().join(",");
-    if (!sets.has(sig)) sets.set(sig, { n: tools.length, hasProbe: sig.includes("recapture_probe"), at: requestRecords });
+async function runTour(sid, t0) {
+  console.log("[tour] deferred-tools tour begins");
+  for (const turn of TOUR_TURNS) {
+    const opts = tourDriverOpts(turn.prefs);
+    const d = await resumeWithPin(sid, opts);
+    try {
+      const prompt = turn.prompt.replaceAll("<SID>", sid);
+      const r = await d.prompt(prompt, 600000);
+      const line = (r.done.payload?.response ?? "").trim().split("\n")[0].slice(0, 110);
+      console.log(`${turn.id} (${((Date.now()-t0)/1000).toFixed(0)}s): ${line}`);
+      console.log(`  tools: ${JSON.stringify(r.tools)}`);
+    } catch (e) {
+      // Honest negative: record the miss, keep the tour moving (Task 3 rules).
+      console.log(`${turn.id} FAILED: ${e.message.slice(0, 200)}`);
+    } finally {
+      await d.stop();
+    }
   }
-  console.log(`\nQUALIFICATION (runbook §3 thresholds):`);
-  console.log(`  request records (turns proxy): ${requestRecords}  ${requestRecords >= 5 ? "PASS" : "FAIL"} (>=5)`);
-  console.log(`  distinct tools: ${toolUnion.size}  ${toolUnion.size >= 10 ? "PASS" : "FAIL"} (>=10)`);
-  console.log(`  subagent dispatch: ${subagentFiles.length > 0 ? "PASS" : "UNCERTAIN — check transcript"} (>=1)`);
-  const seq = [...sets.values()];
-  console.log(`  tool-sets: ${seq.length} distinct -> ${seq.map((s) => `n=${s.n},probe=${s.hasProbe}`).join(" -> ")}  ${seq.length >= 2 ? "PASS (mid-session catalog change)" : "FAIL"} (>=2)`);
-  const both = seq.some((s) => s.hasProbe) && seq.some((s) => !s.hasProbe);
-  console.log(`  attach AND detach directions: ${both ? "PASS" : "FAIL"}`);
-  console.log(`\nWORKLOAD RESULT: ${requestRecords >= 5 && toolUnion.size >= 10 && seq.length >= 2 ? "SESSION QUALIFIES" : "DOES NOT QUALIFY"}`);
+}
+
+async function run() {
+  const cfg = armConfigRestore();
+  seedWorkspace();
+
+  const before = new Set(readdirSync(ROLLOUT));
+  execSync("pkill -f probe-server.mjs || true");
+  cfg.setProbeServer(false); // leg A: clean catalog
+  console.log("[cfg] clean start (no probe)");
+
+  const t0 = Date.now();
+  let sid;
+  const a = new ZcodeDriver(WS, { onLog: () => {} });
+  try {
+    // ---- LEG A: clean catalog ----
+    sid = await a.start("yolo");
+    console.log("WORKLOAD session:", sid);
+
+    const t1 = await a.prompt(
+      "Explore this tiny project with several different tools: Read README.md and calc.js; use Grep to find where the keyword XYZZY_PLUGH appears; use Glob to list the *.js files; and use WebSearch to find the current Node.js LTS version. Finish with a 3-line summary naming each tool you used.", 600000);
+    console.log(`T1 read/search (${((Date.now()-t0)/1000).toFixed(0)}s):`, (t1.done.payload.response ?? "").trim().split("\n")[0].slice(0, 100));
+
+    const t2 = await a.prompt(
+      "Make a small change with full verification: add a subtract(a, b) function to calc.js following the existing add() style, export it in module.exports, add a matching assertion to test.js, run the test suite with Bash, then Read calc.js back to verify the edit. Report the test output.", 600000);
+    console.log(`T2 mutation (${((Date.now()-t0)/1000).toFixed(0)}s):`, (t2.done.payload.response ?? "").trim().split("\n")[0].slice(0, 100));
+
+    const t3 = await a.prompt(
+      "Dispatch a subagent (your agent/Task tool) to independently count the total lines and total characters across all *.js files in this project, instructing it to use at least two different tools. When it returns, report its numbers and which tools the subagent said it used.", 600000);
+    console.log(`T3 subagent (${((Date.now()-t0)/1000).toFixed(0)}s):`, (t3.done.payload.response ?? "").trim().split("\n")[0].slice(0, 100));
+  } finally {
+    await a.stop();
+  }
+
+  // ---- BOUNDARY 1: ATTACH the probe (config add + resume same session) ----
+  cfg.setProbeServer(true);
+  console.log("[cfg] probe ADDED -> resume for attach");
+  let b = await resumeWithPin(sid);
+  try {
+    const t4 = await b.prompt(
+      "You just got a new MCP tool. List your available tools to confirm recapture_probe is present (one line: YES <count>), then invoke the recapture_probe tool exactly once and include its raw output on a second line.", 600000);
+    console.log(`T4 probe-attached (${((Date.now()-t0)/1000).toFixed(0)}s):`, (t4.done.payload.response ?? "").trim().split("\n").slice(0, 2).join(" | ").slice(0, 160));
+  } finally {
+    await b.stop();
+  }
+
+  // ---- BOUNDARY 2: DETACH the probe (config remove + resume same session) ----
+  cfg.setProbeServer(false);
+  console.log("[cfg] probe REMOVED -> resume for detach");
+  let c = await resumeWithPin(sid);
+  try {
+    const t5 = await c.prompt(
+      "Mixed finale: (1) list your tools and confirm in one line whether recapture_probe is still available; (2) Read package.json; (3) run the test suite once with Bash; (4) reply with a one-line summary of everything you did this turn.", 600000);
+    console.log(`T5 mixed finale (${((Date.now()-t0)/1000).toFixed(0)}s):`, (t5.done.payload.response ?? "").trim().split("\n")[0].slice(0, 100));
+  } finally {
+    await c.stop();
+  }
+
+  // ---- Deferred-tools tour (12-05): same session, clean config ----
+  if (process.argv.includes("--tour")) {
+    await runTour(sid, t0);
+  }
+
+  cfg.restore();
+  execSync("pkill -f probe-server.mjs || true");
+
+  // ---- Qualification check (harvest's mechanical thresholds) ----
+  await new Promise((r) => setTimeout(r, 4000));
+  const freshFiles = readdirSync(ROLLOUT).filter((f) => !before.has(f));
+  console.log("\nWORKLOAD fresh rollout files:", JSON.stringify(freshFiles));
+  const mainFile = freshFiles.find((f) => f.includes(sid.replace("sess_", "").slice(0, 8)));
+  const subagentFiles = freshFiles.filter((f) => f.startsWith("subagent") || f.includes("subagent"));
+  console.log("WORKLOAD main session file:", mainFile, "| subagent files:", JSON.stringify(subagentFiles));
+
+  if (mainFile) {
+    const lines = readFileSync(join(ROLLOUT, mainFile), "utf8").split("\n").filter(Boolean);
+    const sets = new Map();
+    const toolUnion = new Set();
+    let requestRecords = 0;
+    const records = [];
+    for (const l of lines) {
+      let rec; try { rec = JSON.parse(l); } catch { continue; }
+      records.push(rec);
+      const tools = rec?.request?.body?.tools;
+      if (!Array.isArray(tools)) continue;
+      requestRecords++;
+      for (const t of tools) toolUnion.add(t.name);
+      const sig = tools.map((t) => t.name).sort().join(",");
+      if (!sets.has(sig)) sets.set(sig, { n: tools.length, hasProbe: sig.includes("recapture_probe"), at: requestRecords });
+    }
+    console.log(`\nQUALIFICATION (runbook §3 thresholds):`);
+    console.log(`  request records (turns proxy): ${requestRecords}  ${requestRecords >= 5 ? "PASS" : "FAIL"} (>=5)`);
+    console.log(`  distinct tools: ${toolUnion.size}  ${toolUnion.size >= 10 ? "PASS" : "FAIL"} (>=10)`);
+    console.log(`  subagent dispatch: ${subagentFiles.length > 0 ? "PASS" : "UNCERTAIN — check transcript"} (>=1)`);
+    const seq = [...sets.values()];
+    console.log(`  tool-sets: ${seq.length} distinct -> ${seq.map((s) => `n=${s.n},probe=${s.hasProbe}`).join(" -> ")}  ${seq.length >= 2 ? "PASS (mid-session catalog change)" : "FAIL"} (>=2)`);
+    const both = seq.some((s) => s.hasProbe) && seq.some((s) => !s.hasProbe);
+    console.log(`  attach AND detach directions: ${both ? "PASS" : "FAIL"}`);
+
+    if (process.argv.includes("--tour")) {
+      try {
+        assertCronCleanup(records);
+        console.log("  cron cleanup (CronList empty at exit): PASS");
+      } catch (e) {
+        console.log(`  cron cleanup (CronList empty at exit): FAIL — ${e.message}`);
+        process.exitCode = 1;
+      }
+    }
+    console.log(`\nWORKLOAD RESULT: ${requestRecords >= 5 && toolUnion.size >= 10 && seq.length >= 2 ? "SESSION QUALIFIES" : "DOES NOT QUALIFY"}`);
+    console.log("TOUR RESULT:", process.argv.includes("--tour") ? (process.exitCode ? "TOUR INCOMPLETE (see failures above)" : "TOUR COMPLETE") : "not run (--tour absent)");
+  }
+}
+
+const isMain = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+if (isMain) {
+  run().catch((e) => { console.error("WORKLOAD ERROR:", e); process.exit(1); });
 }
