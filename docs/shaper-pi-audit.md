@@ -107,16 +107,25 @@ pi's wire-governing compat flags (`getAnthropicCompat` packages/ai/src/api/anthr
 | TM-7 | assistant batch block order | Preserves stored content order (text/thinking/toolCall as stored) (packages/ai/src/api/anthropic-messages.ts:1207-1260). | Optional text block FIRST, then one tool_use block per call in batch order (internal/shaper/shaper.go:196-214) — exactly the captured zcode-normalized shape `{content, toolCalls:[…]}` (08-07 VERIFIED-FACTS #1; pinned by TestMidTurn_AnthropicToolUseRendering). | match | Both render text-before-tool_use for the captured vocabulary; ass-guard's order is corpus-pinned. No action. |
 | TM-8 | empty-content message skipping | User messages with empty/whitespace content are skipped (string or block forms); all-empty assistant batches are skipped (packages/ai/src/api/anthropic-messages.ts:1170-1206, :1261). | Blocks render verbatim — a text-only message with empty Content would emit an empty text block (internal/shaper/shaper.go:197-203); no skip rule exists. | divergence-justified | Not capture-visible: the corpus shows zero empty-content messages (prompts are non-empty; the Projector never synthesizes empty user messages) and the capture exhibits no skip behavior to mirror — inventing one without corpus evidence would be a guess. No action; flagged for re-check if a future capture ever shows the target skipping/keeping empty content. |
 
-## Fix list (post-Task-3 state)
+## Fix list (Task 3 walk — executed)
 
-**Zero in-phase fixes.** No row carries `divergence-fixed`: the two routed rows
+**Zero in-phase fixes.** The Task-3 walk over the table found no
+`divergence-fixed` rows and no `(pending Task 3)` rows: the two routed rows
 (CC-1/CC-4) follow 14-02's committed disposition (profile-bundle format change →
 post-adoption queue; 14-04 probe-only); every other divergence is justified by the
 capture-authority hierarchy (the target's own wire form differs from pi's, or the
 behavior class is absent from the corpus); the remaining rows match. An empty fix
-list is the audit's legitimate result: the shaper's five audited surfaces already
-agree with the CAPTURED target form — pi's divergences here are pi's N-provider
-generality, which ass-guard deliberately does not replicate.
+list is the audit's legitimate result (plan 14-03 Task 3): the shaper's five audited
+surfaces already agree with the CAPTURED target form — pi's divergences here are
+pi's N-provider generality, which ass-guard deliberately does not replicate.
+
+Walk verification (2026-08-19): `go test ./internal/shaper/... -count=1` green;
+`mise run ci` green (exit 0); `git diff` over go.mod/go.sum,
+internal/shaper/shaper.go, internal/shaper/shaper_test.go, and
+internal/shaper/fidelity_test.go across the plan's commits is EMPTY — zero source
+changes, zero dependencies added, the fidelity battery unmodified. No
+`internal/shaper/testdata/pi-audit/` fixtures exist because no fix required
+grounding.
 
 ## Reproducibility
 
