@@ -251,6 +251,29 @@ func toolCallIDOf(tc provider.ToolCall) string {
 	return tc.Name
 }
 
+// subagentResultPayload encodes a subagent's final result as PROPER JSON for
+// the truncation chokepoint (CR-02). The previous naive quote-concat
+// produced INVALID JSON for any result needing escapes — every multi-line
+// report — which bypassed the cap AND failed appendLine's Marshal (the
+// tool_result line was dropped from the transcript entirely). For
+// escape-free results json.Marshal is byte-identical to the old concat
+// (test-pinned); a Marshal error is defensive-only (invalid UTF-8 is
+// replaced rather than errored, per truncateToolResult's contract) and
+// degrades to the error-payload form.
+func subagentResultPayload(result string) (json.RawMessage, bool) {
+	payload, err := json.Marshal(result)
+	if err == nil {
+		return payload, false
+	}
+
+	errJSON, emErr := json.Marshal(map[string]string{mapKeyError: err.Error()})
+	if emErr != nil {
+		return []byte(`{"error":"marshal error failed"}`), true
+	}
+
+	return errJSON, true
+}
+
 // SetToolExecutor injects the real tool executor (Phase-4 TOOL-04/05 — a
 // catalog-backed toolexec.RealExecutor constructed at startup in Plan 04-05).
 // When not called, the session uses stubToolResult for every non-subagent tool
@@ -411,13 +434,16 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 
 						_ = s.Manager.AppendToolResult(turnID, callID, errJSON, true)
 					} else {
-						// 14-05 (EARLY-05): the subagent Task result flows
-						// through the truncation chokepoint like every other
-						// tool Output — under-cap keeps the exact naive-concat
-						// encoding (byte-identical to today), over-cap is
-						// bounded + properly re-encoded.
-						_ = s.Manager.AppendToolResult(turnID, callID,
-							boundedToolResult(json.RawMessage(`"`+result+`"`)), false)
+						// 14-05 (EARLY-05) + CR-02: the subagent Task result
+						// flows through the truncation chokepoint like every
+						// other tool Output, encoded as PROPER JSON first —
+						// the old naive quote-concat produced INVALID JSON for
+						// any result needing escapes (every multi-line
+						// report), which both bypassed the cap and failed
+						// appendLine's Marshal (the tool_result line was
+						// dropped entirely).
+						payload, isErr := subagentResultPayload(result)
+						_ = s.Manager.AppendToolResult(turnID, callID, boundedToolResult(payload), isErr)
 					}
 					// SESS-02/03 boundary (subagent tools are read-only; only
 					// a config-added entry would fire). Same between-turn rule
