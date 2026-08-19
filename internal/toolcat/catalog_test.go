@@ -1,10 +1,14 @@
 package toolcat_test
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 )
+
+// coreToolCount is the stable built-in core (D-16): the 19 coretools.
+const coreToolCount = 19
 
 // TestCatalog_GetCoreTools confirms the built-in catalog carries the core tools
 // with faithful schemas + correct mutability classification.
@@ -122,5 +126,109 @@ func TestCatalog_Names(t *testing.T) {
 	// are NOT in the built-in catalog.
 	if len(names) < 15 {
 		t.Errorf("catalog has %d names, want >= 15 core tools", len(names))
+	}
+}
+
+// TestCatalogParsesContractAnnotations (14-06 test 3): every one of the 19
+// coretools entries deserializes the contract annotations (timeout_ms,
+// concurrency_safe, destructive) and the accessors return the declared values
+// with the documented defaults (IsConcurrencySafe defaults to
+// mutability==read-only when undeclared; IsDestructive defaults false).
+func TestCatalogParsesContractAnnotations(t *testing.T) {
+	t.Parallel()
+
+	c := toolcat.NewCatalog()
+	names := c.Names()
+
+	if len(names) != coreToolCount {
+		t.Fatalf("catalog carries %d tools; want the %d coretools", len(names), coreToolCount)
+	}
+
+	for _, n := range names {
+		tl, ok := c.Get(n)
+		if !ok {
+			t.Fatalf("Get(%q) ok=false", n)
+		}
+
+		if tl.EffectiveTimeoutMS() <= 0 {
+			t.Errorf("%s: EffectiveTimeoutMS() = %d; want a declared timeout_ms > 0", n, tl.EffectiveTimeoutMS())
+		}
+
+		// Undeclared concurrency_safe derives from mutability (read-only ⇒ true).
+		if want := tl.Mutability == toolcat.MutabilityReadOnly; tl.IsConcurrencySafe() != want && !declaredConcurrencySafe(n) {
+			t.Errorf("%s: IsConcurrencySafe() = %v; want mutability default %v", n, tl.IsConcurrencySafe(), want)
+		}
+	}
+
+	// Destructive: declared true ONLY on Bash (irreversible-by-nature mutation).
+	for _, n := range names {
+		tl, _ := c.Get(n)
+
+		if n == toolBash {
+			if !tl.IsDestructive() {
+				t.Errorf("Bash: IsDestructive() = false; want true")
+			}
+
+			continue
+		}
+
+		if tl.IsDestructive() {
+			t.Errorf("%s: IsDestructive() = true; want false (Bash only)", n)
+		}
+	}
+
+	// Declared-value spot checks (concurrency_safe overrides the mutability
+	// default where declared).
+	if tl, _ := c.Get("TodoWrite"); tl.IsConcurrencySafe() {
+		t.Errorf("TodoWrite: IsConcurrencySafe() = true; want declared false (serialized session-state writer)")
+	}
+
+	for _, n := range []string{toolRead, "WebSearch", "WebFetch", "TodoRead", "Skill", "CronList"} {
+		if tl, _ := c.Get(n); !tl.IsConcurrencySafe() {
+			t.Errorf("%s: IsConcurrencySafe() = false; want declared true", n)
+		}
+	}
+
+	// The mutating trio stays alone-in-slot regardless of any declaration.
+	for _, n := range []string{toolBash, toolWrite, toolEdit} {
+		if tl, _ := c.Get(n); tl.IsConcurrencySafe() {
+			t.Errorf("%s: IsConcurrencySafe() = true; want false (mutating)", n)
+		}
+	}
+}
+
+// declaredConcurrencySafe lists the coretools carrying an EXPLICIT
+// concurrency_safe declaration that intentionally overrides the mutability
+// default (the read-only-but-serialized set — 14-06's flags consumption map).
+func declaredConcurrencySafe(name string) bool {
+	switch name {
+	case "TodoWrite", "TodoRead", "CronCreate", "CronDelete", "CronList",
+		"TaskStop", "SendMessage", "ExitPlanMode", "ReadSessionContext", "AskUserQuestion", "Agent":
+		return true
+	}
+
+	return false
+}
+
+// TestCatalogRawCoretoolsAnnotations pins the RAW embedded JSON: every entry
+// carries a timeout_ms annotation (the acceptance grep's programmatic twin).
+func TestCatalogRawCoretoolsAnnotations(t *testing.T) {
+	t.Parallel()
+
+	var entries []toolcat.Tool
+
+	err := json.Unmarshal(toolcat.CoreToolsJSON(), &entries)
+	if err != nil {
+		t.Fatalf("unmarshal coretools.json: %v", err)
+	}
+
+	if len(entries) != coreToolCount {
+		t.Fatalf("coretools.json carries %d entries; want %d", len(entries), coreToolCount)
+	}
+
+	for _, e := range entries {
+		if e.TimeoutMS <= 0 {
+			t.Errorf("%s: coretools.json entry has no timeout_ms annotation", e.Name)
+		}
 	}
 }
