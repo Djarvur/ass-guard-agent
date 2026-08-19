@@ -237,3 +237,87 @@ func (panickingSubagentRunner) Run(
 ) (string, error) {
 	panic("panickingSubagentRunner: injected panic")
 }
+
+// --- 14-05 (EARLY-05): light-tier subagent model routing ---
+
+// TestSubagentModel_OverrideApplied (14-05, Test 1) verifies the economics
+// lever: a Session with SubagentModel set dispatches its subagent with THAT
+// model on the per-dispatch profile copy — the shared session profile keeps
+// the parent model (never mutated). The capture seam is the fake provider's
+// streamed-profiles recorder (the same lens 12-02 used for the agent-prompt
+// copy): the SECOND Stream call is the subagent's (parent → subagent → parent
+// re-projection, sequential in one goroutine).
+func TestSubagentModel_OverrideApplied(t *testing.T) {
+	t.Parallel()
+
+	s, _, fp := newTestSession(t, nil, []provider.Response{
+		{
+			FinishReason: blockToolUse,
+			ToolCalls:    []provider.ToolCall{{Name: toolTask, Input: json.RawMessage(`{"prompt":"x"}`)}},
+		},
+		{FinishReason: stopEndTurn},
+	})
+	s.Catalog = toolcat.NewCatalog()
+
+	s.Profile.Model = "glm-5.2"
+	s.SubagentModel = "glm-5.2-air"
+
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "dispatch"}})
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+
+	profiles := fp.streamedProfiles()
+	if len(profiles) < 2 {
+		t.Fatalf("streamed profiles = %d; want at least parent + subagent calls", len(profiles))
+	}
+
+	if profiles[1].Model != "glm-5.2-air" {
+		t.Errorf("subagent dispatch model = %q; want the light-tier override %q",
+			profiles[1].Model, "glm-5.2-air")
+	}
+
+	if profiles[0].Model != "glm-5.2" {
+		t.Errorf("parent turn model = %q; want the unchanged parent %q (the override is subagent-only)",
+			profiles[0].Model, "glm-5.2")
+	}
+
+	if s.Profile.Model != "glm-5.2" {
+		t.Errorf("shared session profile mutated: Model = %q; want %q (the copy pattern must never write back)",
+			s.Profile.Model, "glm-5.2")
+	}
+}
+
+// TestSubagentModel_EmptyKeepsParent (14-05, Test 2) pins today's behavior for
+// the no-binding case: an empty SubagentModel dispatches the subagent with the
+// parent model exactly as before (the config-conditional default — absence is
+// not a failure and never a silent change).
+func TestSubagentModel_EmptyKeepsParent(t *testing.T) {
+	t.Parallel()
+
+	s, _, fp := newTestSession(t, nil, []provider.Response{
+		{
+			FinishReason: blockToolUse,
+			ToolCalls:    []provider.ToolCall{{Name: toolTask, Input: json.RawMessage(`{"prompt":"x"}`)}},
+		},
+		{FinishReason: stopEndTurn},
+	})
+	s.Catalog = toolcat.NewCatalog()
+
+	s.Profile.Model = "glm-5.2"
+
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "dispatch"}})
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+
+	profiles := fp.streamedProfiles()
+	if len(profiles) < 2 {
+		t.Fatalf("streamed profiles = %d; want at least parent + subagent calls", len(profiles))
+	}
+
+	if profiles[1].Model != "glm-5.2" {
+		t.Errorf("subagent dispatch model = %q; want the parent %q (empty SubagentModel keeps today's behavior)",
+			profiles[1].Model, "glm-5.2")
+	}
+}
