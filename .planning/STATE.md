@@ -5,14 +5,14 @@ milestone_name: ACP Early Adoption
 current_phase: 12
 current_phase_name: product-functional-completeness
 status: executing
-stopped_at: Replan 2026-08-19 complete — new-analysis dispositions recorded (borrows #13-15; adoption line unchanged); next: plan Phase 14
-last_updated: "2026-08-19T15:15:00.000Z"
+stopped_at: "Replan 2026-08-19 complete — new-analysis dispositions recorded (borrows #13-15; adoption line unchanged); next: plan Phase 14"
+last_updated: "2026-08-19T15:41:18.629Z"
 last_activity: 2026-08-19
 last_activity_desc: Replan — cb3ab50 new comparative data dispositioned against the adoption line (plan structure confirmed)
 progress:
-  total_phases: 4
+  total_phases: 5
   completed_phases: 2
-  total_plans: 23
+  total_plans: 29
   completed_plans: 17
 ---
 
