@@ -1,6 +1,8 @@
 package parity
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -202,5 +204,104 @@ func TestCacheProbe_EmptyMerges(t *testing.T) {
 	bare := CacheComposition{}
 	if rep := RunCacheProbe(&bare); !rep.OK {
 		t.Errorf("empty composition must pass:\n%+v", rep.Checks)
+	}
+}
+
+// scanCorpusPinFixture scans 14-02's committed cache-control fixture (the
+// placement pin source — corpus-derived, REDACTED payloads with the structural
+// cache_control placement intact) and returns its context-behavior census.
+func scanCorpusPinFixture(t *testing.T) profile.ContextBehaviorReport {
+	t.Helper()
+
+	f, err := os.Open(filepath.Join("..", "profile", "testdata", "context-behavior", "cache-control.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() { _ = f.Close() }()
+
+	rep, err := profile.ScanContextBehavior(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return rep
+}
+
+// TestCacheProbe_PlacementAgainstPin (Task 3, Test 8): the pin fixture's
+// placement classes (14-02's ContextBehaviorReport over the committed
+// fixture) are the expected set; a composition matching them passes; a
+// composition carrying cache_control on a class the pin lacks, or missing one
+// the pin has (14-03's routed emission outcome — the shaper emits none), fails
+// with the delta named. No pi-derived expected values: the pin is DERIVED
+// from the fixture inside the test; the one-class expectation below is the
+// 14-02 corpus census fact (corpus wins), not a pi rule.
+func TestCacheProbe_PlacementAgainstPin(t *testing.T) {
+	t.Parallel()
+
+	pin := PinClasses(scanCorpusPinFixture(t))
+
+	if len(pin) != 1 || !pin[classSystem] {
+		t.Fatalf("pin must be exactly the system class (14-02 census: every system block, never elsewhere; "+
+			"the fixture's synthetic classifier probes stay excluded), got %v", pin)
+	}
+
+	if pin[classTools] || pin[classMessage] {
+		t.Fatalf("tools/message classes must be pin-absent (corpus shows zero placements there), got %v", pin)
+	}
+
+	// Matching composition — built FROM the derived pin, not hand-written.
+	matching := CacheComposition{
+		System: []ProbeSystemBlock{
+			{Block: profile.TextBlock{Type: "text", Text: "s0"}, CacheControl: pin[classSystem]},
+			{Block: profile.TextBlock{Type: "text", Text: "skills listing"}, Dynamic: true},
+		},
+		Tools: []ProbeToolDecl{
+			{Decl: profile.Decl{Name: "Read"}, CacheControl: pin[classTools]},
+			{Decl: profile.Decl{Name: "mcp__serena__read_file"}, Dynamic: true},
+		},
+	}
+
+	if check := AssertPlacementAgainstPin(&matching, pin); !check.OK {
+		t.Errorf("pin-matching composition must pass: %s", check.Detail)
+	}
+
+	// cache_control on a class the pin LACKS (tools) — delta named.
+	unexpectedTools := matching
+	unexpectedTools.Tools = append([]ProbeToolDecl(nil), matching.Tools...)
+	unexpectedTools.Tools[0].CacheControl = true
+
+	check := AssertPlacementAgainstPin(&unexpectedTools, pin)
+	if check.OK {
+		t.Fatalf("cache_control on the pin-absent tools class must fail")
+	}
+
+	if !strings.Contains(check.Detail, classTools) {
+		t.Errorf("delta must name the tools class: %s", check.Detail)
+	}
+
+	// cache_control on message content blocks — the other pin-absent class.
+	unexpectedMessage := matching
+	unexpectedMessage.MessageCacheSites = 1
+
+	check = AssertPlacementAgainstPin(&unexpectedMessage, pin)
+	if check.OK || !strings.Contains(check.Detail, classMessage) {
+		t.Errorf("cache_control on the pin-absent message class must fail naming the class: %+v", check)
+	}
+
+	// MISSING one the pin HAS (system): today's wiring-time truth — 14-03
+	// concluded the shaper emits NO cache_control anywhere while the corpus
+	// carries it on every system block (CC-1, divergence-routed post-adoption).
+	gap := matching
+	gap.System = append([]ProbeSystemBlock(nil), matching.System...)
+	gap.System[0].CacheControl = false
+
+	check = AssertPlacementAgainstPin(&gap, pin)
+	if check.OK {
+		t.Fatalf("missing the pinned system class must fail (the routed emission gap IS the verdict)")
+	}
+
+	if !strings.Contains(check.Detail, classSystem) {
+		t.Errorf("delta must name the system class: %s", check.Detail)
 	}
 }

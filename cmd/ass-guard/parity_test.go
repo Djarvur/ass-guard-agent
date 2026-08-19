@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/internal/parity"
+	"github.com/Djarvur/ass-guard-agent/internal/profile"
 )
 
 // pinVersion is the coverage manifest's pinned zcode_version in the parity
@@ -125,6 +126,23 @@ func fakeParityRun(t *testing.T) {
 	t.Cleanup(func() { parityRun = old })
 }
 
+// fakeCacheComposition swaps the composeCacheProbeInput seam: the probe sees
+// exactly comp regardless of the loaded profile ("via the test's merge
+// labeling" — the footer test seeds pass and violation states this way).
+func fakeCacheComposition(t *testing.T, comp parity.CacheComposition) {
+	t.Helper()
+
+	old := composeCacheProbeInput
+	composeCacheProbeInput = func(_ *profile.Profile) parity.CacheComposition { return comp }
+	t.Cleanup(func() { composeCacheProbeInput = old })
+}
+
+// corpusPinFixturePath points at 14-02's committed cache-control fixture (the
+// placement pin source) from the cmd/ass-guard test working directory.
+func corpusPinFixturePath() string {
+	return filepath.Join("..", "..", "internal", "profile", "testdata", "context-behavior", "cache-control.jsonl")
+}
+
 // summaryLines extracts the footer's summary lines (the run's verdict shape)
 // for the non-blocking equality assertion.
 func summaryLines(out string) []string {
@@ -156,13 +174,13 @@ func TestParityDriftWarning_Mismatch(t *testing.T) { //nolint:paralleltest // sw
 	fakeZcodeVersion(t, "0.17.0", nil)
 
 	mismatchOut, mismatchErr := captureParityStderr(t, func() error {
-		return runParity(suite, "", profileZcode, profilesDir, "", "")
+		return runParity(suite, "", profileZcode, profilesDir, "", "", "")
 	})
 
 	fakeZcodeVersion(t, pinVersion, nil)
 
 	matchOut, matchErr := captureParityStderr(t, func() error {
-		return runParity(suite, "", profileZcode, profilesDir, "", "")
+		return runParity(suite, "", profileZcode, profilesDir, "", "", "")
 	})
 
 	if mismatchErr != nil || matchErr != nil {
@@ -196,7 +214,7 @@ func TestParityDriftWarning_Match(t *testing.T) { //nolint:paralleltest // swaps
 	fakeZcodeVersion(t, pinVersion, nil)
 
 	out, err := captureParityStderr(t, func() error {
-		return runParity(suite, "", profileZcode, profilesDir, "", "")
+		return runParity(suite, "", profileZcode, profilesDir, "", "", "")
 	})
 
 	if err != nil {
@@ -224,7 +242,7 @@ func TestParityDriftWarning_Unresolvable(t *testing.T) { //nolint:paralleltest /
 	fakeZcodeVersion(t, "", errors.New("binary absent"))
 
 	out, err := captureParityStderr(t, func() error {
-		return runParity(suite, "", profileZcode, profilesDir, "", "")
+		return runParity(suite, "", profileZcode, profilesDir, "", "", "")
 	})
 
 	if err != nil {
@@ -246,7 +264,7 @@ func TestParityDriftWarning_Unresolvable(t *testing.T) { //nolint:paralleltest /
 	}
 
 	out2, err2 := captureParityStderr(t, func() error {
-		return runParity(suite, "", profileZcode, profilesDir, "", "")
+		return runParity(suite, "", profileZcode, profilesDir, "", "", "")
 	})
 
 	if err2 != nil {
@@ -259,5 +277,88 @@ func TestParityDriftWarning_Unresolvable(t *testing.T) { //nolint:paralleltest /
 
 	if strings.Contains(out2, driftWarningMarker) {
 		t.Errorf("missing-manifest run must not warn:\n%s", out2)
+	}
+}
+
+// TestParityRun_CacheProbeWired (Task 3, Test 9): runParity (offline, faked
+// A/B arms) executes the cache probe and the footer carries a `cache probe:`
+// line with pass/fail; a seeded violation (via the test's merge labeling)
+// flips the line to fail WITHOUT changing the A/B summary semantics; the
+// DEFAULT composition reports today's wiring-time verdict — the routed
+// cache_control emission gap (14-03 CC-1) named as the probe's fact.
+func TestParityRun_CacheProbeWired(t *testing.T) { //nolint:paralleltest // swaps process-global seams + os.Stderr
+	fakeParityRun(t)
+
+	profilesDir := writeParityProfileFixture(t, pinVersion)
+	suite := writeParitySuiteFixture(t)
+	pinPath := corpusPinFixturePath()
+
+	// PASS state: a composition matching the corpus pin (the post-emission-fix
+	// shape — captured system blocks carry cache_control, dynamic tails
+	// appended after the stable prefix).
+	good := parity.CacheComposition{
+		System: []parity.ProbeSystemBlock{
+			{Block: profile.TextBlock{Type: "text", Text: "captured-0"}, CacheControl: true},
+			{Block: profile.TextBlock{Type: "text", Text: "skills listing"}, Dynamic: true},
+		},
+		Tools: []parity.ProbeToolDecl{{Decl: profile.Decl{Name: "Read"}}},
+	}
+
+	fakeCacheComposition(t, good)
+
+	passOut, passErr := captureParityStderr(t, func() error {
+		return runParity(suite, "", profileZcode, profilesDir, "", "", pinPath)
+	})
+
+	if passErr != nil {
+		t.Fatalf("pass-state run errored: %v", passErr)
+	}
+
+	if !strings.Contains(passOut, "cache probe: PASS") {
+		t.Errorf("footer missing the passing cache probe line:\n%s", passOut)
+	}
+
+	// FAIL state: a seeded merge-ordering violation (volatile block spliced
+	// mid-stable-prefix).
+	violation := parity.CacheComposition{
+		System: []parity.ProbeSystemBlock{
+			{Block: profile.TextBlock{Type: "text", Text: "captured-0"}, CacheControl: true},
+			{Block: profile.TextBlock{Type: "text", Text: "skills listing"}, Dynamic: true},
+			{Block: profile.TextBlock{Type: "text", Text: "captured-2"}, CacheControl: true},
+		},
+		Tools: []parity.ProbeToolDecl{{Decl: profile.Decl{Name: "Read"}}},
+	}
+
+	fakeCacheComposition(t, violation)
+
+	failOut, failErr := captureParityStderr(t, func() error {
+		return runParity(suite, "", profileZcode, profilesDir, "", "", pinPath)
+	})
+
+	if failErr != nil {
+		t.Fatalf("probe verdict must never fail the run: %v", failErr)
+	}
+
+	if !strings.Contains(failOut, "cache probe: FAIL") {
+		t.Errorf("footer missing the failing cache probe line:\n%s", failOut)
+	}
+
+	if got, want := strings.Join(summaryLines(failOut), "|"), strings.Join(summaryLines(passOut), "|"); got != want {
+		t.Errorf("probe verdict changed the A/B summary semantics:\npass: %s\nfail: %s", want, got)
+	}
+
+	// DEFAULT composition (no seam): today's wiring-time verdict — the shaper
+	// emits no cache_control while the corpus pin carries it on system blocks;
+	// the gap IS the probe line's fact (14-03 CC-1 divergence-routed).
+	defaultOut, defaultErr := captureParityStderr(t, func() error {
+		return runParity(suite, "", profileZcode, profilesDir, "", "", pinPath)
+	})
+
+	if defaultErr != nil {
+		t.Fatalf("default-composition run errored: %v", defaultErr)
+	}
+
+	if !strings.Contains(defaultOut, "cache probe: FAIL") || !strings.Contains(defaultOut, "system") {
+		t.Errorf("default run must report the routed emission gap naming the system class:\n%s", defaultOut)
 	}
 }
