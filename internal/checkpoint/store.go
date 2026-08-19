@@ -256,7 +256,15 @@ func (s *Store) Restore(ctx context.Context, id string) error {
 	}
 
 	return s.withLock(ctx, func() error {
-		_, err := s.git(ctx, "checkout", "-f", refPrefix+id, "--", ".")
+		// --no-overlay (CR-01): plain pathspec checkout is an OVERLAY — it
+		// writes paths present in the target tree but never deletes index
+		// entries absent from it. Files added after the snapshot were staged
+		// into the shadow index by the NEXT snapshot's add -A, so they stay
+		// TRACKED (clean -fd only removes untracked files) and survived
+		// restores of any non-latest checkpoint. --no-overlay makes checkout
+		// delete index+worktree entries the target tree lacks; clean -fd then
+		// only has to sweep genuinely untracked files.
+		_, err := s.git(ctx, "checkout", "--no-overlay", "-f", refPrefix+id, "--", ".")
 		if err != nil {
 			return fmt.Errorf("checkpoint: restore %q (unknown checkpoint id?): %w", id, err)
 		}
