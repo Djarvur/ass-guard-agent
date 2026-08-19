@@ -230,6 +230,155 @@ func TestSubagentResultAlsoBounded(t *testing.T) {
 	}
 }
 
+// multilineOverCapResult builds a deterministic OVER-cap result that REQUIRES
+// JSON escaping — newlines, double quotes, backslashes on every line: the
+// real shape of a subagent report. The naive quote-concat produced INVALID
+// JSON for exactly this shape, so the chokepoint's Unmarshal failed and the
+// payload passed through UNBOUNDED — and appendLine's own Marshal then
+// dropped the whole tool_result line (CR-02).
+func multilineOverCapResult(t *testing.T) string {
+	t.Helper()
+
+	return strings.Repeat("multi \"quoted\" line\\ backslash\n", 8*1024) + "TAIL-SENTINEL"
+}
+
+// rawTaskResult returns the RAW transcript bytes of the Task call's
+// tool_result line — no decoding, JSON validity is under test.
+func rawTaskResult(t *testing.T, s *Session) json.RawMessage {
+	t.Helper()
+
+	lines := linesOf(s)
+	for i := range lines {
+		l := &lines[i]
+		if l.Type == TypeToolResult && l.ToolCallID == toolTask {
+			return l.Output
+		}
+	}
+
+	t.Fatal("no tool_result line for the Task call")
+
+	return nil
+}
+
+// TestSubagentMultilineOverCapResult_Bounded (CR-02): a multi-line over-cap
+// subagent result (every real report shape) must hit the truncation
+// chokepoint — the transcript payload is VALID JSON carrying the bounded
+// marker+tail form. Pre-fix the naive quote-concat made the payload INVALID
+// JSON, which both bypassed the cap AND failed appendLine's own Marshal, so
+// the tool_result line was dropped from the transcript entirely (a tool_call
+// with no result at all).
+func TestSubagentMultilineOverCapResult_Bounded(t *testing.T) {
+	t.Parallel()
+
+	s, _, _ := newSubagentSession(t, []provider.Response{
+		{
+			FinishReason: blockToolUse,
+			ToolCalls:    []provider.ToolCall{{Name: toolTask, Input: json.RawMessage(`{"prompt":"x"}`)}},
+		},
+		{FinishReason: stopEndTurn},
+	})
+
+	big := multilineOverCapResult(t)
+	s.subagentRunner = bigResultRunner{result: big}
+
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: promptDispatchTrunc}})
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+
+	raw := rawTaskResult(t, s)
+
+	if !json.Valid(raw) {
+		t.Fatalf("Task tool_result payload must be VALID JSON; got invalid bytes (prefix %q)", firstN(string(raw), 60))
+	}
+
+	var got string
+
+	err = json.Unmarshal(raw, &got)
+	if err != nil {
+		t.Fatalf("unmarshal Task result payload: %v", err)
+	}
+
+	if !strings.HasPrefix(got, truncationMarkerPrefix) {
+		t.Errorf("multi-line over-cap result must carry the truncated form; got prefix %q", firstN(got, 60))
+	}
+
+	if !strings.HasSuffix(got, "TAIL-SENTINEL") {
+		t.Error("multi-line over-cap result must retain the tail of the subagent result")
+	}
+
+	if len(got) >= len(big) {
+		t.Errorf("bounded result (%d bytes) must be smaller than the original (%d bytes)", len(got), len(big))
+	}
+}
+
+// TestSubagentMultilineUnderCapResult_RoundTripByteIdentical (CR-02): an
+// under-cap MULTI-LINE result round-trips through the transcript byte
+// identically to its json.Marshal encoding — valid JSON, exact decode, no
+// re-encode at the chokepoint.
+func TestSubagentMultilineUnderCapResult_RoundTripByteIdentical(t *testing.T) {
+	t.Parallel()
+
+	s, _, _ := newSubagentSession(t, []provider.Response{
+		{
+			FinishReason: blockToolUse,
+			ToolCalls:    []provider.ToolCall{{Name: toolTask, Input: json.RawMessage(`{"prompt":"x"}`)}},
+		},
+		{FinishReason: stopEndTurn},
+	})
+
+	small := "line one\nline \"two\" quoted\nline \\three\\ backslash\nTAIL-SENTINEL"
+	s.subagentRunner = bigResultRunner{result: small}
+
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: promptDispatchTrunc}})
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+
+	raw := rawTaskResult(t, s)
+
+	want, mErr := json.Marshal(small)
+	if mErr != nil {
+		t.Fatalf("marshal reference encoding: %v", mErr)
+	}
+
+	if string(raw) != string(want) {
+		t.Error("under-cap multi-line result must reach the transcript as its exact json.Marshal encoding")
+		t.Errorf("want prefix %q", firstN(string(want), 60))
+		t.Errorf("got  prefix %q", firstN(string(raw), 60))
+	}
+
+	var got string
+
+	err = json.Unmarshal(raw, &got)
+	if err != nil {
+		t.Fatalf("unmarshal Task result payload: %v", err)
+	}
+
+	if got != small {
+		t.Errorf("decoded payload = %q; want the original result verbatim", got)
+	}
+}
+
+// TestJSONMarshalEscapeFree_EqualsNaiveConcat pins the CR-02 fix's
+// equivalence claim: for an escape-free result — every payload the naive
+// quote-concat ever encoded VALIDLY — json.Marshal output is byte-identical,
+// so the encoding switch changes nothing for previously-valid transcripts.
+func TestJSONMarshalEscapeFree_EqualsNaiveConcat(t *testing.T) {
+	t.Parallel()
+
+	escapeFree := strings.Repeat("plain bytes 0123 ", 32)
+
+	enc, err := json.Marshal(escapeFree)
+	if err != nil {
+		t.Fatalf("marshal escape-free string: %v", err)
+	}
+
+	if string(enc) != `"`+escapeFree+`"` {
+		t.Error("json.Marshal of an escape-free string must equal the naive quote-concat (regression bound for CR-02)")
+	}
+}
+
 // truncParentRow drives the PARENT loop's per-call result append: a Bash tool
 // call whose (over-cap) result flows through the batch append boundary.
 func truncParentRow(t *testing.T, big string) map[string]string {
