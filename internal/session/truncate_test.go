@@ -18,6 +18,17 @@ import (
 // marker (the exact one-line form pinned by the plan).
 const truncationMarkerPrefix = "[ass-guard: tool output truncated;"
 
+// markerOverheadSlack bounds the marker line's byte overhead in size checks.
+const markerOverheadSlack = 200
+
+// promptRunTrunc / promptDispatchTrunc are the user-prompt texts for the
+// truncation wiring tests (distinct from the legacy "run"/"dispatch" literals
+// so the package's goconst counts stay calm).
+const (
+	promptRunTrunc      = "run the big one"
+	promptDispatchTrunc = "dispatch the subagent"
+)
+
 // overCapResult builds a deterministic over-cap result ending in a tail
 // sentinel, so tail-retention is directly assertable.
 func overCapResult(t *testing.T) string {
@@ -53,12 +64,15 @@ func TestTruncateToolResult_Cap(t *testing.T) {
 		t.Errorf("marker must state the kept tail size; got %q", markerLine(got))
 	}
 
-	if max := DefaultToolResultCapBytes + 200; len(got) > max {
-		t.Errorf("truncated result = %d bytes; want ≤ cap (%d) + marker overhead (%d)", len(got), DefaultToolResultCapBytes, 200)
+	limit := DefaultToolResultCapBytes + markerOverheadSlack
+
+	if len(got) > limit {
+		t.Errorf("truncated result = %d bytes; want ≤ cap (%d) + marker overhead (%d)",
+			len(got), DefaultToolResultCapBytes, markerOverheadSlack)
 	}
 
 	if len(got) >= len(big) {
-		t.Errorf("truncated result (%d bytes) must be strictly smaller than the original (%d bytes)", len(got), len(big))
+		t.Errorf("truncated result (%d bytes) must be smaller than the original (%d bytes)", len(got), len(big))
 	}
 
 	if strings.HasPrefix(got, "Exit code ") {
@@ -75,8 +89,7 @@ func TestTruncateToolResult_UnderCapUnmodified(t *testing.T) {
 	body := strings.Repeat("c", 70*1024) // the corpus-maximum scale, untruncated in the capture
 
 	if got := truncateToolResult(body); got != body {
-		t.Fatalf("a 70KB (under-cap) result must be byte-identical; got %d bytes, changed = %v",
-			len(got), got != body)
+		t.Fatalf("a 70KB (under-cap) result must be byte-identical; got %d bytes", len(got))
 	}
 }
 
@@ -92,12 +105,15 @@ func TestTruncateToolResult_Edges(t *testing.T) {
 	}
 
 	exact := strings.Repeat("a", DefaultToolResultCapBytes)
+
 	if got := truncateToolResult(exact); got != exact {
 		t.Errorf("an exactly-at-cap result must be unmodified (boundary is >, not >=); changed to %d bytes", len(got))
 	}
 
 	oneOver := strings.Repeat("a", DefaultToolResultCapBytes) + "Z"
+
 	got := truncateToolResult(oneOver)
+
 	if !strings.HasPrefix(got, truncationMarkerPrefix) {
 		t.Errorf("cap+1 bytes must truncate; got prefix %q", firstN(got, 60))
 	}
@@ -107,14 +123,16 @@ func TestTruncateToolResult_Edges(t *testing.T) {
 	}
 
 	// Multibyte tail: the kept tail must remain valid UTF-8 even when the cap
-	// boundary falls mid-rune.
-	multibyte := strings.Repeat("y", DefaultToolResultCapBytes+64) + strings.Repeat("日本語", 4096)
+	// boundary falls mid-rune (U+20AC is a 3-byte rune).
+	multibyte := strings.Repeat("y", DefaultToolResultCapBytes+64) + strings.Repeat("€", 8192)
+
 	mgot := truncateToolResult(multibyte)
+
 	if !utf8.ValidString(mgot) {
 		t.Error("the kept tail must stay valid UTF-8 (byte-boundary slices advance past a partial rune)")
 	}
 
-	if !strings.HasSuffix(mgot, "日本語") {
+	if !strings.HasSuffix(mgot, "€") {
 		t.Error("the multibyte tail must be retained through the rune-aligned boundary")
 	}
 }
@@ -144,7 +162,11 @@ func toolResultPayloads(t *testing.T, s *Session) map[string]string {
 
 	out := map[string]string{}
 
-	for _, l := range linesOf(s) {
+	lines := linesOf(s)
+
+	for i := range lines {
+		l := &lines[i]
+
 		if l.Type != TypeToolResult {
 			continue
 		}
@@ -183,7 +205,7 @@ func TestSubagentResultAlsoBounded(t *testing.T) {
 	big := overCapResult(t)
 	s.subagentRunner = bigResultRunner{result: big}
 
-	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "dispatch"}})
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: promptDispatchTrunc}})
 	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
@@ -208,6 +230,59 @@ func TestSubagentResultAlsoBounded(t *testing.T) {
 	}
 }
 
+// truncParentRow drives the PARENT loop's per-call result append: a Bash tool
+// call whose (over-cap) result flows through the batch append boundary.
+func truncParentRow(t *testing.T, big string) map[string]string {
+	t.Helper()
+
+	s, _, _ := newSubagentSession(t, []provider.Response{
+		{
+			FinishReason: blockToolUse,
+			ToolCalls: []provider.ToolCall{
+				{Name: toolBash, Input: json.RawMessage(`{"command":"cat big"}`)},
+			},
+		},
+		{FinishReason: stopEndTurn},
+	})
+
+	raw, mErr := json.Marshal(big)
+	if mErr != nil {
+		t.Fatalf("marshal big output: %v", mErr)
+	}
+
+	s.toolExec = &bigOutputExec{output: raw}
+
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: promptRunTrunc}})
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+
+	return toolResultPayloads(t, s)
+}
+
+// truncSubagentRow drives the subagent Task-result append: a Task tool call
+// whose over-cap final result flows through the Task append boundary.
+func truncSubagentRow(t *testing.T, big string) map[string]string {
+	t.Helper()
+
+	s, _, _ := newSubagentSession(t, []provider.Response{
+		{
+			FinishReason: blockToolUse,
+			ToolCalls:    []provider.ToolCall{{Name: toolTask, Input: json.RawMessage(`{"prompt":"x"}`)}},
+		},
+		{FinishReason: stopEndTurn},
+	})
+
+	s.subagentRunner = bigResultRunner{result: big}
+
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: promptDispatchTrunc}})
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+
+	return toolResultPayloads(t, s)
+}
+
 // TestAppendToolResult_TruncatedBeforeTranscript (14-05, Test 8): the
 // chokepoint proven AT the boundary through the real Session append path —
 // BOTH consumers (the parent loop's per-call result append AND the subagent
@@ -219,60 +294,21 @@ func TestAppendToolResult_TruncatedBeforeTranscript(t *testing.T) {
 
 	table := []struct {
 		name string
-		run  func(t *testing.T) map[string]string
+		run  func(t *testing.T, big string) map[string]string
 	}{
-		{
-			name: "parent tool result",
-			run: func(t *testing.T) map[string]string {
-				s, _, _ := newSubagentSession(t, []provider.Response{
-					{
-						FinishReason: blockToolUse,
-						ToolCalls:    []provider.ToolCall{{Name: toolBash, Input: json.RawMessage(`{"command":"cat big"}`)}},
-					},
-					{FinishReason: stopEndTurn},
-				})
-
-				raw, mErr := json.Marshal(big)
-				if mErr != nil {
-					t.Fatalf("marshal big output: %v", mErr)
-				}
-
-				s.toolExec = &bigOutputExec{output: raw}
-
-				if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "run"}}); err != nil {
-					t.Fatalf("Prompt: %v", err)
-				}
-
-				return toolResultPayloads(t, s)
-			},
-		},
-		{
-			name: "subagent Task result",
-			run: func(t *testing.T) map[string]string {
-				s, _, _ := newSubagentSession(t, []provider.Response{
-					{
-						FinishReason: blockToolUse,
-						ToolCalls:    []provider.ToolCall{{Name: toolTask, Input: json.RawMessage(`{"prompt":"x"}`)}},
-					},
-					{FinishReason: stopEndTurn},
-				})
-
-				s.subagentRunner = bigResultRunner{result: big}
-
-				if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "dispatch"}}); err != nil {
-					t.Fatalf("Prompt: %v", err)
-				}
-
-				return toolResultPayloads(t, s)
-			},
-		},
+		{name: "parent tool result", run: truncParentRow},
+		{name: "subagent Task result", run: truncSubagentRow},
 	}
 
-	for _, tc := range table { //nolint:paralleltest // subtests share the over-cap fixture build cost
+	for _, tc := range table {
 		t.Run(tc.name, func(t *testing.T) {
-			payloads := tc.run(t)
+			t.Parallel()
+
+			payloads := tc.run(t, big)
 
 			found := false
+
+			limit := DefaultToolResultCapBytes + markerOverheadSlack
 
 			for id, got := range payloads {
 				if !strings.HasPrefix(got, truncationMarkerPrefix) {
@@ -282,16 +318,16 @@ func TestAppendToolResult_TruncatedBeforeTranscript(t *testing.T) {
 				found = true
 
 				if !strings.HasSuffix(got, "TAIL-SENTINEL") {
-					t.Errorf("[%s] result %s must retain the tail", tc.name, id)
+					t.Errorf("result %s must retain the tail", id)
 				}
 
-				if max := DefaultToolResultCapBytes + 200; len(got) > max {
-					t.Errorf("[%s] result %s = %d bytes; want ≤ cap + marker overhead", tc.name, id, len(got))
+				if len(got) > limit {
+					t.Errorf("result %s = %d bytes; want ≤ cap + marker overhead", id, len(got))
 				}
 			}
 
 			if !found {
-				t.Errorf("[%s] no transcript tool_result carries the truncated form; payloads = %v", tc.name, keysOf(payloads))
+				t.Errorf("no transcript tool_result carries the truncated form; payloads = %v", keysOf(payloads))
 			}
 		})
 	}
@@ -308,7 +344,9 @@ func TestTruncation_UnderCapTranscriptByteIdentical(t *testing.T) {
 	s, _, _ := newSubagentSession(t, []provider.Response{
 		{
 			FinishReason: blockToolUse,
-			ToolCalls:    []provider.ToolCall{{Name: toolBash, Input: json.RawMessage(`{"command":"cat corpus"}`)}},
+			ToolCalls: []provider.ToolCall{
+				{Name: toolBash, Input: json.RawMessage(`{"command":"cat corpus"}`)},
+			},
 		},
 		{FinishReason: stopEndTurn},
 	})
@@ -321,7 +359,8 @@ func TestTruncation_UnderCapTranscriptByteIdentical(t *testing.T) {
 	original := string(raw)
 	s.toolExec = &bigOutputExec{output: raw}
 
-	if _, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "run"}}); err != nil {
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: promptRunTrunc}})
+	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
 
@@ -355,11 +394,9 @@ func firstN(s string, n int) string {
 
 // markerLine returns the first line of s (the marker line for failure messages).
 func markerLine(s string) string {
-	if i := strings.IndexByte(s, '\n'); i >= 0 {
-		return s[:i]
-	}
+	head, _, _ := strings.Cut(s, "\n")
 
-	return s
+	return head
 }
 
 // keysOf returns the map's keys (failure-message helper).

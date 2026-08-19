@@ -240,6 +240,14 @@ func (panickingSubagentRunner) Run(
 
 // --- 14-05 (EARLY-05): light-tier subagent model routing ---
 
+// tierWiring model slugs + prompt text for the subagent-model tests (consts so
+// the package's goconst counts stay calm — the literals repeat elsewhere).
+const (
+	parentModelSlug  = "glm-5.2"
+	lightModelSlug   = "glm-5.2-air"
+	promptDispatchMg = "dispatch for the tier wiring"
+)
+
 // TestSubagentModel_OverrideApplied (14-05, Test 1) verifies the economics
 // lever: a Session with SubagentModel set dispatches its subagent with THAT
 // model on the per-dispatch profile copy — the shared session profile keeps
@@ -259,10 +267,10 @@ func TestSubagentModel_OverrideApplied(t *testing.T) {
 	})
 	s.Catalog = toolcat.NewCatalog()
 
-	s.Profile.Model = "glm-5.2"
-	s.SubagentModel = "glm-5.2-air"
+	s.Profile.Model = parentModelSlug
+	s.SubagentModel = lightModelSlug
 
-	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "dispatch"}})
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: promptDispatchMg}})
 	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
@@ -272,19 +280,19 @@ func TestSubagentModel_OverrideApplied(t *testing.T) {
 		t.Fatalf("streamed profiles = %d; want at least parent + subagent calls", len(profiles))
 	}
 
-	if profiles[1].Model != "glm-5.2-air" {
+	if profiles[1].Model != lightModelSlug {
 		t.Errorf("subagent dispatch model = %q; want the light-tier override %q",
-			profiles[1].Model, "glm-5.2-air")
+			profiles[1].Model, lightModelSlug)
 	}
 
-	if profiles[0].Model != "glm-5.2" {
+	if profiles[0].Model != parentModelSlug {
 		t.Errorf("parent turn model = %q; want the unchanged parent %q (the override is subagent-only)",
-			profiles[0].Model, "glm-5.2")
+			profiles[0].Model, parentModelSlug)
 	}
 
-	if s.Profile.Model != "glm-5.2" {
+	if s.Profile.Model != parentModelSlug {
 		t.Errorf("shared session profile mutated: Model = %q; want %q (the copy pattern must never write back)",
-			s.Profile.Model, "glm-5.2")
+			s.Profile.Model, parentModelSlug)
 	}
 }
 
@@ -304,9 +312,9 @@ func TestSubagentModel_EmptyKeepsParent(t *testing.T) {
 	})
 	s.Catalog = toolcat.NewCatalog()
 
-	s.Profile.Model = "glm-5.2"
+	s.Profile.Model = parentModelSlug
 
-	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "dispatch"}})
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: promptDispatchMg}})
 	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
@@ -316,8 +324,8 @@ func TestSubagentModel_EmptyKeepsParent(t *testing.T) {
 		t.Fatalf("streamed profiles = %d; want at least parent + subagent calls", len(profiles))
 	}
 
-	if profiles[1].Model != "glm-5.2" {
+	if profiles[1].Model != parentModelSlug {
 		t.Errorf("subagent dispatch model = %q; want the parent %q (empty SubagentModel keeps today's behavior)",
-			profiles[1].Model, "glm-5.2")
+			profiles[1].Model, parentModelSlug)
 	}
 }

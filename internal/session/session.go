@@ -411,7 +411,13 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 
 						_ = s.Manager.AppendToolResult(turnID, callID, errJSON, true)
 					} else {
-						_ = s.Manager.AppendToolResult(turnID, callID, json.RawMessage(`"`+result+`"`), false)
+						// 14-05 (EARLY-05): the subagent Task result flows
+						// through the truncation chokepoint like every other
+						// tool Output — under-cap keeps the exact naive-concat
+						// encoding (byte-identical to today), over-cap is
+						// bounded + properly re-encoded.
+						_ = s.Manager.AppendToolResult(turnID, callID,
+							boundedToolResult(json.RawMessage(`"`+result+`"`)), false)
 					}
 					// SESS-02/03 boundary (subagent tools are read-only; only
 					// a config-added entry would fire). Same between-turn rule
@@ -461,7 +467,12 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 					continue
 				}
 
-				_ = s.Manager.AppendToolResult(turnID, callID, res.Output, res.IsError)
+				// 14-05 (EARLY-05): the append-boundary truncation chokepoint —
+				// over-cap outputs are bounded HERE, before the transcript line
+				// exists (hence before both the mid-turn model view and the
+				// Projector's projected window see them); under-cap payloads are
+				// byte-unmodified.
+				_ = s.Manager.AppendToolResult(turnID, callID, boundedToolResult(res.Output), res.IsError)
 				// SESS-02/03: a mutating/config-added tool is a boundary. The
 				// line is the audit marker + the reset point for the NEXT
 				// turn's projection — the producing turn's mid-turn window
