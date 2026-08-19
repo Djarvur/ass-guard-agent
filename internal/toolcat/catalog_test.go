@@ -10,13 +10,20 @@ import (
 // coreToolCount is the stable built-in core (D-16): the 19 coretools.
 const coreToolCount = 19
 
+// 14-06 spot-check names (goconst: repeated literals).
+const (
+	nameTodoWrite = "TodoWrite"
+	nameTodoRead  = "TodoRead"
+	nameWebSearch = "WebSearch"
+)
+
 // TestCatalog_GetCoreTools confirms the built-in catalog carries the core tools
 // with faithful schemas + correct mutability classification.
 func TestCatalog_GetCoreTools(t *testing.T) {
 	t.Parallel()
 
 	c := toolcat.NewCatalog()
-	for _, name := range []string{toolRead, toolBash, toolWrite, toolEdit, "TodoWrite", "WebSearch"} {
+	for _, name := range []string{toolRead, toolBash, toolWrite, toolEdit, nameTodoWrite, nameWebSearch} {
 		tl, ok := c.Get(name)
 		if !ok {
 			t.Errorf("Get(%q) returned ok=false; want a built-in entry", name)
@@ -107,7 +114,7 @@ func TestCatalog_Names(t *testing.T) {
 
 	want := map[string]bool{
 		toolRead: false, toolBash: false, toolEdit: false, toolWrite: false,
-		"TodoWrite": false, "TodoRead": false, "WebSearch": false, "WebFetch": false,
+		nameTodoWrite: false, nameTodoRead: false, nameWebSearch: false, "WebFetch": false,
 		"Skill": false, "Agent": false, "AskUserQuestion": false,
 	}
 
@@ -155,13 +162,40 @@ func TestCatalogParsesContractAnnotations(t *testing.T) {
 		}
 
 		// Undeclared concurrency_safe derives from mutability (read-only ⇒ true).
-		if want := tl.Mutability == toolcat.MutabilityReadOnly; tl.IsConcurrencySafe() != want && !declaredConcurrencySafe(n) {
+		want := tl.Mutability == toolcat.MutabilityReadOnly
+		if tl.IsConcurrencySafe() != want && !declaredConcurrencySafe(n) {
 			t.Errorf("%s: IsConcurrencySafe() = %v; want mutability default %v", n, tl.IsConcurrencySafe(), want)
 		}
 	}
 
-	// Destructive: declared true ONLY on Bash (irreversible-by-nature mutation).
-	for _, n := range names {
+	// Declared-value spot checks (concurrency_safe overrides the mutability
+	// default where declared).
+	if tl, _ := c.Get(nameTodoWrite); tl.IsConcurrencySafe() {
+		t.Errorf("%s: IsConcurrencySafe() = true; want declared false (serialized session-state writer)", nameTodoWrite)
+	}
+
+	for _, n := range []string{toolRead, nameWebSearch, "WebFetch", nameTodoRead, "Skill", "CronList"} {
+		if tl, _ := c.Get(n); !tl.IsConcurrencySafe() {
+			t.Errorf("%s: IsConcurrencySafe() = false; want declared true", n)
+		}
+	}
+
+	// The mutating trio stays alone-in-slot regardless of any declaration.
+	for _, n := range []string{toolBash, toolWrite, toolEdit} {
+		if tl, _ := c.Get(n); tl.IsConcurrencySafe() {
+			t.Errorf("%s: IsConcurrencySafe() = true; want false (mutating)", n)
+		}
+	}
+}
+
+// TestCatalogDestructiveOnlyBash pins the destructive annotation: declared
+// true ONLY on Bash (irreversible-by-nature mutation — 14-06's flags map).
+func TestCatalogDestructiveOnlyBash(t *testing.T) {
+	t.Parallel()
+
+	c := toolcat.NewCatalog()
+
+	for _, n := range c.Names() {
 		tl, _ := c.Get(n)
 
 		if n == toolBash {
@@ -176,25 +210,6 @@ func TestCatalogParsesContractAnnotations(t *testing.T) {
 			t.Errorf("%s: IsDestructive() = true; want false (Bash only)", n)
 		}
 	}
-
-	// Declared-value spot checks (concurrency_safe overrides the mutability
-	// default where declared).
-	if tl, _ := c.Get("TodoWrite"); tl.IsConcurrencySafe() {
-		t.Errorf("TodoWrite: IsConcurrencySafe() = true; want declared false (serialized session-state writer)")
-	}
-
-	for _, n := range []string{toolRead, "WebSearch", "WebFetch", "TodoRead", "Skill", "CronList"} {
-		if tl, _ := c.Get(n); !tl.IsConcurrencySafe() {
-			t.Errorf("%s: IsConcurrencySafe() = false; want declared true", n)
-		}
-	}
-
-	// The mutating trio stays alone-in-slot regardless of any declaration.
-	for _, n := range []string{toolBash, toolWrite, toolEdit} {
-		if tl, _ := c.Get(n); tl.IsConcurrencySafe() {
-			t.Errorf("%s: IsConcurrencySafe() = true; want false (mutating)", n)
-		}
-	}
 }
 
 // declaredConcurrencySafe lists the coretools carrying an EXPLICIT
@@ -202,7 +217,7 @@ func TestCatalogParsesContractAnnotations(t *testing.T) {
 // default (the read-only-but-serialized set — 14-06's flags consumption map).
 func declaredConcurrencySafe(name string) bool {
 	switch name {
-	case "TodoWrite", "TodoRead", "CronCreate", "CronDelete", "CronList",
+	case nameTodoWrite, nameTodoRead, "CronCreate", "CronDelete", "CronList",
 		"TaskStop", "SendMessage", "ExitPlanMode", "ReadSessionContext", "AskUserQuestion", "Agent":
 		return true
 	}

@@ -21,6 +21,8 @@ import "slices"
 // Mutating; otherwise ReadOnly. The adapter class lets Phase 4's OpenSpec
 // adapter (or a per-command override) escalate a read-only catalog tool to a
 // boundary without editing the catalog.
+//
+//nolint:gocritic // hugeParam: Tool is a value-semantic catalog entry (pre-existing signature)
 func EffectiveMutability(tool Tool, adapterClass Mutability) Mutability {
 	if tool.Mutability == MutabilityMutating || adapterClass == MutabilityMutating {
 		return MutabilityMutating

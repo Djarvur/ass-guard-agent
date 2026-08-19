@@ -11,6 +11,11 @@ import (
 //go:embed coretools.json
 var coreToolsJSON []byte
 
+// CoreToolsJSON exposes the embedded coretools.json bytes (14-06: tests pin
+// the raw annotation surface — every entry carries timeout_ms — without
+// re-reading the file from disk).
+func CoreToolsJSON() []byte { return coreToolsJSON }
+
 // Catalog is the built-in tool catalog (TOOL-01). It carries the stable built-in
 // core tools with their faithful captured schemas and (stubbed) execution
 // behavior. A zero Catalog is empty; use NewCatalog to load the built-in core.
@@ -49,6 +54,8 @@ func (c *Catalog) Get(name string) (Tool, bool) {
 // D-15), swappable backends, and learning-mode proposed tools — without
 // rebuilding the embedded core. A registered mutating tool is reflected by
 // IsBoundary via the existing mutability floor (no boundary-engine change).
+//
+//nolint:gocritic // hugeParam: Tool is a value-semantic catalog entry (pre-existing signature)
 func (c *Catalog) Register(t Tool) {
 	if c.tools == nil {
 		c.tools = map[string]Tool{}

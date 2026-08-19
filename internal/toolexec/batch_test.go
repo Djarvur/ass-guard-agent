@@ -361,6 +361,9 @@ func (s *slowExec) snapshot() []execEvent {
 	return append([]execEvent(nil), s.events...)
 }
 
+// toolSlowRO is the fixture slow read-only tool name (14-06 timeout tests).
+const toolSlowRO = "SlowRO"
+
 // annotatedCatalog registers tools carrying 14-06 contract annotations
 // (timeout_ms) beside the mutability field, the way coretools.json does.
 func annotatedCatalog(tools ...toolcat.Tool) *toolcat.Catalog {
@@ -382,8 +385,8 @@ func TestDispatchBatch_PerToolTimeout_Bounds(t *testing.T) {
 	t.Parallel()
 
 	exec := &slowExec{sleep: map[string]time.Duration{
-		toolRead:  500 * time.Millisecond,
-		toolGrep:  100 * time.Millisecond,
+		toolRead: 500 * time.Millisecond,
+		toolGrep: 100 * time.Millisecond,
 	}}
 	catalog := annotatedCatalog(
 		toolcat.Tool{Name: toolRead, Mutability: toolcat.MutabilityReadOnly, TimeoutMS: 50},
@@ -468,14 +471,14 @@ func TestDispatchBatch_TimeoutDoesNotBreakD21(t *testing.T) {
 	t.Parallel()
 
 	exec := &slowExec{sleep: map[string]time.Duration{
-		"SlowRO": 500 * time.Millisecond,
-		toolBash: 30 * time.Millisecond,
+		toolSlowRO: 500 * time.Millisecond,
+		toolBash:   30 * time.Millisecond,
 	}}
 	catalog := annotatedCatalog(
-		toolcat.Tool{Name: "SlowRO", Mutability: toolcat.MutabilityReadOnly, TimeoutMS: 50},
+		toolcat.Tool{Name: toolSlowRO, Mutability: toolcat.MutabilityReadOnly, TimeoutMS: 50},
 		toolcat.Tool{Name: toolBash, Mutability: toolcat.MutabilityMutating, TimeoutMS: 60000},
 	)
-	calls := []provider.ToolCall{{Name: "SlowRO"}, {Name: toolBash}}
+	calls := []provider.ToolCall{{Name: toolSlowRO}, {Name: toolBash}}
 
 	t0 := time.Now()
 	results, err := toolexec.DispatchBatch(context.Background(), exec, catalog, calls)
@@ -486,7 +489,7 @@ func TestDispatchBatch_TimeoutDoesNotBreakD21(t *testing.T) {
 	}
 
 	if !results[0].IsError {
-		t.Errorf("SlowRO result not IsError: %+v", results[0])
+		t.Errorf("%s result not IsError: %+v", toolSlowRO, results[0])
 	}
 
 	if results[1].IsError {

@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
+	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
@@ -15,6 +17,10 @@ import (
 // calls than this is re-batched into groups of at most this size by the
 // semaphore (goroutines block on acquire until a slot frees).
 const DefaultMaxConcurrent = 6
+
+// keyError is the structured-error convention's map key (the shipped
+// corpus-absent failure convention — {"error":…}; same key as coreexec).
+const keyError = "error"
 
 // ErrNoExecutor is returned for a call when DispatchBatch is given a nil
 // executor (a Session without SetToolExecutor should use its stub path, not
@@ -70,6 +76,13 @@ func MaxConcurrent(n int) BatchOpt {
 // result (IsError=true). ctx cancellation aborts in-flight calls (the read-only
 // semaphore acquire + the mutating loop both respect ctx).
 //
+// Every call — pooled or serialized — is wrapped in its OWN context deadline
+// derived from the tool's timeout_ms annotation (default
+// toolcat.DefaultToolTimeoutMS; 14-06/EARLY-06): a timing-out call returns an
+// IsError result with the timeout-classified form and NEVER cancels its
+// siblings. Inner tool-specific deadlines (Bash model-ms, openspec
+// per-command) fire first — this is the outer backstop.
+//
 //nolint:funlen // domain complexity is inherent
 func DispatchBatch(
 	ctx context.Context, exec toolcat.ToolExecutor, catalog *toolcat.Catalog,
@@ -123,7 +136,7 @@ func DispatchBatch(
 
 			defer func() { <-sem }()
 
-			results[ro.idx] = executeOne(ctx, exec, ro.idx, ro.call)
+			results[ro.idx] = executeBounded(ctx, exec, catalog, ro.idx, ro.call)
 		}(ro)
 	}
 
@@ -140,11 +153,73 @@ func DispatchBatch(
 
 			continue
 		}
-		// Synchronous (alone) — no goroutine, no overlap.
-		results[m.idx] = executeOne(ctx, exec, m.idx, m.call)
+		// Synchronous (alone) — no goroutine, no overlap. The per-call
+		// deadline wraps the serialized slot identically to the pool (14-06).
+		results[m.idx] = executeBounded(ctx, exec, catalog, m.idx, m.call)
 	}
 
 	return results, nil
+}
+
+// timeoutFor resolves a call's per-tool timeout backstop: the catalog entry's
+// timeout_ms annotation when set, else toolcat.DefaultToolTimeoutMS (unknown
+// and unannotated tools — MCP/plugin/dynamically-registered — get the
+// default). This is the OUTER bound: a tool's own tighter inner deadline
+// (Bash's model-provided ms timeout, openspec's per-command timeout) fires
+// first because it is always <= this value.
+func timeoutFor(name string, catalog *toolcat.Catalog) time.Duration {
+	if catalog != nil {
+		if t, ok := catalog.Get(name); ok {
+			return time.Duration(t.EffectiveTimeoutMS()) * time.Millisecond
+		}
+	}
+
+	return time.Duration(toolcat.DefaultToolTimeoutMS) * time.Millisecond
+}
+
+// executeBounded wraps one call in its OWN context deadline derived from the
+// tool's timeout annotation (14-06 / EARLY-06 — no tool call can hold a turn
+// indefinitely), runs it, and maps a deadline expiry to an IsError result
+// carrying the timeout-classified structured form (the openspec ClassTimeout
+// vocabulary, rendered in the shipped {"error":…} convention). Each call's
+// deadline is derived from the batch ctx, so ONE call timing out never cancels
+// its siblings.
+func executeBounded(
+	ctx context.Context, exec toolcat.ToolExecutor, catalog *toolcat.Catalog, idx int, call provider.ToolCall,
+) ToolResult {
+	d := timeoutFor(call.Name, catalog)
+
+	callCtx, cancel := context.WithTimeout(ctx, d)
+	defer cancel()
+
+	res := executeOne(callCtx, exec, idx, call)
+
+	// Deadline-expiry mapping: the wrap's own deadline fired (not the parent
+	// ctx cancelling) AND the executor surfaced the deadline error.
+	if !res.IsError || !errors.Is(callCtx.Err(), context.DeadlineExceeded) ||
+		!errors.Is(res.Err, context.DeadlineExceeded) {
+		return res
+	}
+
+	if len(res.Output) == 0 {
+		res.Output = timeoutOutput(call.Name, d)
+	}
+
+	return res
+}
+
+// timeoutOutput renders the wrap's structured timeout form (the shipped
+// {"error":…} convention; best-effort — a marshal failure leaves the result's
+// Err as the sole signal).
+func timeoutOutput(name string, d time.Duration) json.RawMessage {
+	msg := fmt.Sprintf("toolexec: tool %s timed out after %dms", name, d.Milliseconds())
+
+	out, err := json.Marshal(map[string]string{keyError: msg})
+	if err != nil {
+		return nil
+	}
+
+	return out
 }
 
 // executeOne runs one call through the executor and packages the result. A nil
