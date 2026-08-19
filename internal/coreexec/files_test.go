@@ -306,3 +306,30 @@ func jsonStringT(s string) string {
 
 	return string(b)
 }
+
+// TestIsErrorCorpusForm_ReadMissingFile (14-06 Task 8 pin): the live
+// 2026-08-19 corpus scan (docs/tool-contract-inventory.md §b) shows Read's
+// missing-file error is the plain-text `File does not exist. Note: your
+// current working directory is <dir>.` form with IsError set — pinned so the
+// emission cannot silently diverge from the corpus (T-14-17).
+func TestIsErrorCorpusForm_ReadMissingFile(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	exec := ReadExecute(Config{WorkDir: dir})
+	out, err := exec(context.Background(), json.RawMessage(`{"file_path":"no-such-file.txt"}`))
+	if err == nil {
+		t.Fatal("missing file must surface a non-nil error (IsError)")
+	}
+
+	var text string
+	if uErr := json.Unmarshal(out, &text); uErr != nil {
+		t.Fatalf("output not the captured plain-text form: %v (%s)", uErr, out)
+	}
+
+	want := "File does not exist. Note: your current working directory is " + dir + "."
+	if text != want {
+		t.Errorf("corpus form = %q; want %q", text, want)
+	}
+}

@@ -124,3 +124,36 @@ func TestClassifyReason(t *testing.T) {
 	require.Contains(t, ClassifyHTTP("p", "m", 401, nil).Reason, "unauth")
 	require.Contains(t, ClassifyHTTP("p", "m", 0, context.DeadlineExceeded).Reason, "deadline")
 }
+
+// TestRetryOnlyTransient_ClassificationTable (14-06 pin): the FULL
+// retry-only-transient classification table at the errors.go seam, statuses
+// literal — Transient kinds are the only ones any retry path may act on;
+// Structural kinds are never retried (the scheduler's D-04 gate consumes this
+// table; docs/tool-contract-inventory.md §c quotes it).
+func TestRetryOnlyTransient_ClassificationTable(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		status int
+		err    error
+		want   ErrorKind
+	}{
+		{name: "408 request timeout", status: 408, want: KindTransient},
+		{name: "425 too early", status: 425, want: KindTransient},
+		{name: "429 rate limited", status: 429, want: KindTransient},
+		{name: "500 server error", status: 500, want: KindTransient},
+		{name: "502 bad gateway", status: 502, want: KindTransient},
+		{name: "503 service unavailable", status: 503, want: KindTransient},
+		{name: "504 gateway timeout", status: 504, want: KindTransient},
+		{name: "net timeout", status: 0, err: context.DeadlineExceeded, want: KindTransient},
+		{name: "400 bad request", status: 400, want: KindStructural},
+		{name: "401 unauthenticated", status: 401, want: KindStructural},
+		{name: "403 forbidden", status: 403, want: KindStructural},
+		{name: "422 unprocessable", status: 422, want: KindStructural},
+	}
+	for _, tc := range cases {
+		perr := ClassifyHTTP(providerAnthropic, modelGLM52, tc.status, tc.err)
+		require.Equal(t, tc.want, perr.Kind, "%s (status %d): retry-only-transient table", tc.name, tc.status)
+	}
+}

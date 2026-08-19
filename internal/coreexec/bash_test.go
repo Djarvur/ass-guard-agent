@@ -309,3 +309,28 @@ func TestBash_FixtureConformance(t *testing.T) {
 		t.Errorf("success form = %q; want the plain combined output", got)
 	}
 }
+
+// TestIsErrorCorpusForm_BashExitCode (14-06 Task 8 pin — the inventory's
+// is_error anchor row): the live 2026-08-19 corpus scan (283 isError
+// observations, docs/tool-contract-inventory.md §b) shows Bash's error form
+// is EXACTLY `Exit code <N>` + combined output with IsError set — pinned here
+// against a real failing command so the executor's emission cannot silently
+// diverge from the corpus (T-14-17).
+func TestIsErrorCorpusForm_BashExitCode(t *testing.T) {
+	t.Parallel()
+
+	exec := BashExecute(Config{})
+	out, err := exec(context.Background(), json.RawMessage(`{"command":"exit 3"}`))
+	if err == nil {
+		t.Fatal("exit 3 must surface a non-nil error (IsError)")
+	}
+
+	var text string
+	if uErr := json.Unmarshal(out, &text); uErr != nil {
+		t.Fatalf("output not the captured plain-text form: %v (%s)", uErr, out)
+	}
+
+	if !strings.HasPrefix(text, "Exit code 3") {
+		t.Errorf("corpus form prefix = %q; want `Exit code 3` — the captured anchor shape", text)
+	}
+}

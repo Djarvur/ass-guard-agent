@@ -543,3 +543,68 @@ func TestDispatchBatch_MutatingTimeoutBounded(t *testing.T) {
 		t.Errorf("serialized slot took %v; want < 400ms (bounded by the 50ms cap)", elapsed)
 	}
 }
+
+// TestDispatchBatch_UsesConcurrencySafeFlag (14-06 test 7): a read-only tool
+// DECLARED concurrency_safe=false runs OUTSIDE the parallel pool (serialized,
+// alone-in-slot) even though it is read-only — the declared flag overrides the
+// mutability default for pool membership. Mutating tools stay alone-in-slot
+// regardless (the D-21 floor is enforced independently of the flag, T-14-19).
+func TestDispatchBatch_UsesConcurrencySafeFlag(t *testing.T) {
+	t.Parallel()
+
+	no := false
+	exec := &slowExec{sleep: map[string]time.Duration{
+		"FlaggedRO": 80 * time.Millisecond,
+		toolGrep:    80 * time.Millisecond,
+		toolRead:    80 * time.Millisecond,
+	}}
+	catalog := annotatedCatalog(
+		toolcat.Tool{Name: "FlaggedRO", Mutability: toolcat.MutabilityReadOnly, ConcurrencySafeOpt: &no},
+		toolcat.Tool{Name: toolGrep, Mutability: toolcat.MutabilityReadOnly},
+		toolcat.Tool{Name: toolRead, Mutability: toolcat.MutabilityReadOnly},
+	)
+	calls := []provider.ToolCall{{Name: "FlaggedRO"}, {Name: toolGrep}, {Name: toolRead}}
+
+	results, err := toolexec.DispatchBatch(context.Background(), exec, catalog, calls)
+	if err != nil {
+		t.Fatalf("DispatchBatch err = %v", err)
+	}
+
+	for i, r := range results {
+		if r.IsError {
+			t.Errorf("results[%d] errored: %v", i, r.Err)
+		}
+	}
+
+	events := exec.snapshot()
+	if len(events) != 3 {
+		t.Fatalf("exec events = %d; want 3 (%+v)", len(events), events)
+	}
+
+	var flagged, grep, read *execEvent
+
+	for i := range events {
+		switch events[i].name {
+		case "FlaggedRO":
+			flagged = &events[i]
+		case toolGrep:
+			grep = &events[i]
+		case toolRead:
+			read = &events[i]
+		}
+	}
+
+	if flagged == nil || grep == nil || read == nil {
+		t.Fatalf("missing events: %+v", events)
+	}
+
+	// The two pool-eligible read-only calls DID overlap (the pool works).
+	if !overlaps(*grep, *read) {
+		t.Errorf("pool-eligible %s/%s did not overlap — parallelism broken", toolGrep, toolRead)
+	}
+
+	// The flagged call overlapped NEITHER — it ran serialized (outside the pool).
+	if overlaps(*flagged, *grep) || overlaps(*flagged, *read) {
+		t.Errorf("concurrency_safe=false call overlapped a pool call — the declaration is not consumed")
+	}
+}

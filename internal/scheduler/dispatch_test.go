@@ -461,3 +461,48 @@ func TestAsProviderErrorWrapsNonTyped(t *testing.T) {
 	require.Equal(t, providerOpenAI, perr.Provider)
 	require.Equal(t, modelMinimaxM3, perr.Model)
 }
+
+// TestRetrySites_NeverRetryStructural (14-06 pin — the retry-site census's
+// primary site): the scheduler fallback walk is the ONLY retry path in the
+// tree, and its error-kind gate is pinned here from both directions — a
+// Structural error NEVER triggers a fallback step (the walk never starts), a
+// Transient one DOES (the walk advances and can succeed). Companion pins:
+// TestRetryOnlyTransient_ClassificationTable (the table at the errors.go
+// seam) and docs/tool-contract-inventory.md §c (every site censused).
+func TestRetrySites_NeverRetryStructural(t *testing.T) {
+	t.Parallel()
+
+	// Direction 1: Structural on the primary → NO fallback attempted.
+	structuralFp := newFakeProvider().
+		set(modelGLM52, fakeOutcome{err: &provider.ProviderError{
+			Kind: provider.KindStructural, Provider: providerAnthropic, Model: modelGLM52,
+			StatusCode: 401, Reason: "unauthenticated",
+		}}).
+		set(modelMinimaxM3, fakeOutcome{resp: provider.Response{FinishReason: stopReasonStop}})
+	s, bus, _ := newTestScheduler(t, structuralFp)
+	s.SetNow(func() time.Time { return ny(2026, time.August, 16, 12, 0) })
+
+	_, events, err := dispatchAndCollect(context.Background(), t, s, bus, tierHeavy, "myproj", CapabilityReq{})
+	require.Error(t, err)
+
+	var perr *provider.ProviderError
+
+	require.ErrorAs(t, err, &perr)
+	require.Equal(t, provider.KindStructural, perr.Kind)
+	require.Empty(t, events, "Structural must never trigger a retry/fallback step")
+	require.Equal(t, []string{modelGLM52}, structuralFp.calledModels(),
+		"the fallback candidate was never attempted")
+
+	// Direction 2: Transient on the primary → the walk advances and succeeds.
+	transientFp := newFakeProvider().
+		set(modelGLM52, fakeOutcome{err: transientErr(modelGLM52, 429)}).
+		set(modelMinimaxM3, fakeOutcome{resp: provider.Response{FinishReason: stopReasonStop}})
+	s2, bus2, _ := newTestScheduler(t, transientFp)
+	s2.SetNow(func() time.Time { return ny(2026, time.August, 16, 12, 0) })
+
+	resp, events2, err := dispatchAndCollect(context.Background(), t, s2, bus2, tierHeavy, "myproj", CapabilityReq{})
+	require.NoError(t, err)
+	require.Equal(t, stopReasonStop, resp.FinishReason)
+	require.Len(t, events2, 1, "Transient triggers exactly one fallback step")
+	require.Equal(t, []string{modelGLM52, modelMinimaxM3}, transientFp.calledModels())
+}
