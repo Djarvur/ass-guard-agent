@@ -58,3 +58,8 @@ spikes/bin/
 # Never commit: generated from embedded defaults + may carry credentials.
 .ass-guard/
 
+
+# Phase 14 / 14-03: pinned shallow clone of github.com/earendil-works/pi used as the
+# read-only behavioral spec for docs/shaper-pi-audit.md. Never committed; re-clone
+# per the audit header. (14-06: extend tools/ ignores beside this entry, do not restructure.)
+tools/pi-audit/
