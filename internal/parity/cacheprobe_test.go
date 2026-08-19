@@ -1,4 +1,4 @@
-package parity
+package parity_test
 
 import (
 	"os"
@@ -6,32 +6,44 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Djarvur/ass-guard-agent/internal/parity"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
+)
+
+// Test-literal constants (goconst discipline): block type, check names, and
+// the placement class names the corpus pin vocabulary uses.
+const (
+	blockTypeText       = "text"
+	checkSystemOrdering = "system-ordering"
+	checkToolsOrdering  = "tools-ordering"
+	classSystem         = "system"
+	classTools          = "tools"
+	classMessage        = "message"
 )
 
 // capturedBlock / dynamicBlock build probe-view system blocks: the captured
 // stable prefix vs the runtime-merged volatile tail (skills/agents listings,
 // hook context).
-func capturedBlock(text string) ProbeSystemBlock {
-	return ProbeSystemBlock{Block: profile.TextBlock{Type: "text", Text: text}}
+func capturedBlock(text string) parity.ProbeSystemBlock {
+	return parity.ProbeSystemBlock{Block: profile.TextBlock{Type: blockTypeText, Text: text}}
 }
 
-func dynamicBlock(text string) ProbeSystemBlock {
-	return ProbeSystemBlock{Block: profile.TextBlock{Type: "text", Text: text}, Dynamic: true}
+func dynamicBlock(text string) parity.ProbeSystemBlock {
+	return parity.ProbeSystemBlock{Block: profile.TextBlock{Type: blockTypeText, Text: text}, Dynamic: true}
 }
 
 // capturedTool / dynamicTool build probe-view tool declarations: the captured
 // catalog vs the MCP host's appended mcp__<server>__<tool> decls.
-func capturedTool(name string) ProbeToolDecl {
-	return ProbeToolDecl{Decl: profile.Decl{Name: name}}
+func capturedTool(name string) parity.ProbeToolDecl {
+	return parity.ProbeToolDecl{Decl: profile.Decl{Name: name}}
 }
 
-func dynamicTool(name string) ProbeToolDecl {
-	return ProbeToolDecl{Decl: profile.Decl{Name: name}, Dynamic: true}
+func dynamicTool(name string) parity.ProbeToolDecl {
+	return parity.ProbeToolDecl{Decl: profile.Decl{Name: name}, Dynamic: true}
 }
 
 // checkByName returns the named check from a report (nil when absent).
-func checkByName(rep CacheProbeReport, name string) *ProbeCheck {
+func checkByName(rep parity.CacheProbeReport, name string) *parity.ProbeCheck {
 	for i := range rep.Checks {
 		if rep.Checks[i].Name == name {
 			return &rep.Checks[i]
@@ -48,25 +60,25 @@ func checkByName(rep CacheProbeReport, name string) *ProbeCheck {
 func TestCacheProbe_OrderingViolationFails(t *testing.T) {
 	t.Parallel()
 
-	comp := CacheComposition{
-		System: []ProbeSystemBlock{
+	comp := parity.CacheComposition{
+		System: []parity.ProbeSystemBlock{
 			capturedBlock("captured-0"),
 			dynamicBlock("skills listing (volatile)"),
 			capturedBlock("captured-2"),
 		},
-		Tools: []ProbeToolDecl{
+		Tools: []parity.ProbeToolDecl{
 			capturedTool("Read"),
 			capturedTool("Bash"),
 		},
 	}
 
-	rep := RunCacheProbe(&comp)
+	rep := parity.RunCacheProbe(&comp)
 
 	if rep.OK {
 		t.Fatalf("mid-prefix splice must fail the probe, got OK with checks %+v", rep.Checks)
 	}
 
-	check := checkByName(rep, "system-ordering")
+	check := checkByName(rep, checkSystemOrdering)
 	if check == nil {
 		t.Fatalf("report missing system-ordering check: %+v", rep.Checks)
 	}
@@ -88,21 +100,21 @@ func TestCacheProbe_OrderingViolationFails(t *testing.T) {
 func TestCacheProbe_ToolArraySpliceFails(t *testing.T) {
 	t.Parallel()
 
-	spliced := CacheComposition{
-		System: []ProbeSystemBlock{capturedBlock("captured-0")},
-		Tools: []ProbeToolDecl{
+	spliced := parity.CacheComposition{
+		System: []parity.ProbeSystemBlock{capturedBlock("captured-0")},
+		Tools: []parity.ProbeToolDecl{
 			dynamicTool("mcp__serena__read_file"),
 			capturedTool("Read"),
 		},
 	}
 
-	rep := RunCacheProbe(&spliced)
+	rep := parity.RunCacheProbe(&spliced)
 
 	if rep.OK {
 		t.Fatalf("mid-array mcp tool must fail the probe, got OK with checks %+v", rep.Checks)
 	}
 
-	check := checkByName(rep, "tools-ordering")
+	check := checkByName(rep, checkToolsOrdering)
 	if check == nil {
 		t.Fatalf("report missing tools-ordering check: %+v", rep.Checks)
 	}
@@ -117,15 +129,15 @@ func TestCacheProbe_ToolArraySpliceFails(t *testing.T) {
 		}
 	}
 
-	appended := CacheComposition{
-		System: []ProbeSystemBlock{capturedBlock("captured-0")},
-		Tools: []ProbeToolDecl{
+	appended := parity.CacheComposition{
+		System: []parity.ProbeSystemBlock{capturedBlock("captured-0")},
+		Tools: []parity.ProbeToolDecl{
 			capturedTool("Read"),
 			dynamicTool("mcp__serena__read_file"),
 		},
 	}
 
-	appendedRep := RunCacheProbe(&appended)
+	appendedRep := parity.RunCacheProbe(&appended)
 	if !appendedRep.OK {
 		t.Errorf("appended-after mcp tool must pass:\n%+v", appendedRep.Checks)
 	}
@@ -138,15 +150,15 @@ func TestCacheProbe_ToolArraySpliceFails(t *testing.T) {
 func TestCacheProbe_GreenCase(t *testing.T) {
 	t.Parallel()
 
-	comp := CacheComposition{
-		System: []ProbeSystemBlock{
+	comp := parity.CacheComposition{
+		System: []parity.ProbeSystemBlock{
 			capturedBlock("captured-0"),
 			capturedBlock("captured-1"),
 			capturedBlock("captured-2"),
 			dynamicBlock("skills listing (volatile)"),
 			dynamicBlock("agents listing (volatile)"),
 		},
-		Tools: []ProbeToolDecl{
+		Tools: []parity.ProbeToolDecl{
 			capturedTool("Read"),
 			capturedTool("Bash"),
 			capturedTool("Skill"),
@@ -154,13 +166,13 @@ func TestCacheProbe_GreenCase(t *testing.T) {
 		},
 	}
 
-	rep := RunCacheProbe(&comp)
+	rep := parity.RunCacheProbe(&comp)
 
 	if !rep.OK {
 		t.Fatalf("shipped append pattern must pass:\n%+v", rep.Checks)
 	}
 
-	for _, name := range []string{"system-ordering", "tools-ordering"} {
+	for _, name := range []string{checkSystemOrdering, checkToolsOrdering} {
 		check := checkByName(rep, name)
 		if check == nil {
 			t.Fatalf("report missing %s check: %+v", name, rep.Checks)
@@ -171,14 +183,14 @@ func TestCacheProbe_GreenCase(t *testing.T) {
 		}
 	}
 
-	sysCheck := checkByName(rep, "system-ordering")
+	sysCheck := checkByName(rep, checkSystemOrdering)
 	for _, want := range []string{"stable prefix 3", "dynamic 2", "ordering ok"} {
 		if !strings.Contains(sysCheck.Detail, want) {
 			t.Errorf("system-ordering detail must enumerate the facts (%q missing): %s", want, sysCheck.Detail)
 		}
 	}
 
-	toolCheck := checkByName(rep, "tools-ordering")
+	toolCheck := checkByName(rep, checkToolsOrdering)
 	for _, want := range []string{"stable prefix 3", "dynamic 1", "ordering ok"} {
 		if !strings.Contains(toolCheck.Detail, want) {
 			t.Errorf("tools-ordering detail must enumerate the facts (%q missing): %s", want, toolCheck.Detail)
@@ -192,17 +204,17 @@ func TestCacheProbe_GreenCase(t *testing.T) {
 func TestCacheProbe_EmptyMerges(t *testing.T) {
 	t.Parallel()
 
-	pureCapture := CacheComposition{
-		System: []ProbeSystemBlock{capturedBlock("captured-0"), capturedBlock("captured-1")},
-		Tools:  []ProbeToolDecl{capturedTool("Read")},
+	pureCapture := parity.CacheComposition{
+		System: []parity.ProbeSystemBlock{capturedBlock("captured-0"), capturedBlock("captured-1")},
+		Tools:  []parity.ProbeToolDecl{capturedTool("Read")},
 	}
 
-	if rep := RunCacheProbe(&pureCapture); !rep.OK {
+	if rep := parity.RunCacheProbe(&pureCapture); !rep.OK {
 		t.Errorf("pure-capture composition must pass:\n%+v", rep.Checks)
 	}
 
-	bare := CacheComposition{}
-	if rep := RunCacheProbe(&bare); !rep.OK {
+	bare := parity.CacheComposition{}
+	if rep := parity.RunCacheProbe(&bare); !rep.OK {
 		t.Errorf("empty composition must pass:\n%+v", rep.Checks)
 	}
 }
@@ -239,7 +251,7 @@ func scanCorpusPinFixture(t *testing.T) profile.ContextBehaviorReport {
 func TestCacheProbe_PlacementAgainstPin(t *testing.T) {
 	t.Parallel()
 
-	pin := PinClasses(scanCorpusPinFixture(t))
+	pin := parity.PinClasses(scanCorpusPinFixture(t))
 
 	if len(pin) != 1 || !pin[classSystem] {
 		t.Fatalf("pin must be exactly the system class (14-02 census: every system block, never elsewhere; "+
@@ -251,57 +263,57 @@ func TestCacheProbe_PlacementAgainstPin(t *testing.T) {
 	}
 
 	// Matching composition — built FROM the derived pin, not hand-written.
-	matching := CacheComposition{
-		System: []ProbeSystemBlock{
-			{Block: profile.TextBlock{Type: "text", Text: "s0"}, CacheControl: pin[classSystem]},
-			{Block: profile.TextBlock{Type: "text", Text: "skills listing"}, Dynamic: true},
+	matching := parity.CacheComposition{
+		System: []parity.ProbeSystemBlock{
+			{Block: profile.TextBlock{Type: blockTypeText, Text: "s0"}, CacheControl: pin[classSystem]},
+			{Block: profile.TextBlock{Type: blockTypeText, Text: "skills listing"}, Dynamic: true},
 		},
-		Tools: []ProbeToolDecl{
+		Tools: []parity.ProbeToolDecl{
 			{Decl: profile.Decl{Name: "Read"}, CacheControl: pin[classTools]},
 			{Decl: profile.Decl{Name: "mcp__serena__read_file"}, Dynamic: true},
 		},
 	}
 
-	if check := AssertPlacementAgainstPin(&matching, pin); !check.OK {
+	if check := parity.AssertPlacementAgainstPin(&matching, pin); !check.OK {
 		t.Errorf("pin-matching composition must pass: %s", check.Detail)
 	}
 
-	// cache_control on a class the pin LACKS (tools) — delta named.
-	unexpectedTools := matching
-	unexpectedTools.Tools = append([]ProbeToolDecl(nil), matching.Tools...)
-	unexpectedTools.Tools[0].CacheControl = true
+	assertDeltaNamed(t, pin, setToolCache(matching, true), classTools)
+	assertDeltaNamed(t, pin, setMessageSites(matching, 1), classMessage)
+	assertDeltaNamed(t, pin, setSystemCache(matching, false), classSystem)
+}
 
-	check := AssertPlacementAgainstPin(&unexpectedTools, pin)
+// assertDeltaNamed asserts the placement check FAILS on a mutated composition
+// with the named class in its delta.
+func assertDeltaNamed(t *testing.T, pin map[string]bool, mutated parity.CacheComposition, wantClass string) {
+	t.Helper()
+
+	check := parity.AssertPlacementAgainstPin(&mutated, pin)
 	if check.OK {
-		t.Fatalf("cache_control on the pin-absent tools class must fail")
+		t.Fatalf("mutation against the pin must fail (class %s): %+v", wantClass, mutated)
 	}
 
-	if !strings.Contains(check.Detail, classTools) {
-		t.Errorf("delta must name the tools class: %s", check.Detail)
+	if !strings.Contains(check.Detail, wantClass) {
+		t.Errorf("delta must name the %s class: %s", wantClass, check.Detail)
 	}
+}
 
-	// cache_control on message content blocks — the other pin-absent class.
-	unexpectedMessage := matching
-	unexpectedMessage.MessageCacheSites = 1
+func setToolCache(comp parity.CacheComposition, v bool) parity.CacheComposition {
+	comp.Tools = append([]parity.ProbeToolDecl(nil), comp.Tools...)
+	comp.Tools[0].CacheControl = v
 
-	check = AssertPlacementAgainstPin(&unexpectedMessage, pin)
-	if check.OK || !strings.Contains(check.Detail, classMessage) {
-		t.Errorf("cache_control on the pin-absent message class must fail naming the class: %+v", check)
-	}
+	return comp
+}
 
-	// MISSING one the pin HAS (system): today's wiring-time truth — 14-03
-	// concluded the shaper emits NO cache_control anywhere while the corpus
-	// carries it on every system block (CC-1, divergence-routed post-adoption).
-	gap := matching
-	gap.System = append([]ProbeSystemBlock(nil), matching.System...)
-	gap.System[0].CacheControl = false
+func setMessageSites(comp parity.CacheComposition, n int) parity.CacheComposition {
+	comp.MessageCacheSites = n
 
-	check = AssertPlacementAgainstPin(&gap, pin)
-	if check.OK {
-		t.Fatalf("missing the pinned system class must fail (the routed emission gap IS the verdict)")
-	}
+	return comp
+}
 
-	if !strings.Contains(check.Detail, classSystem) {
-		t.Errorf("delta must name the system class: %s", check.Detail)
-	}
+func setSystemCache(comp parity.CacheComposition, v bool) parity.CacheComposition {
+	comp.System = append([]parity.ProbeSystemBlock(nil), comp.System...)
+	comp.System[0].CacheControl = v
+
+	return comp
 }

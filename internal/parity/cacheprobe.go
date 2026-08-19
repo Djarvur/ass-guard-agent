@@ -21,10 +21,13 @@
 // appends; this probe PINS that property so a future merge site cannot
 // silently regress it (a merge can be structurally perfect and still bust
 // the cache prefix).
+
 package parity
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 )
@@ -33,31 +36,50 @@ import (
 const (
 	checkSystemOrdering = "system-ordering"
 	checkToolsOrdering  = "tools-ordering"
+	// CheckPlacementVsPin is exported: the wiring site (runParity) appends the
+	// placement check — or its explicit skip note — under this stable name.
+	CheckPlacementVsPin = "placement-vs-pin"
+)
+
+// Placement site classes — the class-level reduction of 14-02's census keys
+// ("system:index=N" → system, "tools:index=N" → tools,
+// "message:role=R:block=T" → message).
+const (
+	classSystem  = "system"
+	classTools   = "tools"
+	classMessage = "message"
 )
 
 // ProbeSystemBlock is the probe's view of one composed system[] entry: the
 // profile's TextBlock (captured or runtime-merged) labeled by WHO produced
 // it. Dynamic=true marks a runtime merge (skills/agents listing, hook
-// context) — the caller labels what it merged.
+// context) — the caller labels what it merged. CacheControl states whether
+// the composed request carries cache_control on this entry.
 type ProbeSystemBlock struct {
-	Block   profile.TextBlock
-	Dynamic bool
+	Block        profile.TextBlock
+	Dynamic      bool
+	CacheControl bool
 }
 
 // ProbeToolDecl is the probe's view of one composed tools[] declaration:
-// the profile's Decl labeled captured vs runtime-appended (mcp__<server>__<tool>).
+// the profile's Decl labeled captured vs runtime-appended
+// (mcp__<server>__<tool>). CacheControl states whether the composed
+// request carries cache_control on this declaration.
 type ProbeToolDecl struct {
-	Decl    profile.Decl
-	Dynamic bool
+	Decl         profile.Decl
+	Dynamic      bool
+	CacheControl bool
 }
 
 // CacheComposition is the parity package's view of one composed request's
 // cache-discipline-relevant shape — the composed system blocks and tool
 // declarations in request order, each labeled captured (stable prefix) or
-// dynamic (volatile tail).
+// dynamic (volatile tail). MessageCacheSites counts cache_control sites on
+// request.messages content blocks (any role) — the pin's message class.
 type CacheComposition struct {
-	System []ProbeSystemBlock
-	Tools  []ProbeToolDecl
+	System            []ProbeSystemBlock
+	Tools             []ProbeToolDecl
+	MessageCacheSites int
 }
 
 // ProbeCheck is one named probe assertion with a human-readable verdict.
@@ -105,79 +127,86 @@ func RunCacheProbe(comp *CacheComposition) CacheProbeReport {
 // first, dynamically merged blocks (skills/agents listings, hook context)
 // appended after.
 func systemOrderingCheck(blocks []ProbeSystemBlock) ProbeCheck {
-	labels, stable, dynamic := systemLabels(blocks)
+	census := censusList(len(blocks), func(i int) bool { return blocks[i].Dynamic })
 
-	if dyn, cap, violated := orderingPair(labels); violated {
+	pair, violated := orderingPair(census.labels)
+	if violated {
 		return ProbeCheck{
 			Name: checkSystemOrdering,
 			OK:   false,
 			Detail: fmt.Sprintf("dynamic system block at index %d precedes captured block at index %d — "+
-				"stable→volatile ordering broken (cache prefix busted)", dyn, cap),
+				"stable→volatile ordering broken (cache prefix busted)", pair.dynamic, pair.captured),
 		}
 	}
 
 	return ProbeCheck{
 		Name:   checkSystemOrdering,
 		OK:     true,
-		Detail: fmt.Sprintf("stable prefix %d, dynamic %d, ordering ok", stable, dynamic),
+		Detail: fmt.Sprintf("stable prefix %d, dynamic %d, ordering ok", census.stable, census.dynamic),
 	}
 }
 
 // toolsOrderingCheck asserts the tools[] stable prefix: the captured catalog
 // in captured order, runtime-bridged mcp__* decls appended after.
 func toolsOrderingCheck(tools []ProbeToolDecl) ProbeCheck {
-	labels := make([]bool, len(tools))
-	stable, dynamic := 0, 0
+	census := censusList(len(tools), func(i int) bool { return tools[i].Dynamic })
 
-	for i, t := range tools {
-		labels[i] = t.Dynamic
-
-		if t.Dynamic {
-			dynamic++
-		} else {
-			stable++
-		}
-	}
-
-	if dyn, cap, violated := orderingPair(labels); violated {
+	pair, violated := orderingPair(census.labels)
+	if violated {
 		return ProbeCheck{
 			Name: checkToolsOrdering,
 			OK:   false,
 			Detail: fmt.Sprintf("dynamic tool at index %d (%q) precedes captured tool at index %d (%q) — "+
-				"stable→volatile ordering broken (cache prefix busted)", dyn, tools[dyn].Decl.Name, cap, tools[cap].Decl.Name),
+				"stable→volatile ordering broken (cache prefix busted)",
+				pair.dynamic, tools[pair.dynamic].Decl.Name, pair.captured, tools[pair.captured].Decl.Name),
 		}
 	}
 
 	return ProbeCheck{
 		Name:   checkToolsOrdering,
 		OK:     true,
-		Detail: fmt.Sprintf("stable prefix %d, dynamic %d, ordering ok", stable, dynamic),
+		Detail: fmt.Sprintf("stable prefix %d, dynamic %d, ordering ok", census.stable, census.dynamic),
 	}
 }
 
-// systemLabels extracts the dynamic-label slice and the stable/dynamic counts.
-func systemLabels(blocks []ProbeSystemBlock) (labels []bool, stable, dynamic int) {
-	labels = make([]bool, len(blocks))
+// listCensus is one composed list's dynamic-label slice plus its stable and
+// dynamic entry counts.
+type listCensus struct {
+	labels  []bool
+	stable  int
+	dynamic int
+}
 
-	for i, b := range blocks {
-		labels[i] = b.Dynamic
+// censusList builds the census off the caller's dynamic predicate.
+func censusList(n int, dynamicAt func(i int) bool) listCensus {
+	census := listCensus{labels: make([]bool, n)}
 
-		if b.Dynamic {
-			dynamic++
+	for i := range n {
+		census.labels[i] = dynamicAt(i)
+
+		if census.labels[i] {
+			census.dynamic++
 		} else {
-			stable++
+			census.stable++
 		}
 	}
 
-	return labels, stable, dynamic
+	return census
+}
+
+// offendingPair names the (dynamic, captured) index pair of an ordering
+// violation.
+type offendingPair struct {
+	dynamic  int
+	captured int
 }
 
 // orderingPair finds the offending index pair for one list: the FIRST dynamic
 // entry and the LAST captured entry. The ordering discipline is violated iff
 // some dynamic entry precedes some captured entry, which is exactly
 // firstDynamic < lastCaptured; the returned pair names the worst offender.
-func orderingPair(labels []bool) (firstDynamic, lastCaptured int, violated bool) {
-	firstDynamic, lastCaptured = -1, -1
+func orderingPair(labels []bool) (offendingPair, bool) {
+	firstDynamic, lastCaptured := -1, -1
 
 	for i, d := range labels {
 		if d {
@@ -190,8 +219,133 @@ func orderingPair(labels []bool) (firstDynamic, lastCaptured int, violated bool)
 	}
 
 	if firstDynamic >= 0 && lastCaptured >= 0 && firstDynamic < lastCaptured {
-		return firstDynamic, lastCaptured, true
+		return offendingPair{dynamic: firstDynamic, captured: lastCaptured}, true
 	}
 
-	return 0, 0, false
+	return offendingPair{}, false
+}
+
+// PinClasses reduces a 14-02 context-behavior census to the class-level
+// placement pin: the site classes where the captured target carries
+// cache_control. A class is pinned iff its census placements are at least the
+// scanned-record count — the target exhibits the class in EVERY request,
+// matching the corpus fact "every system block (910/910)". Classes below
+// that bar are corpus-absent for pin purposes: the committed fixture's
+// self-documented SYNTHETIC classifier probes (single-occurrence tools/message
+// placements that exist to exercise the scanner, not to represent the corpus)
+// never clear it — corpus wins on conflict (locked prohibition).
+func PinClasses(rep profile.ContextBehaviorReport) map[string]bool {
+	pin := map[string]bool{}
+	if rep.ScannedLines <= 0 {
+		return pin
+	}
+
+	counts := map[string]int{}
+
+	for key, n := range rep.CacheControlPlacements {
+		class, _, _ := strings.Cut(key, ":")
+		counts[class] += n
+	}
+
+	for class, n := range counts {
+		if n >= rep.ScannedLines {
+			pin[class] = true
+		}
+	}
+
+	return pin
+}
+
+// placementClasses reduces the composition to the site classes its composed
+// request carries cache_control on.
+func (comp *CacheComposition) placementClasses() map[string]bool {
+	classes := map[string]bool{}
+
+	for _, b := range comp.System {
+		if b.CacheControl {
+			classes[classSystem] = true
+		}
+	}
+
+	for _, t := range comp.Tools {
+		if t.CacheControl {
+			classes[classTools] = true
+		}
+	}
+
+	if comp.MessageCacheSites > 0 {
+		classes[classMessage] = true
+	}
+
+	return classes
+}
+
+// AssertPlacementAgainstPin compares the composed request's cache_control
+// site classes against the corpus pin — a BIDIRECTIONAL set difference: a
+// class the pin has that the composition lacks (e.g. today's routed emission
+// gap: system) and a class the composition has that the pin lacks (pi-style
+// tool/history breakpoints the corpus never exhibits) are BOTH reported with
+// the delta named. The pin's authority is the corpus (see the file doc
+// comment); an empty pin asserts the composition carries no cache_control
+// anywhere.
+func AssertPlacementAgainstPin(comp *CacheComposition, pin map[string]bool) ProbeCheck {
+	if comp == nil {
+		comp = &CacheComposition{}
+	}
+
+	composed := comp.placementClasses()
+
+	var missing, extra []string
+
+	for class := range pin {
+		if !composed[class] {
+			missing = append(missing, class)
+		}
+	}
+
+	for class := range composed {
+		if !pin[class] {
+			extra = append(extra, class)
+		}
+	}
+
+	sort.Strings(missing)
+	sort.Strings(extra)
+
+	if len(missing) == 0 && len(extra) == 0 {
+		detail := "cache_control sites match the corpus pin"
+		if len(pin) == 0 {
+			detail = "corpus pin carries no class; composition agrees (no cache_control anywhere)"
+		}
+
+		return ProbeCheck{Name: CheckPlacementVsPin, OK: true, Detail: detail}
+	}
+
+	var parts []string
+	if len(missing) > 0 {
+		parts = append(parts, "pin-has-composed-lacks ["+strings.Join(missing, ", ")+"]")
+	}
+
+	if len(extra) > 0 {
+		parts = append(parts, "composed-has-pin-lacks ["+strings.Join(extra, ", ")+"]")
+	}
+
+	return ProbeCheck{
+		Name:   CheckPlacementVsPin,
+		OK:     false,
+		Detail: strings.Join(parts, "; ") + " (corpus pin: 14-02 fixture)",
+	}
+}
+
+// Fact renders the report's one-line footer fact: every check's name and
+// detail joined — a FAIL status plus these deltas names the regression and
+// its offending indices/classes from the verdict line alone.
+func (r CacheProbeReport) Fact() string {
+	parts := make([]string, 0, len(r.Checks))
+
+	for _, c := range r.Checks {
+		parts = append(parts, c.Name+": "+c.Detail)
+	}
+
+	return strings.Join(parts, "; ")
 }

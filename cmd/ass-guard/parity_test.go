@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,6 +20,10 @@ const pinVersion = "0.16.3"
 // keys on (Task 1's "a warning line matching `zcode version drift`").
 const driftWarningMarker = "zcode version drift"
 
+// probeToolRead names the captured Read tool in the wiring-test compositions
+// (goconst discipline: no bare tool-name literals).
+const probeToolRead = "Read"
+
 // writeParityProfileFixture builds a minimal loadable profile bundle under
 // <root>/zcode/ (profile.yaml, system/block-0.txt, tools.json, identity.yaml,
 // thinking.json, tool_choice.json) whose coverage.yaml pins zcodeVersion as
@@ -36,6 +39,9 @@ func writeParityProfileFixture(t *testing.T, zcodeVersion string) string {
 		t.Fatal(err)
 	}
 
+	coverage := "profile: " + profileZcode + "\ntarget_capture_ref:\n" +
+		"  zcode_version: \"" + zcodeVersion + "\"\nfields: []\n"
+
 	files := map[string]string{
 		"profile.yaml":       "name: " + profileZcode + "\nmodel: ph-model\nmax_tokens: 128\n",
 		"system/block-0.txt": "ph-sys-0",
@@ -43,8 +49,7 @@ func writeParityProfileFixture(t *testing.T, zcodeVersion string) string {
 		"identity.yaml":      "headers: []\n",
 		"thinking.json":      "{}",
 		"tool_choice.json":   "{}",
-		"coverage.yaml": "profile: " + profileZcode + "\ntarget_capture_ref:\n  zcode_version: \"" +
-			zcodeVersion + "\"\nfields: []\n",
+		"coverage.yaml":      coverage,
 	}
 
 	for name, body := range files {
@@ -90,12 +95,14 @@ func captureParityStderr(t *testing.T, fn func() error) (string, error) {
 	os.Stderr = w
 
 	done := make(chan struct{})
+
 	go func() { _, _ = buf.ReadFrom(r); close(done) }()
 
 	fnErr := fn()
 
 	_ = w.Close()
 	os.Stderr = old
+
 	<-done
 
 	return buf.String(), fnErr
@@ -107,7 +114,9 @@ func fakeZcodeVersion(t *testing.T, version string, resolveErr error) {
 	t.Helper()
 
 	old := zcodeInstalledVersion
+
 	zcodeInstalledVersion = func() (string, error) { return version, resolveErr }
+
 	t.Cleanup(func() { zcodeInstalledVersion = old })
 }
 
@@ -117,12 +126,14 @@ func fakeParityRun(t *testing.T) {
 	t.Helper()
 
 	old := parityRun
+
 	parityRun = func(_ context.Context, opts *parity.RunOptions) (parity.RunResult, error) {
 		return parity.RunResult{
 			Summary: parity.Summary{SuiteSize: len(opts.Suite), OverallPass: true},
 			Config:  parity.RunConfig{Model: opts.Model, Temp: 0, SuiteSize: len(opts.Suite)},
 		}, nil
 	}
+
 	t.Cleanup(func() { parityRun = old })
 }
 
@@ -133,7 +144,9 @@ func fakeCacheComposition(t *testing.T, comp parity.CacheComposition) {
 	t.Helper()
 
 	old := composeCacheProbeInput
+
 	composeCacheProbeInput = func(_ *profile.Profile) parity.CacheComposition { return comp }
+
 	t.Cleanup(func() { composeCacheProbeInput = old })
 }
 
@@ -150,7 +163,7 @@ func summaryLines(out string) []string {
 
 	var lines []string
 
-	for _, ln := range strings.Split(out, "\n") {
+	for ln := range strings.SplitSeq(out, "\n") {
 		for _, p := range prefixes {
 			if strings.HasPrefix(ln, p) {
 				lines = append(lines, ln)
@@ -182,7 +195,6 @@ func TestParityDriftWarning_Mismatch(t *testing.T) { //nolint:paralleltest // sw
 	matchOut, matchErr := captureParityStderr(t, func() error {
 		return runParity(suite, "", profileZcode, profilesDir, "", "", "")
 	})
-
 	if mismatchErr != nil || matchErr != nil {
 		t.Fatalf("drift warning must never affect the run: mismatch err=%v, match err=%v",
 			mismatchErr, matchErr)
@@ -198,7 +210,10 @@ func TestParityDriftWarning_Mismatch(t *testing.T) { //nolint:paralleltest // sw
 		t.Errorf("matching run must not warn:\n%s", matchOut)
 	}
 
-	if got, want := strings.Join(summaryLines(matchOut), "|"), strings.Join(summaryLines(mismatchOut), "|"); got != want {
+	want := strings.Join(summaryLines(matchOut), "|")
+
+	got := strings.Join(summaryLines(mismatchOut), "|")
+	if got != want {
 		t.Errorf("footer summary changed between match and mismatch runs:\nmatch:    %s\nmismatch: %s", got, want)
 	}
 }
@@ -216,7 +231,6 @@ func TestParityDriftWarning_Match(t *testing.T) { //nolint:paralleltest // swaps
 	out, err := captureParityStderr(t, func() error {
 		return runParity(suite, "", profileZcode, profilesDir, "", "", "")
 	})
-
 	if err != nil {
 		t.Fatalf("run errored: %v", err)
 	}
@@ -239,12 +253,11 @@ func TestParityDriftWarning_Unresolvable(t *testing.T) { //nolint:paralleltest /
 	profilesDir := writeParityProfileFixture(t, pinVersion)
 	suite := writeParitySuiteFixture(t)
 
-	fakeZcodeVersion(t, "", errors.New("binary absent"))
+	fakeZcodeVersion(t, "", os.ErrNotExist)
 
 	out, err := captureParityStderr(t, func() error {
 		return runParity(suite, "", profileZcode, profilesDir, "", "", "")
 	})
-
 	if err != nil {
 		t.Fatalf("unresolvable version must never fail the run: %v", err)
 	}
@@ -266,7 +279,6 @@ func TestParityDriftWarning_Unresolvable(t *testing.T) { //nolint:paralleltest /
 	out2, err2 := captureParityStderr(t, func() error {
 		return runParity(suite, "", profileZcode, profilesDir, "", "", "")
 	})
-
 	if err2 != nil {
 		t.Fatalf("missing manifest must never fail the run: %v", err2)
 	}
@@ -283,9 +295,7 @@ func TestParityDriftWarning_Unresolvable(t *testing.T) { //nolint:paralleltest /
 // TestParityRun_CacheProbeWired (Task 3, Test 9): runParity (offline, faked
 // A/B arms) executes the cache probe and the footer carries a `cache probe:`
 // line with pass/fail; a seeded violation (via the test's merge labeling)
-// flips the line to fail WITHOUT changing the A/B summary semantics; the
-// DEFAULT composition reports today's wiring-time verdict — the routed
-// cache_control emission gap (14-03 CC-1) named as the probe's fact.
+// flips the line to fail WITHOUT changing the A/B summary semantics.
 func TestParityRun_CacheProbeWired(t *testing.T) { //nolint:paralleltest // swaps process-global seams + os.Stderr
 	fakeParityRun(t)
 
@@ -298,10 +308,10 @@ func TestParityRun_CacheProbeWired(t *testing.T) { //nolint:paralleltest // swap
 	// appended after the stable prefix).
 	good := parity.CacheComposition{
 		System: []parity.ProbeSystemBlock{
-			{Block: profile.TextBlock{Type: "text", Text: "captured-0"}, CacheControl: true},
-			{Block: profile.TextBlock{Type: "text", Text: "skills listing"}, Dynamic: true},
+			{Block: profile.TextBlock{Type: blockText, Text: "captured-0"}, CacheControl: true},
+			{Block: profile.TextBlock{Type: blockText, Text: "skills listing"}, Dynamic: true},
 		},
-		Tools: []parity.ProbeToolDecl{{Decl: profile.Decl{Name: "Read"}}},
+		Tools: []parity.ProbeToolDecl{{Decl: profile.Decl{Name: probeToolRead}}},
 	}
 
 	fakeCacheComposition(t, good)
@@ -309,7 +319,6 @@ func TestParityRun_CacheProbeWired(t *testing.T) { //nolint:paralleltest // swap
 	passOut, passErr := captureParityStderr(t, func() error {
 		return runParity(suite, "", profileZcode, profilesDir, "", "", pinPath)
 	})
-
 	if passErr != nil {
 		t.Fatalf("pass-state run errored: %v", passErr)
 	}
@@ -322,11 +331,11 @@ func TestParityRun_CacheProbeWired(t *testing.T) { //nolint:paralleltest // swap
 	// mid-stable-prefix).
 	violation := parity.CacheComposition{
 		System: []parity.ProbeSystemBlock{
-			{Block: profile.TextBlock{Type: "text", Text: "captured-0"}, CacheControl: true},
-			{Block: profile.TextBlock{Type: "text", Text: "skills listing"}, Dynamic: true},
-			{Block: profile.TextBlock{Type: "text", Text: "captured-2"}, CacheControl: true},
+			{Block: profile.TextBlock{Type: blockText, Text: "captured-0"}, CacheControl: true},
+			{Block: profile.TextBlock{Type: blockText, Text: "skills listing"}, Dynamic: true},
+			{Block: profile.TextBlock{Type: blockText, Text: "captured-2"}, CacheControl: true},
 		},
-		Tools: []parity.ProbeToolDecl{{Decl: profile.Decl{Name: "Read"}}},
+		Tools: []parity.ProbeToolDecl{{Decl: profile.Decl{Name: probeToolRead}}},
 	}
 
 	fakeCacheComposition(t, violation)
@@ -334,7 +343,6 @@ func TestParityRun_CacheProbeWired(t *testing.T) { //nolint:paralleltest // swap
 	failOut, failErr := captureParityStderr(t, func() error {
 		return runParity(suite, "", profileZcode, profilesDir, "", "", pinPath)
 	})
-
 	if failErr != nil {
 		t.Fatalf("probe verdict must never fail the run: %v", failErr)
 	}
@@ -346,19 +354,29 @@ func TestParityRun_CacheProbeWired(t *testing.T) { //nolint:paralleltest // swap
 	if got, want := strings.Join(summaryLines(failOut), "|"), strings.Join(summaryLines(passOut), "|"); got != want {
 		t.Errorf("probe verdict changed the A/B summary semantics:\npass: %s\nfail: %s", want, got)
 	}
+}
 
-	// DEFAULT composition (no seam): today's wiring-time verdict — the shaper
-	// emits no cache_control while the corpus pin carries it on system blocks;
-	// the gap IS the probe line's fact (14-03 CC-1 divergence-routed).
+// TestParityRun_CacheProbeDefaultGap (Task 3, Test 9's default leg): the
+// DEFAULT composition reports today's wiring-time verdict — the shaper emits
+// no cache_control while the corpus pin carries it on system blocks; the
+// routed emission gap (14-03 CC-1, divergence-routed post-adoption) IS the
+// probe line's fact, with the system delta named.
+func TestParityRun_CacheProbeDefaultGap(t *testing.T) { //nolint:paralleltest // swaps process-global seams + os.Stderr
+	fakeParityRun(t)
+
+	profilesDir := writeParityProfileFixture(t, pinVersion)
+	suite := writeParitySuiteFixture(t)
+	pinPath := corpusPinFixturePath()
+
 	defaultOut, defaultErr := captureParityStderr(t, func() error {
 		return runParity(suite, "", profileZcode, profilesDir, "", "", pinPath)
 	})
-
 	if defaultErr != nil {
 		t.Fatalf("default-composition run errored: %v", defaultErr)
 	}
 
-	if !strings.Contains(defaultOut, "cache probe: FAIL") || !strings.Contains(defaultOut, "system") {
-		t.Errorf("default run must report the routed emission gap naming the system class:\n%s", defaultOut)
+	if !strings.Contains(defaultOut, "cache probe: FAIL") ||
+		!strings.Contains(defaultOut, "pin-has-composed-lacks [system]") {
+		t.Errorf("default run must report the routed emission gap with the system delta named:\n%s", defaultOut)
 	}
 }

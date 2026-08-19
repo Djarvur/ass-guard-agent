@@ -55,6 +55,11 @@ type RunResult struct {
 	Summary Summary        `json:"summary"`
 	Config  RunConfig      `json:"config"`
 	Turns   []turnEvidence `json:"turns"`
+	// CacheProbe (14-04, EARLY-03) is the cache-discipline probe's additive
+	// verdict — ordering + placement-vs-pin, set by the wiring site beside the
+	// A/B arms. It NEVER feeds Summary or the gate's exit semantics (additive
+	// report only); nil = the probe did not run.
+	CacheProbe *CacheProbeReport `json:"cache_probe,omitempty"`
 }
 
 // RunConfig is the parity run configuration recorded alongside results.

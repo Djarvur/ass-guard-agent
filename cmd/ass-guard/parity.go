@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/internal/parity"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
@@ -26,7 +27,7 @@ const zcodeVersionTimeout = 3 * time.Second
 // no shell, no user input, no interpolation) under a bounded timeout, output
 // trimmed. It is a package-level seam var so tests inject a fake installed
 // version without a live binary (offline CI); the default is the real exec.
-var zcodeInstalledVersion = func() (string, error) {
+var zcodeInstalledVersion = func() (string, error) { //nolint:gochecknoglobals // test-injectable seam
 	ctx, cancel := context.WithTimeout(context.Background(), zcodeVersionTimeout)
 	defer cancel()
 
@@ -40,7 +41,7 @@ var zcodeInstalledVersion = func() (string, error) {
 
 // parityRun is the package-level seam over parity.Run (offline tests fake the
 // A/B arms — no live provider needed); the default drives the real harness.
-var parityRun = parity.Run
+var parityRun = parity.Run //nolint:gochecknoglobals // test-injectable seam
 
 func newParityCmd() *cobra.Command {
 	var (
@@ -50,6 +51,7 @@ func newParityCmd() *cobra.Command {
 		profilesDir   string
 		resultsPath   string
 		surpriseCheck string
+		cachePin      string
 	)
 
 	cmd := &cobra.Command{
@@ -57,7 +59,7 @@ func newParityCmd() *cobra.Command {
 		Short:        "run the behavioral mimicry A/B parity gate (MIMC-03, the north-star gate)",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runParity(suitePath, fromRollout, profileName, profilesDir, resultsPath, surpriseCheck)
+			return runParity(suitePath, fromRollout, profileName, profilesDir, resultsPath, surpriseCheck, cachePin)
 		},
 	}
 	cmd.Flags().StringVar(&suitePath, "suite", defaultSuitePath(),
@@ -69,6 +71,8 @@ func newParityCmd() *cobra.Command {
 	cmd.Flags().StringVar(&resultsPath, "results", "parity-results.json", "results JSON output path")
 	cmd.Flags().StringVar(&surpriseCheck, "surprise-check", "",
 		"optional second suite JSON to run after the curated suite passes")
+	cmd.Flags().StringVar(&cachePin, "cache-pin", defaultCachePinPath(),
+		"corpus cache_control placement pin fixture (14-02 JSONL; empty = skip the placement check)")
 
 	return cmd
 }
@@ -82,12 +86,117 @@ func defaultSuitePath() string {
 	return abs
 }
 
+// defaultCachePinPath resolves 14-02's committed corpus fixture — the
+// cache_control placement pin — under the same repo-relative contract as the
+// default suite path (the parity gate is an operator/dev-run command).
+func defaultCachePinPath() string {
+	rel := filepath.Join("internal", "profile", "testdata", "context-behavior", "cache-control.jsonl")
+
+	abs, err := filepath.Abs(rel)
+	if err != nil {
+		return rel
+	}
+
+	return abs
+}
+
+// composeCacheProbeInput builds the cache probe's composed-shape view from a
+// loaded profile (seam var: tests label the merges themselves): the CAPTURED
+// system blocks and tools as the stable prefix, then the dynamic merges the
+// serve path would apply appended as the volatile tail — the skills/agents
+// listing blocks (ecosys discovery over the same layers sessionFor consults;
+// a discovery error degrades to the captured-only composition). MCP tools
+// (mcp__<server>__<tool>) need a live host and are UNAVAILABLE offline: the
+// probe labels them absent and checks the captured-only tools composition.
+// The cache_control flags state TODAY'S truth — the shaper emits none
+// anywhere (14-03 CC-1, divergence-routed post-adoption); when the routed
+// emission fix lands, this seam derives the flags from the profile's
+// captured values instead.
+var composeCacheProbeInput = func( //nolint:gochecknoglobals // test-injectable seam
+	prof *profile.Profile,
+) parity.CacheComposition {
+	comp := parity.CacheComposition{
+		System: make([]parity.ProbeSystemBlock, len(prof.System)),
+		Tools:  make([]parity.ProbeToolDecl, len(prof.Tools)),
+	}
+
+	for i, b := range prof.System {
+		comp.System[i] = parity.ProbeSystemBlock{Block: b}
+	}
+
+	for i, d := range prof.Tools {
+		comp.Tools[i] = parity.ProbeToolDecl{Decl: d}
+	}
+
+	reg, _, err := ecosys.Discover("")
+	if err != nil {
+		return comp
+	}
+
+	for _, listing := range []string{ecosys.SkillListing(reg), ecosys.AgentListing(reg)} {
+		if listing != "" {
+			comp.System = append(comp.System, parity.ProbeSystemBlock{
+				Block: profile.TextBlock{Type: blockText, Text: listing}, Dynamic: true,
+			})
+		}
+	}
+
+	return comp
+}
+
+// assembleCacheProbe composes the probe input, runs the ordering checks, and
+// appends the placement-vs-pin check derived from the committed corpus
+// fixture (PinClasses over 14-02's scanner). An empty/unreadable pin path
+// degrades to an explicit SKIPPED placement check — never a run failure (the
+// probe is report-only; exit semantics are the A/B gate's alone).
+func assembleCacheProbe(prof *profile.Profile, cachePin string) parity.CacheProbeReport {
+	comp := composeCacheProbeInput(prof)
+
+	rep := parity.RunCacheProbe(&comp)
+
+	check, ok := placementCheck(&comp, cachePin)
+	if !ok {
+		return rep
+	}
+
+	rep.Checks = append(rep.Checks, check)
+	rep.OK = rep.OK && check.OK
+
+	return rep
+}
+
+// placementCheck builds the placement-vs-pin check; ok=false when the pin is
+// unavailable (the caller skips the check entirely).
+func placementCheck(comp *parity.CacheComposition, cachePin string) (parity.ProbeCheck, bool) {
+	skip := func(reason string) (parity.ProbeCheck, bool) {
+		return parity.ProbeCheck{Name: parity.CheckPlacementVsPin, OK: true, Detail: "skipped: " + reason}, false
+	}
+
+	if cachePin == "" {
+		return skip("no pin fixture given (--cache-pin empty)")
+	}
+
+	f, err := os.Open(cachePin)
+	if err != nil {
+		return skip(fmt.Sprintf("corpus pin fixture unreadable (%v)", err))
+	}
+
+	defer func() { _ = f.Close() }()
+
+	scanRep, err := profile.ScanContextBehavior(f)
+	if err != nil {
+		return skip(fmt.Sprintf("corpus pin fixture unscannable (%v)", err))
+	}
+
+	return parity.AssertPlacementAgainstPin(comp, parity.PinClasses(scanRep)), true
+}
+
 // runParity loads the suite + profile, constructs the live Anthropic arm, runs
 // the harness, and emits the structured footer + results JSON. Exit code reflects
 // the gate (0 iff OverallPass). Needs ZAI_API_KEY (operator-gated).
 //
 //nolint:funlen // domain complexity is inherent
-func runParity(suitePath, rollout, name, dir, results, surprise string) error {
+func runParity(suitePath, rollout, name, dir, results, surprise, cachePin string) error {
 	var (
 		suite []parity.CapturedTurn
 		err   error
@@ -118,6 +227,12 @@ func runParity(suitePath, rollout, name, dir, results, surprise string) error {
 	// LOUD on drift, NEVER blocking — exit semantics are untouched below.
 	emitVersionDriftWarning(os.Stderr, dir, name)
 
+	// 14-04 (EARLY-03): the cache-discipline probe — the composition the serve
+	// path would send, checked for stable→volatile merge ordering + placement
+	// against the corpus pin. Report-only: rides the footer beside the A/B
+	// verdicts, never feeds Summary or the exit code.
+	probeRep := assembleCacheProbe(&prof, cachePin)
+
 	// Phase 7 (D-08): the parity arm builds its provider through the scheduler
 	// factory (zero-config $ZAI_API_KEY env resolution applies — the gate is
 	// operator-gated on the env var). The provider surfaces a clear typed error
@@ -142,6 +257,8 @@ func runParity(suitePath, rollout, name, dir, results, surprise string) error {
 	if err != nil {
 		return fmt.Errorf("call: %w", err)
 	}
+
+	res.CacheProbe = &probeRep
 
 	emitParityFooter("curated", &res)
 
@@ -183,34 +300,34 @@ func runParity(suitePath, rollout, name, dir, results, surprise string) error {
 func emitVersionDriftWarning(w io.Writer, profilesDir, name string) {
 	manifest, err := profile.LoadCoverage(filepath.Join(profilesDir, name, "coverage.yaml"))
 	if err != nil {
-		fmt.Fprintf(w, "zcode version check skipped: coverage manifest unavailable (%v)\n", err)
+		_, _ = fmt.Fprintf(w, "zcode version check skipped: coverage manifest unavailable (%v)\n", err)
 
 		return
 	}
 
 	pinned := manifest.TargetCaptureRef.ZcodeVersion
 	if pinned == "" {
-		fmt.Fprintf(w, "zcode version check skipped: pinned zcode version unrecorded in the coverage manifest\n")
+		_, _ = fmt.Fprintf(w, "zcode version check skipped: pinned zcode version unrecorded in the coverage manifest\n")
 
 		return
 	}
 
 	installed, ierr := zcodeInstalledVersion()
 	if ierr != nil {
-		fmt.Fprintf(w, "zcode version check skipped: installed zcode unresolvable (%v); pinned capture zcode %s\n",
-			ierr, pinned)
+		_, _ = fmt.Fprintf(w,
+			"zcode version check skipped: installed zcode unresolvable (%v); pinned capture zcode %s\n", ierr, pinned)
 
 		return
 	}
 
 	if installed != pinned {
-		fmt.Fprintf(w, "WARNING: zcode version drift — installed %s, pinned capture %s "+
+		_, _ = fmt.Fprintf(w, "WARNING: zcode version drift — installed %s, pinned capture %s "+
 			"(the recorded parity reference ages as zcode updates; non-blocking)\n", installed, pinned)
 
 		return
 	}
 
-	fmt.Fprintf(w, "capture provenance: zcode %s matches installed\n", pinned)
+	_, _ = fmt.Fprintf(w, "capture provenance: zcode %s matches installed\n", pinned)
 }
 
 func emitParityFooter(label string, res *parity.RunResult) {
@@ -224,6 +341,17 @@ func emitParityFooter(label string, res *parity.RunResult) {
 	fmt.Fprintf(os.Stderr, "layer1_pass_rate: %.4f\n", res.Summary.Layer1PassRate)
 	fmt.Fprintf(os.Stderr, "layer2_pass_rate: %.4f\n", res.Summary.Layer2PassRate)
 	fmt.Fprintf(os.Stderr, "overall_status: %s\n", status)
+
+	// 14-04 (EARLY-03): one run answers structure, cache discipline, and
+	// target-version drift together — the probe verdict rides the footer.
+	if res.CacheProbe != nil {
+		probeStatus := "FAIL"
+		if res.CacheProbe.OK {
+			probeStatus = "PASS"
+		}
+
+		fmt.Fprintf(os.Stderr, "cache probe: %s — %s\n", probeStatus, res.CacheProbe.Fact())
+	}
 
 	for _, t := range res.Turns {
 		match := "match"
