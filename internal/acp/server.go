@@ -133,6 +133,17 @@ func (stubNoChunkRunner) Run(ctx context.Context, _ string, emit ChunkEmitter, p
 	return stopEndTurn, nil
 }
 
+// Emitter returns a session-scoped ChunkEmitter over the server's Writer —
+// usable OUTSIDE a session/prompt request, it lets server-driven turns
+// (timer resumes, automation firings — 12-07/WINDOWS #3) stream
+// session/update notifications to the connected client through the same
+// mutex-guarded frame writer every other write uses.
+//
+//nolint:ireturn // the emitter seam is intentionally the interface (tests inject fakes)
+func (s *Server) Emitter(sessionID string) ChunkEmitter {
+	return &adapter{out: s.out, sessionID: sessionID}
+}
+
 // Serve runs the reader loop until ctx is cancelled or stdin reaches EOF. Each
 // frame is dispatched: requests (with id) go to a per-request goroutine;
 // notifications (no id) are handled inline. Parse errors surface a -32700

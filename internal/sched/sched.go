@@ -328,6 +328,45 @@ func (s *ScheduleStore) MarkFired(id string, t time.Time) error {
 	return fmt.Errorf("%w: %s", ErrNotFound, id)
 }
 
+// ClaimForFire atomically claims one due firing: under the store mutex it
+// re-checks the unfired-slot condition for the automation and ADVANCES
+// lastFired/runCount when it holds (12-07's exactly-once claim — a concurrent
+// due-walk or catch-up pass sees nothing due after the claim wins). ok=false
+// when another path already claimed the window or the automation is spent.
+// The claim BEFORE the turn (not after) is deliberate: D-02's fire-ONCE
+// priority means a crash mid-turn consumes the window rather than duplicating
+// it on recovery.
+func (s *ScheduleStore) ClaimForFire(id string, now time.Time) (Automation, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for i := range s.autos {
+		a := &s.autos[i]
+		if a.ID != id || a.Done {
+			continue
+		}
+
+		from := a.LastFired
+		if from.IsZero() {
+			from = a.CreatedAt
+		}
+
+		if missedSlots(a, from, now) == 0 {
+			return *a, false
+		}
+
+		a.LastFired = now.UTC()
+		a.RunCount++
+		a.Done = a.Cron == "" || (!a.Recurring && (a.MaxRuns == 0 || a.RunCount >= a.MaxRuns))
+
+		_ = s.persistLocked() // claim holds in-memory; next open re-derives
+
+		return *a, true
+	}
+
+	return Automation{}, false
+}
+
 // Due returns the automations with at least one UNFIRED schedule slot at or
 // before now (the scheduler tick's walk) — i.e. the schedule produced a slot
 // since the last fire (or creation) that has already passed. Spent

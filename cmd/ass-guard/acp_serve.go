@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -35,6 +36,7 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/redact"
+	"github.com/Djarvur/ass-guard-agent/internal/sched"
 	"github.com/Djarvur/ass-guard-agent/internal/scheduler"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
@@ -313,6 +315,8 @@ func resolveProfilesDir(cmd *cobra.Command, profilesDir, workDir string) string 
 // 02-05): each session/prompt drives a session.Session whose Provider.Stream
 // streams chunks to the event bus; the sessionTurnRunner forwards bus chunks to
 // the ACP adapter as session/update notifications.
+//
+//nolint:funlen // the serve pipeline; the 12-07 schedule wiring extends it
 func runACPServe(ctx context.Context, in io.Reader, out, stderr io.Writer, opts *serveOptions) error {
 	bus := event.NewBus()
 
@@ -391,6 +395,21 @@ func runACPServe(ctx context.Context, in io.Reader, out, stderr io.Writer, opts 
 	}
 
 	srv := acp.NewServer(in, out, stderr, acp.WithTurnRunner(runner))
+
+	// 12-07 (ACP-04/D-02): the per-project schedule store + the scheduler
+	// goroutine on the serve-lifetime ctx (no daemon, no port — Close/ctx
+	// owns its lifecycle). A failed open degrades to a serve WITHOUT
+	// scheduled firings (the store's own quarantine handles corruption).
+	scheduleStore, schedErr := sched.Open(opts.WorkDir)
+	if schedErr != nil {
+		_, _ = fmt.Fprintf(stderr,
+			"ass-guard: schedule store disabled (%v) — cron tools report no-store errors\n", schedErr)
+	} else {
+		runner.schedule = scheduleStore
+	}
+
+	runner.emitFor = srv.Emitter // WINDOWS #3: server-driven turns reach the client
+	runner.startScheduler(ctx)
 
 	// Phase 5 (Plan 05-02 T4): when the server-level ctx is cancelled
 	// (SIGINT/SIGTERM), close every live session's MCP host so no subprocess
@@ -485,6 +504,25 @@ type sessionTurnRunner struct {
 	mcpServers []ecosys.ServerConfig
 
 	sessions map[string]*session.Session
+
+	// 12-07 (ACP-04/D-02) cron wiring state — see cron_wiring.go:
+	// turnMus is the per-session turn serialization (queue-behind-active-turn);
+	// turnActive marks client-driven Runs (the session forwarder's mute flag);
+	// sessMu guards lastSessionID + automationProvenance; schedule is the
+	// PER-PROJECT store (workDir-scoped, shared across the project's sessions);
+	// schedTick/schedStop/catchUpOnce drive the serve-lifetime scheduler
+	// goroutine + the one-per-serve catch-up; emitFor builds the session
+	// chunk emitter for SERVER-DRIVEN turns (WINDOWS #3 — nil in tests).
+	turnMus              sync.Map // sessionID -> *sync.Mutex
+	turnActive           sync.Map // sessionID -> *atomic.Bool
+	sessMu               sync.Mutex
+	lastSessionID        string
+	automationProvenance string
+	schedule             *sched.ScheduleStore
+	schedTick            time.Duration
+	schedStop            func()
+	catchUpOnce          sync.Once
+	emitFor              func(sessionID string) acp.ChunkEmitter
 }
 
 // the loaded hook-DAG config + the learning store + the engine + its
@@ -699,6 +737,22 @@ func (r *sessionTurnRunner) Run(
 	emit acp.ChunkEmitter, prompt []acp.ContentBlock,
 ) (string, error) {
 	sess := r.sessionFor(ctx, sessionID)
+
+	// 12-07 (D-02 queue semantics): the per-session turn serialization — the
+	// whole turn (ask-reply resumes included) holds the session mutex, so an
+	// automation firing QUEUES behind it instead of interrupting, and client
+	// turns serialize among themselves.
+	turnMu := r.sessionTurnMu(sessionID)
+	turnMu.Lock()
+
+	defer turnMu.Unlock()
+
+	// The session-lifetime forwarder mutes while this client turn is active
+	// (Run's own forwarder below owns these chunks — WINDOWS #3's split).
+	r.markClientTurn(sessionID, true)
+
+	defer r.markClientTurn(sessionID, false)
+
 	// Subscribe a chunk-forwarder so streamed AgentMessageChunk events become
 	// session/update notifications. The forwarder runs until the turn completes
 	// and is UNSUBSCRIBED when Run returns — a leaked dead subscriber's buffer
@@ -849,6 +903,12 @@ func (r *sessionTurnRunner) runOneTurn( //nolint:funcorder // grouping keeps the
 func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen,maintidx // grouping keeps the turn pipeline together
 	ctx context.Context, sessionID string,
 ) *session.Session {
+	// sessMu spans the WHOLE construction: a concurrent sessionFor for the
+	// same id (the async catch-up firing racing the first Run — 12-07) must
+	// never double-construct a session (two transcripts, one overwritten).
+	r.sessMu.Lock()
+	defer r.sessMu.Unlock()
+
 	if r.sessions == nil {
 		r.sessions = map[string]*session.Session{}
 	}
@@ -996,6 +1056,7 @@ func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen,maintidx // gr
 	coreexec.RegisterInteractive(sCatalog, coreexec.InteractiveConfig{
 		Ask: askBroker, PlanMode: planMode,
 		Mailbox: mailbox, Sessions: sessionReader, Tasks: taskRegistry,
+		Schedule: r.schedule, // 12-07: the PER-PROJECT cron store (nil in test runners → structured no-store errors)
 	})
 
 	// 09-01 T2 (AUD-02): the late-bound capturer closure. sess is declared
@@ -1097,6 +1158,26 @@ func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen,maintidx // gr
 	}
 
 	r.sessions[sessionID] = s
+
+	// 12-07 (sessMu held): this session is the project's current firing target.
+	r.lastSessionID = sessionID
+
+	// ...the session-lifetime chunk forwarder mirrors SERVER-DRIVEN turns
+	// (timer resumes, automation firings) to the client (WINDOWS #3)...
+	stopForwarder, _ := r.startSessionForwarder(sessionID)
+
+	// ...and the FIRST active session of a serve lifetime runs the fire-once
+	// catch-up pass (D-02). Async: the pass queues behind any turn through
+	// the same per-session mutex.
+	//nolint:contextcheck // serve-lifetime ctx (nil only in tests → Background)
+	go r.runCatchUpOnce(r.serveCtxOrBackground(), sessionID)
+
+	prevOnClose := s.OnClose
+	s.OnClose = func() error {
+		stopForwarder()
+
+		return prevOnClose()
+	}
 
 	return s
 }
@@ -1226,7 +1307,16 @@ func (r *sessionTurnRunner) closeAllSessions() { //nolint:funcorder // shutdown 
 		return
 	}
 
+	r.sessMu.Lock()
+	sessions := make([]*session.Session, 0, len(r.sessions))
+
 	for _, s := range r.sessions {
+		sessions = append(sessions, s)
+	}
+
+	r.sessMu.Unlock()
+
+	for _, s := range sessions {
 		_ = s.Close()
 	}
 }
@@ -1239,7 +1329,11 @@ func (r *sessionTurnRunner) CloseSession(sessionID string) error {
 		return nil
 	}
 
-	if s, ok := r.sessions[sessionID]; ok {
+	r.sessMu.Lock()
+	s, ok := r.sessions[sessionID]
+	r.sessMu.Unlock()
+
+	if ok {
 		return s.Close() //nolint:wrapcheck // session delegation
 	}
 
@@ -1325,6 +1419,20 @@ func (a *engineTurnRunnerAdapter) Run(ctx context.Context, prompt []session.Cont
 		// carries no invocation. Prompt-side only: assistant/tool content can
 		// never set this.
 		a.startedBy = key
+
+		// 12-07 vocabulary extension: an automation-fired turn carries the
+		// automation's provenance INSTEAD of a command key (set exclusively by
+		// the runner-side firing path — model content can never reach it,
+		// T-12-07-03; no behavior change for user/command turns).
+		if a.r != nil {
+			a.r.sessMu.Lock()
+
+			if prov := a.r.automationProvenance; prov != "" {
+				key = prov
+			}
+
+			a.r.sessMu.Unlock()
+		}
 
 		if !a.seenFirst {
 			a.seenFirst = true

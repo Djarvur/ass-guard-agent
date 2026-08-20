@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/coreexec"
+	"github.com/Djarvur/ass-guard-agent/internal/sched"
 	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 )
 
@@ -137,12 +138,12 @@ func TestBackgroundWiring_CrossSessionIsolation(t *testing.T) {
 	}
 }
 
-// TestBackgroundWiring_CoreCompleteness (T2 Test 5 — the landed-so-far phase
-// gate): every NON-mcp catalog tool EXCEPT the cron quartet
-// (CronCreate/CronList/CronUpdate/CronDelete — 12-07's post-adoption scope)
-// carries Execute after the FULL per-session registration path — the dead
-// ends removed so far: the 08-08 six, AskUserQuestion, the plan pair, the
-// messaging pair, the background trio.
+// TestBackgroundWiring_CoreCompleteness (12-07 T2 Test 5 — the FULL phase
+// gate, cron exception DROPPED): every NON-mcp catalog tool carries Execute
+// after the FULL per-session registration path — the complete dead-end
+// removal: the 08-08 six, AskUserQuestion, the plan pair, the messaging
+// pair, the background trio, and the cron quartet. This is the phase-gate
+// dead-end check expressed as a permanent regression test.
 func TestBackgroundWiring_CoreCompleteness(t *testing.T) {
 	t.Parallel()
 
@@ -151,20 +152,26 @@ func TestBackgroundWiring_CoreCompleteness(t *testing.T) {
 		WorkDir: t.TempDir(), Todos: coreexec.NewTodoStore(), Tasks: coreexec.NewTaskRegistry(),
 	})
 	coreexec.RegisterAsk(catalog, nil)
+
+	schedStore, err := sched.Open(t.TempDir())
+	if err != nil {
+		t.Fatalf("sched.Open: %v", err)
+	}
+
 	coreexec.RegisterInteractive(catalog, coreexec.InteractiveConfig{
 		PlanMode: nil, Mailbox: coreexec.NewAgentMailbox(),
 		Sessions: coreexec.NewSessionReader(t.TempDir()), Tasks: coreexec.NewTaskRegistry(),
+		Schedule: schedStore,
 	})
 
 	// Exceptions are BY-DESIGN non-catalog execution routes, not dead ends:
-	// the cron quartet is 12-07's post-adoption scope; WebSearch/WebFetch
-	// execute via RealExecutor's swappable-backend routing (intercepted BEFORE
-	// the catalog — the "no implementation" fallback cannot fire); Agent is
-	// the subagent dispatch (routed before the batch, PARA-01); Skill's
-	// Execute is set at the wiring site (the 08-05 registry closure, proven by
-	// its own battery — not reproducible without the runner's registry).
+	// WebSearch/WebFetch execute via RealExecutor's swappable-backend routing
+	// (intercepted BEFORE the catalog — the "no implementation" fallback
+	// cannot fire); Agent is the subagent dispatch (routed before the batch,
+	// PARA-01); Skill's Execute is set at the wiring site (the 08-05 registry
+	// closure, proven by its own battery — not reproducible without the
+	// runner's registry).
 	exceptions := map[string]bool{
-		"CronCreate": true, "CronList": true, "CronUpdate": true, "CronDelete": true,
 		"WebSearch": true, "WebFetch": true, "Agent": true, skillToolName: true,
 	}
 
@@ -176,7 +183,7 @@ func TestBackgroundWiring_CoreCompleteness(t *testing.T) {
 		}
 
 		if exceptions[name] {
-			continue // 12-07's scope (post-adoption)
+			continue // by-design non-catalog route
 		}
 
 		tool, ok := catalog.Get(name)
