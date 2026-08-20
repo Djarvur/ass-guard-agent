@@ -5,15 +5,15 @@ milestone_name: ACP Early Adoption
 current_phase: 12
 current_phase_name: product-functional-completeness
 status: ready
-stopped_at: Completed 12-03-PLAN.md — post-adoption residuals: the delta-aware extractor (WINDOWS #6 CLOSED) + per-turn workspace isolation
-last_updated: "2026-08-20T11:45:00.000Z"
+stopped_at: Completed 12-07-PLAN.md — the cron quartet + firing engine + FULL completeness gate (WINDOWS #3 CLOSED); 12-08 remains
+last_updated: "2026-08-20T13:00:00.000Z"
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 33
-  completed_plans: 27
+  completed_plans: 28
 last_activity: 2026-08-20
-last_activity_desc: 12-03 executed — delta-aware ExtractTurnsFromRollout (messageOffset assembly; 0 empty-expectation turns over live captures vs 12-empty BEFORE) + per-turn workspace isolation in RunSuite
+last_activity_desc: 12-07 executed — cron quartet over the real atomic per-project store; ClaimForFire exactly-once engine-driven firings (queue-behind-active-turn); WINDOWS #3 client-mirror fixed; FULL catalog-completeness gate green (zero non-mcp dead ends)
 ---
 
 # State: ass-guard-agent (working name)
@@ -27,14 +27,15 @@ See: .planning/PROJECT.md (updated 2026-08-14)
 ## Current Position
 
 Phase: 12 (product-functional-completeness) — READY
-Plan: 6/8 executed (12-01, 12-02, 12-04, 12-05, 12-06, 12-03 done); ADOPTION CROSSED — post-adoption set in flight (12-07 cron, 12-08 eval net remain)
+Plan: 7/8 executed (12-01..12-07 done); 12-08 (the eval net) is the LAST plan
+Status addendum: 12-07 COMPLETE 2026-08-20 — cron real end-to-end: the quartet over the atomic per-project store (every form documented corpus_absent — the 12-05 harvest caught zero successful cron calls; zcode's CronList zod defect NOT mimicked); ClaimForFire exactly-once firings as ENGINE-DRIVEN serialized turns (queue-behind-active-turn, catch-up once with the missed-window note, audit provenance, automation StartedBy); CronUpdate added to the embedded core (D-16 pin 19→20 dated); WINDOWS #3 CLOSED (session-lifetime chunk forwarder — server-driven turns mirror to the client); the FULL catalog-completeness gate green — ZERO non-mcp dead ends. Race battery caught + killed a pre-existing sessions-map race (Rule 1).
 Status addendum: 12-03 COMPLETE 2026-08-20 — the extractor is delta-aware (messageOffset window assembly, per-turn aggregation, assembled-tool_use backbone merged with response views): WINDOWS #6 CLOSED with live evidence (7 turns / 0 empty-expectation over the live current captures; BEFORE: 6-empty simulation, 12-05's 12/36 record); RunSuite gives each replayed turn an isolated scratch (fixture-snapshot > base > fresh); no thresholds/baselines moved (instrument-only, Pitfall 18).
 Status: 12-05 COMPLETE 2026-08-20 — the D-04 re-record executed LIVE (4 capture passes against zcode 0.16.3; qualifying session 38 recs/81 tools/79→80→79): the committed fixture zcode-recaptured-2026-08.json pins every deferred-tool family capture-pinned or honestly corpus_absent with full hunts; ACP-07's Bash timeout + <persisted-output> truncation forms + the answered-ask pairing form IMPLEMENTED from the capture; NEW ACP-02 evidence (zcode's plan mode is a runtime-level mutating-tool gate, refusal forms captured). WINDOWS #6 (12-03 extractor re-run) + #7 (rollout rotation — immediate-snapshot rule) recorded.
 Status addendum: 12-04 COMPLETE 2026-08-20 — plan pair on the 12-01 ask seam + the CAPTURED runtime plan-mode gate (the 12-05 capture resolved ACP-02's scope AGAINST the plan's no-gating premise — deviation documented); SendMessage mailbox + ReadSessionContext reader wired at RegisterInteractive.
 Status addendum: 12-06 COMPLETE 2026-08-20 — the TaskRegistry (capped/bounded/reaped-on-close) behind the CAPTURED start + not_ready forms; the completeness gate proves every core tool outside the cron quartet + the documented by-design routes is live. THE ADOPTION LINE IS HERE: everything above it is done (14 → 12-01/02 → 12-05/04/06); the operator begins daily ACP use (v1.1 completion bar — an OPERATOR ACTION, not a plan).
 Next action (operator): start daily ACP use. Next action (agent, post-adoption): execute 12-03 Residuals open in WINDOWS.md: #3 timer-resume chunks not client-mirrored (route: 12-07), #5 standing cache-probe FAIL (post-adoption), #6 extractor zero-target re-run (12-03), #7 rollout-snapshot rule.
 
-Progress: [█████████] 82% (27/33 plans · 4/5 phases)
+Progress: [█████████] 85% (28/33 plans · 4/5 phases)
 
 ## Performance Metrics
 
@@ -45,6 +46,7 @@ Progress: [█████████] 82% (27/33 plans · 4/5 phases)
 
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
+| Phase 12 P07 | 130min | 2 tasks | 13 files |
 | Phase 12 P03 | 50min | 2 tasks | 5 files |
 | Phase 12 P06 | 88min | 2 tasks | 8 files |
 | Phase 12 P04 | 92min | 2 tasks | 17 files |
