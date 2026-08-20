@@ -1,35 +1,37 @@
 {
   "_provenance": {
-    "source": "zcode interactive-tool result forms. The answered form is quoted from the 08-08 harvest note (08-08-PLAN.md <deferred_scope>: `User has answered your questions: \"…\"` — observed in the live rollout capture 2026-08-15). The underlying rollout files have since rotated off ~/.zcode/cli/rollout/ (the D-04 finding, 12-CONTEXT); this committed fixture is the pinned ground truth until plan 12-05's re-record upgrades it from current live zcode.",
+    "source": "zcode interactive-tool result forms. ANSWERED: re-pinned by the 12-05 re-record (2026-08-20, live zcode 0.16.3, session sess_6e4b5cc7 — the deferred-tools tour's answered-ask leg; 15 observations). The pre-12-05 quote (`User has answered your questions: \"…\"`) came from the 08-08 harvest note; the direct capture carries the question=\"answer\" pairing + the continue suffix.",
     "sessions": {
-      "answered_form": "quoted via the 08-08 harvest note (the capture's tool-result shape for an answered AskUserQuestion); the source rollout session rotated off before 12-01 — UPGRADE POINTER: plan 12-05's tour re-records a live AskUserQuestion exchange and replaces this quote with the direct capture"
+      "answered_form": "model-io-sess_6e4b5cc7-85b9-4e15-a3d7-53bcdecbc7f2 (12-05 tour, 2026-08-20, zcode 0.16.3, driver-answered via interaction/requestUserInput {action:accept, content:{answer}})",
+      "failure_form": "same session — 'Permission request failed' (an invalid client answer shape; the capture's error family, recorded in zcode-recaptured-2026-08.json)"
     },
-    "harvestDate": "2026-08-18",
-    "redaction": "D-03 discipline: template texts are preserved verbatim (they are the mimicry target); the reply text is a shape-preserving stand-in (<reply verbatim>).",
-    "policy": "D-01 (12-CONTEXT): an unanswered AskUserQuestion waits a configurable interval (default 10 minutes; 0 = block forever — interactive mode), then returns a capture-shaped non-answer. The non-answer form is CORPUS-ABSENT (no unanswered AskUserQuestion result exists in any pinned corpus) and follows the documented corpus-informed-default convention, routed exactly like ACP-07's corpus-absent forms.",
+    "harvestDate": "2026-08-20",
+    "redaction": "D-03 discipline: template texts are preserved verbatim (they are the mimicry target); the question/reply texts are shape-preserving stand-ins (<question>, <reply>).",
+    "policy": "D-01 (12-CONTEXT): an unanswered AskUserQuestion waits a configurable interval (default 10 minutes; 0 = block forever — interactive mode), then returns a capture-shaped non-answer. The non-answer form remains CORPUS-ABSENT (see the hunt note) and follows the documented corpus-informed-default convention.",
     "corpus_absent": [
-      "ask_non_answer_form — no unanswered AskUserQuestion result observed in any pinned corpus (live rollouts carry zero deferred-tool invocations, per the 12-01 planning corpus check). Documented corpus-informed default per D-01, defined once in internal/session/ask.go RenderAskNonAnswer; UPGRADE POINTER: plan 12-05's re-record replaces it with the captured form if the tour produces one (per D-04's re-record-is-primary finding).",
+      "ask_non_answer_form — HUNT (12-05, 2026-08-20): a HELD interaction (client connected, no answer sent) produced NO self-timeout in 600s — zcode's runtime does not fire its 30s ask timeout while a client holds the request pending; the auto-resolution path is gated on PERSISTED runtime settings (readPersistedAutoResolution), not the headless prefs reply, and was not headless-reachable. ass-guard's D-01 default (internal/session/ask.go RenderAskNonAnswer) stands as the documented corpus-informed default; the target's own non-answer text exists in its bundle but is NOT capture-pinned (the captured-not-written doctrine).",
       "ask_question_client_surface_form — the client-side rendering of the question is UI-side, not part of request/response captures; the surface renderer (coreexec.RenderAskSurface) emits structure (header, question, option labels with descriptions), not judgment — the '(Recommended)' first-option convention is left to the model per the captured schema's own usage notes.",
-      "ask_input_keys_live — the input key set is schema-declared (profiles/zcode/tools.json AskUserQuestion input_schema: questions[].{question,header,options[].{label,description},multiSelect}); the rotated corpus cannot re-verify observed usage. 12-05's re-record confirms or corrects this entry."
+      "ask_input_keys_live — RESOLVED by the 12-05 re-record: observed input key set = {questions} (the schema-declared shape confirmed live)."
     ]
   },
   "tools": {
     "AskUserQuestion": {
       "input_keys_observed": ["questions"],
-      "input_note": "schema-declared shape {questions:[{question,header,options:[{label,description}],multiSelect?}]} (see corpus_absent.ask_input_keys_live); parsed best-effort with unknown fields ignored (the 08-08 bashArgs pattern).",
+      "input_note": "observed live (12-05 re-record): {questions:[{question,header,options:[{label,description}],multiSelect?}]} — the schema-declared shape confirmed; parsed best-effort with unknown fields ignored (the 08-08 bashArgs pattern).",
       "results": {
         "answered": {
           "isError": false,
-          "template": "User has answered your questions: \"<reply verbatim>\"",
+          "lateHarvest": true,
+          "template": "User has answered your questions: \"<question>\"=\"<reply verbatim>\". You can now continue with the user's answers in mind.",
           "literal_prefix": "User has answered your questions: \"",
-          "provenance": "the 08-08 harvest note quoting the capture (08-08-PLAN <deferred_scope> table); the reply text is embedded verbatim — no reinterpretation (T-12-01-02)"
+          "provenance": "CAPTURED 2026-08-20 (sess_6e4b5cc7, 15 obs): pairs question=\"answer\" (comma-joined for multiple questions), reply embedded verbatim — no reinterpretation (T-12-01-02). ass-guard's single-text reply pairs the reply with every surfaced question (session.RenderAskAnswered)."
         },
         "non_answer_timeout": {
           "isError": false,
           "template": "User has not answered your questions (ask timed out after <duration>); proceed or decline on your own.",
           "literal_prefix": "User has not answered your questions",
           "corpus_absent": true,
-          "provenance": "D-01 documented corpus-informed default (no pinned capture exists); the model proceeds or declines — the hands-off core value requires the model to receive SOMETHING. UPGRADE POINTER: plan 12-05."
+          "provenance": "D-01 documented corpus-informed default; the 12-05 hunt (held interaction, 600s) produced no self-timeout capture — see corpus_absent.ask_non_answer_form for the full hunt record."
         }
       }
     }

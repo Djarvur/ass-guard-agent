@@ -15,7 +15,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -142,19 +144,113 @@ func trimCaptured(s string) string {
 	return strings.TrimRight(s, " \t\r\n")
 }
 
+// Captured output-truncation constants (12-05 re-record, 2026-08-20,
+// sess_6e4b5cc7, zcode 0.16.3 — 19 observations of the envelope). The target
+// persists outputs above the inline budget and returns a <persisted-output>
+// envelope with a bounded preview. Budget/preview sizes are target-source
+// verified (15e3 / 2e3) and capture-consistent (a 135.6KB output persisted;
+// preview labelled "first 2KB" = 2000 chars); the exact boundary byte is not
+// observation-bracketed (the 08-08 corpus's ~70KB pass predates this render
+// path) — flagged in the re-record fixture.
+const (
+	bashInlineBudget = 15000
+	bashPreviewChars = 2000
+)
+
+// formatKB renders byte counts in the captured KB form: ÷1024, one decimal,
+// a trailing ".0" stripped (138888 → "135.6KB"; 2000 → "2KB").
+func formatKB(n int) string {
+	s := strconv.FormatFloat(float64(n)/1024, 'f', 1, 64)
+
+	return strings.TrimSuffix(s, ".0") + "KB"
+}
+
+// previewFirstChars cuts the preview at a word boundary: the last space before
+// the limit when one exists past the halfway point, else the hard limit.
+// Returns whether anything was cut (the "..." continuation line renders only
+// then).
+func previewFirstChars(s string, limit int) (string, bool) {
+	if len(s) <= limit {
+		return s, false
+	}
+
+	cut := limit
+
+	space := strings.LastIndex(s[:limit], " ")
+	if space > limit/2 {
+		cut = space
+	}
+
+	return s[:cut], true
+}
+
+// renderPersistedOutput renders the CAPTURED truncation envelope with the
+// real saved-to path (the file write happens at the call site):
+//
+//	<persisted-output>
+//	Output too large (<size>KB). Full output saved to: <path>
+//
+//	Preview (first 2KB):
+//	<preview>
+//	...
+//	</persisted-output>
+func renderPersistedOutput(full, savedTo string) string {
+	preview, more := previewFirstChars(full, bashPreviewChars)
+
+	var b strings.Builder
+	b.WriteString("<persisted-output>\n")
+	fmt.Fprintf(&b, "Output too large (%s). Full output saved to: %s\n\n", formatKB(len(full)), savedTo)
+	fmt.Fprintf(&b, "Preview (first %s):\n%s\n", formatKB(bashPreviewChars), preview)
+
+	if more {
+		b.WriteString("...\n")
+	}
+
+	b.WriteString("</persisted-output>")
+
+	return b.String()
+}
+
+// persistOversize writes the full output under the session's .ass-guard/
+// artifact family (the established write boundary) and returns its path.
+func (cfg Config) persistOversize(full string) string {
+	dir := filepath.Join(cfg.workDirForError(), ".ass-guard", "outputs")
+
+	err := os.MkdirAll(dir, dirPermWrite)
+	if err != nil {
+		return dir // unwritable: render the family path anyway (the best real path)
+	}
+
+	f, err := os.CreateTemp(dir, "bash-*.log")
+	if err != nil {
+		return dir
+	}
+	defer func() { _ = f.Close() }()
+
+	_, werr := f.WriteString(full)
+	if werr != nil {
+		return f.Name()
+	}
+
+	return f.Name()
+}
+
 // BashExecute returns the Bash catalog Stub over cfg: it runs the model's
 // command via `sh -c` with cmd.Dir = cfg.WorkDir (the session workdir — the
 // schema has no cwd field; empty WorkDir inherits), captures stdout+stderr,
 // enforces the model-supplied ms timeout (clamped per the schema), and
 // renders the CAPTURED result forms:
 //
-//   - success, output  → the combined output as plain text (trailing-trimmed)
+//   - success, output  → the combined output as plain text (trailing-trimmed);
+//     above the inline budget → the CAPTURED <persisted-output> envelope with
+//     the full output saved under .ass-guard/outputs/ (12-05 re-record)
 //   - success, silent  → "(Bash completed with no output)"  (the sentinel)
 //   - failure          → "Exit code <N>\n<output>" AND a non-nil error
 //     (executeOne sets IsError — the captured 137/137 error shape)
-//   - timeout/cancel   → structured {"error":"bash: command timed out …"}
-//     (CORPUS-ABSENT form: follows the shipped structured-error convention,
-//     flagged in the fixture for the Phase-9 re-capture)
+//   - timeout/cancel   → "Command timed out after <duration>\n<error>Command
+//     was aborted before completion</error>" AND a non-nil error (the
+//     CAPTURED form — 18 observations, 12-05 re-record; replaces the interim
+//     structured {"error":…} corpus-absent default)
 //
 // The locked safety model is unchanged: NO confirmation tier, no allowlists
 // (PROJECT.md Constraints — pattern table + manual cancellation are the only
@@ -211,6 +307,14 @@ func BashExecute(cfg Config) toolcat.Stub {
 			return json.Marshal(bashSentinel)
 		}
 
+		// The CAPTURED oversize envelope (12-05 re-record): outputs above the
+		// inline budget persist in full and return the bounded preview form.
+		if len(combined) > bashInlineBudget {
+			savedTo := cfg.persistOversize(combined)
+
+			return json.Marshal(renderPersistedOutput(combined, savedTo))
+		}
+
 		return json.Marshal(combined)
 	}
 }
@@ -221,10 +325,19 @@ func BashExecute(cfg Config) toolcat.Stub {
 // structured start-failure form.
 func bashFailure(tctx context.Context, waitErr error, timeoutMS int, combined string) (json.RawMessage, error) {
 	if tctx.Err() != nil {
-		// CORPUS-ABSENT: the timeout error form (structured convention).
-		msg := "bash: command timed out after " + strconv.Itoa(timeoutMS) + "ms"
+		// The CAPTURED timeout form (12-05 re-record, 18 observations):
+		// plain text, non-nil error → IsError (the 137/137 error discipline).
+		text := "Command timed out after " +
+			(time.Duration(timeoutMS) * time.Millisecond).String() +
+			"\n<error>Command was aborted before completion</error>"
 
-		return marshalStructured(msg, fmt.Errorf("coreexec: %s: %w", msg, tctx.Err()))
+		out, mErr := json.Marshal(text)
+		if mErr != nil {
+			return nil, fmt.Errorf("coreexec: marshal bash timeout form: %w", mErr)
+		}
+
+		return out, fmt.Errorf("coreexec: bash: timed out after %s: %w",
+			(time.Duration(timeoutMS) * time.Millisecond), tctx.Err())
 	}
 
 	var exitErr *exec.ExitError

@@ -28,8 +28,10 @@ const KIT_DIR = dirname(fileURLToPath(import.meta.url));
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
 /** Mask an absolute path (unix). */
 const ABS_PATH = /(?:^|[\s"'(:])((?:\/[\w. @-]+)+)/g;
-/** Mask generated ids: cron_x, bash_x, msg_12, agent_<uuid>, sess_..., call_..., shell_... */
-const GEN_ID = /\b(?:cron|bash|msg|agent|sess|call|shell|task|turn|interaction|automation)_[a-z0-9-]{4,}\b/gi;
+/** Mask generated ids: cron_x, bash_x, msg_12, sess_..., call_..., exec_… (the
+ * tail must contain a digit — real generated ids do, XML tag names like
+ * task_type do not, keeping structural tags verbatim in templates). */
+const GEN_ID = /\b(?:cron|bash|msg|agent|sess|call|shell|task|turn|interaction|automation)_[a-z0-9]*[0-9][a-z0-9-]*\b/gi;
 /** Mask digit runs (exit codes, byte counts, timings, line numbers). */
 const DIGITS = /\d+/g;
 

@@ -59,12 +59,17 @@ func TestAskForms_ConformToFixture(t *testing.T) { //nolint:cyclop,funlen // fla
 		t.Fatal("fixture missing the AskUserQuestion entry")
 	}
 
-	// The ANSWERED form byte-matches the fixture template (prefix + verbatim
-	// reply + closing quote).
-	answered := session.RenderAskAnswered("ristretto, please")
+	// The ANSWERED form byte-matches the re-pinned fixture template (12-05
+	// capture: question="answer" pairing + the continue suffix).
+	qs := []session.AskQuestion{{Question: "Which cache approach should I add?", Header: "Cache design"}}
+	answered := session.RenderAskAnswered(qs, "ristretto, please")
 
 	wantAnswered := strings.ReplaceAll(
-		entry.Results["answered"].Template, "<reply verbatim>", "ristretto, please",
+		strings.ReplaceAll(
+			entry.Results["answered"].Template,
+			"<question>", "Which cache approach should I add?",
+		),
+		"<reply verbatim>", "ristretto, please",
 	)
 
 	if answered != wantAnswered {

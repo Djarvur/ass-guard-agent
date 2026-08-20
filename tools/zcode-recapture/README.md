@@ -99,6 +99,42 @@ capture then carries both the divergence thresholds AND the deferred-tool forms)
     workload exits non-zero otherwise), and the config restore diff-empty check runs on
     every exit path.
 
+## Capture record (12-05 Task 3, 2026-08-20)
+
+The forms harvest ran as four live passes (logs in-kit below; every config
+restore diff-verified clean; no automation ever created in the operator env —
+verified: no `recapture tour marker` hit outside this agent's own artifacts):
+
+1. **Primary** (`task3-tour-2026-08-20.txt`): full base workload + 10-leg tour,
+   session `sess_6e4b5cc7` — QUALIFIES (38 recs / 81 tools / subagent /
+   79→80→79). Ask/plan-approval interactions initially failed on the wrong v4
+   answer shape (`Permission request failed`), and a never-exited plan mode
+   poisoned the session's mutating legs (zcode's runtime-level plan-mode gate).
+2. **Retries** (`task3-retry2-2026-08-20.txt`): same session — the corrected
+   `{action:'accept',content:{answer}}` shape landed the ANSWERED ask form +
+   the ExitPlanMode exit; the held-pending non-answer leg proved NO self-timeout
+   in 600s (honest corpus-absent); plan-mode re-entry kept blocking crons.
+3. **Fresh session** (`task3-retry5-2026-08-20.txt`): clean session, answerer on
+   every leg — captured the CronList zod-error family (a zcode 0.16.3 headless
+   bug: automation/list fails its own schema on EVERY call, 3 sessions) and
+   re-observations of every shared family; the model still re-entered plan mode
+   and the cron/message/stop SUCCESS forms stayed uncaptured (honest
+   corpus-absent — the full hunt is in the fixture's corpus_absent list).
+
+**Rolled out mid-harvest:** `sess_6e4b5cc7`'s rollout file rotated off
+`~/.zcode/cli/rollout/` BETWEEN harvests (the D-04 loss class repeating, live).
+Its unique families are pinned VERBATIM in
+`internal/coreexec/testdata/zcode-recaptured-2026-08.json` (the committed
+fixture is the surviving ground truth — exactly what the convention is for).
+The supplementary session's snapshot lived at
+`/tmp/zcode-recapture-run/surviving-bc155bc5.jsonl` during curation (ephemeral).
+
+**Executor upgrades landed from the capture** (late-harvest markers per the
+08-08 precedent): the Bash timeout form, the `<persisted-output>` truncation
+envelope (budget 15000 / preview 2000, KB ÷1024 one-decimal — target-source
+verified + capture-consistent), and the answered-ask pairing form
+(`session.RenderAskAnswered`).
+
 ## Provenance
 
 - Produced 2026-08-15→16 during Phase 9 AUD-05 (the operator-directed app-server stdio

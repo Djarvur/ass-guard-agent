@@ -59,7 +59,7 @@ export const TOUR_TURNS = [
   {
     id: "tour_subagent_message",
     tools: ["SendMessage"],
-    prompt: "Dispatch one subagent to count the *.js files in this project. After it returns, use SendMessage to send that agent a one-line thank-you message, and report the exact result you got back.",
+    prompt: "IMPORTANT: do NOT enter plan mode and do NOT present any plan — stay in normal execution mode and call tools directly. Dispatch one subagent to count the *.js files in this project. After it returns, use SendMessage to send that agent a one-line thank-you message, and report the exact result you got back.",
   },
   {
     id: "tour_read_session_context",
@@ -69,17 +69,17 @@ export const TOUR_TURNS = [
   {
     id: "tour_cron_create_list",
     tools: ["CronCreate", "CronList"],
-    prompt: "Create a scheduled automation titled 'recapture tour marker' that fires ONCE, two minutes from now (use the delayMinutes field — do NOT use a cron expression), with the prompt 'echo hello from the recapture tour'. Then call CronList and report the new automation's id exactly.",
+    prompt: "IMPORTANT: do NOT enter plan mode, do NOT present plans, do NOT ask me anything — execute tools directly now. Create a scheduled automation titled 'recapture tour marker' that fires ONCE, two minutes from now (use the delayMinutes field — do NOT use a cron expression), with the prompt 'echo hello from the recapture tour'. Then call CronList and report the new automation's id exactly.",
   },
   {
     id: "tour_cron_update_delete",
     tools: ["CronUpdate", "CronDelete", "CronList"],
-    prompt: "Update the automation titled 'recapture tour marker' to fire once five minutes from now instead. Then DELETE it by id. Then call CronList once more and reply with its verbatim output.",
+    prompt: "IMPORTANT: do NOT enter plan mode, do NOT present plans, do NOT ask me anything — execute tools directly now. Update the automation titled 'recapture tour marker' to fire once five minutes from now instead. Then DELETE it by id. Then call CronList once more and reply with its verbatim output.",
   },
   {
     id: "tour_bash_background",
     tools: ["Bash:run_in_background", "TaskOutput", "TaskStop"],
-    prompt: "Start a background shell that runs `sleep 60 && echo bg-done` using run_in_background, then immediately retrieve its output ONCE without blocking, then stop the task with TaskStop. Report each result exactly.",
+    prompt: "IMPORTANT: do NOT enter plan mode, do NOT present plans — execute tools directly. Start a background shell that runs `sleep 60 && echo bg-done` using run_in_background, then immediately retrieve its output ONCE without blocking, then stop the task with TaskStop. Report each result exactly.",
   },
   {
     id: "tour_bash_timeout",
@@ -192,21 +192,22 @@ function tourDriverOpts(prefs) {
       onUserInput: () => ({ __noreply: true }),
     };
   }
-  if (prefs === "answer") {
-    return {
-      prefs: { askUserQuestionAutoResolutionEnabled: false },
-      onUserInput: (method, params) => {
-        const s = JSON.stringify(params ?? {});
-        console.log(`[tour] answering ${method}: ${s.slice(0, 300)}`);
-        const isPlanApproval = (params?.schema?.interaction ?? "") === "plan_approval";
-        if (isPlanApproval) return { action: "accept", content: {} };
-        const qs = params?.questions ?? [];
-        const label = qs[0]?.options?.[0]?.label ?? "yes";
-        return { action: "accept", content: { answer: label } };
-      },
-    };
-  }
-  return {};
+  // DEFAULT + "answer": answer every user-input interaction with the v4 accept
+  // shape (plan approvals accept; questions pick the first option). Without
+  // this the generic auto-allow shape fails user-input requests — the live
+  // 2026-08-20 finding ('Permission request failed').
+  return {
+    prefs: { askUserQuestionAutoResolutionEnabled: false },
+    onUserInput: (method, params) => {
+      const s = JSON.stringify(params ?? {});
+      console.log(`[tour] answering ${method}: ${s.slice(0, 300)}`);
+      const isPlanApproval = (params?.schema?.interaction ?? "") === "plan_approval" || Boolean(params?.input?.plan);
+      if (isPlanApproval) return { action: "accept", content: {} };
+      const qs = params?.questions ?? [];
+      const label = qs[0]?.options?.[0]?.label ?? "yes";
+      return { action: "accept", content: { answer: label } };
+    },
+  };
 }
 
 async function resumeWithPin(sid, opts = {}) {
@@ -293,6 +294,7 @@ async function runBase(cfg) {
   cfg.setProbeServer(false); // leg A: clean catalog
   console.log("[cfg] clean start (no probe)");
   const t0 = Date.now();
+  let sid;
   const a = new ZcodeDriver(WS, { onLog: () => {} });
   try {
     // ---- LEG A: clean catalog ----

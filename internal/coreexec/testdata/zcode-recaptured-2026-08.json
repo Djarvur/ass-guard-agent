@@ -1,0 +1,190 @@
+{
+  "_provenance": {
+    "source": "zcode live re-record (12-05, D-04's primary route): the archived driver kit (tools/zcode-recapture/) drove current live zcode 0.16.3 through the 5-turn divergence-prone workload + the deferred-tools tour, via the operator's logged-in builtin:zai-coding-plan. Tool results harvested from request.messages role:'tool' entries {toolName, content, toolCallId, isError} (messagesKind=full) by tools/zcode-recapture/harvest-deferred-forms.mjs (redaction at extraction: uuids/paths/generated-ids/digit-runs masked — the fixed text IS the template).",
+    "sessions": {
+      "primary": "model-io-sess_6e4b5cc7-85b9-4e15-a3d7-53bcdecbc7f2 — the qualifying capture (38 request records, 81 tools, 1 subagent, 79→80→79 probe timeline) + the tour + retries 1-3. ROTATED OFF ~/.zcode/cli/rollout/ between harvests (the D-04 loss class repeating, live); its unique families below are preserved VERBATIM from the in-flight extraction records — this fixture is their pin.",
+      "supplementary": "model-io-sess_bc155bc5-a30b-4320-981c-9d4dd0ca493c — the retry5 fresh session (re-observations of every shared family; snapshot at /tmp/zcode-recapture-run/surviving-bc155bc5.jsonl during curation)."
+    },
+    "zcode_version": "0.16.3",
+    "session_id": "sess_6e4b5cc7-85b9-4e15-a3d7-53bcdecbc7f2 (+ sess_bc155bc5 supplementary)",
+    "harvestDate": "2026-08-20",
+    "redaction": "D-03 discipline: JSON keys, structural shape, and TEMPLATE TEXTS preserved verbatim (the mimicry target); variable spans masked to <uuid>/<path>/<id>/<n>. The operator's scratch content (calc project text) appears inside templates as observed — it is the tour's own seeded content, not operator data.",
+    "corpus_absent": [
+      "cron_success_forms — HUNT (2026-08-20, 4 attempts: original tour + retries 3/5 ×2 legs): every CronCreate/CronUpdate/CronDelete attempt was blocked first by the runtime's plan-mode mutating-tool enforcement ('changes persistent state'), and the automation backend itself returns a schema-invalid response on every CronList call in the headless path (the zod_error family below, reproducing across 3 sessions — a zcode 0.16.3 headless bug). The success forms stay unpinned; the structured-error convention stands for ass-guard's cron executors (12-07).",
+      "cron_list_success_form — same hunt; every observed CronList result is the zod error family.",
+      "sendmessage_ack_form — HUNT: every SendMessage attempt hit the plan-mode refusal (the refusal form IS captured below); the delivered/queued ack ('Message <id> was queued for local agent agent_<uuid>.' per the target's own formatter) was never observed on the wire — stays unpinned (12-04 ships the documented default).",
+      "taskstop_ack_form — HUNT: same plan-mode refusal story; the stop ack stays unpinned (12-06 ships the documented default).",
+      "exitplanmode_approved_form — HUNT: the accepted plan-approval interaction (v4 answer {action:'accept'}) never yielded an observable ExitPlanMode success result — the observable forms are the two error families below; the approved form stays unpinned (12-04 ships the documented default).",
+      "ask_non_answer_form — HUNT: a HELD interaction (client connected, no answer) produced NO self-timeout in 600s; the runtime's auto-resolution is gated on persisted settings (readPersistedAutoResolution), not the headless prefs reply. ass-guard's D-01 default stands (see zcode-interactive-results.json).",
+      "bash_default_timeout_value — unchanged from the 08-08 pin: only explicit timeouts observed (10000ms in the tour); omitted-field behavior unobserved, so the 120000ms schema-declared default stands.",
+      "taskoutput_ready_form — only the not_ready shape observed (the blocking retrieval leg was plan-mode-blocked); the ready/completed shape stays unpinned (12-06)."
+    ]
+  },
+  "tools": {
+    "Bash": {
+      "input_keys_observed": ["command", "description", "run_in_background", "timeout"],
+      "input_note": "FIRST live observation of run_in_background:true (30+2 obs across sessions) — the 08-08 'zero corpus usage' note resolves for this flag. dangerouslyDisableSandbox still never observed.",
+      "results": {
+        "timeout": {
+          "isError": true,
+          "lateHarvest": true,
+          "template": "Command timed out after <n>s\n<error>Command was aborted before completion</error>",
+          "observed_count": 18,
+          "note": "duration rendered from ms as whole seconds/minutes (10000ms → '10s'); the executor renders Go time.Duration strings — matches the captured sample"
+        },
+        "truncation": {
+          "isError": false,
+          "lateHarvest": true,
+          "template": "<persisted-output>\nOutput too large (<n>.<n>KB). Full output saved to: <path><uuid>/<id>.log\n\nPreview (first <n>KB):\n<preview cut at a word boundary ≤2000 chars>\n...\n</persisted-output>",
+          "observed_count": 19,
+          "note": "KB = bytes/1024 one decimal ('.0' stripped; 138888 → 135.6KB, 2000 → 2KB); budget/preview (15000/2000) target-source-verified + capture-consistent; the exact boundary byte not observation-bracketed"
+        },
+        "background_start": {
+          "isError": false,
+          "lateHarvest": true,
+          "template": "Command running in background with ID: exec_<uuid>. Output is being written to: <path><uuid>/<id>.log. You will be notified when it completes. To check interim output, use Read on that file path.",
+          "observed_count": 32,
+          "note": "12-06's immediate-return form pin (task id = exec_<uuid>; the output path is the target's exec-log family)"
+        }
+      }
+    },
+    "Read": {
+      "input_keys_observed": ["file_path"],
+      "input_note": "offset/limit not exercised this tour (already pinned by the 08-08 fixture); NEW: the runtime DEDUPES unchanged re-reads.",
+      "results": {
+        "unchanged_dedup": {
+          "isError": false,
+          "lateHarvest": true,
+          "template": "Wasted call — file unchanged since your last Read. Refer to that earlier tool_result instead.",
+          "observed_count": 37,
+          "note": "read-tracking-adjacent stateful behavior — ROUTED with the existing read-tracking corpus_absent entry (operator disposition), NOT implemented"
+        }
+      }
+    },
+    "AskUserQuestion": {
+      "input_keys_observed": ["questions"],
+      "input_note": "the schema-declared {questions:[…]} shape confirmed live; the full family set also lives in zcode-interactive-results.json.",
+      "results": {
+        "answered": {
+          "isError": false,
+          "lateHarvest": true,
+          "template": "User has answered your questions: \"<question>\"=\"<reply verbatim>\". You can now continue with the user's answers in mind.",
+          "observed_count": 15
+        },
+        "failure_permission_request": {
+          "isError": true,
+          "template": "Permission request failed",
+          "observed_count": 39,
+          "note": "the client-answer-shape failure family (an invalid v4 answer normalizes to decline); captured across both sessions"
+        },
+        "interrupted": {
+          "isError": true,
+          "template": "[Tool execution was interrupted before resume]",
+          "observed_count": 13,
+          "note": "the turn-abort family (the workload's held-prompt leg ends this way)"
+        }
+      }
+    },
+    "EnterPlanMode": {
+      "input_keys_observed": [],
+      "input_note": "empty-object input confirmed live.",
+      "results": {
+        "entered": {
+          "isError": false,
+          "lateHarvest": true,
+          "template": "Entered plan mode. You should now focus on exploring the codebase and designing an implementation approach.\n\nIn plan mode, you should:\n1. Thoroughly explore the codebase to understand existing patterns\n2. Identify similar features that exist… (numbered guidance continues; full text preserved in the primary extraction — the template's fixed head is the form identity)",
+          "observed_count": 43
+        }
+      }
+    },
+    "ExitPlanMode": {
+      "input_keys_observed": ["plan", "allowedPrompts"],
+      "input_note": "the schema-declared pair confirmed live.",
+      "results": {
+        "error_permission_denied": {
+          "isError": true,
+          "template": "Permission denied for ExitPlanMode",
+          "observed_count": 48
+        },
+        "failure_permission_request": {
+          "isError": true,
+          "template": "Permission request failed",
+          "observed_count": 61
+        }
+      }
+    },
+    "SendMessage": {
+      "input_keys_observed": ["to", "summary", "message"],
+      "input_note": "the schema-declared triple confirmed live.",
+      "results": {
+        "plan_mode_refusal": {
+          "isError": true,
+          "template": "Plan mode only allows read-only, non-destructive tools",
+          "observed_count": 43,
+          "note": "ACP-02 EVIDENCE: the TARGET enforces plan-mode gating at the tool-result level (runtime refusal, not model self-restraint) — 12-04's scope decision follows the capture"
+        }
+      }
+    },
+    "TaskStop": {
+      "input_keys_observed": ["task_id"],
+      "results": {
+        "plan_mode_refusal": {
+          "isError": true,
+          "template": "Plan mode only allows read-only, non-destructive tools",
+          "observed_count": 28,
+          "note": "same runtime plan-mode gate as SendMessage"
+        }
+      }
+    },
+    "TaskOutput": {
+      "input_keys_observed": ["task_id", "block"],
+      "input_note": "timeout not exercised (schema default 30000).",
+      "results": {
+        "not_ready": {
+          "isError": false,
+          "lateHarvest": true,
+          "template": "<retrieval_status>not_ready</retrieval_status>\n\n<task_id>exec_<uuid></task_id>\n\n<task_type>local_bash</task_type>\n\n<status>running</status>",
+          "observed_count": 30,
+          "note": "12-06's retrieval form pin (XML-tagged shape)"
+        }
+      }
+    },
+    "ReadSessionContext": {
+      "input_keys_observed": ["sessionId", "query"],
+      "results": {
+        "lite_context": {
+          "isError": false,
+          "lateHarvest": true,
+          "template": "ReadSessionContext returned lite context for sess_<uuid>.\nTitle: <session title>\n## <matched section>\n<excerpt lines> (template head preserved verbatim from the primary extraction; the primary file rotated before the full tail was captured)",
+          "observed_count": 17
+        }
+      }
+    },
+    "CronList": {
+      "input_keys_observed": [],
+      "results": {
+        "zod_error": {
+          "isError": true,
+          "template": "[ { \"expected\": \"array\", \"code\": \"invalid_type\", \"path\": [ \"automations\" ], \"message\": \"Invalid input: expected array, received undefined\" } ]",
+          "observed_count": 45,
+          "note": "zcode 0.16.3 headless bug: the automation/list response fails its own schema validation on EVERY call (reproduced across 3 sessions) — captured as-is; ass-guard's 12-07 cron executors do NOT mimic the bug"
+        }
+      }
+    },
+    "CronCreate": {
+      "input_keys_observed": [],
+      "input_note": "no model input observed — every attempt was plan-mode-blocked before the call.",
+      "results": {}
+    },
+    "CronUpdate": {
+      "input_keys_observed": [],
+      "input_note": "no model input observed — same blocking story.",
+      "results": {}
+    },
+    "CronDelete": {
+      "input_keys_observed": [],
+      "input_note": "no model input observed — same blocking story.",
+      "results": {}
+    }
+  }
+}

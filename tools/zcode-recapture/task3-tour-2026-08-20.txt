@@ -1,0 +1,48 @@
+[cfg] clean start (no probe)
+WORKLOAD session: sess_6e4b5cc7-85b9-4e15-a3d7-53bcdecbc7f2
+T1 read/search (35s): - **Read**: README.md describes the demo project, and calc.js is a 7-line module exporting an `add(a
+T2 mutation (84s): Done — `subtract(a, b)` was added to calc.js in the same style as `add()`, exported via `module.expo
+T3 subagent (121s): The subagent's independent count: **20 total lines and 459 total characters** across the project's t
+[cfg] probe ADDED -> resume for attach
+T4 probe-attached (150s): YES 82 | `recapture-probe-ok (probe server alive)`
+[cfg] probe REMOVED -> resume for detach
+T5 mixed finale (180s): This turn I: confirmed recapture_probe is gone from my 81-tool catalog, read package.json (`calc-scr
+[tour] deferred-tools tour begins
+[tour] answering interaction/requestUserInput: {"input":{"questions":[{"question":"Which cache approach should I add to calc.js?","header":"Cache design","options":[{"label":"Simple Map memo (Recommended)","description":"A plain Map keyed by the argument tuple; zero dependencies, ~5 lines. Never evicts entries."},{"label":"LRU with max size","de
+tour_ask_answered (213s): The interactive question tool was declined/unavailable, so here's the question in plain text — reply with a nu
+  tools: []
+tour_ask_non_answer (242s): The interactive question tool failed again, so here it is in plain text — reply with a number:
+  tools: []
+tour_plan_mode (267s): I'm already fully familiar with this two-file project from this session (calc.js has `add`/`subtract`; test.js
+  tools: []
+tour_subagent_message (323s): The subagent counted **2 `*.js` files** — `calc.js` and `test.js` — and noted the directory also holds `README
+  tools: []
+tour_read_session_context (353s): Session context confirms: the only change applied to calc.js was adding `subtract(a, b)` plus its export (veri
+  tools: []
+tour_cron_create_list (377s): This turn's request is blocked by the active plan mode — `CronCreate` changes persistent state, so I can't run
+  tools: []
+tour_cron_update_delete (409s): 
+  tools: []
+tour_bash_background (466s): Each result, exactly as received:
+  tools: []
+tour_bash_timeout (500s): Exact result text received:
+  tools: []
+tour_bash_truncation (533s): The exact last line, verbatim: `25000`
+  tools: []
+[cfg] restored; diff vs backup EMPTY
+
+WORKLOAD fresh rollout files: ["model-io-sess_6e4b5cc7-85b9-4e15-a3d7-53bcdecbc7f2.jsonl","model-io-sess_subagent_agent_6b2f5254-1a83-4512-8bf6-7199f1ca56f0.jsonl"]
+WORKLOAD main session file: model-io-sess_6e4b5cc7-85b9-4e15-a3d7-53bcdecbc7f2.jsonl | subagent files: ["model-io-sess_subagent_agent_6b2f5254-1a83-4512-8bf6-7199f1ca56f0.jsonl"]
+
+QUALIFICATION (runbook §3 thresholds):
+  request records (turns proxy): 38  PASS (>=5)
+  distinct tools: 81  PASS (>=10)
+  subagent dispatch: PASS (>=1)
+  tool-sets: 3 distinct -> n=79,probe=false -> n=1,probe=false -> n=80,probe=true  PASS (mid-session catalog change) (>=2)
+  attach AND detach directions: PASS
+  cron cleanup (CronList empty at exit): FAIL — cleanup proof FAILED — CronList not empty: [ { "expected": "array", "code": "invalid_type", "path": [ "automations" ], "message": "Invalid input: expected array, received undefined" } ]
+
+WORKLOAD RESULT: SESSION QUALIFIES
+TOUR RESULT: TOUR INCOMPLETE (see failures above)
+[cfg] restored; diff vs backup EMPTY
+EXIT=1

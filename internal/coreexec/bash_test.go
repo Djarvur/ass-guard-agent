@@ -3,6 +3,7 @@ package coreexec //nolint:testpackage // internal package test (decodeJSONString
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -10,6 +11,11 @@ import (
 	"testing"
 	"time"
 )
+
+// recapturedFixturePath is the committed 12-05 re-record fixture (the fresh
+// 2026-08-20 live-zcode capture — the D-04 primary route replacing the
+// rotated-off Phase-9 pin).
+const recapturedFixturePath = "testdata/zcode-recaptured-2026-08.json"
 
 // decodeJSONString decodes a JSON-string Output (the captured plain-text form
 // the executors marshal); fatals when the Output is not a JSON string.
@@ -81,10 +87,10 @@ func TestBash_ErrorForm(t *testing.T) {
 	}
 }
 
-// TestBash_Timeout (T2 Test 4): `sleep 5` with timeout 100ms returns within
-// ~1s a structured `{"error":"bash: command timed out after …"}`-family
-// Output with a non-nil error; corpus-absent form (follows the shipped
-// structured-error convention — flagged in bash.go).
+// TestBash_Timeout (T2 Test 4, re-pinned 12-05): `sleep 5` with timeout 100ms
+// returns within ~1s with a non-nil error (IsError). The result FORM is the
+// captured plain-text template — asserted by TestBash_TimeoutCapturedForm;
+// the interim structured {"error":…} default was REPLACED by the re-record.
 func TestBash_Timeout(t *testing.T) {
 	t.Parallel()
 
@@ -103,21 +109,174 @@ func TestBash_Timeout(t *testing.T) {
 		t.Fatal("err = nil; want non-nil on timeout")
 	}
 
-	var structured struct {
-		Error string `json:"error"`
+	if len(out) == 0 {
+		t.Error("Output empty; want the captured timeout form")
+	}
+}
+
+// TestBash_TimeoutCapturedForm (12-05 Task 3): the timeout result is the
+// RE-PINNED captured form (2026-08-20 re-record, sess_6e4b5cc7, zcode 0.16.3,
+// 18 observations): plain text `Command timed out after <duration>\n<error>
+// Command was aborted before completion</error>` with a non-nil error (IsError)
+// — replacing the interim structured {"error":…} corpus-absent default.
+func TestBash_TimeoutCapturedForm(t *testing.T) {
+	t.Parallel()
+
+	bashExec := BashExecute(Config{WorkDir: t.TempDir()})
+
+	out, err := bashExec(context.Background(), json.RawMessage(`{"command":"sleep 5","timeout":100}`))
+	if err == nil {
+		t.Fatal("err = nil; want non-nil on timeout (IsError)")
 	}
 
-	uerr := json.Unmarshal(out, &structured)
-	if uerr != nil || structured.Error == "" {
-		t.Errorf("Output = %s; want the structured {\"error\":…} timeout form", out)
+	var text string
+
+	uerr := json.Unmarshal(out, &text)
+	if uerr != nil {
+		t.Fatalf("Output = %s; want a plain-text JSON string (the captured form)", out)
 	}
 
-	if !strings.Contains(structured.Error, "timed out") {
-		t.Errorf("error text = %q; want the timed-out wording", structured.Error)
+	want := "Command timed out after 100ms\n<error>Command was aborted before completion</error>"
+	if text != want {
+		t.Errorf("timeout form = %q; want the captured template %q", text, want)
+	}
+}
+
+// TestBash_TruncationEnvelope (12-05 Task 3): outputs above the inline budget
+// render the CAPTURED <persisted-output> envelope (19 observations): size in
+// KB (÷1024, one decimal, ".0" stripped), a real saved-to path whose file
+// carries the FULL output, and a preview cut at a word boundary ≤ 2000 chars
+// with the "..." continuation line.
+func TestBash_TruncationEnvelope(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	bashExec := BashExecute(Config{WorkDir: dir})
+
+	// ~16KB output — above the 15000 budget, below any test timeout.
+	cmd := `{"command":"seq 1 4000 | awk '{print \"word\" $0 \" \"}'"}`
+
+	out, err := bashExec(context.Background(), json.RawMessage(cmd))
+	if err != nil {
+		t.Fatalf("err = %v; want nil (a truncated success is NOT an error)", err)
+	}
+
+	var text string
+
+	uerr := json.Unmarshal(out, &text)
+	if uerr != nil {
+		t.Fatalf("Output = %s; want a plain-text JSON string", out)
+	}
+
+	saved := assertTruncationEnvelopeShape(t, text)
+
+	full, rerr := os.ReadFile(saved)
+	if rerr != nil {
+		t.Fatalf("saved output file %q unreadable: %v", saved, rerr)
+	}
+
+	if !strings.Contains(string(full), "word3999") {
+		t.Error("saved file must carry the FULL output (not the preview)")
+	}
+}
+
+// assertTruncationEnvelopeShape pins the captured envelope structure and
+// returns the extracted saved-to path (the caller proves the file is real).
+func assertTruncationEnvelopeShape(t *testing.T, text string) string {
+	t.Helper()
+
+	if !strings.HasPrefix(text, "<persisted-output>\nOutput too large (") {
+		t.Errorf("envelope head = %q; want the captured prefix", text[:min(60, len(text))])
+	}
+
+	if !strings.Contains(text, ". Full output saved to: ") {
+		t.Error("envelope missing the saved-to line")
+	}
+
+	if !strings.Contains(text, "\n\nPreview (first 2KB):\n") {
+		t.Error("envelope missing the captured preview header (2000 chars → \"2KB\")")
+	}
+
+	if !strings.HasSuffix(text, "...\n</persisted-output>") {
+		t.Error("envelope tail must be the \"...\" continuation + closing tag")
+	}
+
+	_, rest, ok := strings.Cut(text, "saved to: ")
+	if !ok {
+		t.Fatal("saved-to marker not found")
+	}
+
+	saved, _, ok := strings.Cut(rest, "\n")
+	if !ok || saved == "" {
+		t.Fatalf("saved-to path not extractable from %q", rest[:min(80, len(rest))])
+	}
+
+	// The preview is bounded and cut at a word boundary.
+	_, rest, ok = strings.Cut(text, "Preview (first 2KB):\n")
+	if !ok {
+		t.Fatal("preview marker not found")
+	}
+
+	preview, _, ok := strings.Cut(rest, "\n...\n</persisted-output>")
+	if !ok {
+		t.Fatal("preview tail marker not found")
+	}
+
+	if len(preview) > 2000 {
+		t.Errorf("preview len = %d; want ≤ 2000", len(preview))
+	}
+
+	return saved
+}
+
+// TestBash_RecapturedFixtureConformance (12-05 Task 3): the re-recorded
+// fixture carries the timeout + truncation families with full provenance and
+// the executor's constants agree with them (the fixture is the committed
+// ground truth; lateHarvest marks the upgrade from the 08-08 defaults).
+func TestBash_RecapturedFixtureConformance(t *testing.T) {
+	t.Parallel()
+
+	raw, err := os.ReadFile(recapturedFixturePath)
+	if err != nil {
+		t.Fatalf("read %s: %v (the 12-05 re-record fixture must be committed)", recapturedFixturePath, err)
+	}
+
+	var f struct {
+		Provenance struct {
+			ZcodeVersion string `json:"zcode_version"`
+			SessionID    string `json:"session_id"`
+			HarvestDate  string `json:"harvestDate"` //nolint:tagliatelle // fixture header key
+		} `json:"_provenance"` //nolint:tagliatelle // fixture header key
+		Tools map[string]struct {
+			Results map[string]struct {
+				Template string `json:"template"`
+			} `json:"results"`
+		} `json:"tools"`
+	}
+
+	uerr := json.Unmarshal(raw, &f)
+	if uerr != nil {
+		t.Fatalf("parse %s: %v", recapturedFixturePath, uerr)
+	}
+
+	if f.Provenance.ZcodeVersion == "" || f.Provenance.SessionID == "" || f.Provenance.HarvestDate == "" {
+		t.Error("fixture _provenance must carry zcode_version + session_id + harvestDate")
+	}
+
+	bash := f.Tools["Bash"].Results
+	if got := bash["timeout"].Template; !strings.Contains(got, "Command timed out after") ||
+		!strings.Contains(got, "<error>Command was aborted before completion</error>") {
+		t.Errorf("timeout family template = %q; want the captured form", got)
+	}
+
+	if got := bash["truncation"].Template; !strings.HasPrefix(got, "<persisted-output>\nOutput too large (") ||
+		!strings.Contains(got, "Preview (first") {
+		t.Errorf("truncation family template = %q; want the captured envelope head", got)
 	}
 }
 
 // TestBash_TimeoutClampDefault (T2 Test 5): no `timeout` field → 120000ms
+// default (schema-declared — the corpus shows only explicit 60000–660000
 // default (schema-declared — the corpus shows only explicit 60000–660000
 // values, never the default); `timeout: 9e9` → clamped to 600000 (the
 // schema's declared max).

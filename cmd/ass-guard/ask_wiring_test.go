@@ -154,7 +154,8 @@ func TestAskWiring_ReplyRouting(t *testing.T) { //nolint:gocyclo,cyclop,funlen /
 			t.Fatalf("answered output is not a JSON string: %v (%s)", uerr, l.Output)
 		}
 
-		const want = `User has answered your questions: "ristretto, please"`
+		const want = `User has answered your questions: "Which cache library should we use?"="ristretto, please"` +
+			`. You can now continue with the user's answers in mind.`
 		if got != want {
 			t.Errorf("answered form = %q; want the captured shape %q", got, want)
 		}

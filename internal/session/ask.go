@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -226,12 +227,29 @@ func (b *AskBroker) stopTimerLocked() {
 	}
 }
 
-// RenderAskAnswered renders the CAPTURED answered form (fixture-pinned,
-// internal/coreexec/testdata/zcode-interactive-results.json — provenance: the
-// 08-08 harvest note quoting the capture): the operator's reply is embedded
-// VERBATIM, no reinterpretation (T-12-01-02).
-func RenderAskAnswered(reply string) string {
-	return fmt.Sprintf("User has answered your questions: %q", reply)
+// RenderAskAnswered renders the CAPTURED answered form (re-pinned by the
+// 12-05 re-record, 2026-08-20, sess_6e4b5cc7, zcode 0.16.3 — 15 observations;
+// provenance recorded in internal/coreexec/testdata/zcode-interactive-results.json):
+// each question is paired with the operator's reply, embedded VERBATIM, no
+// reinterpretation (T-12-01-02). ass-guard's single-text reply channel pairs
+// the reply with every surfaced question (the captured pairing renders
+// `"question"="answer"` per question, comma-joined).
+func RenderAskAnswered(qs []AskQuestion, reply string) string {
+	var pairs string
+	if len(qs) == 0 {
+		pairs = fmt.Sprintf("%q", reply)
+	} else {
+		quoted := make([]string, 0, len(qs))
+		for _, q := range qs {
+			quoted = append(quoted, fmt.Sprintf("%q=%q", q.Question, reply))
+		}
+
+		pairs = strings.Join(quoted, ", ")
+	}
+
+	return fmt.Sprintf(
+		"User has answered your questions: %s. You can now continue with the user's answers in mind.", pairs,
+	)
 }
 
 // RenderAskNonAnswer renders the D-01 corpus-absent non-answer form (no
@@ -298,7 +316,7 @@ func (s *Session) resumeAskClaimed( //nolint:contextcheck // the timer path pass
 	var form string
 
 	if reply != nil {
-		form = RenderAskAnswered(*reply)
+		form = RenderAskAnswered(p.Questions, *reply)
 	} else {
 		form = RenderAskNonAnswer(s.ask.Timeout())
 	}
