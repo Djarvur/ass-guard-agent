@@ -188,13 +188,14 @@ func TestExtractTurnsFromRollout_MixedCorpus(t *testing.T) {
 		}
 	}
 
-	if len(full.ExpectedToolCalls) != 1 || full.ExpectedToolCalls[0].Name != "Read" {
+	if len(full.ExpectedToolCalls) != 1 || full.ExpectedToolCalls[0].Name != toolRead {
 		t.Errorf("full-record turn calls = %+v, want [Read]", full.ExpectedToolCalls)
 	}
 
 	if len(mixed.ExpectedToolCalls) != 2 ||
 		mixed.ExpectedToolCalls[0].Name != "Grep" ||
 		mixed.ExpectedToolCalls[1].Name != "Bash" {
-		t.Errorf("mixed turn calls = %+v, want [Grep Bash] (streamed backbone + response tail)", mixed.ExpectedToolCalls)
+		t.Errorf("mixed turn calls = %+v, want [Grep Bash] (streamed + response tail)",
+			mixed.ExpectedToolCalls)
 	}
 }
