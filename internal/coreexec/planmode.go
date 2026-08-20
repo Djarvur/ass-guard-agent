@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/Djarvur/ass-guard-agent/internal/sched"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
 	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 )
@@ -105,6 +106,10 @@ type InteractiveConfig struct {
 	Mailbox  *AgentMailbox
 	Sessions *SessionReader
 	Tasks    *TaskRegistry
+	// Schedule is the PER-PROJECT cron store (12-07, D-02: shared across the
+	// project's sessions, unlike the per-session stores above; nil = the
+	// quartet returns the structured no-store error).
+	Schedule *sched.ScheduleStore
 }
 
 // RegisterInteractive sets Execute on the interactive-family catalog entries
@@ -123,6 +128,10 @@ func RegisterInteractive(catalog *toolcat.Catalog, cfg InteractiveConfig) {
 		"SendMessage":         SendMessageExecute(cfg.Mailbox),
 		"ReadSessionContext":  ReadSessionContextExecute(cfg.Sessions),
 		"TaskOutput":          TaskOutputExecute(cfg.Tasks),
+		"CronCreate":          CronCreateExecute(cfg.Schedule),
+		"CronList":            CronListExecute(cfg.Schedule),
+		"CronUpdate":          CronUpdateExecute(cfg.Schedule),
+		"CronDelete":          CronDeleteExecute(cfg.Schedule),
 		"TaskStop":            TaskStopExecute(cfg.Tasks),
 	}
 

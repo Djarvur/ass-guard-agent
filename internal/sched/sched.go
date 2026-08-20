@@ -162,6 +162,14 @@ func Open(workDir string) (*ScheduleStore, error) {
 	return s, nil
 }
 
+// Now returns the store's clock (the injectable time source).
+func (s *ScheduleStore) Now() time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.clock()
+}
+
 // SetNow injects the clock (tests); nil restores time.Now.
 func (s *ScheduleStore) SetNow(f func() time.Time) {
 	s.mu.Lock()

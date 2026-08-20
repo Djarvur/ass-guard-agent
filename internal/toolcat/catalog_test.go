@@ -7,8 +7,10 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 )
 
-// coreToolCount is the stable built-in core (D-16): the 19 coretools.
-const coreToolCount = 19
+// coreToolCount is the stable built-in core (D-16): 19 through Phase-11;
+// 20 from 12-07 (CronUpdate joins the embedded core — the captured catalog
+// always carried the quartet; the embedded copy had only three of the four).
+const coreToolCount = 20
 
 // 14-06 spot-check names (goconst: repeated literals).
 const (
@@ -217,7 +219,7 @@ func TestCatalogDestructiveOnlyBash(t *testing.T) {
 // default (the read-only-but-serialized set — 14-06's flags consumption map).
 func declaredConcurrencySafe(name string) bool {
 	switch name {
-	case nameTodoWrite, nameTodoRead, "CronCreate", "CronDelete", "CronList",
+	case nameTodoWrite, nameTodoRead, "CronCreate", "CronUpdate", "CronDelete", "CronList",
 		"TaskStop", "SendMessage", "ExitPlanMode", "ReadSessionContext", "AskUserQuestion", "Agent":
 		return true
 	}
