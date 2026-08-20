@@ -244,10 +244,26 @@ func TestPlanMode_TimeoutStaysOn(t *testing.T) {
 		t.Fatalf("Prompt stop=%q err=%v; want the suspension", stop, err)
 	}
 
+	// The D-01 timer's Claim clears the pending ask BEFORE fire resumes the
+	// turn (resumeAskClaimed appends the non-answer line asynchronously), so
+	// !HasPendingAsk alone is a racy proxy — poll until the line itself has
+	// landed.
+	pmNonAnswer := func() string {
+		var out string
+
+		for _, l := range linesOf(s) {
+			if l.Type == TypeToolResult && l.ToolCallID == pmCallID2 {
+				_ = json.Unmarshal(l.Output, &out)
+			}
+		}
+
+		return out
+	}
+
 	deadline := time.Now().Add(5 * time.Second)
 
 	for time.Now().Before(deadline) {
-		if !s.HasPendingAsk() {
+		if !s.HasPendingAsk() && pmNonAnswer() != "" {
 			break
 		}
 
