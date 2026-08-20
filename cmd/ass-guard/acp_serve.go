@@ -990,8 +990,11 @@ func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen,maintidx // gr
 	// registers through RegisterInteractive — the SAME Execute-only override
 	// discipline as RegisterCore, wired at the same site.
 	planMode := session.NewPlanModeState()
+	mailbox := coreexec.NewAgentMailbox()
+	sessionReader := coreexec.NewSessionReader(dir)
 	coreexec.RegisterInteractive(sCatalog, coreexec.InteractiveConfig{
 		Ask: askBroker, PlanMode: planMode,
+		Mailbox: mailbox, Sessions: sessionReader,
 	})
 
 	// 09-01 T2 (AUD-02): the late-bound capturer closure. sess is declared

@@ -99,6 +99,10 @@ func (*notInPlanError) Error() string { return "coreexec: ExitPlanMode outside p
 type InteractiveConfig struct {
 	Ask      *session.AskBroker
 	PlanMode *session.PlanModeState
+	// Mailbox delivers SendMessage (nil = the executor returns the structured
+	// no-mailbox error); Sessions reads ReadSessionContext (nil likewise).
+	Mailbox  *AgentMailbox
+	Sessions *SessionReader
 }
 
 // RegisterInteractive sets Execute on the interactive-family catalog entries
@@ -114,6 +118,8 @@ func RegisterInteractive(catalog *toolcat.Catalog, cfg InteractiveConfig) {
 	stubs := map[string]toolcat.Stub{
 		enterPlanModeToolName: EnterPlanModeExecute(),
 		exitPlanModeToolName:  ExitPlanModeExecute(cfg.PlanMode),
+		"SendMessage":         SendMessageExecute(cfg.Mailbox),
+		"ReadSessionContext":  ReadSessionContextExecute(cfg.Sessions),
 	}
 
 	for name, exec := range stubs {

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/internal/session"
+	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 )
 
 // The 12-04 Task 2 battery: SendMessage over the agent mailbox +
@@ -24,14 +25,17 @@ func TestSendMessage_DeliversAndAcks(t *testing.T) {
 
 	var got AgentMessage
 
-	mb.Register("agent_26954a13-f6f1-4028-bfa6-764d66cb7577", func(m AgentMessage) error {
+	const agentID = "agent_26954a13-f6f1-4028-bfa6-764d66cb7577"
+
+	mb.Register(agentID, func(m AgentMessage) error {
 		got = m
 
 		return nil
 	})
 
-	out, err := SendMessageExecute(mb)(context.Background(), json.RawMessage(
-		`{"to":"agent_26954a13-f6f1-4028-bfa6-764d66cb7577","summary":"thanks for the count","message":"great work"}`))
+	input := `{"to":"` + agentID + `","summary":"thanks for the count","message":"great work"}`
+
+	out, err := SendMessageExecute(mb)(context.Background(), json.RawMessage(input))
 	if err != nil {
 		t.Fatalf("err = %v; want nil (delivery succeeded)", err)
 	}
@@ -41,7 +45,9 @@ func TestSendMessage_DeliversAndAcks(t *testing.T) {
 	}
 
 	var ack string
-	if uerr := json.Unmarshal(out, &ack); uerr != nil {
+
+	uerr := json.Unmarshal(out, &ack)
+	if uerr != nil {
 		t.Fatalf("ack not a JSON string: %v (%s)", uerr, out)
 	}
 
@@ -55,8 +61,9 @@ func TestSendMessage_DeliversAndAcks(t *testing.T) {
 func TestSendMessage_UnknownRecipient(t *testing.T) {
 	t.Parallel()
 
-	out, err := SendMessageExecute(NewAgentMailbox())(context.Background(), json.RawMessage(
-		`{"to":"agent_deadbeef-0000-0000-0000-000000000000","summary":"s","message":"m"}`))
+	input := `{"to":"agent_deadbeef-0000-0000-0000-000000000000","summary":"s","message":"m"}`
+
+	out, err := SendMessageExecute(NewAgentMailbox())(context.Background(), json.RawMessage(input))
 	if err == nil {
 		t.Fatal("err = nil; want non-nil (unknown recipient is an error result)")
 	}
@@ -82,12 +89,18 @@ func writeFixtureTranscript(t *testing.T) string {
 
 	lines := []string{
 		`{"type":"session_start","sessionID":"sess_alpha"}`,
-		`{"type":"user_message","turnID":"sess_alpha-turn-001","content":[{"type":"text","text":"add a cache library to the project"}]}`,
+		`{"type":"user_message","turnID":"sess_alpha-turn-001",` +
+			`"content":[{"type":"text",` +
+			`"text":"add a cache library to the project"}]}`,
 		`{"type":"assistant_message","turnID":"sess_alpha-turn-001","text":"I will use ristretto for the cache."}`,
-		`{"type":"user_message","turnID":"sess_alpha-turn-002","content":[{"type":"text","text":"also add tests for the cache"}]}`,
+		`{"type":"user_message","turnID":"sess_alpha-turn-002",` +
+			`"content":[{"type":"text","text":"also add tests for the cache"}]}`,
 		`{"type":"assistant_message","turnID":"sess_alpha-turn-002","text":"tests added for ristretto."}`,
 	}
-	if werr := os.WriteFile(filepath.Join(store, "transcript_sess_alpha.jsonl"), []byte(strings.Join(lines, "\n")+"\n"), dirPermWrite); werr != nil {
+	transcript := filepath.Join(store, "transcript_sess_alpha.jsonl")
+
+	werr := os.WriteFile(transcript, []byte(strings.Join(lines, "\n")+"\n"), dirPermWrite)
+	if werr != nil {
 		t.Fatal(werr)
 	}
 
@@ -97,7 +110,7 @@ func writeFixtureTranscript(t *testing.T) string {
 // TestReadSessionContext_Relevant (T2 Test 3): a query matching scattered
 // lines returns a deterministic excerpt with turn context, bounded by
 // maxTokens (chars/4) with a documented truncation tail.
-func TestReadSessionContext_Relevant(t *testing.T) { //nolint:funlen // flat battery
+func TestReadSessionContext_Relevant(t *testing.T) {
 	t.Parallel()
 
 	reader := NewSessionReader(writeFixtureTranscript(t))
@@ -109,7 +122,9 @@ func TestReadSessionContext_Relevant(t *testing.T) { //nolint:funlen // flat bat
 	}
 
 	var text string
-	if uerr := json.Unmarshal(out, &text); uerr != nil {
+
+	uerr := json.Unmarshal(out, &text)
+	if uerr != nil {
 		t.Fatalf("Output not a JSON string: %v (%s)", uerr, out)
 	}
 
@@ -123,8 +138,9 @@ func TestReadSessionContext_Relevant(t *testing.T) { //nolint:funlen // flat bat
 	}
 
 	// maxTokens bounding: a tiny budget truncates with the documented tail.
-	outSmall, err := ReadSessionContextExecute(reader)(context.Background(), json.RawMessage(
-		`{"sessionId":"sess_alpha","query":"cache","maxTokens":8}`))
+	smallIn := `{"sessionId":"sess_alpha","query":"cache","maxTokens":8}`
+
+	outSmall, err := ReadSessionContextExecute(reader)(context.Background(), json.RawMessage(smallIn))
 	if err != nil {
 		t.Fatalf("err = %v; want nil", err)
 	}
