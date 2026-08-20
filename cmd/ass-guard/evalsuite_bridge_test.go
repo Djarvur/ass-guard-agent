@@ -168,6 +168,7 @@ func TestEvalSuite_Matrix_Gated(t *testing.T) { //nolint:paralleltest // gated: 
 		}
 
 		t.Errorf("matrix eval gate RED (k=1) — artifact: %s", res.Artifact)
+
 		return
 	}
 

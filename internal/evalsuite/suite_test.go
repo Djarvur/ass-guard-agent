@@ -169,7 +169,8 @@ func TestLoadScenarios_Schema(t *testing.T) {
 			t.Fatal(werr)
 		}
 
-		if _, lerr := evalsuite.LoadScenarios(dir); lerr == nil { //nolint:noinlineerr // the negative-acceptance check
+		_, lerr := evalsuite.LoadScenarios(dir)
+		if lerr == nil {
 			t.Errorf("%s: LoadScenarios accepted an invalid scenario", name)
 		}
 	}
@@ -326,8 +327,9 @@ func TestLoadScenarios_MatrixKeys(t *testing.T) {
 	writeScenario := func(name, body string) {
 		t.Helper()
 
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
-			t.Fatal(err)
+		werr := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600)
+		if werr != nil {
+			t.Fatal(werr)
 		}
 	}
 
@@ -356,9 +358,11 @@ func TestLoadScenarios_MatrixKeys(t *testing.T) {
 	}
 
 	// Unknown keys still rejected (T-12-08-01 stands).
-	writeScenario("bad.json", `{"id":"bad","description":"x","changeName":"c","stages":["s"],"asserts":["zero_continue"],"sinful":"1"}`)
+	writeScenario("bad.json", `{"id":"bad","description":"x","changeName":"c",`+
+		`"stages":["s"],"asserts":["zero_continue"],"sinful":"1"}`)
 
-	if _, err := evalsuite.LoadScenarios(dir); err == nil {
+	_, lerr2 := evalsuite.LoadScenarios(dir)
+	if lerr2 == nil {
 		t.Error("an unknown scenario key was accepted")
 	}
 }

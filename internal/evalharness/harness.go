@@ -57,7 +57,7 @@ type TB interface {
 	Helper()
 	Logf(format string, args ...any)
 	Fatalf(format string, args ...any)
-	Cleanup(func())
+	Cleanup(f func())
 	Errorf(format string, args ...any)
 }
 
@@ -456,10 +456,10 @@ func readConfigWithMode(path string) ([]byte, fs.FileMode, error) {
 
 // BootstrapExpandedScratch initializes a scratch under the EXPANDED profile
 // (13-04): the operator's global openspec config is guarded byte-exactly
-// (GuardOpenSpecGlobalConfig) BEFORE init, so `openspec init` installs all 11
-// commands; the 6 expanded command files are asserted present (FAIL LOUD — a
-// silently-core scratch would dead-end every matrix scenario).
-func BootstrapExpandedScratch(t SkipTB) *Scratch { //nolint:contextcheck // init execs with its own bounded ctx (the BootstrapScratch precedent)
+// (GuardOpenSpecGlobalConfig) BEFORE init, so `openspec init` installs all
+// 11 commands; the 6 expanded command files are asserted present (FAIL
+// LOUD — a silently-core scratch would dead-end every matrix scenario).
+func BootstrapExpandedScratch(t SkipTB) *Scratch {
 	t.Helper()
 
 	GuardOpenSpecGlobalConfig(t, ExpandedMatrixProfileJSON)
@@ -474,9 +474,13 @@ func BootstrapExpandedScratch(t SkipTB) *Scratch { //nolint:contextcheck // init
 		t.Fatalf("BLOCKER: expanded-profile openspec init failed in scratch: %v\n%s", err, out)
 	}
 
-	for _, cmd := range []string{"new", "continue", "ff", "verify", "bulk-archive", "onboard"} {
+	expandedCmds := []string{"new", "continue", "ff", "verify", "bulk-archive", "onboard"}
+
+	for _, cmd := range expandedCmds {
 		p := filepath.Join(scratch, ".claude", "commands", "opsx", cmd+".md")
-		if _, serr := os.Stat(p); serr != nil {
+
+		_, serr := os.Stat(p)
+		if serr != nil {
 			t.Fatalf("expanded-profile init did NOT install /opsx:%s (missing %s)", cmd, p)
 		}
 	}
@@ -485,6 +489,17 @@ func BootstrapExpandedScratch(t SkipTB) *Scratch { //nolint:contextcheck // init
 
 	return &Scratch{Dir: scratch}
 }
+
+// dirPermFixture is the fixture writer's directory mode.
+const dirPermFixture = 0o750
+
+// The fixture delta bodies (scenario-less / batch / done).
+const fixtureScenariolessDelta = "## ADDED Requirements\n\n" +
+	"### Requirement: scenarioless\n\nThe DELIBERATELY scenario-less requirement.\n"
+const fixtureBatchDelta = "## ADDED Requirements\n\n### Requirement: batch\n\n" +
+	"The app SHALL batch.\n\n#### Scenario: batching\n\n- **WHEN** bulk archiving\n- **THEN** both archive\n"
+const fixtureDoneDelta = "## ADDED Requirements\n\n### Requirement: done\n\n" +
+	"The app SHALL done.\n\n#### Scenario: done\n\n- **WHEN** complete\n- **THEN** archived\n"
 
 // SeedFixture plants a deterministic fixable-trigger fixture into the
 // scratch (13-04; the probed classes from the 13-01 matrix legs):
@@ -497,7 +512,7 @@ func BootstrapExpandedScratch(t SkipTB) *Scratch { //nolint:contextcheck // init
 //     (the bulk-archive batch trigger);
 //   - completed_change: the archivable state (CHECKED tasks — the bulk
 //     happy + the onboard re-run approximation).
-func SeedFixture(t TB, dir, fixture, changeName string) { //nolint:contextcheck // the fixture exec uses its own bounded ctx
+func SeedFixture(t TB, dir, fixture, changeName string) {
 	t.Helper()
 
 	newChange := func() string {
@@ -517,11 +532,13 @@ func SeedFixture(t TB, dir, fixture, changeName string) { //nolint:contextcheck 
 
 		p := filepath.Join(changeDir, rel)
 
-		if merr := os.MkdirAll(filepath.Dir(p), 0o750); merr != nil {
+		merr := os.MkdirAll(filepath.Dir(p), dirPermFixture)
+		if merr != nil {
 			t.Fatalf("fixture %s: mkdir: %v", fixture, merr)
 		}
 
-		if werr := os.WriteFile(p, []byte(body), 0o600); werr != nil {
+		werr := os.WriteFile(p, []byte(body), filePermSeed)
+		if werr != nil {
 			t.Fatalf("fixture %s: write %s: %v", fixture, p, werr)
 		}
 	}
@@ -534,21 +551,18 @@ func SeedFixture(t TB, dir, fixture, changeName string) { //nolint:contextcheck 
 	case "scenarioless":
 		changeDir := newChange()
 		write(changeDir, "proposal.md", "## Why\n\nFix the gap.\n")
-		write(changeDir, "specs/cap/spec.md",
-			"## ADDED Requirements\n\n### Requirement: scenarioless\n\nThe DELIBERATELY scenario-less requirement.\n")
+		write(changeDir, "specs/cap/spec.md", fixtureScenariolessDelta)
 	case "incomplete_tasks":
 		changeDir := newChange()
 		write(changeDir, "proposal.md", "## Why\n\nBatch.\n")
-		write(changeDir, "specs/cap/spec.md",
-			"## ADDED Requirements\n\n### Requirement: batch\n\nThe app SHALL batch.\n\n#### Scenario: batching\n\n- **WHEN** bulk archiving\n- **THEN** both archive\n")
+		write(changeDir, "specs/cap/spec.md", fixtureBatchDelta)
 		write(changeDir, "tasks.md", "- [ ] 1. Deliberately incomplete task (the fixable trigger)\n")
 	case "completed_change":
 		// The bulk-archive happy + onboard re-run approximation: a change in
 		// the archivable state (proposal + valid delta + CHECKED tasks).
 		changeDir := newChange()
 		write(changeDir, "proposal.md", "## Why\n\nDone work.\n")
-		write(changeDir, "specs/cap/spec.md",
-			"## ADDED Requirements\n\n### Requirement: done\n\nThe app SHALL done.\n\n#### Scenario: done\n\n- **WHEN** complete\n- **THEN** archived\n")
+		write(changeDir, "specs/cap/spec.md", fixtureDoneDelta)
 		write(changeDir, "tasks.md", "- [x] 1. Complete task\n")
 	}
 }
@@ -559,8 +573,9 @@ func SeedFixture(t TB, dir, fixture, changeName string) { //nolint:contextcheck 
 func AssertChangeDir(t TB, scratchDir, changeName string) []string {
 	t.Helper()
 
-	if _, err := os.Stat(filepath.Join(scratchDir, "openspec", "changes", changeName)); err == nil {
-		return nil
+	_, err := os.Stat(filepath.Join(scratchDir, "openspec", "changes", changeName))
+	if err == nil {
+		return nil // the live change directory
 	}
 
 	matches, _ := filepath.Glob(filepath.Join(scratchDir, "openspec", "changes", "archive", "*"+changeName))
@@ -575,7 +590,9 @@ func AssertChangeDir(t TB, scratchDir, changeName string) []string {
 // transcript + disk (13-04's named key): a fixable failure reached the model
 // (a tool result carrying a probed failure signature), a recovery followed
 // it, and the goal artifact (the change directory) landed.
-func AssertFixableRecovery(t TB, lines []session.Line, scratchDir, changeName string) []string { //nolint:cyclop // the two-phase scan reads flat
+//
+//nolint:cyclop,funlen // the two-phase scan reads flat
+func AssertFixableRecovery(t TB, lines []session.Line, scratchDir, changeName string) []string {
 	t.Helper()
 
 	failSigs := []string{
@@ -620,10 +637,13 @@ func AssertFixableRecovery(t TB, lines []session.Line, scratchDir, changeName st
 	}
 
 	if failIdx == -1 {
-		return []string{"no fixable failure reached the model (no probed failure signature in any tool result or closing)"}
+		return []string{
+			"no fixable failure reached the model (no probed signature in any tool result or closing)",
+		}
 	}
 
 	recoverIdx := -1
+
 	for i := range lines {
 		if i <= failIdx {
 			continue
@@ -635,7 +655,9 @@ func AssertFixableRecovery(t TB, lines []session.Line, scratchDir, changeName st
 		}
 
 		out = strings.ToLower(out)
-		for _, sig := range []string{"created", "archived", "proposal", "complete", "spec", "tasks", "verdict", "report"} {
+		recoverSigs := []string{"created", "archived", "proposal", "complete", "spec", "tasks", "verdict", "report"}
+
+		for _, sig := range recoverSigs {
 			if strings.Contains(out, sig) {
 				recoverIdx = i
 

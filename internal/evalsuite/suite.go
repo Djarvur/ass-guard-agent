@@ -233,7 +233,7 @@ type GateTB interface {
 	Skip(args ...any)
 	Skipf(format string, args ...any)
 	TempDir() string
-	Cleanup(func())
+	Cleanup(f func())
 	Errorf(format string, args ...any)
 }
 
@@ -340,7 +340,9 @@ func RunSuiteWith(
 	res := SuiteResult{Timestamp: time.Now().UTC(), K: k, PassAtK: true}
 	start := time.Now()
 
-	for _, sc := range scenarios {
+	for i := range scenarios {
+		sc := scenarios[i]
+
 		sr := ScenarioResult{ID: sc.ID, K: k, PassAtK: true}
 
 		for range k {
@@ -383,10 +385,10 @@ func RunSuiteWith(
 func runPass(ctx context.Context, t GateTB, sc *Scenario, driver Driver, opts SuiteOpts) PassRecord {
 	start := time.Now()
 
-	//nolint:contextcheck // the harness bootstrap execs init with its own bounded ctx
+	//nolint:contextcheck // the bootstrap + fixture execs carry their own bounded ctxs
 	scratch := evalharness.BootstrapScratch(t)
 	if sc.OpenSpecProfile == "expanded" {
-		scratch = evalharness.BootstrapExpandedScratch(t)
+		scratch = evalharness.BootstrapExpandedScratch(t) //nolint:contextcheck // own bounded ctx
 	}
 
 	if opts.Bootstrap != nil {
@@ -394,7 +396,7 @@ func runPass(ctx context.Context, t GateTB, sc *Scenario, driver Driver, opts Su
 	}
 
 	if sc.Fixture != "" {
-		evalharness.SeedFixture(t, scratch.Dir, sc.Fixture, sc.ChangeName)
+		evalharness.SeedFixture(t, scratch.Dir, sc.Fixture, sc.ChangeName) //nolint:contextcheck // own ctxs
 	}
 
 	runner, teardown := driver(t, scratch.Dir)
