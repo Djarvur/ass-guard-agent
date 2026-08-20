@@ -5,15 +5,15 @@ milestone_name: ACP Early Adoption
 current_phase: 13
 current_phase_name: openspec-workflow-completion
 status: executing
-stopped_at: 13-03 COMPLETE 2026-08-20 (the unmatched-ending advisory); 13-04 next
+stopped_at: 13-04 COMPLETE 2026-08-20 — PHASE 13's FIVE PLANS DONE (hard stop per the manager mission; verification is the manager's)
 last_updated: "2026-08-20T22:10:00.000Z"
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 34
-  completed_plans: 33
+  completed_plans: 34
 last_activity: 2026-08-20
-last_activity_desc: 13-03 executed (the advisory: audit-always + one note per class per session, never holds)
+last_activity_desc: 13-04 executed (the 12-scenario per-command eval net, all green at k=1) — Phase 13 complete
 ---
 
 # State: ass-guard-agent (working name)
@@ -27,6 +27,7 @@ See: .planning/PROJECT.md (updated 2026-08-14)
 ## Current Position
 
 Phase: 13 (openspec-workflow-completion) — EXECUTING
+Plan: 5/5 complete (13-04 COMPLETE 2026-08-20: 12 per-command scenarios [6 happy + 6 fixable, D-04] with the openspec_profile + fixture schema keys [unknown keys still rejected], the change_dir + fixable_recovery named keys, 5 deterministic fixture seeders, BootstrapExpandedScratch [guard + FAIL-LOUD], TestEvalSuite_Matrix_Gated [per-suite via MATRIX_SUITE_ID; mise eval-gate stays flagship-scoped], attribution by scenario id pinned offline, the selftest green [seeded-config inside the existing turn-behavior class]; the FULL matrix suite GREEN at k=1 — 1450s, artifact eval-20260820-202612-k1.json + /tmp/eval-matrix-evidence-full2.log. PHASE 13 EXECUTION COMPLETE — hard stop per the manager mission: NO phase close, NO milestone lifecycle, NO v1.2 work; the manager handles verification.)
 Plan: 4/5 complete (13-03 COMPLETE 2026-08-20: the unmatched-ending advisory — ClassifyQuestionEnding [2 capture-anchored classes] + SignalAdvisory in Decide's unmatched cell ONLY [ActionNothing preserved] + the serve wiring [wrapper-held dedupe, the EngineDecision collector subscribed before the turn, the post-done direct emit]; the lever NOT applied [the corpus shows AskUserQuestion usage] so the gated re-proof not owed; the dead-end scan folded into the onboard leg. TDD: 352d90b RED → c65faa9/9639d20 GREEN; mise ci green.)
 Plan: 3/5 complete (13-02 COMPLETE 2026-08-20: post-verify-handoff seeded from three observed closings [report header + blocking consequence — verify-exclusive, clean reports don't chain] → /opsx:continue, the D-07 tracer leg GREEN; post-new-continue-handoff [new + continue's own template phrase] walks the artifact sequence, the pass-2 leg GREEN 483s; ff/bulk/onboard dispositions documented in-table [archive shield / unmatched terminus / the D-02 question class]; safety batteries re-ran green with the expanded rows loaded; mise ci green with two D-06-documented load-flake singles.)
 Plan: 2/5 complete (13-01 COMPLETE 2026-08-20: Task 1's gate re-verified GREEN on the 13-00 tree (artifact eval-20260820-163220-k1.json); the profile-guard primitive committed TDD-order from the parked draft; the 12-leg matrix green — 6 happy + 6 fixable with deterministic probed triggers, 12 capture files committed under testdata/opsx-e2e-matrix/ (the D-03 pass-1 + fixable corpus 13-02/13-03 consume), operator config byte-identical after every run; divergences recorded: verify is report-driven [no CLI validate step — capture-rescoped], wrong-name candidates produce the D-02 ask class). See 13-01-SUMMARY.md + the Concerns entry for the config-telemetry incident.)
@@ -35,7 +36,7 @@ Phase 12 CLOSED 2026-08-20 (verification 8/9, 12-VERIFICATION.md): every catalog
 Next action (agent): execute Phase 13 — 13-00 FIRST (the wave-0 gap closure: engine-visible ask resume per the decided fix route; exit = mise eval-gate flagship green through asks), then 13-01 (its amended opener: copy the drift evidence in-repo, capture-informed re-tuning of the EXISTING 08-06 stage-transition rows in internal/openspec/seeded.toml, exit = mise eval-gate flagship green), then the expanded-matrix E2E legs; 13-02 harvests 13-01's captures. Do NOT start before the checker re-pass on the amended 13-01 is recorded.
 Next action (operator): begin/continue daily ACP use; retroactively confirm (or reverse) the eval-net disposition — 12-VERIFICATION human item 1.
 
-Progress: [██████████] 97% (33/34 plans · 4/5 phases)
+Progress: [██████████] 100% (34/34 plans · 4/5 phases)
 
 ## Performance Metrics
 
@@ -46,6 +47,7 @@ Progress: [██████████] 97% (33/34 plans · 4/5 phases)
 
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
+| Phase 13 P04 | 150min | 2 tasks | 16 files |
 | Phase 13 P03 | 105min | 2 tasks | 7 files |
 | Phase 13 P02 | 130min | 2 tasks | 2 files |
 | Phase 13 P01 | 330min | 4 tasks | 15 files |
