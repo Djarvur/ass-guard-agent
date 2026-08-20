@@ -10,7 +10,7 @@ last_updated: "2026-08-20T22:10:00.000Z"
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 33
+  total_plans: 34
   completed_plans: 33
 last_activity: 2026-08-20
 last_activity_desc: 13-03 executed (the advisory: audit-always + one note per class per session, never holds)
@@ -35,7 +35,7 @@ Phase 12 CLOSED 2026-08-20 (verification 8/9, 12-VERIFICATION.md): every catalog
 Next action (agent): execute Phase 13 — 13-00 FIRST (the wave-0 gap closure: engine-visible ask resume per the decided fix route; exit = mise eval-gate flagship green through asks), then 13-01 (its amended opener: copy the drift evidence in-repo, capture-informed re-tuning of the EXISTING 08-06 stage-transition rows in internal/openspec/seeded.toml, exit = mise eval-gate flagship green), then the expanded-matrix E2E legs; 13-02 harvests 13-01's captures. Do NOT start before the checker re-pass on the amended 13-01 is recorded.
 Next action (operator): begin/continue daily ACP use; retroactively confirm (or reverse) the eval-net disposition — 12-VERIFICATION human item 1.
 
-Progress: [██████████] 100%? (33/33 v1.1-milestone plans)
+Progress: [██████████] 97% (33/34 plans · 4/5 phases)
 
 ## Performance Metrics
 
