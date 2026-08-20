@@ -134,6 +134,44 @@ func (e *Engine) Observe(
 			return stop, err
 		}
 
+		// 13-00 ask-wait (the manager ruling's route 1 — engine-visible
+		// resume): a turn that ended suspended (first turn OR injection —
+		// the stop marker is authoritative, not the re-read output) WAITS
+		// for the broker's settle signal before any decision. On settle the
+		// re-read below sees the COMPLETED turn (the adapter's terminal-line
+		// precedence: a later assistant_message outranks ask_suspended) and
+		// the loop decides normally; a NESTED ask (the resumed turn asked
+		// again) loops straight back into the wait. Anything else keeps
+		// today's semantics exactly: unresolved + ctx death ⇒ cancel-drain
+		// ("cancelled", nil — no decision, no injection); unresolved + alive
+		// on the FIRST turn ⇒ Decide on the suspended output (ActionAsk, no
+		// table lookup); unresolved + alive on an INJECTION ⇒ today's silent
+		// exit (no decision for the asking turn).
+		for stop == StopAsk {
+			if !e.waitAskSettled(ctx, runner) {
+				if ctx.Err() != nil {
+					return "cancelled", nil //nolint:nilerr // cancellation surfaced via stop reason
+				}
+
+				if injections > 0 {
+					return stop, err
+				}
+
+				break // first-turn unresolved → the suspended output reaches Decide
+			}
+
+			reRead, rerr := e.lastTurnAndRecover(runner)
+			if rerr != nil {
+				return stop, err
+			}
+
+			out = reRead
+
+			if !out.AskSuspended {
+				stop = "end_turn" // the suspension resolved to a completed turn
+			}
+		}
+
 		dec, derr := e.decideAndRecover(out, table)
 		if derr != nil {
 			// Decide (or the PatternTable) panicked — degrade gracefully.
@@ -160,7 +198,11 @@ func (e *Engine) Observe(
 			return stop, err
 		}
 
-		if stop != "end_turn" {
+		if stop != "end_turn" && stop != StopAsk {
+			// 13-00: an ask stop falls THROUGH — the loop body's ask-wait
+			// owns it (settled ⇒ decide on the completed turn; unresolved ⇒
+			// today's silent exit). Every other non-end stop returns here as
+			// before.
 			return stop, err
 		}
 	}
@@ -177,6 +219,32 @@ func (e *Engine) Observe(
 	}
 
 	return stop, err
+}
+
+// waitAskSettled blocks until the runner's CURRENT ask suspension settles
+// (13-00). It consults the OPTIONAL AskSettler capability (the
+// ContinuePopulator precedent — runners without it are unaffected): no
+// capability or nil channel ⇒ false immediately (today's semantics); ctx
+// death during the wait ⇒ false (the caller applies cancel-drain); settle ⇒
+// true — and a settle that raced ctx death still prefers the cancel (the
+// engine never proceeds on a dying ctx).
+func (e *Engine) waitAskSettled(ctx context.Context, runner TurnRunner) bool {
+	settler, ok := runner.(AskSettler)
+	if !ok {
+		return false
+	}
+
+	ch := settler.AskSettle()
+	if ch == nil {
+		return false
+	}
+
+	select {
+	case <-ch:
+		return ctx.Err() == nil
+	case <-ctx.Done():
+		return false
+	}
 }
 
 // safeLastTurnID reads runner.LastTurnOutput under a recover so the budget

@@ -488,16 +488,18 @@ func TestObserve_EmitsProvenance(t *testing.T) {
 // --- 13-00 T3: the engine ask-wait (Observe stops exiting on stopAsk) ---
 
 // askWaitRunner is a scripted runner whose Run returns per-call stop reasons
-// (ask markers included) and whose LastTurnOutput FLIPS from the per-call
-// suspended output to a fixed completed output once the settle channel closes
+// (ask markers included) and whose LastTurnOutput slot for an ASKING turn
+// flips ONE-SHOT to the fixed completed output once the settle channel closes
 // — mirroring the real adapter's terminal-line precedence (a later
-// assistant_message outranks ask_suspended exactly when the resume
-// completed). AskSettle exposes the channel (nil = never settles).
+// assistant_message outranks ask_suspended exactly when the resume completed,
+// and only for THAT suspension). AskSettle exposes the channel (nil = never
+// settles).
 type askWaitRunner struct {
-	mu     sync.Mutex
-	stops  []string
-	before []engine.TurnOutput
-	after  engine.TurnOutput
+	mu      sync.Mutex
+	stops   []string
+	before  []engine.TurnOutput
+	after   engine.TurnOutput
+	applied []bool // per-slot: the settle flip fired for this asking turn
 
 	calls   atomic.Int32
 	settle  chan struct{}
@@ -536,9 +538,18 @@ func (a *askWaitRunner) LastTurnOutput() engine.TurnOutput {
 		idx = len(a.before) - 1
 	}
 
+	if a.applied == nil {
+		a.applied = make([]bool, len(a.before))
+	}
+
+	// The suspended slot flips to the completed output once settle fired —
+	// exactly once per suspension (the resume is one-shot).
 	select {
 	case <-a.settle:
-		return a.after // the resumed turn's completed output
+		if a.stops[idx] == engine.StopAsk && !a.applied[idx] {
+			a.before[idx] = a.after
+			a.applied[idx] = true
+		}
 	default:
 	}
 
@@ -554,13 +565,51 @@ func (a *askWaitRunner) AskSettle() <-chan struct{} {
 
 func (a *askWaitRunner) runCalls() int { return int(a.calls.Load()) }
 
-// askNoSettleRunner is askWaitRunner WITHOUT the AskSettler capability (a
-// plain runner — the no-capability byte-identical pin).
+// askNoSettleRunner is the same scripted shape WITHOUT the AskSettler
+// capability (a distinct type — embedding would promote the method back).
 type askNoSettleRunner struct {
-	askWaitRunner
+	mu      sync.Mutex
+	stops   []string
+	outputs []engine.TurnOutput
+	calls   atomic.Int32
 }
 
-func (a *askNoSettleRunner) AskSettle() <-chan struct{} { panic("must not be called") }
+func (a *askNoSettleRunner) Run(_ context.Context, _ []session.ContentBlock) (string, error) {
+	a.calls.Add(1)
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	idx := int(a.calls.Load()) - 1
+	if idx >= len(a.stops) {
+		idx = len(a.stops) - 1
+	}
+
+	stop := stopEndTurn
+	if idx >= 0 && a.stops[idx] != "" {
+		stop = a.stops[idx]
+	}
+
+	return stop, nil
+}
+
+func (a *askNoSettleRunner) LastTurnOutput() engine.TurnOutput {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	idx := int(a.calls.Load()) - 1
+	if idx < 0 {
+		return engine.TurnOutput{}
+	}
+
+	if idx >= len(a.outputs) {
+		idx = len(a.outputs) - 1
+	}
+
+	return a.outputs[idx]
+}
+
+func (a *askNoSettleRunner) runCalls() int { return int(a.calls.Load()) }
 
 // TestObserve_AskWait_InjectedTurnDecidesAfterSettle (13-00 T3 test 1): an
 // INJECTED turn that suspends (stopAsk) WAITS for the settle signal; once the
@@ -677,7 +726,7 @@ func TestObserve_AskWait_CancelDuringWaitDrains(t *testing.T) {
 	runner := &askWaitRunner{
 		stops:  []string{engine.StopAsk},
 		before: []engine.TurnOutput{{TurnID: turn001, AskSuspended: true}},
-		settle: nil, // never settles — the ctx is the only exit
+		settle: make(chan struct{}), // non-nil, NEVER closes — the ctx is the only exit
 	}
 
 	bus := event.NewBus()
@@ -744,11 +793,14 @@ func TestObserve_AskWait_UnresolvedKeepsTodaySemantics(t *testing.T) {
 
 		events := collect()
 		if len(events) != 1 {
-			t.Fatalf("decisions = %d; want exactly the ActionAsk (events: %+v)", len(events), summarizeEvents(events))
+			t.Fatalf("decisions = %d; want exactly the ask decision (events: %+v)", len(events), summarizeEvents(events))
 		}
 
-		if events[0].Action != engine.ActionAsk.String() || events[0].Signal != engine.SignalAskSuspended {
-			t.Errorf("decision = %+v; want ActionAsk with %q (no table lookup)", events[0], engine.SignalAskSuspended)
+		// The nil-dispatcher engine degrades ActionAsk to nothing; the PIN is
+		// the ask:suspended signal with NO table lookup — never a continue.
+		if events[0].Signal != engine.SignalAskSuspended || events[0].Action == engine.ActionContinue.String() {
+			t.Errorf("decision = %+v; want the %s decision, never a continue (no table lookup)",
+				events[0], engine.SignalAskSuspended)
 		}
 	})
 
@@ -802,16 +854,16 @@ func TestObserve_AskWait_NoCapabilityByteIdentical(t *testing.T) {
 	t.Run("first turn", func(t *testing.T) {
 		t.Parallel()
 
-		runner := &askNoSettleRunner{askWaitRunner{
-			stops:  []string{engine.StopAsk},
-			before: []engine.TurnOutput{{TurnID: turn001, AskSuspended: true}},
-		}}
+		runner := &askNoSettleRunner{
+			stops:   []string{engine.StopAsk},
+			outputs: []engine.TurnOutput{{TurnID: turn001, AskSuspended: true}},
+		}
 
 		bus := event.NewBus()
 		eng := &engine.Engine{Bus: bus}
 		collect := captureEvents(t, bus)
 
-		stop, err := eng.Observe(context.Background(), &runner.askWaitRunner, seededTable(),
+		stop, err := eng.Observe(context.Background(), runner, seededTable(),
 			[]session.ContentBlock{{Type: blockText, Text: "go"}})
 		if err != nil {
 			t.Fatalf("Observe err: %v", err)
@@ -821,28 +873,34 @@ func TestObserve_AskWait_NoCapabilityByteIdentical(t *testing.T) {
 			t.Errorf("stop = %q; want the ask marker unchanged", stop)
 		}
 
+		if got := runner.runCalls(); got != 1 {
+			t.Errorf("runner.Run called %d times; want 1 (a suspended turn never chains)", got)
+		}
+
 		events := collect()
-		if len(events) != 1 || events[0].Action != engine.ActionAsk.String() {
-			t.Errorf("decisions = %+v; want exactly ActionAsk (today's first-turn semantics)", summarizeEvents(events))
+		if len(events) != 1 || events[0].Signal != engine.SignalAskSuspended ||
+			events[0].Action == engine.ActionContinue.String() {
+			t.Errorf("decisions = %+v; want the ask-suspended decision, never a continue (today's first-turn semantics)",
+				summarizeEvents(events))
 		}
 	})
 
 	t.Run("injection", func(t *testing.T) {
 		t.Parallel()
 
-		runner := &askNoSettleRunner{askWaitRunner{
+		runner := &askNoSettleRunner{
 			stops: []string{stopEndTurn, engine.StopAsk},
-			before: []engine.TurnOutput{
+			outputs: []engine.TurnOutput{
 				{TurnID: turn001, Text: implementationCompleteMsg},
 				{TurnID: turn002, AskSuspended: true},
 			},
-		}}
+		}
 
 		bus := event.NewBus()
 		eng := &engine.Engine{Bus: bus}
 		collect := captureEvents(t, bus)
 
-		stop, err := eng.Observe(context.Background(), &runner.askWaitRunner, seededTable(),
+		stop, err := eng.Observe(context.Background(), runner, seededTable(),
 			[]session.ContentBlock{{Type: blockText, Text: "go"}})
 		if err != nil {
 			t.Fatalf("Observe err: %v", err)

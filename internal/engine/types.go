@@ -176,3 +176,27 @@ const MaxContinueInjections = 8
 // learning store is NOT consulted for this signal (applyDispatcher keeps
 // ActionAsk — a stored answer must never resume-chain a suspended turn).
 const SignalAskSuspended = "ask:suspended"
+
+// StopAsk mirrors the session layer's ask-suspension stop marker (13-00 —
+// the stopAskACP house pattern: internal/session owns the vocabulary, the
+// engine carries its own constant so Observe can recognize the suspension
+// without importing the session stop vocabulary's private form). A runner
+// Run returning StopAsk means the turn ended suspended on AskUserQuestion;
+// with an AskSettler capability the engine WAITS (the manager ruling's
+// route 1 — the resume becomes engine-visible); without one, today's
+// semantics hold exactly.
+const StopAsk = "ask"
+
+// AskSettler is an OPTIONAL TurnRunner extension (13-00, the ContinuePopulator
+// precedent — additive interface, nil-safe): a runner whose turns can suspend
+// on AskUserQuestion exposes the CURRENT suspension's settle signal — the
+// one-shot channel closed after the resumed turn completes (whichever driver
+// resumed it: the operator reply or the D-01 timer). Observe consults it on
+// the ask stop, blocks until the signal or ctx death, then re-reads the
+// completed turn and decides NORMALLY. Nil channel / no capability ⇒ today's
+// behavior byte-identical.
+type AskSettler interface {
+	// AskSettle returns the current suspension's settle channel — nil when
+	// nothing is pending, already-closed once the resume completed.
+	AskSettle() <-chan struct{}
+}
