@@ -13,6 +13,7 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/coreexec"
 	"github.com/Djarvur/ass-guard-agent/internal/event"
+	"github.com/Djarvur/ass-guard-agent/internal/openspec"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
@@ -345,6 +346,201 @@ func TestAskWiring_SchemaDisciplineAtWiring(t *testing.T) {
 		t.Error("wired entry differs from the captured entry beyond Execute (schema-never-rewritten violated)")
 	}
 }
+
+// TestAskWiring_ChainSurvivesAskTimerResume (13-00 T1, RED — the manager
+// Rule-4 ruling's behavior pin; diagnosis: 13-01-eval-first-runs/
+// iterations-20260820/README.md): a mid-chain AskUserQuestion suspends the
+// INJECTED turn; the D-01 timer (50ms here) resumes it with the non-answer;
+// the COMPLETED turn MUST then get its engine decision (continue) and the
+// chain MUST survive to the next stage. Today BOTH fail: session.Prompt
+// returns the stopAsk marker promptly (correct — invariant 1), but
+// engine.Observe exits at the post-injection `stop != "end_turn"` check
+// (observe.go) WITHOUT deciding, and the timer's resumeAskClaimed runs
+// DETACHED at the session layer — engine-invisible — so the resumed turn's
+// completion never feeds Decide and every remaining injection is lost (the
+// flagship eval-gate death: 2 of 3 completed gate iterations).
+//
+// Turn script (the flagship death shape):
+//   turn 1 (typed explore):  closing matching post-explore-handoff → continue
+//   turn 2 (injected propose): AskUserQuestion → suspends (stopAsk); the 50ms
+//                              timer lands the non-answer; the resumed turn
+//                              closes matching post-propose-handoff
+//   turn 3 (injected apply):  unmatched closing → end_turn (chain terminates)
+//
+// OFFLINE (no env gates). Under today's code the poll first waits out the
+// detached timer resume, then BOTH pinned assertions fail.
+func TestAskWiring_ChainSurvivesAskTimerResume(t *testing.T) {
+	r, prov := newExpansionRunner(t, true,
+		scriptedResp{text: "exploration complete — handoff to propose", finish: stopEndTurn},
+		scriptedResp{toolCalls: []provider.ToolCall{{
+			ID: wiringAskCall, Name: wiringAskTool,
+			Input: json.RawMessage(wiringAskInput),
+		}}},
+		scriptedResp{text: "proposal written — handoff to apply", finish: stopEndTurn},
+		scriptedResp{text: "applied everything; nothing further to do", finish: stopEndTurn},
+	)
+
+	r.askTimeout = 50 * time.Millisecond
+
+	// The seeded chain rows: explore→propose→apply (the flagship shape).
+	cfg := &openspec.OpenSpecConfig{Patterns: []openspec.PatternEntry{
+		{ID: "post-explore-handoff", Regex: "handoff to propose", Action: actionContinue, Next: "/opsx:propose ask-chain"},
+		{ID: "post-propose-handoff", Regex: "handoff to apply", Action: actionContinue, Next: "/opsx:apply ask-chain"},
+	}}
+
+	pt, err := openspec.FromConfig(cfg)
+	if err != nil {
+		t.Fatalf("FromConfig: %v", err)
+	}
+
+	r.patternTable = pt
+
+	const sid = "sess-ask-chain"
+
+	stop, err := r.Run(context.Background(), sid, &noopEmitter{},
+		[]acp.ContentBlock{{Type: blockText, Text: "/opsx:explore ask-chain"}})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if stop != stopEndTurn {
+		t.Fatalf("Run stop = %q; want end_turn (the ask marker is internal; mapAskStop)", stop)
+	}
+
+	sess := r.sessions[sid]
+
+	// Poll the transcript to idle (bounded): under today's code the detached
+	// ~50ms timer resume must land first; under the fixed code the engine
+	// chain also runs to completion before the assertions.
+	deadline := time.Now().Add(5 * time.Second)
+
+	for {
+		lines, rerr := sess.Manager.ReadAll()
+		if rerr != nil {
+			t.Fatalf("ReadAll: %v", rerr)
+		}
+
+		// Idle = the resumed turn's assistant closing exists AND the line
+		// count has been stable for one settle interval (any engine chain
+		// work lands as further lines; today it never does).
+		if hasAskChainIdleMarker(lines) {
+			time.Sleep(250 * time.Millisecond)
+
+			lines2, rerr2 := sess.Manager.ReadAll()
+			if rerr2 != nil {
+				t.Fatalf("ReadAll (settle): %v", rerr2)
+			}
+
+			if len(lines2) == len(lines) {
+				lines = lines2
+
+				break
+			}
+		}
+
+		if time.Now().After(deadline) {
+			break
+		}
+
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	lines, rerr := sess.Manager.ReadAll()
+	if rerr != nil {
+		t.Fatalf("ReadAll (final): %v", rerr)
+	}
+
+	// Locate the suspension (the asking turn) — the engine_decision pin keys
+	// on ITS turn id + ordering after it.
+	askIdx := -1
+
+	askTurnID := ""
+
+	for i := range lines {
+		if lines[i].Type == session.TypeAskSuspended {
+			askIdx = i
+			askTurnID = lines[i].TurnID
+
+			break
+		}
+	}
+
+	if askIdx < 0 {
+		t.Fatal("no ask_suspended line — the scripted ask never suspended the turn")
+	}
+
+	// PIN (a): an engine_decision line EXISTS for the asking turn AFTER its
+	// completion (the decision was made on the resolved+completed turn —
+	// action continue). Today: Observe exited at the post-injection check
+	// before deciding; the detached resume never fed the completion back.
+	decided := false
+
+	for i := range lines {
+		if i > askIdx && lines[i].Type == session.TypeEngineDecision &&
+			lines[i].TurnID == askTurnID && lines[i].Name == actionContinue {
+			decided = true
+
+			break
+		}
+	}
+
+	if !decided {
+		t.Errorf("no continue engine_decision for the asking turn %q after its completion — "+
+			"Observe exited on stopAsk without deciding and the D-01 timer resume ran "+
+			"engine-invisible (the 13-00 blocker, pinned)", askTurnID)
+	}
+
+	// PIN (b): the apply-stage turn EXISTS in the transcript (the chain
+	// survived the ask). Today: the injection is lost with the engine loop.
+	applyTurn := false
+
+	for i := range lines {
+		if lines[i].Type == session.TypeUserMessage && strings.Contains(lines[i].Text, "Apply the change:") {
+			applyTurn = true
+
+			break
+		}
+	}
+
+	if !applyTurn {
+		t.Error("no apply-stage turn in the transcript — the chain died at the ask " +
+			"(the resumed turn's completion produced no continuation)")
+	}
+
+	// Sanity (not a pinned failure): the resumed turn DID complete — without
+	// this the two pins above would fail for the wrong reason.
+	resumed := false
+
+	for i := range lines {
+		if lines[i].Type == session.TypeAssistantMessage && lines[i].TurnID == askTurnID {
+			resumed = true
+
+			break
+		}
+	}
+
+	if !resumed {
+		t.Fatalf("the suspended turn %q never completed after the timer resume — "+
+			"the fixture is broken, not the pins", askTurnID)
+	}
+
+	_ = prov.callCount() // script-shape debug aid when re-tuned
+}
+
+// hasAskChainIdleMarker reports whether the transcript already carries the
+// resumed asking turn's closing text (the settle the idle poll keys on).
+func hasAskChainIdleMarker(lines []session.Line) bool {
+	for i := range lines {
+		if lines[i].Type == session.TypeAssistantMessage &&
+			strings.Contains(lines[i].Text, "handoff to apply") {
+			return true
+		}
+	}
+
+	return false
+}
+
+
 
 // askToolCallProvider is a provider whose first Stream emits the AskUserQuestion
 // tool call (text preamble + tool_use chunk), mirroring the live leg-1 model
