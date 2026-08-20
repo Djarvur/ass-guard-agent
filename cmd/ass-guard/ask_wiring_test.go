@@ -30,6 +30,16 @@ const (
 	wiringAskCall    = "call_ask_w1"
 	wiringAskMe      = "ask me"
 	wiringAskCache   = "ask me which library"
+
+	// The chained-ask batteries' shared literals (goconst).
+	handoffToApply   = "handoff to apply"
+	postProposeRowID = "post-propose-handoff"
+	cwdKey           = "cwd"
+	methodSessNew    = "session/new"
+	methodSessPrmt   = "session/prompt"
+	sessionUpdate    = "session/update"
+	promptListKey    = "prompt"
+	cwdForFrames     = "/tmp"
 )
 
 // wiringAskInput is the plan's Test-1 question shape (one question, two
@@ -361,15 +371,18 @@ func TestAskWiring_SchemaDisciplineAtWiring(t *testing.T) {
 // flagship eval-gate death: 2 of 3 completed gate iterations).
 //
 // Turn script (the flagship death shape):
-//   turn 1 (typed explore):  closing matching post-explore-handoff → continue
-//   turn 2 (injected propose): AskUserQuestion → suspends (stopAsk); the 50ms
-//                              timer lands the non-answer; the resumed turn
-//                              closes matching post-propose-handoff
-//   turn 3 (injected apply):  unmatched closing → end_turn (chain terminates)
+//
+//	turn 1 (typed explore):  closing matching post-explore-handoff → continue
+//	turn 2 (injected propose): AskUserQuestion → suspends (stopAsk); the 50ms
+//	                           timer lands the non-answer; the resumed turn
+//	                           closes matching post-propose-handoff
+//	turn 3 (injected apply):  unmatched closing → end_turn (chain terminates)
 //
 // OFFLINE (no env gates). Under today's code the poll first waits out the
 // detached timer resume, then BOTH pinned assertions fail.
-func TestAskWiring_ChainSurvivesAskTimerResume(t *testing.T) {
+func TestAskWiring_ChainSurvivesAskTimerResume(t *testing.T) { //nolint:cyclop,funlen // settle poll
+	t.Parallel()
+
 	r, prov := newExpansionRunner(t, true,
 		scriptedResp{text: "exploration complete — handoff to propose", finish: stopEndTurn},
 		scriptedResp{toolCalls: []provider.ToolCall{{
@@ -384,8 +397,11 @@ func TestAskWiring_ChainSurvivesAskTimerResume(t *testing.T) {
 
 	// The seeded chain rows: explore→propose→apply (the flagship shape).
 	cfg := &openspec.OpenSpecConfig{Patterns: []openspec.PatternEntry{
-		{ID: "post-explore-handoff", Regex: "handoff to propose", Action: actionContinue, Next: "/opsx:propose ask-chain"},
-		{ID: "post-propose-handoff", Regex: "handoff to apply", Action: actionContinue, Next: "/opsx:apply ask-chain"},
+		{
+			ID: "post-explore-handoff", Regex: "handoff to propose",
+			Action: actionContinue, Next: "/opsx:propose ask-chain",
+		},
+		{ID: postProposeRowID, Regex: handoffToApply, Action: actionContinue, Next: "/opsx:apply ask-chain"},
 	}}
 
 	pt, err := openspec.FromConfig(cfg)
@@ -412,43 +428,7 @@ func TestAskWiring_ChainSurvivesAskTimerResume(t *testing.T) {
 	// Poll the transcript to idle (bounded): under today's code the detached
 	// ~50ms timer resume must land first; under the fixed code the engine
 	// chain also runs to completion before the assertions.
-	deadline := time.Now().Add(5 * time.Second)
-
-	for {
-		lines, rerr := sess.Manager.ReadAll()
-		if rerr != nil {
-			t.Fatalf("ReadAll: %v", rerr)
-		}
-
-		// Idle = the resumed turn's assistant closing exists AND the line
-		// count has been stable for one settle interval (any engine chain
-		// work lands as further lines; today it never does).
-		if hasAskChainIdleMarker(lines) {
-			time.Sleep(250 * time.Millisecond)
-
-			lines2, rerr2 := sess.Manager.ReadAll()
-			if rerr2 != nil {
-				t.Fatalf("ReadAll (settle): %v", rerr2)
-			}
-
-			if len(lines2) == len(lines) {
-				lines = lines2
-
-				break
-			}
-		}
-
-		if time.Now().After(deadline) {
-			break
-		}
-
-		time.Sleep(20 * time.Millisecond)
-	}
-
-	lines, rerr := sess.Manager.ReadAll()
-	if rerr != nil {
-		t.Fatalf("ReadAll (final): %v", rerr)
-	}
+	lines := pollAskChainIdle(t, sess)
 
 	// Locate the suspension (the asking turn) — the engine_decision pin keys
 	// on ITS turn id + ordering after it.
@@ -532,7 +512,47 @@ func hasAskChainIdleMarker(lines []session.Line) bool {
 	return false
 }
 
+// pollAskChainIdle polls until the asking chain's resumed closing exists AND
+// the transcript line count is stable for one settle interval (any engine
+// chain work lands as further lines) — bounded at 5s.
+func pollAskChainIdle(t *testing.T, sess *session.Session) []session.Line {
+	t.Helper()
 
+	deadline := time.Now().Add(5 * time.Second)
+
+	for {
+		lines, rerr := sess.Manager.ReadAll()
+		if rerr != nil {
+			t.Fatalf("ReadAll: %v", rerr)
+		}
+
+		if hasAskChainIdleMarker(lines) {
+			time.Sleep(250 * time.Millisecond)
+
+			lines2, rerr2 := sess.Manager.ReadAll()
+			if rerr2 != nil {
+				t.Fatalf("ReadAll (settle): %v", rerr2)
+			}
+
+			if len(lines2) == len(lines) {
+				return lines2 // idle: the line count is stable
+			}
+		}
+
+		if time.Now().After(deadline) {
+			break
+		}
+
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	lines, rerr := sess.Manager.ReadAll()
+	if rerr != nil {
+		t.Fatalf("ReadAll (final): %v", rerr)
+	}
+
+	return lines
+}
 
 // askToolCallProvider is a provider whose first Stream emits the AskUserQuestion
 // tool call (text preamble + tool_use chunk), mirroring the live leg-1 model
@@ -668,8 +688,8 @@ func TestAskWiring_ServerLevelSurface(t *testing.T) { //nolint:cyclop,funlen // 
 	})
 
 	sendFrame(t, cliW, &acp.Message{
-		JSONRPC: protocolVersion20, ID: json.RawMessage("1"), Method: "session/new",
-		Params: rawJSON(map[string]any{"cwd": "/tmp", keyMCPServers: []any{}}),
+		JSONRPC: protocolVersion20, ID: json.RawMessage("1"), Method: methodSessNew,
+		Params: rawJSON(map[string]any{cwdKey: cwdForFrames, keyMCPServers: []any{}}),
 	})
 
 	frames := readFrames(t, cliR, 2)
@@ -689,10 +709,10 @@ func TestAskWiring_ServerLevelSurface(t *testing.T) { //nolint:cyclop,funlen // 
 	}
 
 	sendFrame(t, cliW, &acp.Message{
-		JSONRPC: protocolVersion20, ID: json.RawMessage("2"), Method: "session/prompt",
+		JSONRPC: protocolVersion20, ID: json.RawMessage("2"), Method: methodSessPrmt,
 		Params: rawJSON(map[string]any{
-			keySessionID: snew.SessionID,
-			"prompt":     []any{map[string]any{"type": blockText, "text": "ask me which library"}},
+			keySessionID:  snew.SessionID,
+			promptListKey: []any{map[string]any{"type": blockText, "text": wiringAskCache}},
 		}),
 	})
 
@@ -741,7 +761,7 @@ func TestAskWiring_ServerLevelSurface(t *testing.T) { //nolint:cyclop,funlen // 
 	questionOnWire := false
 
 	for _, m := range all {
-		if m.Method == "session/update" && strings.Contains(string(m.Params), "Which cache library") {
+		if m.Method == sessionUpdate && strings.Contains(string(m.Params), "Which cache library") {
 			questionOnWire = true
 		}
 	}
@@ -762,7 +782,7 @@ func TestAskWiring_ServerLevelSurface(t *testing.T) { //nolint:cyclop,funlen // 
 // README option 2) would hold the response for the 1h timer and fail the
 // deadline — the stuck-spinner + reply-deadlock shape the 12-01 witness
 // verified against.
-func TestAskPark_PromptResponsePrecedesResolution(t *testing.T) { //nolint:cyclop,funlen // server scenario
+func TestAskPark_PromptResponsePrecedesResolution(t *testing.T) { //nolint:cyclop,gocyclo,funlen // server scenario
 	t.Parallel()
 
 	bus := event.NewBus()
@@ -825,8 +845,8 @@ func TestAskPark_PromptResponsePrecedesResolution(t *testing.T) { //nolint:cyclo
 	})
 
 	sendFrame(t, cliW, &acp.Message{
-		JSONRPC: protocolVersion20, ID: json.RawMessage("1"), Method: "session/new",
-		Params: rawJSON(map[string]any{"cwd": "/tmp", keyMCPServers: []any{}}),
+		JSONRPC: protocolVersion20, ID: json.RawMessage("1"), Method: methodSessNew,
+		Params: rawJSON(map[string]any{cwdKey: cwdForFrames, keyMCPServers: []any{}}),
 	})
 
 	frames := readFrames(t, cliR, 2)
@@ -848,10 +868,10 @@ func TestAskPark_PromptResponsePrecedesResolution(t *testing.T) { //nolint:cyclo
 	sentAt := time.Now()
 
 	sendFrame(t, cliW, &acp.Message{
-		JSONRPC: protocolVersion20, ID: json.RawMessage("2"), Method: "session/prompt",
+		JSONRPC: protocolVersion20, ID: json.RawMessage("2"), Method: methodSessPrmt,
 		Params: rawJSON(map[string]any{
-			keySessionID: snew.SessionID,
-			"prompt":     []any{map[string]any{"type": blockText, "text": "ask me which library"}},
+			keySessionID:  snew.SessionID,
+			promptListKey: []any{map[string]any{"type": blockText, "text": wiringAskCache}},
 		}),
 	})
 
@@ -884,8 +904,9 @@ func TestAskPark_PromptResponsePrecedesResolution(t *testing.T) { //nolint:cyclo
 
 		var m acp.Message
 
-		if jerr := json.Unmarshal(bytes.TrimRight(line, "\n"), &m); jerr == nil {
-			if m.Method == "session/update" && strings.Contains(string(m.Params), "Which cache library") {
+		jerr := json.Unmarshal(bytes.TrimRight(line, "\n"), &m)
+		if jerr == nil {
+			if m.Method == sessionUpdate && strings.Contains(string(m.Params), "Which cache library") {
 				surfaceBeforeResponse = true
 			}
 
@@ -916,8 +937,9 @@ func TestAskPark_PromptResponsePrecedesResolution(t *testing.T) { //nolint:cyclo
 	}
 
 	// Drain the parked chain (test hygiene; also the cancel path's proof shape).
-	if err := runner.CloseSession(snew.SessionID); err != nil {
-		t.Fatalf("CloseSession: %v", err)
+	closeErr := runner.CloseSession(snew.SessionID)
+	if closeErr != nil {
+		t.Fatalf("CloseSession: %v", closeErr)
 	}
 
 	idleCtx, idleCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -934,7 +956,7 @@ func TestAskPark_PromptResponsePrecedesResolution(t *testing.T) { //nolint:cyclo
 // ACP server calls it right after cancelTurn) and closeAllSessions (the serve
 // end). No decision, no injection after the drain; the goroutine is released
 // (chain count reaches zero).
-func TestAskPark_CancelAndCloseDrainParkedChains(t *testing.T) {
+func TestAskPark_CancelAndCloseDrainParkedChains(t *testing.T) { //nolint:funlen // two-route drain battery
 	t.Parallel()
 
 	t.Run("session close (cancel/logout route)", func(t *testing.T) {
@@ -974,7 +996,8 @@ func TestAskPark_CancelAndCloseDrainParkedChains(t *testing.T) {
 
 		// No post-drain decision/injection: the count is stable.
 		if after := countEngineDecisions(t, r, sid); after != before {
-			t.Errorf("engine_decision count went %d → %d after the cancel drain; want stable (no decision, no injection)", before, after)
+			t.Errorf("engine_decision count went %d → %d after the cancel drain; "+
+				"want stable (no decision, no injection)", before, after)
 		}
 	})
 
@@ -1042,7 +1065,9 @@ func countEngineDecisions(t *testing.T, r *sessionTurnRunner, sessionID string) 
 // resumed turn completes, and the post-settle injection QUEUES BEHIND the
 // reply's turn rather than overlapping (12-07 semantics; the transcript's
 // turn ordering proves it).
-func TestAskPark_ReplyDuringParkResumesAndQueuesInjection(t *testing.T) {
+func TestAskPark_ReplyDuringParkResumesAndQueuesInjection(t *testing.T) { //nolint:gocyclo,cyclop,funlen // ordering
+	t.Parallel()
+
 	r, prov := newExpansionRunner(t, true,
 		scriptedResp{text: "exploration complete — handoff to propose", finish: stopEndTurn},
 		scriptedResp{toolCalls: []provider.ToolCall{{
@@ -1056,8 +1081,11 @@ func TestAskPark_ReplyDuringParkResumesAndQueuesInjection(t *testing.T) {
 	r.askTimeout = time.Hour // the REPLY must win — no timer competition
 
 	cfg := &openspec.OpenSpecConfig{Patterns: []openspec.PatternEntry{
-		{ID: "post-explore-handoff", Regex: "handoff to propose", Action: actionContinue, Next: "/opsx:propose park-subj"},
-		{ID: "post-propose-handoff", Regex: "handoff to apply", Action: actionContinue, Next: "/opsx:apply park-subj"},
+		{
+			ID: "post-explore-handoff", Regex: "handoff to propose",
+			Action: actionContinue, Next: "/opsx:propose park-subj",
+		},
+		{ID: postProposeRowID, Regex: handoffToApply, Action: actionContinue, Next: "/opsx:apply park-subj"},
 	}}
 
 	pt, err := openspec.FromConfig(cfg)

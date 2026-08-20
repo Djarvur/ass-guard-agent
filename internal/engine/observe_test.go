@@ -625,9 +625,9 @@ func TestObserve_AskWait_InjectedTurnDecidesAfterSettle(t *testing.T) {
 	runner := &askWaitRunner{
 		stops: []string{stopEndTurn, engine.StopAsk, stopEndTurn},
 		before: []engine.TurnOutput{
-			{TurnID: turn001, Text: implementationCompleteMsg},       // user turn → continue
-			{TurnID: turn002, AskSuspended: true},                    // injected turn asks
-			{TurnID: turn003, Text: resultUnmatched},                 // final injection ends
+			{TurnID: turn001, Text: implementationCompleteMsg}, // user turn → continue
+			{TurnID: turn002, AskSuspended: true},              // injected turn asks
+			{TurnID: turn003, Text: resultUnmatched},           // final injection ends
 		},
 		after:  engine.TurnOutput{TurnID: turn002, Text: implementationCompleteMsg}, // resumed turn002
 		settle: settle,
@@ -772,7 +772,7 @@ func TestObserve_AskWait_CancelDuringWaitDrains(t *testing.T) {
 // settler that never settles with a LIVE ctx keeps today's semantics exactly —
 // the FIRST turn decides ActionAsk on the suspended output (no table lookup);
 // the INJECTED turn exits WITHOUT deciding.
-func TestObserve_AskWait_UnresolvedKeepsTodaySemantics(t *testing.T) {
+func TestObserve_AskWait_UnresolvedKeepsTodaySemantics(t *testing.T) { //nolint:funlen // two-path semantics battery
 	t.Parallel()
 
 	t.Run("first turn unresolved", func(t *testing.T) {
@@ -804,7 +804,8 @@ func TestObserve_AskWait_UnresolvedKeepsTodaySemantics(t *testing.T) {
 
 		events := collect()
 		if len(events) != 1 {
-			t.Fatalf("decisions = %d; want exactly the ask decision (events: %+v)", len(events), summarizeEvents(events))
+			t.Fatalf("decisions = %d; want exactly the ask decision (events: %+v)",
+				len(events), summarizeEvents(events))
 		}
 
 		// The nil-dispatcher engine degrades ActionAsk to nothing; the PIN is
@@ -859,7 +860,7 @@ func TestObserve_AskWait_UnresolvedKeepsTodaySemantics(t *testing.T) {
 // WITHOUT the AskSettler capability keeps today's behavior byte-identical on
 // both paths (first turn → ActionAsk decision; injection → exit without
 // deciding).
-func TestObserve_AskWait_NoCapabilityByteIdentical(t *testing.T) {
+func TestObserve_AskWait_NoCapabilityByteIdentical(t *testing.T) { //nolint:funlen // two-path byte-identity battery
 	t.Parallel()
 
 	t.Run("first turn", func(t *testing.T) {
@@ -891,7 +892,8 @@ func TestObserve_AskWait_NoCapabilityByteIdentical(t *testing.T) {
 		events := collect()
 		if len(events) != 1 || events[0].Signal != engine.SignalAskSuspended ||
 			events[0].Action == engine.ActionContinue.String() {
-			t.Errorf("decisions = %+v; want the ask-suspended decision, never a continue (today's first-turn semantics)",
+			t.Errorf("decisions = %+v; want the ask-suspended decision, never a continue "+
+				"(today's first-turn semantics)",
 				summarizeEvents(events))
 		}
 	})

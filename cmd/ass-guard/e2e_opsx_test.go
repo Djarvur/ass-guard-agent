@@ -289,7 +289,9 @@ func (o opsxRunnerSeam) RunPrompt(ctx context.Context, sessionID, text string) e
 	// chain does — the flagship scenario's expected chain completes through
 	// asks; the seam never re-drives stages (that would fake zero-continue).
 	if !o.r.WaitChainIdle(ctx, sessionID) {
-		return fmt.Errorf("eval seam: the engine chain did not go idle for %s within the ctx bound", sessionID)
+		//nolint:err113 // test-seam diagnostic
+		return fmt.Errorf("eval seam: the engine chain did not go idle for %s within the ctx bound",
+			sessionID)
 	}
 
 	return nil

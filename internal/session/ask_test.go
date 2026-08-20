@@ -2,8 +2,8 @@ package session //nolint:testpackage // internal package test (drives the real t
 
 import (
 	"context"
-	"fmt"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -20,11 +20,14 @@ const askInput = `{"questions":[{"question":"Which cache library should we use?"
 	`"options":[{"label":"ristretto","description":"fast in-memory cache"},` +
 	`{"label":"bigcache","description":"simple disk-backed cache"}]}]}`
 
-// Test-local tool + call ids (goconst).
+// Test-local tool + call ids + shared literals (goconst).
 const (
 	askToolNameTest = "AskUserQuestion"
 	askCallID1      = "call_ask_1"
 	askCallID2      = "call_ask_2"
+	askPromptText   = "add a cache"
+	settleStateSet  = "settled"
+	settleStateOpen = "open"
 )
 
 // newAskSession builds a catalog-wired Session whose AskUserQuestion entry
@@ -93,7 +96,7 @@ func TestAsk_SuspendsAndTimesOutEndToEnd(t *testing.T) { //nolint:gocognit,gocyc
 		{FinishReason: stopEndTurn}, // the resumed iteration closes the turn
 	}, 50*time.Millisecond)
 
-	stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "add a cache"}})
+	stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: askPromptText}})
 	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
@@ -219,7 +222,7 @@ func TestAsk_ReplyResumesSameTurn(t *testing.T) { //nolint:cyclop,funlen // flat
 		{FinishReason: stopEndTurn},
 	}, time.Hour) // long timeout: the reply must win, not the timer
 
-	stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "add a cache"}})
+	stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: askPromptText}})
 	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
@@ -386,15 +389,15 @@ func TestAsk_BrokerClaimRace(t *testing.T) {
 
 // --- 13-00 T2: the per-suspension settle seam (both resume drivers close it) ---
 
-// settleReport probes ch without blocking: "settled" when closed (or nil —
+// settleReport probes ch without blocking: settleStateSet when closed (or nil —
 // nothing ever armed, indistinguishable from settled for wait-first callers),
-// "open" when a suspension is still in flight.
+// settleStateOpen when a suspension is still in flight.
 func settleReport(ch <-chan struct{}) string {
 	select {
 	case <-ch:
-		return "settled"
+		return settleStateSet
 	default:
-		return "open"
+		return settleStateOpen
 	}
 }
 
@@ -415,7 +418,7 @@ func TestAsk_Settle_TimerResumeSettles(t *testing.T) {
 		{FinishReason: stopEndTurn},
 	}, 50*time.Millisecond)
 
-	stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "add a cache"}})
+	stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: askPromptText}})
 	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
@@ -430,13 +433,13 @@ func TestAsk_Settle_TimerResumeSettles(t *testing.T) {
 		t.Fatal("AskSettleChan returned nil while the ask is pending — the suspension did not arm the settle signal")
 	}
 
-	if got := settleReport(ch); got != "open" {
+	if got := settleReport(ch); got != settleStateOpen {
 		t.Fatalf("settle channel %q while PENDING; want open (the resume has not even started)", got)
 	}
 
 	deadline := time.Now().Add(5 * time.Second)
 
-	for settleReport(ch) != "settled" {
+	for settleReport(ch) != settleStateSet {
 		if time.Now().After(deadline) {
 			t.Fatal("the D-01 timer resume never settled the channel (5s)")
 		}
@@ -465,7 +468,7 @@ func TestAsk_Settle_ReplyResumeSettles(t *testing.T) {
 		{FinishReason: stopEndTurn},
 	}, time.Hour)
 
-	stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "add a cache"}})
+	stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: askPromptText}})
 	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
@@ -476,7 +479,7 @@ func TestAsk_Settle_ReplyResumeSettles(t *testing.T) {
 
 	ch := s.AskSettleChan()
 
-	if got := settleReport(ch); got != "open" {
+	if got := settleReport(ch); got != settleStateOpen {
 		t.Fatalf("settle channel %q while pending; want open", got)
 	}
 
@@ -485,7 +488,7 @@ func TestAsk_Settle_ReplyResumeSettles(t *testing.T) {
 		t.Fatalf("ResolveAsk: %v", err)
 	}
 
-	if got := settleReport(ch); got != "settled" {
+	if got := settleReport(ch); got != settleStateSet {
 		t.Fatalf("settle channel %q after the reply resume returned; want settled", got)
 	}
 }
@@ -495,7 +498,7 @@ func TestAsk_Settle_ReplyResumeSettles(t *testing.T) {
 // still running (the fake provider's delay holds the model call open, the
 // claim already happened) the channel is NOT yet closed: decisions can never
 // fire on a half-resumed turn.
-func TestAsk_Settle_ReflectsTurnCompletionNotClaim(t *testing.T) {
+func TestAsk_Settle_ReflectsTurnCompletionNotClaim(t *testing.T) { //nolint:funlen // delayed-provider battery
 	t.Parallel()
 
 	s := newTestSessionWithCatalog(t, nil)
@@ -540,7 +543,7 @@ func TestAsk_Settle_ReflectsTurnCompletionNotClaim(t *testing.T) {
 	}
 	fp.delay = 300 * time.Millisecond
 
-	stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "add a cache"}})
+	stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: askPromptText}})
 	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
@@ -565,12 +568,12 @@ func TestAsk_Settle_ReflectsTurnCompletionNotClaim(t *testing.T) {
 
 	// Claimed, resumed turn mid-flight (its 300ms model call started at the
 	// ~50ms claim; this check runs well inside that window).
-	if got := settleReport(ch); got != "open" {
+	if got := settleReport(ch); got != settleStateOpen {
 		t.Fatalf("settle channel %q while the resumed turn is STILL RUNNING (claim ≠ completion); want open", got)
 	}
 
 	// Now it settles once the turn completes.
-	for settleReport(ch) != "settled" {
+	for settleReport(ch) != settleStateSet {
 		if time.Now().After(deadline) {
 			t.Fatal("the resumed turn never completed/settled (5s)")
 		}
@@ -583,7 +586,7 @@ func TestAsk_Settle_ReflectsTurnCompletionNotClaim(t *testing.T) {
 // sequential suspension (the resumed turn asks again) arms a FRESH signal — no
 // stale-settle ABA; the first signal closes with ITS resume, the second stays
 // open until its own driver completes it.
-func TestAsk_Settle_SequentialSuspensionsFreshSignal(t *testing.T) {
+func TestAsk_Settle_SequentialSuspensionsFreshSignal(t *testing.T) { //nolint:cyclop,funlen // flat settle battery
 	t.Parallel()
 
 	s, _, _ := newAskSession(t, []provider.Response{
@@ -604,7 +607,7 @@ func TestAsk_Settle_SequentialSuspensionsFreshSignal(t *testing.T) {
 		{FinishReason: stopEndTurn},
 	}, time.Hour)
 
-	stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "add a cache"}})
+	stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: askPromptText}})
 	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
@@ -639,14 +642,14 @@ func TestAsk_Settle_SequentialSuspensionsFreshSignal(t *testing.T) {
 
 	// The accessor now returns the FRESH signal — the two are distinct
 	// channels (compare via behavior: ch2 open; ch1 settles shortly).
-	if c1, c2 := settleReport(ch1), settleReport(ch2); c1 == "open" && c2 == "open" {
+	if c1, c2 := settleReport(ch1), settleReport(ch2); c1 == settleStateOpen && c2 == settleStateOpen {
 		// channels could still be identical — prove distinctness by pointer.
 		if anyEqual(ch1, ch2) {
 			t.Fatal("the second suspension re-used the first settle signal (stale ABA hazard)")
 		}
 	}
 
-	for settleReport(ch1) != "settled" {
+	for settleReport(ch1) != settleStateSet {
 		if time.Now().After(deadline) {
 			t.Fatal("the FIRST suspension's signal never settled after its resume returned (5s)")
 		}
@@ -654,7 +657,7 @@ func TestAsk_Settle_SequentialSuspensionsFreshSignal(t *testing.T) {
 		time.Sleep(5 * time.Millisecond)
 	}
 
-	if got := settleReport(ch2); got != "open" {
+	if got := settleReport(ch2); got != settleStateOpen {
 		t.Fatalf("the SECOND suspension's signal %q before its driver ran; want open", got)
 	}
 
@@ -663,14 +666,14 @@ func TestAsk_Settle_SequentialSuspensionsFreshSignal(t *testing.T) {
 		t.Fatalf("ResolveAsk 2: %v", err)
 	}
 
-	if got := settleReport(ch2); got != "settled" {
+	if got := settleReport(ch2); got != settleStateSet {
 		t.Fatalf("the second signal %q after its resume; want settled", got)
 	}
 }
 
 // anyEqual compares two receive-only channels by identity (the only way
 // outside the package that produced them).
-func anyEqual(a, b <-chan struct{}) bool { //nolint:forbidigo // test-only identity probe
+func anyEqual(a, b <-chan struct{}) bool {
 	return fmt.Sprintf("%p", a) == fmt.Sprintf("%p", b)
 }
 
@@ -692,7 +695,7 @@ func TestAsk_Settle_WaiterCancellationPrompt(t *testing.T) {
 		{FinishReason: stopEndTurn},
 	}, 0) // block forever: no timer is armed
 
-	stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "add a cache"}})
+	stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: askPromptText}})
 	if err != nil {
 		t.Fatalf("Prompt: %v", err)
 	}
@@ -719,7 +722,7 @@ func TestAsk_Settle_WaiterCancellationPrompt(t *testing.T) {
 		}
 	}
 
-	if got := settleReport(ch); got != "open" {
+	if got := settleReport(ch); got != settleStateOpen {
 		t.Errorf("channel %q after the cancelled wait; want still open (no driver ran)", got)
 	}
 }

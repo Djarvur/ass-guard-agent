@@ -134,52 +134,13 @@ func (e *Engine) Observe(
 			return stop, err
 		}
 
-		// 13-00 ask-wait (the manager ruling's route 1 — engine-visible
-		// resume): a turn that ended suspended (first turn OR injection —
-		// the stop marker is authoritative, not the re-read output) WAITS
-		// for the broker's settle signal before deciding on completion. The
-		// FIRST turn still surfaces its ask decision AT suspension time
-		// (today's 12-01 ActionAsk audit line — the reply-routing + client
-		// surface pins read it), THEN waits: on settle the re-read below sees
-		// the COMPLETED turn (the adapter's terminal-line precedence: a later
-		// assistant_message outranks ask_suspended) and the loop decides
-		// normally; a NESTED ask (the resumed turn asked again) loops straight
-		// back into the wait. An INJECTED turn never pre-decides (today's
-		// post-injection path emits nothing for an unresolved ask). Anything
-		// unresolved keeps today's semantics exactly: ctx death ⇒
-		// cancel-drain ("cancelled", nil — no injection, no completion
-		// decision); alive + FIRST turn ⇒ the ActionAsk emitted above IS the
-		// last decision; alive + INJECTION ⇒ today's silent exit.
-		if stop == StopAsk && injections == 0 {
-			preDec, pderr := e.decideAndRecover(out, table)
-			if pderr != nil {
-				return stop, err
-			}
-
-			preDec = e.applyDispatcher(ctx, &preDec)
-			e.emit(&preDec) // the ask-suspension decision surfaces NOW (today's behavior)
+		// 13-00 ask-wait — see awaitAskSettlement for the full contract.
+		handled, res := e.awaitAskSettlement(ctx, runner, table, stop, injections, out)
+		if !handled {
+			return res.stop, res.err
 		}
 
-		for stop == StopAsk {
-			if !e.waitAskSettled(ctx, runner) {
-				if ctx.Err() != nil {
-					return "cancelled", nil //nolint:nilerr // cancellation surfaced via stop reason
-				}
-
-				return stop, err // unresolved: first turn already surfaced ActionAsk; injection exits silently
-			}
-
-			reRead, rerr := e.lastTurnAndRecover(runner)
-			if rerr != nil {
-				return stop, err
-			}
-
-			out = reRead
-
-			if !out.AskSuspended {
-				stop = "end_turn" // the suspension resolved to a completed turn
-			}
-		}
+		stop, out = res.stop, res.out
 
 		dec, derr := e.decideAndRecover(out, table)
 		if derr != nil {
@@ -215,19 +176,101 @@ func (e *Engine) Observe(
 			return stop, err
 		}
 	}
-	// Re-fire budget exhausted — the second infinite-loop bar. Emit a Nothing
-	// with a Reason noting the cap (logged, not errored — a safety stop).
+	// Re-fire budget exhausted — the second infinite-loop bar.
 	if injections == MaxContinueInjections {
-		e.emit(&Decision{
-			TurnID: safeLastTurnID(runner),
-			Action: ActionNothing,
-			Signal: "budget",
-			Reason: fmt.Sprintf("re-fire budget cap reached (%d continue-injections); "+
-				"stopping to prevent an infinite loop", MaxContinueInjections),
-		})
+		e.emitBudgetCap(runner)
 	}
 
 	return stop, err
+}
+
+// emitBudgetCap writes the budget-exhaustion Nothing decision (logged, not
+// errored — a safety stop).
+func (e *Engine) emitBudgetCap(runner TurnRunner) {
+	e.emit(&Decision{
+		TurnID: safeLastTurnID(runner),
+		Action: ActionNothing,
+		Signal: "budget",
+		Reason: fmt.Sprintf("re-fire budget cap reached (%d continue-injections); "+
+			"stopping to prevent an infinite loop", MaxContinueInjections),
+	})
+}
+
+// observeStep carries one Observe iteration's mutable state through the
+// 13-00 ask-settlement helper.
+type observeStep struct {
+	stop string
+	err  error
+	out  TurnOutput
+}
+
+// awaitAskSettlement is Observe's ask-wait (13-00, the manager ruling's
+// route 1 — engine-visible resume): a turn that ended suspended (first turn
+// OR injection — the stop marker is authoritative, not the re-read output)
+// WAITS for the broker's settle signal before deciding on completion.
+//
+// The FIRST turn still surfaces its ask decision AT suspension time (today's
+// 12-01 ActionAsk audit line — the reply-routing + client surface pins read
+// it), THEN waits: on settle the re-read sees the COMPLETED turn (the
+// adapter's terminal-line precedence: a later assistant_message outranks
+// ask_suspended) and the caller decides normally; a NESTED ask (the resumed
+// turn asked again) loops straight back into the wait. An INJECTED turn
+// never pre-decides (today's post-injection path emits nothing for an
+// unresolved ask).
+//
+// Returns handled=false when Observe must return immediately (the result
+// carries the (stop, err) to return); handled=true with the normalized
+// (stop, out) otherwise. Unresolved keeps today's semantics exactly: ctx
+// death ⇒ cancel-drain ("cancelled", nil — no injection, no completion
+// decision); alive + FIRST turn ⇒ the ActionAsk emitted here IS the last
+// decision; alive + INJECTION ⇒ today's silent exit.
+func (e *Engine) awaitAskSettlement(
+	ctx context.Context,
+	runner TurnRunner,
+	table PatternTable,
+	stop string,
+	injections int,
+	out TurnOutput, //nolint:gocritic // hugeParam: value contract mirrors Observe's locals
+) (bool, observeStep) {
+	if stop != StopAsk {
+		return true, observeStep{stop: stop, out: out} // not suspended — nothing to wait for
+	}
+
+	if injections == 0 {
+		preDec, pderr := e.decideAndRecover(out, table)
+		if pderr != nil {
+			return false, observeStep{stop: stop, err: nil}
+		}
+
+		preDec = e.applyDispatcher(ctx, &preDec)
+		e.emit(&preDec) // the ask-suspension decision surfaces NOW (today's behavior)
+	}
+
+	for stop == StopAsk {
+		if !e.waitAskSettled(ctx, runner) {
+			if ctx.Err() != nil {
+				// Cancel-drain: no completion decision, no injection.
+				return false, observeStep{stop: "cancelled", err: nil}
+			}
+
+			// Unresolved: the first turn already surfaced ActionAsk above; an
+			// injected turn exits silently — today's semantics.
+			return false, observeStep{stop: stop, err: nil}
+		}
+
+		reRead, rerr := e.lastTurnAndRecover(runner)
+		if rerr != nil {
+			return false, observeStep{stop: stop, err: nil}
+		}
+
+		out = reRead
+
+		if !out.AskSuspended {
+			stop = "end_turn" // the suspension resolved to a completed turn
+		}
+	}
+
+	return true, observeStep{stop: stop, out: out}
 }
 
 // waitAskSettled blocks until the runner's CURRENT ask suspension settles

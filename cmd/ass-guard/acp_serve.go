@@ -874,7 +874,9 @@ func startChunkForwarder(
 // The engine + the continue-injections all run under the SAME ctx derived from
 // the ACP turnCtx (ENG-03 — session/cancel reaches the engine + drains queued
 // injections).
-func (r *sessionTurnRunner) runOneTurn( //nolint:funcorder // grouping keeps the turn pipeline together
+//
+//nolint:funcorder,contextcheck,funlen // grouping; serveCtx-derived park; one flow
+func (r *sessionTurnRunner) runOneTurn(
 	ctx context.Context, sess *session.Session, blocks []session.ContentBlock,
 ) (string, error) {
 	if !r.engineEnabled || r.eng == nil || r.patternTable == nil {
@@ -909,6 +911,7 @@ func (r *sessionTurnRunner) runOneTurn( //nolint:funcorder // grouping keeps the
 	// — cancels the parked ctx (D-03 stays the only off-switch).
 	sessionID := sess.SessionID
 
+	//nolint:contextcheck // deliberately serveCtx-derived: the request ctx must not bound the parked chain
 	parkedCtx, parkedCancel := context.WithCancel(r.serveCtxOrBackground())
 	pc := &parkedChain{cancel: parkedCancel}
 
@@ -937,6 +940,7 @@ func (r *sessionTurnRunner) runOneTurn( //nolint:funcorder // grouping keeps the
 		// any post-settle injection Run (same goroutine), and the buffered
 		// signal never blocks the chain.
 		adapter.parkMu = r.sessionTurnMu(sessionID)
+
 		suspension <- struct{}{}
 	}
 
@@ -991,7 +995,9 @@ type parkedChain struct {
 // registerParkedChain records a parked chain's cancel func for the session
 // (13-00): cancelParkedChains — CloseSession (session/cancel + logout) and
 // closeAllSessions (serve end) — drains every parked chain of that session.
-func (r *sessionTurnRunner) registerParkedChain(sessionID string, pc *parkedChain) { //nolint:funcorder // park helper group
+//
+//nolint:funcorder // park helper group
+func (r *sessionTurnRunner) registerParkedChain(sessionID string, pc *parkedChain) {
 	r.parkedMu.Lock()
 	defer r.parkedMu.Unlock()
 
@@ -1008,7 +1014,9 @@ func (r *sessionTurnRunner) registerParkedChain(sessionID string, pc *parkedChai
 
 // unregisterParkedChain removes a finished chain's registration (idempotent;
 // the chain exited on its own — no cancel fired).
-func (r *sessionTurnRunner) unregisterParkedChain(sessionID string, pc *parkedChain) { //nolint:funcorder // park helper group
+//
+//nolint:funcorder // park helper group
+func (r *sessionTurnRunner) unregisterParkedChain(sessionID string, pc *parkedChain) {
 	r.parkedMu.Lock()
 	defer r.parkedMu.Unlock()
 
@@ -1065,7 +1073,7 @@ func (r *sessionTurnRunner) chainCount(sessionID string) int { //nolint:funcorde
 // parked-ask resume + its injections all finished) or ctx dies. The harness
 // seam (opsxRunnerSeam.RunPrompt / runStageTyped) consumes it — one engine
 // loop, two callers, identical wait-through-suspension semantics.
-func (r *sessionTurnRunner) WaitChainIdle(ctx context.Context, sessionID string) bool { //nolint:funcorder // idle-tracking group
+func (r *sessionTurnRunner) WaitChainIdle(ctx context.Context, sessionID string) bool {
 	for {
 		if r.chainCount(sessionID) == 0 {
 			return true
@@ -1075,9 +1083,13 @@ func (r *sessionTurnRunner) WaitChainIdle(ctx context.Context, sessionID string)
 			return false
 		}
 
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(chainIdlePollInterval)
 	}
 }
+
+// chainIdlePollInterval is WaitChainIdle's poll granularity (13-00): idle
+// waits are seconds-scale; 10ms keeps the poll cheap.
+const chainIdlePollInterval = 10 * time.Millisecond
 
 // sessionFor returns the Session for sessionID, creating it on first use.
 func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen,maintidx // grouping keeps the turn pipeline together

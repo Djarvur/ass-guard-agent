@@ -189,8 +189,8 @@ func TestIntegration_RealStreamingThroughACP(t *testing.T) { //nolint:funlen // 
 	}
 
 	sendFrame(t, cliW, &acp.Message{
-		JSONRPC: protocolVersion20, ID: json.RawMessage("1"), Method: "session/new",
-		Params: rawJSON(map[string]any{"cwd": "/tmp", "mcpServers": []any{}}),
+		JSONRPC: protocolVersion20, ID: json.RawMessage("1"), Method: methodSessNew,
+		Params: rawJSON(map[string]any{cwdKey: cwdForFrames, "mcpServers": []any{}}),
 	})
 	frames = readFrames(t, cliR, 1)
 
@@ -205,7 +205,7 @@ func TestIntegration_RealStreamingThroughACP(t *testing.T) { //nolint:funlen // 
 	}
 
 	sendFrame(t, cliW, &acp.Message{
-		JSONRPC: protocolVersion20, ID: json.RawMessage("2"), Method: "session/prompt",
+		JSONRPC: protocolVersion20, ID: json.RawMessage("2"), Method: methodSessPrmt,
 		Params: rawJSON(map[string]any{
 			keySessionID: snew.SessionID,
 			"prompt":     []map[string]any{{keyType: blockText, blockText: "hi"}},
@@ -231,7 +231,7 @@ func TestIntegration_RealStreamingThroughACP(t *testing.T) { //nolint:funlen // 
 			continue
 		}
 
-		if m.Method == "session/update" {
+		if m.Method == sessionUpdate {
 			chunks++
 		}
 

@@ -1023,7 +1023,7 @@ func TestNextPrompt_InjectionExpandsWithProvenance(t *testing.T) { //nolint:para
 
 	// A pattern table whose row chains propose→apply via the next field.
 	cfg := &openspec.OpenSpecConfig{Patterns: []openspec.PatternEntry{
-		{ID: "post-propose-handoff", Regex: "handoff to apply", Action: actionContinue, Next: "/opsx:apply add-login"},
+		{ID: postProposeRowID, Regex: "handoff to apply", Action: actionContinue, Next: "/opsx:apply add-login"},
 	}}
 
 	pt, err := openspec.FromConfig(cfg)

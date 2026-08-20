@@ -277,7 +277,7 @@ func TestTracerMCPEndToEnd(t *testing.T) { //nolint:cyclop,funlen,paralleltest /
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	_, pErr := sess.Prompt(ctx, []session.ContentBlock{{Type: "text", Text: "call the echo tool"}})
+	_, pErr := sess.Prompt(ctx, []session.ContentBlock{{Type: blockText, Text: "call the echo tool"}})
 	if pErr != nil {
 		t.Fatalf("Prompt failed: %v", pErr)
 	}
