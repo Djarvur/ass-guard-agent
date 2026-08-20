@@ -14,10 +14,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/session"
@@ -333,4 +335,120 @@ func transcriptsOf(lines []session.Line) []string {
 	}
 
 	return out
+}
+
+// ExpandedMatrixProfileJSON is the expanded-profile switch the Phase-13
+// matrix bootstraps write into the operator's global openspec config before
+// `openspec init`: profile "custom" (the 1.5.0 preset enum is core|custom
+// ONLY — there is no named "expanded" preset) + the workflows array naming
+// ALL 11 workflows, so init installs the 6 expanded commands
+// (new/continue/ff/verify/bulk-archive/onboard) alongside the core 5.
+// Planning probe 2026-08-19 (isolated-HOME /tmp/opsx-custom2; the installed
+// package's dist/core/profiles.js CORE_WORKFLOWS vs ALL_WORKFLOWS +
+// dist/core/config-schema.js).
+//
+//nolint:gochecknoglobals // a constant-shaped fixture payload
+var ExpandedMatrixProfileJSON = []byte(`{
+  "profile": "custom",
+  "workflows": [
+    "explore",
+    "propose",
+    "apply",
+    "sync",
+    "archive",
+    "new",
+    "continue",
+    "ff",
+    "verify",
+    "bulk-archive",
+    "onboard"
+  ]
+}`)
+
+// GuardOpenSpecGlobalConfig writes cfgJSON to the operator's GLOBAL openspec
+// config and restores the EXACT original state via t.Cleanup (13-01, the ONE
+// bootstrap primitive every Phase-13 E2E and eval leg shares; T-13-01-01).
+//
+// Path resolution mirrors the binary: HOME-based
+// ~/.config/openspec/config.json (verified with `openspec config path` on
+// darwin + openspec 1.5.0 — the config is global-scope ONLY on the pinned
+// binary, so the guard is the only way an expanded-profile scratch can exist
+// without permanently switching the operator's installs).
+//
+// Restore semantics (byte-exact, the invariant battery pins them offline):
+//   - file existed  ⇒ the original BYTES (and mode) return verbatim — never
+//     a synthesized "core", never key drift from anything the binary wrote
+//     mid-run (telemetry etc.);
+//   - file absent   ⇒ the file is REMOVED again — a gated run must not leave
+//     a global config behind in a HOME that had none.
+//
+// Consumers wanting a post-run byte-identity MEASUREMENT (the matrix runner
+// does) must register their compare cleanup BEFORE calling this guard:
+// t.Cleanup is LIFO, so a compare registered first runs AFTER the restore.
+func GuardOpenSpecGlobalConfig(tb testing.TB, cfgJSON []byte) {
+	tb.Helper()
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		tb.Fatalf("evalharness: resolve HOME for the global openspec config: %v", err)
+	}
+
+	cfgPath := filepath.Join(home, ".config", "openspec", "config.json")
+
+	orig, origMode, readErr := readConfigWithMode(cfgPath)
+	absent := errors.Is(readErr, fs.ErrNotExist)
+
+	if readErr != nil && !absent {
+		tb.Fatalf("evalharness: read global openspec config %s: %v", cfgPath, readErr)
+	}
+
+	err = os.MkdirAll(filepath.Dir(cfgPath), dirPerm)
+	if err != nil {
+		tb.Fatalf("evalharness: mkdir global openspec config dir: %v", err)
+	}
+
+	err = os.WriteFile(cfgPath, cfgJSON, filePermSeed)
+	if err != nil {
+		tb.Fatalf("evalharness: write expanded profile to %s: %v", cfgPath, err)
+	}
+
+	tb.Cleanup(func() {
+		restoreGlobalConfig(tb, cfgPath, orig, origMode, absent)
+	})
+}
+
+// restoreGlobalConfig is the guard's t.Cleanup body: byte-exact restore of the
+// pre-guard state (T-13-01-01).
+func restoreGlobalConfig(tb testing.TB, cfgPath string, orig []byte, origMode fs.FileMode, absent bool) {
+	tb.Helper()
+
+	if absent {
+		err := os.Remove(cfgPath)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			tb.Errorf("evalharness: restore absent global config (remove %s): %v", cfgPath, err)
+		}
+
+		return
+	}
+
+	err := os.WriteFile(cfgPath, orig, origMode)
+	if err != nil {
+		tb.Errorf("evalharness: restore global config bytes %s: %v", cfgPath, err)
+	}
+}
+
+// readConfigWithMode reads path's bytes + mode (the byte-exact restore needs
+// both). A missing file returns (nil, 0, fs.ErrNotExist).
+func readConfigWithMode(path string) ([]byte, fs.FileMode, error) {
+	st, err := os.Stat(path)
+	if err != nil {
+		return nil, 0, fmt.Errorf("evalharness: stat global config: %w", err)
+	}
+
+	orig, err := os.ReadFile(path)
+	if err != nil {
+		return nil, 0, fmt.Errorf("evalharness: read global config: %w", err)
+	}
+
+	return orig, st.Mode().Perm(), nil
 }
