@@ -14,6 +14,9 @@ import (
 // here — the parser honors the injected location's wall clock).
 func fixedNow() time.Time { return time.Date(2026, 8, 20, 9, 15, 0, 0, time.UTC) }
 
+// cronHourly is the schema's own hourly example (goconst).
+const cronHourly = "0 * * * *"
+
 func openStore(t *testing.T) *sched.ScheduleStore {
 	t.Helper()
 
@@ -38,8 +41,9 @@ func TestParser_NextDue(t *testing.T) {
 		want time.Time
 	}{
 		{"*/20 * * * *", time.Date(2026, 8, 20, 9, 20, 0, 0, time.UTC)},
-		{"0 * * * *", time.Date(2026, 8, 20, 10, 0, 0, 0, time.UTC)},
-		{"0 9 * * 1-5", time.Date(2026, 8, 21, 9, 0, 0, 0, time.UTC)}, // 08-20 is a Thursday: next weekday slot is Friday
+		{cronHourly, time.Date(2026, 8, 20, 10, 0, 0, 0, time.UTC)},
+		// 08-20 is a Thursday: the next weekday slot is Friday.
+		{"0 9 * * 1-5", time.Date(2026, 8, 21, 9, 0, 0, 0, time.UTC)},
 		{"30 9 21 8 *", time.Date(2026, 8, 21, 9, 30, 0, 0, time.UTC)},
 	}
 
@@ -56,11 +60,13 @@ func TestParser_NextDue(t *testing.T) {
 		}
 	}
 
-	if _, err := sched.ParseCron("not a cron"); err == nil {
+	_, err := sched.ParseCron("not a cron")
+	if err == nil {
 		t.Error("ParseCron(invalid) = nil error, want structured error")
 	}
 
-	if _, err := sched.ParseCron("61 * * * *"); err == nil {
+	_, err = sched.ParseCron("61 * * * *")
+	if err == nil {
 		t.Error("ParseCron(61 minutes) = nil error, want bounds error")
 	}
 }
@@ -71,6 +77,7 @@ func TestDelayOnce_NextDue(t *testing.T) {
 	t.Parallel()
 
 	a := sched.Automation{DelayOnce: 5, CreatedAt: fixedNow(), Recurring: true}
+
 	due, ok := sched.NextDue(&a, fixedNow())
 	if !ok || !due.Equal(fixedNow().Add(5*time.Minute)) {
 		t.Fatalf("NextDue(delay) = %s ok=%v, want +5m", due, ok)
@@ -89,12 +96,13 @@ func TestStore_CRUDRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
+
 	s, err := sched.Open(dir)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 
-	created, err := s.Create(sched.Automation{Title: "drink water", Prompt: "remind me", DelayOnce: 5})
+	created, err := s.Create(&sched.Automation{Title: "drink water", Prompt: "remind me", DelayOnce: 5})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -104,6 +112,7 @@ func TestStore_CRUDRoundTrip(t *testing.T) {
 	}
 
 	path := filepath.Join(dir, ".ass-guard", "schedule", "schedules.json")
+
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("store file: %v", err)
@@ -122,7 +131,8 @@ func TestStore_CRUDRoundTrip(t *testing.T) {
 	a.DelayOnce = 0
 	a.Title = "every 10m water"
 
-	if err := s.Save(a); err != nil {
+	err = s.Save(&a)
+	if err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
@@ -130,7 +140,8 @@ func TestStore_CRUDRoundTrip(t *testing.T) {
 		t.Errorf("after Save: %+v", got[0])
 	}
 
-	if err := s.Delete(a.ID); err != nil {
+	err = s.Delete(a.ID)
+	if err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 
@@ -145,18 +156,21 @@ func TestStore_RoundTripPersistence(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
+
 	s1, err := sched.Open(dir)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
 
-	created, err := s1.Create(sched.Automation{Title: "t", Prompt: "p", Cron: "0 * * * *"})
+	created, err := s1.Create(&sched.Automation{Title: "t", Prompt: "p", Cron: cronHourly})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
 	firedAt := fixedNow().Add(-2 * time.Hour)
-	if err := s1.MarkFired(created.ID, firedAt); err != nil {
+
+	err = s1.MarkFired(created.ID, firedAt)
+	if err != nil {
 		t.Fatalf("MarkFired: %v", err)
 	}
 
@@ -178,12 +192,15 @@ func TestStore_CorruptFileQuarantined(t *testing.T) {
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".ass-guard", "schedule", "schedules.json")
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+
+	err := os.MkdirAll(filepath.Dir(path), 0o750)
+	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
-		t.Fatal(err)
+	errX := os.WriteFile(path, []byte("{not json"), 0o600)
+	if errX != nil {
+		t.Fatal(errX)
 	}
 
 	s, err := sched.Open(dir)
@@ -195,8 +212,9 @@ func TestStore_CorruptFileQuarantined(t *testing.T) {
 		t.Errorf("List(corrupt) = %+v, want fresh empty", got)
 	}
 
-	if _, err := os.Stat(path); err != nil {
-		t.Errorf("fresh store not written after quarantine: %v", err)
+	_, serr := os.Stat(path)
+	if serr != nil {
+		t.Errorf("fresh store not written after quarantine: %v", serr)
 	}
 }
 
@@ -209,11 +227,16 @@ func TestStore_DueAndCatchUp(t *testing.T) {
 	s := openStore(t)
 	now := fixedNow()
 
-	// Overdue by an hour (hourly cron, never fired).
-	a, err := s.Create(sched.Automation{Title: "hourly", Prompt: "check builds", Cron: "0 * * * *"})
+	// Created at 08:05 (clock injected): the 09:00 slot follows creation, so
+	// at 09:15 the automation is OVERDUE (hourly cron, never fired).
+	s.SetNow(func() time.Time { return now.Add(-70 * time.Minute) }) // 08:05
+
+	a, err := s.Create(&sched.Automation{Title: "hourly", Prompt: "check builds", Cron: cronHourly, Recurring: true})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
+
+	s.SetNow(func() time.Time { return now })
 
 	// The scheduler tick path: Due at now (the 09:00 slot passed at 09:15).
 	due := s.Due(now)
@@ -221,8 +244,9 @@ func TestStore_DueAndCatchUp(t *testing.T) {
 		t.Fatalf("Due = %+v, want the overdue automation", due)
 	}
 
-	if err := s.MarkFired(a.ID, now); err != nil {
-		t.Fatal(err)
+	errX := s.MarkFired(a.ID, now)
+	if errX != nil {
+		t.Fatal(errX)
 	}
 
 	if got := s.Due(now); len(got) != 0 {
@@ -240,6 +264,7 @@ func TestCatchUp_FireOnceWithNote(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
+
 	s1, err := sched.Open(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -247,16 +272,17 @@ func TestCatchUp_FireOnceWithNote(t *testing.T) {
 
 	now := fixedNow()
 
-	b, err := s1.Create(sched.Automation{Title: "daily", Prompt: "report", Cron: "0 9 * * *"})
+	b, err := s1.Create(&sched.Automation{Title: "daily", Prompt: "report", Cron: "0 9 * * *", Recurring: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_ = s1.SetNow(func() time.Time { return now })
+	s1.SetNow(func() time.Time { return now })
 
 	// Simulate the last fire 72h ago: slots at 09:00 on 08-18/19/20 all missed.
-	if err := s1.MarkFired(b.ID, now.Add(-72*time.Hour)); err != nil {
-		t.Fatal(err)
+	merr := s1.MarkFired(b.ID, now.Add(-72*time.Hour))
+	if merr != nil {
+		t.Fatal(merr)
 	}
 
 	s2, err := sched.Open(dir)
@@ -266,7 +292,8 @@ func TestCatchUp_FireOnceWithNote(t *testing.T) {
 
 	// The reopened store sees "now" 1 minute past the last missed slot.
 	restarted := now.Add(time.Minute)
-	_ = s2.SetNow(func() time.Time { return restarted })
+
+	s2.SetNow(func() time.Time { return restarted })
 
 	events := s2.CatchUp(restarted)
 	if len(events) != 1 || events[0].Automation.ID != b.ID {
@@ -283,7 +310,7 @@ func TestCatchUp_FireOnceWithNote(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_ = s3.SetNow(func() time.Time { return restarted.Add(time.Minute) })
+	s3.SetNow(func() time.Time { return restarted.Add(time.Minute) })
 
 	if events := s3.CatchUp(restarted.Add(time.Minute)); len(events) != 0 {
 		t.Errorf("second CatchUp = %+v — lastFired must make catch-up exactly-once", events)
@@ -295,13 +322,15 @@ func TestStoreJSON_Shape(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
+
 	s, err := sched.Open(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := s.Create(sched.Automation{Title: "t", Prompt: "p", DelayOnce: 8}); err != nil {
-		t.Fatal(err)
+	_, cerr := s.Create(&sched.Automation{Title: "t", Prompt: "p", DelayOnce: 8})
+	if cerr != nil {
+		t.Fatal(cerr)
 	}
 
 	raw, err := os.ReadFile(filepath.Join(dir, ".ass-guard", "schedule", "schedules.json"))
@@ -310,7 +339,9 @@ func TestStoreJSON_Shape(t *testing.T) {
 	}
 
 	var doc map[string]any
-	if err := json.Unmarshal(raw, &doc); err != nil {
+
+	err = json.Unmarshal(raw, &doc)
+	if err != nil {
 		t.Fatalf("store json: %v", err)
 	}
 
