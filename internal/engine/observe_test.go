@@ -708,12 +708,18 @@ func TestObserve_AskWait_FirstTurnDecidesAfterSettle(t *testing.T) {
 
 	events := collect()
 
+	// The suspension surfaces its ask decision FIRST (the 12-01 audit line),
+	// then the settled turn gets its NORMAL continue decision.
 	if len(events) < 2 {
-		t.Fatalf("decisions = %d; want >= 2 (continue for the settled turn + the final nothing)", len(events))
+		t.Fatalf("decisions = %d; want >= 2 (the ask surface + the continue for the settled turn)", len(events))
 	}
 
-	if events[0].TurnID != turn001 || events[0].Action != engine.ActionContinue.String() {
-		t.Errorf("first decision = %+v; want continue for the settled user turn %q", events[0], turn001)
+	if events[0].TurnID != turn001 || events[0].Signal != engine.SignalAskSuspended {
+		t.Errorf("first decision = %+v; want the ask-suspension surface for %q", events[0], turn001)
+	}
+
+	if events[1].TurnID != turn001 || events[1].Action != engine.ActionContinue.String() {
+		t.Errorf("second decision = %+v; want continue for the settled user turn %q", events[1], turn001)
 	}
 }
 
@@ -752,8 +758,13 @@ func TestObserve_AskWait_CancelDuringWaitDrains(t *testing.T) {
 		t.Errorf("runner.Run called %d times; want 1 (no injection after the drain)", got)
 	}
 
-	if events := collect(); len(events) != 0 {
-		t.Errorf("decisions emitted during the drain = %+v; want none", summarizeEvents(events))
+	// The ask-suspension decision MAY have surfaced before the drain (it is
+	// true + harmless); the pin is that NO completion decision and NO
+	// injection followed the cancelled wait.
+	for _, ev := range collect() {
+		if ev.Action == engine.ActionContinue.String() {
+			t.Errorf("a continue decision fired during the drain: %+v (the cancelled chain must hold)", ev)
+		}
 	}
 }
 

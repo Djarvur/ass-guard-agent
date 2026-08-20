@@ -137,27 +137,36 @@ func (e *Engine) Observe(
 		// 13-00 ask-wait (the manager ruling's route 1 — engine-visible
 		// resume): a turn that ended suspended (first turn OR injection —
 		// the stop marker is authoritative, not the re-read output) WAITS
-		// for the broker's settle signal before any decision. On settle the
-		// re-read below sees the COMPLETED turn (the adapter's terminal-line
-		// precedence: a later assistant_message outranks ask_suspended) and
-		// the loop decides normally; a NESTED ask (the resumed turn asked
-		// again) loops straight back into the wait. Anything else keeps
-		// today's semantics exactly: unresolved + ctx death ⇒ cancel-drain
-		// ("cancelled", nil — no decision, no injection); unresolved + alive
-		// on the FIRST turn ⇒ Decide on the suspended output (ActionAsk, no
-		// table lookup); unresolved + alive on an INJECTION ⇒ today's silent
-		// exit (no decision for the asking turn).
+		// for the broker's settle signal before deciding on completion. The
+		// FIRST turn still surfaces its ask decision AT suspension time
+		// (today's 12-01 ActionAsk audit line — the reply-routing + client
+		// surface pins read it), THEN waits: on settle the re-read below sees
+		// the COMPLETED turn (the adapter's terminal-line precedence: a later
+		// assistant_message outranks ask_suspended) and the loop decides
+		// normally; a NESTED ask (the resumed turn asked again) loops straight
+		// back into the wait. An INJECTED turn never pre-decides (today's
+		// post-injection path emits nothing for an unresolved ask). Anything
+		// unresolved keeps today's semantics exactly: ctx death ⇒
+		// cancel-drain ("cancelled", nil — no injection, no completion
+		// decision); alive + FIRST turn ⇒ the ActionAsk emitted above IS the
+		// last decision; alive + INJECTION ⇒ today's silent exit.
+		if stop == StopAsk && injections == 0 {
+			preDec, pderr := e.decideAndRecover(out, table)
+			if pderr != nil {
+				return stop, err
+			}
+
+			preDec = e.applyDispatcher(ctx, &preDec)
+			e.emit(&preDec) // the ask-suspension decision surfaces NOW (today's behavior)
+		}
+
 		for stop == StopAsk {
 			if !e.waitAskSettled(ctx, runner) {
 				if ctx.Err() != nil {
 					return "cancelled", nil //nolint:nilerr // cancellation surfaced via stop reason
 				}
 
-				if injections > 0 {
-					return stop, err
-				}
-
-				break // first-turn unresolved → the suspended output reaches Decide
+				return stop, err // unresolved: first turn already surfaced ActionAsk; injection exits silently
 			}
 
 			reRead, rerr := e.lastTurnAndRecover(runner)
