@@ -492,19 +492,11 @@ func TestAskWiring_ChainSurvivesAskTimerResume(t *testing.T) {
 
 	// PIN (b): the apply-stage turn EXISTS in the transcript (the chain
 	// survived the ask). Today: the injection is lost with the engine loop.
-	applyTurn := false
-
-	for i := range lines {
-		if lines[i].Type == session.TypeUserMessage && strings.Contains(lines[i].Text, "Apply the change:") {
-			applyTurn = true
-
-			break
-		}
-	}
-
-	if !applyTurn {
-		t.Error("no apply-stage turn in the transcript — the chain died at the ask " +
-			"(the resumed turn's completion produced no continuation)")
+	// (user_message bodies ride the Content field — lastUserMessageText
+	// assembles them.)
+	if got := lastUserMessageText(t, r, sid); !strings.Contains(got, "Apply the change:") {
+		t.Errorf("last user_message = %q; want the apply-stage turn — the chain died at the ask "+
+			"(the resumed turn's completion produced no continuation)", got)
 	}
 
 	// Sanity (not a pinned failure): the resumed turn DID complete — without
@@ -757,5 +749,411 @@ func TestAskWiring_ServerLevelSurface(t *testing.T) { //nolint:cyclop,funlen // 
 	if !questionOnWire {
 		t.Errorf("the rendered question surface never reached the client wire "+
 			"(%d frames; the live-witness finding reproduced)", len(all))
+	}
+}
+
+// --- 13-00 T4: the serve park pins ---
+
+// TestAskPark_PromptResponsePrecedesResolution (T4 pin 1, wire byte-compat —
+// server level): the session/prompt RESPONSE arrives AT the suspension, BEFORE
+// any resolution — the ask surface reached the client first, the pending ask
+// is still unresolved at response time (the D-01 timer is 1h away), and the
+// chain continues parked. A synchronous-wait implementation (the overruled
+// README option 2) would hold the response for the 1h timer and fail the
+// deadline — the stuck-spinner + reply-deadlock shape the 12-01 witness
+// verified against.
+func TestAskPark_PromptResponsePrecedesResolution(t *testing.T) { //nolint:cyclop,funlen // server scenario
+	t.Parallel()
+
+	bus := event.NewBus()
+
+	mp := &askToolCallProvider{}
+
+	dir := t.TempDir()
+
+	writeOpsxCommandFixtures(t, dir)
+
+	runner := &sessionTurnRunner{
+		bus:          bus,
+		profile:      fakeProfileACP(),
+		workDir:      dir,
+		maxConc:      2,
+		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return mp },
+		askTimeout:   time.Hour, // the timer never fires in test time — the response must NOT wait for it
+	}
+
+	err := runner.setupEngine()
+	if err != nil {
+		t.Fatalf("setupEngine: %v", err)
+	}
+
+	runner.loadCommandRegistry()
+
+	srvInR, cliW := io.Pipe()
+
+	cliR, srvOutW := io.Pipe()
+
+	srv := acp.NewServer(srvInR, srvOutW, &bytes.Buffer{}, acp.WithTurnRunner(runner))
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	served := make(chan struct{})
+
+	go func() {
+		_ = srv.Serve(ctx)
+
+		close(served)
+	}()
+
+	defer func() {
+		cancel()
+
+		_ = cliW.Close()
+		_ = srvOutW.Close()
+		_ = srvInR.Close()
+
+		select {
+		case <-served:
+		case <-time.After(2 * time.Second):
+			t.Errorf("server did not exit")
+		}
+	}()
+
+	sendFrame(t, cliW, &acp.Message{
+		JSONRPC: protocolVersion20, ID: json.RawMessage("0"), Method: methodInitialize,
+		Params: rawJSON(map[string]any{keyProtoVersion: 1}),
+	})
+
+	sendFrame(t, cliW, &acp.Message{
+		JSONRPC: protocolVersion20, ID: json.RawMessage("1"), Method: "session/new",
+		Params: rawJSON(map[string]any{"cwd": "/tmp", keyMCPServers: []any{}}),
+	})
+
+	frames := readFrames(t, cliR, 2)
+
+	var snew struct {
+		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+	}
+
+	for _, f := range frames {
+		if strings.Contains(string(f.Result), "sessionId") {
+			_ = json.Unmarshal(f.Result, &snew)
+		}
+	}
+
+	if snew.SessionID == "" {
+		t.Fatalf("no sessionId from session/new: %+v", frames)
+	}
+
+	sentAt := time.Now()
+
+	sendFrame(t, cliW, &acp.Message{
+		JSONRPC: protocolVersion20, ID: json.RawMessage("2"), Method: "session/prompt",
+		Params: rawJSON(map[string]any{
+			keySessionID: snew.SessionID,
+			"prompt":     []any{map[string]any{"type": blockText, "text": "ask me which library"}},
+		}),
+	})
+
+	br := bufio.NewReader(cliR)
+
+	var (
+		gotResponse bool
+
+		surfaceBeforeResponse bool
+
+		all []*acp.Message
+	)
+
+	deadline := time.After(30 * time.Second)
+
+	for !gotResponse {
+		select {
+		case <-deadline:
+			t.Fatalf("no prompt response within 30s — a synchronous wait is holding it " +
+				"(the response must return AT the suspension, ~instantly)")
+		default:
+		}
+
+		line, rerr := br.ReadBytes('\n')
+		if len(line) == 0 && rerr != nil {
+			time.Sleep(10 * time.Millisecond)
+
+			continue
+		}
+
+		var m acp.Message
+
+		if jerr := json.Unmarshal(bytes.TrimRight(line, "\n"), &m); jerr == nil {
+			if m.Method == "session/update" && strings.Contains(string(m.Params), "Which cache library") {
+				surfaceBeforeResponse = true
+			}
+
+			all = append(all, &m)
+
+			if string(m.ID) == "2" && m.Result != nil {
+				gotResponse = true
+			}
+		}
+	}
+
+	if !surfaceBeforeResponse {
+		t.Errorf("the ask surface did not precede the response (%d frames)", len(all))
+	}
+
+	if elapsed := time.Since(sentAt); elapsed > 10*time.Second {
+		t.Errorf("response took %v; want near-instant (suspension return, not resolution)", elapsed)
+	}
+
+	// The ask is STILL unresolved: the response did not wait for the (1h)
+	// timer or any reply.
+	runner.sessMu.Lock()
+	sess := runner.sessions[snew.SessionID]
+	runner.sessMu.Unlock()
+
+	if sess == nil || !sess.HasPendingAsk() {
+		t.Error("no pending ask at response time — the response outlived the suspension")
+	}
+
+	// Drain the parked chain (test hygiene; also the cancel path's proof shape).
+	if err := runner.CloseSession(snew.SessionID); err != nil {
+		t.Fatalf("CloseSession: %v", err)
+	}
+
+	idleCtx, idleCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer idleCancel()
+
+	if !runner.WaitChainIdle(idleCtx, snew.SessionID) {
+		t.Error("the parked chain did not go idle after CloseSession (goroutine leak)")
+	}
+}
+
+// TestAskPark_CancelAndCloseDrainParkedChains (T4 pin 2 + W4): a parked chain
+// (first-turn ask, 1h timer — parked indefinitely) is DRAINED by BOTH
+// session-close routes: CloseSession (the session/cancel + logout path — the
+// ACP server calls it right after cancelTurn) and closeAllSessions (the serve
+// end). No decision, no injection after the drain; the goroutine is released
+// (chain count reaches zero).
+func TestAskPark_CancelAndCloseDrainParkedChains(t *testing.T) {
+	t.Parallel()
+
+	t.Run("session close (cancel/logout route)", func(t *testing.T) {
+		t.Parallel()
+
+		r, _ := newExpansionRunner(t, true,
+			scriptedResp{toolCalls: []provider.ToolCall{{
+				ID: wiringAskCall, Name: wiringAskTool,
+				Input: json.RawMessage(wiringAskInput),
+			}}},
+			scriptedResp{text: "acknowledged; done", finish: stopEndTurn},
+		)
+
+		r.askTimeout = time.Hour
+
+		const sid = "sess-park-cancel"
+
+		_, err := r.Run(context.Background(), sid, &noopEmitter{},
+			[]acp.ContentBlock{{Type: blockText, Text: wiringAskMe}})
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+
+		before := countEngineDecisions(t, r, sid)
+
+		err = r.CloseSession(sid)
+		if err != nil {
+			t.Fatalf("CloseSession: %v", err)
+		}
+
+		idleCtx, idleCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer idleCancel()
+
+		if !r.WaitChainIdle(idleCtx, sid) {
+			t.Fatal("the parked chain did not drain after CloseSession (goroutine leak)")
+		}
+
+		// No post-drain decision/injection: the count is stable.
+		if after := countEngineDecisions(t, r, sid); after != before {
+			t.Errorf("engine_decision count went %d → %d after the cancel drain; want stable (no decision, no injection)", before, after)
+		}
+	})
+
+	t.Run("serve end (closeAllSessions route)", func(t *testing.T) {
+		t.Parallel()
+
+		r, _ := newExpansionRunner(t, true,
+			scriptedResp{toolCalls: []provider.ToolCall{{
+				ID: wiringAskCall, Name: wiringAskTool,
+				Input: json.RawMessage(wiringAskInput),
+			}}},
+			scriptedResp{text: "acknowledged; done", finish: stopEndTurn},
+		)
+
+		r.askTimeout = time.Hour
+
+		const sid = "sess-park-closeall"
+
+		_, err := r.Run(context.Background(), sid, &noopEmitter{},
+			[]acp.ContentBlock{{Type: blockText, Text: wiringAskMe}})
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+
+		before := countEngineDecisions(t, r, sid)
+
+		r.closeAllSessions()
+
+		idleCtx, idleCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer idleCancel()
+
+		if !r.WaitChainIdle(idleCtx, sid) {
+			t.Fatal("the parked chain did not drain after closeAllSessions (goroutine leak)")
+		}
+
+		if after := countEngineDecisions(t, r, sid); after != before {
+			t.Errorf("engine_decision count went %d → %d after the serve-end drain; want stable", before, after)
+		}
+	})
+}
+
+// countEngineDecisions counts the session's engine_decision transcript lines.
+func countEngineDecisions(t *testing.T, r *sessionTurnRunner, sessionID string) int {
+	t.Helper()
+
+	lines, err := r.sessions[sessionID].Manager.ReadAll()
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+
+	n := 0
+
+	for i := range lines {
+		if lines[i].Type == session.TypeEngineDecision {
+			n++
+		}
+	}
+
+	return n
+}
+
+// TestAskPark_ReplyDuringParkResumesAndQueuesInjection (T4 pin 3,
+// serialization): a reply arriving while the chain is parked resolves the ask
+// through routeAskReply (turnMu is FREE — Run returned at the suspension), the
+// resumed turn completes, and the post-settle injection QUEUES BEHIND the
+// reply's turn rather than overlapping (12-07 semantics; the transcript's
+// turn ordering proves it).
+func TestAskPark_ReplyDuringParkResumesAndQueuesInjection(t *testing.T) {
+	r, prov := newExpansionRunner(t, true,
+		scriptedResp{text: "exploration complete — handoff to propose", finish: stopEndTurn},
+		scriptedResp{toolCalls: []provider.ToolCall{{
+			ID: wiringAskCall, Name: wiringAskTool,
+			Input: json.RawMessage(wiringAskInput),
+		}}},
+		scriptedResp{text: "proposal written — handoff to apply", finish: stopEndTurn},
+		scriptedResp{text: "applied everything; nothing further to do", finish: stopEndTurn},
+	)
+
+	r.askTimeout = time.Hour // the REPLY must win — no timer competition
+
+	cfg := &openspec.OpenSpecConfig{Patterns: []openspec.PatternEntry{
+		{ID: "post-explore-handoff", Regex: "handoff to propose", Action: actionContinue, Next: "/opsx:propose park-subj"},
+		{ID: "post-propose-handoff", Regex: "handoff to apply", Action: actionContinue, Next: "/opsx:apply park-subj"},
+	}}
+
+	pt, err := openspec.FromConfig(cfg)
+	if err != nil {
+		t.Fatalf("FromConfig: %v", err)
+	}
+
+	r.patternTable = pt
+
+	const sid = "sess-park-reply"
+
+	stop1, err := r.Run(context.Background(), sid, &noopEmitter{},
+		[]acp.ContentBlock{{Type: blockText, Text: "/opsx:explore park-subj"}})
+	if err != nil {
+		t.Fatalf("Run 1: %v", err)
+	}
+
+	if stop1 != stopEndTurn {
+		t.Fatalf("Run 1 stop = %q; want end_turn (the suspension maps to a completed turn)", stop1)
+	}
+
+	// The chain is parked; the ask is pending.
+	sess := r.sessions[sid]
+
+	if !sess.HasPendingAsk() {
+		t.Fatal("no pending ask after the suspension")
+	}
+
+	if got := r.chainCount(sid); got != 1 {
+		t.Fatalf("chainCount = %d; want 1 (parked)", got)
+	}
+
+	// The operator's reply — an ordinary session/prompt.
+	stop2, err := r.Run(context.Background(), sid, &noopEmitter{},
+		[]acp.ContentBlock{{Type: blockText, Text: "ristretto, please"}})
+	if err != nil {
+		t.Fatalf("Run 2 (reply): %v", err)
+	}
+
+	if stop2 != stopEndTurn {
+		t.Fatalf("Run 2 stop = %q; want the resumed turn's end_turn", stop2)
+	}
+
+	// The parked chain completes: the resumed turn's continuation decision +
+	// the queued apply injection.
+	idleCtx, idleCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer idleCancel()
+
+	if !r.WaitChainIdle(idleCtx, sid) {
+		t.Fatal("the parked chain never went idle after the reply (10s)")
+	}
+
+	if got := prov.callCount(); got != 4 {
+		t.Errorf("provider calls = %d; want 4 (explore + asking propose + resumed turn + queued apply)", got)
+	}
+
+	// ORDERING (the serialization pin): the apply injection's user_message
+	// lands AFTER the resumed turn's assistant_message — queued, never
+	// overlapped.
+	lines, rerr := sess.Manager.ReadAll()
+	if rerr != nil {
+		t.Fatalf("ReadAll: %v", rerr)
+	}
+
+	resumedIdx, applyIdx := -1, -1
+
+	askTurnID := ""
+
+	for i := range lines {
+		if lines[i].Type == session.TypeAskSuspended && askTurnID == "" {
+			askTurnID = lines[i].TurnID
+		}
+
+		if lines[i].Type == session.TypeAssistantMessage && lines[i].TurnID == askTurnID {
+			resumedIdx = i // the resumed turn's closing (last assistant line of the asking turn)
+		}
+
+		if applyIdx < 0 && lines[i].Type == session.TypeCommandProvenance && lines[i].Name == "opsx:apply" {
+			applyIdx = i
+		}
+	}
+
+	if resumedIdx < 0 {
+		t.Fatal("the resumed turn's assistant message never landed (the reply resume failed)")
+	}
+
+	if applyIdx < 0 {
+		t.Fatal("the apply injection never ran — the chain died at the ask (the park is broken)")
+	}
+
+	if applyIdx < resumedIdx {
+		t.Errorf("apply injection (line %d) preceded the resumed turn's closing (line %d) — "+
+			"overlapping turn drivers on one session", applyIdx, resumedIdx)
+	}
+
+	if got := lastUserMessageText(t, r, sid); !strings.Contains(got, "Apply the change:") {
+		t.Errorf("last user_message = %q; want the expanded apply body", got)
 	}
 }

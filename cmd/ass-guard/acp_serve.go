@@ -523,6 +523,16 @@ type sessionTurnRunner struct {
 	schedStop            func()
 	catchUpOnce          sync.Once
 	emitFor              func(sessionID string) acp.ChunkEmitter
+
+	// 13-00 park state: parkedCancels holds each session's parked-chain ctx
+	// cancels (drained by CloseSession/closeAllSessions — the D-03 off-switch
+	// extended to parked chains); activeChains counts running engine chains
+	// per session (WaitChainIdle's input — the eval/E2E seam's
+	// wait-through-suspension).
+	parkedMu      sync.Mutex
+	parkedCancels map[string]map[*parkedChain]struct{}
+	chainMu       sync.Mutex
+	activeChains  map[string]int
 }
 
 // the loaded hook-DAG config + the learning store + the engine + its
@@ -883,20 +893,190 @@ func (r *sessionTurnRunner) runOneTurn( //nolint:funcorder // grouping keeps the
 	// engine_decision lines land in THIS session's transcript (the Manager is
 	// per-session; setupEngine could not bind it).
 	r.eng.Manager = sess.Manager
+
+	// 13-00 THE PARK (the manager ruling's route 1): the engine chain runs on
+	// a goroutine under a per-session parked-chain ctx derived from serveCtx
+	// (the same discipline the D-01 timer's resumeCtx uses — the suspending
+	// request's ctx must not kill the chain). When the chain suspends on an
+	// ask, the adapter's AskSettle fires the signal AFTER the first-turn ask
+	// decision is on disk, and THIS caller returns the suspension to the ACP
+	// layer NOW (mapAskStop → a completed turn — the live-proven wire
+	// contract: no stuck spinner, no reply deadlock) while the Observe
+	// continuation parks. Post-settle injections hold the session turn mutex
+	// per turn (12-07 queue semantics) and stream through the session-lifetime
+	// forwarder (WINDOWS #3). cancelParkedChains — reached from
+	// CloseSession (session/cancel + logout) and closeAllSessions (serve end)
+	// — cancels the parked ctx (D-03 stays the only off-switch).
+	sessionID := sess.SessionID
+
+	parkedCtx, parkedCancel := context.WithCancel(r.serveCtxOrBackground())
+	pc := &parkedChain{cancel: parkedCancel}
+
+	r.registerParkedChain(sessionID, pc)
+
+	// ENG-03/D-16 keeps its reach: the request ctx dying (session/cancel's
+	// cancelTurn while the turn is still live, or the serve ctx ending) must
+	// drain the chain — the watchdog folds request-ctx death into the parked
+	// cancel. (The response's own return does NOT cancel the request ctx —
+	// handleSessionPrompt only deregisters st.setCancel — so the park
+	// survives it, by design.)
+	if ctx != nil {
+		go func() {
+			select {
+			case <-ctx.Done():
+				parkedCancel()
+			case <-parkedCtx.Done():
+			}
+		}()
+	}
+
 	adapter := &engineTurnRunnerAdapter{sess: sess, mgr: sess.Manager, r: r}
-	// The engine runs the user prompt + every continue-injection through the
-	// adapter (which calls sess.Prompt). Nil userPrompt would make Observe skip
-	// the first Run — pass blocks explicitly.
-	stop, err := r.eng.Observe(ctx, adapter, r.patternTable, blocks)
-	if err == nil && stop == "" {
-		stop = stopEndTurn
+	suspension := make(chan struct{}, 1)
+	adapter.onSuspended = func() {
+		// Runs on the engine goroutine: arming parkMu here orders it before
+		// any post-settle injection Run (same goroutine), and the buffered
+		// signal never blocks the chain.
+		adapter.parkMu = r.sessionTurnMu(sessionID)
+		suspension <- struct{}{}
 	}
 
-	if err != nil {
-		return stop, fmt.Errorf("call: %w", err)
+	type observeResult struct {
+		stop string
+		err  error
 	}
 
-	return stop, nil
+	done := make(chan observeResult, 1)
+
+	r.chainEnter(sessionID)
+
+	go func() {
+		stop, err := r.eng.Observe(parkedCtx, adapter, r.patternTable, blocks)
+
+		// Idle + unregister BEFORE the report so a WaitChainIdle following
+		// the response never waits on a finished chain.
+		r.chainExit(sessionID)
+		r.unregisterParkedChain(sessionID, pc)
+		parkedCancel()
+
+		done <- observeResult{stop, err}
+	}()
+
+	select {
+	case <-suspension:
+		// The chain parked: return the suspension marker; the ACP layer maps
+		// it to a completed turn and the reply (or D-01 timer) resumes under
+		// the SAME session — turnMu is FREE (this Run returns), exactly the
+		// 12-01 reply-routing contract.
+		return stopAskACP, nil
+	case res := <-done:
+		stop, err := res.stop, res.err
+		if err == nil && stop == "" {
+			stop = stopEndTurn
+		}
+
+		if err != nil {
+			return stop, fmt.Errorf("call: %w", err)
+		}
+
+		return stop, nil
+	}
+}
+
+// parkedChain is one parked engine chain's registration (the struct makes the
+// cancel func a comparable map key).
+type parkedChain struct {
+	cancel context.CancelFunc
+}
+
+// registerParkedChain records a parked chain's cancel func for the session
+// (13-00): cancelParkedChains — CloseSession (session/cancel + logout) and
+// closeAllSessions (serve end) — drains every parked chain of that session.
+func (r *sessionTurnRunner) registerParkedChain(sessionID string, pc *parkedChain) { //nolint:funcorder // park helper group
+	r.parkedMu.Lock()
+	defer r.parkedMu.Unlock()
+
+	if r.parkedCancels == nil {
+		r.parkedCancels = make(map[string]map[*parkedChain]struct{})
+	}
+
+	if r.parkedCancels[sessionID] == nil {
+		r.parkedCancels[sessionID] = make(map[*parkedChain]struct{})
+	}
+
+	r.parkedCancels[sessionID][pc] = struct{}{}
+}
+
+// unregisterParkedChain removes a finished chain's registration (idempotent;
+// the chain exited on its own — no cancel fired).
+func (r *sessionTurnRunner) unregisterParkedChain(sessionID string, pc *parkedChain) { //nolint:funcorder // park helper group
+	r.parkedMu.Lock()
+	defer r.parkedMu.Unlock()
+
+	if r.parkedCancels[sessionID] != nil {
+		delete(r.parkedCancels[sessionID], pc)
+	}
+}
+
+// cancelParkedChains cancels every parked chain of the session (the
+// session/cancel + logout + serve-end drain).
+func (r *sessionTurnRunner) cancelParkedChains(sessionID string) { //nolint:funcorder // park helper group
+	r.parkedMu.Lock()
+	chains := r.parkedCancels[sessionID]
+	delete(r.parkedCancels, sessionID)
+	r.parkedMu.Unlock()
+
+	for pc := range chains {
+		pc.cancel()
+	}
+}
+
+// chainEnter/chainExit/chainCount track the active engine chains per session
+// (13-00): WaitChainIdle blocks while any chain — parked or running — is
+// active, giving the eval/E2E seam the serve loop's wait-through-suspension
+// semantics without re-driving anything.
+func (r *sessionTurnRunner) chainEnter(sessionID string) { //nolint:funcorder // idle-tracking group
+	r.chainMu.Lock()
+	defer r.chainMu.Unlock()
+
+	if r.activeChains == nil {
+		r.activeChains = make(map[string]int)
+	}
+
+	r.activeChains[sessionID]++
+}
+
+func (r *sessionTurnRunner) chainExit(sessionID string) { //nolint:funcorder // idle-tracking group
+	r.chainMu.Lock()
+	defer r.chainMu.Unlock()
+
+	if r.activeChains[sessionID] > 0 {
+		r.activeChains[sessionID]--
+	}
+}
+
+func (r *sessionTurnRunner) chainCount(sessionID string) int { //nolint:funcorder // idle-tracking group
+	r.chainMu.Lock()
+	defer r.chainMu.Unlock()
+
+	return r.activeChains[sessionID]
+}
+
+// WaitChainIdle blocks until no engine chain is active for the session (the
+// parked-ask resume + its injections all finished) or ctx dies. The harness
+// seam (opsxRunnerSeam.RunPrompt / runStageTyped) consumes it — one engine
+// loop, two callers, identical wait-through-suspension semantics.
+func (r *sessionTurnRunner) WaitChainIdle(ctx context.Context, sessionID string) bool { //nolint:funcorder // idle-tracking group
+	for {
+		if r.chainCount(sessionID) == 0 {
+			return true
+		}
+
+		if ctx.Err() != nil {
+			return false
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 // sessionFor returns the Session for sessionID, creating it on first use.
@@ -1319,12 +1499,33 @@ func (r *sessionTurnRunner) closeAllSessions() { //nolint:funcorder // shutdown 
 	for _, s := range sessions {
 		_ = s.Close()
 	}
+
+	// 13-00: drain every session's parked chains at serve end (goroutine
+	// release — no chain outlives the serve lifetime).
+	r.parkedMu.Lock()
+	ids := make([]string, 0, len(r.parkedCancels))
+
+	for id := range r.parkedCancels {
+		ids = append(ids, id)
+	}
+
+	r.parkedMu.Unlock()
+
+	for _, id := range ids {
+		r.cancelParkedChains(id)
+	}
 }
 
 // CloseSession closes one session's MCP host (the logout/cancel path — Plan
 // 05-01 T4). It satisfies acp.SessionCloser; the ACP server calls it via type
 // assertion when handling logout/session-cancel. An unknown sessionID is a no-op.
 func (r *sessionTurnRunner) CloseSession(sessionID string) error {
+	// 13-00: session/cancel + logout reach here (the ACP server's
+	// closeSessionIfPossible) — drain the session's parked chains FIRST (no
+	// decision, no injection after the cancel; goroutines released — D-03
+	// stays the only off-switch).
+	r.cancelParkedChains(sessionID)
+
 	if r.sessions == nil {
 		return nil
 	}
@@ -1406,6 +1607,22 @@ type engineTurnRunnerAdapter struct {
 	// with arguments.
 	subject   string
 	seenFirst bool
+
+	// 13-00 park plumbing (all mutated ONLY on the engine's Observe
+	// goroutine — single-threaded by construction, see above):
+	//
+	// lastStop records the stop the LAST sess.Prompt returned; onSuspended
+	// fires once when the engine first consults AskSettle after an ask stop
+	// (i.e. AFTER the first-turn ask decision has been emitted — the park
+	// signal therefore implies the audit line is already on disk); parkMu,
+	// armed by that signal, is the session's turn mutex — every post-park
+	// Run (the settled chain's injections) holds it around sess.Prompt so
+	// server-driven injections serialize with client turns exactly like the
+	// cron/automation precedent.
+	lastStop     string
+	suspSignaled bool
+	onSuspended  func()
+	parkMu       *sync.Mutex
 }
 
 // Run drives one turn through the Session Core.
@@ -1453,7 +1670,35 @@ func (a *engineTurnRunnerAdapter) Run(ctx context.Context, prompt []session.Cont
 		prompt = a.r.expandUserBlocks(a.sess, prompt)
 	}
 
-	return a.sess.Prompt(ctx, prompt) //nolint:wrapcheck // session delegation
+	if a.parkMu != nil {
+		// 13-00: a post-park injection — a server-driven turn on the parked
+		// chain. Hold the session's turn mutex for the WHOLE turn (the cron
+		// firing discipline): client turns and replies queue against it,
+		// never overlap.
+		a.parkMu.Lock()
+		defer a.parkMu.Unlock()
+	}
+
+	stop, err := a.sess.Prompt(ctx, prompt)
+	a.lastStop = stop
+
+	return stop, err //nolint:wrapcheck // session delegation
+}
+
+// AskSettle implements engine.AskSettler (13-00): the engine's ask-wait
+// consumes the session's per-suspension settle channel (closed after the
+// resumed turn completes — whichever driver resumed it). The FIRST
+// consultation after an ask stop also fires the park signal — at that point
+// the first-turn ask decision has already been emitted, so the caller
+// returning the prompt response at the suspension cannot race the audit
+// line.
+func (a *engineTurnRunnerAdapter) AskSettle() <-chan struct{} {
+	if a.lastStop == stopAskACP && !a.suspSignaled && a.onSuspended != nil {
+		a.suspSignaled = true
+		a.onSuspended()
+	}
+
+	return a.sess.AskSettleChan()
 }
 
 // LastTurnOutput reads the transcript to build the engine's view of the most
