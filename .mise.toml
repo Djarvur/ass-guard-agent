@@ -26,6 +26,21 @@ run = "go vet ./..."
 description = "Run the full CI gate: vet + lint + build + test"
 depends = ["vet", "lint", "build", "test"]
 
+# 12-08 (D-03) — the behavioral-eval gate surface. NONE of these joined
+# `ci` (D-03: the suites gate on the locked change classes via
+# eval-check-changed, not every commit; ci keeps its fast deterministic set).
+[tasks.eval-gate]
+description = "Run the behavioral-eval scenario suites at k=1 behind the gate flags (real binary + real model, ~8-10 min)"
+run = "ASSGUARD_EVAL_GATE=1 ASSGUARD_OPENSPEC_BIN=1 ASSGUARD_E2E_LLM=1 go test ./cmd/ass-guard/ -count=1 -run TestEvalSuite_Flagship_Gated -timeout 15m -v"
+
+[tasks.eval-deep]
+description = "Manual/local deep pass: k=3 over the suite (NOT in the gate — D-03)"
+run = "ASSGUARD_EVAL_GATE=1 ASSGUARD_OPENSPEC_BIN=1 ASSGUARD_E2E_LLM=1 go test ./cmd/ass-guard/ -count=1 -run TestEvalSuite_Flagship_Deep -timeout 45m -v"
+
+[tasks.eval-check-changed]
+description = "Detector: do the changes touch the locked eval-gate change classes? (exit 3 => run mise eval-gate)"
+run = "./scripts/eval-change-class.sh"
+
 [tasks.tidy]
 description = "Run go mod tidy"
 run = "go mod tidy"

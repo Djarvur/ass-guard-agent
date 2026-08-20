@@ -1,0 +1,12 @@
+{
+  "id": "opsx-flagship",
+  "description": "The Phase-8-proven flagship flow: explore → propose → apply → archive driven by ONE typed prompt with the engine chaining every subsequent stage (zero manual continues), the archive directory carrying the change.",
+  "changeName": "add-a-tiny-feature",
+  "stages": [
+    "/opsx:explore add-a-tiny-feature",
+    "/opsx:propose add-a-tiny-feature",
+    "/opsx:apply add-a-tiny-feature",
+    "/opsx:archive add-a-tiny-feature"
+  ],
+  "asserts": ["zero_continue"]
+}

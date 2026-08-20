@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
+	"github.com/Djarvur/ass-guard-agent/internal/evalharness"
 	"github.com/Djarvur/ass-guard-agent/internal/event"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
@@ -112,6 +113,16 @@ func fileExists(path string) bool {
 func newOpsxRunner(t *testing.T) (*sessionTurnRunner, string) {
 	t.Helper()
 
+	scratch := t.TempDir()
+
+	return newOpsxRunnerAt(t, scratch), scratch
+}
+
+// newOpsxRunnerAt bootstraps the runner over an EXISTING scratch dir (the
+// evalsuite bridge drives passes over the harness's fresh scratches).
+func newOpsxRunnerAt(t *testing.T, scratch string) *sessionTurnRunner {
+	t.Helper()
+
 	repo := findRepoRoot(t)
 
 	factory, providerName, err := setupProviderFactory(repo, os.Stderr)
@@ -122,8 +133,6 @@ func newOpsxRunner(t *testing.T) (*sessionTurnRunner, string) {
 	if _, _, ok := factory.Endpoint(providerName); !ok {
 		t.Fatalf("BLOCKER: provider %q has no credentialed endpoint — the E2E needs the real model", providerName)
 	}
-
-	scratch := t.TempDir()
 
 	// REAL binary: install the opsx command + skill files into scratch.
 	initCmd := exec.CommandContext(context.Background(), "openspec", "init", "--tools", "claude", "--force")
@@ -146,6 +155,12 @@ func newOpsxRunner(t *testing.T) (*sessionTurnRunner, string) {
 		profile: prof,
 		workDir: scratch,
 		maxConc: 6,
+		// 12-08 finding: with asks REAL (12-01) the model occasionally asks
+		// mid-chain (observed: the archive stage) — the suspension would kill
+		// the hands-off chain at the no-chain-suspension pin. D-01's documented
+		// hands-off mode: a bounded ask timeout returns the capture-shaped
+		// non-answer and the model proceeds. 45s bounds the gate's budget.
+		askTimeout: 45 * time.Second,
 		makeProvider: func(_ provider.RequestCapturer) provider.Provider {
 			p, _ := factory.Build(providerName, shaper.New())
 
@@ -160,7 +175,7 @@ func newOpsxRunner(t *testing.T) (*sessionTurnRunner, string) {
 
 	r.loadCommandRegistry()
 
-	return r, scratch
+	return r
 }
 
 // seedScratchCodebase plants a tiny codebase so /opsx:explore has something
@@ -249,10 +264,32 @@ func runStageTyped(t *testing.T, r *sessionTurnRunner, sessionID, text string) {
 	}
 }
 
+// opsxRunnerSeam adapts sessionTurnRunner to evalharness.RunnerSeam (the
+// extraction's seam — the suite's passes drive the SAME machinery).
+type opsxRunnerSeam struct {
+	r *sessionTurnRunner
+}
+
+func (o opsxRunnerSeam) RunPrompt(ctx context.Context, sessionID, text string) error {
+	_, err := o.r.Run(ctx, sessionID, &noopEmitter{},
+		[]acp.ContentBlock{{Type: blockText, Text: text}})
+
+	return err
+}
+
+func (o opsxRunnerSeam) TranscriptLines(sessionID string) ([]session.Line, error) {
+	lines, err := o.r.sessions[sessionID].Manager.ReadAll()
+	if err != nil {
+		return nil, fmt.Errorf("e2e transcript: %w", err)
+	}
+
+	return lines, nil
+}
+
 // TestOpsxEndToEnd_Gated is the milestone's product proof: the real
 // explore→propose→apply→archive scenario, zero manual continues, archive
 // directory present, every stage output captured.
-func TestOpsxEndToEnd_Gated(t *testing.T) { //nolint:paralleltest,cyclop,funlen // real scratch + live model
+func TestOpsxEndToEnd_Gated(t *testing.T) { //nolint:paralleltest // real scratch + live model
 	e2eGates(t)
 
 	r, scratch := newOpsxRunner(t)
@@ -286,78 +323,27 @@ func TestOpsxEndToEnd_Gated(t *testing.T) { //nolint:paralleltest,cyclop,funlen 
 	// PRODUCT-PROOF MODE: ONE typed prompt; the engine chains the rest.
 	runStageTyped(t, r, sessionID, "/opsx:explore "+e2eChangeName)
 
-	texts := stageAssistantTexts(t, r, sessionID)
-	captureStageOutputs(t, texts, "")
+	texts := evalharness.AssistantTexts(mustLines(t, r, sessionID))
+	evalharness.CaptureStageOutputs(t, texts, e2eTestDataDir, "")
 
-	// Zero manual continues: >= 3 continue decisions chained the 4 stages.
+	// 12-08: the zero-continue assertion set lives in the extracted harness —
+	// the runtime test and the evalsuite assert identically.
+	outcome := evalharness.AssertZeroContinue(t, mustLines(t, r, sessionID), scratch, e2eChangeName, e2eStageCount-1)
+	for _, f := range outcome.Failures {
+		t.Error(f)
+	}
+}
+
+// mustLines reads the session's transcript (the assertion lens).
+func mustLines(t *testing.T, r *sessionTurnRunner, sessionID string) []session.Line {
+	t.Helper()
+
 	lines, err := r.sessions[sessionID].Manager.ReadAll()
 	if err != nil {
 		t.Fatalf("ReadAll: %v", err)
 	}
 
-	var actions []string
-
-	var provenance []string
-
-	for i := range lines {
-		if lines[i].Type == session.TypeEngineDecision {
-			actions = append(actions, lines[i].Name)
-		}
-
-		if lines[i].Type == session.TypeCommandProvenance {
-			provenance = append(provenance, lines[i].Name)
-		}
-	}
-
-	continues := 0
-
-	for _, a := range actions {
-		if a == actionContinue {
-			continues++
-		}
-	}
-
-	if continues < e2eStageCount-1 {
-		t.Errorf("engine continue decisions = %d; want >= %d (explore→propose→apply→archive). decisions=%v",
-			continues, e2eStageCount-1, actions)
-	}
-
-	// Every chained stage arrived as an EXPANDED injected turn (provenance
-	// records each /opsx:* entry — 08-04's seam).
-	for _, key := range []string{"opsx:propose", "opsx:apply", "opsx:archive"} {
-		found := false
-
-		for _, p := range provenance {
-			if p == key {
-				found = true
-			}
-		}
-
-		if !found {
-			t.Errorf("no %s provenance — the stage did not arrive as an expanded injected turn (provenance=%v)",
-				key, provenance)
-		}
-	}
-
-	// The archive ran: the archived change directory exists.
-	archiveDir := filepath.Join(scratch, "openspec", "changes", "archive")
-
-	entries, err := os.ReadDir(archiveDir)
-	if err != nil {
-		t.Fatalf("archive directory missing after the run (%s): %v", archiveDir, err)
-	}
-
-	found := false
-
-	for _, e := range entries {
-		if strings.Contains(e.Name(), e2eChangeName) {
-			found = true
-		}
-	}
-
-	if !found {
-		t.Errorf("no archived %q directory under %s (entries: %v)", e2eChangeName, archiveDir, entries)
-	}
+	return lines
 }
 
 // seedIncompleteChange creates a real change whose tasks.md is deliberately
@@ -391,30 +377,6 @@ func seedIncompleteChange(t *testing.T, scratch, name string) {
 // on a no---yes first attempt: the interactive force-close (plain route) and
 // the structured archive_tasks_incomplete (--json route). Recovery = a result
 // reporting the archive completed.
-func scanFixableRecovery(lines []session.Line) (int, int) { //nolint:gocritic // conflicts w/ nonamedreturns
-	failIdx, recoverIdx := -1, -1
-
-	for i := range lines {
-		if lines[i].Type != session.TypeToolResult {
-			continue
-		}
-
-		out := string(lines[i].Output)
-
-		isFixableFailure := strings.Contains(out, "force closed the prompt") ||
-			strings.Contains(out, "archive_tasks_incomplete")
-
-		if isFixableFailure && failIdx == -1 {
-			failIdx = i
-		}
-
-		if failIdx != -1 && recoverIdx == -1 && strings.Contains(out, "archived") {
-			recoverIdx = i
-		}
-	}
-
-	return failIdx, recoverIdx
-}
 
 // TestOpsxFixableRecovery_Gated proves D-10 with the real model + real
 // binary, CAPTURE-FAITHFUL (the findings-5 disposition, 2026-08-15): the
@@ -464,7 +426,7 @@ func TestOpsxFixableRecovery_Gated(t *testing.T) { //nolint:paralleltest,funlen 
 
 	// The model-visible behavior, asserted where it happens: a FAILED first
 	// attempt, then a recovery attempt that archives.
-	failIdx, recoverIdx := scanFixableRecovery(lines)
+	failIdx, recoverIdx := evalharness.ScanFixableRecovery(lines)
 
 	if failIdx == -1 {
 		t.Error("no fixable-failure result observed — the model's first archive attempt did not " +
