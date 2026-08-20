@@ -1,0 +1,32 @@
+# opsx matrix verify-fixable-capture (captured 2026-08-20T18:20:32Z, openspec 1.5.0, real binary + real model)
+
+## Verification Report: matrix-verfix-subj
+
+### Summary
+
+| Dimension | Status |
+|---|---|
+| Completeness | 0/0 tasks (no tasks.md); 1/1 requirement likely implemented |
+| Correctness | 1/1 requirement covered; 0 scenarios to cover |
+| Coherence | No design.md to verify against |
+
+### What I checked
+
+The change has only two artifacts: `proposal.md` and `specs/cap/spec.md`. There is **no tasks.md and no design.md**, so `openspec status` reports the change as **blocked** (tasks depend on design). Per graceful degradation, I verified the delta spec directly against the codebase.
+
+The single requirement ("scenarioless" — deliberately has no scenarios) calls for an `add` function exercised from `main`. It is implemented in `main.go:6` (`add(a, b int) int`) and called from `main.go:7` (`add(2, 3)`), matching the proposal's intent.
+
+### Issues
+
+**CRITICAL (blocks workflow, not implementation)**
+- Missing artifacts `design.md` and `tasks.md` — the change cannot be applied, verified formally, or archived. **Recommendation:** run `openspec instructions design --change "matrix-verfix-subj" --json` and create the design and tasks artifacts (the tasks would simply check off the already-implemented `add` function).
+
+**WARNING**
+- None. The spec has no scenarios, so scenario coverage is not applicable.
+
+**SUGGESTION**
+- No tests exist for `add`. Not required by the spec (which is scenario-less), but a one-line test would harden it. Optional.
+
+### Final Assessment
+
+The implementation itself matches the spec and proposal. However, **the change workflow is incomplete: design.md and tasks.md must be created before this change can be archived.** Use the openspec-continue-change skill to generate the missing artifacts.

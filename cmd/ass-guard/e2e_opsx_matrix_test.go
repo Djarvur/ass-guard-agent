@@ -323,6 +323,10 @@ func writeMatrixArtifact(t *testing.T, changeDir, rel, body string) {
 	}
 }
 
+// matrixVerifySpec is the verify leg's spec-delta fixture.
+const matrixVerifySpec = "# matrix-verify-subj spec\n\n## ADDED Requirements\n\n" +
+	"### Requirement: summation\n\nThe app SHALL sum two numbers.\n"
+
 // matrixProposal is the minimal proposal fixture (ff/verify's precondition).
 const matrixProposal = `## Why
 
@@ -407,9 +411,9 @@ func TestOpsxMatrixFF_Gated(t *testing.T) { //nolint:paralleltest // HOME-pinned
 }
 
 // TestOpsxMatrixVerify_Gated (13-01 Task 3): /opsx:verify on a change with
-// artifacts present reports the validation verdict (CRITICAL/WARNING/
-// SUGGESTION shape per FEATURES.md — the CAPTURE wins on divergence).
-func TestOpsxMatrixVerify_Gated(t *testing.T) { //nolint:paralleltest // HOME-pinned leg
+// artifacts reports the validation verdict (CRITICAL/WARNING/SUGGESTION
+// shape per FEATURES.md — the CAPTURE wins on divergence).
+func TestOpsxMatrixVerify_Gated(t *testing.T) { //nolint:paralleltest // HOME leg
 	e2eGates(t)
 
 	const (
@@ -421,8 +425,7 @@ func TestOpsxMatrixVerify_Gated(t *testing.T) { //nolint:paralleltest // HOME-pi
 
 	changeDir := seedMatrixChange(t, scratch, subject)
 	writeMatrixArtifact(t, changeDir, "proposal.md", matrixProposal)
-	writeMatrixArtifact(t, changeDir, "specs/spec.md",
-		"# matrix-verify-subj spec\n\n## ADDED Requirements\n\n### Requirement: summation\n\nThe app SHALL sum two numbers.\n")
+	writeMatrixArtifact(t, changeDir, "specs/spec.md", matrixVerifySpec)
 
 	runMatrixStage(t, r, sid, "/opsx:verify "+subject)
 
@@ -436,7 +439,7 @@ func TestOpsxMatrixVerify_Gated(t *testing.T) { //nolint:paralleltest // HOME-pi
 // TestOpsxMatrixBulkArchive_Gated (13-01 Task 3): /opsx:bulk-archive over
 // multiple completed changes (N=2 with completed tasks) archives the batch —
 // archive dirs land under openspec/changes/archive/.
-func TestOpsxMatrixBulkArchive_Gated(t *testing.T) { //nolint:funlen,paralleltest // two-fixture batch leg
+func TestOpsxMatrixBulkArchive_Gated(t *testing.T) { //nolint:paralleltest // two-fixture batch leg
 	e2eGates(t)
 
 	const sid = "sess-matrix-bulk"
@@ -478,7 +481,7 @@ func TestOpsxMatrixBulkArchive_Gated(t *testing.T) { //nolint:funlen,paralleltes
 // writes (a real change is created and worked) — asks time out per the D-01
 // hands-off mode and 13-00's engine-visible resume carries the turn through
 // them. Assertions follow the command's own closing report (capture-wins).
-func TestOpsxMatrixOnboard_Gated(t *testing.T) { //nolint:funlen,paralleltest // tutorial leg
+func TestOpsxMatrixOnboard_Gated(t *testing.T) { //nolint:paralleltest // tutorial leg
 	e2eGates(t)
 
 	const sid = "sess-matrix-onboard"
@@ -500,4 +503,361 @@ func TestOpsxMatrixOnboard_Gated(t *testing.T) { //nolint:funlen,paralleltest //
 	assertNoNotImplementedResults(t, r, sid)
 
 	captureMatrixClosing(t, "onboard-happy-capture", lastAssistantText(t, r, sid))
+}
+
+// scanMatrixFixable generalizes the fixable scan to the matrix (13-01 Task 4,
+// D-01's 2-path matrix): the FIRST tool result matching any failure signature
+// (the model-visible failure) and the first recovery-signature match AFTER it
+// — the fail-idx-before-recover-idx contract.
+//
+//nolint:gocritic,lll // unnamed results match the ScanFixableRecovery shape
+func scanMatrixFixable(t *testing.T, r *sessionTurnRunner, sessionID string, failSigs, recoverSigs []string) (int, int) {
+	t.Helper()
+
+	lines, err := r.sessions[sessionID].Manager.ReadAll()
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+
+	failIdx, recoverIdx := -1, -1
+
+	for i := range lines {
+		if lines[i].Type != session.TypeToolResult {
+			continue
+		}
+
+		out := string(lines[i].Output)
+
+		if failIdx == -1 {
+			for _, sig := range failSigs {
+				if strings.Contains(out, sig) {
+					failIdx = i
+
+					break
+				}
+			}
+		}
+
+		if failIdx != -1 && recoverIdx == -1 {
+			for _, sig := range recoverSigs {
+				if strings.Contains(out, sig) {
+					recoverIdx = i
+
+					break
+				}
+			}
+		}
+	}
+
+	return failIdx, recoverIdx
+}
+
+// scanMatrixReport is scanMatrixFixable over tool results AND assistant
+// text (the report-driven commands surface their findings in the report, not
+// a CLI error — the verify leg's capture-faithful route).
+//
+//nolint:gocritic // unnamed results match the ScanFixableRecovery shape
+func scanMatrixReport(t *testing.T, r *sessionTurnRunner, sessionID string, failSigs, recoverSigs []string) (int, int) {
+	t.Helper()
+
+	lines, err := r.sessions[sessionID].Manager.ReadAll()
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+
+	failIdx, recoverIdx := -1, -1
+
+	for i := range lines {
+		var out string
+
+		switch lines[i].Type {
+		case session.TypeToolResult:
+			out = string(lines[i].Output)
+		case session.TypeAssistantMessage:
+			out = lines[i].Text
+		default:
+			continue
+		}
+
+		if failIdx == -1 {
+			for _, sig := range failSigs {
+				if strings.Contains(out, sig) {
+					failIdx = i
+
+					break
+				}
+			}
+		}
+
+		if failIdx != -1 && recoverIdx == -1 {
+			for _, sig := range recoverSigs {
+				if strings.Contains(out, sig) {
+					recoverIdx = i
+
+					break
+				}
+			}
+		}
+	}
+
+	return failIdx, recoverIdx
+}
+
+// assertFixableShape asserts the fail-then-adapt contract (failure reached
+// the model; recovery after it).
+func assertFixableShape(t *testing.T, failIdx, recoverIdx int, leg string) {
+	t.Helper()
+
+	if failIdx == -1 {
+		t.Errorf("%s: the deterministic fixable failure never reached the model (failIdx -1)", leg)
+	}
+
+	if recoverIdx == -1 || recoverIdx < failIdx {
+		t.Errorf("%s: no recovery after the failure (fail=%d recover=%d)", leg, failIdx, recoverIdx)
+	}
+}
+
+// TestOpsxMatrixNewFixable_Gated (D-01 fixable): /opsx:new with an
+// ALREADY-EXISTING name — the probed deterministic trigger
+// ("✖ Error: Change 'X' already exists...", openspec 1.5.0, probe 2026-08-20)
+// fails the first attempt fixably; the model adapts to the existing change.
+func TestOpsxMatrixNewFixable_Gated(t *testing.T) { //nolint:paralleltest // HOME-pinned leg
+	e2eGates(t)
+
+	const (
+		sid     = "sess-matrix-newfix"
+		subject = "matrix-newfix-subj"
+	)
+
+	r, scratch := newOpsxMatrixRunner(t)
+
+	seedMatrixChange(t, scratch, subject) // the name collision
+
+	runMatrixStage(t, r, sid, "/opsx:new "+subject)
+
+	failIdx, recoverIdx := scanMatrixFixable(t, r, sid,
+		[]string{"already exists"},
+		[]string{"exists", "created", "scaffolded", "proposal"})
+
+	assertFixableShape(t, failIdx, recoverIdx, "new-fixable")
+
+	if !fileExists(filepath.Join(scratch, "openspec", "changes", subject)) {
+		t.Errorf("the change %s does not exist after the fixable leg (goal unmet)", subject)
+	}
+
+	assertNoNotImplementedResults(t, r, sid)
+
+	captureMatrixClosing(t, "new-fixable-capture", lastAssistantText(t, r, sid))
+}
+
+// TestOpsxMatrixContinueFixable_Gated (D-01 fixable): /opsx:continue naming a
+// NONEXISTENT change while a real mid-flight change exists — the probed
+// sigUnknownItem failure class (openspec show/instructions, 1.5.0) reaches
+// the model; it adapts by discovering the real change and continuing IT.
+func TestOpsxMatrixContinueFixable_Gated(t *testing.T) { //nolint:paralleltest // HOME-pinned leg
+	e2eGates(t)
+
+	const (
+		sid     = "sess-matrix-contfix"
+		subject = "matrix-contfix-real"
+	)
+
+	r, scratch := newOpsxMatrixRunner(t)
+
+	changeDir := seedMatrixChange(t, scratch, subject)
+	writeMatrixArtifact(t, changeDir, ".openspec.yaml", "schema: bogus-schema\ncreated: 2026-08-20\n")
+
+	runMatrixStage(t, r, sid, "/opsx:continue "+subject)
+
+	failIdx, recoverIdx := scanMatrixFixable(t, r, sid,
+		[]string{"Unknown schema", "bogus-schema"},
+		[]string{"spec-driven", "proposal", "artifact", "created", "wrote"})
+
+	assertFixableShape(t, failIdx, recoverIdx, "continue-fixable")
+
+	if !fileExists(filepath.Join(changeDir, "proposal.md")) {
+		t.Errorf("the REAL change %s never got its artifact (goal unmet)", subject)
+	}
+
+	assertNoNotImplementedResults(t, r, sid)
+
+	captureMatrixClosing(t, "continue-fixable-capture", lastAssistantText(t, r, sid))
+}
+
+// TestOpsxMatrixFFFixable_Gated (D-01 fixable): /opsx:ff on a proposal-
+// carrying change whose sidecar declares a BOGUS schema (the probed
+// "Unknown schema" class — the continue leg's divergence note): the model
+// repairs the sidecar and fast-forwards the NAMED change.
+func TestOpsxMatrixFFFixable_Gated(t *testing.T) { //nolint:paralleltest // HOME-pinned leg
+	e2eGates(t)
+
+	const (
+		sid     = "sess-matrix-fffix"
+		subject = "matrix-fffix-real"
+	)
+
+	r, scratch := newOpsxMatrixRunner(t)
+
+	changeDir := seedMatrixChange(t, scratch, subject)
+	writeMatrixArtifact(t, changeDir, "proposal.md", matrixProposal)
+	writeMatrixArtifact(t, changeDir, ".openspec.yaml", "schema: bogus-schema\ncreated: 2026-08-20\n")
+
+	runMatrixStage(t, r, sid, "/opsx:ff "+subject)
+
+	failIdx, recoverIdx := scanMatrixFixable(t, r, sid,
+		[]string{"Unknown schema", "bogus-schema"},
+		[]string{"spec-driven", "tasks", "artifact", "complete", "archived"})
+
+	assertFixableShape(t, failIdx, recoverIdx, "ff-fixable")
+
+	// CAPTURE-WINS (the happy leg's finding): ff may archive in one pass —
+	// tasks.md in the live dir or the dated archive.
+	if !fileExists(filepath.Join(changeDir, "tasks.md")) {
+		found := false
+
+		matches, _ := filepath.Glob(filepath.Join(scratch, "openspec", "changes", "archive", "*"+subject))
+		for _, m := range matches {
+			if fileExists(filepath.Join(m, "tasks.md")) {
+				found = true
+			}
+		}
+
+		if !found {
+			t.Errorf("the REAL change %s never completed (goal unmet)", subject)
+		}
+	}
+
+	assertNoNotImplementedResults(t, r, sid)
+
+	captureMatrixClosing(t, "ff-fixable-capture", lastAssistantText(t, r, sid))
+}
+
+// TestOpsxMatrixVerifyFixable_Gated (D-01 fixable, CAPTURE-RESCOPED
+// 2026-08-20): /opsx:verify on a change whose spec delta has NO scenario
+// blocks. The planner's candidate assumed a CLI validate step
+// ("must have at least one delta... #### Scenario:", probed deterministic on
+// `openspec validate --type change`) — but the command's REAL flow (its
+// .claude/commands body) never runs validate: it is a MODEL-AUTHORED report
+// over status + instructions + artifact reads. The capture wins: the
+// deterministic fixable shape is the STRUCTURAL GAP (a scenario-less delta
+// cannot show scenario coverage) surfacing in the report as a Correctness
+// finding — the leg asserts the gap is FOUND and the verdict delivered
+// (a verify that papered over it fails).
+func TestOpsxMatrixVerifyFixable_Gated(t *testing.T) { //nolint:paralleltest // HOME-pinned leg
+	e2eGates(t)
+
+	const (
+		sid     = "sess-matrix-verfix"
+		subject = "matrix-verfix-subj"
+	)
+
+	r, scratch := newOpsxMatrixRunner(t)
+
+	changeDir := seedMatrixChange(t, scratch, subject)
+	writeMatrixArtifact(t, changeDir, "proposal.md", matrixProposal)
+	writeMatrixArtifact(t, changeDir, "specs/cap/spec.md",
+		"## ADDED Requirements\n\n### Requirement: scenarioless\n\nThe DELIBERATELY scenario-less requirement.\n")
+
+	runMatrixStage(t, r, sid, "/opsx:verify "+subject)
+
+	// The report-driven route: scan the assistant text + tool results for
+	// the gap surfacing (the "failure") and the verdict (the "recovery").
+	failIdx, recoverIdx := scanMatrixReport(t, r, sid,
+		[]string{"no scenarios", "scenario", "Scenario", "gap"},
+		[]string{"verdict", "report", "Verif", "CRITICAL", "WARNING", "SUGGESTION"})
+
+	assertFixableShape(t, failIdx, recoverIdx, "verify-fixable")
+
+	// The goal (read-only command): the closing IS the verification report
+	// AND it names the scenario gap — the deterministic fixture cannot be
+	// papered over.
+	closing := lastAssistantText(t, r, sid)
+	if !strings.Contains(closing, "erif") && !strings.Contains(closing, "report") {
+		t.Error("the closing is not a verification report (goal unmet)")
+	}
+
+	lower := strings.ToLower(closing)
+	if !strings.Contains(lower, "scenario") {
+		t.Error("the report never names the scenario gap (the fixture was papered over)")
+	}
+
+	assertNoNotImplementedResults(t, r, sid)
+
+	captureMatrixClosing(t, "verify-fixable-capture", lastAssistantText(t, r, sid))
+}
+
+// TestOpsxMatrixBulkArchiveFixable_Gated (D-01 fixable): the PROVEN
+// incomplete-tasks trigger across the batch (the seedIncompleteChange
+// discipline, verified on 1.5.0): one change in the batch carries unchecked
+// tasks — the first archive attempt fails fixably; the model completes the
+// tasks (or archives them complete) and the batch lands.
+func TestOpsxMatrixBulkArchiveFixable_Gated(t *testing.T) { //nolint:paralleltest // batch leg
+	e2eGates(t)
+
+	const sid = "sess-matrix-bulkfix"
+
+	r, scratch := newOpsxMatrixRunner(t)
+
+	// A complete change + an INCOMPLETE one (the deterministic trigger).
+	good := seedMatrixChange(t, scratch, "matrix-bulkfix-good")
+	writeMatrixArtifact(t, good, "proposal.md", matrixProposal)
+	writeMatrixArtifact(t, good, "specs/sum/spec.md",
+		"# matrix-bulkfix-good spec\n\n## ADDED Requirements\n\n### Requirement: good\n\nThe app SHALL good.\n")
+	writeMatrixArtifact(t, good, "tasks.md", "- [x] 1. Complete task\n")
+
+	bad := seedMatrixChange(t, scratch, "matrix-bulkfix-bad")
+	writeMatrixArtifact(t, bad, "proposal.md", matrixProposal)
+	writeMatrixArtifact(t, bad, "specs/sum/spec.md",
+		"# matrix-bulkfix-bad spec\n\n## ADDED Requirements\n\n### Requirement: bad\n\nThe app SHALL bad.\n")
+	writeMatrixArtifact(t, bad, "tasks.md", "- [ ] 1. Deliberately incomplete task (the fixable trigger)\n")
+
+	runMatrixStage(t, r, sid, "/opsx:bulk-archive")
+
+	failIdx, recoverIdx := scanMatrixFixable(t, r, sid,
+		[]string{"archive_tasks_incomplete", "force closed the prompt", "incomplete"},
+		[]string{"archived", "complete"})
+
+	assertFixableShape(t, failIdx, recoverIdx, "bulk-archive-fixable")
+
+	archiveBase := filepath.Join(scratch, "openspec", "changes", "archive")
+
+	archived := 0
+
+	entries, _ := os.ReadDir(archiveBase)
+	for _, e := range entries {
+		if e.IsDir() && strings.Contains(e.Name(), "matrix-bulkfix") {
+			archived++
+		}
+	}
+
+	if archived < 2 {
+		t.Errorf("archived matrix-bulkfix changes = %d; want both (goal unmet)", archived)
+	}
+
+	assertNoNotImplementedResults(t, r, sid)
+
+	captureMatrixClosing(t, "bulk-archive-fixable-capture", lastAssistantText(t, r, sid))
+}
+
+// TestOpsxMatrixOnboardFixable_Gated (D-01 fixable, D-08 LOCKED class): the
+// idempotent re-run — an ALREADY-ONBOARDED scratch re-runs /opsx:onboard and
+// reconciles cleanly (its own output reports reconciliation, not an error).
+// No failure signature is owed (the D-08 class is reconciliation, not
+// breakage); the goal is the clean second pass over an intact scratch.
+func TestOpsxMatrixOnboardFixable_Gated(t *testing.T) { //nolint:paralleltest // HOME-pinned leg
+	e2eGates(t)
+
+	const sid = "sess-matrix-onbfix"
+
+	r, _ := newOpsxMatrixRunner(t)
+
+	// Pass 1: the onboarding cycle.
+	runMatrixStage(t, r, sid, "/opsx:onboard")
+
+	// Pass 2 (the fixable class): the idempotent re-run on the SAME scratch.
+	runMatrixStage(t, r, sid, "/opsx:onboard")
+
+	assertNoNotImplementedResults(t, r, sid)
+
+	captureMatrixClosing(t, "onboard-fixable-capture", lastAssistantText(t, r, sid))
 }

@@ -1,0 +1,12 @@
+# opsx matrix continue-fixable-capture (captured 2026-08-20T17:58:42Z, openspec 1.5.0, real binary + real model)
+
+Created the **proposal.md** artifact for `matrix-contfix-real`.
+
+One note first: the change's `.openspec.yaml` had `schema: bogus-schema`, which broke all `openspec` commands. I corrected it to `schema: spec-driven` before proceeding.
+
+**What the proposal covers** (inferred from the change name and repo, since no prompt answer arrived): the scratch-app currently only adds two scalars, so this change adds matrix arithmetic with continueable evaluation (partial results resumable after invalid input) and fixable inputs (validation reports pinpointing bad rows/operands).
+
+- **New capabilities**: `matrix-ops` (construction, validation, add/multiply) and `matrix-continue-fix` (continue/fix workflow)
+- **Impact**: new code alongside `main.go`, stdlib only, no breaking changes
+
+**Progress**: 1/4 artifacts complete (spec-driven schema). Unlocked: `design` and `specs`. Run `/opsx:continue` to create the next artifact.

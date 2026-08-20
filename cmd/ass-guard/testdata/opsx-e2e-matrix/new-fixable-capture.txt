@@ -1,0 +1,12 @@
+# opsx matrix new-fixable-capture (captured 2026-08-20T17:29:55Z, openspec 1.5.0, real binary + real model)
+
+The change **matrix-newfix-subj** already existed at `openspec/changes/matrix-newfix-subj`, so I reused it rather than creating a duplicate.
+
+**Status:**
+- **Schema/workflow:** `spec-driven` — artifact sequence: `proposal` → `design` + `specs` → `tasks`
+- **Current progress:** 0/4 artifacts complete; `proposal` is ready, the rest are blocked on dependencies
+- **Location:** `openspec/changes/matrix-newfix-subj/` (repo-local planning home)
+
+**First artifact template (proposal.md):** sections for **Why**, **What Changes**, **Capabilities** (new/modified, kebab-case names), and **Impact** — focused on the motivation, not implementation details.
+
+Ready to create the first artifact? Run `/opsx:continue` or just describe what this change is about and I'll draft the proposal.

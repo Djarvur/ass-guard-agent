@@ -1,0 +1,12 @@
+# opsx matrix ff-fixable-capture (captured 2026-08-20T18:09:23Z, openspec 1.5.0, real binary + real model)
+
+## Archive Complete
+
+**Change:** matrix-fffix-real
+**Schema:** spec-driven
+**Archived to:** `openspec/changes/archive/2026-08-20-matrix-fffix-real/`
+**Specs:** ✓ Synced to main specs
+
+All artifacts (proposal, design, specs, tasks) were complete and all 3 tasks were checked off. Before archiving, the delta spec was synced: created `openspec/specs/sum-feature/spec.md` with the two ADDED requirements ("App adds two integers" and "Sum handles negative and zero inputs").
+
+Note: the sync prompt timed out, so I proceeded with the recommended option (sync now, then archive).
