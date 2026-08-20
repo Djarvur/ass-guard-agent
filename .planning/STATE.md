@@ -5,13 +5,13 @@ milestone_name: ACP Early Adoption
 current_phase: 12
 current_phase_name: product-functional-completeness
 status: ready
-stopped_at: Completed 12-04-PLAN.md (plan mode + messaging + session reads; 12-06 next)
-last_updated: "2026-08-20T00:44:10.517Z"
+stopped_at: Completed 12-06-PLAN.md — the pre-adoption minimal set done; ADOPTION LINE next (operator action)
+last_updated: "2026-08-20T01:03:11.106Z"
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 33
-  completed_plans: 25
+  completed_plans: 26
 last_activity: 2026-08-20
 last_activity_desc: 12-05 executed — live re-record from zcode 0.16.3 (4 capture passes; Bash timeout + truncation + answered-ask forms implemented; cron/message hunts documented)
 ---
@@ -22,17 +22,18 @@ last_activity_desc: 12-05 executed — live re-record from zcode 0.16.3 (4 captu
 
 See: .planning/PROJECT.md (updated 2026-08-14)
 **Core value:** Outgoing requests to the model provider must be structurally indistinguishable from the mimicked agent's (zcode first) — *validated v1.0 (Phase-1 A/B parity)*
-**Current focus:** Phase 12 — product-functional-completeness (12-06 next; 12-04 + 12-05 done 2026-08-20)
+**Current focus:** ADOPTION LINE reached 2026-08-20 — the pre-adoption minimal set complete (12-01/02/05/04/06 + Phase 14); awaiting the operator daily-use start
 
 ## Current Position
 
 Phase: 12 (product-functional-completeness) — READY
-Plan: 12-06 next (4/8 executed: 12-01, 12-02, 12-04, 12-05 done)
+Plan: ADOPTION LINE (5/8 executed: 12-01, 12-02, 12-04, 12-05, 12-06 done)
 Status: 12-05 COMPLETE 2026-08-20 — the D-04 re-record executed LIVE (4 capture passes against zcode 0.16.3; qualifying session 38 recs/81 tools/79→80→79): the committed fixture zcode-recaptured-2026-08.json pins every deferred-tool family capture-pinned or honestly corpus_absent with full hunts; ACP-07's Bash timeout + <persisted-output> truncation forms + the answered-ask pairing form IMPLEMENTED from the capture; NEW ACP-02 evidence (zcode's plan mode is a runtime-level mutating-tool gate, refusal forms captured). WINDOWS #6 (12-03 extractor re-run) + #7 (rollout rotation — immediate-snapshot rule) recorded.
 Status addendum: 12-04 COMPLETE 2026-08-20 — plan pair on the 12-01 ask seam + the CAPTURED runtime plan-mode gate (the 12-05 capture resolved ACP-02's scope AGAINST the plan's no-gating premise — deviation documented); SendMessage mailbox + ReadSessionContext reader wired at RegisterInteractive.
-Next action: `/gsd:execute-phase 12` → 12-06 (background work: Bash run_in_background + TaskOutput + TaskStop over a per-session TaskRegistry — the background forms are ALREADY PINNED by 12-05's fixture) → **ADOPTION LINE** (the operator begins daily ACP use — v1.1's completion bar) → 12-03 → 12-08 → 12-07 → 13. Residuals open in WINDOWS.md: #3 timer-resume chunks not client-mirrored (route: 12-07), #5 standing cache-probe FAIL (post-adoption), #6 extractor zero-target re-run (12-03), #7 rollout-snapshot rule.
+Status addendum: 12-06 COMPLETE 2026-08-20 — the TaskRegistry (capped/bounded/reaped-on-close) behind the CAPTURED start + not_ready forms; the completeness gate proves every core tool outside the cron quartet + the documented by-design routes is live. THE ADOPTION LINE IS HERE: everything above it is done (14 → 12-01/02 → 12-05/04/06); the operator begins daily ACP use (v1.1 completion bar — an OPERATOR ACTION, not a plan).
+Next action (operator): start daily ACP use. Next action (agent, post-adoption): execute 12-03 Residuals open in WINDOWS.md: #3 timer-resume chunks not client-mirrored (route: 12-07), #5 standing cache-probe FAIL (post-adoption), #6 extractor zero-target re-run (12-03), #7 rollout-snapshot rule.
 
-Progress: [████████░] 76% (25/33 plans · 4/5 phases)
+Progress: [████████░] 79% (26/33 plans · 4/5 phases)
 
 ## Performance Metrics
 
@@ -43,6 +44,7 @@ Progress: [████████░] 76% (25/33 plans · 4/5 phases)
 
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
+| Phase 12 P06 | 88min | 2 tasks | 8 files |
 | Phase 12 P04 | 92min | 2 tasks | 17 files |
 | Phase 12 P05 | 214min | 3 tasks | 20 files |
 | Phase 12 P02 | 40min | 4 tasks | 28 files |
@@ -60,6 +62,7 @@ Progress: [████████░] 76% (25/33 plans · 4/5 phases)
 
 Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecting current work:
 
+- **[12-06 EXECUTED, 2026-08-20] Background work executes — THE PRE-ADOPTION MINIMAL SET IS COMPLETE:** the per-session TaskRegistry (16-task cap, 1MB bounded accumulation, stdout-before-stderr combine, progressive logs under .ass-guard/outputs/, ReapAll in OnClose) behind the CAPTURED start form (exec_<uuid>, 32 obs) + the CAPTURED not_ready retrieval XML (30 obs); TaskStop kills whole groups w/ the reap loop; per-session scoping proven cross-session; the completeness gate (TestBackgroundWiring_CoreCompleteness) proves every non-mcp core tool outside the cron quartet + the documented by-design routes (WebSearch/WebFetch backend routing, Agent pre-batch dispatch, Skill wiring closure) carries Execute. 12-05's fixture had ALREADY pinned the background forms (the plan anticipated the ordering). THE ADOPTION LINE follows this plan: the operator begins daily ACP use — v1.1 completion bar.
 - **[12-04 EXECUTED, 2026-08-20] The interactive-tool family executes; ACP-02's scope RESOLVED BY CAPTURE:** the 12-05 re-record proved zcode enforces plan mode at the tool-result level (mutating + SendMessage/TaskStop/cron refused with captured forms) — ass-guard MIRRORS it (per-session PlanModeState + the gate at the tool-loop batch-build site); the plan approval rides the 12-01 AskBroker with PendingAsk.Kind (approve → source-informed approved form + gate lift + exit marker; decline → the CAPTURED denial; D-01 timeout → the gate STAYS ON). plan_mode markers are their own audit line type (never boundaries — no projection resets). SendMessage: per-session AgentMailbox over agent_<uuid> ids, honest queued-acks, structured unknown-id errors. ReadSessionContext: deterministic relevant/handoff excerpting over .ass-guard/ transcripts, maxTokens chars/4. Engine TurnOutput.PlanMode = decision-reason provenance ONLY (no chaining keys on it).
 - **[12-05 EXECUTED, 2026-08-20] The D-04 re-record route is LIVE-PROVEN:** four capture passes via the archived driver kit against zcode 0.16.3 (protocol undrifted); the qualifying session (38 recs/81 tools/79→80→79) doubles as the forms source. Committed fixture zcode-recaptured-2026-08.json: every deferred-tool family capture-pinned or honestly corpus_absent with full hunts (cron quartet blocked by zcode's OWN runtime plan-mode gate + a reproducible automation zod bug in 0.16.3 headless; SendMessage/TaskStop/ExitPlanMode-approved/ask-non-answer hunts documented). ACP-07's flagship families RESOLVED: Bash timeout form + the <persisted-output> truncation envelope (budget 15000/preview 2000, target-source-verified + capture-consistent) IMPLEMENTED; the answered-ask PAIRING form (question="answer" + continue suffix) replaces 12-01's interim quote. KEY ACP-02 EVIDENCE for 12-04: plan mode in zcode is a RUNTIME-LEVEL mutating-tool gate ('Plan mode only allows read-only, non-destructive tools' + 'changes persistent state' refusals captured) — the 12-04 plan's 'model self-restraint' premise is disproven by the target; the Agent tool result carries the agent_<uuid> SendMessage address. The primary rollout ROTATED OFF mid-harvest (D-04 class live repeat — WINDOWS #7: snapshot immediately); the v4 interaction answer shape ({action:'accept',content:{answer}}) and the held-pending no-self-timeout finding are recorded in the kit README.
 - **[REPLAN 2026-08-19, operator priority ruling — "первый приоритет: как можно скорее дать мне возможность пользоваться агентом; второй: все важное и полезное до начала пользования; третий: вся необходимая функциональность работает и покрыта автотестами" (study the new comparative-analysis data; replan as needed)]:** the new data = commit `cb3ab50` (ECOSYSTEM-AUDIT §1.1 OpenClaude + occ deep-dives, redline 8 amendment; IDEA-LANDSCAPE rows 22-23 + borrows #13-15; SEED-004 triggers extended). **Plan structure CONFIRMED — no re-order**: the 2026-08-18 adoption-line plan already encodes the three priorities exactly (P1 = the pre-adoption minimal set 14→12-05→12-04→12-06; P2 = Phase 14's six YES items; P3 = the post-adoption queue 12-03/12-08/12-07/13, where 12-08 IS the autotest net). The only undecided residue was borrows #13-15, now dispositioned: **#13 nightly-parity gate** NOT pre-adoption (nothing in it is a daily-use dead end or unrecoverable risk; delaying the line for CI automation would violate P1) — cheap zcode-version drift-warning slice → Phase 14 EARLY-03 planning input (parity run already records zcode_version provenance from 09-03), full gate → 12-08 (post-adoption EVAL net), CI automation tail → v1.2; **#14 scheduler outcome store** → v1.2 pool (needs accumulated per-task data; pre-adoption economics already covered by EARLY-05); **#15 surface census** → ADOPTED as a free verification input — EARLY-06's contract inventory cross-checks it, 12-06/12-07 catalog-completeness tests gain it as a coverage manifest (zero new requirement, zero scope growth, 30/30 mapping unchanged). Artifacts updated: ROADMAP (Phase 14 disposition note + Research Flags inputs, 12-08 input note, v1.2 pool), REQUIREMENTS (Phase 14 note + footer), IDEA-LANDSCAPE (#13-15 disposition notes per extension protocol), SEED-004 (disposition recorded). The adoption line does NOT move.
@@ -172,6 +175,6 @@ Carried from v1.0 close — dispositioned into v1.1 scope:
 
 ## Session Continuity
 
-Last session: 2026-08-20T00:44:10.471Z
-Stopped at: Completed 12-04-PLAN.md (plan mode + messaging + session reads; 12-06 next)
+Last session: 2026-08-20T01:03:11.057Z
+Stopped at: Completed 12-06-PLAN.md — the pre-adoption minimal set done; ADOPTION LINE next (operator action)
 Resume file: None
