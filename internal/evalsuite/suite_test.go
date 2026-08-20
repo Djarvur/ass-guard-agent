@@ -300,3 +300,124 @@ func TestDeterministicLayer_Completeness(t *testing.T) {
 		}
 	}
 }
+
+// --- 13-04: the expanded-matrix suite extension (RED battery) ---
+
+// TestLoadScenarios_MatrixKeys (13-04 T1): the openspec_profile + fixture
+// schema keys are accepted (validated values); unknown keys still rejected;
+// the new assert keys resolve.
+func TestLoadScenarios_MatrixKeys(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	writeScenario := func(name, body string) {
+		t.Helper()
+
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	writeScenario("opsx-probe.json", `{
+		"id": "opsx-probe",
+		"description": "probe",
+		"changeName": "probe-change",
+		"stages": ["/opsx:new probe-change"],
+		"asserts": ["change_dir"],
+		"openspec_profile": "expanded",
+		"fixture": "existing_change"
+	}`)
+
+	scenarios, err := evalsuite.LoadScenarios(dir)
+	if err != nil {
+		t.Fatalf("LoadScenarios with the matrix keys: %v", err)
+	}
+
+	if len(scenarios) != 1 {
+		t.Fatalf("scenarios = %d; want 1", len(scenarios))
+	}
+
+	if scenarios[0].OpenSpecProfile != "expanded" || scenarios[0].Fixture != "existing_change" {
+		t.Errorf("profile/fixture = %q/%q; want expanded/existing_change",
+			scenarios[0].OpenSpecProfile, scenarios[0].Fixture)
+	}
+
+	// Unknown keys still rejected (T-12-08-01 stands).
+	writeScenario("bad.json", `{"id":"bad","description":"x","changeName":"c","stages":["s"],"asserts":["zero_continue"],"sinful":"1"}`)
+
+	if _, err := evalsuite.LoadScenarios(dir); err == nil {
+		t.Error("an unknown scenario key was accepted")
+	}
+}
+
+// TestRunSuite_MatrixAssertKeys (13-04 T1): the change_dir + fixable_recovery
+// named keys resolve offline — the fixture seeds the trigger state; the fake
+// seam supplies the transcript shape (fail→recover tool results).
+func TestRunSuite_MatrixAssertKeys(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	fixtureDir := func(sc evalsuite.Scenario) string {
+		// RunForTest bootstraps its own offline scratches; the fixture hook
+		// seeds inside runPass — the offline probe reads the seed via the
+		// scenario under test below.
+		return dir
+	}
+
+	_ = fixtureDir
+
+	failRecoverLines := []session.Line{
+		{Type: session.TypeToolResult, Output: json.RawMessage(`"Error: Change 'probe-change' already exists"`)},
+		{Type: session.TypeAssistantMessage, Text: "It exists — proceeding with the existing change."},
+		{Type: session.TypeToolResult, Output: json.RawMessage(`"created proposal for probe-change"`)},
+	}
+
+	driver := func(_ evalsuite.GateTB, _ string) (evalharness.RunnerSeam, func() error) {
+		return fakeSeam{lines: failRecoverLines}, func() error { return nil }
+	}
+
+	sc := evalsuite.Scenario{
+		ID: "opsx-new-fixable-probe", Description: "probe", ChangeName: "probe-change",
+		Stages: []string{"/opsx:new probe-change"}, Asserts: []string{"fixable_recovery"},
+		Fixture: "existing_change",
+	}
+
+	res, err := evalsuite.RunForTest(t, []evalsuite.Scenario{sc}, 1, driver)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !res.PassAtK {
+		t.Errorf("fixable_recovery pass = false; failures = %v", res.Scenarios[0].Records[0].Failures)
+	}
+}
+
+// TestRunSuite_FailureAttribution (13-04 T2, D-04's exact-attribution): a
+// deliberately failing opsx-* scenario is NAMED by id in the result.
+func TestRunSuite_FailureAttribution(t *testing.T) {
+	t.Parallel()
+
+	empty := func(_ evalsuite.GateTB, _ string) (evalharness.RunnerSeam, func() error) {
+		return fakeSeam{lines: nil}, func() error { return nil }
+	}
+
+	sc := evalsuite.Scenario{
+		ID: "opsx-continue", Description: "probe", ChangeName: "c",
+		Stages: []string{"/opsx:continue c"}, Asserts: []string{"change_dir"},
+	}
+
+	res, err := evalsuite.RunForTest(t, []evalsuite.Scenario{sc}, 1, empty)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if res.PassAtK {
+		t.Fatal("the empty-transcript probe passed — the battery is broken")
+	}
+
+	if res.Scenarios[0].ID != "opsx-continue" {
+		t.Errorf("failing scenario id = %q; want opsx-continue (exact attribution)", res.Scenarios[0].ID)
+	}
+}
