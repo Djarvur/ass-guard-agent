@@ -518,7 +518,11 @@ func hasAskChainIdleMarker(lines []session.Line) bool {
 func pollAskChainIdle(t *testing.T, sess *session.Session) []session.Line {
 	t.Helper()
 
-	deadline := time.Now().Add(5 * time.Second)
+	// The deadline only bounds a hang (the assertions are ordering-based):
+	// 15s because the full -race suite runs this parallel with everything
+	// else and the 50ms timer + settle + injection chain has been observed
+	// to stall >5s on a loaded machine (the 2026-08-20 full-suite flake).
+	deadline := time.Now().Add(15 * time.Second)
 
 	for {
 		lines, rerr := sess.Manager.ReadAll()
