@@ -425,10 +425,22 @@ func TestAskWiring_ChainSurvivesAskTimerResume(t *testing.T) { //nolint:cyclop,f
 
 	sess := r.sessions[sid]
 
-	// Poll the transcript to idle (bounded): under today's code the detached
-	// ~50ms timer resume must land first; under the fixed code the engine
-	// chain also runs to completion before the assertions.
-	lines := pollAskChainIdle(t, sess)
+	// Wait for the engine chain to go IDLE — the precise, load-immune signal
+	// (the chain count reaches zero exactly when the parked Observe goroutine
+	// exits: every decision + injection done). Under today's code the chain
+	// exits at the suspension; the pins below then fail on the missing
+	// decision/continuation.
+	idleCtx, idleCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer idleCancel()
+
+	if !r.WaitChainIdle(idleCtx, sid) {
+		t.Fatal("the engine chain did not go idle within 15s — the fixture hung")
+	}
+
+	lines, rerr := sess.Manager.ReadAll()
+	if rerr != nil {
+		t.Fatalf("ReadAll: %v", rerr)
+	}
 
 	// Locate the suspension (the asking turn) — the engine_decision pin keys
 	// on ITS turn id + ordering after it.
@@ -497,65 +509,6 @@ func TestAskWiring_ChainSurvivesAskTimerResume(t *testing.T) { //nolint:cyclop,f
 	}
 
 	_ = prov.callCount() // script-shape debug aid when re-tuned
-}
-
-// hasAskChainIdleMarker reports whether the transcript already carries the
-// resumed asking turn's closing text (the settle the idle poll keys on).
-func hasAskChainIdleMarker(lines []session.Line) bool {
-	for i := range lines {
-		if lines[i].Type == session.TypeAssistantMessage &&
-			strings.Contains(lines[i].Text, "handoff to apply") {
-			return true
-		}
-	}
-
-	return false
-}
-
-// pollAskChainIdle polls until the asking chain's resumed closing exists AND
-// the transcript line count is stable for one settle interval (any engine
-// chain work lands as further lines) — bounded at 5s.
-func pollAskChainIdle(t *testing.T, sess *session.Session) []session.Line {
-	t.Helper()
-
-	// The deadline only bounds a hang (the assertions are ordering-based):
-	// 15s because the full -race suite runs this parallel with everything
-	// else and the 50ms timer + settle + injection chain has been observed
-	// to stall >5s on a loaded machine (the 2026-08-20 full-suite flake).
-	deadline := time.Now().Add(15 * time.Second)
-
-	for {
-		lines, rerr := sess.Manager.ReadAll()
-		if rerr != nil {
-			t.Fatalf("ReadAll: %v", rerr)
-		}
-
-		if hasAskChainIdleMarker(lines) {
-			time.Sleep(250 * time.Millisecond)
-
-			lines2, rerr2 := sess.Manager.ReadAll()
-			if rerr2 != nil {
-				t.Fatalf("ReadAll (settle): %v", rerr2)
-			}
-
-			if len(lines2) == len(lines) {
-				return lines2 // idle: the line count is stable
-			}
-		}
-
-		if time.Now().After(deadline) {
-			break
-		}
-
-		time.Sleep(20 * time.Millisecond)
-	}
-
-	lines, rerr := sess.Manager.ReadAll()
-	if rerr != nil {
-		t.Fatalf("ReadAll (final): %v", rerr)
-	}
-
-	return lines
 }
 
 // askToolCallProvider is a provider whose first Stream emits the AskUserQuestion
