@@ -1,0 +1,17 @@
+# opsx matrix new-happy-capture (captured 2026-08-20T16:49:26Z, openspec 1.5.0, real binary + real model)
+
+The change **matrix-tracer-subject** has been created and scaffolded.
+
+**Location:** `openspec/changes/matrix-tracer-subject/` (repo-local planning home)
+
+**Schema:** `spec-driven`, with the artifact sequence: **proposal → design + specs → tasks** (tasks requires both design and specs).
+
+**Status:** 0/4 artifacts complete. The `proposal` artifact is ready; the rest are blocked pending their dependencies.
+
+**First artifact template (proposal.md):**
+- **Why** — the problem/opportunity, 1–2 sentences
+- **What Changes** — specific bullet list of changes
+- **Capabilities** — New Capabilities (each becomes `specs/<name>/spec.md`) and Modified Capabilities (existing specs whose requirements change)
+- **Impact** — affected code, APIs, dependencies, systems
+
+Ready to create the first artifact? Run `/opsx:continue` or just describe what this change is about and I'll draft the proposal.
