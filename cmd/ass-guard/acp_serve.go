@@ -964,8 +964,9 @@ func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen,maintidx // gr
 	// one HookRunner per session (discovered plugin hooks; the runner is
 	// nil-safe when none are installed) wraps every core executor.
 	hookRunner := ecosys.NewHookRunner(r.reg.Hooks, sessionID, dir, mgr.Path())
+	taskRegistry := coreexec.NewTaskRegistry()
 	coreexec.RegisterCore(sCatalog, coreexec.Config{
-		WorkDir: dir, Todos: coreexec.NewTodoStore(), Hooks: hookRunner,
+		WorkDir: dir, Todos: coreexec.NewTodoStore(), Hooks: hookRunner, Tasks: taskRegistry,
 	})
 
 	// 12-01 (ACP-01/D-01): the per-session AskUserQuestion surface. The
@@ -994,7 +995,7 @@ func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen,maintidx // gr
 	sessionReader := coreexec.NewSessionReader(dir)
 	coreexec.RegisterInteractive(sCatalog, coreexec.InteractiveConfig{
 		Ask: askBroker, PlanMode: planMode,
-		Mailbox: mailbox, Sessions: sessionReader,
+		Mailbox: mailbox, Sessions: sessionReader, Tasks: taskRegistry,
 	})
 
 	// 09-01 T2 (AUD-02): the late-bound capturer closure. sess is declared
@@ -1090,6 +1091,7 @@ func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen,maintidx // gr
 	// composed with the writer's cancel (Close runs the chain exactly once).
 	s.OnClose = func() error {
 		cancelWriter()
+		taskRegistry.ReapAll() // 12-06: no background group outlives the session
 
 		return mcpHost.Close()
 	}

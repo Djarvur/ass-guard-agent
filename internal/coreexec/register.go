@@ -28,6 +28,10 @@ type Config struct {
 	WorkDir string
 	Todos   *TodoStore
 	Hooks   ToolHooks
+	// Tasks owns Bash run_in_background executions (12-06, ACP-06): nil =
+	// background starts degrade to the structured no-registry error (the
+	// foreground path is unaffected).
+	Tasks *TaskRegistry
 }
 
 // RegisterCore sets Execute on the six core catalog entries (08-08's /opsx

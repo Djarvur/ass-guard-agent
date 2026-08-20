@@ -27,8 +27,9 @@ func TestBackground_StartRetrieveRoundTrip(t *testing.T) { //nolint:funlen // fl
 
 	start := time.Now()
 
-	out, err := bashExec(context.Background(), json.RawMessage(
-		`{"command":"echo bg-started; sleep 1; echo bg-done","run_in_background":true}`))
+	input := `{"command":"echo bg-started; sleep 1; echo bg-done","run_in_background":true}`
+
+	out, err := bashExec(context.Background(), json.RawMessage(input))
 	elapsed := time.Since(start)
 
 	if err != nil {
@@ -40,7 +41,9 @@ func TestBackground_StartRetrieveRoundTrip(t *testing.T) { //nolint:funlen // fl
 	}
 
 	var text string
-	if uerr := json.Unmarshal(out, &text); uerr != nil {
+
+	uerr := json.Unmarshal(out, &text)
+	if uerr != nil {
 		t.Fatalf("Output not a JSON string: %v (%s)", uerr, out)
 	}
 
@@ -68,7 +71,8 @@ func TestBackground_StartRetrieveRoundTrip(t *testing.T) { //nolint:funlen // fl
 	pathEnd := strings.Index(text[pathStart:], ".")
 	saved := text[pathStart : pathStart+pathEnd]
 
-	if _, serr := os.Stat(saved); serr != nil {
+	_, serr := os.Stat(saved)
+	if serr != nil {
 		t.Errorf("output file %q not live from the start: %v", saved, serr)
 	}
 
@@ -252,16 +256,21 @@ func TestBackground_OutputFilePersisted(t *testing.T) {
 
 	_ = json.Unmarshal(out, &text)
 
-	pathStart := strings.Index(text, "written to: ") + len("written to: ")
-	saved := text[pathStart:]
-	if i := strings.IndexAny(saved, ".\n"); i >= 0 {
-		saved = saved[:i]
+	_, rest, ok := strings.Cut(text, "written to: ")
+	if !ok {
+		t.Fatalf("start form = %q; cannot extract the log path", text)
+	}
+
+	saved, _, ok := strings.Cut(rest, ". You will be notified")
+	if !ok || saved == "" {
+		t.Fatalf("start form = %q; cannot extract the log path", text)
 	}
 
 	deadline := time.Now().Add(5 * time.Second)
 
 	for time.Now().Before(deadline) {
-		if b, rerr := os.ReadFile(saved); rerr == nil && strings.Contains(string(b), "persisted-line") {
+		b, rerr := os.ReadFile(saved)
+		if rerr == nil && strings.Contains(string(b), "persisted-line") {
 			return // pass
 		}
 

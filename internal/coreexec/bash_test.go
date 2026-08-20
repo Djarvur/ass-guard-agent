@@ -401,15 +401,20 @@ func TestBash_ProcessGroupKill(t *testing.T) { //nolint:paralleltest // PATH-sco
 // dangerouslyDisableSandbox are accepted-and-ignored (schema-valid, zero
 // corpus usage — documented corpus-absent + deferred in bash.go): the command
 // runs foreground and returns its output synchronously.
-func TestBash_IgnoredFields(t *testing.T) {
+// TestBash_SandboxFlagNoopByDesign (re-pin of the 08-08 IgnoredFields test,
+// 12-06): dangerouslyDisableSandbox is parsed and is a no-op BY DESIGN (no
+// sandbox tier exists — the locked safety model); the FOREGROUND path is
+// unaffected by it. run_in_background now EXECUTES via the TaskRegistry
+// (its own battery: TestBackground_*).
+func TestBash_SandboxFlagNoopByDesign(t *testing.T) {
 	t.Parallel()
 
 	bashExec := BashExecute(Config{WorkDir: t.TempDir()})
 
 	out, err := bashExec(context.Background(),
-		json.RawMessage(`{"command":"echo ok","run_in_background":true,"dangerouslyDisableSandbox":true}`))
+		json.RawMessage(`{"command":"echo ok","dangerouslyDisableSandbox":true}`))
 	if err != nil {
-		t.Fatalf("err = %v; want nil (fields accepted)", err)
+		t.Fatalf("err = %v; want nil (the flag is a deliberate no-op)", err)
 	}
 
 	if got := decodeJSONString(t, out); got != "ok" {

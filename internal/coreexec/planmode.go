@@ -100,9 +100,11 @@ type InteractiveConfig struct {
 	Ask      *session.AskBroker
 	PlanMode *session.PlanModeState
 	// Mailbox delivers SendMessage (nil = the executor returns the structured
-	// no-mailbox error); Sessions reads ReadSessionContext (nil likewise).
+	// no-mailbox error); Sessions reads ReadSessionContext (nil likewise);
+	// Tasks owns the background pair (12-06 — TaskOutput + TaskStop).
 	Mailbox  *AgentMailbox
 	Sessions *SessionReader
+	Tasks    *TaskRegistry
 }
 
 // RegisterInteractive sets Execute on the interactive-family catalog entries
@@ -120,6 +122,8 @@ func RegisterInteractive(catalog *toolcat.Catalog, cfg InteractiveConfig) {
 		exitPlanModeToolName:  ExitPlanModeExecute(cfg.PlanMode),
 		"SendMessage":         SendMessageExecute(cfg.Mailbox),
 		"ReadSessionContext":  ReadSessionContextExecute(cfg.Sessions),
+		"TaskOutput":          TaskOutputExecute(cfg.Tasks),
+		"TaskStop":            TaskStopExecute(cfg.Tasks),
 	}
 
 	for name, exec := range stubs {

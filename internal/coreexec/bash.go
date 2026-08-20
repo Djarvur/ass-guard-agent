@@ -55,12 +55,13 @@ const (
 )
 
 // bashArgs is the observed input shape: {command, description} always;
-// timeout (ms) sometimes (subagent corpus). run_in_background and
-// dangerouslyDisableSandbox are schema-declared but NEVER appear in any
-// observed input (zero corpus usage) — accepted-and-ignored here (documented
-// deferred: run_in_background needs the re-invoke machinery + TaskStop;
-// no sandbox tier exists to disable — the locked no-confirmation-tier
-// safety model has no sandbox to bypass).
+// timeout (ms) sometimes (subagent corpus). run_in_background EXECUTES via
+// the TaskRegistry (12-06; first live corpus usage recorded by the 12-05
+// re-record). dangerouslyDisableSandbox is parsed DELIBERATELY and is a no-op
+// BY DESIGN (12-06's upgrade of the 08-08 'accepted-and-ignored' note) —
+// ass-guard has no sandbox tier (the locked no-confirmation-tier safety
+// model), so the flag's captured meaning (skip sandboxing) is vacuously
+// satisfied; never silently ignored: this parsing IS the documented contract.
 type bashArgs struct {
 	Command                   string  `json:"command"`
 	Description               string  `json:"description"`
@@ -265,6 +266,12 @@ func BashExecute(cfg Config) toolcat.Stub {
 
 		timeoutMS := resolveBashTimeout(a.Timeout)
 
+		// 12-06 (ACP-06): the background branch — Start instead of Wait (the
+		// registry owns the process from here); the CAPTURED immediate form.
+		if a.RunInBackground {
+			return bashBackgroundStart(cfg, a.Command)
+		}
+
 		tctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMS)*time.Millisecond)
 		defer cancel()
 
@@ -317,6 +324,26 @@ func BashExecute(cfg Config) toolcat.Stub {
 
 		return json.Marshal(combined)
 	}
+}
+
+// bashBackgroundStart is BashExecute's run_in_background branch (12-06,
+// ACP-06): registry Start + the CAPTURED immediate-return form.
+func bashBackgroundStart(cfg Config, command string) (json.RawMessage, error) {
+	if cfg.Tasks == nil {
+		return marshalStructured("bash: run_in_background: no task registry configured", errNoRegistry)
+	}
+
+	id, serr := cfg.Tasks.Start(cfg.workDirForError(), command)
+	if serr != nil {
+		return marshalStructured(serr.Error(), serr)
+	}
+
+	out, mErr := json.Marshal(renderBackgroundStart(id, taskLogPath(cfg.workDirForError(), id)))
+	if mErr != nil {
+		return nil, fmt.Errorf("coreexec: marshal background start form: %w", mErr)
+	}
+
+	return out, nil
 }
 
 // bashFailure renders the failure forms for a finished command (extracted
