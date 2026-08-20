@@ -271,3 +271,15 @@ timeout_secs = 60
 "opsx:sync" = "mutating"
 "opsx:update" = "mutating"
 "opsx:archive" = "mutating"
+
+# 13-01 (13-CONTEXT D-11 discretion item): the expanded matrix's mutability
+# rows — new/continue/ff/bulk-archive/onboard write openspec/ artifacts
+# (mutating); verify validates specs without writing (read-only). Harvest
+# evidence from the matrix legs refines these if a command's real write
+# surface differs (13-02).
+"opsx:new" = "mutating"
+"opsx:continue" = "mutating"
+"opsx:ff" = "mutating"
+"opsx:verify" = "read-only"
+"opsx:bulk-archive" = "mutating"
+"opsx:onboard" = "mutating"
