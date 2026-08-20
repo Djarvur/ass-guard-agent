@@ -22,7 +22,12 @@
   },
   "tools": {
     "Bash": {
-      "input_keys_observed": ["command", "description", "run_in_background", "timeout"],
+      "input_keys_observed": [
+        "command",
+        "description",
+        "run_in_background",
+        "timeout"
+      ],
       "input_note": "FIRST live observation of run_in_background:true (30+2 obs across sessions) — the 08-08 'zero corpus usage' note resolves for this flag. dangerouslyDisableSandbox still never observed.",
       "results": {
         "timeout": {
@@ -49,7 +54,9 @@
       }
     },
     "Read": {
-      "input_keys_observed": ["file_path"],
+      "input_keys_observed": [
+        "file_path"
+      ],
       "input_note": "offset/limit not exercised this tour (already pinned by the 08-08 fixture); NEW: the runtime DEDUPES unchanged re-reads.",
       "results": {
         "unchanged_dedup": {
@@ -62,7 +69,9 @@
       }
     },
     "AskUserQuestion": {
-      "input_keys_observed": ["questions"],
+      "input_keys_observed": [
+        "questions"
+      ],
       "input_note": "the schema-declared {questions:[…]} shape confirmed live; the full family set also lives in zcode-interactive-results.json.",
       "results": {
         "answered": {
@@ -92,13 +101,17 @@
         "entered": {
           "isError": false,
           "lateHarvest": true,
-          "template": "Entered plan mode. You should now focus on exploring the codebase and designing an implementation approach.\n\nIn plan mode, you should:\n1. Thoroughly explore the codebase to understand existing patterns\n2. Identify similar features that exist… (numbered guidance continues; full text preserved in the primary extraction — the template's fixed head is the form identity)",
-          "observed_count": 43
+          "template": "Entered plan mode. You should now focus on exploring the codebase and designing an implementation approach.\n\nIn plan mode, you should:\n<n>. Thoroughly explore the codebase to understand existing patterns\n<n>. Identify similar features and architectural approaches\n<n>. Consider multiple approaches and their trade-offs\n<n>. Use AskUserQuestion if you need to clarify the approach\n<n>. Design a concrete implementation strategy\n<n>. When ready, use ExitPlanMode to present your plan for approval\n\nRemember: DO NOT write or edit any files yet. This is a read-only exploration and planning phase.",
+          "observed_count": 43,
+          "note": "full text completed from the supplementary session's mechanical harvest (the primary's in-flight extraction had truncated at 230 chars); digit-masked"
         }
       }
     },
     "ExitPlanMode": {
-      "input_keys_observed": ["plan", "allowedPrompts"],
+      "input_keys_observed": [
+        "plan",
+        "allowedPrompts"
+      ],
       "input_note": "the schema-declared pair confirmed live.",
       "results": {
         "error_permission_denied": {
@@ -114,7 +127,11 @@
       }
     },
     "SendMessage": {
-      "input_keys_observed": ["to", "summary", "message"],
+      "input_keys_observed": [
+        "to",
+        "summary",
+        "message"
+      ],
       "input_note": "the schema-declared triple confirmed live.",
       "results": {
         "plan_mode_refusal": {
@@ -126,7 +143,9 @@
       }
     },
     "TaskStop": {
-      "input_keys_observed": ["task_id"],
+      "input_keys_observed": [
+        "task_id"
+      ],
       "results": {
         "plan_mode_refusal": {
           "isError": true,
@@ -137,7 +156,10 @@
       }
     },
     "TaskOutput": {
-      "input_keys_observed": ["task_id", "block"],
+      "input_keys_observed": [
+        "task_id",
+        "block"
+      ],
       "input_note": "timeout not exercised (schema default 30000).",
       "results": {
         "not_ready": {
@@ -150,7 +172,10 @@
       }
     },
     "ReadSessionContext": {
-      "input_keys_observed": ["sessionId", "query"],
+      "input_keys_observed": [
+        "sessionId",
+        "query"
+      ],
       "results": {
         "lite_context": {
           "isError": false,

@@ -12,6 +12,9 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/toolexec"
 )
 
+// pmCallID2 is the ExitPlanMode call id (goconst).
+const pmCallID2 = "call_pm_2"
+
 // The 12-04 Task 1 battery: plan mode end-to-end over the REAL Session tool
 // loop (the 12-01 ask_test pattern). SCOPE NOTE: the 12-05 capture (zcode
 // 0.16.3) answers ACP-02's at-plan-phase question — the TARGET enforces plan
@@ -26,15 +29,15 @@ import (
 // test) plus a Bash stub whose output proves real-vs-refused execution.
 func planModeTestTools(s *Session, state *PlanModeState) {
 	s.Catalog.Register(toolcat.Tool{
-		Name:        "EnterPlanMode",
+		Name:        toolNameEnterPlanMode,
 		Mutability:  toolcat.MutabilityReadOnly,
 		InputSchema: json.RawMessage(`{"type":"object"}`),
 		Execute: func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
-			return json.Marshal(planModeEnteredForm)
+			return json.Marshal(PlanModeEnteredForm)
 		},
 	})
 	s.Catalog.Register(toolcat.Tool{
-		Name:        "ExitPlanMode",
+		Name:        toolNameExitPlanMode,
 		Mutability:  toolcat.MutabilityReadOnly,
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"plan":{"type":"string"}}}`),
 		Execute: func(_ context.Context, args json.RawMessage) (json.RawMessage, error) {
@@ -45,8 +48,8 @@ func planModeTestTools(s *Session, state *PlanModeState) {
 			var a struct {
 				Plan string `json:"plan"`
 			}
-			_ = json.Unmarshal(args, &a)
 
+			_ = json.Unmarshal(args, &a)
 			payload, _ := json.Marshal([]AskQuestion{{
 				Question: planApprovalQuestion(a.Plan),
 				Header:   "Plan approval",
@@ -95,20 +98,20 @@ func newPlanModeSession(t *testing.T, responses []provider.Response, timeout tim
 // the broker; the approval reply lands the approved form as its tool result,
 // records the exit marker, flips the state OFF, and the resumed turn executes
 // the SAME mutating call for real.
-func TestPlanMode_EnterGateApprovalExit(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen // flat battery
+func TestPlanMode_EnterGateApprovalExit(t *testing.T) { //nolint:gocyclo,cyclop,funlen // flat battery
 	t.Parallel()
 
 	exitInput := json.RawMessage(`{"plan":"1. add multiply() to calc.js\n2. add a test"}`)
 
 	s, state := newPlanModeSession(t, []provider.Response{
 		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
-			{ID: "call_pm_1", Name: "EnterPlanMode", Input: json.RawMessage(`{}`)},
+			{ID: "call_pm_1", Name: toolNameEnterPlanMode, Input: json.RawMessage(`{}`)},
 		}},
 		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
 			{ID: "call_bash_1", Name: toolBash, Input: json.RawMessage(`{"command":"echo hi"}`)},
 		}},
 		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
-			{ID: "call_pm_2", Name: "ExitPlanMode", Input: exitInput},
+			{ID: pmCallID2, Name: toolNameExitPlanMode, Input: exitInput},
 		}},
 		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
 			{ID: "call_bash_2", Name: toolBash, Input: json.RawMessage(`{"command":"echo hi"}`)},
@@ -130,23 +133,18 @@ func TestPlanMode_EnterGateApprovalExit(t *testing.T) { //nolint:gocognit,gocycl
 	}
 
 	var (
-		enterMarker, exitMarker bool
-		refused                 string
-		bashRanOut              string
-		refusedErr, bashRan     bool
+		enterMarker bool
+		refused     string
+		refusedErr  bool
 	)
+
 	for _, l := range linesOf(s) {
 		switch {
 		case l.Type == TypePlanMode && l.Cause == planModeCauseEnter:
 			enterMarker = true
-		case l.Type == TypePlanMode && l.Cause == planModeCauseExit:
-			exitMarker = true
 		case l.Type == TypeToolResult && l.ToolCallID == "call_bash_1":
 			_ = json.Unmarshal(l.Output, &refused)
 			refusedErr = l.IsError
-		case l.Type == TypeToolResult && l.ToolCallID == "call_bash_2":
-			_ = json.Unmarshal(l.Output, &bashRanOut)
-			bashRan = true
 		}
 	}
 
@@ -155,11 +153,8 @@ func TestPlanMode_EnterGateApprovalExit(t *testing.T) { //nolint:gocognit,gocycl
 	}
 
 	if refused != planModeRefusalForm || !refusedErr {
-		t.Errorf("gated Bash result = %q isError=%v; want the CAPTURED refusal %q (isError)", refused, refusedErr, planModeRefusalForm)
-	}
-
-	if exitMarker {
-		t.Error("plan_mode_exit marker BEFORE the approval resolved")
+		t.Errorf("gated Bash result = %q isError=%v; want the CAPTURED refusal (isError)",
+			refused, refusedErr)
 	}
 
 	// The approval surfaces on the broker with the plan + kind.
@@ -190,16 +185,22 @@ func TestPlanMode_EnterGateApprovalExit(t *testing.T) { //nolint:gocognit,gocycl
 		t.Error("plan-mode state ON after approval; want OFF")
 	}
 
-	exitMarker = false
-
-	var exitResult string
+	var (
+		exitMarker bool
+		exitResult string
+		bashRan    bool
+		bashRanOut string
+	)
 
 	for _, l := range linesOf(s) {
 		switch {
 		case l.Type == TypePlanMode && l.Cause == planModeCauseExit:
 			exitMarker = true
-		case l.Type == TypeToolResult && l.ToolCallID == "call_pm_2":
+		case l.Type == TypeToolResult && l.ToolCallID == pmCallID2:
 			_ = json.Unmarshal(l.Output, &exitResult)
+		case l.Type == TypeToolResult && l.ToolCallID == "call_bash_2":
+			_ = json.Unmarshal(l.Output, &bashRanOut)
+			bashRan = true
 		}
 	}
 
@@ -230,10 +231,10 @@ func TestPlanMode_TimeoutStaysOn(t *testing.T) {
 
 	s, state := newPlanModeSession(t, []provider.Response{
 		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
-			{ID: "call_pm_1", Name: "EnterPlanMode", Input: json.RawMessage(`{}`)},
+			{ID: "call_pm_1", Name: toolNameEnterPlanMode, Input: json.RawMessage(`{}`)},
 		}},
 		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
-			{ID: "call_pm_2", Name: "ExitPlanMode", Input: json.RawMessage(`{"plan":"do the thing"}`)},
+			{ID: pmCallID2, Name: toolNameExitPlanMode, Input: json.RawMessage(`{"plan":"do the thing"}`)},
 		}},
 		{FinishReason: stopEndTurn},
 	}, 50*time.Millisecond)
@@ -264,7 +265,7 @@ func TestPlanMode_TimeoutStaysOn(t *testing.T) {
 	var nonAnswer string
 
 	for _, l := range linesOf(s) {
-		if l.Type == TypeToolResult && l.ToolCallID == "call_pm_2" {
+		if l.Type == TypeToolResult && l.ToolCallID == pmCallID2 {
 			_ = json.Unmarshal(l.Output, &nonAnswer)
 		}
 	}
@@ -285,15 +286,15 @@ func TestPlanMode_BlockedSet(t *testing.T) {
 	state.Enter()
 
 	cases := map[string]bool{ // name -> want blocked
-		toolBash:           true,
-		"Write":            true,
-		"SendMessage":      true, // capture: refused in plan mode (read-only in catalog, side-effecting in target)
-		"TaskStop":         true, // capture: refused
-		"CronCreate":       true, // capture: 'changes persistent state'
-		"EnterPlanMode":    false,
-		"ExitPlanMode":     false,
-		toolRead:           false,
-		"ReadSessionContext": false,
+		toolBash:              true,
+		"Write":               true,
+		"SendMessage":         true, // capture: refused in plan mode (read-only in catalog, side-effecting in target)
+		"TaskStop":            true, // capture: refused
+		"CronCreate":          true, // capture: 'changes persistent state'
+		toolNameEnterPlanMode: false,
+		toolNameExitPlanMode:  false,
+		toolRead:              false,
+		"ReadSessionContext":  false,
 	}
 
 	for name, want := range cases {

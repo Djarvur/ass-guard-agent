@@ -70,7 +70,19 @@ type PendingAsk struct {
 	CallID     string        `json:"callID"` //nolint:tagliatelle // on-disk form
 	Questions  []AskQuestion `json:"questions"`
 	SurfacedAt time.Time     `json:"surfacedAt"` //nolint:tagliatelle // on-disk form
+	// Kind distinguishes the suspension surface (12-04): an ordinary model
+	// question ("") vs a plan approval ("plan_approval" — the ExitPlanMode
+	// resume renders the approved/denied forms and flips the plan-mode state).
+	Kind string `json:"kind,omitempty"`
 }
+
+// PendingAskKindPlanApproval marks an ExitPlanMode approval suspension (the
+// empty Kind is the ordinary AskUserQuestion question).
+const PendingAskKindPlanApproval = "plan_approval"
+
+// PendingAskKindQuestion is the explicit ordinary-question Kind (the zero
+// value; the constant exists for readability at the construction site).
+const PendingAskKindQuestion = ""
 
 // AskBroker holds the per-session pending ask + the D-01 timeout timer. It is
 // deliberately Await-free: Surface records + notifies; Claim atomically hands
@@ -315,13 +327,33 @@ func (s *Session) resumeAskClaimed( //nolint:contextcheck // the timer path pass
 
 	var form string
 
-	if reply != nil {
+	isErr := false
+
+	switch {
+	case p.Kind == PendingAskKindPlanApproval && reply != nil && isApprovalReply(*reply):
+		// 12-04: an approving reply renders the approved form (source-informed
+		// corpus-absent default), lifts the gate, and records the exit marker.
+		form, _ = RenderPlanApprovalResolved(planOf(p.Questions), *reply)
+
+		if s.planMode != nil {
+			s.planMode.Exit()
+		}
+
+		s.appendPlanModeMarker(planModeCauseExit, p.CallID, p.TurnID)
+	case p.Kind == PendingAskKindPlanApproval && reply != nil:
+		// A declining reply: the CAPTURED denial (isError); the gate STAYS ON.
+		form, isErr = RenderPlanApprovalResolved(planOf(p.Questions), *reply)
+	case p.Kind == PendingAskKindPlanApproval:
+		// The D-01 timeout: the non-answer; the gate STAYS ON (an unapproved
+		// plan never ungates the mutating tools).
+		form = RenderAskNonAnswer(s.ask.Timeout())
+	case reply != nil:
 		form = RenderAskAnswered(p.Questions, *reply)
-	} else {
+	default:
 		form = RenderAskNonAnswer(s.ask.Timeout())
 	}
 
-	_ = s.Manager.AppendToolResult(p.TurnID, p.CallID, marshalAskForm(form), false)
+	_ = s.Manager.AppendToolResult(p.TurnID, p.CallID, marshalAskForm(form), isErr)
 
 	stop, _ := s.runTurn(ctx, p.TurnID)
 
@@ -338,4 +370,19 @@ func marshalAskForm(form string) json.RawMessage {
 	}
 
 	return out
+}
+
+// planOf extracts the plan text from an approval question (the question wraps
+// the plan after its header line — planApprovalQuestion's shape).
+func planOf(qs []AskQuestion) string {
+	if len(qs) == 0 {
+		return ""
+	}
+
+	_, plan, found := strings.Cut(qs[0].Question, "\n\n")
+	if !found {
+		return qs[0].Question
+	}
+
+	return plan
 }

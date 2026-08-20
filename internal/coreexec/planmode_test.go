@@ -29,8 +29,9 @@ func recapturedFamily(t *testing.T, tool, family string) struct {
 		} `json:"tools"`
 	}
 
-	if uerr := json.Unmarshal(raw, &f); uerr != nil {
-		t.Fatalf("parse fixture: %v", uerr)
+	perr := json.Unmarshal(raw, &f)
+	if perr != nil {
+		t.Fatalf("parse fixture: %v", perr)
 	}
 
 	var fam struct {
@@ -48,7 +49,8 @@ func recapturedFamily(t *testing.T, tool, family string) struct {
 		t.Fatalf("fixture missing %s.%s", tool, family)
 	}
 
-	if uerr := json.Unmarshal(famRaw, &fam); uerr != nil {
+	uerr := json.Unmarshal(famRaw, &fam)
+	if uerr != nil {
 		t.Fatalf("parse %s.%s: %v", tool, family, uerr)
 	}
 
@@ -67,7 +69,9 @@ func TestPlanMode_EnteredFormCaptured(t *testing.T) {
 	}
 
 	var got string
-	if uerr := json.Unmarshal(out, &got); uerr != nil {
+
+	uerr := json.Unmarshal(out, &got)
+	if uerr != nil {
 		t.Fatalf("Output not a JSON string: %v (%s)", uerr, out)
 	}
 
@@ -75,9 +79,20 @@ func TestPlanMode_EnteredFormCaptured(t *testing.T) {
 		t.Errorf("entered form head = %q; want the captured head", got[:60])
 	}
 
+	const tail = "Remember: DO NOT write or edit any files yet. This is a read-only exploration and planning phase."
 	if !strings.Contains(got, "use ExitPlanMode to present your plan for approval") ||
-		!strings.HasSuffix(got, "Remember: DO NOT write or edit any files yet. This is a read-only exploration and planning phase.") {
+		!strings.HasSuffix(got, tail) {
 		t.Errorf("entered form = %q; want the captured guidance tail", got)
+	}
+
+	// Fixture conformance (T1 Test 5): the family template carries the same
+	// captured shape (digit-masked in the fixture — the numbered list is
+	// restored by the single-definition const).
+	fam := recapturedFamily(t, "EnterPlanMode", "entered")
+
+	if !strings.HasPrefix(fam.Template, "Entered plan mode.") ||
+		!strings.Contains(fam.Template, "use ExitPlanMode to present your plan for approval") {
+		t.Errorf("fixture entered family = %q; want the captured head+tail", fam.Template)
 	}
 }
 
@@ -97,7 +112,9 @@ func TestPlanMode_ExitSuspendsWithApprovalPayload(t *testing.T) {
 	}
 
 	var qs []session.AskQuestion
-	if uerr := json.Unmarshal(out, &qs); uerr != nil || len(qs) != 1 {
+
+	uerr := json.Unmarshal(out, &qs)
+	if uerr != nil || len(qs) != 1 {
 		t.Fatalf("payload = %s; want one approval question", out)
 	}
 
@@ -122,13 +139,21 @@ func TestRegisterInteractive_SchemaNeverRewritten(t *testing.T) {
 
 	catalog := toolcat.NewCatalog()
 
-	before := map[string]toolcat.Tool{}
-	for _, name := range []string{"EnterPlanMode", "ExitPlanMode"} {
+	type schemaSnap struct {
+		name, desc, schema, mutability string
+	}
+
+	before := map[string]schemaSnap{}
+
+	for _, name := range []string{enterPlanModeToolName, exitPlanModeToolName} {
 		tool, ok := catalog.Get(name)
 		if !ok {
 			t.Fatalf("catalog missing %s (the captured catalog must carry it)", name)
 		}
-		before[name] = tool.Clone()
+
+		before[name] = schemaSnap{
+			tool.Name, tool.Description, string(tool.InputSchema), tool.Mutability.String(),
+		}
 	}
 
 	RegisterInteractive(catalog, InteractiveConfig{PlanMode: session.NewPlanModeState()})
@@ -140,8 +165,8 @@ func TestRegisterInteractive_SchemaNeverRewritten(t *testing.T) {
 		}
 
 		b := before[name]
-		if after.Name != b.Name || string(after.InputSchema) != string(b.InputSchema) ||
-			after.Description != b.Description || after.Mutability != b.Mutability {
+		if after.Name != b.name || string(after.InputSchema) != b.schema ||
+			after.Description != b.desc || after.Mutability.String() != b.mutability {
 			t.Errorf("%s schema rewritten by RegisterInteractive", name)
 		}
 

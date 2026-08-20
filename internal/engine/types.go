@@ -156,6 +156,11 @@ type TurnOutput struct {
 	// turn must NEVER chain (the Phase-8 pattern table would otherwise
 	// auto-continue a suspended stage; the no-chain regression pin).
 	AskSuspended bool
+	// PlanMode marks a turn that ended while plan mode was ON (12-04, ACP-02):
+	// engine-decision PROVENANCE ONLY (signal context) — no chaining behavior
+	// keys on it (a plan-mode turn ends like any other; the gate lives at the
+	// tool-exec layer, not the engine).
+	PlanMode bool
 }
 
 // MaxContinueInjections is the re-fire budget — the second infinite-loop bar

@@ -249,6 +249,18 @@ func (m *Manager) AppendAskSuspended(turnID, toolCallID string, questions json.R
 	})
 }
 
+// AppendPlanMode records a plan-mode transition (12-04, ACP-02): cause
+// plan_mode_enter (the EnterPlanMode result) or plan_mode_exit (the approved
+// ExitPlanMode resume). Schema-stable audit marker — NOT a boundary line; the
+// Projector skips it (entering plan mode is not a mutating call and never
+// resets a projection window).
+func (m *Manager) AppendPlanMode(cause, toolCallID, turnID string) error {
+	return m.appendLine(&Line{
+		Type: TypePlanMode, TurnID: turnID, Timestamp: now(), Cause: cause,
+		ToolCallID: toolCallID,
+	})
+}
+
 // AppendEngineDecision records the unified engine's verdict for one turn
 // (Phase-4 ENG-02 — the single provenance-tagged stream). The line type constant
 // TypeEngineDecision is already reserved in transcript.go. action is the

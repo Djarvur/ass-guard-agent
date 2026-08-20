@@ -1,9 +1,10 @@
 {
   "_provenance": {
-    "source": "zcode interactive-tool result forms. ANSWERED: re-pinned by the 12-05 re-record (2026-08-20, live zcode 0.16.3, session sess_6e4b5cc7 — the deferred-tools tour's answered-ask leg; 15 observations). The pre-12-05 quote (`User has answered your questions: \"…\"`) came from the 08-08 harvest note; the direct capture carries the question=\"answer\" pairing + the continue suffix.",
+    "source": "zcode interactive-tool result forms. ANSWERED + the plan-mode/messaging families: re-pinned by the 12-05 re-record (2026-08-20, live zcode 0.16.3, sessions sess_6e4b5cc7 + sess_bc155bc5). The pre-12-05 answered quote came from the 08-08 harvest note.",
     "sessions": {
       "answered_form": "model-io-sess_6e4b5cc7-85b9-4e15-a3d7-53bcdecbc7f2 (12-05 tour, 2026-08-20, zcode 0.16.3, driver-answered via interaction/requestUserInput {action:accept, content:{answer}})",
-      "failure_form": "same session — 'Permission request failed' (an invalid client answer shape; the capture's error family, recorded in zcode-recaptured-2026-08.json)"
+      "failure_form": "same session — 'Permission request failed' (an invalid client answer shape; the capture's error family, recorded in zcode-recaptured-2026-08.json)",
+      "plan_mode_forms": "model-io-sess_6e4b5cc7 + sess_bc155bc5 (EnterPlanMode captured form; ExitPlanMode error families captured — the approved form corpus_absent, see the hunt)"
     },
     "harvestDate": "2026-08-20",
     "redaction": "D-03 discipline: template texts are preserved verbatim (they are the mimicry target); the question/reply texts are shape-preserving stand-ins (<question>, <reply>).",
@@ -11,12 +12,15 @@
     "corpus_absent": [
       "ask_non_answer_form — HUNT (12-05, 2026-08-20): a HELD interaction (client connected, no answer sent) produced NO self-timeout in 600s — zcode's runtime does not fire its 30s ask timeout while a client holds the request pending; the auto-resolution path is gated on PERSISTED runtime settings (readPersistedAutoResolution), not the headless prefs reply, and was not headless-reachable. ass-guard's D-01 default (internal/session/ask.go RenderAskNonAnswer) stands as the documented corpus-informed default; the target's own non-answer text exists in its bundle but is NOT capture-pinned (the captured-not-written doctrine).",
       "ask_question_client_surface_form — the client-side rendering of the question is UI-side, not part of request/response captures; the surface renderer (coreexec.RenderAskSurface) emits structure (header, question, option labels with descriptions), not judgment — the '(Recommended)' first-option convention is left to the model per the captured schema's own usage notes.",
-      "ask_input_keys_live — RESOLVED by the 12-05 re-record: observed input key set = {questions} (the schema-declared shape confirmed live)."
+      "ask_input_keys_live — RESOLVED by the 12-05 re-record: observed input key set = {questions} (the schema-declared shape confirmed live).",
+      "exitplanmode_approved_form — HUNT (12-05, 2026-08-20): the accepted plan-approval interaction never yielded an observable ExitPlanMode success result (the observable forms are the error families in zcode-recaptured-2026-08.json); ass-guard ships the source-informed default (the target's own formatter text: 'User has approved your plan. You can now start coding. Start with updating your todo list if applicable. ## Approved Plan: <plan>') — flagged corpus_absent, never capture-pinned."
     ]
   },
   "tools": {
     "AskUserQuestion": {
-      "input_keys_observed": ["questions"],
+      "input_keys_observed": [
+        "questions"
+      ],
       "input_note": "observed live (12-05 re-record): {questions:[{question,header,options:[{label,description}],multiSelect?}]} — the schema-declared shape confirmed; parsed best-effort with unknown fields ignored (the 08-08 bashArgs pattern).",
       "results": {
         "answered": {
@@ -32,6 +36,41 @@
           "literal_prefix": "User has not answered your questions",
           "corpus_absent": true,
           "provenance": "D-01 documented corpus-informed default; the 12-05 hunt (held interaction, 600s) produced no self-timeout capture — see corpus_absent.ask_non_answer_form for the full hunt record."
+        }
+      }
+    },
+    "EnterPlanMode": {
+      "input_keys_observed": [],
+      "input_note": "empty-object input confirmed live (12-05).",
+      "results": {
+        "entered": {
+          "isError": false,
+          "lateHarvest": true,
+          "template": "Entered plan mode. You should now focus on exploring the codebase and designing an implementation approach.\n\nIn plan mode, you should:\n<n>. Thoroughly explore the codebase to understand existing patterns\n<n>. Identify similar features and architectural approaches\n<n>. Consider multiple approaches and their trade-offs\n<n>. Use AskUserQuestion if you need to clarify the approach\n<n>. Design a concrete implementation strategy\n<n>. When ready, use ExitPlanMode to present your plan for approval\n\nRemember: DO NOT write or edit any files yet. This is a read-only exploration and planning phase.",
+          "observed_count": 43,
+          "provenance": "12-05 re-record (full text; session.PlanModeEnteredForm is the single definition)"
+        }
+      }
+    },
+    "ExitPlanMode": {
+      "input_keys_observed": [
+        "plan",
+        "allowedPrompts"
+      ],
+      "input_note": "the schema-declared pair confirmed live.",
+      "results": {
+        "approved": {
+          "isError": false,
+          "corpus_absent": true,
+          "template": "User has approved your plan. You can now start coding. Start with updating your todo list if applicable. ## Approved Plan: <plan verbatim>",
+          "provenance": "SOURCE-INFORMED corpus-absent default (the 12-05 hunt record above); rendered by session.RenderPlanApprovalResolved on an approving reply; an approving reply also lifts the plan-mode gate + writes the plan_mode_exit marker"
+        },
+        "denied": {
+          "isError": true,
+          "lateHarvest": true,
+          "template": "Permission denied for ExitPlanMode",
+          "observed_count": 48,
+          "provenance": "CAPTURED (12-05 re-record); a declining reply renders it and the gate STAYS ON"
         }
       }
     }

@@ -846,7 +846,7 @@ func (r *sessionTurnRunner) runOneTurn( //nolint:funcorder // grouping keeps the
 }
 
 // sessionFor returns the Session for sessionID, creating it on first use.
-func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen // grouping keeps the turn pipeline together
+func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen,maintidx // grouping keeps the turn pipeline together
 	ctx context.Context, sessionID string,
 ) *session.Session {
 	if r.sessions == nil {
@@ -983,6 +983,16 @@ func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen // grouping ke
 		})
 	})
 	coreexec.RegisterAsk(sCatalog, askBroker)
+
+	// 12-04 (ACP-02): the per-session plan-mode state + the interactive-tool
+	// family. The state carries the CAPTURED runtime-level mutating-tool gate
+	// (the 12-05 re-record proved the target enforces it); the plan pair
+	// registers through RegisterInteractive — the SAME Execute-only override
+	// discipline as RegisterCore, wired at the same site.
+	planMode := session.NewPlanModeState()
+	coreexec.RegisterInteractive(sCatalog, coreexec.InteractiveConfig{
+		Ask: askBroker, PlanMode: planMode,
+	})
 
 	// 09-01 T2 (AUD-02): the late-bound capturer closure. sess is declared
 	// BEFORE the Session literal and assigned after — the closure reads
@@ -1357,6 +1367,11 @@ func (a *engineTurnRunnerAdapter) LastTurnOutput() engine.TurnOutput {
 
 	var askSuspended *session.Line
 
+	// 12-04 (ACP-02): the plan-mode state at turn end — the LAST plan_mode
+	// marker's cause (enter/exit) is the state the turn ENDED in; it rides
+	// TurnOutput as engine-decision provenance (signal context only).
+	planModeOn := false
+
 	for i := len(lines) - 1; i >= 0; i-- { //nolint:modernize // conflicts with gocritic rangeValCopy
 		switch lines[i].Type {
 		case session.TypeAssistantMessage:
@@ -1366,6 +1381,8 @@ func (a *engineTurnRunnerAdapter) LastTurnOutput() engine.TurnOutput {
 			// resumed turn's closing text) outranks it — the scan from the end
 			// guarantees the newest terminal line wins.
 			askSuspended = &lines[i]
+		case session.TypePlanMode:
+			planModeOn = lines[i].Cause == session.PlanModeCauseEnter
 		}
 
 		if lastAssistant != nil || askSuspended != nil {
@@ -1378,6 +1395,7 @@ func (a *engineTurnRunnerAdapter) LastTurnOutput() engine.TurnOutput {
 			TurnID: askSuspended.TurnID, StartedBy: a.startedBy,
 			AskSuspended: true,
 			ToolCalls:    toolCallNamesUnder(lines, askSuspended.TurnID),
+			PlanMode:     planModeOn,
 		}
 	}
 
@@ -1388,6 +1406,7 @@ func (a *engineTurnRunnerAdapter) LastTurnOutput() engine.TurnOutput {
 	return engine.TurnOutput{
 		TurnID: lastAssistant.TurnID, Text: lastAssistant.Text,
 		StartedBy: a.startedBy, ToolCalls: toolCallNamesUnder(lines, lastAssistant.TurnID),
+		PlanMode: planModeOn,
 	}
 }
 

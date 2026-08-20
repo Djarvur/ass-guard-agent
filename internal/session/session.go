@@ -77,6 +77,12 @@ type Session struct {
 	// inside the parent turn's recovery window.
 	Checkpointer Checkpointer
 
+	// planMode is the per-session plan-mode state (12-04, ACP-02): nil =
+	// plan mode not wired (the gate never fires). The state carries the
+	// runtime-level mutating-tool gate MIRRORED FROM THE CAPTURE (the 12-05
+	// re-record proved the target enforces it — see planmode.go).
+	planMode *PlanModeState
+
 	// SubagentModel is the scheduler light-tier model slug for SUBAGENT
 	// dispatches (14-05, EARLY-05 — the token-economics lever). Empty (the
 	// default) keeps the parent model exactly as before: the routing is
@@ -330,7 +336,7 @@ func (s *Session) injectHookContext(out ecosys.HookOutcome) {
 // maxIterations budget: a suspension ENDS a client-visible turn (the client
 // controls the next prompt; T-12-01-03), so the runaway bound is per-entry.
 //
-//nolint:gocognit,gocyclo,cyclop,funlen,nonamedreturns // domain complexity; err used by defer
+//nolint:gocognit,gocyclo,cyclop,funlen,nonamedreturns,maintidx // domain complexity; err used by defer
 func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -455,6 +461,17 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 					continue
 				}
 
+				// 12-04 plan-mode gate (CAPTURED, 12-05 re-record): while
+				// plan mode is ON, gated calls (mutating + the captured
+				// extra-refused set) return the captured refusal WITHOUT
+				// executing — the target's runtime-level enforcement,
+				// mirrored; read-only exploration continues.
+				if s.planModeBlocks(tc.Name) {
+					_ = s.Manager.AppendToolResult(turnID, callID, planModeRefusal(), true)
+
+					continue
+				}
+
 				batchCalls = append(batchCalls, tc)
 				batchIDs = append(batchIDs, callID)
 			}
@@ -471,6 +488,7 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 			var (
 				suspendedCallID string
 				suspendedOutput json.RawMessage
+				suspendedTool   string
 			)
 
 			for _, res := range results {
@@ -489,6 +507,7 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 				if res.Err != nil && errors.Is(res.Err, ErrSuspended) {
 					suspendedCallID = callID
 					suspendedOutput = res.Output
+					suspendedTool = res.Name
 
 					continue
 				}
@@ -506,11 +525,17 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 				// capture: corpus session 4440f5a7, 46/46 rolling-64 tail
 				// records, zero tool-result resets — 08-09 / 08-08 T4).
 				_ = s.MaybeAppendBoundary(res.Name, callID, turnID)
+				// 12-04: a successful EnterPlanMode flips the state ON and
+				// records the enter marker (an audit line, never a boundary).
+				if res.Name == toolNameEnterPlanMode && !res.IsError && s.planMode != nil {
+					s.planMode.Enter()
+					s.appendPlanModeMarker(planModeCauseEnter, callID, turnID)
+				}
 			}
 
 			if suspendedCallID != "" {
 				if s.ask != nil {
-					s.suspendForAsk(turnID, suspendedCallID, suspendedOutput)
+					s.suspendForAsk(turnID, suspendedCallID, suspendedOutput, suspendedTool)
 
 					return stopAsk, nil
 				}
@@ -548,15 +573,27 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 	return "", errToolLoopExceeded
 }
 
+// The plan-mode tool names (12-04; the loop matches them for state/marker
+// transitions — the executors render forms, the loop owns identity + state).
+const (
+	toolNameEnterPlanMode = "EnterPlanMode"
+	toolNameExitPlanMode  = "ExitPlanMode"
+)
+
 // suspendForAsk records the suspension in the transcript + surfaces the
 // question through the broker (which fires the client-visible surface callback
 // and arms the D-01 timer). The executor's parsed questions ride the suspended
 // result's Output (the Stub seam carries no call identity; this is the one
 // place that knows both turnID and callID — T-12-01-01's keying).
-func (s *Session) suspendForAsk(turnID, callID string, output json.RawMessage) {
+func (s *Session) suspendForAsk(turnID, callID string, output json.RawMessage, toolName string) {
 	var qs []AskQuestion
 
 	_ = json.Unmarshal(output, &qs)
+
+	kind := PendingAskKindQuestion
+	if toolName == toolNameExitPlanMode {
+		kind = PendingAskKindPlanApproval
+	}
 
 	qJSON, mErr := json.Marshal(qs)
 	if mErr != nil {
@@ -564,7 +601,7 @@ func (s *Session) suspendForAsk(turnID, callID string, output json.RawMessage) {
 	}
 
 	_ = s.Manager.AppendAskSuspended(turnID, callID, qJSON)
-	s.ask.Surface(PendingAsk{TurnID: turnID, CallID: callID, Questions: qs})
+	s.ask.Surface(PendingAsk{TurnID: turnID, CallID: callID, Questions: qs, Kind: kind})
 }
 
 // stubExecutor returns the Phase-2 canned stub for every tool (D-15 — execution

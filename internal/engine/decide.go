@@ -80,6 +80,8 @@ func Decide(out TurnOutput, table PatternTable) Decision { //nolint:gocritic // 
 	// Ask suspension first, before any table consultation (askSuspendedDecision
 	// — ErrAskPending semantics: surface the ask + stop the loop).
 	if dec, suspended := askSuspendedDecision(out); suspended {
+		withPlanModeNote(&dec, out.PlanMode)
+
 		return dec
 	}
 
@@ -95,7 +97,7 @@ func Decide(out TurnOutput, table PatternTable) Decision { //nolint:gocritic // 
 			}
 		}
 
-		return Decision{
+		dec := Decision{
 			TurnID:       out.TurnID,
 			Action:       d.Action,
 			Signal:       "text:" + d.ID,
@@ -103,11 +105,14 @@ func Decide(out TurnOutput, table PatternTable) Decision { //nolint:gocritic // 
 			ConfigSource: d.ConfigSource,
 			Reason:       reason,
 		}
+		withPlanModeNote(&dec, out.PlanMode)
+
+		return dec
 	}
 
 	for _, name := range out.ToolCalls {
 		if d := table.MatchTool(name); d.Action != ActionNothing {
-			return Decision{
+			dec := Decision{
 				TurnID:       out.TurnID,
 				Action:       d.Action,
 				Signal:       "tool:" + d.ID,
@@ -115,19 +120,38 @@ func Decide(out TurnOutput, table PatternTable) Decision { //nolint:gocritic // 
 				ConfigSource: d.ConfigSource,
 				Reason:       "handoff tool-call matched",
 			}
+			withPlanModeNote(&dec, out.PlanMode)
+
+			return dec
 		}
 	}
 
 	// Third signal: command provenance (hybrid chaining) — see
 	// provenanceContinue for the gating.
 	if dec, ok := provenanceContinue(out, table); ok {
+		withPlanModeNote(&dec, out.PlanMode)
+
 		return dec
 	}
 
-	return Decision{
+	dec := Decision{
 		TurnID: out.TurnID,
 		Action: ActionNothing,
 		Signal: "unmatched",
 		Reason: "no pattern or handoff tool matched",
+	}
+	withPlanModeNote(&dec, out.PlanMode)
+
+	return dec
+}
+
+// withPlanModeNote decorates a decision with the plan-mode provenance (12-04,
+// ACP-02): the reason names the state for the audit trail; NOTHING ELSE keys
+// on it — the action/signal are exactly what the same turn without the flag
+// would produce (the gate lives at the tool-exec layer; a plan-mode turn
+// decides like any other turn — no new chaining behavior).
+func withPlanModeNote(dec *Decision, planModeOn bool) {
+	if planModeOn {
+		dec.Reason = "plan-mode ON; " + dec.Reason
 	}
 }
