@@ -74,6 +74,12 @@ type PendingAsk struct {
 	// question ("") vs a plan approval ("plan_approval" — the ExitPlanMode
 	// resume renders the approved/denied forms and flips the plan-mode state).
 	Kind string `json:"kind,omitempty"`
+	// settle is the per-suspension one-shot completion signal (13-00): armed
+	// by Surface, closed by resumeAskClaimed AFTER the resumed runTurn
+	// returns. It rides the struct so the winning driver (claim copy) closes
+	// exactly ITS suspension's channel — a sequential re-ask inside the
+	// resumed turn arms a fresh one. Not serialized.
+	settle chan struct{}
 }
 
 // PendingAskKindPlanApproval marks an ExitPlanMode approval suspension (the
@@ -95,6 +101,12 @@ type AskBroker struct {
 	onTimeout func(PendingAsk)
 	timeout   time.Duration
 	timer     *time.Timer
+	// settleCh is the most-recently-armed settle signal (13-00). It survives
+	// Claim (the resume is in flight precisely then) and is replaced at the
+	// next Surface — the accessor hands waiters the CURRENT suspension's
+	// channel; before any suspension it is nil (wait-first callers treat nil
+	// as "nothing to wait for").
+	settleCh chan struct{}
 }
 
 // NewAskBroker returns a broker with the D-01 timeout (a NEGATIVE value
@@ -160,6 +172,13 @@ func (b *AskBroker) Surface(p PendingAsk) { //nolint:gocritic // hugeParam: 80-b
 	if p.SurfacedAt.IsZero() {
 		p.SurfacedAt = time.Now().UTC()
 	}
+
+	// 13-00: every surfaced suspension arms a FRESH one-shot settle signal —
+	// the incoming struct's settle value (if any) is ignored, so an externally
+	// constructed PendingAsk can never carry a foreign (or already-closed)
+	// channel into the waiter seam.
+	p.settle = make(chan struct{})
+	b.settleCh = p.settle
 
 	b.pending = &p
 
@@ -230,6 +249,19 @@ func (b *AskBroker) Disarm() {
 	b.stopTimerLocked()
 }
 
+// SettleChan returns the CURRENT suspension's settle signal (13-00) — the
+// channel closed when this suspension's resume completes (whichever driver
+// won). Nil before any suspension ever surfaced on this broker; already-closed
+// once the resume finished (waiters fall straight through). Replaced at the
+// next Surface, so a waiter holding an earlier reference keeps waiting on
+// exactly ITS suspension.
+func (b *AskBroker) SettleChan() <-chan struct{} {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return b.settleCh
+}
+
 // stopTimerLocked stops + clears the timer (caller holds mu).
 func (b *AskBroker) stopTimerLocked() {
 	if b.timer != nil {
@@ -295,6 +327,21 @@ func (s *Session) AskBroker() *AskBroker { return s.ask }
 // HasPendingAsk reports whether this session has an unresolved pending ask.
 func (s *Session) HasPendingAsk() bool { return s.ask != nil && s.ask.Pending() }
 
+// AskSettleChan exposes the current suspension's settle signal (13-00): the
+// one-shot channel closed AFTER the resumed runTurn returns, whichever resume
+// driver (operator reply or D-01 timer) drove it. Nil when no broker is wired
+// or no suspension was ever surfaced; already-closed once a resume finished.
+// The waiter semantics: "wait until THIS suspension's resume completes" — the
+// engine's ask-wait consumes it; a cancelled waiter ctx is the waiter's own
+// exit (the channel alone never settles without a driver).
+func (s *Session) AskSettleChan() <-chan struct{} {
+	if s.ask == nil {
+		return nil
+	}
+
+	return s.ask.SettleChan()
+}
+
 // ResolveAsk routes an operator reply into the pending ask: the reply lands as
 // the pending call's tool result in the captured answered form, and the
 // SUSPENDED turn's model loop resumes (no new user message — the reply IS the
@@ -356,6 +403,14 @@ func (s *Session) resumeAskClaimed( //nolint:contextcheck // the timer path pass
 	_ = s.Manager.AppendToolResult(p.TurnID, p.CallID, marshalAskForm(form), isErr)
 
 	stop, _ := s.runTurn(ctx, p.TurnID)
+
+	// 13-00: the settle signal closes AFTER the resumed runTurn returns —
+	// turn COMPLETION, not the claim, not the render. Exactly-once is the
+	// claim discipline's (only the winning driver reaches here, and each
+	// resume closes only its own p.settle — Surface always arms fresh).
+	if p.settle != nil {
+		close(p.settle)
+	}
 
 	return stop
 }
