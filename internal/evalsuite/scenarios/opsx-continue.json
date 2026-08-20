@@ -1,0 +1,9 @@
+{
+  "id": "opsx-continue",
+  "description": "The /opsx:continue happy case: ONE typed invocation creates the next artifact; the self-chain handoff (13-02) walks the sequence, the change directory carrying the walk.",
+  "changeName": "opsx-eval-cont",
+  "stages": ["/opsx:continue opsx-eval-cont"],
+  "asserts": ["change_dir"],
+  "openspec_profile": "expanded",
+  "fixture": "existing_change"
+}

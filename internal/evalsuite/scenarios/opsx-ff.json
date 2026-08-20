@@ -1,0 +1,8 @@
+{
+  "id": "opsx-ff",
+  "description": "The /opsx:ff happy case: ONE typed invocation fast-forwards the artifact sequence (the observed flow completes AND archives in one pass — the change directory lands live-or-archived).",
+  "changeName": "opsx-eval-ff",
+  "stages": ["/opsx:ff opsx-eval-ff"],
+  "asserts": ["change_dir"],
+  "openspec_profile": "expanded"
+}

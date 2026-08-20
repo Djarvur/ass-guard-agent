@@ -93,8 +93,22 @@ type Scenario struct {
 	Stages      []string `json:"stages"`
 	// Asserts names harness-owned assertion keys. Today: "zero_continue"
 	// (AssertZeroContinue: >= len(stages)-1 continue decisions, stage
-	// provenance, the archived change directory).
+	// provenance, the archived change directory), "change_dir" (13-04: the
+	// change directory exists live-or-archived), "fixable_recovery" (13-04:
+	// a fixable failure reached the model, recovery followed, the goal
+	// artifact landed).
 	Asserts []string `json:"asserts"`
+
+	// OpenSpecProfile selects the scratch bootstrap profile (13-04): ""
+	// (default) = the core install; "expanded" = the 11-workflow switch via
+	// evalharness's guard (GuardOpenSpecGlobalConfig) with a FAIL-LOUD check
+	// that the 6 expanded commands installed.
+	OpenSpecProfile string `json:"openspec_profile"`
+
+	// Fixture names a harness-owned scratch fixture seeded AFTER the
+	// bootstrap (13-04, the deterministic fixable triggers): "" (none),
+	// "existing_change", "bogus_schema", "scenarioless", "incomplete_tasks".
+	Fixture string `json:"fixture"`
 }
 
 // PassRecord is one scenario pass's outcome evidence.
@@ -157,7 +171,7 @@ func LoadScenarios(dir string) ([]Scenario, error) { //nolint:cyclop // the vali
 
 		for key := range probe {
 			switch key {
-			case "id", "description", "changeName", "stages", "asserts":
+			case "id", "description", "changeName", "stages", "asserts", "openspec_profile", "fixture":
 			default:
 				return nil, fmt.Errorf("%w: %s: %q", ErrUnknownScenarioKey, e.Name(), key)
 			}
@@ -176,9 +190,23 @@ func LoadScenarios(dir string) ([]Scenario, error) { //nolint:cyclop // the vali
 		}
 
 		for _, a := range sc.Asserts {
-			if a != "zero_continue" {
+			switch a {
+			case "zero_continue", "change_dir", "fixable_recovery":
+			default:
 				return nil, fmt.Errorf("%w: %s: %q", ErrUnknownAssertKey, e.Name(), a)
 			}
+		}
+
+		switch sc.OpenSpecProfile {
+		case "", "expanded":
+		default:
+			return nil, fmt.Errorf("%w: %s: openspec_profile %q", ErrUnknownScenarioKey, e.Name(), sc.OpenSpecProfile)
+		}
+
+		switch sc.Fixture {
+		case "", "existing_change", "bogus_schema", "scenarioless", "incomplete_tasks", "completed_change":
+		default:
+			return nil, fmt.Errorf("%w: %s: fixture %q", ErrUnknownScenarioKey, e.Name(), sc.Fixture)
 		}
 
 		out = append(out, sc)
@@ -205,6 +233,8 @@ type GateTB interface {
 	Skip(args ...any)
 	Skipf(format string, args ...any)
 	TempDir() string
+	Cleanup(func())
+	Errorf(format string, args ...any)
 }
 
 // GatesEvalGate skips LOUDLY unless ASSGUARD_EVAL_GATE=1 AND the harness's
@@ -355,8 +385,16 @@ func runPass(ctx context.Context, t GateTB, sc *Scenario, driver Driver, opts Su
 
 	//nolint:contextcheck // the harness bootstrap execs init with its own bounded ctx
 	scratch := evalharness.BootstrapScratch(t)
+	if sc.OpenSpecProfile == "expanded" {
+		scratch = evalharness.BootstrapExpandedScratch(t)
+	}
+
 	if opts.Bootstrap != nil {
 		scratch = opts.Bootstrap(t)
+	}
+
+	if sc.Fixture != "" {
+		evalharness.SeedFixture(t, scratch.Dir, sc.Fixture, sc.ChangeName)
 	}
 
 	runner, teardown := driver(t, scratch.Dir)
@@ -384,15 +422,20 @@ func runPass(ctx context.Context, t GateTB, sc *Scenario, driver Driver, opts Su
 	rec := PassRecord{Scratch: scratch.Dir, DurationMS: time.Since(start).Milliseconds()}
 
 	for _, a := range sc.Asserts {
-		if a != "zero_continue" {
-			continue
+		switch a {
+		case "zero_continue":
+			out := evalharness.AssertZeroContinue(t, lines, scratch.Dir, sc.ChangeName, len(sc.Stages)-1)
+
+			rec.Continues = out.Continues
+			rec.AssistantMsgs = out.AssistantMsg
+			rec.Failures = append(rec.Failures, out.Failures...)
+		case "change_dir":
+			rec.Failures = append(rec.Failures,
+				evalharness.AssertChangeDir(t, scratch.Dir, sc.ChangeName)...)
+		case "fixable_recovery":
+			rec.Failures = append(rec.Failures,
+				evalharness.AssertFixableRecovery(t, lines, scratch.Dir, sc.ChangeName)...)
 		}
-
-		out := evalharness.AssertZeroContinue(t, lines, scratch.Dir, sc.ChangeName, len(sc.Stages)-1)
-
-		rec.Continues = out.Continues
-		rec.AssistantMsgs = out.AssistantMsg
-		rec.Failures = append(rec.Failures, out.Failures...)
 	}
 
 	rec.Pass = len(rec.Failures) == 0

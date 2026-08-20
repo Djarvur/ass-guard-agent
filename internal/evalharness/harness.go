@@ -19,7 +19,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"testing"
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/session"
@@ -58,6 +57,8 @@ type TB interface {
 	Helper()
 	Logf(format string, args ...any)
 	Fatalf(format string, args ...any)
+	Cleanup(func())
+	Errorf(format string, args ...any)
 }
 
 // RunnerSeam is the turn-runner surface the scenario passes drive: one typed
@@ -385,7 +386,7 @@ var ExpandedMatrixProfileJSON = []byte(`{
 // Consumers wanting a post-run byte-identity MEASUREMENT (the matrix runner
 // does) must register their compare cleanup BEFORE calling this guard:
 // t.Cleanup is LIFO, so a compare registered first runs AFTER the restore.
-func GuardOpenSpecGlobalConfig(tb testing.TB, cfgJSON []byte) {
+func GuardOpenSpecGlobalConfig(tb TB, cfgJSON []byte) {
 	tb.Helper()
 
 	home, err := os.UserHomeDir()
@@ -419,7 +420,7 @@ func GuardOpenSpecGlobalConfig(tb testing.TB, cfgJSON []byte) {
 
 // restoreGlobalConfig is the guard's t.Cleanup body: byte-exact restore of the
 // pre-guard state (T-13-01-01).
-func restoreGlobalConfig(tb testing.TB, cfgPath string, orig []byte, origMode fs.FileMode, absent bool) {
+func restoreGlobalConfig(tb TB, cfgPath string, orig []byte, origMode fs.FileMode, absent bool) {
 	tb.Helper()
 
 	if absent {
@@ -451,4 +452,205 @@ func readConfigWithMode(path string) ([]byte, fs.FileMode, error) {
 	}
 
 	return orig, st.Mode().Perm(), nil
+}
+
+// BootstrapExpandedScratch initializes a scratch under the EXPANDED profile
+// (13-04): the operator's global openspec config is guarded byte-exactly
+// (GuardOpenSpecGlobalConfig) BEFORE init, so `openspec init` installs all 11
+// commands; the 6 expanded command files are asserted present (FAIL LOUD — a
+// silently-core scratch would dead-end every matrix scenario).
+func BootstrapExpandedScratch(t SkipTB) *Scratch {
+	t.Helper()
+
+	GuardOpenSpecGlobalConfig(t, ExpandedMatrixProfileJSON)
+
+	scratch := t.TempDir()
+
+	initCmd := exec.CommandContext(context.Background(), "openspec", "init", "--tools", "claude", "--force")
+	initCmd.Dir = scratch
+
+	out, err := initCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("BLOCKER: expanded-profile openspec init failed in scratch: %v\n%s", err, out)
+	}
+
+	for _, cmd := range []string{"new", "continue", "ff", "verify", "bulk-archive", "onboard"} {
+		p := filepath.Join(scratch, ".claude", "commands", "opsx", cmd+".md")
+		if _, serr := os.Stat(p); serr != nil {
+			t.Fatalf("expanded-profile init did NOT install /opsx:%s (missing %s)", cmd, p)
+		}
+	}
+
+	SeedScratch(t, scratch)
+
+	return &Scratch{Dir: scratch}
+}
+
+// SeedFixture plants a deterministic fixable-trigger fixture into the
+// scratch (13-04; the probed classes from the 13-01 matrix legs):
+//   - existing_change: `openspec new change <name>` (the already-exists
+//     trigger for /opsx:new);
+//   - bogus_schema: the change + a sidecar declaring an unknown schema (the
+//     "Unknown schema" trigger for /opsx:continue + /opsx:ff);
+//   - scenarioless: the change + proposal + a scenario-less spec delta (the
+//     verify gap);
+//     (the bulk-archive batch trigger);
+//   - completed_change: the archivable state (CHECKED tasks — the bulk
+//     happy + the onboard re-run approximation).
+func SeedFixture(t TB, dir, fixture, changeName string) {
+	t.Helper()
+
+	newChange := func() string {
+		newCmd := exec.CommandContext(context.Background(), "openspec", "new", "change", changeName)
+		newCmd.Dir = dir
+
+		out, err := newCmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("fixture %s: openspec new change %s: %v\n%s", fixture, changeName, err, out)
+		}
+
+		return filepath.Join(dir, "openspec", "changes", changeName)
+	}
+
+	write := func(changeDir, rel, body string) {
+		t.Helper()
+
+		p := filepath.Join(changeDir, rel)
+
+		if merr := os.MkdirAll(filepath.Dir(p), 0o750); merr != nil {
+			t.Fatalf("fixture %s: mkdir: %v", fixture, merr)
+		}
+
+		if werr := os.WriteFile(p, []byte(body), 0o600); werr != nil {
+			t.Fatalf("fixture %s: write %s: %v", fixture, p, werr)
+		}
+	}
+
+	switch fixture {
+	case "existing_change":
+		newChange()
+	case "bogus_schema":
+		write(newChange(), ".openspec.yaml", "schema: bogus-schema\ncreated: 2026-08-20\n")
+	case "scenarioless":
+		changeDir := newChange()
+		write(changeDir, "proposal.md", "## Why\n\nFix the gap.\n")
+		write(changeDir, "specs/cap/spec.md",
+			"## ADDED Requirements\n\n### Requirement: scenarioless\n\nThe DELIBERATELY scenario-less requirement.\n")
+	case "incomplete_tasks":
+		changeDir := newChange()
+		write(changeDir, "proposal.md", "## Why\n\nBatch.\n")
+		write(changeDir, "specs/cap/spec.md",
+			"## ADDED Requirements\n\n### Requirement: batch\n\nThe app SHALL batch.\n\n#### Scenario: batching\n\n- **WHEN** bulk archiving\n- **THEN** both archive\n")
+		write(changeDir, "tasks.md", "- [ ] 1. Deliberately incomplete task (the fixable trigger)\n")
+	case "completed_change":
+		// The bulk-archive happy + onboard re-run approximation: a change in
+		// the archivable state (proposal + valid delta + CHECKED tasks).
+		changeDir := newChange()
+		write(changeDir, "proposal.md", "## Why\n\nDone work.\n")
+		write(changeDir, "specs/cap/spec.md",
+			"## ADDED Requirements\n\n### Requirement: done\n\nThe app SHALL done.\n\n#### Scenario: done\n\n- **WHEN** complete\n- **THEN** archived\n")
+		write(changeDir, "tasks.md", "- [x] 1. Complete task\n")
+	}
+}
+
+// AssertChangeDir asserts the change directory exists live or archived
+// (13-04's named key for the expanded commands whose artifact is the change
+// itself).
+func AssertChangeDir(t TB, scratchDir, changeName string) []string {
+	t.Helper()
+
+	if _, err := os.Stat(filepath.Join(scratchDir, "openspec", "changes", changeName)); err == nil {
+		return nil
+	}
+
+	matches, _ := filepath.Glob(filepath.Join(scratchDir, "openspec", "changes", "archive", "*"+changeName))
+	if len(matches) > 0 {
+		return nil
+	}
+
+	return []string{fmt.Sprintf("change directory %s not found (live or archived) under %s", changeName, scratchDir)}
+}
+
+// AssertFixableRecovery asserts the D-01 fixable contract from the
+// transcript + disk (13-04's named key): a fixable failure reached the model
+// (a tool result carrying a probed failure signature), a recovery followed
+// it, and the goal artifact (the change directory) landed.
+func AssertFixableRecovery(t TB, lines []session.Line, scratchDir, changeName string) []string {
+	t.Helper()
+
+	failSigs := []string{
+		"already exists", "Unknown schema", "archive_tasks_incomplete",
+		"force closed the prompt", "No items found", "Unknown item",
+		"must have at least one delta", "incomplete",
+	}
+
+	// The failure may surface in a TOOL RESULT (the CLI error classes) OR in
+	// the ASSISTANT text (the report-driven commands — the 13-01 verify
+	// finding: the model authors the report, no CLI validate step exists).
+	bodyAt := func(i int) (string, bool) {
+		switch lines[i].Type {
+		case session.TypeToolResult:
+			return string(lines[i].Output), true
+		case session.TypeAssistantMessage:
+			return lines[i].Text, true
+		default:
+			return "", false
+		}
+	}
+
+	failIdx := -1
+
+	for i := range lines {
+		out, ok := bodyAt(i)
+		if !ok {
+			continue
+		}
+
+		for _, sig := range failSigs {
+			if strings.Contains(out, sig) {
+				failIdx = i
+
+				break
+			}
+		}
+
+		if failIdx != -1 {
+			break
+		}
+	}
+
+	if failIdx == -1 {
+		return []string{"no fixable failure reached the model (no probed failure signature in any tool result or closing)"}
+	}
+
+	recoverIdx := -1
+	for i := range lines {
+		if i <= failIdx {
+			continue
+		}
+
+		out, ok := bodyAt(i)
+		if !ok {
+			continue
+		}
+
+		out = strings.ToLower(out)
+		for _, sig := range []string{"created", "archived", "proposal", "complete", "spec", "tasks", "verdict", "report"} {
+			if strings.Contains(out, sig) {
+				recoverIdx = i
+
+				break
+			}
+		}
+
+		if recoverIdx != -1 {
+			break
+		}
+	}
+
+	if recoverIdx == -1 {
+		return []string{fmt.Sprintf("no recovery after the failure (failIdx=%d)", failIdx)}
+	}
+
+	return AssertChangeDir(t, scratchDir, changeName)
 }

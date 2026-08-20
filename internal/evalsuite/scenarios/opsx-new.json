@@ -1,0 +1,8 @@
+{
+  "id": "opsx-new",
+  "description": "The expanded /opsx:new happy case: ONE typed invocation scaffolds the change and the seeded new→continue handoff walks the artifact sequence (13-02's row), the change directory carrying the walk's terminal artifact.",
+  "changeName": "opsx-eval-new",
+  "stages": ["/opsx:new opsx-eval-new"],
+  "asserts": ["change_dir"],
+  "openspec_profile": "expanded"
+}

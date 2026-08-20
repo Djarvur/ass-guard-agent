@@ -1,0 +1,9 @@
+{
+  "id": "opsx-verify-fixable",
+  "description": "The /opsx:verify fixable case: the scenario-less delta (the structural gap) surfaces in the report; the model authors the scenario blocks and delivers the verdict.",
+  "changeName": "opsx-eval-verfix",
+  "stages": ["/opsx:verify opsx-eval-verfix"],
+  "asserts": ["fixable_recovery"],
+  "openspec_profile": "expanded",
+  "fixture": "scenarioless"
+}

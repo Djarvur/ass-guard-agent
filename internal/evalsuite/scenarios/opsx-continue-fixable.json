@@ -1,0 +1,9 @@
+{
+  "id": "opsx-continue-fixable",
+  "description": "The /opsx:continue fixable case: the bogus-schema sidecar (the probed Unknown-schema trigger) fails the first attempt; the model repairs and creates the artifact.",
+  "changeName": "opsx-eval-contfix",
+  "stages": ["/opsx:continue opsx-eval-contfix"],
+  "asserts": ["fixable_recovery"],
+  "openspec_profile": "expanded",
+  "fixture": "bogus_schema"
+}

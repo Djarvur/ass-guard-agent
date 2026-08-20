@@ -1,0 +1,9 @@
+{
+  "id": "opsx-onboard-fixable",
+  "description": "The /opsx:onboard fixable case (D-08, the LOCKED idempotent class): the pre-onboarded approximation (completed_change fixture) re-runs /opsx:onboard and reconciles cleanly — no failure owed, the state stands.",
+  "changeName": "opsx-eval-onbfix",
+  "stages": ["/opsx:onboard"],
+  "asserts": ["change_dir"],
+  "openspec_profile": "expanded",
+  "fixture": "completed_change"
+}

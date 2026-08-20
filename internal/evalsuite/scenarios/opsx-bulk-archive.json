@@ -1,0 +1,9 @@
+{
+  "id": "opsx-bulk-archive",
+  "description": "The /opsx:bulk-archive happy case: the completed-change fixture archives; the change directory lands under archive/.",
+  "changeName": "opsx-eval-bulk",
+  "stages": ["/opsx:bulk-archive"],
+  "asserts": ["change_dir"],
+  "openspec_profile": "expanded",
+  "fixture": "completed_change"
+}

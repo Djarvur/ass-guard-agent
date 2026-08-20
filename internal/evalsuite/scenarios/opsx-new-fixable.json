@@ -1,0 +1,9 @@
+{
+  "id": "opsx-new-fixable",
+  "description": "The /opsx:new fixable case (D-04): the already-exists trigger (the fixture pre-creates the change) fails the first attempt fixably; the model adapts to the existing change and the goal directory stands.",
+  "changeName": "opsx-eval-newfix",
+  "stages": ["/opsx:new opsx-eval-newfix"],
+  "asserts": ["fixable_recovery"],
+  "openspec_profile": "expanded",
+  "fixture": "existing_change"
+}

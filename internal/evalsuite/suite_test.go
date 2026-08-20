@@ -22,6 +22,8 @@ type fakeTB struct {
 
 func (f *fakeTB) Helper()                      {}
 func (f *fakeTB) Logf(format string, a ...any) {}
+func (f *fakeTB) Cleanup(_ func())             {}
+func (f *fakeTB) Errorf(_ string, _ ...any)    {}
 
 func (f *fakeTB) Fatalf(format string, a ...any) {
 	f.fatal = strings.ReplaceAll(format, "%s", "") // recorded, not panicking
@@ -178,8 +180,18 @@ func TestLoadScenarios_Schema(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(def) != 1 || def[0].ID != "opsx-flagship" || len(def[0].Asserts) != 1 {
-		t.Fatalf("DefaultScenarios = %+v", def)
+	// 13-04: the embedded set carries the flagship + the expanded-matrix
+	// suites; the flagship itself must load clean with its one assert.
+	var flagship *evalsuite.Scenario
+
+	for i := range def {
+		if def[i].ID == "opsx-flagship" {
+			flagship = &def[i]
+		}
+	}
+
+	if flagship == nil || len(flagship.Asserts) != 1 {
+		t.Fatalf("DefaultScenarios = %+v (flagship missing/malformed)", def)
 	}
 }
 

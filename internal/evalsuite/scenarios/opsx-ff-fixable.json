@@ -1,0 +1,9 @@
+{
+  "id": "opsx-ff-fixable",
+  "description": "The /opsx:ff fixable case: the bogus-schema sidecar fails the status check; the model repairs and fast-forwards.",
+  "changeName": "opsx-eval-fffix",
+  "stages": ["/opsx:ff opsx-eval-fffix"],
+  "asserts": ["fixable_recovery"],
+  "openspec_profile": "expanded",
+  "fixture": "bogus_schema"
+}

@@ -1,0 +1,9 @@
+{
+  "id": "opsx-bulk-archive-fixable",
+  "description": "The /opsx:bulk-archive fixable case: the incomplete-tasks batch trigger (the proven class) fails the first archive attempt; the model completes and the batch lands.",
+  "changeName": "opsx-eval-bulkfix",
+  "stages": ["/opsx:bulk-archive"],
+  "asserts": ["fixable_recovery"],
+  "openspec_profile": "expanded",
+  "fixture": "incomplete_tasks"
+}

@@ -1,0 +1,9 @@
+{
+  "id": "opsx-onboard",
+  "description": "The /opsx:onboard happy case (D-08 full-tilt): the guided tutorial does real work — asks ride the D-01 hands-off mode + 13-00's engine-visible resume; the cycle's change lands.",
+  "changeName": "opsx-eval-onb",
+  "stages": ["/opsx:onboard"],
+  "asserts": ["change_dir"],
+  "openspec_profile": "expanded",
+  "fixture": "existing_change"
+}

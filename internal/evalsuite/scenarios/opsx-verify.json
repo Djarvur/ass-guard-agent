@@ -1,0 +1,9 @@
+{
+  "id": "opsx-verify",
+  "description": "The /opsx:verify happy case: the report's incomplete-workflow closing fires the D-07 handoff (13-02's row) into /opsx:continue — the chained fix workflow's artifacts land.",
+  "changeName": "opsx-eval-ver",
+  "stages": ["/opsx:verify opsx-eval-ver"],
+  "asserts": ["change_dir"],
+  "openspec_profile": "expanded",
+  "fixture": "completed_change"
+}
