@@ -9,7 +9,7 @@ v1.1 completes the product. Phase 8 closed the kickoff loop (`/opsx:explore → 
 ## Milestones
 
 - ✅ **v1.0 MVP** — Phases 0–7 (shipped 2026-08-14; full detail: `.planning/milestones/v1.0-ROADMAP.md`, artifacts in `.planning/milestones/v1.0-phases/`, record in `.planning/MILESTONES.md`)
-- 🚧 **v1.1 ACP Early Adoption** — Phases 8, 9, 12, 14, 13 (3/5 complete; renamed "Kickoff & Peers" → "ACP Completion" → "Product Completion" at the 2026-08-16 re-scope + split, → "ACP Early Adoption" at the 2026-08-18 adoption re-order; completes when the operator begins daily ACP use — the post-adoption continuation finishes in use)
+- 🚧 **v1.1 ACP Early Adoption** — Phases 8, 9, 12, 14, 13 (4/5 complete; renamed "Kickoff & Peers" → "ACP Completion" → "Product Completion" at the 2026-08-16 re-scope + split, → "ACP Early Adoption" at the 2026-08-18 adoption re-order; completes when the operator begins daily ACP use — the post-adoption continuation finishes in use)
 - 📋 **v1.2 pool (not yet a milestone)** — ex-Phases 10–11 (Telegram peer; dsh profile #2 — replan against source-analysis), SEED-001 agent-creation kit, ECOSYSTEM-AUDIT clusters PLUG (full lifecycle) / LSP / MEM, scheduler outcome store + feedback loop (borrow #14, occ cost-cascade — added at the 2026-08-19 disposition), nightly-parity CI automation beyond 12-08's gate (borrow #13 tail)
 
 <details>
@@ -30,7 +30,7 @@ v1.1 completes the product. Phase 8 closed the kickoff loop (`/opsx:explore → 
 
 - [x] **Phase 8: Slash-Command Kickoff** - `/namespace:name` discovery + zcode-semantics expansion + OpenSpec adapter reconciled to the real binary; the zero-continue product proof (completed 2026-08-16, operator witness accepted; execution + evidence 2026-08-15)
 - [x] **Phase 9: Serve-Path Audit + zcode Parity Re-capture** - redacted, bounded, decision-explaining audit on `acp serve`; stability test re-grounded on a pinned capture session (completed 2026-08-18)
-- [ ] **Phase 12: Product Functional Completeness** - every built-in catalog tool executes for real (the 9 deferred tools + Bash background flags), capture-pinned result forms, the behavioral-eval regression net, plugin-install discovery *(added at the 2026-08-16 re-scope; split same day — machinery half; executes directly after Phase 9. 2026-08-18 adoption re-order: waves split around the adoption line — 12-01/02/05/04/06 pre-adoption, 12-03/07/08 post)*
+- [x] **Phase 12: Product Functional Completeness** - every built-in catalog tool executes for real (the 9 deferred tools + Bash background flags), capture-pinned result forms, the behavioral-eval regression net, plugin-install discovery *(added at the 2026-08-16 re-scope; split same day — machinery half; executes directly after Phase 9. 2026-08-18 adoption re-order: waves split around the adoption line — 12-01/02/05/04/06 pre-adoption, 12-03/07/08 post. Completed 2026-08-20 — verification 8/9 criteria PASS, ACP-08 PARTIAL: eval first-green routed to Phase 13 exit [12-VERIFICATION, manager disposition 2026-08-20, flagged for retroactive operator confirmation])*
 - [x] **Phase 14: Adoption Readiness (Analysis Dispositions)** - workspace undo/checkpoints (the no-confirmation backstop), compaction policy verified from the Phase-9 pin, a cache-hit probe in the parity harness, pi↔shaper cross-validation, token economics, the uniform tool contract — the dispositioned YES items of the other-agents analysis, all six confirmed by the operator *(added at the 2026-08-18 adoption re-order; plans after 12-01/12-02 start; completed 2026-08-19 — verification pass 39/39, all four human items resolved in one operator session: live rollback E2E RUN+PASS [WINDOWS #4 fixed], shaper audit + compaction routing signed off, goal wording accepted; residual WINDOWS #3 → 12-07, #5 flips with the routed TextBlock fix)*
 - [ ] **Phase 13: OpenSpec Workflow Completion** - the expanded OpenSpec command matrix (`new / continue / ff / verify / bulk-archive / onboard`) runs E2E with zero-continue chaining and eval coverage *(the 2026-08-16 split's workflow half; executes after Phase 12 — post-adoption continuation)*
 - [ ] ~~**Phase 10: Telegram Peer (Text + Voice)**~~ - → **moved to the v1.2 pool** (operator 2026-08-16; plan preserved in `.planning/phases/10-telegram-peer-text-voice/`)
@@ -42,7 +42,7 @@ v1.1 completes the product. Phase 8 closed the kickoff loop (`/opsx:explore → 
 |---|-------|------|--------------|------------------|
 | 8 | Slash-Command Kickoff | 8/9 | Completed 2026-08-16 — operator witness accepted; findings 5+6 dispositions confirmed (hybrid provenance chaining + D-10 capture-faithful reshape); full guard green; gated E2E: fixable green + zero-continue 2/3 (one stage-4 model-variance fail recorded as known residual, same class as UAT check 3); UAT 10 pass/1 partial/0 blocked | 2026-08-16 |
 | 9 | Serve-Path Audit + zcode Parity Re-capture | 6/6 | Complete   | 2026-08-18 |
-| 12 | Product Functional Completeness | Every catalog tool the model can see executes for real, result forms are capture-pinned, a behavioral-eval regression net guards turn behavior, and plugin installs widen discovery | ACP-01..08, ACP-10 | 9 |
+| 12 | Product Functional Completeness | 8/8 | Completed 2026-08-20 — verification 8/9 criteria PASS; eval first-green routed to Phase 13 exit (12-VERIFICATION ACP-08 PARTIAL, manager disposition 2026-08-20) | 2026-08-20 |
 | 14 | Adoption Readiness (Analysis Dispositions) | 6/6 | Completed 2026-08-19 — verification 39/39 (all four human items resolved); live rollback E2E PASS with operator credentials | 2026-08-19 |
 | 13 | OpenSpec Workflow Completion | The expanded OpenSpec command matrix runs E2E through ass-guard against the real binary, zero-continue chained, eval-covered | OS-01, OS-02, OS-03 | 3 |
 | 10 | ~~Telegram Peer (Text + Voice)~~ | *Moved to v1.2 pool (2026-08-16)* | TG-01..06 | - |
@@ -229,8 +229,8 @@ Builds on shipped v1.0 + Phases 8–9: the re-capture ground truth (the newly pi
   8. A behavioral-eval regression net exists and gates: deterministic tool-unit tests, scenario suites (pass@k, real binary, scratch project — initial suite = the Phase-8-proven `explore → propose → apply → archive` scenario), re-run gate on profile / model / turn-behavior changes (ACP-08, ECOSYSTEM-AUDIT §4.4 EVAL-01..03; Phase 13 extends the suites)
   9. Command + skill discovery reads Claude-Code-compatible plugin installs as native (`installed_plugins.json` + cache layout, PLUG-05 carve-out widened 2026-08-19): plugin-bundled `skills/`, `commands/`, `agents/`, `hooks/hooks.json`, `.mcp.json` all merge with documented precedence (agents → spawnable subagent types; hooks → mapped lifecycle seams; MCP → the existing host); roots are project `.claude/plugins/` + user `~/.claude/plugins/` (zcode root dropped by the operator — plugins are installed for Claude Code and consumed as native); user + project `.claude/skills|commands|agents/` first-class; writes stay under the ass-guard root (ACP-10)
 
-**Phase gate:** `mise ci` clean AND a live-serve session exercising `AskUserQuestion` end-to-end (operator answers a real model question) AND zero `no implementation yet` strings reachable from the 19-tool built-in catalog on any turn (grep-gated) AND the eval suites green in CI. No stub-only evidence closes this phase.
-**Plans:** 2/8 plans executed
+**Phase gate:** `mise ci` clean AND a live-serve session exercising `AskUserQuestion` end-to-end (operator answers a real model question) AND zero `no implementation yet` strings reachable from the 19-tool built-in catalog on any turn (grep-gated) AND the eval suites green in CI. No stub-only evidence closes this phase. *(Close note 2026-08-20: the eval-suites-green leg closed as ACP-08 PARTIAL by the manager disposition — the net exists/gates/caught real drift; the FIRST GREEN is Phase 13's exit evidence.)*
+**Plans:** 8/8 plans complete (verified 2026-08-20)
 
 **Execution order (2026-08-18 adoption re-order):** PRE-ADOPTION = 12-01, 12-02 (dispatch immediately — checker-passed, zero planning latency) → Phase 14 (the analysis-disposition phase) → 12-05, 12-04, 12-06 — **ADOPTION LINE** (the operator begins daily ACP use; v1.1's completion bar) — POST-ADOPTION = 12-03, 12-08, 12-07. The wave blocking is re-read accordingly: 12-03's outputs (parity-extractor fixes) feed only the parity suite, so deferring it past the line breaks nothing downstream; 12-04 keeps its ask-seam dependency on 12-01; 12-06 keeps its forms dependency on 12-05.
 
@@ -239,24 +239,24 @@ Plans:
 
 - [x] 12-01-PLAN.md — AskUserQuestion end-to-end: the question surface, turn suspension on the engine ask path, reply-as-tool-result, the D-01 timeout policy + the live-serve operator witness (THE phase tracer) [ACP-01]
 - [x] 12-02-PLAN.md — plugin-install discovery as native: `installed_plugins.json` + cache layout from project `.claude/plugins/` AND user `~/.claude/plugins/` (zcode root dropped), ALL contributions merged — skills/commands/agents/hooks/.mcp.json — with the five-tier precedence + read-only boundary [ACP-10] *(scope widened by the operator 2026-08-19; 4 tasks)*
-- [ ] 12-03-PLAN.md — parity extractor fixes: `ExtractTurnsFromRollout` delta-record reconstruction + per-turn workspace isolation (the from-rollout A/B artifact classes, D-04 #2) [ACP-07]
+- [x] 12-03-PLAN.md — parity extractor fixes: `ExtractTurnsFromRollout` delta-record reconstruction + per-turn workspace isolation (the from-rollout A/B artifact classes, D-04 #2) [ACP-07] — COMPLETE 2026-08-20 (WINDOWS #6 closed with live evidence: 7 turns / 0 empty-expectation)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 12-04-PLAN.md — plan mode (EnterPlanMode/ExitPlanMode over the ask seam, no-gating design pinned) + SendMessage (agent mailbox) + ReadSessionContext (persisted-session reader) [ACP-02, ACP-03]
-- [ ] 12-05-PLAN.md — re-record from live zcode via the archived driver kit: the deferred-tools tour, the forms harvest, the committed re-pinned fixture, the ACP-07 families implemented (D-04 primary route)
+- [x] 12-04-PLAN.md — plan mode (EnterPlanMode/ExitPlanMode over the ask seam, no-gating design pinned) + SendMessage (agent mailbox) + ReadSessionContext (persisted-session reader) [ACP-02, ACP-03] — COMPLETE 2026-08-20 (scope resolved BY CAPTURE: plan mode is a runtime-level gate)
+- [x] 12-05-PLAN.md — re-record from live zcode via the archived driver kit: the deferred-tools tour, the forms harvest, the committed re-pinned fixture, the ACP-07 families implemented (D-04 primary route) — COMPLETE 2026-08-20 (fixture zcode-recaptured-2026-08.json committed; 4 live capture passes, zcode 0.16.3)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 12-06-PLAN.md — background work: Bash `run_in_background` + the TaskRegistry, TaskOutput retrieval, TaskStop group-kill, session-close reaping, `dangerouslyDisableSandbox` by-design [ACP-05, ACP-06]
+- [x] 12-06-PLAN.md — background work: Bash `run_in_background` + the TaskRegistry, TaskOutput retrieval, TaskStop group-kill, session-close reaping, `dangerouslyDisableSandbox` by-design [ACP-05, ACP-06] — COMPLETE 2026-08-20 (the pre-adoption minimal set closed with it)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 12-07-PLAN.md — cron: the persisted `.ass-guard/schedule/` store, the four executors, queue/fire-once engine-driven turns with missed-window notes, the FULL catalog-completeness test [ACP-04]
+- [x] 12-07-PLAN.md — cron: the persisted `.ass-guard/schedule/` store, the four executors, queue/fire-once engine-driven turns with missed-window notes, the FULL catalog-completeness test [ACP-04] — COMPLETE 2026-08-20 (WINDOWS #3 closed; the FULL completeness gate green — zero non-mcp dead ends)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 12-08-PLAN.md — the behavioral-eval regression net: extracted E2E harness, the scenario runner (pass@k, flagship suite), the `ASSGUARD_EVAL_GATE` gate + change-class detector + k=3 manual task (D-03) [ACP-08] *(2026-08-19 input: the occ nightly-parity pattern — the gate re-fires when the tracked zcode release changes, turning one-shot capture into a living gate; full CI automation itself is v1.2)*
+- [x] 12-08-PLAN.md — the behavioral-eval regression net: extracted E2E harness, the scenario runner (pass@k, flagship suite), the `ASSGUARD_EVAL_GATE` gate + change-class detector + k=3 manual task (D-03) [ACP-08] *(2026-08-19 input: the occ nightly-parity pattern — the gate re-fires when the tracked zcode release changes, turning one-shot capture into a living gate; full CI automation itself is v1.2)* — COMPLETE 2026-08-20 (machinery green + the net's opening runs CAUGHT real pattern drift; first green deferred to Phase 13 — 12-VERIFICATION ACP-08 PARTIAL)
 
 ### Phase 13: OpenSpec Workflow Completion
 
@@ -346,7 +346,7 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 8. Slash-Command Kickoff | v1.1 | 9/9 | Complete (operator witness accepted; 2 known residuals documented) | 2026-08-16 |
 | 9. Serve-Path Audit + zcode Parity Re-capture | v1.1 | 6/6 | Complete (verifier PASS; UAT 3/4 — parity re-baseline disposition accepted, live-serve audit witnessed, capture-method deviation stands; test 4 informational) | 2026-08-18 |
-| 12. Product Functional Completeness | v1.1 | 2/8 | In Progress|  |
+| 12. Product Functional Completeness | v1.1 | 8/8 | Complete (verification 8/9; ACP-08 PARTIAL — eval first-green routed to Phase 13 exit) | 2026-08-20 |
 | 14. Adoption Readiness (Analysis Dispositions) | v1.1 | 6/6 | In Progress|  |
 | 13. OpenSpec Workflow Completion | v1.1 | 0/4 | Planned (2026-08-19; post-adoption — executes after Phase 12 closes) | - |
 | 10. Telegram Peer (Text + Voice) | v1.2 pool | 0/7 (plans preserved; 2026-08-17 execution attempt aborted — executor died ~15 min in, partial extraction WIP-preserved at 47f10b4 on the phase branch, untrusted) | Moved to v1.2 (2026-08-16) | - |

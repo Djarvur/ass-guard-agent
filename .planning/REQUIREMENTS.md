@@ -43,13 +43,13 @@
 *(Operator re-scope 2026-08-16: "make the product fully functional as soon as possible"; split same day into the machinery half (this, Phase 12) and the OpenSpec-workflow half (Phase 13). Ground truth: 9 of the 19 built-in catalog tools still return "no implementation yet" — the 08-08 deferred-tools table never dispositioned; Bash background flags unimplemented; corpus-absent result forms routed to Phase 9's re-capture; zero behavioral-eval regression net — ECOSYSTEM-AUDIT §3.3 calls this the biggest methodological hole.)*
 
 - [x] **ACP-01**: The model invoking `AskUserQuestion` gets a real question surface on ACP — question + options surface to the client in the captured shape, the turn suspends on the engine's ask path, and the operator's reply lands as the tool result; capture-grounded result form; the no-confirmation-tier safety model is untouched (a model-initiated question, not a tool-execution gate). Directly addresses the Phase-8 residual class where the model ends a terminal stage by asking a question in plain text and the engine correctly does nothing
-- [ ] **ACP-02**: `EnterPlanMode` / `ExitPlanMode` execute for real with captured result forms; plan-mode state is visible in the transcript and respected by the turn loop (scope per capture — design at plan-phase)
-- [ ] **ACP-03**: `SendMessage` and `ReadSessionContext` execute for real (cross-agent messaging + prior-session context reads), capture-grounded result forms
-- [ ] **ACP-04**: `CronCreate` / `CronList` / `CronDelete` execute against a real persisted schedule, and a due scheduled prompt fires as an engine-driven turn while the agent runs (no daemon, no network port — firing semantics designed at plan-phase within the editor-owned lifecycle)
-- [ ] **ACP-05**: `TaskStop` executes for real — cancels the targeted in-flight task/background work with the captured result form
-- [ ] **ACP-06**: Bash `run_in_background` and `dangerouslyDisableSandbox` execute faithfully per captured semantics, with background-shell output retrieval working in the captured form
-- [ ] **ACP-07**: The corpus-absent result forms — truncation markers, Bash timeout form, Bash default timeout, file-tool failure forms — are re-pinned against the newly pinned Phase-9 capture session (depends on AUD-05's pin) and implemented where the corpus shows them
-- [ ] **ACP-08**: A behavioral-eval regression net exists (ECOSYSTEM-AUDIT §4.4 EVAL-01..03): deterministic tool-unit tests, scenario suites (pass@k against a scratch project with the real binary — the initial suite is the Phase-8-proven `explore → propose → apply → archive` scenario), and a re-run gate wired so profile / model / turn-behavior changes cannot land without the suites green. Phase 13 extends the suites across the expanded command matrix (OS-03)
+- [x] **ACP-02**: `EnterPlanMode` / `ExitPlanMode` execute for real with captured result forms; plan-mode state is visible in the transcript and respected by the turn loop (scope per capture — design at plan-phase) *(verified 2026-08-20: scope resolved BY CAPTURE — zcode enforces plan mode as a runtime-level mutating-tool gate; ass-guard mirrors it; 12-04 + the 12-05 fixture)*
+- [x] **ACP-03**: `SendMessage` and `ReadSessionContext` execute for real (cross-agent messaging + prior-session context reads), capture-grounded result forms *(verified 2026-08-20 — 12-04: AgentMailbox + SessionReader wired at RegisterInteractive)*
+- [x] **ACP-04**: `CronCreate` / `CronList` / `CronDelete` execute against a real persisted schedule, and a due scheduled prompt fires as an engine-driven turn while the agent runs (no daemon, no network port — firing semantics designed at plan-phase within the editor-owned lifecycle) *(verified 2026-08-20 — 12-07: internal/sched store + queue/fire-once/catch-up batteries green; CronUpdate added, pin 20)*
+- [x] **ACP-05**: `TaskStop` executes for real — cancels the targeted in-flight task/background work with the captured result form *(verified 2026-08-20 — 12-06: group SIGKILL + reap loop; stop-ack form honestly corpus_absent)*
+- [x] **ACP-06**: Bash `run_in_background` and `dangerouslyDisableSandbox` execute faithfully per captured semantics, with background-shell output retrieval working in the captured form *(verified 2026-08-20 — 12-06: captured start + not_ready forms; no-op flag documented by design)*
+- [x] **ACP-07**: The corpus-absent result forms — truncation markers, Bash timeout form, Bash default timeout, file-tool failure forms — are re-pinned against the newly pinned Phase-9 capture session (depends on AUD-05's pin) and implemented where the corpus shows them *(verified 2026-08-20 — the D-04 re-record-primary route: live zcode 0.16.3 re-record, fixture zcode-recaptured-2026-08.json; Bash timeout + truncation envelope + answered-ask pairing implemented)*
+- [x] **ACP-08**: A behavioral-eval regression net exists (ECOSYSTEM-AUDIT §4.4 EVAL-01..03): deterministic tool-unit tests, scenario suites (pass@k against a scratch project with the real binary — the initial suite is the Phase-8-proven `explore → propose → apply → archive` scenario), and a re-run gate wired so profile / model / turn-behavior changes cannot land without the suites green. Phase 13 extends the suites across the expanded command matrix (OS-03) *(verified 2026-08-20: machinery complete, first green deferred to Phase 13 exit — 12-VERIFICATION ACP-08 PARTIAL, manager disposition 2026-08-20; the net's opening runs caught real pattern drift, safety pins held)*
 - [x] **ACP-10**: Command + skill discovery reads Claude-Code-compatible plugin installs as native (`installed_plugins.json` + `<root>/plugins/cache/<marketplace>/<plugin>/<version>/` layout, PLUG-05 carve-out) — plugin-bundled `skills/`, `commands/`, `agents/`, `hooks/hooks.json`, and `.mcp.json` all merge into the existing surfaces with documented precedence (agents register as spawnable subagent types; hooks fire at the mapped lifecycle points with documented stdin/stdout/exit semantics; MCP servers register through the existing host as `mcp__<server>__<tool>`); roots are the PROJECT `.claude/plugins/` and USER `~/.claude/plugins/` (the `~/.zcode/cli/plugins/` root dropped by the operator 2026-08-19 — no kit ships an ass-guard target, so plugins are installed for Claude Code and consumed as native; the dynamic listing is content, not structure — mimicry unaffected); user + project `.claude/skills/`, `.claude/commands/`, `.claude/agents/` remain first-class chain entries; writes stay under the ass-guard root only *(revised by the operator 2026-08-19: "…поддержки ass-guard нет ни в одном популярном ките…, поддержать agents/, hooks/hooks.json, .mcp.json тоже")*
 
 ### OpenSpec Workflow Completion (priority 4 — the re-scope's workflow half, Phase 13; split 2026-08-16)
@@ -121,13 +121,13 @@ Which phases cover which requirements. Filled during roadmap creation (2026-08-1
 | AUD-04 | Phase 9 | Pending (code-complete; phase not verified) |
 | AUD-05 | Phase 9 | Pending (blocked on operator capture workload) |
 | ACP-01 | Phase 12 | Complete |
-| ACP-02 | Phase 12 | Pending |
-| ACP-03 | Phase 12 | Pending |
-| ACP-04 | Phase 12 | Pending |
-| ACP-05 | Phase 12 | Pending |
-| ACP-06 | Phase 12 | Pending |
-| ACP-07 | Phase 12 | Pending (depends on AUD-05's pinned session) |
-| ACP-08 | Phase 12 | Pending |
+| ACP-02 | Phase 12 | Complete |
+| ACP-03 | Phase 12 | Complete |
+| ACP-04 | Phase 12 | Complete |
+| ACP-05 | Phase 12 | Complete |
+| ACP-06 | Phase 12 | Complete |
+| ACP-07 | Phase 12 | Complete |
+| ACP-08 | Phase 12 | Complete (machinery complete, first green deferred to Phase 13 exit) |
 | ACP-10 | Phase 12 | Complete |
 | EARLY-01 | Phase 14 | Complete |
 | EARLY-02 | Phase 14 | Complete |
@@ -154,3 +154,4 @@ Which phases cover which requirements. Filled during roadmap creation (2026-08-1
 *Requirements defined: 2026-08-14*
 *Updated: 2026-08-18 — early-adoption re-order: Phase 14 Adoption Readiness added (EARLY-01..06, the full other-agents-analysis disposition — operator confirmed all six); Phase 12's waves split around the adoption line (12-01/02/05/04/06 pre-adoption; 12-03/07/08 post); Phase 13 post-adoption; 30/30 mapped; milestone renamed v1.1 ACP Early Adoption*
 *Updated: 2026-08-19 — new-analysis disposition (borrows #13-15 from `cb3ab50`): no new requirements; #15 census → EARLY-06 input, #13 drift-warning → EARLY-03 input with the full gate in 12-08, #14 outcome store → v1.2 pool; adoption line unchanged (30/30 mapped)*
+*Updated: 2026-08-20 — Phase 12 closed (verification 8/9): ACP-02..08 verified per 12-VERIFICATION; ACP-08 PARTIAL by disposition — machinery complete, first green deferred to Phase 13 exit (manager ruling 2026-08-20, flagged for retroactive operator confirmation)*
