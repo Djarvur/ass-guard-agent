@@ -480,7 +480,7 @@ func TestObserve_EmitsProvenance(t *testing.T) {
 	}
 
 	d := capturing2.decisions[0]
-	if d.Action != engine.ActionNothing || d.Signal != "unmatched" || d.MatchedSpan != "" || d.ConfigSource != "" {
+	if d.Action != engine.ActionNothing || d.Signal != resultUnmatched || d.MatchedSpan != "" || d.ConfigSource != "" {
 		t.Errorf("nothing decision = %+v; want unmatched with empty provenance", d)
 	}
 }

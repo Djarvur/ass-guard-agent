@@ -716,7 +716,7 @@ func TestAskWiring_ServerLevelSurface(t *testing.T) { //nolint:cyclop,funlen // 
 		JSONRPC: protocolVersion20, ID: json.RawMessage("2"), Method: methodSessPrmt,
 		Params: rawJSON(map[string]any{
 			keySessionID:  snew.SessionID,
-			promptListKey: []any{map[string]any{"type": blockText, "text": wiringAskCache}},
+			promptListKey: []any{map[string]any{keyType: blockText, textListKey: wiringAskCache}},
 		}),
 	})
 
@@ -875,7 +875,7 @@ func TestAskPark_PromptResponsePrecedesResolution(t *testing.T) { //nolint:cyclo
 		JSONRPC: protocolVersion20, ID: json.RawMessage("2"), Method: methodSessPrmt,
 		Params: rawJSON(map[string]any{
 			keySessionID:  snew.SessionID,
-			promptListKey: []any{map[string]any{"type": blockText, "text": wiringAskCache}},
+			promptListKey: []any{map[string]any{keyType: blockText, textListKey: wiringAskCache}},
 		}),
 	})
 

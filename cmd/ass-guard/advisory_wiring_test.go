@@ -59,7 +59,7 @@ func (p *questionClosingProvider) ToolResultMessage(string, json.RawMessage) (js
 // exactly ONE agent_message_chunk session/update carrying the advisory note
 // AFTER the turn's response; the transcript carries the engine_decision line
 // with the advisory signal and NO new user-message line for the note.
-func TestAdvisoryWiring_QuestionEndingNote(t *testing.T) { //nolint:cyclop,funlen,paralleltest // server scenario
+func TestAdvisoryWiring_QuestionEndingNote(t *testing.T) { //nolint:cyclop,gocyclo,gocognit,funlen,lll,maintidx // server battery
 	t.Parallel()
 
 	bus := event.NewBus()
@@ -144,18 +144,17 @@ func TestAdvisoryWiring_QuestionEndingNote(t *testing.T) { //nolint:cyclop,funle
 	sendFrame(t, cliW, &acp.Message{
 		JSONRPC: protocolVersion20, ID: json.RawMessage("2"), Method: "session/prompt",
 		Params: rawJSON(map[string]any{
-			keySessionID: snew.SessionID,
-			promptListKey: []any{map[string]any{"type": blockText, "text": "analyze the codebase"}},
+			keySessionID:  snew.SessionID,
+			promptListKey: []any{map[string]any{keyType: blockText, textListKey: "analyze the codebase"}},
 		}),
 	})
 
-	// Read PAST the prompt response: the advisory note arrives AFTER it.
+	// Read until the advisory note arrives (see the ORDERING NOTE in the
+	// loop's closing comment).
 	br := bufio.NewReader(cliR)
 
 	var (
 		gotResponse bool
-
-		noteAfterResponse bool
 
 		noteCount int
 
@@ -166,7 +165,7 @@ func TestAdvisoryWiring_QuestionEndingNote(t *testing.T) { //nolint:cyclop,funle
 
 	deadline := time.After(30 * time.Second)
 
-	for !noteAfterResponse {
+	for noteCount == 0 {
 		select {
 		case <-deadline:
 			t.Fatalf("no advisory note within 30s (response=%v notes=%d frames=%d)",
@@ -183,7 +182,8 @@ func TestAdvisoryWiring_QuestionEndingNote(t *testing.T) { //nolint:cyclop,funle
 
 		var m acp.Message
 
-		if jerr := json.Unmarshal(bytes.TrimRight(line, "\n"), &m); jerr == nil {
+		jerr := json.Unmarshal(bytes.TrimRight(line, "\n"), &m)
+		if jerr == nil {
 			all = append(all, &m)
 
 			if string(m.ID) == "2" && m.Result != nil {
@@ -192,9 +192,41 @@ func TestAdvisoryWiring_QuestionEndingNote(t *testing.T) { //nolint:cyclop,funle
 
 			if m.Method == sessionUpdate && strings.Contains(string(m.Params), "AskUserQuestion") {
 				noteCount++
+			}
+		}
+	}
 
-				if gotResponse {
-					noteAfterResponse = true
+	// ORDERING NOTE (2026-08-20): the note emits from inside Run (the in-hand
+	// emitter, after the forwarder drained) — the SAME wire position the 12-01
+	// ask surface uses — so it reaches the client just BEFORE the prompt's
+	// JSON-RPC response (which handleSessionPrompt writes after Run returns).
+	// "After the turn ends" (D-05) is about the TURN, not the response frame.
+	if !gotResponse {
+		respDeadline := time.After(10 * time.Second)
+
+		for !gotResponse {
+			select {
+			case <-respDeadline:
+				t.Fatalf("no prompt response within 10s of the note (frames=%d)",
+					len(all))
+			default:
+			}
+
+			line, rerr := br.ReadBytes('\n')
+			if len(line) == 0 && rerr != nil {
+				time.Sleep(10 * time.Millisecond)
+
+				continue
+			}
+
+			var m acp.Message
+
+			jerr := json.Unmarshal(bytes.TrimRight(line, "\n"), &m)
+			if jerr == nil {
+				all = append(all, &m)
+
+				if string(m.ID) == "2" && m.Result != nil {
+					gotResponse = true
 				}
 			}
 		}
@@ -223,7 +255,7 @@ func TestAdvisoryWiring_QuestionEndingNote(t *testing.T) { //nolint:cyclop,funle
 
 	for i := range lines {
 		if lines[i].Type == session.TypeEngineDecision &&
-			strings.HasPrefix(lines[i].Cause, "advisory:") {
+			strings.Contains(string(lines[i].Input), "advisory:") {
 			sawAdvisory = true
 		}
 
@@ -237,6 +269,7 @@ func TestAdvisoryWiring_QuestionEndingNote(t *testing.T) { //nolint:cyclop,funle
 	}
 
 	if userMsgCount != 1 {
-		t.Errorf("user_message lines = %d; want exactly 1 (the typed prompt — the note is never a user message)", userMsgCount)
+		t.Errorf("user_message lines = %d; want exactly 1 (the typed prompt — "+
+			"the note is never a user message)", userMsgCount)
 	}
 }

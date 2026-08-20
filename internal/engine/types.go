@@ -200,3 +200,10 @@ type AskSettler interface {
 	// nothing is pending, already-closed once the resume completed.
 	AskSettle() <-chan struct{}
 }
+
+// SignalAdvisory is the Decision.Signal prefix for the unmatched-ending
+// advisory (13-03, D-02): "advisory:<class>" — an audit-always signal naming
+// the question-shaped-ending class; the Action stays ActionNothing (the
+// advisory NEVER holds continuation; the ACP-side wrapper surfaces ONE
+// client-visible note per session + class per D-05).
+const SignalAdvisory = "advisory:"

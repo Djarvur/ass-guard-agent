@@ -533,6 +533,14 @@ type sessionTurnRunner struct {
 	parkedCancels map[string]map[*parkedChain]struct{}
 	chainMu       sync.Mutex
 	activeChains  map[string]int
+
+	// 13-03 (D-05): the advisory-note dedupe — sessionID → set of seen
+	// advisory classes. The ENGINE stays stateless (observe.go's design
+	// invariant); this WRAPPER holds the per-session state (the reg/
+	// patternTable precedent). First-per-class-per-session is client-visible;
+	// repeats increment the audit trail only.
+	advisoryMu   sync.Mutex
+	advisorySeen map[string]map[string]bool
 }
 
 // the loaded hook-DAG config + the learning store + the engine + its
@@ -799,10 +807,27 @@ func (r *sessionTurnRunner) Run(
 		blocks = r.expandUserBlocks(sess, blocks)
 	}
 
+	// 13-03 (D-02/D-05): collect the turn's advisory decisions. Subscribed
+	// BEFORE runOneTurn (the decisions publish during the turn — the bus
+	// DROPS events with no subscriber); the collector mirrors the chunk
+	// forwarder's promptDone/done drain, and AFTER the forwarder has drained
+	// Run applies the per-session dedupe and emits the note DIRECTLY through
+	// the in-hand emitter (a post-turn bus publish would be lost — the
+	// PATTERNS timing hazard).
+	advCh := r.bus.Subscribe("EngineDecision", event.BufEngineDecision)
+
+	advDone := make(chan *advisoryNote, 1)
+
+	go r.collectAdvisory(advCh, promptDone, advDone)
+
 	stop, err := r.runOneTurn(ctx, sess, blocks)
 
 	close(promptDone)
 	<-done
+
+	if adv := <-advDone; adv != nil && r.advisoryNoteDue(sessionID, adv.class) {
+		_ = emit.AgentMessageChunk(adv.turnID, adv.text)
+	}
 
 	return mapAskStop(stop), err
 }
@@ -1551,6 +1576,92 @@ func (r *sessionTurnRunner) CloseSession(sessionID string) error {
 	}
 
 	return nil
+}
+
+// advisoryNote is one collected advisory decision's client-note projection.
+type advisoryNote struct {
+	turnID string
+	class  string
+	text   string
+}
+
+// collectAdvisory drains EngineDecision events until promptDone, capturing
+// the LAST advisory-signal decision (the note rides its turn id).
+//
+//nolint:lll // the drain-mirror signature
+func (r *sessionTurnRunner) collectAdvisory(advCh <-chan event.Event, promptDone <-chan struct{}, advDone chan<- *advisoryNote) {
+	defer r.bus.Unsubscribe("EngineDecision", advCh)
+
+	var last *advisoryNote
+
+	for {
+		select {
+		case e, ok := <-advCh:
+			if !ok {
+				advDone <- last
+
+				return
+			}
+
+			if d, isDec := e.(event.EngineDecision); isDec && strings.HasPrefix(d.Signal, engine.SignalAdvisory) {
+				last = &advisoryNote{
+					turnID: d.TurnID,
+					class:  strings.TrimPrefix(d.Signal, engine.SignalAdvisory),
+					text:   advisoryNoteText,
+				}
+			}
+		case <-promptDone:
+			// Drain any buffered decisions, then hand the last advisory over.
+			for {
+				select {
+				case e := <-advCh:
+					d, isDec := e.(event.EngineDecision)
+					if isDec && strings.HasPrefix(d.Signal, engine.SignalAdvisory) {
+						last = &advisoryNote{
+							turnID: d.TurnID,
+							class:  strings.TrimPrefix(d.Signal, engine.SignalAdvisory),
+							text:   advisoryNoteText,
+						}
+					}
+				default:
+					advDone <- last
+
+					return
+				}
+			}
+		}
+	}
+}
+
+// advisoryNoteText is the FIXED client-visible advisory note (single-line —
+// the Writer's decoded-newline transport guard; wording elements: the turn
+// ended on a question, AskUserQuestion is the hands-off route, nothing is
+// being held).
+const advisoryNoteText = "The turn ended with a question for you. " +
+	"AskUserQuestion is the hands-off route for questions like this; " +
+	"the turn is complete and nothing further is queued."
+
+// advisoryNoteDue applies the D-05 dedupe: the FIRST advisory of a class in
+// a session is client-visible; repeats are audit-trail-only.
+func (r *sessionTurnRunner) advisoryNoteDue(sessionID, class string) bool {
+	r.advisoryMu.Lock()
+	defer r.advisoryMu.Unlock()
+
+	if r.advisorySeen == nil {
+		r.advisorySeen = make(map[string]map[string]bool)
+	}
+
+	if r.advisorySeen[sessionID] == nil {
+		r.advisorySeen[sessionID] = make(map[string]bool)
+	}
+
+	if r.advisorySeen[sessionID][class] {
+		return false
+	}
+
+	r.advisorySeen[sessionID][class] = true
+
+	return true
 }
 
 // routeAskReply routes a pending-ask reply (12-01, ACP-01): the reply text

@@ -120,7 +120,7 @@ func TestDecide_DualSignalTextWins(t *testing.T) {
 }
 
 // TestDecide_UnmatchedIsNothing is the structural-safety cell (D-03): no text
-// match + no tool match ⇒ ActionNothing with Signal "unmatched".
+// match + no tool match ⇒ ActionNothing with Signal resultUnmatched.
 func TestDecide_UnmatchedIsNothing(t *testing.T) {
 	t.Parallel()
 
@@ -342,13 +342,13 @@ func TestDecide_ToolMatchSpanIsName(t *testing.T) {
 }
 
 // TestDecide_UnmatchedStaysLean (09-02 T1 Test 3): no match ⇒ empty span +
-// empty config source + signal "unmatched" (structural safety unchanged).
+// empty config source + signal resultUnmatched (structural safety unchanged).
 func TestDecide_UnmatchedStaysLean(t *testing.T) {
 	t.Parallel()
 
 	d := engine.Decide(engine.TurnOutput{TurnID: "t3", Text: "nothing here"}, spanTable{})
 
-	if d.Action != engine.ActionNothing || d.Signal != "unmatched" {
+	if d.Action != engine.ActionNothing || d.Signal != resultUnmatched {
 		t.Fatalf("Action/Signal = %v/%q; want nothing/unmatched", d.Action, d.Signal)
 	}
 

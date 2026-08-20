@@ -110,20 +110,10 @@ func Decide(out TurnOutput, table PatternTable) Decision { //nolint:gocritic // 
 		return dec
 	}
 
-	for _, name := range out.ToolCalls {
-		if d := table.MatchTool(name); d.Action != ActionNothing {
-			dec := Decision{
-				TurnID:       out.TurnID,
-				Action:       d.Action,
-				Signal:       "tool:" + d.ID,
-				MatchedSpan:  d.Span,
-				ConfigSource: d.ConfigSource,
-				Reason:       "handoff tool-call matched",
-			}
-			withPlanModeNote(&dec, out.PlanMode)
+	if dec, ok := toolSignalDecision(out, table); ok {
+		withPlanModeNote(&dec, out.PlanMode)
 
-			return dec
-		}
+		return dec
 	}
 
 	// Third signal: command provenance (hybrid chaining) — see
@@ -140,9 +130,46 @@ func Decide(out TurnOutput, table PatternTable) Decision { //nolint:gocritic // 
 		Signal: "unmatched",
 		Reason: "no pattern or handoff tool matched",
 	}
+
+	withAdvisorySignal(&dec, out.Text)
+
 	withPlanModeNote(&dec, out.PlanMode)
 
 	return dec
+}
+
+// toolSignalDecision is Decide's SECOND signal (the handoff tool-call
+// match); extracted from Decide for length (behavior identical).
+func toolSignalDecision(out TurnOutput, table PatternTable) (Decision, bool) { //nolint:gocritic // value semantics
+	for _, name := range out.ToolCalls {
+		if d := table.MatchTool(name); d.Action != ActionNothing {
+			return Decision{
+				TurnID:       out.TurnID,
+				Action:       d.Action,
+				Signal:       "tool:" + d.ID,
+				MatchedSpan:  d.Span,
+				ConfigSource: d.ConfigSource,
+				Reason:       "handoff tool-call matched",
+			}, true
+		}
+	}
+
+	return Decision{}, false
+}
+
+// withAdvisorySignal is the unmatched cell's ONLY augmentation (13-03, D-02):
+// a question-shaped ending carries the advisory signal (audit-always; the
+// ACP wrapper dedupes the client note per session + class). The Action stays
+// ActionNothing — the advisory never holds continuation.
+func withAdvisorySignal(dec *Decision, text string) {
+	class, ok := ClassifyQuestionEnding(text)
+	if !ok {
+		return
+	}
+
+	dec.Signal = SignalAdvisory + class
+	dec.Reason = "unmatched question-shaped ending — suggest AskUserQuestion " +
+		"as the hands-off route; nothing is being held"
 }
 
 // withPlanModeNote decorates a decision with the plan-mode provenance (12-04,

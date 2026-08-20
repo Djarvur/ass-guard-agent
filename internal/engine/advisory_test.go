@@ -1,6 +1,7 @@
 package engine_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/internal/engine"
@@ -31,7 +32,7 @@ func TestClassifyQuestionEnding_ChoiceClass(t *testing.T) {
 // TestDecide_AdvisoryOnUnmatchedQuestionEnding (13-03 T1 Test 2): with a
 // table matching nothing, a question-shaped ending yields ActionNothing with
 // Signal advisory:<class>; a NON-question unmatched ending keeps Signal
-// "unmatched" exactly as today.
+// resultUnmatched exactly as today.
 func TestDecide_AdvisoryOnUnmatchedQuestionEnding(t *testing.T) {
 	t.Parallel()
 
@@ -53,7 +54,7 @@ func TestDecide_AdvisoryOnUnmatchedQuestionEnding(t *testing.T) {
 		TurnID: turn002, Text: "an honest unmatched closing with no anchor",
 	}, table)
 
-	if dec2.Signal != "unmatched" {
+	if dec2.Signal != resultUnmatched {
 		t.Errorf("non-question unmatched Signal = %q; want today's \"unmatched\"", dec2.Signal)
 	}
 }
