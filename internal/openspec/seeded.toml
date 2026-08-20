@@ -49,12 +49,19 @@
 # Source: cmd/ass-guard/testdata/opsx-e2e/stage-{1,2,3}-output-capture.txt
 # Capture run: 2026-08-15T13:29Z, gated E2E capture mode (real openspec 1.5.0
 # binary + real GLM-5.2 via the Z.ai Anthropic endpoint), full
-# explore→propose→apply→archive scenario, 505s. The propose/apply TEXT rows
-# anchor on the stable phrase the model emits across runs (propose names
-# `/opsx:apply`, apply names `/opsx:archive` — verified against BOTH 2026-08-15
-# gated runs' closings); the explore boundary chains on COMMAND PROVENANCE (see
-# [[command_patterns]] below). Row ORDER among the text rows is first-match-
-# wins; the archive-terminal shield leads so an archive closing can never chain.
+# explore→propose→apply→archive scenario, 505s. RE-TUNED 2026-08-20 (13-01
+# Task 1) against the 12-08 drift evidence (three runs 2026-08-20, preserved
+# at .planning/phases/13-openspec-workflow-completion/13-01-eval-first-runs/):
+# the bare-command anchors drifted — the apply stage's own banner echo
+# `(override with `/opsx:apply <other>`)` matches a bare `/opsx:apply` regex,
+# so the apply turn's ending re-fired the →apply injection until the budget
+# cap (run 3's loop). The anchors now pin the STAGE-CLOSING phrasings the
+# model emits across ALL observed runs (2026-08-15 captures + 2026-08-20
+# evidence): propose closes with "Run `/opsx:apply` … to start …"; apply
+# closes with "… archiv(e|ed)( this change)? with `/opsx:archive`". The
+# explore boundary chains on COMMAND PROVENANCE (see [[command_patterns]]
+# below). Row ORDER among the text rows is first-match-wins; the
+# archive-terminal shield leads so an archive closing can never chain.
 # Operator overlays adjust without code (D-12).
 
 # The terminal shield: the archive closing ends the chain (wait = no injection,
@@ -66,13 +73,13 @@ action = "wait"
 
 [[patterns]]
 id = "post-propose-handoff"
-regex = "/opsx:apply"
+regex = "(?i)run `?/opsx:apply`?[^.]*to (start|begin|implement)"
 action = "continue"
 next = "/opsx:apply"
 
 [[patterns]]
 id = "post-apply-handoff"
-regex = "/opsx:archive"
+regex = "(?i)archiv(e|ed)( this change)? with `?/opsx:archive`?"
 action = "continue"
 next = "/opsx:archive"
 
