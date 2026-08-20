@@ -5,15 +5,15 @@ milestone_name: ACP Early Adoption
 current_phase: 13
 current_phase_name: openspec-workflow-completion
 status: executing
-stopped_at: 13-00 COMPLETE 2026-08-20 (engine-visible ask resume; eval-gate flagship FIRST GREEN — the ACP-08 deferred evidence); 13-01 next (Task 1 gate re-run + Tasks 2-4)
-last_updated: "2026-08-20T19:45:00.000Z"
+stopped_at: 13-01 COMPLETE 2026-08-20 (gate re-verified GREEN + the full 12-leg expanded matrix); 13-02 next
+last_updated: "2026-08-20T22:10:00.000Z"
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 33
-  completed_plans: 30
+  completed_plans: 31
 last_activity: 2026-08-20
-last_activity_desc: 13-00 executed (engine-visible ask resume; eval-gate flagship first green = ACP-08 deferred evidence); 12-08 + Phase-13 blockers closed
+last_activity_desc: 13-01 executed (gate re-verified; the 12-leg expanded matrix green with the committed capture corpus)
 ---
 
 # State: ass-guard-agent (working name)
@@ -27,12 +27,13 @@ See: .planning/PROJECT.md (updated 2026-08-14)
 ## Current Position
 
 Phase: 13 (openspec-workflow-completion) — EXECUTING
+Plan: 2/5 complete (13-01 COMPLETE 2026-08-20: Task 1's gate re-verified GREEN on the 13-00 tree (artifact eval-20260820-163220-k1.json); the profile-guard primitive committed TDD-order from the parked draft; the 12-leg matrix green — 6 happy + 6 fixable with deterministic probed triggers, 12 capture files committed under testdata/opsx-e2e-matrix/ (the D-03 pass-1 + fixable corpus 13-02/13-03 consume), operator config byte-identical after every run; divergences recorded: verify is report-driven [no CLI validate step — capture-rescoped], wrong-name candidates produce the D-02 ask class). See 13-01-SUMMARY.md + the Concerns entry for the config-telemetry incident.)
 Plan: 1/5 complete (13-00 COMPLETE 2026-08-20: the engine-visible ask resume per the manager Rule-4 route 1 — session settle seam + engine ask-wait + serve park + harness mirror; mise eval-gate flagship FIRST GREEN through asks, artifact .ass-guard/eval/eval-20260820-161520-k1.json; both Phase-13 blockers closed; ACP-08's deferred exit evidence discharged). Next: 13-01 (Task 1 re-runs the SAME gate — already green via 13-00; then Tasks 2-4: the parked draft review + the 12-leg matrix), then 13-02..13-04. (13-00 added 2026-08-20 as the wave-0 gap closure for the decided fix route); [SUPERSEDED 2026-08-20 — 13-00 landed; the gate is GREEN and 13-01 Task 1 re-verifies it:] 13-01 Task 1 PARTIALLY EXECUTED: checker warning fixes committed (d06d9f7), the drift evidence copied in-repo + the 08-06 stage-transition rows RE-TUNED and proven discriminating (8c56b29 — the 12-08 apply re-fire loop is FIXED, iter-1 chained explore→propose→apply→archive-injection with full provenance), but mise eval-gate stays RED on a NEWLY DIAGNOSED non-pattern failure class: a mid-chain AskUserQuestion returns stopAsk, engine.Observe exits before deciding, and the dispositioned askTimeout=45s timer fires DETACHED (engine-invisible, after the harness asserted) — the chain dies at any ask (2 of 3 completed runs; see Blockers). Task 2's guard primitive is drafted + lint-clean + offline-green but UNCOMMITTED in the working tree (internal/evalharness/harness.go + profile_guard_test.go) for the continuation. mise ci green at the stop.
 Phase 12 CLOSED 2026-08-20 (verification 8/9, 12-VERIFICATION.md): every catalog tool executes for real (the FULL completeness gate is a permanent regression test — zero `no implementation yet` dead ends), result forms capture-pinned (the live re-record fixture), plugin discovery live-proven; ACP-08 PARTIAL by disposition — the eval net exists/gates and its opening runs CAUGHT real pattern-table drift, but the flagship suite's FIRST GREEN is Phase 13's EXIT evidence (manager ruling 2026-08-20, FLAGGED for retroactive operator confirmation — see Decisions + Blockers). ADOPTION LINE status: the pre-adoption minimal set is complete; the operator's daily-use start remains v1.1's completion bar.
 Next action (agent): execute Phase 13 — 13-00 FIRST (the wave-0 gap closure: engine-visible ask resume per the decided fix route; exit = mise eval-gate flagship green through asks), then 13-01 (its amended opener: copy the drift evidence in-repo, capture-informed re-tuning of the EXISTING 08-06 stage-transition rows in internal/openspec/seeded.toml, exit = mise eval-gate flagship green), then the expanded-matrix E2E legs; 13-02 harvests 13-01's captures. Do NOT start before the checker re-pass on the amended 13-01 is recorded.
 Next action (operator): begin/continue daily ACP use; retroactively confirm (or reverse) the eval-net disposition — 12-VERIFICATION human item 1.
 
-Progress: [█████████ ] 91% (30/33 plans · 4/5 phases)
+Progress: [██████████] 94% (31/33 plans · 4/5 phases)
 
 ## Performance Metrics
 
@@ -43,6 +44,7 @@ Progress: [█████████ ] 91% (30/33 plans · 4/5 phases)
 
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
+| Phase 13 P01 | 330min | 4 tasks | 15 files |
 | Phase 13 P00 | 255min | 5 tasks | 12 files |
 | Phase 12 P08 | 150min | 2 tasks | 8 files |
 | Phase 12 P07 | 130min | 2 tasks | 13 files |
