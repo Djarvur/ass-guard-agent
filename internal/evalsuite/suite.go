@@ -144,7 +144,7 @@ type SuiteResult struct {
 // LoadScenarios reads every *.json scenario file in dir (sorted by name).
 // Unknown keys in a scenario file are rejected — a tampered scenario cannot
 // smuggle fields the runner does not own (T-12-08-01).
-func LoadScenarios(dir string) ([]Scenario, error) { //nolint:cyclop // the validation battery is flat by design
+func LoadScenarios(dir string) ([]Scenario, error) { //nolint:cyclop,funlen // the validation battery is flat by design
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, fmt.Errorf("evalsuite: read scenarios dir: %w", err)

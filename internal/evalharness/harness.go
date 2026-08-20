@@ -459,7 +459,7 @@ func readConfigWithMode(path string) ([]byte, fs.FileMode, error) {
 // (GuardOpenSpecGlobalConfig) BEFORE init, so `openspec init` installs all 11
 // commands; the 6 expanded command files are asserted present (FAIL LOUD — a
 // silently-core scratch would dead-end every matrix scenario).
-func BootstrapExpandedScratch(t SkipTB) *Scratch {
+func BootstrapExpandedScratch(t SkipTB) *Scratch { //nolint:contextcheck // init execs with its own bounded ctx (the BootstrapScratch precedent)
 	t.Helper()
 
 	GuardOpenSpecGlobalConfig(t, ExpandedMatrixProfileJSON)
@@ -497,7 +497,7 @@ func BootstrapExpandedScratch(t SkipTB) *Scratch {
 //     (the bulk-archive batch trigger);
 //   - completed_change: the archivable state (CHECKED tasks — the bulk
 //     happy + the onboard re-run approximation).
-func SeedFixture(t TB, dir, fixture, changeName string) {
+func SeedFixture(t TB, dir, fixture, changeName string) { //nolint:contextcheck // the fixture exec uses its own bounded ctx
 	t.Helper()
 
 	newChange := func() string {
@@ -575,7 +575,7 @@ func AssertChangeDir(t TB, scratchDir, changeName string) []string {
 // transcript + disk (13-04's named key): a fixable failure reached the model
 // (a tool result carrying a probed failure signature), a recovery followed
 // it, and the goal artifact (the change directory) landed.
-func AssertFixableRecovery(t TB, lines []session.Line, scratchDir, changeName string) []string {
+func AssertFixableRecovery(t TB, lines []session.Line, scratchDir, changeName string) []string { //nolint:cyclop // the two-phase scan reads flat
 	t.Helper()
 
 	failSigs := []string{
