@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
+	"github.com/Djarvur/ass-guard-agent/internal/engine"
 	"github.com/Djarvur/ass-guard-agent/internal/evalharness"
 	"github.com/Djarvur/ass-guard-agent/internal/event"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
@@ -503,7 +504,21 @@ func TestOpsxMatrixOnboard_Gated(t *testing.T) { //nolint:paralleltest // tutori
 
 	assertNoNotImplementedResults(t, r, sid)
 
-	captureMatrixClosing(t, "onboard-happy-capture", lastAssistantText(t, r, sid))
+	closing := lastAssistantText(t, r, sid)
+
+	// 13-03 D-02 evidence check (the dead-end advisory scan, folded in): the
+	// onboard closing is the question-shaped exemplar (the 2026-08-20
+	// capture: "Which task interests you?..."). WHEN the closing classifies,
+	// the advisory engine_decision line MUST exist — the dead-end surfaces,
+	// never silently stalls.
+	if class, ok := engine.ClassifyQuestionEnding(closing); ok {
+		if got := countAdvisoryDecisions(t, r, sid); got < 1 {
+			t.Errorf("question-shaped closing (class %q) produced NO advisory decision — "+
+				"the dead-end stalled silently", class)
+		}
+	}
+
+	captureMatrixClosing(t, "onboard-happy-capture", closing)
 }
 
 // scanMatrixFixable generalizes the fixable scan to the matrix (13-01 Task 4,

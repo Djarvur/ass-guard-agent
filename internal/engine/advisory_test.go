@@ -2,6 +2,7 @@ package engine_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/internal/engine"
@@ -94,5 +95,69 @@ func TestDecide_AdvisoryNeverHolds(t *testing.T) {
 
 	if stop != stopEndTurn {
 		t.Errorf("stop = %q; want end_turn", stop)
+	}
+}
+
+// TestClassifyQuestionEnding_MultiClass (13-03 T2 Test 5): the second class
+// (open-question, harvest-informed) matches its own closings and NOT the
+// choice class's; first-match-wins order is pinned (a closing matching both
+// yields the table's earlier class).
+func TestClassifyQuestionEnding_MultiClass(t *testing.T) {
+	t.Parallel()
+
+	got, ok := engine.ClassifyQuestionEnding("If you'd like to continue, just say the word and I'll draft it.")
+	if !ok || got != engine.ClassOpenQuestionEnding {
+		t.Errorf("open-question classify = (%q, %v); want (%q, true)", got, ok, engine.ClassOpenQuestionEnding)
+	}
+
+	// Its own closings do not cross-match the choice class.
+	got2, ok2 := engine.ClassifyQuestionEnding("let me know which store you meant")
+	if !ok2 || got2 != engine.ClassOpenQuestionEnding {
+		t.Errorf("open-question phrase classify = (%q, %v)", got2, ok2)
+	}
+
+	// The choice class still matches its shape.
+	if got, ok := engine.ClassifyQuestionEnding("Which would you like? (1/2)"); !ok || got != engine.ClassChoiceEnding {
+		t.Errorf("choice classify = (%q, %v)", got, ok)
+	}
+}
+
+// TestDecide_AdvisorySeededNonInterference (13-03 T2 Test 6, the D-07 note):
+// with a table whose text row MATCHES the closing, Decide returns the
+// continue decision and NO advisory signal — the advisory lives only in the
+// unmatched cell.
+func TestDecide_AdvisorySeededNonInterference(t *testing.T) {
+	t.Parallel()
+
+	table := fakeTable{textPatterns: map[string]engine.Action{
+		"say the word": engine.ActionContinue,
+	}}
+
+	dec := engine.Decide(engine.TurnOutput{
+		TurnID: turn001, Text: "Ready when you are — just say the word.",
+	}, table)
+
+	if dec.Action != engine.ActionContinue {
+		t.Errorf("Action = %v; want Continue (the seed matched — no advisory interference)", dec.Action)
+	}
+
+	if strings.HasPrefix(dec.Signal, engine.SignalAdvisory) {
+		t.Errorf("Signal = %q; want the seeded signal, never an advisory on a matched closing", dec.Signal)
+	}
+}
+
+// TestDecide_AdvisoryAskPrecedence (13-03 T2 Test 7): an AskSuspended turn
+// yields ActionAsk + SignalAskSuspended, never an advisory (the suspension
+// check precedes everything).
+func TestDecide_AdvisoryAskPrecedence(t *testing.T) {
+	t.Parallel()
+
+	dec := engine.Decide(engine.TurnOutput{
+		TurnID: turn001, AskSuspended: true, Text: "Which would you like? (1/2)",
+	}, fakeTable{})
+
+	if dec.Action != engine.ActionAsk || dec.Signal != engine.SignalAskSuspended {
+		t.Errorf("decision = (%v, %q); want ActionAsk + %s (suspension first)",
+			dec.Action, dec.Signal, engine.SignalAskSuspended)
 	}
 }

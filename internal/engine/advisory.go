@@ -17,6 +17,11 @@ import "regexp"
 // note).
 const ClassChoiceEnding = "choice"
 
+// ClassOpenQuestionEnding is the open-question class (13-03 T2, harvest
+// 2026-08-20): a closing that hands the turn back with an unstructured
+// open question ("just say the word" / "let me know which…").
+const ClassOpenQuestionEnding = "open-question"
+
 // classifyTable is the ordered question-shaped-ending classifier (first match
 // wins). Each row's regex is RE2-safe and anchored on CAPTURED closings (D-12
 // discipline applies to classifier rows too — the provenance comment names
@@ -33,6 +38,14 @@ var classifyTable = []struct {
 		// like? (1/2)" — and the 13-01 onboard-happy closing (2026-08-20):
 		// "Which task interests you? (Pick a number or describe your own)".
 		re: regexp.MustCompile(`(?i)\? *\(([123]/[123]|[Pp]ick a number[^)]*)\)`),
+	},
+	{
+		class: ClassOpenQuestionEnding,
+		// Source: the 13-01 continue-fixable run-1 closing (2026-08-20,
+		// preserved in git history + /tmp/opsx-matrix-evidence/): "If you'd
+		// like to continue matrix-contfix-real, just say the word or run
+		// /opsx:continue … let me know which store…".
+		re: regexp.MustCompile(`(?i)(just say the word|let me know|tell me which)`),
 	},
 }
 
