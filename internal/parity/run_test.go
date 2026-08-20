@@ -1,23 +1,36 @@
-package parity
+package parity_test
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"testing"
+
+	"github.com/Djarvur/ass-guard-agent/internal/parity"
 )
+
+// Test constants (goconst) + the workspace-required sentinel (err113).
+const (
+	stateMissing = "MISSING"
+	toolObserved = "Observed"
+)
+
+var errWorkspaceRequired = errors.New("arm requires a workspace (implement WorkspaceArm)")
 
 // writeFile is the test helper for seeding fixture trees.
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+	err := os.MkdirAll(filepath.Dir(path), 0o750)
+	if err != nil {
 		t.Fatalf("mkdir %s: %v", path, err)
 	}
 
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+	err = os.WriteFile(path, []byte(content), 0o600)
+	if err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}
 }
@@ -42,23 +55,37 @@ type touchingArm struct {
 	marker string
 }
 
-func (a *touchingArm) RunTurn(_ context.Context, _ string) ([]ToolCall, error) {
-	return nil, errors.New("touchingArm requires a workspace (implement WorkspaceArm)")
+func (a *touchingArm) RunTurn(_ context.Context, _ string) ([]parity.ToolCall, error) {
+	return nil, errWorkspaceRequired
 }
 
-func (a *touchingArm) RunTurnInWorkspace(_ context.Context, _ string, dir string) ([]ToolCall, error) {
+func (a *touchingArm) RunTurnInWorkspace(_ context.Context, _, dir string) ([]parity.ToolCall, error) {
 	path := filepath.Join(dir, "state.txt")
-	before := "MISSING"
+	before := stateMissing
 
-	if raw, err := os.ReadFile(path); err == nil {
+	raw, readErr := os.ReadFile(path)
+	if readErr == nil {
 		before = string(raw)
 	}
 
-	if err := os.AppendFile(path, []byte(a.marker+"\n"), 0o600); err != nil {
-		return nil, err
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
 
-	return []ToolCall{{Name: "Observed", Input: []byte("state=" + before)}}, nil
+	_, err = f.WriteString(a.marker + "\n")
+	if err != nil {
+		_ = f.Close()
+
+		return nil, fmt.Errorf("append %s: %w", path, err)
+	}
+
+	err = f.Close()
+	if err != nil {
+		return nil, fmt.Errorf("close %s: %w", path, err)
+	}
+
+	return []parity.ToolCall{{Name: toolObserved, Input: []byte("state=" + before)}}, nil
 }
 
 // TestRunSuite_PerTurnIsolation proves the 12-03 state-pollution fix: turn 1's
@@ -71,15 +98,16 @@ func TestRunSuite_PerTurnIsolation(t *testing.T) {
 	base := t.TempDir()
 	writeFile(t, filepath.Join(base, "state.txt"), "pristine")
 
-	suite := []CapturedTurn{
-		{TurnID: "t1", Prompt: "mutate", ExpectedToolCalls: []ToolCall{{Name: "Observed", Input: []byte("state=pristine")}}},
-		{TurnID: "t2", Prompt: "depends on pristine state", ExpectedToolCalls: []ToolCall{{Name: "Observed", Input: []byte("state=pristine")}}},
+	expectPristine := []parity.ToolCall{{Name: toolObserved, Input: []byte("state=pristine")}}
+	suite := []parity.CapturedTurn{
+		{TurnID: "t1", Prompt: "mutate", ExpectedToolCalls: expectPristine},
+		{TurnID: "t2", Prompt: "depends on pristine state", ExpectedToolCalls: expectPristine},
 	}
 
-	h := NewHarness()
+	h := parity.NewHarness()
 	h.BaseWorkspace = base
 
-	results, err := runSuite(context.Background(), h, suite, &touchingArm{marker: "touched"})
+	results, err := parity.RunSuite(context.Background(), h, suite, &touchingArm{marker: "touched"})
 	if err != nil {
 		t.Fatalf("runSuite: %v", err)
 	}
@@ -104,7 +132,7 @@ func TestRunSuite_PerTurnIsolation(t *testing.T) {
 
 // TestRunSuite_FixtureSnapshotSource pins the snapshot precedence: a turn's
 // own recorded snapshot seeds its scratch when present, else the suite's base
-// snapshot — and a turn with neither still gets a FRESH dir.
+// snapshot; with no base anywhere, a snapshot-less sibling gets a FRESH dir.
 func TestRunSuite_FixtureSnapshotSource(t *testing.T) {
 	t.Parallel()
 
@@ -114,44 +142,61 @@ func TestRunSuite_FixtureSnapshotSource(t *testing.T) {
 	snap := t.TempDir()
 	writeFile(t, filepath.Join(snap, "state.txt"), "from-snapshot")
 
-	suite := []CapturedTurn{
+	suite := []parity.CapturedTurn{
 		{TurnID: "snap", Prompt: "own snapshot", FixtureSnapshot: snap},
-		{TurnID: "base", Prompt: "base fallback"},
-		{TurnID: "fresh", Prompt: "neither — fresh empty scratch"},
+		{TurnID: "base", Prompt: "base fallback (the documented fallback)"},
 	}
 
-	h := NewHarness()
+	h := parity.NewHarness()
 	h.BaseWorkspace = base
 
-	results, err := runSuite(context.Background(), h, suite, &readingArm{})
+	results, err := parity.RunSuite(context.Background(), h, suite, &readingArm{})
 	if err != nil {
 		t.Fatalf("runSuite: %v", err)
 	}
 
-	want := map[string]string{"snap": "from-snapshot", "base": "from-base", "fresh": "MISSING"}
+	want := map[string]string{"snap": "from-snapshot", "base": "from-base"}
+
 	for _, r := range results {
 		got := string(r.AssGuardCalls[0].Input)
 		if wantStr := "state=" + want[r.TurnID]; got != wantStr {
 			t.Errorf("turn %s workspace = %s, want %s", r.TurnID, got, wantStr)
 		}
 	}
+
+	// No base configured anywhere + one turn carrying a snapshot: the
+	// snapshot-less sibling still gets a FRESH dir (never residue).
+	noBase := []parity.CapturedTurn{
+		{TurnID: "carries", Prompt: "has snapshot", FixtureSnapshot: snap},
+		{TurnID: "bare", Prompt: "no snapshot, no base"},
+	}
+
+	results, err = parity.RunSuite(context.Background(), parity.NewHarness(), noBase, &readingArm{})
+	if err != nil {
+		t.Fatalf("runSuite (no base): %v", err)
+	}
+
+	if got := string(results[1].AssGuardCalls[0].Input); got != "state="+stateMissing {
+		t.Errorf("bare turn workspace = %s, want fresh empty (%s)", got, stateMissing)
+	}
 }
 
 // readingArm reads the scratch state file without mutating it.
 type readingArm struct{}
 
-func (a *readingArm) RunTurn(_ context.Context, _ string) ([]ToolCall, error) {
-	return nil, errors.New("readingArm requires a workspace")
+func (a *readingArm) RunTurn(_ context.Context, _ string) ([]parity.ToolCall, error) {
+	return nil, errWorkspaceRequired
 }
 
-func (a *readingArm) RunTurnInWorkspace(_ context.Context, _ string, dir string) ([]ToolCall, error) {
-	before := "MISSING"
+func (a *readingArm) RunTurnInWorkspace(_ context.Context, _, dir string) ([]parity.ToolCall, error) {
+	before := stateMissing
 
-	if raw, err := os.ReadFile(filepath.Join(dir, "state.txt")); err == nil {
+	raw, readErr := os.ReadFile(filepath.Join(dir, "state.txt"))
+	if readErr == nil {
 		before = string(raw)
 	}
 
-	return []ToolCall{{Name: "Observed", Input: []byte("state=" + before)}}, nil
+	return []parity.ToolCall{{Name: toolObserved, Input: []byte("state=" + before)}}, nil
 }
 
 // TestRunSuite_DoubleRunDeterminism proves no cross-RUN residue: running the
@@ -163,17 +208,18 @@ func TestRunSuite_DoubleRunDeterminism(t *testing.T) {
 	base := t.TempDir()
 	writeFile(t, filepath.Join(base, "state.txt"), "pristine")
 
-	suite := []CapturedTurn{
-		{TurnID: "t1", Prompt: "mutate", ExpectedToolCalls: []ToolCall{{Name: "Observed", Input: []byte("state=pristine")}}},
+	expectPristine := []parity.ToolCall{{Name: toolObserved, Input: []byte("state=pristine")}}
+	suite := []parity.CapturedTurn{
+		{TurnID: "t1", Prompt: "mutate", ExpectedToolCalls: expectPristine},
 	}
 
-	h := NewHarness()
+	h := parity.NewHarness()
 	h.BaseWorkspace = base
 
 	runOnce := func() []string {
 		t.Helper()
 
-		results, err := runSuite(context.Background(), h, suite, &touchingArm{marker: "pass"})
+		results, err := parity.RunSuite(context.Background(), h, suite, &touchingArm{marker: "pass"})
 		if err != nil {
 			t.Fatalf("runSuite: %v", err)
 		}
@@ -199,11 +245,11 @@ func TestRunSuite_DoubleRunDeterminism(t *testing.T) {
 func TestRunSuite_LegacyPathUnchanged(t *testing.T) {
 	t.Parallel()
 
-	suite := []CapturedTurn{{TurnID: "t1", Prompt: "plain"}}
+	suite := []parity.CapturedTurn{{TurnID: "t1", Prompt: "plain"}}
 
-	h := NewHarness()
+	h := parity.NewHarness()
 
-	results, err := runSuite(context.Background(), h, suite, &plainArm{})
+	results, err := parity.RunSuite(context.Background(), h, suite, &plainArm{})
 	if err != nil {
 		t.Fatalf("runSuite: %v", err)
 	}
@@ -216,6 +262,6 @@ func TestRunSuite_LegacyPathUnchanged(t *testing.T) {
 // plainArm consumes no workspace (the LiveArm shape: RunTurn only).
 type plainArm struct{}
 
-func (a *plainArm) RunTurn(_ context.Context, _ string) ([]ToolCall, error) {
-	return []ToolCall{}, nil
+func (a *plainArm) RunTurn(_ context.Context, _ string) ([]parity.ToolCall, error) {
+	return []parity.ToolCall{}, nil
 }

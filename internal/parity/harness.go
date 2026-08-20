@@ -32,7 +32,13 @@ type Summary struct {
 }
 
 // Harness runs the parity A/B comparison.
-type Harness struct{}
+type Harness struct {
+	// BaseWorkspace seeds each turn's isolated scratch when set (12-03 Task 2,
+	// consumed via runSuite): each CapturedTurn replays into a fresh dir
+	// seeded from this snapshot (or the turn's own FixtureSnapshot). Empty =
+	// the legacy shared-cwd behavior (the curated path — unchanged).
+	BaseWorkspace string
+}
 
 // NewHarness returns a Harness.
 func NewHarness() *Harness { return &Harness{} }
