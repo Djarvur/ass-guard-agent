@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -860,4 +861,163 @@ func TestOpsxMatrixOnboardFixable_Gated(t *testing.T) { //nolint:paralleltest //
 	assertNoNotImplementedResults(t, r, sid)
 
 	captureMatrixClosing(t, "onboard-fixable-capture", lastAssistantText(t, r, sid))
+}
+
+// countMatrixDecisionsByAction counts the session's engine_decision lines
+// with the given action name.
+func countMatrixDecisionsByAction(t *testing.T, r *sessionTurnRunner, sessionID, action string) int {
+	t.Helper()
+
+	lines, err := r.sessions[sessionID].Manager.ReadAll()
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+
+	n := 0
+
+	for i := range lines {
+		if lines[i].Type == session.TypeEngineDecision && lines[i].Name == action {
+			n++
+		}
+	}
+
+	return n
+}
+
+// hasMatrixCommandProvenance reports whether the session's transcript carries
+// a command_provenance line for the key.
+func hasMatrixCommandProvenance(t *testing.T, r *sessionTurnRunner, sessionID, key string) bool {
+	t.Helper()
+
+	lines, err := r.sessions[sessionID].Manager.ReadAll()
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+
+	for i := range lines {
+		if lines[i].Type == session.TypeCommandProvenance && lines[i].Name == key {
+			return true
+		}
+	}
+
+	return false
+}
+
+// lastMatrixDecisionAction returns the session's final engine_decision action
+// ("" when none).
+func lastMatrixDecisionAction(t *testing.T, r *sessionTurnRunner, sessionID string) string {
+	t.Helper()
+
+	lines, err := r.sessions[sessionID].Manager.ReadAll()
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+
+	for _, l := range slices.Backward(lines) { //nolint:gocritic // modernize-required backward scan
+		if l.Type == session.TypeEngineDecision {
+			return l.Name
+		}
+	}
+
+	return ""
+}
+
+// TestOpsxMatrixVerifyChain_Gated (13-02 Task 1, the D-07 TRACER): ONE typed
+// /opsx:verify on an incomplete-workflow change — the report's "cannot be
+// archived" CRITICAL closes the turn, the seeded post-verify-handoff row
+// chains /opsx:continue (the fix workflow the captures' recommendations
+// name), and the chained continue turn creates the missing artifact. The
+// audit trail carries the continue decision + the opsx:continue provenance;
+// the terminal closing triggers nothing further.
+func TestOpsxMatrixVerifyChain_Gated(t *testing.T) { //nolint:paralleltest // chain leg
+	e2eGates(t)
+
+	const (
+		sid     = "sess-matrix-vchain"
+		subject = "matrix-vchain-subj"
+	)
+
+	r, scratch := newOpsxMatrixRunner(t)
+
+	changeDir := seedMatrixChange(t, scratch, subject)
+	writeMatrixArtifact(t, changeDir, "proposal.md", matrixProposal)
+	writeMatrixArtifact(t, changeDir, "specs/cap/spec.md", matrixVerifySpec)
+
+	// ONE typed prompt — the engine chains the rest (zero manual continues).
+	runMatrixStage(t, r, sid, "/opsx:verify "+subject)
+
+	// The chained fix stage ran: the continue decision + provenance key.
+	if got := countMatrixDecisionsByAction(t, r, sid, actionContinue); got < 1 {
+		t.Errorf("continue engine_decisions = %d; want >= 1 (the D-07 handoff fired)", got)
+	}
+
+	if !hasMatrixCommandProvenance(t, r, sid, "opsx:continue") {
+		t.Error("no opsx:continue command_provenance line — the chained stage never expanded")
+	}
+
+	// The fix workflow's real artifact: the continue turn creates the next
+	// artifact the reports recommend (design.md; the schema's sequence).
+	if !fileExists(filepath.Join(changeDir, "design.md")) {
+		t.Errorf("no design.md in %s after the chained continue (the fix artifact)", changeDir)
+	}
+
+	// The terminal closing triggers nothing: the final decision is not a
+	// continue (nothing/wait/ask are all legitimate chain ends).
+	if got := lastMatrixDecisionAction(t, r, sid); got == actionContinue {
+		t.Errorf("the LAST decision is a continue — the chain never terminated naturally (%q)", got)
+	}
+
+	assertNoNotImplementedResults(t, r, sid)
+}
+
+// TestOpsxMatrixNewChain_Gated (13-02 Task 2, pass 2): ONE typed /opsx:new
+// invocation chains the spec-driven artifact sequence via the seeded
+// post-new-continue-handoff row — the engine walks new→continue→continue→…
+// with zero manual continues, every chained stage's provenance recorded, and
+// the chain terminates naturally (final decision not a continue).
+func TestOpsxMatrixNewChain_Gated(t *testing.T) { //nolint:paralleltest // chain leg
+	e2eGates(t)
+
+	const (
+		sid     = "sess-matrix-nchain"
+		subject = "matrix-nchain-subj"
+	)
+
+	r, scratch := newOpsxMatrixRunner(t)
+
+	changeDir := seedMatrixChange(t, scratch, subject)
+
+	runMatrixStage(t, r, sid, "/opsx:new "+subject)
+
+	// Zero manual continues: >= 2 chained continue decisions (the artifact
+	// walk) + the opsx:continue provenance key on the chained stages.
+	if got := countMatrixDecisionsByAction(t, r, sid, actionContinue); got < 2 {
+		t.Errorf("continue engine_decisions = %d; want >= 2 (the artifact walk chained)", got)
+	}
+
+	if !hasMatrixCommandProvenance(t, r, sid, "opsx:continue") {
+		t.Error("no opsx:continue command_provenance line — the chained stages never expanded")
+	}
+
+	// The walked artifacts land on disk: the sequence's terminal artifact.
+	if !fileExists(filepath.Join(changeDir, "tasks.md")) {
+		found := false
+
+		matches, _ := filepath.Glob(filepath.Join(scratch, "openspec", "changes", "archive", "*"+subject))
+		for _, m := range matches {
+			if fileExists(filepath.Join(m, "tasks.md")) {
+				found = true
+			}
+		}
+
+		if !found {
+			t.Errorf("no tasks.md in %s (or its archive) after the chained walk", changeDir)
+		}
+	}
+
+	if got := lastMatrixDecisionAction(t, r, sid); got == actionContinue {
+		t.Errorf("the LAST decision is a continue — the chain never terminated naturally (%q)", got)
+	}
+
+	assertNoNotImplementedResults(t, r, sid)
 }

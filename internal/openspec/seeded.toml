@@ -283,3 +283,57 @@ timeout_secs = 60
 "opsx:verify" = "read-only"
 "opsx:bulk-archive" = "mutating"
 "opsx:onboard" = "mutating"
+
+# ---- 13-02 Task 1: the D-07 verify→fix handoff (capture-derived, D-12) ----
+# Source: THREE observed verify closings on incomplete-workflow changes
+# (openspec 1.5.0 + real model, 2026-08-20):
+#   1. verify-happy-capture.txt   — "The change cannot be archived in the
+#      normal spec-driven flow until they exist" + the design-instructions
+#      recommendation;
+#   2. verify-fixable-capture.txt — "cannot be applied, verified formally,
+#      or archived" + the same recommendation;
+#   3. the 2026-08-20 chain-leg diagnostic run — "the change itself is
+#      incomplete per its own schema ... complete those artifacts ... before
+#      archiving".
+# The STRUCTURAL invariant: the report header ("Verification Report" — the
+# command's own template, verify-exclusivE) followed by the blocking
+# consequence ("cannot be ... archived" / "before archiving" / the incomplete
+# schema note). The header token keeps the row from ever matching other
+# stages' closings (explore/apply/propose/archive never emit it; the
+# archive-terminal shield leads for archive closings regardless); the
+# consequence alternation keeps a CLEAN report ("all checks passed, ready to
+# archive") from chaining — D-07's legitimate terminus. The fix target is
+# /opsx:continue (the command that creates the next artifact — exactly what
+# all three closings' recommendations instruct).
+[[patterns]]
+id = "post-verify-handoff"
+regex = "(?is)Verification Report.*(cannot be [a-z ]{0,40}archived|before archiving|incomplete)"
+action = "continue"
+next = "/opsx:continue"
+
+# ---- 13-02 Task 2: the remaining expanded-matrix dispositions (D-03/D-12) ----
+# new + continue: BOTH closings hand off to /opsx:continue — the new closing
+# ends "Ready to create the first artifact? Run `/opsx:continue` or just
+# describe..." (new-happy-capture.txt) and every continue closing ends "Run
+# `/opsx:continue` to create the next artifact" (continue-happy-capture.txt;
+# the self-chain walks the spec-driven artifact sequence). Sources:
+# cmd/ass-guard/testdata/opsx-e2e-matrix/{new,continue}-happy-capture.txt,
+# 2026-08-20, openspec 1.5.0 + real model. The anchor is the imperative
+# handoff phrase the toolkit's own template emits.
+[[patterns]]
+id = "post-new-continue-handoff"
+regex = "(?i)run `?/opsx:continue`?"
+action = "continue"
+next = "/opsx:continue"
+
+# ff + bulk-archive: TERMINI. ff completes AND archives in one pass — its
+# closing IS an Archive Complete closing (ff-happy-capture.txt: "## Archive
+# Complete... Archived to..."), already shielded by post-archive-terminal.
+# bulk-archive's batch report ends with per-change warnings (no chain
+# handoff; bulk-archive-happy-capture.txt) — deliberately UNMATCHED
+# (unmatched ⇒ nothing, the honest terminal; a wait row anchored on
+# fixture-specific warning text would over-fit).
+# onboard: TERMINUS — the tutorial closes with a question to the operator
+# (onboard-happy-capture.txt: "Which task interests you?"), the D-02
+# question-shaped-ending class 13-03's advisory surfaces; no chaining row
+# (the Phase-8 auto-continue-on-question rejection stands).
