@@ -484,3 +484,435 @@ func TestObserve_EmitsProvenance(t *testing.T) {
 		t.Errorf("nothing decision = %+v; want unmatched with empty provenance", d)
 	}
 }
+
+// --- 13-00 T3: the engine ask-wait (Observe stops exiting on stopAsk) ---
+
+// askWaitRunner is a scripted runner whose Run returns per-call stop reasons
+// (ask markers included) and whose LastTurnOutput FLIPS from the per-call
+// suspended output to a fixed completed output once the settle channel closes
+// — mirroring the real adapter's terminal-line precedence (a later
+// assistant_message outranks ask_suspended exactly when the resume
+// completed). AskSettle exposes the channel (nil = never settles).
+type askWaitRunner struct {
+	mu     sync.Mutex
+	stops  []string
+	before []engine.TurnOutput
+	after  engine.TurnOutput
+
+	calls   atomic.Int32
+	settle  chan struct{}
+	settles atomic.Int32
+}
+
+func (a *askWaitRunner) Run(_ context.Context, _ []session.ContentBlock) (string, error) {
+	a.calls.Add(1)
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	idx := int(a.calls.Load()) - 1
+	if idx >= len(a.stops) {
+		idx = len(a.stops) - 1
+	}
+
+	stop := stopEndTurn
+	if idx >= 0 && a.stops[idx] != "" {
+		stop = a.stops[idx]
+	}
+
+	return stop, nil
+}
+
+func (a *askWaitRunner) LastTurnOutput() engine.TurnOutput {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	idx := int(a.calls.Load()) - 1
+	if idx < 0 {
+		return engine.TurnOutput{}
+	}
+
+	if idx >= len(a.before) {
+		idx = len(a.before) - 1
+	}
+
+	select {
+	case <-a.settle:
+		return a.after // the resumed turn's completed output
+	default:
+	}
+
+	return a.before[idx]
+}
+
+// AskSettle implements the engine's optional AskSettler capability.
+func (a *askWaitRunner) AskSettle() <-chan struct{} {
+	a.settles.Add(1)
+
+	return a.settle
+}
+
+func (a *askWaitRunner) runCalls() int { return int(a.calls.Load()) }
+
+// askNoSettleRunner is askWaitRunner WITHOUT the AskSettler capability (a
+// plain runner — the no-capability byte-identical pin).
+type askNoSettleRunner struct {
+	askWaitRunner
+}
+
+func (a *askNoSettleRunner) AskSettle() <-chan struct{} { panic("must not be called") }
+
+// TestObserve_AskWait_InjectedTurnDecidesAfterSettle (13-00 T3 test 1): an
+// INJECTED turn that suspends (stopAsk) WAITS for the settle signal; once the
+// resumed turn completes, Observe RE-READS it, emits a continue decision for
+// the asking turn, and performs the next injection. Today (RED): Observe exits
+// at the post-injection `stop != "end_turn"` check with NO decision — the
+// detached-resume blocker at the engine level.
+func TestObserve_AskWait_InjectedTurnDecidesAfterSettle(t *testing.T) {
+	t.Parallel()
+
+	settle := make(chan struct{})
+
+	runner := &askWaitRunner{
+		stops: []string{stopEndTurn, engine.StopAsk, stopEndTurn},
+		before: []engine.TurnOutput{
+			{TurnID: turn001, Text: implementationCompleteMsg},       // user turn → continue
+			{TurnID: turn002, AskSuspended: true},                    // injected turn asks
+			{TurnID: turn003, Text: resultUnmatched},                 // final injection ends
+		},
+		after:  engine.TurnOutput{TurnID: turn002, Text: implementationCompleteMsg}, // resumed turn002
+		settle: settle,
+	}
+
+	bus := event.NewBus()
+	eng := &engine.Engine{Bus: bus}
+	collect := captureEvents(t, bus)
+
+	// The resume completes 50ms in: the engine's wait must span it.
+	time.AfterFunc(50*time.Millisecond, func() { close(settle) })
+
+	stop, err := eng.Observe(context.Background(), runner, seededTable(),
+		[]session.ContentBlock{{Type: blockText, Text: "go"}})
+	if err != nil {
+		t.Fatalf("Observe err: %v", err)
+	}
+
+	if stop != stopEndTurn {
+		t.Errorf("stop = %q; want end_turn (the chain ran to its natural terminus)", stop)
+	}
+
+	if got := runner.runCalls(); got != 3 {
+		t.Errorf("runner.Run called %d times; want 3 (user + ask-suspended injection + settled next injection)", got)
+	}
+
+	events := collect()
+
+	contForAsking := false
+
+	for _, ev := range events {
+		if ev.TurnID == turn002 && ev.Action == engine.ActionContinue.String() {
+			contForAsking = true
+		}
+	}
+
+	if !contForAsking {
+		t.Errorf("no continue decision for the ASKING turn %q after settle (events: %+v) — "+
+			"the completed turn never fed Decide (the engine-level blocker, pinned)", turn002, summarizeEvents(events))
+	}
+}
+
+// TestObserve_AskWait_FirstTurnDecidesAfterSettle (13-00 T3 test 2): a FIRST
+// (user) turn that suspends then settles takes the same normal-decide path —
+// the completed turn's decision is a continue with an injection. Today (RED):
+// ActionAsk on the unresolved suspended output.
+func TestObserve_AskWait_FirstTurnDecidesAfterSettle(t *testing.T) {
+	t.Parallel()
+
+	settle := make(chan struct{})
+
+	runner := &askWaitRunner{
+		stops:  []string{engine.StopAsk, stopEndTurn},
+		before: []engine.TurnOutput{{TurnID: turn001, AskSuspended: true}, {TurnID: turn002, Text: resultUnmatched}},
+		after:  engine.TurnOutput{TurnID: turn001, Text: implementationCompleteMsg},
+		settle: settle,
+	}
+
+	bus := event.NewBus()
+	eng := &engine.Engine{Bus: bus}
+	collect := captureEvents(t, bus)
+
+	time.AfterFunc(50*time.Millisecond, func() { close(settle) })
+
+	stop, err := eng.Observe(context.Background(), runner, seededTable(),
+		[]session.ContentBlock{{Type: blockText, Text: "go"}})
+	if err != nil {
+		t.Fatalf("Observe err: %v", err)
+	}
+
+	if stop != stopEndTurn {
+		t.Errorf("stop = %q; want end_turn", stop)
+	}
+
+	if got := runner.runCalls(); got != 2 {
+		t.Errorf("runner.Run called %d times; want 2 (the suspended user turn + the settled injection)", got)
+	}
+
+	events := collect()
+
+	if len(events) < 2 {
+		t.Fatalf("decisions = %d; want >= 2 (continue for the settled turn + the final nothing)", len(events))
+	}
+
+	if events[0].TurnID != turn001 || events[0].Action != engine.ActionContinue.String() {
+		t.Errorf("first decision = %+v; want continue for the settled user turn %q", events[0], turn001)
+	}
+}
+
+// TestObserve_AskWait_CancelDuringWaitDrains (13-00 T3 test 3a): ctx death
+// MID-WAIT ⇒ cancel-drain semantics — ("cancelled", nil), no decision, no
+// injection (D-03 extended to the ask-wait).
+func TestObserve_AskWait_CancelDuringWaitDrains(t *testing.T) {
+	t.Parallel()
+
+	runner := &askWaitRunner{
+		stops:  []string{engine.StopAsk},
+		before: []engine.TurnOutput{{TurnID: turn001, AskSuspended: true}},
+		settle: nil, // never settles — the ctx is the only exit
+	}
+
+	bus := event.NewBus()
+	eng := &engine.Engine{Bus: bus}
+	collect := captureEvents(t, bus)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	time.AfterFunc(50*time.Millisecond, cancel)
+
+	stop, err := eng.Observe(ctx, runner, seededTable(),
+		[]session.ContentBlock{{Type: blockText, Text: "go"}})
+	if err != nil {
+		t.Fatalf("Observe err: %v; want nil (cancel-drain)", err)
+	}
+
+	if stop != "cancelled" {
+		t.Errorf("stop = %q; want cancelled (ctx death mid-wait drains)", stop)
+	}
+
+	if got := runner.runCalls(); got != 1 {
+		t.Errorf("runner.Run called %d times; want 1 (no injection after the drain)", got)
+	}
+
+	if events := collect(); len(events) != 0 {
+		t.Errorf("decisions emitted during the drain = %+v; want none", summarizeEvents(events))
+	}
+}
+
+// TestObserve_AskWait_UnresolvedKeepsTodaySemantics (13-00 T3 test 3b): a
+// settler that never settles with a LIVE ctx keeps today's semantics exactly —
+// the FIRST turn decides ActionAsk on the suspended output (no table lookup);
+// the INJECTED turn exits WITHOUT deciding.
+func TestObserve_AskWait_UnresolvedKeepsTodaySemantics(t *testing.T) {
+	t.Parallel()
+
+	t.Run("first turn unresolved", func(t *testing.T) {
+		t.Parallel()
+
+		runner := &askWaitRunner{
+			stops:  []string{engine.StopAsk},
+			before: []engine.TurnOutput{{TurnID: turn001, AskSuspended: true}},
+			settle: nil,
+		}
+
+		bus := event.NewBus()
+		eng := &engine.Engine{Bus: bus}
+		collect := captureEvents(t, bus)
+
+		stop, err := eng.Observe(context.Background(), runner, seededTable(),
+			[]session.ContentBlock{{Type: blockText, Text: "go"}})
+		if err != nil {
+			t.Fatalf("Observe err: %v", err)
+		}
+
+		if stop != engine.StopAsk {
+			t.Errorf("stop = %q; want the ask marker returned unchanged", stop)
+		}
+
+		if got := runner.runCalls(); got != 1 {
+			t.Errorf("runner.Run called %d times; want 1 (a suspended turn never chains)", got)
+		}
+
+		events := collect()
+		if len(events) != 1 {
+			t.Fatalf("decisions = %d; want exactly the ActionAsk (events: %+v)", len(events), summarizeEvents(events))
+		}
+
+		if events[0].Action != engine.ActionAsk.String() || events[0].Signal != engine.SignalAskSuspended {
+			t.Errorf("decision = %+v; want ActionAsk with %q (no table lookup)", events[0], engine.SignalAskSuspended)
+		}
+	})
+
+	t.Run("injected turn unresolved exits silently", func(t *testing.T) {
+		t.Parallel()
+
+		runner := &askWaitRunner{
+			stops: []string{stopEndTurn, engine.StopAsk},
+			before: []engine.TurnOutput{
+				{TurnID: turn001, Text: implementationCompleteMsg},
+				{TurnID: turn002, AskSuspended: true},
+			},
+			settle: nil,
+		}
+
+		bus := event.NewBus()
+		eng := &engine.Engine{Bus: bus}
+		collect := captureEvents(t, bus)
+
+		stop, err := eng.Observe(context.Background(), runner, seededTable(),
+			[]session.ContentBlock{{Type: blockText, Text: "go"}})
+		if err != nil {
+			t.Fatalf("Observe err: %v", err)
+		}
+
+		if stop != engine.StopAsk {
+			t.Errorf("stop = %q; want the ask marker returned unchanged", stop)
+		}
+
+		if got := runner.runCalls(); got != 2 {
+			t.Errorf("runner.Run called %d times; want 2 (user + the one injection; nothing after)", got)
+		}
+
+		// Exactly ONE decision (the user turn's continue); the asking turn
+		// exits WITHOUT a decision — today's post-injection behavior.
+		events := collect()
+		if len(events) != 1 {
+			t.Fatalf("decisions = %+v; want exactly 1 (the user turn's continue — the ask exits silently)",
+				summarizeEvents(events))
+		}
+	})
+}
+
+// TestObserve_AskWait_NoCapabilityByteIdentical (13-00 T3 test 4): a runner
+// WITHOUT the AskSettler capability keeps today's behavior byte-identical on
+// both paths (first turn → ActionAsk decision; injection → exit without
+// deciding).
+func TestObserve_AskWait_NoCapabilityByteIdentical(t *testing.T) {
+	t.Parallel()
+
+	t.Run("first turn", func(t *testing.T) {
+		t.Parallel()
+
+		runner := &askNoSettleRunner{askWaitRunner{
+			stops:  []string{engine.StopAsk},
+			before: []engine.TurnOutput{{TurnID: turn001, AskSuspended: true}},
+		}}
+
+		bus := event.NewBus()
+		eng := &engine.Engine{Bus: bus}
+		collect := captureEvents(t, bus)
+
+		stop, err := eng.Observe(context.Background(), &runner.askWaitRunner, seededTable(),
+			[]session.ContentBlock{{Type: blockText, Text: "go"}})
+		if err != nil {
+			t.Fatalf("Observe err: %v", err)
+		}
+
+		if stop != engine.StopAsk {
+			t.Errorf("stop = %q; want the ask marker unchanged", stop)
+		}
+
+		events := collect()
+		if len(events) != 1 || events[0].Action != engine.ActionAsk.String() {
+			t.Errorf("decisions = %+v; want exactly ActionAsk (today's first-turn semantics)", summarizeEvents(events))
+		}
+	})
+
+	t.Run("injection", func(t *testing.T) {
+		t.Parallel()
+
+		runner := &askNoSettleRunner{askWaitRunner{
+			stops: []string{stopEndTurn, engine.StopAsk},
+			before: []engine.TurnOutput{
+				{TurnID: turn001, Text: implementationCompleteMsg},
+				{TurnID: turn002, AskSuspended: true},
+			},
+		}}
+
+		bus := event.NewBus()
+		eng := &engine.Engine{Bus: bus}
+		collect := captureEvents(t, bus)
+
+		stop, err := eng.Observe(context.Background(), &runner.askWaitRunner, seededTable(),
+			[]session.ContentBlock{{Type: blockText, Text: "go"}})
+		if err != nil {
+			t.Fatalf("Observe err: %v", err)
+		}
+
+		if stop != engine.StopAsk {
+			t.Errorf("stop = %q; want the ask marker unchanged", stop)
+		}
+
+		if events := collect(); len(events) != 1 {
+			t.Errorf("decisions = %+v; want exactly 1 (today's silent exit)", summarizeEvents(events))
+		}
+	})
+}
+
+// TestObserve_AskWait_WaitsConsumeNoBudget (13-00 T3 test 5): a chain of
+// ask→settle→ask→settle… counts INJECTIONS only against the re-fire budget —
+// waits are free. The cap still bounds the chain (no infinite ask-settle
+// loop).
+func TestObserve_AskWait_WaitsConsumeNoBudget(t *testing.T) {
+	t.Parallel()
+
+	settle := make(chan struct{})
+
+	runner := &askWaitRunner{
+		stops:  []string{engine.StopAsk, engine.StopAsk, engine.StopAsk},
+		before: []engine.TurnOutput{{TurnID: turn001, AskSuspended: true}},
+		after:  engine.TurnOutput{TurnID: turn001, Text: implementationCompleteMsg}, // every settle → continue
+		settle: settle,
+	}
+
+	bus := event.NewBus()
+	eng := &engine.Engine{Bus: bus}
+	collect := captureEvents(t, bus)
+
+	// Keep the settle channel cycling: close-and-replace is not observable by
+	// a closed channel, so leave it OPEN-closed from 25ms — every wait after
+	// that sees it closed (settled instantly).
+	time.AfterFunc(25*time.Millisecond, func() { close(settle) })
+
+	stop, err := eng.Observe(context.Background(), runner, seededTable(),
+		[]session.ContentBlock{{Type: blockText, Text: "go"}})
+	if err != nil {
+		t.Fatalf("Observe err: %v", err)
+	}
+
+	_ = stop
+
+	// The budget caps at MaxContinueInjections injections; the user prompt is
+	// the +1. The waits never counted.
+	if got := runner.runCalls(); got != engine.MaxContinueInjections+1 {
+		t.Errorf("runner.Run called %d times; want %d (waits consumed no budget — injections only)",
+			got, engine.MaxContinueInjections+1)
+	}
+
+	events := collect()
+
+	last := events[len(events)-1]
+	if last.Signal != "budget" {
+		t.Errorf("last signal = %q; want budget (the cap, not the waits, stopped the chain)", last.Signal)
+	}
+}
+
+// summarizeEvents renders the captured decisions compactly for failure
+// messages.
+func summarizeEvents(events []event.EngineDecision) []string {
+	out := make([]string, 0, len(events))
+	for _, ev := range events {
+		out = append(out, ev.TurnID+"/"+ev.Action+"/"+ev.Signal)
+	}
+
+	return out
+}
