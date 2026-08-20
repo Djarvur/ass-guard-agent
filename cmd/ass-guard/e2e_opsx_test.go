@@ -262,6 +262,14 @@ func runStageTyped(t *testing.T, r *sessionTurnRunner, sessionID, text string) {
 	if err != nil {
 		t.Fatalf("stage prompt %q: %v", text, err)
 	}
+
+	// 13-00: the harness mirrors the serve loop's wait-through-suspension —
+	// WaitChainIdle after Run returns (bounded by the same overall wait), so a
+	// mid-stage ask's parked chain completes before the harness asserts.
+	if !r.WaitChainIdle(ctx, sessionID) {
+		t.Fatalf("stage prompt %q: the engine chain did not go idle within the overall wait "+
+			"(a parked ask never resolved, or a chain hung)", text)
+	}
 }
 
 // opsxRunnerSeam adapts sessionTurnRunner to evalharness.RunnerSeam (the
@@ -273,8 +281,18 @@ type opsxRunnerSeam struct {
 func (o opsxRunnerSeam) RunPrompt(ctx context.Context, sessionID, text string) error {
 	_, err := o.r.Run(ctx, sessionID, &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: text}})
+	if err != nil {
+		return err
+	}
 
-	return err
+	// 13-00: wait through suspension exactly as the serve turn loop's parked
+	// chain does — the flagship scenario's expected chain completes through
+	// asks; the seam never re-drives stages (that would fake zero-continue).
+	if !o.r.WaitChainIdle(ctx, sessionID) {
+		return fmt.Errorf("eval seam: the engine chain did not go idle for %s within the ctx bound", sessionID)
+	}
+
+	return nil
 }
 
 func (o opsxRunnerSeam) TranscriptLines(sessionID string) ([]session.Line, error) {
