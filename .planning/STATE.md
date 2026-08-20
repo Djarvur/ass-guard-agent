@@ -5,15 +5,15 @@ milestone_name: ACP Early Adoption
 current_phase: 12
 current_phase_name: product-functional-completeness
 status: ready
-stopped_at: Completed 12-07-PLAN.md — the cron quartet + firing engine + FULL completeness gate (WINDOWS #3 CLOSED); 12-08 remains
-last_updated: "2026-08-20T13:00:00.000Z"
+stopped_at: Completed 12-08-PLAN.md — PHASE 12's PLANS ALL EXECUTED (29/33 incl. Phase 14); the eval net's first-green BLOCKED on pattern drift (Blockers/Concerns)
+last_updated: "2026-08-20T15:30:00.000Z"
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 33
-  completed_plans: 28
+  completed_plans: 29
 last_activity: 2026-08-20
-last_activity_desc: 12-07 executed — cron quartet over the real atomic per-project store; ClaimForFire exactly-once engine-driven firings (queue-behind-active-turn); WINDOWS #3 client-mirror fixed; FULL catalog-completeness gate green (zero non-mcp dead ends)
+last_activity_desc: 12-08 executed — the three-layer eval net (extracted harness + pass@k suite + D-03 mise gate/detector); its first live runs CAUGHT real pattern-table drift (first green blocked, evidence preserved)
 ---
 
 # State: ass-guard-agent (working name)
@@ -27,7 +27,8 @@ See: .planning/PROJECT.md (updated 2026-08-14)
 ## Current Position
 
 Phase: 12 (product-functional-completeness) — READY
-Plan: 7/8 executed (12-01..12-07 done); 12-08 (the eval net) is the LAST plan
+Plan: 8/8 executed (12-01..12-08 ALL DONE — the phase's plan set complete; Phase-12 verification/closure is the manager's)
+Status addendum: 12-08 COMPLETE 2026-08-20 — the behavioral-eval regression net EXISTS end-to-end: internal/evalharness (the Phase-8 E2E machinery extracted importable; the runtime gated tests re-pointed at it — extraction proof), internal/evalsuite (harness-owned assertion keys, pass@k+pass@1 scoring, JSON artifacts, the loud gate skip, the embedded scenarios/ = Phase-13's add-a-JSON extension point), the D-03 mise surface (eval-gate k=1 / eval-deep k=3 / eval-check-changed; ci UNTOUCHED), the change-class detector w/ selftest + CI hook. THE FIRST LIVE RUNS ARE THE NET'S OPENING CATCHES: pattern-table drift vs the current model (3 runs, 3 chain shapes — see Blockers/Concerns; first green blocked, evidence /tmp/eval-net-evidence/12-08-first-runs/, assertions untouched). WINDOWS #8/#9 recorded; #5's expected flip is NOT in this set (the cache-probe fix is 14-03's post-adoption queue).
 Status addendum: 12-07 COMPLETE 2026-08-20 — cron real end-to-end: the quartet over the atomic per-project store (every form documented corpus_absent — the 12-05 harvest caught zero successful cron calls; zcode's CronList zod defect NOT mimicked); ClaimForFire exactly-once firings as ENGINE-DRIVEN serialized turns (queue-behind-active-turn, catch-up once with the missed-window note, audit provenance, automation StartedBy); CronUpdate added to the embedded core (D-16 pin 19→20 dated); WINDOWS #3 CLOSED (session-lifetime chunk forwarder — server-driven turns mirror to the client); the FULL catalog-completeness gate green — ZERO non-mcp dead ends. Race battery caught + killed a pre-existing sessions-map race (Rule 1).
 Status addendum: 12-03 COMPLETE 2026-08-20 — the extractor is delta-aware (messageOffset window assembly, per-turn aggregation, assembled-tool_use backbone merged with response views): WINDOWS #6 CLOSED with live evidence (7 turns / 0 empty-expectation over the live current captures; BEFORE: 6-empty simulation, 12-05's 12/36 record); RunSuite gives each replayed turn an isolated scratch (fixture-snapshot > base > fresh); no thresholds/baselines moved (instrument-only, Pitfall 18).
 Status: 12-05 COMPLETE 2026-08-20 — the D-04 re-record executed LIVE (4 capture passes against zcode 0.16.3; qualifying session 38 recs/81 tools/79→80→79): the committed fixture zcode-recaptured-2026-08.json pins every deferred-tool family capture-pinned or honestly corpus_absent with full hunts; ACP-07's Bash timeout + <persisted-output> truncation forms + the answered-ask pairing form IMPLEMENTED from the capture; NEW ACP-02 evidence (zcode's plan mode is a runtime-level mutating-tool gate, refusal forms captured). WINDOWS #6 (12-03 extractor re-run) + #7 (rollout rotation — immediate-snapshot rule) recorded.
@@ -35,7 +36,7 @@ Status addendum: 12-04 COMPLETE 2026-08-20 — plan pair on the 12-01 ask seam +
 Status addendum: 12-06 COMPLETE 2026-08-20 — the TaskRegistry (capped/bounded/reaped-on-close) behind the CAPTURED start + not_ready forms; the completeness gate proves every core tool outside the cron quartet + the documented by-design routes is live. THE ADOPTION LINE IS HERE: everything above it is done (14 → 12-01/02 → 12-05/04/06); the operator begins daily ACP use (v1.1 completion bar — an OPERATOR ACTION, not a plan).
 Next action (operator): start daily ACP use. Next action (agent, post-adoption): execute 12-03 Residuals open in WINDOWS.md: #3 timer-resume chunks not client-mirrored (route: 12-07), #5 standing cache-probe FAIL (post-adoption), #6 extractor zero-target re-run (12-03), #7 rollout-snapshot rule.
 
-Progress: [█████████] 85% (28/33 plans · 4/5 phases)
+Progress: [█████████] 88% (29/33 plans · 4/5 phases)
 
 ## Performance Metrics
 
@@ -46,6 +47,7 @@ Progress: [█████████] 85% (28/33 plans · 4/5 phases)
 
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
+| Phase 12 P08 | 150min | 2 tasks | 8 files |
 | Phase 12 P07 | 130min | 2 tasks | 13 files |
 | Phase 12 P03 | 50min | 2 tasks | 5 files |
 | Phase 12 P06 | 88min | 2 tasks | 8 files |
@@ -113,6 +115,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 None yet.
 
 ### Blockers/Concerns
+
+- [Phase 12 / 12-08, OPEN 2026-08-20 — THE EVAL GATE'S FIRST GREEN IS BLOCKED ON PATTERN-TABLE DRIFT (a real finding by the net's own opening runs)]: three live runs of the flagship scenario (real binary + real model via the operator's repo config creds), three chain shapes: run 1 stalled after explore (decisions=[nothing]); run 2 SUSPENDED on a real AskUserQuestion at the archive stage (asks became real in 12-01; the Phase-8 proof predates that — the ask tool was then a no-implementation stub) — fixed-by-configuration with askTimeout=45s on the E2E runners (D-01's documented hands-off mode, NOT an assertion weakening); run 3 chained explore→propose→apply then the apply turn's ending re-matched the →apply injection 8 times (the re-fire budget cap stopped it). DIAGNOSIS: the 08-06 seeded stage-transition patterns have drifted against the current model's phrasing. Safety pins held everywhere (budget cap, no-chain-suspension, full audits). EVIDENCE: /tmp/eval-net-evidence/12-08-first-runs/ (both suite artifacts + the loop transcript + the README). FIX ROUTE (operator decision): capture-informed re-tuning of the stage-transition patterns — a small Phase-12 residual or the Phase-13 opener. Run command: mise eval-gate. WINDOWS #8 (unrun-verify) + #9 (deviation) carry it.
 
 - [Phase 12 / 12-01 Task 3, RESOLVED 2026-08-19 — operator witness APPROVED (was the blocking live-serve checkpoint): both legs PASS (leg 1 session d9f98023: reply "ristretto" landed verbatim as the tool result `User has answered your questions: "ristretto"`, model proceeded on it with real work; leg 2 session e253bfbd: +30.000s timeout fired the non-answer form, the resumed turn correctly declined to touch code). The witness's ONE finding — the rendered ask surface never reached the live client wire — was fixed in `1b38e3d`: the Writer's decoded-newline transport guard (framer.go containsDecodedNewline, v1.0) silently drops newline-carrying frames; the surface now renders single-line, pinned by TestAskWiring_ServerLevelSurface through the REAL acp.Server. The same guard ALSO drops the model's own newline-carrying text chunks (pre-existing; 9 dropped in leg 1) — recorded in WINDOWS.md + deferred-items.md for the operator. Original checkpoint text retained below for archaeology]: all CODE work is done + `mise ci` green (RED `99663e0` → T1 GREEN `8a909f2` → T2 RED `8ffe40a` → T2 GREEN `4edd91a` → lint `e45d2ae`): AskBroker suspension/resume (D-01 timer default 10m, 0=block-forever), captured answered form + corpus-absent non-answer fixture, engine ActionAsk no-chain pin, sessionFor wiring, reply-as-tool-result routing, `--ask-timeout` flag. What offline proof CANNOT prove: a LIVE serve session where the real model asks, the OPERATOR answers from a real ACP client (Zed), and the reply lands as the tool result. AWAITED FROM THE OPERATOR: (leg 1) `export ZAI_API_KEY=<GLM Coding Plan key>`, connect Zed (or any ACP client) to `/tmp/ask-live-evidence/ass-guard acp serve --work-dir /tmp/ask-live-scratch` (binary prebuilt; registry/`docs/recapture-runbook.md` path also works), prompt: "I need to add a cache to this project — ask me which cache library to use before touching code", verify the question+options render in the client AND the turn's response completes (no stuck spinner), reply with an option in plain text, verify the model's next message acknowledges YOUR answer; (leg 2, optional D-01 hands-off proof) repeat with `--ask-timeout 30s` WITHOUT answering — after ~30s the model receives the non-answer and proceeds/declines on its own. EVIDENCE the continuation collects on resume: the scratch session's transcript lines under `/tmp/ask-live-scratch/.ass-guard/` (ask_suspended record + tool_result carrying the answer verbatim), the engine_decision line (action=ask), copied to `/tmp/ask-live-evidence/`; then SUMMARY + state advance. Resume signal per the plan: "approved" (both legs), "approved-main" (leg 1 only — record the timeout-leg residual), or a failure description.
 

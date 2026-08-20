@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 2
+open_count: 4
 waived_count: 0
 fixed_count: 5
-total_count: 7
-last_updated: 2026-08-20T12:37:47.286Z
+total_count: 9
+last_updated: 2026-08-20T13:29:34.929Z
 ---
 
 # Broken Windows Ledger
@@ -22,6 +22,8 @@ last_updated: 2026-08-20T12:37:47.286Z
 | 5 | 14 | deviation | cmd/ass-guard/parity.go |  | Standing cache probe FAIL on every parity run: placement-vs-pin reports the routed system-class cache_control emission gap (14-03 CC-1, post-adoption queue) — expected verdict, flips green when the TextBlock format fix lands | open |  | 2026-08-19T19:13:00.378Z |  |
 | 6 | 12 | unrun-verify | internal/parity/replay.go |  | 12-05 Behavior-4 zero-target deferred to 12-03 (post-adoption): the extractor decomposition ran on the fresh capture with the CURRENT extractor (36 turns / 12 empty-expectation vs the drift baseline 6/13) — the delta-aware fix + the zero-empty acceptance re-runs over the committed capture when 12-03 executes | fixed |  | 2026-08-20T00:02:29.871Z | 2026-08-20T11:37:21.920Z |
 | 7 | 12 | deviation | tools/zcode-recapture/harvest-deferred-forms.mjs |  | 12-05: the primary capture rollout rotated off ~/.zcode/cli/rollout/ mid-harvest (D-04 loss class, live repeat) — unique families pinned verbatim in the committed fixture; supplementary session snapshot was /tmp-only. Future harvests must snapshot the rollout file IMMEDIATELY after each live pass | open |  | 2026-08-20T00:02:30.135Z |  |
+| 8 | 12 | unrun-verify | cmd/ass-guard/evalsuite_bridge_test.go |  | 12-08: the eval gate's FIRST GREEN is blocked on pattern-table drift — three live runs, three chain shapes (run1 stall after explore; run2 archive-stage ask suspension; run3 apply self-injection x8 to the budget cap; evidence /tmp/eval-net-evidence/12-08-first-runs/). The NET itself is complete and its opening catches are real findings. Run: mise eval-gate. Fix route: capture-informed re-tuning of the 08-06 stage-transition patterns (operator decision) | open |  | 2026-08-20T13:29:34.742Z |  |
+| 9 | 12 | deviation | cmd/ass-guard/e2e_opsx_test.go |  | 12-08 finding: the Phase-8 flagship proof predates REAL asks (12-01) — a mid-chain AskUserQuestion now suspends the chain at the no-chain-suspension pin; the E2E runners carry askTimeout=45s (D-01's documented hands-off mode: the bounded timeout returns the capture-shaped non-answer and the model proceeds) | open |  | 2026-08-20T13:29:34.929Z |  |
 
 ````json
 [
@@ -107,6 +109,30 @@ last_updated: 2026-08-20T12:37:47.286Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-08-20T00:02:30.135Z",
+    "resolved_at": null
+  },
+  {
+    "id": 8,
+    "kind": "unrun-verify",
+    "phase": "12",
+    "file": "cmd/ass-guard/evalsuite_bridge_test.go",
+    "line": null,
+    "description": "12-08: the eval gate's FIRST GREEN is blocked on pattern-table drift — three live runs, three chain shapes (run1 stall after explore; run2 archive-stage ask suspension; run3 apply self-injection x8 to the budget cap; evidence /tmp/eval-net-evidence/12-08-first-runs/). The NET itself is complete and its opening catches are real findings. Run: mise eval-gate. Fix route: capture-informed re-tuning of the 08-06 stage-transition patterns (operator decision)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-20T13:29:34.742Z",
+    "resolved_at": null
+  },
+  {
+    "id": 9,
+    "kind": "deviation",
+    "phase": "12",
+    "file": "cmd/ass-guard/e2e_opsx_test.go",
+    "line": null,
+    "description": "12-08 finding: the Phase-8 flagship proof predates REAL asks (12-01) — a mid-chain AskUserQuestion now suspends the chain at the no-chain-suspension pin; the E2E runners carry askTimeout=45s (D-01's documented hands-off mode: the bounded timeout returns the capture-shaped non-answer and the model proceeds)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-20T13:29:34.929Z",
     "resolved_at": null
   }
 ]
