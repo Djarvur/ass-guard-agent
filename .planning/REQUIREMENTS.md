@@ -56,9 +56,9 @@
 
 *(The operator split 2026-08-16: "make it working with openspec." Phase 8 proved the flagship loop — `explore → propose → apply → archive` — zero-continue against the real binary; the rest of the toolkit's command matrix is unproven. Absorbs ex-ACP-09.)*
 
-- [ ] **OS-01**: The expanded OpenSpec command matrix — `new / continue / ff / verify / bulk-archive / onboard` — drives E2E through ass-guard against the real openspec binary, happy and fixable-failure paths (the `/opsx` beyond the proven loop)
-- [ ] **OS-02**: Zero-continue chaining covers the expanded matrix — engine pattern seeds / dual-signal rows for the new command handoffs, with the structural-safety discipline unchanged (assistant-role-only matching, unmatched ⇒ nothing); interactive dead-ends in the matrix surface via `AskUserQuestion` (ACP-01) instead of stalling the chain — the Phase-8 stage-4 residual class, now with a tool-shaped route
-- [ ] **OS-03**: The Phase-12 eval suites are extended with per-command scenario suites for the expanded matrix (pass@k, real binary, scratch project), running in the same re-run gate
+- [x] **OS-01**: The expanded OpenSpec command matrix — `new / continue / ff / verify / bulk-archive / onboard` — drives E2E through ass-guard against the real openspec binary, happy and fixable-failure paths (the `/opsx` beyond the proven loop) *(verified 2026-08-21 — 13-VERIFICATION SC-1 PASS: 14 gated test functions in e2e_opsx_matrix_test.go [6 happy + 6 fixable + 2 chain legs], 12 captures committed with provenance headers, per-command E2E re-proven by the 13-04 suite batch 12/12 k=1; divergences documented loud, not silent)*
+- [x] **OS-02**: Zero-continue chaining covers the expanded matrix — engine pattern seeds / dual-signal rows for the new command handoffs, with the structural-safety discipline unchanged (assistant-role-only matching, unmatched ⇒ nothing); interactive dead-ends in the matrix surface via `AskUserQuestion` (ACP-01) instead of stalling the chain — the Phase-8 stage-4 residual class, now with a tool-shaped route *(verified 2026-08-21 — 13-VERIFICATION SC-2 PASS: 13-00's engine-visible ask resume pinned by named tests; both chain legs green under the verifier's own runs with continue decisions + provenance asserted from real transcripts; safety re-pins green with the expanded rows; 13-03 advisory battery green through the real acp.Server)*
+- [x] **OS-03**: The Phase-12 eval suites are extended with per-command scenario suites for the expanded matrix (pass@k, real binary, scratch project), running in the same re-run gate *(verified 2026-08-21 — 13-VERIFICATION SC-3 PASS: 12 scenario files + flagship, FULL batch pass@1 TRUE 12/12 [artifact eval-20260820-202612-k1.json]; TestEvalSuite_Matrix_Gated gate surface, mise ci unchanged; failure attribution by scenario id proven by the preserved RED run)*
 
 ## Moved to v1.2 (operator re-scope 2026-08-16)
 
@@ -135,9 +135,9 @@ Which phases cover which requirements. Filled during roadmap creation (2026-08-1
 | EARLY-04 | Phase 14 | Complete |
 | EARLY-05 | Phase 14 | Complete |
 | EARLY-06 | Phase 14 | Complete |
-| OS-01 | Phase 13 | Pending (absorbs ex-ACP-09; post-adoption continuation) |
-| OS-02 | Phase 13 | Pending |
-| OS-03 | Phase 13 | Pending |
+| OS-01 | Phase 13 | Complete (13-VERIFICATION SC-1; 12 legs + captures + per-command eval re-proof) |
+| OS-02 | Phase 13 | Complete (13-VERIFICATION SC-2; chain legs re-proven live by the verifier) |
+| OS-03 | Phase 13 | Complete (13-VERIFICATION SC-3; 12 suites green k=1, same re-run gate) |
 | TG-01 | v1.2 pool (ex-Phase 10) | Deferred |
 | TG-02 | v1.2 pool (ex-Phase 10) | Deferred |
 | TG-03 | v1.2 pool (ex-Phase 10) | Deferred |
@@ -155,3 +155,4 @@ Which phases cover which requirements. Filled during roadmap creation (2026-08-1
 *Updated: 2026-08-18 — early-adoption re-order: Phase 14 Adoption Readiness added (EARLY-01..06, the full other-agents-analysis disposition — operator confirmed all six); Phase 12's waves split around the adoption line (12-01/02/05/04/06 pre-adoption; 12-03/07/08 post); Phase 13 post-adoption; 30/30 mapped; milestone renamed v1.1 ACP Early Adoption*
 *Updated: 2026-08-19 — new-analysis disposition (borrows #13-15 from `cb3ab50`): no new requirements; #15 census → EARLY-06 input, #13 drift-warning → EARLY-03 input with the full gate in 12-08, #14 outcome store → v1.2 pool; adoption line unchanged (30/30 mapped)*
 *Updated: 2026-08-20 — Phase 12 closed (verification 8/9): ACP-02..08 verified per 12-VERIFICATION; ACP-08 PARTIAL by disposition — machinery complete, first green deferred to Phase 13 exit (manager ruling 2026-08-20, flagged for retroactive operator confirmation)*
+*Updated: 2026-08-21 — Phase 13 closed + v1.1 milestone COMPLETE: OS-01..03 verified per 13-VERIFICATION (3/3 PASS); ACP-08's deferred first-green discharged (flagship green ×3, WINDOWS #8/#9 fixed); remaining open pre-existing rows: AUD-01..05 (Phase 9 closed 2026-08-18 — verifier PASS, UAT 3/4 accepted; cells not flipped at that close) and WINDOWS-routed #5/#7*

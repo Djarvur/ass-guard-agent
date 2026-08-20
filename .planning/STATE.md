@@ -4,16 +4,16 @@ milestone: v1.1
 milestone_name: ACP Early Adoption
 current_phase: 13
 current_phase_name: openspec-workflow-completion
-status: executing
-stopped_at: 13-04 COMPLETE 2026-08-20 — PHASE 13's FIVE PLANS DONE (hard stop per the manager mission; verification is the manager's)
-last_updated: "2026-08-20T22:10:00.000Z"
+status: complete
+stopped_at: v1.1 MILESTONE COMPLETE 2026-08-21 (34/34 plans, 5/5 phases; Phase 13 closed verification 3/3)
+last_updated: "2026-08-20T21:20:00.000Z"
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 34
   completed_plans: 34
-last_activity: 2026-08-20
-last_activity_desc: 13-04 executed (the 12-scenario per-command eval net, all green at k=1) — Phase 13 complete
+last_activity: 2026-08-21
+last_activity_desc: v1.1 milestone complete — Phase 13 closed (13-VERIFICATION 3/3 PASS); 5/5 phases, 34/34 plans
 ---
 
 # State: ass-guard-agent (working name)
@@ -22,21 +22,15 @@ last_activity_desc: 13-04 executed (the 12-scenario per-command eval net, all gr
 
 See: .planning/PROJECT.md (updated 2026-08-14)
 **Core value:** Outgoing requests to the model provider must be structurally indistinguishable from the mimicked agent's (zcode first) — *validated v1.0 (Phase-1 A/B parity)*
-**Current focus:** ADOPTION LINE reached 2026-08-20 — the pre-adoption minimal set complete (12-01/02/05/04/06 + Phase 14); awaiting the operator daily-use start
+**Current focus:** v1.1 COMPLETE 2026-08-21 — the adoption line was crossed 2026-08-20 and the post-adoption continuation finished in use; awaiting the operator's retroactive ratifications + milestone lifecycle choice
 
 ## Current Position
 
-Phase: 13 (openspec-workflow-completion) — EXECUTING
-Plan: 5/5 complete (13-04 COMPLETE 2026-08-20: 12 per-command scenarios [6 happy + 6 fixable, D-04] with the openspec_profile + fixture schema keys [unknown keys still rejected], the change_dir + fixable_recovery named keys, 5 deterministic fixture seeders, BootstrapExpandedScratch [guard + FAIL-LOUD], TestEvalSuite_Matrix_Gated [per-suite via MATRIX_SUITE_ID; mise eval-gate stays flagship-scoped], attribution by scenario id pinned offline, the selftest green [seeded-config inside the existing turn-behavior class]; the FULL matrix suite GREEN at k=1 — 1450s, artifact eval-20260820-202612-k1.json + /tmp/eval-matrix-evidence-full2.log. PHASE 13 EXECUTION COMPLETE — hard stop per the manager mission: NO phase close, NO milestone lifecycle, NO v1.2 work; the manager handles verification.)
-Plan: 4/5 complete (13-03 COMPLETE 2026-08-20: the unmatched-ending advisory — ClassifyQuestionEnding [2 capture-anchored classes] + SignalAdvisory in Decide's unmatched cell ONLY [ActionNothing preserved] + the serve wiring [wrapper-held dedupe, the EngineDecision collector subscribed before the turn, the post-done direct emit]; the lever NOT applied [the corpus shows AskUserQuestion usage] so the gated re-proof not owed; the dead-end scan folded into the onboard leg. TDD: 352d90b RED → c65faa9/9639d20 GREEN; mise ci green.)
-Plan: 3/5 complete (13-02 COMPLETE 2026-08-20: post-verify-handoff seeded from three observed closings [report header + blocking consequence — verify-exclusive, clean reports don't chain] → /opsx:continue, the D-07 tracer leg GREEN; post-new-continue-handoff [new + continue's own template phrase] walks the artifact sequence, the pass-2 leg GREEN 483s; ff/bulk/onboard dispositions documented in-table [archive shield / unmatched terminus / the D-02 question class]; safety batteries re-ran green with the expanded rows loaded; mise ci green with two D-06-documented load-flake singles.)
-Plan: 2/5 complete (13-01 COMPLETE 2026-08-20: Task 1's gate re-verified GREEN on the 13-00 tree (artifact eval-20260820-163220-k1.json); the profile-guard primitive committed TDD-order from the parked draft; the 12-leg matrix green — 6 happy + 6 fixable with deterministic probed triggers, 12 capture files committed under testdata/opsx-e2e-matrix/ (the D-03 pass-1 + fixable corpus 13-02/13-03 consume), operator config byte-identical after every run; divergences recorded: verify is report-driven [no CLI validate step — capture-rescoped], wrong-name candidates produce the D-02 ask class). See 13-01-SUMMARY.md + the Concerns entry for the config-telemetry incident.)
-Plan: 1/5 complete (13-00 COMPLETE 2026-08-20: the engine-visible ask resume per the manager Rule-4 route 1 — session settle seam + engine ask-wait + serve park + harness mirror; mise eval-gate flagship FIRST GREEN through asks, artifact .ass-guard/eval/eval-20260820-161520-k1.json; both Phase-13 blockers closed; ACP-08's deferred exit evidence discharged). Next: 13-01 (Task 1 re-runs the SAME gate — already green via 13-00; then Tasks 2-4: the parked draft review + the 12-leg matrix), then 13-02..13-04. (13-00 added 2026-08-20 as the wave-0 gap closure for the decided fix route); [SUPERSEDED 2026-08-20 — 13-00 landed; the gate is GREEN and 13-01 Task 1 re-verifies it:] 13-01 Task 1 PARTIALLY EXECUTED: checker warning fixes committed (d06d9f7), the drift evidence copied in-repo + the 08-06 stage-transition rows RE-TUNED and proven discriminating (8c56b29 — the 12-08 apply re-fire loop is FIXED, iter-1 chained explore→propose→apply→archive-injection with full provenance), but mise eval-gate stays RED on a NEWLY DIAGNOSED non-pattern failure class: a mid-chain AskUserQuestion returns stopAsk, engine.Observe exits before deciding, and the dispositioned askTimeout=45s timer fires DETACHED (engine-invisible, after the harness asserted) — the chain dies at any ask (2 of 3 completed runs; see Blockers). Task 2's guard primitive is drafted + lint-clean + offline-green but UNCOMMITTED in the working tree (internal/evalharness/harness.go + profile_guard_test.go) for the continuation. mise ci green at the stop.
-Phase 12 CLOSED 2026-08-20 (verification 8/9, 12-VERIFICATION.md): every catalog tool executes for real (the FULL completeness gate is a permanent regression test — zero `no implementation yet` dead ends), result forms capture-pinned (the live re-record fixture), plugin discovery live-proven; ACP-08 PARTIAL by disposition — the eval net exists/gates and its opening runs CAUGHT real pattern-table drift, but the flagship suite's FIRST GREEN is Phase 13's EXIT evidence (manager ruling 2026-08-20, FLAGGED for retroactive operator confirmation — see Decisions + Blockers). ADOPTION LINE status: the pre-adoption minimal set is complete; the operator's daily-use start remains v1.1's completion bar.
-Next action (agent): execute Phase 13 — 13-00 FIRST (the wave-0 gap closure: engine-visible ask resume per the decided fix route; exit = mise eval-gate flagship green through asks), then 13-01 (its amended opener: copy the drift evidence in-repo, capture-informed re-tuning of the EXISTING 08-06 stage-transition rows in internal/openspec/seeded.toml, exit = mise eval-gate flagship green), then the expanded-matrix E2E legs; 13-02 harvests 13-01's captures. Do NOT start before the checker re-pass on the amended 13-01 is recorded.
-Next action (operator): begin/continue daily ACP use; retroactively confirm (or reverse) the eval-net disposition — 12-VERIFICATION human item 1.
+**MILESTONE COMPLETE — v1.1 ACP Early Adoption closed 2026-08-21.** All five phases complete (8, 9, 12, 13, 14 — Phases 10/11 parked to the v1.2 pool), 34/34 plans. The milestone's completion bar — the operator begins daily ACP use — was met at the adoption line 2026-08-20, and the post-adoption continuation (12-03/07/08, Phase 13) finished in use. Phase 13 closed on 13-VERIFICATION (3/3 criteria PASS, zero PARTIAL/FAIL): the verifier independently re-ran both zero-continue chain legs against the real binary + real model (57.3s / 162.1s), the full 13-00/13-03 pin batteries, all offline suites, and read — not trusted — the gate artifacts and the manager's same-day certifications. Delivered across the milestone: the zero-continue product proof (Phase 8), the redacted decision-explaining audit + parity re-capture (Phase 9), every catalog tool executing for real with the behavioral-eval regression net (Phase 12), the adoption-readiness backstops (Phase 14), and the full OpenSpec command matrix hands-off incl. through model asks (Phase 13 — ACP-08's deferred first-green discharged: flagship green ×3, eval-20260820-161520 / 163220 / 205550-k1.json; WINDOWS #8/#9 fixed, open_count 2 with #5/#7 routed). Verified milestone gates: mise ci green + eval-gate flagship green k=1 (manager-certified 2026-08-20).
 
-Progress: [██████████] 100% (34/34 plans · 4/5 phases)
+Awaiting operator: (1) retroactive ratification of the two standing flags (eval-net disposition → Phase-13 opener routing; route-1 ruling → engine-visible ask resume) — overturn routes recorded, work delivered and verified either way; (2) milestone lifecycle choice: retrospective + v1.2 pool kickoff (ROADMAP v1.2 section lists the staged pool).
+
+Progress: [██████████] 100% (34/34 plans · 5/5 phases)
 
 ## Performance Metrics
 
@@ -194,6 +188,6 @@ Carried from v1.0 close — dispositioned into v1.1 scope:
 
 ## Session Continuity
 
-Last session: 2026-08-20T01:03:11.057Z
-Stopped at: Completed 12-06-PLAN.md — the pre-adoption minimal set done; ADOPTION LINE next (operator action)
+Last session: 2026-08-20T21:20:00.000Z
+Stopped at: v1.1 MILESTONE COMPLETE 2026-08-21 — Phase 13 closed (13-VERIFICATION 3/3 PASS); awaiting the operator's retroactive ratifications + milestone lifecycle choice
 Resume file: None
