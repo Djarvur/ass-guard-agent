@@ -40,13 +40,14 @@ func runTool(t *testing.T, catalog *toolcat.Catalog, name, input string) string 
 		t.Fatalf("%s has no Execute (the dead-end this plan kills)", name)
 	}
 
-	out, err := tool.Execute(context.Background(), json.RawMessage(input))
-	if err != nil {
-		t.Fatalf("%s execute: %v", name, err)
-	}
+	// The house executor convention: structured failures return BOTH the
+	// JSON error form and a non-nil error — the payload is the tool result.
+	out, _ := tool.Execute(context.Background(), json.RawMessage(input))
 
 	var s string
-	if uerr := json.Unmarshal(out, &s); uerr == nil {
+
+	uerr := json.Unmarshal(out, &s)
+	if uerr == nil {
 		return s
 	}
 
@@ -65,15 +66,16 @@ func TestCronQuartet_EndToEnd(t *testing.T) {
 	// Create (delayMinutes route — the schema's preferred relative form).
 	out := runTool(t, catalog, "CronCreate",
 		`{"delayMinutes":5,"prompt":"remind me to stretch","title":"stretch reminder"}`)
-	if want := "cron_"; len(out) < len(want) || out[:len(want)] != want {
-		t.Fatalf("CronCreate result = %q, want an id-bearing ack", out)
-	}
 
 	created := store.List()
 	if len(created) != 1 || created[0].Prompt != "remind me to stretch" {
-		t.Fatalf("store after create = %+v", created)
+		t.Fatalf("store after create = %+v (ack was %q)", created, out)
 	}
+
 	id := created[0].ID
+	if !contains(out, id) {
+		t.Fatalf("CronCreate result = %q, want it to carry the created id %s", out, id)
+	}
 
 	// List includes it with its schedule.
 	listOut := runTool(t, catalog, "CronList", `{}`)
@@ -82,8 +84,10 @@ func TestCronQuartet_EndToEnd(t *testing.T) {
 	}
 
 	var entries []map[string]any
-	if err := json.Unmarshal([]byte(listOut), &entries); err != nil {
-		t.Fatalf("CronList output not a JSON array of entries: %v (%s)", err, listOut)
+
+	lerr := json.Unmarshal([]byte(listOut), &entries)
+	if lerr != nil {
+		t.Fatalf("CronList output not a JSON array of entries: %v (%s)", lerr, listOut)
 	}
 
 	if len(entries) != 1 || entries[0]["id"] != id {
@@ -135,7 +139,7 @@ func TestCronCreate_Validation(t *testing.T) {
 
 	for _, tc := range cases {
 		out := runTool(t, catalog, "CronCreate", tc.input)
-		if want := "croncreate: "; len(out) >= len(want) && out[:len(want)] != want {
+		if !contains(out, "croncreate") || !contains(out, "\"error\"") {
 			t.Errorf("%s: result = %q, want the structured error form", tc.name, out)
 		}
 	}
@@ -171,12 +175,12 @@ func TestCronErrors_UnknownID(t *testing.T) {
 
 	catalog, _ := cronFixture(t)
 
-	if out := runTool(t, catalog, "CronUpdate", `{"id":"cron_missing","title":"t"}`); out == "" {
-		t.Error("CronUpdate(unknown) returned empty")
+	if out := runTool(t, catalog, "CronUpdate", `{"id":"cron_missing","title":"t"}`); !contains(out, "\"error\"") {
+		t.Errorf("CronUpdate(unknown) = %q, want the structured error", out)
 	}
 
-	if out := runTool(t, catalog, "CronDelete", `{"id":"cron_missing"}`); out == "" {
-		t.Error("CronDelete(unknown) returned empty")
+	if out := runTool(t, catalog, "CronDelete", `{"id":"cron_missing"}`); !contains(out, "\"error\"") {
+		t.Errorf("CronDelete(unknown) = %q, want the structured error", out)
 	}
 }
 
