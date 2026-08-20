@@ -5,15 +5,15 @@ milestone_name: ACP Early Adoption
 current_phase: 12
 current_phase_name: product-functional-completeness
 status: ready
-stopped_at: Phase 14 closed 2026-08-19 (verification 39/39 — all four human items resolved: live rollback E2E PASS, shaper audit + compaction routing signed off, goal wording accepted; WINDOWS #4 fixed)
-last_updated: "2026-08-19T22:55:00.000Z"
-last_activity: 2026-08-19
-last_activity_desc: Phase 14 close — operator session resolved the verification human items (live E2E + two sign-offs + format ruling)
+stopped_at: Completed 12-05-PLAN.md (re-record fixture + ACP-07 executor upgrades; 12-04 next)
+last_updated: "2026-08-20T00:04:18.011Z"
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 3
   total_plans: 33
-  completed_plans: 23
+  completed_plans: 24
+last_activity: 2026-08-20
+last_activity_desc: 12-05 executed — live re-record from zcode 0.16.3 (4 capture passes; Bash timeout + truncation + answered-ask forms implemented; cron/message hunts documented)
 ---
 
 # State: ass-guard-agent (working name)
@@ -22,16 +22,16 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-08-14)
 **Core value:** Outgoing requests to the model provider must be structurally indistinguishable from the mimicked agent's (zcode first) — *validated v1.0 (Phase-1 A/B parity)*
-**Current focus:** Phase 12 — product-functional-completeness (12-05 next; Phase 14 closed 2026-08-19)
+**Current focus:** Phase 12 — product-functional-completeness (12-04 next; 12-05 done 2026-08-20)
 
 ## Current Position
 
 Phase: 12 (product-functional-completeness) — READY
-Plan: 12-05 next (2/8 executed: 12-01, 12-02 done)
-Status: Phase 14 CLOSED 2026-08-19 — verification pass 39/39; the four human items resolved in one operator session (gated live rollback E2E RUN+PASS with real GLM credentials — WINDOWS.md #4 fixed; pi↔shaper audit + compaction-decision routing signed off; MVP goal wording accepted as-is). Phase 13 already planned (4 plans checker-passed, 0 blockers — post-adoption).
-Next action: `/gsd:execute-phase 12` → 12-05 (re-record from live zcode via the archived driver kit — the forms harvest; consumes Phase 14's compaction-decision routing as confirmed) → 12-04 → 12-06 → **ADOPTION LINE** (the operator begins daily ACP use — v1.1's completion bar) → 12-03 → 12-08 → 12-07 → 13. Residuals open in WINDOWS.md: #3 timer-resume chunks not client-mirrored (route: 12-07), #5 standing cache-probe FAIL (flips green when the routed TextBlock cache_control fix lands — post-adoption).
+Plan: 12-04 next (3/8 executed: 12-01, 12-02, 12-05 done)
+Status: 12-05 COMPLETE 2026-08-20 — the D-04 re-record executed LIVE (4 capture passes against zcode 0.16.3; qualifying session 38 recs/81 tools/79→80→79): the committed fixture zcode-recaptured-2026-08.json pins every deferred-tool family capture-pinned or honestly corpus_absent with full hunts; ACP-07's Bash timeout + <persisted-output> truncation forms + the answered-ask pairing form IMPLEMENTED from the capture; NEW ACP-02 evidence (zcode's plan mode is a runtime-level mutating-tool gate, refusal forms captured). WINDOWS #6 (12-03 extractor re-run) + #7 (rollout rotation — immediate-snapshot rule) recorded.
+Next action: `/gsd:execute-phase 12` → 12-04 (plan mode + messaging + session-context reads — NOTE the capture now answers ACP-02's scope question: implement the gate in the captured form) → 12-06 → **ADOPTION LINE** (the operator begins daily ACP use — v1.1's completion bar) → 12-03 → 12-08 → 12-07 → 13. Residuals open in WINDOWS.md: #3 timer-resume chunks not client-mirrored (route: 12-07), #5 standing cache-probe FAIL (post-adoption), #6 extractor zero-target re-run (12-03), #7 rollout-snapshot rule.
 
-Progress: [███████░░░] 70% (23/33 plans · 4/5 phases)
+Progress: [███████░░░] 73% (24/33 plans · 4/5 phases)
 
 ## Performance Metrics
 
@@ -42,6 +42,7 @@ Progress: [███████░░░] 70% (23/33 plans · 4/5 phases)
 
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
+| Phase 12 P05 | 214min | 3 tasks | 20 files |
 | Phase 12 P02 | 40min | 4 tasks | 28 files |
 | Phase 12 P01 | 183min | 3 tasks | 13 files |
 | Phase 14 P01 | 47min | 3 tasks | 10 files |
@@ -57,6 +58,7 @@ Progress: [███████░░░] 70% (23/33 plans · 4/5 phases)
 
 Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecting current work:
 
+- **[12-05 EXECUTED, 2026-08-20] The D-04 re-record route is LIVE-PROVEN:** four capture passes via the archived driver kit against zcode 0.16.3 (protocol undrifted); the qualifying session (38 recs/81 tools/79→80→79) doubles as the forms source. Committed fixture zcode-recaptured-2026-08.json: every deferred-tool family capture-pinned or honestly corpus_absent with full hunts (cron quartet blocked by zcode's OWN runtime plan-mode gate + a reproducible automation zod bug in 0.16.3 headless; SendMessage/TaskStop/ExitPlanMode-approved/ask-non-answer hunts documented). ACP-07's flagship families RESOLVED: Bash timeout form + the <persisted-output> truncation envelope (budget 15000/preview 2000, target-source-verified + capture-consistent) IMPLEMENTED; the answered-ask PAIRING form (question="answer" + continue suffix) replaces 12-01's interim quote. KEY ACP-02 EVIDENCE for 12-04: plan mode in zcode is a RUNTIME-LEVEL mutating-tool gate ('Plan mode only allows read-only, non-destructive tools' + 'changes persistent state' refusals captured) — the 12-04 plan's 'model self-restraint' premise is disproven by the target; the Agent tool result carries the agent_<uuid> SendMessage address. The primary rollout ROTATED OFF mid-harvest (D-04 class live repeat — WINDOWS #7: snapshot immediately); the v4 interaction answer shape ({action:'accept',content:{answer}}) and the held-pending no-self-timeout finding are recorded in the kit README.
 - **[REPLAN 2026-08-19, operator priority ruling — "первый приоритет: как можно скорее дать мне возможность пользоваться агентом; второй: все важное и полезное до начала пользования; третий: вся необходимая функциональность работает и покрыта автотестами" (study the new comparative-analysis data; replan as needed)]:** the new data = commit `cb3ab50` (ECOSYSTEM-AUDIT §1.1 OpenClaude + occ deep-dives, redline 8 amendment; IDEA-LANDSCAPE rows 22-23 + borrows #13-15; SEED-004 triggers extended). **Plan structure CONFIRMED — no re-order**: the 2026-08-18 adoption-line plan already encodes the three priorities exactly (P1 = the pre-adoption minimal set 14→12-05→12-04→12-06; P2 = Phase 14's six YES items; P3 = the post-adoption queue 12-03/12-08/12-07/13, where 12-08 IS the autotest net). The only undecided residue was borrows #13-15, now dispositioned: **#13 nightly-parity gate** NOT pre-adoption (nothing in it is a daily-use dead end or unrecoverable risk; delaying the line for CI automation would violate P1) — cheap zcode-version drift-warning slice → Phase 14 EARLY-03 planning input (parity run already records zcode_version provenance from 09-03), full gate → 12-08 (post-adoption EVAL net), CI automation tail → v1.2; **#14 scheduler outcome store** → v1.2 pool (needs accumulated per-task data; pre-adoption economics already covered by EARLY-05); **#15 surface census** → ADOPTED as a free verification input — EARLY-06's contract inventory cross-checks it, 12-06/12-07 catalog-completeness tests gain it as a coverage manifest (zero new requirement, zero scope growth, 30/30 mapping unchanged). Artifacts updated: ROADMAP (Phase 14 disposition note + Research Flags inputs, 12-08 input note, v1.2 pool), REQUIREMENTS (Phase 14 note + footer), IDEA-LANDSCAPE (#13-15 disposition notes per extension protocol), SEED-004 (disposition recorded). The adoption line does NOT move.
 - **[12-02 SCOPE REVISION, 2026-08-19, operator — "~/.zcode/cli/plugins/ можно игнорировать… есть еще проектный ./.claude/plugins/… обязательно учесть ~/.claude/commands|skills и ./.claude/commands|skills… поддержки ass-guard нет ни в одном популярном ките, поэтому мы будем ставить их для claude code, и должны с ними работать, как с родными… необходимо поддержать agents/, hooks/hooks.json, .mcp.json тоже"]:** ACP-10/12-02 re-scoped. (1) Plugin roots: PROJECT `.claude/plugins/` + USER `~/.claude/plugins/` ONLY — the zcode root is dropped (plugins are installed for Claude Code and consumed as native; the skills/agents listing is dynamic content merged into the captured shape, so the mimicry contract — request structure — is unaffected). (2) Plugin contributions widened from skills/commands to ALL FIVE kinds: skills/, commands/, agents/ (register as spawnable subagent types on the existing PARA machinery; `.claude/agents/` project+user also discovered), hooks/hooks.json (fire at the mapped lifecycle seams — UserPromptSubmit/PreToolUse/PostToolUse/Stop/SubagentStop/SessionStart/SessionEnd — with documented stdin-JSON/stdout/exit-2 semantics; Notification/PreCompact degrade observe-only), .mcp.json (servers through the existing MCP host, lowest merge layer). (3) User + project `.claude/skills|commands|agents/` explicitly first-class in the precedence matrix. Precedence chain: ass-guard root > project `.claude/` > user `.claude/` > project `.claude/plugins/` > user `~/.claude/plugins/`. Still read-only everywhere, zero new deps, no lifecycle (PLUG-03 stays v1.2). 12-02-PLAN.md rewritten (4 tasks, ~95k tokens est.); ACP-10, ROADMAP criterion 9 + wave line, 12-CONTEXT D-49 discretion note updated. Re-run the plan-checker at dispatch time (scope grew past the checker-passed 2026-08-17 shape).
 
@@ -167,6 +169,6 @@ Carried from v1.0 close — dispositioned into v1.1 scope:
 
 ## Session Continuity
 
-Last session: 2026-08-19T20:39:57.753Z
-Stopped at: Completed 14-06-PLAN.md (EARLY-06 tool contract — Phase 14 complete, 6/6)
+Last session: 2026-08-20T00:04:17.964Z
+Stopped at: Completed 12-05-PLAN.md (re-record fixture + ACP-07 executor upgrades; 12-04 next)
 Resume file: None

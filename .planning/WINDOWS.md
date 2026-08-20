@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 2
+open_count: 4
 waived_count: 0
 fixed_count: 3
-total_count: 5
-last_updated: 2026-08-19T22:55:00.000Z
+total_count: 7
+last_updated: 2026-08-20T00:02:30.135Z
 ---
 
 # Broken Windows Ledger
@@ -20,6 +20,8 @@ last_updated: 2026-08-19T22:55:00.000Z
 | 3 | 12 | stub | internal/session/ask.go |  | D-01 timer-driven resume: the resumed turn runs server-side and is transcript-recorded, but its chunks are not mirrored to the ACP client (no active Run subscription at fire time); the reply path IS fully client-visible | open |  | 2026-08-19T00:22:32.985Z |  |
 | 4 | 14 | unrun-verify | cmd/ass-guard/checkpoint_test.go |  | Gated live rollback leg TestCheckpointLiveRollback_Gated not executed in plan 14-01 (ZAI_API_KEY absent at run time; test skips loud naming both env gates). Offline battery proves byte-identical restore + user-git-untouched; live run command: ASSGUARD_CHECKPOINT_E2E=1 ZAI_API_KEY=<key> go test ./cmd/ass-guard/... -run TestCheckpointLiveRollback_Gated -count=1 -v | fixed | 260820-live: gated E2E executed with operator ZAI_API_KEY — PASS (15.54s, exit 0): real GLM turn mutated the scratch repo, Store.Restore returned byte-identical workspace, user .git HEAD/index/porcelain unchanged; evidence restoredRef=refs/checkpoints/sess-ckpt-live-turn-001 + transcript_sess-ckpt-live.jsonl (test temp dir); log /tmp/ckpt-live-e2e.log | 2026-08-19T17:58:28.367Z | 2026-08-19T22:55:00.000Z |
 | 5 | 14 | deviation | cmd/ass-guard/parity.go |  | Standing cache probe FAIL on every parity run: placement-vs-pin reports the routed system-class cache_control emission gap (14-03 CC-1, post-adoption queue) — expected verdict, flips green when the TextBlock format fix lands | open |  | 2026-08-19T19:13:00.378Z |  |
+| 6 | 12 | unrun-verify | internal/parity/replay.go |  | 12-05 Behavior-4 zero-target deferred to 12-03 (post-adoption): the extractor decomposition ran on the fresh capture with the CURRENT extractor (36 turns / 12 empty-expectation vs the drift baseline 6/13) — the delta-aware fix + the zero-empty acceptance re-runs over the committed capture when 12-03 executes | open |  | 2026-08-20T00:02:29.871Z |  |
+| 7 | 12 | deviation | tools/zcode-recapture/harvest-deferred-forms.mjs |  | 12-05: the primary capture rollout rotated off ~/.zcode/cli/rollout/ mid-harvest (D-04 loss class, live repeat) — unique families pinned verbatim in the committed fixture; supplementary session snapshot was /tmp-only. Future harvests must snapshot the rollout file IMMEDIATELY after each live pass | open |  | 2026-08-20T00:02:30.135Z |  |
 
 ````json
 [
@@ -81,6 +83,30 @@ last_updated: 2026-08-19T22:55:00.000Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-08-19T19:13:00.378Z",
+    "resolved_at": null
+  },
+  {
+    "id": 6,
+    "kind": "unrun-verify",
+    "phase": "12",
+    "file": "internal/parity/replay.go",
+    "line": null,
+    "description": "12-05 Behavior-4 zero-target deferred to 12-03 (post-adoption): the extractor decomposition ran on the fresh capture with the CURRENT extractor (36 turns / 12 empty-expectation vs the drift baseline 6/13) — the delta-aware fix + the zero-empty acceptance re-runs over the committed capture when 12-03 executes",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-20T00:02:29.871Z",
+    "resolved_at": null
+  },
+  {
+    "id": 7,
+    "kind": "deviation",
+    "phase": "12",
+    "file": "tools/zcode-recapture/harvest-deferred-forms.mjs",
+    "line": null,
+    "description": "12-05: the primary capture rollout rotated off ~/.zcode/cli/rollout/ mid-harvest (D-04 loss class, live repeat) — unique families pinned verbatim in the committed fixture; supplementary session snapshot was /tmp-only. Future harvests must snapshot the rollout file IMMEDIATELY after each live pass",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-20T00:02:30.135Z",
     "resolved_at": null
   }
 ]
