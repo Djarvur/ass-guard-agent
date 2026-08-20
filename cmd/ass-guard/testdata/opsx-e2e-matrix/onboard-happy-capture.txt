@@ -1,0 +1,43 @@
+# opsx matrix onboard-happy-capture (captured 2026-08-20T17:10:44Z, openspec 1.5.0, real binary + real model)
+
+## Welcome to OpenSpec!
+
+I'll walk you through a complete change cycle—from idea to implementation—using a real task in your codebase. Along the way, you'll learn the workflow by doing it.
+
+**What we'll do:**
+1. Pick a small, real task in your codebase
+2. Explore the problem briefly
+3. Create a change (the container for our work)
+4. Build the artifacts: proposal → specs → design → tasks
+5. Implement the tasks
+6. Archive the completed change
+
+**Time:** ~15-20 minutes
+
+Let's start by finding something to work on.
+
+---
+
+## Task Suggestions
+
+I scanned your codebase—a small Go app (`main.go`) with an `add` function that's used exactly once in `main`. Here are good starter tasks:
+
+**1. Add a `subtract` function (Most promising)**
+   Location: `main.go`
+   Scope: ~1 file, ~10 lines
+   Why it's good: Mirrors the existing `add` pattern, perfect size to see the full OpenSpec cycle without getting bogged down.
+
+**2. Add unit tests for `add` (and future math helpers)**
+   Location: new `main_test.go`
+   Scope: ~1 file, ~15 lines
+   Why it's good: The project has zero tests; introduces Go testing plus the spec/scenario format maps directly to test cases.
+
+**3. Handle command-line arguments instead of hardcoded `2, 3`**
+   Location: `main.go`
+   Scope: ~1 file, ~20 lines
+   Why it's good: Turns the scratch app into a real CLI; slightly more involved (flag parsing, error handling).
+
+**4. Something else?**
+   Tell me what you'd like to work on.
+
+Which task interests you? (Pick a number or describe your own)

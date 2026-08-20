@@ -1,0 +1,15 @@
+# opsx matrix bulk-archive-happy-capture (captured 2026-08-20T17:09:01Z, openspec 1.5.0, real binary + real model)
+
+## Bulk Archive Complete
+
+The selection prompt timed out, so per the batch workflow's default I proceeded with all changes. Archived 2 changes:
+
+- matrix-bulk-one → `openspec/changes/archive/2026-08-20-matrix-bulk-one/`
+- matrix-bulk-two → `openspec/changes/archive/2026-08-20-matrix-bulk-two/`
+
+**Spec sync summary:**
+- 0 delta specs synced to main specs — both changes had a delta spec adding the same `### Requirement: batch` (a conflict), but the codebase (`main.go`) only implements an `add` function with no batch-related code, so per the conflict rules neither change's spec was synced.
+- 1 conflict resolved by skipping sync (neither implemented).
+
+**Warnings:**
+- Both changes were missing the optional `design.md` artifact; tasks were complete (1/1) in each, so they were archived anyway.

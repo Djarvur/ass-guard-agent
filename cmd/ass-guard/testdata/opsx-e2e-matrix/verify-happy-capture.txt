@@ -1,0 +1,30 @@
+# opsx matrix verify-happy-capture (captured 2026-08-20T17:05:48Z, openspec 1.5.0, real binary + real model)
+
+## Verification Report: matrix-verify-subj
+
+### Summary
+| Dimension | Status |
+|---|---|
+| Completeness | 0/0 tasks (tasks.md doesn't exist yet); 1/1 requirements implemented |
+| Correctness | 1/1 requirements covered |
+| Coherence | Follows proposal (single function, single call site); no design.md to check |
+
+### What was verified
+
+The only spec requirement — **"summation: the app SHALL sum two numbers"** — is implemented at `main.go:6` (`add(a, b int) int`) and exercised from `main()` at `main.go:7` (`add(2, 3)`), matching the proposal's scope of "one function, one call site."
+
+### Skipped checks
+- **Task completion**: `tasks.md` does not exist (its status is "blocked" pending `design.md`), so there were no checkboxes to verify.
+- **Design adherence**: No `design.md` exists, so this check was skipped.
+
+### Issues by priority
+
+1. **CRITICAL** — none for the implementation itself, but note the workflow is incomplete: `design.md` and `tasks.md` artifacts haven't been created. The change cannot be archived in the normal spec-driven flow until they exist.
+   - Recommendation: run `openspec instructions design --change "matrix-verify-subj"`, then create `design.md` and `tasks.md` (marking the already-implemented work as done), or follow the project's skip policy if these artifacts are optional.
+
+2. **WARNING** — none.
+
+3. **SUGGESTION** — no tests exist for `add`. If scenario coverage matters here, a small test (`add(2,3) == 5`) would cover the spec's requirement. Given the proposal calls this a minimal scratch app, this is optional.
+
+### Final Assessment
+No critical implementation issues — the code matches the spec and proposal. However, **the change is not ready for archive**: `design.md` and `tasks.md` are missing, and the workflow marks `isComplete: false` with tasks blocked on design. Create the remaining artifacts (retroactively documenting the implemented work), then re-verify.

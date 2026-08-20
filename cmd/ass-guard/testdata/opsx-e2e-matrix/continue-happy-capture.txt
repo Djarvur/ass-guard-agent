@@ -1,0 +1,7 @@
+# opsx matrix continue-happy-capture (captured 2026-08-20T16:53:33Z, openspec 1.5.0, real binary + real model)
+
+Created the **proposal** artifact for `matrix-continue-subj` (spec-driven schema, 1/4 complete).
+
+The proposal introduces matrix support to the scratch app: a new `matrix-ops` capability covering a `Matrix` type with construction/validation, element access, equality, addition, scalar multiplication, and dimension-checked matrix multiplication — as an addition alongside the existing scalar `add`, with no breaking changes.
+
+Unlocked next: **design** and **specs** (a spec file for `matrix-ops`). Run `/opsx:continue` to create the next artifact.

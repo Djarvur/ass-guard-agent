@@ -1,0 +1,12 @@
+# opsx matrix ff-happy-capture (captured 2026-08-20T17:26:32Z, openspec 1.5.0, real binary + real model)
+
+## Archive Complete
+
+**Change:** matrix-ff-subj
+**Schema:** spec-driven
+**Archived to:** `openspec/changes/archive/2026-08-20-matrix-ff-subj/`
+**Specs:** ✓ Synced to main specs — the ADDED requirement "Sum feature is verified by tests" from the delta spec is now in `openspec/specs/sum-verification/spec.md`
+
+All artifacts complete (proposal, design, specs, tasks). All 3 tasks complete, none incomplete.
+
+One note: the sync confirmation prompt timed out, so I proceeded with the recommended option (sync before archiving) — the main spec now reflects the change, and the archived delta spec is preserved in the archive if you ever want to reference it.
