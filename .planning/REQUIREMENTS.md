@@ -21,11 +21,11 @@
 
 ### Audit & Parity Re-capture (priority 2-3, merged — adjacent in the operator chain)
 
-- [ ] **AUD-01**: A provider request made during `acp serve` is captured through a single-sourced factory-seam capturer covering both protocol shapes (the existing tracer path refactored onto the same seam — no divergent provider-construction copies)
-- [ ] **AUD-02**: Every serve-path session writes a redacted audit trail — per-session transcript events with correlation IDs (session/turn/request) including `RequestShaped`, plus an optional `--audit-log` mirror (0600, append-only JSONL, rejects stdout as a target)
-- [ ] **AUD-03**: Audit volume is bounded via the body_ref pattern (hash in the event, full body in a capped store) and audit write failures are loud but never fatal to a turn
-- [ ] **AUD-04**: The audit trail records engine decisions (continue / hook / ask / wait, with the matched signal) — the "why did the agent continue" question is answerable from the log alone
-- [ ] **AUD-05**: The zcode parity stability test runs green against a newly pinned divergence-prone capture session, produced via an operator runbook (scripted subagent/MCP-attach/tool-variety workload — not richest-session selection), with the pinned session ID consumed by the test, zcode + extractor versions recorded, thresholds explicitly re-baselined, and the drift report committed before any profile update
+- [x] **AUD-01**: A provider request made during `acp serve` is captured through a single-sourced factory-seam capturer covering both protocol shapes (the existing tracer path refactored onto the same seam — no divergent provider-construction copies) *(verified 2026-08-18 — Phase-9 close: 09-VERIFICATION truth 1 SATISFIED, regression-checked at cfababa — single `BuildWithCapturer` seam, both shapes, `tracerProvider` 0 matches)*
+- [x] **AUD-02**: Every serve-path session writes a redacted audit trail — per-session transcript events with correlation IDs (session/turn/request) including `RequestShaped`, plus an optional `--audit-log` mirror (0600, append-only JSONL, rejects stdout as a target) *(verified 2026-08-18 — Phase-9 close: 09-VERIFICATION truth 2 SATISFIED, e2e green through the real seam; live-serve redacted-audit witness ATTESTED 2026-08-17 via 09-UAT test 2, session d5e413d1)*
+- [x] **AUD-03**: Audit volume is bounded via the body_ref pattern (hash in the event, full body in a capped store) and audit write failures are loud but never fatal to a turn *(verified 2026-08-18 — Phase-9 close: 09-VERIFICATION truth 3 SATISFIED — capped body store unchanged, `internal/audit` green in the race run)*
+- [x] **AUD-04**: The audit trail records engine decisions (continue / hook / ask / wait, with the matched signal) — the "why did the agent continue" question is answerable from the log alone *(verified 2026-08-18 — Phase-9 close: 09-VERIFICATION truth 4 SATISFIED — EngineDecision chain intact; `engine_decision` line witnessed live in 09-UAT test 2)*
+- [x] **AUD-05**: The zcode parity stability test runs green against a newly pinned divergence-prone capture session, produced via an operator runbook (scripted subagent/MCP-attach/tool-variety workload — not richest-session selection), with the pinned session ID consumed by the test, zcode + extractor versions recorded, thresholds explicitly re-baselined, and the drift report committed before any profile update *(verified 2026-08-18 — Phase-9 close: machinery legs proven, 09-VERIFICATION truth 5 — pin `sess_3cee56ae`, drift-before-update ordering; the open parity clause closed by operator ACCEPT 2026-08-16 at 09-UAT test 1, recorded in STATE.md Decisions; capture-method deviation accepted 2026-08-17)*
 
 ### Adoption Readiness (priority 3 — added at the 2026-08-18 early-adoption re-order; Phase 14)
 
@@ -115,11 +115,11 @@ Which phases cover which requirements. Filled during roadmap creation (2026-08-1
 | CMD-05 | Phase 8 | Complete |
 | CMD-06 | Phase 8 | Complete |
 | CMD-07 | Phase 8 | Complete |
-| AUD-01 | Phase 9 | Pending (code-complete per 09-01..03/05/06 summaries; phase not verified) |
-| AUD-02 | Phase 9 | Pending (code-complete; phase not verified) |
-| AUD-03 | Phase 9 | Pending (code-complete; phase not verified) |
-| AUD-04 | Phase 9 | Pending (code-complete; phase not verified) |
-| AUD-05 | Phase 9 | Pending (blocked on operator capture workload) |
+| AUD-01 | Phase 9 | Complete (09-VERIFICATION truth 1; phase passed 2026-08-18) |
+| AUD-02 | Phase 9 | Complete (truth 2 + live-serve witness 2026-08-17, 09-UAT test 2) |
+| AUD-03 | Phase 9 | Complete (09-VERIFICATION truth 3; phase passed 2026-08-18) |
+| AUD-04 | Phase 9 | Complete (09-VERIFICATION truth 4; phase passed 2026-08-18) |
+| AUD-05 | Phase 9 | Complete (truth 5 machinery + parity re-baseline ACCEPTED 2026-08-16 — 09-UAT test 1, STATE.md Decisions) |
 | ACP-01 | Phase 12 | Complete |
 | ACP-02 | Phase 12 | Complete |
 | ACP-03 | Phase 12 | Complete |
@@ -155,4 +155,5 @@ Which phases cover which requirements. Filled during roadmap creation (2026-08-1
 *Updated: 2026-08-18 — early-adoption re-order: Phase 14 Adoption Readiness added (EARLY-01..06, the full other-agents-analysis disposition — operator confirmed all six); Phase 12's waves split around the adoption line (12-01/02/05/04/06 pre-adoption; 12-03/07/08 post); Phase 13 post-adoption; 30/30 mapped; milestone renamed v1.1 ACP Early Adoption*
 *Updated: 2026-08-19 — new-analysis disposition (borrows #13-15 from `cb3ab50`): no new requirements; #15 census → EARLY-06 input, #13 drift-warning → EARLY-03 input with the full gate in 12-08, #14 outcome store → v1.2 pool; adoption line unchanged (30/30 mapped)*
 *Updated: 2026-08-20 — Phase 12 closed (verification 8/9): ACP-02..08 verified per 12-VERIFICATION; ACP-08 PARTIAL by disposition — machinery complete, first green deferred to Phase 13 exit (manager ruling 2026-08-20, flagged for retroactive operator confirmation)*
-*Updated: 2026-08-21 — Phase 13 closed + v1.1 milestone COMPLETE: OS-01..03 verified per 13-VERIFICATION (3/3 PASS); ACP-08's deferred first-green discharged (flagship green ×3, WINDOWS #8/#9 fixed); remaining open pre-existing rows: AUD-01..05 (Phase 9 closed 2026-08-18 — verifier PASS, UAT 3/4 accepted; cells not flipped at that close) and WINDOWS-routed #5/#7*
+*Updated: 2026-08-21 — Phase 13 closed + v1.1 milestone COMPLETE: OS-01..03 verified per 13-VERIFICATION (3/3 PASS); ACP-08's deferred first-green discharged (flagship green ×3, WINDOWS #8/#9 fixed); remaining open pre-existing rows: WINDOWS-routed #5/#7*
+*Updated: 2026-08-21 — AUD-01..05 flipped to Complete on the Phase-9 close evidence (phase passed 2026-08-18: 09-VERIFICATION truths 1–5 + operator resolution; 09-UAT 4/4 — parity re-baseline ACCEPTED 2026-08-16, live-serve witness ATTESTED 2026-08-17); the cells had been left Pending at the 2026-08-21 milestone close — that staleness flag is resolved here*
