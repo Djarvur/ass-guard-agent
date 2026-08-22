@@ -129,7 +129,8 @@ func newPlanModeWiringRunner(t *testing.T) (*sessionTurnRunner, *planModeScriptP
 		},
 	}
 
-	if err := r.setupEngine(); err != nil {
+	err := r.setupEngine()
+	if err != nil {
 		t.Fatalf("setupEngine: %v", err)
 	}
 
@@ -245,7 +246,8 @@ func promptAndWait(
 
 		var m acp.Message
 
-		if jerr := json.Unmarshal(bytes.TrimRight(line, "\n"), &m); jerr == nil {
+		jerr := json.Unmarshal(bytes.TrimRight(line, "\n"), &m)
+		if jerr == nil {
 			all = append(all, &m)
 
 			if string(m.ID) == id && m.Result != nil {
@@ -271,7 +273,7 @@ func replyToAsk(t *testing.T, cliW io.Writer, cliR io.Reader, sessionID, reply, 
 // the SUBSEQUENT Edit tool_use must be REFUSED by the runtime gate without
 // executing. Today Session.planMode is never wired in sessionFor, so the flip
 // is skipped and the Edit sails through (the live finding).
-func TestPlanModeWiring_EnterFlipsStateAndGateRefuses(t *testing.T) { //nolint:funlen // server scenario
+func TestPlanModeWiring_EnterFlipsStateAndGateRefuses(t *testing.T) {
 	t.Parallel()
 
 	r, _, cliW, cliR, sid := startPlanModeServer(t)
@@ -326,7 +328,7 @@ func TestPlanModeWiring_EnterFlipsStateAndGateRefuses(t *testing.T) { //nolint:f
 // response (the ask surface contract), and the approving reply resumes the
 // SAME turn landing the approved-form tool_result. Today ExitPlanMode errors
 // "not in plan mode" because the state never flipped ON.
-func TestPlanModeWiring_ExitApprovalResumesSameTurn(t *testing.T) { //nolint:funlen,cyclop // server scenario
+func TestPlanModeWiring_ExitApprovalResumesSameTurn(t *testing.T) {
 	t.Parallel()
 
 	_, _, cliW, cliR, sid := startPlanModeServer(t)

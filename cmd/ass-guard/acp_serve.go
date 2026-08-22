@@ -1343,6 +1343,11 @@ func (r *sessionTurnRunner) sessionFor( //nolint:funcorder,funlen,maintidx // gr
 	// timer; resumes run under the serve-lifetime ctx).
 	//nolint:contextcheck // the serve-lifetime ctx is a stored field, not derived here
 	s.SetAskBroker(r.serveCtxOrBackground(), askBroker)
+	// 12-09 (G-12-3): wire the per-session plan-mode state onto the Session —
+	// without this the Enter flip at the tool-result site is skipped
+	// (Session.planMode nil), the mutating-tool gate never fires, and
+	// ExitPlanMode answers "not in plan mode" (the live-session finding).
+	s.SetPlanMode(planMode)
 	// Phase-4 TOOL-04/05: inject the catalog-backed real executor (WebSearch/
 	// WebFetch delegate to the configured backend; others call catalog
 	// Tool.Execute). Phase 5 wraps it in toolcat.MCPExecutor so mcp__* calls
@@ -1834,6 +1839,8 @@ func (a *engineTurnRunnerAdapter) AskSettle() <-chan struct{} {
 // tool loop), so scanning only assistant lines would attribute the suspension
 // to the PREVIOUS turn. An ask_suspended terminal line yields
 // TurnOutput with AskSuspended set (Decide → ActionAsk, never Continue).
+//
+//nolint:cyclop,funlen // the backward scan is one cohesive walk
 func (a *engineTurnRunnerAdapter) LastTurnOutput() engine.TurnOutput {
 	if a.mgr == nil {
 		return engine.TurnOutput{}
@@ -1853,20 +1860,46 @@ func (a *engineTurnRunnerAdapter) LastTurnOutput() engine.TurnOutput {
 	// TurnOutput as engine-decision provenance (signal context only).
 	planModeOn := false
 
+	// 12-09 (G-12-3): the terminal line is found FIRST scanning backward; its
+	// turn's plan_mode markers sit EARLIER in the transcript, so the scan must
+	// continue to the terminal line's own boundary before honoring the break.
+	// The marker is always written BEFORE its turn's terminal line (the
+	// tool-result site vs Step 6), so once the scan crosses INTO earlier turns
+	// (a user_message of a different turn) the newest-marker read is final.
+	var terminalTurn string
+
+	// 12-09: per-turn "a tool_result landed BELOW this point" flags — a
+	// suspension whose result already landed is RESOLVED and no longer
+	// terminal (the reply or the D-01 timer completed it; the resumed turn's
+	// own assistant_message is the real terminal).
+	resolvedBelow := map[string]bool{}
+
 	for i := len(lines) - 1; i >= 0; i-- { //nolint:modernize // conflicts with gocritic rangeValCopy
 		switch lines[i].Type {
 		case session.TypeAssistantMessage:
-			lastAssistant = &lines[i]
+			if lastAssistant == nil {
+				lastAssistant = &lines[i]
+
+				terminalTurn = lines[i].TurnID
+			}
+		case session.TypeToolResult:
+			resolvedBelow[lines[i].TurnID] = true
 		case session.TypeAskSuspended:
-			// Only terminal while unresolved: a LATER assistant_message (the
-			// resumed turn's closing text) outranks it — the scan from the end
-			// guarantees the newest terminal line wins.
-			askSuspended = &lines[i]
+			// Only an UNRESOLVED suspension is terminal: one whose tool_result
+			// already landed below it was completed by the reply/timer resume.
+			if !resolvedBelow[lines[i].TurnID] && askSuspended == nil {
+				askSuspended = &lines[i]
+
+				terminalTurn = lines[i].TurnID
+			}
 		case session.TypePlanMode:
+			// Newest marker within/at-or-before the terminal turn wins; keep
+			// reading until we cross out of that turn so the marker written
+			// mid-turn is seen.
 			planModeOn = lines[i].Cause == session.PlanModeCauseEnter
 		}
 
-		if lastAssistant != nil || askSuspended != nil {
+		if terminalTurn != "" && lines[i].Type == session.TypeUserMessage && lines[i].TurnID == terminalTurn {
 			break
 		}
 	}
