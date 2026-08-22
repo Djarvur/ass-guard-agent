@@ -3,6 +3,7 @@ package session //nolint:testpackage // internal package test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
+	"github.com/Djarvur/ass-guard-agent/internal/toolexec"
 )
 
 // fakeProvider is a controllable Provider for Session tests. It queues
@@ -1005,4 +1007,94 @@ func (b *syncBuffer) String() string {
 	defer b.mu.Unlock()
 
 	return b.buf.String()
+}
+
+// --- 12-10: the end-to-end regression battery (G-12-3b) ---
+
+// fixtureWebBackend is a Backend whose Fetch serves a committed-in-test
+// text/plain body (the G-12-3b storm shape — raw.githubusercontent.com served
+// text/plain). Search is unreachable in these scenarios.
+type fixtureWebBackend struct{ body []byte }
+
+func (f *fixtureWebBackend) Name() string { return "fixture" }
+
+func (*fixtureWebBackend) Search(_ context.Context, _ string) (json.RawMessage, error) {
+	//nolint:err113,err113-best-effort // test-only guard
+	return nil, errors.New("fixtureWebBackend: search not expected")
+}
+
+func (f *fixtureWebBackend) Fetch(_ context.Context, _ string) (json.RawMessage, error) {
+	out, err := json.Marshal(map[string]string{"content": string(f.body)})
+	if err != nil {
+		return nil, fmt.Errorf("fixture fetch marshal: %w", err)
+	}
+
+	return out, nil
+}
+
+// TestSession_TextPlainFetchLandsInTranscript (12-10 regression battery): a
+// real RealExecutor routing WebFetch through a text/plain-serving backend must
+// leave a TRANSCRIPT-VISIBLE tool_result keyed by the call id — the exact leg
+// that silently vanished pre-12-10 (33 identical calls, zero tool_result
+// lines). The model-visible Output is valid JSON carrying {"content": ...}.
+func TestSession_TextPlainFetchLandsInTranscript(t *testing.T) { //nolint:paralleltest // single sequential scenario
+	bus := event.NewBus()
+	s, m, _ := newTestSession(t, bus, []provider.Response{
+		{
+			FinishReason: blockToolUse,
+			ToolCalls: []provider.ToolCall{{
+				ID:   "call_fetch_e2e",
+				Name: toolWebFetch,
+				Input: json.RawMessage(
+					`{"url":"https://raw.githubusercontent.com/golangci/example/main/example.go"}`),
+			}},
+		},
+		{FinishReason: stopEndTurn},
+	})
+	s.Catalog = toolcat.NewCatalog()
+	s.Catalog.Register(toolcat.Tool{Name: toolWebFetch, Mutability: toolcat.MutabilityReadOnly})
+
+	s.SetToolExecutor(&toolexec.RealExecutor{
+		Catalog: s.Catalog,
+		Backends: map[string]toolexec.Backend{
+			toolWebFetch: &fixtureWebBackend{body: []byte("package main // plain text body")},
+		},
+	})
+
+	stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "fetch it"}})
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+
+	if stop != stopEndTurn {
+		t.Fatalf("stop = %q; want end_turn", stop)
+	}
+
+	lines, rerr := m.ReadAll()
+	if rerr != nil {
+		t.Fatalf("ReadAll: %v", rerr)
+	}
+
+	found := findToolResultLine(lines, "call_fetch_e2e")
+	if found == nil {
+		t.Fatal("NO tool_result line for call_fetch_e2e — the G-12-3b silent-loss signature")
+	}
+
+	assertFallbackPayloadNotNeeded := !found.IsError
+	if !assertFallbackPayloadNotNeeded {
+		t.Error("text/plain fetch tool_result IsError = true; want a clean result")
+	}
+
+	var payload struct {
+		Content string `json:"content"`
+	}
+
+	uerr := json.Unmarshal(found.Output, &payload)
+	if uerr != nil {
+		t.Fatalf("tool_result output not valid JSON: %v (%s)", uerr, found.Output)
+	}
+
+	if payload.Content != "package main // plain text body" {
+		t.Errorf("content = %q; want the fetched text/plain body verbatim", payload.Content)
+	}
 }
