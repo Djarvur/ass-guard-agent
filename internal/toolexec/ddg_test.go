@@ -1,6 +1,7 @@
 package toolexec //nolint:testpackage // internal package test (accesses the fetchHTML/resolve seams)
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net"
@@ -122,23 +123,89 @@ func TestFetchMarkdown(t *testing.T) {
 	assert.Contains(t, out.Content, "**bold**")
 }
 
-// TestFetchNonHTMLPassthrough (Test 4) verifies text/plain bodies return the
-// raw text unconverted.
-func TestFetchNonHTMLPassthrough(t *testing.T) {
+// TestFetchNonHTMLPassthrough (Test 4) re-pinned by 12-10 (G-12-3b): a
+// non-HTML body must return VALID JSON — wrapped as {"content": <body>} like
+// the HTML branch — never raw bytes. The old unwrapped shape produced invalid
+// JSON for any text/plain body ("invalid character p looking for beginning of
+// value"), appendLine's Marshal failed, the '_ =' caller swallowed it, and
+// every WebFetch tool_result silently vanished from the transcript (the UAT
+// G-12-3b retry storm: 33 identical calls, zero visible results).
+//
+// The over-cap leg pins truncation-BEFORE-wrap (fetchRawCap); the JSON
+// content-type leg pins that original JSON text travels as a STRING inside
+// content (never re-encoded as an object).
+func TestFetchNonHTMLPassthrough(t *testing.T) { //nolint:dupl // parallel legs share backend shape by design
 	t.Parallel()
 
-	be := &DefaultBackend{
-		fetchHTML: func(_ context.Context, _ string) ([]byte, string, error) {
-			return []byte("plain text body"), "text/plain; charset=utf-8", nil
-		},
-		resolve: func(_ context.Context, _ string) ([]net.IP, error) {
-			return []net.IP{net.ParseIP("93.184.216.34")}, nil
-		},
+	newPlainBackend := func(body []byte, contentType string) *DefaultBackend {
+		return &DefaultBackend{
+			fetchHTML: func(_ context.Context, _ string) ([]byte, string, error) {
+				return body, contentType, nil
+			},
+			resolve: func(_ context.Context, _ string) ([]net.IP, error) {
+				return []net.IP{net.ParseIP("93.184.216.34")}, nil // example.com — public
+			},
+		}
 	}
 
-	raw, err := be.Fetch(context.Background(), "https://example.com/robots.txt")
-	require.NoError(t, err)
-	assert.Equal(t, "plain text body", string(raw))
+	t.Run("text_plain_wrapped_as_content", func(t *testing.T) {
+		t.Parallel()
+
+		be := newPlainBackend([]byte("plain text body"), "text/plain; charset=utf-8")
+
+		raw, err := be.Fetch(context.Background(), "https://example.com/robots.txt")
+		require.NoError(t, err)
+
+		var out struct {
+			Content string `json:"content"`
+		}
+		require.NoErrorf(t, json.Unmarshal(raw, &out),
+			"non-HTML Fetch output must be valid JSON (G-12-3b); got: %s", raw)
+		assert.Equal(t, "plain text body", out.Content)
+	})
+
+	t.Run("over_cap_truncates_before_wrap", func(t *testing.T) {
+		t.Parallel()
+
+		body := bytes.Repeat([]byte("a"), fetchRawCap+1024)
+		be := newPlainBackend(body, "text/plain")
+
+		raw, err := be.Fetch(context.Background(), "https://example.com/big.txt")
+		require.NoError(t, err)
+		require.LessOrEqual(t, len(raw), jsonMaxWrappedLen(fetchRawCap))
+
+		var out struct {
+			Content string `json:"content"`
+		}
+		require.NoErrorf(t, json.Unmarshal(raw, &out),
+			"truncated passthrough must still wrap to valid JSON; got %d bytes", len(raw))
+		assert.Len(t, out.Content, fetchRawCap)
+	})
+
+	t.Run("json_content_type_travels_as_string", func(t *testing.T) {
+		t.Parallel()
+
+		originalJSON := `{"key":"value","n":3}`
+		be := newPlainBackend([]byte(originalJSON), "application/json")
+
+		raw, err := be.Fetch(context.Background(), "https://example.com/data.json")
+		require.NoError(t, err)
+
+		var out struct {
+			Content string `json:"content"`
+		}
+		require.NoErrorf(t, json.Unmarshal(raw, &out),
+			"JSON content-type body must travel INSIDE content as its original TEXT")
+		assert.JSONEq(t, originalJSON, out.Content,
+			"content must carry the ORIGINAL JSON text, not a re-encoded object")
+	})
+}
+
+// jsonMaxWrappedLen bounds the wrapped form's wire size: the {"content":…}
+// envelope overhead plus JSON escaping headroom for an all-escaped payload
+// (\u00XX = 6 bytes per source byte worst case).
+func jsonMaxWrappedLen(cap int) int {
+	return cap*6 + len(`{"content":""}`) + 64
 }
 
 // TestSSRFGuard (Test 5) verifies Fetch refuses loopback/private/link-local
