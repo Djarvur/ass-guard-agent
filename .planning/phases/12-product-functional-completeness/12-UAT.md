@@ -101,18 +101,22 @@ blocked: 0
   missing:
     - "Call s.SetPlanMode(planMode) beside s.SetAskBroker at the wiring site; add a server-level wiring test asserting Enter→gate-refusal→Exit approval flow through the real acp.Server"
 - gap_id: G-12-3b
-  truth: "A failed tool call yields a visible is_error tool_result the model can adapt to"
+  truth: "A tool call's result always lands in the transcript and reaches the model, whether success or error"
   status: failed
-  reason: "34 of 56 tool_calls have no matching tool_result line; 33 identical WebFetch retries storm the provider with model round-trips between them"
+  reason: "33 identical WebFetch calls to one raw.githubusercontent URL over ~2min10s (21:42:53→21:45:05), zero tool_result lines for any of them; model retried blind each round-trip (~280B request growth per step = accumulated unpaired tool_use blocks)"
   severity: major
   test: 6
+  root_cause: "REPRODUCED 2026-08-23: DefaultBackend.Fetch non-HTML passthrough returns raw body bytes as json.RawMessage WITHOUT JSON-wrapping (internal/toolexec/ddg.go:138-142 'return body, nil') — for text/plain responses that is INVALID JSON. json.Marshal(Line) then fails ('invalid character p looking for beginning of value' — reproduced standalone), appendLine returns the error, and the caller swallows it via '_ =' at internal/session/session.go:519. Same defect class as 14-05 CR-02 (subagent payloads; fixed there but the web-passthrough path was missed). Successes only landed when content happened to be valid JSON or wrapped."
   artifacts:
-    - path: "internal/toolexec/batch.go"
-      issue: "executeBounded/executeOne error results — verify they reach the session append loop for backend-delegated tools"
+    - path: "internal/toolexec/ddg.go"
+      issue: "non-HTML Fetch passthrough returns unwrapped raw bytes (line ~141); must marshal as {\"content\": string} like the HTML branch"
     - path: "internal/session/session.go"
-      issue: "batch result append loop (~line 499-536): diagnose why res.Err results produce no transcript line"
+      issue: "AppendToolResult errors swallowed by '_ =' (line ~519); silent transcript loss must be loud (stderr log + structured fallback payload)"
+    - path: "internal/toolexec/batch.go"
+      issue: "no defense-in-depth: executeOne should validate/coerce Output to valid JSON before returning (single chokepoint for all executors)"
   missing:
-    - "Diagnose exact drop point; errored results must land as is_error lines; add regression test driving a failing WebFetch through the real executor"
+    - "Fix ddg.go passthrough to return valid JSON ({content: ...}); add Marshal-error fallback in appendLine callers so a bad payload degrades to an error form instead of vanishing; regression test: real DefaultBackend.Fetch on a text/plain URL produces a transcript-visible tool_result"
+    - "Optional hardening: repeated-identical-call detection (same tool+input N times in one turn → inject a hint to the model) to bound retry storms"
 
 ## Deferred Follow-Ups
 
