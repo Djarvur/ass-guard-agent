@@ -178,9 +178,9 @@ func (defaultSubagentRunner) Run(
 						errJSON = []byte(`{"error":"marshal error failed"}`)
 					}
 
-					_ = s.Manager.AppendToolResult(subagentTurnID, tc.Name, errJSON, true)
+					s.appendToolResultLoud(subagentTurnID, tc.Name, tc.Name, errJSON, true)
 				} else {
-					_ = s.Manager.AppendToolResult(subagentTurnID, tc.Name, out, false)
+					s.appendToolResultLoud(subagentTurnID, tc.Name, tc.Name, out, false)
 				}
 			}
 			// Loop with the assistant turn included (simplified: re-send prompt).

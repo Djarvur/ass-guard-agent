@@ -438,7 +438,7 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 							errJSON = []byte(`{"error":"marshal error failed"}`)
 						}
 
-						_ = s.Manager.AppendToolResult(turnID, callID, errJSON, true)
+						s.appendToolResultLoud(turnID, callID, tc.Name, errJSON, true)
 					} else {
 						// 14-05 (EARLY-05) + CR-02: the subagent Task result
 						// flows through the truncation chokepoint like every
@@ -449,7 +449,7 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 						// appendLine's Marshal (the tool_result line was
 						// dropped entirely).
 						payload, isErr := subagentResultPayload(result)
-						_ = s.Manager.AppendToolResult(turnID, callID, boundedToolResult(payload), isErr)
+						s.appendToolResultLoud(turnID, callID, tc.Name, boundedToolResult(payload), isErr)
 					}
 					// SESS-02/03 boundary (subagent tools are read-only; only
 					// a config-added entry would fire). Same between-turn rule
@@ -467,7 +467,7 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 				// executing — the target's runtime-level enforcement,
 				// mirrored; read-only exploration continues.
 				if s.planModeBlocks(tc.Name) {
-					_ = s.Manager.AppendToolResult(turnID, callID, planModeRefusal(), true)
+					s.appendToolResultLoud(turnID, callID, tc.Name, planModeRefusal(), true)
 
 					continue
 				}
@@ -517,7 +517,7 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 				// exists (hence before both the mid-turn model view and the
 				// Projector's projected window see them); under-cap payloads are
 				// byte-unmodified.
-				_ = s.Manager.AppendToolResult(turnID, callID, boundedToolResult(res.Output), res.IsError)
+				s.appendToolResultLoud(turnID, callID, res.Name, boundedToolResult(res.Output), res.IsError)
 				// SESS-02/03: a mutating/config-added tool is a boundary. The
 				// line is the audit marker + the reset point for the NEXT
 				// turn's projection — the producing turn's mid-turn window
@@ -548,7 +548,7 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 					errJSON = []byte(`{"error":"marshal error failed"}`)
 				}
 
-				_ = s.Manager.AppendToolResult(turnID, suspendedCallID, errJSON, true)
+				s.appendToolResultLoud(turnID, suspendedCallID, suspendedTool, errJSON, true)
 
 				continue
 			}
@@ -705,6 +705,36 @@ func (s *Session) streamAndEmit(
 // recordCanceled appends a canceled line (D-16).
 func (s *Session) recordCanceled(turnID, reason string) {
 	_ = s.Manager.AppendCanceled(turnID, now(), reason)
+}
+
+// appendToolResultLoud is the G-12-3b loudness gate (12-10): EVERY
+// AppendToolResult call in the session package routes through here. On nil
+// error it behaves exactly as the bare call did. On error (appendLine's
+// json.Marshal(Line) failed — an invalid-JSON Output payload), the loss is
+// LOUD: a stderr warning names turn/call-id/tool + the cause, and a FALLBACK
+// {"error": …} payload line is appended keyed by the SAME call id, so the
+// model always sees SOMETHING for every executed call instead of flying blind
+// with unpaired tool_use blocks accumulating per round-trip. If even the
+// fallback Marshal fails, the hardcoded literal byte form is used (the same
+// guard pattern as the dispatch-error sites). Manager.appendLine itself is
+// untouched — redaction ordering stays as shipped.
+func (s *Session) appendToolResultLoud(turnID, callID, toolName string, output json.RawMessage, isError bool) {
+	err := s.Manager.AppendToolResult(turnID, callID, output, isError)
+	if err == nil {
+		return
+	}
+
+	slog.Warn("session: tool result could not be recorded; appending fallback",
+		"turnID", turnID, "callID", callID, "tool", toolName, "error", err.Error())
+
+	fallback, mErr := json.Marshal(map[string]string{
+		mapKeyError: "tool result could not be recorded: " + err.Error(),
+	})
+	if mErr != nil {
+		fallback = []byte(`{"error":"tool result could not be recorded"}`)
+	}
+
+	_ = s.Manager.AppendToolResult(turnID, callID, fallback, true)
 }
 
 // appendError is the investigate-and-fix-ready error writer (PROJECT.md). The

@@ -99,7 +99,14 @@ func (d *DefaultBackend) Search(ctx context.Context, query string) (json.RawMess
 
 // Fetch GETs the target. Loopback/private/link-local hosts are refused BEFORE
 // any request (T-8-05); HTML bodies convert to markdown (D-08); other content
-// types pass through raw, truncated at fetchRawCap.
+// types pass through as {"content": <body>} — VALID JSON, wrapped exactly like
+// the HTML branch — truncated at fetchRawCap BEFORE the wrap. The pre-12-10
+// unwrapped passthrough produced invalid JSON for any text/plain body, which
+// failed appendLine's Marshal and silently dropped every WebFetch tool_result
+// from the transcript (UAT G-12-3b: 33 blind retries). The captured-zcode form
+// for WebFetch results is corpus-absent in all three committed fixtures, so
+// there is no captured shape to diverge from; {"content": …} mirrors the
+// already-shipped HTML-branch convention.
 func (d *DefaultBackend) Fetch(ctx context.Context, target string) (json.RawMessage, error) {
 	u, err := url.Parse(target)
 	if err != nil {
@@ -139,7 +146,12 @@ func (d *DefaultBackend) Fetch(ctx context.Context, target string) (json.RawMess
 		body = body[:fetchRawCap]
 	}
 
-	return body, nil
+	out, marshalErr := json.Marshal(map[string]string{"content": string(body)})
+	if marshalErr != nil {
+		return nil, fmt.Errorf("toolexec: fetch marshal: %w", marshalErr)
+	}
+
+	return out, nil
 }
 
 // markdownConverter lazily builds the html-to-markdown converter (v1 API:

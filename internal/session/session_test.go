@@ -889,6 +889,34 @@ func (p *poisonedToolExec) Execute(_ context.Context, name string, _ json.RawMes
 	return json.RawMessage("plain text body"), fmt.Errorf("executor %s failed", name)
 }
 
+// swapDefaultLogger captures slog default-handler output (the house stderr
+// seam) and restores the previous logger on test cleanup.
+func swapDefaultLogger(t *testing.T) *syncBuffer {
+	t.Helper()
+
+	logBuf := &syncBuffer{}
+
+	prevLogger := slog.Default()
+
+	slog.SetDefault(slog.New(slog.NewTextHandler(logBuf, nil)))
+
+	t.Cleanup(func() { slog.SetDefault(prevLogger) })
+
+	return logBuf
+}
+
+// findToolResultLine returns the first tool_result line keyed by callID.
+func findToolResultLine(lines []Line, callID string) *Line {
+	for i := range lines {
+		l := &lines[i]
+		if l.Type == TypeToolResult && l.ToolCallID == callID {
+			return l
+		}
+	}
+
+	return nil
+}
+
 // TestSession_ToolResultAppendFailureSurfaces (12-10 RED) pins the loudness
 // gate: when AppendToolResult's Marshal fails (an invalid-JSON Output), the
 // loss must be LOUD — (a) a tool_result line EXISTS keyed by the failing
@@ -909,11 +937,7 @@ func TestSession_ToolResultAppendFailureSurfaces(t *testing.T) { //nolint:parall
 	s.Catalog = toolcat.NewCatalog()
 	s.Catalog.Register(toolcat.Tool{Name: toolWebFetch, Mutability: toolcat.MutabilityReadOnly})
 
-	// Capture slog default-handler output (the house stderr seam).
-	var logBuf syncBuffer
-	prevLogger := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuf, nil)))
-	defer func() { slog.SetDefault(prevLogger) }()
+	logBuf := swapDefaultLogger(t)
 
 	s.SetToolExecutor(&poisonedToolExec{})
 
@@ -927,35 +951,12 @@ func TestSession_ToolResultAppendFailureSurfaces(t *testing.T) { //nolint:parall
 		t.Fatalf("ReadAll: %v", rerr)
 	}
 
-	// (a) A tool_result line EXISTS for the poisoned call id — the fallback
-	// payload — with the structured {"error":…} convention.
-	var found *Line
-
-	for i := range lines {
-		l := &lines[i]
-		if l.Type == TypeToolResult && l.ToolCallID == "call_poisoned_1" {
-			found = l
-
-			break
-		}
-	}
-
+	found := findToolResultLine(lines, "call_poisoned_1")
 	if found == nil {
 		t.Fatal("NO tool_result line for call_poisoned_1 — silent transcript loss (G-12-3b)")
 	}
 
-	if !found.IsError {
-		t.Error("fallback tool_result IsError = false; want true")
-	}
-
-	var payload map[string]string
-	if uerr := json.Unmarshal(found.Output, &payload); uerr != nil {
-		t.Fatalf("fallback payload not valid JSON object: %v (%s)", uerr, found.Output)
-	}
-
-	if payload[mapKeyError] == "" {
-		t.Errorf("fallback payload missing \"error\" key: %s", found.Output)
-	}
+	assertFallbackPayload(t, found)
 
 	// (b) The loss was LOUD: something was logged to the default handler.
 	logged := logBuf.String()
@@ -964,7 +965,28 @@ func TestSession_ToolResultAppendFailureSurfaces(t *testing.T) { //nolint:parall
 	}
 }
 
-// syncBuffer is a mutex-guarded bytes.Buffer for concurrent slog writes.
+// assertFallbackPayload pins the fallback line's shape: IsError + the valid
+// JSON object carrying the structured {"error":…} key.
+func assertFallbackPayload(t *testing.T, found *Line) {
+	t.Helper()
+
+	if !found.IsError {
+		t.Error("fallback tool_result IsError = false; want true")
+	}
+
+	var payload map[string]string
+
+	uerr := json.Unmarshal(found.Output, &payload)
+	if uerr != nil {
+		t.Fatalf("fallback payload not valid JSON object: %v (%s)", uerr, found.Output)
+	}
+
+	if payload[mapKeyError] == "" {
+		t.Errorf("fallback payload missing \"error\" key: %s", found.Output)
+	}
+}
+
+// syncBuffer is a mutex-guarded string builder for concurrent slog writes.
 type syncBuffer struct {
 	mu  sync.Mutex
 	buf strings.Builder
@@ -974,7 +996,8 @@ func (b *syncBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	return b.buf.Write(p)
+	//nolint:wrapcheck // io.Writer contract must pass the error through
+	return b.buf.WriteString(string(p))
 }
 
 func (b *syncBuffer) String() string {

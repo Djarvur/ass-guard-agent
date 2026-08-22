@@ -400,7 +400,7 @@ func (s *Session) resumeAskClaimed( //nolint:contextcheck // the timer path pass
 		form = RenderAskNonAnswer(s.ask.Timeout())
 	}
 
-	_ = s.Manager.AppendToolResult(p.TurnID, p.CallID, marshalAskForm(form), isErr)
+	s.appendToolResultLoud(p.TurnID, p.CallID, "ask", marshalAskForm(form), isErr)
 
 	stop, _ := s.runTurn(ctx, p.TurnID)
 
