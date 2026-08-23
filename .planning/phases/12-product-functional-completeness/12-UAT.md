@@ -9,10 +9,10 @@ updated: 2026-08-22T09:00:00Z
 ## Current Test
 <!-- OVERWRITE each test - shows where we are -->
 
-number: 3
-name: Plan-mode gate + exit approval
+number: 4
+name: Agent messaging + session-context reads
 expected: |
-  When plan mode is ON, mutating tool calls are refused without executing. ExitPlanMode surfaces the plan as an approval question and suspends the turn; your approval resumes the same turn and execution proceeds.
+  SendMessage delivers to a spawned agent's mailbox with an honest ack; unknown agent ids error structurally. ReadSessionContext returns relevant/handoff context from the product's own transcript with documented truncation tail.
 awaiting: user response
 
 ## Tests
