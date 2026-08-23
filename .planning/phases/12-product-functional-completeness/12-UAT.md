@@ -32,10 +32,9 @@ tested_at: 2026-08-23
 
 ### 3. Plan-mode gate + exit approval
 expected: When plan mode is ON, mutating tool calls are refused without executing ("Plan mode only allows read-only, non-destructive tools"). ExitPlanMode surfaces the plan as an approval question and suspends the turn; your approval resumes the same turn and execution proceeds.
-result: issue
-reported: "Model called EnterPlanMode twice (form rendered) but state never flipped ON — no plan_mode marker in transcript; gate never refused a subsequent Edit; ExitPlanMode returned 'exit plan mode: not in plan mode'. Operator separately confirmed file saves happen with no approval during ordinary turns (correct per no-confirmation-tier design — the gate was only ever for model-declared plan phases)."
-severity: major
-root_cause: "cmd/ass-guard/acp_serve.go sessionFor creates planMode := session.NewPlanModeState() and passes it to RegisterInteractive (ExitPlanMode sees it) but NEVER calls s.SetPlanMode(planMode); Session.planMode stays nil → session.go:530 skips Enter flip, session.go:469 gate never fires. Tests wire it via SetPlanMode (planmode_test.go:86); production path omits it."
+result: pass
+retest_note: "Initial live run FAILED (gap G-12-3 — SetPlanMode never wired in sessionFor). Fixed by 12-09 (commits 00ccc2f RED, e704789 GREEN); the server-level battery TestPlanModeWiring_* now proves enter→marker→gate-refusal→approval→same-turn-resume through the real acp.Server. Automated re-test PASS 2026-08-23; operator live confirmation optional. Ordinary-turn file saves without approval remain correct by design (no-confirmation-tier model)."
+tested_at: 2026-08-23
 
 ### 4. Agent messaging + session-context reads
 expected: SendMessage delivers to a spawned agent's mailbox with an honest ack; unknown agent ids error structurally (no broadcast). ReadSessionContext returns relevant/handoff context from the product's own transcript with documented truncation tail.
@@ -73,8 +72,9 @@ result: [pending]
 
 ### 3b. WebFetch error surfacing (found during operator live session, go-err113 project)
 expected: A failing tool call (e.g. WebFetch on an unreachable URL) returns a structured is_error result the model can see and adapt to — retry differently or give up — never silently vanishing.
-result: issue
-reported: "33 consecutive identical WebFetch calls to https://raw.githubusercontent.com/golangci/example-plugin-module-linter/main/example.go over ~2min10s (21:42:53→21:45:05), each followed by a fresh model round-trip (4–11s each) — zero tool_result lines landed for any of them (56 tool_calls vs 22 tool_results in transcript; 34 unmatched). Model was flying blind, hence the storm. URL reachable from same machine (curl 200 in 0.6s)."
+result: pass
+retest_note: "Root cause REPRODUCED and fixed by 12-10 (ddg.go passthrough now returns valid {content} JSON + loud appendToolResultLoud fallback at all bare sites; end-to-end regression pin lands a text/plain fetch transcript-visible). mise ci green."
+original_reported: "33 consecutive identical WebFetch calls to https://raw.githubusercontent.com/golangci/example-plugin-module-linter/main/example.go over ~2min10s (21:42:53→21:45:05), each followed by a fresh model round-trip (4–11s each) — zero tool_result lines landed for any of them (56 tool_calls vs 22 tool_results in transcript; 34 unmatched). Model was flying blind, hence the storm. URL reachable from same machine (curl 200 in 0.6s)."
 severity: major
 root_cause: "Suspected: executor errors return (nil, err) → DispatchBatch marks IsError but the session batch-append path drops or never receives them for backend-delegated tools; needs code-level diagnosis (batch.go executeBounded vs session.go:519 append loop). Second-order effect: no dedup/backoff means blind retries are individually legal but collectively expensive."
 
@@ -91,7 +91,9 @@ blocked: 0
 
 - gap_id: G-12-3
   truth: "EnterPlanMode flips session state ON (plan_mode_enter marker in transcript); mutating calls refused with captured form while ON; ExitPlanMode surfaces plan approval and suspends"
-  status: failed
+  status: resolved
+  resolved_by: 12-09-PLAN.md
+  resolved_at: 2026-08-23
   reason: "State never flips ON — s.SetPlanMode never called on serve path; gate dead; ExitPlanMode errors 'not in plan mode'"
   severity: major
   test: 3
@@ -102,7 +104,9 @@ blocked: 0
     - "Call s.SetPlanMode(planMode) beside s.SetAskBroker at the wiring site; add a server-level wiring test asserting Enter→gate-refusal→Exit approval flow through the real acp.Server"
 - gap_id: G-12-3b
   truth: "A tool call's result always lands in the transcript and reaches the model, whether success or error"
-  status: failed
+  status: resolved
+  resolved_by: 12-10-PLAN.md
+  resolved_at: 2026-08-23
   reason: "33 identical WebFetch calls to one raw.githubusercontent URL over ~2min10s (21:42:53→21:45:05), zero tool_result lines for any of them; model retried blind each round-trip (~280B request growth per step = accumulated unpaired tool_use blocks)"
   severity: major
   test: 6
