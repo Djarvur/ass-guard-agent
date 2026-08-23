@@ -38,11 +38,17 @@ tested_at: 2026-08-23
 
 ### 4. Agent messaging + session-context reads
 expected: SendMessage delivers to a spawned agent's mailbox with an honest ack; unknown agent ids error structurally (no broadcast). ReadSessionContext returns relevant/handoff context from the product's own transcript with documented truncation tail.
-result: [pending]
+result: issue
+reported: "stdio-driven live test 2026-08-23. (a) SendMessage to unknown id: structured is_error, no broadcast — PASS. (b) ReadSessionContext on the CURRENT session id: errors twice — first invalid input shape, then \"invalid session id\" because real ids are UUIDs while the reader demands sess_* prefix; NO real session can ever be read."
+severity: major
+root_cause: "(b) id-vocabulary mismatch: transcripts are written transcript_<uuid>.jsonl (internal/session/transcript.go:141) but SessionReader validates ^sess_[A-Za-z0-9._-]+$ (internal/coreexec/messaging.go:177) and enumerates only transcript_sess_* files (:242). The 12-04 offline tests created sess_ fixtures, hiding the mismatch."
 
 ### 5. Background bash trio
 expected: Bash with run_in_background returns immediately with an exec_<uuid> id, the real log path, and read guidance. TaskOutput retrieves running tasks as not_ready (and finished ones ready). TaskStop kills the process group. Over-cap and unknown-id cases error structurally.
-result: [pending]
+result: issue
+reported: "stdio-driven live test 2026-08-23. Bash run_in_background: PASS (exec_id + log path + guidance). TaskStop: PASS (group kill + honest ack). TaskOutput: FAILS — model-visible catalog carries it (zcode profile) but the EXECUTION catalog (coretools.json) lacks the entry, so RegisterInteractive silently skips it and every call errors 'tool TaskOutput not in catalog' with a NULL payload line (isError, no output text). The phase's own completeness gate misses it because the gate walks coretools, not the profile decls."
+severity: major
+root_cause: "Catalog asymmetry: TaskOutput exists in internal/defaults/seed/profiles/zcode/tools.json but not internal/toolcat/coretools.json; RegisterInteractive's skip-if-missing discipline (forward-compat) turned the omission into a guaranteed dead end — the exact 'no implementation yet' class Phase 12 was scoped to kill."
 
 ### 6. Cron schedules fire as engine-driven turns
 expected: Created schedules persist per-project atomically; due prompts fire serialized behind active turns (queue, no double-fire); missed windows catch up once with a note; fired turns MIRROR to your editor client (WINDOWS #3 fix). No daemon, no port.
@@ -88,6 +94,32 @@ skipped: 0
 blocked: 0
 
 ## Gaps
+
+- gap_id: G-12-4c
+  truth: "ReadSessionContext reads ass-guard's own persisted transcripts for any real session id"
+  status: failed
+  reason: "Id-vocabulary mismatch — real ids are UUIDs; reader demands sess_* prefix and enumerates only transcript_sess_* files, so no real session is ever readable"
+  severity: major
+  test: 4
+  artifacts:
+    - path: "internal/coreexec/messaging.go"
+      issue: "sessIDPattern (^sess_…) at :177 vs transcript_<uuid> writes (session/transcript.go:141); ListSessions glob transcript_sess_* at :242"
+  missing:
+    - "Accept the product's own id vocabulary: validate against UUID form OR drop the prefix check in favor of path-traversal-safe existence check over the enumerated family; add a live-shaped fixture (transcript_<uuid>.jsonl) to the offline tests"
+
+- gap_id: G-12-5a
+  truth: "TaskOutput executes for real when the model calls it"
+  status: failed
+  reason: "Executor + registry exist but the catalog entry does not (coretools.json lacks TaskOutput while the zcode profile declares it); RegisterInteractive silently skips → guaranteed dead end with null-payload error"
+  severity: major
+  test: 5
+  artifacts:
+    - path: "internal/toolcat/coretools.json"
+      issue: "missing TaskOutput entry (TaskStop present — asymmetry)"
+    - path: "internal/coreexec/planmode.go"
+      issue: "RegisterInteractive skip-if-missing hid the omission; consider loud stderr warn on skipped stubs"
+  missing:
+    - "Add the TaskOutput entry to coretools.json matching the captured zcode schema verbatim; extend the completeness gate to diff profile decls vs execution catalog so model-visible-but-unexecutable tools fail CI"
 
 - gap_id: G-12-3
   truth: "EnterPlanMode flips session state ON (plan_mode_enter marker in transcript); mutating calls refused with captured form while ON; ExitPlanMode surfaces plan approval and suspends"
