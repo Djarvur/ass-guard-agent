@@ -57,7 +57,9 @@ tested_at: 2026-08-25
 
 ### 7. No dead ends anywhere in the catalog (outcome clause)
 expected: Across a real driving session, the model never hits a "no implementation yet" dead end — every non-mcp catalog tool executes for real (completeness gate as permanent regression test proves zero non-mcp gaps).
-result: [pending]
+result: pass
+note: "Live stdio sweep 2026-08-25 (TodoWrite/TodoRead/WebSearch) — all real results, zero dead-end strings. Static half now stronger than at verification time: the 12-11 profile-vs-catalog parity gate closes the one hole the original gate missed (TaskOutput). Across this whole UAT session (tests 1-7): AskUserQuestion, EnterPlanMode/ExitPlanMode, Edit-refusal, SendMessage, ReadSessionContext, Bash fg+bg, TaskOutput, TaskStop, CronCreate + automation fire — every tool returned a real result; the only dead ends found were the two fixed gaps."
+tested_at: 2026-08-25
 
 ### Section B — technical checks (deferred until Section A passes)
 
