@@ -1,6 +1,6 @@
 ---
 id: SEED-001
-status: dormant
+status: consumed
 planted: 2026-08-16
 planted_during: v1.1 Kickoff & Peers / Phase 8 (gate-ready, awaiting operator witness)
 trigger_when: when planning the milestone after v1.1 (v1.2+), especially once Phase 10's internal/runtime extraction and Phase 11's DSH-01 genericization have landed
@@ -8,7 +8,7 @@ scope: large
 audit_acknowledged:
   milestone: v1.1
   at: 2026-08-25
-  status: dormant
+  status: consumed
 ---
 
 # SEED-001: Extract the agent-creation kit from ass-guard-agent as a library (in this repo); ass-guard-agent itself becomes an app built on the kit
