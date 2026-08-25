@@ -3,11 +3,14 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/coreexec"
+	"github.com/Djarvur/ass-guard-agent/internal/defaults"
+	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/sched"
 	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 )
@@ -194,5 +197,57 @@ func TestBackgroundWiring_CoreCompleteness(t *testing.T) {
 
 	if len(missing) > 0 {
 		t.Errorf("schema-only core tools remain (dead ends): %v", missing)
+	}
+}
+
+// TestBackgroundWiring_ProfileCatalogParity (12-11/G-12-5a — the extended
+// completeness gate): the MODEL-VISIBLE surface (the embedded seed zcode
+// profile's tool declarations, what the model is actually offered) and the
+// EXECUTION catalog (coretools.json, what RegisterInteractive can wire) must
+// agree BIDIRECTIONALLY for every non-mcp tool. TestBackgroundWiring_Core-
+// Completeness walks only the catalog side — a tool absent from the catalog has
+// no entry to walk, which is exactly how TaskOutput's omission hid. Failure
+// names every asymmetric tool in each direction.
+func TestBackgroundWiring_ProfileCatalogParity(t *testing.T) {
+	t.Parallel()
+
+	tmp := t.TempDir()
+
+	if err := defaults.WriteTree(tmp, false); err != nil {
+		t.Fatalf("WriteTree: %v", err)
+	}
+
+	prof, err := profile.NewLoader(filepath.Join(tmp, "profiles")).Load("zcode")
+	if err != nil {
+		t.Fatalf("Load zcode from seed: %v", err)
+	}
+
+	catalogNames := map[string]bool{}
+	for _, n := range toolcat.NewCatalog().Names() {
+		catalogNames[n] = true
+	}
+
+	profileOnly := []string{} // model-visible but absent from the execution catalog
+	catalogOnly := []string{} // executable but never offered to the model
+
+	for _, decl := range prof.Tools {
+		if strings.HasPrefix(decl.Name, "mcp__") {
+			continue // dynamically-registered MCP tools are host-scoped, not core
+		}
+
+		if !catalogNames[decl.Name] {
+			profileOnly = append(profileOnly, decl.Name)
+		} else {
+			delete(catalogNames, decl.Name)
+		}
+	}
+
+	for n := range catalogNames {
+		catalogOnly = append(catalogOnly, n)
+	}
+
+	if len(profileOnly) > 0 || len(catalogOnly) > 0 {
+		t.Fatalf("profile/catalog asymmetry: declared-but-not-executable %v; executable-but-not-declared %v",
+			profileOnly, catalogOnly)
 	}
 }
