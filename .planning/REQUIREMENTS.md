@@ -27,6 +27,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 - [ ] **CMDS-01**: Slash-invocation resolves via one chain: builtins → skills → agents → file-discovered commands (current behavior last)
 - [ ] **CMDS-02**: Class-B control-plane commands execute at the runner seam with NO model turn and write `local_command` transcript lines: /help /status /cost /mcp /memory /permissions /doctor /config /model /clear /resume /compact (/compact requires PAR-01)
 - [ ] **CMDS-03**: Class-A prompt-expanding commands (/init) ride the existing `expandUserBlocks` seam and are recorded as user turns with provenance
+- [ ] **CMDS-04**: Live rescan — newly created/installed commands, skills, agents (and removals) are discovered without restart: filesystem watch or invoke-time rescan re-runs discovery and available_commands_update re-fires so the editor autocomplete reflects changes immediately
 
 ### Slash-invocable Skills
 
@@ -38,7 +39,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 - [ ] **PAR-01**: Compaction on context overflow risk: threshold-triggered (~80% default, configurable) light-tier summarizer appending an additive typed `compaction` transcript line; Projector treats it as a hard reset-point class (summary = durable seed, immune to mutating-boundary resets); tool_use/result pairs atomic; retry-once recovery on provider overflow error; thinking blocks never rewritten mid-chain
 - [ ] **PAR-02**: `cache_control {"type":"ephemeral"}` emitted on every system block via the Shaper (parity-faithful lever; zcode corpus has no auto-compact — verified in docs/compaction-decision.md)
-- [ ] **PAR-03**: Hooks: settings.json parsing (project + user scopes), PreToolUse deny interceptor at the executor chokepoint — bounded sync execution, hard timeout, fail-open, structured verdicts, deny-only authority from project scope (no allow from repo-shipped files); joins the ONE gate pipeline locked in Phase 3 (hook verdict → permission ask → execute)
+- [ ] **PAR-03**: Hooks: settings.json parsing (project + user scopes), PreToolUse deny interceptor at the executor chokepoint — bounded sync execution, hard timeout, fail-open, structured verdicts, deny-only authority from project scope (no allow from repo-shipped files); joins the ONE gate pipeline locked in Phase 17 (hook verdict → permission ask → execute)
 - [ ] **PAR-04**: AGENTS.md/CLAUDE.md auto-injected into system context every session via dynamic merge into the per-session profile copy (trailing System TextBlocks), mtime-cached
 - [ ] **PAR-05**: Thinking blocks streamed to client: provider `"thinking"` chunks → raw `json.RawMessage` passthrough end-to-end (transcript, redactor excluded by construction, projector) — Anthropic signatures round-trip byte-identical
 - [ ] **PAR-06**: Rich prompt content: image blocks (base64) and @-file mentions expand with Read-tool rule gating and provenance; ingress capability validation per provider shape
@@ -101,13 +102,48 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| RUNT-01 | Pending | Pending |
+| RUNT-01 | Phase 15 | Pending |
+| ACP-03 | Phase 16 | Pending |
+| ACP-08 | Phase 16 | Pending |
+| ACP-01 | Phase 17 | Pending |
+| ACP-02 | Phase 17 | Pending |
+| ACP-05 | Phase 18 | Pending |
+| ACP-06 | Phase 18 | Pending |
+| ACP-07 | Phase 18 | Pending |
+| PAR-01 | Phase 19 | Pending |
+| PAR-02 | Phase 19 | Pending |
+| ACP-04 | Phase 20 | Pending |
+| CMDS-01 | Phase 20 | Pending |
+| CMDS-02 | Phase 20 | Pending |
+| CMDS-03 | Phase 20 | Pending |
+| CMDS-04 | Phase 20 | Pending |
+| SKLS-01 | Phase 20 | Pending |
+| SKLS-02 | Phase 20 | Pending |
+| SKLS-03 | Phase 20 | Pending |
+| PAR-03 | Phase 21 | Pending |
+| PAR-04 | Phase 21 | Pending |
+| PAR-05 | Phase 21 | Pending |
+| PAR-06 | Phase 21 | Pending |
+| PAR-07 | Phase 22 | Pending |
+| PAR-08 | Phase 22 | Pending |
+| PAR-09 | Phase 22 | Pending |
+| SAND-01 | Phase 22 | Pending |
+| SEEDG-01 | Phase 23 | Pending |
+| SEEDG-02 | Phase 23 | Pending |
+| SEEDG-03 | Phase 23 | Pending |
+| DOC-01 | Phase 24 | Pending |
+| TAIL-01 | Phase 24 | Pending |
+| TAIL-02 | Phase 24 | Pending |
+| TAIL-03 | Phase 24 | Pending |
+| KIT-01 | Phase 25 | Pending |
+| KIT-02 | Phase 25 | Pending |
+| KIT-03 | Phase 25 | Pending |
 
 **Coverage:**
-- v1.2 requirements: 33 total
-- Mapped to phases: 0
-- Unmapped: 33 ⚠️ (roadmap pending)
+- v1.2 requirements: 36 total
+- Mapped to phases: 36
+- Unmapped: 0 ✓ (Phases 15–25; numbering continues from v1.1's Phase 14)
 
 ---
 *Requirements defined: 2026-08-26*
-*Last updated: 2026-08-26 after initial definition*
+*Last updated: 2026-08-26 — traceability mapped to roadmap Phases 15–25 (35/35)*

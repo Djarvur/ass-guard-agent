@@ -5,7 +5,8 @@
 ## Milestones
 
 - ✅ **v1.0 MVP** — Phases 0–7 (shipped 2026-08-14; full detail: `.planning/milestones/v1.0-ROADMAP.md`, artifacts in `.planning/milestones/v1.0-phases/`)
-- ✅ **v1.1 ACP Early Adoption** — Phases 8, 9, 12, 13, 14 (shipped 2026-08-25; full detail: `.planning/milestones/v1.1-ROADMAP.md`, artifacts in `.planning/milestones/v1.1-phases/`)
+- ✅ **v1.1 ACP Early Adoption** — Phases 8, 9, 12–14 (shipped 2026-08-25; full detail: `.planning/milestones/v1.1-ROADMAP.md`, artifacts in `.planning/milestones/v1.1-phases/`)
+- 🚧 **v1.2 Claude Code Parity** — Phases 15–25 (in progress; this roadmap)
 
 ## Phases
 
@@ -38,31 +39,179 @@ Operator decisions at close (2026-08-23…25): D-09 REVERSED (session resume = m
 
 </details>
 
-## Next Milestone: v1.2 (pool — not yet planned)
+### 🚧 v1.2 Claude Code Parity (Phases 15–25, In Progress)
 
-Staged pool (order TBD at planning):
+**Milestone Goal:** Make ass-guard feel native in the editor and behave like Claude Code end-to-end — full ACP surfaces, built-in + skill slash-commands, deliberate parity-closure of the ten known divergences — then extract the agent-creation kit as a library with ass-guard as its reference app.
 
-1. **ACP completeness** — session/request_permission (clickable asks), elicitation/create, tool_call+plan update streaming, available_commands_update, session/list/resume/close/delete family (session resume is operator-must-have, D-09 reversal); plus **editor-driven configuration**: read Zed `settings` payload at initialize + advertise `configOptions` / handle `session/set_config_option` so tier/model defaults are switchable from the editor UI (operator ask 2026-08-25; api keys stay env/file, never editor settings)
-1a. **Built-in chat commands** (operator ask 2026-08-25: "/model", "/config"… "we will need all the useful internal commands") — zero built-in slash-commands exist today (only file-discovered ones like /opsx:*). Replicate CC's internal set: /model (session-scope routing override), /config (rides editor-config), /compact (needs compaction), /clear (new session same thread), /cost (usage aggregation from existing transcript records), /resume, /memory, /mcp status, /permissions, /doctor, /status, /help, /init. Surface via available_commands_update so Zed autocompletes them. Depends on: ACP-completeness item 1 for the update mechanism + configOptions.
+**Explicitly deferred from v1.2:** Telegram peer → v1.3 pool, LOWEST priority per operator 2026-08-26 (steering queue SEEDG-01 is built transport-neutral as its prerequisite). dsh profile #2 dropped entirely (operator 2026-08-26; mimicry bar abandoned).
 
-1c. **Slash-invocable skills** (operator ask 2026-08-25: "claude code can call skills like the commands. we need too!") — today typing /<skill-name> falls through to plain text: invocationFor resolves ONLY reg.Commands (cmd/ass-guard/acp_serve.go); skills live in reg.Skills and are reachable only via the model's Skill tool (12-04/08-05). In CC, every skill IS a slash command ("when users reference a slash command, they are referring to a skill" — the Skill tool's own description). Fix: extend invocationFor (or the expansion seam) to resolve skill keys — expanding SKILL.md body as the prompt, args appended; include skills in available_commands_update so Zed autocompletes them alongside commands. Extend likewise to discovered AGENTS (BMad-style: its installer drops .claude/agents/*.md that CC addresses as /agents too) — plus wire the per-agent `model:` frontmatter field into subagent dispatch (parsed today but ignored; routing comes from the light tier only), since BMad agents carry per-role model hints.
+- [ ] **Phase 15: internal/runtime Carve (Step 0)** - Mechanical verbatim move of sessionTurnRunner into internal/runtime so seven later feature clusters land in their final home
+- [ ] **Phase 16: ACP Wire Foundation** - Outbound id'd requests, one ordered TurnEmitter, transcript line-type extensions, initialize capability overhaul
+- [ ] **Phase 17: Permissions + Elicitation** - Clickable permission asks and structured form asks through the editor; ONE gate pipeline locked
+- [ ] **Phase 18: Session Family** - list / load-resume / close-delete with full replay and live-state reconciliation
+- [ ] **Phase 19: Compaction + cache_control** - Threshold-triggered compaction marker plus parity-faithful cache_control emission
+- [ ] **Phase 20: Built-in Commands + Skills + Per-Agent Model** - Resolver chain, class-B/class-A command families, slash-invocable skills, per-agent model dispatch
+- [ ] **Phase 21: Context & Policy Parity Closures** - Hooks PreToolUse deny joining the gate pipeline, AGENTS.md injection, thinking streaming, rich prompt content
+- [ ] **Phase 22: Background Execution + Sandbox Reality** - Full subagents, background Bash, persistent shell on shared process lifecycle; real sandbox
+- [ ] **Phase 23: SEED Gaps Close-out** - Steering queue, checkpoint restore guard, /undo
+- [ ] **Phase 24: Documentation & Ops Tails** - LSP doc requirement, outcome store, nightly CI, ecosystem end-to-end
+- [ ] **Phase 25: SEED-001 Kit Extraction (strictly last)** - Agent machinery extracted behind a composition-root API; ass-guard becomes the reference app
 
-1b. **Claude Code parity audit** (operator ask 2026-08-25: "I want claude code behaviour and ux replicated in ass-guard as full as possible") — zcode was already claude-code-compat, so the catalog/forms largely match; the audit closes the 10 known divergences deliberately instead of rediscovering them:
-    - compaction on context overflow (today: rolling 64-msg window + lean seed, NO compaction — long sessions silently lose earlier turns)
-    - session resume (--resume/continue anywhere)
-    - permissions UX (clickable allow/deny/always vs plain-text asks) — rides ACP-completeness item 1
-    - subagents (full Task tool w/ background agents + completion notifications vs restricted-subset goroutines)
-    - slash-command autocomplete in editor (available_commands_update) — rides ACP-completeness
-    - hooks: full lifecycle incl. PreToolUse deny path (today observe-only, limited events)
-    - AGENTS.md / CLAUDE.md auto-injection into system context every session
-    - structured thinking blocks streamed to client (interleaved reasoning display)
-    - rich prompt content (@-file mentions, images) beyond text blocks
-    - persistent-shell Bash option + background-completion notifications to client
+## Phase Details
 
-2. **Telegram Peer** (ex-Phase 10, replan) — text + voice STT, shared turn core (`internal/runtime` extraction), go-telegram/bot dependency lands here
-3. **dsh profile #2** (ex-Phase 11, replan vs source-analysis) — scope re-evaluated under the mimicry-pivot decision
-4. **LSP support** — documented requirement for IDE-side MCP configuration (operator decision 2026-08-25: no agent-side LSP implementation)
-5. SEED-001 agent-creation kit library; SEED-002 charmbracelet/fantasy mining; SEED-003 Go agent reference landscape; SEED-004 IDEA-LANDSCAPE borrow list (acknowledged dormant at v1.1 close)
-6. Scheduler outcome store + feedback loop; nightly-parity CI automation tail
+### Phase 15: internal/runtime Carve (Step 0)
+**Goal**: The turn runner lives in its final home before any feature touches it — seven of ten feature clusters modify `sessionTurnRunner`, and carving first means features land once instead of migrating twice.
+**Depends on**: Nothing (first phase of the milestone)
+**Requirements**: RUNT-01
+**Success Criteria** (what must be TRUE):
+  1. `internal/runtime` houses `sessionTurnRunner` verbatim with engine/MCP adapters and cron wiring; `cmd/ass-guard` composes it — zero behavior change, proven by the standing `mise ci` gate (vet + lint + CGO_ENABLED=0 build + `go test -race`) green.
+  2. Every existing serve-path behavior is observably identical after the move: a live Zed-spawned session streams tokens, executes tools, replays on restart exactly as at v1.1 close (the operator's daily-use surface unchanged).
+  3. No feature code moved or rewritten during the carve — the diff is a pure relocation (verbatim bodies, import fixes only), reviewable as such.
+**Plans**: TBD
 
-Deferred from v1.1 requirements: TG-01..06 (Telegram), DSH-01..05 (dsh profile).
+### Phase 16: ACP Wire Foundation
+**Goal**: The three primitives every interactive phase depends on exist and are proven under concurrency: outbound id'd JSON-RPC requests with a pending-response registry, one ordered inline TurnEmitter owning all client frames with explicit backpressure, and the extended transcript line types (raw-thinking passthrough as `json.RawMessage`, `local_command`, compaction marker) that later phases' schemas lock here.
+**Depends on**: Phase 15 (the emitter and request paths attach to the carved runner)
+**Requirements**: ACP-03, ACP-08
+**Success Criteria** (what must be TRUE):
+  1. During a live Zed turn the user sees activity stream in real time in the editor's native cards: tool_call/tool_call_update (kind/status/diff/locations), plan updates mirroring TodoWrite entries, and agent_thought_chunk — never a black-box spinner for the whole turn.
+  2. Frames from concurrent emitters (foreground turn, subagents, engine firings) arrive at the client in one consistent order — a multi-emitter `-race` stress test proves no cross-kind reordering and no dropped frames under backpressure, with the interleaving policy documented (foreground priority).
+  3. An id'd request written to the client (e.g. a probe elicitation) receives its response matched by id even while notifications stream — the pending-response registry resolves responses concurrently without blocking the writer mutex, and an unanswered request degrades loudly rather than wedging the connection.
+  4. Initialize/new/load/resume responses carry the richer capability set (loadSession, sessionCapabilities, configOptions advertisement shape), verified against the ACP schema in a real Zed handshake.
+  5. Transcript lines for raw thinking (`json.RawMessage` passthrough), local_command, and the compaction marker type exist append-only with redaction excluded by construction for thinking bytes.
+**Plans**: TBD
+
+### Phase 17: Permissions + Elicitation
+**Goal**: The agent's asks become clickable editor surfaces instead of plain text — permission asks via session/request_permission with allow/reject × once/always semantics, learning/engine asks via elicitation/create forms — riding the AskBroker suspension pattern so human-timescale waits never hold locks; the ONE gate pipeline (hook verdict → permission ask → execute) is locked and documented here so Phase 21's hooks join rather than bolt on.
+**Depends on**: Phase 16 (id'd outbound requests + pending-response registry are the transport these asks ride)
+**Requirements**: ACP-01, ACP-02
+**Success Criteria** (what must be TRUE):
+  1. With `permissions.mode: gated`, a mutating tool call pops Zed's native permission dialog with allow/reject × once/always options; the chosen option persists correctly across subsequent calls (always = no further ask).
+  2. While a permission dialog is open, the session stays alive and responsive — other prompts queue, cancellation works, a turn death mid-ask delivers cancelled as a NORMAL response (no hang, no orphaned dialog), and nothing blocks holding the turn mutex.
+  3. Learning-store and engine asks render as structured forms via elicitation/create on current clients; on older clients the -32601 probe degrades to today's plain-text AskBroker path automatically — either way the user can answer and the answer lands as the tool result.
+  4. Default remains ungated (safety-model amendment "available, not default"): with default config, zero new dialogs appear versus v1.1 behavior; mode flips via editor configOptions take effect on the running session.
+  5. The gate pipeline precedence (hook verdict → permission ask → execute) is implemented at ONE chokepoint and documented, with permissions.yaml persisted choices surviving restarts.
+**Plans**: TBD
+
+### Phase 18: Session Family
+**Goal**: Sessions become first-class objects the editor can enumerate and restore: list with pagination, load/resume with full replay plus live-state reconciliation (the hard part — dangling expectations get synthetic closure), and close/delete with tombstoning preserving the D-20 audit invariant.
+**Depends on**: Phase 16 (replay rides the ordered TurnEmitter); Phase 17 (parked asks/pending permissions are part of the reconciled live state)
+**Requirements**: ACP-05, ACP-06, ACP-07
+**Success Criteria** (what must be TRUE):
+  1. The user opens Zed's session picker and sees past sessions listed with headers/cursor pagination, and can open any of them — the full conversation replays visibly through the same ordered frames as live turns.
+  2. Resuming mid-history works like Claude Code: ids continue from transcript maxima (no collisions), commands re-advertise, and a kill -9 mid-turn followed by resume leaves NO ghost state — dangling tool_calls close as failed, parked asks and pending permissions resolve synthetically (kill -9 E2E test green).
+  3. `ass-guard --resume` works anywhere (CLI flag), not only from the editor.
+  4. Closing a session stops its work cleanly; deleting tombstones the record (never rm) so audit history survives — deleted sessions disappear from the list but remain investigable on disk.
+**Plans**: TBD
+
+### Phase 19: Compaction + cache_control
+**Goal**: Long sessions stop silently losing earlier turns: threshold-triggered light-tier compaction appends an additive typed marker the Projector treats as a durable reset-point class, and cache_control ephemeral breakpoints ship on every system block — the corpus-proven parity-faithful lever (zcode has no auto-compact; docs/compaction-decision.md settles design).
+**Depends on**: Phase 16 (transcript marker line type locked there); independent of the session family otherwise — pulled ahead of its nominal slot because /compact (Phase 20) requires it and it touches the Projector Phase 18 disturbed
+**Requirements**: PAR-01, PAR-02
+**Success Criteria** (what must be TRUE):
+  1. A long session crossing the ~80% context threshold (configurable) compacts automatically: a summary persists in context as a durable seed immune to mutating-boundary resets, and the user observes the conversation continuing coherently where v1.1 would have lost earlier turns.
+  2. Tool_use/result pairs survive compaction atomically (no orphaned results), thinking blocks are never rewritten mid-chain, and pinned Projector tests prove boundary-survival and pair-atomicity — the two-layer context machinery is respected, not bypassed.
+  3. On a provider overflow error ("prompt too long"), recovery retries once post-compaction instead of failing the turn.
+  4. Every outgoing request carries cache_control {"type":"ephemeral"} on each system block — visible in the request log — and the existing cache-discipline probe in `ass-guard parity` flips green on placement.
+**Plans**: TBD
+
+### Phase 20: Built-in Commands + Skills + Per-Agent Model
+**Goal**: Slash-invocation becomes one coherent resolver chain — builtins → skills → agents → file-discovered commands — with CC's useful internal commands executing control-plane-fast (no model turn) or prompt-expanding as appropriate, skills addressable as slash commands, AGENTS addressable likewise, and per-agent `model:` frontmatter actually routing subagent dispatch. Everything autocompletes in the editor via available_commands_update.
+**Depends on**: Phase 16 (available_commands_update + local_command transcript lines); Phase 19 (/compact requires compaction)
+**Requirements**: ACP-04, CMDS-01, CMDS-02, CMDS-03, CMDS-04, SKLS-01, SKLS-02, SKLS-03
+**Success Criteria** (what must be TRUE):
+  1. Typing `/` in Zed autocompletes the full command set (builtins, discovered commands, skills, AGENTS), and available_commands_update re-fires when discovery changes mid-session.
+  2. Newly created/installed (or removed) commands, skills, and agents are picked up WITHOUT restarting the session — live rescan (filesystem watch or invoke-time re-discovery) updates the resolver chain and the editor autocomplete reflects the change immediately.
+  3. `/help /status /cost /mcp /memory /permissions /doctor /config /model /clear /resume /compact` respond instantly with NO model turn, recorded as local_command transcript lines; /compact performs real compaction (Phase 19's machinery); /model switches session-scope routing and takes effect on the next request.
+  4. `/init` expands as a prompt-expanding command recorded as a user turn with provenance, riding the existing expansion seam unchanged in behavior.
+  5. Typing `/<skill-name>` runs the skill — SKILL.md body expands as the prompt with args appended; discovered AGENTS are invocable the same way (BMad-style `.claude/agents/*.md` layout works).
+  6. A subagent dispatched to an agent whose frontmatter declares `model:` routes to that model (precedence frontmatter > dispatch > session default > tier), with resolvedModel reported back — mis-routed background launches become impossible before Phase 22 builds on this.
+**Plans**: TBD
+
+### Phase 21: Context & Policy Parity Closures
+**Goal**: The content-path parity closures land as one coherent wave sharing two vehicles already built: hooks PreToolUse deny joins Phase 17's single gate pipeline (deny-only authority from project scope), AGENTS.md/CLAUDE.md auto-inject via the profile-copy merge, thinking streams end-to-end byte-identical, and rich prompt content (images, @-mentions) enters with ingress validation.
+**Depends on**: Phase 17 (the gate pipeline hooks join); Phase 16 (thinking passthrough line types); Phase 15 (runner seam for injection points)
+**Requirements**: PAR-03, PAR-04, PAR-05, PAR-06
+**Success Criteria** (what must be TRUE):
+  1. A settings.json hook (project or user scope) returning deny on PreToolUse blocks the tool call at the executor chokepoint — bounded sync execution with hard timeout, fail-open on hook failure, structured verdicts, and repo-shipped files can NEVER grant allow (deny-only from project scope).
+  2. Hook verdicts flow through the SAME pipeline as permission asks (documented precedence hook verdict → permission ask → execute) — no second gate exists.
+  3. A fresh session in a repo with AGENTS.md/CLAUDE.md shows those files' content in system context automatically (mtime-cached; edits picked up on change) without any manual step.
+  4. Extended thinking renders live in Zed as thought chunks, and thinking blocks round-trip byte-identical including the Anthropic cryptographic signature through transcript/redactor/projector — no 400s from edited or reordered signatures.
+  5. Pasting an image reference or @-mention into the prompt produces the corresponding content block in the outgoing request (@ expansion gated by Read-tool rules with provenance; ingress validated per provider shape — unsupported shapes degrade loudly, not silently).
+**Plans**: TBD
+
+### Phase 22: Background Execution + Sandbox Reality
+**Goal**: All long-lived process work converges on ONE lifecycle infrastructure: full subagents (background dispatch, structured task-notifications by kind, output retrieval, cancellation), background Bash completion callbacks on the same task-notification subsystem, persistent-shell Bash via PTY, and the sandbox flag made real with landlock/sandbox-exec split — probe-and-degrade loudly, default OFF.
+**Depends on**: Phase 20 (per-agent model routing must precede subagent dispatch or background agents launch mis-routed); Phase 16 (task-notifications ride existing tool_call frames)
+**Requirements**: PAR-07, PAR-08, PAR-09, SAND-01
+**Success Criteria** (what must be TRUE):
+  1. The model can launch a subagent in the background and keep working: the dispatch returns immediately with a discriminated result, a structured task-notification arrives on completion (detected by kind, not text-matching), output is retrievable for running tasks, and cancellation kills cleanly.
+  2. Background Bash behaves identically lifecycle-wise: completion notifications ride the same task-notification subsystem, processes die with their process group (TERM-before-KILL escalation, Linux Pdeathsig), stale logs sweep at startup, and no orphans survive agent shutdown.
+  3. The persistent-shell Bash option holds state across calls in one PTY session (cd/export persist, ANSI stripped, EIO-as-EOF handled) without leaking the master fd.
+  4. With sandbox enabled, tools run confined (landlock on Linux kernel ≥5.13, sandbox-exec generated profiles on macOS with targeted denies); unsupported kernels/environments degrade LOUDLY at startup, default stays OFF, and `--sandbox=off` always escapes.
+**Plans**: TBD
+
+### Phase 23: SEED Gaps Close-out
+**Goal**: The remaining SEED-004 gaps close: steering/input queue during a running turn (transport-neutral — the Telegram prerequisite, not descoped to queue-behind), checkpoint restore hardened against active turns and nested repos, and /undo exposed as a class-B command.
+**Depends on**: Phase 20 (steering drains at model-request boundaries in the carved runner; /undo lands in the class-B command table)
+**Requirements**: SEEDG-01, SEEDG-02, SEEDG-03
+**Success Criteria** (what must be TRUE):
+  1. Typing while a turn runs queues input and applies it at the next model-request boundary — never mid-in-flight-request, never splitting tool_use/result pairs — with the ticket/cutoff cancel protocol resolving which queued inputs the running turn acknowledges.
+  2. A queued-but-unresolved ask disambiguates cleanly (parked-ask handling): the user can tell what's waiting and answer or cancel it without killing the turn.
+  3. Checkpoint restore refuses safely when a turn or engine chain is active, snapshots pre-restore state first, refuses nested-repo restores (gitlink contents would be silently unprotected), GCs expired checkpoint objects, and `.ass-guard/` is excluded from the user's git via `.git/info/exclude`.
+  4. `/undo` restores the last checkpoint instantly with no model turn (class-B), and the restored workspace is byte-identical to the pre-turn snapshot.
+  5. The steering queue API is transport-neutral (consumable by a non-ACP frontend) — Telegram could adopt it without rework.
+**Plans**: TBD
+
+### Phase 24: Documentation & Ops Tails
+**Goal**: Small independent tails close out: LSP documented as an IDE-side MCP configuration requirement (no agent-side implementation), the scheduler gains its deterministic outcome store + feedback loop, nightly upstream-parity CI automation runs unattended, and plugins/skills prove working unchanged in every interaction mode (ECOS-04 end-to-end).
+**Depends on**: Phases 15–23 (tails verify settled surfaces; ECOS-04 exercises modes built across the milestone)
+**Requirements**: DOC-01, TAIL-01, TAIL-02, TAIL-03
+**Success Criteria** (what must be TRUE):
+  1. Following the documented guide, a user configures IDE-side MCP/LSP for ass-guard sessions (operator decision 2026-08-25 honored: documentation only, no agent-side implementation).
+  2. Scheduler outcomes are stored deterministically (zero LLM calls) and feed back into routing decisions observable in subsequent scheduling behavior.
+  3. Nightly CI runs the upstream-parity gate unattended on a schedule and reports drift (zcode version or structure changes) without human triggering.
+  4. Plugins/skills installed for Claude Code work unchanged in EVERY interaction mode — not just loaded at discovery but functional end-to-end wherever they apply.
+**Plans**: TBD
+
+### Phase 25: SEED-001 Kit Extraction (strictly last)
+**Goal**: The agent-building machinery extracts as a library in this repo behind a composition-root API, with the frontend seam (emitter + requester defined session-side, implemented acp-side) as the kit interfaces — the milestone's one genuinely new design act. Any earlier ordering invalidates extracted interfaces; with Phases 15–24 settled this is mostly re-homing.
+**Depends on**: All previous phases (extraction strictly last)
+**Requirements**: KIT-01, KIT-02, KIT-03
+**Success Criteria** (what must be TRUE):
+  1. Core machinery (profile/shaper/provider/modelrouting/toolcat/toolexec/engine/hookdag/event/session/redact/checkpoint/audit/mcp) lives behind a composition-root API in `pkg/`, importable as a library without touching cmd/ or app-internal packages.
+  2. The frontend seam is expressed as kit interfaces — emitter + requester defined session-side, implemented acp-side — proving a non-ACP frontend could host the kit (design-level proof; the Telegram peer consumes this in v1.3).
+  3. ass-guard builds and behaves identically as the kit's reference app (retains ecosys/openspec/coreexec/learning/firstrun/evalsuite/parity + ACP frontend) — `mise ci` green, live Zed session unchanged, all behavioral eval suites still pass against the extracted layout.
+  4. SEED-002 fantasy + SEED-003 landscape materials are present as reading material/design prior art with zero runtime dependencies.
+**Plans**: TBD
+
+## Research Flags
+
+Phases likely needing `/gsd-plan-phase --research-phase <N>` (from research/SUMMARY.md):
+
+- **Phase 16:** several ACP details web-derived LOW confidence — sequenceNumber continuity/reset-on-load legality, available_commands_update full-replacement semantics, cancel contract; verify against `zed-industries/agent-client-protocol` source before coding.
+- **Phase 18:** resume reconciliation is the densest correctness surface; enumerate the live-state inventory and design the kill -9 test matrix during planning.
+- **Phase 19:** compaction × projector interaction MEDIUM confidence; pin boundary-survival and pair-atomicity tests up front.
+- **Phase 22:** platform facts drift (Ubuntu userns policy, Seatbelt fragility, creack/pty failure modes) — re-verify at planning time.
+- **Phase 23:** pi/strands steering reference implementations NOT verified (LOW confidence) — consult during discuss-phase.
+
+Standard patterns (skip research-phase): Phase 15 (verbatim move), Phase 20 (established patterns), Phase 21's AGENTS.md portion (four merge sites to copy), Phase 25 (re-homing stabilized code).
+
+## Progress
+
+**Execution Order:**
+Phases execute in numeric order: 15 → 16 → … → 25
+
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|-----------|----------------|--------|-----------|
+| 15. internal/runtime Carve | v1.2 | 0/? | Not started | - |
+| 16. ACP Wire Foundation | v1.2 | 0/? | Not started | - |
+| 17. Permissions + Elicitation | v1.2 | 0/? | Not started | - |
+| 18. Session Family | v1.2 | 0/? | Not started | - |
+| 19. Compaction + cache_control | v1.2 | 0/? | Not started | - |
+| 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 0/? | Not started | - |
+| 21. Context & Policy Parity Closures | v1.2 | 0/? | Not started | - |
+| 22. Background Execution + Sandbox Reality | v1.2 | 0/? | Not started | - |
+| 23. SEED Gaps Close-out | v1.2 | 0/? | Not started | - |
+| 24. Documentation & Ops Tails | v1.2 | 0/? | Not started | - |
+| 25. SEED-001 Kit Extraction | v1.2 | 0/? | Not started | - |
