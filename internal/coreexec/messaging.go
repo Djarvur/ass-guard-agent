@@ -172,9 +172,18 @@ func (e *unknownAgentError) Error() string { return "sendmessage: unknown agent 
 
 // --- ReadSessionContext -------------------------------------------------------
 
-// sessIDPattern is the schema-declared sessionId pattern (the schema is the
-// provenance for this shape).
-var sessIDPattern = regexp.MustCompile(`^sess_[A-Za-z0-9._-]+$`)
+// sessIDPattern validates session ids in BOTH live vocabularies (12-11,
+// G-12-4c): the captured zcode schema's sess_* branch (kept
+// character-for-character — the schema is the provenance for that shape) OR
+// ass-guard's own id branch — the RFC 4122 v4 UUID form internal/acp/handlers.go
+// newSessionID mints and internal/session/transcript.go openTranscript writes as
+// transcript_<uuid>.jsonl (T-12-04-03: the reader serves ass-guard's OWN store).
+//
+// Traversal-safe by construction (T-12-11-01): both alternatives exclude path
+// separators, so the filepath.Join under .ass-guard/ in read() cannot escape
+// the store directory — a hostile id rejects structurally BEFORE any file open.
+var sessIDPattern = regexp.MustCompile(
+	`^(sess_[A-Za-z0-9._-]+|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$`)
 
 // SessionReader enumerates + reads the project's .ass-guard/ transcript family.
 type SessionReader struct {
@@ -239,7 +248,7 @@ func (r *SessionReader) Sessions() []string {
 
 	for _, e := range entries {
 		name := e.Name()
-		if strings.HasPrefix(name, "transcript_sess_") && strings.HasSuffix(name, ".jsonl") {
+		if strings.HasPrefix(name, "transcript_") && strings.HasSuffix(name, ".jsonl") {
 			ids = append(ids, strings.TrimSuffix(strings.TrimPrefix(name, "transcript_"), ".jsonl"))
 		}
 	}
