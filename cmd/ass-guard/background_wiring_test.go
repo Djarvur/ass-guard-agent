@@ -213,13 +213,14 @@ func TestBackgroundWiring_ProfileCatalogParity(t *testing.T) {
 
 	tmp := t.TempDir()
 
-	if err := defaults.WriteTree(tmp, false); err != nil {
+	err := defaults.WriteTree(tmp, false)
+	if err != nil {
 		t.Fatalf("WriteTree: %v", err)
 	}
 
-	prof, err := profile.NewLoader(filepath.Join(tmp, "profiles")).Load("zcode")
-	if err != nil {
-		t.Fatalf("Load zcode from seed: %v", err)
+	prof, lerr := profile.NewLoader(filepath.Join(tmp, "profiles")).Load("zcode")
+	if lerr != nil {
+		t.Fatalf("Load zcode from seed: %v", lerr)
 	}
 
 	catalogNames := map[string]bool{}
@@ -228,7 +229,7 @@ func TestBackgroundWiring_ProfileCatalogParity(t *testing.T) {
 	}
 
 	profileOnly := []string{} // model-visible but absent from the execution catalog
-	catalogOnly := []string{} // executable but never offered to the model
+	catalogOnly := make([]string, 0, len(catalogNames))
 
 	for _, decl := range prof.Tools {
 		if strings.HasPrefix(decl.Name, "mcp__") {

@@ -9,8 +9,10 @@ import (
 
 // coreToolCount is the stable built-in core (D-16): 19 through Phase-11;
 // 20 from 12-07 (CronUpdate joins the embedded core — the captured catalog
-// always carried the quartet; the embedded copy had only three of the four).
-const coreToolCount = 20
+// always carried the quartet; the embedded copy had only three of the four);
+// 21 from 12-11 (TaskOutput joins — G-12-5a: the zcode profile declared it but
+// coretools.json lacked the entry, a live dead end; deliberate re-pin).
+const coreToolCount = 21
 
 // 14-06 spot-check names (goconst: repeated literals).
 const (
@@ -220,7 +222,8 @@ func TestCatalogDestructiveOnlyBash(t *testing.T) {
 func declaredConcurrencySafe(name string) bool {
 	switch name {
 	case nameTodoWrite, nameTodoRead, "CronCreate", "CronUpdate", "CronDelete", "CronList",
-		"TaskStop", "SendMessage", "ExitPlanMode", "ReadSessionContext", "AskUserQuestion", "Agent":
+		"TaskStop", "TaskOutput", "SendMessage", "ExitPlanMode", "ReadSessionContext",
+		"AskUserQuestion", "Agent":
 		return true
 	}
 

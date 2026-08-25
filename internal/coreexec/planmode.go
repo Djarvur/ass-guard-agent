@@ -3,6 +3,7 @@ package coreexec
 import (
 	"context"
 	"encoding/json"
+	"log"
 
 	"github.com/Djarvur/ass-guard-agent/internal/sched"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
@@ -139,6 +140,15 @@ func RegisterInteractive(catalog *toolcat.Catalog, cfg InteractiveConfig) {
 		if tool, ok := catalog.Get(name); ok {
 			tool.Execute = exec
 			catalog.Register(tool)
+
+			continue
 		}
+
+		// Skipped stub target: LOUD, not silent (12-11/G-12-5a lesson — the
+		// silent skip is what turned TaskOutput's catalog omission into a
+		// guaranteed dead end). Forward-compat discipline unchanged: the skip
+		// stays a skip.
+		log.Printf("coreexec: RegisterInteractive skipping stub %q: no catalog entry "+
+			"(model-visible surface and execution catalog have drifted)", name)
 	}
 }
