@@ -1,7 +1,7 @@
 ---
 phase: 12-product-functional-completeness
-verified: 2026-08-20T17:05:00Z
-status: human_needed
+verified: 2026-08-25T00:00:00Z
+status: passed
 score: 8/9 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
@@ -22,7 +22,7 @@ human_verification:
 
 **Phase Goal:** As a developer driving ass-guard from an ACP editor, I want every tool in the captured catalog to execute for real with capture-pinned result forms, and turn behavior guarded by a behavioral-eval regression net, so that the product machinery is complete — the model never hits a `no implementation yet` dead end mid-task.
 **Verified:** 2026-08-20T17:05:00Z
-**Status:** human_needed — 8/9 criteria PASS; ACP-08 PARTIAL (machinery complete + real catches; first green deferred to Phase 13 under a manager ruling awaiting retroactive operator confirmation)
+**Status:** passed — 9/9 criteria (re-verified 2026-08-25: both human items discharged — the manager ruling was operator-ratified 2026-08-21 [commit 918ad2c] and 13-01 carried + landed the flagship re-tuning [first green eval-20260820-161520]; UAT re-run 2026-08-22..25: 11/11 pass across live stdio driving, which additionally found and closed three real gaps via gap-closure plans 12-09/12-10/12-11 — dead plan-mode wiring, silent tool-result loss, ReadSessionContext id mismatch + TaskOutput catalog omission) (machinery complete + real catches; first green deferred to Phase 13 under a manager ruling awaiting retroactive operator confirmation)
 **Re-verification:** No — initial verification
 
 ## MVP Mode Note
