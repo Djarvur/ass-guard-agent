@@ -1,346 +1,324 @@
-# Feature Research
+# Feature Research — v1.2 Claude Code Parity
 
-**Domain:** v1.1 feature areas for ass-guard (slash-command invocation; audit log on `acp serve`; zcode parity re-capture; Telegram peer; deepseek-harness mimicry profile #2)
-**Researched:** 2026-08-14
-**Confidence:** HIGH for slash-command semantics (Claude Code official docs + zcode local ground truth + OpenSpec main-branch docs), HIGH for audit-log norms (Claude Code official OTel docs), MEDIUM for Telegram frontends (comparables are community projects; official Claude Code Channels covered via multiple secondary sources), MEDIUM for deepseek-harness (developer preview; docs inspected but turn-level wire protocol not fully enumerated — flagged as open verification items)
-
-> Scope note: this replaces the 2026-08-09 v1.0 landscape doc (v1.0 shipped; its landscape conclusions are absorbed into PROJECT.md). This doc covers ONLY the five NEW v1.1 feature areas. Complexity is implementation complexity for ass-guard specifically (Go, single static binary, ACP-stdio + Telegram-in-process, existing v1.0 capabilities listed in PROJECT.md Validated). Volatile surfaces web-verified August 2026.
+**Domain:** AI coding agent — ACP-native surfaces, chat commands, subagents, steering (v1.2 scope only)
+**Researched:** 2026-08-26
+**Confidence:** HIGH for ACP protocol shapes and Claude Code documented behavior (official docs + live schema); MEDIUM for compaction internals, Zed panel specifics, and steering-semantics comparisons (community/version-drift sources)
 
 ---
 
-## Verified Landscape Facts (grounding for the five areas)
+## Verified Landscape Facts (answers to the research questions)
 
-### (a) Slash-command semantics — Claude Code 2026, zcode, and OpenSpec
+These are the expected-behavior facts each v1.2 feature should match. Confidence tagged per block.
 
-**Claude Code (official docs, current 2026):**
+### (a) Claude Code built-in slash-commands — exact behavior [HIGH]
 
-- **Commands have been merged into skills.** A file at `.claude/commands/deploy.md` and a skill at `.claude/skills/deploy/SKILL.md` both create `/deploy` and function identically. Existing `commands/` files keep working; skills are the recommended form (supporting-file dirs, invocation-control frontmatter, auto-load by relevance).
-- **Layout / naming:** command name = filename minus extension. Namespacing comes from directories: plugin skills (`<plugin>/skills/<name>/SKILL.md`) → `/plugin:name`; clashing nested dirs get directory-qualified names (`/apps/web:deploy`). Search paths: enterprise/managed > personal (`~/.claude/`) > project (`.claude/`) > bundled; a skill beats a same-named command file.
-- **Frontmatter fields (all optional):** `name`, `description`, `when_to_use`, `argument-hint` (autocomplete hint), `arguments` (named positional args), `disable-model-invocation` (user-only), `user-invocable: false` (hide from `/` menu), `allowed-tools` / `disallowed-tools` (per-turn grants/removals — grants clear on the next message), `model`, `effort`, `context: fork` (run in a subagent; with `agent`, `background`), `hooks`, `paths` (glob activation limits), `shell`, `metadata`, `license`, `compatibility`.
-- **Substitution:** `$ARGUMENTS` = full argument string (if unused, arguments are appended as `ARGUMENTS: <value>`); `$ARGUMENTS[N]` / `$N` 0-based positional (missing index stays literal); named `$name` args via the `arguments` field; env vars `${CLAUDE_SESSION_ID}`, `${CLAUDE_SKILL_DIR}`, `${CLAUDE_PROJECT_DIR}`, `${CLAUDE_EFFORT}`, `${CLAUDE_PLUGIN_ROOT}`, `${CLAUDE_PLUGIN_DATA}`; `\$` escapes a literal dollar; multi-word args need quoting.
-- **Composition with skills:** command stacking — `/write-tests /fix-issue 123` loads the first skill plus up to five more; a non-expanding token ends the run and becomes argument text. `context: fork` runs the command as a background subagent with the file content as prompt. Dynamic injection via `` !`command` `` (or ` ```! ` blocks) runs pre-invocation shell in Claude Code (can be disabled); failures abort the invocation.
+Source: official code.claude.com docs (`/commands`, `/costs`, `/model-config`, `/settings-reference`).
 
-**zcode (mimicry target — local ground truth from the shipped `zcode-guide` diagnostics skill):**
+| Command | What it does | State changed | UI presented |
+|---------|--------------|---------------|--------------|
+| `/model` | Switches the main-loop model mid-session (`/model sonnet`). Direct-argument command — works even in non-TUI clients | Session-scope model routing | Argument-less: model selector; with arg: applies immediately |
+| `/config` | Opens settings panel OR accepts direct `key=value` (e.g. `/config verbose true`) touching theme, verbose, autoCompactEnabled, output styles | Settings files (scoped) | Interactive arrow-key panel; Esc exits; enum items cycle on Enter |
+| `/compact` | Summarizes conversation history to free context. Optional focus instructions (`/compact focus on the DB changes`) steer the summary | Replaces projected history with summary + kept-recent tail | After: shows summary size vs capacity |
+| `/clear` (aliases `/reset`, `/new`) | Starts new empty-context conversation; optionally labels the previous session so it's findable in the `/resume` picker | New session id; resets usage counters too | Confirmation-free |
+| `/cost` | Total cost, API duration, wall duration, lines added/removed, **per-model** breakdown with cache-read/cache-write tokens | None (read-only aggregation) | Text block |
+| `/resume` | Opens interactive session picker; searchable, also by PR URL. **Cannot run remotely** (needs local terminal UI) | Loads selected session | Full-screen picker |
+| `/memory` | Picker of memory-file locations (project `CLAUDE.md`, user `~/.claude/CLAUDE.md`, project-local) → opens chosen file in $EDITOR | File edits persist | Picker menu → editor |
+| `/mcp` | Lists configured MCP servers with connection status, auth status, tools exposed; triggers OAuth flows for servers needing it | Can initiate auth | Server list w/ per-server detail |
+| `/permissions` | Interactive editor for **allow / ask / deny** rule sets. Rule syntax `Tool(specifier)`: `Bash(npm run *)`, `Read(./.env)`, `WebFetch(domain:example.com)`, `mcp__server__*` | Writes rules to scoped settings files | Tabbed rule editor |
+| `/doctor` | Full checkup: installation issues, unused skills, CLAUDE.md optimization opportunities. **Asks before changing anything** | Optional fixes after confirm | Findings report → per-finding confirmations |
+| `/status` | Version, model, account/auth, context-window usage, related runtime info | None | Text block |
+| `/help` | Lists all commands (built-in + discovered) | None | Text list |
+| `/init` | Generates a starter `CLAUDE.md` (structure, build commands, architecture, conventions); can import config from other agents; every later session auto-loads it | Creates CLAUDE.md | Generation progress → review |
 
-- Discovery order (first match wins, normalized name = path with `:` separators, lowercased): explicitly configured roots > `~/.zcode/commands` > `~/.agents/commands` > workspace `.zcode/commands` (every level from cwd up to repo root) > workspace `.agents/commands` > enabled plugin roots. Within a level `.zcode` scans before `.agents`. Local files always beat plugins.
-- Name must match `^[a-z0-9][a-z0-9_:-]{0,63}$` — violations are dropped. Nested dirs join with `:` (`review/code.md` → `/review:code`).
-- **Flat single-line frontmatter parser** (indented/multi-line values are silently dropped). Recognized keys: `description`, `argument-hint`, `allowed-tools`, `model`, `skills`, `disable-noninteractive`. Unknown keys are ignored but the command still loads. A description OR a non-empty body is required (both empty → dropped; absent description → first body line used).
-- `$ARGUMENTS` = full argument string; `$1`/`$2` positional, out-of-range → empty; supplied args with no placeholder → appended under a "User arguments:" heading. `${ARGUMENTS}` brace form is NOT recognized. **Inline dynamic shell (`` !`cmd` ``) is REJECTED** in zcode (unlike Claude Code) — this is a real semantic divergence from Claude Code that ass-guard's expansion must follow (mimicry target wins over Claude Code here).
-- `skills:` frontmatter auto-mounts skills for the command's turn. Commands whose names collide with built-ins (or `compress`) are filtered from the interactive `/` menu only. Config can disable a command by absolute file path.
+Key architectural fact for us: CC itself classifies these — **text-output commands** (`/compact`, `/clear`, `/usage`, `/exit`), **direct-argument commands** (`/model`, `/effort`, `/rename`), **MCP controls**, **configuration commands** work headlessly/remotely; commands needing a *local terminal interface* (`/plugin`, `/resume`) do not. In an ACP agent the TUI pickers become client-native equivalents (session list → `session/list`; memory picker → text list or elicitation form).
 
-**OpenSpec (repo verified: `Fission-AI/OpenSpec` — NOT "Fission-A/AI-OpsSpec"; no rename found; npm `@fission-ai/openspec`, current 1.9.0 (published 2026-08-13), MIT, ~329k weekly downloads, 64.9k stars):**
+### (b) Permission modes & request_permission UX [HIGH]
 
-- `openspec init` (interactive tool picker) generates per-tool command/skill files; `openspec update` refreshes them so the latest commands are active. For Claude Code the generated form is `.claude/commands/opsx/<id>.md` → `/opsx:<id>`. Other tools get different spellings: `/opsx-propose` (Cursor/Copilot), `@opsx-propose` (Amazon Q), `$openspec-propose` (Codex), or skills-only forms (Kimi Code `/skill:...`, shared `.agents/`).
-- **Core profile (default), stage-by-stage SDD workflow:**
-  - `/opsx:explore` — "no-stakes thinking partner": reads codebase, compares options, diagrams; writes NO artifacts
-  - `/opsx:propose <name>` — creates `openspec/changes/<name>/` with `proposal.md`, `specs/`, `design.md`, `tasks.md`; stops "ready for `/opsx:apply`"
-  - `/opsx:apply` — reads `tasks.md`, implements incomplete tasks one by one, checks off `[x]`, resumable
-  - `/opsx:update` — revises planning artifacts only ("never edits code"), reconciles ripple effects; pulls state via `openspec status --change <name> --json` and reads the output
-  - `/opsx:sync` — merges delta specs (ADDED/MODIFIED/REMOVED/RENAMED) into `openspec/specs/`; mostly optional (archive prompts to sync)
-  - `/opsx:archive` — moves the change to `openspec/changes/archive/YYYY-MM-DD-<name>/`, "preserving everything for audit trail"
-- **Expanded profile** (opt-in via `openspec config profile`): `/opsx:new` (scaffold + `.openspec.yaml`), `/opsx:continue` (exactly one next artifact from the dependency graph), `/opsx:ff` (all artifacts in dependency order), `/opsx:verify` (completeness/correctness/coherence, CRITICAL/WARNING/SUGGESTION), `/opsx:bulk-archive`, `/opsx:onboard` (interactive 11-phase tutorial).
-- **Division of labor (confirms the corrected hosting model):** the agent is the executor (reads artifacts, writes code/specs, resolves conflicts agentically); the CLI binary is supporting tooling — `init`, `update`, `list`, `status --change <name> [--json]`, `schemas`, `schema init`, `config profile`.
-- **Version-drift warning for the adapter:** PROJECT.md reconciled the adapter against openspec **v1.5.0** (`list/view/change/spec/archive/doctor/context`); main-branch docs at **1.9.0** show a different binary surface (`status --change` rather than `view`, etc.). The adapter must pin to the *installed* binary's `--help`, not the docs of a moving main branch.
+- **Modes:** `default` (ask per policy), `acceptEdits` (auto-accept file edits), `plan` (read-only planning), `bypassPermissions`. `disableBypassPermissionsMode: "disable"` enforces org policy against bypass. `defaultMode` in the settings `permissions` block sets the starting mode; CLI flag overrides per session.
+- **Evaluation order (six steps, sequential):** Hooks → Deny rules → Ask rules → Permission mode → Allow rules → canUseTool callback. **Deny and ask beat allow and even beat bypassPermissions.** In non-interactive `dontAsk` mode, anything requiring confirmation is denied instead of prompted.
+- **Rule syntax:** `Tool(specifier)` with prefix wildcards: `Bash(npm run test:*)`, `WebFetch(domain:...)`, `mcp__puppeteer__*`.
+- **Persistence scopes (precedence):** enterprise managed → CLI args → `.claude/settings.local.json` → `.claude/settings.json` → `~/.claude/settings.json`. When a user picks "Always allow" at an interactive prompt, a rule is persisted at the chosen scope — that is the entire persistence story: **"always" = write a rule, not a session flag.**
 
-### (b) Agent Telegram frontends — what comparables offer
+### (c) ACP `session/request_permission` wire shape [HIGH — live schema]
 
-Two representative 2026 surfaces:
+- Request: `{sessionId, toolCall: ToolCallUpdate, options: PermissionOption[], _meta}`. Each option: `{optionId, name, kind}` where kind ∈ `allow_once | allow_always | reject_once | reject_always`.
+- Response: `{outcome}` ∈ `selected{optionId}` | `cancelled`. **If the turn is cancelled while the ask is outstanding, the client MUST answer `cancelled`** — the agent must treat that identically to reject.
+- Zed renders options verbatim as dialog buttons ("Allow once / Always allow / Reject"). Known early-ecosystem failure mode: agents that printed permission text instead of calling the RPC got raw-text prompts in the panel (Gemini CLI did this at first) — the RPC, not formatted text, is what buys native UX.
+- **Session modes** are the other half of permissions UX: advertise `modes` in newSession/load responses (e.g. our tiers of ask/auto-edit/bypass), Zed shows a native dropdown in the panel bottom bar, `session/set_mode` switches, and `current_mode_update` pushes agent-side mode changes back into the dropdown. CC's four permission modes map onto this abstraction.
 
-**`RichardAtCT/claude-code-telegram`** (Python, ~2.8k stars, MIT, v1.3.0, long-lived service):
-- **Session binding:** per-user, per-project-directory sessions with automatic persistence and auto-resume on return; `/repo <name>` switching; optional Project Threads mode routing each project to a Telegram forum topic via a `projects.yaml` registry (+ `/sync_threads` reconciliation)
-- **UX:** agentic mode (natural conversation; `/start`, `/new`, `/status`, `/verbose 0|1|2` streaming-detail control, persistent typing indicator) and a classic mode with 13 terminal-style commands + inline keyboards/quick actions
-- **Media:** file uploads with archive extraction; image/screenshot analysis; **voice messages with pluggable transcription (Mistral Voxtral / OpenAI Whisper / local whisper.cpp)**
-- **Ops/security:** chat whitelist, cost caps per user, token-bucket rate limiting, audit logging, SQLite persistence with migrations, usage/cost tracking; sandboxed to an `APPROVED_DIRECTORY`; GitHub webhook server (HMAC) and cron/proactive notifications as opt-in extras
+### (d) Compaction: microcompact vs auto-compact [MEDIUM — version-drifted internals]
 
-**Claude Code official "Channels" plugin** (shipped 2026; Telegram is a channel):
-- **Voice flow:** hold mic → transcription before the message reaches Claude; provider fallback chain OpenAI Whisper → Groq → Deepgram → local whisper-cli; optional TTS replies (ElevenLabs); "handles format conversion, chunking, and transcription automatically"
-- **Threading:** forum topics fully supported, each isolated; reply-chain tracking (~3 levels) in groups
-- **Media/format:** stickers/GIFs → multi-frame collages; PDF/DOCX/CSV up to 10 MB; long replies via Telegraph Instant View articles; MarkdownV2 auto-escaping
-- **Lifecycle:** pairing by DMing the bot a 6-character code, then `/telegram:access pair <code>`; allowlist policy mode; daemon supervisor with exponential-backoff restarts, a context watchdog restarting at 70% usage, single-instance lock; launchd/systemd for 24/7; forwarded-message batching (debounce ~5 s, summarize, one reply)
+- **Auto-compact triggers ≈92–95% context utilization** (threshold drifted across versions; warning banner appears near ~60%). Disable via `autoCompactEnabled:false` or `DISABLE_AUTOCOMPACT`.
+- **What happens:** a structured summary is generated covering prior requests, actions taken, code changes, technical decisions, next steps. Old tool call results are dropped (represented only inside the summary). Preserved verbatim: system prompt, CLAUDE.md/memory injections, the most recent turns, the compact-boundary summary itself. Post-compact display shows summary size vs capacity.
+- **Microcompact** is a distinct earlier housekeeping step: selectively clears older tool outputs (keep last N), placeholder-substituted. In v2.x it appears largely absorbed into uniform auto-compact handling. Not triggerable by `/compact`.
+- Manual `/compact [instructions]` steers summary emphasis.
+- Community consensus caveat: compaction loses file paths / early decisions; heavy users write key state to notes files before compaction, or prefer fresh sessions with hand-written handoffs. This validates SEED-004's "verify-first" stance: check what the zcode profile already captures about zcode's own auto-compact + cache_control placement before designing ours, because compaction placement interacts with prompt-cache economics.
 
-**Long-poll vs webhook in a non-daemon process:** every comparable effectively polls (python-telegram-bot polling loop; Channels' daemon). Webhook mode requires a public HTTPS endpoint and a listening server — incompatible with ass-guard's no-daemon/no-network-port constraint (the editor owns process lifecycle). Long-polling (`getUpdates`) works behind NAT, needs no inbound port, and drains cleanly via `context.Context` cancellation — matching the shipped design decision (go-telegram/bot, Phase-0-verified stdout-silent).
+### (e) Task/subagents: background, notifications, per-agent model [HIGH]
 
-### (c) deepseek-harness ("dsh") — user-visible surface
+Official Agent SDK docs (the Task tool is exposed as `Agent`):
 
-- **Repo:** `deepseek-ai/deepseek-harness`, MIT, **developer preview v0.1** with an explicit "THERE WILL BE COMPATIBILITY-BREAKING CHANGES" warning; TypeScript/Node (pnpm), 92.2k stars, very high commit velocity; announced alongside DeepSeek V4-Pro (VentureBeat positions it as an open-source Claude Code rival). It self-describes as an agent *runtime framework*, not a finished terminal product.
-- **Architecture:** Cordis kernel (plugin mounting/unmounting/dependencies); **everything is a plugin** — models, tools, skills, sessions, sandboxes, storage, loops, scheduling, even the UI. Extension seams: `ctx.llm`, `ctx.tools`, `ctx.shell`, `ctx.fs`, `ctx.sandbox`; swapping a sandbox provider moves Bash/PTY/LSP with it. Community plugins discoverable via the `dsh-plugin` GitHub topic.
-- **Entrypoints/modes:** `npx @deepseek-ai/dsh web` (Web UI at 127.0.0.1:3080) and `dsh headless` are the two shipped profile templates. Preset profiles: **Standard** (full toolset: file editing, shell, file/web search, skills, planning, goals, subagents, workflows), **Code** (programmatic tool calling — the model writes one TypeScript program orchestrating multi-step tool calls via the Code Mode SDK), **Minimal** (exactly two tools — persistent bash + `str_replace_editor` — for benchmarking), **Creator** (author/inspect presets, in-memory plugin testing).
-- **Providers/config:** `$DSH_HOME/settings.yaml`, e.g. `llm-pi-ai.providers.<id>` with `apiKeyEnv`, `api: openai-completions`, `baseURL`, per-model modality lists (`input: [text, image]`). Catalog providers (Anthropic, OpenAI, Bedrock, Vertex, Azure, Codex) get endpoint + protocol + model list from the installed catalog; custom providers cover gateways/self-hosted (model discovery via OpenAI-compatible `GET /models`). Credentials live in `$DSH_HOME/.credentials.yaml` (write-only in the UI; only a redacted descriptor is ever shown). DeepSeek's own built-in route is chat-completions and **text-only**.
-- **Skills/instructions:** SKILL.md-based skills (slash-invocable and auto-triggered — consistent with the Agent Skills ecosystem); repo carries root `AGENTS.md` + `CLAUDE.md` + `docs/AGENTS.md` (contributor-facing; no evidence of a distinctive dsh-specific project-instruction convention beyond the agents.md standard).
-- **Traceability (directly relevant to area (d) too):** append-only session log — "**model-visible means logged**": system prompts, reasoning, tool calls/results, subagent scheduling, context injections. A Trajectory view inspects by source; resume, fork, search, and replay all operate on the same event stream.
-- **Implications for profile #2:** (1) ground truth is easier than zcode — the harness is open source (shape from source) *plus* its own session logs (`$DSH_HOME`) give log-extracted capture, satisfying the "log-extracted, not hand-written" decision from both directions; (2) the outgoing wire shape is provider-dependent (`openai-completions` custom providers; catalog-supplied protocols for Anthropic et al.) — which protocol a *DeepSeek-model turn* uses (chat-completions vs Responses vs Anthropic-shape) is an **open verification item** before writing the shaper; (3) developer-preview churn means the profile will need version pinning + the existing drift detector, not one-shot capture.
+- **Discriminated result statuses:** `completed` (returns `agentId`, `agentType`, content blocks, **`resolvedModel`**, `modelsUsed[]`, token/tool/duration stats, optional worktree path/branch) | `async_launched` (returns `agentId`, `outputFile`, `canReadOutputFile` — fire-and-forget) | `remote_launched` (cloud session).
+- **Background lifecycle events:** `TaskStartedMessage` carries `task_type` distinguishing local-Bash vs local-subagent vs remote; on finish, a **task_notification** system message carries `{task_id, status: completed|failed|stopped, output_file, summary, usage}`. Documented consumer guidance: **detect notifications by structured `origin.kind`, never by matching notice text** — directly relevant since our engine is an event-bus observer.
+- **Retrieval:** `TaskOutput(task_id, block, timeout)` exists but is deprecated — the pattern is **Read the task's `output_file`**. `TaskStop` terminates; `SendMessage` steers a running background agent.
+- **Per-agent model override:** subagent definitions (`.claude/agents/*.md` frontmatter or programmatic `AgentDefinition`) take `model:` = tier alias (`sonnet|haiku|opus`), `inherit`, or a full model ID; the Task call can also pass `model` directly. Result reports back the actually-`resolvedModel`. Skills support `context: fork` (isolated subagent whose prompt is the skill body; background-by-default unless `background: false`) — exactly the shape of our slash-invocable-skills feature.
 
-### (d) Audit-log feature shape in comparable agents
+### (f) Hooks lifecycle incl. PreToolUse deny [HIGH]
 
-**Claude Code (official OTel telemetry docs — the most-documented 2026 norm):**
+- Event set includes: `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `SessionStart`, `Stop`, `PreCompact`, plus `Notification`, `SessionEnd`, `SubagentStop`.
+- **PreToolUse decision control — three channels:**
+  1. Exit code: `0` = no opinion, normal permission flow proceeds; `2` = **block** the tool call, stderr becomes Claude's visible feedback; other = non-blocking error.
+  2. Structured JSON on stdout (with exit 0): `hookSpecificOutput.permissionDecision` ∈ `allow | deny | ask | defer` (+ `permissionDecisionReason`, `updatedInput` which *replaces* the whole input object, `additionalContext`).
+  3. Conflict precedence across multiple hooks: **deny > defer > ask > allow**. `ask` forces a prompt even in auto mode and displays the rule origin (User/Project/Plugin/Local).
+- This is a *pre-execution interceptor in the tool-dispatch path* — architecturally different from ass-guard's existing hook-DAG, which runs **post-turn**. The parity item is a new insertion point, not an extension of the existing DAG.
 
-- **Events** (all `claude_code.` prefixed): `user_prompt`, `assistant_response`, `tool_result`, `tool_decision` (any accept/reject permission decision, with `decision`, `source` — config/hook/user_permanent/user_temporary/user_abort/user_reject — and `tool_source` provenance), `api_request`, `api_error`, `api_refusal`, `permission_mode_changed`, `auth`, `mcp_server_connection`, `internal_error`, `plugin_installed`/`plugin_loaded`; raw `api_request_body`/`api_response_body` only behind an opt-in env flag.
-- **Correlation IDs:** `prompt.id` (UUID tying all events from one prompt), `tool_use_id` (joins tool spans + result/decision events), `message.uuid`, `request_id`, `client_request_id`. Correlation keys are the difference between a log and an audit trail.
-- **Metrics:** session.count (with `start_type` fresh/resume/continue), token.usage, cost.usage, lines_of_code, commit/pull_request counts, active_time.
-- **Redaction norms (opt-in content, always-redact secrets):** prompts → `<REDACTED>` unless explicitly enabled; assistant text redacted unless enabled; tool params/Bash commands/MCP+skill names omitted unless `OTEL_LOG_TOOL_DETAILS=1` (then values > 512 chars truncated, ~4 KB bound); custom agent/plugin/MCP names → `"custom"`/`"third-party"`; internal errors → class name + errno only; auth errors → category only; extended thinking always redacted. **Always included:** session.id, anonymous user.id, org id, token counts, durations, costs, HTTP status, built-in tool names. Content cap 60 KB by default; raw-body-to-file mode writes full JSON to disk with a `body_ref` pointer in the event.
-- Platform-side, Anthropic's Audit Logs API records 35 event types with 6-year compliance retention — that's the SaaS tier; the local-agent norm is the above.
+### (g) @-file mentions & image paste [HIGH]
 
-**dsh:** the purest statement of the norm — append-only session log where everything model-visible is recorded (prompts, reasoning, tool calls/results, subagent scheduling, context injections), with the log doubling as the substrate for resume/fork/replay. **claude-code-telegram:** audit logging + usage/cost tracking + rate-limit events into SQLite. **ass-guard v1.0** already has the right bones (tracer-wired redacted request logging + redactor; transcript-as-diagnostic-surface per D-03/D-20) — the v1.1 gap is only that `--audit-log` isn't written on the `acp serve` path.
+- `@path` pulls file/dir contents into the prompt context; fuzzy matching (`@auth` matches auth.js…), trailing slash for dirs, Tab autocomplete. A `fileSuggestion` setting lets large monorepos swap in a custom shell command (stdin query → newline-separated paths on stdout, 5s timeout, ≤15 suggestions shown).
+- Images: pasted or dragged (shift-drag to attach as files) into the prompt; carried as **image content blocks** alongside text. Editors do the same over ACP by sending image/resource content blocks in `session/prompt`.
+- `#` shortcut appends text to a memory file (mid-session memory writes).
+- For ass-guard the work is content-block plumbing end-to-end: accept image/resource_link blocks from the client → carry through profile shaping → provider payload; and resolve `@mentions` arriving inside prompt text against the workspace.
+
+### (h) Zed ACP agent panel — native surfaces other agents use [MEDIUM]
+
+Verified from agentclientprotocol.com (tool-calls page + schema) and Zed materials:
+
+- **Tool calls:** `session/update` with `sessionUpdate:"tool_call"` then `"tool_call_update"`. Fields: `toolCallId`+`title` (required); `kind` ∈ `read|edit|delete|move|search|execute|think|fetch|other` (drives icons); `status` ∈ `pending|in_progress|completed|failed` (older schema revisions used `error` — current docs say `failed`); `locations[{path,line}]` enable click-to-jump; `rawInput/rawOutput` for inspection; `content[]` blocks include text/image/**`diff{path, oldText /* null = new file */, newText}`**/**`terminal{terminalId}`** — diffs render inline in the panel. Updates are sparse: only changed fields beyond `toolCallId`.
+- **Plan:** `plan` update carrying `PlanEntry[]{content, priority: high|medium|low, status: pending|in_progress|completed}`; rendered as a native checklist. (Spec reordered the priority enum between revisions — treat values as stable, ordering as presentation.)
+- **Commands autocomplete:** `available_commands_update` with `AvailableCommand{name, description, input?: {hint}}` powers the `/` popup in the prompt editor. The `hint` string is what shows before args are typed — good place for e.g. `model name or tier`.
+- **Elicitation:** `elicitation/create` is a union — `form{requestedSchema}` | `url{elicitationId, url}` | `other{mode}`; response action `accept` (optional `content` payload) / `decline` / `cancel`; follow-up `elicitation/complete{elicitationId}` notification for async completion (url mode).
+- **Sessions:** `session/list` (capability `list`; `cursor` + optional `cwd` filter → `sessions: SessionInfo[]`, `nextCursor`), `session/load{sessionId, cwd, mcpServers, additionalDirectories}`, `session/close` and `session/delete` (capabilities `close`/`delete`). Capabilities are declared at initialize — the client only offers the UX the agent declares.
+- **Editor-driven config:** newSession/load responses may carry `modes` + `configOptions`; `session/set_config_option` is a union (`boolean` value | `value_id` reference) keyed by `configId`, and its response returns **the full updated configOptions array** (authoritative round-trip). `config_options_update` pushes changes to the client.
+- **Thought/message chunks:** `agent_thought_chunk` / `agent_message_chunk` stream natively (thinking blocks show styled in Zed).
+
+### (i) Steering queues mid-turn [MEDIUM]
+
+Two reference implementations converge on the same insight: the only safe injection points are boundaries between LLM calls.
+
+- **pi (badlogic/pi-mono):** two user-selectable modes (Tab toggles; default via settings `steeringMode`):
+  - *Steering:* queued message is injected into the conversation **as soon as the current tool call finishes, before the next API call** — the model sees it mid-turn and can change course without losing work done so far.
+  - *Follow-up:* message waits until the whole turn completes, then enters as a new message.
+  - Esc always means abort-now. Rationale (author's words): you want to be able to steer at any point with full control over the loop.
+- **Strands Agents (Python):** shipped "queue input during running turn" (issue #855 → PR #913). Formal interrupt machinery: interruptible tools raise through an `InterruptState`; agent returns `stop_reason="pause_turn"`; caller re-invokes the agent with collected input to resume. Pausing requires a session manager (persistence).
+- Implication for ass-guard: a **bounded queue drained at tool-call boundaries** (steering) with an opt-in "wait for turn end" mode covers both references; abort remains `session/cancel` (already shipped).
 
 ---
 
-## Feature Landscape
+## Feature Landscape — v1.2 Areas
 
-### Area 1 — Slash-command invocation (`/namespace:name` expansion + OpenSpec adapter)
+### Area 1 — ACP completeness (priority 1)
 
 #### Table Stakes (Users Expect These)
 
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| `/namespace:name` expansion from discovered command files (`.claude/commands/opsx/explore.md` → `/opsx:explore`) | Both Claude Code and zcode namespace via directories→colons; OpenSpec's Claude-Code form depends on it; without it the toolkit cannot be kicked off at all (the v1.0 UAT gap) | LOW | ecosys discovery already loads commands (ECOS-01..03) — the work is expansion into the prompt pre-turn: body → user message, frontmatter consumed. Nested dirs join with `:` (NOT `/`) — zcode pitfall #11 |
-| `$ARGUMENTS` + `$1..$N` positional substitution; args-without-placeholder appended under a "User arguments:" heading | Universal substitution contract (Claude Code and zcode agree on `$ARGUMENTS`/positional + append-when-unused; zcode additionally rejects the `${ARGUMENTS}` brace form) | LOW | Mimic zcode exactly (target wins over Claude Code): out-of-range positional → empty; append heading when no placeholder |
-| Frontmatter: `description`, `argument-hint`, `allowed-tools`, `model`, `skills`, `disable-noninteractive` (flat single-line parser) | The six keys zcode actually parses; `skills:` auto-mounts skills for the turn; `allowed-tools` grants are per-turn and clear next message | LOW | zcode's parser is flat/single-line (multi-line arrays silently dropped) — replicate leniently: unknown keys ignored, command still loads; empty command (no description + empty body) dropped |
-| Discovery precedence: user > workspace > plugins, first-match-wins dedup | zcode ground truth: configured roots > `~/.zcode/commands` > `~/.agents/commands` > workspace `.zcode` > `.agents` > plugins; local always beats plugin | LOW | ass-guard's ecosys already implements `.claude/` + `.ass-guard/` precedence read-only — reconcile with zcode's `.zcode`/`.agents` roots for profile fidelity |
-| Command execution as a context boundary (lean window reset) | OpenSpec stages are long; v1.0 two-layer context resets at command boundaries by design; each `/opsx:*` stage must start clean but replay from the durable transcript | LOW | Already built (Phase 2) — just ensure expanded commands mark the boundary |
-| OpenSpec core profile driveable end-to-end: explore → propose → apply → (update/sync) → archive | The toolkit's documented workflow; `/opsx:propose` creates the change folder + artifacts, `/opsx:apply` implements `tasks.md` checking off `[x]`, `/opsx:archive` moves to `openspec/changes/archive/YYYY-MM-DD-<name>/` | MEDIUM | Mostly engine work: handoffs between stages are the autocontinue engine's dual-signal (text-pattern OR tool-call) matches — `/opsx:propose`'s "ready for `/opsx:apply`" stop-phrase is a textbook handoff signal |
-| Adapter pinned to the real openspec binary (`list`, `status --change --json`, `schemas`, `config`) called as a tool by the agent | OpenSpec's own division of labor: agent executes command files; binary is supporting tooling; `/opsx:update` literally reads `openspec status --change <name> --json` output | MEDIUM | WARNING: binary surface moved 1.5.0 → 1.9.0 (PROJECT.md reconciled against 1.5.0; main docs show `status` not `view`). Pin the adapter to the installed binary's `--help`; keep `ASSGUARD_OPENSPEC_BIN=1` as the phase gate |
+| Feature | Why Expected | Complexity | Notes / Dependency on existing |
+|---------|--------------|------------|-------------------------------|
+| `session/request_permission` clickable asks | Every serious ACP agent does this; plain-text gates feel broken in Zed | MEDIUM | Wire shape simple; hard part is the pending-ask state machine during a running turn + mandatory `cancelled` handling. Replaces today's plain-text tool-gate prompts. Depends on: tool-execution gate seam (exists), cancel-drain (exists) |
+| `tool_call` + `tool_call_update` streaming | Panel cards are how users watch progress; absent = black box | MEDIUM | Map catalog tools → `kind` (static per tool) + lifecycle statuses; extract `diff` blocks from Edit/Write inputs; `locations` from Read/Grep targets. Depends on: tool catalog (103 tools, exists), tracer/event bus (exists) |
+| `available_commands_update` | `/` autocomplete is the discoverability surface for everything else in this milestone | LOW | We already discover commands + (soon) skills; this just advertises them. Emit on discovery + after skill/config changes. Depends on: ECOS discovery (shipped v1.1) |
+| `plan` update streaming | Users expect a visible checklist during multi-step SDD runs | LOW–MEDIUM | Hook-DAG stages map naturally to plan entries; emit on stage transitions. Depends on: unified engine stage events (shipped Phase 4) |
+| Session list/resume/close/delete | Operator must-have (D-09 reversal); every ACP client expects `loadSession` | MEDIUM | Replay-on-load exists (Phase 2). Add: durable session metadata store, `SessionInfo` projection, capability declaration `list/close/delete`, tombstoning on delete. Depends on: two-layer context + replay (shipped) |
+| Editor-driven configuration (configOptions / set_config_option) | Native switcher beats editing YAML; Zed renders it free | MEDIUM | Advertise e.g. tier default + active model as configIds; handle boolean/value_id variants; respond with full authoritative array. **API keys stay env/file by explicit project decision** |
+| `elicitation/create` (form mode) | Structured asks (learning-mode questions fit perfectly) surfaced natively | LOW once permission path exists | Same JSON-RPC pattern as request_permission; `requestedSchema` → our ask-once-remember learning prompts. URL mode deferred |
 
 #### Differentiators (Competitive Advantage)
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| Zero-continue stage chaining (engine auto-invokes the next `/opsx:*` command) | Claude Code/zcode users tap each stage manually; ass-guard's reason-to-exist is removing exactly that — the `/opsx:propose`→`apply`→`archive` chain driven by the unified engine with hooks between stages | MEDIUM | Depends on Phase-4 engine + seeded hook table; this is where v1.1's headline value lands |
-| Cross-tool spelling tolerance (`/opsx:explore` AND `/opsx-explore`) | OpenSpec generates different spellings per tool (Cursor `/opsx-propose`, Codex `$openspec-propose`); tolerating both costs nothing and survives toolkit re-runs | LOW | Prefix-match on the opsx namespace; don't over-generalize to every tool's grammar |
-| Command-args surfaced into ACP `session/update` | IDE users see what was expanded and with which args (transparency the raw toolkits don't give) | LOW | Rides existing session/update stream |
-
-#### Anti-Features (Commonly Requested, Often Problematic)
-
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| Dynamic shell injection (`` !`cmd` `` pre-invocation) | Claude Code supports it; command authors want computed context | zcode REJECTS it (mimicry divergence — target wins); runs arbitrary shell pre-prompt in a no-confirmation-tier agent | Reject with zcode's error semantics; static text + `$ARGUMENTS` only |
-| Full Claude-Code skill-merge semantics (commands≡skills, `context: fork`, stacking up to 6) | Claude Code's 2026 direction is commands-as-skills | Scope creep for a kickoff milestone; zcode keeps commands and skills separate (with `skills:` mounting); fork-subagent semantics change the turn shape the profile pins | Implement zcode's `skills:` auto-mount only; revisit under ECOS-04 (post-v1.1, "working unchanged") |
-| Expanded-profile commands (`/opsx:new/continue/ff/verify/bulk-archive/onboard`) in the gate | They're documented and tempting | Core profile is the default install; expanded is opt-in via `openspec config profile` — testing it doubles UAT surface for near-zero first-customer value | Verify core profile E2E; assert expanded files *load* (expansion works) without E2E-driving them |
-
-### Area 2 — Audit log on the `acp serve` path (LOG-01 completion)
-
-#### Table Stakes
-
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| Audit log written on every path, `acp serve` included | An audit log that silently doesn't record the primary production path is worse than none (v1.0 known gap #3) | LOW | The tracer + redactor already exist (Phase 1/2) — this is wiring: construct the tracer in the ACP serve path, not only via main.go CLI flags |
-| Correlation IDs per prompt/turn/tool | Claude Code's `prompt.id` + `tool_use_id` are what make events an *audit trail* rather than a log; dsh's whole trajectory view is built on the event stream being joinable | LOW | ass-guard already has transcript ids and tool_use ids from the session core — thread them into audit records |
-| Per-event record of: user input, model request (redacted), tool call + result, engine decisions (continue/hook/wait), errors with recoverable/non-recoverable classification | Claude Code records user_prompt/tool_result/tool_decision/api_error/internal_error; ass-guard's investigate-and-fix-ready constraint (PROJECT.md) demands strictly more context than "an error occurred" | LOW–MEDIUM | The engine-decision events are the ass-guard-specific addition (no comparable records autocontinue decisions — that's a differentiator below) |
-| Secrets always redacted (API keys, auth headers, credential env vars) | Universal norm: Claude Code strips auth headers/env always; content is the only thing ever gated by flags | LOW | Redactor exists; assert coverage in tests |
-| Append-only, machine-parseable output (JSONL) with size caps/truncation on big payloads | Claude Code caps content at 60 KB default with truncation markers, 512-char tool-value truncation under details mode; unbounded logs rot disks and leak more | LOW | Matches existing transcript discipline |
-
-#### Differentiators
-
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| Engine-decision audit events (why the agent continued / ran a hook / waited) | No comparable agent records its autocontinue reasoning; for a hands-off agent this IS the trust surface — reviewers can see why the machine drove the next stage | LOW | Engine already emits internal events; serialize them into the audit stream |
-| Audit log doubling as parity evidence (request hashes/shape fingerprints per turn) | Ties audit to the mimicry north star — the audit trail can prove "structurally indistinguishable" continuously, not just at capture time | LOW | Drift detector already computes shape fingerprints; appending them per-turn makes drift visible in production |
+| Learning-store questions via elicitation forms | Ask-once-remember becomes a clickable form instead of a text question — unique among ACP agents | LOW | Rides elicitation/form + existing learning store |
+| Audit-explaining tool cards | `rawInput`/`rawOutput` + redaction discipline gives users inspectable tool calls (ties to investigate-and-fix-ready constraint) | LOW | Mostly a projection of existing audit/tracer data |
 
 #### Anti-Features
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| Raw request/response bodies logged by default | "Full fidelity" debugging appeal | Inverts the redaction norm (Claude Code gates raw bodies behind an explicit env flag precisely because they carry file contents/secrets in tool results); compliance exposure | Opt-in flag mirroring `OTEL_LOG_RAW_API_BODIES=file:<dir>`: full bodies to a separate file, `body_ref` pointer in the audit record |
-| OTLP/SIEM export in v1.1 | Enterprise asks | Claude Code ships no SIEM integration either (events go to whatever OTLP endpoint you configure); exporter plumbing, mTLS, header helpers = a milestone of its own | Local JSONL now; an OTLP exporter is a natural post-v1.1 add-on once the event schema is stable |
-| Untruncated tool outputs in audit | "Nothing missed" | 60 KB caps + 512-char value truncation are the documented norm for good reasons (PII blast radius, disk); transcript already holds the full record | Audit = index + redacted summary; transcript remains the full-fidelity artifact (D-03/D-20) |
+| Credentials via editor settings | Convenience | Explicitly rejected in PROJECT.md (secrets leak into plaintext editor config/sync) | Env/file credential resolution (shipped Phase 7) |
+| `elicitation/url` mode at launch | Protocol completeness | Needs browser-roundtrip + elicitationId lifecycle; zero current callers | Form mode now; url mode when a concrete need appears |
 
-### Area 3 — zcode parity re-capture (operator-gated)
+### Area 2 — Built-in chat commands (priority 2)
 
 #### Table Stakes
 
-| Feature | Why Expected | Complexity | Notes |
+| Command | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| Fresh capture session pinned as the new ground truth (`ZAI_API_KEY` + a divergence-prone session) | The pinned session (`eea3dc48`) is absent on disk — the Phase-1 within-session stability test cannot run until a replacement exists; profile-content-is-log-extracted is a Key Decision | LOW (code) / operator-dependent | No new code expected; a capture-runbook + pinned artifact hash. The A/B parity thesis is proven; this closes the stability leg |
-| Re-run drift detector + stability test against the new capture | `ass-guard profile check` and the coverage manifest exist and are useless without a live capture | LOW | Gate: stability test green in CI against the pinned session |
-
-#### Differentiators
-
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| Capture provenance recorded in the profile (session id, date, zcode version, tool-count manifest) | Makes the profile artifact auditable and re-capturable; turns "re-capture" from a chore into a repeatable procedure — groundwork for profile #2 where the same procedure runs against dsh | LOW | Extends the existing coverage manifest |
+| `/help` | Zero-cost discoverability baseline | LOW | List built-ins + discovered commands; rides available_commands_update data |
+| `/status` | First diagnostic users reach for | LOW | Version (ldflags exists), active model/tier, session id, context-window % (projector knows) |
+| `/model` | Mid-session routing switch; CC treats it as direct-argument | LOW–MEDIUM | Maps to session-scope scheduler override; precedence must slot under existing D-02 chain. Depends on: scheduler resolver (shipped Phase 3) |
+| `/clear` | Context reset without restarting the editor session | LOW–MEDIUM | "New session same thread": new sessionId, preserved ACP connection; label previous for resume picker. Depends on: session core |
+| `/compact` | THE context-management command; advertised as prerequisite in PROJECT.md | HIGH (inherits compaction cost) | Blocked on compaction existing. Optional focus instructions → summary prompt param |
+| `/cost` | Usage transparency; subscription users expect per-model splits | LOW–MEDIUM | Aggregate from durable transcript records (they exist); per-model split needs usage captured per turn — verify capture exists, else add accounting |
+| `/resume` | Pairs with session list family | MEDIUM | In ACP the picker is client-side; agent-side `/resume` = text list + selection or defer to client's native loader. Do not rebuild a TUI picker |
+| `/memory` | Memory-file visibility/editing | LOW–MEDIUM | Text-list + contents dump (text-output class); editor opening is client territory. `#` append shortcut is CC-TUI-specific — skip |
+| `/mcp` | Server health is the top debugging need | LOW | Aggregate connection state of hosted MCP subprocesses (reaper/process manager exists from Phase 5) |
+| `/permissions` | Visibility into the gate rules | MEDIUM | Read-only rule dump first (what would run ungated vs ask); interactive editing deferred to editor-config/rules phase |
+| `/config` | Settings visibility | MEDIUM | Rides editor-config configOptions for what's switchable; dumps static config otherwise |
+| `/init` | Onboarding convention | MEDIUM | Generate AGENTS.md/CLAUDE.md starter from repo scan; mirrors CC behavior including import-from-other-agents offer |
+| `/doctor` | Trust-building diagnostics | MEDIUM | Checks: config parse, credential resolution (lazy factory gives typed errors), discovery scan, provider reachability, scheduling validate. Asks before fixing |
 
 #### Anti-Features
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| Automated continuous re-capture (nightly zcode runs) | "Always fresh" mimicry | Burns operator API spend unattended; zcode updates are event-driven, not nightly-diff-driven; the operator gate exists deliberately | Manual operator-gated capture + drift detector alerting when the pinned zcode version changes |
-| Re-capture blocking the milestone | Sequencing instinct | It's priority 3 precisely because it unblocks a *test*, not a feature — other areas don't depend on it | Run it adjacent to Area 2 in the same phase (both small); don't serialize Area 4/5 behind it |
+| TUI-style interactive pickers inside commands (`/resume` fullscreen picker etc.) | CC parity reflex | We have no terminal UI (explicit out-of-scope); ACP clients own list UX | Expose data via `session/list` + text output; let Zed render |
+| Theme/vim-mode/output-style config keys | CC parity checklist | Meaningless without a TUI; config bloat | Support only agent-meaningful configOptions |
 
-### Area 4 — Telegram peer (text + voice STT)
-
-#### Table Stakes
-
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| Chat → project/session binding with persistence + auto-resume | Every comparable does per-chat/per-project binding (claude-code-telegram: per-user per-directory sessions, `/repo` switching; Channels: forum-topic isolation). Without it, Telegram turns can't address a working tree | MEDIUM | ass-guard's twist: a Telegram chat binds to an ass-guard *session* (the same session core ACP uses), not to a spawned CLI process — no daemon, no child Claude, one engine |
-| Text in → streamed/edited reply out, 4096-char chunking, typing indicator, MarkdownV2 escaping | Telegram physics; both comparables do chunked delivery + MarkdownV2 auto-escape + persistent "working" indicator | LOW–MEDIUM | Map ACP `session/update` stream → message edits; edit-rate throttle per Telegram limits |
-| Voice messages → STT → ordinary text input (ogg/opus download → transcribe → inject) | Both comparables treat voice as first-class (claude-code-telegram: Voxtral/Whisper/whisper.cpp; Channels: Whisper→Groq→Deepgram→whisper-cli chain). For ass-guard this is the explicit v1.1 requirement: configurable STT backend, OpenAI Whisper API default, whisper.cpp subprocess + Groq via config | MEDIUM | Download via Telegram file API (ogg/opus), transcribe via the OpenAI-shape client (already in the provider factory — audio endpoint is a small add), inject as plain user text. NO extra dependency for the default |
-| Access control: allowlist/pairing | Both comparables gate access (whitelist; Channels' 6-char pairing code + allowlist policy). An agent with shell tools reachable from an open bot is a remote-code hole | LOW | Config allowlist of chat/user ids at minimum; pairing flow is a nice-to-have differentiator |
-| Long-polling (not webhook), draining on shutdown | ass-guard runs editor-owned, no network port, no daemon; webhooks need public HTTPS + a listener (constraint violation); every comparable effectively polls | LOW | go-telegram/bot long-poll goroutine (Phase-0 verified stdout-silent); context cancellation drains the loop AND in-flight Telegram-driven turns |
-| Long-reply handling (documents/Telegraph-style) | Both comparables solve >4096-char replies (files, Instant View articles) | LOW | Send as `.md` document attachment or split; keep it boring |
-
-#### Differentiators
-
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| **In-process peer beside ACP stdio** — same core engine, same sessions, no daemon | No comparable does this: claude-code-telegram and Channels both run a *separate* daemon supervising CLI processes; ass-guard's Telegram is a goroutine in the single static binary the editor already owns. Mobile drive-by of the SAME session the IDE has open is unique | HIGH (lifecycle, not features) | The load-bearing risks: stdout discipline (Telegram must never write stdout — enforced by review/lint), shared turn-loop serialization (one turn per session at a time), and context-first shutdown draining both frontends |
-| Full SDD scenario drivable from Telegram (incl. `/opsx:*` commands) | The milestone's bar is "full peer", not a notification relay (which is what Channels is for Claude Code) | MEDIUM | Slash-command expansion (Area 1) must be surface-agnostic — expansion happens in the session layer, so Telegram gets it for free |
-| STT backend fallback chain (Whisper → Groq → whisper.cpp) | Channels normalized the fallback chain; matching it in config (not code) fits the configurable-backend pattern from v1.0 | LOW | Scheduler's typed ProviderError classification already models fallback chains — reuse the semantics |
-| Forum-topic-per-project threading | claude-code-telegram's Project Threads mode is its most-loved feature for multi-repo users | MEDIUM | Add after validation (v1.1.x): a `projects.yaml`-style registry mapping topics → working dirs |
-
-#### Anti-Features
-
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| Approval/permission buttons in Telegram | Every comparable offers inline confirm buttons; it feels like the safety answer | Directly violates the shipped safety model (no confirmation tier; pattern/hook table + manual cancellation only). Bolted-on approval on ONE surface also breaks the mimicry invariant that behavior is surface-independent | Manual cancellation (stop button → cancel session turn) only; surface the same cancellation ACP has |
-| Webhook mode | "More production-ready" framing | Requires public HTTPS endpoint + listener → violates no-daemon/no-port constraint and complicates editor-owned lifecycle | Long-poll always; document NAT-friendliness as a feature |
-| TTS voice replies, sticker/GIF collages, calendar commands | Channels-feature parity envy | Novelty surface area; TTS adds a synth provider + audio upload path for little SDD value; sticker collages are a party trick | Post-v1.1 backlog; voice IN is the workflow need (walk-and-talk spec'ing), voice OUT is not |
-| Classic-mode terminal commands (`/cd`, `/ls`, `/git` … 13 commands) | claude-code-telegram's mode B | Duplicates the model's own tools with a worse UX; encourages shell-as-IRC instead of agentic turns | Agentic natural-language only; `/new`, `/status`, `/stop` as the small command set |
-
-### Area 5 — Mimicry profile #2: deepseek-harness (dsh) for DeepSeek-model turns
+### Area 3 — Slash-invocable skills (priority 3)
 
 #### Table Stakes
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| Profile artifact for dsh: system blocks, tool catalog, message shape, identity — captured, not hand-written | The Key Decision (log-extracted, not hand-written) applies to every profile; dsh ground truth is *easier*: the repo is open source (TypeScript — shape readable from source) AND `$DSH_HOME` session logs ("model-visible means logged": prompts, reasoning, tool calls/results, subagent scheduling, context injections) provide log-side capture | MEDIUM | Capture tooling must handle a second log format + a source-reading pass. Rides the N-profile architecture (explicitly built for this — "no zcode-specific paths") |
-| Wire-shape support for dsh's outgoing protocol | dsh's provider layer speaks `openai-completions` for custom providers, catalog-supplied protocols for Anthropic/OpenAI et al.; DeepSeek's own built-in route is chat-completions (text-only). A DeepSeek-model turn is therefore most likely OpenAI-chat-shape — which the two-shape ProviderFactory already speaks | MEDIUM | **Open verification item (phase gate):** confirm what a real dsh DeepSeek turn sends (chat-completions vs Responses vs other) by reading `dsh-llm-deepseek` source + a captured session log BEFORE writing the shaper. If it's Responses-API shape, that's a third provider shape and a scope decision |
-| Profile selection config (per-project/per-turn override: zcode for GLM turns, dsh for DeepSeek turns) | The operator's stated setup (opencode subscription serving MiniMax + DeepSeek) means both profiles coexist; PROJECT.md's opencode-exclusion decision routes DeepSeek turns through dsh shape | LOW | Scheduler already resolves provider+model per turn; profile becomes a dimension of that resolution (model→profile mapping in config) |
-| Drift detection against pinned dsh version | dsh is developer preview with a bolded compatibility-breaking-changes warning — profile rot is near-certain without pinning | LOW | Reuse `ass-guard profile check`; pin the profile to a dsh commit/version and record it in provenance (Area 3's differentiator) |
+| `invocationFor` resolves skill keys | CC types `/skill-name args` and the SKILL.md body becomes the prompt; users expect identical muscle memory | LOW–MEDIUM | Discovery already walks skills; add key→invoker resolution + body-expansion-with-appended-args at the command-expansion seam |
+| AGENTS addressable as slash commands | BMad-style installer layouts put agents in `.claude/agents/`; typing `/bmad-agent-x` should just work | LOW | Same discovery walk; register agent names into the command table |
+| Per-agent `model:` wired into dispatch | Frontmatter parsed-but-ignored today; CC resolves tier alias / `inherit` / full ID and reports resolvedModel back | MEDIUM | Resolution order: agent frontmatter → dispatch-time param → session default → tier. Depends on: scheduler resolver; report resolvedModel in result metadata |
 
 #### Differentiators
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| **Cross-harness mimicry as a product capability** (2 profiles, one shaper) | Nobody in the 2026 market does structural request mimicry at all (v1.0 research conclusion); proving it generalizes beyond zcode converts "a zcode trick" into "the platform thesis validated twice" | LOW (if N-profile architecture holds) | The main risk is hidden zcode-isms in the shaper — the v1.1 requirement "rides the existing N-profile architecture (no zcode-specific paths)" is the acceptance test |
-| Source+log dual-grounded profile | zcode was log-only (closed-ish runtime); dsh is open-source — shape-from-source cross-checked-against-logs is a *stronger* grounding method than profile #1 had | MEDIUM | Capture pipeline gains a "read the source" half; worth doing once generically (it also serves future open-source targets) |
+| `context: fork` skills as background subagents | Long skills stop blocking the main thread; matches CC's newest skills behavior | MEDIUM–HIGH | Needs background-agent infra from parity area first — sequence after it |
+| Skill-invocation telemetry in `/cost` | Per-skill spend attribution nobody else shows | LOW | Rides usage accounting |
 
-#### Anti-Features
+### Area 4 — CC parity audit: 10 divergences (priority 4)
 
-| Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| Tracking dsh HEAD | Newest-shape fidelity | Developer preview with announced breaking changes — a moving profile target invalidates captures weekly | Pin a dsh version; re-capture operator-gated on meaningful dsh releases (same procedure as Area 3) |
-| Mimicking dsh's Web UI / plugin runtime behavior | "Full harness parity" framing | Mimicry is about *outgoing model requests*, not UI; dsh's UI/plugins never reach the model provider beyond the request shape | Scope the profile strictly to request shape (system blocks, tools, message shape, identity) |
-| Assuming Anthropic-shape for DeepSeek turns (reusing zcode's shaper shape) | Reuse temptation — one shaper, two configs | dsh's DeepSeek route is chat-completions (text-only); zcode's shape is Anthropic. Wrong shape = model behavior diverges = north star violated | Verify first (see table stakes), shaper-shape follows the profile, never the reverse |
+| Divergence | Expected behavior (CC) | Complexity | Notes |
+|-----------|------------------------|------------|-------|
+| Compaction on context overflow | Auto-summary ≈92–95%, preserve system+memory+recent tail, drop old tool results | HIGH | Verify-first (SEED-004): inspect zcode profile for existing auto-compact + cache_control evidence before designing. Summary generation = light-tier call. Interacts with two-layer projector — natural boundary |
+| Session resume | Covered in Area 1 | — | Rides ACP session family; no separate design |
+| Permissions UX | Covered in Area 1 | — | Rides request_permission + modes |
+| Full subagents (Task + background + notifications) | Discriminated completed/async_launched results; structured task_notification events; output-file retrieval; SendMessage steering; TaskStop | HIGH | Goroutine turn-loops exist; add: task registry, output files, notification events on the bus, per-task ids threaded through ACP updates. Detect-by-kind not text-match (official guidance) |
+| Slash autocomplete in editor | Covered in Area 1 | — | Rides available_commands_update |
+| Hooks PreToolUse deny | Exit-2 block w/ stderr feedback; JSON permissionDecision allow/deny/ask/defer; deny>defer>ask>allow precedence; updatedInput replacement | MEDIUM | NEW insertion point pre-tool-dispatch — distinct from post-stage hook-DAG. Keep DAG untouched; add a pre-execution interceptor consulting the same hook configs where applicable |
+| AGENTS.md/CLAUDE.md auto-injection | Startup context loads global user prefs + project memory automatically | LOW | Discovery already reads these trees; inject into system context at session start (respecting precedence) |
+| Streamed thinking blocks | `agent_thought_chunk` streams CoT; Zed styles it | LOW–MEDIUM | Provider adapters must surface thinking deltas as a distinct channel instead of swallowing them |
+| Rich prompt content (@-mentions, images) | Image/resource blocks carried in prompt; @-paths resolved to content | MEDIUM | Content-block plumbing through Profile Shaper → provider payload; @-mention resolution against workspace; Zed sends the blocks — no autocomplete needed agent-side beyond what files ship |
+| Persistent shell / background Bash | Commands can move to background (`run_in_background`), output retrievable, completion notifies; shell state persists across Bash calls | MEDIUM–HIGH | Process-group spawn/shutdown exists (MCP hosting precedent). Add: PTY or persistent process pool, output buffers, bg-task registry shared with subagent notifications |
+
+### Area 5 — SEED-004 gap fixes (priority 5)
+
+| Gap | Expected behavior | Complexity | Notes |
+|-----|-------------------|------------|-------|
+| Checkpoints/undo via shadow-git | Workspace snapshot at turn boundaries; rollback surface (`ass-guard checkpoint` CLI + optional ACP command) | MEDIUM | Shadow repo beside workspace (not user's git); auto-commit per turn; restore = checkout. Watch nested-repo and large-binary hygiene |
+| Compaction verify-first | Research gate before building compaction | LOW | Deliverable = finding, feeds Area 4 compaction design |
+| Sandbox flag made real | macOS Seatbelt / Linux bwrap+seccomp wrapping of tool subprocesses | HIGH | Parity-driven: implement what zcode tool semantics imply; platform-split profiles; escape-hatch policy needed or legit workflows break |
+| Steering/input queue | Queue drained at tool-call boundaries (pi steering) or turn-end (follow-up); abort stays cancel | MEDIUM | Queue lives in turn loop; drain points already structurally present (between LLM calls). Telegram prerequisite — design for shared core now, Telegram later |
+
+### Area 6 — SEED-001 kit extraction (priority 6, last)
+
+| Item | Why | Complexity | Notes |
+|------|-----|------------|-------|
+| Extract agent kit library (profile mechanism, providers, session/turn loop, projector, engine+DAG, tool catalog, scheduling, redaction) | Reuse + clean composition; ass-guard becomes reference app | HIGH | Pure refactor gated on everything above being stable — doing it earlier guarantees churn. Rides internal/runtime extraction |
 
 ---
 
 ## Feature Dependencies
 
 ```
-[Slash-command kickoff (Area 1)]
-    ├──requires──> [ecosys command/skill discovery]        (v1.0 ECOS-01..03, EXISTS — unwired)
-    ├──requires──> [session/ACP layer prompt path]          (v1.0 Phase 2, EXISTS)
-    ├──requires──> [two-layer context boundary reset]       (v1.0 Phase 2, EXISTS — commands = boundaries)
-    ├──requires──> [unified engine dual-signal handoffs]    (v1.0 Phase 4, EXISTS — propose→apply chaining)
-    └──requires──> [OpenSpec adapter reconciled to installed binary]  (v1.0 exists; v1.1 reconcile + ASSGUARD_OPENSPEC_BIN gate)
+[available_commands_update]
+    └──requires──> [command+skill discovery (shipped)]
+    └──enhances──> [all built-in commands] ──enhances──> [slash-invocable skills]
 
-[Audit log on acp serve (Area 2)]
-    ├──requires──> [tracer + redactor]                      (v1.0 Phase 1/2, EXISTS — wiring gap only)
-    └──enhances──> [parity evidence]  <──enhances── [Area 3 re-capture]   (shape fingerprints per turn)
+[request_permission] ──requires──> [tool-gate seam (shipped)] + [cancel-drain (shipped)]
+    └──same-pattern-enables──> [elicitation/create] ──enhances──> [learning store asks]
 
-[zcode parity re-capture (Area 3)]
-    └──requires──> [operator action: ZAI_API_KEY + capture session]      (external; unblocks Phase-1 stability test)
+[session modes advertisement] ──pairs-with──> [request_permission]   (dropdown + dialogs = full permissions UX)
 
-[Telegram peer (Area 4)]
-    ├──requires──> [session core turn loop]                 (v1.0 Phase 2, EXISTS — shared, one turn per session)
-    ├──requires──> [unified engine]                          (v1.0 Phase 4, EXISTS — same decisions both surfaces)
-    ├──requires──> [scheduler + provider factory]            (v1.0 Phases 3/7, EXISTS — STT rides OpenAI-shape client)
-    ├──requires──> [stdout discipline enforcement]           (v1.0 constraint — Telegram goroutine must stay stderr-only)
-    └──enhances──> [Area 1]  (slash-commands must work from Telegram — expansion lives in session layer, surface-agnostic)
+[/compact] ──requires──> [compaction] ──requires──> [verify-first spike (SEED-004)]
 
-[dsh profile #2 (Area 5)]
-    ├──requires──> [N-profile architecture + shaper]         (v1.0 Phase 1, EXISTS — acceptance test: no zcode-specific paths)
-    ├──requires──> [provider factory wire shape]             (openai-completions EXISTS; Responses/other = VERIFY then maybe build)
-    ├──requires──> [drift detector + provenance]             (v1.0 EXISTS; provenance extension comes from Area 3)
-    └──requires──> [dsh ground truth: source + $DSH_HOME logs]  (capture runbook; dsh pinned version)
+[session list/resume/close/delete]
+    └──requires──> [replay (shipped)] + [durable session metadata]
+    └──enables──> [/resume]
 
-Conflicts / tensions:
-[Telegram approval buttons] ──conflicts──> [no-confirmation-tier safety model]     (resolved: cancellation only)
-[dsh HEAD tracking]         ──conflicts──> [profile stability / drift detector]    (resolved: pin version)
-[Claude-Code !`cmd` expansion] ──conflicts──> [zcode mimicry (target rejects it)]  (resolved: follow zcode)
-[Telegram webhook mode]     ──conflicts──> [no-daemon / no-network-port constraint] (resolved: long-poll only)
+[per-agent model:] ──requires──> [scheduler resolver (shipped)]
+    └──required-by──> [full subagents]   (background agents inherit model overrides)
+
+[background Bash + full subagents] ──share──> [task registry + notification events]
+    └──feeds──> [/cost] (usage accounting)
+
+[steering queue] ──requires──> [turn-loop injection points (structural)] 
+    └──prerequisite-for──> [Telegram (v1.3)]
+
+[kit extraction] ──must-be-last──> [everything above stabilized]
 ```
 
 ### Dependency Notes
 
-- **Area 1 requires ecosys wiring first** — everything else in the milestone's priority order (1→4→3→5→2 per PROJECT.md; adjacent small items may merge) sits behind kickoff working, because the UAT-closed OpenSpec loop is the product's proof.
-- **Area 4 enhances Area 1:** if slash expansion is implemented in the session layer (not the ACP handler), Telegram inherits `/opsx:*` for free; if implemented in the ACP layer, Area 4 must re-implement it — build it surface-agnostic.
-- **Area 3 enhances Area 5:** the capture-provenance extension and runbook written for zcode re-capture should be written generically (parameterized by target) so dsh capture is a config, not a second tool.
-- **Area 2 is independent** (pure wiring) — mergeable with Area 3 into one small phase per PROJECT.md's "adjacent may merge."
+- **/compact requires compaction requires verify-first:** the SEED-004 spike is cheap and de-risks the single most complex feature in the milestone — schedule it early even though compaction itself sits in parity-priority 4.
+- **available_commands_update is the highest-leverage LOW-cost item:** it makes every later command/skill discoverable; shipping it first makes subsequent command work immediately visible.
+- **request_permission and elicitation share one JSON-RPC interaction pattern** (ask → outcome → continue); build the pending-interjection state machine once, reuse for both.
+- **Subagents and background Bash converge on one task-notification subsystem** — design it once (structured kinds, output files) rather than twice.
+- **Per-agent model must precede full subagents**, or background agents launch with the wrong routing and the resolvedModel reporting is retrofitted.
+- **Kit extraction conflicts with everything:** any phase ordered before it invalidates extracted interfaces. Strictly last.
 
 ## MVP Definition
 
-### Launch With (v1.1)
+### Launch With (v1.2 core — operator priority order)
 
-- [ ] `/namespace:name` expansion with zcode semantics ($ARGUMENTS/$1..$N, "User arguments:" append, flat frontmatter, `:` namespacing, zcode discovery precedence, dynamic-shell rejected) — the kickoff gap closer
-- [ ] OpenSpec core profile E2E: explore → propose → apply → archive chained by the engine with zero manual continues; adapter pinned to the installed binary's surface; `ASSGUARD_OPENSPEC_BIN=1` gate green; 11 deferred UAT checks closed
-- [ ] Audit log written on `acp serve`: correlation IDs, secrets-redacted, append-only JSONL, truncation caps, engine-decision events
-- [ ] zcode re-capture: new pinned session, drift detector + Phase-1 within-session stability test green
-- [ ] Telegram: text + voice (Whisper default), chat↔session binding with resume, allowlist, long-poll drain on shutdown, 4096 chunking, MarkdownV2 escaping, `/opsx:*` drivable
-- [ ] dsh profile #2: wire-shape verified (gate), profile captured from source+logs at a pinned dsh version, model→profile mapping in scheduler config, drift check extended
+- [ ] ACP completeness bundle: request_permission + tool_call/plan streaming + available_commands_update — the "feels native in the editor" bar
+- [ ] Session list/resume/close/delete — operator must-have (D-09)
+- [ ] Editor-driven configuration — native tier/model switching
+- [ ] Cheap built-in commands riding the expansion seam: /help /status /model /clear /cost /mcp /memory
+- [ ] Slash-invocable skills + AGENTS-as-commands + per-agent model wiring
+- [ ] Compaction verify-first spike (early, cheap, unblocks the expensive item)
 
-### Add After Validation (v1.1.x)
+### Add After Validation (v1.2 continued)
 
-- [ ] Forum-topic-per-project threading — trigger: multi-project Telegram users
-- [ ] STT fallback chain (Whisper → Groq → whisper.cpp subprocess) — trigger: default-backend latency/cost complaints
-- [ ] Audit OTLP exporter — trigger: enterprise/team ask; keep event schema stable first
-- [ ] Raw-body opt-in audit mode (`file:<dir>` + body_ref) — trigger: debugging needs
-- [ ] Expanded OpenSpec profile commands E2E — trigger: first user opting into `openspec config profile`
+- [ ] elicitation/create form mode (after permission state machine proves out)
+- [ ] /compact (after compaction lands) + /resume /config /permissions /init /doctor
+- [ ] Full subagents + background Bash on a shared task-notification subsystem
+- [ ] Hooks PreToolUse deny path; thinking-block streaming; @-mentions/images
+- [ ] Steering queue; checkpoints/undo; sandbox real
 
-### Future Consideration (v2+)
+### Future Consideration (v1.3+)
 
-- [ ] dsh Responses-API (or other) wire shape — only if verification shows DeepSeek turns use it and users need it (third provider shape is architecture scope)
-- [ ] Telegram TTS replies / rich-media parity with Channels — novelty, not workflow
-- [ ] Claude-Code command≡skill merge semantics (`context: fork`, stacking) — under ECOS-04 "working unchanged in every interaction mode"
-- [ ] Channels-style pairing codes — if allowlist proves clunky for teams
+- [ ] Kit extraction stabilization as public-ish library surface (extraction itself is v1.2 priority 6)
+- [ ] Telegram peer consuming the steering queue + shared turn core
+- [ ] Elicitation url mode; permission-rule interactive editing; remote-launched (cloud) agents
 
 ## Feature Prioritization Matrix
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| Slash-command expansion + OpenSpec core E2E (Area 1) | HIGH (product proof; closes UAT gap) | MEDIUM | P1 |
-| Audit log on acp serve (Area 2) | HIGH (trust; known gap) | LOW | P1–P2 (mergeable) |
-| zcode parity re-capture (Area 3) | HIGH internally (unblocks stability test) | LOW code / operator-gated | P2 |
-| Telegram text+voice peer (Area 4) | HIGH (new surface; mobile/async SDD) | HIGH (lifecycle + binding + STT) | P2 (milestone priority 4) |
-| dsh profile #2 (Area 5) | MEDIUM–HIGH (thesis generalization; operator's DeepSeek turns) | MEDIUM (verification-gated) | P3 (milestone priority 5) |
-| Telegram forum topics | MEDIUM | MEDIUM | P3 |
-| Audit OTLP export | MEDIUM (enterprise) | MEDIUM | P3 |
-| Expanded OpenSpec profile E2E | LOW (opt-in) | MEDIUM | P3 |
+| available_commands_update | HIGH | LOW | P1 |
+| request_permission + session modes | HIGH | MEDIUM | P1 |
+| tool_call + plan streaming | HIGH | MEDIUM | P1 |
+| session list/resume/close/delete | HIGH | MEDIUM | P1 |
+| Editor-driven config | MEDIUM | MEDIUM | P1 |
+| Cheap built-in commands (/help /status /model /clear /cost /mcp) | HIGH | LOW | P1 |
+| Skill-key invocation + AGENTS commands | HIGH | LOW–MEDIUM | P2 |
+| Per-agent model dispatch | MEDIUM | MEDIUM | P2 |
+| Compaction (verify-first → build) | HIGH | HIGH | P2 |
+| /compact /resume /memory /config /permissions | MEDIUM | LOW–MEDIUM | P2 |
+| elicitation/create (form) | MEDIUM | LOW | P2 |
+| Full subagents + background Bash | HIGH | HIGH | P3 |
+| PreToolUse deny; thinking blocks; @-mentions/images | MEDIUM | LOW–MEDIUM | P3 |
+| Steering queue | MEDIUM (HIGH for Telegram) | MEDIUM | P3 |
+| Checkpoints/undo | MEDIUM | MEDIUM | P3 |
+| Sandbox real | MEDIUM | HIGH | P3 |
+| /init /doctor | LOW–MEDIUM | MEDIUM | P3 |
+| Kit extraction | HIGH (strategic) | HIGH | P4 (strictly last) |
 
-**Priority key:**
-- P1: Must have for launch (v1.1 cannot ship without)
-- P2: Should have, add when possible
-- P3: Nice to have, future consideration
+**Priority key:** P1 must-have for the native-editor bar · P2 should-have this milestone · P3 close-out/parity tail · P4 strategic refactor
 
 ## Competitor Feature Analysis
 
-| Feature | Claude Code (official surface) | zcode (mimicry target) | claude-code-telegram / Channels | dsh | Our Approach |
-|---------|-------------------------------|------------------------|----------------------------------|-----|--------------|
-| Slash commands | Merged into skills; rich frontmatter (fork/context/stacking); `!`cmd`` dynamic injection allowed | Separate commands; flat 6-key frontmatter; `skills:` auto-mount; dynamic shell REJECTED; strict name regex; first-match-wins precedence | Channels adds `/telegram:access pair`-style commands | SKILL.md skills, slash-invocable + auto-trigger | Implement **zcode semantics** (target wins); surface-agnostic expansion (ACP + Telegram) |
-| SDD workflow driving | Manual stage taps; OpenSpec command files work as-is | Same manual pattern | n/a (adjunct surface) | n/a | **Zero-continue chaining** of `/opsx:*` stages via the unified engine — the differentiator nobody has |
-| Audit/telemetry | OTel events + metrics + correlation IDs; opt-in content; secrets always redacted; 60 KB caps | (not public) | claude-code-telegram: SQLite audit + cost tracking | Append-only session log, "model-visible means logged", trajectory view, resume/fork/replay on the stream | Same norms (correlation IDs, redaction, caps) + engine-decision events + parity fingerprints — audit as trust surface |
-| Telegram frontend | Channels plugin = messaging adjunct into a running session; daemon supervisor; voice via Whisper-chain; forum topics; allowlist/pairing | none | Full bots; per-project session binding; `/verbose`; whitelist; cost caps; polling daemons | none | **In-process peer goroutine** beside ACP stdio in one static binary; same sessions/engine; long-poll + context drain; cancellation-only safety (no approval tier) |
-| Voice STT | Whisper→Groq→Deepgram→whisper-cli fallback chain (Channels) | none | Voxtral/Whisper/whisper.cpp options | n/a | Configurable backend, OpenAI Whisper default via existing OpenAI-shape client; fallback chain via scheduler error classification |
-| Mimicry of other harnesses | none | none | none | none | **Category of one**: zcode profile (proven) + dsh profile #2 (open-source + log dual grounding, version-pinned) |
-| Model providers | Anthropic + catalog | Anthropic-shape (Z.ai) | delegates to Claude Code | Plugin providers: openai-completions custom, catalog protocols, `$DSH_HOME` settings.yaml + .credentials.yaml | Two-shape factory (existing); dsh-profile turns ride openai-completions shape pending verification |
+| Feature | Claude Code | Gemini CLI (ACP) | pi (badlogic) | Our Approach |
+|---------|-------------|------------------|---------------|--------------|
+| Permission asks | TUI dialogs + rule persistence, 4 modes | ACP request_permission (had raw-text bug early) | minimal/none | ACP RPC + session modes; "always" = persisted rule in .ass-guard scope |
+| Compaction | auto ≈95% + manual + (absorbed) microcompact | error-on-overflow historically, start-new-session | manual /compact only | verify zcode-profile evidence first; then auto+manual with focus args |
+| Subagents | Task/Agent, background, notifications, per-agent model | none native | none | goroutine loops + shared task-notification subsystem |
+| Steering | queued messages post-turn (no true mid-turn steer) | limited | true steering at tool-call boundaries + follow-up mode | pi-style boundary drain; cancel unchanged |
+| Commands | 15+ built-ins + discovered | basic | few, file-based | built-ins via expansion seam + discovered commands/skills/AGENTS advertised over ACP |
+| Config | /config panel + settings hierarchy | editor settings partial | settings.json | ACP configOptions for editor-native switching; env/file credentials |
 
 ## Sources
 
-- [Claude Code — Slash Commands docs](https://code.claude.com/docs/en/slash-commands) (commands≡skills merge, frontmatter, substitution, stacking, precedence)
-- [Claude Code — Skills docs](https://code.claude.com/docs/en/skills)
-- [zcode `diagnosing-commands` skill](file:///Users/nil/.zcode/cli/plugins/cache/zcode-plugins-official/zcode-guide/0.1.0/skills/diagnosing-commands/SKILL.md) — local ground truth for the mimicry target's command semantics
-- [Fission-AI/OpenSpec repo](https://github.com/Fission-AI/OpenSpec) + [docs/commands.md](https://github.com/Fission-AI/OpenSpec/blob/main/docs/commands.md) + [docs/opsx.md](https://github.com/Fission-AI/OpenSpec/blob/main/docs/opsx.md) (repo verified Fission-AI, not "Fission-A/AI-OpsSpec")
-- [npm @fission-ai/openspec](https://www.npmjs.com/package/@fission-ai/openspec) — v1.9.0 current (2026-08-13)
-- [Claude Code — Monitoring Usage (OTel) docs](https://code.claude.com/docs/en/monitoring-usage) (event names, correlation IDs, redaction rules, content caps)
-- [Anthropic Audit Logs API for compliance](https://amitkoth.com/log-claude-api-calls-compliance-siem/) (35 event types, 6-year retention — platform-side norm)
-- [DeepSeek Harness developer preview page](https://deepseek.com/harness/en/) + [deepseek-ai/deepseek-harness repo](https://github.com/deepseek-ai/deepseek-harness) + [docs/user/guide/providers.md](https://github.com/deepseek-ai/deepseek-harness/blob/master/docs/user/guide/providers.md) + [x-cmd package page](https://www.x-cmd.com/install/deepseek-harness/) (v0.1 preview, Cordis, plugins, providers/protocols, session-log traceability)
-- [VentureBeat — DeepSeek Harness launch](https://venturebeat.com/technology/deepseek-harness-launches-as-open-source-rival-to-claude-code-alongside-v4-pro-on-api-with-higher-prices)
-- [DeepSeek API docs — Codex integration](https://api-docs.deepseek.com/quick_start/agent_integrations/codex/) (Responses API + SKILL.md skills context)
-- [RichardAtCT/claude-code-telegram](https://github.com/RichardAtCT/claude-code-telegram) (session binding, media, voice transcription options, whitelist, audit logging, polling service)
-- [Claude Code + Telegram voice & threading (dev.to)](https://dev.to/timmothybuilder/claude-code-telegram-how-to-supercharge-your-ai-assistant-with-voice-threading-more-1b69) (Channels plugin: STT fallback chain, forum topics, pairing, daemon supervisor)
-- [implicator.ai — adding voice to Claude Code Channels](https://www.implicator.ai/claude-code-channels-has-no-voice-support-you-can-add-it-in-20-minutes-2/)
-- [General Analysis — Claude Code OTel observability](https://generalanalysis.com/guides/claude-code-control-observability-opentelemetry)
+- Official Claude Code docs via Context7 (`/websites/code_claude` — commands, model-config, costs, settings-reference, hooks, hooks-guide, agent-sdk/typescript+python, skills, claude-directory, communications-kit, context-window, best-practices, whats-new) [HIGH]
+- Agent Client Protocol: agentclientprotocol.com/protocol/schema + /protocol/tool-calls (live fetches) [HIGH]
+- Zed ACP UX: zed.dev blog/docs, zed-industries/zed issues/PRs, agentclientprotocol.com [MEDIUM]
+- Compaction internals: Anthropic docs + GitHub issues anthropics/claude-code #2497/#4251, r/ClaudeAI reports [MEDIUM]
+- pi steering: github.com/badlogic/pi-mono packages/coding-agent/docs/customization.md, mariozechner.at [MEDIUM]
+- Strands interrupts/queueing: strandsagents.com docs, GitHub issue #855 / PR #913 [MEDIUM]
 
 ---
-*Feature research for: ass-guard v1.1 (slash-command kickoff, audit log, parity re-capture, Telegram peer, dsh profile #2)*
-*Researched: 2026-08-14*
+*Feature research for: ass-guard-agent v1.2 Claude Code Parity*
+*Researched: 2026-08-26*

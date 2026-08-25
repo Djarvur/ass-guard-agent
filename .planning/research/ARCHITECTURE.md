@@ -1,379 +1,461 @@
 # Architecture Research
 
-**Domain:** v1.1 feature integration onto the shipped ass-guard v1.0 architecture (24 Go packages, ~33.5k LOC) — slash-command kickoff, LOG-01 audit completion, zcode parity re-capture, Telegram peer, deepseek-harness profile #2
-**Researched:** 2026-08-14
-**Confidence:** HIGH for integration points (all verified against source + a live `openspec v1.5.0` probe); MEDIUM for Telegram/dsh internal details (library/target specifics verified at the API-surface level, internals to be validated during build)
+**Domain:** v1.2 Claude Code Parity — integration of ten feature clusters onto the shipped ass-guard v1.1 architecture (Go binary, ~24 internal packages)
+**Researched:** 2026-08-26
+**Confidence:** HIGH for all codebase integration points (every named package/type/function verified against source in this repo); MEDIUM for exact ACP wire shapes (taken from the official spec pages at agentclientprotocol.com — primary-source fetched and cross-checked, but not yet validated against a live Zed handshake)
 
-> This document covers ONLY how the five v1.1 features integrate with the shipped architecture. The v1.0 architecture itself (event-bus spine, two-layer context, provider-shape isolation, unified engine, stdio discipline) is treated as given — it is embodied in the code and documented in MILESTONES.md. Every integration point below names the real package, type, and function it attaches to.
+> This document covers ONLY how the v1.2 features integrate with the shipped architecture. The v1.1 architecture itself (event-bus spine, two-layer context, unified engine, stdio discipline, hook-DAG, scheduler) is treated as given. Every integration point names the real package, type, and function it attaches to, and marks **NEW** vs **MODIFIED** explicitly. A suggested build order that respects the dependencies is at the end.
 
 ---
 
 ## System Overview
 
-The five v1.1 features attach to the shipped architecture at four layers. Nothing rewrites a v1.0 component; every feature is either a new leaf package or new wiring inside existing seams.
+All ten feature clusters attach to four layers. No v1.1 component is rewritten; the largest single concentration of change is `cmd/ass-guard/acp_serve.go`'s `sessionTurnRunner` (2,116 lines) — which is itself the argument for the early `internal/runtime` carve recommended in the build order.
 
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│ FRONTENDS (process surfaces — stdout stays ACP-only in every mode)       │
-│                                                                          │
-│  ┌─────────────────────┐        ┌────────────────────────────────────┐   │
-│  │ internal/acp        │        │ internal/telegram        [NEW]     │   │
-│  │ JSON-RPC v1 stdio   │        │ go-telegram/bot long-poll goroutine│   │
-│  │ session/prompt ─────┼──┐     │ per-chat session binding + voice   │   │
-│  └─────────────────────┘  │     │ STT (Whisper default)              │   │
-│                           │     └───────────────┬────────────────────┘   │
-│  cmd/ass-guard: `acp serve`   `telegram` [NEW]  │ both share one core    │
-└───────────────────────────┼─────────────────────┼────────────────────────┘
-                            ▼                     ▼
-┌──────────────────────────────────────────────────────────────────────────┐
-│ TURN CORE (extracted from cmd/ass-guard sessionTurnRunner → internal/    │
-│ runtime [NEW package]; owns sessionFor + runOneTurn + engine wiring)     │
-│                                                                          │
-│  ┌────────────────────────────────────────────────────────────────────┐  │
-│  │ slash-command expander [MODIFIED: internal/ecosys + wiring]        │  │
-│  │ "/opsx:explore args" → ecosys.AllCommands → markdown body          │  │
-│  └────────────────────────────────────────────────────────────────────┘  │
-│  ┌───────────────────────────┐  ┌────────────────────────────────────┐   │
-│  │ internal/session (Core)   │  │ internal/engine (post-turn observer)│   │
-│  │ Prompt loop, transcript,  │  │ Observe → Decide → continue/hook/   │   │
-│  │ projector, boundaries     │  │ ask/wait; PatternTable from         │   │
-│  └────────────┬──────────────┘  │ internal/openspec toml [MODIFIED]   │   │
-│               │                 └────────────────────────────────────┘   │
-│  ┌────────────▼──────────────────────────────────────────────────────┐   │
-│  │ audit wiring [MODIFIED: RequestCapturer on serve path +            │   │
-│  │ TranscriptWriter per session + optional --audit-log sink]          │   │
-│  └───────────────────────────────────────────────────────────────────┘   │
-├──────────────────────────────────────────────────────────────────────────┤
-│ PROVIDER / PROFILE LAYER                                                 │
-│  ┌────────────────────────────┐  ┌────────────────────────────────────┐   │
-│  │ internal/profile [MODIFIED]│  │ internal/provider [MODIFIED]        │   │
-│  │ loader + extractor ride    │  │ OpenAI shape gains system-block     │   │
-│  │ unchanged; profile #2 =    │  │ mapping (today: silently dropped)   │   │
-│  │ profiles/dsh bundle [NEW]  │  │ + dsh DeepSeek provider entry       │   │
-│  └────────────────────────────┘  └────────────────────────────────────┘   │
-└──────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ ACP FRONTEND (internal/acp + cmd/ass-guard/acp_serve.go)                     │
+│                                                                              │
+│  ┌────────────────────┐  ┌──────────────────────────────────────────────┐    │
+│  │ Server / handlers  │  │ EMITTERS + REQUESTERS [NEW capabilities]     │    │
+│  │ [MODIFIED: session │  │ TurnEmitter: agent_message_chunk (today)     │    │
+│  │ family, caps,      │  │   + tool_call / tool_call_update / plan      │    │
+│  │ configOptions]     │  │   + agent_thought_chunk                      │    │
+│  └────────────────────┘  │ Requester: request_permission, elicitation/  │    │
+│                          │   create  (agent→client REQUESTS w/ id)      │    │
+│                          └──────────────────────────────────────────────┘    │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ RUNNER LAYER (cmd/ass-guard sessionTurnRunner → internal/runtime [CARVE])    │
+│  ┌────────────────────┐  ┌───────────────────┐  ┌────────────────────────┐   │
+│  │ invocation resolver│  │ session family ops│  │ editor-config override │   │
+│  │ [MODIFIED: builtins│  │ [NEW: list/resume/│  │ [NEW: session-scope    │   │
+│  │ → skills → agents] │  │  close/delete]    │  │  tier/model routing]   │   │
+│  └────────────────────┘  └───────────────────┘  └────────────────────────┘   │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ SESSION CORE (internal/session)                                              │
+│  ┌───────────────┐ ┌────────────┐ ┌──────────────────────────────────────┐   │
+│  │ turn loop     │ │ Projector  │ │ SEAMS [MODIFIED/NEW]:                │   │
+│  │ [MODIFIED:    │ │ [MODIFIED: │ │ PermissionGate · SteerQueue ·        │   │
+│  │ gates, steer, │ │ compaction │ │ Compactor · BackgroundSubagents ·    │   │
+│  │ bg subagents] │ │  reset pt] │ │ TurnEmitter · AGENTS.md merge        │   │
+│  └───────────────┘ └────────────┘ └──────────────────────────────────────┘   │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ OBSERVER + ECOSYSTEM + PROVIDER                                              │
+│  engine (post-turn) · ecosys discovery [MODIFIED: settings.json hooks,       │
+│  memory files] · shaper [MODIFIED: cache_control, images, thinking] ·        │
+│  provider [MODIFIED: thinking StreamChunk]                                   │
+├──────────────────────────────────────────────────────────────────────────────┤
+│ STORES: transcript_*.jsonl · shadow.git checkpoints · learned.yaml ·         │
+│  schedule store · permissions.yaml [NEW]                                     │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Component Responsibilities (v1.1 delta view)
+### Component Responsibilities (v1.2 delta view)
 
-| Component | Status | Responsibility for v1.1 |
-|-----------|--------|------------------------|
-| `internal/ecosys` | MODIFIED | Gains namespaced command discovery (`commands/<ns>/<name>.md`), richer command frontmatter (allowed-tools/model), and a pure `Expand` function; gets its first non-test importer |
-| `internal/openspec` | MODIFIED | `seeded.toml` `[commands]` reconciled to the real v1.5.0 binary surface; registered tools gain an Adapter-backed `Execute`; pattern table re-seeded from real handoff texts |
-| `cmd/ass-guard` (`acp_serve.go`) | MODIFIED | Loads the ecosys registry at startup, expands `/ns:name` in `sessionTurnRunner.Run`, passes `--audit-log` into the serve path, attaches the RequestCapturer, wires the TranscriptWriter, gains the `telegram` subcommand |
-| `internal/runtime` (or similar) | NEW | The extracted turn core (sessionTurnRunner + engine/hook/learning wiring) shared by ACP and Telegram frontends |
-| `internal/telegram` | NEW | Bot long-poll loop, per-chat session binding, chat-message emit sink, /stop cancellation, voice download + STT hand-off |
-| `internal/stt` (or `internal/telegram/stt`) | NEW | `Transcriber` interface; OpenAI Whisper default via `go-openai` (existing dep), Groq via base-URL swap, whisper.cpp via subprocess |
-| `internal/audit` | MODIFIED (small) | Reused as the optional flat-file sink on the serve path; the primary audit artifact stays the transcript (D-20) |
-| `internal/session` | MODIFIED (small) | `sessionFor` path gains TranscriptWriter construction; possibly a `CurrentTurnID()` accessor so captured requests carry a TurnID |
-| `internal/provider` | MODIFIED | `openai.go buildRequest` maps `profile.System` → system message (today dropped — verified); dsh turns need it |
-| `internal/profile` | MODIFIED (small) | Loader tolerates absent `thinking.json`/`tool_choice.json` (hard-errors today); `cmd/extract-profile` gains a dsh source+log extraction mode |
-| `profiles/dsh/` + `internal/defaults/seed/profiles/dsh/` | NEW | Profile #2 artifact bundle, zero-config seeded |
-| `internal/redact` | UNCHANGED | Both audit paths already redact through it — nothing new needed |
+| Component | Status | v1.2 Responsibility |
+|-----------|--------|---------------------|
+| `internal/acp` Server | MODIFIED | New handlers (`session/list`, `session/load`, `session/resume`, `session/close`, `session/delete`, `session/set_config_option`, `elicitation/create` responses); richer `initialize` capabilities (`loadSession:true`, `sessionCapabilities`, `configOptions`); generalized emitter beyond `AgentMessageChunk`; outbound request capability (agent→client JSON-RPC *requests* with an id — the server has only ever sent notifications) |
+| `cmd/ass-guard` `sessionTurnRunner` | MODIFIED (+ carve) | Invocation resolver chain; session-family operations; permission/elicitation brokering; editor-config override plumbing; everything below that today lives in `Run`/`sessionFor` |
+| `internal/session` Session | MODIFIED | Permission gate seam beside the plan-mode gate; steering queue drain in `runTurn`; compaction marker handling; background-subagent registry; turn-emitter publication of tool_call/plan/thought frames |
+| `internal/session` Projector | MODIFIED | Treat a `compaction` transcript line as a second reset-point class (summary becomes the seed); otherwise untouched |
+| `internal/ecosys` | MODIFIED | Parse `settings.json` hooks (project+user) in the loader; AGENTS.md/CLAUDE.md readers; skills/agents surfaced as invocable keys |
+| `internal/shaper` / `internal/provider` | MODIFIED | `cache_control {"type":"ephemeral"}` on every system block (routed gap, docs/compaction-decision.md §3 row 1); `"thinking"` StreamChunk type; image content blocks |
+| `internal/coreexec` | MODIFIED | Sandbox wrapper for Bash; background-task completion callbacks; persistent-shell option; uniform hook wrap coverage |
+| `internal/checkpoint` | GIVEN (shipped v1.1 EARLY-01) | Shadow-git store, refs, CLI already exist; v1.2 adds only the surface/guard rails (see §9) |
 
 ---
 
-## Recommended Project Structure (v1.1 additions)
+## Recommended Project Structure (v1.2 deltas)
 
 ```
-ass-guard-agent/
-├── cmd/ass-guard/
-│   ├── acp_serve.go          # MODIFIED: ecosys load, expansion call, audit flags, telegram sidecar flag
-│   ├── telegram_cmd.go       # NEW: `telegram` cobra subcommand (telegram-only launch)
-│   ├── provider_factory.go   # MODIFIED: generalize tracerProvider → shared captured-provider helper
-│   └── profile_check.go      # MODIFIED: per-profile capture loader (dsh live path)
-├── internal/
-│   ├── runtime/              # NEW: extracted turn core (runner, engine wiring, sessionFor)
-│   │   ├── runner.go         #   sessionTurnRunner moved here, frontend-agnostic RunTurn
-│   │   └── engine_wiring.go  #   setupEngine, dispatchers, hook seams (moved from acp_serve.go)
-│   ├── ecosys/
-│   │   ├── loader.go         # MODIFIED: discoverCommands walks one subdirectory level (namespace)
-│   │   ├── types.go          # MODIFIED: Command gains Namespace + frontmatter directives
-│   │   └── expand.go         # NEW: pure "/ns:name args" parser + body expansion ($ARGUMENTS)
-│   ├── telegram/             # NEW: frontend (bot loop, chat binding, voice download)
-│   │   ├── frontend.go       #   Start(ctx) long-poll, handler registration, chat→session map
-│   │   ├── sink.go           #   bus-chunk → Telegram message batching (rate-limit aware)
-│   │   └── stt.go            #   Transcriber interface + whisper-openai/groq/whisper-cpp impls
-│   ├── openspec/
-│   │   ├── seeded.toml       # MODIFIED: real binary surface + real handoff patterns
-│   │   └── register.go       # MODIFIED: register Adapter-backed Execute per command
-│   └── profile/
-│       └── loader.go         # MODIFIED: optional thinking/tool_choice files
-├── profiles/dsh/             # NEW: profile #2 bundle (profile.yaml, system/, tools.json, …)
-└── internal/defaults/seed/
-    └── profiles/dsh/         # NEW: sanitized seed copy (sync.sh extended)
+cmd/ass-guard/
+├── acp_serve.go              # MODIFIED — thins over time as runtime carves out
+├── acp_sessions.go           # NEW  — session list/resume/close/delete runner ops
+├── acp_commands.go           # NEW  — builtin command table + local-render handlers
+├── acp_config.go             # NEW  — editor configOptions ↔ routing override
+├── checkpoint.go             # GIVEN — CLI surface (v1.1)
+internal/runtime/             # NEW (carve) — sessionTurnRunner + engine/MCP wiring,
+│                              #   moved mechanically from acp_serve.go; frontends
+│                              #   (acp today, telegram v1.3) become clients
+internal/acp/
+├── server.go                 # MODIFIED — outbound-request writer path (id'd frames)
+├── emitters.go               # NEW  — TurnEmitter (chunk/thought/tool_call/plan)
+├── requesters.go             # NEW  — RequestPermission / ElicitationCreate flows
+├── handlers_sessions.go      # NEW  — session family handlers
+├── handlers_config.go        # NEW  — session/set_config_option
+internal/session/
+├── permission.go             # NEW  — PermissionGate (broker pattern, mirror of ask.go)
+├── steering.go               # NEW  — SteerQueue + runTurn drain point
+├── compaction.go             # NEW  — Compactor (summarize call + marker line)
+├── bgsubagent.go             # NEW  — background dispatch registry + completion cb
+internal/event/events.go      # MODIFIED — + AgentThoughtChunk, BackgroundTaskDone,
+│                              #   + payload fields on existing ToolCall/ToolCallUpdate
+internal/ecosys/
+├── settings_hooks.go         # NEW  — settings.json hooks parsing (both scopes)
+├── memory.go                 # NEW  — AGENTS.md/CLAUDE.md discovery + concat
 ```
 
-### Structure Rationale
+### Structure rationale
 
-- **`internal/runtime` extraction is the one structural refactor v1.1 needs.** Today the turn core (`sessionTurnRunner`, engine wiring, hook seams, MCP spawn) lives in `cmd/ass-guard/acp_serve.go` (package `main`). Telegram must drive the identical path (same sessions, same engine, same audit); a frontend-agnostic core package is the only way both surfaces share it without duplicating 400 lines of wiring. It is a move, not a rewrite — the ACP path calls the same functions afterward.
-- **`internal/telegram` is a leaf** mirroring `internal/acp`'s shape: it owns a transport, a session-binding policy, and a chunk sink; it never imports provider/profile logic directly.
-- **Expansion lives in `internal/ecosys`** because it is pure over the already-precedence-resolved `Registry`; no new package needed, and the read-only `.claude/` contract stays in one place.
-- **Profile #2 is data, not code**: a directory bundle under the existing name-keyed loader (verified: `profile.NewLoader(root).Load(name)` is profile-agnostic — PROF-02 held).
+- **New files, not new packages, inside `internal/session`:** every new seam follows the established file-per-seam convention (`ask.go`, `planmode.go`, `boundary.go`) — the Session struct gains fields wired via `Set*` accessors, exactly like `SetAskBroker`/`SetPlanMode`.
+- **`internal/runtime` carve is mechanical, not architectural:** move `sessionTurnRunner`, `engineTurnRunnerAdapter`, `acpDispatcher`, the cron wiring helpers, and their constructors verbatim; zero behavior change; `cmd/ass-guard` composes it. This is the same extraction ROADMAP Phase-10 already sketched and SEED-001 names as the kit's down-payment.
 
 ---
 
-## Architectural Patterns (feature-by-feature integration)
+## Architectural Patterns (the five that carry v1.2)
 
-### Pattern 1: Slash-command expansion — hook at the TurnRunner, not the ACP handler
+### Pattern 1: The broker/suspension pattern (reuse for permissions, elicitation, steering acks)
 
-**What:** Intercept `/namespace:name args` in incoming prompt text, resolve via the ecosys precedence chain, expand the command's markdown body, and feed the expanded text as the turn's user message.
+**What:** a per-session broker holds a pending interaction, fires a client-visible surface callback, and exposes a settle channel; the requesting seam suspends; a later prompt resolves it.
+**When:** any agent→client round trip that must suspend model progress.
+**Proven in-repo:** `internal/session/ask.go` (`AskBroker`: `Surface` → bus-published render → `ResolveAsk` resumes the suspended turn; `routeAskReply` in acp_serve.go routes the reply prompt; the D-01 timer bounds the wait; `AskSettleChan` lets the parked engine chain wait through suspension).
 
-**Where it hooks (the decision):** `sessionTurnRunner.Run` in `cmd/ass-guard/acp_serve.go:405` (moving to `internal/runtime`), immediately before `runOneTurn` — NOT in `internal/acp.handleSessionPrompt` (`internal/acp/handlers.go:102`).
-
-Rationale, verified against the code:
-
-1. `internal/acp` is protocol-pure: it has no filesystem, no workDir, no ecosys dependency. Putting markdown-file resolution there drags ecosystem discovery into the JSON-RPC layer and breaks the package's clean test surface.
-2. `sessionTurnRunner` already owns `workDir` (the discovery root), the profile, and the engine — everything expansion needs. It is also the single place the Telegram frontend will enter after the runtime extraction, so Telegram gets slash-commands for free (a hard requirement: "Telegram can drive an entire SDD scenario").
-3. The expanded blocks must be what `engine.Observe` receives as `userPrompt` (`acp_serve.go:487`), so expansion must happen before `runOneTurn`, and the transcript's `user_message` line records the *expanded* body (the audit trail shows what the model actually saw).
-
-**Load-bearing gap found (verified live):** `internal/ecosys.discoverCommands` (`internal/ecosys/loader.go:164`) scans `commands/*.md` flat and explicitly skips directories (`if e.IsDir() … continue`). But `openspec init --tools claude` (probed against the real v1.5.0 binary) installs commands as a **subdirectory**: `.claude/commands/opsx/{explore,apply,propose,sync,archive}.md` plus five skills (`.claude/skills/openspec-*/SKILL.md`). With today's loader, zero opsx commands are discoverable. The loader needs one-level-deep discovery mapping `commands/<ns>/<name>.md` → key `ns:name` (matching the `/opsx:explore` invocation surface). Top-level `commands/<name>.md` stays the un-namespaced form.
-
-**Expansion semantics:**
-
-- `ecosys.Command` (types.go) gains the frontmatter directives the body may carry: `allowed-tools`, `model`, plus keep `description`. The current `parseCommand` decodes only `description`; opsx v1.5.0 files use `name/description/category/tags` (verified) — unknown keys are ignored by YAML decode, so this is additive.
-- `$ARGUMENTS`: the ecosys doc already promises the placeholder. Verified: opsx v1.5.0 bodies do NOT use `$ARGUMENTS` (they reference "the argument after `/opsx:explore`" in prose). Expansion rule (Claude-Code convention): substitute `$ARGUMENTS` where present; otherwise append the args as a trailing line (`Arguments: <args>`). Both paths needed.
-- Frontmatter directives: v1 `allowed-tools` can restrict the session's projected tool set for that turn (a natural extension of the per-session profile copy already built in `sessionFor`, `acp_serve.go:534-538`); `model` can influence the tier/model override through the existing scheduler config. Ship allowed-tools as a follow-on within the phase; do not let it block the kickoff UAT.
-- Unknown `/command` (no registry match): pass the text through unchanged + a stderr log. This matches the project's structural-safety posture (no match ⇒ nothing happens); an ACP error response would break Telegram parity where the same rule applies.
-- Exposure: ACP v1 has no commands-list method, so "expose loaded slash-commands" = stderr log at startup + a small `ass-guard commands` listing (optional). The user types `/opsx:explore` as ordinary prompt text; Zed forwards it verbatim.
-
-**How OpenSpec stages then drive (the full kickoff chain):**
-
-```
-user types "/opsx:explore add-auth" in Zed
-  → ACP session/prompt (verbatim text)
-  → runtime.RunTurn: ecosys.Expand → opsx:explore markdown body (+args)
-  → Session.Prompt: transcript user_message = expanded body; provider turn
-  → model follows the command body: runs `openspec list --json`, `openspec show …`
-    (via Bash tool calls — the binary as supporting tooling) and/or the
-    namespaced openspec:* catalog tools
-  → turn ends (end_turn)
-  → engine.Observe → Decide(TurnOutput, OpenSpecPatternTable)
-      text handoff ("proposal ready…") OR tool-call handoff → ActionContinue
-  → NextStagePrompt injects the next stage as a REAL turn (D-12)
-  → hooks fire post-implement/post-phase via acpDispatcher.Hook → hookdag
+```go
+// PermissionGate = AskBroker's twin, different payload + resolution channel.
+type PermissionGate struct {
+    mu      sync.Mutex
+    pending map[string]chan PermissionOutcome // toolCallID -> resolution
+    onAsk   func(PermissionRequest)            // publishes request_permission via acp
+}
+func (g *PermissionGate) Await(ctx context.Context, req PermissionRequest) (PermissionOutcome, error) {
+    ch := make(chan PermissionOutcome, 1)
+    g.register(req.ToolCallID, ch)
+    g.onAsk(req) // acp layer writes the id'd request; response resolves via Resolve()
+    select {
+    case o := <-ch: return o, nil
+    case <-ctx.Done(): return PermissionReject, ctx.Err() // cancel ⇒ reject_once semantics
+    }
+}
 ```
 
-**Adapter reconciliation — verified against the real binary (v1.5.0 `--help` probed):** the real surface is `init, update, list, view, change, archive, spec, config, schema, store, doctor, context, workset, validate, show, status, instructions, templates, feedback, completion`. The seeded `[commands]` table (`internal/openspec/seeded.toml`) declares `list/show/validate/apply/implement` — `apply` and `implement` do not exist as binary subcommands (they are agent-workflow stages driven by the command files). Reconcile: read-only `list, show, view, validate, status, instructions, context, doctor, spec(list/view)`; mutating `archive, change, config, schema, store`. Note the UAT report's claim that show/validate "don't exist" was half-right: they DO exist on v1.5.0; the true mismatch is `apply`/`implement`.
+**Trade-offs:** identical suspension semantics to asks (turn stops consuming the loop, client controls latency); the known hazard — reply-vs-new-prompt ambiguity — is already solved by `HasPendingAsk` routing and must be extended: while a permission is pending, the *response frame* (not a prompt) resolves it, so no routing conflict arises.
 
-**Should tools be re-derived from `openspec/config.yaml`? No.** Probed the file produced by `openspec init`: it holds `schema:` (e.g. `spec-driven`), optional project `context:` and per-artifact `rules:` — it is project configuration for artifact generation, NOT a command-surface declaration. Deriving the tool table from it is not viable. The `[commands]` table should be reconciled against the binary surface (a dev-time probe; the table stays hand-maintained TOML), and mutability stays the single source of truth for boundaries via `toolcat.IsBoundary` (verified: `openspec.RegisterTools` → `toolcat.Tool.Mutability` → existing boundary floor, no boundary-engine change).
+### Pattern 2: Ordered inline emission, not multi-kind bus fan-out, for client-visible frames
 
-**Second load-bearing gap (verified):** `openspec.RegisterTools` (`internal/openspec/register.go:28`) registers catalog entries with **no `Execute`** — the comment says the engine invokes them via the Adapter, but the actual 04-05 wiring gives the session `toolexec.RealExecutor{Catalog}`, whose nil-Execute path returns `{"error":"tool openspec:* has no implementation yet"}` (`internal/toolexec/real.go:67-71`). The Adapter (`internal/openspec/adapter.go`) is constructed nowhere outside tests. The fix is small: in `RegisterTools`, set `Execute` to a closure over an `Adapter` that parses `{command, args}` input and calls `Run` — then model-invoked `openspec:list` style calls actually execute the binary. (The command-file bodies mostly drive the binary through `Bash`; the namespaced tools are the structured alternative and must work when the model prefers them.)
+**What:** client-visible session/update frames for a turn (text chunks, thought chunks, tool_call lifecycle, plan) are emitted **inline by the turn goroutine through one emitter object**, in causal order. The bus remains the async/audit spine (TranscriptWriter, engine, audit mirror).
+**When:** any feature that adds a second client-visible frame type during streaming turns.
+**Why not the bus for these:** the bus demultiplexes by kind into separate bounded channels (`BufAgentMessageChunk=128`, `BufToolCall=16`, …). One subscriber goroutine selecting over N channels gives **no cross-kind ordering guarantee** — a `tool_call_update` can overtake the `tool_call` that created it, or a chunk can interleave between them, and ACP clients build UI state off these transitions. The existing single-kind forwarding worked precisely because there was only one kind.
 
-**When to use / trade-offs:** expansion-at-runner keeps ACP pure and shares across frontends, at the cost of one indirection layer (runtime package). Doing it in the ACP handler instead would be less code today and wrong tomorrow (Telegram + the "same core" constraint).
+```go
+// internal/acp/emitters.go — replaces/augments the ChunkEmitter seam.
+type TurnEmitter interface {
+    AgentMessageChunk(messageID, text string) error          // exists today
+    AgentThoughtChunk(messageID, text string) error          // NEW (thinking)
+    ToolCallCreated(tc ToolCallFrame) error                  // NEW
+    ToolCallUpdated(update ToolCallUpdateFrame) error        // NEW
+    Plan(entries []PlanEntry) error                          // NEW (TodoWrite mirror)
+}
+// session.runTurn calls these at the SAME sites where it appends transcript
+// lines (record-tool_call site → ToolCallCreated; result-append site →
+// ToolCallUpdated completed/failed) — transcript and wire stay causally aligned.
+```
 
-### Pattern 2: LOG-01 audit wiring on `acp serve` — transcript is the artifact, file sink is optional
+Server-driven turns (cron firings, parked-chain injections) obtain the same interface from `srv.Emitter(sessionID)` — the `startSessionForwarder` mute-flag dance (`turnActive`) extends to the new frame kinds unchanged.
 
-**What:** Make `--audit-log` (and, more importantly, `request_shaped` capture) real on the serve path.
+### Pattern 3: Dynamic merge into the profile copy (the injection vehicle)
 
-**Verified current state:**
+**What:** anything the model must see that is not part of the static capture (runtime cwd, skills listing, agent listing, hook stdout, and now AGENTS.md/CLAUDE.md) is appended as trailing `System` TextBlocks on the **per-session profile copy** assembled in `sessionFor` — never mutating the shared `r.profile`.
+**When:** every context-injection feature.
+**Existing sites:** `ComposeRuntimeWorkDir`, `ecosys.SkillListing`, `ecosys.AgentListing`, `injectHookContext` — all copy-on-append.
+**Known documented nuisance:** the capture places some of this as system-role messages *inside* `request.messages`, while the Shaper supports only leading system-param blocks; the trailing-System-block form is the accepted divergence pending re-capture evidence. v1.2 additions (memory files) reuse the same vehicle rather than inventing a second one.
 
-- `--audit-log` is a root persistent flag (`cmd/ass-guard/main.go:74`); cobra propagates it to `acp serve`, but `runACPServeCmd` never reads it — the value dies unparsed-to-use. The tracer path (`runTrace`) owns the only audit wiring: `openAuditSink` + `audit.NewAuditLogger(bus, sink)` + `tracerProvider(...)` which reconstructs the Anthropic adapter with `WithAnthropicRequestCapture` (`cmd/ass-guard/provider_factory.go:90-109`).
-- On the serve path, `makeProvider` (`acp_serve.go:272`) calls `factory.Build(providerName, shaper.New())` with **no capturer** — so `event.RequestShaped` is never published, and neither an AuditLogger nor a TranscriptWriter could see anything.
-- **Second verified gap:** `session.NewTranscriptWriter` has zero non-test callers. The serve path never runs it, so streaming audit lines (`request_shaped`, `agent_message_chunk`, `usage`) never reach the per-session transcript — only the session-structure lines written synchronously by `Session.Prompt`. D-20 ("audit log = transcript, one artifact") is only half-realized on the serve path.
+### Pattern 4: Optional-capability interface type-assertion at the server boundary
 
-**Recommended wiring (reuse, not new mechanisms):**
+**What:** the ACP server discovers runner capabilities by type-asserting the injected `TurnRunner` to optional interfaces (`SessionCloser` exists today).
+**When:** every new session-family operation.
+**Extension:** `SessionLister`, `SessionLoader`, `SessionEraser`, `ConfigOptionsProvider` — each a small interface in `internal/acp`, asserted in the corresponding handler; a stub runner simply doesn't implement them and the handler degrades (mirroring `closeSessionIfPossible`). This keeps `internal/acp` free of `internal/session` imports.
 
-1. **Attach the capturer:** generalize `tracerProvider` into one shared helper (e.g. `capturedProvider(factory, name, capturer)`) handling BOTH shapes — the OpenAI adapter already has `WithOpenAIRequestCapture` (`internal/provider/openai.go:53`, verified). `serveOptions` gains `AuditLogPath`; `runACPServe` passes a capturer closure publishing `event.RequestShaped{Profile: prof.Name, Timestamp: now}` to the shared bus.
-2. **Primary artifact = transcript (D-20):** construct and run one `TranscriptWriter` per session inside the `sessionFor` path (`go tw.Run(ctx)`), so `AppendRequestShaped`/chunks/usage land in `.ass-guard/transcript_<sessionID>.jsonl`. This is the LOG-01 completion in the D-20 sense and needs no new code in `internal/audit`.
-3. **Optional flat file:** when `--audit-log` is set, also `audit.NewAuditLogger(bus, sink)` for a process-wide cross-session JSONL (reuse verbatim; it already redacts and already panics on a stdout sink — keep that guard).
-4. **TurnID on captured requests:** the `RequestCapturer` signature (`func(body []byte, headers map[string]string)`) carries no TurnID; the tracer publishes with it empty. Cheapest correct fix: add an atomic `CurrentTurnID()` accessor on `Session` (it already keeps `turnCounter`) and let the per-session capturer closure read it; acceptable fallback for v1.1 is empty TurnID (the line still lands, ordering preserved by append).
+### Pattern 5: Executor-only override on the captured catalog
 
-**Redaction already exists — nothing to build:** `internal/redact` redacts secret-carrier VALUES preserving field names (JSON-tree walker: authorization/api_key/bearer/token/x-api-key/…) with a Bearer/sk- regex fallback for non-JSON, plus `ScrubError`. Both consumers already route through it: `Manager.appendLine` redacts every transcript line before write (LOG-03), and `audit.AuditLogger.handle` redacts before sink. Verified importers: acp server/handlers (error scrubbing), session manager, audit, provider errors.
-
-**When to use / trade-offs:** the alternative — a separate session-level event log under `.ass-guard/` — would create a second artifact and violate D-20's one-writer property (the TranscriptWriter doc comment explicitly warns about two-writer drift). Keep the flat `--audit-log` file strictly optional/operator-facing.
-
-### Pattern 3: Telegram frontend — a second driver over the same turn core
-
-**What:** A Telegram bot as a full peer surface: text and voice in, the same engine/sessions/audit out; runs either as a goroutine beside ACP stdio or as its own launch mode.
-
-**Integration shape:**
-
-1. **Shared core (the prerequisite):** extract `sessionTurnRunner` + `setupEngine` + the hook/learning/MCP wiring from `cmd/ass-guard/acp_serve.go` into `internal/runtime`. The ACP server then consumes it via the existing `acp.TurnRunner` interface (unchanged seam — `internal/acp/server.go:31`), and Telegram consumes the same runner through a frontend-agnostic entry (the chunk-forwarding goroutine in `Run` is the only ACP-specific part; it becomes one sink implementation among two). `runOneTurn`/`eng.Observe`/`sessionFor` are already frontend-agnostic — verified: everything below `Run` talks in `session.ContentBlock` and bus events.
-2. **Long-poll loop:** `github.com/go-telegram/bot` (new dep — NOT in go.mod today, verified), chosen in v1.0 research for zero-dependency + idiomatic `context.Context` throughout. `bot.Start(ctx)` runs the GetUpdates loop; ctx cancellation drains it. Handler-based registration maps message updates to the frontend.
-3. **Per-chat session binding:** `map[chatID]*session.Session` over the same `sessionFor` construction, with **stable session IDs** (`tg-<chatID>`) so the durable transcript (`transcript_tg-<chatID>.jsonl`) survives process restarts — unlike ACP's per-editor-session UUIDs. One chat = one continuing session = one engine state.
-4. **Chunk streaming to chat:** subscribe `AgentMessageChunk` on the shared bus exactly as `sessionTurnRunner.Run` does, batch into Telegram messages (rate limits: ~1 msg/sec per chat, edit-message throttling — v1 recommendation: stream coarse chunk batches, fall back to final-message-only if editing proves noisy). Final `stopReason` mirrors the ACP contract.
-5. **Voice flow:** `message.Voice` (ogg/opus) → `getFile` → download from `https://api.telegram.org/file/bot<token>/<file_path>` (Bot API mechanics; the library exposes GetFile + the URL helper) → `Transcriber.Transcribe(ctx, io.Reader) (string, error)` → the transcript text becomes an ordinary user prompt through the same `RunTurn` (with a transcript note that it originated as voice). Backends behind one interface: **OpenAI Whisper API default via `sashabaranov/go-openai` transcription (already a dependency — zero new deps for the default)**; Groq = base-URL swap on the same client; whisper.cpp = out-of-process `whisper-cli` subprocess (never cgo — goreleaser/static-binary constraint). Config in `.ass-guard/telegram.yaml` (seeded by firstrun; mirrors scheduling.yaml conventions), bot token via the established credential precedence (flag > `$TELEGRAM_BOT_TOKEN` env > config literal).
-6. **Launch modes:** new cobra subcommand `telegram` (telegram-only: runner + bot, no ACP server, stdin unused) AND an `acp serve --telegram` flag to run the bot goroutine beside the ACP server sharing one runner (the PROJECT.md requirement "goroutine in the same process as ACP stdio"). One GetUpdates loop per token — never two (409 conflict), a pitfall if both modes run against the same bot.
-7. **Shutdown:** derive one ctx from `signal.NotifyContext` (the `acp serve` RunE already does this — `acp_serve.go:141`); on cancel: bot long-poll returns (`Start(ctx)`), in-flight Telegram turns abort via per-chat cancel funcs mirroring `sessionState.cancelTurn` (a `/stop` chat command maps to the same cancel), then `closeAllSessions()` reaps MCP subprocesses (existing helper, `acp_serve.go:610`).
-8. **stdout discipline:** the bot library's logger must be redirected to stderr (`bot.WithLogger` / slog bridge). In telegram-only mode stdout stays byte-clean even though unused — enforce via the same review/lint gate as ACP.
-
-**When to use / trade-offs:** running Telegram in-process (not a separate daemon) honors "single static binary, no daemon"; the cost is that a Telegram-driven heavy turn competes with ACP turns for the process-wide provider semaphore (existing `provider.NewSemaphore(maxConc)`) — acceptable and arguably correct (PARA-04 bounds outbound concurrency across parent + subagents already; Telegram turns are just more parents).
-
-### Pattern 4: Profile #2 (deepseek-harness) — data bundle plus two targeted code fixes
-
-**What:** Mimic `deepseek-ai/deepseek-harness` ("dsh" — DeepSeek's MIT-licensed, plugin-based open-source coding agent; TypeScript, "traceable sessions") for DeepSeek-model turns, riding the N-profile architecture with no zcode-specific paths.
-
-**The artifact (identical bundle shape, verified loader contract):** `profiles/dsh/` containing `profile.yaml` (name/model/max_tokens), `system/block-*.txt` (byte-faithful, lexical order), `tools.json` (name+description+input_schema), `identity.yaml` (header NAMES byte-faithful, value templates), `thinking.json`, `tool_choice.json`, plus `coverage.yaml` (tiered manifest with `TargetCaptureRef` provenance). `internal/profile.Loader.Load(name)` is directory-keyed and profile-agnostic — zero changes to load dsh. Selection is already a flag: `ass-guard acp serve --profile dsh`.
-
-**Two code adaptations required (both verified gaps):**
-
-1. **OpenAI-shape system mapping:** `internal/provider/openai.go buildRequest` (verified, lines 108-155) never reads `profile.System` — system blocks are silently dropped on the OpenAI shape. DeepSeek's API is OpenAI-shape, so dsh turns would carry NO system prompt. The adapter must prepend the system content as message(s) — exact form (one joined system message vs multiple vs developer-role) is a ground-truth extraction question: mimic however dsh itself sends it.
-2. **Optional profile fields:** `Loader.Load` hard-errors when `thinking.json`/`tool_choice.json` are missing (`os.ReadFile` error returned). Anthropic-isms may be absent in dsh (Chat Completions has no thinking param). Either convention: ship empty files, or (cleaner) make the loader tolerate absence when `profile.yaml` declares `shape: openai`. Keep the Shaper untouched (Anthropic path unchanged).
-
-**Extraction (ground-truth, per the "log-extracted, not hand-written" Key Decision):** dsh is open source, so capture is two-sourced: (a) its **TypeScript source** — system prompts, tool registry schemas, identity/request assembly are in-repo code; (b) **its own session logs** (dsh advertises traceable sessions — on-disk format is a build-time discovery item). This differs from zcode (closed binary, logs-only) but the profile contract is the same: verbatim system text (TIER-1), tool name+schema set (TIER-1), header names (TIER-2), model/max_tokens (TIER-3). `cmd/extract-profile` + `internal/profile/extract.go` gain a dsh mode (the current `ModelIO` rollout schema is zcode-specific); `CoverageEntry.Source` already records which artifact each field came from. Where logs and source disagree, logs win (source shows what it *would* send; logs show what it *did*).
-
-**Drift-check adaptation:** `drift.Detect` + `CoverageManifest.Validate` are profile-agnostic (verified — they consume a manifest + a captured map). The only zcode-ism is `profile_check.go`'s live path hardcoding `~/.zcode/cli/rollout`. Fix: a per-profile capture loader (dsh's log location resolved from its config/layout), with `--capture-file` continuing to work for fixtures. `ass-guard profile check dsh` then runs the identical tiered diff.
-
-**Scheduling:** a DeepSeek provider entry (openai shape, operator's opencode-subscription endpoint or DeepSeek API) in `scheduling.yaml` is pure config — the two-shape `ProviderFactory.Build` already constructs it. Open design note: today profile is chosen per-launch (`--profile`), while the scheduler picks provider per tier. Coupling tier→profile (so DeepSeek-model turns automatically use the dsh profile) is the natural v1.2 extension; v1.1 keeps profile selection explicit at launch — do not silently introduce per-turn profile switching under this feature.
-
-### Pattern 5 (cross-cutting): operator-gated verification as phase gates
-
-The kickoff phase's gate is the operator-gated real-binary run (`ASSGUARD_OPENSPEC_BIN=1`) — the stub-binary E2E is exactly what hid the model mismatch last time (UAT root cause). The parity re-capture (`ZAI_API_KEY` + a divergence-prone capture session, pinned in `profiles/zcode/coverage.yaml` `TargetCaptureRef`) unblocks `internal/profile/stability_test.go`, which fails today because session `eea3dc48` is absent on disk. Both are operator actions riding existing machinery — the code work around them is small, which is why they pair naturally in one phase.
+**What:** captured tool decls (schema/description) are never rewritten; behavior attaches by overriding only `Execute` on the per-session catalog clone.
+**When:** new interactive/control tools.
+**Existing sites:** `Skill` override (`ecosys.SkillExecute`), `RegisterAsk`, `RegisterInteractive`. v1.2's `/commands` do **not** become tools (see Anti-Pattern 2); but the *Undo* ACP command and any future checkpoint tool would ride this pattern.
 
 ---
 
-## Data Flow
+## Data Flow (the six flows v1.2 adds or reroutes)
 
-### Request Flow (v1.1 — slash-command kickoff, the headline flow)
+### Flow 1: request_permission (the amended safety model)
 
 ```
-[User types /opsx:explore add-auth in Zed]
-    ↓ (ACP session/prompt — verbatim text block)
-internal/acp.handleSessionPrompt → turnRunner.Run(ctx, sessionID, emit, prompt)
+model returns tool_use batch (session.runTurn)
+    ↓ pre-batch classification loop (where planModeBlocks sits today)
+PermissionGate.Allowed?(name, input)                    ← policy: ungated default;
+    ↓ gated?                                               opt-in via config/editor
+    ├─ publish ToolCallCreated{status: pending}            (TurnEmitter, inline)
+    ├─ Gate.Await → acp.Requesters.RequestPermission       (id'd agent→client request:
+    │     {sessionId, toolCall:{toolCallId}, options:[allow_once|allow_always|
+    │      reject_once|reject_always]})
+    ├─ client responds outcome selected(optionId)|cancelled
+    ├─ allow_always → persist to .ass-guard/permissions.yaml (project scope,
+    │  session-scope memory checked first) — the Learning-store precedent
+    ├─ reject / cancelled → structured isError tool_result (errHookRefused form),
+    │  no execution                                        ← same shape the
+    └─ allow → proceed into DispatchBatch as today          PreToolUse denial uses
+```
+
+**Landing sites.**
+- **Intercept point:** `internal/session/session.go` `runTurn`, the pre-batch loop that already special-cases subagent tools and the plan-mode gate — a third branch calling the gate. This is *above* `DispatchBatch` so read-only concurrent calls are classified before batching (a blocked call never enters the batch), and *beside* `PreToolUse` hooks, which continue to run at the executor chokepoint (`coreexec.withHooks`) — permission is consent, hooks are policy; both can refuse.
+- **Wire mechanics (NEW in `internal/acp`):** the server today only writes notifications and responses. `request_permission` and `elicitation/create` are **outbound requests** needing an id, a pending-response registry, and correlation of the inbound response frame. The framer already delivers arbitrary inbound requests to `handlers` — add a `pendingRequests map[json.RawMessage]chan json.RawMessage` guarded by the writer mutex's sibling.
+- **Capability advertisement:** `initialize` gains `agentCapabilities.requestPermission` (and meta toggles); Zed decides clickable UX from this.
+- **Safety-model amendment, made explicit:** PROJECT.md Out-of-Scope still says "no confirmation/permission tier." v1.2 amends this per the milestone's own feature list. Architecture stance: the tier is **available but not default** — `permissions.mode: ungated` (v1.1 behavior, structural default) | `gated` (policy-table-driven asks) — switchable per session via editor configOptions. Nothing forces a prompt on the hands-off OpenSpec workflow.
+
+### Flow 2: tool_call / plan / thought streaming during a turn
+
+```
+streamAndEmit chunk loop ─ text → AgentMessageChunk (existing) ─────────────┐
+                        ├─ thinking delta → AgentThoughtChunk [NEW event]   ├── inline
+                        └─ tool_use  → (existing ToolCall event for audit)   │   TurnEmitter
+runTurn tool-call sites                                                     │
+  ├─ AppendToolCall site      → ToolCallCreated{id,title,kind,status:pending}┤
+  ├─ result-append site       → ToolCallUpdated{status:completed|failed,     │
+  │                             content:[output excerpt], locations:[paths]} │
+  └─ TodoWrite executor site  → Plan(snapshot of TodoStore)  ────────────────┘
+```
+
+- **Title/kind derivation** is a pure function over `(toolName, input)` — reuse `projector.extractFilePaths` for `locations`; kind table: Read/Glob/Grep→`read`, Write/Edit→`edit`, Bash→`execute`, WebFetch/WebSearch→`fetch`, Task/Agent→`other`, AskUserQuestion→`think`. Lives in `internal/coreexec` or `internal/toolcat` (catalog metadata is the natural home).
+- **Event vocabulary:** add `event.AgentThoughtChunk` (mirror of `AgentMessageChunk`, buffer 128) so TranscriptWriter persists thinking for replay; extend `event.ToolCall`/`ToolCallUpdate` payloads with the ACP-facing fields rather than adding a third kind.
+- **Transcript:** thinking text must land in the durable transcript (replay-on-load re-streams it); either a new `agent_thought_chunk` line type or a marked segment of `assistant_message`. Prefer the dedicated line type — `LastTurnOutput`'s backward scan ignores unknown-to-it line types safely.
+- **Plan variant:** the TodoStore snapshot is already centralized (`TodoWriteExecute` → `Swap`); publishing the plan frame at that one site gives CC-parity todo panels with no projector changes.
+
+### Flow 3: compaction (summarize-then-marker; window semantics preserved)
+
+```
+trigger: cumulative UsageUpdate tokens ≥ threshold (context limit from
+         modelrouting capability metadata) OR manual /compact
     ↓
-internal/runtime.RunTurn
-    ├─ ecosys registry (loaded once at startup via Discover(workDir))     [NEW wiring]
-    ├─ ecosys.Expand("/opsx:explore add-auth")                            [NEW]
-    │    → Command{Namespace:"opsx", Name:"explore", Body, AllowedTools, Model}
-    │    → expanded text (body with $ARGUMENTS→args, or body + "Arguments: …")
+Compactor.Run: provider call (light tier) over Manager.ReadAll() lines
     ↓
-runOneTurn → engine.Observe(engineTurnRunnerAdapter, patternTable, expandedBlocks)
+Manager.AppendCompaction(summary, coversThroughTurn)   ← NEW line type "compaction"
     ↓
-session.Session.Prompt  (transcript user_message = EXPANDED body; provider turn;
-    ↓                    model drives openspec binary via Bash / openspec:* tools)
-engine.Decide(TurnOutput, OpenSpecPatternTable)  → continue / hook / ask / nothing
-    ↓ (ActionContinue)
-NextStagePrompt → real turn → … until non-continue decision or cancel
+Projector.Project: latest compaction line is a HARD reset point —
+    seed := summary-message + post-compaction history (existing between-turn
+    rules apply within that span); mid-turn accumulation untouched (64-tail,
+    pair-safe cut unchanged)
+    ↓
+replay-on-load: unaffected — the summary lives IN the durable transcript;
+    session/load re-streams full history from lines regardless of what the
+    Projector sends to the model (two independent consumers of one artifact)
 ```
 
-### Audit Flow (LOG-01 completion)
+**Why this shape.** The two-layer design already separates "what the model sees" (Projector) from "what happened" (Manager). Compaction is purely a Projector-seed policy plus one new durable line type — it does **not** truncate or rewrite the transcript (audit-artifact invariant D-20 survives intact), and resume works because reconstruction reads lines, not projections. The verify-first mandate from SEED-004 is already discharged: `docs/compaction-decision.md` proves the zcode corpus contains **no auto-compact** — the target manages context via the rolling 64-tail (which we already replicate) plus `cache_control` on every system block (the routed gap). Consequence for v1.2: ship **cache_control emission alongside** compaction (Shaper maps a per-TextBlock flag onto `anthropic.TextBlockParam.CacheControl`; profile TextBlock gains the captured value) — it is the parity-faithful lever, cheap, and TIER-1-scoped per the decision doc. Auto-compact threshold defaults conservative (e.g. 80% of the model's context window; `/compact [instructions]` always available); the summarizer rides the light tier like subagents.
+
+### Flow 4: session list / resume (load) / close / delete
 
 ```
-Session.streamAndEmit → Provider.Stream(shape(profile, messages))
-    ├─ adapter invokes RequestCapturer(body, headers)                      [NEW on serve path]
-    ↓ capturer publishes event.RequestShaped{TurnID?, VerbatimRequest, Profile}
-event.Bus
-    ├─ session.TranscriptWriter (per-session, Run(ctx))                    [NEW wiring]
-    │    → Manager.AppendRequestShaped → redact.Redact → transcript_<id>.jsonl
-    └─ audit.AuditLogger (optional --audit-log file)                       [reuse]
-         → redact.Redact → <audit-log> JSONL
+session/list  → SessionLister.List(cursor,cwd): scan <workdir>/.ass-guard/
+                transcript_*.jsonl headers (session_start + first user_message
+                for title, last line ts for updatedAt) → SessionInfo[]
+session/load  → SessionLoader.Load(sessionId, cwd, mcpServers):
+                1. Manager opens the EXISTING transcript (openTranscript already
+                   O_APPEND — resume is append-native)
+                2. sessionFor builds the Session normally (Projector replays from
+                   lines; no model call)
+                3. REPLAY: walk transcript lines → emit user_message_chunk /
+                   agent_thought_chunk / agent_message_chunk / tool_call /
+                   tool_call_update frames via TurnEmitter (reconstruction_test.go
+                   is the existing proof this data suffices)
+                4. respond with configOptions/modes
+session/close → cancel parked chains + cancelTurn + s.Close() (all exist via
+                CloseSession/cancelParkedChains) + drop sessionState
+session/delete→ close + archive (rename transcript to .deleted/) — NEVER rm
+                (transcript = the investigate-and-fix artifact, D-20)
 ```
 
-### Telegram Flow (text + voice)
+- **Identity:** Zed issues its own sessionId strings; the runner keys sessions by whatever id the client presents (`sessions map[string]*session.Session` already does). Resume therefore needs **an id-alias map** (presented id ↔ stored transcript id) or, simpler, `session/list` returns the *stored* ids and `session/load` accepts them — the transcript filename is `transcript_<sessionID>.jsonl`, so the presented id must equal the stored one; alias map handles the general case.
+- **Capabilities:** `initialize` flips to `loadSession:true` + `sessionCapabilities{list,resume,close,delete}`; D-09's `-32601` stub is replaced by the real handler (the reversal is already logged as an operator decision).
+- **Engine state on resume:** parked chains are process-local; a resumed session starts clean (chains ended when the process died). The transcript's `engine_decision` lines preserve the audit trail; `WaitChainIdle` simply finds zero chains.
+
+### Flow 5: invocation resolution chain + available_commands_update
 
 ```
-Telegram update → internal/telegram handler
-    ├─ text:  prompt → runtime.RunTurn(chatSession, blocks, telegramSink)
-    ├─ voice: getFile → download ogg/opus → Transcriber.Transcribe
-    │         → text block → same RunTurn (voice origin noted in transcript)
-    └─ /stop: chat-level cancel func → drains in-flight turn (mirror session/cancel)
-runOneTurn (identical to ACP: same engine, same hooks, same audit)
-    ↓ AgentMessageChunk events on shared bus
-telegramSink batches chunks → chat messages (rate-limit aware)
+prompt "/key args"
+    ↓ invocationFor [MODIFIED — resolver chain, first match wins]
+    1. builtins table (acp_commands.go): /model /config /compact /clear /cost
+       /resume /memory /mcp /permissions /doctor /status /help /init
+    2. reg.Skills  → SKILL.md body = prompt, args appended (Expand semantics)
+    3. reg.Agents  → BMad-style: agent body = prompt (per-agent model: rides
+       dispatch, see Flow 6)
+    4. reg.Commands (today's only lookup — unchanged last position)
+    ↓ class A: prompt-expanding (skills, agents, /init, /memory)
+        expandUserBlocks path UNCHANGED: body replaces block text,
+        AppendCommandProvenance(key,path,args) written, mutating-boundary rule
+        applies ⇒ YES, recorded as ordinary user turns (the model sees exactly
+        what it sees for /opsx:* today; replay shows the expanded body +
+        provenance metadata)
+    ↓ class B: control-plane (/model /cost /status /help /doctor /mcp
+       /permissions /config /compact /clear /resume)
+        NO model turn. Handler executes at the runner seam and returns;
+        response rendered locally via TurnEmitter.AgentMessageChunk.
+        Audit: NEW transcript line "local_command" {key, args} — the typed
+        command IS metadata (provenance precedent), the rendered output is a
+        client-visible note, never an assistant_message (the model never said it).
+available_commands_update [NEW emitter call]
+    fired: after session/new response, after session/load, after any registry
+    reload; payload = builtins ∪ reg.Commands ∪ skills ∪ agents
+    ({name, description}); Zed autocompletes from this single list.
 ```
 
-### Key Data Flows
+- **Registry freshness:** `loadCommandRegistry` loads once at startup; v1.2 keeps that (a per-turn rediscovery race is not worth it) but emits the update once per session so late-started sessions still see the list.
+- **`/model` and `/config`** mutate the same session-scope routing override as editor configOptions (one seam): precedence **editor/UI override > time-window > project > global** — an explicit human choice outranks automation, consistent with D-02's spirit (window narrows project narrows global; the UI is narrower still).
+- **`/cost`** aggregates `TypeUsage` lines already written by TranscriptWriter. **`/mcp`** reads live host state — `sessionFor` closes over `mcpHost`; expose an accessor on the runner. **`/clear`** = `AppendBoundary("command:/clear")` (next projection seeds empty) + client-visible note. **`/compact`** invokes the Compactor (Flow 3). **`/resume`** returns the session list through the same machinery as `session/list`.
 
-1. **Command expansion is pre-transcript:** the expanded body is recorded as the user_message — the transcript remains the faithful record of what the model saw (investigate-and-fix-ready contract).
-2. **One bus, two sinks:** ACP `session/update` notifications and Telegram messages are both subscriptions on the same `AgentMessageChunk` stream; neither sink is in the turn's critical path.
-3. **Voice becomes text before the core:** STT is a frontend concern; the turn core never knows a prompt came from audio (preserves the mimicry contract — outgoing requests are identical regardless of surface).
-4. **Profile #2 is load-time data:** dsh changes what the Shaper emits by changing the bundle, not the shaping code (one exception: the OpenAI system-mapping fix, which is generic, not dsh-specific).
+### Flow 6: full subagents / background agents / per-agent model
 
-## Scaling Considerations
+```
+Task/Agent call with run_in_background=true        [MODIFIED session/subagent.go]
+    ├─ BackgroundDispatch: register in per-session SubagentRegistry
+    │    {subagentTurnID, cancel, toolCallID}  (mirror of coreexec.TaskRegistry)
+    ├─ return immediately: tool_result = task id (TaskOutput-pollable — the
+    │    registry + TaskOutput tool already exist for Bash tasks)
+    ├─ completion → event.SubagentResult (EXISTS) + NEW event.BackgroundTaskDone
+    │    → adapter emits ToolCallUpdated{toolCallId: <dispatch call>,
+    │      status:completed, content:[result]} — the notification path rides the
+    │    SAME tool_call frame the client already renders, no new UI concept
+    └─ cancellation: registry cancels feed CloseSession/cancelParkedChains
+       (foreground path unchanged: DispatchSubagent select on resCh/ctx)
 
-Not a user-scale system; the real "scaling" axes and what breaks first:
+per-agent model:  subagentProfile [MODIFIED]
+    def.Model != "" → resolve BEFORE the light-tier default:
+      tier-name match ("heavy"/"good"/"light") → modelrouting resolver for that tier
+      else treat as literal slug on the session's provider (buildTarget);
+      unresolvable → loud stderr warn + fall back to today's light-tier rule.
+    Precedence: agent frontmatter > Session.SubagentModel (light tier) > parent.
+```
 
-| Axis | What breaks first | Mitigation already in place / needed |
-|------|-------------------|--------------------------------------|
-| Transcript volume (request_shaped lines are ~80 KB each) | Transcript files grow fast once LOG-01 lands on serve | Acceptable (operator artifact, self-gitignored `.ass-guard/`); optional rotation is post-v1.1 |
-| Concurrent turns (ACP + Telegram chats) | Outbound provider concurrency | Existing process-wide `provider.NewSemaphore` (PARA-04) already bounds parent + subagents; Telegram turns are additional parents under the same cap |
-| Telegram message rate | Edit/send throttling per chat (~1/s) | Batch chunks in the sink; final-message fallback |
-| Ecosystem discovery cost | Re-scanning `.claude/` per prompt | Load once at startup (per `acp serve` process); reload-on-change is post-v1.1 |
+Foreground subagent chunk leakage note: `defaultSubagentRunner` publishes chunks tagged with the *subagent* turn id; the client forwarder's prefix filter admits them (same session prefix). With tool_call streaming this becomes visible noise — filter subagent-tagged chunks out of the parent's stream (they are interior work; CC does not stream subagent internals to the main transcript either) while keeping `SubagentResult` notifications.
 
-### Scaling Priorities
+---
 
-1. **First bottleneck:** audit line volume vs transcript size — measure during the kickoff phase E2E; keep `--audit-log` file opt-in.
-2. **Second bottleneck:** Telegram turn concurrency from multiple chats — bounded by the semaphore; serialize per-chat (one in-flight turn per chat, queue or reject with a "busy" reply) to keep transcripts deterministic.
+## Integration Points (feature-by-feature index)
+
+| # | Feature (milestone wording) | Primary landing | NEW / MODIFIED | Depends on |
+|---|---|---|---|---|
+| 1 | session/request_permission | `session.runTurn` pre-batch loop; `internal/acp` outbound-request writer; `PermissionGate` (new, `session/permission.go`); `permissions.yaml` store | NEW seam + MODIFIED loop | outbound-request mechanics |
+| 2 | elicitation/create | `internal/acp/requesters.go`; upgrade paths: engine `ActionAsk` note → structured form; `AskUserQuestion` renders via elicitation when client advertises support, AskBroker text fallback otherwise | NEW | outbound-request mechanics |
+| 3 | tool_call + plan streaming | `TurnEmitter` (new `internal/acp/emitters.go`); `runTurn` record/result sites; `TodoWriteExecute` plan publish; `event.ToolCall(+Update)` payload growth | NEW emitter + MODIFIED loop/sites | — |
+| 4 | available_commands_update | emitter + resolver chain (Flow 5) | NEW | #3 emitters |
+| 5 | session list/resume/close/delete | `internal/acp/handlers_sessions.go`; `SessionLister/Loader` capability interfaces; alias map in runner; `handlers.go` capabilities flip | NEW handlers + MODIFIED initialize | #3 (replay frames) |
+| 6 | editor configOptions | `initialize`/`session/new` response fields; `session/set_config_option` handler; session-scope routing override consulted in `sessionFor`/`resolveSubagentModel` | NEW + MODIFIED resolver precedence | — |
+| 7 | built-in chat commands | `cmd/ass-guard/acp_commands.go` table + class-B handlers; `invocationFor` chain | NEW + MODIFIED seam | #4, /compact→#8, /resume→#5, /model→#6 |
+| 8 | compaction (+ cache_control) | `session/compaction.go`; `Manager.AppendCompaction`; `Projector` reset-point class; `shaper` cache_control mapping; profile TextBlock field | NEW + MODIFIED projector/shaper | usage accounting (exists) |
+| 9 | slash-invocable skills + AGENTS-as-commands + per-agent model | resolver chain positions 2–3; `subagentProfile` model resolution | MODIFIED `invocationFor`, `subagentProfile` | #4 (autocomplete) |
+| 10 | hooks PreToolUse deny (full lifecycle) | `ecosys` loader parses `settings.json` hooks (project + user scopes — today plugin-bundle `hooks/hooks.json` only); widen `withHooks` wrap to the `MCPExecutor` boundary so MCP tools are gated too; deny already returns structured refusal | MODIFIED loader + wrap site | — |
+| 11 | AGENTS.md/CLAUDE.md injection | `sessionFor` profile-copy assembly (Pattern 3), fed by `ecosys/memory.go` (project root + `.claude/CLAUDE.md` + user `~/.claude/CLAUDE.md`, project wins; mtime-cached per serve) | NEW reader + one merge site | — |
+| 12 | thinking blocks | `provider` `"thinking"` StreamChunk (anthropic `thinking_delta`; OpenAI-shape `reasoning_content` when present, silent absence otherwise); `event.AgentThoughtChunk`; emitter + TranscriptWriter line | MODIFIED provider/streaming + NEW event | #3 |
+| 13 | rich prompt content (@-mentions, images) | `acp.ContentBlock`/`session.ContentBlock` gain image/resource variants; `expandUserBlocks` grows an @-mention expander (inline-read + cap, riding `boundedToolResult` limits); shaper maps images (anthropic native; OpenAI `image_url`) | MODIFIED types + expander + shaper | — |
+| 14 | background Bash + persistent shell + sandbox | `coreexec/background.go` completion callback → `BackgroundTaskDone` event → emitter; persistent shell = per-session shell process owned by bash executor config; sandbox = `sandbox-exec`(seatbelt)/`bwrap` wrapper around `exec.CommandContext` honoring the existing `dangerouslyDisableSandbox` input for real | MODIFIED coreexec/bash+background | #3 (notifications) |
+| 15 | steering queue | `session/steering.go`: per-session buffered chan; `session/prompt` handler enqueues when `turnActive`; `runTurn` drains at each iteration top → steered blocks appended as turn-tagged user_messages (projector picks them up naturally); parked-chain resumes drain identically | NEW | — |
+| 16 | shadow-git checkpoints | store + CLI **exist** (EARLY-01 shipped: `internal/checkpoint`, `SnapshotTurn` at parent-turn entry, refs/checkpoints/<sid>-turn-NNN, keep-50, 0700). v1.2 remainder: restore guard (refuse restore into a session with active turn/chains — `chainCount`+`turnActive` checks), optional `/undo` class-B command surfacing the CLI, eval coverage | GIVEN + small NEW surface | — |
+| 17 | SEED-001 kit extraction | see Build Order; library surface over `profile/shaper/provider/sched/toolcat/toolexec/engine/hookdag/event/session/redact/checkpoint/audit/mcp`; app-retained: `ecosys`, `openspec`, `coreexec`, `learning`, `firstrun`, `evalsuite`, `parity/drift`, `cmd/`, `acp` (frontend) | NEW `pkg/` (or `kit/`) API layer | runtime carve |
+
+---
 
 ## Anti-Patterns
 
-### Anti-Pattern 1: Expanding slash-commands inside internal/acp
+### Anti-Pattern 1: Fanning client frames out through multiple bus subscriptions
+**What people do:** subscribe the forwarder to `AgentMessageChunk` + `ToolCall` + new kinds, select over channels.
+**Why wrong:** per-kind channels destroy cross-kind ordering; clients render `tool_call_update` for a call they never saw created.
+**Instead:** Pattern 2 — inline ordered `TurnEmitter` from the turn goroutine; bus stays the audit/async spine.
 
-**What people do:** Patch `handleSessionPrompt` to detect `/…` and read command files.
-**Why it's wrong:** Puts filesystem/ecosys knowledge into the protocol layer; Telegram (and any future frontend) then needs a second implementation; the acp package's clean test surface (in-memory reader/writer) dies.
-**Do this instead:** Expand in the shared turn core (runtime.RunTurn) before `runOneTurn`; internal/acp stays transport-pure.
+### Anti-Pattern 2: Making built-in commands model turns
+**What people do:** implement `/cost` by expanding a prompt that instructs the model to compute cost.
+**Why wrong:** burns tokens, adds latency and hallucination surface for deterministic answers, pollutes the transcript with fake Q/A.
+**Instead:** class-B handlers execute at the runner seam; results are client-visible notes, never `assistant_message` lines.
 
-### Anti-Pattern 2: Treating the openspec binary as the stage driver
+### Anti-Pattern 3: Truncating or rewriting the transcript for compaction
+**What people do:** delete/replace old transcript lines when compacting (the CC mental model imported literally).
+**Why wrong:** breaks the D-20 one-audit-artifact invariant, breaks replay-on-load, loses investigate-and-fix material.
+**Instead:** compaction is additive (marker line) and lives entirely in the Projector's seed policy.
 
-**What people do:** Model the workflow as `openspec apply` / `openspec implement` subprocess stages (exactly what seeded.toml did).
-**Why it's wrong:** Those subcommands don't exist (verified against v1.5.0). The toolkit's workflow is driven by agent-executed command files (`/opsx:*` markdown); the binary is supporting tooling (list/show/validate/status/instructions/context/doctor/archive/change…).
-**Do this instead:** ecosys discovery + expansion drives stages; the adapter's `[commands]` table mirrors the real binary surface; the pattern table matches real handoff texts.
+### Anti-Pattern 4: Putting permission logic inside tool executors
+**What people do:** teach each core executor to consult the permission gate.
+**Why wrong:** executors are per-tool; MCP and future tools leak past the gate; the batch classifier is the single chokepoint that already exists.
+**Instead:** one gate check in the pre-batch classification loop; hooks remain the executor-level policy layer; the two refusals compose.
 
-### Anti-Pattern 3: A second audit artifact under `.ass-guard/`
+### Anti-Pattern 5: `rm`ing transcripts on session/delete
+**What people do:** delete means delete.
+**Why wrong:** the transcript is the primary diagnostic surface (PROJECT.md constraint); deletion is unrecoverable forensics loss.
+**Instead:** rename to `.deleted/` (or tombstone line + exclude from `session/list`).
 
-**What people do:** Add a parallel `events.jsonl` beside the transcript for LOG-01.
-**Why it's wrong:** Violates D-20 (audit = transcript, one writer, one artifact); two writers drift; redaction must be maintained twice.
-**Do this instead:** Wire the existing TranscriptWriter per session; keep the flat `--audit-log` strictly as an optional operator-facing mirror reusing `internal/audit`.
+### Anti-Pattern 6: Building v1.2 features deeper into `cmd/ass-guard/acp_serve.go`
+**What people do:** keep appending to the 2,100-line composition file because "the kit extraction comes last."
+**Why wrong:** seven of ten clusters modify exactly this code; deferring the carve means every feature lands twice (write in `cmd/`, migrate in the kit phase).
+**Instead:** front-load the mechanical `internal/runtime` carve (build order step 0); features then land in their final home.
 
-### Anti-Pattern 4: cgo-binding whisper.cpp, daemonizing Telegram, or porting the bot to HTTP
+---
 
-**What people do:** Link whisper via cgo for "integrated" STT; run Telegram as a separate daemon process or open a port.
-**Why it's wrong:** Breaks the single static binary / no-daemon / no-port constraints (goreleaser CGO_ENABLED=0 cross-compile; editor-owned lifecycle).
-**Do this instead:** whisper.cpp as an out-of-process `whisper-cli` subprocess if ever needed (Whisper API default needs no new dep); Telegram as a goroutine inside the one process; stdout stays ACP-only in every mode.
+## Integration Points — External Services & Internal Boundaries
 
-### Anti-Pattern 5: Hand-writing the dsh profile from its source "because it's open source"
+| Boundary | Communication | v1.2 notes |
+|----------|---------------|------------|
+| Zed ⇄ agent (stdio JSON-RPC) | ACP v1 frames | New: outbound id'd requests (`request_permission`, `elicitation/create`) require a pending-response registry beside the mutex-guarded Writer; string ids already handled (RawMessage verbatim echo) |
+| agent ⇄ provider APIs | SSE streams | `"thinking"` chunk type; image blocks; `cache_control` on system blocks (Anthropic-shape only — OpenAI-shape silently omits, matching today's shape-isolation) |
+| session core ⇄ runner | direct calls + `Set*` seams | All new seams follow the ask-broker/accessor convention; `internal/session` must not import `internal/acp` (emitter/requester interfaces defined session-side, implemented acp-side — the `OnClose` func-seam precedent) |
+| runner ⇄ stores | files under `.ass-guard/` | `permissions.yaml` joins `learned.yaml`/schedule store; transcripts remain sole-owner Manager writes |
+| kit ⇄ app (post-extraction) | exported constructors + interfaces | Public API = composition root options; invariants (stdout discipline, `.claude/` read-only, static binary) enforced app-side, exposed as kit choices |
 
-**What people do:** Copy system prompts/tool schemas out of the TypeScript repo and call the profile done.
-**Why it's wrong:** The Key Decision is log-extracted content — source shows intent, logs show the wire. Source-only extraction repeats the hand-written-profile guess the project explicitly rejected.
-**Do this instead:** Extract from dsh's own session logs where available (traceable sessions), use source to fill fields logs don't carry, and record provenance per field in `coverage.yaml` (`CoverageEntry.Source`).
+## Scaling Considerations
 
-## Integration Points
+| Concern | Now (single user, one editor) | v1.2 stress | Adjustment |
+|---------|------------------------------|-------------|------------|
+| `session/list` cost | trivial (few transcripts) | hundreds of long sessions | header-scan only (first/last lines), cursor pagination per spec; never `ReadAll` per listing |
+| Replay size on resume | short histories | 18–40 MB transcripts exist in the wild (corpus evidence) | replay streams from lines with backpressure via the Writer; cap initial replay (spec permits truncated replay; full fidelity lives on disk) |
+| Compaction summarizer | rare | every long session | light-tier route (subagent precedent); summarizer output capped; compaction is O(transcript) once per threshold crossing, not per turn |
+| Frame volume with tool_call streaming | one kind | 4–5 kinds per busy turn | inline emission shares the single Writer mutex (safe interleaving, no new locks); buffers unchanged since bus no longer carries client traffic |
+| Permissions store contention | n/a | concurrent sessions allow_always | whole-file rewrite under mutex (Learning-store pattern); project file is small |
 
-### External Services
+---
 
-| Service | Integration Pattern | Notes |
-|---------|---------------------|-------|
-| `openspec` v1.5.0 binary | subprocess via existing `internal/openspec.Adapter`; registered as catalog `Execute` closures | Read-only surface (`list/show/view/validate/status/instructions/context/doctor`) + mutating (`archive/change/config/schema/store`); `apply`/`implement` do NOT exist — stages are command-file driven |
-| Telegram Bot API | `github.com/go-telegram/bot` long-poll (`Start(ctx)`); `getFile` + `https://api.telegram.org/file/bot<token>/<file_path>` for voice | New dep (verified absent from go.mod); one GetUpdates loop per token (409 on two); redirect library logs to stderr |
-| OpenAI Whisper API (STT default) | `sashabaranov/go-openai` transcription client (existing dep) | Groq = base-URL swap; whisper.cpp = subprocess, never cgo |
-| DeepSeek / opencode-subscription endpoint | OpenAI-shape provider entry in `scheduling.yaml` via existing `ProviderFactory` | Requires the OpenAI adapter system-mapping fix or dsh sends no system prompt |
-| Zed (ACP client) | unchanged stdio v1 server | Slash text arrives as ordinary prompt content; `session/load` stays no-op (D-09) |
+## Build Order (dependency-respecting)
 
-### Internal Boundaries
+**Step 0 — `internal/runtime` carve (recommended phase 0, mechanical).** Move `sessionTurnRunner` + adapters + cron wiring out of `cmd/ass-guard/acp_serve.go` verbatim. Everything in waves 1–3 modifies this code; carving first means every feature lands in its final home and the SEED-001 phase inherits a clean seam instead of performing archaeology. Cost: a move, not a redesign (zero behavior change, `mise ci` proves it). If the operator rejects the refactor-up-front discipline, fall back to feature-first and accept the double migration — but then budget the kit phase accordingly.
 
-| Boundary | Communication | v1.1 consideration |
-|----------|---------------|--------------------|
-| acp ↔ runtime | `acp.TurnRunner` interface (unchanged) | Runner moves into `internal/runtime`; ACP wiring is a constructor change only |
-| telegram ↔ runtime | new frontend-agnostic `RunTurn(ctx, sessionID, blocks, sink)` | Same sessions/engine/audit; per-chat stable session IDs |
-| runtime ↔ ecosys | startup `Discover(workDir)` + per-turn pure `Expand` | First non-test importer of ecosys (today zero — verified); ecosys stays read-only on `.claude/` |
-| runtime ↔ engine/openspec | `engine.Observe` + `PatternTable` (unchanged) | Only the seeded config content changes; `triggerFromSignal` may need real stage names (post-explore/post-propose/post-apply/post-archive) beyond today's post-implement/post-phase |
-| audit ↔ session | both consume `RequestShaped` on the shared bus | TranscriptWriter per session (primary), AuditLogger optional; both already redact via `internal/redact` |
-| profile ↔ provider | `Profile` struct consumed by Shaper (anthropic) / buildRequest (openai) | OpenAI path must start honoring `System` blocks; loader must tolerate absent Anthropic-ism files |
+**Wave 1 — ACP foundation (unblocks nearly everything):**
+1. Outbound-request mechanics in `internal/acp` (writer + pending-response registry) — prerequisite for permissions *and* elicitation.
+2. `TurnEmitter` (tool_call/tool_call_update/plan/thought) + event payload growth + TranscriptWriter line types.
+3. `initialize` capabilities overhaul + `session/new`/`load`/`resume` response fields.
+4. `request_permission` end-to-end (gate seam, policy config, permissions.yaml) — the safety-model amendment lands here, default ungated.
+5. `elicitation/create` (+ AskUserQuestion upgrade path with AskBroker fallback).
 
-## Suggested Build Order
+**Wave 2 — session family:** list → close/delete (small, capability-interface assertions) → load/resume with replay (largest; depends on Wave-1 emitters for replay frames; alias-map identity decision up front).
 
-Operator's strict priority chain (PROJECT.md): **kickoff gap first; LOG-01 + zcode re-capture may share a phase; Telegram before dsh profile.** Dependency analysis agrees, with one argument for sequencing the audit phase before Telegram (below).
+**Wave 3 — commands, skills, compaction:**
+1. Compaction + cache_control first (`/compact` depends on it; parity-audit item too).
+2. Resolver chain (builtins → skills → agents → commands) + `available_commands_update`.
+3. Class-B builtins in dependency order: /help /status /cost /mcp /doctor /permissions (cheap) → /model /config (routing override seam shared with editor configOptions) → /clear /resume (ride Wave 2) → /compact → /init /memory (expansion class).
 
-| Phase | Contents | New / Modified | Gate |
-|-------|----------|----------------|------|
-| **1. Slash-command kickoff** | (a) ecosys namespaced discovery + `Expand`; runtime wiring at `Run`-before-`runOneTurn`; `ecosys.Command` frontmatter fields; openspec `seeded.toml` reconciliation (real binary surface, real handoff patterns, `apply`/`implement` removed); `RegisterTools` gains Adapter-backed `Execute`; extend `triggerFromSignal` stage vocabulary | M: `internal/ecosys`, `internal/openspec`, `cmd/ass-guard/acp_serve.go` (or the runtime extraction if done here); N: `ecosys/expand.go` | `mise ci`; **operator-gated `ASSGUARD_OPENSPEC_BIN=1` run against real openspec v1.5.0**; the 11 deferred Phase-4 UAT checks; run `openspec init --tools claude` in a scratch project and drive `/opsx:explore → propose → apply → archive` end-to-end |
-| **2. Operational gaps (merged — adjacent per operator)** | (b) LOG-01 on serve: shared captured-provider helper (both shapes), `serveOptions.AuditLogPath`, per-session TranscriptWriter, optional AuditLogger sink, `CurrentTurnID()` accessor; (c-parity) zcode re-capture: operator runs the gated capture (`ZAI_API_KEY` + divergence-prone session), re-pin `coverage.yaml` `TargetCaptureRef`, `profile check zcode` green, stability test unblocked | M: `cmd/ass-guard/provider_factory.go`, `acp_serve.go`, `internal/session` (accessor); operator action for the capture | `mise ci`; `--audit-log` file verified redacted on a live serve; stability test passes on the new pinned session |
-| **3. Telegram peer** | Runtime extraction to `internal/runtime` (prerequisite, mechanical move); `internal/telegram` frontend + per-chat binding + chunk sink; `internal/stt` Transcriber (Whisper default); `telegram` cobra subcommand + `acp serve --telegram` sidecar; context-first shutdown; `telegram.yaml` seed | N: `internal/telegram`, `internal/stt` (or nested), `cmd/ass-guard/telegram_cmd.go`, dep `go-telegram/bot`; M: `acp_serve.go` → runtime move, `internal/defaults` seed | `mise ci`; a full SDD scenario driven from a Telegram chat (text); voice message transcribed and drove a turn; SIGTERM drains long-poll + in-flight turns; stdout byte-clean in both modes |
-| **4. deepseek-harness profile #2** | dsh ground-truth capture (source + its logs); `profiles/dsh` bundle + sanitized seed; OpenAI adapter system mapping; loader optional-field tolerance; extract-profile dsh mode; profile_check per-profile capture loader; scheduling.yaml DeepSeek provider entry | N: `profiles/dsh`, seed copy; M: `internal/provider/openai.go`, `internal/profile/loader.go`, `cmd/extract-profile`, `cmd/ass-guard/profile_check.go` | `mise ci`; `--profile dsh` A/B parity harness run (existing `internal/parity`) against a DeepSeek endpoint; `profile check dsh` green |
+**Wave 4 — parity closures:** hooks settings.json parsing + MCP-boundary wrap → AGENTS.md injection → thinking streaming (provider chunk type) → rich content (@-mentions/images) → background-subagent registry + completion notifications → background-Bash completion callback + persistent shell + sandbox reality.
 
-**Why 2 before 3 (the one judgment call):** the operator chain allows LOG-01+re-capture to share a phase and requires only kickoff-first and Telegram-before-dsh. Doing audit wiring in Phase 2 means the shared captured-provider helper lands in `cmd/ass-guard` *before* the Phase-3 runtime extraction moves it — the capturer wiring is written once, in its final home, instead of being re-wired during the move. (PROJECT.md's compressed chain notation `1→4→3→5→2` reads as Telegram immediately after kickoff; the three operator constraints are satisfied by both groupings — flagging this so the roadmapper phases it deliberately. The Phase-2→3 order is recommended for the write-once reason above; if the operator prefers 1→4 first, Phase 2's audit work must be re-homed in Phase 3's extraction with zero functional change.)
+**Wave 5 — SEED gaps:** steering queue (mid-turn drain; Telegram prerequisite — do not descope to queue-until-next-turn silently; if forced, make it a flagged fallback) → checkpoint restore guard + `/undo`.
 
-Cross-phase invariants (every phase): `mise ci` clean (vet + golangci-lint v2 all-linters + CGO_ENABLED=0 build + `go test -race`); stdout = ACP frames only; no daemon, no port; static binary; `.claude/` strictly read-only.
+**Wave 6 — SEED-001 kit extraction.** With Waves 1–5 settled, the library boundary is drawn around stabilized machinery: export `profile/shaper/provider/sched(modelrouting)/toolcat/toolexec/engine/hookdag/event/session/redact/checkpoint/audit/mcp` behind a composition-root API in `pkg/` (single module first; separate module only if an external consumer appears); `ecosys/openspec/coreexec/learning/firstrun/evalsuite/parity` stay app-side as the zcode-flavored composition; `cmd/ass-guard` becomes the reference app. The per-agent-model and permission seams must be expressed as kit interfaces (Frontend seam: emitter + requester), not concrete ACP types — that inversion is the one genuinely new design act in this wave; everything else is re-homing.
+
+**Cross-wave invariants to hold:** `mise ci` gate per phase (non-negotiable); stdout reserved for frames; `.claude/` strictly read-only; transcript = sole audit artifact; graceful degradation everywhere (a failed permission store or registry load degrades to v1.1 behavior, never a serve refusal).
+
+---
 
 ## Sources
 
-- Codebase (primary, all read this session): `internal/{acp,session,engine,openspec,ecosys,audit,redact,profile,provider,shaper,scheduler,toolcat,toolexec,hookdag,learning,mcp,event,defaults,firstrun,drift,parity}/*.go`, `cmd/ass-guard/{main,acp_serve,provider_factory,profile_check}.go`, `go.mod`, `profiles/zcode/`, `internal/defaults/seed/`
-- `.planning/PROJECT.md` (v1.1 milestone scope, priority chain, constraints) and `.planning/milestones/v1.0-phases/04-…/04-UAT.md` (kickoff gap root cause)
-- Live probe (2026-08-14): `openspec v1.5.0` (`/usr/local/bin/openspec`) — `--help` surface; `openspec init --tools claude` in a scratch dir → `.claude/commands/opsx/{explore,apply,propose,sync,archive}.md` + 5 skills; `openspec/config.yaml` contents (schema/context/rules — no command surface)
-- v1.0 research carried in repo: `.planning/research/{STACK,FEATURES,VERIFIED-FACTS}.md` (go-telegram/bot selection, JSONL/rollout formats, provider shapes)
-- External grounding: Telegram Bot API file handling (`getFile` → `https://api.telegram.org/file/bot<token>/<file_path>`, core.telegram.org/bots/api#getfile); DeepSeek Harness (github.com/deepseek-ai/deepseek-harness — MIT, plugin-based, TypeScript, traceable sessions; deepseek.com/harness/en)
+**Codebase (HIGH — read directly for this research):**
+- `cmd/ass-guard/acp_serve.go` — sessionTurnRunner, invocationFor/expandUserBlocks, sessionFor, runOneTurn park machinery, engineTurnRunnerAdapter
+- `cmd/ass-guard/cron_wiring.go` — startSessionForwarder, turnActive mute discipline, server-driven turn pattern
+- `internal/acp/server.go`, `handlers.go`, `types.go` — handler map, ChunkEmitter, SessionCloser assertion, D-09 load stub, RawMessage id handling
+- `internal/session/session.go`, `projector.go`, `subagent.go`, `ask.go`, `manager.go`, `truncate.go`, `transcript*.go` — turn loop, gate sites, suspension broker, transcript line vocabulary, truncation chokepoint, reconstruction prior art
+- `internal/event/events.go` — existing ToolCall/ToolCallUpdate kinds and buffer sizing
+- `internal/provider/provider.go`, `internal/shaper/shaper.go` — StreamChunk vocabulary, Message shape, toThinking mapping
+- `internal/ecosys/types.go`, `expand.go`, `skills.go`, `hooks.go`, `loader.go` — registry shape, Expand semantics, listings, HookRunner deny path, discovery scopes
+- `internal/coreexec/register.go`, `bash.go`, `background.go`, `todo.go`, `messaging.go` — ToolHooks chokepoint, TaskRegistry, TodoStore, mailbox
+- `internal/checkpoint/store.go` — shipped shadow-git design (EARLY-01)
+- `docs/compaction-decision.md` + `internal/profile/corpus_scan.go` — corpus-proven compaction/cache_control facts and routed gaps
+- `.planning/seeds/SEED-001…md`, `SEED-004…md` — kit scope, four-gap dispositions
+
+**External (MEDIUM — primary-source fetched, not yet live-handshake-validated):**
+- [ACP Schema](https://agentclientprotocol.com/protocol/schema) — session/update variant union; session family methods + capability gates; configOptions placement (ClientCapabilities.session.configOptions → new/load/resume responses → session/set_config_option)
+- [ACP Tool Calls](https://agentclientprotocol.com/protocol/tool-calls) — tool_call/tool_call_update fields, statuses, content/locations; request_permission options/outcome contract; pending-status-while-awaiting semantics
+- [ACP Elicitation](https://agentclientprotocol.com/protocol/elicitation) — elicitation/create union (form/url/other), accept/decline/cancel outcomes, elicitation/complete
+- Claude Code compaction behavior (community-documented: ~92–95% auto-compact threshold, /compact instructions, known lossiness) — treated as directional context only; ass-guard's own corpus scan overrides it for design decisions
 
 ---
-*Architecture research for: v1.1 feature integration (kickoff / audit / parity / Telegram / dsh profile)*
-*Researched: 2026-08-14*
+*Architecture research for: ass-guard v1.2 Claude Code Parity*
+*Researched: 2026-08-26*
