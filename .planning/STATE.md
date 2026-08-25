@@ -2,9 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Claude Code Parity
+current_phase: 15
+current_phase_name: internal/runtime Carve — first of eleven v1.2 phases, 15–25
 status: planning
-last_updated: "2026-08-26T00:00:00.000Z"
+stopped_at: Phase 15 context gathered
+last_updated: "2026-08-25T23:23:42.980Z"
 last_activity: 2026-08-26
+last_activity_desc: v1.2 roadmap created (11 phases, 36/36 requirements mapped)
+state_head: 330a97e63a5dfe59f287dabb649b5bbb91b2bd66
 progress:
   total_phases: 11
   completed_phases: 0
@@ -63,6 +68,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-26
-Stopped at: v1.2 roadmap created — ROADMAP.md (Phases 15–25), STATE.md initialized, REQUIREMENTS.md traceability updated (36/36 mapped)
-Resume file: None
+Last session: 2026-08-25T23:23:42.960Z
+Stopped at: Phase 15 context gathered
+Resume file: .planning/phases/15-internal-runtime-carve-step-0/15-CONTEXT.md
