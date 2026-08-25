@@ -1,5 +1,5 @@
 ---
-status: passed
+status: complete
 phase: 09-serve-path-audit-zcode-parity-re-capture
 source: [09-VERIFICATION.md]
 started: 2026-08-16T08:45:09Z

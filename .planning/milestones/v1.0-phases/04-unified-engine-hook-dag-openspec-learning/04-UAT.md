@@ -1,6 +1,7 @@
 ---
-status: partial
+status: complete
 phase: 04-unified-engine-hook-dag-openspec-learning
+resolution: "The 11 pending scenarios were discharged at v1.1 Phase 8 (CMD-04): 10/11 re-run green in 08-VERIFICATION; check 3's live hook leg accepted by the operator 2026-08-16 as a documented residual. Recorded 2026-08-25 at v1.1 close."
 source: [04-01-SUMMARY.md, 04-02-SUMMARY.md, 04-03-SUMMARY.md, 04-04-SUMMARY.md, 04-05-SUMMARY.md, 04-06-SUMMARY.md, 04-07-SUMMARY.md, 04-VERIFICATION-PREP.md]
 started: 2026-08-14T14:07:34Z
 updated: 2026-08-14T14:45:00Z

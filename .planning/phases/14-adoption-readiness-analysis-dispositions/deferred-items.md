@@ -6,6 +6,9 @@ are auto-fixable). One entry per discovery.
 
 ## [2026-08-19] cmd/ass-guard live-serve test flake under full-suite load (observed during 14-03 Task 3 verify)
 
+- **Status:** resolved
+cmd/ass-guard live-serve transient failure — concurrent-commit race, not a flake
+
 - **Observed:** first `mise run ci` of the session failed 2 tests in
   `cmd/ass-guard`: `TestServeAudit_RequestShapedThroughRealSeam`,
   `TestServeMirror_Override` (10s timeouts each).
