@@ -38,10 +38,9 @@ tested_at: 2026-08-23
 
 ### 4. Agent messaging + session-context reads
 expected: SendMessage delivers to a spawned agent's mailbox with an honest ack; unknown agent ids error structurally (no broadcast). ReadSessionContext returns relevant/handoff context from the product's own transcript with documented truncation tail.
-result: issue
-reported: "stdio-driven live test 2026-08-23. (a) SendMessage to unknown id: structured is_error, no broadcast — PASS. (b) ReadSessionContext on the CURRENT session id: errors twice — first invalid input shape, then \"invalid session id\" because real ids are UUIDs while the reader demands sess_* prefix; NO real session can ever be read."
-severity: major
-root_cause: "(b) id-vocabulary mismatch: transcripts are written transcript_<uuid>.jsonl (internal/session/transcript.go:141) but SessionReader validates ^sess_[A-Za-z0-9._-]+$ (internal/coreexec/messaging.go:177) and enumerates only transcript_sess_* files (:242). The 12-04 offline tests created sess_ fixtures, hiding the mismatch."
+result: pass
+retest_note: "Live stdio re-test 2026-08-25 PASS after 12-11 fix: ReadSessionContext on the real UUID session id returns the lite-context head + turn excerpts. SendMessage unknown-id structured error unchanged (PASS)."
+original_reported: "ReadSessionContext errored on every real session id — UUID vs sess_* vocabulary mismatch."
 
 ### 5. Background bash trio
 expected: Bash with run_in_background returns immediately with an exec_<uuid> id, the real log path, and read guidance. TaskOutput retrieves running tasks as not_ready (and finished ones ready). TaskStop kills the process group. Over-cap and unknown-id cases error structurally.
