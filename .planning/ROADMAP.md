@@ -43,6 +43,18 @@ Operator decisions at close (2026-08-23…25): D-09 REVERSED (session resume = m
 Staged pool (order TBD at planning):
 
 1. **ACP completeness** — session/request_permission (clickable asks), elicitation/create, tool_call+plan update streaming, available_commands_update, session/list/resume/close/delete family (session resume is operator-must-have, D-09 reversal); plus **editor-driven configuration**: read Zed `settings` payload at initialize + advertise `configOptions` / handle `session/set_config_option` so tier/model defaults are switchable from the editor UI (operator ask 2026-08-25; api keys stay env/file, never editor settings)
+1b. **Claude Code parity audit** (operator ask 2026-08-25: "I want claude code behaviour and ux replicated in ass-guard as full as possible") — zcode was already claude-code-compat, so the catalog/forms largely match; the audit closes the 10 known divergences deliberately instead of rediscovering them:
+    - compaction on context overflow (today: rolling 64-msg window + lean seed, NO compaction — long sessions silently lose earlier turns)
+    - session resume (--resume/continue anywhere)
+    - permissions UX (clickable allow/deny/always vs plain-text asks) — rides ACP-completeness item 1
+    - subagents (full Task tool w/ background agents + completion notifications vs restricted-subset goroutines)
+    - slash-command autocomplete in editor (available_commands_update) — rides ACP-completeness
+    - hooks: full lifecycle incl. PreToolUse deny path (today observe-only, limited events)
+    - AGENTS.md / CLAUDE.md auto-injection into system context every session
+    - structured thinking blocks streamed to client (interleaved reasoning display)
+    - rich prompt content (@-file mentions, images) beyond text blocks
+    - persistent-shell Bash option + background-completion notifications to client
+
 2. **Telegram Peer** (ex-Phase 10, replan) — text + voice STT, shared turn core (`internal/runtime` extraction), go-telegram/bot dependency lands here
 3. **dsh profile #2** (ex-Phase 11, replan vs source-analysis) — scope re-evaluated under the mimicry-pivot decision
 4. **LSP support** — documented requirement for IDE-side MCP configuration (operator decision 2026-08-25: no agent-side LSP implementation)
