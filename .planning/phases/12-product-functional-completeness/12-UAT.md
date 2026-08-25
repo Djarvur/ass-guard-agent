@@ -71,15 +71,21 @@ tested_at: 2026-08-25
 
 ### 9. Ecosystem discovery + precedence matrix (12-02, all-auto-covered confirm)
 expected: installed_plugins.json + cache-layout discovery, five-tier precedence with shadow warnings, agents/hooks/mcp wiring, live operator-plugins evidence, mise ci green. Automated battery passed — confirming summary only.
-result: [pending]
+result: pass
+note: "Coverage-mode auto-passed D1-D6 of 12-02 (unit batteries + live operator-plugins evidence + mise ci); confirmed 2026-08-25 — no human checkpoint required per the coverage classification."
+tested_at: 2026-08-25
 
 ### 10. Parity extractor zero-empty re-run (12-03)
 expected: Delta-window assembly yields zero empty-expectation turns over live captures (7 turns / 0 empty / 1 counted skip vs BEFORE 53-turns/6-empty); replays run per-turn isolated. Evidence: /tmp/eval-net-evidence/12-03-extract-decomp.txt.
-result: [pending]
+result: pass
+note: "Evidence-confirmed 2026-08-25: 12-03-SUMMARY records the zero-empty acceptance over three live captures incl. the executor's own session (WINDOWS #6 discharged); the offline parity batteries stay green in every mise ci run this UAT round."
+tested_at: 2026-08-25
 
 ### 11. Re-capture freshness (12-05)
 expected: Capture kit re-proven against current zcode (0.16.3, qualifying primary session sess_6e4b5cc7: 38 request records, 81 tools); config restore diff-verified EMPTY every pass; committed fixture zcode-recaptured-2026-08.json re-pins ACP-07 families (Bash timeout form, persisted-output envelope, answered-ask pairing) or documents corpus-absent hunts honestly.
-result: [pending]
+result: pass
+note: "Evidence-confirmed 2026-08-25: 12-05-SUMMARY carries the capture metadata + family hits/misses table; fixture zcode-recaptured-2026-08.json committed; corpus-absent hunts documented (cron quartet behind plan-mode gate; ExitPlanMode approved form). This UAT's live findings (G-12-4c/G-12-5a) were implementation gaps, not capture drift."
+tested_at: 2026-08-25
 
 ### 3b. WebFetch error surfacing (found during operator live session, go-err113 project)
 expected: A failing tool call (e.g. WebFetch on an unreachable URL) returns a structured is_error result the model can see and adapt to — retry differently or give up — never silently vanishing.
