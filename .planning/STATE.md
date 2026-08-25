@@ -2,18 +2,20 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: ACP Early Adoption
-current_phase: 13
-current_phase_name: openspec-workflow-completion
-status: complete
+status: Awaiting next milestone
 stopped_at: v1.1 MILESTONE COMPLETE 2026-08-21 (34/34 plans, 5/5 phases; Phase 13 closed verification 3/3)
-last_updated: "2026-08-25T00:00:00.000Z"
+last_updated: "2026-08-25T20:42:53.865Z"
+last_activity: 2026-08-25
+last_activity_desc: Milestone v1.1 completed and archived
+state_head: b5554ccbc4625eae9211f8bc59a75117bc32415b
 progress:
   total_phases: 5
   completed_phases: 5
-  total_plans: 34
-  completed_plans: 34
-last_activity: 2026-08-21
-last_activity_desc: v1.1 milestone complete — Phase 13 closed (13-VERIFICATION 3/3 PASS); 5/5 phases, 34/34 plans
+  total_plans: 37
+  completed_plans: 37
+  percent: 100
+current_phase: 13
+current_phase_name: openspec-workflow-completion
 ---
 
 # State: ass-guard-agent (working name)
@@ -26,13 +28,10 @@ See: .planning/PROJECT.md (updated 2026-08-14)
 
 ## Current Position
 
-**UAT REOPENED + RE-CLOSED (2026-08-22..25): Phase 12's conversational UAT ran live and found three real gaps — dead plan-mode serve wiring (G-12-3), silent WebFetch tool-result loss causing 33-retry storms (G-12-3b), ReadSessionContext id-vocabulary mismatch + TaskOutput catalog omission (G-12-4c/5a). All fixed via gap-closure plans 12-09/12-10/12-11 (TDD, mise ci green at every gate) and re-proven by live stdio driving: 11/11 UAT tests pass; 12-VERIFICATION canonicalized to passed; 13/14 verification statuses normalized. Operator decisions recorded: D-09 REVERSED (session/load resume = must-have, top of v1.2 pool); "scheduling" rename requested (naming discussion pending); plan-mode approvals only gate model-declared plan phases, ordinary saves stay approval-free.**
-
-**MILESTONE COMPLETE — v1.1 ACP Early Adoption closed 2026-08-21.** All five phases complete (8, 9, 12, 13, 14 — Phases 10/11 parked to the v1.2 pool), 34/34 plans. The milestone's completion bar — the operator begins daily ACP use — was met at the adoption line 2026-08-20, and the post-adoption continuation (12-03/07/08, Phase 13) finished in use. Phase 13 closed on 13-VERIFICATION (3/3 criteria PASS, zero PARTIAL/FAIL): the verifier independently re-ran both zero-continue chain legs against the real binary + real model (57.3s / 162.1s), the full 13-00/13-03 pin batteries, all offline suites, and read — not trusted — the gate artifacts and the manager's same-day certifications. Delivered across the milestone: the zero-continue product proof (Phase 8), the redacted decision-explaining audit + parity re-capture (Phase 9), every catalog tool executing for real with the behavioral-eval regression net (Phase 12), the adoption-readiness backstops (Phase 14), and the full OpenSpec command matrix hands-off incl. through model asks (Phase 13 — ACP-08's deferred first-green discharged: flagship green ×3, eval-20260820-161520 / 163220 / 205550-k1.json; WINDOWS #8/#9 fixed, open_count 2 with #5/#7 routed). Verified milestone gates: mise ci green + eval-gate flagship green k=1 (manager-certified 2026-08-20).
-
-Awaiting operator: (1) retroactive ratification of the two standing flags (eval-net disposition → Phase-13 opener routing; route-1 ruling → engine-visible ask resume) — overturn routes recorded, work delivered and verified either way; (2) milestone lifecycle choice: retrospective + v1.2 pool kickoff (ROADMAP v1.2 section lists the staged pool).
-
-Progress: [██████████] 100% (34/34 plans · 5/5 phases)
+Phase: Milestone v1.1 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-08-25 — Milestone v1.1 completed and archived
 
 ## Performance Metrics
 
@@ -177,10 +176,6 @@ None yet.
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
-| 260817-11v | Relocate scheduling config: .ass-guard/scheduling.yaml → config.yaml (global ~/.config/ass-guard-agent/ + project .ass-guard/ layers, no migration, same schema) | 2026-08-17 | 715f575 | [260817-11v-relocate-scheduling-config-ass-guard-sch](./quick/260817-11v-relocate-scheduling-config-ass-guard-sch/) |
-| 260817-uv3 | Archive /tmp/zcode-recapture driver kit → tools/zcode-recapture (protects the only re-capture mechanism + surviving capture records before /tmp reaping; Phase-12 discuss D-04; the pinned rollout file itself was already lost — rotated off ~/.zcode/cli/rollout/) | 2026-08-17 | 32234f4 | [260817-uv3-archive-the-tmp-zcode-recapture-driver-k](./quick/260817-uv3-archive-the-tmp-zcode-recapture-driver-k/) |
-| 260819-nlg | Relax the ACP decoded-newline transport guard to the raw-byte check (operator disposition on the 12-01 witness finding, WINDOWS #1/#2): model newline-carrying chunks now reach the editor; single-line ask render kept as the documented convention; pre-existing 5s test flake widened to 30s (proven on baseline) | 2026-08-19 | f5f5b52, d6fa490, 3218572 | [260819-nlg-relax-newline-guard-to-raw-bytes](./quick/260819-nlg-relax-newline-guard-to-raw-bytes/) |
-| 260820-flk | Fix TestPlanMode_TimeoutStaysOn flake (12-04): poll waits for the landed non-answer tool_result line, not the pending-clear proxy — the D-01 claim clears pending BEFORE the async resume writes the line; test-only, ask.go untouched | 2026-08-20 | ec45a47 | [260820-flk-planmode-timeout-poll-on-landed-line](./quick/260820-flk-planmode-timeout-poll-on-landed-line/) |
 
 ## Deferred Items
 
@@ -199,3 +194,7 @@ Carried from v1.0 close — dispositioned into v1.1 scope:
 Last session: 2026-08-20T21:20:00.000Z
 Stopped at: v1.1 MILESTONE COMPLETE 2026-08-21 — Phase 13 closed (13-VERIFICATION 3/3 PASS); awaiting the operator's retroactive ratifications + milestone lifecycle choice
 Resume file: None
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone

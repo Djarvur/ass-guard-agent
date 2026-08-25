@@ -5,6 +5,10 @@ planted: 2026-08-17
 planted_during: v1.1 Kickoff & Peers / Phase 9 (legs complete, awaiting verification)
 trigger_when: (a) Phase 12 planning (sandbox-flag honesty, evalset format, behavioral-eval references, Claudecourse checklist); (b) Phase 13 planning (per-command eval suites); (c) v1.2 pool planning (steering queue for Telegram, worktree isolation for hookdag fresh-context, MEM cluster study of letta/qwen, checkpoints decision); (d) every /gsd:new-milestone scan (landscape refresh); (e) before any "how do others solve X" research spike — check IDEA-LANDSCAPE.md first
 scope: medium — four gap items (each small–medium, none violates an invariant) + a living doc to keep extended
+audit_acknowledged:
+  milestone: v1.1
+  at: 2026-08-25
+  status: dormant
 ---
 
 # SEED-004: Act on the IDEA-LANDSCAPE borrow list — four gaps + the extension protocol for the 34-source reference doc

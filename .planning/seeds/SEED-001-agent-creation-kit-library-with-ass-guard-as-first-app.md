@@ -5,6 +5,10 @@ planted: 2026-08-16
 planted_during: v1.1 Kickoff & Peers / Phase 8 (gate-ready, awaiting operator witness)
 trigger_when: when planning the milestone after v1.1 (v1.2+), especially once Phase 10's internal/runtime extraction and Phase 11's DSH-01 genericization have landed
 scope: large
+audit_acknowledged:
+  milestone: v1.1
+  at: 2026-08-25
+  status: dormant
 ---
 
 # SEED-001: Extract the agent-creation kit from ass-guard-agent as a library (in this repo); ass-guard-agent itself becomes an app built on the kit
@@ -22,6 +26,7 @@ This also hardens the existing thesis rather than competing with it: "N profiles
 **Trigger:** when planning the milestone after v1.1 (v1.2+), especially once Phase 10's `internal/runtime` extraction and Phase 11's DSH-01 genericization have landed — those two deliver most of the decoupling the kit needs as a side effect.
 
 Natural moments to re-read this seed:
+
 - v1.1 close / v1.2 milestone scoping (`/gsd:new-milestone` scan)
 - after Phase 10 lands `internal/runtime` as the shared turn core
 - after Phase 11 proves the second profile with zero target-specific code paths

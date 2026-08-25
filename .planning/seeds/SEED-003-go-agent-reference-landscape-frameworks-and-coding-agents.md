@@ -5,6 +5,10 @@ planted: 2026-08-17
 planted_during: v1.1 Kickoff & Peers / Phase 9 (legs complete, awaiting verification)
 trigger_when: alongside SEED-002's triggers — SEED-001 kit extraction (API-surface design); engine interrupt/resume + checkpoint design; session/memory package evolution; provider-testing cassettes (parity); scheduler error classification; post-stage auto-debug routines (hook-DAG); headless/non-interactive serve-mode design; STACK.md currency passes
 scope: small
+audit_acknowledged:
+  milestone: v1.1
+  at: 2026-08-25
+  status: dormant
 ---
 
 # SEED-003: Go agent-framework & coding-agent reference landscape — the projects worth studying alongside fantasy (SEED-002)

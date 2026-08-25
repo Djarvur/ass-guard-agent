@@ -5,6 +5,10 @@ planted: 2026-08-17
 planted_during: v1.1 Kickoff & Peers / Phase 9 (legs complete, awaiting verification + parity disposition)
 trigger_when: (a) when hardening tool-call validation/repair in toolexec; (b) when designing the scheduler's retry/fallback-chain policy; (c) when building cassette/replay fixtures for parity+drift; (d) when SEED-001's kit extraction starts (fantasy is its direct prior art); (e) if a Crush mimicry profile is ever considered; (f) at the next STACK.md review (official openai-go SDK question)
 scope: medium
+audit_acknowledged:
+  milestone: v1.1
+  at: 2026-08-25
+  status: dormant
 ---
 
 # SEED-002: Mine charmbracelet/fantasy (Charm's Go agent kit, the engine powering Crush) — patterns, stealable packages, and prior art for the kit extraction

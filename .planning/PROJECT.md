@@ -6,13 +6,18 @@ A Go-based AI coding agent that makes SDD (Spec-Driven Development) workflows ru
 
 ## Core Value
 
-Outgoing requests to the model provider must be structurally indistinguishable from the mimicked agent's (zcode first) — if the model can tell the requests apart, everything built on top is compromised, because model behavior diverges. Every other capability (autocontinue, hooks, scheduling, interfaces) is downstream of this.
+**(PIVOTED 2026-08-25)** A hands-off coding agent that feels native in the editor: full SDD workflows run end-to-end without manual continues, and the agent surfaces through the client's own UX — clickable permission prompts, native file diffs, session management. *(Former bar — request-shape indistinguishability from zcode ("mimicry") — validated v1.0 by the Phase-1 A/B parity test and maintained through v1.1; abandoned by operator decision 2026-08-25 in favor of client-native ACP surfaces. Mimicry assets retained as reference; the tool catalog, engine, and all execution machinery carry forward unchanged.)*
 
-*Validated v1.0:* the Phase-1 A/B parity test proved the thesis — ass-guard's shaped requests (3 byte-identical system blocks, 103-tool catalog, thinking/tool_choice/stream fields) produce statistically indistinguishable tool-call sequences from live zcode.
+## Current Milestone: v1.2 (planning pending)
 
-## Current Milestone: v1.1 Kickoff & Peers
+**Goal:** Editor-native agent experience on the proven v1.0/v1.1 machinery — ACP completeness (permission prompts, elicitation, tool/plan streaming, session management incl. resume [operator must-have]), Telegram peer (replan), LSP via documented IDE-side MCP configuration requirement.
 
-**Goal:** Make the hands-off OpenSpec promise real end-to-end — kickoff via agent commands (verified against the real openspec binary), v1.0 operational gaps closed (audit log, parity re-capture), and two new peer surfaces added (Telegram, deepseek-harness profile).
+<details>
+<summary>✅ v1.1 ACP Early Adoption — SHIPPED 2026-08-25</summary>
+
+Delivered the hands-off OpenSpec promise end-to-end (zero-continue product proof), every catalog tool executing for real with a behavioral-eval regression net, redacted decision-explaining audit + parity re-capture, adoption-readiness backstops (checkpoints/rollback, model-routing rename, uniform tool contract), and a live UAT round that found and fixed three real product gaps. Operator decisions at close: D-09 reversed (session resume must-have); mimicry abandoned for client-native surfaces; LSP = IDE-side MCP documentation requirement.
+
+</details>
 
 **Target features (strict priority order — phases chain 1→4→3→5→2, adjacent small items may merge):**
 - Slash-command kickoff: ecosys wired into session/ACP, `/namespace:name` expansion, OpenSpec adapter reconciled to real openspec v1.5.0, real-binary gate run, 11 deferred UAT checks completed
