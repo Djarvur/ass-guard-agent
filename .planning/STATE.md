@@ -1,21 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1
-milestone_name: ACP Early Adoption
-status: Awaiting next milestone
-stopped_at: v1.1 MILESTONE COMPLETE 2026-08-21 (34/34 plans, 5/5 phases; Phase 13 closed verification 3/3)
-last_updated: "2026-08-25T20:42:53.865Z"
-last_activity: 2026-08-25
-last_activity_desc: Milestone v1.1 completed and archived
-state_head: b5554ccbc4625eae9211f8bc59a75117bc32415b
+milestone: v1.2
+milestone_name: Claude Code Parity
+status: planning
+last_updated: "2026-08-25T21:17:51.304Z"
+last_activity: 2026-08-26
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 37
-  completed_plans: 37
-  percent: 100
-current_phase: 13
-current_phase_name: openspec-workflow-completion
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # State: ass-guard-agent (working name)
@@ -28,10 +23,10 @@ See: .planning/PROJECT.md (updated 2026-08-14)
 
 ## Current Position
 
-Phase: Milestone v1.1 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-08-25 — Milestone v1.1 completed and archived
+Status: Defining requirements
+Last activity: 2026-08-26 — Milestone v1.2 started
 
 ## Performance Metrics
 

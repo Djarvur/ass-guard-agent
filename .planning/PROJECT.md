@@ -8,9 +8,9 @@ A Go-based AI coding agent that makes SDD (Spec-Driven Development) workflows ru
 
 **(PIVOTED 2026-08-25)** A hands-off coding agent that feels native in the editor: full SDD workflows run end-to-end without manual continues, and the agent surfaces through the client's own UX — clickable permission prompts, native file diffs, session management. *(Former bar — request-shape indistinguishability from zcode ("mimicry") — validated v1.0 by the Phase-1 A/B parity test and maintained through v1.1; abandoned by operator decision 2026-08-25 in favor of client-native ACP surfaces. Mimicry assets retained as reference; the tool catalog, engine, and all execution machinery carry forward unchanged.)*
 
-## Current Milestone: v1.2 (planning pending)
+## Current Milestone: v1.2 Claude Code Parity
 
-**Goal:** Editor-native agent experience on the proven v1.0/v1.1 machinery — ACP completeness (permission prompts, elicitation, tool/plan streaming, session management incl. resume [operator must-have]), Telegram peer (replan), LSP via documented IDE-side MCP configuration requirement.
+**Goal:** Make ass-guard feel native in the editor and behave like Claude Code end-to-end — full ACP surfaces, built-in + skill slash-commands, deliberate parity-closure of known divergences — then extract the agent-creation kit as a library.
 
 <details>
 <summary>✅ v1.1 ACP Early Adoption — SHIPPED 2026-08-25</summary>
@@ -19,12 +19,16 @@ Delivered the hands-off OpenSpec promise end-to-end (zero-continue product proof
 
 </details>
 
-**Target features (strict priority order — phases chain 1→4→3→5→2, adjacent small items may merge):**
-- Slash-command kickoff: ecosys wired into session/ACP, `/namespace:name` expansion, OpenSpec adapter reconciled to real openspec v1.5.0, real-binary gate run, 11 deferred UAT checks completed
-- LOG-01 completion: audit log on the `acp serve` path
-- zcode parity re-capture (operator-gated): unblocks the Phase-1 stability test
-- Telegram peer: full SDD-scenario driving, text + voice STT, context-first shutdown beside ACP stdio
-- deepseek-harness profile #2: mimic `deepseek-ai/deepseek-harness` for DeepSeek-model turns
+**Target features (priority order — ACP/commands/skills first, parity audit, SEED gaps, kit extraction last; dsh dropped entirely 2026-08-26; Telegram lowest priority — slips to v1.3 if milestone overflows):**
+- ACP completeness: session/request_permission (clickable asks), elicitation/create, tool_call+plan streaming, available_commands_update, session list/resume/close/delete (operator must-have), editor-driven configuration (configOptions / session/set_config_option)
+- Built-in chat commands: /model /config /compact /clear /cost /resume /memory /mcp /permissions /doctor /status /help /init — surfaced via available_commands_update (compaction is a prerequisite)
+- Slash-invocable skills: invocationFor resolves skill keys (+ discovered AGENTS as commands), SKILL.md body expanded as the prompt with args appended, per-agent `model:` frontmatter wired into subagent dispatch
+- CC parity audit: close the 10 known divergences deliberately — compaction on context overflow, session resume, permissions UX, full subagents, slash-command autocomplete in editor, hooks PreToolUse deny path, AGENTS.md/CLAUDE.md auto-injection, streamed thinking blocks, rich prompt content (@-file mentions, images), background Bash + persistent shell
+- SEED-004 gap fixes: checkpoints/undo (shadow-git), compaction verify-first, sandbox flag made real, steering/input queue during a running turn
+- SEED-001: agent-creation kit extracted as a library in this repo; ass-guard becomes its reference app (rides internal/runtime extraction)
+- LSP support: documented IDE-side MCP configuration requirement only (no agent-side implementation)
+- Scheduler outcome store + feedback loop; nightly-parity CI automation tail
+- Telegram peer (lowest priority — text + voice STT, shared turn core, context-first shutdown)
 
 ## Business Context
 
@@ -48,29 +52,52 @@ Delivered the hands-off OpenSpec promise end-to-end (zero-continue product proof
 
 ### Active
 
-**v1.1 — Slash-command kickoff (priority 1)**
+**v1.2 — ACP completeness (priority 1)**
 
-- [ ] Wire `internal/ecosys` command/skill discovery into the session/ACP layer: expose loaded slash-commands and expand `/namespace:name` invocations (e.g. `/opsx:explore`) into the command's markdown prompt before the provider turn
-- [ ] Reconcile the OpenSpec adapter command set with the real `openspec` v1.5.0 binary surface (`list/view/change/spec/archive/doctor/context`, not `show/validate/apply/implement`); the toolkit's workflow is driven by agent-executed command files (`openspec init --tools claude` installs `.claude/commands/opsx/*.md` + skills), with the binary as supporting tooling
-- [ ] Run the operator-gated real-binary test (`ASSGUARD_OPENSPEC_BIN=1`) as a phase gate; complete the 11 deferred Phase-4 UAT checks
+- [ ] session/request_permission: clickable permission asks in Zed (allow/deny/always) replacing plain-text tool-gate prompts
+- [ ] elicitation/create: structured form asks surfaced through the editor
+- [ ] tool_call + plan update streaming to the client during turns
+- [ ] available_commands_update: editor-side slash-command autocomplete for discovered commands and skills
+- [ ] session list/resume/close/delete family incl. --resume anywhere (operator must-have, D-09 reversal)
+- [ ] Editor-driven configuration: read Zed settings payload at initialize, advertise configOptions, handle session/set_config_option (tier/model defaults switchable from editor UI; API keys stay env/file, never editor settings)
 
-**v1.1 — Operational gaps (priority 2-3, adjacent — may share a phase)**
+**v1.2 — Built-in chat commands (priority 2)**
 
-- [ ] LOG-01 completion: `--audit-log` written on the `acp serve` path (tracer wired via main.go only today)
-- [ ] zcode parity re-capture (operator-gated: `ZAI_API_KEY` export + capture session): unblocks the Phase-1 within-session stability test
+- [ ] Built-in slash-commands riding the command-expansion seam: /model (session-scope routing override), /config (rides editor-config), /compact (requires compaction), /clear (new session same thread), /cost (usage aggregation from transcript records), /resume, /memory, /mcp status, /permissions, /doctor, /status, /help, /init — advertised via available_commands_update
 
-**v1.1 — Telegram peer (priority 4)**
+**v1.2 — Slash-invocable skills (priority 3)**
 
-- [ ] Telegram is a full peer interface: can drive an entire SDD scenario; voice messages transcribed to text as ordinary user input via a configurable STT backend (OpenAI Whisper API default; whisper.cpp subprocess and Groq accommodated by config)
-- [ ] Telegram frontend runs as a goroutine in the same process as ACP stdio, sharing the core engine; context-first shutdown drains the long-poll loop and in-flight Telegram-driven turns (go-telegram/bot, verified stdout-silent in Phase 0)
+- [ ] invocationFor resolves skill keys (not just reg.Commands): SKILL.md body expands as the prompt with args appended
+- [ ] Discovered AGENTS addressable as slash commands (BMad-style installer layout)
+- [ ] Per-agent `model:` frontmatter wired into subagent dispatch (parsed today but ignored; routing comes from light tier only)
 
-**v1.1 — deepseek-harness profile #2 (priority 5)**
+**v1.2 — CC parity audit (priority 4)**
 
-- [ ] Profile #2: mimic `deepseek-ai/deepseek-harness` ("dsh" — DeepSeek's official agent harness) for DeepSeek-model turns; ground-truth capture from source + its own logs; rides the existing N-profile architecture (no zcode-specific paths)
+- [ ] Close the 10 known divergences deliberately: compaction on context overflow; session resume; permissions UX (rides ACP-completeness); full subagents (Task tool w/ background agents + completion notifications); slash-command autocomplete in editor (rides ACP-completeness); hooks full lifecycle incl. PreToolUse deny path; AGENTS.md/CLAUDE.md auto-injection into system context; structured thinking blocks streamed to client; rich prompt content (@-file mentions, images); persistent-shell Bash option + background-completion notifications
 
-**Future (post-v1.1)**
+**v1.2 — SEED-004 gap fixes (priority 5)**
 
-- [ ] ECOS-04 end-to-end beyond commands: plugins and skills not just loaded but *working unchanged* in every interaction mode
+- [ ] Checkpoints/undo via shadow-git: workspace snapshot at turn boundaries; rollback surface (`ass-guard checkpoint` CLI + optional ACP command)
+- [ ] Compaction verify-first: check whether the zcode profile already captures zcode auto-compact + cache_control placement before designing our own
+- [ ] Sandbox flag made real: parity-driven sandboxing implementing what zcode's tool semantics imply (macOS Seatbelt / Linux bwrap+seccomp reference)
+- [ ] Steering/input queue during a running turn (Telegram prerequisite; pi/strands reference semantics)
+
+**v1.2 — SEED-001 kit extraction (priority 6, last)**
+
+- [ ] Extract agent-building machinery as a library in this repo: profile mechanism, provider clients, session/turn loop, projector, unified engine + hook-DAG, tool catalog/execution, scheduling, redaction
+- [ ] ass-guard-agent becomes the kit's reference app (zcode profile, .claude/ compat, OpenSpec hosting, ACP frontend = one composition)
+- [ ] Rides internal/runtime extraction; SEED-002 fantasy + SEED-003 landscape as design prior art
+
+**v1.2 — Small tails (priority 7)**
+
+- [ ] LSP support: documented IDE-side MCP configuration requirement only
+- [ ] Scheduler outcome store + feedback loop (deterministic, zero LLM calls)
+- [ ] Nightly upstream-parity gate CI automation (12-08 tail)
+- [ ] ECOS-04 end-to-end beyond commands: plugins/skills working unchanged in every interaction mode
+
+**v1.3 pool (post-v1.2)**
+
+- [ ] Telegram peer: full peer interface, text + voice STT, shared turn core (`internal/runtime` extraction), context-first shutdown beside ACP stdio — LOWEST priority per operator 2026-08-26; slips here if v1.2 overflows
 
 ### Out of Scope
 
@@ -153,4 +180,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-14 — v1.1 Kickoff & Peers started*
+*Last updated: 2026-08-26 — v1.2 Claude Code Parity started (dsh dropped entirely; Telegram → lowest priority/v1.3 pool)*
