@@ -40,8 +40,9 @@ original_reported: "ReadSessionContext errored on every real session id — UUID
 
 ### 5. Background bash trio
 expected: Bash with run_in_background returns immediately with an exec_<uuid> id, the real log path, and read guidance. TaskOutput retrieves running tasks as not_ready (and finished ones ready). TaskStop kills the process group. Over-cap and unknown-id cases error structurally.
-result: issue
-reported: "stdio-driven live test 2026-08-23. Bash run_in_background: PASS (exec_id + log path + guidance). TaskStop: PASS (group kill + honest ack). TaskOutput: FAILS — model-visible catalog carries it (zcode profile) but the EXECUTION catalog (coretools.json) lacks the entry, so RegisterInteractive silently skips it and every call errors 'tool TaskOutput not in catalog' with a NULL payload line (isError, no output text). The phase's own completeness gate misses it because the gate walks coretools, not the profile decls."
+result: pass
+retest_note: "Live stdio re-test 2026-08-25 PASS after 12-11 fix: TaskOutput returns the captured not_ready form for a running task; TaskStop + Bash background unchanged (PASS). New parity gate prevents recurrence."
+original_reported: "stdio-driven live test 2026-08-23. Bash run_in_background: PASS (exec_id + log path + guidance). TaskStop: PASS (group kill + honest ack). TaskOutput: FAILS — model-visible catalog carries it (zcode profile) but the EXECUTION catalog (coretools.json) lacks the entry, so RegisterInteractive silently skips it and every call errors 'tool TaskOutput not in catalog' with a NULL payload line (isError, no output text). The phase's own completeness gate misses it because the gate walks coretools, not the profile decls."
 severity: major
 root_cause: "Catalog asymmetry: TaskOutput exists in internal/defaults/seed/profiles/zcode/tools.json but not internal/toolcat/coretools.json; RegisterInteractive's skip-if-missing discipline (forward-compat) turned the omission into a guaranteed dead end — the exact 'no implementation yet' class Phase 12 was scoped to kill."
 
