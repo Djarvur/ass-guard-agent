@@ -51,7 +51,9 @@ root_cause: "Catalog asymmetry: TaskOutput exists in internal/defaults/seed/prof
 
 ### 6. Cron schedules fire as engine-driven turns
 expected: Created schedules persist per-project atomically; due prompts fire serialized behind active turns (queue, no double-fire); missed windows catch up once with a note; fired turns MIRROR to your editor client (WINDOWS #3 fix). No daemon, no port.
-result: [pending]
+result: pass
+note: "Live stdio test 2026-08-25: CronCreate delayMinutes=1 → store persisted (.ass-guard/schedule); firing ~60s later as a serialized engine-driven turn (assistant 'PONG'); engine_decision provenance line 'automation fire — cron_<id> (uat-ping) fired'. Catch-up + mirror legs covered by the 12-07 wiring battery (TestCronWiring_*); live single-fire leg confirmed here."
+tested_at: 2026-08-25
 
 ### 7. No dead ends anywhere in the catalog (outcome clause)
 expected: Across a real driving session, the model never hits a "no implementation yet" dead end — every non-mcp catalog tool executes for real (completeness gate as permanent regression test proves zero non-mcp gaps).
