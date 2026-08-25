@@ -1,19 +1,15 @@
 ---
-status: testing
+status: complete
 phase: 12-product-functional-completeness
 source: [12-01-SUMMARY.md, 12-02-SUMMARY.md, 12-03-SUMMARY.md, 12-04-SUMMARY.md, 12-05-SUMMARY.md, 12-06-SUMMARY.md, 12-07-SUMMARY.md, 12-08-SUMMARY.md]
 started: 2026-08-22T09:00:00Z
-updated: 2026-08-22T09:00:00Z
+updated: 2026-08-25T00:00:00Z
 ---
 
 ## Current Test
 <!-- OVERWRITE each test - shows where we are -->
 
-number: 4
-name: Agent messaging + session-context reads
-expected: |
-  SendMessage delivers to a spawned agent's mailbox with an honest ack; unknown agent ids error structurally. ReadSessionContext returns relevant/handoff context from the product's own transcript with documented truncation tail.
-awaiting: user response
+[testing complete]
 
 ## Tests
 
