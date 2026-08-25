@@ -194,7 +194,7 @@ func selectBackend(name, tool string) (Backend, error) { //nolint:ireturn // one
 	}
 }
 
-// ConfigError lists one or more config violations (mirrors scheduler.ConfigError
+// ConfigError lists one or more config violations (mirrors modelrouting.ConfigError
 // for a consistent operator-facing report). Used by BackendsFromConfig.
 type ConfigError struct {
 	Violations []string

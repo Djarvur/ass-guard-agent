@@ -8,16 +8,16 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
-	"github.com/Djarvur/ass-guard-agent/internal/scheduler"
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 )
 
-// testSchedulingWarnsConfig declares two providers — zai with a literal api_key
+// testModelRoutingWarnsConfig declares two providers — zai with a literal api_key
 // and nokey with api_key_env pointing at an UNSET var — so WarnUncredentialed
 // emits exactly one warning (for nokey) and Load's D-04 credential-field warn
 // stays silent. The literal api_key is a FAKE test value.
-const testSchedulingWarnsConfig = `providers:
+const testModelRoutingWarnsConfig = `providers:
   zai:
     base_url: "https://api.z.ai/api/anthropic"
     shape: anthropic
@@ -42,10 +42,10 @@ tiers:
     fallback: []
 `
 
-// testSchedulingZeroEnvConfig declares two providers; the heavy-tier provider
+// testModelRoutingZeroEnvConfig declares two providers; the heavy-tier provider
 // (zai) carries a literal api_key and no env dependency (SC1 editor-zero-env),
 // while oai declares an unset env var (D-07 warn-not-reject path).
-const testSchedulingZeroEnvConfig = `providers:
+const testModelRoutingZeroEnvConfig = `providers:
   zai:
     base_url: "https://api.z.ai/api/anthropic"
     shape: anthropic
@@ -109,9 +109,9 @@ tiers:
 // the no-legacy-reads contract (260817-11v revised decision).
 const legacySchedulingFileName = "scheduling" + ".yaml"
 
-// writeTestScheduling writes content to the PROJECT config layer
+// writeTestModelRouting writes content to the PROJECT config layer
 // (<workDir>/.ass-guard/config.yaml) and returns the written path.
-func writeTestScheduling(t *testing.T, workDir, content string) string {
+func writeTestModelRouting(t *testing.T, workDir, content string) string {
 	t.Helper()
 
 	dir := filepath.Join(workDir, ".ass-guard")
@@ -124,7 +124,7 @@ func writeTestScheduling(t *testing.T, workDir, content string) string {
 }
 
 // pinEmptyHome pins HOME to an empty temp dir so the global config layer
-// contributes nothing — every loadSchedulingFactory-reaching test stays
+// contributes nothing — every loadModelRoutingFactory-reaching test stays
 // hermetic against the operator's real home (t.Setenv ⇒ these tests are not
 // parallel).
 func pinEmptyHome(t *testing.T) string {
@@ -148,12 +148,12 @@ func writeGlobalTestConfig(t *testing.T, home, content string) string {
 	return path
 }
 
-// TestLoadSchedulingFactory_WarnsUncredentialed proves D-07 at the wiring seam:
+// TestLoadModelRoutingFactory_WarnsUncredentialed proves D-07 at the wiring seam:
 // a 2-provider config where one provider carries a literal api_key and the
 // other has no resolvable credential produces exactly one stderr warning naming
 // the uncredentialed provider — and the factory is still built (warn, never
 // refuse to start).
-func TestLoadSchedulingFactory_WarnsUncredentialed(t *testing.T) {
+func TestLoadModelRoutingFactory_WarnsUncredentialed(t *testing.T) {
 	// Env hygiene: the assertions assume NOKEY_API_KEY is unset (the fixture
 	// declares it via api_key_env) and zai stays credentialed regardless of
 	// any ambient ZAI_API_KEY. The pinned empty HOME keeps the global config
@@ -163,11 +163,11 @@ func TestLoadSchedulingFactory_WarnsUncredentialed(t *testing.T) {
 	t.Setenv("NOKEY_API_KEY", "")
 
 	workDir := t.TempDir()
-	writeTestScheduling(t, workDir, testSchedulingWarnsConfig)
+	writeTestModelRouting(t, workDir, testModelRoutingWarnsConfig)
 
 	var stderr bytes.Buffer
 
-	cfg, factory, err := loadSchedulingFactory(workDir, "", &stderr)
+	cfg, factory, err := loadModelRoutingFactory(workDir, "", &stderr)
 	require.NoError(t, err, "an uncredentialed provider must not refuse the factory (D-07)")
 	require.NotNil(t, cfg)
 	require.NotNil(t, factory)
@@ -176,17 +176,17 @@ func TestLoadSchedulingFactory_WarnsUncredentialed(t *testing.T) {
 	require.NotContains(t, stderr.String(), "sk-test-literal", "a warning must never print a key (T-07-06)")
 }
 
-// TestLoadSchedulingFactory_ZeroConfigEnv proves SC4 backward-compat at the
+// TestLoadModelRoutingFactory_ZeroConfigEnv proves SC4 backward-compat at the
 // wiring seam: with no overlay file and $ZAI_API_KEY set, the embedded default
 // resolves the anthropic provider's key from the env (Source=env) and Build
 // returns a real adapter — today's exact behavior.
-func TestLoadSchedulingFactory_ZeroConfigEnv(t *testing.T) {
+func TestLoadModelRoutingFactory_ZeroConfigEnv(t *testing.T) {
 	pinEmptyHome(t)
 	t.Setenv("ZAI_API_KEY", "env-secret")
 
 	var stderr bytes.Buffer
 
-	cfg, factory, err := loadSchedulingFactory(t.TempDir(), "", &stderr)
+	cfg, factory, err := loadModelRoutingFactory(t.TempDir(), "", &stderr)
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 	require.NotNil(t, factory)
@@ -194,7 +194,7 @@ func TestLoadSchedulingFactory_ZeroConfigEnv(t *testing.T) {
 	prov, ok := cfg.Providers["anthropic"]
 	require.True(t, ok, "the embedded default declares the anthropic provider")
 
-	cred := scheduler.ResolveCredential(prov, "anthropic", "")
+	cred := modelrouting.ResolveCredential(prov, "anthropic", "")
 	require.Equal(t, "env", cred.Source, "the embedded api_key_env resolves from $ZAI_API_KEY")
 	require.Equal(t, "env-secret", cred.Key)
 
@@ -204,18 +204,18 @@ func TestLoadSchedulingFactory_ZeroConfigEnv(t *testing.T) {
 	require.Empty(t, stderr.String(), "a fully-credentialed config warns nothing (no ambient global layer)")
 }
 
-// TestLoadSchedulingFactory_GlobalLayerMerged proves the global layer
+// TestLoadModelRoutingFactory_GlobalLayerMerged proves the global layer
 // (260817-11v): a config at <home>/.config/ass-guard-agent/config.yaml is
 // honored over an empty project — the sentinel tier binding wins over the
 // embedded floor while the embedded default's provider stays present (merge,
 // not replace).
-func TestLoadSchedulingFactory_GlobalLayerMerged(t *testing.T) { //nolint:paralleltest // HOME pinned — serial
+func TestLoadModelRoutingFactory_GlobalLayerMerged(t *testing.T) { //nolint:paralleltest // HOME pinned — serial
 	home := pinEmptyHome(t)
 	writeGlobalTestConfig(t, home, testGlobalLayerConfig)
 
 	var stderr bytes.Buffer
 
-	cfg, factory, err := loadSchedulingFactory(t.TempDir(), "", &stderr)
+	cfg, factory, err := loadModelRoutingFactory(t.TempDir(), "", &stderr)
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 	require.NotNil(t, factory)
@@ -231,20 +231,20 @@ func TestLoadSchedulingFactory_GlobalLayerMerged(t *testing.T) { //nolint:parall
 	require.True(t, ok, "the embedded default's provider survives beneath the global layer")
 }
 
-// TestLoadSchedulingFactory_ProjectOverridesGlobal proves the layered
+// TestLoadModelRoutingFactory_ProjectOverridesGlobal proves the layered
 // precedence: with BOTH layers present and conflicting heavy-tier bindings,
 // the project layer (<workDir>/.ass-guard/config.yaml) wins — Load's overlay
 // order is global then project.
-func TestLoadSchedulingFactory_ProjectOverridesGlobal(t *testing.T) { //nolint:paralleltest // HOME pinned — serial
+func TestLoadModelRoutingFactory_ProjectOverridesGlobal(t *testing.T) { //nolint:paralleltest // HOME pinned — serial
 	home := pinEmptyHome(t)
 	writeGlobalTestConfig(t, home, testGlobalLayerConfig)
 
 	workDir := t.TempDir()
-	writeTestScheduling(t, workDir, testProjectLayerConfig)
+	writeTestModelRouting(t, workDir, testProjectLayerConfig)
 
 	var stderr bytes.Buffer
 
-	cfg, factory, err := loadSchedulingFactory(workDir, "", &stderr)
+	cfg, factory, err := loadModelRoutingFactory(workDir, "", &stderr)
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 	require.NotNil(t, factory)
@@ -259,11 +259,11 @@ func TestLoadSchedulingFactory_ProjectOverridesGlobal(t *testing.T) { //nolint:p
 	require.True(t, pok, "the project layer's provider is present")
 }
 
-// TestLoadSchedulingFactory_LegacyNameNeverRead proves the revised 260817-11v
+// TestLoadModelRoutingFactory_LegacyNameNeverRead proves the revised 260817-11v
 // decision: the pre-rename project config filename is treated as nonexistent —
 // a file carrying it is never read, and behavior is identical to no config at
 // all (the embedded floor serves).
-func TestLoadSchedulingFactory_LegacyNameNeverRead(t *testing.T) { //nolint:paralleltest // HOME pinned — serial
+func TestLoadModelRoutingFactory_LegacyNameNeverRead(t *testing.T) { //nolint:paralleltest // HOME pinned — serial
 	pinEmptyHome(t)
 
 	workDir := t.TempDir()
@@ -275,7 +275,7 @@ func TestLoadSchedulingFactory_LegacyNameNeverRead(t *testing.T) { //nolint:para
 
 	var stderr bytes.Buffer
 
-	cfg, factory, err := loadSchedulingFactory(workDir, "", &stderr)
+	cfg, factory, err := loadModelRoutingFactory(workDir, "", &stderr)
 	require.NoError(t, err)
 	require.NotNil(t, factory)
 
@@ -319,9 +319,9 @@ func TestStartupWarn_ConfigPermLoose(t *testing.T) { //nolint:paralleltest // HO
 			var path string
 
 			if tc.layer == layerGlobal {
-				path = writeGlobalTestConfig(t, home, testSchedulingZeroEnvConfig)
+				path = writeGlobalTestConfig(t, home, testModelRoutingZeroEnvConfig)
 			} else {
-				path = writeTestScheduling(t, t.TempDir(), testSchedulingZeroEnvConfig)
+				path = writeTestModelRouting(t, t.TempDir(), testModelRoutingZeroEnvConfig)
 			}
 
 			require.NoError(t, os.Chmod(path, tc.perm))
@@ -349,13 +349,13 @@ func TestBackwardCompat_ZAIEnvOnly(t *testing.T) {
 
 	var stderr bytes.Buffer
 
-	cfg, factory, err := loadSchedulingFactory(t.TempDir(), "", &stderr)
+	cfg, factory, err := loadModelRoutingFactory(t.TempDir(), "", &stderr)
 	require.NoError(t, err)
 
 	prov, ok := cfg.Providers["anthropic"]
 	require.True(t, ok, "the embedded default declares the anthropic provider")
 
-	cred := scheduler.ResolveCredential(prov, "anthropic", "")
+	cred := modelrouting.ResolveCredential(prov, "anthropic", "")
 	require.Equal(t, "env", cred.Source, "zero-config resolves from the env (D-06)")
 	require.Equal(t, "env-secret", cred.Key, "the key equals $ZAI_API_KEY")
 
@@ -377,18 +377,18 @@ func TestEditorZeroEnv_LiteralInConfig(t *testing.T) {
 	t.Setenv("NOKEY_API_KEY", "")
 
 	workDir := t.TempDir()
-	writeTestScheduling(t, workDir, testSchedulingZeroEnvConfig)
+	writeTestModelRouting(t, workDir, testModelRoutingZeroEnvConfig)
 
 	var stderr bytes.Buffer
 
-	cfg, factory, err := loadSchedulingFactory(workDir, "", &stderr)
+	cfg, factory, err := loadModelRoutingFactory(workDir, "", &stderr)
 	require.NoError(t, err)
 	require.NotNil(t, factory)
 
 	prov, ok := cfg.Providers["zai"]
 	require.True(t, ok, "the config declares the active provider")
 
-	cred := scheduler.ResolveCredential(prov, "zai", "")
+	cred := modelrouting.ResolveCredential(prov, "zai", "")
 	require.Equal(t, "config", cred.Source, "the file credential is the floor (D-05)")
 	require.Equal(t, "sk-test-literal", cred.Key)
 

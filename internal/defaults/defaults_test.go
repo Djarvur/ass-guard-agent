@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/internal/defaults"
+	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
-	"github.com/Djarvur/ass-guard-agent/internal/scheduler"
 )
 
 // Seed-profile expectations. tools = 79: the 09-04/AUD-05 re-pin (zcode
@@ -161,7 +161,7 @@ func TestSeedProfileLoads(t *testing.T) {
 }
 
 // TestDriftGuard_SchedulingYAML asserts the embedded seed config.yaml is
-// byte-identical to internal/scheduler's embedded default (the DIST-03 floor).
+// byte-identical to internal/modelrouting's embedded default (the DIST-03 floor).
 // Both sides are build-time embed bytes (no filesystem lookup), so this is
 // robust under -trimpath. Run sync.sh if this fails.
 func TestDriftGuard_SchedulingYAML(t *testing.T) {
@@ -172,7 +172,7 @@ func TestDriftGuard_SchedulingYAML(t *testing.T) {
 		t.Fatalf("read embedded seed/config.yaml: %v", err)
 	}
 
-	schedulerBytes := scheduler.EmbeddedDefaultScheduling()
+	schedulerBytes := modelrouting.EmbeddedDefaultScheduling()
 
 	if !bytes.Equal(seedBytes, schedulerBytes) {
 		t.Errorf("config.yaml drift: seed=%d bytes != scheduler=%d bytes — run ./internal/defaults/seed/sync.sh",

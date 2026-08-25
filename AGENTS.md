@@ -65,7 +65,7 @@ A Go-based AI coding agent that makes SDD (Spec-Driven Development) workflows ru
 | `github.com/modelcontextprotocol/go-sdk` | v1.0.0+ | MCP client + server | **HIGH** | Always — hosts Claude-Code-installed MCP servers. See Focus 5. |
 | `github.com/kwo/jsonrpc2` | `v0.0.0-20260410…` | **Fallback only** — maintained 2026 fork of `go.lsp.dev/jsonrpc2` | **MEDIUM** | Only if a future need makes hand-rolled framing painful (e.g. complex bidirectional notification routing). Default is hand-rolled — see "What NOT to Use." |
 | Internal: `internal/profile` | (project package) | Profile types + loader | **HIGH** | Always — the mimicry profile mechanism. |
-| Internal: `internal/scheduler` | (project package) | Tier/time-window/fallback resolver | **HIGH** | Always — the model scheduling layer. |
+| Internal: `internal/modelrouting` | (project package) | Tier/time-window/fallback resolver | **HIGH** | Always — the model scheduling layer. |
 | Internal: `internal/hookdag` | (project package) | In-process DAG executor | **HIGH** | Always — the "forgotten routine" engine. |
 ### Development Tools
 | Tool | Purpose | Notes |

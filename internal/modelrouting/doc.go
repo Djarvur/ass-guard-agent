@@ -1,4 +1,5 @@
-// Package scheduler is the model-scheduling layer (Phase 3).
+// Package modelrouting is the model-routing layer (Phase 3; renamed from
+// "scheduler" 2026-08-25 — the old name collided with the cron engine in internal/sched).
 //
 // The turn loop (Phase 2 Session Core) selects a tier — heavy / good / light —
 // instead of a concrete model. The Scheduler resolves that tier to a concrete
@@ -28,4 +29,4 @@
 // event → ACP session/update), D-07 (dual-mechanism circuit breaker), D-08
 // (dollars-per-window cost ceiling), D-09 (structured CapabilityProfile +
 // request-time gate), D-10 (load-time capability-mismatch rejection).
-package scheduler
+package modelrouting

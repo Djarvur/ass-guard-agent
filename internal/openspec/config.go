@@ -118,7 +118,7 @@ type OpenSpecConfig struct {
 var embeddedSeeded []byte
 
 // ConfigError lists every validation violation found in one pass (collect-all —
-// mirrors scheduler.ConfigError / hookdag.ConfigError).
+// mirrors modelrouting.ConfigError / hookdag.ConfigError).
 type ConfigError struct {
 	Violations []string
 }

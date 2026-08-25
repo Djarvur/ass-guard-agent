@@ -63,7 +63,7 @@ exist and seeds it with the embedded defaults (DIST-03):
 - `.gitignore` — a self-gitignoring file (`*\n!.gitignore\n`) so the seeded
   tree does not pollute your project's git status.
 
-The model scheduling config resolves in two operator layers on top of the
+The model-routing config resolves in two operator layers on top of the
 embedded default (later layers win on conflict):
 
 1. the **embedded default** — the seeded `.ass-guard/config.yaml` content,

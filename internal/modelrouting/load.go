@@ -1,4 +1,4 @@
-package scheduler
+package modelrouting
 
 import (
 	_ "embed"

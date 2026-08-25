@@ -83,15 +83,15 @@ tiers:
 
 // tierWiringRunner builds an expansion runner over a workDir carrying the
 // fixture config, then loads the scheduling config through the REAL serve seam
-// (setupScheduling — load + heavy-tier provider resolution) and arms the
+// (setupModelRouting — load + heavy-tier provider resolution) and arms the
 // runner exactly as runACPServe does, with an injected stderr buffer.
 func tierWiringRunner(t *testing.T, fixture string) (*sessionTurnRunner, *bytes.Buffer) {
 	t.Helper()
 
 	r, _ := newExpansionRunner(t, false, scriptedResp{text: "ok", finish: stopEndTurn})
-	writeTestScheduling(t, r.workDir, fixture)
+	writeTestModelRouting(t, r.workDir, fixture)
 
-	cfg, _, providerName, err := setupScheduling(r.workDir, io.Discard)
+	cfg, _, providerName, err := setupModelRouting(r.workDir, io.Discard)
 	require.NoError(t, err, "fixture config must load")
 
 	r.schedCfg = cfg

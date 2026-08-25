@@ -68,7 +68,7 @@ Aggregate: 7,892 tool-result messages, 283 isError.
 
 | # | Site | Where | Gate | Can a Structural error be retried here? |
 |---|---|---|---|---|
-| 1 | Scheduler fallback walk (THE retry site) | `internal/scheduler/dispatch.go:250-287` | typed `ProviderError.Kind`: `Structural` → immediate return (258-262, D-04 — never feeds the breaker); `Exhausted` → return; `Transient` → breaker record + walk to next candidate | **No** — pinned by `TestDispatchStructuralStopsWalk`; re-pinned by 14-06 `TestRetrySites_NeverRetryStructural` |
+| 1 | Scheduler fallback walk (THE retry site) | `internal/modelrouting/dispatch.go:250-287` | typed `ProviderError.Kind`: `Structural` → immediate return (258-262, D-04 — never feeds the breaker); `Exhausted` → return; `Transient` → breaker record + walk to next candidate | **No** — pinned by `TestDispatchStructuralStopsWalk`; re-pinned by 14-06 `TestRetrySites_NeverRetryStructural` |
 | 2 | SSE idle watchdog | `internal/provider/streaming.go:40-155` | not a retry — classifies a stalled stream as a retryable `KindTransient` typed error (a SIGNAL for the next dispatch, pinned `TestStream_IdleWatchdogAbortsStalledStream`) | n/a (signal producer) |
 | 3 | Session stream consumer | `internal/session/session.go:620-627` | records the retryable error + ends the turn — **no auto-retry** at this layer | n/a |
 | 4 | HTTP/SDK clients | Anthropic path = raw `net/http` (`streaming.go:157+`); OpenAI path = `go-openai` single-shot (no built-in retry) | none found — **no hidden retry loops** exist in the tree (grep: zero `MaxRetries`/`WithMaxRetries`) | n/a |

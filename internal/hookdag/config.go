@@ -81,7 +81,7 @@ var embeddedSeeded []byte
 
 // Load decodes the embedded default, then each path in order (layered: later
 // paths overlay earlier ones — operator over default — D-06 mirrors
-// internal/scheduler's config.yaml convention, using gopkg.in/yaml.v3
+// internal/modelrouting's config.yaml convention, using gopkg.in/yaml.v3
 // directly so dotted keys are preserved). The merged config is re-decoded into
 // typed Hooks + validated. A *ConfigError (collect-all) is returned if any
 // violation is found; the config is NOT executed.
@@ -129,7 +129,7 @@ func Load(paths ...string) ([]Hook, error) {
 	return cfg.Hooks, nil
 }
 
-// deepMerge recursively merges src into dst (mirrors scheduler.deepMerge). For
+// deepMerge recursively merges src into dst (mirrors modelrouting.deepMerge). For
 // shared keys whose values are both maps, recurse; otherwise src's value wins
 // (overlay semantics — an operator path replaces a default list entry).
 func deepMerge(dst, src map[string]any) {

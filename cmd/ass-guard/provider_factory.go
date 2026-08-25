@@ -10,7 +10,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/scheduler"
+	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
 )
 
 // globalConfigPath resolves the GLOBAL operator config layer (260817-11v):
@@ -35,11 +35,11 @@ func projectConfigPath(workDir string) string {
 	return filepath.Join(workDir, ".ass-guard", "config.yaml")
 }
 
-// loadSchedulingFactory is the D-08 wiring seam shared by acp serve / tracer /
+// loadModelRoutingFactory is the D-08 wiring seam shared by acp serve / tracer /
 // parity: it loads the operator's layered config.yaml (global
 // ~/.config/ass-guard-agent/config.yaml, then project
 // <workDir>/.ass-guard/config.yaml — each when present) overlaid on the
-// embedded default (project wins), builds the scheduler.ProviderFactory, and
+// embedded default (project wins), builds the modelrouting.ProviderFactory, and
 // emits the D-07 startup uncredentialed-provider warnings to stderr (transport
 // discipline — stdout stays ACP-only). A load error is returned for the caller
 // to degrade gracefully (T-07-08); the factory never refuses to build. The
@@ -47,9 +47,9 @@ func projectConfigPath(workDir string) string {
 // (260817-11v: no existing installs, no migration).
 //
 //nolint:unparam // apiKeyFlag is the D-05 flag-precedence seam (07-CONTEXT D-05), kept per the plan contract
-func loadSchedulingFactory(
+func loadModelRoutingFactory(
 	workDir, apiKeyFlag string, stderr io.Writer,
-) (*scheduler.Config, *scheduler.ProviderFactory, error) {
+) (*modelrouting.Config, *modelrouting.ProviderFactory, error) {
 	var candidates []string
 
 	globalPath, gerr := globalConfigPath()
@@ -64,7 +64,7 @@ func loadSchedulingFactory(
 
 	candidates = append(candidates, projectConfigPath(workDir))
 
-	// scheduler.Load errors on a passed-but-missing path — stat-gate each
+	// modelrouting.Load errors on a passed-but-missing path — stat-gate each
 	// candidate and pass only the existing ones, in overlay order (global
 	// then project; an empty list loads the embedded floor alone).
 	existing := make([]string, 0, len(candidates))
@@ -76,18 +76,18 @@ func loadSchedulingFactory(
 		}
 	}
 
-	cfg, err := scheduler.Load(existing...)
+	cfg, err := modelrouting.Load(existing...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("load scheduling config: %w", err)
 	}
 
-	factory := scheduler.NewProviderFactory(cfg, apiKeyFlag, slog.Default())
+	factory := modelrouting.NewProviderFactory(cfg, apiKeyFlag, slog.Default())
 	factory.WarnUncredentialed(stderr)
 
 	return cfg, factory, nil
 }
 
-// setupScheduling is setupProviderFactory's cfg-retaining twin (14-05,
+// setupModelRouting is setupProviderFactory's cfg-retaining twin (14-05,
 // EARLY-05): the serve path needs the loaded scheduling config AFTER startup —
 // the light-tier subagent routing resolves tiers.light through the same
 // resolver at sessionFor. Semantics are IDENTICAL to the legacy shape (same
@@ -95,23 +95,25 @@ func loadSchedulingFactory(
 // resolution); only the cfg return is added. setupProviderFactory remains as a
 // thin wrapper because its 3-return shape is pinned by the parity/main call
 // sites.
-func setupScheduling(workDir string, stderr io.Writer) (*scheduler.Config, *scheduler.ProviderFactory, string, error) {
-	cfg, factory, err := loadSchedulingFactory(workDir, "", stderr)
+func setupModelRouting(
+	workDir string, stderr io.Writer,
+) (*modelrouting.Config, *modelrouting.ProviderFactory, string, error) {
+	cfg, factory, err := loadModelRoutingFactory(workDir, "", stderr)
 	if err != nil {
 		log.Printf("ass-guard: scheduling config load failed (continuing with embedded default): %v", err)
 
-		cfg, err = scheduler.Load()
+		cfg, err = modelrouting.Load()
 		if err != nil {
 			return nil, nil, "", fmt.Errorf("load embedded scheduling default: %w", err)
 		}
 
-		factory = scheduler.NewProviderFactory(cfg, "", nil)
+		factory = modelrouting.NewProviderFactory(cfg, "", nil)
 		factory.WarnUncredentialed(stderr)
 	}
 
 	providerName := firstDeclaredProvider(cfg)
 
-	primary, _, rerr := scheduler.NewResolver(cfg).Resolve(tierHeavy, "", time.Now(), scheduler.CapabilityReq{})
+	primary, _, rerr := modelrouting.NewResolver(cfg).Resolve(tierHeavy, "", time.Now(), modelrouting.CapabilityReq{})
 	if rerr == nil {
 		providerName = primary.Provider
 	}
@@ -125,15 +127,15 @@ func setupScheduling(workDir string, stderr io.Writer) (*scheduler.Config, *sche
 // failed operator config degrades to the embedded default + a stderr log,
 // mirroring the engine/learning-store degradation pattern (T-07-08); only a
 // failure of the embedded default itself is returned.
-func setupProviderFactory(workDir string, stderr io.Writer) (*scheduler.ProviderFactory, string, error) {
-	_, factory, providerName, err := setupScheduling(workDir, stderr)
+func setupProviderFactory(workDir string, stderr io.Writer) (*modelrouting.ProviderFactory, string, error) {
+	_, factory, providerName, err := setupModelRouting(workDir, stderr)
 
 	return factory, providerName, err
 }
 
 // firstDeclaredProvider returns the first provider name in sorted order — the
 // resolve-error fallback so a factory-wired session always has a provider.
-func firstDeclaredProvider(cfg *scheduler.Config) string {
+func firstDeclaredProvider(cfg *modelrouting.Config) string {
 	names := make([]string, 0, len(cfg.Providers))
 	for name := range cfg.Providers {
 		names = append(names, name)

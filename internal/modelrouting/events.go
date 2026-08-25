@@ -1,4 +1,4 @@
-package scheduler
+package modelrouting
 
 import (
 	"github.com/Djarvur/ass-guard-agent/internal/event"

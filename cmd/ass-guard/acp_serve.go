@@ -32,12 +32,12 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/hookdag"
 	"github.com/Djarvur/ass-guard-agent/internal/learning"
 	mcp "github.com/Djarvur/ass-guard-agent/internal/mcp"
+	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
 	"github.com/Djarvur/ass-guard-agent/internal/openspec"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/redact"
 	"github.com/Djarvur/ass-guard-agent/internal/sched"
-	"github.com/Djarvur/ass-guard-agent/internal/scheduler"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
@@ -332,11 +332,11 @@ func runACPServe(ctx context.Context, in io.Reader, out, stderr io.Writer, opts 
 	// scheduler resolver; the session's provider is the factory-built
 	// credentialed instance (T-07-07 — resolution is deterministic +
 	// validated).
-	// 14-05 (EARLY-05): setupScheduling is setupProviderFactory's
+	// 14-05 (EARLY-05): setupModelRouting is setupProviderFactory's
 	// cfg-retaining twin — the serve path keeps the loaded scheduling config
 	// + the resolved session provider for the light-tier subagent routing at
 	// sessionFor (ONE load, no second config read, identical semantics).
-	schedCfg, factory, providerName, ferr := setupScheduling(opts.WorkDir, stderr)
+	schedCfg, factory, providerName, ferr := setupModelRouting(opts.WorkDir, stderr)
 	if ferr != nil {
 		return fmt.Errorf("setup provider factory: %w", ferr)
 	}
@@ -467,7 +467,7 @@ type sessionTurnRunner struct {
 	// the light-tier subagent routing at sessionFor resolves tiers.light
 	// through the SAME resolver that picked the session provider. nil in test
 	// runners → no subagent model override (the documented default).
-	schedCfg *scheduler.Config
+	schedCfg *modelrouting.Config
 
 	// providerName is the session provider the factory builds (the heavy-tier
 	// resolution's pick, 14-05): the same-provider check for the light binding
@@ -1433,7 +1433,7 @@ func (r *sessionTurnRunner) stderrOrDefault() io.Writer {
 
 // resolveSubagentModel resolves the scheduler light tier for SUBAGENT
 // dispatches (14-05, EARLY-05 — the token-economics lever). It is the same
-// call shape setupScheduling uses for tierHeavy, on the EXISTING tiers table
+// call shape setupModelRouting uses for tierHeavy, on the EXISTING tiers table
 // (no new config surface):
 //
 //   - resolve error / absent binding → "" (silently: absence is the
@@ -1445,12 +1445,12 @@ func (r *sessionTurnRunner) stderrOrDefault() io.Writer {
 //     subagent runner is ROUTED to the post-adoption queue (the override
 //     covers the tier's primary purpose — a cheaper model on the same wire
 //     shape); never a silent wrong-wire.
-func resolveSubagentModel(cfg *scheduler.Config, sessionProvider string, now time.Time, stderr io.Writer) string {
+func resolveSubagentModel(cfg *modelrouting.Config, sessionProvider string, now time.Time, stderr io.Writer) string {
 	if cfg == nil {
 		return ""
 	}
 
-	primary, _, err := scheduler.NewResolver(cfg).Resolve(tierLight, "", now, scheduler.CapabilityReq{})
+	primary, _, err := modelrouting.NewResolver(cfg).Resolve(tierLight, "", now, modelrouting.CapabilityReq{})
 	if err != nil {
 		return "" // no tiers.light binding — the documented default
 	}

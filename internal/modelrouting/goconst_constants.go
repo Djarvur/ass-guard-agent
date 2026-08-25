@@ -1,4 +1,4 @@
-package scheduler
+package modelrouting
 
 // Repeated string literals extracted to constants (goconst).
 const stopReasonStop = "stop"
