@@ -42,7 +42,7 @@ Operator decisions at close (2026-08-23…25): D-09 REVERSED (session resume = m
 
 Staged pool (order TBD at planning):
 
-1. **ACP completeness** — session/request_permission (clickable asks), elicitation/create, tool_call+plan update streaming, available_commands_update, session/list/resume/close/delete family (session resume is operator-must-have, D-09 reversal)
+1. **ACP completeness** — session/request_permission (clickable asks), elicitation/create, tool_call+plan update streaming, available_commands_update, session/list/resume/close/delete family (session resume is operator-must-have, D-09 reversal); plus **editor-driven configuration**: read Zed `settings` payload at initialize + advertise `configOptions` / handle `session/set_config_option` so tier/model defaults are switchable from the editor UI (operator ask 2026-08-25; api keys stay env/file, never editor settings)
 2. **Telegram Peer** (ex-Phase 10, replan) — text + voice STT, shared turn core (`internal/runtime` extraction), go-telegram/bot dependency lands here
 3. **dsh profile #2** (ex-Phase 11, replan vs source-analysis) — scope re-evaluated under the mimicry-pivot decision
 4. **LSP support** — documented requirement for IDE-side MCP configuration (operator decision 2026-08-25: no agent-side LSP implementation)
