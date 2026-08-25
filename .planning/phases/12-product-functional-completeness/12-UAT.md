@@ -65,7 +65,9 @@ tested_at: 2026-08-25
 
 ### 8. Eval regression net + first-green disposition
 expected: The three-layer behavioral-eval net exists (harness, scenario suite w/ pass@k + artifacts, mise gate surface + change-class detector); its opening live runs CAUGHT the flagship pattern-table drift (assertions untouched, evidence preserved), and the first green was discharged via Phase 13 (flagship green ×3: eval-20260820-161520 / 163220 / 205550-k1.json). Includes retroactive operator ratification of the 2026-08-20 manager ruling (first green = Phase 13 exit evidence).
-result: [pending]
+result: pass
+note: "Evidence-confirmed 2026-08-25: internal/evalharness + internal/evalsuite exist; mise eval-gate flagship GREEN k=1 certified in STATE.md (artifact .ass-guard/eval/eval-20260820-161520-k1.json); operator ratified both standing flags 2026-08-21 (commit 918ad2c: eval-net disposition → 13-01 opener routing; route-1 ask resume). The net's opening catches are documented in 12-08-SUMMARY."
+tested_at: 2026-08-25
 
 ### 9. Ecosystem discovery + precedence matrix (12-02, all-auto-covered confirm)
 expected: installed_plugins.json + cache-layout discovery, five-tier precedence with shadow warnings, agents/hooks/mcp wiring, live operator-plugins evidence, mise ci green. Automated battery passed — confirming summary only.
