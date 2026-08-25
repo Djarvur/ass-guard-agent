@@ -78,7 +78,12 @@ func TestSendMessage_UnknownRecipient(t *testing.T) {
 	}
 }
 
-// writeFixtureTranscript seeds a two-session .ass-guard/ family for the reader.
+// writeFixtureTranscript seeds a two-session .ass-guard/ family for the reader:
+// the captured-vocabulary fixture (transcript_sess_alpha.jsonl) AND a real-shaped
+// product fixture (transcript_<uuid>.jsonl — 12-11/G-12-4c: ass-guard mints
+// RFC-4122-v4 session ids via internal/acp/handlers.go newSessionID and writes
+// transcript_<uuid>.jsonl via internal/session/transcript.go openTranscript; the
+// sess_ shape alone hid the id-vocabulary mismatch from the 12-04 offline tests).
 func writeFixtureTranscript(t *testing.T) string {
 	t.Helper()
 
@@ -87,7 +92,18 @@ func writeFixtureTranscript(t *testing.T) string {
 
 	_ = os.MkdirAll(store, dirPermWrite)
 
-	lines := []string{
+	write := func(name string, lines []string) {
+		t.Helper()
+
+		werr := os.WriteFile(filepath.Join(store, name), []byte(strings.Join(lines, "\n")+"\n"), dirPermWrite)
+		if werr != nil {
+			t.Fatal(werr)
+		}
+	}
+
+	const uuidSession = "d9f98023-1c3e-4b5a-9e2f-a1b2c3d4e5f6"
+
+	write("transcript_sess_alpha.jsonl", []string{
 		`{"type":"session_start","sessionID":"sess_alpha"}`,
 		`{"type":"user_message","turnID":"sess_alpha-turn-001",` +
 			`"content":[{"type":"text",` +
@@ -96,13 +112,22 @@ func writeFixtureTranscript(t *testing.T) string {
 		`{"type":"user_message","turnID":"sess_alpha-turn-002",` +
 			`"content":[{"type":"text","text":"also add tests for the cache"}]}`,
 		`{"type":"assistant_message","turnID":"sess_alpha-turn-002","text":"tests added for ristretto."}`,
-	}
-	transcript := filepath.Join(store, "transcript_sess_alpha.jsonl")
+	})
 
-	werr := os.WriteFile(transcript, []byte(strings.Join(lines, "\n")+"\n"), dirPermWrite)
-	if werr != nil {
-		t.Fatal(werr)
-	}
+	// The real-shaped fixture mirrors the line types the product writes (the
+	// same shapes as above, keyed to the UUID id) with a distinctive marker so
+	// query filtering has something to hit.
+	write("transcript_"+uuidSession+".jsonl", []string{
+		`{"type":"session_start","sessionID":"` + uuidSession + `"}`,
+		`{"type":"user_message","turnID":"` + uuidSession + `-turn-001",` +
+			`"content":[{"type":"text",` +
+			`"text":"which cache library should we adopt?"}]}`,
+		`{"type":"assistant_message","turnID":"` + uuidSession + `-turn-001",` +
+			`"text":"We chose ristretto for the cache-library decision."}`,
+		`{"type":"user_message","turnID":"` + uuidSession + `-turn-002",` +
+			`"content":[{"type":"text","text":"wire it into the store"}]}`,
+		`{"type":"assistant_message","turnID":"` + uuidSession + `-turn-002","text":"store wired to ristretto."}`,
+	})
 
 	return dir
 }
@@ -214,6 +239,112 @@ func TestRegisterInteractive_MessagingPair(t *testing.T) {
 
 		if tool.Execute == nil {
 			t.Errorf("%s Execute not set", name)
+		}
+	}
+}
+
+// --- 12-11 / G-12-4c battery: the product's own UUID id vocabulary ----------
+
+// uuidSession is a REAL-shaped session id — the RFC 4122 v4 form
+// internal/acp/handlers.go newSessionID mints (lowercase hex + dashes).
+const uuidSession = "d9f98023-1c3e-4b5a-9e2f-a1b2c3d4e5f6"
+
+// TestReadSessionContext_ProductUUIDSession (12-11 T1): the reader must serve
+// ass-guard's OWN persisted transcripts keyed by the minted UUID ids, not only
+// the captured sess_* vocabulary. RED signature today: the structured
+// "readsessioncontext: invalid session id d9f98023-…" error — the UAT test 4
+// failure mechanically.
+func TestReadSessionContext_ProductUUIDSession(t *testing.T) {
+	t.Parallel()
+
+	reader := NewSessionReader(writeFixtureTranscript(t))
+
+	out, err := ReadSessionContextExecute(reader)(context.Background(), json.RawMessage(
+		`{"sessionId":"`+uuidSession+`","query":"cache-library"}`))
+	if err != nil {
+		t.Fatalf("err = %v; want nil (the reader must accept ass-guard's own UUID session ids)", err)
+	}
+
+	var text string
+
+	uerr := json.Unmarshal(out, &text)
+	if uerr != nil {
+		t.Fatalf("Output not a JSON string: %v (%s)", uerr, out)
+	}
+
+	if !strings.Contains(text, "cache-library decision") {
+		t.Errorf("excerpt = %q; want the fixture's matching assistant text", text)
+	}
+}
+
+// TestReadSessionContext_UUIDHandoff (12-11 T1): the handoff strategy renders
+// the bounded tail over the product vocabulary too.
+func TestReadSessionContext_UUIDHandoff(t *testing.T) {
+	t.Parallel()
+
+	reader := NewSessionReader(writeFixtureTranscript(t))
+
+	out, err := ReadSessionContextExecute(reader)(context.Background(), json.RawMessage(
+		`{"sessionId":"`+uuidSession+`","query":"handoff","strategy":"handoff"}`))
+	if err != nil {
+		t.Fatalf("err = %v; want nil", err)
+	}
+
+	var text string
+
+	_ = json.Unmarshal(out, &text)
+
+	if !strings.Contains(text, "store wired to ristretto.") {
+		t.Errorf("handoff excerpt = %q; want the UUID session's tail", text)
+	}
+}
+
+// TestSessions_EnumeratesBothVocabularies (12-11 T1): Sessions() must list every
+// recorded transcript regardless of id vocabulary. RED signature today: the
+// UUID id is SILENTLY absent — the transcript_sess_* glob skips its file.
+func TestSessions_EnumeratesBothVocabularies(t *testing.T) {
+	t.Parallel()
+
+	got := map[string]bool{}
+	for _, id := range NewSessionReader(writeFixtureTranscript(t)).Sessions() {
+		got[id] = true
+	}
+
+	for _, want := range []string{"sess_alpha", uuidSession} {
+		if !got[want] {
+			t.Errorf("Sessions() missing %q; got %v", want, NewSessionReader(writeFixtureTranscript(t)).Sessions())
+		}
+	}
+}
+
+// TestReadSessionContext_RejectsTraversalIds pins the safety invariant that
+// survives the vocabulary widening: an id carrying path separators (or any
+// shape outside both vocabularies) is rejected structurally BEFORE any file
+// open — the widened validator stays traversal-safe (T-12-11-01). Expected
+// GREEN before AND after the fix.
+func TestReadSessionContext_RejectsTraversalIds(t *testing.T) {
+	t.Parallel()
+
+	reader := NewSessionReader(writeFixtureTranscript(t))
+
+	for _, bad := range []string{"../../etc", `sub\evil`, "..", "", ".gitignore", "d9f98023/../../etc"} {
+		out, err := ReadSessionContextExecute(reader)(context.Background(), json.RawMessage(
+			`{"sessionId":"`+bad+`","query":"x"}`))
+		if err == nil {
+			t.Errorf("sessionId %q: err = nil; want the structured invalid-id rejection", bad)
+
+			continue
+		}
+
+		var structured struct {
+			Error string `json:"error"`
+		}
+
+		_ = json.Unmarshal(out, &structured)
+
+		if !strings.Contains(structured.Error, "invalid session id") &&
+			!strings.Contains(structured.Error, "invalid input") {
+			t.Errorf("sessionId %q: Output = %s; want the invalid-id error class", bad, out)
 		}
 	}
 }
