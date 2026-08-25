@@ -102,6 +102,11 @@ The unmodified OpenSpec toolkit runs hands-off end-to-end: the flagship chain gr
 
 ---
 
+
+### Close-Out Addendum (2026-08-25 — the formal close)
+
+The milestone closed formally 4 days after the 2026-08-21 completion: the operator requested a live UAT round, which REOPENED Phase 12 and found three real product gaps (dead plan-mode serve wiring; silent tool-result loss causing 33-retry storms; ReadSessionContext id mismatch + TaskOutput catalog omission). All fixed via gap-closure plans 12-09/12-10/12-11 under full TDD + CI discipline; UAT re-run 11/11 pass over live stdio driving. Three operator decisions landed at close: D-09 reversed (session resume = must-have, v1.2 top), "scheduling" renamed to model-routing (full package+CLI rename), and the strategic pivot — mimicry abandoned as the product bar in favor of client-native ACP surfaces (Zed-provided fs/permission/session UX); LSP routed to documented IDE-side MCP configuration rather than agent-side implementation. Lesson: the UAT round was the cheapest bug-finding mechanism of the whole project — offline batteries missed four wiring/catalog defects that an hour of real driving caught.
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
