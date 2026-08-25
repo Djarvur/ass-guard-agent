@@ -6,7 +6,7 @@ current_phase: 13
 current_phase_name: openspec-workflow-completion
 status: complete
 stopped_at: v1.1 MILESTONE COMPLETE 2026-08-21 (34/34 plans, 5/5 phases; Phase 13 closed verification 3/3)
-last_updated: "2026-08-20T21:20:00.000Z"
+last_updated: "2026-08-25T00:00:00.000Z"
 progress:
   total_phases: 5
   completed_phases: 5
@@ -25,6 +25,8 @@ See: .planning/PROJECT.md (updated 2026-08-14)
 **Current focus:** v1.1 COMPLETE 2026-08-21 — the adoption line was crossed 2026-08-20 and the post-adoption continuation finished in use; awaiting the operator's retroactive ratifications + milestone lifecycle choice
 
 ## Current Position
+
+**UAT REOPENED + RE-CLOSED (2026-08-22..25): Phase 12's conversational UAT ran live and found three real gaps — dead plan-mode serve wiring (G-12-3), silent WebFetch tool-result loss causing 33-retry storms (G-12-3b), ReadSessionContext id-vocabulary mismatch + TaskOutput catalog omission (G-12-4c/5a). All fixed via gap-closure plans 12-09/12-10/12-11 (TDD, mise ci green at every gate) and re-proven by live stdio driving: 11/11 UAT tests pass; 12-VERIFICATION canonicalized to passed; 13/14 verification statuses normalized. Operator decisions recorded: D-09 REVERSED (session/load resume = must-have, top of v1.2 pool); "scheduling" rename requested (naming discussion pending); plan-mode approvals only gate model-declared plan phases, ordinary saves stay approval-free.**
 
 **MILESTONE COMPLETE — v1.1 ACP Early Adoption closed 2026-08-21.** All five phases complete (8, 9, 12, 13, 14 — Phases 10/11 parked to the v1.2 pool), 34/34 plans. The milestone's completion bar — the operator begins daily ACP use — was met at the adoption line 2026-08-20, and the post-adoption continuation (12-03/07/08, Phase 13) finished in use. Phase 13 closed on 13-VERIFICATION (3/3 criteria PASS, zero PARTIAL/FAIL): the verifier independently re-ran both zero-continue chain legs against the real binary + real model (57.3s / 162.1s), the full 13-00/13-03 pin batteries, all offline suites, and read — not trusted — the gate artifacts and the manager's same-day certifications. Delivered across the milestone: the zero-continue product proof (Phase 8), the redacted decision-explaining audit + parity re-capture (Phase 9), every catalog tool executing for real with the behavioral-eval regression net (Phase 12), the adoption-readiness backstops (Phase 14), and the full OpenSpec command matrix hands-off incl. through model asks (Phase 13 — ACP-08's deferred first-green discharged: flagship green ×3, eval-20260820-161520 / 163220 / 205550-k1.json; WINDOWS #8/#9 fixed, open_count 2 with #5/#7 routed). Verified milestone gates: mise ci green + eval-gate flagship green k=1 (manager-certified 2026-08-20).
 
