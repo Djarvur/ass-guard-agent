@@ -19,6 +19,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
+	"github.com/Djarvur/ass-guard-agent/internal/acpserve"
 	"github.com/Djarvur/ass-guard-agent/internal/audit"
 	"github.com/Djarvur/ass-guard-agent/internal/engine"
 	"github.com/Djarvur/ass-guard-agent/internal/event"
@@ -96,7 +97,7 @@ func TestACPServeWiresStdoutClean(t *testing.T) {
 
 	ctx := t.Context()
 
-	err := runACPServe(ctx, in, &stdout, &stderr, &serveOptions{
+	err := runACPServe(ctx, in, &stdout, &stderr, &acpserve.Options{
 		Profile: profileZcode, MaxConcurrent: 6,
 		ProfilesDir: repoProfilesDir(t), WorkDir: t.TempDir(),
 	})
@@ -139,7 +140,7 @@ func TestACPServeNoStdoutPollutionFromLogs(t *testing.T) {
 
 	ctx := t.Context()
 
-	_ = runACPServe(ctx, in, &stdout, &stderr, &serveOptions{
+	_ = runACPServe(ctx, in, &stdout, &stderr, &acpserve.Options{
 		Profile: profileZcode, MaxConcurrent: 6,
 		ProfilesDir: repoProfilesDir(t), WorkDir: t.TempDir(),
 	})
@@ -1556,7 +1557,7 @@ func TestServeAudit_RequestShapedThroughRealSeam(t *testing.T) { //nolint:funlen
 	inPipeR, inPipeW := io.Pipe()
 
 	go func() {
-		_ = runACPServe(ctx, inPipeR, stdout, stderr, &serveOptions{
+		_ = runACPServe(ctx, inPipeR, stdout, stderr, &acpserve.Options{
 			Profile: profileZcode, MaxConcurrent: 2,
 			ProfilesDir: repoProfilesDir(t), WorkDir: workDir,
 		})
@@ -1943,7 +1944,7 @@ func TestServeMirror_Override(t *testing.T) {
 	inPipeR, inPipeW := io.Pipe()
 
 	go func() {
-		_ = runACPServe(ctx, inPipeR, stdout, stderr, &serveOptions{
+		_ = runACPServe(ctx, inPipeR, stdout, stderr, &acpserve.Options{
 			Profile: profileZcode, MaxConcurrent: 2,
 			ProfilesDir: repoProfilesDir(t), WorkDir: workDir,
 			AuditLogPath: overridePath,

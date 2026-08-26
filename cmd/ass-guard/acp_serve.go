@@ -22,13 +22,13 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
+	"github.com/Djarvur/ass-guard-agent/internal/acpserve"
 	"github.com/Djarvur/ass-guard-agent/internal/audit"
 	"github.com/Djarvur/ass-guard-agent/internal/checkpoint"
 	"github.com/Djarvur/ass-guard-agent/internal/coreexec"
 	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/internal/engine"
 	"github.com/Djarvur/ass-guard-agent/internal/event"
-	"github.com/Djarvur/ass-guard-agent/internal/firstrun"
 	"github.com/Djarvur/ass-guard-agent/internal/hookdag"
 	"github.com/Djarvur/ass-guard-agent/internal/learning"
 	mcp "github.com/Djarvur/ass-guard-agent/internal/mcp"
@@ -36,7 +36,6 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/openspec"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
-	"github.com/Djarvur/ass-guard-agent/internal/providerfactory"
 	"github.com/Djarvur/ass-guard-agent/internal/redact"
 	"github.com/Djarvur/ass-guard-agent/internal/sched"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
@@ -98,28 +97,6 @@ func (stubCatalogExec) Execute(_ context.Context, _ string, _ json.RawMessage) (
 	return json.RawMessage(stubExecResult), nil
 }
 
-// serveOptions carries the `acp serve` subcommand flags. The profile is loaded
-// by name (default zcode); --max-concurrent bounds outbound provider concurrency
-// (PARA-04, default 6). WorkDir is where .ass-guard/ transcripts live (default
-// cwd). ConfigAddedBoundaries lets a project ADD boundaries (SESS-02).
-// EngineEnabled (default true; --no-engine disables) wires the Phase-4 unified
-// engine + hook-DAG + OpenSpec + learning (Plan 04-05). AskTimeout is the D-01
-// AskUserQuestion wait (default 10m; 0 = block forever — interactive mode).
-type serveOptions struct {
-	Profile               string
-	MaxConcurrent         int
-	ProfilesDir           string
-	WorkDir               string
-	ConfigAddedBoundaries []string
-	EngineEnabled         bool
-	AskTimeout            time.Duration
-
-	// AuditLogPath is the --audit-log operator override (09-06): "" → the
-	// default per-session mirror under <workdir>/.ass-guard/audit/; "-" →
-	// stderr; a path → the single-file mirror (D-02).
-	AuditLogPath string
-}
-
 // redactorAdapter adapts internal/redact to session.Redactor.
 type redactorAdapter struct{}
 
@@ -175,7 +152,15 @@ func newACPServeCmd() *cobra.Command {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 
-			return runACPServeCmd(ctx, cmd, profileName, maxConcurrent, profilesDir, workDir, !noEngine, askTimeout)
+			// 09-06: the persistent --audit-log flag reaches the serve path
+			// (it was declared but never read — the dead-flag finding).
+			// De-cobra'd in plan 15-05: flag reads stay in the shell.
+			auditPath, _ := cmd.Flags().GetString("audit-log")
+
+			changedProfilesDir := cmd.Flags().Changed(flagProfilesDir)
+
+			return runACPServeCmd(ctx, auditPath, profilesDir, workDir, changedProfilesDir,
+				profileName, maxConcurrent, !noEngine, askTimeout)
 		},
 	}
 	c.Flags().StringVar(&profileName, "profile", profileZcode, "profile name to load (PROF-01)")
@@ -196,31 +181,31 @@ func newACPServeCmd() *cobra.Command {
 // resolves workDir, runs the Phase-6 first-run seed (D-04), resolves the
 // zero-config profiles dir (DIST-03), then constructs + serves the ACP server.
 // All diagnostics go to stderr (transport discipline — stdout = ACP frames).
+//
+// De-cobra'd in plan 15-05 (one of the two sanctioned edits): the audit-log
+// flag read and the profiles-dir Changed() probe live in the cobra shell and
+// arrive here as plain values.
 func runACPServeCmd(
-	ctx context.Context, cmd *cobra.Command,
-	profileName string, maxConcurrent int, profilesDir, workDir string, engineEnabled bool,
+	ctx context.Context, auditPath, profilesDir, workDir string, profilesDirChanged bool,
+	profileName string, maxConcurrent int, engineEnabled bool,
 	askTimeout time.Duration,
 ) error {
 	log.SetOutput(os.Stderr)
 
-	resolvedWorkDir, err := resolveWorkDir(workDir)
+	resolvedWorkDir, err := acpserve.ResolveWorkDir(workDir)
 	if err != nil {
-		return err
+		return err //nolint:wrapcheck // flag-resolution error passes through
 	}
 
 	// Phase 6 first-run (D-04): seed .ass-guard/ when missing. Non-clobbering; a
 	// failed seed degrades to defaults, never a server crash.
-	seedACPGuard(resolvedWorkDir)
+	acpserve.SeedACPGuard(resolvedWorkDir)
 
 	// Zero-config profiles dir (DIST-03): prefer .ass-guard/profiles when the
 	// flag is default and that dir exists; else the dev ./profiles default.
-	resolvedProfilesDir := resolveProfilesDir(cmd, profilesDir, resolvedWorkDir)
+	resolvedProfilesDir := acpserve.ResolveProfilesDir(profilesDir, profilesDirChanged, resolvedWorkDir)
 
-	// 09-06: the persistent --audit-log flag reaches the serve path (it was
-	// declared but never read — the dead-flag finding).
-	auditPath, _ := cmd.Flags().GetString("audit-log")
-
-	return runACPServe(ctx, os.Stdin, os.Stdout, os.Stderr, &serveOptions{
+	return runACPServe(ctx, os.Stdin, os.Stdout, os.Stderr, &acpserve.Options{
 		Profile:       profileName,
 		MaxConcurrent: maxConcurrent,
 		ProfilesDir:   resolvedProfilesDir,
@@ -231,152 +216,40 @@ func runACPServeCmd(
 	})
 }
 
-// startAuditMirror (09-06, AUD-02/D-02): the per-session mirror, DEFAULT ON;
-// the --audit-log override reroutes it ("-" → stderr; a path → single file).
-// Any construction failure degrades loudly (stderr log, mirror disabled) —
-// never a serve refusal.
-func startAuditMirror(ctx context.Context, bus *event.Bus, opts *serveOptions, stderr io.Writer) {
-	//nolint:staticcheck // QF1002: the switch is intentional documentation
-	switch {
-	case opts.AuditLogPath == "":
-		_ = audit.NewMirror(bus, filepath.Join(opts.WorkDir, ".ass-guard", "audit"), nil)
-	case opts.AuditLogPath == "-":
-		_ = audit.NewMirrorFile(bus, stderr, nil)
-	default:
-		mw, mclose, merr := audit.OpenFileSink(opts.AuditLogPath)
-		if merr != nil {
-			log.Printf("ass-guard: audit mirror disabled (%v): %v", opts.AuditLogPath, merr)
-
-			return
-		}
-
-		_ = audit.NewMirrorFile(bus, mw, nil)
-
-		go func() {
-			<-ctx.Done()
-
-			closeErr := mclose()
-			if closeErr != nil {
-				log.Printf("ass-guard: audit mirror sink close: %v", closeErr)
-			}
-		}()
-	}
-}
-
-// resolveWorkDir returns workDir, or the current working directory when the flag
-// is empty. Eager resolution keeps the seed dir and the session dir consistent.
-func resolveWorkDir(workDir string) (string, error) {
-	if workDir != "" {
-		return workDir, nil
-	}
-
-	wd, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("resolve work dir: %w", err)
-	}
-
-	return wd, nil
-}
-
-// seedACPGuard runs the Phase-6 first-run seed (D-04) and logs the outcome to
-// stderr. A failed seed is non-fatal — the agent stays runnable on defaults.
-func seedACPGuard(workDir string) {
-	seeded, err := firstrun.Ensure(workDir)
-	if err != nil {
-		log.Printf("ass-guard: first-run seeding failed (continuing): %v", err)
-
-		return
-	}
-
-	if seeded {
-		log.Printf("ass-guard: initialized %s", filepath.Join(workDir, ".ass-guard"))
-	}
-}
-
-// resolveProfilesDir honors an explicit --profiles-dir; otherwise it prefers the
-// seeded <workDir>/.ass-guard/profiles when it exists (zero-config, DIST-03),
-// falling back to the flag's default (the dev ./profiles) otherwise.
-func resolveProfilesDir(cmd *cobra.Command, profilesDir, workDir string) string {
-	if cmd.Flags().Changed(flagProfilesDir) {
-		return profilesDir
-	}
-
-	seedProfiles := filepath.Join(workDir, ".ass-guard", "profiles")
-
-	_, err := os.Stat(seedProfiles)
-	if err != nil {
-		return profilesDir
-	}
-
-	return seedProfiles
-}
-
 // runACPServe constructs the ACP server and runs it until ctx is cancelled or
 // stdin reaches EOF. It wires the real Session Core as the TurnRunner (Plan
 // 02-05): each session/prompt drives a session.Session whose Provider.Stream
 // streams chunks to the event bus; the sessionTurnRunner forwards bus chunks to
 // the ACP adapter as session/update notifications.
 //
-//nolint:funlen // the serve pipeline; the 12-07 schedule wiring extends it
-func runACPServe(ctx context.Context, in io.Reader, out, stderr io.Writer, opts *serveOptions) error {
-	bus := event.NewBus()
-
-	prof, err := profile.NewLoader(opts.ProfilesDir).Load(opts.Profile)
+// TRANSITIONAL (plan 15-05, dissolved by 15-06): the pre-runner pipeline lives
+// in acpserve.PrepareServe and the post-engine statements in acpserve.FinishServe;
+// the runner literal + its two setup calls stay here until the runner family
+// relocates to internal/runtime.
+func runACPServe(ctx context.Context, in io.Reader, out, stderr io.Writer, opts *acpserve.Options) error {
+	prep, err := acpserve.PrepareServe(ctx, stderr, opts)
 	if err != nil {
-		return fmt.Errorf("call: %w", err)
+		return err //nolint:wrapcheck // pipeline error passes through
 	}
-
-	// Phase 7 (D-08): build the provider factory ONCE at startup from the
-	// operator's layered config.yaml (global ~/.config/ass-guard-agent/,
-	// then project .ass-guard/ — project wins) overlaid on the embedded
-	// default. The heavy-tier provider is resolved through the validated
-	// scheduler resolver; the session's provider is the factory-built
-	// credentialed instance (T-07-07 — resolution is deterministic +
-	// validated).
-	// 14-05 (EARLY-05): setupModelRouting is setupProviderFactory's
-	// cfg-retaining twin — the serve path keeps the loaded scheduling config
-	// + the resolved session provider for the light-tier subagent routing at
-	// sessionFor (ONE load, no second config read, identical semantics).
-	schedCfg, factory, providerName, ferr := providerfactory.SetupModelRouting(opts.WorkDir, stderr)
-	if ferr != nil {
-		return fmt.Errorf("setup provider factory: %w", ferr)
-	}
-
-	// SC3 (Phase 7, extended by 260817-11v): warn once at startup when an
-	// operator config.yaml (global or project layer) is looser than 0600 —
-	// either may carry a literal api_key (credential-on-disk hygiene,
-	// T-07-05). Advisory only; the seed itself stays 0644 (D-06).
-	globalPath, gerr := providerfactory.GlobalConfigPath()
-	if gerr == nil {
-		providerfactory.WarnLooseConfigPerm(globalPath, stderr)
-	}
-
-	providerfactory.WarnLooseConfigPerm(providerfactory.ProjectConfigPath(opts.WorkDir), stderr)
-
-	// 09-05: one capped body store per serve process (construction is lazy —
-	// Put reports errors; a broken store degrades audit, never the serve).
-	bodyStore := audit.NewBodyStore(filepath.Join(opts.WorkDir, ".ass-guard", "audit", "bodies"), 0)
-
-	startAuditMirror(ctx, bus, opts, stderr)
 
 	runner := &sessionTurnRunner{
-		bus:          bus,
-		bodyStore:    bodyStore,
-		profile:      prof,
+		bus:          prep.Bus,
+		bodyStore:    prep.BodyStore,
+		profile:      prep.Profile,
 		workDir:      opts.WorkDir,
 		maxConc:      opts.MaxConcurrent,
 		configAdded:  opts.ConfigAddedBoundaries,
 		askTimeout:   opts.AskTimeout,
 		serveCtx:     ctx,
-		schedCfg:     schedCfg,
-		providerName: providerName,
+		schedCfg:     prep.SchedCfg,
+		providerName: prep.ProviderName,
 		stderr:       stderr,
 		makeProvider: func(capturer provider.RequestCapturer) provider.Provider {
 			// 09-01: the SINGLE factory seam — the same construction the
 			// tracer uses (the divergent copy is gone; Pitfall 8).
 			// Construction errors keep the existing degradation semantics
 			// (ignore, the no-provider path surfaces at first use).
-			p, _ := factory.BuildWithCapturer(providerName, shaper.New(), capturer)
+			p, _ := prep.Factory.BuildWithCapturer(prep.ProviderName, shaper.New(), capturer)
 
 			return p
 		},
@@ -395,34 +268,12 @@ func runACPServe(ctx context.Context, in io.Reader, out, stderr io.Writer, opts 
 		}
 	}
 
-	srv := acp.NewServer(in, out, stderr, acp.WithTurnRunner(runner))
-
-	// 12-07 (ACP-04/D-02): the per-project schedule store + the scheduler
-	// goroutine on the serve-lifetime ctx (no daemon, no port — Close/ctx
-	// owns its lifecycle). A failed open degrades to a serve WITHOUT
-	// scheduled firings (the store's own quarantine handles corruption).
-	scheduleStore, schedErr := sched.Open(opts.WorkDir)
-	if schedErr != nil {
-		_, _ = fmt.Fprintf(stderr,
-			"ass-guard: schedule store disabled (%v) — cron tools report no-store errors\n", schedErr)
-	} else {
-		runner.schedule = scheduleStore
-	}
-
-	runner.emitFor = srv.Emitter // WINDOWS #3: server-driven turns reach the client
-	runner.startScheduler(ctx)
-
-	// Phase 5 (Plan 05-02 T4): when the server-level ctx is cancelled
-	// (SIGINT/SIGTERM), close every live session's MCP host so no subprocess
-	// outlives the ass-guard process. Serve returns after ctx cancellation.
-	go func() {
-		<-ctx.Done()
-
-		//nolint:contextcheck // ctx-done drain path; Session.Close owns its bounded per-hook timeouts
-		runner.closeAllSessions()
-	}()
-
-	return srv.Serve(ctx) //nolint:wrapcheck // direct delegation
+	return acpserve.FinishServe(ctx, in, out, stderr, opts, runner, acpserve.FinishHooks{ //nolint:lll,wrapcheck // thin delegation
+		AssignSchedule: func(store *sched.ScheduleStore) { runner.schedule = store },
+		InjectEmitter:  func(emit func(sessionID string) acp.ChunkEmitter) { runner.emitFor = emit },
+		StartScheduler: runner.startScheduler,
+		CloseSessions:  runner.closeAllSessions,
+	})
 }
 
 // setupEngine builds the Phase-4 engine wiring (Plan 04-05 D-01/D-13/D-15/D-21):

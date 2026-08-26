@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Djarvur/ass-guard-agent/internal/acpserve"
 	"github.com/Djarvur/ass-guard-agent/internal/checkpoint"
 	"github.com/Djarvur/ass-guard-agent/internal/checkpointcmd"
 )
@@ -48,9 +49,9 @@ func newCheckpointCmd() *cobra.Command {
 		Short:        "list checkpoints, oldest first (empty store: \"no checkpoints\", exit 0)",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			dir, err := resolveWorkDir(workDir)
+			dir, err := acpserve.ResolveWorkDir(workDir)
 			if err != nil {
-				return err
+				return err //nolint:wrapcheck // flag-resolution error passes through
 			}
 
 			return checkpointcmd.RunCheckpointList(cmd.ErrOrStderr(), dir)
@@ -63,9 +64,9 @@ func newCheckpointCmd() *cobra.Command {
 		SilenceUsage: true,
 		Args:         cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			dir, err := resolveWorkDir(workDir)
+			dir, err := acpserve.ResolveWorkDir(workDir)
 			if err != nil {
-				return err
+				return err //nolint:wrapcheck // flag-resolution error passes through
 			}
 
 			return checkpointcmd.RunCheckpointRestore(cmd.Context(), cmd.ErrOrStderr(), dir, args[0]) //nolint:lll // thin delegation
