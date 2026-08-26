@@ -9,7 +9,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Runtime Carve
 
-- [ ] **RUNT-01**: `sessionTurnRunner` carved verbatim from `cmd/ass-guard/acp_serve.go` into `internal/runtime`; cmd composes it; zero behavior change (`mise ci` proves equivalence)
+- [x] **RUNT-01**: `sessionTurnRunner` carved verbatim from `cmd/ass-guard/acp_serve.go` into `internal/runtime`; cmd composes it; zero behavior change (`mise ci` proves equivalence)
 
 ### ACP Completeness
 
@@ -102,7 +102,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| RUNT-01 | Phase 15 | Pending |
+| RUNT-01 | Phase 15 | Complete |
 | ACP-03 | Phase 16 | Pending |
 | ACP-08 | Phase 16 | Pending |
 | ACP-01 | Phase 17 | Pending |
@@ -140,6 +140,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | KIT-03 | Phase 25 | Pending |
 
 **Coverage:**
+
 - v1.2 requirements: 36 total
 - Mapped to phases: 36
 - Unmapped: 0 ✓ (Phases 15–25; numbering continues from v1.1's Phase 14)

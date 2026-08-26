@@ -4,17 +4,17 @@ milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 15
 current_phase_name: internal/runtime Carve (Step 0)
-status: executing
-stopped_at: Completed 15-06-PLAN.md
-last_updated: "2026-08-26T13:52:24.781Z"
+status: verifying
+stopped_at: Completed 15-07-PLAN.md — phase 15 all plans done
+last_updated: "2026-08-26T13:57:49.267Z"
 last_activity: 2026-08-26
 last_activity_desc: Phase 15 execution started
-state_head: a709e377b23d26dd18fe00d86a1f1495ddca733e
+state_head: fa9c2fcc627703f9fc79a90564ff3d8398f0ab75
 progress:
   total_phases: 11
   completed_phases: 0
   total_plans: 7
-  completed_plans: 6
+  completed_plans: 7
   percent: 0
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-08-26)
 
 Phase: 15 (internal/runtime Carve (Step 0)) — EXECUTING
 Plan: 7 of 7
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-08-26 — Phase 15 execution started
 
 Progress: [░░░░░░░░░░] 0%
@@ -50,6 +50,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 15 P04 | 18 min | 2 tasks | 14 files |
 | Phase 15 P05 | 22 min | 2 tasks | 6 files |
 | Phase 15 P06 | 75 min | 3 tasks | 20 files |
+| Phase 15 P07 | 20 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -66,6 +67,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 15]: acpserve extracted with PrepareServe/FinishServe callback-hook seam (4 hooks incl. CloseSessions); stdout tests moved with stub runner; 3 runner-subject tests stay in cmd until 15-06
 - [Phase 15]: 15-06: exported sextet (quartet + SetupEngine/LoadCommandRegistry) — D-19 export-by-necessity for the acpserve.Run composition
 - [Phase 15]: 15-06: pointer configs for NewRunner/NewEngineTurnAdapter/NewACPDispatcher (hugeParam, 15-05 precedent)
+- [Phase 15]: 15-07: PENDING-OPERATOR-CONFIRMATION for live-Zed criterion — auto-advance ran, operator check outstanding (tracked in WINDOWS ledger)
 
 ### Pending Todos
 
@@ -84,6 +86,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-26T13:52:24.753Z
-Stopped at: Completed 15-06-PLAN.md
+Last session: 2026-08-26T13:57:49.241Z
+Stopped at: Completed 15-07-PLAN.md — phase 15 all plans done
 Resume file: None

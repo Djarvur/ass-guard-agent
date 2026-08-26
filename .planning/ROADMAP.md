@@ -70,7 +70,7 @@ Operator decisions at close (2026-08-23…25): D-09 REVERSED (session resume = m
   2. Every existing serve-path behavior is observably identical after the move: a live Zed-spawned session streams tokens, executes tools, replays on restart exactly as at v1.1 close (the operator's daily-use surface unchanged).
   3. No feature code moved or rewritten during the carve — the diff is a pure relocation (verbatim bodies, import fixes only), reviewable as such.
 
-**Plans:** 6/7 plans executed
+**Plans:** 7/7 plans executed
 
 Plans:
 **Wave 1**
@@ -96,7 +96,7 @@ Plans:
 
 **Wave 6** *(blocked on Wave 5 completion)*
 
-- [ ] 15-07-PLAN.md — Equivalence proof battery + color-moved review record + live-Zed operator checkpoint
+- [x] 15-07-PLAN.md — Equivalence proof battery + color-moved review record + live-Zed operator checkpoint
 
 ### Phase 16: ACP Wire Foundation
 
@@ -263,7 +263,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 15. internal/runtime Carve | v1.2 | 6/7 | In Progress|  |
+| 15. internal/runtime Carve | v1.2 | 7/7 | In Progress|  |
 | 16. ACP Wire Foundation | v1.2 | 0/? | Not started | - |
 | 17. Permissions + Elicitation | v1.2 | 0/? | Not started | - |
 | 18. Session Family | v1.2 | 0/? | Not started | - |
