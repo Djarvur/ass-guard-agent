@@ -70,12 +70,12 @@ Operator decisions at close (2026-08-23…25): D-09 REVERSED (session resume = m
   2. Every existing serve-path behavior is observably identical after the move: a live Zed-spawned session streams tokens, executes tools, replays on restart exactly as at v1.1 close (the operator's daily-use surface unchanged).
   3. No feature code moved or rewritten during the carve — the diff is a pure relocation (verbatim bodies, import fixes only), reviewable as such.
 
-**Plans:** 7 plans
+**Plans:** 1/7 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 15-01-PLAN.md — Wave-0 instruments: pre-move test ledger (130) + CLI-contract golden test
+- [x] 15-01-PLAN.md — Wave-0 instruments: pre-move test ledger (130) + CLI-contract golden test
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -263,7 +263,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 15. internal/runtime Carve | v1.2 | 0/? | Not started | - |
+| 15. internal/runtime Carve | v1.2 | 1/7 | In Progress|  |
 | 16. ACP Wire Foundation | v1.2 | 0/? | Not started | - |
 | 17. Permissions + Elicitation | v1.2 | 0/? | Not started | - |
 | 18. Session Family | v1.2 | 0/? | Not started | - |

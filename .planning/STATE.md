@@ -5,16 +5,16 @@ milestone_name: Claude Code Parity
 current_phase: 15
 current_phase_name: internal/runtime Carve (Step 0)
 status: executing
-stopped_at: Phase 25 context gathered
-last_updated: "2026-08-26T12:23:24.737Z"
+stopped_at: Completed 15-01-PLAN.md
+last_updated: "2026-08-26T12:42:10.064Z"
 last_activity: 2026-08-26
-last_activity_desc: v1.2 roadmap created (11 phases, 36/36 requirements mapped)
-state_head: fa8ff1e3325676f3609be80c34502872e916d419
+last_activity_desc: Phase 15 execution started
+state_head: d4ee9ab621ad0ff73dfcd15a19ad59f23f7a16a2
 progress:
   total_phases: 11
   completed_phases: 0
   total_plans: 7
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 ---
 
@@ -24,14 +24,14 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-08-26)
 **Core value:** A hands-off coding agent that feels native in the editor: full SDD workflows run end-to-end without manual continues, and the agent surfaces through the client's own UX — clickable permission prompts, native file diffs, session management. (Pivoted 2026-08-25 from the mimicry bar.)
-**Current focus:** Phase 15 — internal/runtime Carve (Step 0), ready to plan
+**Current focus:** Phase 15 — internal/runtime Carve (Step 0)
 
 ## Current Position
 
-Phase: 15 (internal/runtime Carve (Step 0)) — READY TO EXECUTE
-Plan: — (not yet planned)
+Phase: 15 (internal/runtime Carve (Step 0)) — EXECUTING
+Plan: 2 of 7
 Status: Ready to execute
-Last activity: 2026-08-26 — v1.2 roadmap created (11 phases, 36/36 requirements mapped)
+Last activity: 2026-08-26 — Phase 15 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -40,6 +40,11 @@ Progress: [░░░░░░░░░░] 0%
 **Velocity (v1.0 history, for calibration):** 36 plans / 8 phases in 6 days; `mise ci` gate green at every phase close. **v1.1:** 51 plans / 5 phases over ~7 active days.
 
 **By Phase (v1.2):** no plans executed yet.
+**Per-Plan Metrics:**
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 15 P01 | 13 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -68,6 +73,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-26T12:23:24.711Z
-Stopped at: Phase 25 context gathered
-Resume file: .planning/phases/25-seed-001-kit-extraction-strictly-last/25-CONTEXT.md
+Last session: 2026-08-26T12:42:10.040Z
+Stopped at: Completed 15-01-PLAN.md
+Resume file: None
