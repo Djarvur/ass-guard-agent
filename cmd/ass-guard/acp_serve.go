@@ -107,13 +107,14 @@ func runACPServeCmd(
 	// flag is default and that dir exists; else the dev ./profiles default.
 	resolvedProfilesDir := acpserve.ResolveProfilesDir(profilesDir, profilesDirChanged, resolvedWorkDir)
 
-	return acpserve.Run(ctx, os.Stdin, os.Stdout, os.Stderr, &acpserve.Options{ //nolint:wrapcheck // thin shell delegation
-		Profile:       profileName,
-		MaxConcurrent: maxConcurrent,
-		ProfilesDir:   resolvedProfilesDir,
-		WorkDir:       resolvedWorkDir,
-		EngineEnabled: engineEnabled,
-		AskTimeout:    askTimeout,
-		AuditLogPath:  auditPath,
-	})
+	return acpserve.Run( //nolint:wrapcheck // thin shell delegation
+		ctx, os.Stdin, os.Stdout, os.Stderr, &acpserve.Options{
+			Profile:       profileName,
+			MaxConcurrent: maxConcurrent,
+			ProfilesDir:   resolvedProfilesDir,
+			WorkDir:       resolvedWorkDir,
+			EngineEnabled: engineEnabled,
+			AskTimeout:    askTimeout,
+			AuditLogPath:  auditPath,
+		})
 }

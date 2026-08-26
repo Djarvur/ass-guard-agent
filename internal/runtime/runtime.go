@@ -228,7 +228,7 @@ type RunnerConfig struct {
 // NewRunner fills a Runner from cfg — struct-fill ONLY (D-05 thin ctor).
 // Callers invoke LoadCommandRegistry/SetupEngine/startScheduler explicitly,
 // in today's order.
-func NewRunner(cfg RunnerConfig) *Runner {
+func NewRunner(cfg *RunnerConfig) *Runner {
 	return &Runner{
 		bus:          cfg.Bus,
 		bodyStore:    cfg.BodyStore,
@@ -264,7 +264,7 @@ func (c checkpointerAdapter) SnapshotTurn(
 // the loaded hook-DAG config + the learning store + the engine + its
 // ActionDispatcher. On any error the engine stays disabled (Run falls back to
 // the unwrapped sess.Prompt — backward-compatible + D-04 graceful degradation).
-func (r *Runner) SetupEngine() error { //nolint:funcorder // ordering groups related logic
+func (r *Runner) SetupEngine() error {
 	catalog := toolcat.NewCatalog()
 	r.catalog = catalog
 
@@ -311,7 +311,7 @@ func (r *Runner) SetupEngine() error { //nolint:funcorder // ordering groups rel
 	// nextPromptFor resolves DYNAMICALLY through the pattern-table interface so
 	// the table remains the single source of truth (tests may swap it after
 	// setup; the dispatcher follows).
-	r.eng.Dispatcher = enginebridge.NewACPDispatcher(enginebridge.BridgeConfig{
+	r.eng.Dispatcher = enginebridge.NewACPDispatcher(&enginebridge.BridgeConfig{
 		Hooks:   r.hookExec,
 		HookCfg: r.hookCfg,
 		Learned: r.learned,
@@ -346,7 +346,7 @@ func (r *Runner) workDirOrDefault() string { //nolint:funcorder // ordering grou
 // text (T-8-16: an expansion problem NEVER becomes a turn failure or an ACP
 // error). Tests call it explicitly after planting fixtures; production calls
 // it from the serve composition.
-func (r *Runner) LoadCommandRegistry() { //nolint:funcorder // startup helper grouped with engine wiring
+func (r *Runner) LoadCommandRegistry() {
 	reg, servers, err := ecosys.Discover(r.workDirOrDefault())
 	if err != nil {
 		// Drop to zero (do NOT serve a stale registry): the registry mirrors
@@ -676,7 +676,7 @@ func (r *Runner) runOneTurn(
 		}()
 	}
 
-	adapter := enginebridge.NewEngineTurnAdapter(sess, enginebridge.BridgeConfig{
+	adapter := enginebridge.NewEngineTurnAdapter(sess, &enginebridge.BridgeConfig{
 		Expand: r.expandUserBlocks,
 		Invoke: r.invocationFor,
 		AutomationProvenance: func() string {
@@ -1310,6 +1310,32 @@ func (r *Runner) CloseSession(sessionID string) error {
 	return nil
 }
 
+// --- serve-composition seam (D-19 export-by-necessity) ---
+//
+// The serve composition (acpserve.Run) wires the scheduler store + the
+// server's emitter + the scheduler goroutine + the ctx-done session reap —
+// the four operations the 15-05 FinishHooks callback seam crossed with while
+// the runner lived in package main (with LoadCommandRegistry/SetupEngine,
+// which Run also calls between NewRunner and NewServer). They are exported
+// because acpserve cannot compile otherwise (unexported members are
+// unreachable from a foreign package); NOTHING else is exported for it.
+
+// SetSchedule assigns the per-project schedule store (the sched.Open success
+// arm of the serve composition).
+func (r *Runner) SetSchedule(store *sched.ScheduleStore) { r.schedule = store }
+
+// SetEmitter injects the server-driven-turn chunk emitter (WINDOWS #3:
+// strictly between server construction and scheduler start).
+func (r *Runner) SetEmitter(emit func(sessionID string) acp.ChunkEmitter) { r.emitFor = emit }
+
+// StartScheduler launches the due-check goroutine (the serve composition's
+// post-emitter step — see cron_wiring.go).
+func (r *Runner) StartScheduler(ctx context.Context) { r.startScheduler(ctx) }
+
+// CloseAllSessions closes every live session at serve end (the ctx-done
+// subprocess reap).
+func (r *Runner) CloseAllSessions() { r.closeAllSessions() }
+
 // advisoryNote is one collected advisory decision's client-note projection.
 type advisoryNote struct {
 	turnID string
@@ -1319,8 +1345,6 @@ type advisoryNote struct {
 
 // collectAdvisory drains EngineDecision events until promptDone, capturing
 // the LAST advisory-signal decision (the note rides its turn id).
-//
-//nolint:lll // the drain-mirror signature
 func (r *Runner) collectAdvisory(advCh <-chan event.Event, promptDone <-chan struct{}, advDone chan<- *advisoryNote) {
 	defer r.bus.Unsubscribe("EngineDecision", advCh)
 
@@ -1437,29 +1461,3 @@ func toContentBlocks(in []acp.ContentBlock) []session.ContentBlock {
 type patternNextPrompter interface {
 	NextPromptFor(patternID string) string
 }
-
-// --- serve-composition seam (D-19 export-by-necessity) ---
-//
-// The serve composition (acpserve.Run) wires the scheduler store + the
-// server's emitter + the scheduler goroutine + the ctx-done session reap —
-// the four operations the 15-05 FinishHooks callback seam crossed with while
-// the runner lived in package main (with LoadCommandRegistry/SetupEngine,
-// which Run also calls between NewRunner and NewServer). They are exported
-// because acpserve cannot compile otherwise (unexported members are
-// unreachable from a foreign package); NOTHING else is exported for it.
-
-// SetSchedule assigns the per-project schedule store (the sched.Open success
-// arm of the serve composition).
-func (r *Runner) SetSchedule(store *sched.ScheduleStore) { r.schedule = store }
-
-// SetEmitter injects the server-driven-turn chunk emitter (WINDOWS #3:
-// strictly between server construction and scheduler start).
-func (r *Runner) SetEmitter(emit func(sessionID string) acp.ChunkEmitter) { r.emitFor = emit }
-
-// StartScheduler launches the due-check goroutine (the serve composition's
-// post-emitter step — see cron_wiring.go).
-func (r *Runner) StartScheduler(ctx context.Context) { r.startScheduler(ctx) }
-
-// CloseAllSessions closes every live session at serve end (the ctx-done
-// subprocess reap).
-func (r *Runner) CloseAllSessions() { r.closeAllSessions() }

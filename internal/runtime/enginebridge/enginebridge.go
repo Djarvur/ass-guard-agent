@@ -134,8 +134,8 @@ type EngineTurnAdapter struct {
 // NewEngineTurnAdapter constructs the adapter over the active session, fed
 // the runner-derived func values from cfg (the construction site stays in
 // package runtime — runOneTurn).
-func NewEngineTurnAdapter(sess *session.Session, cfg BridgeConfig) *EngineTurnAdapter {
-	return &EngineTurnAdapter{sess: sess, mgr: sess.Manager, cfg: cfg}
+func NewEngineTurnAdapter(sess *session.Session, cfg *BridgeConfig) *EngineTurnAdapter {
+	return &EngineTurnAdapter{sess: sess, mgr: sess.Manager, cfg: *cfg}
 }
 
 // Run drives one turn through the Session Core.
@@ -353,7 +353,7 @@ type ACPDispatcher struct {
 
 // NewACPDispatcher constructs the dispatcher from the bridge config (the
 // construction site stays in package runtime — setupEngine).
-func NewACPDispatcher(cfg BridgeConfig) *ACPDispatcher {
+func NewACPDispatcher(cfg *BridgeConfig) *ACPDispatcher {
 	return &ACPDispatcher{
 		hooks:         cfg.Hooks,
 		hookCfg:       cfg.HookCfg,
@@ -478,6 +478,8 @@ func NewHookSessionTurnRunner(sess *session.Session) *HookSessionTurnRunner {
 	return &HookSessionTurnRunner{sess: sess}
 }
 
+// Run drives one hook-context turn through sess.Prompt (content-block
+// conversion only — no expansion, no engine).
 func (h *HookSessionTurnRunner) Run(ctx context.Context, prompt []hookdag.ContentBlock) (string, error) {
 	blocks := make([]session.ContentBlock, len(prompt))
 	for i, b := range prompt {
@@ -501,6 +503,8 @@ func NewHookSessionBoundaryOpener(mgr *session.Manager) *HookSessionBoundaryOpen
 	return &HookSessionBoundaryOpener{mgr: mgr}
 }
 
+// OpenBoundary records the fresh-context boundary on the transcript
+// (HOOK-05).
 func (h *HookSessionBoundaryOpener) OpenBoundary(_ context.Context, cause string) error {
 	if h.mgr == nil {
 		return nil
@@ -516,6 +520,9 @@ type RealCommandRunner struct{}
 // NewRealCommandRunner constructs the hookdag.CommandRunner seam.
 func NewRealCommandRunner() RealCommandRunner { return RealCommandRunner{} }
 
+// Run execs the command and returns stdout, stderr, and the exit code
+// (D-08 exit-code contract).
+//
 //nolint:gocritic // conflicts w/ nonamedreturns
 func (RealCommandRunner) Run(ctx context.Context, command string, args []string) (string, string, int, error) {
 	cmd := exec.CommandContext(ctx, command, args...)

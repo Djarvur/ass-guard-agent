@@ -118,7 +118,9 @@ func SeedACPGuard(workDir string) { seedACPGuard(workDir) }
 // 02-05): each session/prompt drives a session.Session whose Provider.Stream
 // streams chunks to the event bus; the runtime Runner forwards bus chunks to
 // the ACP adapter as session/update notifications.
-func Run(ctx context.Context, in io.Reader, out, stderr io.Writer, opts *Options) error {
+func Run( //nolint:funlen // :320-425
+	ctx context.Context, in io.Reader, out, stderr io.Writer, opts *Options,
+) error {
 	bus := event.NewBus()
 
 	prof, err := profile.NewLoader(opts.ProfilesDir).Load(opts.Profile)
@@ -159,7 +161,7 @@ func Run(ctx context.Context, in io.Reader, out, stderr io.Writer, opts *Options
 
 	startAuditMirror(ctx, bus, opts, stderr)
 
-	runner := runtime.NewRunner(runtime.RunnerConfig{
+	runner := runtime.NewRunner(&runtime.RunnerConfig{
 		Bus:          bus,
 		BodyStore:    bodyStore,
 		Profile:      prof,
@@ -218,7 +220,7 @@ func Run(ctx context.Context, in io.Reader, out, stderr io.Writer, opts *Options
 	go func() {
 		<-ctx.Done()
 
-		runner.CloseAllSessions()
+		runner.CloseAllSessions() //nolint:contextcheck // the reap is ctx-driven by design
 	}()
 
 	return srv.Serve(ctx) //nolint:wrapcheck // direct delegation

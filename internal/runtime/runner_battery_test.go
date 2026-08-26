@@ -240,7 +240,7 @@ func TestInjectionExpansion_AdapterExpandsInjections(t *testing.T) {
 
 	sess := r.sessionFor(context.Background(), "sess-inj")
 
-	adapter := enginebridge.NewEngineTurnAdapter(sess, enginebridge.BridgeConfig{
+	adapter := enginebridge.NewEngineTurnAdapter(sess, &enginebridge.BridgeConfig{
 		Invoke: r.invocationFor, Expand: r.expandUserBlocks,
 	})
 
@@ -951,7 +951,7 @@ func TestEngine_ToolResultContentIgnored(t *testing.T) {
 	}
 
 	// …but LastTurnOutput (the engine's view) does NOT: assistant-role-only.
-	adapter := enginebridge.NewEngineTurnAdapter(sess, enginebridge.BridgeConfig{})
+	adapter := enginebridge.NewEngineTurnAdapter(sess, &enginebridge.BridgeConfig{})
 	out := adapter.LastTurnOutput()
 
 	if strings.Contains(out.Text, "Implementation Complete") || strings.Contains(out.Text, "proposal") {
@@ -1094,7 +1094,7 @@ func TestEngine_CommandProvenanceNotInjectable(t *testing.T) {
 
 	// …but the adapter (which never ran an expansion for this turn) reports NO
 	// StartedBy, and Decide over the SEEDED table stays nothing.
-	adapter := enginebridge.NewEngineTurnAdapter(sess, enginebridge.BridgeConfig{})
+	adapter := enginebridge.NewEngineTurnAdapter(sess, &enginebridge.BridgeConfig{})
 	out := adapter.LastTurnOutput()
 
 	if out.StartedBy != "" {
