@@ -37,7 +37,7 @@ const DefaultAskTimeout = 10 * time.Minute
 
 // stopAsk is the Prompt stop marker for an ask-suspended turn. It is INTERNAL:
 // the ACP-facing stopReason for a suspended turn maps to a completed turn
-// (sessionTurnRunner.Run); the engine maps it to ActionAsk via
+// (Runner.Run); the engine maps it to ActionAsk via
 // TurnOutput.AskSuspended (never ActionContinue — the chained-stage hazard).
 const stopAsk = "ask"
 

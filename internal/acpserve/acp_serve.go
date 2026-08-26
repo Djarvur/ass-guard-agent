@@ -1,23 +1,8 @@
 // Package acpserve owns the ACP serve composition (D-06/D-07): the startup
 // pipeline (bus → profile → provider factory → perm warnings → body store →
-// audit mirror) and the server half (NewServer → schedule wiring → emitter
-// injection → scheduler start → ctx-done reap → Serve).
-//
-// TRANSITIONAL SHAPE (plan 15-05, dissolved by plan 15-06): the final form is
-// a single Run(ctx, in, out, stderr, opts). Until the runner family leaves
-// package main (15-06), the runner literal cannot live here — package main
-// cannot be imported. The pipeline therefore ships as two composition halves
-// around the still-in-cmd runner construction:
-//
-//	prep, err := acpserve.PrepareServe(ctx, stderr, opts)   // pre-runner statements
-//	runner := &sessionTurnRunner{...from prep...}            // stays in cmd (15-06)
-//	runner.loadCommandRegistry() / runner.setupEngine()      // stays in cmd (15-06)
-//	return acpserve.FinishServe(ctx, in, out, stderr, opts.Opts, runner, hooks)
-//
-// FinishServe's runner interactions cross the boundary exclusively through
-// the FinishHooks callback seam (never field access), invoked at the exact
-// statement positions of the pre-carve source. When 15-06 lands
-// runtime.NewRunner, the hooks dissolve and Run reunifies.
+// audit mirror → runner construction + setup) and the server half (NewServer →
+// schedule wiring → emitter injection → scheduler start → ctx-done reap →
+// Serve), as ONE Run function in the pre-carve source's statement order.
 package acpserve
 
 import (
@@ -32,10 +17,12 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/audit"
 	"github.com/Djarvur/ass-guard-agent/internal/event"
 	"github.com/Djarvur/ass-guard-agent/internal/firstrun"
-	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
+	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/providerfactory"
+	"github.com/Djarvur/ass-guard-agent/internal/runtime"
 	"github.com/Djarvur/ass-guard-agent/internal/sched"
+	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 )
 
 // startAuditMirror (09-06, AUD-02/D-02): the per-session mirror, DEFAULT ON;
@@ -126,29 +113,17 @@ func ResolveProfilesDir(profilesDir string, changed bool, workDir string) string
 // source fidelity; the shell re-exports the call).
 func SeedACPGuard(workDir string) { seedACPGuard(workDir) }
 
-// PreparedServe carries the pre-runner pipeline state between PrepareServe and
-// the cmd-side runner construction (transitional 15-05 shape).
-type PreparedServe struct {
-	Opts         Options
-	Bus          *event.Bus
-	Profile      profile.Profile
-	SchedCfg     *modelrouting.Config
-	Factory      *modelrouting.ProviderFactory
-	ProviderName string
-	BodyStore    *audit.BodyStore
-}
-
-// PrepareServe runs the serve pipeline's pre-runner statements in their original
-// order (source :321-360): event bus → profile load → provider factory +
-// scheduling config → loose-perm warnings → body store → audit mirror. The
-// caller constructs the runner from the returned state, then hands control to
-// FinishServe.
-func PrepareServe(ctx context.Context, stderr io.Writer, opts *Options) (*PreparedServe, error) {
+// Run constructs the ACP server and runs it until ctx is cancelled or
+// stdin reaches EOF. It wires the real Session Core as the TurnRunner (Plan
+// 02-05): each session/prompt drives a session.Session whose Provider.Stream
+// streams chunks to the event bus; the runtime Runner forwards bus chunks to
+// the ACP adapter as session/update notifications.
+func Run(ctx context.Context, in io.Reader, out, stderr io.Writer, opts *Options) error {
 	bus := event.NewBus()
 
 	prof, err := profile.NewLoader(opts.ProfilesDir).Load(opts.Profile)
 	if err != nil {
-		return nil, fmt.Errorf("call: %w", err)
+		return fmt.Errorf("call: %w", err)
 	}
 
 	// Phase 7 (D-08): build the provider factory ONCE at startup from the
@@ -164,7 +139,7 @@ func PrepareServe(ctx context.Context, stderr io.Writer, opts *Options) (*Prepar
 	// sessionFor (ONE load, no second config read, identical semantics).
 	schedCfg, factory, providerName, ferr := providerfactory.SetupModelRouting(opts.WorkDir, stderr)
 	if ferr != nil {
-		return nil, fmt.Errorf("setup provider factory: %w", ferr)
+		return fmt.Errorf("setup provider factory: %w", ferr)
 	}
 
 	// SC3 (Phase 7, extended by 260817-11v): warn once at startup when an
@@ -184,44 +159,42 @@ func PrepareServe(ctx context.Context, stderr io.Writer, opts *Options) (*Prepar
 
 	startAuditMirror(ctx, bus, opts, stderr)
 
-	return &PreparedServe{
-		Opts:         *opts,
+	runner := runtime.NewRunner(runtime.RunnerConfig{
 		Bus:          bus,
-		Profile:      prof,
-		SchedCfg:     schedCfg,
-		Factory:      factory,
-		ProviderName: providerName,
 		BodyStore:    bodyStore,
-	}, nil
-}
+		Profile:      prof,
+		WorkDir:      opts.WorkDir,
+		MaxConc:      opts.MaxConcurrent,
+		ConfigAdded:  opts.ConfigAddedBoundaries,
+		AskTimeout:   opts.AskTimeout,
+		ServeCtx:     ctx,
+		SchedCfg:     schedCfg,
+		ProviderName: providerName,
+		Stderr:       stderr,
+		MakeProvider: func(capturer provider.RequestCapturer) provider.Provider {
+			// 09-01: the SINGLE factory seam — the same construction the
+			// tracer uses (the divergent copy is gone; Pitfall 8).
+			// Construction errors keep the existing degradation semantics
+			// (ignore, the no-provider path surfaces at first use).
+			p, _ := factory.BuildWithCapturer(providerName, shaper.New(), capturer)
 
-// FinishHooks carries FinishServe's runner-touching operations as callbacks —
-// the ONLY way the package-boundary half reaches unexported runner members
-// (package main cannot be imported; the closures stay in cmd until 15-06).
-// Each hook fires at the exact statement position of the pre-carve source.
-type FinishHooks struct {
-	// AssignSchedule replaces the source's `runner.schedule = scheduleStore`
-	// statement (the sched.Open success arm only).
-	AssignSchedule func(store *sched.ScheduleStore)
-	// InjectEmitter replaces `runner.emitFor = srv.Emitter` (WINDOWS #3:
-	// strictly between NewServer and startScheduler).
-	InjectEmitter func(emit func(sessionID string) acp.ChunkEmitter)
-	// StartScheduler replaces `runner.startScheduler(ctx)`.
-	StartScheduler func(ctx context.Context)
-	// CloseSessions replaces the ctx-done goroutine's
-	// `runner.closeAllSessions()` reap.
-	CloseSessions func()
-}
+			return p
+		},
+	})
+	// Slash-command registry (08-04): load ONCE at startup, engine-independent
+	// (the engine-off path expands too). A failed load degrades — turns run on
+	// plain text (see LoadCommandRegistry).
+	runner.LoadCommandRegistry()
 
-// FinishServe runs the serve pipeline's post-engine statements in their original
-// order (source :398-425): acp.NewServer → sched.Open (degrade-loudly) →
-// schedule assignment → emitter injection (WINDOWS #3) → scheduler start →
-// ctx-done session reap → Serve. The runner arrives as the acp.TurnRunner
-// interface; its unexported operations arrive as hooks.
-func FinishServe(
-	ctx context.Context, in io.Reader, out, stderr io.Writer,
-	opts *Options, runner acp.TurnRunner, hooks FinishHooks,
-) error {
+	if opts.EngineEnabled {
+		err := runner.SetupEngine()
+		if err != nil {
+			// A bad config degrades to defaults, never a server crash (the
+			// engine is an observer — D-04 graceful degradation at startup).
+			log.Printf("ass-guard: engine setup failed (continuing without engine): %v", err)
+		}
+	}
+
 	srv := acp.NewServer(in, out, stderr, acp.WithTurnRunner(runner))
 
 	// 12-07 (ACP-04/D-02): the per-project schedule store + the scheduler
@@ -233,11 +206,11 @@ func FinishServe(
 		_, _ = fmt.Fprintf(stderr,
 			"ass-guard: schedule store disabled (%v) — cron tools report no-store errors\n", schedErr)
 	} else {
-		hooks.AssignSchedule(scheduleStore)
+		runner.SetSchedule(scheduleStore)
 	}
 
-	hooks.InjectEmitter(srv.Emitter) // WINDOWS #3: server-driven turns reach the client
-	hooks.StartScheduler(ctx)
+	runner.SetEmitter(srv.Emitter) // WINDOWS #3: server-driven turns reach the client
+	runner.StartScheduler(ctx)
 
 	// Phase 5 (Plan 05-02 T4): when the server-level ctx is cancelled
 	// (SIGINT/SIGTERM), close every live session's MCP host so no subprocess
@@ -245,7 +218,7 @@ func FinishServe(
 	go func() {
 		<-ctx.Done()
 
-		hooks.CloseSessions()
+		runner.CloseAllSessions()
 	}()
 
 	return srv.Serve(ctx) //nolint:wrapcheck // direct delegation

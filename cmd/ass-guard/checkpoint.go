@@ -1,28 +1,11 @@
 package main
 
 import (
-	"context"
-
 	"github.com/spf13/cobra"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acpserve"
-	"github.com/Djarvur/ass-guard-agent/internal/checkpoint"
 	"github.com/Djarvur/ass-guard-agent/internal/checkpointcmd"
 )
-
-// checkpointerAdapter adapts *checkpoint.Store to session.Checkpointer: the
-// store's method is Snapshot, the seam speaks SnapshotTurn — the one-method
-// adapter lives at the wiring site so internal/session keeps no dependency
-// on internal/checkpoint (the OnClose func-seam pattern).
-type checkpointerAdapter struct {
-	store *checkpoint.Store
-}
-
-func (c checkpointerAdapter) SnapshotTurn(
-	ctx context.Context, sessionID, turnID string,
-) error {
-	return c.store.Snapshot(ctx, sessionID, turnID) //nolint:wrapcheck // thin delegation
-}
 
 // newCheckpointCmd builds the `ass-guard checkpoint` command group
 // (list | restore) — the EARLY-01 terminal surface over the shadow-git
