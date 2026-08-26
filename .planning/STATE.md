@@ -5,16 +5,16 @@ milestone_name: Claude Code Parity
 current_phase: 15
 current_phase_name: internal/runtime Carve (Step 0)
 status: executing
-stopped_at: Completed 15-03-PLAN.md
-last_updated: "2026-08-26T13:00:01.273Z"
+stopped_at: Completed 15-04-PLAN.md
+last_updated: "2026-08-26T13:07:21.467Z"
 last_activity: 2026-08-26
 last_activity_desc: Phase 15 execution started
-state_head: ab972d8bcc09c39e0511409b1280e268223d41ce
+state_head: f058fa2ad9a0a714a99661998553bd044fc6bd8c
 progress:
   total_phases: 11
   completed_phases: 0
   total_plans: 7
-  completed_plans: 3
+  completed_plans: 4
   percent: 0
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-26)
 ## Current Position
 
 Phase: 15 (internal/runtime Carve (Step 0)) — EXECUTING
-Plan: 4 of 7
+Plan: 5 of 7
 Status: Ready to execute
 Last activity: 2026-08-26 — Phase 15 execution started
 
@@ -47,6 +47,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase 15 P01 | 13 min | 2 tasks | 2 files |
 | Phase 15 P02 | 16 min | 2 tasks | 8 files |
 | Phase 15 P03 | 14 min | 2 tasks | 10 files |
+| Phase 15 P04 | 18 min | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -59,6 +60,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - **[GATE PIPELINE LOCK, Phase 17]:** ONE permission/gate pipeline with documented precedence (hook verdict → permission ask → execute) locks in Phase 17; Phase 21's hooks join it rather than bolting a second gate. Hooks carry deny-only authority from project scope (repo-shipped files never grant allow).
 - [Phase 15]: provider-factory extracted to internal/providerfactory behind 5-wrapper cmd bridge; dead unparam directive dropped (exported funcs skipped by unparam)
 - [Phase 15]: CLI-support split: cobra shells stay in cmd, run-logic verbatim to internal/{checkpointcmd,learningcmd,modelroutingcmd}; tests follow subject (modelrouting cobra-tree tests stay in cmd)
+- [Phase 15]: providerfactory wrapper bridge deleted at 15-04: all five consumers qualified (acp_serve :339/:349/:351/:354 + 4 test files); parity seams stay unexported vars (same-package test injection)
 
 ### Pending Todos
 
@@ -77,6 +79,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-26T13:00:01.248Z
-Stopped at: Completed 15-03-PLAN.md
+Last session: 2026-08-26T13:07:21.440Z
+Stopped at: Completed 15-04-PLAN.md
 Resume file: None
