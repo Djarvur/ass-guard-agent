@@ -16,6 +16,7 @@ import (
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/checkpoint"
+	"github.com/Djarvur/ass-guard-agent/internal/checkpointcmd"
 	"github.com/Djarvur/ass-guard-agent/internal/event"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
@@ -59,9 +60,9 @@ func TestCheckpointListEmptyStore(t *testing.T) {
 
 	var out bytes.Buffer
 
-	err := runCheckpointList(&out, t.TempDir())
+	err := checkpointcmd.RunCheckpointList(&out, t.TempDir())
 	if err != nil {
-		t.Fatalf("runCheckpointList on empty store: %v", err)
+		t.Fatalf("RunCheckpointList on empty store: %v", err)
 	}
 
 	if !strings.Contains(out.String(), "no checkpoints") {
@@ -84,9 +85,9 @@ func TestCheckpointListShowsSnapshots(t *testing.T) {
 
 	var out bytes.Buffer
 
-	err = runCheckpointList(&out, work)
+	err = checkpointcmd.RunCheckpointList(&out, work)
 	if err != nil {
-		t.Fatalf("runCheckpointList: %v", err)
+		t.Fatalf("RunCheckpointList: %v", err)
 	}
 
 	got := out.String()
@@ -118,9 +119,9 @@ func TestCheckpointRestoreRoundtripCLI(t *testing.T) {
 
 	var out bytes.Buffer
 
-	err = runCheckpointRestore(context.Background(), &out, work, "sess-cli-turn-001")
+	err = checkpointcmd.RunCheckpointRestore(context.Background(), &out, work, "sess-cli-turn-001")
 	if err != nil {
-		t.Fatalf("runCheckpointRestore: %v", err)
+		t.Fatalf("RunCheckpointRestore: %v", err)
 	}
 
 	if !strings.Contains(out.String(), "sess-cli-turn-001") ||
@@ -148,7 +149,7 @@ func TestCheckpointRestoreRejectsBadID(t *testing.T) {
 
 	var out bytes.Buffer
 
-	err := runCheckpointRestore(context.Background(), &out, work, "HEAD")
+	err := checkpointcmd.RunCheckpointRestore(context.Background(), &out, work, "HEAD")
 	if err == nil {
 		t.Fatal("restore HEAD must fail (malformed checkpoint id)")
 	}

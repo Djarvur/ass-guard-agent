@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/internal/learning"
+	"github.com/Djarvur/ass-guard-agent/internal/learningcmd"
 )
 
 // TestLearningList_Empty verifies an empty store prints the header + an stderr
@@ -18,9 +19,9 @@ func TestLearningList_Empty(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 
-	err := runLearningList(&stdout, &stderr, path)
+	err := learningcmd.RunLearningList(&stdout, &stderr, path)
 	if err != nil {
-		t.Fatalf("runLearningList: %v", err)
+		t.Fatalf("RunLearningList: %v", err)
 	}
 
 	if !strings.Contains(stdout.String(), "ID") || !strings.Contains(stdout.String(), "SITUATION") {
@@ -53,9 +54,9 @@ func TestLearningList_Populated(t *testing.T) {
 
 	var stdout bytes.Buffer
 
-	err = runLearningList(&stdout, &bytes.Buffer{}, path)
+	err = learningcmd.RunLearningList(&stdout, &bytes.Buffer{}, path)
 	if err != nil {
-		t.Fatalf("runLearningList: %v", err)
+		t.Fatalf("RunLearningList: %v", err)
 	}
 	// Header + 3 rows = 4 newlines.
 	if got := strings.Count(stdout.String(), "\n"); got != 4 {
@@ -86,9 +87,9 @@ func TestLearningRevert_Existing(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 
-	err = runLearningRevert(&stdout, &stderr, path, learning.Slug("alpha"))
+	err = learningcmd.RunLearningRevert(&stdout, &stderr, path, learning.Slug("alpha"))
 	if err != nil {
-		t.Fatalf("runLearningRevert: %v", err)
+		t.Fatalf("RunLearningRevert: %v", err)
 	}
 
 	if !strings.Contains(stdout.String(), "reverted") {
@@ -115,9 +116,9 @@ func TestLearningRevert_Missing(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 
-	err = runLearningRevert(&stdout, &stderr, path, "does-not-exist")
+	err = learningcmd.RunLearningRevert(&stdout, &stderr, path, "does-not-exist")
 	if err != nil {
-		t.Fatalf("runLearningRevert on missing id: %v (want nil — no-op)", err)
+		t.Fatalf("RunLearningRevert on missing id: %v (want nil — no-op)", err)
 	}
 
 	if !strings.Contains(stderr.String(), "nothing reverted") {

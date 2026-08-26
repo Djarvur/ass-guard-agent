@@ -2,18 +2,12 @@ package main
 
 import (
 	"context"
-	"fmt"
-	"io"
-	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Djarvur/ass-guard-agent/internal/checkpoint"
+	"github.com/Djarvur/ass-guard-agent/internal/checkpointcmd"
 )
-
-// checkpointNoEntriesNote is the empty-store list note (exit 0).
-const checkpointNoEntriesNote = "no checkpoints"
 
 // checkpointerAdapter adapts *checkpoint.Store to session.Checkpointer: the
 // store's method is Snapshot, the seam speaks SnapshotTurn — the one-method
@@ -28,12 +22,6 @@ func (c checkpointerAdapter) SnapshotTurn(
 ) error {
 	return c.store.Snapshot(ctx, sessionID, turnID) //nolint:wrapcheck // thin delegation
 }
-
-// checkpointRestoredNote is the restore success line.
-const checkpointRestoredNote = "workspace restored to pre-turn state"
-
-// checkpointIDHint documents the id grammar in structured errors.
-const checkpointIDHint = "want <sessionID>-turn-<NNN>"
 
 // newCheckpointCmd builds the `ass-guard checkpoint` command group
 // (list | restore) — the EARLY-01 terminal surface over the shadow-git
@@ -65,7 +53,7 @@ func newCheckpointCmd() *cobra.Command {
 				return err
 			}
 
-			return runCheckpointList(cmd.ErrOrStderr(), dir)
+			return checkpointcmd.RunCheckpointList(cmd.ErrOrStderr(), dir)
 		},
 	}
 
@@ -80,7 +68,7 @@ func newCheckpointCmd() *cobra.Command {
 				return err
 			}
 
-			return runCheckpointRestore(cmd.Context(), cmd.ErrOrStderr(), dir, args[0])
+			return checkpointcmd.RunCheckpointRestore(cmd.Context(), cmd.ErrOrStderr(), dir, args[0]) //nolint:lll // thin delegation
 		},
 	}
 
@@ -92,55 +80,4 @@ func newCheckpointCmd() *cobra.Command {
 	checkpointCmd.AddCommand(listCmd, restoreCmd)
 
 	return checkpointCmd
-}
-
-// runCheckpointList opens (lazily creating) the store over workDir and
-// prints its entries to stderr, ascending by (sessionID, turn number). An
-// empty or absent store prints "no checkpoints" and succeeds — an
-// uncheckpointed workspace is a normal state, not an error.
-func runCheckpointList(stderr io.Writer, workDir string) error {
-	store, err := checkpoint.Open(workDir)
-	if err != nil {
-		return fmt.Errorf("checkpoint list: %w", err)
-	}
-
-	entries, err := store.List()
-	if err != nil {
-		return fmt.Errorf("checkpoint list: %w", err)
-	}
-
-	if len(entries) == 0 {
-		_, _ = fmt.Fprintln(stderr, checkpointNoEntriesNote)
-
-		return nil
-	}
-
-	for _, e := range entries {
-		id := strings.TrimPrefix(e.Ref, "refs/checkpoints/")
-
-		_, _ = fmt.Fprintf(stderr, "%s\t%s\n", id, e.CommittedAt.Format(time.RFC3339))
-	}
-
-	return nil
-}
-
-// runCheckpointRestore returns the workspace to the named checkpoint's
-// pre-turn state and reports the restored ref on stderr. A malformed or
-// unknown id is a structured error (cobra prints it, exit 1) — never a
-// silent success.
-func runCheckpointRestore(ctx context.Context, stderr io.Writer, workDir, id string) error {
-	//nolint:contextcheck // plan-pinned signature: Store.Open carries no ctx
-	store, err := checkpoint.Open(workDir)
-	if err != nil {
-		return fmt.Errorf("checkpoint restore: %w", err)
-	}
-
-	err = store.Restore(ctx, id)
-	if err != nil {
-		return fmt.Errorf("checkpoint restore %q (%s): %w", id, checkpointIDHint, err)
-	}
-
-	_, _ = fmt.Fprintf(stderr, "restored %s — %s\n", id, checkpointRestoredNote)
-
-	return nil
 }
