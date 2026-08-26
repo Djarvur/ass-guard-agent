@@ -1,4 +1,4 @@
-package main
+package learningcmd //nolint:testpackage // internal package test
 
 import (
 	"bytes"
@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/internal/learning"
-	"github.com/Djarvur/ass-guard-agent/internal/learningcmd"
 )
 
 // TestLearningList_Empty verifies an empty store prints the header + an stderr
@@ -19,7 +18,7 @@ func TestLearningList_Empty(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 
-	err := learningcmd.RunLearningList(&stdout, &stderr, path)
+	err := RunLearningList(&stdout, &stderr, path)
 	if err != nil {
 		t.Fatalf("RunLearningList: %v", err)
 	}
@@ -54,7 +53,7 @@ func TestLearningList_Populated(t *testing.T) {
 
 	var stdout bytes.Buffer
 
-	err = learningcmd.RunLearningList(&stdout, &bytes.Buffer{}, path)
+	err = RunLearningList(&stdout, &bytes.Buffer{}, path)
 	if err != nil {
 		t.Fatalf("RunLearningList: %v", err)
 	}
@@ -87,7 +86,7 @@ func TestLearningRevert_Existing(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 
-	err = learningcmd.RunLearningRevert(&stdout, &stderr, path, learning.Slug("alpha"))
+	err = RunLearningRevert(&stdout, &stderr, path, learning.Slug("alpha"))
 	if err != nil {
 		t.Fatalf("RunLearningRevert: %v", err)
 	}
@@ -116,7 +115,7 @@ func TestLearningRevert_Missing(t *testing.T) {
 
 	var stdout, stderr bytes.Buffer
 
-	err = learningcmd.RunLearningRevert(&stdout, &stderr, path, "does-not-exist")
+	err = RunLearningRevert(&stdout, &stderr, path, "does-not-exist")
 	if err != nil {
 		t.Fatalf("RunLearningRevert on missing id: %v (want nil — no-op)", err)
 	}
