@@ -1,0 +1,179 @@
+# Pre-move test-function ledger — Phase 15 internal/runtime carve baseline
+# Captured: 2026-08-26 at HEAD 9be5386 (9be53869187b43a63581f7d7c03d296d2c372011)
+# Post-carve rule: the sum of '^func Test' declarations across cmd/ass-guard + internal/runtime/... + internal/acpserve/... + the six new CLI packages (checkpointcmd, learningcmd, modelroutingcmd, profilecheckcmd, paritycli, providerfactory) must equal 130.
+
+## cmd/ass-guard/acp_engine_e2e_test.go (8)
+func TestEndToEnd_ZeroContinue
+func TestEndToEnd_StructuralSafety
+func TestEndToEnd_ToolSignalContinue
+func TestEndToEnd_EngineDisabledBackwardCompat
+func TestRunACPServe_NoEngineFlag
+func TestCancelDrainsInjections //nolint:paralleltest // timing-sensitive cancel-drain
+func TestE2E_Criterion1_ZeroContinueAndSafety
+func TestE2E_Criterion4_LearningAskOnce
+
+## cmd/ass-guard/acp_serve_test.go (27)
+func TestACPServeCommandRegistered
+func TestACPServeWiresStdoutClean
+func TestACPServeNoStdoutPollutionFromLogs
+func TestACPServeDoesNotRegressProfileCheck
+func TestExpansion_EngineOffPathExpanded
+func TestExpansion_EngineOnPathExpanded
+func TestInjectionExpansion_AdapterExpandsInjections
+func TestExpansion_UnknownCommandFallsThrough
+func TestExpansion_RegistryLoadFailureDegrades
+func TestExpansion_NoEditorEcho
+func TestProvenance_RecordedOnExpansion
+func TestCommandBoundary_MutatingVsReadOnly
+func TestAssistantRoleOnly_InjectionGuard
+func TestSkill_ClosureRegisteredAndSchemaUntouched //nolint:paralleltest // HOME pin
+func TestSkill_EndToEndRoundTrip //nolint:paralleltest // HOME pin
+func TestSkill_ListingMergedProfileCopyUntouched //nolint:paralleltest // HOME pin
+func TestSkill_OpsxTriggerSeesListing //nolint:paralleltest // HOME pin
+func TestSkill_ZeroSkillDegradation //nolint:paralleltest // HOME pin
+func TestNextPrompt_InjectionExpandsWithProvenance //nolint:paralleltest // HOME pin via helper
+func TestStageVocab_TriggerFromSignal
+func TestEngine_ToolResultContentIgnored
+func TestProvenanceChain_ExploreChainsWithoutTextAnchor //nolint:paralleltest // transcript helper
+func TestEngine_CommandProvenanceNotInjectable
+func TestServeCapturer_PublishesWithTurnID
+func TestServeTranscriptWriter_OnePerSession
+func TestServeAudit_RequestShapedThroughRealSeam //nolint:funlen // end-to-end audit proof
+func TestServeMirror_Override
+
+## cmd/ass-guard/advisory_wiring_test.go (3)
+func TestAdvisoryWiring_QuestionEndingNote //nolint:cyclop,gocyclo,gocognit,funlen,lll,maintidx // server battery
+func TestAdvisoryWiring_DedupeSemantics //nolint:gocognit,cyclop,funlen // D-05 battery
+func TestAdvisoryWiring_NoteWordingElements
+
+## cmd/ass-guard/ask_wiring_test.go (10)
+func TestAskWiring_ReplyRouting //nolint:gocyclo,cyclop,funlen // flat battery
+func TestAskWiring_ClientSurface
+func TestAskWiring_SurfaceMatchesRenderer
+func TestAskWiring_ConfigKnob
+func TestAskWiring_SchemaDisciplineAtWiring
+func TestAskWiring_ChainSurvivesAskTimerResume //nolint:cyclop,funlen // settle poll
+func TestAskWiring_ServerLevelSurface //nolint:cyclop,funlen // comprehensive server scenario
+func TestAskPark_PromptResponsePrecedesResolution //nolint:cyclop,gocyclo,funlen // server scenario
+func TestAskPark_CancelAndCloseDrainParkedChains //nolint:funlen // two-route drain battery
+func TestAskPark_ReplyDuringParkResumesAndQueuesInjection //nolint:gocyclo,cyclop,funlen // ordering
+
+## cmd/ass-guard/background_wiring_test.go (6)
+func TestBackgroundWiring_StopKillsGroup
+func TestBackgroundWiring_DeprecatedShellID
+func TestBackgroundWiring_ReapAll
+func TestBackgroundWiring_CrossSessionIsolation
+func TestBackgroundWiring_CoreCompleteness
+func TestBackgroundWiring_ProfileCatalogParity
+
+## cmd/ass-guard/checkpoint_test.go (6)
+func TestCheckpointListEmptyStore
+func TestCheckpointListShowsSnapshots
+func TestCheckpointRestoreRoundtripCLI
+func TestCheckpointRestoreRejectsBadID
+func TestSessionFor_WiresCheckpointer
+func TestCheckpointLiveRollback_Gated //nolint:paralleltest,funlen,cyclop // live model leg
+
+## cmd/ass-guard/coreexec_wiring_test.go (6)
+func TestCoreExec_BashThroughSession //nolint:gocognit,gocyclo,cyclop,funlen // flat battery
+func TestCoreExec_BashBatchSerializes
+func TestCoreExec_FileTodoMixedBatch //nolint:gocognit,gocyclo,cyclop,funlen // flat battery
+func TestCoreExec_ReadOnlyProjection //nolint:cyclop,funlen // flat battery
+func TestSessionFor_ComposesRuntimeWorkDir
+func TestRun_DoesNotLeakChunkForwarder //nolint:paralleltest // bus is runner-global
+
+## cmd/ass-guard/cron_wiring_test.go (5)
+func TestCronWiring_QueueBehindActiveTurn //nolint:funlen,cyclop // flat queue-semantics battery
+func TestCronWiring_AuditProvenance
+func TestCronWiring_FireOnceCatchUp //nolint:cyclop,funlen // flat restart-scenario battery
+func TestCronWiring_SchedulerGoroutineLifecycle
+func TestCronWiring_ServerDrivenMirror
+
+## cmd/ass-guard/e2e_opsx_matrix_test.go (14)
+func TestOpsxMatrixNew_Gated //nolint:paralleltest // gated, HOME-pinned leg
+func TestOpsxMatrixContinue_Gated //nolint:paralleltest // HOME-pinned leg
+func TestOpsxMatrixFF_Gated //nolint:paralleltest // HOME-pinned leg
+func TestOpsxMatrixVerify_Gated //nolint:paralleltest // HOME leg
+func TestOpsxMatrixBulkArchive_Gated //nolint:paralleltest // two-fixture batch leg
+func TestOpsxMatrixOnboard_Gated //nolint:paralleltest // tutorial leg
+func TestOpsxMatrixNewFixable_Gated //nolint:paralleltest // HOME-pinned leg
+func TestOpsxMatrixContinueFixable_Gated //nolint:paralleltest // HOME-pinned leg
+func TestOpsxMatrixFFFixable_Gated //nolint:paralleltest // HOME-pinned leg
+func TestOpsxMatrixVerifyFixable_Gated //nolint:paralleltest // HOME-pinned leg
+func TestOpsxMatrixBulkArchiveFixable_Gated //nolint:paralleltest // batch leg
+func TestOpsxMatrixOnboardFixable_Gated //nolint:paralleltest // HOME-pinned leg
+func TestOpsxMatrixVerifyChain_Gated //nolint:paralleltest // chain leg
+func TestOpsxMatrixNewChain_Gated //nolint:paralleltest // chain leg
+
+## cmd/ass-guard/e2e_opsx_test.go (2)
+func TestOpsxEndToEnd_Gated //nolint:paralleltest // real scratch + live model
+func TestOpsxFixableRecovery_Gated //nolint:paralleltest,funlen // real scratch + live model
+
+## cmd/ass-guard/evalsuite_bridge_test.go (3)
+func TestEvalSuite_Flagship_Gated //nolint:paralleltest // gated: real scratch + live model
+func TestEvalSuite_Flagship_Deep //nolint:paralleltest // gated deep leg
+func TestEvalSuite_Matrix_Gated //nolint:paralleltest // gated: real scratches + live model
+
+## cmd/ass-guard/integration_test.go (2)
+func TestIntegration_RealStreamingThroughACP //nolint:funlen // comprehensive test scenario
+func TestIntegration_SessionLoadNoOp
+
+## cmd/ass-guard/interactive_wiring_test.go (2)
+func TestInteractiveWiring_FamilyExecutes
+func TestInteractiveWiring_SendMessageEndToEnd
+
+## cmd/ass-guard/learning_cmd_test.go (4)
+func TestLearningList_Empty
+func TestLearningList_Populated
+func TestLearningRevert_Existing
+func TestLearningRevert_Missing
+
+## cmd/ass-guard/mcp_tracer_test.go (5)
+func TestMain(m *testing.M) {
+func TestSessionForMCPProfileCopy //nolint:paralleltest // spawns a subprocess
+func TestSessionForMCPCatalogRegistration //nolint:paralleltest // spawns a subprocess
+func TestTracerMCPEndToEnd //nolint:cyclop,funlen,paralleltest // subprocess e2e tracer
+func TestSessionShutdownWired //nolint:paralleltest // spawns a subprocess
+
+## cmd/ass-guard/modelrouting_test.go (5)
+func TestModelRoutingValidateValid
+func TestModelRoutingValidateInvalid
+func TestModelRoutingResolveJSON
+func TestModelRoutingResolveHumanGoesToStderr
+func TestModelRoutingResolvePeakWindow
+
+## cmd/ass-guard/parity_test.go (5)
+func TestParityDriftWarning_Mismatch //nolint:paralleltest // swaps process-global seams + os.Stderr
+func TestParityDriftWarning_Match //nolint:paralleltest // swaps process-global seams + os.Stderr
+func TestParityDriftWarning_Unresolvable //nolint:paralleltest // swaps process-global seams + os.Stderr
+func TestParityRun_CacheProbeWired //nolint:paralleltest // swaps process-global seams + os.Stderr
+func TestParityRun_CacheProbeDefaultGap //nolint:paralleltest // swaps process-global seams + os.Stderr
+
+## cmd/ass-guard/planmode_wiring_test.go (2)
+func TestPlanModeWiring_EnterFlipsStateAndGateRefuses
+func TestPlanModeWiring_ExitApprovalResumesSameTurn
+
+## cmd/ass-guard/profile_check_test.go (4)
+func TestProfileCheck_NoDrift
+func TestProfileCheck_DriftDetected //nolint:paralleltest // swaps process-global os.Stderr
+func TestProfileCheck_ReportContainsStructuredFooter //nolint:paralleltest // swaps global os.Stderr
+func TestProfileCheck_CaptureProvenanceFooter //nolint:paralleltest // swaps global os.Stderr
+
+## cmd/ass-guard/provider_factory_test.go (8)
+func TestLoadModelRoutingFactory_WarnsUncredentialed
+func TestLoadModelRoutingFactory_ZeroConfigEnv
+func TestLoadModelRoutingFactory_GlobalLayerMerged //nolint:paralleltest // HOME pinned — serial
+func TestLoadModelRoutingFactory_ProjectOverridesGlobal //nolint:paralleltest // HOME pinned — serial
+func TestLoadModelRoutingFactory_LegacyNameNeverRead //nolint:paralleltest // HOME pinned — serial
+func TestStartupWarn_ConfigPermLoose //nolint:paralleltest // HOME pinned — serial
+func TestBackwardCompat_ZAIEnvOnly
+func TestEditorZeroEnv_LiteralInConfig
+
+## cmd/ass-guard/subagent_tier_wiring_test.go (2)
+func TestSessionFor_ResolvesLightTier //nolint:paralleltest // HOME pinned via pinEmptyHome — serial
+func TestSessionFor_LightTierCrossProviderWarns
+
+## cmd/ass-guard/zeroconfig_test.go (1)
+func TestZeroConfigFirstRun
+
+func Test grand total: 130
