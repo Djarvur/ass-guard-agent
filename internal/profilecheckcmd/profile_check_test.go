@@ -1,4 +1,4 @@
-package main
+package profilecheckcmd //nolint:testpackage // internal package test
 
 import (
 	"bytes"
@@ -104,7 +104,7 @@ func TestProfileCheck_NoDrift(t *testing.T) {
 	profilesDir := writeCoverageFixture(t, profileZcode, 3, 103, 12)
 	capture := writeCaptureFixture(t, 3, 103, 12)
 
-	err := runProfileCheck(profileZcode, profilesDir, capture)
+	err := RunProfileCheck(profileZcode, profilesDir, capture)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -124,7 +124,7 @@ func TestProfileCheck_DriftDetected(t *testing.T) { //nolint:paralleltest // swa
 
 	go func() { _, _ = stderr.ReadFrom(r); close(done) }()
 
-	err := runProfileCheck(profileZcode, profilesDir, capture)
+	err := RunProfileCheck(profileZcode, profilesDir, capture)
 
 	_ = w.Close()
 
@@ -159,7 +159,7 @@ func TestProfileCheck_ReportContainsStructuredFooter(t *testing.T) { //nolint:pa
 
 	go func() { _, _ = stderr.ReadFrom(r); close(done) }()
 
-	_ = runProfileCheck(profileZcode, profilesDir, capture)
+	_ = RunProfileCheck(profileZcode, profilesDir, capture)
 
 	_ = w.Close()
 
@@ -208,7 +208,7 @@ func TestProfileCheck_CaptureProvenanceFooter(t *testing.T) { //nolint:parallelt
 
 	go func() { _, _ = stderr.ReadFrom(r); close(done) }()
 
-	_ = runProfileCheck(profileZcode, profilesDir, capture)
+	_ = RunProfileCheck(profileZcode, profilesDir, capture)
 
 	_ = w.Close()
 
