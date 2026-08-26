@@ -28,10 +28,11 @@
     "context_warnings": false
   },
   "intel": {
-    "enabled": false
+    "enabled": true
   },
   "graphify": {
-    "enabled": false
+    "enabled": true,
+    "auto_update": true
   },
   "plan_review": {
     "source_grounding": true

@@ -5,16 +5,16 @@ milestone_name: Claude Code Parity
 current_phase: 15
 current_phase_name: internal/runtime Carve (Step 0)
 status: executing
-stopped_at: Completed 15-01-PLAN.md
-last_updated: "2026-08-26T12:42:10.064Z"
+stopped_at: Completed 15-02-PLAN.md
+last_updated: "2026-08-26T12:51:25.284Z"
 last_activity: 2026-08-26
 last_activity_desc: Phase 15 execution started
-state_head: d4ee9ab621ad0ff73dfcd15a19ad59f23f7a16a2
+state_head: 92ecd400b1306a141a21d0c2aa32cf4cc1f930e0
 progress:
   total_phases: 11
   completed_phases: 0
   total_plans: 7
-  completed_plans: 1
+  completed_plans: 2
   percent: 0
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-26)
 ## Current Position
 
 Phase: 15 (internal/runtime Carve (Step 0)) — EXECUTING
-Plan: 2 of 7
+Plan: 3 of 7
 Status: Ready to execute
 Last activity: 2026-08-26 — Phase 15 execution started
 
@@ -45,6 +45,7 @@ Progress: [░░░░░░░░░░] 0%
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
 | Phase 15 P01 | 13 min | 2 tasks | 2 files |
+| Phase 15 P02 | 16 min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -55,6 +56,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - **[ROADMAP STRUCTURE, 2026-08-26]:** 11 phases derived from research/SUMMARY.md's 10-cluster suggestion plus a small tails phase — carve (15) → wire primitives (16) → interactive asks (17) → sessions (18) → compaction (19) → commands/skills/per-agent-model (20) → content/policy closures (21) → background+sandbox (22) → SEED gaps (23) → tails (24) → kit extraction (25, strictly last). Numbering continues from v1.1's Phase 14. ACP-04 (available_commands_update) maps to Phase 20 with the commands it advertises; ACP-03 + ACP-08 map to Phase 16 as wire primitives.
 - **[MILESTONE SCOPE, operator 2026-08-26]:** Telegram peer deferred to the v1.3 pool (LOWEST priority); steering queue SEEDG-01 is built transport-neutral in Phase 23 as its prerequisite — do not descope to queue-behind silently. dsh profile #2 dropped entirely (mimicry bar abandoned 2026-08-25). Safety-model amendment: permission tier AVAILABLE but NOT default (`permissions.mode` default ungated).
 - **[GATE PIPELINE LOCK, Phase 17]:** ONE permission/gate pipeline with documented precedence (hook verdict → permission ask → execute) locks in Phase 17; Phase 21's hooks join it rather than bolting a second gate. Hooks carry deny-only authority from project scope (repo-shipped files never grant allow).
+- [Phase 15]: provider-factory extracted to internal/providerfactory behind 5-wrapper cmd bridge; dead unparam directive dropped (exported funcs skipped by unparam)
 
 ### Pending Todos
 
@@ -73,6 +75,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-26T12:42:10.040Z
-Stopped at: Completed 15-01-PLAN.md
+Last session: 2026-08-26T12:51:25.260Z
+Stopped at: Completed 15-02-PLAN.md
 Resume file: None
