@@ -175,7 +175,7 @@ func TestBackgroundWiring_CoreCompleteness(t *testing.T) {
 	// closure, proven by its own battery — not reproducible without the
 	// runner's registry).
 	exceptions := map[string]bool{
-		"WebSearch": true, "WebFetch": true, "Agent": true, skillToolName: true,
+		"WebSearch": true, "WebFetch": true, "Agent": true, "Skill": true,
 	}
 
 	var missing []string

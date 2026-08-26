@@ -1,4 +1,4 @@
-package main
+package runtime //nolint:testpackage // internal package test
 
 import (
 	"context"
@@ -23,7 +23,7 @@ import (
 // (the expansion harness) plus a REAL schedule store.
 //
 //nolint:lll // signature carries the harness triple
-func newCronRunner(t *testing.T, dir string, script ...scriptedResp) (*sessionTurnRunner, *scriptedACPProvider, *sched.ScheduleStore) {
+func newCronRunner(t *testing.T, dir string, script ...scriptedResp) (*Runner, *scriptedACPProvider, *sched.ScheduleStore) {
 	t.Helper()
 
 	r, prov := newExpansionRunner(t, true, script...)

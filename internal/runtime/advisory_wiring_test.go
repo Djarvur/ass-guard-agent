@@ -1,4 +1,4 @@
-package main
+package runtime //nolint:testpackage // internal package test
 
 import (
 	"bufio"
@@ -70,7 +70,7 @@ func TestAdvisoryWiring_QuestionEndingNote(t *testing.T) { //nolint:cyclop,gocyc
 
 	writeOpsxCommandFixtures(t, dir)
 
-	runner := &sessionTurnRunner{
+	runner := &Runner{
 		bus:          bus,
 		profile:      fakeProfileACP(),
 		workDir:      dir,
@@ -78,12 +78,12 @@ func TestAdvisoryWiring_QuestionEndingNote(t *testing.T) { //nolint:cyclop,gocyc
 		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return mp },
 	}
 
-	err := runner.setupEngine()
+	err := runner.SetupEngine()
 	if err != nil {
-		t.Fatalf("setupEngine: %v", err)
+		t.Fatalf("SetupEngine: %v", err)
 	}
 
-	runner.loadCommandRegistry()
+	runner.LoadCommandRegistry()
 
 	srvInR, cliW := io.Pipe()
 
@@ -295,7 +295,7 @@ func (c *countingEmitter) AgentMessageChunk(_, text string) error {
 func TestAdvisoryWiring_DedupeSemantics(t *testing.T) { //nolint:gocognit,cyclop,funlen // D-05 battery
 	t.Parallel()
 
-	newRunner := func() (*sessionTurnRunner, *countingEmitter) {
+	newRunner := func() (*Runner, *countingEmitter) {
 		r, _ := newExpansionRunner(t, true,
 			scriptedResp{text: "Done. Which would you like? (1/2)", finish: stopEndTurn},
 			scriptedResp{text: "Done again. Which would you like? (1/2)", finish: stopEndTurn},
@@ -405,7 +405,7 @@ func TestAdvisoryWiring_DedupeSemantics(t *testing.T) { //nolint:gocognit,cyclop
 }
 
 // countAdvisoryDecisions counts advisory-signal engine_decision lines.
-func countAdvisoryDecisions(t *testing.T, r *sessionTurnRunner, sessionID string) int {
+func countAdvisoryDecisions(t *testing.T, r *Runner, sessionID string) int {
 	t.Helper()
 
 	lines, err := r.sessions[sessionID].Manager.ReadAll()

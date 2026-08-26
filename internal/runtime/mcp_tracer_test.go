@@ -1,4 +1,4 @@
-package main
+package runtime //nolint:testpackage // internal package test
 
 import (
 	"context"
@@ -101,10 +101,10 @@ func writeMcpJSON(t *testing.T, dir string) string {
 	return dir
 }
 
-// newTracerRunner builds a sessionTurnRunner wired for the TRACER: a fake
+// newTracerRunner builds a Runner wired for the TRACER: a fake
 // provider that emits the given scripted responses, no engine (so the stub
 // inner executor is used and MCPExecutor wraps it).
-func newTracerRunner(t *testing.T, script []provider.Response, workDir string) *sessionTurnRunner {
+func newTracerRunner(t *testing.T, script []provider.Response, workDir string) *Runner {
 	t.Helper()
 
 	bus := event.NewBus()
@@ -113,7 +113,7 @@ func newTracerRunner(t *testing.T, script []provider.Response, workDir string) *
 
 	writeMcpJSON(t, workDir)
 
-	return &sessionTurnRunner{
+	return &Runner{
 		bus:     bus,
 		profile: prof,
 		workDir: workDir,

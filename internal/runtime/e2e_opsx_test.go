@@ -1,4 +1,4 @@
-package main
+package runtime //nolint:testpackage // internal package test
 
 import (
 	"context"
@@ -108,11 +108,11 @@ func fileExists(path string) bool {
 }
 
 // newOpsxRunner bootstraps a scratch project with the REAL binary and returns
-// a fully wired sessionTurnRunner (real profile + real provider + engine +
+// a fully wired Runner (real profile + real provider + engine +
 // expansion) over it.
 //
 //nolint:gocritic // unnamed result vs nonamedreturns (house) conflict
-func newOpsxRunner(t *testing.T) (*sessionTurnRunner, string) {
+func newOpsxRunner(t *testing.T) (*Runner, string) {
 	t.Helper()
 
 	scratch := t.TempDir()
@@ -122,7 +122,7 @@ func newOpsxRunner(t *testing.T) (*sessionTurnRunner, string) {
 
 // newOpsxRunnerAt bootstraps the runner over an EXISTING scratch dir (the
 // evalsuite bridge drives passes over the harness's fresh scratches).
-func newOpsxRunnerAt(t *testing.T, scratch string) *sessionTurnRunner {
+func newOpsxRunnerAt(t *testing.T, scratch string) *Runner {
 	t.Helper()
 
 	repo := findRepoRoot(t)
@@ -152,7 +152,7 @@ func newOpsxRunnerAt(t *testing.T, scratch string) *sessionTurnRunner {
 		t.Fatalf("load real zcode profile: %v", err)
 	}
 
-	r := &sessionTurnRunner{
+	r := &Runner{
 		bus:     event.NewBus(),
 		profile: prof,
 		workDir: scratch,
@@ -170,12 +170,12 @@ func newOpsxRunnerAt(t *testing.T, scratch string) *sessionTurnRunner {
 		},
 	}
 
-	err = r.setupEngine()
+	err = r.SetupEngine()
 	if err != nil {
-		t.Fatalf("setupEngine: %v", err)
+		t.Fatalf("SetupEngine: %v", err)
 	}
 
-	r.loadCommandRegistry()
+	r.LoadCommandRegistry()
 
 	return r
 }
@@ -204,7 +204,7 @@ func seedScratchCodebase(t *testing.T, scratch string) {
 
 // stageAssistantTexts returns each Prompt turn's final assistant text, in
 // order (one per stage in the scenario).
-func stageAssistantTexts(t *testing.T, r *sessionTurnRunner, sessionID string) []string {
+func stageAssistantTexts(t *testing.T, r *Runner, sessionID string) []string {
 	t.Helper()
 
 	lines, err := r.sessions[sessionID].Manager.ReadAll()
@@ -253,7 +253,7 @@ func captureStageOutputs(t *testing.T, texts []string, suffix string) {
 
 // runStageTyped sends one opsx command as a typed prompt and waits for the
 // turn to finish.
-func runStageTyped(t *testing.T, r *sessionTurnRunner, sessionID, text string) {
+func runStageTyped(t *testing.T, r *Runner, sessionID, text string) {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), e2eOverallWait)
@@ -274,10 +274,10 @@ func runStageTyped(t *testing.T, r *sessionTurnRunner, sessionID, text string) {
 	}
 }
 
-// opsxRunnerSeam adapts sessionTurnRunner to evalharness.RunnerSeam (the
+// opsxRunnerSeam adapts Runner to evalharness.RunnerSeam (the
 // extraction's seam — the suite's passes drive the SAME machinery).
 type opsxRunnerSeam struct {
-	r *sessionTurnRunner
+	r *Runner
 }
 
 func (o opsxRunnerSeam) RunPrompt(ctx context.Context, sessionID, text string) error {
@@ -357,7 +357,7 @@ func TestOpsxEndToEnd_Gated(t *testing.T) { //nolint:paralleltest // real scratc
 }
 
 // mustLines reads the session's transcript (the assertion lens).
-func mustLines(t *testing.T, r *sessionTurnRunner, sessionID string) []session.Line {
+func mustLines(t *testing.T, r *Runner, sessionID string) []session.Line {
 	t.Helper()
 
 	lines, err := r.sessions[sessionID].Manager.ReadAll()

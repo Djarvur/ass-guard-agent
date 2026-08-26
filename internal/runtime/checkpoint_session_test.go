@@ -1,4 +1,4 @@
-package main
+package runtime //nolint:testpackage // internal package test
 
 import (
 	"context"
@@ -221,7 +221,7 @@ func TestCheckpointLiveRollback_Gated(t *testing.T) { //nolint:paralleltest,funl
 
 	bus := event.NewBus()
 
-	r := &sessionTurnRunner{
+	r := &Runner{
 		bus:     bus,
 		profile: prof,
 		workDir: scratch,
@@ -233,12 +233,12 @@ func TestCheckpointLiveRollback_Gated(t *testing.T) { //nolint:paralleltest,funl
 		},
 	}
 
-	serr := r.setupEngine()
+	serr := r.SetupEngine()
 	if serr != nil {
-		t.Fatalf("setupEngine: %v", serr)
+		t.Fatalf("SetupEngine: %v", serr)
 	}
 
-	r.loadCommandRegistry()
+	r.LoadCommandRegistry()
 
 	const sessionID = "sess-ckpt-live"
 

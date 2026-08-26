@@ -1,4 +1,4 @@
-package main
+package runtime //nolint:testpackage // internal package test
 
 import (
 	"bytes"
@@ -87,7 +87,7 @@ tiers:
 // fixture config, then loads the scheduling config through the REAL serve seam
 // (setupModelRouting — load + heavy-tier provider resolution) and arms the
 // runner exactly as runACPServe does, with an injected stderr buffer.
-func tierWiringRunner(t *testing.T, fixture string) (*sessionTurnRunner, *bytes.Buffer) {
+func tierWiringRunner(t *testing.T, fixture string) (*Runner, *bytes.Buffer) {
 	t.Helper()
 
 	r, _ := newExpansionRunner(t, false, scriptedResp{text: "ok", finish: stopEndTurn})

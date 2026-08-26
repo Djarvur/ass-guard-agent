@@ -1,4 +1,4 @@
-package main
+package runtime //nolint:testpackage // internal package test
 
 import (
 	"bufio"
@@ -52,7 +52,7 @@ const wiringAskInput = `{"questions":[{"question":"Which cache library should we
 // newAskWiringRunner builds an ENGINE-ON runner (the real sessionFor path)
 // scripted for a suspending first turn + a closing resumed turn, with the
 // ask timeout set (the reply must win the race in the routing tests).
-func newAskWiringRunner(t *testing.T, timeout time.Duration) (*sessionTurnRunner, *scriptedACPProvider) {
+func newAskWiringRunner(t *testing.T, timeout time.Duration) (*Runner, *scriptedACPProvider) {
 	t.Helper()
 
 	r, prov := newExpansionRunner(t, true,
@@ -255,27 +255,12 @@ func TestAskWiring_SurfaceMatchesRenderer(t *testing.T) {
 }
 
 // TestAskWiring_ConfigKnob (12-01 T2 Test 3, D-01): the ask timeout is
-// configurable at the serve layer — the cobra flag exists with the 10m default
-// and block-forever documentation, and the value threads runner → sessionFor →
-// broker (7m propagates as 7m; 0 propagates as block-forever).
+// configurable at the serve layer (the cobra flag's 10m default + block-forever
+// documentation are pinned by TestACPServeCommandRegistered in cmd), and the
+// value threads runner → sessionFor → broker (7m propagates as 7m; 0
+// propagates as block-forever).
 func TestAskWiring_ConfigKnob(t *testing.T) {
 	t.Parallel()
-
-	// The cobra flag: exists, default 10m, documents 0 = block forever.
-	cmd := newACPServeCmd()
-
-	flag := cmd.Flags().Lookup("ask-timeout")
-	if flag == nil {
-		t.Fatal("acp serve has no --ask-timeout flag")
-	}
-
-	if flag.DefValue != (10 * time.Minute).String() {
-		t.Errorf("--ask-timeout default = %q; want the D-01 10m default", flag.DefValue)
-	}
-
-	if !strings.Contains(flag.Usage, "block forever") {
-		t.Errorf("--ask-timeout usage = %q; want the 0 = block forever (interactive mode) documentation", flag.Usage)
-	}
 
 	// Threading: the runner's askTimeout reaches the sessionFor-built broker.
 	for _, tc := range []struct {
@@ -584,7 +569,7 @@ func (p *askToolCallProvider) ToolResultMessage(string, json.RawMessage) (json.R
 func TestAskWiring_ServerLevelSurface(t *testing.T) { //nolint:cyclop,funlen // comprehensive server scenario
 	t.Parallel()
 
-	// The live path: the REAL engine wiring (setupEngine — the RealExecutor
+	// The live path: the REAL engine wiring (SetupEngine — the RealExecutor
 	// executes AskUserQuestion; the engine-off driveACP stub never suspends).
 	bus := event.NewBus()
 
@@ -594,7 +579,7 @@ func TestAskWiring_ServerLevelSurface(t *testing.T) { //nolint:cyclop,funlen // 
 
 	writeOpsxCommandFixtures(t, dir)
 
-	runner := &sessionTurnRunner{
+	runner := &Runner{
 		bus:          bus,
 		profile:      fakeProfileACP(),
 		workDir:      dir,
@@ -602,12 +587,12 @@ func TestAskWiring_ServerLevelSurface(t *testing.T) { //nolint:cyclop,funlen // 
 		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return mp },
 	}
 
-	err := runner.setupEngine()
+	err := runner.SetupEngine()
 	if err != nil {
-		t.Fatalf("setupEngine: %v", err)
+		t.Fatalf("SetupEngine: %v", err)
 	}
 
-	runner.loadCommandRegistry()
+	runner.LoadCommandRegistry()
 
 	srvInR, cliW := io.Pipe()
 
@@ -750,7 +735,7 @@ func TestAskPark_PromptResponsePrecedesResolution(t *testing.T) { //nolint:cyclo
 
 	writeOpsxCommandFixtures(t, dir)
 
-	runner := &sessionTurnRunner{
+	runner := &Runner{
 		bus:          bus,
 		profile:      fakeProfileACP(),
 		workDir:      dir,
@@ -759,12 +744,12 @@ func TestAskPark_PromptResponsePrecedesResolution(t *testing.T) { //nolint:cyclo
 		askTimeout:   time.Hour, // the timer never fires in test time — the response must NOT wait for it
 	}
 
-	err := runner.setupEngine()
+	err := runner.SetupEngine()
 	if err != nil {
-		t.Fatalf("setupEngine: %v", err)
+		t.Fatalf("SetupEngine: %v", err)
 	}
 
-	runner.loadCommandRegistry()
+	runner.LoadCommandRegistry()
 
 	srvInR, cliW := io.Pipe()
 
@@ -997,7 +982,7 @@ func TestAskPark_CancelAndCloseDrainParkedChains(t *testing.T) { //nolint:funlen
 }
 
 // countEngineDecisions counts the session's engine_decision transcript lines.
-func countEngineDecisions(t *testing.T, r *sessionTurnRunner, sessionID string) int {
+func countEngineDecisions(t *testing.T, r *Runner, sessionID string) int {
 	t.Helper()
 
 	lines, err := r.sessions[sessionID].Manager.ReadAll()

@@ -1,4 +1,4 @@
-package main
+package runtime //nolint:testpackage // internal package test
 
 import (
 	"bufio"
@@ -107,7 +107,7 @@ func (p *planModeScriptProvider) ToolResultMessage(string, json.RawMessage) (jso
 
 // newPlanModeWiringRunner builds an ENGINE-ON runner scripted with the
 // plan-mode scenario and a long D-01 timeout (the approval reply must win).
-func newPlanModeWiringRunner(t *testing.T) (*sessionTurnRunner, *planModeScriptProvider) {
+func newPlanModeWiringRunner(t *testing.T) (*Runner, *planModeScriptProvider) {
 	t.Helper()
 
 	bus := event.NewBus()
@@ -118,7 +118,7 @@ func newPlanModeWiringRunner(t *testing.T) (*sessionTurnRunner, *planModeScriptP
 
 	writeOpsxCommandFixtures(t, dir)
 
-	r := &sessionTurnRunner{
+	r := &Runner{
 		bus:        bus,
 		profile:    fakeProfileACP(),
 		workDir:    dir,
@@ -129,12 +129,12 @@ func newPlanModeWiringRunner(t *testing.T) (*sessionTurnRunner, *planModeScriptP
 		},
 	}
 
-	err := r.setupEngine()
+	err := r.SetupEngine()
 	if err != nil {
-		t.Fatalf("setupEngine: %v", err)
+		t.Fatalf("SetupEngine: %v", err)
 	}
 
-	r.loadCommandRegistry()
+	r.LoadCommandRegistry()
 
 	return r, prov
 }
@@ -143,7 +143,7 @@ func newPlanModeWiringRunner(t *testing.T) (*sessionTurnRunner, *planModeScriptP
 // handshake, returning the reader/writer pair and the session id.
 func startPlanModeServer(
 	t *testing.T,
-) (*sessionTurnRunner, *planModeScriptProvider, io.WriteCloser, io.ReadCloser, string) {
+) (*Runner, *planModeScriptProvider, io.WriteCloser, io.ReadCloser, string) {
 	t.Helper()
 
 	r, prov := newPlanModeWiringRunner(t)

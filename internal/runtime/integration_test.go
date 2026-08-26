@@ -1,4 +1,4 @@
-package main
+package runtime //nolint:testpackage // internal package test
 
 import (
 	"bufio"
@@ -68,7 +68,7 @@ func driveACP(t *testing.T, mp provider.Provider) ( //nolint:nonamedreturns // n
 
 	bus := event.NewBus()
 	prof := profile.Profile{Name: "test", System: []profile.TextBlock{{Type: blockText, Text: "test agent"}}}
-	runner := &sessionTurnRunner{
+	runner := &Runner{
 		bus:          bus,
 		profile:      prof,
 		workDir:      t.TempDir(),

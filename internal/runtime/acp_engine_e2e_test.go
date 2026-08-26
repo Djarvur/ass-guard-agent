@@ -1,4 +1,4 @@
-package main
+package runtime //nolint:testpackage // internal package test
 
 import (
 	"context"
@@ -129,10 +129,10 @@ func fakeProfileACP() profile.Profile {
 	}
 }
 
-// newEngineRunner builds a sessionTurnRunner with the engine wired + a scripted
+// newEngineRunner builds a Runner with the engine wired + a scripted
 // provider, against a temp work dir. Returns the runner + the provider + the
 // transcript dir.
-func newEngineRunner(t *testing.T, script ...scriptedResp) (*sessionTurnRunner, *scriptedACPProvider, string) {
+func newEngineRunner(t *testing.T, script ...scriptedResp) (*Runner, *scriptedACPProvider, string) {
 	t.Helper()
 
 	bus := event.NewBus()
@@ -141,7 +141,7 @@ func newEngineRunner(t *testing.T, script ...scriptedResp) (*sessionTurnRunner, 
 
 	dir := t.TempDir()
 
-	r := &sessionTurnRunner{
+	r := &Runner{
 		bus:          bus,
 		profile:      fakeProfileACP(),
 		workDir:      dir,
@@ -149,9 +149,9 @@ func newEngineRunner(t *testing.T, script ...scriptedResp) (*sessionTurnRunner, 
 		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return prov },
 	}
 
-	err := r.setupEngine()
+	err := r.SetupEngine()
 	if err != nil {
-		t.Fatalf("setupEngine: %v", err)
+		t.Fatalf("SetupEngine: %v", err)
 	}
 
 	return r, prov, dir
@@ -259,7 +259,7 @@ func TestEndToEnd_ToolSignalContinue(t *testing.T) {
 	}
 }
 
-// TestEndToEnd_EngineDisabledBackwardCompat verifies a runner WITHOUT setupEngine
+// TestEndToEnd_EngineDisabledBackwardCompat verifies a runner WITHOUT SetupEngine
 // (engineEnabled=false) falls back to the unwrapped sess.Prompt path — the
 // Phase-2 behavior unchanged (Plan 04-05 backward-compat).
 func TestEndToEnd_EngineDisabledBackwardCompat(t *testing.T) {
@@ -269,13 +269,13 @@ func TestEndToEnd_EngineDisabledBackwardCompat(t *testing.T) {
 	prov := &scriptedACPProvider{}
 	prov.queue(scriptedResp{text: "unmatched text that the engine WOULD have ignored anyway", finish: stopEndTurn})
 
-	r := &sessionTurnRunner{
+	r := &Runner{
 		bus:          bus,
 		profile:      fakeProfileACP(),
 		workDir:      t.TempDir(),
 		maxConc:      4,
 		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return prov },
-		// engineEnabled stays false — no setupEngine call.
+		// engineEnabled stays false — no SetupEngine call.
 	}
 
 	stop, err := r.Run(context.Background(), "sess-noeng", &noopEmitter{},
@@ -320,13 +320,13 @@ func TestRunACPServe_NoEngineFlag(t *testing.T) {
 		t.Fatalf("SetupProviderFactory: %v", ferr)
 	}
 
-	r := &sessionTurnRunner{bus: bus, makeProvider: func(_ provider.RequestCapturer) provider.Provider {
+	r := &Runner{bus: bus, makeProvider: func(_ provider.RequestCapturer) provider.Provider {
 		p, _ := factory.Build(providerName, shaper.New())
 
 		return p
 	}}
 	if r.engineEnabled {
-		t.Error("zero-value sessionTurnRunner should have engine disabled")
+		t.Error("zero-value Runner should have engine disabled")
 	}
 }
 
