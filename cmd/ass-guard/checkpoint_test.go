@@ -19,6 +19,7 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/event"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
+	"github.com/Djarvur/ass-guard-agent/internal/providerfactory"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 )
@@ -315,7 +316,7 @@ func TestCheckpointLiveRollback_Gated(t *testing.T) { //nolint:paralleltest,funl
 
 	repo := findRepoRoot(t)
 
-	factory, providerName, ferr := setupProviderFactory(repo, os.Stderr)
+	factory, providerName, ferr := providerfactory.SetupProviderFactory(repo, os.Stderr)
 	if ferr != nil {
 		t.Fatalf("BLOCKER: provider factory: %v", ferr)
 	}

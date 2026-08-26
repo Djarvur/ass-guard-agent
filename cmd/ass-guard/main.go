@@ -22,6 +22,7 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/event"
 	"github.com/Djarvur/ass-guard-agent/internal/loop"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
+	"github.com/Djarvur/ass-guard-agent/internal/providerfactory"
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 	"github.com/Djarvur/ass-guard-agent/internal/version"
 )
@@ -126,7 +127,7 @@ func runTrace(ctx context.Context, prompt, name, dir, auditLogPath string) error
 	// RequestCapturer for both shapes with factory-RESOLVED base_url+key. The
 	// pre-09-01 hand-rebuilt construction path is gone (Pitfall 8). An
 	// uncredentialed build keeps the lazy noCredentialProvider wrapper (D-07).
-	factory, providerName, ferr := setupProviderFactory("", os.Stderr)
+	factory, providerName, ferr := providerfactory.SetupProviderFactory("", os.Stderr)
 	if ferr != nil {
 		return fmt.Errorf("setup provider factory: %w", ferr)
 	}

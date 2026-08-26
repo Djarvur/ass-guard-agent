@@ -1,4 +1,4 @@
-package main
+package providerfactory //nolint:testpackage // internal package test
 
 import (
 	"bytes"
@@ -124,7 +124,7 @@ func writeTestModelRouting(t *testing.T, workDir, content string) string {
 }
 
 // pinEmptyHome pins HOME to an empty temp dir so the global config layer
-// contributes nothing — every loadModelRoutingFactory-reaching test stays
+// contributes nothing — every LoadModelRoutingFactory-reaching test stays
 // hermetic against the operator's real home (t.Setenv ⇒ these tests are not
 // parallel).
 func pinEmptyHome(t *testing.T) string {
@@ -167,7 +167,7 @@ func TestLoadModelRoutingFactory_WarnsUncredentialed(t *testing.T) {
 
 	var stderr bytes.Buffer
 
-	cfg, factory, err := loadModelRoutingFactory(workDir, "", &stderr)
+	cfg, factory, err := LoadModelRoutingFactory(workDir, "", &stderr)
 	require.NoError(t, err, "an uncredentialed provider must not refuse the factory (D-07)")
 	require.NotNil(t, cfg)
 	require.NotNil(t, factory)
@@ -186,7 +186,7 @@ func TestLoadModelRoutingFactory_ZeroConfigEnv(t *testing.T) {
 
 	var stderr bytes.Buffer
 
-	cfg, factory, err := loadModelRoutingFactory(t.TempDir(), "", &stderr)
+	cfg, factory, err := LoadModelRoutingFactory(t.TempDir(), "", &stderr)
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 	require.NotNil(t, factory)
@@ -215,7 +215,7 @@ func TestLoadModelRoutingFactory_GlobalLayerMerged(t *testing.T) { //nolint:para
 
 	var stderr bytes.Buffer
 
-	cfg, factory, err := loadModelRoutingFactory(t.TempDir(), "", &stderr)
+	cfg, factory, err := LoadModelRoutingFactory(t.TempDir(), "", &stderr)
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 	require.NotNil(t, factory)
@@ -244,7 +244,7 @@ func TestLoadModelRoutingFactory_ProjectOverridesGlobal(t *testing.T) { //nolint
 
 	var stderr bytes.Buffer
 
-	cfg, factory, err := loadModelRoutingFactory(workDir, "", &stderr)
+	cfg, factory, err := LoadModelRoutingFactory(workDir, "", &stderr)
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 	require.NotNil(t, factory)
@@ -275,7 +275,7 @@ func TestLoadModelRoutingFactory_LegacyNameNeverRead(t *testing.T) { //nolint:pa
 
 	var stderr bytes.Buffer
 
-	cfg, factory, err := loadModelRoutingFactory(workDir, "", &stderr)
+	cfg, factory, err := LoadModelRoutingFactory(workDir, "", &stderr)
 	require.NoError(t, err)
 	require.NotNil(t, factory)
 
@@ -328,7 +328,7 @@ func TestStartupWarn_ConfigPermLoose(t *testing.T) { //nolint:paralleltest // HO
 
 			var stderr bytes.Buffer
 
-			warnLooseConfigPerm(path, &stderr)
+			WarnLooseConfigPerm(path, &stderr)
 
 			if tc.wantWarn {
 				require.Contains(t, stderr.String(), "0600",
@@ -349,7 +349,7 @@ func TestBackwardCompat_ZAIEnvOnly(t *testing.T) {
 
 	var stderr bytes.Buffer
 
-	cfg, factory, err := loadModelRoutingFactory(t.TempDir(), "", &stderr)
+	cfg, factory, err := LoadModelRoutingFactory(t.TempDir(), "", &stderr)
 	require.NoError(t, err)
 
 	prov, ok := cfg.Providers["anthropic"]
@@ -381,7 +381,7 @@ func TestEditorZeroEnv_LiteralInConfig(t *testing.T) {
 
 	var stderr bytes.Buffer
 
-	cfg, factory, err := loadModelRoutingFactory(workDir, "", &stderr)
+	cfg, factory, err := LoadModelRoutingFactory(workDir, "", &stderr)
 	require.NoError(t, err)
 	require.NotNil(t, factory)
 
