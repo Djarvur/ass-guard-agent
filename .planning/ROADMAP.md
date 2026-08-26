@@ -67,7 +67,16 @@ Operator decisions at close (2026-08-23…25): D-09 REVERSED (session resume = m
   1. `internal/runtime` houses `sessionTurnRunner` verbatim with engine/MCP adapters and cron wiring; `cmd/ass-guard` composes it — zero behavior change, proven by the standing `mise ci` gate (vet + lint + CGO_ENABLED=0 build + `go test -race`) green.
   2. Every existing serve-path behavior is observably identical after the move: a live Zed-spawned session streams tokens, executes tools, replays on restart exactly as at v1.1 close (the operator's daily-use surface unchanged).
   3. No feature code moved or rewritten during the carve — the diff is a pure relocation (verbatim bodies, import fixes only), reviewable as such.
-**Plans**: TBD
+**Plans:** 7 plans
+
+Plans:
+- [ ] 15-01-PLAN.md — Wave-0 instruments: pre-move test ledger (130) + CLI-contract golden test
+- [ ] 15-02-PLAN.md — Extract internal/providerfactory (shared-infra; consumed by acpserve/tracer/parity)
+- [ ] 15-03-PLAN.md — Extract checkpointcmd/learningcmd/modelroutingcmd CLI logic packages
+- [ ] 15-04-PLAN.md — Extract profilecheckcmd + paritycli; retire providerfactory wrapper bridge
+- [ ] 15-05-PLAN.md — Extract internal/acpserve (Options + serve pipeline, two sanctioned de-cobra edits)
+- [ ] 15-06-PLAN.md — THE CARVE: runtime + enginebridge + cron family as one compile closure; acpserve.Run unified
+- [ ] 15-07-PLAN.md — Equivalence proof battery + color-moved review record + live-Zed operator checkpoint
 
 ### Phase 16: ACP Wire Foundation
 **Goal**: The three primitives every interactive phase depends on exist and are proven under concurrency: outbound id'd JSON-RPC requests with a pending-response registry, one ordered inline TurnEmitter owning all client frames with explicit backpressure, and the extended transcript line types (raw-thinking passthrough as `json.RawMessage`, `local_command`, compaction marker) that later phases' schemas lock here.
