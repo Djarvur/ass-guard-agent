@@ -14,8 +14,10 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/evalharness"
 	"github.com/Djarvur/ass-guard-agent/internal/event"
+
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
+	"github.com/Djarvur/ass-guard-agent/internal/providerfactory"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 )
@@ -125,7 +127,7 @@ func newOpsxRunnerAt(t *testing.T, scratch string) *sessionTurnRunner {
 
 	repo := findRepoRoot(t)
 
-	factory, providerName, err := setupProviderFactory(repo, os.Stderr)
+	factory, providerName, err := providerfactory.SetupProviderFactory(repo, os.Stderr)
 	if err != nil {
 		t.Fatalf("BLOCKER: provider factory (real model creds): %v", err)
 	}

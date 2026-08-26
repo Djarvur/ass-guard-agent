@@ -13,7 +13,9 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/event"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
+
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
+	"github.com/Djarvur/ass-guard-agent/internal/providerfactory"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 )
@@ -313,9 +315,9 @@ func TestRunACPServe_NoEngineFlag(t *testing.T) {
 	// Phase 7 (D-08): even the fixture delegates provider construction to the
 	// scheduler factory — no bare ctor remains in cmd/ass-guard. The provider
 	// is never invoked by this structural check (the runner stays nil-engine).
-	factory, providerName, ferr := setupProviderFactory(t.TempDir(), io.Discard)
+	factory, providerName, ferr := providerfactory.SetupProviderFactory(t.TempDir(), io.Discard)
 	if ferr != nil {
-		t.Fatalf("setupProviderFactory: %v", ferr)
+		t.Fatalf("SetupProviderFactory: %v", ferr)
 	}
 
 	r := &sessionTurnRunner{bus: bus, makeProvider: func(_ provider.RequestCapturer) provider.Provider {

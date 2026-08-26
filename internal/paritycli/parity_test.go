@@ -1,4 +1,4 @@
-package main
+package paritycli //nolint:testpackage // internal package test
 
 import (
 	"bytes"
@@ -187,13 +187,13 @@ func TestParityDriftWarning_Mismatch(t *testing.T) { //nolint:paralleltest // sw
 	fakeZcodeVersion(t, "0.17.0", nil)
 
 	mismatchOut, mismatchErr := captureParityStderr(t, func() error {
-		return runParity(suite, "", profileZcode, profilesDir, "", "", "")
+		return RunParity(suite, "", profileZcode, profilesDir, "", "", "")
 	})
 
 	fakeZcodeVersion(t, pinVersion, nil)
 
 	matchOut, matchErr := captureParityStderr(t, func() error {
-		return runParity(suite, "", profileZcode, profilesDir, "", "", "")
+		return RunParity(suite, "", profileZcode, profilesDir, "", "", "")
 	})
 	if mismatchErr != nil || matchErr != nil {
 		t.Fatalf("drift warning must never affect the run: mismatch err=%v, match err=%v",
@@ -229,7 +229,7 @@ func TestParityDriftWarning_Match(t *testing.T) { //nolint:paralleltest // swaps
 	fakeZcodeVersion(t, pinVersion, nil)
 
 	out, err := captureParityStderr(t, func() error {
-		return runParity(suite, "", profileZcode, profilesDir, "", "", "")
+		return RunParity(suite, "", profileZcode, profilesDir, "", "", "")
 	})
 	if err != nil {
 		t.Fatalf("run errored: %v", err)
@@ -256,7 +256,7 @@ func TestParityDriftWarning_Unresolvable(t *testing.T) { //nolint:paralleltest /
 	fakeZcodeVersion(t, "", os.ErrNotExist)
 
 	out, err := captureParityStderr(t, func() error {
-		return runParity(suite, "", profileZcode, profilesDir, "", "", "")
+		return RunParity(suite, "", profileZcode, profilesDir, "", "", "")
 	})
 	if err != nil {
 		t.Fatalf("unresolvable version must never fail the run: %v", err)
@@ -277,7 +277,7 @@ func TestParityDriftWarning_Unresolvable(t *testing.T) { //nolint:paralleltest /
 	}
 
 	out2, err2 := captureParityStderr(t, func() error {
-		return runParity(suite, "", profileZcode, profilesDir, "", "", "")
+		return RunParity(suite, "", profileZcode, profilesDir, "", "", "")
 	})
 	if err2 != nil {
 		t.Fatalf("missing manifest must never fail the run: %v", err2)
@@ -317,7 +317,7 @@ func TestParityRun_CacheProbeWired(t *testing.T) { //nolint:paralleltest // swap
 	fakeCacheComposition(t, good)
 
 	passOut, passErr := captureParityStderr(t, func() error {
-		return runParity(suite, "", profileZcode, profilesDir, "", "", pinPath)
+		return RunParity(suite, "", profileZcode, profilesDir, "", "", pinPath)
 	})
 	if passErr != nil {
 		t.Fatalf("pass-state run errored: %v", passErr)
@@ -341,7 +341,7 @@ func TestParityRun_CacheProbeWired(t *testing.T) { //nolint:paralleltest // swap
 	fakeCacheComposition(t, violation)
 
 	failOut, failErr := captureParityStderr(t, func() error {
-		return runParity(suite, "", profileZcode, profilesDir, "", "", pinPath)
+		return RunParity(suite, "", profileZcode, profilesDir, "", "", pinPath)
 	})
 	if failErr != nil {
 		t.Fatalf("probe verdict must never fail the run: %v", failErr)
@@ -369,7 +369,7 @@ func TestParityRun_CacheProbeDefaultGap(t *testing.T) { //nolint:paralleltest //
 	pinPath := corpusPinFixturePath()
 
 	defaultOut, defaultErr := captureParityStderr(t, func() error {
-		return runParity(suite, "", profileZcode, profilesDir, "", "", pinPath)
+		return RunParity(suite, "", profileZcode, profilesDir, "", "", pinPath)
 	})
 	if defaultErr != nil {
 		t.Fatalf("default-composition run errored: %v", defaultErr)

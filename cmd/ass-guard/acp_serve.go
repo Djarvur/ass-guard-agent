@@ -36,6 +36,7 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/openspec"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
+	"github.com/Djarvur/ass-guard-agent/internal/providerfactory"
 	"github.com/Djarvur/ass-guard-agent/internal/redact"
 	"github.com/Djarvur/ass-guard-agent/internal/sched"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
@@ -336,7 +337,7 @@ func runACPServe(ctx context.Context, in io.Reader, out, stderr io.Writer, opts 
 	// cfg-retaining twin — the serve path keeps the loaded scheduling config
 	// + the resolved session provider for the light-tier subagent routing at
 	// sessionFor (ONE load, no second config read, identical semantics).
-	schedCfg, factory, providerName, ferr := setupModelRouting(opts.WorkDir, stderr)
+	schedCfg, factory, providerName, ferr := providerfactory.SetupModelRouting(opts.WorkDir, stderr)
 	if ferr != nil {
 		return fmt.Errorf("setup provider factory: %w", ferr)
 	}
@@ -345,12 +346,12 @@ func runACPServe(ctx context.Context, in io.Reader, out, stderr io.Writer, opts 
 	// operator config.yaml (global or project layer) is looser than 0600 —
 	// either may carry a literal api_key (credential-on-disk hygiene,
 	// T-07-05). Advisory only; the seed itself stays 0644 (D-06).
-	globalPath, gerr := globalConfigPath()
+	globalPath, gerr := providerfactory.GlobalConfigPath()
 	if gerr == nil {
-		warnLooseConfigPerm(globalPath, stderr)
+		providerfactory.WarnLooseConfigPerm(globalPath, stderr)
 	}
 
-	warnLooseConfigPerm(projectConfigPath(opts.WorkDir), stderr)
+	providerfactory.WarnLooseConfigPerm(providerfactory.ProjectConfigPath(opts.WorkDir), stderr)
 
 	// 09-05: one capped body store per serve process (construction is lazy —
 	// Put reports errors; a broken store degrades audit, never the serve).

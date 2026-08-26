@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/Djarvur/ass-guard-agent/internal/providerfactory"
 )
 
 // --- 14-05 (EARLY-05): sessionFor light-tier resolution (Tests 3-4) ---
@@ -91,7 +93,7 @@ func tierWiringRunner(t *testing.T, fixture string) (*sessionTurnRunner, *bytes.
 	r, _ := newExpansionRunner(t, false, scriptedResp{text: "ok", finish: stopEndTurn})
 	writeTestModelRouting(t, r.workDir, fixture)
 
-	cfg, _, providerName, err := setupModelRouting(r.workDir, io.Discard)
+	cfg, _, providerName, err := providerfactory.SetupModelRouting(r.workDir, io.Discard)
 	require.NoError(t, err, "fixture config must load")
 
 	r.schedCfg = cfg
