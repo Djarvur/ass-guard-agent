@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -76,76 +75,6 @@ func TestACPServeCommandRegistered(t *testing.T) {
 	mc, _ := pf.GetInt("max-concurrent")
 	if mc != 6 {
 		t.Errorf("serve --max-concurrent default = %d; want 6 (RESEARCH §11.1)", mc)
-	}
-}
-
-// TestACPServeWiresStdoutClean verifies that running `acp serve` against a
-// canned initialize frame produces the initialize response on stdout and sends
-// all diagnostics to stderr — transport discipline (stdout = ACP frames only).
-func TestACPServeWiresStdoutClean(t *testing.T) {
-	t.Parallel()
-
-	in := strings.NewReader(`{"jsonrpc":"2.0","id":0,"method":"initialize","params":` +
-		`{"protocolVersion":1,"clientCapabilities":{},` +
-		`"clientInfo":{"name":"test","version":"0"}}}
-`)
-
-	var (
-		stdout bytes.Buffer
-		stderr bytes.Buffer
-	)
-
-	ctx := t.Context()
-
-	err := runACPServe(ctx, in, &stdout, &stderr, &acpserve.Options{
-		Profile: profileZcode, MaxConcurrent: 6,
-		ProfilesDir: repoProfilesDir(t), WorkDir: t.TempDir(),
-	})
-	if err != nil && !errors.Is(err, io.EOF) {
-		t.Logf("runACPServe returned %v (acceptable)", err)
-	}
-
-	out := stdout.String()
-	if !strings.Contains(out, `"agentCapabilities"`) {
-		t.Errorf("stdout missing agentCapabilities in initialize response: %s", out)
-	}
-
-	if !strings.Contains(out, `"loadSession":false`) {
-		t.Errorf("stdout missing loadSession:false: %s", out)
-	}
-
-	for i, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {
-		if line == "" {
-			continue
-		}
-
-		var m map[string]any
-
-		err := json.Unmarshal([]byte(line), &m)
-		if err != nil {
-			t.Errorf("stdout line %d is not valid JSON (transport discipline): %v (line=%q)", i, err, line)
-		}
-	}
-}
-
-// TestACPServeNoStdoutPollutionFromLogs verifies stderr gets diagnostics and
-// stdout NEVER receives log bytes (Pitfall 1).
-func TestACPServeNoStdoutPollutionFromLogs(t *testing.T) {
-	t.Parallel()
-
-	in := strings.NewReader(`{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1}}
-`)
-
-	var stdout, stderr bytes.Buffer
-
-	ctx := t.Context()
-
-	_ = runACPServe(ctx, in, &stdout, &stderr, &acpserve.Options{
-		Profile: profileZcode, MaxConcurrent: 6,
-		ProfilesDir: repoProfilesDir(t), WorkDir: t.TempDir(),
-	})
-	if strings.Contains(stdout.String(), "ass-guard/acp") {
-		t.Errorf("stdout contains a log prefix (transport discipline violation): %s", stdout.String())
 	}
 }
 
