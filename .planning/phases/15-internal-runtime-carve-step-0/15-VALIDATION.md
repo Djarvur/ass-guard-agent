@@ -3,9 +3,9 @@ phase: 15
 slug: internal-runtime-carve-step-0
 # status lifecycle: draft (seeded by plan-phase) → validated (set by validate-phase §6)
 # audit-milestone §5.5 distinguishes NOT-VALIDATED (draft) from PARTIAL (validated + nyquist_compliant: false) (#2117)
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: validated
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-08-26
 ---
 
@@ -42,9 +42,9 @@ RUNT-01's proof is *equivalence*: the existing suite passes unchanged from new h
 
 | Req ID | Behavior | Test Type | Automated Command | File Exists? |
 |--------|----------|-----------|-------------------|-------------|
-| RUNT-01 | All 130 existing test functions still pass, relocated | regression (existing suite) | `mise ci` | ✅ (baseline: 130 `^func Test` in cmd today — ledger captured pre-move) |
-| RUNT-01 | Relocated tests execute in their new packages | structural | `go test ./internal/runtime/... ./internal/acpserve/... -count=1 -v \| grep -c '^=== RUN'` compared to ledger | ❌ Wave 0 ledger artifact |
-| RUNT-01 | CLI contract unchanged (commands + flags byte-identical) | contract smoke | golden-list test asserting root/acp/checkpoint/learning/model-routing/profile/parity command+flag sets | ❌ Wave 0 recommended addition (~80 lines; protects success criterion #2 mechanically) |
+| RUNT-01 | All 130 existing test functions still pass, relocated | regression (existing suite) | `mise ci` | ✅ COVERED — mise ci exit 0; repo 829 / carve-scope 134 = 131-listed + 3 goldens (phase-review.md Leg 2) |
+| RUNT-01 | Relocated tests execute in their new packages | structural | ledger comparison | ✅ COVERED — test-ledger.txt committed; scope sum matches exactly; exactly one TestMain in internal/runtime |
+| RUNT-01 | CLI contract unchanged (commands + flags byte-identical) | contract smoke | golden-list test | ✅ COVERED — cmd/ass-guard/cli_contract_test.go (15-01, 3 goldens, green) |
 | RUNT-01 | Binary handshake still clean (stdout = ACP frames only) | e2e smoke (exists) | `go test ./cmd/ass-guard/ -run TestZeroConfigFirstRun -count=1` (builds binary, spawns `acp serve`, no keys needed) | ✅ zeroconfig_test.go |
 | RUNT-01 | Diff is pure relocation | review aid (manual) | `git diff --color-moved=plain master` + moved-line ratio in PR description | manual-only — justified: reviewer judgment is the criterion |
 | RUNT-01 | Live Zed session identical (criterion #2) | manual-only | operator's daily-use session | manual-only — justified: requires editor + live credentials; automated coverage above (handshake smoke + full race suite) bounds the risk |
@@ -53,9 +53,9 @@ RUNT-01's proof is *equivalence*: the existing suite passes unchanged from new h
 
 ## Wave 0 Gaps
 
-- [ ] Test-count ledger (pre-move): `grep -h "^func Test" cmd/ass-guard/*_test.go \| wc -l` (=130 today) recorded in the plan; post-move sum across cmd + new packages must equal it.
-- [ ] CLI-contract golden test (recommended above) — the only suggested *new* test; everything else reuses the standing suite.
-- [ ] Framework install: none needed.
+- [x] Test-count ledger (pre-move): committed as test-ledger.txt (15-01); post-move scope sum 134 = 131 listed + 3 goldens — exact.
+- [x] CLI-contract golden test: cmd/ass-guard/cli_contract_test.go committed (15-01) — the phase's only new tests.
+- [x] Framework install: none needed (confirmed).
 
 ---
 
@@ -93,4 +93,16 @@ Each PLAN.md carries a `<threat_model>` block. For this phase the threat model i
 
 ---
 
-*Phase 15 validation strategy — seeded from RESEARCH.md §Validation Architecture, 2026-08-26*
+## Validation Audit 2026-08-26
+
+| Metric | Count |
+|--------|-------|
+| Gaps found | 0 |
+| Resolved | 0 (both Wave-0 items were closed in-plan by 15-01) |
+| Escalated | 0 |
+
+Manual-only (strategy-sanctioned): the live-Zed session check — disposition
+PENDING-OPERATOR-CONFIRMATION in 15-07-SUMMARY.md, tracked in the WINDOWS
+ledger.
+
+*Phase 15 validation strategy — seeded from RESEARCH.md §Validation Architecture, 2026-08-26; validated at phase close*
