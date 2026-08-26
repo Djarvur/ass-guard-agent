@@ -5,11 +5,11 @@ milestone_name: Claude Code Parity
 current_phase: 15
 current_phase_name: internal/runtime Carve (Step 0)
 status: executing
-stopped_at: Completed 15-05-PLAN.md
-last_updated: "2026-08-26T13:16:39.255Z"
+stopped_at: Phase 16 context gathered
+last_updated: "2026-08-26T13:42:22.256Z"
 last_activity: 2026-08-26
 last_activity_desc: Phase 15 execution started
-state_head: 64b378928d67d81f48f9f8f1e743b62cc567118f
+state_head: 11a563a6fc54b95185df30d3a651ae8e72f01bcd
 progress:
   total_phases: 11
   completed_phases: 0
@@ -81,6 +81,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-26T13:16:39.215Z
-Stopped at: Completed 15-05-PLAN.md
-Resume file: None
+Last session: 2026-08-26T13:42:22.200Z
+Stopped at: Phase 16 context gathered
+Resume file: .planning/phases/16-acp-wire-foundation/16-CONTEXT.md
