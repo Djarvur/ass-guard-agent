@@ -70,7 +70,7 @@ Operator decisions at close (2026-08-23…25): D-09 REVERSED (session resume = m
   2. Every existing serve-path behavior is observably identical after the move: a live Zed-spawned session streams tokens, executes tools, replays on restart exactly as at v1.1 close (the operator's daily-use surface unchanged).
   3. No feature code moved or rewritten during the carve — the diff is a pure relocation (verbatim bodies, import fixes only), reviewable as such.
 
-**Plans:** 2/7 plans executed
+**Plans:** 3/7 plans executed
 
 Plans:
 **Wave 1**
@@ -83,7 +83,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 15-03-PLAN.md — Extract checkpointcmd/learningcmd/modelroutingcmd CLI logic packages
+- [x] 15-03-PLAN.md — Extract checkpointcmd/learningcmd/modelroutingcmd CLI logic packages
 - [ ] 15-04-PLAN.md — Extract profilecheckcmd + paritycli; retire providerfactory wrapper bridge
 
 **Wave 4** *(blocked on Wave 3 completion)*
@@ -263,7 +263,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 15. internal/runtime Carve | v1.2 | 2/7 | In Progress|  |
+| 15. internal/runtime Carve | v1.2 | 3/7 | In Progress|  |
 | 16. ACP Wire Foundation | v1.2 | 0/? | Not started | - |
 | 17. Permissions + Elicitation | v1.2 | 0/? | Not started | - |
 | 18. Session Family | v1.2 | 0/? | Not started | - |

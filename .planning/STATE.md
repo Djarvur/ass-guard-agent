@@ -5,16 +5,16 @@ milestone_name: Claude Code Parity
 current_phase: 15
 current_phase_name: internal/runtime Carve (Step 0)
 status: executing
-stopped_at: Completed 15-02-PLAN.md
-last_updated: "2026-08-26T12:51:25.284Z"
+stopped_at: Completed 15-03-PLAN.md
+last_updated: "2026-08-26T13:00:01.273Z"
 last_activity: 2026-08-26
 last_activity_desc: Phase 15 execution started
-state_head: 92ecd400b1306a141a21d0c2aa32cf4cc1f930e0
+state_head: ab972d8bcc09c39e0511409b1280e268223d41ce
 progress:
   total_phases: 11
   completed_phases: 0
   total_plans: 7
-  completed_plans: 2
+  completed_plans: 3
   percent: 0
 ---
 
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-26)
 ## Current Position
 
 Phase: 15 (internal/runtime Carve (Step 0)) — EXECUTING
-Plan: 3 of 7
+Plan: 4 of 7
 Status: Ready to execute
 Last activity: 2026-08-26 — Phase 15 execution started
 
@@ -46,6 +46,7 @@ Progress: [░░░░░░░░░░] 0%
 |------|----------|-------|-------|
 | Phase 15 P01 | 13 min | 2 tasks | 2 files |
 | Phase 15 P02 | 16 min | 2 tasks | 8 files |
+| Phase 15 P03 | 14 min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -57,6 +58,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - **[MILESTONE SCOPE, operator 2026-08-26]:** Telegram peer deferred to the v1.3 pool (LOWEST priority); steering queue SEEDG-01 is built transport-neutral in Phase 23 as its prerequisite — do not descope to queue-behind silently. dsh profile #2 dropped entirely (mimicry bar abandoned 2026-08-25). Safety-model amendment: permission tier AVAILABLE but NOT default (`permissions.mode` default ungated).
 - **[GATE PIPELINE LOCK, Phase 17]:** ONE permission/gate pipeline with documented precedence (hook verdict → permission ask → execute) locks in Phase 17; Phase 21's hooks join it rather than bolting a second gate. Hooks carry deny-only authority from project scope (repo-shipped files never grant allow).
 - [Phase 15]: provider-factory extracted to internal/providerfactory behind 5-wrapper cmd bridge; dead unparam directive dropped (exported funcs skipped by unparam)
+- [Phase 15]: CLI-support split: cobra shells stay in cmd, run-logic verbatim to internal/{checkpointcmd,learningcmd,modelroutingcmd}; tests follow subject (modelrouting cobra-tree tests stay in cmd)
 
 ### Pending Todos
 
@@ -75,6 +77,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-26T12:51:25.260Z
-Stopped at: Completed 15-02-PLAN.md
+Last session: 2026-08-26T13:00:01.248Z
+Stopped at: Completed 15-03-PLAN.md
 Resume file: None
