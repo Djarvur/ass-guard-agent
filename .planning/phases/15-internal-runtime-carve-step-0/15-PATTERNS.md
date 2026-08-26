@@ -18,7 +18,7 @@ Roles use Go-flavored values: `composition-root` (build wiring, own process life
 |------------------|------|-----------|-----------------------------------|---------------|
 | `internal/runtime/*.go` (Runner core) | service | event-driven (bus subs) + request-response (Run) | `cmd/ass-guard/acp_serve.go:441-544` (struct), methods per table below | exact |
 | `internal/runtime/enginebridge/*.go` (7 adapters + engine setup) | adapter | transform (engine↔session seams) | `acp_serve.go:81-98, :549-612, :1716-2115`; shape per RESEARCH.md Pattern 2 | exact (source) / no-shape-analog (bridge struct) |
-| `internal/runtime/cron/*.go` (scheduler family) | service | polling + event-driven forwarder | `cmd/ass-guard/cron_wiring.go:1-258` (whole file); mechanism per RESEARCH.md Pattern 3 | exact (source) / no-shape-analog (embedded owner) |
+| `internal/runtime/cron_wiring.go` (scheduler family — SUPERSEDED destination: original runtime/cron row amended per D-13) | service | polling + event-driven forwarder | `cmd/ass-guard/cron_wiring.go:1-258` (whole file); mechanism per RESEARCH.md Pattern 3 | exact (source) / no-shape-analog (embedded owner) |
 | `internal/acpserve/*.go` | composition-root | streaming (stdio frames) | `acp_serve.go:47-135, :194-311, :313-425`; serveOptions→`Options` per D-07 | exact |
 | `internal/<checkpoint-cli>/*.go` | cli-logic | batch (list/restore) | `checkpoint.go:16-36, :97-146` (cobra def `:38-95` stays in cmd) | exact |
 | `internal/<learning-cli>/*.go` | cli-logic | batch | `learning_cmd.go:53-134` (cobra def `:13-51` stays) | exact |
@@ -62,7 +62,7 @@ Roles use Go-flavored values: `composition-root` (build wiring, own process life
 | `stubCatalogExec` / `stubExecResult` | 81-98 / 71 | **enginebridge** (D-12) | used by sessionFor `:1359` (engine-off path) — construction stays in core |
 | `checkpointerAdapter` | `checkpoint.go:22-30` | **runtime core** (D-17 — beside its sessionFor use site) | |
 | `redactorAdapter` | 123-135 | runtime core per RESEARCH OQ2 recommendation (sole consumer is sessionFor; D-07's letter would strand it behind an import cycle) | |
-| cron: `defaultSchedTick`, `sessionTurnMu` `:34`, `clientTurnActive` `:43`, `markClientTurn` `:53`, `currentSessionID` `:62`, `startScheduler` `:73`, `fireDueAutomations` `:105`, `runAutomationTurn` `:132`, `runCatchUpOnce` `:209`, `startSessionForwarder` `:229` | `cron_wiring.go` full file | **runtime/cron** (D-13/D-15) via the OQ1 mechanism — 4 of 9 are called from core (`Run`, `runOneTurn`, `sessionFor`) | |
+| cron: `defaultSchedTick`, `sessionTurnMu` `:34`, `clientTurnActive` `:43`, `markClientTurn` `:53`, `currentSessionID` `:62`, `startScheduler` `:73`, `fireDueAutomations` `:105`, `runAutomationTurn` `:132`, `runCatchUpOnce` `:209`, `startSessionForwarder` `:229` | `cron_wiring.go` full file | **runtime** — `internal/runtime/cron_wiring.go` (supersedes the original runtime/cron destination per AMENDED D-13/D-15) via the OQ1 mechanism — 4 of 9 are called from core (`Run`, `runOneTurn`, `sessionFor`) | |
 
 ---
 
@@ -201,6 +201,8 @@ r.eng.Dispatcher = &acpDispatcher{
 ---
 
 ### `internal/runtime/cron` (service, polling + forwarding)
+
+> **SUPERSEDED (AMENDED D-13/D-15, operator sign-off 2026-08-26):** no `internal/runtime/cron` sub-package is created in Phase 15 — `cron_wiring.go` relocates byte-verbatim to `internal/runtime/cron_wiring.go` (package runtime), its nine methods staying beside their receiver; the interface-based cron seam is deferred to Phase 25 as design work. The patterns below describe the code itself, which moves unchanged.
 
 **Verbatim analog:** `cron_wiring.go:1-258` in its entirety (9 methods + `defaultSchedTick` `:26`).
 **No in-repo shape analog exists** for the embedded-state-owner mechanism — RESEARCH.md "Pattern 3" is authoritative; the planner locks the mechanism (OQ1) before writing tasks.
