@@ -476,19 +476,24 @@ func (r *Registry) Call(ctx context.Context, method string, params json.RawMessa
 | A7 | D-08's "wire-level scope parameter" has NO ACP-native field (verified absent from SessionConfigOption) — implemented as id-namespace (e.g. `model` vs `_global/model`) or `_meta`-carried scope; planner picks | ACP-08 / D-08 | Either is extension-legal (`_`-prefix reserved for implementation-specific use); choice affects editor UI grouping |
 | A8 | Inbound `$/cancel_request` from client (cancelling ITS requests) needs only fast no-op/ack handling this phase — our outbound-request cancellation by the client is Phase 17 territory | Pattern 2/3 | If Zed sends it for long-running inbound requests (e.g. a future slow session/prompt), behavior degrades to natural completion — acceptable |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **ChunkEmitter interface growth vs KIT-02 minimal pair**
+All three open questions were resolved at plan time; the resolutions are pinned in 16-01-PLAN.md and inlined below.
+
+1. **ChunkEmitter interface growth vs KIT-02 minimal pair** — (RESOLVED in 16-01 Task 1)
    - What we know: 25-CONTEXT D-13/D-14 want Emitter/Requester as kit-neutral session-side interfaces with an acp adapter translating; today runtime holds `emitFor func(sessionID string) acp.ChunkEmitter` (runtime.go:182) — runtime already speaks the acp interface.
    - What's unclear: whether Phase 16 should extend `acp.ChunkEmitter` in place (fast, acp-coupled) or introduce a neutral event interface in runtime with translation at acpserve.
    - Recommendation: extend `acp.ChunkEmitter` now (Phase 16 ships acp-side; 15-D-20's "no ACP words in runtime API" is about naming, and the existing seam already crosses the boundary); Phase 25's KIT-02 does the neutral-pair redesign with the emitter as prior art. Keeps this phase's diff reviewable.
-2. **Where the turn-end flush barrier lives** (Pitfall 4)
+   - Resolution: do NOT widen `acp.ChunkEmitter` in place. A new `ActivityEmitter` interface in internal/acp/emitter.go embeds ChunkEmitter and adds ToolCall/ToolCallUpdate/PlanUpdate/ThoughtChunk; the existing interface keeps declaring exactly AgentMessageChunk so test fakes across the repo keep compiling, and runtime forwarders type-assert emit to ActivityEmitter. The acp-side-now guidance holds — the growth is additive-via-embedding, not in-place mutation; Phase 25's KIT-02 still owns the neutral-pair redesign.
+2. **Where the turn-end flush barrier lives** (Pitfall 4) — (RESOLVED in 16-01 Task 2)
    - What we know: the cancel contract requires updates-before-response; the prompt handler owns the response write.
    - What's unclear: flush-in-emitFor-wrap vs route-response-through-emitter.
    - Recommendation: planner decides; route-response-through-emitter is the stronger invariant but touches handleSessionPrompt's return path.
-3. **Session-scoped vs serve-scoped emitter ownership for background emitters** (engine firings before any session/prompt — WINDOWS #3's server-driven turns)
+   - Resolution: barrier at the handler. handleSessionPrompt calls the emitter barrier after turnRunner.Run returns and before the handler returns; responses keep using writeResult directly, which stays legal because only notification-vs-response order at turn end is spec-constrained — the barrier's enqueue/written counter pair orders the response after all queued turn frames with at most one in-flight frame preceding it.
+3. **Session-scoped vs serve-scoped emitter ownership for background emitters** (engine firings before any session/prompt — WINDOWS #3's server-driven turns) — (RESOLVED in 16-01 Task 1)
    - What we know: srv.Emitter(sessionID) exists for exactly this; class (fg/bg) must be selectable per handle.
    - Recommendation: two constructors (`Emitter` foreground, `BackgroundEmitter`) or a class parameter — planner picks; test both classes in the stress.
+   - Resolution: both handle classes over ONE TurnEmitter — Server.Emitter(sessionID) returns the foreground-class handle; a background-class constructor routes to the bg lane (class selected per handle; each handle's methods enqueue into its own lane). Both classes are exercised in the -race stress per the recommendation.
 
 ## Environment Availability
 
