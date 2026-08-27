@@ -111,14 +111,14 @@ Plans:
   4. Initialize/new/load/resume responses carry the richer capability set (loadSession, sessionCapabilities, configOptions advertisement shape), verified against the ACP schema in a real Zed handshake.
   5. Transcript lines for raw thinking (`json.RawMessage` passthrough), local_command, and the compaction marker type exist append-only with redaction excluded by construction for thinking bytes.
 
-**Plans**: 2/6 plans executed
+**Plans**: 3/6 plans executed
 
 Plans:
 **Wave 1**
 
 - [x] 16-01-PLAN.md — Tracer: ordered TurnEmitter + tool_call/plan streaming through the carved seam (ACP-03 spine, D-01..D-04)
 - [x] 16-02-PLAN.md — Transcript additive kinds: raw_thinking (unredacted), local_command, compaction marker (D-20..D-23)
-- [ ] 16-04-PLAN.md — Config layer writer: atomic persist-then-apply, session_tier key (D-07 writer half, D-08 groundwork)
+- [x] 16-04-PLAN.md — Config layer writer: atomic persist-then-apply, session_tier key (D-07 writer half, D-08 groundwork)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -332,7 +332,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 15. internal/runtime Carve | v1.2 | 7/7 | Complete    | 2026-08-27 |
-| 16. ACP Wire Foundation | v1.2 | 2/6 | In Progress|  |
+| 16. ACP Wire Foundation | v1.2 | 3/6 | In Progress|  |
 | 17. Permissions + Elicitation | v1.2 | 0/? | Not started | - |
 | 18. Session Family | v1.2 | 0/? | Not started | - |
 | 19. Compaction + cache_control | v1.2 | 0/5 | Not started | - |

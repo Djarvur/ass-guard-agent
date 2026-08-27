@@ -4,13 +4,13 @@ milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 16
 current_phase_name: ACP Wire Foundation
-current_plan: 3
+current_plan: 4
 status: executing
-stopped_at: Completed 16-02-PLAN.md
-last_updated: "2026-08-27T15:12:12.107Z"
+stopped_at: Completed 16-04-PLAN.md
+last_updated: "2026-08-27T15:31:49.988Z"
 last_activity: 2026-08-27
 last_activity_desc: 16-01 executed — ordered TurnEmitter landed and proven
-state_head: 7b891c47435fb03034dd28a9f08af628c8be9a7a
+state_head: 516a03dc6906218ad8fc2952bf168882b8e02b97
 progress:
   total_phases: 11
   completed_phases: 1
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-08-27)
 ## Current Position
 
 Phase: 16 (ACP Wire Foundation) — EXECUTING
-Current Plan: 3
+Current Plan: 4
 Total Plans in Phase: 6
 Status: Ready to execute
 Last activity: 2026-08-27 — 16-01 executed (ordered TurnEmitter, 3 tasks, 5 commits)
@@ -55,6 +55,7 @@ Progress: [████████░░░░░░░░░░░] 8/29 plans
 | Phase 15 P06 | 75 min | 3 tasks | 20 files |
 | Phase 15 P07 | 20 min | 2 tasks | 2 files |
 | Phase 16 P02 | 16 min | 2 tasks | 3 files |
+| Phase 16 P04 | 13 min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -79,6 +80,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 16]: 16-02 raw_thinking reuses Line Content+Model (payload json.RawMessage verbatim + provider attribution); compaction pointers opaque PreRef/PostRef strings until Phase 19 types them (D-20 weak schema)
 - [Phase 16]: 16-02 appendLineUnredacted is a deliberate near-copy of appendLine minus the redact block — no shared helper (Pitfall 5); sole caller AppendRawThinking, grep-verified (T-16-04 type-scoped exemption)
 - [Phase 16]: 16-02 local-command args verbatim string + ordered SourceChain + free-string Expansion (vocabularies owned by Phase 20); compaction boundary ids via local uuidV4 crypto/rand replication
+- [Phase 16]: 16-04 modelrouting.DeepMerge exported (was unexported deepMerge) — the config writer reuses Load's overlay semantics verbatim so a written layer is inverse-compatible with the loader that reads it back; no forked merge — Round-trip fidelity is the D-07 write-half contract; duplicating the merge rules would drift silently
+- [Phase 16]: 16-04 WriteLayerOption atomic sibling-temp+rename at hard 0600 (dirs 0750 max), no fsync — parity with the session append path convention; renameFunc unexported seam proves the crash-between-marshal-and-rename window — Typed LayerReadError/LayerWriteError give 16-05 distinct JSON-RPC error classes; every failure leaves the target byte-identical with no temp leftovers (T-16-10/11)
+- [Phase 16]: 16-04 session_tier is parse/default/round-trip only — Validate does NOT cross-reference it; tier consumption and D-09 typed rejection land in 16-05's apply seam — Keeps the config package ACP-free and value whitelisting at the wire where the menu ids live (T-16-12)
 
 ### Pending Todos
 
@@ -98,6 +102,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-27T15:12:02.355Z
-Stopped at: Completed 16-02-PLAN.md
+Last session: 2026-08-27T15:31:23.705Z
+Stopped at: Completed 16-04-PLAN.md
 Resume file: None
