@@ -145,7 +145,25 @@ Plans:
   4. Default remains ungated (safety-model amendment "available, not default"): with default config, zero new dialogs appear versus v1.1 behavior; mode flips via editor configOptions take effect on the running session.
   5. The gate pipeline precedence (hook verdict → permission ask → execute) is implemented at ONE chokepoint and documented, with permissions.yaml persisted choices surviving restarts.
 
-**Plans**: TBD
+**Plans**: 5 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 17-01-PLAN.md — internal/perm: CC-parity rule grammar + permissions.yaml store (D-01..D-03, both directions, 0600 atomic)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 17-02-PLAN.md — TRACER: the ONE gate chokepoint + permission ask end-to-end + live permissions.mode flip (criterion 1+4, D-04..D-07)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 17-03-PLAN.md — Ask queue semantics + turn-death drain on all teardown paths (criterion 2, D-11..D-13)
+- [ ] 17-04-PLAN.md — Elicitation surfaces: D-08 mapping, whole-family conversion, D-10 re-validation, plain-text fallback (ACP-02, D-08..D-10)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 17-05-PLAN.md — Chokepoint documentation + Zed-simulator E2E + live-Zed operator checkpoint (criterion 5, criteria 1+3 manual legs)
 
 ### Phase 18: Session Family
 
