@@ -173,7 +173,22 @@ Plans:
   3. On a provider overflow error ("prompt too long"), recovery retries once post-compaction instead of failing the turn.
   4. Every outgoing request carries cache_control {"type":"ephemeral"} on each system block — visible in the request log — and the existing cache-discipline probe in `ass-guard parity` flips green on placement.
 
-**Plans**: TBD
+**Plans**: 5 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 19-01-PLAN.md — Tracer: cache_control chain end-to-end — profile flag → shaper emission → probe flip, WINDOWS #5 closed (PAR-02, D-12)
+- [ ] 19-02-PLAN.md — Provider overflow truth: non-2xx error-chunk surfacing + IsOverflow predicate (PAR-01 foundation, Pitfall 1)
+- [ ] 19-03-PLAN.md — Marker summary payload + Projector durable reset-point class + budget-fill pair-safe tail cut (PAR-01 semantics)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 19-04-PLAN.md — Compaction engine: threshold check, blocking same-pipeline summarizer, loop-head wiring, retry-once, CompactNow (PAR-01 assembly)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 19-05-PLAN.md — Config keys + configOptions menu live-apply: compaction.threshold_pct / compaction.enabled (D-03)
 
 ### Phase 20: Built-in Commands + Skills + Per-Agent Model
 
@@ -286,7 +301,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 | 16. ACP Wire Foundation | v1.2 | 0/? | Not started | - |
 | 17. Permissions + Elicitation | v1.2 | 0/? | Not started | - |
 | 18. Session Family | v1.2 | 0/? | Not started | - |
-| 19. Compaction + cache_control | v1.2 | 0/? | Not started | - |
+| 19. Compaction + cache_control | v1.2 | 0/5 | Not started | - |
 | 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 0/? | Not started | - |
 | 21. Context & Policy Parity Closures | v1.2 | 0/? | Not started | - |
 | 22. Background Execution + Sandbox Reality | v1.2 | 0/? | Not started | - |
