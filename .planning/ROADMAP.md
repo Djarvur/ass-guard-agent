@@ -111,7 +111,15 @@ Plans:
   4. Initialize/new/load/resume responses carry the richer capability set (loadSession, sessionCapabilities, configOptions advertisement shape), verified against the ACP schema in a real Zed handshake.
   5. Transcript lines for raw thinking (`json.RawMessage` passthrough), local_command, and the compaction marker type exist append-only with redaction excluded by construction for thinking bytes.
 
-**Plans**: TBD
+**Plans**: 6 plans
+
+Plans:
+- [ ] 16-01-PLAN.md — Tracer: ordered TurnEmitter + tool_call/plan streaming through the carved seam (ACP-03 spine, D-01..D-04)
+- [ ] 16-02-PLAN.md — Transcript additive kinds: raw_thinking (unredacted), local_command, compaction marker (D-20..D-23)
+- [ ] 16-03-PLAN.md — Outbound request registry, response interception, capability probe, telemetry (D-13..D-19)
+- [ ] 16-04-PLAN.md — Config layer writer: atomic persist-then-apply, session_tier key (D-07 writer half, D-08 groundwork)
+- [ ] 16-05-PLAN.md — ACP-08 wire surface: configOptions advertisement, set_config_option, _meta blob, live apply (D-05..D-12)
+- [ ] 16-06-PLAN.md — Zed-client simulator E2E + adversarial soak + live-Zed operator checkpoint
 
 ### Phase 17: Permissions + Elicitation
 
