@@ -286,6 +286,15 @@ func subagentResultPayload(result string) (json.RawMessage, bool) {
 // (the Phase-2 backward-compatible behavior — real execution is opt-in).
 func (s *Session) SetToolExecutor(tx toolcat.ToolExecutor) { s.toolExec = tx }
 
+// SetTurnModel swaps the model the session's requests are shaped with (16-05,
+// ACP-08 live apply): the Shaper reads Model from the session profile at every
+// Stream, so the NEXT provider request carries the new model. Serialization
+// contract: the CALLER holds the session's turn serialization (the runtime's
+// per-session turn mutex), so the swap lands strictly BETWEEN turns and can
+// never tear a request the provider is mid-shaping — the same discipline the
+// SubagentModel per-dispatch-copy precedent established for subagents.
+func (s *Session) SetTurnModel(model string) { s.Profile.Model = model }
+
 // Close ends the session: it runs the OnClose hook exactly once (idempotent) so
 // MCP subprocesses are reaped, transcript managers flushed, etc. (Plan 05-01
 // T4). Safe to call multiple times; concurrent calls are serialized. A

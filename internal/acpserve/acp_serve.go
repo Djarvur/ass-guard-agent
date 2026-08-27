@@ -202,7 +202,27 @@ func Run( //nolint:funlen // :320-425
 	// preempts at the head, bg FIFO, bounded lanes block-never-drop), and the
 	// emitter-backed handles flow to both the prompt-turn path (srv.Emitter,
 	// below) and the runner's server-driven-turn seam (SetEmitter).
-	srv := acp.NewServer(in, out, stderr, acp.WithTurnRunner(runner), acp.WithTurnEmitter(acp.TurnEmitterConfig{}))
+	//
+	// 16-05 (ACP-08): the ConfigSurface rides the same construction — menu +
+	// effective values over the operator's two layer files (globalPath from
+	// the startup resolution above; "" degrades to project-only), injected
+	// via WithConfigSurface — then the composition binds its live-apply hook
+	// to the runner and its out-of-band notification to the server.
+	surface := NewConfigSurface(
+		globalPath, providerfactory.ProjectConfigPath(opts.WorkDir), providerName, stderr)
+
+	srv := acp.NewServer(in, out, stderr,
+		acp.WithTurnRunner(runner),
+		acp.WithTurnEmitter(acp.TurnEmitterConfig{}),
+		acp.WithConfigSurface(surface))
+
+	surface.SetNotify(func(sessionID string, opts []acp.ConfigOptionFrame) {
+		nerr := srv.NotifyConfigOptions(sessionID, opts)
+		if nerr != nil {
+			log.Printf("ass-guard: config_option_update enqueue failed (continuing): %v", nerr)
+		}
+	})
+	surface.SetApplyHook(runner.ApplyTurnModel)
 
 	// 12-07 (ACP-04/D-02): the per-project schedule store + the scheduler
 	// goroutine on the serve-lifetime ctx (no daemon, no port — Close/ctx

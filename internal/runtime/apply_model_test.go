@@ -18,6 +18,13 @@ import (
 // turn (no torn stamp), and sessions created after the change stamp the
 // effective model at construction.
 
+// Repeated literals (goconst).
+const (
+	testProfileName = "test"
+	testModelBefore = "model-a"
+	testModelAfter  = "model-b"
+)
+
 // nopEmitter satisfies acp.ChunkEmitter for turns that stream no chunks.
 type nopEmitter struct{}
 
@@ -29,8 +36,8 @@ func (nopEmitter) AgentMessageChunk(string, string) error { return nil }
 type gatedStreamProvider struct {
 	mu           sync.Mutex
 	models       []string
-	seen         chan string    // one entry per Stream call, in order
-	releaseFirst chan struct{}  // closed by the test to free the held request
+	seen         chan string   // one entry per Stream call, in order
+	releaseFirst chan struct{} // closed by the test to free the held request
 	heldOnce     sync.Once
 }
 
@@ -63,12 +70,14 @@ func (p *gatedStreamProvider) Stream(
 		select {
 		case <-p.releaseFirst:
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, ctx.Err() //nolint:wrapcheck // test fake passthrough
 		}
 	}
 
 	ch := make(chan provider.StreamChunk, 1)
+
 	ch <- provider.StreamChunk{Type: chunkDone, FinishReason: stopEndTurn}
+
 	close(ch)
 
 	return ch, nil
@@ -78,53 +87,32 @@ func (p *gatedStreamProvider) ToolResultMessage(string, json.RawMessage) (json.R
 	return json.RawMessage(`{}`), nil
 }
 
-func TestApplyTurnModel(t *testing.T) {
-	bus := event.NewBus()
+func TestApplyTurnModel(t *testing.T) { //nolint:paralleltest // drives a background turn with real timing
 	gated := newGatedStreamProvider()
-
-	runner := &Runner{
-		bus:     bus,
-		profile: profile.Profile{Name: "test", Model: "model-a", System: []profile.TextBlock{{Type: blockText, Text: "t"}}},
-		workDir: t.TempDir(),
-		maxConc: 2,
-		makeProvider: func(provider.RequestCapturer) provider.Provider { return gated },
-	}
+	runner := newModelTestRunner(t, gated, testModelBefore)
 
 	ctx := context.Background()
 
 	// Sessions stamp the profile's model at construction before any change.
 	sess1 := runner.sessionFor(ctx, "s1")
-	if sess1.Profile.Model != "model-a" {
-		t.Fatalf("initial session model = %q; want the profile's model-a", sess1.Profile.Model)
+	if sess1.Profile.Model != testModelBefore {
+		t.Fatalf("initial session model = %q; want the profile's model", sess1.Profile.Model)
 	}
 
-	turnDone := make(chan struct{})
-
-	go func() {
-		defer close(turnDone)
-
-		_, _ = runner.Run(ctx, "s1", nopEmitter{}, []acp.ContentBlock{{Type: blockText, Text: "hi"}})
-	}()
+	turnDone := startTestTurn(t, runner, "s1", ctx)
 
 	// Wait until the in-flight request is open (its model recorded).
-	select {
-	case got := <-gated.seen:
-		if got != "model-a" {
-			t.Fatalf("in-flight request model = %q; want model-a", got)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("the turn's request never opened")
-	}
+	awaitSeenModel(t, gated, testModelBefore)
 
 	// A Set arriving MID-TURN must wait: the in-flight request keeps its model.
 	applyDone := make(chan error, 1)
 
-	go func() { applyDone <- runner.ApplyTurnModel("model-b") }()
+	go func() { applyDone <- runner.ApplyTurnModel(testModelAfter) }()
 
 	time.Sleep(150 * time.Millisecond)
 
-	if got := sess1.Profile.Model; got != "model-a" {
-		t.Errorf("mid-turn Set tore the live model: %q (want model-a until the turn ends)", got)
+	if got := sess1.Profile.Model; got != testModelBefore {
+		t.Errorf("mid-turn Set tore the live model: %q (want %q until the turn ends)", got, testModelBefore)
 	}
 
 	select {
@@ -146,26 +134,90 @@ func TestApplyTurnModel(t *testing.T) {
 		t.Fatal("ApplyTurnModel never returned after the turn ended")
 	}
 
-	if got := sess1.Profile.Model; got != "model-b" {
-		t.Errorf("session model after apply = %q; want model-b", got)
+	if got := sess1.Profile.Model; got != testModelAfter {
+		t.Errorf("session model after apply = %q; want %q", got, testModelAfter)
 	}
 
 	// The very next request on the SAME session carries the new model.
 	_, _ = runner.Run(ctx, "s1", nopEmitter{}, []acp.ContentBlock{{Type: blockText, Text: "again"}})
 
+	awaitSeenModel(t, gated, testModelAfter)
+}
+
+// newModelTestRunner builds a Runner wired to the gated provider.
+func newModelTestRunner(t *testing.T, gated *gatedStreamProvider, model string) *Runner {
+	t.Helper()
+
+	return &Runner{
+		bus:     event.NewBus(),
+		profile: profile.Profile{Name: testProfileName, Model: model},
+		workDir: t.TempDir(),
+		maxConc: 2,
+		makeProvider: func(provider.RequestCapturer) provider.Provider {
+			return gated
+		},
+	}
+}
+
+// startTestTurn drives one background prompt turn and returns its done signal.
+//
+//nolint:revive // test helper keeps the caller's arg order
+func startTestTurn(t *testing.T, runner *Runner, sessionID string, ctx context.Context) chan struct{} {
+	t.Helper()
+
+	turnDone := make(chan struct{})
+
+	go func() {
+		defer close(turnDone)
+
+		_, _ = runner.Run(ctx, sessionID, nopEmitter{},
+			[]acp.ContentBlock{{Type: blockText, Text: "hi"}})
+	}()
+
+	return turnDone
+}
+
+// awaitSeenModel waits for the provider's next recorded request model and
+// asserts it carries the live-applied value.
+func awaitSeenModel(t *testing.T, gated *gatedStreamProvider, want string) {
+	t.Helper()
+
 	select {
 	case got := <-gated.seen:
-		if got != "model-b" {
-			t.Errorf("next request model = %q; want model-b (the live apply reached the wire)", got)
+		if got != want {
+			t.Errorf("next request model = %q; want %q (the live apply reached the wire)", got, want)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the second turn's request never opened")
 	}
+}
 
-	// Sessions created after the change stamp the effective model at
-	// construction (the future-sessions leg).
+// TestApplyTurnModel_StampsFutureSessions pins the future-sessions leg:
+// sessions created after the change stamp the effective model at construction.
+func TestApplyTurnModel_StampsFutureSessions(t *testing.T) {
+	t.Parallel()
+
+	runner := &Runner{
+		bus:     event.NewBus(),
+		profile: profile.Profile{Name: testProfileName, Model: testModelBefore},
+		workDir: t.TempDir(),
+		maxConc: 2,
+		makeProvider: func(provider.RequestCapturer) provider.Provider {
+			return newGatedStreamProvider()
+		},
+	}
+
+	ctx := context.Background()
+
+	_ = runner.sessionFor(ctx, "s1")
+
+	aerr := runner.ApplyTurnModel(testModelAfter)
+	if aerr != nil {
+		t.Fatalf("ApplyTurnModel: %v", aerr)
+	}
+
 	sess2 := runner.sessionFor(ctx, "s2")
-	if got := sess2.Profile.Model; got != "model-b" {
-		t.Errorf("new session model = %q; want the effective model-b stamped at construction", got)
+	if got := sess2.Profile.Model; got != testModelAfter {
+		t.Errorf("new session model = %q; want the effective %q stamped at construction", got, testModelAfter)
 	}
 }

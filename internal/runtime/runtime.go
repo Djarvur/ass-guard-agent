@@ -127,6 +127,13 @@ type Runner struct {
 	// runners → no subagent model override (the documented default).
 	schedCfg *modelrouting.Config
 
+	// 16-05 (ACP-08 live apply): the effective model an editor-driven
+	// config change stamped ("" = the profile's own model). ApplyTurnModel
+	// writes it under modelMu; sessionFor reads it to stamp sessions created
+	// after the change.
+	modelMu        sync.Mutex
+	effectiveModel string
+
 	// providerName is the session provider the factory builds (the heavy-tier
 	// resolution's pick, 14-05): the same-provider check for the light binding
 	// compares against it. Kept beside schedCfg so both come from the one
@@ -966,7 +973,7 @@ func (r *Runner) WaitChainIdle(ctx context.Context, sessionID string) bool {
 const chainIdlePollInterval = 10 * time.Millisecond
 
 // sessionFor returns the Session for sessionID, creating it on first use.
-func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx // grouping keeps the turn pipeline together
+func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop // grouping keeps the turn pipeline together
 	ctx context.Context, sessionID string,
 ) *session.Session {
 	// sessMu spans the WHOLE construction: a concurrent sessionFor for the
@@ -1049,6 +1056,13 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx // grouping keep
 	if listing := ecosys.SkillListing(r.reg); listing != "" {
 		prof.System = append(append([]profile.TextBlock(nil), prof.System...),
 			profile.TextBlock{Type: blockText, Text: listing})
+	}
+
+	// 16-05 (ACP-08 live apply): sessions created after an editor-driven model
+	// change stamp the effective model at construction — the future-sessions
+	// leg of the live-apply seam (the live-session leg is ApplyTurnModel).
+	if m := r.effectiveModelFor(); m != "" {
+		prof.Model = m
 	}
 
 	// 12-02 (Task 3): the agent-type listing — the same dedicated-system-block
@@ -1446,6 +1460,43 @@ func (r *Runner) CloseSession(sessionID string) error {
 // arm of the serve composition).
 func (r *Runner) SetSchedule(store *sched.ScheduleStore) { r.schedule = store }
 
+// ApplyTurnModel applies an editor-driven model change to LIVE state (16-05/
+// ACP-08, D-05's day-1 handlers): the runner's effective-model state updates
+// under its mutex, then every live session's profile copy is re-stamped UNDER
+// that session's turn mutex — a Set arriving mid-turn WAITS for the in-flight
+// turn to finish, so the in-flight request keeps its model and the next
+// request carries the new one (no torn stamp). Sessions created later stamp
+// the effective model at construction (sessionFor).
+func (r *Runner) ApplyTurnModel(model string) error {
+	r.modelMu.Lock()
+	r.effectiveModel = model
+	r.modelMu.Unlock()
+
+	r.sessMu.Lock()
+
+	ids := make([]string, 0, len(r.sessions))
+
+	sessions := make(map[string]*session.Session, len(r.sessions))
+
+	for id, s := range r.sessions {
+		ids = append(ids, id)
+		sessions[id] = s
+	}
+
+	r.sessMu.Unlock()
+
+	for _, id := range ids {
+		mu := r.sessionTurnMu(id)
+		mu.Lock()
+
+		sessions[id].SetTurnModel(model)
+
+		mu.Unlock()
+	}
+
+	return nil
+}
+
 // SetEmitter injects the server-driven-turn chunk emitter (WINDOWS #3:
 // strictly between server construction and scheduler start).
 func (r *Runner) SetEmitter(emit func(sessionID string) acp.ChunkEmitter) { r.emitFor = emit }
@@ -1457,6 +1508,15 @@ func (r *Runner) StartScheduler(ctx context.Context) { r.startScheduler(ctx) }
 // CloseAllSessions closes every live session at serve end (the ctx-done
 // subprocess reap).
 func (r *Runner) CloseAllSessions() { r.closeAllSessions() }
+
+// effectiveModelFor returns the editor-stamped effective model ("" = none —
+// the profile's own model governs).
+func (r *Runner) effectiveModelFor() string {
+	r.modelMu.Lock()
+	defer r.modelMu.Unlock()
+
+	return r.effectiveModel
+}
 
 // advisoryNote is one collected advisory decision's client-note projection.
 type advisoryNote struct {

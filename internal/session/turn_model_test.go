@@ -1,4 +1,4 @@
-package session
+package session //nolint:testpackage // same-package convention for internal tests
 
 import (
 	"testing"

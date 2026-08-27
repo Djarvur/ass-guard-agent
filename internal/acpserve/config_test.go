@@ -631,6 +631,18 @@ func (s *sseModelStub) recordedModels() []string {
 	return append([]string(nil), s.models...)
 }
 
+// waitInFlight blocks until the stub is HOLDING its first request open (only
+// armed when delayFirst > 0) — the deterministic "in-flight request" point.
+func (s *sseModelStub) waitInFlight(t *testing.T) {
+	t.Helper()
+
+	select {
+	case <-s.inFlight:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the stub's first request never went in flight")
+	}
+}
+
 // liveApplyConfig is the project layer for the live-apply serves: the
 // anthropic provider aimed at the stub + the declared extra YAML (tier
 // bindings for the tier-switch cases).
@@ -657,17 +669,17 @@ func liveApplyConfig(t *testing.T, stubURL, extra string) string {
 
 // runLiveApplyServe starts one acpserve.Run over pipes against workDir and
 // returns the frame writer + stdout snapshot.
-func runLiveApplyServe(
+func runLiveApplyServe( //nolint:nonamedreturns // names document the triple for callers
 	t *testing.T, workDir string,
-) (*io.PipeWriter, *syncBuffer, *syncBuffer) {
+) (in *io.PipeWriter, stdout, stderr *syncBuffer) {
 	t.Helper()
 
 	t.Setenv("ZAI_API_KEY", "") // force the config literal (canary) to win
 
-	stdout := &syncBuffer{}
-	stderr := &syncBuffer{}
+	stdout = &syncBuffer{}
+	stderr = &syncBuffer{}
 
-	//nolint:modernize,testingcontext // explicit cancel before the pipe close
+	//nolint:testingcontext // explicit cancel before the pipe close
 	ctx, cancel := context.WithCancel(context.Background())
 
 	inPipeR, inPipeW := io.Pipe()
@@ -782,26 +794,38 @@ func pollSetConfigResponse(t *testing.T, stdout *syncBuffer, id string) {
 // case: light → glm-5.2, both models the floor declares on anthropic).
 const tierExtraLayer = "tiers:\n  light:\n    model: glm-5.2\n"
 
-// crossProviderExtraLayer binds tiers.light to a model of a DIFFERENT
-// provider — the loud-degrade case (cross-provider switches never rewire the
-// live provider).
-const crossProviderExtraLayer = `providers:
-  other:
-    base_url: "https://other.invalid"
-    shape: openai
-models:
-  other-model:
-    provider: other
-    pricing: { input_per_mtoken: 0.0, output_per_mtoken: 0.0 }
-    capabilities: { context_window: 100000, max_output_tokens: 32000, tool_calling: true, streaming: true, extended_thinking: true }
-tiers:
-  light:
-    model: other-model
-`
+// liveApplyCrossProviderConfig writes the loud-degrade config as ONE document
+// (tiers.light bound to a model of a DIFFERENT provider — cross-provider
+// switches never rewire the live provider): providers.anthropic aimed at the
+// stub + providers.other, models.other-model, tiers.light.
+func liveApplyCrossProviderConfig(t *testing.T, stubURL string) string {
+	t.Helper()
 
-func TestLiveModelApply(t *testing.T) {
-	t.Parallel()
+	workDir := t.TempDir()
 
+	mkerr := os.MkdirAll(filepath.Join(workDir, ".ass-guard"), 0o750)
+	if mkerr != nil {
+		t.Fatalf("mkdir .ass-guard: %v", mkerr)
+	}
+
+	content := "providers:\n  anthropic:\n    base_url: " + strconv.Quote(stubURL) +
+		"\n    api_key: \"sk-live-apply-canary\"\n" +
+		"  other:\n    base_url: \"https://other.invalid\"\n    shape: openai\n" +
+		"models:\n  other-model:\n    provider: other\n" +
+		"    pricing: { input_per_mtoken: 0.0, output_per_mtoken: 0.0 }\n" +
+		"    capabilities: { context_window: 100000, max_output_tokens: 32000,\n" +
+		"      tool_calling: true, streaming: true, extended_thinking: true }\n" +
+		"tiers:\n  light:\n    model: other-model\n"
+
+	werr := os.WriteFile(filepath.Join(workDir, ".ass-guard", "config.yaml"), []byte(content), 0o600)
+	if werr != nil {
+		t.Fatalf("write config.yaml: %v", werr)
+	}
+
+	return workDir
+}
+
+func TestLiveModelApply(t *testing.T) { //nolint:paralleltest // runLiveApplyServe uses t.Setenv
 	stub := newSSEModelStub(t, 0)
 	workDir := liveApplyConfig(t, stub.srv.URL, "")
 	inPipeW, stdout, _ := runLiveApplyServe(t, workDir)
@@ -832,9 +856,7 @@ func TestLiveModelApply(t *testing.T) {
 	}
 }
 
-func TestLiveModelApply_MidTurn(t *testing.T) {
-	t.Parallel()
-
+func TestLiveModelApply_MidTurn(t *testing.T) { //nolint:paralleltest // runLiveApplyServe uses t.Setenv
 	stub := newSSEModelStub(t, 700*time.Millisecond) // the FIRST request is held open
 	workDir := liveApplyConfig(t, stub.srv.URL, "")
 	inPipeW, stdout, _ := runLiveApplyServe(t, workDir)
@@ -844,7 +866,10 @@ func TestLiveModelApply_MidTurn(t *testing.T) {
 	writeServeLine(t, inPipeW, `{"jsonrpc":"2.0","id":2,"method":"session/prompt","params":{"sessionId":"`+
 		sid+`","prompt":[{"type":"text","text":"hi"}]}}`)
 
-	// The in-flight request is open; a Set arriving now must WAIT.
+	// Wait until the stub is HOLDING the first request open, then send the
+	// Set mid-turn: it must WAIT.
+	stub.waitInFlight(t)
+
 	writeServeLine(t, inPipeW, `{"jsonrpc":"2.0","id":3,"method":"session/set_config_option","params":{"sessionId":"`+
 		sid+`","configId":"`+optModel+`","value":"`+testModelFallback+`"}}`)
 
@@ -852,7 +877,8 @@ func TestLiveModelApply_MidTurn(t *testing.T) {
 
 	inFlight := stub.recordedModels()
 	if len(inFlight) != 1 || inFlight[0] != testModelPrimary {
-		t.Fatalf("in-flight models = %v; want exactly [%s] (the held request keeps its model)", inFlight, testModelPrimary)
+		t.Fatalf("in-flight models = %v; want exactly [%s] (the held request keeps its model)",
+			inFlight, testModelPrimary)
 	}
 
 	// The set response arrives only AFTER the held turn finished and the
@@ -869,9 +895,7 @@ func TestLiveModelApply_MidTurn(t *testing.T) {
 	}
 }
 
-func TestTierSwitch(t *testing.T) {
-	t.Parallel()
-
+func TestTierSwitch(t *testing.T) { //nolint:paralleltest // runLiveApplyServe uses t.Setenv
 	stub := newSSEModelStub(t, 0)
 	workDir := liveApplyConfig(t, stub.srv.URL, tierExtraLayer)
 	inPipeW, stdout, _ := runLiveApplyServe(t, workDir)
@@ -902,11 +926,9 @@ func TestTierSwitch(t *testing.T) {
 	}
 }
 
-func TestTierSwitch_CrossProvider(t *testing.T) {
-	t.Parallel()
-
+func TestTierSwitch_CrossProvider(t *testing.T) { //nolint:paralleltest // runLiveApplyServe uses t.Setenv
 	stub := newSSEModelStub(t, 0)
-	workDir := liveApplyConfig(t, stub.srv.URL, crossProviderExtraLayer)
+	workDir := liveApplyCrossProviderConfig(t, stub.srv.URL)
 	inPipeW, stdout, stderr := runLiveApplyServe(t, workDir)
 
 	sid := startLiveApplySession(t, inPipeW, stdout)
