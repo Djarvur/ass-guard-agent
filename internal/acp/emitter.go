@@ -141,7 +141,8 @@ type TurnEmitter struct {
 	stopOnce sync.Once
 
 	stallThreshold time.Duration
-	stalled        atomic.Int64 // D-03 counter family: sustained-stall episodes reported
+	stalled        atomic.Int64 // 16-01 stall counter (legacy StallCount accessor)
+	metrics        *Metrics     // D-16 family adopted by NewServer; canonical /status counter
 }
 
 // NewTurnEmitter builds a TurnEmitter over sink and starts its single drain
@@ -380,6 +381,7 @@ func (t *TurnEmitter) sampleStall(wm stallWatermark, lane string, full bool, now
 	}
 
 	t.stalled.Add(1)
+	t.metrics.noteWriterStall() // D-16 family (nil-safe — adopted by NewServer)
 
 	if t.log != nil {
 		t.log.Printf(stallLogFormat, lane, now.Sub(wm.since).Milliseconds(), t.stallThreshold.Milliseconds())

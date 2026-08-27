@@ -199,9 +199,23 @@ func NewRegistry(out NotificationSink, stderr io.Writer, opts ...RegistryOption)
 // *RequestTimeoutError (errors.As-able, NOT a cancellation — the caller
 // degrades to the plain-text path instead).
 func (r *Registry) Call(ctx context.Context, method string, params any, class TimeoutClass) (*Message, error) {
-	raw, err := json.Marshal(params)
-	if err != nil {
-		return nil, fmt.Errorf("registry: marshal params for %s: %w", method, err)
+	// Call owns the marshaling. json.RawMessage passes through verbatim (a
+	// []byte would otherwise marshal as base64 — a classic JSON-RPC footgun);
+	// nil is the JSON null; anything else marshals here.
+	var raw []byte
+
+	switch p := params.(type) {
+	case json.RawMessage:
+		raw = p
+	case nil:
+		raw = []byte("null")
+	default:
+		encoded, marshalErr := json.Marshal(p)
+		if marshalErr != nil {
+			return nil, fmt.Errorf("registry: marshal params for %s: %w", method, marshalErr)
+		}
+
+		raw = encoded
 	}
 
 	entry, err := r.register(method)

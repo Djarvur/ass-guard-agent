@@ -198,4 +198,9 @@ const (
 	// cascade); client→agent it cancels one of OURS (a fast no-op for us in
 	// v1.2 — Assumption A8).
 	methodCancelRequest = "$/cancel_request"
+
+	// methodElicitationCreate is the agent→client elicitation request — the
+	// D-13 capability probe subject, and the vehicle for Phase 17's real
+	// permission/question forms.
+	methodElicitationCreate = "elicitation/create"
 )

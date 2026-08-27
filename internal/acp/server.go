@@ -56,17 +56,20 @@ type Handler func(ctx context.Context, params json.RawMessage) (result any, err 
 // a race. All frame writes go through the mutex-guarded Writer so concurrent
 // goroutines never interleave a line on stdout.
 type Server struct {
-	in         io.Reader
-	out        *Writer
-	log        *log.Logger
-	handlers   map[string]Handler
-	mu         sync.Mutex
-	sessions   map[string]*sessionState
-	turnRunner TurnRunner
-	emitter    *TurnEmitter      // THE ordered session/update notification path (16-01); non-nil after NewServer
-	registry   *Registry         // outbound id'd requests + response matching (16-02); non-nil after NewServer
-	emitCfg    TurnEmitterConfig // composition-root knobs via WithTurnEmitter
-	handlerWG  sync.WaitGroup    // tracks in-flight request goroutines so Close is safe
+	in           io.Reader
+	out          *Writer
+	log          *log.Logger
+	handlers     map[string]Handler
+	mu           sync.Mutex
+	sessions     map[string]*sessionState
+	turnRunner   TurnRunner
+	emitter      *TurnEmitter      // THE ordered session/update notification path (16-01); non-nil after NewServer
+	registry     *Registry         // outbound id'd requests + response matching (16-02); non-nil after NewServer
+	metrics      *Metrics          // D-16 counters (probes/timeouts/fallbacks/cancels/stalls)
+	capabilities *capabilityCache  // D-13/D-18 sticky capability negotiation cache; non-nil after NewServer
+	emitCfg      TurnEmitterConfig // composition-root knobs via WithTurnEmitter
+	registryCfg  RegistryConfig    // D-17 timeout windows via WithRegistryConfig (tests shrink FAST-CONTROL)
+	handlerWG    sync.WaitGroup    // tracks in-flight request goroutines so Close is safe
 }
 
 // sessionState is one live session (created by session/new). It carries the
@@ -116,6 +119,13 @@ func WithTurnEmitter(cfg TurnEmitterConfig) ServerOption {
 	return func(s *Server) { s.emitCfg = cfg }
 }
 
+// WithRegistryConfig tunes the outbound-request registry's D-17 timeout
+// windows (zero values keep the documented defaults; tests shrink FAST-CONTROL
+// so the D-14 ladder runs in milliseconds).
+func WithRegistryConfig(cfg RegistryConfig) ServerOption {
+	return func(s *Server) { s.registryCfg = cfg }
+}
+
 // NewServer builds a Server reading frames from in, writing frames to out, and
 // diagnostics to stderrSink (must NEVER be stdout — transport discipline).
 // Construction arms the TurnEmitter over the same Writer: notifications route
@@ -135,17 +145,77 @@ func NewServer(in io.Reader, out, stderrSink io.Writer, opts ...ServerOption) *S
 		o(s)
 	}
 
+	s.metrics = &Metrics{}
 	s.emitter = NewTurnEmitter(s.out, stderrSink, s.emitCfg)
+	s.emitter.metrics = s.metrics // the D-16 family adopts 16-01's writer-stall counter
 
 	// The registry (16-02) writes id'd request frames straight through the
 	// Writer (unconstrained by notification ordering) and routes its D-19
 	// synthetic-cancel cascade through the emitter's FOREGROUND lane so the
 	// turn-end Barrier orders it before the prompt response.
-	s.registry = NewRegistry(s.out, stderrSink, WithRegistryCascade(s.emitter.newHandle("", classForeground).Notify))
+	s.registry = NewRegistry(s.out, stderrSink,
+		WithRegistryTimeouts(s.registryCfg),
+		WithRegistryCascade(s.emitter.newHandle("", classForeground).Notify),
+		WithRegistryOnCancel(s.metrics.noteRegistryCancel))
+
+	s.capabilities = newCapabilityCache()
 
 	s.registerHandlers()
 
 	return s
+}
+
+// CapabilityState is one negotiated capability's sticky result (D-13/D-18).
+// Tier note: the cache deliberately rides internal/acp beside the registry —
+// the probe IS a registry Call issued inside handleInitialize, Server lifetime
+// equals connection lifetime (exactly D-13/D-18's scope), and acpserve owns
+// the Server via composition, so the state is acpserve-owned transitively.
+type CapabilityState int
+
+// Negotiated capability states (the zero value is "not yet negotiated").
+const (
+	CapabilityUnknown  CapabilityState = iota
+	CapabilityOK                       // advertised by the client, or the probe was answered
+	CapabilityDegraded                 // probe failed (-32601/cancelled/ladder) — sticky, no re-probe (D-18)
+)
+
+// capElicitationForm is the capability key of the D-13 probe subject (form
+// elicitation support — Phase 17's ask surfaces consult it).
+const capElicitationForm = "elicitation.form"
+
+// capabilityCache is the D-13/D-18 sticky per-connection capability cache:
+// negotiation happens ONCE (advertisement at initialize, else one probe) and
+// a result — ok or degraded — STAYS for the connection lifetime. No flapping,
+// no re-probe backoff; the NEXT connection probes fresh (the cache dies with
+// the Server).
+type capabilityCache struct {
+	mu      sync.Mutex
+	results map[string]CapabilityState
+}
+
+func newCapabilityCache() *capabilityCache {
+	return &capabilityCache{results: map[string]CapabilityState{}}
+}
+
+func (c *capabilityCache) set(key string, state CapabilityState) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.results[key] = state
+}
+
+func (c *capabilityCache) get(key string) CapabilityState {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.results[key]
+}
+
+// Capability reports the sticky negotiation result for one capability key.
+// Later phases (Phase 17's permission/elicitation asks) consult this instead
+// of ever re-probing (D-13/D-18).
+func (s *Server) Capability(key string) CapabilityState {
+	return s.capabilities.get(key)
 }
 
 // stubNoChunkRunner is the default turn runner: returns "end_turn" with no

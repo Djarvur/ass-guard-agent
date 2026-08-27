@@ -41,10 +41,49 @@ type initializeResponse struct {
 	AuthMethods       []any          `json:"authMethods"`       //nolint:tagliatelle // ACP wire field
 }
 
-// handleInitialize echoes the protocol version and advertises loadSession:false.
-// D-09: NO replay in v1, so loadSession is structurally false (session/load
-// returns -32601).
+// handleInitialize negotiates the elicitation-form capability (D-13) and
+// responds. Negotiation is advertisement-first: a clientCapabilities
+// elicitation.form advertisement caches ok and skips the probe entirely (real
+// Zed handshakes never see a probe — VERIFIED acp.rs:767-795). Without the
+// advertisement, at most ONE probe is issued for the connection (sticky after
+// either outcome — D-18), bounded by the D-14 ladder. initialize ALWAYS
+// responds, degraded or not; agentCapabilities are unchanged by degradation
+// (D-13: every surface knows to degrade — the response never withholds).
 func (s *Server) handleInitialize(ctx context.Context, params json.RawMessage) (any, error) {
+	if len(params) > 0 {
+		var p struct {
+			ClientCapabilities struct {
+				Elicitation struct {
+					Form *json.RawMessage `json:"form,omitempty"`
+				} `json:"elicitation"`
+			} `json:"clientCapabilities"` //nolint:tagliatelle // ACP wire field
+		}
+
+		// Tolerant parse (unknown shapes treated as absent — schema-tolerant
+		// style): a parse miss just falls through to the probe path.
+		unmarshalErr := json.Unmarshal(params, &p)
+		if unmarshalErr == nil && p.ClientCapabilities.Elicitation.Form != nil {
+			s.capabilities.set(capElicitationForm, CapabilityOK)
+			s.log.Printf("capability %s: advertised by client (no probe)", capElicitationForm)
+
+			return s.initializeResult(), nil
+		}
+	}
+
+	// Sticky check (D-18): already negotiated for this connection — never
+	// re-probe, no flapping.
+	if state := s.capabilities.get(capElicitationForm); state != CapabilityUnknown {
+		return s.initializeResult(), nil
+	}
+
+	s.capabilities.set(capElicitationForm, s.probeElicitationCapability(ctx))
+
+	return s.initializeResult(), nil
+}
+
+// initializeResult builds the initialize response (integer protocolVersion 1,
+// loadSession:false per D-09).
+func (s *Server) initializeResult() initializeResponse {
 	return initializeResponse{
 		ProtocolVersion: 1,
 		AgentCapabilities: map[string]any{
@@ -55,7 +94,89 @@ func (s *Server) handleInitialize(ctx context.Context, params json.RawMessage) (
 			"version": "0",
 		},
 		AuthMethods: []any{},
-	}, nil
+	}
+}
+
+// probeFormMode is the elicitation mode value of the capability probe (v1
+// ElicitationFormMode).
+const probeFormMode = "form"
+
+// elicitationProbeParams is the minimal schema-valid v1 Form probe payload
+// (A3 / CONTEXT discretion): one short text element, static, carrying no
+// session content, no paths, no config values (T-16-08). Field names verbatim
+// from schema/v1 CreateElicitationRequest + ElicitationFormMode +
+// ElicitationSchema.
+type elicitationProbeParams struct {
+	Message         string                     `json:"message"`
+	Mode            string                     `json:"mode"`
+	RequestedSchema elicitationRequestedSchema `json:"requestedSchema"` //nolint:tagliatelle // ACP wire field
+}
+
+type elicitationRequestedSchema struct {
+	Type       string                     `json:"type"`
+	Properties map[string]elicitationProp `json:"properties"`
+}
+
+type elicitationProp struct {
+	Type        string `json:"type"`
+	Description string `json:"description,omitempty"`
+}
+
+// probeElicitationCapability issues the D-13 capability probe through the
+// registry (FAST-CONTROL window — D-17). A result response caches ok; an
+// error response (-32601 for pre-elicitation clients — the canonical degrade
+// signal) caches degraded; an unresponsive client meets the D-14 ladder (one
+// retry, then degraded fallback + counters + structured stderr lines). It runs
+// inside the initialize request's own goroutine, so blocking is safe — the
+// read loop keeps serving (per-request dispatch, no reader deadlock).
+func (s *Server) probeElicitationCapability(ctx context.Context) CapabilityState {
+	s.metrics.noteProbe()
+
+	// Call owns the marshaling — the static struct passes directly.
+	payload := elicitationProbeParams{
+		Message: "ass-guard capability probe (no action needed)",
+		Mode:    probeFormMode,
+		RequestedSchema: elicitationRequestedSchema{
+			Type: "object",
+			Properties: map[string]elicitationProp{
+				"probe": {Type: "string", Description: "Capability probe — any input is fine."},
+			},
+		},
+	}
+
+	msg, callErr := s.registry.Call(ctx, methodElicitationCreate, payload, TimeoutFastControl)
+
+	switch {
+	case callErr != nil && errors.Is(callErr, ErrRequestCancelled):
+		s.metrics.noteProbeFallback()
+		s.log.Printf("capability probe %s: cancelled — degrading (D-13/D-18)", capElicitationForm)
+
+		return CapabilityDegraded
+	case callErr != nil:
+		var timeoutErr *RequestTimeoutError
+		if errors.As(callErr, &timeoutErr) {
+			// The D-14 ladder burned BOTH windows (initial + one retry).
+			s.metrics.noteProbeTimeout()
+			s.metrics.noteProbeTimeout()
+			s.metrics.noteProbeFallback()
+			s.log.Printf("capability probe %s: fallback after retry — degrading (D-14)", capElicitationForm)
+		} else {
+			s.metrics.noteProbeFallback()
+			s.log.Printf("capability probe %s: %v — degrading", capElicitationForm, callErr)
+		}
+
+		return CapabilityDegraded
+	case msg.Error != nil:
+		s.metrics.noteProbeFallback()
+		s.log.Printf("capability probe %s: answered with jsonrpc error %d — degrading (D-13)",
+			capElicitationForm, msg.Error.Code)
+
+		return CapabilityDegraded
+	default:
+		s.log.Printf("capability probe %s: answered — ok", capElicitationForm)
+
+		return CapabilityOK
+	}
 }
 
 // sessionNewResult carries the sessionId the client threads into session/prompt.

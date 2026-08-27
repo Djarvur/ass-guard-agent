@@ -178,7 +178,7 @@ func newNotification(method string, params map[string]any) *Message {
 func TestInitializeReturnsAgentCapabilities(t *testing.T) {
 	t.Parallel()
 	h := newPipeHarness(t)
-	h.send(t, newRequest(0, methodInitialize, map[string]any{keyProtocolVersion: 1}))
+	h.send(t, newRequest(0, methodInitialize, zedLikeInitializeParams()))
 
 	msg := h.readFrame(t)
 	if msg.ID == nil || string(msg.ID) != "0" {
@@ -239,7 +239,8 @@ func TestInitializeStringID(t *testing.T) {
 	const id = "b88df47d-ab10-4831-aad2-bad625231c5a" // the exact shape Zed sends
 
 	_, err := fmt.Fprintf(h.cliW,
-		`{"jsonrpc":"2.0","id":%q,"method":"initialize","params":{"protocolVersion":1}}`+"\n",
+		`{"jsonrpc":"2.0","id":%q,"method":"initialize","params":{"protocolVersion":1,`+
+			`"clientCapabilities":{"elicitation":{"form":{}}}}}`+"\n",
 		id)
 	if err != nil {
 		t.Fatalf("write raw frame: %v", err)
@@ -264,7 +265,7 @@ func TestInitializeStringID(t *testing.T) {
 func TestSessionNewReturnsSessionID(t *testing.T) {
 	t.Parallel()
 	h := newPipeHarness(t)
-	h.send(t, newRequest(0, methodInitialize, map[string]any{keyProtocolVersion: 1}))
+	h.send(t, newRequest(0, methodInitialize, zedLikeInitializeParams()))
 	h.readFrame(t)
 	h.send(t, newRequest(1, "session/new", map[string]any{keyCwd: testCwdTmp, keyMcpServers: []any{}}))
 	msg := h.readFrame(t)
@@ -292,7 +293,7 @@ func TestSessionPromptStreamsUpdate(t *testing.T) { //nolint:funlen // comprehen
 
 	stub := &stubTurn{chunks: []string{"Hello", " world"}}
 	h := newPipeHarness(t, WithTurnRunner(stub))
-	h.send(t, newRequest(0, methodInitialize, map[string]any{keyProtocolVersion: 1}))
+	h.send(t, newRequest(0, methodInitialize, zedLikeInitializeParams()))
 	h.readFrame(t)
 	h.send(t, newRequest(1, "session/new", map[string]any{keyCwd: testCwdTmp, keyMcpServers: []any{}}))
 	snew := h.readFrame(t)
@@ -375,7 +376,7 @@ func TestSessionCancelProducesNoResponse(t *testing.T) {
 
 	stub := &stubTurn{chunks: []string{"x"}}
 	h := newPipeHarness(t, WithTurnRunner(stub))
-	h.send(t, newRequest(0, methodInitialize, map[string]any{keyProtocolVersion: 1}))
+	h.send(t, newRequest(0, methodInitialize, zedLikeInitializeParams()))
 	h.readFrame(t)
 	h.send(t, newRequest(1, "session/new", map[string]any{keyCwd: testCwdTmp, keyMcpServers: []any{}}))
 	snew := h.readFrame(t)
@@ -456,7 +457,7 @@ func TestStdoutClean(t *testing.T) {
 		<-done
 	}()
 
-	_, _ = cliW.Write(mustFrame(t, newRequest(0, methodInitialize, map[string]any{keyProtocolVersion: 1})))
+	_, _ = cliW.Write(mustFrame(t, newRequest(0, methodInitialize, zedLikeInitializeParams())))
 
 	time.Sleep(100 * time.Millisecond)
 	cancel()
@@ -524,8 +525,8 @@ func TestMalformedFrameContinues(t *testing.T) {
 	h := newPipeHarness(t)
 	// Write a malformed frame directly.
 	_, _ = h.cliW.Write([]byte("{\"jsonrpc\":\"2.0\",BROKEN\n"))
-	// Then a well-formed initialize.
-	h.send(t, newRequest(0, methodInitialize, map[string]any{keyProtocolVersion: 1}))
+	// Then a well-formed initialize (Zed-like — no probe).
+	h.send(t, newRequest(0, methodInitialize, zedLikeInitializeParams()))
 
 	gotParseError := false
 
@@ -568,7 +569,7 @@ func (e *errTurn) Run(ctx context.Context, _ string, emit ChunkEmitter, prompt [
 func TestErrorResponseShape(t *testing.T) {
 	t.Parallel()
 	h := newPipeHarness(t, WithTurnRunner(&errTurn{err: errBoomFailed}))
-	h.send(t, newRequest(0, methodInitialize, map[string]any{keyProtocolVersion: 1}))
+	h.send(t, newRequest(0, methodInitialize, zedLikeInitializeParams()))
 	h.readFrame(t)
 	h.send(t, newRequest(1, "session/new", map[string]any{keyCwd: testCwdTmp, keyMcpServers: []any{}}))
 	h.readFrame(t)
@@ -603,12 +604,24 @@ func TestErrorResponseShape(t *testing.T) {
 	}
 }
 
+// zedLikeInitializeParams mirrors a REAL Zed handshake: protocolVersion 1 plus
+// the elicitation.form advertisement (acp.rs:767-795). Advertisement-first
+// (D-13) means NO capability probe ever fires for these tests.
+func zedLikeInitializeParams() map[string]any {
+	return map[string]any{
+		keyProtocolVersion: 1,
+		"clientCapabilities": map[string]any{
+			"elicitation": map[string]any{probeFormMode: map[string]any{}},
+		},
+	}
+}
+
 // handshake runs initialize (and swallows its response) so tests exercise a
 // post-initialize connection.
 func handshake(t *testing.T, h *pipeHarness) {
 	t.Helper()
 
-	h.send(t, newRequest(0, methodInitialize, map[string]any{keyProtocolVersion: 1}))
+	h.send(t, newRequest(0, methodInitialize, zedLikeInitializeParams()))
 	h.readFrame(t)
 }
 
@@ -737,7 +750,11 @@ func readProbeFrame(t *testing.T, h *pipeHarness) string {
 		t.Fatalf("unmarshal probe params: %v (%s)", unmarshalErr, string(req.Params))
 	}
 
-	if pp.Mode != "form" || pp.RequestedSchema.Type != "object" || len(pp.RequestedSchema.Properties) == 0 || pp.Message == "" {
+	validForm := pp.Mode == probeFormMode &&
+		pp.RequestedSchema.Type == "object" &&
+		len(pp.RequestedSchema.Properties) > 0 &&
+		pp.Message != ""
+	if !validForm {
 		t.Errorf("probe payload not a minimal valid v1 Form: mode=%q schemaType=%q props=%d msg=%q",
 			pp.Mode, pp.RequestedSchema.Type, len(pp.RequestedSchema.Properties), pp.Message)
 	}
@@ -745,26 +762,36 @@ func readProbeFrame(t *testing.T, h *pipeHarness) string {
 	return NormalizeRequestID(req.ID)
 }
 
+// readInitializeResponse reads the next frame and asserts it is the response
+// to initialize request id "0" (the always-respond rule).
+func readInitializeResponse(t *testing.T, h *pipeHarness) {
+	t.Helper()
+
+	resp := h.readFrame(t)
+	if resp.ID == nil || string(resp.ID) != "0" {
+		t.Fatalf("expected the initialize response; got method=%q id=%v", resp.Method, resp.ID)
+	}
+}
+
 // TestInitializeProbe proves D-13's advertisement-first negotiation: a client
 // advertising elicitation.form gets NO probe frame; a silent client gets
 // exactly ONE elicitation/create probe whose result caches ok and whose -32601
 // error caches degraded; the initialize response arrives on every path.
 func TestInitializeProbe(t *testing.T) {
+	t.Parallel()
+
 	t.Run("advertised: no probe, cached ok", func(t *testing.T) {
 		t.Parallel()
 
 		h := newPipeHarness(t)
 		h.send(t, newRequest(0, methodInitialize, map[string]any{
 			keyProtocolVersion: 1,
-			"clientCapabilities": map[string]any{ //nolint:tagliatelle // ACP wire field
-				"elicitation": map[string]any{"form": map[string]any{}},
+			"clientCapabilities": map[string]any{
+				"elicitation": map[string]any{probeFormMode: map[string]any{}},
 			},
 		}))
 
-		resp := h.readFrame(t) // FIRST frame after initialize — no probe preceded it
-		if resp.ID == nil || string(resp.ID) != "0" {
-			t.Fatalf("expected the initialize response first; got method=%q id=%v", resp.Method, resp.ID)
-		}
+		readInitializeResponse(t, h) // FIRST frame after initialize — no probe preceded it
 
 		if got := h.srv.Capability(capElicitationForm); got != CapabilityOK {
 			t.Errorf("capability = %v; want CapabilityOK (advertisement-first)", got)
@@ -778,12 +805,13 @@ func TestInitializeProbe(t *testing.T) {
 		h.send(t, newRequest(0, methodInitialize, map[string]any{keyProtocolVersion: 1}))
 
 		id := readProbeFrame(t, h)
-		h.send(t, &Message{JSONRPC: protocolVersion20, ID: quotedID(id), Result: json.RawMessage(`{"action":"accept"}`)})
+		h.send(t, &Message{
+			JSONRPC: protocolVersion20,
+			ID:      quotedID(id),
+			Result:  json.RawMessage(`{"action":"accept"}`),
+		})
 
-		resp := h.readFrame(t) // initialize STILL responds (always-respond rule)
-		if resp.ID == nil || string(resp.ID) != "0" {
-			t.Fatalf("expected the initialize response; got method=%q id=%v", resp.Method, resp.ID)
-		}
+		readInitializeResponse(t, h) // initialize STILL responds (always-respond rule)
 
 		if got := h.srv.Capability(capElicitationForm); got != CapabilityOK {
 			t.Errorf("capability = %v; want CapabilityOK after a result answer", got)
@@ -803,10 +831,7 @@ func TestInitializeProbe(t *testing.T) {
 			Error:   &RPCError{Code: CodeMethodNotFound, Message: "not supported"},
 		})
 
-		resp := h.readFrame(t)
-		if resp.ID == nil || string(resp.ID) != "0" {
-			t.Fatalf("expected the initialize response; got method=%q id=%v", resp.Method, resp.ID)
-		}
+		readInitializeResponse(t, h)
 
 		if got := h.srv.Capability(capElicitationForm); got != CapabilityDegraded {
 			t.Errorf("capability = %v; want CapabilityDegraded after -32601", got)
@@ -848,22 +873,20 @@ func TestCapabilityStickiness(t *testing.T) {
 // unresponsive client burns one retry (same id), then the probe degrades with
 // counters (probe total 1, timeout windows 2, fallback 1) and structured
 // stderr lines — and the initialize response STILL arrives.
-func TestProbeTimeoutFallback(t *testing.T) { //nolint:funlen // ladder + counters + logs in one scenario
+func TestProbeTimeoutFallback(t *testing.T) {
 	t.Parallel()
 
 	h := newPipeHarness(t, WithRegistryConfig(RegistryConfig{FastControlTimeout: 4 * time.Millisecond}))
 	h.send(t, newRequest(0, methodInitialize, map[string]any{keyProtocolVersion: 1}))
 
 	first := readProbeFrame(t, h)
+
 	retry := readProbeFrame(t, h)
 	if first != retry {
 		t.Errorf("probe retry id = %q; want the SAME id %q (D-14)", retry, first)
 	}
 
-	resp := h.readFrame(t) // initialize responds even when the probe falls back
-	if resp.ID == nil || string(resp.ID) != "0" {
-		t.Fatalf("expected the initialize response; got method=%q id=%v", resp.Method, resp.ID)
-	}
+	readInitializeResponse(t, h) // initialize responds even when the probe falls back
 
 	if got := h.srv.Capability(capElicitationForm); got != CapabilityDegraded {
 		t.Errorf("capability = %v; want CapabilityDegraded after the ladder", got)
@@ -922,8 +945,10 @@ func TestMetricsWriterStallFamily(t *testing.T) {
 	t.Parallel()
 
 	m := &Metrics{}
+
 	em := NewTurnEmitter(&registrySink{}, &strings.Builder{}, TurnEmitterConfig{StallThreshold: time.Millisecond})
 	defer em.Stop()
+
 	em.metrics = m
 
 	em.sampleStall(stallWatermark{since: time.Now().Add(-time.Second)}, laneForeground, true, time.Now())
