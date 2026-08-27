@@ -1,24 +1,16 @@
 ---
-status: testing
+status: complete
 phase: 15-internal-runtime-carve-step-0
 source: [15-VERIFICATION.md]
 started: 2026-08-26T00:00:00Z
-updated: 2026-08-27T12:45:00Z
+updated: 2026-08-27T13:23:54Z
 ---
 
 # Phase 15 UAT — Human Verification Tests
 
 ## Current Test
 
-number: 2
-name: Native streaming + tool diffs (live-Zed checklist steps 1–3)
-expected: |
-  Spawn `ass-guard acp serve` from Zed as in daily use; send a prompt — token
-  streaming renders natively (session/update chunks, the chunk-forwarder path);
-  exercise a tool call (file read/edit) — native diffs render and the tool
-  result returns (catalog executor path). Checklist: phase-review.md
-  "Operator live-Zed checklist" steps 1–3.
-awaiting: user response
+[testing complete]
 
 ## Tests
 
@@ -29,14 +21,14 @@ reason: "Deferred follow-up: resume-from-history shows 'Failed to Launch — Loa
 
 ### 2. Native streaming + tool diffs (live-Zed checklist steps 1–3)
 expected: Prompt streaming renders natively (session/update chunk-forwarder path); tool call diffs render natively and tool result returns (catalog executor path) after the carve.
-result: [pending]
+result: pass
 
 ## Summary
 
 total: 2
-passed: 0
+passed: 1
 issues: 0
-pending: 1
+pending: 0
 skipped: 1
 blocked: 0
 
