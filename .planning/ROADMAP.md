@@ -45,7 +45,7 @@ Operator decisions at close (2026-08-23…25): D-09 REVERSED (session resume = m
 
 **Explicitly deferred from v1.2:** Telegram peer → v1.3 pool, LOWEST priority per operator 2026-08-26 (steering queue SEEDG-01 is built transport-neutral as its prerequisite). dsh profile #2 dropped entirely (operator 2026-08-26; mimicry bar abandoned).
 
-- [ ] **Phase 15: internal/runtime Carve (Step 0)** - Mechanical verbatim move of sessionTurnRunner into internal/runtime so seven later feature clusters land in their final home
+- [x] **Phase 15: internal/runtime Carve (Step 0)** - Mechanical verbatim move of sessionTurnRunner into internal/runtime so seven later feature clusters land in their final home (completed 2026-08-27)
 - [ ] **Phase 16: ACP Wire Foundation** - Outbound id'd requests, one ordered TurnEmitter, transcript line-type extensions, initialize capability overhaul
 - [ ] **Phase 17: Permissions + Elicitation** - Clickable permission asks and structured form asks through the editor; ONE gate pipeline locked
 - [ ] **Phase 18: Session Family** - list / load-resume / close-delete with full replay and live-state reconciliation
@@ -70,7 +70,7 @@ Operator decisions at close (2026-08-23…25): D-09 REVERSED (session resume = m
   2. Every existing serve-path behavior is observably identical after the move: a live Zed-spawned session streams tokens, executes tools, replays on restart exactly as at v1.1 close (the operator's daily-use surface unchanged).
   3. No feature code moved or rewritten during the carve — the diff is a pure relocation (verbatim bodies, import fixes only), reviewable as such.
 
-**Plans:** 7/7 plans executed
+**Plans:** 7/7 plans complete
 
 Plans:
 **Wave 1**
@@ -331,7 +331,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 15. internal/runtime Carve | v1.2 | 7/7 | In Progress|  |
+| 15. internal/runtime Carve | v1.2 | 7/7 | Complete    | 2026-08-27 |
 | 16. ACP Wire Foundation | v1.2 | 0/? | Not started | - |
 | 17. Permissions + Elicitation | v1.2 | 0/? | Not started | - |
 | 18. Session Family | v1.2 | 0/? | Not started | - |

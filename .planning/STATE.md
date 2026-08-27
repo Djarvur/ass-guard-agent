@@ -2,38 +2,38 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Claude Code Parity
-current_phase: 18
-current_phase_name: Session Family
-status: executing
-stopped_at: Phase 24 context gathered
-last_updated: "2026-08-27T02:11:37.748Z"
-last_activity: 2026-08-26
-last_activity_desc: Phase 15 execution started
-state_head: 043dbccc35f1311c596e287448bb6dcb7b129334
+current_phase: 16
+current_phase_name: ACP Wire Foundation
+status: planning
+stopped_at: Phase 15 complete, ready to plan Phase 16
+last_updated: "2026-08-27T13:26:48.516Z"
+last_activity: 2026-08-27
+last_activity_desc: Phase 15 complete, transitioned to Phase 16
+state_head: 6a5fe68f1661a1f4efcbedacaaed65b5a394d285
 progress:
   total_phases: 11
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 29
   completed_plans: 7
-  percent: 0
+  percent: 9
 ---
 
 # State: ass-guard-agent (working name)
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-08-26)
+See: .planning/PROJECT.md (updated 2026-08-27)
 **Core value:** A hands-off coding agent that feels native in the editor: full SDD workflows run end-to-end without manual continues, and the agent surfaces through the client's own UX — clickable permission prompts, native file diffs, session management. (Pivoted 2026-08-25 from the mimicry bar.)
-**Current focus:** Phase 15 — internal/runtime Carve (Step 0)
+**Current focus:** Phase 16 — ACP Wire Foundation
 
 ## Current Position
 
-Phase: 18 (Session Family) — READY TO EXECUTE
+Phase: 16 — ACP Wire Foundation
 Total Plans in Phase: 6
-Status: Ready to execute
-Last activity: 2026-08-26 — Phase 15 execution started
+Status: Ready to plan
+Last activity: 2026-08-27 — Phase 15 complete, transitioned to Phase 16
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█████░░░░░░░░░░░░░░] 7/29 plans (24%)
 
 ## Performance Metrics
 
@@ -67,7 +67,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 15]: acpserve extracted with PrepareServe/FinishServe callback-hook seam (4 hooks incl. CloseSessions); stdout tests moved with stub runner; 3 runner-subject tests stay in cmd until 15-06
 - [Phase 15]: 15-06: exported sextet (quartet + SetupEngine/LoadCommandRegistry) — D-19 export-by-necessity for the acpserve.Run composition
 - [Phase 15]: 15-06: pointer configs for NewRunner/NewEngineTurnAdapter/NewACPDispatcher (hugeParam, 15-05 precedent)
-- [Phase 15]: 15-07: PENDING-OPERATOR-CONFIRMATION for live-Zed criterion — auto-advance ran, operator check outstanding (tracked in WINDOWS ledger)
+- [Phase 15]: 15-07 live-Zed criterion closed by operator UAT 2026-08-27: parity with v1.1 PROVEN (internal/acp/ byte-identical; loadSession:false + session/load -32601 is v1.1's shipped behavior — Zed aborts client-side); streaming/tool-diff legs operator-confirmed. Resume UX gap deferred to Phase 18 (18-01/18-04); tracked in UAT Deferred Follow-Ups
 
 ### Pending Todos
 
@@ -76,6 +76,7 @@ None yet.
 ### Blockers/Concerns
 
 - [RESEARCH FLAGS / planning-time]: Phases 16/18/19/22/23 flagged for `--research-phase` (ACP schema LOW-confidence details; resume reconciliation inventory; compaction × projector pins; platform drift; pi/strands steering references unverified). Full list in ROADMAP.md Research Flags section.
+- [Phase 15 UAT, deferred 2026-08-27]: Zed history-resume shows "Failed to Launch" — by-design v1 scope (loadSession:false); fix owned by Phase 18 Session Family (18-01/18-04), already planned. Do not re-diagnose as a Phase 15/16 regression.
 
 ## Deferred Items
 
@@ -86,6 +87,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-27T01:14:16.583Z
-Stopped at: Phase 24 context gathered
-Resume file: 24-CONTEXT.md
+Last session: 2026-08-27T13:27:00Z
+Stopped at: Phase 15 complete (verified + transitioned), Phase 16 ready to execute
+Resume file: None

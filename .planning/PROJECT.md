@@ -180,4 +180,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-08-26 — v1.2 Claude Code Parity started (dsh dropped entirely; Telegram → lowest priority/v1.3 pool)*
+*Last updated: 2026-08-27 — Phase 15 (internal/runtime carve) verified and closed; no product-surface changes (mechanical relocation, parity-proven)*
