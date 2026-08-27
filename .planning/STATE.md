@@ -4,18 +4,18 @@ milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 16
 current_phase_name: ACP Wire Foundation
-status: planning
-stopped_at: Phase 15 complete, ready to plan Phase 16
-last_updated: "2026-08-27T13:26:48.516Z"
+status: executing
+stopped_at: Completed 16-01-PLAN.md (TurnEmitter tracer)
+last_updated: "2026-08-27T14:55:00.000Z"
 last_activity: 2026-08-27
-last_activity_desc: Phase 15 complete, transitioned to Phase 16
-state_head: 6a5fe68f1661a1f4efcbedacaaed65b5a394d285
+last_activity_desc: 16-01 executed — ordered TurnEmitter landed and proven
+state_head: 11a86c3529f677ae22d160dae53ca78f362e3bbb
 progress:
   total_phases: 11
   completed_phases: 1
   total_plans: 29
-  completed_plans: 7
-  percent: 9
+  completed_plans: 8
+  percent: 28
 ---
 
 # State: ass-guard-agent (working name)
@@ -28,22 +28,24 @@ See: .planning/PROJECT.md (updated 2026-08-27)
 
 ## Current Position
 
-Phase: 16 — ACP Wire Foundation
+Phase: 16 (ACP Wire Foundation) — EXECUTING
+Current Plan: 2 (16-02 next — outbound id'd requests + registry)
 Total Plans in Phase: 6
-Status: Ready to plan
-Last activity: 2026-08-27 — Phase 15 complete, transitioned to Phase 16
+Status: Executing Phase 16
+Last activity: 2026-08-27 — 16-01 executed (ordered TurnEmitter, 3 tasks, 5 commits)
 
-Progress: [█████░░░░░░░░░░░░░░] 7/29 plans (24%)
+Progress: [████████░░░░░░░░░░░] 8/29 plans (28%)
 
 ## Performance Metrics
 
 **Velocity (v1.0 history, for calibration):** 36 plans / 8 phases in 6 days; `mise ci` gate green at every phase close. **v1.1:** 51 plans / 5 phases over ~7 active days.
 
-**By Phase (v1.2):** no plans executed yet.
+**By Phase (v1.2):** Phase 16: 1/6 plans executed (16-01 ✓ 2026-08-27).
 **Per-Plan Metrics:**
 
 | Plan | Duration | Tasks | Files |
 |------|----------|-------|-------|
+| Phase 16 P01 | 59 min | 3 tasks | 9 files |
 | Phase 15 P01 | 13 min | 2 tasks | 2 files |
 | Phase 15 P02 | 16 min | 2 tasks | 8 files |
 | Phase 15 P03 | 14 min | 2 tasks | 10 files |
@@ -68,6 +70,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 15]: 15-06: exported sextet (quartet + SetupEngine/LoadCommandRegistry) — D-19 export-by-necessity for the acpserve.Run composition
 - [Phase 15]: 15-06: pointer configs for NewRunner/NewEngineTurnAdapter/NewACPDispatcher (hugeParam, 15-05 precedent)
 - [Phase 15]: 15-07 live-Zed criterion closed by operator UAT 2026-08-27: parity with v1.1 PROVEN (internal/acp/ byte-identical; loadSession:false + session/load -32601 is v1.1's shipped behavior — Zed aborts client-side); streaming/tool-diff legs operator-confirmed. Resume UX gap deferred to Phase 18 (18-01/18-04); tracked in UAT Deferred Follow-Ups
+- [Phase 16]: 16-01 TurnEmitter armed by NewServer (knobs via WithTurnEmitter at the acp_serve junction) — one drain owns every session/update notification from the first frame; lanes fg 128 / bg 256, stall threshold 5s (CONTEXT-discretion defaults)
+- [Phase 16]: 16-01 ActivityEmitter added via embedding (ChunkEmitter untouched — repo test fakes keep compiling; RESEARCH Open Question 1 resolution); runtime forwarders type-assert emit
+- [Phase 16]: 16-01 stall sampler runs in its OWN goroutine — the drain wedges inside sink.Write on slow clients, so in-drain sampling would go silent exactly when a stall is real (anti-D-03)
+- [Phase 16]: 16-01 TodoWrite→plan presentation rule lives in internal/acp (EmitterHandle.ToolCall); runtime.go gained zero plan/todo vocabulary (15-D-20)
 
 ### Pending Todos
 
@@ -87,6 +93,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-27T13:27:00Z
-Stopped at: Phase 15 complete (verified + transitioned), Phase 16 ready to execute
+Last session: 2026-08-27T14:55:00Z
+Stopped at: Completed 16-01-PLAN.md — ready for 16-02
 Resume file: None
