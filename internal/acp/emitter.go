@@ -82,10 +82,13 @@ const (
 // stderr line and increments the stall counter. Tests shrink it.
 const DefaultStallThreshold = 5 * time.Second
 
-// stallSampleInterval is the drain-loop watermark sampling cadence. Small enough
-// that a shrunken test threshold resolves within a few ticks; large enough that
-// sampling stays free next to actual frame writes.
+// stallSampleInterval is the watermark sampler's cadence. Small enough that a
+// shrunken test threshold resolves within a few ticks; large enough that
+// sampling stays cheap next to actual frame writes.
 const stallSampleInterval = 25 * time.Millisecond
+
+// emitterGoroutines is the lifecycle WaitGroup width: the drain + the sampler.
+const emitterGoroutines = 2
 
 // Stall log vocabulary: structured key=value lines on the injected stderr
 // logger (transport discipline — diagnostics NEVER touch stdout).
@@ -175,9 +178,10 @@ func NewTurnEmitter(sink NotificationSink, stderr io.Writer, cfg TurnEmitterConf
 		stallThreshold: threshold,
 	}
 
-	em.wg.Add(1)
+	em.wg.Add(emitterGoroutines)
 
 	go em.drain()
+	go em.sampleLoop()
 
 	return em
 }
@@ -222,9 +226,12 @@ func (t *TurnEmitter) BackgroundHandle(sessionID string) ChunkEmitter {
 	return t.newHandle(sessionID, classBackground)
 }
 
-// Stop shuts down the drain goroutine. Idempotent. Producers blocked on a full
-// lane wake with an error (their root ctx dies); any still-queued frames are
-// discarded — Stop runs only at serve teardown, after all handlers finished.
+// Stop shuts down the emitter. Idempotent. The cancel fires IMMEDIATELY —
+// producers blocked on a full lane wake with an error and the drain's select
+// exits — but the join waits for the drain's IN-FLIGHT sink.Write to return,
+// so a hard-wedged client delays Stop exactly as long as Writer.Close would
+// (same teardown semantics, one wedged write at most). Stop runs only at serve
+// teardown, after all handlers finished; still-queued frames are discarded.
 func (t *TurnEmitter) Stop() {
 	t.stopOnce.Do(func() {
 		t.cancel()
@@ -295,19 +302,10 @@ func (t *TurnEmitter) writeOut(m *Message) {
 }
 
 // drain is THE total-order point (D-02): foreground frames preempt always;
-// when the fg lane is empty both lanes compete with equal chance. The ticker
-// samples per-lane full watermarks for D-03's loud-stall reporting. Exit paths:
+// when the fg lane is empty both lanes compete with equal chance. Exit paths:
 // the root ctx (Stop) — queued-but-unwritten frames are discarded at teardown.
 func (t *TurnEmitter) drain() {
 	defer t.wg.Done()
-
-	ticker := time.NewTicker(stallSampleInterval)
-	defer ticker.Stop()
-
-	var (
-		fgWatermark stallWatermark
-		bgWatermark stallWatermark
-	)
 
 	for {
 		// Foreground first, ALWAYS (D-02 preemption-at-the-head).
@@ -324,12 +322,36 @@ func (t *TurnEmitter) drain() {
 			t.writeOut(m)
 		case m := <-t.bg:
 			t.writeOut(m)
+		case <-t.ctx.Done():
+			return
+		}
+	}
+}
+
+// sampleLoop is D-03's watermark sampler, deliberately SEPARATE from the drain:
+// the drain blocks INSIDE sink.Write on a slow client, so stall sampling that
+// lived in its select would stop exactly when a stall is real (the anti-D-03 —
+// silent blocking). A dedicated goroutine keeps observing lane depths while the
+// drain is wedged mid-write.
+func (t *TurnEmitter) sampleLoop() {
+	defer t.wg.Done()
+
+	ticker := time.NewTicker(stallSampleInterval)
+	defer ticker.Stop()
+
+	var (
+		fgWatermark stallWatermark
+		bgWatermark stallWatermark
+	)
+
+	for {
+		select {
+		case <-t.ctx.Done():
+			return
 		case <-ticker.C:
 			now := time.Now()
 			fgWatermark = t.sampleStall(fgWatermark, laneForeground, len(t.fg) == cap(t.fg), now)
 			bgWatermark = t.sampleStall(bgWatermark, laneBackground, len(t.bg) == cap(t.bg), now)
-		case <-t.ctx.Done():
-			return
 		}
 	}
 }

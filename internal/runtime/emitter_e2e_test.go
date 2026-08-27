@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -46,12 +47,17 @@ type emitPhase struct {
 	pause    time.Duration // sleep AFTER producing this phase's stream chunk
 }
 
-// pacedStreamProvider streams emitPhases then the done chunk. It is the
-// transport under the real Session Core: streamAndEmit publishes
-// AgentMessageChunk / ToolCall bus events per chunk exactly as production does.
+// pacedStreamProvider streams emitPhases then the done chunk — ONCE. The
+// session tool loop re-streams while a response carries tool calls, so the
+// SECOND Stream call returns an empty stream: the turn then terminates after
+// the tool pass instead of looping to its 64-iteration runaway bound (the
+// deadline-fragile behavior the full-CI run exposed). It is the transport
+// under the real Session Core: streamAndEmit publishes AgentMessageChunk /
+// ToolCall bus events per chunk exactly as production does.
 type pacedStreamProvider struct {
 	phases []emitPhase
 	finish string
+	calls  atomic.Int64
 }
 
 func (p *pacedStreamProvider) Send(
@@ -65,8 +71,20 @@ func (p *pacedStreamProvider) Stream(
 ) (<-chan provider.StreamChunk, error) {
 	ch := make(chan provider.StreamChunk, len(p.phases)+1)
 
+	first := p.calls.Add(1) == 1
+
 	go func() {
 		defer close(ch)
+
+		if !first {
+			// The post-tool model round: nothing selected, turn ends.
+			select {
+			case ch <- provider.StreamChunk{Type: chunkDone, FinishReason: p.finish}:
+			case <-ctx.Done():
+			}
+
+			return
+		}
 
 		for _, ph := range p.phases {
 			var chunk provider.StreamChunk
