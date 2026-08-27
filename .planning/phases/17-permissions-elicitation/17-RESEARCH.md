@@ -504,20 +504,25 @@ All [CITED: code.claude.com/docs/en/permissions, fetched 2026-08-27]:
 | A9 | Engine-ask elicitation replies persist to the learning store (answers persist as today — CONTEXT's Reusable Assets line) | Architecture Diagram | If engine asks need a different sink, only the resolution fan-in changes |
 | A10 | Structured multi-field replies render deterministically into the captured answered form (exact serialization is planner's to pin; string-valued replies must stay byte-identical) | Pattern 4 | Golden-test drift on the answered-form fixture catches any deviation |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+All three recommendations are adopted verbatim in the phase plans; each question below carries an inline RESOLVED marker citing the adopting plan task.
 
 1. **Where the "turn death" signal originates for a SUSPENDED permission ask**
    - What we know: 16-D-19 ships registry.ResolveCancelled + the $/cancel_request cascade; D-13 requires draining the open dialog + queued asks on turn death; `handleSessionCancel` (handlers.go:153-182) is the cancel hook that exists today; the suspended turn's own ctx is already gone when the prompt response was sent.
    - What's unclear: the precise event that marks a turn "dead" for queue-drain purposes once the turn goroutine has returned (cancel notification vs session close vs serve shutdown — likely all three, wired to the same drain).
    - Recommendation: implement the drain as one function called from all three teardown paths; test each.
+   - RESOLVED: adopted — 17-03 Task 2 implements `DrainTurn(turnID)` as the one shared drain function wired into all three teardown paths (session/cancel notification, session close, serve shutdown), with a dedicated wiring test per path (pinned in 17-03 must_haves truths).
 2. **Does the subagent dispatch branch gate?**
    - What we know: subagent Task calls bypass DispatchBatch; the chokepoint site sees them; D-11 names "subagent asks" as a queue priority class (implying subagent-ORIGINATED asks exist), but nothing locks whether a subagent's TOOL calls pass the permission gate.
    - What's unclear: whether a Task dispatch is itself ask-class (it spawns arbitrary nested work).
    - Recommendation: gate it (ONE pipeline, D-05's letter) with the Task tool's own specifier; planner confirms against D-06's class derivation (`isAloneInSlot`).
+   - RESOLVED: adopted — 17-02 Task 1 invokes gateCall inside the subagent dispatch branch before DispatchSubagent, with the Task tool gated per its catalog class under D-06, and a gating test covering the subagent branch (pinned in 17-02 must_haves truths).
 3. **permissions.yaml vs the 16-05 pending-handler contract**
    - What we know: 16-05's plan says pending ids "log the pending-handler line, do not persist, return the set unchanged"; Phase 17's real handler persists (the mode is a real config choice).
    - What's unclear: nothing structural — but the handler must follow 16-D-07 persist-then-apply and the D-10 idempotence guard already coded for model/tier.
    - Recommendation: register the handler as a first-class sibling of tier/model in the ConfigSurface, reusing WriteLayerOption.
+   - RESOLVED: adopted — 17-02 Task 3 registers the real permissions.mode handler as a first-class sibling of tier/model in the ConfigSurface, persisting via WriteLayerOption with persist-then-apply and the 16-D-10 idempotent-re-push guard.
 
 ## Environment Availability
 
