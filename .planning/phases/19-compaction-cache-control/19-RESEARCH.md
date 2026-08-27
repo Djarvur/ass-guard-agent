@@ -420,20 +420,25 @@ if s.compactionEnabled() {
 | A4 | The summarizer defaulting to the parent model (no `tiers.light` binding in the shipped defaults) is acceptable operator-visible behavior (matching the subagent override's documented default) | Standard Stack | If the operator expects light-tier-by-default, a defaults/config.yaml `tiers.light` entry is a one-line follow-up |
 | A5 | `compaction.threshold_pct` / `compaction.enabled` persist in the modelrouting layered config.yaml (global + project) behind the Phase 16 configOptions registry | Architectural Responsibility Map | If Phase 16's registry landed a different persistence home, the keys move there instead — planner verifies against the executed Phase 16 code |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+*All three questions are planner-pinned in the phase plans (revision 1); the resolution is recorded inline under each question.*
 
 1. **Breakpoint degradation policy beyond 4 blocks**
    - What we know: the API cap is 4; the corpus is 3-4 blocks; dynamic merges can exceed 4 [CITED: platform.claude.com prompt-caching docs].
    - What's unclear: whether to keep the LAST 4 breakpoints (deepest prefixes) or only the final block when over cap; whether Z.ai enforces the cap at all.
    - Recommendation: keep the last 4 (deepest cache utility), document at the shaper site, pin with a test. This is an API-constraint accommodation of D-12, not a scope change — but the planner should surface it for operator visibility.
+   - **RESOLVED (revision 1):** keep-last-4 — pinned in 19-01 Task 3 (`TestShape_CacheControlCapDegrade`: 3/4/5/6-block cases, positions asserted, order preserved) with the cap rationale documented at the shaper site.
 2. **Summary text's transcript home (marker payload vs sibling line)**
    - What we know: 16-D-21 names id/timestamp/usage/pre-post pointers; 18-D-01 requires marker+summary to reconstruct on resume.
    - What's unclear: whether Phase 16's executed `AppendCompaction` signature carries the summary.
    - Recommendation: read the landed Phase 16 code at plan time; extend additively if the field is missing (A3).
+   - **RESOLVED (revision 1):** the summary lives ON the marker line — 19-03 Task 1 adds the additive `Summary` field to the 16-02-landed kind (camelCase `summary`, omitempty, redacted append path); no sibling line. The landed `AppendCompaction` signature is extended additively under 19-03's `<execution_precondition>` gate on Phase 16 execution.
 3. **Durable-seed merge shape when a mutating boundary follows a compaction marker**
    - What we know: D-06 — summary is immune; the tail follows existing discipline.
    - What's unclear: whether the seed after a later boundary is summary-ONLY or summary + mechanical post-marker summary.
    - Recommendation: summary-only (simplest reading of D-06's letter); the mechanical summary remains the no-marker path. Pin whichever the planner picks in the boundary-survival test.
+   - **RESOLVED (revision 1):** summary-only per D-06's letter — pinned in 19-03 Task 2's boundary-survival test (`TestProjector_CompactionResetPoint`); the mechanical `extractSummary` path is the no-marker behavior only.
 
 ## Environment Availability
 
