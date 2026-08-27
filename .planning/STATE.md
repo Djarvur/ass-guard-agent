@@ -4,18 +4,19 @@ milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 16
 current_phase_name: ACP Wire Foundation
+current_plan: 3
 status: executing
-stopped_at: Completed 16-01-PLAN.md (TurnEmitter tracer)
-last_updated: "2026-08-27T14:55:00.000Z"
+stopped_at: Completed 16-02-PLAN.md
+last_updated: "2026-08-27T15:12:12.107Z"
 last_activity: 2026-08-27
 last_activity_desc: 16-01 executed — ordered TurnEmitter landed and proven
-state_head: 11a86c3529f677ae22d160dae53ca78f362e3bbb
+state_head: 7b891c47435fb03034dd28a9f08af628c8be9a7a
 progress:
   total_phases: 11
   completed_phases: 1
   total_plans: 29
-  completed_plans: 8
-  percent: 28
+  completed_plans: 9
+  percent: 9
 ---
 
 # State: ass-guard-agent (working name)
@@ -29,12 +30,12 @@ See: .planning/PROJECT.md (updated 2026-08-27)
 ## Current Position
 
 Phase: 16 (ACP Wire Foundation) — EXECUTING
-Current Plan: 2 (16-02 next — outbound id'd requests + registry)
+Current Plan: 3
 Total Plans in Phase: 6
-Status: Executing Phase 16
+Status: Ready to execute
 Last activity: 2026-08-27 — 16-01 executed (ordered TurnEmitter, 3 tasks, 5 commits)
 
-Progress: [████████░░░░░░░░░░░] 8/29 plans (28%)
+Progress: [████████░░░░░░░░░░░] 8/29 plans ([█░░░░░░░░░] 9%)
 
 ## Performance Metrics
 
@@ -53,6 +54,7 @@ Progress: [████████░░░░░░░░░░░] 8/29 plans
 | Phase 15 P05 | 22 min | 2 tasks | 6 files |
 | Phase 15 P06 | 75 min | 3 tasks | 20 files |
 | Phase 15 P07 | 20 min | 2 tasks | 2 files |
+| Phase 16 P02 | 16 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -74,6 +76,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 16]: 16-01 ActivityEmitter added via embedding (ChunkEmitter untouched — repo test fakes keep compiling; RESEARCH Open Question 1 resolution); runtime forwarders type-assert emit
 - [Phase 16]: 16-01 stall sampler runs in its OWN goroutine — the drain wedges inside sink.Write on slow clients, so in-drain sampling would go silent exactly when a stall is real (anti-D-03)
 - [Phase 16]: 16-01 TodoWrite→plan presentation rule lives in internal/acp (EmitterHandle.ToolCall); runtime.go gained zero plan/todo vocabulary (15-D-20)
+- [Phase 16]: 16-02 raw_thinking reuses Line Content+Model (payload json.RawMessage verbatim + provider attribution); compaction pointers opaque PreRef/PostRef strings until Phase 19 types them (D-20 weak schema)
+- [Phase 16]: 16-02 appendLineUnredacted is a deliberate near-copy of appendLine minus the redact block — no shared helper (Pitfall 5); sole caller AppendRawThinking, grep-verified (T-16-04 type-scoped exemption)
+- [Phase 16]: 16-02 local-command args verbatim string + ordered SourceChain + free-string Expansion (vocabularies owned by Phase 20); compaction boundary ids via local uuidV4 crypto/rand replication
 
 ### Pending Todos
 
@@ -93,6 +98,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-27T14:55:00Z
-Stopped at: Completed 16-01-PLAN.md — ready for 16-02
+Last session: 2026-08-27T15:12:02.355Z
+Stopped at: Completed 16-02-PLAN.md
 Resume file: None
