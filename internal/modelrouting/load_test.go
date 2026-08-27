@@ -1,11 +1,14 @@
 package modelrouting //nolint:testpackage // internal package test
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 // TestLoadValid loads the canonical valid fixture and asserts the populated
@@ -123,6 +126,55 @@ func TestLoadEmbeddedDefault(t *testing.T) {
 	require.Equal(t, 128000, cfg.Models[modelGLM53].Capabilities.MaxOutputTokens,
 		"max_output_tokens mirrors the pinned capture's request.body.max_tokens")
 	require.True(t, cfg.Models[modelGLM53].Capabilities.ToolCalling)
+}
+
+// TestSessionTier asserts the additive session_tier key (ACP-08 groundwork,
+// 16-04): absent → tierHeavy default at the same defaults-application site as
+// the other absent-key defaults; an explicit value loads through; the key
+// survives a marshal→Load round-trip. No resolver behavior here — tier
+// consumption lands in 16-05's apply seam.
+func TestSessionTier(t *testing.T) {
+	t.Parallel()
+
+	t.Run("absent key defaults to heavy", func(t *testing.T) {
+		t.Parallel()
+
+		cfg, err := Load("testdata/minimal.yaml")
+		require.NoError(t, err)
+		require.Equal(t, tierHeavy, cfg.SessionTier)
+	})
+
+	t.Run("explicit value loads through", func(t *testing.T) {
+		t.Parallel()
+
+		path := filepath.Join(t.TempDir(), "session_tier.yaml")
+		require.NoError(t, os.WriteFile(path, []byte("session_tier: light\n"), 0o600))
+
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		require.Equal(t, tierLight, cfg.SessionTier)
+	})
+
+	t.Run("marshal round-trip preserves the key", func(t *testing.T) {
+		t.Parallel()
+
+		path := filepath.Join(t.TempDir(), "session_tier.yaml")
+		require.NoError(t, os.WriteFile(path, []byte("session_tier: light\n"), 0o600))
+
+		cfg, err := Load(path)
+		require.NoError(t, err)
+
+		out, err := yaml.Marshal(cfg)
+		require.NoError(t, err)
+
+		round := filepath.Join(t.TempDir(), "round.yaml")
+		require.NoError(t, os.WriteFile(round, out, 0o600))
+
+		reloaded, err := Load(round)
+		require.NoError(t, err)
+		require.Equal(t, tierLight, reloaded.SessionTier,
+			"session_tier must survive marshal→Load byte-for-byte in value")
+	})
 }
 
 // TestValidateWarns_NoCredentialField asserts D-04's warn-not-reject: a

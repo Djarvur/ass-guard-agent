@@ -160,6 +160,46 @@ func TestConfigWrite_CorruptLayerNeverClobbered(t *testing.T) {
 	require.Equal(t, corrupt, got, "corrupt layer must stay byte-identical — never clobbered")
 }
 
+// testKeySessionTier is the additive tier option key (16-05's menu exposes it).
+const testKeySessionTier = "session_tier"
+
+// testTierLight is the tier value the session_tier round-trip cases write.
+const testTierLight = "light"
+
+// TestConfigWrite_SessionTierRoundTrip: the FULL persist→read path for the
+// tier option — a session_tier write into a layer file resolves through the
+// REAL loader, and a project-layer write never touches the global layer file
+// (byte comparison, D-08 two-layer groundwork).
+//nolint:paralleltest // renameFunc seam is package-global — serial family
+func TestConfigWrite_SessionTierRoundTrip(t *testing.T) {
+	t.Run("write global session_tier then Load resolves light", func(t *testing.T) {
+		global := filepath.Join(t.TempDir(), "config.yaml")
+
+		require.NoError(t, WriteLayerOption(global, []string{testKeySessionTier}, testTierLight))
+
+		cfg, err := modelrouting.Load(global)
+		require.NoError(t, err)
+		require.Equal(t, testTierLight, cfg.SessionTier,
+			"the full persist→read path must resolve the written tier option")
+	})
+
+	t.Run("project write leaves the global layer byte-identical", func(t *testing.T) {
+		globalDir := t.TempDir()
+		globalPath := filepath.Join(globalDir, "config.yaml")
+
+		globalBytes := []byte("session_tier: heavy\n")
+		require.NoError(t, os.WriteFile(globalPath, globalBytes, 0o600))
+
+		projectPath := filepath.Join(t.TempDir(), "config.yaml")
+		require.NoError(t, WriteLayerOption(projectPath, []string{testKeySessionTier}, testTierLight))
+
+		got, err := os.ReadFile(globalPath)
+		require.NoError(t, err)
+		require.Equal(t, globalBytes, got,
+			"a project-layer write must never modify the global layer file")
+	})
+}
+
 // TestConfigWrite_RenameFailureKeepsOriginal: injecting a rename failure (the
 // crash-between-marshal-and-rename window) must surface a typed write error,
 // leave the ORIGINAL layer file byte-identical (no half-written state), and
