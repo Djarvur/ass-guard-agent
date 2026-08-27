@@ -170,6 +170,7 @@ const testTierLight = "light"
 // tier option — a session_tier write into a layer file resolves through the
 // REAL loader, and a project-layer write never touches the global layer file
 // (byte comparison, D-08 two-layer groundwork).
+//
 //nolint:paralleltest // renameFunc seam is package-global — serial family
 func TestConfigWrite_SessionTierRoundTrip(t *testing.T) {
 	t.Run("write global session_tier then Load resolves light", func(t *testing.T) {

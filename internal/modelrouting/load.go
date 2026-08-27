@@ -125,6 +125,12 @@ func applyDefaults(cfg *Config) {
 		cfg.Timezone = "UTC"
 	}
 
+	// session_tier absent → heavy (ACP-08's additive option, 16-04): the
+	// code default covers every config layering that predates the key.
+	if cfg.SessionTier == "" {
+		cfg.SessionTier = tierHeavy
+	}
+
 	cb := &cfg.CircuitBreaker
 	if cb.ConsecutiveFailures == 0 {
 		cb.ConsecutiveFailures = defaultBreaker.ConsecutiveFailures

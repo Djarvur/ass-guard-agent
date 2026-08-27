@@ -11,7 +11,16 @@ import (
 // (time-window → project → global) the resolver applies over the MERGED config
 // (pitfall 1).
 type Config struct {
-	Timezone       string                     `yaml:"timezone"`
+	Timezone string `yaml:"timezone"`
+
+	// SessionTier names the tier the interactive session runs on (ACP-08's
+	// editor-facing option; 16-05 advertises and applies it). Additive key
+	// (D-08 groundwork): either config layer may set it; an absent key gets
+	// the tierHeavy default at load time. This plan only parses, defaults,
+	// and round-trips it — tier consumption lands in 16-05's apply seam, so
+	// Validate does NOT cross-reference it (an unknown tier name is 16-05's
+	// typed-reject concern at the wire, per D-09).
+	SessionTier    string                     `yaml:"session_tier"`
 	Providers      map[string]ProviderConfig  `yaml:"providers"`
 	Models         map[string]ModelConfig     `yaml:"models"`
 	Tiers          map[string]TierBinding     `yaml:"tiers"`
