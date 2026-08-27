@@ -170,6 +170,14 @@ func readFrames(t *testing.T, cliR io.Reader, n int) []*acp.Message {
 // token-by-token through ACP: initialize → session/new → session/prompt emits
 // agent_message_chunk session/update notifications (one per chunk) before the
 // stopReason response. NO full-turn buffering (ACP-04).
+// Zed-like initialize advertisement fragments (acp.rs:767-795): advertising
+// elicitation.form keeps the D-13 advertisement-first path probe-free.
+const (
+	keyClientCapabilities = "clientCapabilities"
+	keyElicitation        = "elicitation"
+	keyForm               = "form"
+)
+
 func TestIntegration_RealStreamingThroughACP(t *testing.T) { //nolint:funlen // comprehensive test scenario
 	t.Parallel()
 
@@ -180,7 +188,12 @@ func TestIntegration_RealStreamingThroughACP(t *testing.T) { //nolint:funlen // 
 
 	sendFrame(t, cliW, &acp.Message{
 		JSONRPC: protocolVersion20, ID: json.RawMessage("0"), Method: "initialize",
-		Params: rawJSON(map[string]any{"protocolVersion": 1}),
+		Params: rawJSON(map[string]any{"protocolVersion": 1,
+			// Zed-like elicitation advertisement (acp.rs:767-795) — the D-13
+			// advertisement-first rule means NO capability probe fires.
+			keyClientCapabilities: map[string]any{
+				keyElicitation: map[string]any{keyForm: map[string]any{}},
+			}}),
 	})
 
 	frames := readFrames(t, cliR, 1)
@@ -269,7 +282,12 @@ func TestIntegration_SessionLoadNoOp(t *testing.T) {
 
 	sendFrame(t, cliW, &acp.Message{
 		JSONRPC: protocolVersion20, ID: json.RawMessage("0"), Method: "initialize",
-		Params: rawJSON(map[string]any{"protocolVersion": 1}),
+		Params: rawJSON(map[string]any{"protocolVersion": 1,
+			// Zed-like elicitation advertisement (acp.rs:767-795) — the D-13
+			// advertisement-first rule means NO capability probe fires.
+			keyClientCapabilities: map[string]any{
+				keyElicitation: map[string]any{keyForm: map[string]any{}},
+			}}),
 	})
 	readFrames(t, cliR, 1)
 	sendFrame(t, cliW, &acp.Message{

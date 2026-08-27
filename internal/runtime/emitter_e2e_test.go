@@ -190,7 +190,12 @@ func TestTurnEmitterEndToEnd(t *testing.T) { //nolint:funlen // full end-to-end 
 
 	sendFrame(t, cliW, &acp.Message{
 		JSONRPC: protocolVersion20, ID: json.RawMessage("0"), Method: methodInitialize,
-		Params: rawJSON(map[string]any{keyProtoVersion: 1}),
+		Params: rawJSON(map[string]any{keyProtoVersion: 1,
+			// Zed-like elicitation advertisement (acp.rs:767-795) — the D-13
+			// advertisement-first rule means NO capability probe fires.
+			keyClientCapabilities: map[string]any{
+				keyElicitation: map[string]any{keyForm: map[string]any{}},
+			}}),
 	})
 
 	frames := readFrames(t, cliR, 1)
