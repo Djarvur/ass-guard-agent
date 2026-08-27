@@ -246,7 +246,29 @@ Plans:
   5. Typing `/<skill-name>` runs the skill — SKILL.md body expands as the prompt with args appended; discovered AGENTS are invocable the same way (BMad-style `.claude/agents/*.md` layout works).
   6. A subagent dispatched to an agent whose frontmatter declares `model:` routes to that model (precedence frontmatter > dispatch > session default > tier), with resolvedModel reported back — mis-routed background launches become impossible before Phase 22 builds on this.
 
-**Plans**: TBD
+**Plans**: 6 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 20-01-PLAN.md — Tracer: command chain + /status class-B end-to-end + available_commands_update advertisement (ACP-04, CMDS-01, CMDS-02 spine; D-01..D-05)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 20-02-PLAN.md — Class-B family: twelve commands, /clear boundary, /cost endpoint-first, /model live-apply, /resume + /compact delegation seams (CMDS-02, D-06..D-09)
+- [ ] 20-03-PLAN.md — Per-agent model routing: precedence, inherit, cross-provider factory routing, resolvedModel both ways (SKLS-03, D-13..D-16)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 20-04-PLAN.md — Skills + agents as slash commands + /init class-A (SKLS-01, SKLS-02, CMDS-03, D-03)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 20-05-PLAN.md — Live rescan: fsnotify watch + debounce + atomic swap + freshness backstop + re-fire (CMDS-04, D-10..D-12)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 20-06-PLAN.md — Simulator E2E + criteria-to-evidence matrix + live-Zed operator checkpoint (all criteria)
 
 ### Phase 21: Context & Policy Parity Closures
 
@@ -344,7 +366,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 | 17. Permissions + Elicitation | v1.2 | 0/? | Not started | - |
 | 18. Session Family | v1.2 | 0/? | Not started | - |
 | 19. Compaction + cache_control | v1.2 | 0/5 | Not started | - |
-| 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 0/? | Not started | - |
+| 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 0/6 | Planned | - |
 | 21. Context & Policy Parity Closures | v1.2 | 0/? | Not started | - |
 | 22. Background Execution + Sandbox Reality | v1.2 | 0/? | Not started | - |
 | 23. SEED Gaps Close-out | v1.2 | 0/? | Not started | - |
