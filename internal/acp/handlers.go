@@ -232,10 +232,13 @@ func (s *Server) handleSessionSetMode(ctx context.Context, params json.RawMessag
 	return map[string]any{}, nil
 }
 
-// newSessionID returns a fresh random session id (RFC 4122 v4 UUID shape). It
-// panics on a CSPRNG failure — ass-guard cannot run without a working entropy
-// source (mirrors internal/shaper uuidV4).
-func newSessionID() string {
+// uuidV4 returns a fresh random RFC 4122 v4 UUID string. It panics on a CSPRNG
+// failure — ass-guard cannot run without a working entropy source (mirrors the
+// internal/shaper helper). 16-02/D-15 generalizes the newSessionID
+// construction: request ids are UUID v4 strings BOTH directions, and the same
+// CSPRNG shape serves session, message, tool-call, and request ids (RESEARCH
+// "Don't Hand-Roll" — collision-by-construction across restarts).
+func uuidV4() string {
 	var b [16]byte
 
 	_, err := rand.Read(b[:])
@@ -247,4 +250,11 @@ func newSessionID() string {
 	b[8] = (b[8] & variantMask) | uuidVariantSet
 
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
+}
+
+// newSessionID returns a fresh random session id (RFC 4122 v4 UUID shape via
+// uuidV4; the thin wrapper keeps session-id generation one named call-site
+// away from the general id generator).
+func newSessionID() string {
+	return uuidV4()
 }

@@ -1,4 +1,4 @@
-package acp
+package acp //nolint:testpackage // internal package test
 
 import (
 	"context"
@@ -131,9 +131,6 @@ func awaitOutcome(t *testing.T, ch <-chan registryOutcome) registryOutcome {
 	}
 }
 
-// quotedID renders a registry id as the JSON string the wire carries.
-func quotedID(id string) json.RawMessage { return json.RawMessage(`"` + id + `"`) }
-
 // TestRegistryConcurrentResolve proves ROADMAP criterion 3: an id'd request
 // written to the client resolves by id while notification frames stream
 // concurrently — resolution happens under the registry's own mutex, never the
@@ -147,6 +144,7 @@ func TestRegistryConcurrentResolve(t *testing.T) {
 	reg := NewRegistry(sink, stderr, WithRegistryCascade(caps.notify))
 
 	outcome := callAsync(reg, TimeoutFastControl)
+
 	sink.awaitCount(t, 1)
 
 	sent := sink.frameAt(0)
@@ -263,9 +261,11 @@ func TestRegistryRequestCancelledResponse(t *testing.T) {
 	t.Parallel()
 
 	sink := &registrySink{}
-	reg := NewRegistry(sink, &strings.Builder{}, WithRegistryTimeouts(RegistryConfig{FastControlTimeout: 4 * time.Millisecond}))
+	reg := NewRegistry(sink, &strings.Builder{},
+		WithRegistryTimeouts(RegistryConfig{FastControlTimeout: 4 * time.Millisecond}))
 
 	outcome := callAsync(reg, TimeoutFastControl)
+
 	sink.awaitCount(t, 1)
 
 	id := NormalizeRequestID(sink.frameAt(0).ID)
@@ -298,6 +298,7 @@ func TestRegistrySyntheticCancel(t *testing.T) {
 	reg := NewRegistry(sink, &strings.Builder{}, WithRegistryCascade(caps.notify))
 
 	outcome := callAsync(reg, TimeoutFastControl)
+
 	sink.awaitCount(t, 1)
 
 	id := NormalizeRequestID(sink.frameAt(0).ID)
@@ -321,8 +322,9 @@ func TestRegistrySyntheticCancel(t *testing.T) {
 		RequestID string `json:"requestId"` //nolint:tagliatelle // ACP wire field
 	}
 
-	if err := json.Unmarshal(cascades[0].Params, &params); err != nil {
-		t.Fatalf("unmarshal cascade params: %v (%s)", err, string(cascades[0].Params))
+	unmarshalErr := json.Unmarshal(cascades[0].Params, &params)
+	if unmarshalErr != nil {
+		t.Fatalf("unmarshal cascade params: %v (%s)", unmarshalErr, string(cascades[0].Params))
 	}
 
 	if params.RequestID != id {
@@ -378,6 +380,7 @@ func TestRegistryShutdown(t *testing.T) {
 	reg := NewRegistry(sink, &strings.Builder{}, WithRegistryCascade(caps.notify))
 
 	outcome := callAsync(reg, TimeoutFastControl)
+
 	sink.awaitCount(t, 1)
 
 	id := NormalizeRequestID(sink.frameAt(0).ID)
@@ -398,8 +401,9 @@ func TestRegistryShutdown(t *testing.T) {
 
 	before := sink.count()
 
-	if _, err := reg.Call(context.Background(), testOutboundMethod, nil, TimeoutFastControl); !errors.Is(err, ErrRequestCancelled) {
-		t.Errorf("post-shutdown Call err = %v; want ErrRequestCancelled", err)
+	_, callErr := reg.Call(context.Background(), testOutboundMethod, nil, TimeoutFastControl)
+	if !errors.Is(callErr, ErrRequestCancelled) {
+		t.Errorf("post-shutdown Call err = %v; want ErrRequestCancelled", callErr)
 	}
 
 	if got := sink.count(); got != before {

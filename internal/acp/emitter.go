@@ -522,6 +522,34 @@ func (h *EmitterHandle) ThoughtChunk(messageID string, content ContentBlock) err
 	})
 }
 
+// Notify enqueues one PRE-BUILT notification frame through this handle's class
+// lane with full Barrier accounting (16-02/D-19: the request registry's
+// synthetic-cancel $/cancel_request rides the FOREGROUND lane so the turn-end
+// barrier orders it before the prompt response — the documented cascade).
+// Unlike the frame methods above, the caller owns the payload; the handle only
+// routes and counts.
+func (h *EmitterHandle) Notify(msg *Message) error {
+	h.em.mu.Lock()
+	h.em.enqueued++
+	h.em.mu.Unlock()
+
+	lane := h.em.bg
+	if h.class == classForeground {
+		lane = h.em.fg
+	}
+
+	select {
+	case lane <- msg:
+		return nil
+	case <-h.em.ctx.Done(): // emitter stopped (serve teardown) — fail fast, never wedge post-Close (Pitfall 8)
+		h.em.mu.Lock()
+		h.em.enqueued--
+		h.em.mu.Unlock()
+
+		return fmt.Errorf("enqueue notification: %w", context.Canceled)
+	}
+}
+
 // applyOptionalCardFields fills the shared optional tool-card fields, omitting
 // every empty one (the wire shape treats them as partial-update options).
 func (h *EmitterHandle) applyOptionalCardFields(

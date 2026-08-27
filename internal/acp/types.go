@@ -178,11 +178,24 @@ type ThoughtChunkFrame struct {
 	Content   ContentBlock `json:"content"`   // required
 }
 
-// Canonical JSON-RPC error codes (jsonrpc.org/spec).
+// Canonical JSON-RPC error codes (jsonrpc.org/spec) + the ACP v1
+// request-cancellation code (docs/protocol/v1/cancellation.mdx). A response
+// carrying CodeRequestCancelled resolves a pending Registry entry as cancelled
+// with NO retry (D-14); internal cancellation SHOULD surface the same code.
 const (
-	CodeParseError     = -32700
-	CodeInvalidRequest = -32600
-	CodeMethodNotFound = -32601
-	CodeInvalidParams  = -32602
-	CodeInternalError  = -32603
+	CodeParseError       = -32700
+	CodeInvalidRequest   = -32600
+	CodeMethodNotFound   = -32601
+	CodeInvalidParams    = -32602
+	CodeInternalError    = -32603
+	CodeRequestCancelled = -32800
+)
+
+// Wire method names of the outbound-request surface (16-02/D-19).
+const (
+	// methodCancelRequest is the request-cancellation notification. Agent→client
+	// it cancels one of the CLIENT's in-flight activities (the documented
+	// cascade); client→agent it cancels one of OURS (a fast no-op for us in
+	// v1.2 — Assumption A8).
+	methodCancelRequest = "$/cancel_request"
 )
