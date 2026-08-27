@@ -4,18 +4,18 @@ milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 16
 current_phase_name: ACP Wire Foundation
-current_plan: 5
+current_plan: 6
 status: executing
-stopped_at: Completed 16-03-PLAN.md
-last_updated: "2026-08-27T16:23:54.718Z"
+stopped_at: Completed 16-05-PLAN.md
+last_updated: "2026-08-27T17:32:03.422Z"
 last_activity: 2026-08-27
 last_activity_desc: 16-01 executed — ordered TurnEmitter landed and proven
-state_head: 76091ff052ca8d8569e3b82a29e459c14c87d952
+state_head: a34d9e1b0fbf9fee42baadad3437eef82ff554ba
 progress:
   total_phases: 11
   completed_phases: 1
   total_plans: 29
-  completed_plans: 11
+  completed_plans: 12
   percent: 9
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-08-27)
 ## Current Position
 
 Phase: 16 (ACP Wire Foundation) — EXECUTING
-Current Plan: 5
+Current Plan: 6
 Total Plans in Phase: 6
 Status: Ready to execute
 Last activity: 2026-08-27 — 16-01 executed (ordered TurnEmitter, 3 tasks, 5 commits)
@@ -57,6 +57,7 @@ Progress: [████████░░░░░░░░░░░] 8/29 plans
 | Phase 16 P02 | 16 min | 2 tasks | 3 files |
 | Phase 16 P04 | 13 min | 2 tasks | 5 files |
 | Phase 16 P03 | 38 min | 3 tasks | 10 files |
+| Phase 16 P05 | 49 min | 3 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -84,6 +85,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 16]: 16-04 modelrouting.DeepMerge exported (was unexported deepMerge) — the config writer reuses Load's overlay semantics verbatim so a written layer is inverse-compatible with the loader that reads it back; no forked merge — Round-trip fidelity is the D-07 write-half contract; duplicating the merge rules would drift silently
 - [Phase 16]: 16-04 WriteLayerOption atomic sibling-temp+rename at hard 0600 (dirs 0750 max), no fsync — parity with the session append path convention; renameFunc unexported seam proves the crash-between-marshal-and-rename window — Typed LayerReadError/LayerWriteError give 16-05 distinct JSON-RPC error classes; every failure leaves the target byte-identical with no temp leftovers (T-16-10/11)
 - [Phase 16]: 16-04 session_tier is parse/default/round-trip only — Validate does NOT cross-reference it; tier consumption and D-09 typed rejection land in 16-05's apply seam — Keeps the config package ACP-free and value whitelisting at the wire where the menu ids live (T-16-12)
+- [Phase 16]: 16-05: set REQUEST field is configId (v1 SetSessionConfigOptionRequest) while the advertisement key is id — both verbatim from the fetched schema; plan prose's optionId normalized to wire truth — Pitfall-7 discipline: wire shapes come from the canonical schema, never plan prose
+- [Phase 16]: 16-05: D-10 explicitness boundary drawn at the LAYER FILES — the _meta blob beats the embedded floor in-memory only, never persists, and an idempotent re-push of a blob-derived value neither churns the layer nor promotes it into persisted config — Files are operator config (D-10/D-12); the floor is not — a redundant Zed default re-push must not become explicit config
+- [Phase 16]: 16-05: live apply rides Runner.ApplyTurnModel under the per-session turn mutex — mid-turn Sets land between turns; model writes go through tiers.<tier>.model, _global/ prefix addresses the global layer; cross-provider targets degrade loudly with model unchanged — Reuses 12-07 queue semantics as the no-torn-stamp gate and the resolveSubagentModel loud-degrade precedent
 
 ### Pending Todos
 
@@ -103,6 +107,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-27T16:23:54.589Z
-Stopped at: Completed 16-03-PLAN.md
+Last session: 2026-08-27T17:31:45.292Z
+Stopped at: Completed 16-05-PLAN.md
 Resume file: None
