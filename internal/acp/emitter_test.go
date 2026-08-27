@@ -626,8 +626,9 @@ func updateOf(t *testing.T, m *Message) map[string]any {
 		Update map[string]any `json:"update"`
 	}
 
-	if err := json.Unmarshal(m.Params, &params); err != nil {
-		t.Fatalf("decode update: %v (%s)", err, string(m.Params))
+	unmarshalErr := json.Unmarshal(m.Params, &params)
+	if unmarshalErr != nil {
+		t.Fatalf("decode update: %v (%s)", unmarshalErr, string(m.Params))
 	}
 
 	return params.Update
@@ -640,7 +641,7 @@ func updateOf(t *testing.T, m *Message) map[string]any {
 // NOT also emit a tool_call card for that call. Any other tool still gets its
 // ordinary card, and a malformed TodoWrite input falls back to the card (the
 // real activity must stay visible — ACP-03 transparency).
-func TestPlanFrameFromTodoWrite(t *testing.T) { //nolint:funlen // three scenarios, one rule
+func TestPlanFrameFromTodoWrite(t *testing.T) { //nolint:funlen,cyclop // three scenarios, one rule
 	t.Parallel()
 
 	rec := &recordingSink{}
@@ -648,7 +649,7 @@ func TestPlanFrameFromTodoWrite(t *testing.T) { //nolint:funlen // three scenari
 	em := NewTurnEmitter(rec, &syncBuffer{}, TurnEmitterConfig{})
 	defer em.Stop()
 
-	fg := em.ForegroundHandle("sess").(ActivityEmitter) //nolint:forcetypeassert // the handle implements the full surface
+	fg := em.ForegroundHandle("sess").(ActivityEmitter) //nolint:forcetypeassert // handle implements the full surface
 
 	// Scenario 1: the happy path — plan frame instead of a tool card.
 	err := fg.ToolCall(&ToolCallFrame{
@@ -739,7 +740,7 @@ func TestThoughtChunkFrame(t *testing.T) {
 	em := NewTurnEmitter(rec, &syncBuffer{}, TurnEmitterConfig{})
 	defer em.Stop()
 
-	fg := em.ForegroundHandle("sess").(ActivityEmitter) //nolint:forcetypeassert // the handle implements the full surface
+	fg := em.ForegroundHandle("sess").(ActivityEmitter) //nolint:forcetypeassert // handle implements the full surface
 
 	err := fg.ThoughtChunk("msg-9", ContentBlock{Type: blockText, Text: "considering the ordering"})
 	if err != nil {
@@ -781,7 +782,7 @@ func TestToolCallUpdateFrame(t *testing.T) {
 	em := NewTurnEmitter(rec, &syncBuffer{}, TurnEmitterConfig{})
 	defer em.Stop()
 
-	fg := em.ForegroundHandle("sess").(ActivityEmitter) //nolint:forcetypeassert // the handle implements the full surface
+	fg := em.ForegroundHandle("sess").(ActivityEmitter) //nolint:forcetypeassert // handle implements the full surface
 
 	line := int64(42)
 

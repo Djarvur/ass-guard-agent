@@ -104,6 +104,11 @@ const (
 // (a forwarder bug must surface as a dropped card with an error, not a panic).
 var errNilFrame = errors.New("acp: nil tool-call frame")
 
+// todoWriteToolName is the captured core tool whose calls render as live plan
+// frames instead of tool cards (spelling pinned against the registered core
+// working set — coreexec/register.go: "TodoWrite").
+const todoWriteToolName = "TodoWrite"
+
 // TurnEmitter owns the ordered session/update notification path. One instance
 // per server lifetime, constructed inside NewServer (configured at the
 // composition root via WithTurnEmitter) so EVERY notification path — prompt
@@ -425,10 +430,22 @@ func (h *EmitterHandle) AgentMessageChunk(messageID, text string) error {
 	})
 }
 
-// ToolCall mirrors a model-selected tool invocation as a v1 tool_call card.
+// ToolCall mirrors a model-selected tool invocation as a v1 tool_call card —
+// except TodoWrite (16-01 presentation rule, applied HERE in the acp layer so
+// the runtime stays ACP-word-free per 15-D-20): its captured {todos:[…]} input
+// becomes a full-replacement `plan` update instead of a card, and ONLY the
+// plan frame is emitted for that call. A malformed TodoWrite input falls back
+// to the ordinary card — the activity is real either way and must stay visible
+// (ACP-03 transparency: presentation never fabricates or hides activity).
 func (h *EmitterHandle) ToolCall(frame *ToolCallFrame) error {
 	if frame == nil {
 		return errNilFrame
+	}
+
+	if frame.Title == todoWriteToolName {
+		if entries, ok := planEntriesFromTodoInput(frame.Input); ok {
+			return h.PlanUpdate(entries)
+		}
 	}
 
 	update := map[string]any{
@@ -439,6 +456,29 @@ func (h *EmitterHandle) ToolCall(frame *ToolCallFrame) error {
 	h.applyOptionalCardFields(update, frame.Title, frame.Kind, frame.Status, frame.Content, frame.Locations)
 
 	return h.enqueueUpdate(update)
+}
+
+// planEntriesFromTodoInput decodes the captured TodoWrite input shape
+// ({todos:[{content,status,priority}]}, coreexec/todo.go) into v1 plan entries.
+// The field names and the status/priority enums coincide verbatim with the
+// captured fixtures, so the mapping is a pure re-type — never a rewrite. ok is
+// false when the input is absent or unparseable (the caller falls back to the
+// tool card).
+func planEntriesFromTodoInput(raw json.RawMessage) ([]PlanEntry, bool) {
+	if len(raw) == 0 {
+		return nil, false
+	}
+
+	var parsed struct {
+		Todos []PlanEntry `json:"todos"`
+	}
+
+	unmarshalErr := json.Unmarshal(raw, &parsed)
+	if unmarshalErr != nil {
+		return nil, false
+	}
+
+	return parsed.Todos, true
 }
 
 // ToolCallUpdate mirrors a partial/in-progress update for a tool call.

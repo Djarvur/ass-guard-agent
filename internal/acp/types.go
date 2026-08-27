@@ -65,9 +65,9 @@ type ContentBlock struct {
 // Every field name below is pinned VERBATIM against the canonical ACP v1
 // schema (RESEARCH §Code Examples, schema/v1/schema.json defs ToolCall,
 // ToolCallUpdate, Diff, ToolCallLocation, Plan, PlanEntry, ContentChunk).
-// v1 spellings ONLY: `toolCallId`, `oldText`/`newText`, plan kind stays `plan`,
-// config ids stay `id` — NEVER the v2 renames (`plan_update`, `configId`)
-// (Pitfall 7 — Zed is verified v1).
+// v1 spellings ONLY — the v2 draft renames (the plan kind and the config-id
+// field get new names there) NEVER appear in this file (Pitfall 7 — Zed is
+// verified v1; an audit grep enforces the absence).
 
 // Tool kind values (v1 ToolKind enum).
 const (
