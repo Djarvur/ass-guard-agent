@@ -401,20 +401,25 @@ Picker row content for D-11 calibration: "the session name if you set one, other
 | A5 | CC picker behaviors (Ctrl+A widen, branch grouping, rename) are NOT parity targets for D-11's numbered picker | Code Examples | Scope creep only; REQUIREMENTS out-of-scope table already bars agent-side TUI pickers |
 | A6 | Synthetic closures are APPENDED to the transcript on load (on-disk provenance per D-02 "unambiguous on disk"), not merely emitted into replay | Pattern 5 | If planner chooses replay-only emission, audit post-mortem of kill -9 cases weakens; either satisfies the UI half of D-02 — decide in planning |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **`--resume <id|name>` resolution scope beyond cwd**
+All three questions were resolved during Phase 18 planning (2026-08-27); each resolution names the plan/task that owns it.
+
+1. **`--resume <id|name>` resolution scope beyond cwd** — **(RESOLVED)**
    - What we know: CC resolves `<session-id>` across all projects (unique-match); ass-guard stores transcripts per project directory with no central registry.
    - What's unclear: whether ACP-06's "`--resume` anywhere" demands cross-directory search or only CLI-surface availability.
    - Recommendation: default to cwd-scoped resolution + clear "not found in this directory" error; treat global search as a follow-up needing a project registry (A2). Planner confirms with operator only if cheap; otherwise document the deviation.
-2. **Phase-17 pending-permission state on disk (inventory class 10)**
+   - **Resolution:** recommendation taken — cwd-scoped resolution with a not-found error naming the directory searched, recorded as the documented deviation in 18-06-PLAN.md `<deviation_note>` (cross-project unique-match search would need a project-directory registry — a store design decision outside this phase's sources). The deviation is surfaced to the operator for sign-off at phase verification, not silently descoped.
+2. **Phase-17 pending-permission state on disk (inventory class 10)** — **(RESOLVED)**
    - What we know: reconciliation is transcript-only (D-01); permission asks post-17 suspend via AskBroker and 17-D-13 drains them on turn death.
    - What's unclear: whether Phase 17's plan records pending gate state as transcript lines (needed) or in-memory only (breaks class-10 reconciliation).
    - Recommendation: planner reads 17's PLAN.md when it lands; if in-memory only, Phase 18 must add the additive line kind (16-D-20 permits) or accept that pending permission asks resolve as cancelled-normal (class-3 treatment) — the latter is probably correct UX anyway.
-3. **Picker/CLI landing surface**
+   - **Resolution:** class-3 treatment confirmed — 18-05 Task 1 carries the precondition that reads 17's landed PLAN/SUMMARY set before wiring; either shape 17 shipped is safe: `ask_suspended`-without-resolution closes as cancelled-normal, and in-memory-only ask registries are empty after process death by construction (no parked ask can fire post-resume). 18-05's SUMMARY records which shape 17 actually shipped.
+3. **Picker/CLI landing surface** — **(RESOLVED)**
    - What we know: root command is a one-shot tracer requiring `--prompt`; `acp serve` is the Zed entrypoint; D-10's trio implies an interactive conversational loop or at least a resume-then-serve flow.
    - What's unclear: whether `--resume` attaches to root, to `acp serve`, or to a new interactive mode; Phase 18's boundary says "CLI flag parsing in cmd (root/acp command) — --resume/--continue pre-serve selection," suggesting flags select a session then hand off to serve wiring.
    - Recommendation: flags on `acp serve` (and a thin root passthrough if criterion 3's "works anywhere" demands it) that resolve the target BEFORE `acpserve.Run` and inject it as the initial loaded session via the same load engine as session/load — one engine, two entrypoints.
+   - **Resolution:** recommendation taken, widened to both entrypoints — 18-06 registers `--resume`/`--continue` as persistent flags on the ROOT command (inherited by `acp serve` via cobra), resolves the target through one shared resolver, and injects it via `Options.ResumeTarget` consumed by `acpserve.Run` before Serve through the exported `Server.LoadSession` core (18-06 must_haves: one engine, two entrypoints).
 
 ## Environment Availability
 
