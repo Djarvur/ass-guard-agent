@@ -26,6 +26,7 @@ type pipeHarness struct {
 	cliR   *io.PipeReader // client reads frames here (← server stdout)
 	cbr    *bufio.Reader  // one shared client bufio.Reader over cliR
 	cliMu  sync.Mutex     // serializes client reads (one reader at a time)
+	stderr *strings.Builder
 	cancel context.CancelFunc
 }
 
@@ -43,6 +44,7 @@ func newPipeHarness(t *testing.T, opts ...ServerOption) *pipeHarness {
 		cliR:   cliR,
 		cbr:    bufio.NewReader(cliR),
 		srv:    srv,
+		stderr: stderr,
 		cancel: cancel,
 	}
 	done := make(chan struct{})
@@ -598,5 +600,108 @@ func TestErrorResponseShape(t *testing.T) {
 
 	if loadResp.Error.Code != CodeMethodNotFound {
 		t.Errorf("session/load error code = %d; want -32601 (method not found)", loadResp.Error.Code)
+	}
+}
+
+// handshake runs initialize (and swallows its response) so tests exercise a
+// post-initialize connection.
+func handshake(t *testing.T, h *pipeHarness) {
+	t.Helper()
+
+	h.send(t, newRequest(0, methodInitialize, map[string]any{keyProtocolVersion: 1}))
+	h.readFrame(t)
+}
+
+// TestServeResponseRouting proves Pitfall 1's fix: an inbound frame with an id,
+// NO method, and a result-or-error is a RESPONSE to one of OUR outbound
+// requests — delivered to the registry BEFORE handler dispatch, producing ZERO
+// outbound frames (no spurious -32601). Unknown ids get exactly one structured
+// stderr log and are dropped; serving continues.
+func TestServeResponseRouting(t *testing.T) { //nolint:funlen // three scenarios, one routing rule
+	t.Parallel()
+
+	h := newPipeHarness(t)
+	handshake(t, h)
+
+	// A pending outbound Call from a paired goroutine.
+	outcome := make(chan registryOutcome, 1)
+
+	go func() {
+		msg, err := h.srv.registry.Call(context.Background(), testOutboundMethod, map[string]any{"q": 1}, TimeoutFastControl)
+		outcome <- registryOutcome{msg: msg, err: err}
+	}()
+
+	req := h.readFrame(t)
+	if req.Method != testOutboundMethod {
+		t.Fatalf("outbound method = %q; want %q", req.Method, testOutboundMethod)
+	}
+
+	id := NormalizeRequestID(req.ID)
+
+	// Answer it — the response must resolve the Call and produce NO reply.
+	h.send(t, &Message{JSONRPC: protocolVersion20, ID: quotedID(id), Result: json.RawMessage(`{"pong":true}`)})
+
+	select {
+	case oc := <-outcome:
+		if oc.err != nil {
+			t.Fatalf("Call errored: %v", oc.err)
+		}
+
+		if string(oc.msg.Result) != `{"pong":true}` {
+			t.Errorf("resolved result = %s; want {\"pong\":true}", string(oc.msg.Result))
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("response frame never resolved the pending Call")
+	}
+
+	// Zero spurious frames: the very next frame on stdout is our probe's
+	// response (a mis-dispatched response would surface a -32601 first).
+	h.send(t, newRequest(7, methodInitialize, map[string]any{keyProtocolVersion: 1}))
+	next := h.readFrame(t)
+	if string(next.ID) != "7" {
+		t.Fatalf("expected the initialize response next; got method=%q id=%v (spurious dispatch?)", next.Method, next.ID)
+	}
+
+	// Unknown-id response: exactly one structured stderr log, dropped, and the
+	// server keeps serving.
+	const bogusID = "00000000-0000-4000-8000-000000000000"
+
+	h.send(t, &Message{JSONRPC: protocolVersion20, ID: quotedID(bogusID), Error: &RPCError{Code: CodeInternalError, Message: "late"}})
+	h.send(t, newRequest(8, methodInitialize, map[string]any{keyProtocolVersion: 1}))
+	next = h.readFrame(t)
+	if string(next.ID) != "8" {
+		t.Fatalf("expected the second initialize response next; got method=%q id=%v", next.Method, next.ID)
+	}
+
+	logs := h.stderr.String()
+	if n := strings.Count(logs, "response for unknown id"); n != 1 {
+		t.Errorf("unknown-id log lines = %d; want exactly 1", n)
+	}
+
+	if !strings.Contains(logs, bogusID) {
+		t.Error("unknown-id log missing the id")
+	}
+}
+
+// TestServeInboundCancelNoOp proves A8: an inbound $/cancel_request
+// notification (the client cancelling ITS request) is a fast no-op — logged,
+// no response frame (notifications get none), no error.
+func TestServeInboundCancelNoOp(t *testing.T) {
+	t.Parallel()
+
+	h := newPipeHarness(t)
+	handshake(t, h)
+
+	h.send(t, newNotification(methodCancelRequest, map[string]any{"requestId": "client-req-1"}))
+	h.send(t, newRequest(9, methodInitialize, map[string]any{keyProtocolVersion: 1}))
+
+	next := h.readFrame(t)
+	if string(next.ID) != "9" {
+		t.Fatalf("expected the initialize response next; got method=%q id=%v (cancel produced a frame?)", next.Method, next.ID)
+	}
+
+	logs := h.stderr.String()
+	if !strings.Contains(logs, "cancel_request") || !strings.Contains(logs, "client-req-1") {
+		t.Errorf("inbound cancel not logged (logs=%q)", logs)
 	}
 }
