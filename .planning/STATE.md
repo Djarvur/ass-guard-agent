@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Claude Code Parity
-current_phase: 15
-current_phase_name: internal/runtime Carve (Step 0)
-status: verifying
+current_phase: 16
+current_phase_name: ACP Wire Foundation
+status: executing
 stopped_at: Phase 23 context gathered
-last_updated: "2026-08-27T01:03:19.699Z"
+last_updated: "2026-08-27T01:09:08.833Z"
 last_activity: 2026-08-26
 last_activity_desc: Phase 15 execution started
-state_head: b72f7b783a5608a59568aff6487fae59bebea466
+state_head: ea4f214aed586155e1484ed07eb8ec9c66d86755
 progress:
   total_phases: 11
   completed_phases: 0
@@ -28,9 +28,9 @@ See: .planning/PROJECT.md (updated 2026-08-26)
 
 ## Current Position
 
-Phase: 15 (internal/runtime Carve (Step 0)) — EXECUTING
+Phase: 16 (ACP Wire Foundation) — READY TO EXECUTE
 Plan: 7 of 7
-Status: Phase complete — ready for verification
+Status: Ready to execute
 Last activity: 2026-08-26 — Phase 15 execution started
 
 Progress: [░░░░░░░░░░] 0%
