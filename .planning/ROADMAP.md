@@ -111,7 +111,7 @@ Plans:
   4. Initialize/new/load/resume responses carry the richer capability set (loadSession, sessionCapabilities, configOptions advertisement shape), verified against the ACP schema in a real Zed handshake.
   5. Transcript lines for raw thinking (`json.RawMessage` passthrough), local_command, and the compaction marker type exist append-only with redaction excluded by construction for thinking bytes.
 
-**Plans**: 6/6 plans executed
+**Plans**: 6/6 plans executed + 3 gap-closure plans (16-07..16-09, from 16-VERIFICATION.md)
 
 Plans:
 **Wave 1**
@@ -131,6 +131,14 @@ Plans:
 **Wave 4** *(blocked on Wave 3 completion)*
 
 - [x] 16-06-PLAN.md — Zed-client simulator E2E + adversarial soak + live-Zed operator checkpoint
+
+**Gap closure** *(from 16-VERIFICATION.md: gaps_found — CR-01 barrier lost-wakeup, WR-05 scope semantics, chip truthfulness)*
+
+**Wave 1**
+
+- [ ] 16-07-PLAN.md — Gap closure: Barrier broadcast wake — CR-01 two-concurrent-waiter lost wakeup (gaps 1-2, ACP-03)
+- [ ] 16-08-PLAN.md — Gap closure: scope-aware config surface — global-layer idempotence + layer-true _global twins (gaps 3, 4a, 5, ACP-08)
+- [ ] 16-09-PLAN.md — Gap closure: chip truthfulness — runner default follows the tier resolution (gap 4b, ACP-08)
 
 ### Phase 17: Permissions + Elicitation
 
