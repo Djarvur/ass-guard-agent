@@ -61,7 +61,7 @@ func Load(paths ...string) (*Config, error) {
 			return nil, fmt.Errorf("decode scheduling config %q: %w", p, err)
 		}
 
-		deepMerge(merged, overlay)
+		DeepMerge(merged, overlay)
 	}
 
 	// Re-marshal the merged map and decode into the typed Config so yaml tags +
@@ -94,15 +94,20 @@ func Load(paths ...string) (*Config, error) {
 	return &cfg, nil
 }
 
-// deepMerge recursively merges src into dst. For shared keys whose values are
-// both maps, it recurses (deep merge); otherwise src's value wins (overlay
-// semantics). Mutates dst in place.
-func deepMerge(dst, src map[string]any) {
+// DeepMerge recursively merges src into dst — the layer-overlay semantics Load
+// applies between every pair of config layers. Exported because the D-07
+// config writer (internal/providerfactory) must apply key-path writes with
+// EXACTLY these semantics: a layer written through DeepMerge is
+// inverse-compatible with the Load that reads it back (what Load returns after
+// a write is exactly what was written, at the written key path). For shared
+// keys whose values are both maps, it recurses (deep merge); otherwise src's
+// value wins (overlay semantics). Mutates dst in place.
+func DeepMerge(dst, src map[string]any) {
 	for k, sv := range src {
 		if sm, ok := sv.(map[string]any); ok {
 			if dv, ok := dst[k]; ok {
 				if dm, ok := dv.(map[string]any); ok {
-					deepMerge(dm, sm)
+					DeepMerge(dm, sm)
 
 					continue
 				}
