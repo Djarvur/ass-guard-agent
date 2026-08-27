@@ -485,22 +485,26 @@ go func() {
 | A4 | BMad-style installers write `.claude/agents/*.md` (SKLS-02's own letter) and need no BMad-specific parsing beyond what `discoverAgents` already does | SKLS-02 row | None — the loader already walks exactly that layout [VERIFIED: loader.go:185–224] |
 | A5 | Phase 16–19 plans land before Phase 20 executes (Phase 16 plans 07–09 and all of 17–19 are planned/pending per STATE.md) so `/compact` (19-D-11), the picker (18-D-10), and gate machinery (17) exist to delegate to | Summary | If ordering shifts, the delegating handlers stub behind seams — no structural risk, but criterion 3's /compact leg depends on Phase 19 |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Which providers expose live usage/billing endpoints for /cost (D-07)?**
    - What we know: D-07 locks the ORDER (endpoint live when one exists → transcript × cost table fallback) and the timeout class; the fallback is fully implementable today from `Target.Pricing` + transcript usage lines.
    - What's unclear: per-provider endpoint availability/shape (Z.ai, Anthropic, MiniMax, OpenRouter) — not verifiable without operator credentials.
    - Recommendation: plan the endpoint fetch as a per-provider capability seam (config-declared "none" default); executor verifies against the operator's actual providers behind a checkpoint if none is found. Never blocks the class-B budget (fallback + source note).
+   - RESOLVED (20-02 Task 3): the endpoint fetch ships as the config-declared per-provider usage-endpoint capability seam (default "none"); the live leg runs only when a capability is declared, under the ~10s FAST-CONTROL budget; absence/timeout/error fall back to transcript × Pricing with the mandatory source note (P-20-02). Per-provider endpoint availability remains an execution-time item gated on operator credentials — the fallback is the contract, never a blocker.
 2. **Watcher owner: acpserve (composition) or runtime?**
    - What we know: the watch lifecycle ties to the serve ctx (CONTEXT integration point); the chain + rescan consumer is the Runner; the advertisement emitter lives on the acp server.
    - What's unclear: which package owns the goroutine.
    - Recommendation: runtime owns the chain + rescan (it owns `Discover` and resolution); acpserve owns the wire (watches the runner's rescan-complete callback → `NotifyAvailableCommands`). Keeps 15-D-20 layering.
+   - RESOLVED (20-05 Task 1): as recommended — runtime owns the chain + rescan machinery in internal/runtime/rescan.go (watch set, debounce, Discover re-run, atomic swap); acpserve owns the wire (starts/stops the watcher on the serve ctx and fires `NotifyAvailableCommands` via the rescan-complete callback seam). 15-D-20 layering preserved.
 3. **Does `/compact` accept focus-instruction args (CC parity) or ignore them?**
    - What we know: CC's /compact takes optional focus instructions; 19-D-11 locks same-machinery-immediate but says nothing about args.
    - Recommendation: pass typed args through to the Phase 19 summarizer entry if its signature admits them; otherwise record args in local_command (verbatim, D-22) and note "focus instructions not yet supported" in the output — planner picks with Phase 19's plan in hand.
+   - RESOLVED (20-02 Task 2): /compact passes typed args through to the registered Phase 19 seam when its signature admits them; the args are recorded verbatim in the local_command line (16-D-22) either way, so the durable record never loses what the operator typed.
 4. **Should `user-invocable: false` skills be hidden from the advertisement (CC hides them from the `/` menu)?**
    - What we know: CC: `user-invocable: false` → "hides it from the `/` menu and doesn't run it when you type /name" [CITED: code.claude.com/docs/en/skills]; ass-guard's `Skill` type does not parse that field today.
    - Recommendation: parse the two relevant fields (`user-invocable`, `disable-model-invocation`) in the chain build and exclude `user-invocable: false` from the chain (it can never fire via slash — D-04 winners-only says absent); treat as a small, CC-parity-faithful addition. Planner confirms.
+   - RESOLVED (20-04 Task 1): the Skill parse gains `user-invocable` (additive frontmatter field following the existing tolerant-parser patterns, default true when absent); a skill with `user-invocable: false` is excluded from the chain and the advertisement — it cannot fire via slash (D-04 winners-only honesty) — while remaining reachable on the model-invocation path.
 
 ## Environment Availability
 
