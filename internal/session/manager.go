@@ -2,6 +2,7 @@ package session
 
 import (
 	"bufio"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -100,6 +101,63 @@ func (m *Manager) appendLine(line *Line) error { //nolint:funcorder // ordering 
 	}
 
 	return nil
+}
+
+// appendLineUnredacted is the raw_thinking-ONLY append path (D-23, T-16-04):
+// it marshals the line and writes it under the mutex WITHOUT invoking the
+// Redactor — provider thinking bytes reach the transcript verbatim. It is a
+// DELIBERATE near-copy of appendLine minus the redact block; do NOT extract
+// a shared marshal/newline helper across the two paths — the distinct code
+// path IS the guarantee (Pitfall 5's warning sign is any shared helper). The
+// exemption is type-scoped to raw_thinking and must never widen.
+func (m *Manager) appendLineUnredacted(line *Line) error { //nolint:funcorder // ordering groups related logic
+	raw, err := json.Marshal(line)
+	if err != nil {
+		return fmt.Errorf("call: %w", err)
+	}
+
+	raw = append(raw, '\n')
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.f == nil {
+		return errManagerClosed
+	}
+
+	_, err = m.f.Write(raw)
+	if err != nil {
+		return fmt.Errorf("call: %w", err)
+	}
+
+	return nil
+}
+
+// RFC 4122 v4 bit masks for uuidV4 (same in-repo construction as
+// internal/acp newSessionID / internal/shaper uuidV4).
+const (
+	uuidVersionMask = 0x0F
+	uuidVariantMask = 0x3F
+	uuidVersionV4   = 0x40 // version nibble 0b0100
+	uuidVariant10   = 0x80 // variant bits 0b10
+)
+
+// uuidV4 returns a fresh RFC 4122 v4 UUID string using crypto/rand. It
+// panics on CSPRNG failure — ass-guard cannot run without a working entropy
+// source. Replicated locally (the acp/shaper helpers are unexported, and
+// session must not import the wire packages for an id shape).
+func uuidV4() string {
+	var b [16]byte
+
+	_, err := rand.Read(b[:])
+	if err != nil {
+		panic("crypto/rand failed: " + err.Error())
+	}
+
+	b[6] = (b[6] & uuidVersionMask) | uuidVersionV4
+	b[8] = (b[8] & uuidVariantMask) | uuidVariant10
+
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
 func now() time.Time { return time.Now().UTC() }
@@ -280,6 +338,44 @@ func (m *Manager) AppendEngineDecision(
 		MatchedSpan:  matchedSpan,
 		ConfigSource: configSource,
 		Text:         reason,
+	})
+}
+
+// AppendRawThinking records one raw provider thinking block (D-20/D-23):
+// payload is the provider's own JSON bytes (json.RawMessage — never
+// re-serialized) and model is the provider attribution (Phase 21 / PAR-05
+// provenance). Routed through appendLineUnredacted — the Redactor NEVER sees
+// thinking bytes (counting-fake test pins zero calls).
+func (m *Manager) AppendRawThinking(turnID, model string, payload json.RawMessage) error {
+	return m.appendLineUnredacted(&Line{
+		Type: TypeRawThinking, TurnID: turnID, Timestamp: now(),
+		Model: model, Content: payload,
+	})
+}
+
+// AppendLocalCommand records a full local-command invocation record (D-22):
+// the command key + the VERBATIM typed args (no shell re-quoting or
+// normalization) + the resolution-source chain in resolution order
+// (builtin → skills → agents → file per CMDS-01) + the expansion outcome.
+// Metadata goes through the REDACTED path like every non-thinking kind
+// (D-23's exemption is type-scoped to raw_thinking).
+func (m *Manager) AppendLocalCommand(turnID, key, args, expansion string, sourceChain []string) error {
+	return m.appendLine(&Line{
+		Type: TypeLocalCommand, TurnID: turnID, Timestamp: now(),
+		Name: key, Args: args, Expansion: expansion, SourceChain: sourceChain,
+	})
+}
+
+// AppendCompaction records a compaction boundary marker (D-21): a fresh
+// boundary id + the token-usage snapshot at the boundary (input/output/cache
+// totals) + opaque pre/post transcript pointers (what survived / where the
+// projected window resets). Phase 19 reconstructs the reset from the marker
+// alone. Metadata goes through the REDACTED path (not provider bytes).
+func (m *Manager) AppendCompaction(turnID, preRef, postRef string, input, output, cache int64) error {
+	return m.appendLine(&Line{
+		Type: TypeCompaction, TurnID: turnID, Timestamp: now(),
+		BoundaryID: uuidV4(), PreRef: preRef, PostRef: postRef,
+		InputTokens: input, OutputTokens: output, CacheTokens: cache,
 	})
 }
 
