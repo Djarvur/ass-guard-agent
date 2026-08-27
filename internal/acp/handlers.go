@@ -19,7 +19,8 @@ var errMissingSessionid = errors.New("session/prompt: missing sessionId")
 
 // registerHandlers populates the method→handler map with the canonical ACP v1
 // method set (VERIFIED-FACTS #3): initialize, session/new, session/prompt,
-// session/cancel, session/load (no-op per D-09), logout, session/set_mode.
+// session/cancel, session/load (no-op per D-09), logout, session/set_mode,
+// session/set_config_option (16-05/ACP-08).
 func (s *Server) registerHandlers() {
 	s.handlers[methodInitialize] = s.handleInitialize
 	s.handlers["session/new"] = s.handleSessionNew
@@ -29,16 +30,21 @@ func (s *Server) registerHandlers() {
 	s.handlers["logout"] = s.handleLogout
 	s.handlers["session/set_mode"] = s.handleSessionSetMode
 	s.handlers[methodCancelRequest] = s.handleCancelRequestNoOp
+	s.handlers[methodSetConfigOption] = s.handleSetConfigOption
 }
 
 // initializeResponse is the initialize result (INITIALIZATION.md / VERIFIED-
 // FACTS #3). The field name is `agentCapabilities` (NOT capabilities/serverInfo),
 // protocolVersion is integer 1, and loadSession is false (D-09 — NO replay).
+// configOptions (16-05) advertises the v1.2 menu with effective current values
+// when a ConfigSurface is wired; omitted entirely without one (the degrade —
+// existing acpserve-less handshakes stay byte-compatible).
 type initializeResponse struct {
-	ProtocolVersion   int            `json:"protocolVersion"`   //nolint:tagliatelle // ACP wire field
-	AgentCapabilities map[string]any `json:"agentCapabilities"` //nolint:tagliatelle // ACP wire field
-	AgentInfo         map[string]any `json:"agentInfo"`         //nolint:tagliatelle // ACP wire field
-	AuthMethods       []any          `json:"authMethods"`       //nolint:tagliatelle // ACP wire field
+	ProtocolVersion   int                 `json:"protocolVersion"`         //nolint:tagliatelle // ACP wire field
+	AgentCapabilities map[string]any      `json:"agentCapabilities"`       //nolint:tagliatelle // ACP wire field
+	AgentInfo         map[string]any      `json:"agentInfo"`               //nolint:tagliatelle // ACP wire field
+	AuthMethods       []any               `json:"authMethods"`             //nolint:tagliatelle // ACP wire field
+	ConfigOptions     []ConfigOptionFrame `json:"configOptions,omitempty"` //nolint:tagliatelle // ACP wire field
 }
 
 // handleInitialize negotiates the elicitation-form capability (D-13) and
@@ -49,7 +55,16 @@ type initializeResponse struct {
 // either outcome — D-18), bounded by the D-14 ladder. initialize ALWAYS
 // responds, degraded or not; agentCapabilities are unchanged by degradation
 // (D-13: every surface knows to degrade — the response never withholds).
+//
+// 16-05 (D-10): the request's _meta object is the schema-tolerant
+// client-defaults blob channel — recognized option keys fill unset slots
+// in-memory (explicit config always wins), unknown keys are retained verbatim,
+// and the surface emits the out-of-band config_option_update carrying the full
+// refreshed set when application moved a value. The response advertisement is
+// built AFTER application so it carries the post-blob effective values.
 func (s *Server) handleInitialize(ctx context.Context, params json.RawMessage) (any, error) {
+	s.applyMetaBlob(params)
+
 	if len(params) > 0 {
 		var p struct {
 			ClientCapabilities struct {
@@ -81,8 +96,40 @@ func (s *Server) handleInitialize(ctx context.Context, params json.RawMessage) (
 	return s.initializeResult(), nil
 }
 
+// applyMetaBlob parses the initialize request's _meta object schema-tolerantly
+// and hands it to the ConfigSurface (D-10's blob channel). Absent surface,
+// absent _meta, or a malformed _meta all degrade quietly — a defaults channel
+// can never fail the handshake. Application errors are logged loudly (the
+// surface owns fills-unset semantics; a partial apply must be visible).
+func (s *Server) applyMetaBlob(params json.RawMessage) {
+	if s.configSurf == nil || len(params) == 0 {
+		return
+	}
+
+	var p struct {
+		Meta map[string]json.RawMessage `json:"_meta"` //nolint:tagliatelle // ACP wire field
+	}
+
+	uerr := json.Unmarshal(params, &p)
+	if uerr != nil || len(p.Meta) == 0 {
+		return
+	}
+
+	changed, err := s.configSurf.ApplyBlobDefaults(p.Meta)
+	if err != nil {
+		s.log.Printf("config: initialize _meta blob application failed (continuing): %v", err)
+
+		return
+	}
+
+	if changed {
+		s.log.Printf("config: initialize _meta defaults applied (config_option_update emitted)")
+	}
+}
+
 // initializeResult builds the initialize response (integer protocolVersion 1,
-// loadSession:false per D-09).
+// loadSession:false per D-09) plus the configOptions advertisement (16-05) via
+// the shared builder — omitted entirely when no surface is wired.
 func (s *Server) initializeResult() initializeResponse {
 	return initializeResponse{
 		ProtocolVersion: 1,
@@ -93,8 +140,21 @@ func (s *Server) initializeResult() initializeResponse {
 			"name":    "ass-guard",
 			"version": "0",
 		},
-		AuthMethods: []any{},
+		AuthMethods:   []any{},
+		ConfigOptions: s.configOptionsFor(),
 	}
+}
+
+// configOptionsFor is THE advertisement builder (16-05): one function feeding
+// initialize and session/new (and later load/resume in Phase 18), reading the
+// injected ConfigSurface. Nil surface → nil (the caller's omitempty drops the
+// field — the degrade shape).
+func (s *Server) configOptionsFor() []ConfigOptionFrame {
+	if s.configSurf == nil {
+		return nil
+	}
+
+	return s.configSurf.Options()
 }
 
 // probeFormMode is the elicitation mode value of the capability probe (v1
@@ -179,12 +239,17 @@ func (s *Server) probeElicitationCapability(ctx context.Context) CapabilityState
 	}
 }
 
-// sessionNewResult carries the sessionId the client threads into session/prompt.
+// sessionNewResult carries the sessionId the client threads into session/prompt,
+// plus the configOptions advertisement (16-05 — the v1 NewSessionResponse
+// shape; omitted entirely without a wired surface).
 type sessionNewResult struct {
-	SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+	SessionID     string              `json:"sessionId"`               //nolint:tagliatelle // ACP wire field
+	ConfigOptions []ConfigOptionFrame `json:"configOptions,omitempty"` //nolint:tagliatelle // ACP wire field
 }
 
-// handleSessionNew creates a sessionState and returns its id.
+// handleSessionNew creates a sessionState and returns its id (plus the shared
+// configOptions advertisement — Zed applies its stored defaults against the
+// advertised menu right after session/new, acp.rs:1303-1391).
 func (s *Server) handleSessionNew(ctx context.Context, params json.RawMessage) (any, error) {
 	var p struct {
 		Cwd        string `json:"cwd"`
@@ -202,7 +267,79 @@ func (s *Server) handleSessionNew(ctx context.Context, params json.RawMessage) (
 	s.sessions[id] = st
 	s.mu.Unlock()
 
-	return sessionNewResult{SessionID: id}, nil
+	return sessionNewResult{SessionID: id, ConfigOptions: s.configOptionsFor()}, nil
+}
+
+// setConfigOptionParams is the session/set_config_option payload (schema/v1
+// SetSessionConfigOptionRequest: sessionId + configId + value; the request's
+// option-key field is verbatim `configId` while the ADVERTISEMENT uses `id` —
+// both pinned against the fetched v1 schema). The value is the value_id string
+// variant for select options (ass-guard advertises selects only).
+type setConfigOptionParams struct {
+	SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+	ConfigID  string `json:"configId"`  //nolint:tagliatelle // ACP wire field
+	Value     any    `json:"value,omitempty"`
+}
+
+// setConfigOptionResult carries the FULL refreshed option set (schema/v1
+// SetSessionConfigOptionResponse: "the full set of configuration options and
+// their current values" — the response shape after EVERY non-error outcome).
+type setConfigOptionResult struct {
+	ConfigOptions []ConfigOptionFrame `json:"configOptions"` //nolint:tagliatelle // ACP wire field
+}
+
+// handleSetConfigOption is the relay half of editor-driven configuration
+// (16-05/D-05..D-09): it validates request SHAPE, relays to the injected
+// ConfigSurface (which owns menu semantics, persist-then-apply ordering,
+// pending no-ops, and idempotent re-pushes), and translates surface outcomes
+// to typed JSON-RPC errors. A absent surface degrades to the typed
+// not-available error — never a crash. Handler validation covers shape only;
+// menu/value validation is the surface's (D-09 violations arrive as
+// *ConfigViolationError, persist failures as *ConfigPersistError — distinct
+// wire classes).
+func (s *Server) handleSetConfigOption(ctx context.Context, params json.RawMessage) (any, error) {
+	if s.configSurf == nil {
+		return nil, &RPCError{
+			Code:    CodeInvalidRequest,
+			Message: "session/set_config_option not available (no configuration surface wired)",
+		}
+	}
+
+	var p setConfigOptionParams
+
+	uerr := json.Unmarshal(params, &p)
+	if uerr != nil {
+		return nil, &ConfigViolationError{Violation: "malformed params: " + uerr.Error()}
+	}
+
+	opts, err := s.configSurf.Set(p.SessionID, p.ConfigID, p.Value)
+	if err != nil {
+		var violation *ConfigViolationError
+		if errors.As(err, &violation) {
+			return nil, &RPCError{
+				Code:    CodeInvalidParams,
+				Message: violation.Error(),
+				Data:    map[string]string{"optionId": violation.OptionID, "violation": violation.Violation},
+			}
+		}
+
+		var persist *ConfigPersistError
+		if errors.As(err, &persist) {
+			return nil, &RPCError{
+				Code:    CodeInternalError,
+				Message: persist.Error(),
+				Data: map[string]string{
+					"optionId":  persist.OptionID,
+					"violation": "persist failed (state untouched)",
+				},
+			}
+		}
+
+		// Unknown surface error: generic internal class, scrubbed upstream.
+		return nil, fmt.Errorf("set config option: %w", err)
+	}
+
+	return setConfigOptionResult{ConfigOptions: opts}, nil
 }
 
 // sessionPromptParams is the session/prompt payload (PROMPT-TURN.md): a

@@ -191,6 +191,90 @@ const (
 	CodeRequestCancelled = -32800
 )
 
+// --- 16-05 config-options wire vocabulary (ACP-08) ---
+//
+// Field names pinned VERBATIM against schema/v1/schema.json defs
+// SessionConfigOption, SessionConfigSelect, SessionConfigSelectOption,
+// SetSessionConfigOptionRequest/Response, ConfigOptionUpdate. v1 spellings
+// ONLY: the advertisement option key is `id` (the v2 draft renames it
+// configId — Pitfall 7); the SET REQUEST carries `configId` per the v1
+// SetSessionConfigOptionRequest def. Both verified against the fetched schema.
+
+// KindConfigOptionUpdate is the v1 sessionUpdate kind announcing that the
+// configuration options changed out-of-band (schema/v1 SessionUpdate const
+// "config_option_update"; its payload carries the FULL refreshed set).
+const KindConfigOptionUpdate = "config_option_update"
+
+// ConfigOptionTypeSelect is the v1 SessionConfigOption type discriminator for
+// the single-value selector variant (the only variant ass-guard advertises).
+const ConfigOptionTypeSelect = "select"
+
+// ConfigOptionValue is one selectable value of a select config option (v1
+// SessionConfigSelectOption).
+type ConfigOptionValue struct {
+	Value       string `json:"value"` // required
+	Name        string `json:"name"`  // required
+	Description string `json:"description,omitempty"`
+}
+
+// ConfigOptionFrame is the v1 SessionConfigOption advertisement shape: the
+// selector identity plus its select payload (currentValue + options sit flat
+// beside the `type` discriminator on the wire — the schema's oneOf/allOf
+// composition). CurrentValue is REQUIRED and carries the option's current
+// EFFECTIVE value resolved through the precedence chain (D-11) — never a
+// static default.
+type ConfigOptionFrame struct {
+	ID           string              `json:"id"`
+	Name         string              `json:"name"`
+	Description  string              `json:"description,omitempty"`
+	Category     string              `json:"category,omitempty"` // mode|model|model_config|thought_level | _custom
+	Type         string              `json:"type"`               // ConfigOptionTypeSelect
+	CurrentValue string              `json:"currentValue"`       //nolint:tagliatelle // ACP wire field (D-11)
+	Options      []ConfigOptionValue `json:"options"`            // required for select
+}
+
+// ConfigViolationError is the D-09 typed reject: an option id or value that
+// failed menu validation. The set_config_option handler maps it to
+// CodeInvalidParams with Data{optionId, violation} so the editor renders the
+// rejection. Returned BY the ConfigSurface (the surface owns the menu
+// semantics); the handler only translates.
+type ConfigViolationError struct {
+	OptionID  string
+	Violation string
+}
+
+// Error implements the error interface.
+func (e *ConfigViolationError) Error() string {
+	return fmt.Sprintf("config option %q: %s", e.OptionID, e.Violation)
+}
+
+// ConfigPersistError is the D-07 persist-failure class: the layer write behind
+// a set_config_option failed. DISTINCT from ConfigViolationError (and mapped
+// to a distinct JSON-RPC error class) so a write failure never reads as client
+// error — the operator's file state is untouched when this returns.
+type ConfigPersistError struct {
+	OptionID string
+	Err      error
+}
+
+// Error implements the error interface (names the option, never secret
+// material — layer paths carry no credentials).
+func (e *ConfigPersistError) Error() string {
+	return fmt.Sprintf("config option %q: persist failed: %v", e.OptionID, e.Err)
+}
+
+// Unwrap exposes the cause for errors.As/Is chains.
+func (e *ConfigPersistError) Unwrap() error { return e.Err }
+
+// Wire method name of the editor-driven configuration surface (16-05/ACP-08).
+const (
+	// methodSetConfigOption is the client→agent request that persists+applies
+	// one advertised option (schema/v1 SetSessionConfigOptionRequest
+	// x-method). The response and the out-of-band config_option_update
+	// notification BOTH carry the full option set with current values.
+	methodSetConfigOption = "session/set_config_option"
+)
+
 // Wire method names of the outbound-request surface (16-02/D-19).
 const (
 	// methodCancelRequest is the request-cancellation notification. Agent→client

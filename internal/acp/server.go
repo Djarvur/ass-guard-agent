@@ -41,6 +41,30 @@ type SessionCloser interface {
 	CloseSession(sessionID string) error
 }
 
+// ConfigSurface is the acp-side seam for the v1.2 editor-driven configuration
+// surface (16-05/ACP-08). internal/acp owns only the wire shapes and the
+// handler; the surface implementation (internal/acpserve) owns the menu
+// semantics, the layer writes, and effective-value resolution — acp stays free
+// of modelrouting/providerfactory imports (wire-only dependency direction).
+// The exact shape is executor-frozen and kept minimal:
+//
+//   - Options returns the full advertised menu in v1 SessionConfigOption
+//     shapes, each currentValue the option's current EFFECTIVE value (D-11).
+//   - Set persists+applies one option (D-07 persist-then-apply lives in the
+//     surface). It validates the id and value (D-09 typed rejects as
+//     *ConfigViolationError), reports layer-write failures as
+//     *ConfigPersistError, and answers applied/pending-no-op/idempotent
+//     outcomes all with the refreshed FULL option set. sessionID scopes the
+//     out-of-band config_option_update notification.
+//   - ApplyBlobDefaults applies the initialize _meta blob (D-10): recognized
+//     keys fill unset slots in-memory, unknown keys are retained verbatim;
+//     changed reports whether any effective value moved.
+type ConfigSurface interface {
+	Options() []ConfigOptionFrame
+	Set(sessionID, optionID string, value any) ([]ConfigOptionFrame, error)
+	ApplyBlobDefaults(meta map[string]json.RawMessage) (changed bool, err error)
+}
+
 // Handler is one ACP method's handler. params is the raw JSON params; msg is the
 // full envelope (so handlers can read the id). A non-nil error surfaces as a
 // JSON-RPC error response; a nil error with a non-nil result surfaces as a
@@ -63,6 +87,7 @@ type Server struct {
 	mu           sync.Mutex
 	sessions     map[string]*sessionState
 	turnRunner   TurnRunner
+	configSurf   ConfigSurface     // 16-05/ACP-08 editor-driven configuration; nil = surface absent (degrade)
 	emitter      *TurnEmitter      // THE ordered session/update notification path (16-01); non-nil after NewServer
 	registry     *Registry         // outbound id'd requests + response matching (16-02); non-nil after NewServer
 	metrics      *Metrics          // D-16 counters (probes/timeouts/fallbacks/cancels/stalls)
@@ -124,6 +149,14 @@ func WithTurnEmitter(cfg TurnEmitterConfig) ServerOption {
 // so the D-14 ladder runs in milliseconds).
 func WithRegistryConfig(cfg RegistryConfig) ServerOption {
 	return func(s *Server) { s.registryCfg = cfg }
+}
+
+// WithConfigSurface injects the editor-driven configuration surface (16-05/
+// ACP-08). Absent (the default): advertisements omit configOptions entirely
+// and session/set_config_option answers the typed not-available error — the
+// degrade never crashes acpserve-less setups.
+func WithConfigSurface(cs ConfigSurface) ServerOption {
+	return func(s *Server) { s.configSurf = cs }
 }
 
 // NewServer builds a Server reading frames from in, writing frames to out, and
@@ -253,6 +286,34 @@ func (s *Server) BackgroundEmitter(sessionID string) ChunkEmitter {
 // knobs only via WithTurnEmitter before traffic starts.
 func (s *Server) TurnEmitter() *TurnEmitter {
 	return s.emitter
+}
+
+// NotifyConfigOptions emits one config_option_update session/update
+// notification through the emitter's FOREGROUND lane (16-05: out-of-band
+// configuration changes — D-10's post-blob-application notification and
+// applied editor sets). The frame carries the FULL refreshed option set per
+// v1. An empty sessionID is legal on the only sessionless path (the
+// initialize _meta blob precedes session creation on the connection): the
+// frame still carries the refreshed set, and a sessionless client has no view
+// to re-render. Best-effort: enqueue errors return (serve teardown races).
+func (s *Server) NotifyConfigOptions(sessionID string, opts []ConfigOptionFrame) error {
+	if opts == nil {
+		opts = []ConfigOptionFrame{}
+	}
+
+	raw, err := json.Marshal(map[string]any{
+		keySessionID: sessionID,
+		"update": map[string]any{
+			keySessionUpdate: KindConfigOptionUpdate,
+			"configOptions":  opts,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("marshal config_option_update: %w", err)
+	}
+
+	return s.emitter.newHandle(sessionID, classForeground).Notify(
+		&Message{JSONRPC: protocolVersion20, Method: methodSessionUpdate, Params: raw})
 }
 
 // Serve runs the reader loop until ctx is cancelled or stdin reaches EOF. Each
