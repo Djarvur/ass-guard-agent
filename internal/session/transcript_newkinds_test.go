@@ -10,12 +10,16 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/Djarvur/ass-guard-agent/internal/profile"
 )
 
 // Reused fixture strings (goconst).
 const (
-	fixtureModelSlug = "glm-5.2"
-	fixtureUserText  = "hello"
+	fixtureModelSlug     = "glm-5.2"
+	fixtureUserText      = "hello"
+	fixtureProfileName   = "zcode"
+	fixtureSourceBuiltin = "builtin"
 )
 
 // countingRedactor is a Redactor fake that counts Redact invocations — the
@@ -171,7 +175,7 @@ func testLocalCommandInvocationRecord(t *testing.T) {
 	// no shell re-quoting, no normalization (D-22).
 	args := `--flag="a b"   'c  d'`
 
-	err := m.AppendLocalCommand("turn_2", "review", args, "expanded", []string{"builtin", "skills"})
+	err := m.AppendLocalCommand("turn_2", "review", args, "expanded", []string{fixtureSourceBuiltin, "skills"})
 	if err != nil {
 		t.Fatalf("AppendLocalCommand: %v", err)
 	}
@@ -201,7 +205,7 @@ func testLocalCommandInvocationRecord(t *testing.T) {
 		t.Errorf("verbatim args mutated:\n orig: %q\nround: %q", args, got.Args)
 	}
 
-	wantChain := []string{"builtin", "skills"}
+	wantChain := []string{fixtureSourceBuiltin, "skills"}
 	if !reflect.DeepEqual(got.SourceChain, wantChain) {
 		t.Errorf("SourceChain = %v; want %v (resolution order preserved)", got.SourceChain, wantChain)
 	}
@@ -328,5 +332,128 @@ func testReplayToleratesNewKinds(t *testing.T) {
 	// field on the same line.
 	if got := extractText(&lines[4]); got != "hi" {
 		t.Errorf("user_message text = %q; want hi (payload intact)", got)
+	}
+}
+
+// TestProjectorToleratesNewKinds pins D-20's additive-only guarantee
+// end-to-end: a transcript interleaved with the three Phase-16 kinds PLUS an
+// unknown future kind projects a window IDENTICAL to the same transcript
+// without them — the kinds are inert to projection today.
+//
+// Activation owners: Phase 19 (compaction becomes a reset-point class) and
+// Phase 21 (thinking replay, PAR-05). Until those phases switch their
+// semantics on, projection stays blind to these lines — verified inert at
+// the dispatch sites (splitAtResetBoundary resets ONLY on TypeBoundary;
+// accumulateMidTurn and extractSummary switch only on their known kinds),
+// and pinned here so a future dispatch change that breaks additive
+// inertness fails loudly.
+func TestProjectorToleratesNewKinds(t *testing.T) {
+	t.Parallel()
+
+	plain := newTestManager(t, "sess-plain")
+	appendToleratedTurn(t, plain, false)
+
+	mixed := newTestManager(t, "sess-mixed")
+	appendToleratedTurn(t, mixed, true)
+
+	winPlain, err := NewProjector(&profile.Profile{Name: fixtureProfileName}, plain).Project("turn_t")
+	if err != nil {
+		t.Fatalf("Project(plain): %v", err)
+	}
+
+	winMixed, err := NewProjector(&profile.Profile{Name: fixtureProfileName}, mixed).Project("turn_t")
+	if err != nil {
+		t.Fatalf("Project(mixed): %v", err)
+	}
+
+	if len(winPlain) == 0 {
+		t.Fatal("empty plain projection — fixture broken")
+	}
+
+	if !reflect.DeepEqual(winPlain, winMixed) {
+		t.Errorf("projected window changed by inert kinds:\nplain: %+v\nmixed: %+v", winPlain, winMixed)
+	}
+}
+
+// appendToleratedTurn writes the same two-turn content into the transcript;
+// when interleave is true the Phase-16 kinds + one unknown kind thread
+// through the IDENTICAL content — including a compaction line sitting where
+// a boundary would reset (proving compaction is NOT a reset point today).
+func appendToleratedTurn(t *testing.T, m *Manager, interleave bool) {
+	t.Helper()
+
+	thinking := json.RawMessage(`{"thinking":"scratch"}`)
+	toolInput := json.RawMessage(`{"cmd":"ls"}`)
+	toolOutput := json.RawMessage(`"done"`)
+
+	if interleave {
+		mustAppend(t, m.AppendRawThinking("turn_0", fixtureModelSlug, thinking), "AppendRawThinking")
+	}
+
+	mustAppend(t,
+		m.AppendUserMessage("turn_0", []ContentBlock{{Type: blockText, Text: fixtureUserText}}),
+		"AppendUserMessage")
+
+	mustAppend(t, m.AppendAssistantMessage("turn_0", "prior answer"), "AppendAssistantMessage")
+
+	if interleave {
+		// Sits where a boundary WOULD reset the window; inert until Phase 19.
+		mustAppend(t, m.AppendCompaction("turn_0", "line:2", "line:3", 10, 20, 30), "AppendCompaction")
+	}
+
+	if interleave {
+		mustAppend(t,
+			m.AppendLocalCommand("turn_t", "review", "--x 1", "expanded", []string{fixtureSourceBuiltin}),
+			"AppendLocalCommand")
+	}
+
+	mustAppend(t,
+		m.AppendUserMessage("turn_t", []ContentBlock{{Type: blockText, Text: "current intent"}}),
+		"AppendUserMessage")
+
+	mustAppend(t, m.AppendToolCall("turn_t", "tc1", "Bash", toolInput), "AppendToolCall")
+
+	if interleave {
+		mustAppend(t, m.AppendRawThinking("turn_t", fixtureModelSlug, thinking), "AppendRawThinking")
+	}
+
+	mustAppend(t, m.AppendToolResult("turn_t", "tc1", toolOutput, false), "AppendToolResult")
+
+	mustAppend(t, m.AppendAssistantMessage("turn_t", "final text"), "AppendAssistantMessage")
+
+	if interleave {
+		appendRawUnknownLine(t, m, "turn_t")
+	}
+}
+
+// mustAppend fails the test when a fixture append errors (keeps the fixture
+// builders free of per-call error scaffolding).
+func mustAppend(t *testing.T, err error, what string) {
+	t.Helper()
+
+	if err != nil {
+		t.Fatalf("%s: %v", what, err)
+	}
+}
+
+// appendRawUnknownLine appends an unknown-future-kind line straight to the
+// JSONL file (no appender exists for unknown kinds by design — readers must
+// tolerate them, D-20).
+func appendRawUnknownLine(t *testing.T, m *Manager, turnID string) {
+	t.Helper()
+
+	line := `{"type":"quantum_teleport","turnID":"` + turnID + `",` +
+		`"timestamp":"2026-08-27T00:00:09Z","qubits":9}` + "\n"
+
+	f, err := os.OpenFile(m.Path(), os.O_APPEND|os.O_WRONLY, filePermOwner)
+	if err != nil {
+		t.Fatalf("open transcript for unknown-kind line: %v", err)
+	}
+
+	defer func() { _ = f.Close() }()
+
+	_, werr := f.WriteString(line)
+	if werr != nil {
+		t.Fatalf("write unknown-kind line: %v", werr)
 	}
 }
