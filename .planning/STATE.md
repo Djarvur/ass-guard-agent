@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Claude Code Parity
-current_phase: 16
-current_phase_name: ACP Wire Foundation
+current_phase: 20
+current_phase_name: Built-in Commands + Skills + Per-Agent Model
 current_plan: 6
 status: executing
 stopped_at: Completed 16-06-PLAN.md
-last_updated: "2026-08-27T22:40:59.982Z"
+last_updated: "2026-08-27T23:50:40.045Z"
 last_activity: 2026-08-27
 last_activity_desc: 16-06 executed — simulator, soak, and the operator checkpoint recorded pending
-state_head: 26cd926e2a86156acfc53dd9d3e49a2f752c0765
+state_head: c89dbff3798064f6a0e9f4538abd5f64a9d8bbbf
 progress:
   total_phases: 11
   completed_phases: 1
-  total_plans: 32
+  total_plans: 38
   completed_plans: 13
   percent: 9
 ---
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-08-27)
 
 ## Current Position
 
-Phase: 16 (ACP Wire Foundation) — READY TO EXECUTE
+Phase: 20 (Built-in Commands + Skills + Per-Agent Model) — READY TO EXECUTE
 Current Plan: 6
-Total Plans in Phase: 9
+Total Plans in Phase: 6
 Status: Ready to execute
 Last activity: 2026-08-27 — 16-06 executed (Zed simulator E2E, adversarial soak + mise task, operator checkpoint recorded pending; 3 tasks, 3 commits)
 
