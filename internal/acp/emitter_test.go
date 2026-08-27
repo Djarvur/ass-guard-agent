@@ -592,3 +592,224 @@ func (s *barrierStubTurn) Run(_ context.Context, _ string, emit ChunkEmitter, _ 
 
 	return stopEndTurn, nil
 }
+
+// --- Task 3: frame-surface completion (plan from TodoWrite, thought chunk,
+// tool_call_update shapes). A recording sink keeps the emitter-level tests
+// synchronous: enqueue, wait for written, assert the recorded frame.
+
+// recordingSink collects every written frame (never blocks).
+type recordingSink struct {
+	mu   sync.Mutex
+	msgs []*Message
+}
+
+func (r *recordingSink) Write(m *Message) error {
+	r.mu.Lock()
+	r.msgs = append(r.msgs, m)
+	r.mu.Unlock()
+
+	return nil
+}
+
+func (r *recordingSink) recorded() []*Message {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return append([]*Message(nil), r.msgs...)
+}
+
+// updateOf decodes a session/update frame's update object.
+func updateOf(t *testing.T, m *Message) map[string]any {
+	t.Helper()
+
+	var params struct {
+		Update map[string]any `json:"update"`
+	}
+
+	if err := json.Unmarshal(m.Params, &params); err != nil {
+		t.Fatalf("decode update: %v (%s)", err, string(m.Params))
+	}
+
+	return params.Update
+}
+
+// TestPlanFrameFromTodoWrite proves the presentation rule (INSIDE internal/acp
+// — the runtime stays ACP-word-free per 15-D-20): a TodoWrite tool call whose
+// input carries the captured {todos:[…]} shape renders as a v1 `plan` update —
+// full-replacement entries mapped content/priority/status verbatim — and does
+// NOT also emit a tool_call card for that call. Any other tool still gets its
+// ordinary card, and a malformed TodoWrite input falls back to the card (the
+// real activity must stay visible — ACP-03 transparency).
+func TestPlanFrameFromTodoWrite(t *testing.T) { //nolint:funlen // three scenarios, one rule
+	t.Parallel()
+
+	rec := &recordingSink{}
+
+	em := NewTurnEmitter(rec, &syncBuffer{}, TurnEmitterConfig{})
+	defer em.Stop()
+
+	fg := em.ForegroundHandle("sess").(ActivityEmitter) //nolint:forcetypeassert // the handle implements the full surface
+
+	// Scenario 1: the happy path — plan frame instead of a tool card.
+	err := fg.ToolCall(&ToolCallFrame{
+		ToolCallID: "tc-todo-1",
+		Title:      "TodoWrite",
+		Input: json.RawMessage(`{"todos":[` +
+			`{"content":"map the seam","status":"completed","priority":"high"},` +
+			`{"content":"wire the emitter","status":"in_progress","priority":"medium"},` +
+			`{"content":"prove the invariants","status":"pending","priority":"low"}]}`),
+	})
+	if err != nil {
+		t.Fatalf("TodoWrite tool call: %v", err)
+	}
+
+	waitFor(t, "plan frame written", 2*time.Second, func() bool {
+		return em.WrittenNotifications() == 1
+	})
+
+	got := rec.recorded()
+	if len(got) != 1 {
+		t.Fatalf("expected exactly 1 frame for the TodoWrite call, got %d (no card beside the plan)", len(got))
+	}
+
+	upd := updateOf(t, got[0])
+	if upd["sessionUpdate"] != "plan" {
+		t.Fatalf("sessionUpdate = %v; want plan (v1 kind, full replacement)", upd["sessionUpdate"])
+	}
+
+	entries, ok := upd["entries"].([]any)
+	if !ok || len(entries) != 3 {
+		t.Fatalf("entries = %v; want 3 full-replacement rows", upd["entries"])
+	}
+
+	first, entryOK := entries[0].(map[string]any)
+	if !entryOK || first["content"] != "map the seam" || first["status"] != "completed" ||
+		first["priority"] != "high" {
+		t.Fatalf("entry[0] = %v; want mapped content/status/priority", entries[0])
+	}
+
+	// Scenario 2: any OTHER tool keeps its ordinary tool_call card.
+	err = fg.ToolCall(&ToolCallFrame{
+		ToolCallID: "tc-bash-1",
+		Title:      "Bash",
+		Input:      json.RawMessage(`{"command":"ls"}`),
+	})
+	if err != nil {
+		t.Fatalf("Bash tool call: %v", err)
+	}
+
+	waitFor(t, "bash card written", 2*time.Second, func() bool {
+		return em.WrittenNotifications() == 2
+	})
+
+	updBash := updateOf(t, rec.recorded()[1])
+	if updBash["sessionUpdate"] != updKindToolCall || updBash["toolCallId"] != "tc-bash-1" {
+		t.Fatalf("non-TodoWrite call lost its card: %v", updBash)
+	}
+
+	// Scenario 3: a TodoWrite call with unparseable input falls back to the
+	// card — the activity is real and must stay visible.
+	err = fg.ToolCall(&ToolCallFrame{
+		ToolCallID: "tc-todo-2",
+		Title:      "TodoWrite",
+		Input:      json.RawMessage(`{"todos":"not-an-array"}`),
+	})
+	if err != nil {
+		t.Fatalf("malformed TodoWrite call: %v", err)
+	}
+
+	waitFor(t, "fallback card written", 2*time.Second, func() bool {
+		return em.WrittenNotifications() == 3
+	})
+
+	updFallback := updateOf(t, rec.recorded()[2])
+	if updFallback["sessionUpdate"] != updKindToolCall || updFallback["toolCallId"] != "tc-todo-2" {
+		t.Fatalf("malformed TodoWrite input must fall back to the card: %v", updFallback)
+	}
+}
+
+// TestThoughtChunkFrame pins the agent_thought_chunk shape (v1 ContentChunk):
+// messageId + a content block, unit-proven only until Phase 21 provides a live
+// provider thinking source (PAR-05).
+func TestThoughtChunkFrame(t *testing.T) {
+	t.Parallel()
+
+	rec := &recordingSink{}
+
+	em := NewTurnEmitter(rec, &syncBuffer{}, TurnEmitterConfig{})
+	defer em.Stop()
+
+	fg := em.ForegroundHandle("sess").(ActivityEmitter) //nolint:forcetypeassert // the handle implements the full surface
+
+	err := fg.ThoughtChunk("msg-9", ContentBlock{Type: blockText, Text: "considering the ordering"})
+	if err != nil {
+		t.Fatalf("thought chunk: %v", err)
+	}
+
+	waitFor(t, "thought frame written", 2*time.Second, func() bool {
+		return em.WrittenNotifications() == 1
+	})
+
+	got := rec.recorded()
+	if len(got) != 1 {
+		t.Fatalf("expected 1 frame, got %d", len(got))
+	}
+
+	upd := updateOf(t, got[0])
+	if upd["sessionUpdate"] != updKindThoughtChunk {
+		t.Fatalf("sessionUpdate = %v; want agent_thought_chunk (v1 spelling)", upd["sessionUpdate"])
+	}
+
+	if upd["messageId"] != "msg-9" {
+		t.Fatalf("messageId = %v; want msg-9", upd["messageId"])
+	}
+
+	content, ok := upd["content"].(map[string]any)
+	if !ok || content["type"] != blockText || content["text"] != "considering the ordering" {
+		t.Fatalf("content = %v; want the text content block", upd["content"])
+	}
+}
+
+// TestToolCallUpdateFrame pins the tool_call_update partial-update shape under
+// verbatim camelCase v1 names: kind/status plus the diff content variant
+// (path/oldText/newText) and locations (absolute path + optional line).
+func TestToolCallUpdateFrame(t *testing.T) {
+	t.Parallel()
+
+	rec := &recordingSink{}
+
+	em := NewTurnEmitter(rec, &syncBuffer{}, TurnEmitterConfig{})
+	defer em.Stop()
+
+	fg := em.ForegroundHandle("sess").(ActivityEmitter) //nolint:forcetypeassert // the handle implements the full surface
+
+	line := int64(42)
+
+	err := fg.ToolCallUpdate(&ToolCallUpdateFrame{
+		ToolCallID: "upd-1",
+		Kind:       ToolKindEdit,
+		Status:     StatusInProgress,
+		Content: []ToolCallContent{
+			DiffContent{Path: "/repo/main.go", OldText: "old", NewText: "new"}.Frame(),
+		},
+		Locations: []ToolCallLocation{{Path: "/repo/main.go", Line: &line}},
+	})
+	if err != nil {
+		t.Fatalf("tool call update: %v", err)
+	}
+
+	waitFor(t, "update frame written", 2*time.Second, func() bool {
+		return em.WrittenNotifications() == 1
+	})
+
+	raw := string(rec.recorded()[0].Params)
+	for _, wireKey := range []string{
+		`"toolCallId":"upd-1"`, `"kind":"edit"`, `"status":"in_progress"`,
+		`"type":"diff"`, `"path":"/repo/main.go"`, `"oldText":"old"`, `"newText":"new"`,
+		`"locations":[{`, `"line":42`,
+	} {
+		if !strings.Contains(raw, wireKey) {
+			t.Fatalf("wire frame missing %s:\n%s", wireKey, raw)
+		}
+	}
+}
