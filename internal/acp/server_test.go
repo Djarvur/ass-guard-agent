@@ -711,3 +711,228 @@ func TestServeInboundCancelNoOp(t *testing.T) {
 		t.Errorf("inbound cancel not logged (logs=%q)", logs)
 	}
 }
+
+// readProbeFrame reads the next frame and asserts it is an elicitation/create
+// probe carrying a minimal, schema-valid v1 Form payload with no session
+// content (T-16-08) — returning its normalized id.
+func readProbeFrame(t *testing.T, h *pipeHarness) string {
+	t.Helper()
+
+	req := h.readFrame(t)
+	if req.Method != methodElicitationCreate {
+		t.Fatalf("expected a %s probe; got method=%q", methodElicitationCreate, req.Method)
+	}
+
+	var pp struct {
+		Message         string `json:"message"`
+		Mode            string `json:"mode"`
+		RequestedSchema struct {
+			Type       string         `json:"type"`
+			Properties map[string]any `json:"properties"`
+		} `json:"requestedSchema"` //nolint:tagliatelle // ACP wire field
+	}
+
+	unmarshalErr := json.Unmarshal(req.Params, &pp)
+	if unmarshalErr != nil {
+		t.Fatalf("unmarshal probe params: %v (%s)", unmarshalErr, string(req.Params))
+	}
+
+	if pp.Mode != "form" || pp.RequestedSchema.Type != "object" || len(pp.RequestedSchema.Properties) == 0 || pp.Message == "" {
+		t.Errorf("probe payload not a minimal valid v1 Form: mode=%q schemaType=%q props=%d msg=%q",
+			pp.Mode, pp.RequestedSchema.Type, len(pp.RequestedSchema.Properties), pp.Message)
+	}
+
+	return NormalizeRequestID(req.ID)
+}
+
+// TestInitializeProbe proves D-13's advertisement-first negotiation: a client
+// advertising elicitation.form gets NO probe frame; a silent client gets
+// exactly ONE elicitation/create probe whose result caches ok and whose -32601
+// error caches degraded; the initialize response arrives on every path.
+func TestInitializeProbe(t *testing.T) {
+	t.Run("advertised: no probe, cached ok", func(t *testing.T) {
+		t.Parallel()
+
+		h := newPipeHarness(t)
+		h.send(t, newRequest(0, methodInitialize, map[string]any{
+			keyProtocolVersion: 1,
+			"clientCapabilities": map[string]any{ //nolint:tagliatelle // ACP wire field
+				"elicitation": map[string]any{"form": map[string]any{}},
+			},
+		}))
+
+		resp := h.readFrame(t) // FIRST frame after initialize — no probe preceded it
+		if resp.ID == nil || string(resp.ID) != "0" {
+			t.Fatalf("expected the initialize response first; got method=%q id=%v", resp.Method, resp.ID)
+		}
+
+		if got := h.srv.Capability(capElicitationForm); got != CapabilityOK {
+			t.Errorf("capability = %v; want CapabilityOK (advertisement-first)", got)
+		}
+	})
+
+	t.Run("absent answered: one probe, ok", func(t *testing.T) {
+		t.Parallel()
+
+		h := newPipeHarness(t)
+		h.send(t, newRequest(0, methodInitialize, map[string]any{keyProtocolVersion: 1}))
+
+		id := readProbeFrame(t, h)
+		h.send(t, &Message{JSONRPC: protocolVersion20, ID: quotedID(id), Result: json.RawMessage(`{"action":"accept"}`)})
+
+		resp := h.readFrame(t) // initialize STILL responds (always-respond rule)
+		if resp.ID == nil || string(resp.ID) != "0" {
+			t.Fatalf("expected the initialize response; got method=%q id=%v", resp.Method, resp.ID)
+		}
+
+		if got := h.srv.Capability(capElicitationForm); got != CapabilityOK {
+			t.Errorf("capability = %v; want CapabilityOK after a result answer", got)
+		}
+	})
+
+	t.Run("absent -32601: one probe, degraded", func(t *testing.T) {
+		t.Parallel()
+
+		h := newPipeHarness(t)
+		h.send(t, newRequest(0, methodInitialize, map[string]any{keyProtocolVersion: 1}))
+
+		id := readProbeFrame(t, h)
+		h.send(t, &Message{
+			JSONRPC: protocolVersion20,
+			ID:      quotedID(id),
+			Error:   &RPCError{Code: CodeMethodNotFound, Message: "not supported"},
+		})
+
+		resp := h.readFrame(t)
+		if resp.ID == nil || string(resp.ID) != "0" {
+			t.Fatalf("expected the initialize response; got method=%q id=%v", resp.Method, resp.ID)
+		}
+
+		if got := h.srv.Capability(capElicitationForm); got != CapabilityDegraded {
+			t.Errorf("capability = %v; want CapabilityDegraded after -32601", got)
+		}
+	})
+}
+
+// TestCapabilityStickiness proves D-18: after a degraded negotiation the cache
+// answers degraded forever — a second capability query (even a re-initialized
+// handshake) issues NO new probe for the connection.
+func TestCapabilityStickiness(t *testing.T) {
+	t.Parallel()
+
+	h := newPipeHarness(t)
+	h.send(t, newRequest(0, methodInitialize, map[string]any{keyProtocolVersion: 1}))
+
+	id := readProbeFrame(t, h)
+	h.send(t, &Message{
+		JSONRPC: protocolVersion20,
+		ID:      quotedID(id),
+		Error:   &RPCError{Code: CodeMethodNotFound, Message: "not supported"},
+	})
+	h.readFrame(t) // initialize response
+
+	if got := h.srv.Capability(capElicitationForm); got != CapabilityDegraded {
+		t.Fatalf("capability = %v; want CapabilityDegraded", got)
+	}
+
+	// A second capability query: still degraded, NO new probe on the wire.
+	h.send(t, newRequest(1, methodInitialize, map[string]any{keyProtocolVersion: 1}))
+	readProbeResponse(t, h, "1")
+
+	if got := h.srv.Capability(capElicitationForm); got != CapabilityDegraded {
+		t.Errorf("second query capability = %v; want CapabilityDegraded (sticky, D-18)", got)
+	}
+}
+
+// TestProbeTimeoutFallback proves the probe rides the D-14 ladder: an
+// unresponsive client burns one retry (same id), then the probe degrades with
+// counters (probe total 1, timeout windows 2, fallback 1) and structured
+// stderr lines — and the initialize response STILL arrives.
+func TestProbeTimeoutFallback(t *testing.T) { //nolint:funlen // ladder + counters + logs in one scenario
+	t.Parallel()
+
+	h := newPipeHarness(t, WithRegistryConfig(RegistryConfig{FastControlTimeout: 4 * time.Millisecond}))
+	h.send(t, newRequest(0, methodInitialize, map[string]any{keyProtocolVersion: 1}))
+
+	first := readProbeFrame(t, h)
+	retry := readProbeFrame(t, h)
+	if first != retry {
+		t.Errorf("probe retry id = %q; want the SAME id %q (D-14)", retry, first)
+	}
+
+	resp := h.readFrame(t) // initialize responds even when the probe falls back
+	if resp.ID == nil || string(resp.ID) != "0" {
+		t.Fatalf("expected the initialize response; got method=%q id=%v", resp.Method, resp.ID)
+	}
+
+	if got := h.srv.Capability(capElicitationForm); got != CapabilityDegraded {
+		t.Errorf("capability = %v; want CapabilityDegraded after the ladder", got)
+	}
+
+	snap := h.srv.metrics.Snapshot()
+	if snap.ProbeTotal != 1 || snap.ProbeTimeoutTotal != 2 || snap.ProbeFallbackTotal != 1 {
+		t.Errorf("counters = (probe %d, timeout %d, fallback %d); want (1, 2, 1)",
+			snap.ProbeTotal, snap.ProbeTimeoutTotal, snap.ProbeFallbackTotal)
+	}
+
+	logs := h.stderr.String()
+	if !strings.Contains(logs, "capability probe elicitation.form") || !strings.Contains(logs, "fallback") {
+		t.Errorf("probe fallback not logged structurally (logs=%q)", logs)
+	}
+}
+
+// TestMetricsRegistryCancelCounter proves the D-16 family counts cancelled
+// outbound requests through the registry's onCancel hook (NewServer wiring):
+// a client answering -32800 bumps RegistryCancelTotal.
+func TestMetricsRegistryCancelCounter(t *testing.T) {
+	t.Parallel()
+
+	h := newPipeHarness(t)
+	handshake(t, h)
+
+	ch := make(chan registryOutcome, 1)
+
+	go func() {
+		_, err := h.srv.registry.Call(
+			context.Background(), testOutboundMethod, map[string]any{}, TimeoutFastControl)
+		ch <- registryOutcome{err: err}
+	}()
+
+	req := h.readFrame(t)
+	h.send(t, &Message{
+		JSONRPC: protocolVersion20,
+		ID:      quotedID(NormalizeRequestID(req.ID)),
+		Error:   &RPCError{Code: CodeRequestCancelled, Message: "cancelled"},
+	})
+
+	oc := awaitOutcome(t, ch)
+	if !errors.Is(oc.err, ErrRequestCancelled) {
+		t.Fatalf("err = %v; want ErrRequestCancelled", oc.err)
+	}
+
+	if got := h.srv.metrics.Snapshot().RegistryCancelTotal; got != 1 {
+		t.Errorf("RegistryCancelTotal = %d; want 1", got)
+	}
+}
+
+// TestMetricsWriterStallFamily proves the 16-01 stall counter is adopted into
+// the D-16 family: a sustained-stall episode bumps BOTH the emitter's legacy
+// accessor and Metrics.WriterStallTotal (the /status surface).
+func TestMetricsWriterStallFamily(t *testing.T) {
+	t.Parallel()
+
+	m := &Metrics{}
+	em := NewTurnEmitter(&registrySink{}, &strings.Builder{}, TurnEmitterConfig{StallThreshold: time.Millisecond})
+	defer em.Stop()
+	em.metrics = m
+
+	em.sampleStall(stallWatermark{since: time.Now().Add(-time.Second)}, laneForeground, true, time.Now())
+
+	if got := m.Snapshot().WriterStallTotal; got != 1 {
+		t.Errorf("WriterStallTotal = %d; want 1", got)
+	}
+
+	if got := em.StallCount(); got != 1 {
+		t.Errorf("StallCount = %d; want 1 (legacy accessor keeps counting)", got)
+	}
+}
