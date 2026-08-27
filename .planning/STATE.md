@@ -5,18 +5,18 @@ milestone_name: Claude Code Parity
 current_phase: 16
 current_phase_name: ACP Wire Foundation
 current_plan: 6
-status: executing
-stopped_at: Completed 16-05-PLAN.md
-last_updated: "2026-08-27T17:32:03.422Z"
+status: verifying
+stopped_at: Completed 16-06-PLAN.md
+last_updated: "2026-08-27T18:30:46.071Z"
 last_activity: 2026-08-27
-last_activity_desc: 16-01 executed — ordered TurnEmitter landed and proven
-state_head: a34d9e1b0fbf9fee42baadad3437eef82ff554ba
+last_activity_desc: 16-06 executed — simulator, soak, and the operator checkpoint recorded pending
+state_head: 51b35d48ab51543b48625fd2777ace51a59cdeb0
 progress:
   total_phases: 11
   completed_phases: 1
   total_plans: 29
-  completed_plans: 12
-  percent: 9
+  completed_plans: 13
+  percent: 45
 ---
 
 # State: ass-guard-agent (working name)
@@ -32,8 +32,8 @@ See: .planning/PROJECT.md (updated 2026-08-27)
 Phase: 16 (ACP Wire Foundation) — EXECUTING
 Current Plan: 6
 Total Plans in Phase: 6
-Status: Ready to execute
-Last activity: 2026-08-27 — 16-01 executed (ordered TurnEmitter, 3 tasks, 5 commits)
+Status: Phase complete — ready for verification
+Last activity: 2026-08-27 — 16-06 executed (Zed simulator E2E, adversarial soak + mise task, operator checkpoint recorded pending; 3 tasks, 3 commits)
 
 Progress: [████████░░░░░░░░░░░] 8/29 plans ([█░░░░░░░░░] 9%)
 
@@ -41,7 +41,7 @@ Progress: [████████░░░░░░░░░░░] 8/29 plans
 
 **Velocity (v1.0 history, for calibration):** 36 plans / 8 phases in 6 days; `mise ci` gate green at every phase close. **v1.1:** 51 plans / 5 phases over ~7 active days.
 
-**By Phase (v1.2):** Phase 16: 1/6 plans executed (16-01 ✓ 2026-08-27).
+**By Phase (v1.2):** Phase 16: 6/6 plans executed (16-06 ✓ 2026-08-27) — phase closes pending the operator live-Zed confirmation (WINDOWS #11).
 **Per-Plan Metrics:**
 
 | Plan | Duration | Tasks | Files |
@@ -58,6 +58,7 @@ Progress: [████████░░░░░░░░░░░] 8/29 plans
 | Phase 16 P04 | 13 min | 2 tasks | 5 files |
 | Phase 16 P03 | 38 min | 3 tasks | 10 files |
 | Phase 16 P05 | 49 min | 3 tasks | 11 files |
+| Phase 16 P06 | 49 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -88,6 +89,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 16]: 16-05: set REQUEST field is configId (v1 SetSessionConfigOptionRequest) while the advertisement key is id — both verbatim from the fetched schema; plan prose's optionId normalized to wire truth — Pitfall-7 discipline: wire shapes come from the canonical schema, never plan prose
 - [Phase 16]: 16-05: D-10 explicitness boundary drawn at the LAYER FILES — the _meta blob beats the embedded floor in-memory only, never persists, and an idempotent re-push of a blob-derived value neither churns the layer nor promotes it into persisted config — Files are operator config (D-10/D-12); the floor is not — a redundant Zed default re-push must not become explicit config
 - [Phase 16]: 16-05: live apply rides Runner.ApplyTurnModel under the per-session turn mutex — mid-turn Sets land between turns; model writes go through tiers.<tier>.model, _global/ prefix addresses the global layer; cross-provider targets degrade loudly with model unchanged — Reuses 12-07 queue semantics as the no-torn-stamp gate and the resolveSubagentModel loud-degrade precedent
+- [Phase 16]: 16-06: the simulator's fake provider enters through the REAL seam (temp project config aiming the factory-built provider at a scripted SSE stub) — Run's only injection point; zero production changes, the Run-over-pipes key link holds
+- [Phase 16]: 16-06: SSE tool blocks flush at the NEXT block's stop (real transport behavior) — scripted turns put tool phases before text phases so the [tool_call, plan, chunk] emission story is deterministic
+- [Phase 16]: 16-06: soak chaos mapping — per-producer mid-block ctx cancel is the unit contract (TestTurnEmitterCtxAbort); the soak's equivalent is abrupt producer exits + barrier-ctx cancels; flooders + long-stall tormentor make stall-detector-fired deterministic (2min run: 4,056,534 frames, 160 episodes)
+- [Phase 16]: 16-06: operator live-Zed checkpoint surfaced and recorded PENDING-OPERATOR-CONFIRMATION (WINDOWS #11) — criteria 1/4 await the operator; ACP-03 + ACP-08 marked complete as the last declaring sibling
 
 ### Pending Todos
 
@@ -107,6 +112,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-27T17:31:45.292Z
-Stopped at: Completed 16-05-PLAN.md
+Last session: 2026-08-27T18:30:33.751Z
+Stopped at: Completed 16-06-PLAN.md
 Resume file: None

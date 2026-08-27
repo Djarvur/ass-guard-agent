@@ -111,7 +111,7 @@ Plans:
   4. Initialize/new/load/resume responses carry the richer capability set (loadSession, sessionCapabilities, configOptions advertisement shape), verified against the ACP schema in a real Zed handshake.
   5. Transcript lines for raw thinking (`json.RawMessage` passthrough), local_command, and the compaction marker type exist append-only with redaction excluded by construction for thinking bytes.
 
-**Plans**: 5/6 plans executed
+**Plans**: 6/6 plans executed
 
 Plans:
 **Wave 1**
@@ -130,7 +130,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 16-06-PLAN.md — Zed-client simulator E2E + adversarial soak + live-Zed operator checkpoint
+- [x] 16-06-PLAN.md — Zed-client simulator E2E + adversarial soak + live-Zed operator checkpoint
 
 ### Phase 17: Permissions + Elicitation
 
@@ -332,7 +332,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 15. internal/runtime Carve | v1.2 | 7/7 | Complete    | 2026-08-27 |
-| 16. ACP Wire Foundation | v1.2 | 5/6 | In Progress|  |
+| 16. ACP Wire Foundation | v1.2 | 6/6 | In Progress|  |
 | 17. Permissions + Elicitation | v1.2 | 0/? | Not started | - |
 | 18. Session Family | v1.2 | 0/? | Not started | - |
 | 19. Compaction + cache_control | v1.2 | 0/5 | Not started | - |

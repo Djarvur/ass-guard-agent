@@ -15,12 +15,12 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 - [ ] **ACP-01**: User sees clickable permission asks via `session/request_permission` (allow/reject × once/always options; cancelled handled as a normal response when turn dies mid-ask); new `permissions.mode: ungated|gated` config switchable via editor configOptions — available, not default (safety-model amendment)
 - [ ] **ACP-02**: Learning-store and engine asks surface as structured forms via `elicitation/create` (form mode) with plain-text AskBroker fallback and -32601 probe-and-degrade on older clients; url mode deferred
-- [ ] **ACP-03**: Zed renders live turn activity: `tool_call`/`tool_call_update` streaming (kind/status/diff/locations), `plan` updates mirroring TodoWrite, `agent_thought_chunk` — all through one ordered inline TurnEmitter with explicit backpressure policy
+- [x] **ACP-03**: Zed renders live turn activity: `tool_call`/`tool_call_update` streaming (kind/status/diff/locations), `plan` updates mirroring TodoWrite, `agent_thought_chunk` — all through one ordered inline TurnEmitter with explicit backpressure policy
 - [ ] **ACP-04**: Editor autocompletes `/` commands: `available_commands_update` sent on session start and on discovery change
 - [ ] **ACP-05**: User can list sessions from the editor via `session/list` (header-scan, cursor pagination)
 - [ ] **ACP-06**: User can resume any past session via `session/load` — full replay through TurnEmitter plus live-state reconciliation (synthetic interrupted-closures for dangling expectations, continued id sequences from transcript maxima, orphaned in-flight tool_calls closed as failed, commands re-advertised); `--resume` anywhere
 - [ ] **ACP-07**: User can close or delete a session via `session/close` / `session/delete` with tombstoning (never rm — D-20 audit invariant); delete is spec-unstable → best-effort
-- [ ] **ACP-08**: Editor drives configuration: `configOptions[]` advertised at initialize/new/load/resume responses, Zed settings payload read at initialize, `session/set_config_option` handled (tier/model defaults switchable from editor UI); API keys stay env/file, never editor settings
+- [x] **ACP-08**: Editor drives configuration: `configOptions[]` advertised at initialize/new/load/resume responses, Zed settings payload read at initialize, `session/set_config_option` handled (tier/model defaults switchable from editor UI); API keys stay env/file, never editor settings
 
 ### Built-in Chat Commands
 
@@ -103,8 +103,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | RUNT-01 | Phase 15 | Complete |
-| ACP-03 | Phase 16 | Pending |
-| ACP-08 | Phase 16 | Pending |
+| ACP-03 | Phase 16 | Complete |
+| ACP-08 | Phase 16 | Complete |
 | ACP-01 | Phase 17 | Pending |
 | ACP-02 | Phase 17 | Pending |
 | ACP-05 | Phase 18 | Pending |
