@@ -1,15 +1,23 @@
 package acpserve //nolint:testpackage // internal package test
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
+	"github.com/Djarvur/ass-guard-agent/internal/session"
 )
 
 // The 16-05 ConfigSurface tests (ACP-08 implementation half): menu from real
@@ -543,4 +551,392 @@ func readLayerBytes(t *testing.T, path string) string {
 	}
 
 	return string(raw)
+}
+
+// --- 16-05 Task 3: the full serve path from wire to provider request ---
+//
+// TestLiveModelApply / TestTierSwitch drive acpserve.Run end-to-end: the
+// Run composition binds the ConfigSurface to the runner (apply hook) and
+// injects it into the Server (WithConfigSurface), so an editor's
+// session/set_config_option changes the very next provider request's model —
+// proven through the transcript's request_shaped fingerprints.
+
+// sseModelStub is a recording SSE stub: it parses each request body's model
+// and can hold the FIRST request open (the controllable in-flight request for
+// the mid-turn case).
+type sseModelStub struct {
+	mu           sync.Mutex
+	models       []string
+	delayFirst   time.Duration
+	inFlight     chan struct{}
+	inFlightOnce sync.Once
+	srv          *httptest.Server
+}
+
+func newSSEModelStub(t *testing.T, delayFirst time.Duration) *sseModelStub {
+	t.Helper()
+
+	st := &sseModelStub{delayFirst: delayFirst, inFlight: make(chan struct{})}
+
+	st.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, rerr := io.ReadAll(r.Body)
+		if rerr == nil {
+			var req struct {
+				Model string `json:"model"`
+			}
+
+			if json.Unmarshal(body, &req) == nil && req.Model != "" {
+				st.mu.Lock()
+				first := len(st.models) == 0
+				st.models = append(st.models, req.Model)
+				st.mu.Unlock()
+
+				if first && st.delayFirst > 0 {
+					st.inFlightOnce.Do(func() { close(st.inFlight) })
+					time.Sleep(st.delayFirst)
+				}
+			}
+		}
+
+		w.Header().Set("Content-Type", "text/event-stream")
+
+		flusher, _ := w.(http.Flusher)
+
+		for _, frame := range []string{
+			`{"type":"message_start","message":{"usage":{"input_tokens":5,"output_tokens":1}}}`,
+			`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}`,
+			`{"type":"content_block_stop","index":0}`,
+			`{"type":"message_delta","delta":{"stop_reason":"end_turn"}}`,
+		} {
+			fmt.Fprintf(w, "data: %s\n\n", frame)
+
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+
+		fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+
+	t.Cleanup(st.srv.Close)
+
+	return st
+}
+
+func (s *sseModelStub) recordedModels() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return append([]string(nil), s.models...)
+}
+
+// liveApplyConfig is the project layer for the live-apply serves: the
+// anthropic provider aimed at the stub + the declared extra YAML (tier
+// bindings for the tier-switch cases).
+func liveApplyConfig(t *testing.T, stubURL, extra string) string {
+	t.Helper()
+
+	workDir := t.TempDir()
+
+	err := os.MkdirAll(filepath.Join(workDir, ".ass-guard"), 0o750)
+	if err != nil {
+		t.Fatalf("mkdir .ass-guard: %v", err)
+	}
+
+	content := "providers:\n  anthropic:\n    base_url: " + strconv.Quote(stubURL) +
+		"\n    api_key: \"sk-live-apply-canary\"\n" + extra
+
+	werr := os.WriteFile(filepath.Join(workDir, ".ass-guard", "config.yaml"), []byte(content), 0o600)
+	if werr != nil {
+		t.Fatalf("write config.yaml: %v", werr)
+	}
+
+	return workDir
+}
+
+// runLiveApplyServe starts one acpserve.Run over pipes against workDir and
+// returns the frame writer + stdout snapshot.
+func runLiveApplyServe(
+	t *testing.T, workDir string,
+) (*io.PipeWriter, *syncBuffer, *syncBuffer) {
+	t.Helper()
+
+	t.Setenv("ZAI_API_KEY", "") // force the config literal (canary) to win
+
+	stdout := &syncBuffer{}
+	stderr := &syncBuffer{}
+
+	//nolint:modernize,testingcontext // explicit cancel before the pipe close
+	ctx, cancel := context.WithCancel(context.Background())
+
+	inPipeR, inPipeW := io.Pipe()
+
+	go func() {
+		_ = Run(ctx, inPipeR, stdout, stderr, &Options{
+			Profile: profileZcode, MaxConcurrent: 2,
+			ProfilesDir: repoProfilesDir(t), WorkDir: workDir,
+		})
+	}()
+
+	t.Cleanup(func() {
+		cancel()
+
+		_ = inPipeW.Close()
+	})
+
+	return inPipeW, stdout, stderr
+}
+
+func writeServeLine(t *testing.T, w io.Writer, line string) {
+	t.Helper()
+
+	_, err := w.Write([]byte(line + "\n"))
+	if err != nil {
+		t.Fatalf("write frame: %v", err)
+	}
+}
+
+// startLiveApplySession handshakes a Zed-like initialize (elicitation
+// advertised — the D-13 probe-free path) + session/new and returns the
+// session id.
+func startLiveApplySession(t *testing.T, inPipeW *io.PipeWriter, stdout *syncBuffer) string {
+	t.Helper()
+
+	writeServeLine(t, inPipeW,
+		`{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,`+
+			`"clientCapabilities":{"elicitation":{"form":{}}}}}`)
+	writeServeLine(t, inPipeW,
+		`{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"x"}}`)
+
+	return pollStdoutForSessionID(t, stdout)
+}
+
+// waitRequestModels polls the session transcript until n request_shaped lines
+// exist, returning their fingerprinted models in order.
+func waitRequestModels(t *testing.T, workDir, sessionID string, n int) []string {
+	t.Helper()
+
+	transcriptPath := filepath.Join(workDir, ".ass-guard", "transcript_"+sessionID+".jsonl")
+
+	deadline := time.Now().Add(15 * time.Second)
+
+	for time.Now().Before(deadline) {
+		raw, rerr := os.ReadFile(transcriptPath)
+		if rerr == nil {
+			var models []string
+
+			for line := range strings.SplitSeq(string(raw), "\n") {
+				if line == "" {
+					continue
+				}
+
+				var l session.Line
+
+				if json.Unmarshal([]byte(line), &l) == nil && l.Type == "request_shaped" {
+					models = append(models, l.Model)
+				}
+			}
+
+			if len(models) >= n {
+				return models
+			}
+		}
+
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	t.Fatalf("only saw fewer than %d request_shaped lines within 15s", n)
+
+	return nil
+}
+
+// pollSetConfigResponse waits for the set_config_option response frame and
+// asserts it is a success carrying the full option set (the composition is
+// wired: no surface would answer the typed not-available error instead).
+func pollSetConfigResponse(t *testing.T, stdout *syncBuffer, id string) {
+	t.Helper()
+
+	deadline := time.Now().Add(15 * time.Second)
+
+	for time.Now().Before(deadline) {
+		for line := range strings.SplitSeq(stdout.String(), "\n") {
+			if !strings.Contains(line, `"id":`+id+`,`) {
+				continue
+			}
+
+			if !strings.Contains(line, `"error"`) && strings.Contains(line, `"configOptions"`) {
+				return
+			}
+
+			t.Fatalf("set_config_option response was an error or lacked the full set: %.400s", line)
+		}
+
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	t.Fatalf("set_config_option response (id=%s) never arrived; stdout tail: %.600s", id, stdout.String())
+}
+
+// tierExtraLayer declares tiers.light on the same provider (the switchable
+// case: light → glm-5.2, both models the floor declares on anthropic).
+const tierExtraLayer = "tiers:\n  light:\n    model: glm-5.2\n"
+
+// crossProviderExtraLayer binds tiers.light to a model of a DIFFERENT
+// provider — the loud-degrade case (cross-provider switches never rewire the
+// live provider).
+const crossProviderExtraLayer = `providers:
+  other:
+    base_url: "https://other.invalid"
+    shape: openai
+models:
+  other-model:
+    provider: other
+    pricing: { input_per_mtoken: 0.0, output_per_mtoken: 0.0 }
+    capabilities: { context_window: 100000, max_output_tokens: 32000, tool_calling: true, streaming: true, extended_thinking: true }
+tiers:
+  light:
+    model: other-model
+`
+
+func TestLiveModelApply(t *testing.T) {
+	t.Parallel()
+
+	stub := newSSEModelStub(t, 0)
+	workDir := liveApplyConfig(t, stub.srv.URL, "")
+	inPipeW, stdout, _ := runLiveApplyServe(t, workDir)
+
+	sid := startLiveApplySession(t, inPipeW, stdout)
+
+	writeServeLine(t, inPipeW, `{"jsonrpc":"2.0","id":2,"method":"session/prompt","params":{"sessionId":"`+
+		sid+`","prompt":[{"type":"text","text":"hi"}]}}`)
+
+	models := waitRequestModels(t, workDir, sid, 1)
+	if models[0] != testModelPrimary {
+		t.Fatalf("first request model = %q; want the configured heavy primary %q", models[0], testModelPrimary)
+	}
+
+	// The editor switches the model; the surface persists then applies live.
+	writeServeLine(t, inPipeW, `{"jsonrpc":"2.0","id":3,"method":"session/set_config_option","params":{"sessionId":"`+
+		sid+`","configId":"`+optModel+`","value":"`+testModelFallback+`"}}`)
+
+	pollSetConfigResponse(t, stdout, "3")
+
+	writeServeLine(t, inPipeW, `{"jsonrpc":"2.0","id":4,"method":"session/prompt","params":{"sessionId":"`+
+		sid+`","prompt":[{"type":"text","text":"again"}]}}`)
+
+	models = waitRequestModels(t, workDir, sid, 2)
+	if models[1] != testModelFallback {
+		t.Errorf("post-set request model = %q; want %q (the very next request carries the new model)",
+			models[1], testModelFallback)
+	}
+}
+
+func TestLiveModelApply_MidTurn(t *testing.T) {
+	t.Parallel()
+
+	stub := newSSEModelStub(t, 700*time.Millisecond) // the FIRST request is held open
+	workDir := liveApplyConfig(t, stub.srv.URL, "")
+	inPipeW, stdout, _ := runLiveApplyServe(t, workDir)
+
+	sid := startLiveApplySession(t, inPipeW, stdout)
+
+	writeServeLine(t, inPipeW, `{"jsonrpc":"2.0","id":2,"method":"session/prompt","params":{"sessionId":"`+
+		sid+`","prompt":[{"type":"text","text":"hi"}]}}`)
+
+	// The in-flight request is open; a Set arriving now must WAIT.
+	writeServeLine(t, inPipeW, `{"jsonrpc":"2.0","id":3,"method":"session/set_config_option","params":{"sessionId":"`+
+		sid+`","configId":"`+optModel+`","value":"`+testModelFallback+`"}}`)
+
+	time.Sleep(150 * time.Millisecond)
+
+	inFlight := stub.recordedModels()
+	if len(inFlight) != 1 || inFlight[0] != testModelPrimary {
+		t.Fatalf("in-flight models = %v; want exactly [%s] (the held request keeps its model)", inFlight, testModelPrimary)
+	}
+
+	// The set response arrives only AFTER the held turn finished and the
+	// serialized apply landed between turns.
+	pollSetConfigResponse(t, stdout, "3")
+
+	writeServeLine(t, inPipeW, `{"jsonrpc":"2.0","id":4,"method":"session/prompt","params":{"sessionId":"`+
+		sid+`","prompt":[{"type":"text","text":"again"}]}}`)
+
+	models := waitRequestModels(t, workDir, sid, 2)
+	if models[0] != testModelPrimary || models[1] != testModelFallback {
+		t.Errorf("request models = %v; want [%s %s] (no torn stamp, next request carries the new model)",
+			models, testModelPrimary, testModelFallback)
+	}
+}
+
+func TestTierSwitch(t *testing.T) {
+	t.Parallel()
+
+	stub := newSSEModelStub(t, 0)
+	workDir := liveApplyConfig(t, stub.srv.URL, tierExtraLayer)
+	inPipeW, stdout, _ := runLiveApplyServe(t, workDir)
+
+	sid := startLiveApplySession(t, inPipeW, stdout)
+
+	writeServeLine(t, inPipeW, `{"jsonrpc":"2.0","id":2,"method":"session/prompt","params":{"sessionId":"`+
+		sid+`","prompt":[{"type":"text","text":"hi"}]}}`)
+
+	models := waitRequestModels(t, workDir, sid, 1)
+	if models[0] != testModelPrimary {
+		t.Fatalf("first request model = %q; want %q", models[0], testModelPrimary)
+	}
+
+	// tiers.light is bound to glm-5.2 on the SAME provider — the tier switch
+	// rewires the model the next request carries.
+	writeServeLine(t, inPipeW, `{"jsonrpc":"2.0","id":3,"method":"session/set_config_option","params":{"sessionId":"`+
+		sid+`","configId":"`+optTier+`","value":"`+testTierLight+`"}}`)
+
+	pollSetConfigResponse(t, stdout, "3")
+
+	writeServeLine(t, inPipeW, `{"jsonrpc":"2.0","id":4,"method":"session/prompt","params":{"sessionId":"`+
+		sid+`","prompt":[{"type":"text","text":"again"}]}}`)
+
+	models = waitRequestModels(t, workDir, sid, 2)
+	if models[1] != testModelFallback {
+		t.Errorf("post-tier-switch request model = %q; want %q (tiers.light.model)", models[1], testModelFallback)
+	}
+}
+
+func TestTierSwitch_CrossProvider(t *testing.T) {
+	t.Parallel()
+
+	stub := newSSEModelStub(t, 0)
+	workDir := liveApplyConfig(t, stub.srv.URL, crossProviderExtraLayer)
+	inPipeW, stdout, stderr := runLiveApplyServe(t, workDir)
+
+	sid := startLiveApplySession(t, inPipeW, stdout)
+
+	writeServeLine(t, inPipeW, `{"jsonrpc":"2.0","id":2,"method":"session/prompt","params":{"sessionId":"`+
+		sid+`","prompt":[{"type":"text","text":"hi"}]}}`)
+
+	models := waitRequestModels(t, workDir, sid, 1)
+	if models[0] != testModelPrimary {
+		t.Fatalf("first request model = %q; want %q", models[0], testModelPrimary)
+	}
+
+	// tiers.light is bound to a DIFFERENT provider: the persist succeeds (the
+	// tier is a config write) but the live apply degrades LOUDLY with the
+	// model unchanged — cross-provider switches never rewire the live provider.
+	writeServeLine(t, inPipeW, `{"jsonrpc":"2.0","id":3,"method":"session/set_config_option","params":{"sessionId":"`+
+		sid+`","configId":"`+optTier+`","value":"`+testTierLight+`"}}`)
+
+	pollSetConfigResponse(t, stdout, "3")
+
+	writeServeLine(t, inPipeW, `{"jsonrpc":"2.0","id":4,"method":"session/prompt","params":{"sessionId":"`+
+		sid+`","prompt":[{"type":"text","text":"again"}]}}`)
+
+	models = waitRequestModels(t, workDir, sid, 2)
+	if models[1] != testModelPrimary {
+		t.Errorf("post-tier-switch request model = %q; want %q UNCHANGED (cross-provider degrade)",
+			models[1], testModelPrimary)
+	}
+
+	if got := stderr.String(); !strings.Contains(got, "live apply SKIPPED") {
+		t.Errorf("cross-provider tier switch not loudly logged (stderr=%q)", got)
+	}
 }
