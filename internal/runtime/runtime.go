@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -494,14 +495,21 @@ func (r *Runner) Run(
 	// and is UNSUBSCRIBED when Run returns — a leaked dead subscriber's buffer
 	// fills and wedges every later turn's chunk publishes (the stack-proven
 	// 08-15 multi-stage stall: Bus.Publish blocked on the dead channel).
+	// 16-01: ToolCall / ToolCallUpdate subscriptions join it — the ACP-03 live
+	// tool cards ride the same forwarder → ActivityEmitter path (the emitter's
+	// single drain owns the notification order).
 	ch := r.bus.Subscribe("AgentMessageChunk", event.BufAgentMessageChunk)
+	toolCh := r.bus.Subscribe("ToolCall", event.BufToolCall)
+	toolUpdCh := r.bus.Subscribe("ToolCallUpdate", event.BufToolCallUpdate)
 
 	defer r.bus.Unsubscribe("AgentMessageChunk", ch)
+	defer r.bus.Unsubscribe("ToolCall", toolCh)
+	defer r.bus.Unsubscribe("ToolCallUpdate", toolUpdCh)
 
 	done := make(chan struct{})
 	promptDone := make(chan struct{})
 
-	startChunkForwarder(ctx, ch, emit, promptDone, done)
+	startChunkForwarder(ctx, ch, toolCh, toolUpdCh, emit, promptDone, done)
 
 	blocks := toContentBlocks(prompt)
 
@@ -568,15 +576,23 @@ func mapAskStop(stop string) string {
 const stopAskACP = "ask"
 
 // startChunkForwarder spawns the per-Run chunk forwarder: streamed
-// AgentMessageChunk events become session/update notifications until the turn
-// completes, then any buffered chunks drain before the goroutine exits (the
-// caller signals promptDone + waits on done).
+// AgentMessageChunk events become session/update notifications, and (16-01)
+// ToolCall / ToolCallUpdate events become the ACP-03 tool-card frames via the
+// ActivityEmitter seam, until the turn completes; then any buffered events
+// drain before the goroutine exits (the caller signals promptDone + waits on
+// done). A plain ChunkEmitter (legacy fakes) silently skips the tool frames.
 func startChunkForwarder(
 	ctx context.Context,
-	ch <-chan event.Event,
+	ch, toolCh, toolUpdCh <-chan event.Event,
 	emit acp.ChunkEmitter,
 	promptDone, done chan struct{},
 ) {
+	// 16-01: the ActivityEmitter assertion happens once; a nil toolEmit simply
+	// disables tool-card forwarding for plain ChunkEmitter fakes.
+	toolEmit, _ := emit.(acp.ActivityEmitter)
+
+	route := func(e event.Event) { routeBusEvent(e, emit, toolEmit) }
+
 	go func() {
 		defer func() { done <- struct{}{} }()
 
@@ -587,19 +603,31 @@ func startChunkForwarder(
 					return
 				}
 
-				if c, ok := e.(event.AgentMessageChunk); ok {
-					_ = emit.AgentMessageChunk(c.MessageID, c.Content)
+				route(e)
+			case e, ok := <-toolCh:
+				if !ok {
+					return
 				}
+
+				route(e)
+			case e, ok := <-toolUpdCh:
+				if !ok {
+					return
+				}
+
+				route(e)
 			case <-ctx.Done():
 				return
 			case <-promptDone:
-				// Prompt returned; drain any buffered chunks, then exit.
+				// Prompt returned; drain any buffered events, then exit.
 				for {
 					select {
 					case e := <-ch:
-						if c, ok := e.(event.AgentMessageChunk); ok {
-							_ = emit.AgentMessageChunk(c.MessageID, c.Content)
-						}
+						route(e)
+					case e := <-toolCh:
+						route(e)
+					case e := <-toolUpdCh:
+						route(e)
 					default:
 						return
 					}
@@ -607,6 +635,100 @@ func startChunkForwarder(
 			}
 		}
 	}()
+}
+
+// routeBusEvent forwards one bus event of the forwarder-supported kinds to the
+// right emitter method (AgentMessageChunk → text chunk; ToolCall /
+// ToolCallUpdate → the ACP-03 tool-card frames). Shared by the per-Run and the
+// session-lifetime forwarders.
+func routeBusEvent(e event.Event, emit acp.ChunkEmitter, toolEmit acp.ActivityEmitter) {
+	switch c := e.(type) {
+	case event.AgentMessageChunk:
+		_ = emit.AgentMessageChunk(c.MessageID, c.Content)
+	case event.ToolCall:
+		forwardToolCall(toolEmit, e)
+	case event.ToolCallUpdate:
+		forwardToolCallUpdate(toolEmit, e)
+	}
+}
+
+// forwardToolCall mirrors one bus ToolCall event as a v1 tool_call frame: the
+// card's title IS the tool name and the frame carries the event's raw input so
+// the acp layer can derive presentation variants (its own concern, never the
+// runtime's). A nil emitter (plain ChunkEmitter fake) is a no-op.
+func forwardToolCall(toolEmit acp.ActivityEmitter, e event.Event) {
+	if toolEmit == nil {
+		return
+	}
+
+	c, ok := e.(event.ToolCall)
+	if !ok {
+		return
+	}
+
+	_ = toolEmit.ToolCall(&acp.ToolCallFrame{
+		ToolCallID: c.ToolCallID,
+		Title:      c.Name,
+		Kind:       toolKindFor(c.Name),
+		Input:      append(json.RawMessage(nil), c.Input...),
+	})
+}
+
+// forwardToolCallUpdate mirrors one bus ToolCallUpdate event: the event's
+// partial-update JSON is decoded (tolerantly — unknown keys dropped, the
+// decoder never fabricates) and pinned to the event's real toolCallId.
+func forwardToolCallUpdate(toolEmit acp.ActivityEmitter, e event.Event) {
+	if toolEmit == nil {
+		return
+	}
+
+	c, ok := e.(event.ToolCallUpdate)
+	if !ok || len(c.Update) == 0 {
+		return
+	}
+
+	var uf acp.ToolCallUpdateFrame
+
+	_ = json.Unmarshal(c.Update, &uf)
+	uf.ToolCallID = c.ToolCallID
+
+	_ = toolEmit.ToolCallUpdate(&uf)
+}
+
+// Captured core tool names referenced by toolKindFor (named so the mapping
+// table reads as a table, not a string pile).
+const (
+	toolNameBash         = "Bash"
+	toolNameEdit         = "Edit"
+	toolNameWrite        = "Write"
+	toolNameRead         = "Read"
+	toolNameGrep         = "Grep"
+	toolNameGlob         = "Glob"
+	toolNameWebFetch     = "WebFetch"
+	toolNameWebSearch    = "WebSearch"
+	toolNameExitPlanMode = "ExitPlanMode"
+)
+
+// toolKindFor maps the captured core tool names to v1 ToolKind values.
+// Unknown tools map to "" (kind omitted — the schema treats it as optional;
+// never guessed). Presentation vocabulary, not behavior.
+func toolKindFor(name string) string {
+	switch name {
+	case toolNameBash:
+		return acp.ToolKindExecute
+	case toolNameEdit, toolNameWrite:
+		return acp.ToolKindEdit
+	case toolNameRead:
+		return acp.ToolKindRead
+	case toolNameGrep, toolNameGlob:
+		return acp.ToolKindSearch
+	case toolNameWebFetch, toolNameWebSearch:
+		return acp.ToolKindFetch
+	case toolNameExitPlanMode:
+		return acp.ToolKindSwitchMode
+	default:
+		return ""
+	}
 }
 
 // runOneTurn drives ONE ACP session/prompt through the Session Core, wrapping it

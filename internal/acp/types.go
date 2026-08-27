@@ -60,6 +60,124 @@ type ContentBlock struct {
 	Text string `json:"text,omitempty"`
 }
 
+// --- ACP-03 live-turn frame vocabulary (16-01) ---
+//
+// Every field name below is pinned VERBATIM against the canonical ACP v1
+// schema (RESEARCH §Code Examples, schema/v1/schema.json defs ToolCall,
+// ToolCallUpdate, Diff, ToolCallLocation, Plan, PlanEntry, ContentChunk).
+// v1 spellings ONLY: `toolCallId`, `oldText`/`newText`, plan kind stays `plan`,
+// config ids stay `id` — NEVER the v2 renames (`plan_update`, `configId`)
+// (Pitfall 7 — Zed is verified v1).
+
+// Tool kind values (v1 ToolKind enum).
+const (
+	ToolKindRead       = "read"
+	ToolKindEdit       = "edit"
+	ToolKindDelete     = "delete"
+	ToolKindMove       = "move"
+	ToolKindSearch     = "search"
+	ToolKindExecute    = "execute"
+	ToolKindThink      = "think"
+	ToolKindFetch      = "fetch"
+	ToolKindSwitchMode = "switch_mode"
+	ToolKindOther      = "other"
+)
+
+// Tool call status values (v1 ToolCallStatus enum — four values ONLY: v1 has
+// NO "cancelled" status; agent-side cancellation closure is internal state,
+// never a wire status).
+const (
+	StatusPending    = "pending"
+	StatusInProgress = "in_progress"
+	StatusCompleted  = "completed"
+	StatusFailed     = "failed"
+)
+
+// ToolCallFrame is the payload of a v1 `tool_call` session/update card.
+type ToolCallFrame struct {
+	ToolCallID string             `json:"toolCallId"` //nolint:tagliatelle // ACP wire field (required)
+	Title      string             `json:"title,omitempty"`
+	Kind       string             `json:"kind,omitempty"`   // ToolKind values
+	Status     string             `json:"status,omitempty"` // Status* values
+	Content    []ToolCallContent  `json:"content,omitempty"`
+	Locations  []ToolCallLocation `json:"locations,omitempty"`
+	// Input mirrors the runtime bus event's raw input so the acp layer can
+	// derive presentation variants (e.g. TodoWrite → plan frame). It is NEVER
+	// marshaled — v1's tool_call frame carries no rawInput field.
+	Input json.RawMessage `json:"-"`
+}
+
+// ToolCallUpdateFrame is the payload of a v1 `tool_call_update` session/update
+// notification. All fields except toolCallId are partial-update options.
+type ToolCallUpdateFrame struct {
+	ToolCallID string             `json:"toolCallId"` //nolint:tagliatelle // ACP wire field (required)
+	Title      string             `json:"title,omitempty"`
+	Kind       string             `json:"kind,omitempty"`   // ToolKind values
+	Status     string             `json:"status,omitempty"` // Status* values
+	Content    []ToolCallContent  `json:"content,omitempty"`
+	Locations  []ToolCallLocation `json:"locations,omitempty"`
+}
+
+// ToolCallContent is one entry of a tool-call frame's content array. The v1
+// schema models it as a union over `type`; this flat struct carries every
+// variant's fields and each producer fills exactly its own.
+//
+//	{"type":"content","content":{…TextBlock}}   — inline text/output preview
+//	{"type":"diff","path":"…","newText":"…"}    — file edit diff (OldText null
+//	                                              becomes omitted for new files)
+type ToolCallContent struct {
+	Type    string        `json:"type"`              // required v1: "content" | "diff"
+	Content *ContentBlock `json:"content,omitempty"` // the "content" variant payload
+	Path    string        `json:"path,omitempty"`    // diff variant: file path (required when diff)
+	OldText string        `json:"oldText,omitempty"` //nolint:tagliatelle // ACP wire field (diff)
+	NewText string        `json:"newText,omitempty"` //nolint:tagliatelle // ACP wire field (diff)
+}
+
+// DiffContent names the diff variant's payload as a plain builder view — v1
+// flattens path/oldText/newText onto the ToolCallContent object itself, so
+// this type exists to keep constructors legible; Frame() produces the wire shape.
+type DiffContent struct {
+	Path    string
+	OldText string
+	NewText string
+}
+
+// Frame converts the builder view into its flattened ToolCallContent form.
+func (d DiffContent) Frame() ToolCallContent {
+	return ToolCallContent{Type: "diff", Path: d.Path, OldText: d.OldText, NewText: d.NewText}
+}
+
+// ToolCallLocation names where a tool call touched (v1 ToolCallLocation:
+// absolute path + optional line). Line is a pointer so a genuine line number
+// stays distinct from "no line".
+type ToolCallLocation struct {
+	Path string `json:"path"`
+	Line *int64 `json:"line,omitempty"`
+}
+
+// PlanFrame is the payload of a v1 `plan` session/update. Entries is REQUIRED
+// and full-replacement ("The client replaces the entire plan with each update").
+type PlanFrame struct {
+	Entries []PlanEntry `json:"entries"`
+}
+
+// PlanEntry is one row of the live plan panel.
+type PlanEntry struct {
+	Content  string `json:"content"`  // required
+	Priority string `json:"priority"` // required (high | medium | low)
+	Status   string `json:"status"`   // required (pending | in_progress | completed)
+}
+
+// ThoughtChunkFrame is the payload of an `agent_thought_chunk` session/update —
+// v1's ContentChunk shape (messageId shared across one message's chunks; "a
+// change in messageId indicates a new message has started"). No provider
+// thinking source exists until Phase 21 (PAR-05); the shape completes the
+// emitter's frame surface ahead of it.
+type ThoughtChunkFrame struct {
+	MessageID string       `json:"messageId"` //nolint:tagliatelle // ACP wire field
+	Content   ContentBlock `json:"content"`   // required
+}
+
 // Canonical JSON-RPC error codes (jsonrpc.org/spec).
 const (
 	CodeParseError     = -32700

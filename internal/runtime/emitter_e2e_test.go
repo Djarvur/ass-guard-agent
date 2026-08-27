@@ -172,7 +172,7 @@ func TestTurnEmitterEndToEnd(t *testing.T) { //nolint:funlen // full end-to-end 
 
 	sendFrame(t, cliW, &acp.Message{
 		JSONRPC: protocolVersion20, ID: json.RawMessage("0"), Method: methodInitialize,
-		Params: rawJSON(map[string]any{"protocolVersion": 1}),
+		Params: rawJSON(map[string]any{keyProtoVersion: 1}),
 	})
 
 	frames := readFrames(t, cliR, 1)
@@ -190,8 +190,9 @@ func TestTurnEmitterEndToEnd(t *testing.T) { //nolint:funlen // full end-to-end 
 		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
 	}
 
-	if err := json.Unmarshal(frames[0].Result, &snew); err != nil || snew.SessionID == "" {
-		t.Fatalf("no sessionId from session/new: %v %+v", err, frames)
+	snewErr := json.Unmarshal(frames[0].Result, &snew)
+	if snewErr != nil || snew.SessionID == "" {
+		t.Fatalf("no sessionId from session/new: %v %+v", snewErr, frames)
 	}
 
 	sendFrame(t, cliW, &acp.Message{
@@ -207,51 +208,7 @@ func TestTurnEmitterEndToEnd(t *testing.T) { //nolint:funlen // full end-to-end 
 	// order IS wire emission order.
 	br := bufio.NewReader(cliR)
 
-	var (
-		updates []string // sessionUpdate discriminator values, in arrival order
-		gotResp bool
-	)
-
-	deadline := time.After(10 * time.Second)
-	for !gotResp {
-		select {
-		case <-deadline:
-			t.Fatalf("timeout waiting for prompt response; updates=%v", updates)
-		default:
-		}
-
-		line, rerr := br.ReadBytes('\n')
-		if len(line) == 0 && rerr != nil {
-			t.Fatalf("stdout closed before response; updates=%v", updates)
-		}
-
-		if len(bytes.TrimSpace(line)) == 0 {
-			continue
-		}
-
-		var m acp.Message
-
-		if json.Unmarshal(bytes.TrimRight(line, "\n"), &m) != nil {
-			continue
-		}
-
-		switch {
-		case m.ID != nil && string(m.ID) == "2":
-			gotResp = true
-		case m.Method == sessionUpdate:
-			var upd struct {
-				Update struct {
-					SessionUpdate string `json:"sessionUpdate"` //nolint:tagliatelle // ACP wire field
-					ToolCallID    string `json:"toolCallId"`    //nolint:tagliatelle // ACP wire field
-					Title         string `json:"title"`
-				} `json:"update"`
-			}
-
-			if jerr := json.Unmarshal(m.Params, &upd); jerr == nil {
-				updates = append(updates, upd.Update.SessionUpdate+"|"+upd.Update.ToolCallID+"|"+upd.Update.Title)
-			}
-		}
-	}
+	updates := readSessionUpdatesUntilResponse(t, br, "2")
 
 	want := []string{
 		"agent_message_chunk||",
@@ -282,6 +239,62 @@ func TestTurnEmitterEndToEnd(t *testing.T) { //nolint:funlen // full end-to-end 
 	}
 
 	if written != len(updates) {
-		t.Fatalf("notification leak: emitter wrote %d but stdout carried %d session/update frames", written, len(updates))
+		t.Fatalf("notification leak: emitter wrote %d but stdout carried %d update frames",
+			written, len(updates))
 	}
+}
+
+// readSessionUpdatesUntilResponse reads frames sequentially until the response
+// with the given id arrives, returning every session/update's discriminator as
+// "kind|toolCallId|title" in exact arrival order (the wire's ground truth).
+func readSessionUpdatesUntilResponse( //nolint:nonamedreturns // name documents the return
+	t *testing.T, br *bufio.Reader, responseID string,
+) (updates []string) {
+	t.Helper()
+
+	deadline := time.After(10 * time.Second)
+
+	gotResp := false
+	for !gotResp {
+		select {
+		case <-deadline:
+			t.Fatalf("timeout waiting for prompt response; updates=%v", updates)
+		default:
+		}
+
+		line, rerr := br.ReadBytes('\n')
+		if len(line) == 0 && rerr != nil {
+			t.Fatalf("stdout closed before response; updates=%v", updates)
+		}
+
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+
+		var m acp.Message
+
+		if json.Unmarshal(bytes.TrimRight(line, "\n"), &m) != nil {
+			continue
+		}
+
+		switch {
+		case m.ID != nil && string(m.ID) == responseID:
+			gotResp = true
+		case m.Method == sessionUpdate:
+			var upd struct {
+				Update struct {
+					SessionUpdate string `json:"sessionUpdate"` //nolint:tagliatelle // ACP wire field
+					ToolCallID    string `json:"toolCallId"`    //nolint:tagliatelle // ACP wire field
+					Title         string `json:"title"`
+				} `json:"update"`
+			}
+
+			jerr := json.Unmarshal(m.Params, &upd)
+			if jerr == nil {
+				updates = append(updates, upd.Update.SessionUpdate+"|"+upd.Update.ToolCallID+"|"+upd.Update.Title)
+			}
+		}
+	}
+
+	return updates
 }

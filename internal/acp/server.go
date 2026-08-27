@@ -63,7 +63,9 @@ type Server struct {
 	mu         sync.Mutex
 	sessions   map[string]*sessionState
 	turnRunner TurnRunner
-	handlerWG  sync.WaitGroup // tracks in-flight request goroutines so Close is safe
+	emitter    *TurnEmitter      // THE ordered session/update notification path (16-01); non-nil after NewServer
+	emitCfg    TurnEmitterConfig // composition-root knobs via WithTurnEmitter
+	handlerWG  sync.WaitGroup    // tracks in-flight request goroutines so Close is safe
 }
 
 // sessionState is one live session (created by session/new). It carries the
@@ -105,8 +107,20 @@ func WithLogger(l *log.Logger) ServerOption {
 	return func(s *Server) { s.log = l }
 }
 
+// WithTurnEmitter configures the composition-root TurnEmitter's knobs (lane
+// capacities + stall threshold; zero values keep the documented defaults).
+// The emitter itself is ALWAYS armed by NewServer so every session/update
+// notification shares one ordered drain (16-01/D-02 single-writer total order).
+func WithTurnEmitter(cfg TurnEmitterConfig) ServerOption {
+	return func(s *Server) { s.emitCfg = cfg }
+}
+
 // NewServer builds a Server reading frames from in, writing frames to out, and
 // diagnostics to stderrSink (must NEVER be stdout — transport discipline).
+// Construction arms the TurnEmitter over the same Writer: notifications route
+// through its lanes; responses and parse errors still use writeResult/
+// writeError directly (response-vs-notification ordering is not spec-constrained
+// except at turn end, which handleSessionPrompt's Barrier covers).
 func NewServer(in io.Reader, out, stderrSink io.Writer, opts ...ServerOption) *Server {
 	s := &Server{
 		in:         in,
@@ -119,6 +133,8 @@ func NewServer(in io.Reader, out, stderrSink io.Writer, opts ...ServerOption) *S
 	for _, o := range opts {
 		o(s)
 	}
+
+	s.emitter = NewTurnEmitter(s.out, stderrSink, s.emitCfg)
 
 	s.registerHandlers()
 
@@ -133,26 +149,46 @@ func (stubNoChunkRunner) Run(ctx context.Context, _ string, emit ChunkEmitter, p
 	return stopEndTurn, nil
 }
 
-// Emitter returns a session-scoped ChunkEmitter over the server's Writer —
-// usable OUTSIDE a session/prompt request, it lets server-driven turns
-// (timer resumes, automation firings — 12-07/WINDOWS #3) stream
-// session/update notifications to the connected client through the same
-// mutex-guarded frame writer every other write uses.
+// Emitter returns a session-scoped FOREGROUND-class emitter handle over the
+// Server's TurnEmitter (16-01): its frames preempt the queue head. Usable
+// OUTSIDE a session/prompt request, it lets server-driven turns (timer resumes,
+// automation firings — 12-07/WINDOWS #3) stream session/update notifications
+// through the same single ordered drain every other notification uses.
+// The returned value satisfies ChunkEmitter; type-assert to ActivityEmitter for
+// the extended v1 frame vocabulary.
 //
 //nolint:ireturn // the emitter seam is intentionally the interface (tests inject fakes)
 func (s *Server) Emitter(sessionID string) ChunkEmitter {
-	return &adapter{out: s.out, sessionID: sessionID}
+	return s.emitter.ForegroundHandle(sessionID)
+}
+
+// BackgroundEmitter returns a session-scoped BACKGROUND-class handle: frames
+// enqueue FIFO behind any foreground preemption (subagent / engine /
+// automation streams — D-01/D-02).
+//
+//nolint:ireturn // same seam rationale as Emitter
+func (s *Server) BackgroundEmitter(sessionID string) ChunkEmitter {
+	return s.emitter.BackgroundHandle(sessionID)
+}
+
+// TurnEmitter exposes the server's ordered notification emitter (16-01): the
+// registry (16-02) and tests read its counters; the composition root may tune
+// knobs only via WithTurnEmitter before traffic starts.
+func (s *Server) TurnEmitter() *TurnEmitter {
+	return s.emitter
 }
 
 // Serve runs the reader loop until ctx is cancelled or stdin reaches EOF. Each
 // frame is dispatched: requests (with id) go to a per-request goroutine;
 // notifications (no id) are handled inline. Parse errors surface a -32700
 // response (asynchronously, via the Writer's drain) and the loop continues. On
-// exit, Serve waits for in-flight handlers then closes the Writer so all buffered
-// frames flush before the caller inspects stdout.
+// exit, Serve waits for in-flight handlers, stops the TurnEmitter (its drain
+// must exit BEFORE the Writer closes — Pitfall 8), then closes the Writer so
+// all buffered frames flush before the caller inspects stdout.
 func (s *Server) Serve(ctx context.Context) error {
 	defer func() {
 		s.handlerWG.Wait()
+		s.emitter.Stop()
 		s.out.Close()
 	}()
 
@@ -300,30 +336,4 @@ func (s *Server) writeResult(id, result json.RawMessage) {
 // writeError writes an error response with the given id.
 func (s *Server) writeError(id json.RawMessage, e *RPCError) {
 	_ = s.out.Write(&Message{JSONRPC: protocolVersion20, ID: id, Error: e})
-}
-
-// adapter is the default ChunkEmitter: it writes session/update notifications
-// for the given session via the Server's Writer. Plan 02-05 extends it to
-// subscribe to the event bus for tool_call/usage_update kinds too.
-type adapter struct {
-	out       *Writer
-	sessionID string
-}
-
-// AgentMessageChunk streams one text chunk as a session/update notification
-// (sessionUpdate="agent_message_chunk"). NO id (notification).
-func (a *adapter) AgentMessageChunk(messageID, text string) error {
-	update := map[string]any{
-		"sessionUpdate": "agent_message_chunk",
-		"messageId":     messageID,
-		"content":       ContentBlock{Type: blockText, Text: text},
-	}
-	params := map[string]any{keySessionID: a.sessionID, "update": update}
-
-	raw, err := json.Marshal(params)
-	if err != nil {
-		return fmt.Errorf("call: %w", err)
-	}
-
-	return a.out.Write(&Message{JSONRPC: protocolVersion20, Method: methodSessionUpdate, Params: raw})
 }

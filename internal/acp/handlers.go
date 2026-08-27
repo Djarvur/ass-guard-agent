@@ -126,9 +126,20 @@ func (s *Server) handleSessionPrompt(ctx context.Context, params json.RawMessage
 
 	defer st.setCancel(nil)
 
-	emit := &adapter{out: s.out, sessionID: p.SessionID}
+	// 16-01: the turn streams through the FOREGROUND-class emitter handle —
+	// its frames preempt any queued background traffic (D-01/D-02) and the
+	// single drain owns the notification order.
+	emit := s.Emitter(p.SessionID)
 
 	stopReason, err := s.turnRunner.Run(turnCtx, p.SessionID, emit, p.Prompt)
+
+	// Updates-before-response (16-01, Pitfall 4 — the verified cancel contract):
+	// the turn's notifications ride the emitter's async lanes, so the handler
+	// MUST wait for the drain to flush everything queued during the turn before
+	// returning — the session/prompt response is written only after them. The
+	// request ctx lets a cancelled turn skip the wait (the connection is dying).
+	s.emitter.Barrier(ctx)
+
 	if err != nil {
 		// D-16: if the turn was cancelled, report stopReason "cancelled" rather
 		// than a hard error (the client expects a stopReason after cancel).

@@ -197,7 +197,12 @@ func Run( //nolint:funlen // :320-425
 		}
 	}
 
-	srv := acp.NewServer(in, out, stderr, acp.WithTurnRunner(runner))
+	// 16-01 (composition root, D-01..D-02): the TurnEmitter is armed WITH the
+	// server — one ordered drain owns every session/update notification (fg
+	// preempts at the head, bg FIFO, bounded lanes block-never-drop), and the
+	// emitter-backed handles flow to both the prompt-turn path (srv.Emitter,
+	// below) and the runner's server-driven-turn seam (SetEmitter).
+	srv := acp.NewServer(in, out, stderr, acp.WithTurnRunner(runner), acp.WithTurnEmitter(acp.TurnEmitterConfig{}))
 
 	// 12-07 (ACP-04/D-02): the per-project schedule store + the scheduler
 	// goroutine on the serve-lifetime ctx (no daemon, no port — Close/ctx

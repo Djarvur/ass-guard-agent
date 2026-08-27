@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/event"
 	"github.com/Djarvur/ass-guard-agent/internal/sched"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
@@ -222,8 +223,9 @@ func (r *Runner) runCatchUpOnce(ctx context.Context, sessionID string) {
 // startSessionForwarder subscribes the session-lifetime chunk forwarder
 // (WINDOWS #3's fix): AgentMessageChunk events belonging to this session —
 // INCLUDING server-driven turns (D-01 timer resumes, automation firings)
-// where no Run subscription exists — reach the connected client. While a
-// client-driven Run is active its OWN forwarder owns the chunks (the
+// where no Run subscription exists — reach the connected client, and (16-01)
+// so do its ToolCall / ToolCallUpdate events as the ACP-03 tool-card frames.
+// While a client-driven Run is active its OWN forwarder owns these kinds (the
 // client-turn flag mutes this one — no duplicates). stop unsubscribes (the
 // session close chain).
 func (r *Runner) startSessionForwarder(sessionID string) (func(), bool) {
@@ -237,22 +239,77 @@ func (r *Runner) startSessionForwarder(sessionID string) (func(), bool) {
 	}
 
 	ch := r.bus.Subscribe("AgentMessageChunk", event.BufAgentMessageChunk)
+	toolCh := r.bus.Subscribe("ToolCall", event.BufToolCall)
+	toolUpdCh := r.bus.Subscribe("ToolCallUpdate", event.BufToolCallUpdate)
+
+	// Merge the three per-kind channels into one stream (per-kind FIFO is kept
+	// by each source goroutine; cross-kind interleaving was already best-effort
+	// under the previous single select). The stream closes — and the goroutine
+	// exits — when stop unsubscribes and the sources drain closed.
+	merged := fanInEvents(ch, toolCh, toolUpdCh)
+
 	prefix := sessionID + "-turn-"
+	toolEmit, _ := emit.(acp.ActivityEmitter)
+
+	forward := func(e event.Event) {
+		switch c := e.(type) {
+		case event.AgentMessageChunk:
+			if strings.HasPrefix(c.TurnID, prefix) {
+				_ = emit.AgentMessageChunk(c.MessageID, c.Content)
+			}
+		case event.ToolCall:
+			if strings.HasPrefix(c.TurnID, prefix) {
+				forwardToolCall(toolEmit, e)
+			}
+		case event.ToolCallUpdate:
+			if strings.HasPrefix(c.TurnID, prefix) {
+				forwardToolCallUpdate(toolEmit, e)
+			}
+		}
+	}
 
 	go func() {
-		for e := range ch {
+		for e := range merged {
 			if r.clientTurnActive(sessionID) {
-				continue // Run's forwarder owns client-turn chunks
+				continue // Run's forwarder owns client-turn events
 			}
 
-			c, ok := e.(event.AgentMessageChunk)
-			if !ok || !strings.HasPrefix(c.TurnID, prefix) {
-				continue
-			}
-
-			_ = emit.AgentMessageChunk(c.MessageID, c.Content)
+			forward(e)
 		}
 	}()
 
-	return func() { r.bus.Unsubscribe("AgentMessageChunk", ch) }, true
+	return func() {
+		r.bus.Unsubscribe("AgentMessageChunk", ch)
+		r.bus.Unsubscribe("ToolCall", toolCh)
+		r.bus.Unsubscribe("ToolCallUpdate", toolUpdCh)
+	}, true
+}
+
+// fanInEvents merges per-kind bus subscription channels into ONE event stream.
+// Each source runs its own pump goroutine (so a slow consumer blocks all
+// sources — the same backpressure the direct selects had) and the out channel
+// closes once every source closed (unsubscribe → clean goroutine teardown).
+func fanInEvents(chans ...<-chan event.Event) <-chan event.Event {
+	out := make(chan event.Event, event.BufAgentMessageChunk)
+
+	var wg sync.WaitGroup
+
+	wg.Add(len(chans))
+
+	for _, c := range chans {
+		go func(src <-chan event.Event) {
+			defer wg.Done()
+
+			for e := range src {
+				out <- e
+			}
+		}(c)
+	}
+
+	go func() {
+		wg.Wait()
+		close(out)
+	}()
+
+	return out
 }
