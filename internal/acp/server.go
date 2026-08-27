@@ -64,6 +64,7 @@ type Server struct {
 	sessions   map[string]*sessionState
 	turnRunner TurnRunner
 	emitter    *TurnEmitter      // THE ordered session/update notification path (16-01); non-nil after NewServer
+	registry   *Registry         // outbound id'd requests + response matching (16-02); non-nil after NewServer
 	emitCfg    TurnEmitterConfig // composition-root knobs via WithTurnEmitter
 	handlerWG  sync.WaitGroup    // tracks in-flight request goroutines so Close is safe
 }
@@ -136,6 +137,12 @@ func NewServer(in io.Reader, out, stderrSink io.Writer, opts ...ServerOption) *S
 
 	s.emitter = NewTurnEmitter(s.out, stderrSink, s.emitCfg)
 
+	// The registry (16-02) writes id'd request frames straight through the
+	// Writer (unconstrained by notification ordering) and routes its D-19
+	// synthetic-cancel cascade through the emitter's FOREGROUND lane so the
+	// turn-end Barrier orders it before the prompt response.
+	s.registry = NewRegistry(s.out, stderrSink, WithRegistryCascade(s.emitter.newHandle("", classForeground).Notify))
+
 	s.registerHandlers()
 
 	return s
@@ -188,6 +195,7 @@ func (s *Server) TurnEmitter() *TurnEmitter {
 func (s *Server) Serve(ctx context.Context) error {
 	defer func() {
 		s.handlerWG.Wait()
+		s.registry.Stop() // drain pending outbound requests BEFORE the Writer closes (Pitfall 8)
 		s.emitter.Stop()
 		s.out.Close()
 	}()
@@ -209,6 +217,18 @@ func (s *Server) Serve(ctx context.Context) error {
 			// Parse error: surface -32700 and keep reading. Only respond when we
 			// can recover an id; otherwise log and continue.
 			s.handleParseError(err)
+
+			continue
+		}
+
+		// Response interception (16-02, RESEARCH Pattern 2 — Pitfall 1): a frame
+		// with an id, NO method, and a result-or-error is a RESPONSE to one of
+		// OUR outbound requests. Route it to the registry and produce NO reply —
+		// dispatching it to the handler map would emit a spurious -32601
+		// (protocol garbage the client may treat as a failure). The condition
+		// captures neither notifications (no id) nor requests (method present).
+		if msg.ID != nil && msg.Method == "" && (msg.Result != nil || msg.Error != nil) {
+			s.registry.Deliver(msg)
 
 			continue
 		}

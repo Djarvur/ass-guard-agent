@@ -612,12 +612,23 @@ func handshake(t *testing.T, h *pipeHarness) {
 	h.readFrame(t)
 }
 
+// readProbeResponse reads the next frame and asserts it is the response to a
+// probe request with the given id — proving NO spurious frame arrived first.
+func readProbeResponse(t *testing.T, h *pipeHarness, wantID string) {
+	t.Helper()
+
+	next := h.readFrame(t)
+	if string(next.ID) != wantID {
+		t.Fatalf("expected the initialize response next; got method=%q id=%v (spurious?)", next.Method, next.ID)
+	}
+}
+
 // TestServeResponseRouting proves Pitfall 1's fix: an inbound frame with an id,
 // NO method, and a result-or-error is a RESPONSE to one of OUR outbound
 // requests — delivered to the registry BEFORE handler dispatch, producing ZERO
 // outbound frames (no spurious -32601). Unknown ids get exactly one structured
 // stderr log and are dropped; serving continues.
-func TestServeResponseRouting(t *testing.T) { //nolint:funlen // three scenarios, one routing rule
+func TestServeResponseRouting(t *testing.T) {
 	t.Parallel()
 
 	h := newPipeHarness(t)
@@ -627,7 +638,8 @@ func TestServeResponseRouting(t *testing.T) { //nolint:funlen // three scenarios
 	outcome := make(chan registryOutcome, 1)
 
 	go func() {
-		msg, err := h.srv.registry.Call(context.Background(), testOutboundMethod, map[string]any{"q": 1}, TimeoutFastControl)
+		msg, err := h.srv.registry.Call(
+			context.Background(), testOutboundMethod, map[string]any{"q": 1}, TimeoutFastControl)
 		outcome <- registryOutcome{msg: msg, err: err}
 	}()
 
@@ -657,21 +669,19 @@ func TestServeResponseRouting(t *testing.T) { //nolint:funlen // three scenarios
 	// Zero spurious frames: the very next frame on stdout is our probe's
 	// response (a mis-dispatched response would surface a -32601 first).
 	h.send(t, newRequest(7, methodInitialize, map[string]any{keyProtocolVersion: 1}))
-	next := h.readFrame(t)
-	if string(next.ID) != "7" {
-		t.Fatalf("expected the initialize response next; got method=%q id=%v (spurious dispatch?)", next.Method, next.ID)
-	}
+	readProbeResponse(t, h, "7")
 
 	// Unknown-id response: exactly one structured stderr log, dropped, and the
 	// server keeps serving.
 	const bogusID = "00000000-0000-4000-8000-000000000000"
 
-	h.send(t, &Message{JSONRPC: protocolVersion20, ID: quotedID(bogusID), Error: &RPCError{Code: CodeInternalError, Message: "late"}})
+	h.send(t, &Message{
+		JSONRPC: protocolVersion20,
+		ID:      quotedID(bogusID),
+		Error:   &RPCError{Code: CodeInternalError, Message: "late"},
+	})
 	h.send(t, newRequest(8, methodInitialize, map[string]any{keyProtocolVersion: 1}))
-	next = h.readFrame(t)
-	if string(next.ID) != "8" {
-		t.Fatalf("expected the second initialize response next; got method=%q id=%v", next.Method, next.ID)
-	}
+	readProbeResponse(t, h, "8")
 
 	logs := h.stderr.String()
 	if n := strings.Count(logs, "response for unknown id"); n != 1 {
@@ -694,11 +704,7 @@ func TestServeInboundCancelNoOp(t *testing.T) {
 
 	h.send(t, newNotification(methodCancelRequest, map[string]any{"requestId": "client-req-1"}))
 	h.send(t, newRequest(9, methodInitialize, map[string]any{keyProtocolVersion: 1}))
-
-	next := h.readFrame(t)
-	if string(next.ID) != "9" {
-		t.Fatalf("expected the initialize response next; got method=%q id=%v (cancel produced a frame?)", next.Method, next.ID)
-	}
+	readProbeResponse(t, h, "9")
 
 	logs := h.stderr.String()
 	if !strings.Contains(logs, "cancel_request") || !strings.Contains(logs, "client-req-1") {

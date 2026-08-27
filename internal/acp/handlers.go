@@ -28,6 +28,7 @@ func (s *Server) registerHandlers() {
 	s.handlers["session/load"] = s.handleSessionLoad
 	s.handlers["logout"] = s.handleLogout
 	s.handlers["session/set_mode"] = s.handleSessionSetMode
+	s.handlers[methodCancelRequest] = s.handleCancelRequestNoOp
 }
 
 // initializeResponse is the initialize result (INITIALIZATION.md / VERIFIED-
@@ -230,6 +231,28 @@ func (s *Server) handleSessionSetMode(ctx context.Context, params json.RawMessag
 	_ = redact.ScrubError(nil) // keep redact import live for future scrubbing here
 
 	return map[string]any{}, nil
+}
+
+// handleCancelRequestNoOp records a client-side cancellation of one of the
+// CLIENT'S own in-flight requests (Assumption A8): ass-guard never cancels
+// client-initiated requests mid-flight in v1.2, so the event is logged for
+// diagnosis and produces no response (it is a notification — no frame by
+// construction). The client's answer to OUR outbound asks is a -32800 error
+// response, which the registry resolves — this handler is only for the
+// client's own $/cancel_request notifications.
+func (s *Server) handleCancelRequestNoOp(ctx context.Context, params json.RawMessage) (any, error) {
+	var p struct {
+		RequestID string `json:"requestId"` //nolint:tagliatelle // ACP wire field
+	}
+
+	if len(params) > 0 {
+		_ = json.Unmarshal(params, &p)
+	}
+
+	s.log.Printf("inbound %s: requestId=%q (fast no-op — A8: no client-initiated cancels in v1.2)",
+		methodCancelRequest, p.RequestID)
+
+	return nil, nil //nolint:nilnil // nil result signals "no JSON-RPC response" (notification)
 }
 
 // uuidV4 returns a fresh random RFC 4122 v4 UUID string. It panics on a CSPRNG
