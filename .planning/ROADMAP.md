@@ -177,7 +177,23 @@ Plans:
   3. `ass-guard --resume` works anywhere (CLI flag), not only from the editor.
   4. Closing a session stops its work cleanly; deleting tombstones the record (never rm) so audit history survives — deleted sessions disappear from the list but remain investigable on disk.
 
-**Plans**: TBD
+**Plans**: 6 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 18-01-PLAN.md — TRACER: session/load clean-path — load engine, replay mapping, capability flip (ACP-06)
+- [ ] 18-02-PLAN.md — Reconciliation engine: ten-row inventory classifier + append-only closures (ACP-06)
+- [ ] 18-03-PLAN.md — List engine: header scan, composite cursor, tombstone filter (ACP-05)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 18-04-PLAN.md — list/close/delete RPC + tombstone lifecycle + startup sweep (ACP-05, ACP-07)
+- [ ] 18-05-PLAN.md — Reconciliation wired into load + kill -9 matrix E2E (criterion 2, ACP-06)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 18-06-PLAN.md — CLI trio (--resume/--continue) + numbered picker + serve injection (criterion 3, ACP-06)
 
 ### Phase 19: Compaction + cache_control
 
