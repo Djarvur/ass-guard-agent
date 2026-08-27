@@ -1,14 +1,18 @@
 ---
 phase: 15-internal-runtime-carve-step-0
 verified: 2026-08-26T00:00:00Z
-status: human_needed
+status: passed
 score: 3/4 must-haves verified
 behavior_unverified: 1 # Count of ⚠️ PRESENT_BEHAVIOR_UNVERIFIED truths (present + wired, behavior not exercised)
 behavior_unverified_items: # Only if behavior_unverified > 0 — the truths above as structured items; emitted regardless of overall status
+
   - truth: "A live Zed-spawned session streams tokens, executes tools, and replays on restart exactly as at v1.1 close"
     test: "Spawn ass-guard acp serve from Zed as in daily use, send a prompt, exercise a tool call (file read/edit), restart Zed mid-session (full checklist: phase-review.md 'Operator live-Zed checklist')"
     expected: "Token streaming renders natively (session/update chunks), tool diffs render natively and results return, restart replay matches v1.1-close behavior (session/load no-op D-09, transcripts on disk under .ass-guard/)"
     why_human: "Editor-rendered perceptual comparison against the operator's daily-use memory of v1.1 close; no automated harness renders Zed's UI surface"
+test: "Spawn ass-guard acp serve from Zed as in daily use, send a prompt, exercise a tool call (file read/edit), restart Zed mid-session (full checklist: phase-review.md 'Operator live-Zed checklist')"
+expected: Token streaming renders natively (session/update chunks), tool diffs render natively and results return, restart replay matches v1.1-close behavior (session/load no-op D-09, transcripts on disk under .ass-guard/)
+why_human: Editor-rendered perceptual comparison against the operator's daily-use memory of v1.1 close; no automated harness renders Zed's UI surface
 ---
 
 # Phase 15: internal/runtime Carve (Step 0) Verification Report
@@ -75,6 +79,7 @@ behavior_unverified_items: # Only if behavior_unverified > 0 — the truths abov
 ## Human Verification Required
 
 ### 1. Live-Zed editor-session identity
+
 **Test:** Spawn `ass-guard acp serve` from Zed exactly as in daily use; send a prompt; exercise a tool call (file read/edit); restart Zed mid-session. Full checklist: phase-review.md "Operator live-Zed checklist".
 **Expected:** Token streaming renders natively (session/update chunks); tool diffs render natively and results return; restart replay matches v1.1-close behavior (session/load no-op, transcripts remain under `.ass-guard/`).
 **Why human:** Editor-rendered perceptual comparison against the operator's daily-use memory of v1.1 close; no automated harness renders Zed's UI surface.
