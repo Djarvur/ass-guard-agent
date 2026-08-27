@@ -26,7 +26,7 @@ key-files:
   modified: []
 
 key-decisions:
-  - "PENDING-OPERATOR-CONFIRMATION recorded for the live-Zed checkpoint: workflow ran under auto-advance, the operator has not yet answered — ROADMAP criterion 2 stays open pending their session check"
+  - "OPERATOR-TESTED 2026-08-27 (partial): resume leg root-caused as v1-by-design (loadSession:false, Zed client-side abort) — deferred to Phase 18; streaming/tool-diff legs pending operator answer (15-UAT.md test 2)"
   - "Duplicate-name gate recorded honestly as 2 pre-existing (proven at f1e26b3) rather than the plan's literal zero — no new duplicates introduced"
   - "Color-moved census scoped to the phase-start baseline f1e26b3 for meaningful relocation review (master predates milestone v1.2); the literal master command also recorded"
 
@@ -50,10 +50,14 @@ completed: 2026-08-26
 
 ## Operator Disposition (ROADMAP criterion 2)
 
-PENDING-OPERATOR-CONFIRMATION — the checkpoint ran under workflow
-auto-advance; the operator has not yet executed the live-Zed checklist in
-phase-review.md. When they do, flip this marker to OPERATOR-CONFIRMED (or
-record the divergence observed). Automated bounds (handshake smoke, serve
+OPERATOR-TESTED 2026-08-27 (partial) — the operator ran the resume leg:
+Zed shows "Failed to Launch — Loading or resuming sessions is not supported
+by this agent." Root cause (diagnosis .planning/debug/zed-session-resume-unsupported.md):
+v1-by-design per original D-09 "NO REPLAY IN v1" (loadSession:false +
+session/load -32601 since v1.1 close; internal/acp/ unchanged by the carve —
+empty git diff v1.1..HEAD). Zed aborts client-side on the capability check.
+Fix is Phase 18 Session Family (18-01/18-04), already planned. Streaming and
+tool-diff legs (checklist steps 1-3) remain pending as 15-UAT.md test 2. Automated bounds (handshake smoke, serve
 audit through the real seam, CLI contract) are green; the editor-session
 identity remains manual-only per the RESEARCH validation map.
 
