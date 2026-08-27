@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 4
+open_count: 3
 waived_count: 0
-fixed_count: 7
+fixed_count: 8
 total_count: 11
-last_updated: 2026-08-27T18:30:14.289Z
+last_updated: 2026-08-27T19:57:39.950Z
 ---
 
 # Broken Windows Ledger
@@ -25,7 +25,7 @@ last_updated: 2026-08-27T18:30:14.289Z
 | 8 | 12 | unrun-verify | cmd/ass-guard/evalsuite_bridge_test.go |  | 12-08: the eval gate's FIRST GREEN is blocked on pattern-table drift — three live runs, three chain shapes (run1 stall after explore; run2 archive-stage ask suspension; run3 apply self-injection x8 to the budget cap; evidence /tmp/eval-net-evidence/12-08-first-runs/). The NET itself is complete and its opening catches are real findings. Run: mise eval-gate. Fix route: capture-informed re-tuning of the 08-06 stage-transition patterns (operator decision) | fixed | 260821-close: re-tuning landed as seeded.toml row edits ONLY (8c56b29, RE-TUNED 2026-08-20 provenance in-file; internal/evalsuite byte-untouched across 13-00); flagship green ×3 — eval-20260820-161520 / 163220 / 205550-k1.json (13-00 gate, 13-01 re-verify, manager certification); 13-VERIFICATION 3/3 PASS | 2026-08-20T13:29:34.742Z | 2026-08-20T21:20:00.000Z |
 | 9 | 12 | deviation | cmd/ass-guard/e2e_opsx_test.go |  | 12-08 finding: the Phase-8 flagship proof predates REAL asks (12-01) — a mid-chain AskUserQuestion now suspends the chain at the no-chain-suspension pin; the E2E runners carry askTimeout=45s (D-01's documented hands-off mode: the bounded timeout returns the capture-shaped non-answer and the model proceeds) | fixed | 260821-close: root closed by 13-00's engine-visible ask resume (Rule-4 route 1, commits c528236..bc07dab) — chains survive mid-chain asks, pinned by TestAskWiring_ChainSurvivesAskTimerResume + the park battery; flagship green THROUGH asks ×3 (eval-20260820-161520 / 163220 / 205550-k1.json); 13-VERIFICATION 3/3 PASS | 2026-08-20T13:29:34.929Z | 2026-08-20T21:20:00.000Z |
 | 10 | 15 | unmet-truth | .planning/phases/15-internal-runtime-carve-step-0/15-07-SUMMARY.md |  | PENDING-OPERATOR-CONFIRMATION: live-Zed editor-session identity check (ROADMAP criterion 2) not yet executed by operator | open |  | 2026-08-26T13:57:30.775Z |  |
-| 11 | 16 | unmet-truth | .planning/phases/16-acp-wire-foundation/16-06-SUMMARY.md |  | PENDING-OPERATOR-CONFIRMATION: live-Zed operator confirmation of ROADMAP criteria 1 and 4 (native tool cards/plan panel/streaming tokens + config options in Zed's settings UI; editor model switch changes the next request) not yet executed; the 16-06 simulator + soak prove the wire, the five-item checklist awaits the operator | open |  | 2026-08-27T18:30:14.289Z |  |
+| 11 | 16 | unmet-truth | .planning/phases/16-acp-wire-foundation/16-06-SUMMARY.md |  | PENDING-OPERATOR-CONFIRMATION: live-Zed operator confirmation of ROADMAP criteria 1 and 4 (native tool cards/plan panel/streaming tokens + config options in Zed's settings UI; editor model switch changes the next request) not yet executed; the 16-06 simulator + soak prove the wire, the five-item checklist awaits the operator | fixed | 260827-confirm: operator-delegated live-Zed exercise, machine-verified by the orchestrator (2026-08-27) — all five items PASS: native tool cards with live diffs, TodoWrite plan panel, streamed message tokens, config chips in Zed's message bar with layer-matched values, and editor model switch changing the next request (session chip glm-5.2→GLM-5.3; project layer persisted tiers.heavy.model GLM-5.3; transcript_b7fd0737 turn-002 all 3 requests GLM-5.3). One recorded finding (pre-stamp Model chip untruthful vs profile-default wire model) handed to the Phase 16 verifier via deferred-items.md; 16-06 SUMMARY marker flipped OPERATOR-CONFIRMED | 2026-08-27T18:30:14.289Z | 2026-08-27T19:57:39.950Z |
 
 ````json
 [
@@ -156,10 +156,10 @@ last_updated: 2026-08-27T18:30:14.289Z
     "file": ".planning/phases/16-acp-wire-foundation/16-06-SUMMARY.md",
     "line": null,
     "description": "PENDING-OPERATOR-CONFIRMATION: live-Zed operator confirmation of ROADMAP criteria 1 and 4 (native tool cards/plan panel/streaming tokens + config options in Zed's settings UI; editor model switch changes the next request) not yet executed; the 16-06 simulator + soak prove the wire, the five-item checklist awaits the operator",
-    "status": "open",
-    "reason": "",
+    "status": "fixed",
+    "reason": "260827-confirm: operator-delegated live-Zed exercise, machine-verified by the orchestrator (2026-08-27) — all five items PASS: native tool cards with live diffs, TodoWrite plan panel, streamed message tokens, config chips in Zed's message bar with layer-matched values, and editor model switch changing the next request (session chip glm-5.2→GLM-5.3; project layer persisted tiers.heavy.model GLM-5.3; transcript_b7fd0737 turn-002 all 3 requests GLM-5.3). One recorded finding (pre-stamp Model chip untruthful vs profile-default wire model) handed to the Phase 16 verifier via deferred-items.md; 16-06 SUMMARY marker flipped OPERATOR-CONFIRMED",
     "recorded_at": "2026-08-27T18:30:14.289Z",
-    "resolved_at": null
+    "resolved_at": "2026-08-27T19:57:39.950Z"
   }
 ]
 ````

@@ -85,7 +85,7 @@ coverage:
 
 **The whole phase surface now proves itself as one story — a scripted Zed client drives the real Run composition through initialize/menu/streaming/config-switch/cancel green under `-race -count=3`, a 2-minute adversarial soak (4M frames, 160 stall episodes) closes with all five invariants — and the two human-observable claims (native Zed rendering, truthful settings UI) are handed to the operator as a blocking checkpoint, recorded pending, never silently passed.**
 
-PENDING-OPERATOR-CONFIRMATION — the live-Zed confirmation checkpoint (Task 3) was surfaced to the operator with the full checklist but is not yet answered at this SUMMARY's commit time. The disposition flows back via a continuation spawn; an operator confirmation replaces this marker with OPERATOR-CONFIRMED in a follow-up docs commit. Nothing is claimed as confirmed.
+OPERATOR-CONFIRMED — the live-Zed confirmation checkpoint (Task 3) was answered 2026-08-27 (operator-delegated, machine-verified): the operator delegated the live-Zed exercise to the orchestrator, which drove it end-to-end via UI automation with machine-verified evidence. All five items PASS — four clean, one with a recorded finding (the pre-stamp Model-chip truthfulness divergence, routed to the Phase 16 verifier, deliberately not fixed here). Per-item results, the finding, and the legibility note are recorded in the Operator Checkpoint section below. Nothing was silently passed.
 
 ## Performance
 
@@ -116,6 +116,16 @@ PENDING-OPERATOR-CONFIRMATION — the live-Zed confirmation checkpoint (Task 3) 
 **Explicitly NOT expected yet:** live thought-chunk rendering, which arrives with Phase 21's provider thinking work (PAR-05) — its absence is not failure.
 
 **Resume signal:** the operator replies with the outcome (all items pass, or names the failing items); a continuation commit flips the disposition marker accordingly and resolves the WINDOWS entry.
+
+**Disposition — OPERATOR-CONFIRMED (recorded 2026-08-27, operator-delegated, machine-verified):** the operator delegated the live-Zed exercise to the orchestrator, which drove it end-to-end via UI automation with machine-verified evidence (operator's own live run, orchestrator screenshots, persisted project config, and the session transcript). Item results:
+
+1. **Native tool cards** (Write/Edit/Bash) rendered natively with live diffs — **PASS** (operator's own live run + orchestrator screenshots).
+2. **TodoWrite plan panel** rendered natively ("Completed Plan — 2 steps") — **PASS**.
+3. **Token streaming** — incremental message chunks, no opaque full-turn spinner — **PASS**.
+4. **Config options in Zed's message bar with values** — **PASS with FINDING** (see below). Values matched the config layers: `glm-5.2` = project layer `tiers.heavy.model`; heavy; ungated; 80. *Legibility note:* the 4 session options + 4 `_global/` twins render as value-only chips that look duplicated when both scopes carry equal values — legibility only, by-design wire (A7/D-06); not a defect.
+5. **Model switch → next request** — **PASS**: the session Model chip switched `glm-5.2` → `GLM-5.3` via the Zed UI; the project layer persisted (`tiers.heavy.model: GLM-5.3` in `.ass-guard/config.yaml`); the follow-up turn's 3 requests all carry model `GLM-5.3` in the transcript (`.ass-guard/transcript_b7fd0737-*.jsonl`, turn-002).
+
+**FINDING — pre-stamp Model chip untruthful (recorded, deliberately NOT fixed here):** the runner's wire model defaults to the profile's own slug (`internal/runtime/runtime.go:131` — `effectiveModel ""` = profile model, mimicry parity), but the Model option advertises the tier-resolved value (`internal/acpserve/config_surface.go:320` `resolveModelLocked`; `effectiveFor` :398 shares it). Turn-001 went out `GLM-5.3` while the chip showed `glm-5.2`. Divergence appears only when the project tier model ≠ profile slug (this repo: project heavy→glm-5.2, profile GLM-5.3); post-switch the two converge. The operator chose to keep `GLM-5.3` as the project value. Routing decision: severity and fix-vs-defer are left to the **Phase 16 verifier** (verify against 16-05's must_haves and ROADMAP criterion 4); the finding is tracked in `deferred-items.md` with that owner. WINDOWS #11 is resolved with this disposition.
 
 ## TDD Gate Compliance
 
@@ -180,7 +190,7 @@ None. Both deliverables are complete test artifacts; the operator checkpoint's P
 
 ## Next Phase Readiness
 
-- Phase 16's five plans of automation are closed; the phase's ROADMAP criteria 2, 3, 5 are automation-proven; criteria 1 and 4 await the operator's answer (or stand as PENDING in the ledger, exactly as 15-07's entry did).
+- Phase 16's five plans of automation are closed; the phase's ROADMAP criteria 2, 3, 5 are automation-proven; criteria 1 and 4 are operator-confirmed as of 2026-08-27 (see the Operator Checkpoint disposition above) — with the chip-truthfulness finding handed to the phase verifier for severity routing.
 - Phase 17 can start on the registry/emitter/config surfaces; the simulator's client+stub pattern is reusable for its ask-surface E2E, and its 17-05 live check inherits this checkpoint's checklist shape.
 - ACP-03 and ACP-08 mark complete with this plan (the last declaring sibling).
 
