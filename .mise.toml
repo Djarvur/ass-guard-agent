@@ -41,6 +41,15 @@ run = "ASSGUARD_EVAL_GATE=1 ASSGUARD_OPENSPEC_BIN=1 ASSGUARD_E2E_LLM=1 go test .
 description = "Detector: do the changes touch the locked eval-gate change classes? (exit 3 => run mise eval-gate)"
 run = "./scripts/eval-change-class.sh"
 
+# 16-06 (D-04): the adversarial TurnEmitter soak — MINUTES of chaotic
+# producers and a stuttering writer standing behind the seconds-scale ci
+# stress. Env-gated exactly like the eval lane: the test SKIPS (never fails)
+# with the flag unset, so `ci` stays fast by construction. Override the
+# duration for longer nightly runs via ASSGUARD_EMITTER_SOAK_DURATION.
+[tasks.emitter-soak]
+description = "Adversarial emitter soak (2min default; NOT part of ci)"
+run = "ASSGUARD_EMITTER_SOAK=1 go test ./internal/acp/ -run TestTurnEmitterSoak -count=1 -timeout 10m -v"
+
 [tasks.tidy]
 description = "Run go mod tidy"
 run = "go mod tidy"
