@@ -67,7 +67,7 @@ created: 2026-08-28
 - [ ] `internal/runtime/steering_ingress_test.go` — pre-mutex classifier, combined scenario, engine-chain E2E (SEEDG-01)
 - [ ] `internal/checkpoint/store_test.go` extensions — pre-restore family, grammar table, nested-repo fixture (dir + .git FILE), GC, exclude (SEEDG-02)
 - [ ] `internal/runtime/restore_guard_test.go` — guard matrix, session-start sweep, config-to-GC (SEEDG-02)
-- [ ] `internal/runtime/commands_test.go` — /undo battery (joins the TestClassB family; create if Phase 20 has not landed it) (SEEDG-03)
+- [ ] `internal/runtime/commands_test.go` — /undo battery (joins the TestClassB family; existence governed by the 23-05 Task 1 precondition — HALT if Phase 20 machinery is absent, do not scaffold it here) (SEEDG-03)
 - [ ] No framework install needed — existing `go test` infrastructure covers all phase requirements
 
 ---

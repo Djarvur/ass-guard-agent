@@ -515,21 +515,25 @@ func ensureUserRepoExclude(workDir string) error {
 | A5 | `parked_ask` transcript kind name (16-D-20 names "steering_delivery, parked_ask records" verbatim in CONTEXT canonical refs) | Pattern 3 | Cosmetic; replay tolerance makes the exact name non-load-bearing |
 | A6 | Steering/parked notes ride `agent_message_chunk` (the existing note family) rather than a new session/update kind | Pattern 6 / Don't-Hand-Roll | If the planner prefers a dedicated kind, the emitter gains one const + handle method (16-01 embedding precedent) |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Response semantics for a steering `session/prompt` request**
    - What we know: ACP v1 says nothing about concurrent prompts; each `session/prompt` MUST eventually return a stopReason (handlers.go:393-417 pattern). The turnMu currently makes the second prompt block until the turn ends.
    - What's unclear: should a steered prompt return immediately (stopReason end_turn after the queued note) or block until its steering is delivered (an ack)?
    - Recommendation: return promptly with the queued note + end_turn (keeps the editor responsive; the running turn's stream continues via the session-lifetime forwarder — WINDOWS #3 split). The transport-neutral API returns the ticket either way; the ACP adapter chooses.
+   - **Resolution:** 23-02 Task 1 implements return-after-enqueue (queued note + end_turn-mapped stop, no turn-mutex acquisition) per this recommendation.
 2. **Persistence home for `checkpoint.expiry_days` / `max_per_session`**
    - What we know: layer YAML tolerates a `checkpoint:` key (load.go verified); the typed Config drops it, so read-back uses the generic layer-map pattern.
    - Recommendation: persist via `WriteLayerOption` under a `checkpoint:` key path; read at GC/config time via `readLayerMap`; embedded floor holds the 7d + count defaults.
+   - **Resolution:** 23-04 Task 2 implements exactly this — WriteLayerOption under `checkpoint:`, read-back via `checkpointGCBounds` over readLayerMap; the typed modelrouting.Config is deliberately NOT extended.
 3. **Restore-guard scope for the v1.1 CLI (`ass-guard checkpoint restore`)**
    - What we know: the CLI is a separate process; in-process turn/chain state is invisible cross-process (the store lock serializes git ops only, store.go:158-166).
    - Recommendation: guards + D-12 apply to the agent's in-process restore path; the CLI keeps today's behavior and documents the caveat. Do not build cross-process turn detection.
+   - **Resolution:** 23-03 flagged_assumptions + 23-04 flagged_assumptions record the in-process-only scope as a documented constraint; no cross-process turn detection is built.
 4. **Engine-chain interaction with steering lines**
    - What we know: `LastTurnOutput` scans only assistant/ask_suspended terminal lines (enginebridge.go:225-306), so steering lines are invisible to engine Decide signals — chains won't misfire on them. Post-park injection turns hold `ParkMu` around `sess.Prompt` (enginebridge.go:182-189) so the boundary drain works unchanged.
    - Recommendation: no engine changes; add one E2E asserting a steered engine-chain turn applies steering and the chain completes.
+   - **Resolution:** 23-02 Task 3 implements the engine-chain E2E (steering applies at the boundary AND the chain completes) with zero engine changes, pinning the LastTurnOutput kind-filter guarantee.
 
 ## Environment Availability
 
