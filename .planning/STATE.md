@@ -6,15 +6,15 @@ current_phase: 25
 current_phase_name: seed-001-kit-extraction-strictly-last
 current_plan: 1
 status: executing
-stopped_at: 16-07 complete (CR-01 barrier broadcast, gaps 1+2 closed; commits dc02474/20333dd/4fddf9f); 25-01 still halted at Task 3 phase-ordering precondition
-last_updated: "2026-08-28T12:42:36.625Z"
+stopped_at: 16-08 complete (WR-05 scope-aware config surface, gaps 3+4a+5 closed; commits 0ddbf2e/8c7929f/e064df3/9006708); 25-01 still halted at Task 3 phase-ordering precondition
+last_updated: "2026-08-28T13:01:50.073Z"
 last_activity: 2026-08-28
 last_activity_desc: Phase 25 execution started
 progress:
   total_phases: 11
   completed_phases: 1
   total_plans: 69
-  completed_plans: 14
+  completed_plans: 15
   percent: 9
 state_head: 9ba2baa14bf99d55b37abcf41ae713e522306276
 ---
@@ -60,6 +60,7 @@ Progress: [████████░░░░░░░░░░░] 8/29 plans
 | Phase 16 P05 | 49 min | 3 tasks | 11 files |
 | Phase 16 P06 | 49 min | 3 tasks | 4 files |
 | Phase 16 P07 | 11 min | 2 tasks | 2 files |
+| Phase 16 P08 | 12 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -97,6 +98,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase ?]: [Phase 25 P01 Task 1, AUTO-SELECTED 2026-08-28]: D-02 one-way gate — option-a 'Proceed' (kit/ tree inside the single module per D-01/D-02/D-07) auto-selected under auto_advance; takes effect at the tracer commit. Tracer itself NOT yet executed — blocked by the phase-ordering precondition.
 - [Phase ?]: 16-07: CR-01 fixed as verifier-named per-generation broadcast (writeOut closes+swaps wake under mu), not sync.Cond — drain stays the only writer/closer, single-writer total order and D-01 untouched
 - [Phase ?]: 16-07: adjacency probe decided — concurrent Barrier waiters stay separate, each re-checks written independently; pinned by TestTurnEmitterBarrierConcurrentWaiters with never-cancelled ctxs (no Done escape)
+- [Phase ?]: 16-08: WR-05 closed at one root cause — Set's idempotence basis is scope-aware (global scope compares against the global layer ALONE via globalOnlyResolvedLocked; project scope keeps the combined D-10 guard) and the _global twins resolve the global layer's own tier/model (no blobFills, embedded-floor fallback); gaps 3+4a+5 closed, 4b (chip truthfulness) remains for 16-09
 
 ### Pending Todos
 
@@ -117,6 +119,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-28T12:42:36.559Z
-Stopped at: 16-07 complete (CR-01 barrier broadcast, gaps 1+2 closed; commits dc02474/20333dd/4fddf9f); 25-01 still halted at Task 3 phase-ordering precondition
+Last session: 2026-08-28T13:01:50.044Z
+Stopped at: 16-08 complete (WR-05 scope-aware config surface, gaps 3+4a+5 closed; commits 0ddbf2e/8c7929f/e064df3/9006708); 25-01 still halted at Task 3 phase-ordering precondition
 Resume file: None
