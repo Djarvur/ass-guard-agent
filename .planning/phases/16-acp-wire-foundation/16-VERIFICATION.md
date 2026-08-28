@@ -1,89 +1,68 @@
 ---
 phase: 16-acp-wire-foundation
-verified: 2026-08-27T23:59:00Z
-status: gaps_found
-score: 26/31 must-haves verified
+verified: 2026-08-28T14:52:04Z
+status: human_needed
+score: 31/31 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
-unverified_prohibitions: # ADR-550 D4 — judgment-tier items, NON-AUTHORITATIVE LLM-judge verdicts; human review recommended
+overrides: []
+unverified_prohibitions: # ADR-550 D4 — judgment-tier items, NON-AUTHORITATIVE LLM-judge verdicts re-checked in the current tree; human review recommended
   - statement: "Emitter must never synthesize/fabricate client frames (16-01, ACP-03 transparency)"
     verdict: pass_non_authoritative
-    evidence: "All frame origins traced to bus events / registry cascade / surface notifications; TodoWrite plan derives from captured input; no synthesis path found in emitter.go/handlers.go"
+    evidence: "Re-checked: emitter.go last touched by 16-07 GREEN (4fddf9f, wake mechanism only); all frame origins still bus events / registry cascade / surface notifications; no synthesis path"
   - statement: "Unredacted append path never extended beyond raw_thinking (16-02, ACP-03 privacy)"
     verdict: pass_non_authoritative
-    evidence: "grep: appendLineUnredacted sole caller is AppendRawThinking (manager.go:350); counting-fake test pins zero Redact calls"
+    evidence: "Re-grepped: appendLineUnredacted sole caller is AppendRawThinking (manager.go:350); D-23 comment intact at :106"
   - statement: "API keys/credentials never appear as editor config options (16-05, ACP-08 privacy)"
     verdict: pass_non_authoritative
-    evidence: "Menu fixed to model/tier/permissions.mode/compaction-threshold + _global/ twins (config_surface.go optionsLocked); no credential key path exists in the surface"
+    evidence: "Re-grepped: no credential key path in config_surface.go; menu comment pins 'no credential options'; 16-08/CR-02 changes added no new option vocabulary"
   - statement: "_meta blob never overrides explicit operator file config (16-05, ACP-08 ownership)"
     verdict: pass_non_authoritative
-    evidence: "fills-unset is in-memory overlay only; TestMetaBlob_ExplicitFileWins pins explicit-file-wins in both directions; blobFills never persisted"
-gaps:
-  - truth: "A turn with zero streamed activity emits zero session/update frames and its session/prompt response still arrives — the turn-end barrier returns immediately on an empty queue (16-01 truth 5)"
-    status: failed
-    reason: "CR-01 (confirmed in current code, not fixed post-review): TurnEmitter.Barrier uses a capacity-1 wake channel with single-token handoff (emitter.go:181,278,304-307). With two concurrent session/prompt turns on one connection (supported: per-request goroutine dispatch, server.go:378; one shared emitter per Server, server.go:182; Barrier receives the connection-lifetime Serve ctx, handlers.go:400), the final written frame's token wakes only ONE waiter; the other never receives again, its ctx never fires in production, and its prompt response hangs forever. No test covers two concurrent long-lived-ctx Barriers completing on the same final frame (TestTurnEmitterBarrier is single-waiter; the soak's barrier hammer uses short-lived ctxs that escape via ctx.Done — emitter_soak_test.go:371-388)."
-    artifacts:
-      - path: "internal/acp/emitter.go"
-        issue: "Barrier lost-wakeup: capacity-1 wake channel drops the second concurrent waiter at terminal state (lines 181, 261-285, 297-308)"
-    missing:
-      - "Broadcast wake: swap-and-close the wake channel per generation under mu (or sync.Cond / registered waiter channels) so every concurrent Barrier re-checks after each written frame"
-      - "Regression test: two Barriers whose targets are satisfied by the same final frame, both with connection-lifetime ctxs (no ctx.Done escape), both must return"
-  - truth: "The session/prompt response is written only after all that turn's queued notification frames have been written (updates-before-response, the verified cancel contract) (16-01 truth 6)"
-    status: failed
-    reason: "Same root cause as CR-01: for the hung second concurrent turn, the response is never written at all — the ordering contract degrades into a liveness failure exactly on the concurrency axis the phase goal claims ('proven under concurrency')."
-    artifacts:
-      - path: "internal/acp/emitter.go"
-        issue: "Barrier wake mechanism cannot progress two simultaneous waiters at queue-drain"
-    missing:
-      - "The CR-01 fix above; the existing single-turn ordering tests already pin the single-waiter case"
-  - truth: "The global layer and project layer are independently addressable write targets (16-04 truth 3, D-08)"
-    status: partial
-    reason: "WR-05 (confirmed in current code): the idempotence guard in ConfigSurface.Set compares against the COMBINED (project-won) effective value regardless of scope (config_surface.go:182, effectiveFor :398-404). Set(\"_global/model\", X) where X equals the combined effective value returns 'idempotent re-push, no layer write' — the operator's explicitly global-scoped mutation is silently swallowed and never reaches the global layer. Differing-value writes work (TestScopeRouting_GlobalPrefixWritesGlobalLayer passes)."
-    artifacts:
-      - path: "internal/acpserve/config_surface.go"
-        issue: "Scope-blind idempotence guard intercepts global-scope writes whose value equals the combined effective value (lines 182-191)"
-    missing:
-      - "Scope-aware idempotence: compare against the ADDRESSED layer's current value (load the global layer through modelrouting.Load(s.globalPath)) before declaring a re-push idempotent"
-      - "Test: _global/ write whose value equals the combined effective but differs from the global layer's value must persist to the global layer"
-  - truth: "Advertisement carries an EFFECTIVE currentValue resolved through the precedence chain for every menu entry (16-05 truth 1; ROADMAP criterion 4 'true current values')"
-    status: partial
-    reason: "Two confirmed divergences. (a) WR-05 part 1: the _global/model and _global/tier twins are built with res.model/res.tier — the PROJECT-won combined values (config_surface.go:518-521) — so the editor renders the project's value under 'Model (global default)'. (b) Pre-stamp Model chip finding (operator-confirmed 2026-08-27, routed to this verifier): the runner's wire model defaults to the profile slug (runtime.go effectiveModel \"\" = profile model, mimicry parity) while the chip advertises the tier-resolved config value (config_surface.go resolveModelLocked); live evidence: turn-001 went out GLM-5.3 while the chip showed glm-5.2. Checked later phases (Step 9b): Phase 20's /model covers session-scope command routing, NOT the chip's default-state truth — no later-phase owner exists. Post-switch the values converge; divergence appears only when project tier model ≠ profile slug."
-    artifacts:
-      - path: "internal/acpserve/config_surface.go"
-        issue: "_global twins advertise combined values (lines 518-521); model advertisement resolves config-layer value, not the runner's actual request model"
-      - path: "internal/runtime/runtime.go"
-        issue: "effectiveModel \"\" default sends the profile slug while the ACP-08 menu advertises the tier-resolved model (mimicry-parity vs chip-truth tension)"
-    missing:
-      - "Resolve the global twins' currentValue from the global layer alone"
-      - "Decide and implement chip truthfulness: either stamp the advertisement with the runner's effective request model, or make the runner's default follow the tier resolution (one of the two sources of truth must win) — OR accept via a recorded override with the operator's disposition as rationale"
-  - truth: "session/set_config_option persists first then applies live; an inbound value equal to the option's currently-effective value is a logged idempotent no-op (16-05 truth 2)"
-    status: partial
-    reason: "The persist-then-apply ordering, typed rejections, and idempotence guard all exist and are tested — but the idempotence rule is implemented with a scope-blind effective-value basis (see 16-04 truth 3 gap): for _global/-scoped ids, 'currently-effective' resolves to the combined value, so legitimate global-layer writes can be classified as redundant re-pushes and silently dropped. The must-have clause is implemented with the wrong comparison basis for the global scope."
-    artifacts:
-      - path: "internal/acpserve/config_surface.go"
-        issue: "Idempotence guard basis does not distinguish addressed layer vs combined resolution (lines 182-191)"
-    missing:
-      - "Same scope-aware comparison as the 16-04 truth 3 gap (single fix, one root cause)"
-deferred: # Items addressed in later phases — not actionable gaps
+    evidence: "Re-checked in current tree: fills-unset still deletes the fill after explicit persist (Set path); the CR-02 blob hook writes only the in-memory effectiveModel slot (no layer write); TestBlobFillYieldsToExplicitLayer pins explicit-layer-wins"
+re_verification:
+  previous_status: gaps_found
+  previous_score: 26/31
+  gaps_closed:
+    - "Gap 1 (16-01 truth 5, FAILED): Barrier lost-wakeup CR-01 — closed by 16-07 per-generation broadcast wake; TestTurnEmitterBarrierConcurrentWaiters (no ctx escape) passes 5x under -race in this verifier's run"
+    - "Gap 2 (16-01 truth 6, FAILED): updates-before-response under concurrency — same root cause, same fix; each waiter returns only when written >= target and writeOut bumps written only after sink.Write returns, proven by the same regression"
+    - "Gap 3 (16-04 truth 3, PARTIAL): global layer independently addressable — closed by 16-08 scope-aware idempotenceBasisLocked; TestScopeRouting_GlobalWritePersistsWhenCombinedMatches (both subtests) passes; D-10 project-scope pins unmodified and green"
+    - "Gap 4a (16-05 truth 1 leg-a, PARTIAL): _global twins layer-true — closed by 16-08; TestConfigSurface_GlobalTwinsAdvertiseGlobalLayer (model/tier/absent-file-floor subtests) passes"
+    - "Gap 4b (16-05 truth 1 leg-b, PARTIAL): chip==wire pre-stamp — closed by 16-09 (layer path: Runner.defaultTurnModel mirrors resolveModelLocked) AND by review-fix CR-02 (blob path: SetDefaultTurnModel + SetBlobDefaultHook wired at acp_serve.go:233); TestDefaultTurnModel_FollowsTierResolution (4 subtests), TestConfigAdvertisement_ResolverTruth, TestBlobFillReachesTheWire all pass"
+    - "Gap 5 (16-05 truth 2, PARTIAL): idempotence basis scope-aware — closed with gap 3 (one root cause); addressed-layer-true-idempotence subtest passes"
+  gaps_remaining: []
+  regressions: []
+deferred: # Items addressed in later phases — not actionable gaps (carried from prior round; still valid)
   - truth: "load/resume responses carry the richer capability set incl. configOptions advertisement (ROADMAP criterion 4 legs beyond initialize/new)"
     addressed_in: "Phase 18"
-    evidence: "Phase 18 goal: 'list / load-resume / close-delete with full replay and live-state reconciliation'; 16-05 shipped configOptionsFor as the shared builder explicitly reusable by load/resume (16-05-SUMMARY: 'Phase 18 (load/resume reuse configOptionsFor)'); loadSession honestly false until replay lands"
+    evidence: "Phase 18 goal: 'list / load-resume / close-delete with full replay and live-state reconciliation'; configOptionsFor shipped as the shared builder explicitly reusable by load/resume"
   - truth: "agent_thought_chunk streams from a live provider source during real turns (ROADMAP criterion 1 leg)"
     addressed_in: "Phase 21"
-    evidence: "PAR-05 owns the provider thinking source; 16-01 shipped + unit-proved the wire shape ahead of it; the operator checkpoint explicitly excluded live thought-chunk rendering ('its absence is not failure')"
-re_verification: null
+    evidence: "PAR-05 owns the provider thinking source; wire shape shipped + unit-proven here; operator checkpoint explicitly excluded live thought-chunk rendering"
+human_verification:
+  - test: "Live-Zed chip==wire confirmation: connect a real Zed client with the project tier model differing from the profile slug; read the Model chip BEFORE any editor stamp; then send an initialize _meta blob with a model fill and read the chip again and the next provider request's model"
+    expected: "Pre-stamp chip shows the tier-resolved config model (no longer the profile slug — the operator-observed turn-001 GLM-5.3-vs-glm-5.2 divergence class); after a blob fill, chip and wire model move TOGETHER"
+    why_human: "Live editor rendering + real provider traffic; the divergence was only ever observed live (16-06 WINDOWS #11)"
+  - test: "CR-02 blob-tier edge (flagged by the review-fix pass): with an editor stamp set under tier A, deliver an initialize _meta blob whose tier fill resolves to tier B with a different model; observe the effective model of the next turn"
+    expected: "The hook overwrites the prior stamp so chip==wire holds under the NEW tier — confirm this product intent (a layer-backed stamp would make the fill inert instead; only in-memory stamps are overwritten)"
+    why_human: "ACP precedence-semantics decision the fixer explicitly marked 'requires human verification'; machine checks pin the mechanism, not the intent"
+  - test: "CR-01(new) turn-scoped cancel semantics (flagged by the review-fix pass): start a turn, cancel it mid-stream, then re-prompt the SAME session id; then logout and re-check"
+    expected: "Cancel keeps the session registered and promptable (re-prompt succeeds; MCP host/transcript/forwarder stay live); reaping happens only on logout or serve teardown — confirm this product intent"
+    why_human: "Product-intent confirmation on ACP session lifecycle semantics, marked 'requires human verification' by the fixer; TestSessionCancelDoesNotReapTheSession pins the mechanism"
+  - test: "WR-01 per-turn hook executor (flagged by the review-fix pass): run the same hook chain concurrently from two DIFFERENT sessions"
+    expected: "Both run (HOOK-04 in-flight reentrancy guard is now per-turn-instance; loop prevention within one chain unchanged) — confirm cross-session concurrency is the intended behavior change"
+    why_human: "Behavior change to loop-prevention scope marked 'requires human verification' by the fixer"
 ---
 
 # Phase 16: ACP Wire Foundation — Verification Report
 
 **Phase Goal:** The three primitives every interactive phase depends on exist and are proven under concurrency: outbound id'd JSON-RPC requests with a pending-response registry, one ordered inline TurnEmitter owning all client frames with explicit backpressure, and the extended transcript line types (raw-thinking passthrough as `json.RawMessage`, `local_command`, compaction marker) that later phases' schemas lock here.
-**Verified:** 2026-08-27T23:59:00Z
-**Status:** gaps_found
-**Re-verification:** No — initial verification
+**Verified:** 2026-08-28T14:52:04Z
+**Status:** human_needed
+**Re-verification:** Yes — after gap closure (16-07/16-08/16-09) plus a deep code-review fix pass (8 findings, 16-REVIEW-FIX.md)
 
 ## Goal Achievement
 
-Two of the three primitives (registry, transcript kinds) are verified end to end including concurrency proofs. The TurnEmitter's ordering/backpressure invariants are real and heavily tested — but the turn-end Barrier contains a code-confirmed lost-wakeup defect (CR-01 from 16-REVIEW.md, still present in current code) that hangs the second of two concurrent `session/prompt` turns forever. The phase goal's "proven under concurrency" clause is therefore not met for the emitter primitive: every shipped test covers either a single Barrier waiter or Barriers that escape via short-lived ctxs, and the concurrent-waiter terminal state is broken.
+All five gaps from the prior round are closed by implementation in the current tree — every fix was verified against the code (not the summaries), and every gap-closure regression was re-run by this verifier under `-race`. The barrier defect (CR-01) that made the phase goal's "proven under concurrency" clause false is fixed exactly as the prior verification prescribed, with the no-ctx-escape regression the prescription demanded. The review-fix pass that followed landed 8 further fixes (2 Critical + 6 Warning) with regression tests; the three fixes carrying semantic decisions surface below as human-verification items, not gaps.
 
 ### Observable Truths
 
@@ -91,105 +70,91 @@ Roadmap contract (SCs):
 
 | #  | Truth (ROADMAP SC)                                                                                                                                    | Status     | Evidence |
 |----|------------------------------------------------------------------------------------------------------------------------------------------------------|------------|----------|
-| 1  | Live turn activity streams in real time (tool_call/tool_call_update, plan-from-TodoWrite, agent_thought_chunk), never a black-box spinner              | ✓ VERIFIED | Wire tests (TestPlanFrameFromTodoWrite, TestToolCallUpdateFrame, TestThoughtChunkFrame), simulator stages 2-3, OPERATOR-CONFIRMED items 1-3; thought-chunk live source deferred to Phase 21 (PAR-05) by plan contract, shape shipped + unit-proven |
-| 2  | Concurrent emitters arrive in one consistent order; multi-emitter -race stress proves no reordering / no dropped frames; policy documented (fg first)  | ✓ VERIFIED | TestTurnEmitterPriority PASS (ran); adversarial soak re-run by verifier: 2m0s, 4,051,238 frames, 155 stall episodes, all five invariants PASS; fg-priority documented at emitter.go:310-335 |
-| 3  | Id'd request matched by id while notifications stream; registry resolves without the writer mutex; unanswered degrades loudly                          | ✓ VERIFIED | TestRegistryConcurrentResolve / TestRegistryTimeoutFallback / TestRegistrySyntheticCancel PASS (ran); resolution under registry's own mutex code-verified (request_registry.go:134-270) |
-| 4  | Initialize/new/load/resume carry the richer capability set, verified against the ACP schema in a real Zed handshake                                    | ⚠️ partial | initialize/new verified (simulator stage 1, TestInitializeProbe/TestCapabilityStickiness exist+green, OPERATOR-CONFIRMED item 4) — but "true current values" diverges pre-stamp (chip vs wire model) and the _global twins display combined values → gap 4; load/resume legs → Phase 18 (deferred) |
-| 5  | Transcript lines raw_thinking / local_command / compaction append-only, redaction excluded by construction for thinking bytes                          | ✓ VERIFIED | TestTranscriptNewKinds + TestProjectorToleratesNewKinds PASS (ran); appendLineUnredacted sole caller grep-verified (manager.go:350) |
+| 1  | Live turn activity streams in real time (tool_call/tool_call_update, plan-from-TodoWrite, agent_thought_chunk), never a black-box spinner              | ✓ VERIFIED | Carried from prior round (wire tests, simulator stages 2-3, OPERATOR-CONFIRMED items 1-3); emitter frame surface untouched by the closure commits; thought-chunk live source → Phase 21 (deferred) |
+| 2  | Concurrent emitters arrive in one consistent order; multi-emitter -race stress proves no reordering / no dropped frames; policy documented (fg first)  | ✓ VERIFIED | Adversarial soak RE-RUN by this verifier on the CURRENT broadcast-wake code: 152s, exit 0, all five invariants asserted internally (no-drop, fifo, no-leak, stall-fired, clean-close); full acp package green under -race |
+| 3  | Id'd request matched by id while notifications stream; registry resolves without the writer mutex; unanswered degrades loudly                          | ✓ VERIFIED | Carried (registry core + ladder tests green in the full acp sweep); registry send path unchanged since prior round |
+| 4  | Initialize/new/load/resume carry the richer capability set, verified against the ACP schema in a real Zed handshake                                    | ✓ VERIFIED (initialize/new legs) | Chip==wire now holds on ALL paths: layer path (16-09 `defaultTurnModel` mirroring `resolveModelLocked` — TestDefaultTurnModel_FollowsTierResolution, TestConfigAdvertisement_ResolverTruth) and blob path (review CR-02 — TestBlobFillReachesTheWire drives the REAL composition end-to-end); _global twins layer-true (TestConfigSurface_GlobalTwinsAdvertiseGlobalLayer); load/resume legs → Phase 18 (deferred) |
+| 5  | Transcript lines raw_thinking / local_command / compaction append-only, redaction excluded by construction for thinking bytes                          | ✓ VERIFIED | Carried; appendLineUnredacted sole-caller re-grepped in current tree (manager.go:350); session package green in the sweep |
 
-Plan-level truths (31 total across 16-01..16-06): 26 VERIFIED (incl. the soak truth, re-proven by this verifier's own run, and the operator-disposition truth: anchored OPERATOR-CONFIRMED marker grep = 1), 2 FAILED, 3 PARTIAL — the failures/partials are the five gaps in the frontmatter above.
+Plan-level truths (31 total across 16-01..16-06): **31/31 VERIFIED** — the prior round's 2 FAILED and 3 PARTIAL truths are all closed with passing behavioral tests (see re_verification.gaps_closed). 0 present-but-behavior-unverified.
 
-**Score:** 26/31 truths verified (0 present-but-behavior-unverified; the two behavior-dependent barrier truths FAILED on code-provable defects, the rest carry passing behavioral tests)
+**Score:** 31/31 truths verified (0 present, behavior-unverified)
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 | -------- | -------- | ------ | ------- |
-| `internal/acp/emitter.go` | TurnEmitter: bounded lanes, nested-select drain, stall detector, barrier | ✓ VERIFIED (defect: Barrier wake) | 619 lines; all symbols present; Barrier wake mechanism defective under 2 waiters (CR-01) |
-| `internal/acp/types.go` | v1 frame structs, verbatim camelCase | ✓ VERIFIED | ToolCallFrame :97, ToolCallUpdateFrame :112, DiffContent :139, ToolCallLocation :153, PlanFrame :160, ThoughtChunkFrame :176, ConfigOptionFrame :226; no `plan_update`; `configId` is v1-verbatim for the SET REQUEST (schema-pinned) |
-| `internal/acp/request_registry.go` | Registry: Call/Deliver/ResolveCancelled/Stop, ladder, cascade | ✓ VERIFIED | 487 lines; WIRED into Serve (interception server.go:361-365) + cascade via emitter fg lane |
-| `internal/acp/metrics.go` | Counter family + Snapshot() | ✓ VERIFIED | Metrics :13, Snapshot :32; adopted stall counter (WR-01 race noted below) |
-| `internal/session/transcript.go` + `manager.go` | 3 kinds + unredacted path + appenders | ✓ VERIFIED | TypeRawThinking :58, TypeLocalCommand :66, TypeCompaction :76; appendLineUnredacted :113, sole caller AppendRawThinking :350 |
-| `internal/session/transcript_newkinds_test.go` | byte-identity, zero-redactor, tolerance tests | ✓ VERIFIED | TestTranscriptNewKinds/TestProjectorToleratesNewKinds PASS |
-| `internal/providerfactory/config_write.go` | WriteLayerOption, typed errors, atomic 0600 | ✓ VERIFIED | LayerReadError/LayerWriteError, DeepMerge reuse; TestConfigWrite family PASS |
-| `internal/modelrouting/config.go` | SessionTier yaml key defaulted heavy | ✓ VERIFIED | `session_tier` :23; TestSessionTier PASS |
-| `internal/acp/handlers.go` + `server.go` | handleSetConfigOption, advertisement, WithConfigSurface | ✓ VERIFIED | Handler registered under v1 name; WithConfigSurface option; no-surface degrade |
-| `internal/acpserve/config_surface.go` | menu, effective values, scope routing, blob, live apply | ✓ VERIFIED (defects: WR-05) | 681 lines; all seams wired; _global twins + idempotence basis defective (gaps 3-5) |
-| `internal/runtime/runtime.go` + `session/session.go` | ApplyTurnModel + SetTurnModel seam | ✓ VERIFIED | Subscriptions :509-514; effectiveModel + turn-mutex serialization; TestLiveModelApply/TestTierSwitch/TestApplyTurnModel PASS |
-| `internal/acpserve/simulator_e2e_test.go` | TestZedSimulatorE2E whole-surface story | ✓ VERIFIED | PASS under -race in verifier run (6.2s) |
-| `internal/acp/emitter_soak_test.go` + `.mise.toml` | env-gated soak + mise task outside ci | ✓ VERIFIED | PASS in verifier run; `emitter-soak` task at .mise.toml:49-51, absent from ci chain |
+| `internal/acp/emitter.go` | TurnEmitter: bounded lanes, nested-select drain, stall detector, barrier with broadcast wake | ✓ VERIFIED | Barrier wake is the per-generation broadcast the prior verification prescribed: `close(t.wake)` + fresh-channel swap in writeOut under mu, same critical section as `written++` (lines 320-321); Barrier snapshots `wake` under the same lock as the check (:283); last commit touching the file is 16-07 GREEN (4fddf9f) — nothing after it |
+| `internal/acp/emitter_test.go` | TestTurnEmitterBarrierConcurrentWaiters, no ctx escape | ✓ VERIFIED | Two waiters on `context.Background()` (deliberately never cancelled), both targets satisfied by the SAME final frame, gated-writer harness, bounded 2s join with explicit lost-wakeup message; lone-waiter anti-over-correction subtest; the file's only WithCancel uses (:427, :633) are in other pre-existing tests |
+| `internal/acpserve/config_surface.go` | Scope-aware idempotence + layer-true _global twins + blob hook | ✓ VERIFIED | `idempotenceBasisLocked` (:452) — global scope resolves via `globalOnlyResolvedLocked` (:479, global layer alone, no project layer, no blobFills), project scope keeps combined (D-10 intact); twins built from `gRes` (:688-704) with embedded-floor fallback ladder; `SetBlobDefaultHook` (:148) wired in Run (acp_serve.go:233); WR-03 lock split preserved all three semantics |
+| `internal/acpserve/config_test.go` | Scope-routing + twins regressions | ✓ VERIFIED | TestScopeRouting_GlobalWritePersistsWhenCombinedMatches (differing-value-persists + true-idempotence-no-churn subtests), TestConfigSurface_GlobalTwinsAdvertiseGlobalLayer (model/tier/absent-file subtests) — all pass; TestSetIdempotent_* D-10 pins unmodified and green |
+| `internal/acpserve/chip_truth_test.go` | Advertisement resolver-truth pin | ✓ VERIFIED | TestConfigAdvertisement_ResolverTruth pins the bare model entry to an independent `modelrouting` resolver evaluation over the same layer files |
+| `internal/acpserve/blob_chip_wire_test.go` | Blob-path chip==wire (review CR-02) | ✓ VERIFIED | TestBlobFillReachesTheWire (blob fill shows on chip AND rides the next provider request through the real Run composition) + TestBlobFillYieldsToExplicitLayer (explicit layer inerts the fill, hook never fired) — both pass |
+| `internal/runtime/runtime.go` | defaultTurnModel ladder + sessionFor fallthrough + SetDefaultTurnModel | ✓ VERIFIED | `defaultTurnModel` (:1627) mirrors resolveModelLocked exactly (resolver → static binding → "", nil schedCfg → profile slug); sessionFor stamp (:1110-1116) keeps the explicit stamp first (D-12); `SetDefaultTurnModel` (:1573) writes the same modelMu-guarded slot, no live restamp |
+| `internal/runtime/apply_model_test.go` | Four-subtest default-model regression | ✓ VERIFIED | TestDefaultTurnModel_FollowsTierResolution (tier-resolution default, explicit-stamp precedence, nil-config profile default, resolver-decline static-binding fallback) passes; existing ApplyTurnModel pins unmodified and green |
+| Prior-round artifacts (types.go, request_registry.go, metrics.go, transcript.go/manager.go, config_write.go, modelrouting config, handlers.go/server.go, simulator_e2e_test.go, emitter_soak_test.go) | unchanged contracts | ✓ VERIFIED (regression sanity) | Full -race sweep of the four wire packages green; providerfactory/modelrouting writer tests green; debt-marker scan clean on all phase files |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
-| ---- | -- | --- | ------ | ------- |
-| acpserve/acp_serve.go | acp/emitter.go | TurnEmitter construction + SetEmitter (:204-239) | ✓ WIRED | runner.SetEmitter(srv.Emitter); emitter armed in NewServer |
-| runtime/runtime.go | acp/emitter.go | ActivityEmitter forwarders | ✓ WIRED | ToolCall/ToolCallUpdate subscriptions (:509-514), routeBusEvent dispatch |
-| acp/server.go | request_registry.go | Serve interception before dispatch | ✓ WIRED | id+no-method+result-or-error → Deliver (:361-365) |
-| request_registry.go | emitter.go | $/cancel_request cascade via fg lane | ✓ WIRED | WithRegistryCascade(s.emitter...Notify) (server.go:191) |
-| acp/handlers.go | acpserve/config_surface.go | ConfigSurface interface via WithConfigSurface | ✓ WIRED | acpserve :211-217 injects; acp stays config-package-free |
-| config_surface.go | providerfactory/config_write.go | WriteLayerOption per scope | ✓ WIRED | persistLocked → WriteLayerOption (defective basis upstream: WR-05) |
-| config_surface.go | runtime/runtime.go | applyLocked → Runner.ApplyTurnModel | ✓ WIRED | Live apply proven by TestLiveModelApply (WR-04 lock-scope caveat) |
-| simulator_e2e_test.go | acpserve/acp_serve.go | real Run over pipes | ✓ WIRED | Verifier-run PASS; five stages green |
+| ---- | --- | --- | ------ | ------- |
+| acpserve/acp_serve.go | acp/emitter.go | TurnEmitter construction + SetEmitter | ✓ WIRED | Carried; unchanged |
+| runtime/runtime.go | acp/emitter.go | ActivityEmitter forwarders | ✓ WIRED | Carried; full runtime package green under -race |
+| acp/server.go | request_registry.go | Serve interception before dispatch | ✓ WIRED | Carried; unchanged |
+| request_registry.go | emitter.go | $/cancel_request cascade via fg lane | ✓ WIRED | Carried; unchanged |
+| acp/handlers.go | acpserve/config_surface.go | ConfigSurface interface via WithConfigSurface | ✓ WIRED | Carried; unchanged |
+| config_surface.go | providerfactory/config_write.go | WriteLayerOption per scope | ✓ WIRED | Carried; now reached only when the addressed-layer basis says the value differs (WR-05 fix) |
+| config_surface.go | runtime/runtime.go | applyLocked → Runner.ApplyTurnModel | ✓ WIRED | Carried + NEW: blob-channel twin `SetBlobDefaultHook(runner.SetDefaultTurnModel)` wired at acp_serve.go:233, fired outside the surface lock (composes with the WR-03 lock split) |
+| runtime.go sessionFor | modelrouting resolver | defaultTurnModel → NewResolver().Resolve | ✓ WIRED | Same chain as the advertisement's resolveModelLocked — chip==wire by construction, pinned from both sides |
+| simulator_e2e_test.go | acpserve/acp_serve.go | real Run over pipes | ✓ WIRED | Green in the full-package sweep (6 clean acpserve runs total) |
 
 ### Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
 | -------- | ------- | ------ | ------ |
-| Whole-surface story (5 stages) | `go test -race ./internal/acpserve/ -run TestZedSimulatorE2E -count=1` | ok 6.2s | ✓ PASS |
-| Priority/no-drop + barrier + registry core | `go test -race ./internal/acp/ -run 'TestTurnEmitterPriority\|TestTurnEmitterBarrier\|TestRegistryConcurrentResolve\|TestRegistryTimeoutFallback\|TestRegistrySyntheticCancel'` | ok 2.0s | ✓ PASS |
-| Transcript kinds + projector tolerance | `go test ./internal/session/ -run 'TestTranscriptNewKinds\|TestProjectorToleratesNewKinds'` | ok 0.8s | ✓ PASS |
-| Config writer round-trip + session_tier | `go test ./internal/providerfactory/ ./internal/modelrouting/ -run 'TestConfigWrite\|TestSessionTier'` | ok | ✓ PASS |
-| Live apply + tier switch (incl. mid-turn) | `go test -race ./internal/acpserve/ -run 'TestLiveModelApply\|TestTierSwitch'` | ok 14.6s | ✓ PASS |
-| Two concurrent long-lived-ctx Barriers | (no such test exists — CR-01 hole) | code analysis: second waiter hangs at terminal state | ✗ FAIL (gap) |
+| CR-01 regression, no ctx escape, 5x shake | `go test -race ./internal/acp/ -run TestTurnEmitterBarrierConcurrentWaiters -count=5` | ok 2.4s | ✓ PASS |
+| WR-05 scope routing + twins + D-10 pins | `go test -race ./internal/acpserve/ -run 'TestScopeRouting_Global*|TestConfigSurface_GlobalTwins*|TestSetIdempotent_*' -count=1 -v` | 8/8 tests + subtests PASS | ✓ PASS |
+| Chip==wire layer path + blob path | `go test -race ./internal/acpserve/ -run 'TestConfigAdvertisement_ResolverTruth|TestBlobFill*' -count=1 -v` | 3/3 PASS | ✓ PASS |
+| Gap-4b wire side + D-12 precedence | `go test -race ./internal/runtime/ -run 'TestDefaultTurnModel_FollowsTierResolution|TestApplyTurnModel|TestTierSwitch' -count=1 -v` | all PASS | ✓ PASS |
+| Full wire-package sweep | `go test -race -count=1 ./internal/acp/ ./internal/acpserve/ ./internal/runtime/ ./internal/session/` | acp ok, runtime ok, session ok; acpserve failed ONCE (test name not captured), then 5 consecutive clean full-package runs incl. `-count=3` | ✓ PASS (1 non-reproducing flake — see Anti-Patterns) |
+| Config writer + session_tier | `go test ./internal/providerfactory/ ./internal/modelrouting/ -run 'TestConfigWrite|TestSessionTier'` | ok | ✓ PASS |
 
 ### Probe Execution
 
 | Probe | Command | Result | Status |
 | ----- | ------- | ------ | ------ |
-| `internal/acp/emitter_soak_test.go` (declared in 16-06 PLAN) | `ASSGUARD_EMITTER_SOAK=1 go test ./internal/acp/ -run TestTurnEmitterSoak -count=1 -timeout 10m` | `SOAK RESULT: duration=2m0s producers=8 frames=4051238 stall_episodes=155 invariants=[no-drop,fifo,no-leak,stall-fired,clean-close] all=PASS` (153s) | PASS |
+| `internal/acp/emitter_soak_test.go` (env-gated adversarial soak) | `ASSGUARD_EMITTER_SOAK=1 go test ./internal/acp/ -run TestTurnEmitterSoak -count=1 -timeout 10m` | exit 0, ok 152s — invariants (no-drop, fifo, no-leak, stall-fired, clean-close) asserted internally; re-run by this verifier on the CURRENT broadcast-wake code | PASS |
 
 ### Requirements Coverage
 
 | Requirement | Source Plan | Description | Status | Evidence |
 | ----------- | ---------- | ----------- | ------ | -------- |
-| ACP-03 | 16-01, 16-02, 16-03, 16-06 | Zed renders live turn activity through one ordered inline TurnEmitter with explicit backpressure | ✓ SATISFIED (with critical defect) | Wire tests + simulator + OPERATOR-CONFIRMED items 1-3; CR-01 barrier hang is a concurrency defect against the "one ordered TurnEmitter... proven under concurrency" phase clause — recorded as gap 1-2 |
-| ACP-08 | 16-04, 16-05, 16-06 | Editor drives configuration: configOptions advertised, set_config_option handled, API keys env/file only | ✓ SATISFIED (with partial defects) | Advertisement + set + live apply operator-confirmed (items 4-5, PASS); _global twin display + idempotence scope + pre-stamp chip truthfulness recorded as gaps 3-5 |
+| ACP-03 | 16-01, 16-02, 16-03, 16-06, 16-07 | Zed renders live turn activity through one ordered inline TurnEmitter with explicit backpressure | ✓ SATISFIED | The CR-01 concurrency defect against the "proven under concurrency" clause is FIXED and pinned by the no-ctx-escape two-waiter regression (5x -race) plus this verifier's own soak re-run on the fixed code |
+| ACP-08 | 16-04, 16-05, 16-06, 16-08, 16-09 | Editor drives configuration: configOptions advertised, set_config_option handled, API keys env/file only | ✓ SATISFIED | Scope semantics corrected (global layer genuinely independently addressable; twins layer-true; idempotence basis addressed-layer); chip==wire holds on layer AND blob paths; D-10 anti-promotion guard preserved |
 
-Orphaned requirements: none — REQUIREMENTS.md maps exactly ACP-03 and ACP-08 to Phase 16 (traceability table :106-107), both claimed by plan frontmatter.
+Orphaned requirements: none — REQUIREMENTS.md maps exactly ACP-03 and ACP-08 to Phase 16 (traceability table :106-107); both are claimed across the plan frontmatters including the gap-closure plans.
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 | ---- | ---- | ------- | -------- | ------ |
-| internal/acp/emitter.go | 181, 261-285, 304-308 | CR-01 Barrier lost-wakeup (capacity-1 wake, single-token handoff) | 🛑 Blocker | Second concurrent prompt response hangs forever |
-| internal/acpserve/config_surface.go | 182-191, 398-404, 518-521 | WR-05 scope-blind idempotence + combined-value global twins | ⚠️ Warning | Global-scoped writes silently swallowed; mislabeled display |
-| internal/acp/server.go vs emitter.go | 183 / 145,384 | WR-01 metrics field written after sampler goroutine start (unsynchronized) | ⚠️ Warning | Data race per Go memory model; bounded impact (missed stall count) |
-| internal/runtime/cron_wiring.go | 249, 269-320 | WR-02 fanInEvents teardown contract false (Unsubscribe never closes channels; Bus.Close never called) | ⚠️ Warning | ~5 goroutines leak per closed session in long-lived processes; comment documents a mechanism that does not exist |
-| internal/acp/request_registry.go | 387-401 vs 319-348 | WR-03 send TOCTOU vs Writer.Close (guarded today only by handlerWG.Wait-before-Stop convention) | ⚠️ Warning | Latent send-on-closed-channel panic for the first non-handler caller (Phase 17 background asks) |
-| internal/acpserve/config_surface.go | 149-207, 435-464 | WR-04 Set holds s.mu across the live-apply hook | ⚠️ Warning | One mid-turn Set blocks all config operations (Options/Sets/blob) until the turn ends; serialization correctness itself holds |
-| internal/acp/handlers.go | 489, 13,530 | IN-01 dead redact call pinning an import; IN-02 `asciiDelete` misnames UUID version bits | ℹ️ Info | Cosmetic/robustness |
-| internal/session/manager.go | 106-128 | IN-03 "byte-identical / never re-serialized" comment overclaims (json.Marshal compacts RawMessage, HTML-escapes) | ℹ️ Info | On-disk contract wording; D-20 is one-way — reword before later phases lock against it |
-| internal/acp/server.go | 361-365 | IN-04 malformed response (neither result nor error) falls through to a spurious -32601 | ℹ️ Info | Low likelihood (Zed-controlled side) |
-| internal/acpserve/config_surface.go | 126-134 | IN-05 SetNotify/SetApplyHook write fields without s.mu | ℹ️ Info | Safe only under wired-before-serve convention |
+| internal/acpserve (package) | — | One unidentified test failure in the first full sweep; 5 subsequent clean full-package runs (incl. -count=3) under -race; all named gap-closure regressions deterministic | ⚠️ Warning | Non-reproducing flake in a timing-sensitive suite; not attributable to a specific test (name not captured in the truncated output). Watch for recurrence in Phase 17 |
+| internal/acp/server.go | 96+ | Prior-round WR-01: metrics field written after sampler goroutine start (unsynchronized) — still present, untouched by the fix pass | ⚠️ Warning | Bounded: missed stall count |
+| internal/runtime/cron_wiring.go | 282-284 | Prior-round WR-02: fanInEvents teardown contract false (Unsubscribe never closes channels) — still present | ⚠️ Warning | ~5 goroutines leak per closed session in long-lived processes |
+| internal/acp/request_registry.go | 387-401 | Prior-round WR-03: send TOCTOU vs Writer.Close — still present; latent for the first non-handler caller (Phase 17 background asks) | ⚠️ Warning | Latent send-on-closed-channel panic |
+| 16-REVIEW.md IN-01..IN-06 | — | Six Info findings explicitly out of the fix pass's scope (dead keep-alive call, asciiDelete misnomer, duplicate sentinels, optionsLocked comment vs pending-twins, toolchain pin 1.26 vs 1.25 floor, blank-stdin -32700) | ℹ️ Info | Tracked in 16-REVIEW.md for a follow-up pass |
 
-Debt markers (TBD/FIXME/XXX): none in any phase-modified file. Stub patterns: none. No orphaned or placeholder artifacts.
+Debt markers (TBD/FIXME/XXX): none in any phase-modified file. Stub patterns: none.
 
 ### Human Verification Required
 
-The phase's designated human gate (16-06 Task 3, blocking) was dispositioned **OPERATOR-CONFIRMED** (2026-08-27, operator-delegated, machine-verified; anchored marker grep = 1): all five live-Zed items PASS, with the pre-stamp Model-chip finding recorded and routed to this verifier (now gap 4). Residual human decisions ride the gaps, not a UAT list: the CR-01 fix (must-fix vs override with a documented single-concurrent-prompt limitation), and the chip truthfulness direction (advertisement follows runner vs runner follows tier resolution).
+Four items (frontmatter `human_verification`): the live-Zed chip==wire confirmation, plus the three semantic decisions the review-fix pass explicitly marked "requires human verification" (CR-02 blob-tier stamp overwrite edge, CR-01-new turn-scoped cancel intent, WR-01 cross-session hook concurrency). These are product-intent and live-rendering checks — the mechanisms are pinned by tests; the intents are not.
 
 ### Gaps Summary
 
-Five gaps, three root causes, all confirmed by direct code reading in the current tree (the 16-REVIEW.md findings were re-verified against the code, not accepted on the reviewer's word):
-
-1. **CR-01 Barrier lost-wakeup (BLOCKER, failed truths 16-01 #5 and #6).** Every test that passes today avoids the broken state by construction: single Barrier waiter, or short-lived ctxs escaping via ctx.Done. Production passes the connection-lifetime Serve ctx, so the second of two concurrent session/prompt turns hangs with no escape. This directly contradicts the phase goal's "proven under concurrency" for the emitter primitive. Fix is small (generation close/cond broadcast) and must ship with the two-waiter regression test.
-2. **WR-05 scope semantics in the ACP-08 surface (partial, truths 16-04 #3, 16-05 #1, 16-05 #2).** One root cause: the effective-value basis used for both the _global twin display and the idempotence guard is the combined project-won resolution rather than the addressed layer's value.
-3. **Pre-stamp Model chip truthfulness (partial, against ROADMAP criterion 4).** Code-confirmed, operator-observed live (turn-001 GLM-5.3 on wire vs glm-5.2 chip), and — per the Step 9b scan — owned by no later phase (Phase 20's /model is session-scope command routing). Route: gap-closure candidate; alternatively accept via a recorded override carrying the operator's OPERATOR-CONFIRMED disposition as rationale.
-
-Everything else the phase claims holds under independent re-run: registry concurrency and degradation ladder, transcript schema lock with provable redaction exemption, config writer atomicity and round-trip, live model/tier apply with turn serialization, the whole-surface simulator story, and the 2-minute adversarial soak (4.05M frames, all invariants PASS in this verifier's own process).
+None. All five prior-round gaps are closed in the current tree by implementation (not override), each with the exact regression test the prior verification prescribed, and each re-run by this verifier under -race. The review-fix pass that followed closed 8 additional findings with regression tests and full-package gates (its own report records `go test -race -count=1 ./...` across 37 packages, 0 failures). The three fix-pass items carrying semantic decisions are routed to human verification above; they do not block the goal — the mechanisms are correct and tested, and the open questions are intent confirmations plus one live-rendering check.
 
 ---
 
-_Verified: 2026-08-27T23:59:00Z_
+_Verified: 2026-08-28T14:52:04Z_
 _Verifier: Claude (gsd-verifier)_
