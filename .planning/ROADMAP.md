@@ -322,11 +322,25 @@ Plans:
 **Plans:** 6 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 22-01-PLAN.md — Tracer: the ONE task-notification subsystem (tracker kinds, D-02 payloads, D-03 coalescing, D-01 wake-turn drain) with background Bash as first producer; D-10 subagent cap/queue; OQ5 close-cancel
-- [ ] 22-02-PLAN.md — Background Bash lifecycle hardening: TERM-before-KILL ladder + Linux Pdeathsig, D-11 queue-on-cap + D-12 configOptions caps, OQ4 tombstone stale-log sweep
-- [ ] 22-03-PLAN.md — Background subagents (PAR-07): discriminated async_launched dispatch, output-file retrieval, cancellation, Phase-20 routing seam (precondition-marked), OQ3 ask-decline parity
-- [ ] 22-04-PLAN.md — Persistent-shell PTY (PAR-09): one lazy session PTY, nonce-sentinel cycle, ANSI strip, EIO-as-EOF, D-08 lazy restart + close drain, OQ1 additive `persistent` schema property per D-09
 - [ ] 22-05-PLAN.md — Sandbox policy core (SAND-01): one policy struct → landlock + seatbelt backends behind ONE portable WrapCmd entry, strict probe taxonomy, D-05 honesty doc — live-probed on darwin, compile-gated on linux
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 22-02-PLAN.md — Background Bash lifecycle hardening: TERM-before-KILL ladder + Linux Pdeathsig, D-11 queue-on-cap + D-12 configOptions caps, OQ4 tombstone stale-log sweep
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 22-03-PLAN.md — Background subagents (PAR-07): discriminated async_launched dispatch, output-file retrieval, cancellation, Phase-20 routing seam (precondition-marked), OQ3 ask-decline parity
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 22-04-PLAN.md — Persistent-shell PTY (PAR-09): one lazy session PTY, nonce-sentinel cycle, ANSI strip, EIO-as-EOF, D-08 lazy restart + close drain, OQ1 additive `persistent` schema property per D-09
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
 - [ ] 22-06-PLAN.md — Sandbox enforcement (SAND-01): --sandbox flag + startup probe-and-degrade + sentinel main hook, wrap at ALL THREE exec sites (foreground Bash, background TaskRegistry.Start, PTY persistent shell — D-09 orthogonality), OQ2 honored dangerouslyDisableSandbox, default OFF
 
 ### Phase 23: SEED Gaps Close-out

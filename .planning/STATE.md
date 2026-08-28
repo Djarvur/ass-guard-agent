@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Claude Code Parity
-current_phase: 21
-current_phase_name: Context & Policy Parity Closures
+current_phase: 22
+current_phase_name: Background Execution + Sandbox Reality
 current_plan: 6
 status: executing
 stopped_at: Completed 16-06-PLAN.md
-last_updated: "2026-08-28T01:21:42.803Z"
+last_updated: "2026-08-28T03:21:18.921Z"
 last_activity: 2026-08-27
 last_activity_desc: 16-06 executed — simulator, soak, and the operator checkpoint recorded pending
-state_head: c51ef423564f1d1c135290b0cd76f21dc3eb6517
+state_head: ecf2f4c0339e8f12073467510e8fa286f9aa76f7
 progress:
   total_phases: 11
   completed_phases: 1
-  total_plans: 44
+  total_plans: 50
   completed_plans: 13
   percent: 9
 ---
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-27)
 
 ## Current Position
 
-Phase: 21 (Context & Policy Parity Closures) — READY TO EXECUTE
+Phase: 22 (Background Execution + Sandbox Reality) — READY TO EXECUTE
 Current Plan: 6
 Total Plans in Phase: 6
 Status: Ready to execute
