@@ -146,71 +146,42 @@ func (s *ConfigSurface) Options() []acp.ConfigOptionFrame {
 // refreshed FULL set on every non-error outcome: an applied write, a pending
 // no-op, or an idempotent re-push. See the package-level doc for the ordering
 // and the D-09/D-10 guards.
+//
+// 16-REVIEW WR-03: the surface mutex spans only validation, persist, and the
+// refreshed-frame computation. The live apply (blocks on every live session's
+// turn mutex) and the out-of-band notify (a blocking send on the emitter lane)
+// run OUTSIDE it — other config operations (including initialize's
+// applyMetaBlob) never queue behind a slow client or an in-flight turn. The
+// persist→apply→notify order for the responding caller is unchanged.
 func (s *ConfigSurface) Set(sessionID, optionID string, value any) ([]acp.ConfigOptionFrame, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
-	parsed := splitScope(optionID)
+	outcome, serr := s.setLocked(optionID, value)
 
-	scope, bare := parsed.scope, parsed.bare
+	notify, hook := s.notify, s.applyHook
 
-	if !isMenuOption(bare) {
-		return nil, &acp.ConfigViolationError{OptionID: optionID, Violation: "unknown option id"}
+	s.mu.Unlock()
+
+	if serr != nil {
+		return nil, serr
 	}
 
-	val, ok := value.(string)
-	if !ok || val == "" {
-		return nil, &acp.ConfigViolationError{
-			OptionID: optionID, Violation: "value must be a non-empty string option id",
+	if outcome.doApply && hook != nil {
+		herr := hook(outcome.applyModel)
+		if herr != nil {
+			s.logf("live apply of model %q failed (config persisted, live state unchanged): %v",
+				outcome.applyModel, herr)
 		}
 	}
 
-	res, err := s.resolveLocked()
-	if err != nil {
-		return nil, fmt.Errorf("resolve current config: %w", err)
+	// Only an APPLIED write emits out-of-band (the pending no-op and the
+	// idempotent re-push answer the caller without a config_option_update —
+	// the pre-WR-03 emit discipline, unchanged).
+	if outcome.doNotify && notify != nil {
+		notify(sessionID, outcome.frames)
 	}
 
-	if isPendingOption(bare) {
-		return s.setPendingLocked(optionID, scope, bare, val)
-	}
-
-	verr := s.validateSettableLocked(bare, optionID, val, res.cfg)
-	if verr != nil {
-		return nil, verr
-	}
-
-	// Idempotence basis: the ADDRESSED layer's current value, not the combined
-	// resolution (WR-05 gap closure — see the helper's contract).
-	basis, berr := s.idempotenceBasisLocked(bare, scope, res)
-	if berr != nil {
-		return nil, berr
-	}
-
-	if val == basis.value {
-		// D-10 guard on the set channel: a redundant client default (Zed
-		// re-pushes its stored defaults every connection) must not churn the
-		// operator's file — nor promote a blob-derived effective value into
-		// persisted explicit config. One structured line, refreshed set, done.
-		s.logf("option %q: value %q equals %s — idempotent re-push, no layer write (D-10)",
-			optionID, val, basis.where)
-
-		return s.optionsLocked(), nil
-	}
-
-	perr := s.persistLocked(scope, bare, optionID, res.tier, val)
-	if perr != nil {
-		return nil, perr
-	}
-
-	// An explicit editor write supersedes any blob fill for this option (the
-	// fill would be inert anyway — explicit wins — dropping it keeps the
-	// overlay honest without promoting the value anywhere).
-	delete(s.blobFills, bare)
-
-	s.applyLocked(bare, val, res.cfg)
-	s.emitLocked(sessionID)
-
-	return s.optionsLocked(), nil
+	return outcome.frames, nil
 }
 
 // ApplyBlobDefaults applies the initialize _meta object (D-10): every key is
@@ -218,12 +189,17 @@ func (s *ConfigSurface) Set(sessionID, optionID string, value any) ([]acp.Config
 // recognized option keys fill UNSET slots in-memory. changed reports whether
 // any effective value moved — the signal behind the out-of-band
 // config_option_update carrying the full refreshed set.
+//
+// 16-REVIEW WR-03: the surface mutex spans only the retention/fill/snapshot
+// work; the out-of-band notify (a blocking send on the emitter lane) runs
+// OUTSIDE it on frames computed under the lock.
 func (s *ConfigSurface) ApplyBlobDefaults(meta map[string]json.RawMessage) (bool, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	before, err := s.snapshotLocked()
 	if err != nil {
+		s.mu.Unlock()
+
 		return false, fmt.Errorf("resolve config before blob application: %w", err)
 	}
 
@@ -257,16 +233,112 @@ func (s *ConfigSurface) ApplyBlobDefaults(meta map[string]json.RawMessage) (bool
 
 	after, err := s.snapshotLocked()
 	if err != nil {
+		s.mu.Unlock()
+
 		return false, fmt.Errorf("resolve config after blob application: %w", err)
 	}
 
 	if before == after {
+		s.mu.Unlock()
+
 		return false, nil // explicit config won in every slot — nothing moved
 	}
 
-	s.emitLocked("") // out-of-band change: the full set follows application (sessionless at initialize)
+	frames := s.optionsLocked()
+
+	notify := s.notify
+
+	s.mu.Unlock()
+
+	// Out-of-band change: the full set follows application (sessionless at
+	// initialize). Sent lock-free — see the WR-03 note above.
+	if notify != nil {
+		notify("", frames)
+	}
 
 	return true, nil
+}
+
+// setOutcome carries Set's lock-free tail inputs from setLocked: the refreshed
+// frame set (always — every non-error outcome answers with the FULL set), the
+// live-apply target + whether one applies, and whether the applied write emits
+// the out-of-band update.
+type setOutcome struct {
+	frames     []acp.ConfigOptionFrame
+	applyModel string
+	doApply    bool
+	doNotify   bool
+}
+
+// setLocked is Set's lock-holding half (callers hold s.mu): validate →
+// idempotence guard → persist → drop the superseded blob fill → resolve the
+// live-apply target → compute the refreshed frame set. The hook is NOT invoked
+// here — the outcome hands the apply to the lock-free caller.
+func (s *ConfigSurface) setLocked(optionID string, value any) (setOutcome, error) {
+	parsed := splitScope(optionID)
+
+	scope, bare := parsed.scope, parsed.bare
+
+	if !isMenuOption(bare) {
+		return setOutcome{}, &acp.ConfigViolationError{OptionID: optionID, Violation: "unknown option id"}
+	}
+
+	val, ok := value.(string)
+	if !ok || val == "" {
+		return setOutcome{}, &acp.ConfigViolationError{
+			OptionID: optionID, Violation: "value must be a non-empty string option id",
+		}
+	}
+
+	res, rerr := s.resolveLocked()
+	if rerr != nil {
+		return setOutcome{}, fmt.Errorf("resolve current config: %w", rerr)
+	}
+
+	if isPendingOption(bare) {
+		frames, perr := s.setPendingLocked(optionID, scope, bare, val)
+
+		return setOutcome{frames: frames}, perr
+	}
+
+	verr := s.validateSettableLocked(bare, optionID, val, res.cfg)
+	if verr != nil {
+		return setOutcome{}, verr
+	}
+
+	// Idempotence basis: the ADDRESSED layer's current value, not the combined
+	// resolution (WR-05 gap closure — see the helper's contract).
+	basis, berr := s.idempotenceBasisLocked(bare, scope, res)
+	if berr != nil {
+		return setOutcome{}, berr
+	}
+
+	if val == basis.value {
+		// D-10 guard on the set channel: a redundant client default (Zed
+		// re-pushes its stored defaults every connection) must not churn the
+		// operator's file — nor promote a blob-derived effective value into
+		// persisted explicit config. One structured line, refreshed set, done.
+		s.logf("option %q: value %q equals %s — idempotent re-push, no layer write (D-10)",
+			optionID, val, basis.where)
+
+		return setOutcome{frames: s.optionsLocked()}, nil
+	}
+
+	perr := s.persistLocked(scope, bare, optionID, res.tier, val)
+	if perr != nil {
+		return setOutcome{}, perr
+	}
+
+	// An explicit editor write supersedes any blob fill for this option (the
+	// fill would be inert anyway — explicit wins — dropping it keeps the
+	// overlay honest without promoting the value anywhere).
+	delete(s.blobFills, bare)
+
+	applyModel, doApply := s.applyTargetLocked(bare, val, res.cfg)
+
+	return setOutcome{
+		frames: s.optionsLocked(), applyModel: applyModel, doApply: doApply, doNotify: true,
+	}, nil
 }
 
 // --- resolution (callers hold s.mu) ---
@@ -497,16 +569,16 @@ func (s *ConfigSurface) persistLocked(scope, bare, optionID, tier, val string) e
 	return nil
 }
 
-// applyLocked triggers the live apply for a successful persist: the model to
-// apply is the written value (model option) or the newly-selected tier's
-// resolved model (tier option). A target on a DIFFERENT provider degrades
-// loudly with the model unchanged — the resolveSubagentModel precedent
-// (cross-provider switches never rewire the live provider).
-func (s *ConfigSurface) applyLocked(bare, val string, cfg *modelrouting.Config) {
-	if s.applyHook == nil {
-		return
-	}
-
+// applyTargetLocked resolves the live-apply target for a successful persist
+// (callers hold s.mu): the model to apply is the written value (model option)
+// or the newly-selected tier's resolved model (tier option). ok=false (with the
+// skip reason logged) marks the degrade cases — an undeclared model, or a
+// target bound to a DIFFERENT provider (cross-provider switches degrade loudly,
+// they never rewire the live provider — the resolveSubagentModel precedent).
+// The CALLER invokes the apply hook OUTSIDE s.mu (16-REVIEW WR-03: the hook
+// blocks on every live session's turn mutex — the surface lock must never
+// serialize other config operations behind it).
+func (s *ConfigSurface) applyTargetLocked(bare, val string, cfg *modelrouting.Config) (string, bool) {
 	target := val
 	if bare == optTier {
 		target = s.resolveModelLocked(cfg, val)
@@ -516,7 +588,7 @@ func (s *ConfigSurface) applyLocked(bare, val string, cfg *modelrouting.Config) 
 	if !ok {
 		s.logf("live apply skipped: model %q is not declared", target)
 
-		return
+		return "", false
 	}
 
 	if mc.Provider != s.providerName {
@@ -524,21 +596,10 @@ func (s *ConfigSurface) applyLocked(bare, val string, cfg *modelrouting.Config) 
 			"(model unchanged; cross-provider switches degrade loudly, they do not rewire the live provider)",
 			target, mc.Provider, s.providerName)
 
-		return
+		return "", false
 	}
 
-	herr := s.applyHook(target)
-	if herr != nil {
-		s.logf("live apply of model %q failed (config persisted, live state unchanged): %v", target, herr)
-	}
-}
-
-func (s *ConfigSurface) emitLocked(sessionID string) {
-	if s.notify == nil {
-		return
-	}
-
-	s.notify(sessionID, s.optionsLocked())
+	return target, true
 }
 
 // --- advertisement (callers hold s.mu) ---
