@@ -417,7 +417,44 @@ Plans:
   3. ass-guard builds and behaves identically as the kit's reference app (retains ecosys/openspec/coreexec/learning/firstrun/evalsuite/parity + ACP frontend) — `mise ci` green, live Zed session unchanged, all behavioral eval suites still pass against the extracted layout.
   4. SEED-002 fantasy + SEED-003 landscape materials are present as reading material/design prior art with zero runtime dependencies.
 
-**Plans**: TBD
+**Plans**: 9 plans (waves 1-9, strictly sequential — each plan touches kit/ packages the previous one settled)
+
+Plans:
+**Wave 1**
+
+- [ ] 25-01-PLAN.md — One-way boundary checkpoint + Wave-0 instruments (ledger baseline, eval class extension) + TRACER: rank-0 verbatim moves (KIT-01, D-01/D-02/D-03/D-07/D-20)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 25-02-PLAN.md — Pass-1 ranks 1-3: audit/hookdag/shaper/toolcat + provider/mcp + toolexec/modelrouting verbatim, embeds intact (KIT-01)
+
+**Wave 3** *(blocked on Wave 2)*
+
+- [ ] 25-03-PLAN.md — Pass-1 completion: session/engine + enginebridge→kit/internal + runtime; ledger sum proof, D-06 disposition (KIT-01, KIT-03)
+
+**Wave 4** *(blocked on Wave 3)*
+
+- [ ] 25-04-PLAN.md — KIT-02: Emitter + Requester seams kit-side, kitTurnAdapter acp-side, runtime→acp edge severed (D-13/D-14/D-15, OQ2/OQ3)
+
+**Wave 5** *(blocked on Wave 4)*
+
+- [ ] 25-05-PLAN.md — Scheduler port (D-16) + LearnedStore port + SetupEngine parameterization (OQ4); sched/learning/openspec edges severed
+
+**Wave 6** *(blocked on Wave 5)*
+
+- [ ] 25-06-PLAN.md — kit/session neutral types + CommandCatalog injection (D-17); ecosys edges severed
+
+**Wave 7** *(blocked on Wave 6)*
+
+- [ ] 25-07-PLAN.md — SessionToolkit injection (OQ1 coarse Attach); runtime→coreexec severed — kit/ import-clean
+
+**Wave 8** *(blocked on Wave 7)*
+
+- [ ] 25-08-PLAN.md — White-box test disposition: subject-split to acpserve + kit fakes; gate-scope decision made real
+
+**Wave 9** *(blocked on Wave 8)*
+
+- [ ] 25-09-PLAN.md — D-19 gates (mise + depguard) + hostproof test + kit/README (D-08) + full D-20 battery + live-Zed operator checkpoint (KIT-01/02/03 close)
 
 ## Research Flags
 
