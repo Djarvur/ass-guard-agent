@@ -49,10 +49,10 @@ created: 2026-08-28
 | 21-03-02 | 03 | 2 | PAR-05 | T-21-10 | zero redactor calls on thinking path; live forward | unit | `go test -race ./internal/session/ -run 'TestRawThinking\|TestStreamAndEmit' -count=1 && go test -race ./internal/runtime/ -run TestThoughtForward -count=1` | partial (manager_test.go 16-02) / ❌ W0 forwarder | ⬜ pending |
 | 21-03-03 | 03 | 2 | PAR-05 | T-21-09/T-21-12 | D-14 field-value identity goldens incl. boundary + redacted | golden | `go test -race ./internal/session/ -run 'TestThinkingGolden\|TestProjector' -count=1 && go test -race ./internal/shaper/ -run TestShaperThinking -count=1` | ❌ W0 (testdata/thinking-golden) | ⬜ pending |
 | 21-04-01 | 04 | 3 | PAR-06 | T-21-14/T-21-15 | @dir no recursion; Read-rule gate bites; fixed-form notes | unit | `go test -race ./internal/ecosys/ -run TestParseMentions -count=1 && go test -race ./internal/runtime/ -run TestMentionExpand -count=1` | ❌ W0 | ⬜ pending |
-| 21-04-02 | 04 | 3 | PAR-06 | T-21-13/T-21-17 | bomb refused pre-decode; no base64 in transcript; CGO gate | unit+build | `go test -race ./internal/runtime/ -run 'TestImageIngress\|TestValidateAndScale' -count=1 && CGO_ENABLED=0 go build ./...` | ❌ W0 (imgscale_test.go) | ⬜ pending |
-| 21-04-03 | 04 | 3 | PAR-06 | T-21-16 | D-11 drop + exactly one loud note on unsupported provider | unit | `go test -race ./internal/shaper/ -run TestImageCapability -count=1 && go test ./internal/provider/ -count=1` | ❌ W0 | ⬜ pending |
-| 21-05-01 | 05 | 4 | PAR-03 | T-21-18/T-21-19 | hook deny/ask/allow through the ONE gate head, both branches | integration | `go test -race ./internal/session/ -run 'TestGateHookVerdict\|TestGatePermissionSuspend' -count=1` | ❌ blocked-on-17 (extends 17-02's gate_test.go — precondition-marked) | ⬜ pending |
-| 21-05-02 | 05 | 4 | PAR-03 | T-21-18 | once-only side effects; single-consultation grep audit | unit+audit | `go test -race ./internal/coreexec/ -run 'TestHookWiring\|TestHooksOnceOnly' -count=1` + filtered greps | ⚠ extend hooks_wiring_test.go (17-gated) | ⬜ pending |
+| 21-05-01 | 05 | 4 | PAR-06 | T-21-13/T-21-17 | bomb refused pre-decode; no base64 in transcript; CGO gate | unit+build | `go test -race ./internal/runtime/ -run 'TestImageIngress\|TestValidateAndScale' -count=1 && CGO_ENABLED=0 go build ./... && go test ./internal/session/ -run TestContentBlockRoundTrip -count=1` | ❌ W0 (imgscale_test.go, transcript_newkinds_test.go) | ⬜ pending |
+| 21-05-02 | 05 | 4 | PAR-06 | T-21-16 | D-11 drop + exactly one loud note on unsupported provider | unit | `go test -race ./internal/shaper/ -run TestImageCapability -count=1 && go test ./internal/provider/ -count=1` | ❌ W0 | ⬜ pending |
+| 21-06-01 | 06 | 5 | PAR-03 | T-21-18/T-21-19 | hook deny/ask/allow through the ONE gate head, both branches | integration | `go test -race ./internal/session/ -run 'TestGateHookVerdict\|TestGatePermissionSuspend' -count=1` | ❌ blocked-on-17 (extends 17-02's gate_test.go — precondition-marked) | ⬜ pending |
+| 21-06-02 | 06 | 5 | PAR-03 | T-21-18 | once-only side effects; single-consultation grep audit | unit+audit | `go test -race ./internal/coreexec/ -run 'TestRegisterCore\|TestHooksOnceOnly' -count=1` + filtered greps | ⚠ extend hooks_wiring_test.go (17-gated; TestHooksOnceOnly is new) | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -65,9 +65,10 @@ created: 2026-08-28
 - [ ] `internal/ecosys/memory_test.go` — walker tree fixtures via t.TempDir (21-02)
 - [ ] `internal/runtime/memory_wiring_test.go` — sessionFor integration (21-02)
 - [ ] `internal/session/testdata/thinking-golden/sse-thinking.jsonl` — captured wire-pair goldens (21-03; A4 capture contingency)
-- [ ] Image fixtures synthesized in-test (oversized JPEG + IHDR-only pixel-bomb PNG) (21-04)
-- [ ] `go get golang.org/x/image@v0.45.0` in 21-04 Task 2 (build-contract gate: CGO_ENABLED=0)
-- The 21-05 gate-join test file is 17-02's `gate_test.go` — created by Phase 17, EXTENDED by 21-05 (precondition-marked, not Wave 0)
+- [ ] 21-03 session-leg test files: `internal/session/thinking_test.go` (NEW), `internal/event/events_test.go` + `internal/runtime/emitter_e2e_test.go` (extend)
+- [ ] Image fixtures synthesized in-test (oversized JPEG + IHDR-only pixel-bomb PNG) (21-05)
+- [ ] `go get golang.org/x/image@v0.45.0` in 21-05 Task 1 (build-contract gate: CGO_ENABLED=0)
+- The 21-06 gate-join test file is 17-02's `gate_test.go` — created by Phase 17, EXTENDED by 21-06 (precondition-marked, not Wave 0)
 
 ---
 

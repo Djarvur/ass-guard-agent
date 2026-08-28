@@ -500,27 +500,31 @@ CC merges hook entries across settings levels (user/project/local/managed) rathe
 | A5 | Per-file memory cap ~16–32 KB and total budget exact values are planner-chosen (D-08 discretion); suggested: 24 KB/file, 64 KB total | Pattern 3 | LOW — pure tuning |
 | A6 | `StreamChunk.Type` string `"thinking"` and `event.AgentThoughtChunk` kind naming follow the existing string-const conventions (blockText/blockToolUse style) | Pattern 4 | LOW — naming only; goconst lint enforces the convention mechanically |
 
-## Open Questions
+## Open Questions (RESOLVED — all four adopted by plans; resolutions recorded 2026-08-28 at plan revision)
 
 1. **Executor-level PreToolUse disposal after the gate join**
    - What we know: `withHooks` fires PreToolUse at the executor today; post-join the gate head owns verdicts (Pitfall 2).
    - What's unclear: whether to delete the PreToolUse leg of `withHooks` in Phase 21 or keep it as a no-op seam for kit-extraction symmetry (Phase 25).
    - Recommendation: delete the PreToolUse consultation (keep PostToolUse), and let Phase 25 re-home if the kit needs the seam; a dead policy seam is a bypass risk, not a convenience.
+   - **RESOLVED:** recommendation adopted — 21-06 Task 2 deletes the executor PreToolUse leg (keeping PostToolUse) with the single-consultation grep audit as its acceptance gate; Phase 25 re-homes if the kit needs the seam.
 
 2. **Plugin-hook matcher dialect migration scope**
    - What we know: settings hooks should use CC's two-path dialect (Pitfall 3); D-02 says "existing plugin hooks unchanged."
    - What's unclear: whether "unchanged" covers matcher semantics or only the JSON verdict channel compatibility.
    - Recommendation: unchanged = plugin hooks keep the current regex-everything behavior; settings hooks get the dialect. Document as a known divergence in the hook-runner doc comment.
+   - **RESOLVED:** recommendation adopted — 21-01 Task 1 applies the two-path dialect to scopeProject/scopeUser hooks only and pins the split with table rows (settings matcher "Edit" does not match "NotebookEdit"; plugin matcher "Edit" still does); the divergence is documented in the hook-runner doc comment.
 
 3. **Where image bytes live in the transcript vs request**
    - What we know: D-09 requires original bytes preserved on disk + provenance in the transcript; the request carries (possibly downscaled) base64.
    - What's unclear: whether the transcript stores the base64 payload inline (transcript bloat: 10 MB/image) or a file reference + hash with the audit body store (the 09-05 request_shaped precedent: metadata-in-line, body-by-Ref).
    - Recommendation: follow the 09-05 discipline — transcript line carries dims/media-type/resize-provenance + Ref; full bytes live on disk (originals) and in the request only. Planner confirms against transcript-size budgets.
+   - **RESOLVED:** 09-05 discipline adopted and confirmed against transcript-size budgets — 21-05 Task 1 persists original+scaled bytes under the session .ass-guard images dir (sha-keyed) and carries Ref + metadata + resize provenance in the transcript line, with an explicit no-base64-in-transcript test.
 
 4. **`ask` in ungated mode before Phase 17 lands**
    - What we know: D-04 locks ask-routes-to-ask-step "even in ungated mode."
    - What's unclear: nothing semantically — but mechanically the ask step is 17-02's gateSuspend+queue, so the D-04 behavior cannot exist until the join lands.
    - Recommendation: the join plan implements D-04 fully; pre-join, the resolver emits the verdict but the consumption site (gate) doesn't exist — which is exactly why the join is the final, precondition-marked plan.
+   - **RESOLVED:** recommendation adopted — 21-06 Task 1 (the final, Phase-17-preconditioned tracer) implements D-04 fully (ask → gateSuspend unconditionally, ungated included), with the hookless-ungated zero-dialog control pinned in the same battery.
 
 ## Sources
 

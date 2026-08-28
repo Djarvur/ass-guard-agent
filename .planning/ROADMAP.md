@@ -283,7 +283,7 @@ Plans:
   4. Extended thinking renders live in Zed as thought chunks, and thinking blocks round-trip byte-identical including the Anthropic cryptographic signature through transcript/redactor/projector — no 400s from edited or reordered signatures.
   5. Pasting an image reference or @-mention into the prompt produces the corresponding content block in the outgoing request (@ expansion gated by Read-tool rules with provenance; ingress validated per provider shape — unsupported shapes degrade loudly, not silently).
 
-**Plans**: 5 plans
+**Plans**: 6 plans
 
 Plans:
 **Wave 1**
@@ -297,11 +297,15 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 21-04-PLAN.md — Rich content: @-mentions + image ingress (pure-Go downscale) + provider capability (PAR-06, D-09..D-11)
+- [ ] 21-04-PLAN.md — @-mention expansion: parse-only extraction in ecosys + Read-rule-gated runtime expansion + per-mention provenance (PAR-06, D-10)
 
-**Wave 4** *(blocked on Wave 3 completion; preconditions on Phase 17 executed)*
+**Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 21-05-PLAN.md — TRACER gate-join: hook verdicts join gateCall's head + executor-leg disposal + Read-rule wiring (PAR-03 join, criterion 1+2, D-04)
+- [ ] 21-05-PLAN.md — Image ingress: DecodeConfig-first validation + pure-Go auto-downscale + Ref-based transcript lines + provider capability D-11 (PAR-06, D-09, D-11)
+
+**Wave 5** *(blocked on Wave 4 completion; preconditions on Phase 17 executed)*
+
+- [ ] 21-06-PLAN.md — TRACER gate-join: hook verdicts join gateCall's head + executor-leg disposal + Read-rule wiring (PAR-03 join, criterion 1+2, D-04)
 
 ### Phase 22: Background Execution + Sandbox Reality
 
