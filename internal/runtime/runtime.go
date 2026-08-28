@@ -471,6 +471,14 @@ func (r *Runner) Run(
 	emit acp.ChunkEmitter, prompt []acp.ContentBlock,
 ) (string, error) {
 	sess := r.sessionFor(ctx, sessionID)
+	if sess == nil {
+		// 16-REVIEW WR-05: sessionFor could not construct the session (both
+		// transcript locations unusable — the cause is on stderr). A typed
+		// error surfaces the real failure; the old shape nil-derefed in the
+		// turn path and the client only ever saw a generic -32603.
+		//nolint:err113 // dynamic, caller-facing
+		return "", fmt.Errorf("session %s unavailable: transcript manager could not be created", sessionID)
+	}
 
 	// 12-07 (D-02 queue semantics): the per-session turn serialization — the
 	// whole turn (ask-reply resumes included) holds the session mutex, so an
@@ -1027,8 +1035,21 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop // groupi
 
 	mgr, err := session.NewManager(dir, sessionID, redactorAdapter{})
 	if err != nil {
-		// Fall back to a no-op manager path; the error is surfaced via Prompt.
-		mgr, _ = session.NewManager(filepath.Join(os.TempDir(), "ass-guard"), sessionID, redactorAdapter{})
+		log.Printf("ass-guard: transcript open failed for %s (%v); retrying in temp", dir, err)
+
+		mgr, err = session.NewManager(filepath.Join(os.TempDir(), "ass-guard"), sessionID, redactorAdapter{})
+		if err != nil {
+			// 16-REVIEW WR-05: both transcript locations are unusable. The old
+			// code discarded this error and left mgr nil — the very next
+			// mgr.Path() use panicked, recovered per-dispatch into a generic
+			// -32603 on EVERY prompt with the real cause (both locations
+			// unwritable) swallowed. Degrade deterministically: nil session,
+			// typed caller error, loud stderr.
+			log.Printf("ass-guard: transcript open failed in temp too (%v) — session %s is unavailable",
+				err, sessionID)
+
+			return nil
+		}
 	}
 
 	maxConc := r.maxConc
