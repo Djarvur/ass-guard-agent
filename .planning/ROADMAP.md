@@ -391,10 +391,18 @@ Plans:
 **Plans**: 5 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 24-01-PLAN.md — TAIL-01 core: outcome store + seam-replay aggregation (TDD, D-07 contract)
-- [ ] 24-02-PLAN.md — TAIL-01 live wiring: record at real dispatch sites + stats CLI + live demotion
 - [ ] 24-03-PLAN.md — DOC-01: docs/lsp-setup.md three-leg Zed guide + D-03 dry-run (checkpoint: A1 server choice)
 - [ ] 24-04-PLAN.md — TAIL-02: nightly drift core + first GitHub Actions workflow + dispatch smoke
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 24-02-PLAN.md — TAIL-01 live wiring: record at real dispatch sites + stats CLI + live demotion
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 24-05-PLAN.md — TAIL-03: ECOS-04 4x3 mode/surface harness with loud precondition marks (checkpoint: real-plugin spot-check)
 
 ### Phase 25: SEED-001 Kit Extraction (strictly last)
