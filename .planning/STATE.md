@@ -6,15 +6,15 @@ current_phase: 25
 current_phase_name: seed-001-kit-extraction-strictly-last
 current_plan: 1
 status: executing
-stopped_at: 25-01 halted at Task 3 precondition (phase-ordering blocker); Tasks 1-2 done (commit 03db89d)
-last_updated: "2026-08-28T12:21:46.906Z"
+stopped_at: 16-07 complete (CR-01 barrier broadcast, gaps 1+2 closed; commits dc02474/20333dd/4fddf9f); 25-01 still halted at Task 3 phase-ordering precondition
+last_updated: "2026-08-28T12:42:36.625Z"
 last_activity: 2026-08-28
 last_activity_desc: Phase 25 execution started
 progress:
   total_phases: 11
   completed_phases: 1
   total_plans: 69
-  completed_plans: 13
+  completed_plans: 14
   percent: 9
 state_head: 9ba2baa14bf99d55b37abcf41ae713e522306276
 ---
@@ -59,6 +59,7 @@ Progress: [████████░░░░░░░░░░░] 8/29 plans
 | Phase 16 P03 | 38 min | 3 tasks | 10 files |
 | Phase 16 P05 | 49 min | 3 tasks | 11 files |
 | Phase 16 P06 | 49 min | 3 tasks | 4 files |
+| Phase 16 P07 | 11 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -94,6 +95,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 16]: 16-06: soak chaos mapping — per-producer mid-block ctx cancel is the unit contract (TestTurnEmitterCtxAbort); the soak's equivalent is abrupt producer exits + barrier-ctx cancels; flooders + long-stall tormentor make stall-detector-fired deterministic (2min run: 4,056,534 frames, 160 episodes)
 - [Phase 16]: 16-06: operator live-Zed checkpoint surfaced and recorded PENDING-OPERATOR-CONFIRMATION (WINDOWS #11) — criteria 1/4 await the operator; ACP-03 + ACP-08 marked complete as the last declaring sibling
 - [Phase ?]: [Phase 25 P01 Task 1, AUTO-SELECTED 2026-08-28]: D-02 one-way gate — option-a 'Proceed' (kit/ tree inside the single module per D-01/D-02/D-07) auto-selected under auto_advance; takes effect at the tracer commit. Tracer itself NOT yet executed — blocked by the phase-ordering precondition.
+- [Phase ?]: 16-07: CR-01 fixed as verifier-named per-generation broadcast (writeOut closes+swaps wake under mu), not sync.Cond — drain stays the only writer/closer, single-writer total order and D-01 untouched
+- [Phase ?]: 16-07: adjacency probe decided — concurrent Barrier waiters stay separate, each re-checks written independently; pinned by TestTurnEmitterBarrierConcurrentWaiters with never-cancelled ctxs (no Done escape)
 
 ### Pending Todos
 
@@ -114,6 +117,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-28T12:21:46.879Z
-Stopped at: 25-01 halted at Task 3 precondition (phase-ordering blocker); Tasks 1-2 done (commit 03db89d)
+Last session: 2026-08-28T12:42:36.559Z
+Stopped at: 16-07 complete (CR-01 barrier broadcast, gaps 1+2 closed; commits dc02474/20333dd/4fddf9f); 25-01 still halted at Task 3 phase-ordering precondition
 Resume file: None
