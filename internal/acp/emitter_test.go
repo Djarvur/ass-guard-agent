@@ -503,6 +503,8 @@ func TestTurnEmitterBarrierConcurrentWaiters(t *testing.T) { //nolint:funlen // 
 	t.Parallel()
 
 	t.Run("same final frame satisfies both waiters", func(t *testing.T) {
+		t.Parallel()
+
 		gw := newGatedWriter()
 
 		em := NewTurnEmitter(sinkView{gw}, &syncBuffer{}, TurnEmitterConfig{})
@@ -512,7 +514,8 @@ func TestTurnEmitterBarrierConcurrentWaiters(t *testing.T) { //nolint:funlen // 
 
 		// Frame 1: the drain picks it up and wedges INSIDE sink.Write, so
 		// written stays 0 while the whole turn is enqueued.
-		if err := fg.AgentMessageChunk("fg-0", "x"); err != nil {
+		err := fg.AgentMessageChunk("fg-0", "x")
+		if err != nil {
 			t.Fatalf("enqueue fg-0: %v", err)
 		}
 
@@ -524,7 +527,8 @@ func TestTurnEmitterBarrierConcurrentWaiters(t *testing.T) { //nolint:funlen // 
 
 		// Frame 2: queued behind the wedged write. Both Barriers below target
 		// written >= 2 — the FINAL frame satisfies both (the CR-01 shape).
-		if err := fg.AgentMessageChunk("fg-1", "x"); err != nil {
+		err = fg.AgentMessageChunk("fg-1", "x")
+		if err != nil {
 			t.Fatalf("enqueue fg-1: %v", err)
 		}
 
@@ -532,9 +536,10 @@ func TestTurnEmitterBarrierConcurrentWaiters(t *testing.T) { //nolint:funlen // 
 
 		done := make(chan struct{}, waiters)
 
-		for i := 0; i < waiters; i++ {
+		for range waiters {
 			go func() {
 				em.Barrier(context.Background()) // connection-lifetime ctx: no Done escape
+
 				done <- struct{}{}
 			}()
 		}
@@ -545,7 +550,7 @@ func TestTurnEmitterBarrierConcurrentWaiters(t *testing.T) { //nolint:funlen // 
 
 		gw.release()
 
-		for i := 0; i < waiters; i++ {
+		for i := range waiters {
 			select {
 			case <-done:
 			case <-time.After(2 * time.Second):
@@ -560,6 +565,8 @@ func TestTurnEmitterBarrierConcurrentWaiters(t *testing.T) { //nolint:funlen // 
 	})
 
 	t.Run("a lone waiter still wakes per frame", func(t *testing.T) {
+		t.Parallel()
+
 		gw := newGatedWriter()
 
 		em := NewTurnEmitter(sinkView{gw}, &syncBuffer{}, TurnEmitterConfig{})
@@ -567,7 +574,8 @@ func TestTurnEmitterBarrierConcurrentWaiters(t *testing.T) { //nolint:funlen // 
 
 		fg := em.ForegroundHandle("sess")
 
-		if err := fg.AgentMessageChunk("fg-0", "x"); err != nil {
+		err := fg.AgentMessageChunk("fg-0", "x")
+		if err != nil {
 			t.Fatalf("enqueue fg-0: %v", err)
 		}
 
@@ -581,6 +589,7 @@ func TestTurnEmitterBarrierConcurrentWaiters(t *testing.T) { //nolint:funlen // 
 
 		go func() {
 			em.Barrier(context.Background()) // target=1: the FIRST written frame satisfies it
+
 			done <- struct{}{}
 		}()
 
@@ -589,7 +598,8 @@ func TestTurnEmitterBarrierConcurrentWaiters(t *testing.T) { //nolint:funlen // 
 
 		// A second frame enqueued WHILE the waiter is parked must not disturb
 		// the plain per-frame wake its target already satisfies.
-		if err := fg.AgentMessageChunk("fg-1", "x"); err != nil {
+		err = fg.AgentMessageChunk("fg-1", "x")
+		if err != nil {
 			t.Fatalf("enqueue fg-1: %v", err)
 		}
 
