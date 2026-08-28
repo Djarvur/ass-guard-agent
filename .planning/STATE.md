@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Claude Code Parity
-current_phase: 20
-current_phase_name: Built-in Commands + Skills + Per-Agent Model
+current_phase: 21
+current_phase_name: Context & Policy Parity Closures
 current_plan: 6
 status: executing
 stopped_at: Completed 16-06-PLAN.md
-last_updated: "2026-08-27T23:50:40.045Z"
+last_updated: "2026-08-28T01:21:42.803Z"
 last_activity: 2026-08-27
 last_activity_desc: 16-06 executed — simulator, soak, and the operator checkpoint recorded pending
-state_head: c89dbff3798064f6a0e9f4538abd5f64a9d8bbbf
+state_head: c51ef423564f1d1c135290b0cd76f21dc3eb6517
 progress:
   total_phases: 11
   completed_phases: 1
-  total_plans: 38
+  total_plans: 44
   completed_plans: 13
   percent: 9
 ---
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-08-27)
 
 ## Current Position
 
-Phase: 20 (Built-in Commands + Skills + Per-Agent Model) — READY TO EXECUTE
+Phase: 21 (Context & Policy Parity Closures) — READY TO EXECUTE
 Current Plan: 6
 Total Plans in Phase: 6
 Status: Ready to execute
