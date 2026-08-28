@@ -128,9 +128,10 @@ type Runner struct {
 	schedCfg *modelrouting.Config
 
 	// 16-05 (ACP-08 live apply): the effective model an editor-driven
-	// config change stamped ("" = the profile's own model). ApplyTurnModel
-	// writes it under modelMu; sessionFor reads it to stamp sessions created
-	// after the change.
+	// config change stamped. "" = no editor stamp — the tier-resolved config
+	// default governs the wire (16-09 gap 4b chip parity: defaultTurnModel),
+	// NOT the profile's own model. ApplyTurnModel writes it under modelMu;
+	// sessionFor reads it to stamp sessions created after the change.
 	modelMu        sync.Mutex
 	effectiveModel string
 
@@ -1061,7 +1062,15 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop // groupi
 	// 16-05 (ACP-08 live apply): sessions created after an editor-driven model
 	// change stamp the effective model at construction — the future-sessions
 	// leg of the live-apply seam (the live-session leg is ApplyTurnModel).
-	if m := r.effectiveModelFor(); m != "" {
+	// 16-09 (gap 4b): with NO editor stamp the default is the tier-resolved
+	// config model — the same value the advertisement displays (chip==wire);
+	// the explicit stamp keeps absolute precedence (D-12).
+	m := r.effectiveModelFor()
+	if m == "" {
+		m = r.defaultTurnModel()
+	}
+
+	if m != "" {
 		prof.Model = m
 	}
 
@@ -1510,12 +1519,47 @@ func (r *Runner) StartScheduler(ctx context.Context) { r.startScheduler(ctx) }
 func (r *Runner) CloseAllSessions() { r.closeAllSessions() }
 
 // effectiveModelFor returns the editor-stamped effective model ("" = none —
-// the profile's own model governs).
+// the tier-resolved config default governs, see defaultTurnModel).
 func (r *Runner) effectiveModelFor() string {
 	r.modelMu.Lock()
 	defer r.modelMu.Unlock()
 
 	return r.effectiveModel
+}
+
+// defaultTurnModel returns the tier-resolved config default for the wire
+// model (16-09 gap 4b — chip==wire): the SAME resolver-then-static-binding
+// ladder the advertisement's resolveModelLocked applies, so with no editor
+// stamp the model on the wire equals the advertised value (D-11). Ladder:
+// schedCfg == nil → "" (the documented profile-slug default of test runners);
+// the session tier, empty → the literal "heavy" (modelrouting's load floor —
+// loader-produced schedCfg never has an empty tier; the literal covers
+// hand-built schedCfg, and modelrouting's tierHeavy is unexported); the
+// resolver's primary; else the tier's static binding; else "".
+//
+// The default never rewires the live provider: it rides the same heavy-tier
+// resolution that picked the session provider (14-05), and cross-provider
+// targets keep the loud-degrade guards (the resolveSubagentModel precedent).
+func (r *Runner) defaultTurnModel() string {
+	if r.schedCfg == nil {
+		return ""
+	}
+
+	tier := r.schedCfg.SessionTier
+	if tier == "" {
+		tier = "heavy"
+	}
+
+	tgt, _, err := modelrouting.NewResolver(r.schedCfg).Resolve(tier, "", time.Now(), modelrouting.CapabilityReq{})
+	if err == nil && tgt.Model != "" {
+		return tgt.Model
+	}
+
+	if b, ok := r.schedCfg.Tiers[tier]; ok {
+		return b.Model
+	}
+
+	return ""
 }
 
 // advisoryNote is one collected advisory decision's client-note projection.

@@ -232,7 +232,8 @@ func tierDefaultTestConfig(t *testing.T) *modelrouting.Config {
 	content := "models:\n  " + testModelFromConfig + ":\n    provider: anthropic\n" +
 		"tiers:\n  " + testTierHeavy + ":\n    model: " + testModelFromConfig + "\n"
 
-	if werr := os.WriteFile(path, []byte(content), 0o600); werr != nil {
+	werr := os.WriteFile(path, []byte(content), 0o600)
+	if werr != nil {
 		t.Fatalf("write scheduling config: %v", werr)
 	}
 
@@ -257,109 +258,137 @@ func TestDefaultTurnModel_FollowsTierResolution(t *testing.T) {
 	t.Run("default-follows-tier-resolution", func(t *testing.T) {
 		t.Parallel()
 
-		gated := newGatedStreamProvider()
-
-		runner := newModelTestRunner(t, gated, testProfileSlug)
-		runner.schedCfg = tierDefaultTestConfig(t)
-
-		ctx := context.Background()
-
-		turnDone := startTestTurn(t, runner, "s-default", ctx)
-
-		// The pre-fix code sent the profile slug here (the operator-observed
-		// turn-001 divergence); the tier-resolved config model must ride out.
-		awaitSeenModelWhy(t, gated, testModelFromConfig,
-			"the tier-resolved default is chip==wire with no editor stamp")
-
-		close(gated.releaseFirst)
-		<-turnDone
+		defaultTurnTierResolutionSubtest(t)
 	})
 
 	t.Run("explicit-stamp-wins", func(t *testing.T) {
 		t.Parallel()
 
-		gated := newGatedStreamProvider()
-
-		runner := newModelTestRunner(t, gated, testProfileSlug)
-		runner.schedCfg = tierDefaultTestConfig(t)
-
-		if aerr := runner.ApplyTurnModel(testModelExplicit); aerr != nil {
-			t.Fatalf("ApplyTurnModel: %v", aerr)
-		}
-
-		ctx := context.Background()
-
-		turnDone := startTestTurn(t, runner, "s-explicit", ctx)
-
-		// D-12: the editor write tops the chain — the tier default never
-		// overrides an explicit stamp.
-		awaitSeenModelWhy(t, gated, testModelExplicit, "the editor write tops the chain (D-12)")
-
-		close(gated.releaseFirst)
-		<-turnDone
+		defaultTurnExplicitStampSubtest(t)
 	})
 
 	t.Run("nil-config-keeps-profile-slug", func(t *testing.T) {
 		t.Parallel()
 
-		gated := newGatedStreamProvider()
-
-		// schedCfg stays nil — the documented test-runner default.
-		runner := newModelTestRunner(t, gated, testProfileSlug)
-
-		ctx := context.Background()
-
-		turnDone := startTestTurn(t, runner, "s-nil", ctx)
-
-		awaitSeenModelWhy(t, gated, testProfileSlug,
-			"nil schedCfg keeps the documented profile-slug default")
-
-		close(gated.releaseFirst)
-		<-turnDone
+		defaultTurnNilConfigSubtest(t)
 	})
 
 	t.Run("resolver-decline-falls-back-to-static-binding", func(t *testing.T) {
 		t.Parallel()
 
-		gated := newGatedStreamProvider()
-
-		runner := newModelTestRunner(t, gated, testProfileSlug)
-		// Hand-built schedCfg: the heavy binding's model is NOT declared in
-		// models (Resolve declines) and the fixture window's schedule is
-		// malformed, so the window is never active (the T-16-09-03
-		// malformed-window degrade). The static binding's slug must be
-		// stamped — exactly the advertisement's resolveModelLocked fallback
-		// (chip parity).
-		runner.schedCfg = &modelrouting.Config{
-			Timezone:    "UTC",
-			SessionTier: testTierHeavy,
-			Providers: map[string]modelrouting.ProviderConfig{
-				"anthropic": {BaseURL: "https://fallback.invalid", Shape: "anthropic"},
-			},
-			Models: map[string]modelrouting.ModelConfig{},
-			Tiers: map[string]modelrouting.TierBinding{
-				testTierHeavy: {Model: testModelStaticBind},
-			},
-			TimeWindows: []modelrouting.TimeWindow{{
-				Name:     "never-active",
-				Zone:     "UTC",
-				Schedule: modelrouting.Schedule{From: "99:99", To: "00:00"},
-				Tiers: map[string]modelrouting.TierBinding{
-					testTierHeavy: {Model: testModelFromConfig},
-				},
-			}},
-		}
-
-		ctx := context.Background()
-
-		turnDone := startTestTurn(t, runner, "s-fallback", ctx)
-
-		awaitSeenModelWhy(t, gated, testModelStaticBind,
-			"a resolver decline falls back to the static binding (chip parity)")
-
-		close(gated.releaseFirst)
-		<-turnDone
+		defaultTurnResolverDeclineSubtest(t)
 	})
+}
+
+// defaultTurnTierResolutionSubtest: with no editor stamp and a loaded
+// schedCfg, the tier-resolved config model rides out — not the profile slug
+// (the operator-observed turn-001 divergence).
+func defaultTurnTierResolutionSubtest(t *testing.T) {
+	t.Helper()
+
+	gated := newGatedStreamProvider()
+
+	runner := newModelTestRunner(t, gated, testProfileSlug)
+	runner.schedCfg = tierDefaultTestConfig(t)
+
+	ctx := context.Background()
+
+	turnDone := startTestTurn(t, runner, "s-default", ctx)
+
+	awaitSeenModelWhy(t, gated, testModelFromConfig,
+		"the tier-resolved default is chip==wire with no editor stamp")
+
+	close(gated.releaseFirst)
+	<-turnDone
+}
+
+// defaultTurnExplicitStampSubtest: D-12 — the editor write tops the chain;
+// the tier default never overrides an explicit stamp.
+func defaultTurnExplicitStampSubtest(t *testing.T) {
+	t.Helper()
+
+	gated := newGatedStreamProvider()
+
+	runner := newModelTestRunner(t, gated, testProfileSlug)
+	runner.schedCfg = tierDefaultTestConfig(t)
+
+	aerr := runner.ApplyTurnModel(testModelExplicit)
+	if aerr != nil {
+		t.Fatalf("ApplyTurnModel: %v", aerr)
+	}
+
+	ctx := context.Background()
+
+	turnDone := startTestTurn(t, runner, "s-explicit", ctx)
+
+	awaitSeenModelWhy(t, gated, testModelExplicit, "the editor write tops the chain (D-12)")
+
+	close(gated.releaseFirst)
+	<-turnDone
+}
+
+// defaultTurnNilConfigSubtest: a Runner with schedCfg == nil keeps the
+// documented profile-slug default (test runners).
+func defaultTurnNilConfigSubtest(t *testing.T) {
+	t.Helper()
+
+	gated := newGatedStreamProvider()
+
+	// schedCfg stays nil — the documented test-runner default.
+	runner := newModelTestRunner(t, gated, testProfileSlug)
+
+	ctx := context.Background()
+
+	turnDone := startTestTurn(t, runner, "s-nil", ctx)
+
+	awaitSeenModelWhy(t, gated, testProfileSlug,
+		"nil schedCfg keeps the documented profile-slug default")
+
+	close(gated.releaseFirst)
+	<-turnDone
+}
+
+// defaultTurnResolverDeclineSubtest: hand-built schedCfg whose heavy binding's
+// model is NOT declared in models (Resolve declines) and whose fixture
+// window's schedule is malformed, so the window is never active (the
+// T-16-09-03 malformed-window degrade). The static binding's slug must be
+// stamped — exactly the advertisement's resolveModelLocked fallback (chip
+// parity).
+func defaultTurnResolverDeclineSubtest(t *testing.T) {
+	t.Helper()
+
+	gated := newGatedStreamProvider()
+
+	runner := newModelTestRunner(t, gated, testProfileSlug)
+	runner.schedCfg = &modelrouting.Config{
+		Timezone:    "UTC",
+		SessionTier: testTierHeavy,
+		Providers: map[string]modelrouting.ProviderConfig{
+			"anthropic": {BaseURL: "https://fallback.invalid", Shape: "anthropic"},
+		},
+		Models: map[string]modelrouting.ModelConfig{},
+		Tiers: map[string]modelrouting.TierBinding{
+			testTierHeavy: {Model: testModelStaticBind},
+		},
+		TimeWindows: []modelrouting.TimeWindow{{
+			Name:     "never-active",
+			Zone:     "UTC",
+			Schedule: modelrouting.Schedule{From: "99:99", To: "00:00"},
+			Tiers: map[string]modelrouting.TierBinding{
+				testTierHeavy: {Model: testModelFromConfig},
+			},
+		}},
+	}
+
+	ctx := context.Background()
+
+	turnDone := startTestTurn(t, runner, "s-fallback", ctx)
+
+	awaitSeenModelWhy(t, gated, testModelStaticBind,
+		"a resolver decline falls back to the static binding (chip parity)")
+
+	close(gated.releaseFirst)
+	<-turnDone
 }
 
 // TestApplyTurnModel_StampsFutureSessions pins the future-sessions leg:
