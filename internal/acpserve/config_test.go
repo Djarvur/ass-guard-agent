@@ -466,6 +466,83 @@ func TestScopeRouting_DefaultWritesProjectLayer(t *testing.T) {
 	}
 }
 
+// TestScopeRouting_GlobalWritePersistsWhenCombinedMatches pins the scope-aware
+// idempotence basis (16-08 gap closure: WR-05 gaps 3+5, one root cause): a
+// _global/-scoped write whose value equals the COMBINED (project-won) effective
+// value but differs from the GLOBAL layer's own value must reach the global
+// layer. The scope-blind guard classified it as a redundant re-push and
+// silently swallowed the operator's explicitly global mutation.
+func TestScopeRouting_GlobalWritePersistsWhenCombinedMatches(t *testing.T) {
+	t.Parallel()
+
+	t.Run("differing-addressed-layer-value-persists", func(t *testing.T) {
+		t.Parallel()
+
+		f := newSurfaceFixture(t)
+		// Project layer wins the COMBINED resolution with GLM-5.3; the global
+		// layer's own value is glm-5.2.
+		writeLayer(t, f.projectPath, "tiers:\n  heavy:\n    model: "+testModelPrimary+"\n")
+		writeLayer(t, f.globalPath, "tiers:\n  heavy:\n    model: "+testModelFallback+"\n")
+
+		opts, err := f.surface.Set("sess-1", "_global/model", testModelPrimary)
+		if err != nil {
+			t.Fatalf("Set(_global/model) equal to the combined effective: %v", err)
+		}
+
+		assertEight(t, opts, "global-scope set response")
+
+		// Read back through the REAL loader: the global file must carry the
+		// written value (the silent swallow kept glm-5.2 on disk).
+		cfg, err := modelrouting.Load(f.globalPath)
+		if err != nil {
+			t.Fatalf("reload global layer: %v", err)
+		}
+
+		if cfg.Tiers[testTierHeavy].Model != testModelPrimary {
+			t.Errorf("global tiers.heavy.model = %q; want the explicitly global write %q persisted",
+				cfg.Tiers[testTierHeavy].Model, testModelPrimary)
+		}
+
+		if got := strings.Count(f.stderr.String(), "idempotent"); got != 0 {
+			t.Errorf("legitimate global mutation classified as an idempotent re-push (%d log lines) — silent swallow",
+				got)
+		}
+	})
+
+	t.Run("addressed-layer-true-idempotence", func(t *testing.T) {
+		t.Parallel()
+
+		f := newSurfaceFixture(t)
+		// The GLOBAL layer genuinely holds glm-5.2; no project layer — the
+		// combined effective is glm-5.2 as well.
+		writeLayer(t, f.globalPath, "tiers:\n  heavy:\n    model: "+testModelFallback+"\n")
+		writeLayer(t, f.projectPath, unrelatedLayer)
+
+		globalBefore := readLayerBytes(t, f.globalPath)
+
+		opts, err := f.surface.Set("sess-1", "_global/model", testModelFallback)
+		if err != nil {
+			t.Fatalf("Set(_global/model) equal to the global layer's value: %v", err)
+		}
+
+		assertEight(t, opts, "global idempotent response")
+
+		if got := readLayerBytes(t, f.globalPath); got != globalBefore {
+			t.Errorf("true global idempotence churned the global file:\nbefore=%q\nafter=%q",
+				globalBefore, got)
+		}
+
+		if got := strings.Count(f.stderr.String(), "idempotent"); got != 1 {
+			t.Errorf("idempotent log lines = %d; want exactly 1 (the addressed layer holds the value) (stderr=%q)",
+				got, f.stderr.String())
+		}
+
+		if f.notifyCount() != 0 {
+			t.Error("global idempotent re-push emitted a config_option_update (nothing changed)")
+		}
+	})
+}
+
 func TestSetIdempotent_BlobDerivedEffective(t *testing.T) {
 	t.Parallel()
 
