@@ -283,7 +283,25 @@ Plans:
   4. Extended thinking renders live in Zed as thought chunks, and thinking blocks round-trip byte-identical including the Anthropic cryptographic signature through transcript/redactor/projector — no 400s from edited or reordered signatures.
   5. Pasting an image reference or @-mention into the prompt produces the corresponding content block in the outgoing request (@ expansion gated by Read-tool rules with provenance; ingress validated per provider shape — unsupported shapes degrade loudly, not silently).
 
-**Plans**: TBD
+**Plans**: 5 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 21-01-PLAN.md — Hook substrate: settings-scope loading + JSON verdicts + deny-wins ResolveVerdict in internal/ecosys (PAR-03 substrate, D-01..D-04)
+- [ ] 21-02-PLAN.md — Memory injection: AGENTS.md/CLAUDE.md walker + mtime cache + fourth profile-copy merge (PAR-04, D-05..D-08)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 21-03-PLAN.md — Thinking pipeline: SSE → StreamChunk → transcript → agent_thought_chunk → projector → shaper + D-14 goldens (PAR-05, D-12..D-14)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 21-04-PLAN.md — Rich content: @-mentions + image ingress (pure-Go downscale) + provider capability (PAR-06, D-09..D-11)
+
+**Wave 4** *(blocked on Wave 3 completion; preconditions on Phase 17 executed)*
+
+- [ ] 21-05-PLAN.md — TRACER gate-join: hook verdicts join gateCall's head + executor-leg disposal + Read-rule wiring (PAR-03 join, criterion 1+2, D-04)
 
 ### Phase 22: Background Execution + Sandbox Reality
 
