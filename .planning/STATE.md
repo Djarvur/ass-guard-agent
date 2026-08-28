@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Claude Code Parity
-current_phase: 24
-current_phase_name: Documentation & Ops Tails
+current_phase: 25
+current_phase_name: SEED-001 Kit Extraction (strictly last)
 current_plan: 6
 status: executing
 stopped_at: Completed 16-06-PLAN.md
-last_updated: "2026-08-28T06:15:04.960Z"
+last_updated: "2026-08-28T07:58:10.410Z"
 last_activity: 2026-08-27
 last_activity_desc: 16-06 executed — simulator, soak, and the operator checkpoint recorded pending
-state_head: 7ae5b9c8002ebcd7e4b224dbf2fca07537ee3e7f
+state_head: 9ba2baa14bf99d55b37abcf41ae713e522306276
 progress:
   total_phases: 11
   completed_phases: 1
-  total_plans: 60
+  total_plans: 69
   completed_plans: 13
   percent: 9
 ---
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-08-27)
 
 ## Current Position
 
-Phase: 24 (Documentation & Ops Tails) — READY TO EXECUTE
+Phase: 25 (SEED-001 Kit Extraction (strictly last)) — READY TO EXECUTE
 Current Plan: 6
-Total Plans in Phase: 5
+Total Plans in Phase: 9
 Status: Ready to execute
 Last activity: 2026-08-27 — 16-06 executed (Zed simulator E2E, adversarial soak + mise task, operator checkpoint recorded pending; 3 tasks, 3 commits)
 
