@@ -356,7 +356,25 @@ Plans:
   4. `/undo` restores the last checkpoint instantly with no model turn (class-B), and the restored workspace is byte-identical to the pre-turn snapshot.
   5. The steering queue API is transport-neutral (consumable by a non-ACP frontend) — Telegram could adopt it without rework.
 
-**Plans**: TBD
+**Plans**: 5 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 23-01-PLAN.md — SEEDG-01 steering core: transport-neutral SteerQueue, boundary drain at the runTurn iteration top, steering_delivery fold (anchor-safe, replay-parity)
+- [ ] 23-03-PLAN.md — SEEDG-02 store guards: pre-restore snapshot id family (three-site grammar), nested-repo refusal, age+count GC with object expiry, user-repo .git/info/exclude append
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 23-02-PLAN.md — SEEDG-01 ingress: pre-mutex input classifier, steered-prompt response semantics (return-after-enqueue), parked-ask visibility + cancel grammar, combined-scenario + engine-chain E2E
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 23-04-PLAN.md — SEEDG-02 composition: Runner-level store handle, restore guard over turnActive/chainCount, session-start GC sweep, checkpoint.expiry_days/max_per_session configOptions + persistence + read-back
+
+**Wave 4** *(blocked on Wave 3 completion + Phase 20 class-B contract)*
+
+- [ ] 23-05-PLAN.md — SEEDG-03 /undo: 14th RESERVED class-B name, D-11 stack walk, D-12 auto-cancel-then-restore, /undo battery + live-Zed UAT checkpoint
 
 ### Phase 24: Documentation & Ops Tails
 
