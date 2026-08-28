@@ -442,20 +442,23 @@ const (
 | A5 | Real CC plugin choice for the D-14 spot-check (one per surface) — Claude's discretion per CONTEXT; research made no choice | Pitfall list / TAIL-03 | Low |
 | A6 | `Usage` data availability at the recording site: streaming `usage` chunks exist [VERIFIED: internal/provider/provider.go:41,60-61], but whether the session turn layer surfaces them per-dispatch was not traced end-to-end this session | Pitfall 7 | Medium — if usage is not reachable at the recording site, tokens/cost stay zero and cost-degrade feedback needs the documented zero-handling |
 
-## Open Questions
+## Open Questions (RESOLVED in planning)
 
 1. **Which LSP-capable MCP server is the dry-run's worked example?**
    - What we know: Zed's native LSP surface doesn't reach external agents; ass-guard consumes `.mcp.json` today; Serena explicitly excluded by operator framing; the generic LSP-MCP pattern is "secondary" per D-01.
    - What's unclear: whether the operator wants (a) the doc to keep Zed-as-framing with the honest surface + `.mcp.json` dry-run leg (research recommendation), or (b) to name a specific LSP MCP server for the worked example.
    - Recommendation: planner carries A1 into the plan as a checkpoint:human-confirm before the doc task finalizes its worked example; the status-table doc structure works under either answer.
+   - **RESOLVED (planning):** carried forward exactly as recommended — plan 24-03 opens with a blocking `checkpoint:decision` ("Which LSP-capable MCP server anchors the worked example and the D-03 dry-run", citing A1/OQ1) before any doc task finalizes its config snippets; Zed-as-framing + the `.mcp.json` dry-run leg is locked as the doc structure either way.
 2. **Where exactly does the live path start consulting aggregated outcomes?**
    - What we know: the seams exist (`SetBreakers`/`SetCostTracker`, resolver fallback ordering via `TierBinding.Fallback`); production drives only the Resolver today.
    - What's unclear: whether Phase 24 wires `Scheduler.Dispatch` into the live turn loop (bigger blast radius) or attaches recording + feedback at the two Resolve call sites + the Send site (smaller, matches D-06's letter).
    - Recommendation: plan a dedicated design task for TAIL-01 with the D-07 test written first as the contract.
+   - **RESOLVED (planning):** the smaller-blast-radius option is locked — decided in plan 24-01 (Scheduler NOT wired into the live turn loop; recording at the real Send/Stream sites, feedback re-enters via the Breaker seam at the two live Resolve call sites) and implemented in plan 24-02 (D-06/D-07), with `Scheduler.Dispatch` staying unwired.
 3. **Does the nightly re-capture from zcode, or only probe + compare?**
    - What we know: D-09 says "zcode version probe + profile structure hash vs pinned capture + build/test"; the drift CLI's live path reads "the freshest main rollout line" (profile_check.go doc).
    - What's unclear: whether the self-hosted job runs a zcode recapture (heavier, needs the recapture runbook) or a version probe + hash comparison (lighter, deterministic).
    - Recommendation: light path (probe + hash + `mise ci`) for v1 of the workflow; recapture stays the operator runbook (docs/recapture-runbook.md exists).
+   - **RESOLVED (planning):** plan 24-04 implements the recommended light path — the unattended job executes probe + structure hash + build/test only; recapture stays the operator runbook (docs/recapture-runbook.md), never part of the job (see 24-04 must_haves "OQ3 RESOLVED").
 
 ## Environment Availability
 
