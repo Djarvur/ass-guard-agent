@@ -489,6 +489,124 @@ func TestTurnEmitterBarrier(t *testing.T) { //nolint:funlen // full server-level
 	}
 }
 
+// TestTurnEmitterBarrierConcurrentWaiters is the CR-01 regression (16-07): TWO
+// concurrent turn-end Barriers over one shared emitter whose targets are both
+// satisfied by the SAME final frame, each holding a connection-lifetime context
+// (context.Background() — deliberately NEVER cancelled, because escaping via a
+// short-lived ctx is exactly how the broken state hides: every pre-existing
+// waiter test could return through ctx.Done, so none proved the wake itself).
+// On the pre-fix capacity-1 token channel the final frame wakes at most ONE
+// waiter; the other is stranded at terminal state forever — the RED gate.
+// The lone-waiter subtest guards against over-correction: the broadcast must
+// not lose the plain single-waiter per-frame wake.
+func TestTurnEmitterBarrierConcurrentWaiters(t *testing.T) { //nolint:funlen // two scenarios, one regression
+	t.Parallel()
+
+	t.Run("same final frame satisfies both waiters", func(t *testing.T) {
+		gw := newGatedWriter()
+
+		em := NewTurnEmitter(sinkView{gw}, &syncBuffer{}, TurnEmitterConfig{})
+		defer em.Stop()
+
+		fg := em.ForegroundHandle("sess")
+
+		// Frame 1: the drain picks it up and wedges INSIDE sink.Write, so
+		// written stays 0 while the whole turn is enqueued.
+		if err := fg.AgentMessageChunk("fg-0", "x"); err != nil {
+			t.Fatalf("enqueue fg-0: %v", err)
+		}
+
+		select {
+		case <-gw.firstWrite:
+		case <-time.After(2 * time.Second):
+			t.Fatal("drain never picked up the first frame")
+		}
+
+		// Frame 2: queued behind the wedged write. Both Barriers below target
+		// written >= 2 — the FINAL frame satisfies both (the CR-01 shape).
+		if err := fg.AgentMessageChunk("fg-1", "x"); err != nil {
+			t.Fatalf("enqueue fg-1: %v", err)
+		}
+
+		const waiters = 2
+
+		done := make(chan struct{}, waiters)
+
+		for i := 0; i < waiters; i++ {
+			go func() {
+				em.Barrier(context.Background()) // connection-lifetime ctx: no Done escape
+				done <- struct{}{}
+			}()
+		}
+
+		// Let both waiters park while the sink holds write #1 (same bounded
+		// settle convention as TestTurnEmitterProducerCtxAbort).
+		time.Sleep(100 * time.Millisecond)
+
+		gw.release()
+
+		for i := 0; i < waiters; i++ {
+			select {
+			case <-done:
+			case <-time.After(2 * time.Second):
+				t.Fatalf("Barrier waiter %d/%d still parked after the final frame was written — lost wakeup (CR-01)",
+					i+1, waiters)
+			}
+		}
+
+		waitFor(t, "both frames written", 2*time.Second, func() bool {
+			return em.WrittenNotifications() == 2
+		})
+	})
+
+	t.Run("a lone waiter still wakes per frame", func(t *testing.T) {
+		gw := newGatedWriter()
+
+		em := NewTurnEmitter(sinkView{gw}, &syncBuffer{}, TurnEmitterConfig{})
+		defer em.Stop()
+
+		fg := em.ForegroundHandle("sess")
+
+		if err := fg.AgentMessageChunk("fg-0", "x"); err != nil {
+			t.Fatalf("enqueue fg-0: %v", err)
+		}
+
+		select {
+		case <-gw.firstWrite:
+		case <-time.After(2 * time.Second):
+			t.Fatal("drain never picked up the first frame")
+		}
+
+		done := make(chan struct{}, 1)
+
+		go func() {
+			em.Barrier(context.Background()) // target=1: the FIRST written frame satisfies it
+			done <- struct{}{}
+		}()
+
+		// Park the waiter before any further traffic (same settle convention).
+		time.Sleep(100 * time.Millisecond)
+
+		// A second frame enqueued WHILE the waiter is parked must not disturb
+		// the plain per-frame wake its target already satisfies.
+		if err := fg.AgentMessageChunk("fg-1", "x"); err != nil {
+			t.Fatalf("enqueue fg-1: %v", err)
+		}
+
+		gw.release()
+
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatal("lone Barrier waiter never woke on the frame that satisfied its target")
+		}
+
+		waitFor(t, "both frames written", 2*time.Second, func() bool {
+			return em.WrittenNotifications() == 2
+		})
+	})
+}
+
 // TestTurnEmitterEmptyTurn proves the zero-activity edge: a turn with no
 // streamed frames emits zero session/update notifications, its barrier returns
 // immediately (no stall, no delay), and the prompt response still arrives.
