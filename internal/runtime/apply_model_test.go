@@ -3,12 +3,15 @@ package runtime //nolint:testpackage // internal package test
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/event"
+	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 )
@@ -190,6 +193,173 @@ func awaitSeenModel(t *testing.T, gated *gatedStreamProvider, want string) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the second turn's request never opened")
 	}
+}
+
+// awaitSeenModelWhy is awaitSeenModel with a contract-specific failure note
+// (kept separate so the 16-05 tests above stay byte-identical).
+func awaitSeenModelWhy(t *testing.T, gated *gatedStreamProvider, want, why string) {
+	t.Helper()
+
+	select {
+	case got := <-gated.seen:
+		if got != want {
+			t.Errorf("next request model = %q; want %q (%s)", got, want, why)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the request never opened")
+	}
+}
+
+// 16-09 gap-4b fixtures (chip==wire): the profile slug the wire would carry
+// pre-fix, the config-resolved tier default, the explicit editor stamp, and
+// the static binding a resolver decline must fall back to.
+const (
+	testProfileSlug     = "model-profile-slug"
+	testModelFromConfig = "model-from-config"
+	testModelExplicit   = "model-explicit"
+	testModelStaticBind = "model-static-binding"
+	testTierHeavy       = "heavy"
+)
+
+// tierDefaultTestConfig loads a temp scheduling config whose heavy tier binds
+// testModelFromConfig (declared on the embedded floor's anthropic provider so
+// the loader's validation passes) — the config side of the chip==wire
+// invariant.
+func tierDefaultTestConfig(t *testing.T) *modelrouting.Config {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "scheduling.yaml")
+	content := "models:\n  " + testModelFromConfig + ":\n    provider: anthropic\n" +
+		"tiers:\n  " + testTierHeavy + ":\n    model: " + testModelFromConfig + "\n"
+
+	if werr := os.WriteFile(path, []byte(content), 0o600); werr != nil {
+		t.Fatalf("write scheduling config: %v", werr)
+	}
+
+	cfg, err := modelrouting.Load(path)
+	if err != nil {
+		t.Fatalf("load scheduling config: %v", err)
+	}
+
+	return cfg
+}
+
+// TestDefaultTurnModel_FollowsTierResolution pins the wire side of the 16-09
+// chip==wire invariant (gap 4b): with NO editor stamp the model on the wire is
+// the tier-resolved config model — the same value the ACP-08 advertisement
+// displays — while an explicit editor stamp keeps absolute precedence (D-12),
+// a nil schedCfg keeps the documented profile-slug default, and a resolver
+// decline falls back to the static binding exactly like the advertisement's
+// resolveModelLocked.
+func TestDefaultTurnModel_FollowsTierResolution(t *testing.T) {
+	t.Parallel()
+
+	t.Run("default-follows-tier-resolution", func(t *testing.T) {
+		t.Parallel()
+
+		gated := newGatedStreamProvider()
+
+		runner := newModelTestRunner(t, gated, testProfileSlug)
+		runner.schedCfg = tierDefaultTestConfig(t)
+
+		ctx := context.Background()
+
+		turnDone := startTestTurn(t, runner, "s-default", ctx)
+
+		// The pre-fix code sent the profile slug here (the operator-observed
+		// turn-001 divergence); the tier-resolved config model must ride out.
+		awaitSeenModelWhy(t, gated, testModelFromConfig,
+			"the tier-resolved default is chip==wire with no editor stamp")
+
+		close(gated.releaseFirst)
+		<-turnDone
+	})
+
+	t.Run("explicit-stamp-wins", func(t *testing.T) {
+		t.Parallel()
+
+		gated := newGatedStreamProvider()
+
+		runner := newModelTestRunner(t, gated, testProfileSlug)
+		runner.schedCfg = tierDefaultTestConfig(t)
+
+		if aerr := runner.ApplyTurnModel(testModelExplicit); aerr != nil {
+			t.Fatalf("ApplyTurnModel: %v", aerr)
+		}
+
+		ctx := context.Background()
+
+		turnDone := startTestTurn(t, runner, "s-explicit", ctx)
+
+		// D-12: the editor write tops the chain — the tier default never
+		// overrides an explicit stamp.
+		awaitSeenModelWhy(t, gated, testModelExplicit, "the editor write tops the chain (D-12)")
+
+		close(gated.releaseFirst)
+		<-turnDone
+	})
+
+	t.Run("nil-config-keeps-profile-slug", func(t *testing.T) {
+		t.Parallel()
+
+		gated := newGatedStreamProvider()
+
+		// schedCfg stays nil — the documented test-runner default.
+		runner := newModelTestRunner(t, gated, testProfileSlug)
+
+		ctx := context.Background()
+
+		turnDone := startTestTurn(t, runner, "s-nil", ctx)
+
+		awaitSeenModelWhy(t, gated, testProfileSlug,
+			"nil schedCfg keeps the documented profile-slug default")
+
+		close(gated.releaseFirst)
+		<-turnDone
+	})
+
+	t.Run("resolver-decline-falls-back-to-static-binding", func(t *testing.T) {
+		t.Parallel()
+
+		gated := newGatedStreamProvider()
+
+		runner := newModelTestRunner(t, gated, testProfileSlug)
+		// Hand-built schedCfg: the heavy binding's model is NOT declared in
+		// models (Resolve declines) and the fixture window's schedule is
+		// malformed, so the window is never active (the T-16-09-03
+		// malformed-window degrade). The static binding's slug must be
+		// stamped — exactly the advertisement's resolveModelLocked fallback
+		// (chip parity).
+		runner.schedCfg = &modelrouting.Config{
+			Timezone:    "UTC",
+			SessionTier: testTierHeavy,
+			Providers: map[string]modelrouting.ProviderConfig{
+				"anthropic": {BaseURL: "https://fallback.invalid", Shape: "anthropic"},
+			},
+			Models: map[string]modelrouting.ModelConfig{},
+			Tiers: map[string]modelrouting.TierBinding{
+				testTierHeavy: {Model: testModelStaticBind},
+			},
+			TimeWindows: []modelrouting.TimeWindow{{
+				Name:     "never-active",
+				Zone:     "UTC",
+				Schedule: modelrouting.Schedule{From: "99:99", To: "00:00"},
+				Tiers: map[string]modelrouting.TierBinding{
+					testTierHeavy: {Model: testModelFromConfig},
+				},
+			}},
+		}
+
+		ctx := context.Background()
+
+		turnDone := startTestTurn(t, runner, "s-fallback", ctx)
+
+		awaitSeenModelWhy(t, gated, testModelStaticBind,
+			"a resolver decline falls back to the static binding (chip parity)")
+
+		close(gated.releaseFirst)
+		<-turnDone
+	})
 }
 
 // TestApplyTurnModel_StampsFutureSessions pins the future-sessions leg:
