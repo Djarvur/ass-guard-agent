@@ -580,24 +580,30 @@ func TestKitHostsNonACPFrontend(t *testing.T) {
 | A4 | `sched.Automation`/`FireEvent` promote cleanly (pure data structs, no app imports) | Scheduler port | If they carry behavior the kit shouldn't own, fall back to kit-neutral mirrors + adapter (small cost) |
 | A5 | The kit-side host-proof test can drive a real turn with nil Catalog/Toolkit on the degraded path | Code Examples | If a full turn requires toolkit-registered tools, the proof test registers a minimal fake toolkit instead — still zero app imports |
 
-## Open Questions
+## Open Questions (RESOLVED in phase plans)
+
+> All four questions are resolved in the phase plans. Original questions retained below for traceability.
 
 1. **SessionToolkit interface shape (the coreexec seam)**
    - What we know: every coreexec touchpoint in the kit is enumerated (runtime.go:1107-1140,1240); the env struct's contents are exactly today's arguments; the nil/stub degraded path already exists (runtime.go:1222).
    - What's unclear: one coarse `Attach(catalog, env)` vs finer per-family methods (core/ask/interactive); whether `RenderAskSurface` rides the env or a separate config func-field.
    - Recommendation: start coarse (one Attach + env + Reaper), split only if a kit-only consumer needs partial toolkits; planner finalizes against the landed 21-06/22-04/22-06 coreexec state.
+   - **RESOLVED (25-07 Task 1):** coarse Attach + ToolkitEnv + Reaper; the ask-surface renderer is a RunnerConfig func-field, not an env field.
 2. **Home of the acp↔kit adapter**
    - What we know: D-14 says "the acp adapter"; acpserve is the composition root and 17-02's ask_surface.go already lands there; internal/acp hosting it would add acp→kit imports (allowed direction, but couples wire package to kit).
    - What's unclear: whether replay/session-family (Phase 18) adapters want the same home.
    - Recommendation: `internal/acpserve` hosts all adapters; revisit only if acp-internal code needs them.
+   - **RESOLVED (25-04 Task 2):** internal/acpserve hosts all acp↔kit adapters.
 3. **Stop-reason vocabulary ownership**
    - What we know: today `stopAskACP = "ask"` maps to `"end_turn"` kit-side (runtime.go:573-583); the kit returning its raw marker and the adapter mapping is cleaner D-14-wise.
    - What's unclear: whether any kit consumer (cron automation audit lines read `stop=`) depends on the mapped value.
    - Recommendation: audit lines keep the kit-raw stop; only the acp adapter maps — verify against cron_wiring.go:192-199 at planning time.
+   - **RESOLVED (25-04 Task 2, action step 3):** audit lines keep the kit-raw stop; only the adapter maps — verified against the landed cron wiring at execution time.
 4. **Exact SetupEngine parameterization**
    - What we know: SetupEngine currently self-loads openspec config, hookdag defaults, learning store (runtime.go:275-337); D-17 moves hosting app-side; D-11 requires explicit startup steps.
    - What's unclear: whether SetupEngine takes a populated catalog + pattern table + hook config as one struct or separate args, and whether it keeps its name (the exported sextet is acpserve's compile surface).
    - Recommendation: keep the name, change the signature to accept inputs; the moved wiring tests pin the semantics.
+   - **RESOLVED (25-05 Task 3):** name kept; signature takes a kit-neutral inputs struct (D-10 mirrored names); hookdag.DefaultHooks stays kit self-config.
 
 ## Environment Availability
 
