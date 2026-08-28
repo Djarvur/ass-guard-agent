@@ -3,20 +3,20 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 25
-current_phase_name: SEED-001 Kit Extraction (strictly last)
-current_plan: 6
+current_phase_name: seed-001-kit-extraction-strictly-last
+current_plan: 1
 status: executing
-stopped_at: Completed 16-06-PLAN.md
-last_updated: "2026-08-28T07:58:10.410Z"
-last_activity: 2026-08-27
-last_activity_desc: 16-06 executed — simulator, soak, and the operator checkpoint recorded pending
-state_head: 9ba2baa14bf99d55b37abcf41ae713e522306276
+stopped_at: 25-01 halted at Task 3 precondition (phase-ordering blocker); Tasks 1-2 done (commit 03db89d)
+last_updated: "2026-08-28T12:21:46.906Z"
+last_activity: 2026-08-28
+last_activity_desc: Phase 25 execution started
 progress:
   total_phases: 11
   completed_phases: 1
   total_plans: 69
   completed_plans: 13
   percent: 9
+state_head: 9ba2baa14bf99d55b37abcf41ae713e522306276
 ---
 
 # State: ass-guard-agent (working name)
@@ -25,15 +25,15 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-08-27)
 **Core value:** A hands-off coding agent that feels native in the editor: full SDD workflows run end-to-end without manual continues, and the agent surfaces through the client's own UX — clickable permission prompts, native file diffs, session management. (Pivoted 2026-08-25 from the mimicry bar.)
-**Current focus:** Phase 16 — ACP Wire Foundation
+**Current focus:** Phase 25 — seed-001-kit-extraction-strictly-last
 
 ## Current Position
 
-Phase: 25 (SEED-001 Kit Extraction (strictly last)) — READY TO EXECUTE
-Current Plan: 6
+Phase: 25 (seed-001-kit-extraction-strictly-last) — EXECUTING
+Current Plan: 1
 Total Plans in Phase: 9
-Status: Ready to execute
-Last activity: 2026-08-27 — 16-06 executed (Zed simulator E2E, adversarial soak + mise task, operator checkpoint recorded pending; 3 tasks, 3 commits)
+Status: Executing Phase 25
+Last activity: 2026-08-28 — Phase 25 execution started
 
 Progress: [████████░░░░░░░░░░░] 8/29 plans ([█░░░░░░░░░] 9%)
 
@@ -93,6 +93,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 16]: 16-06: SSE tool blocks flush at the NEXT block's stop (real transport behavior) — scripted turns put tool phases before text phases so the [tool_call, plan, chunk] emission story is deterministic
 - [Phase 16]: 16-06: soak chaos mapping — per-producer mid-block ctx cancel is the unit contract (TestTurnEmitterCtxAbort); the soak's equivalent is abrupt producer exits + barrier-ctx cancels; flooders + long-stall tormentor make stall-detector-fired deterministic (2min run: 4,056,534 frames, 160 episodes)
 - [Phase 16]: 16-06: operator live-Zed checkpoint surfaced and recorded PENDING-OPERATOR-CONFIRMATION (WINDOWS #11) — criteria 1/4 await the operator; ACP-03 + ACP-08 marked complete as the last declaring sibling
+- [Phase ?]: [Phase 25 P01 Task 1, AUTO-SELECTED 2026-08-28]: D-02 one-way gate — option-a 'Proceed' (kit/ tree inside the single module per D-01/D-02/D-07) auto-selected under auto_advance; takes effect at the tracer commit. Tracer itself NOT yet executed — blocked by the phase-ordering precondition.
 
 ### Pending Todos
 
@@ -102,6 +103,7 @@ None yet.
 
 - [RESEARCH FLAGS / planning-time]: Phases 16/18/19/22/23 flagged for `--research-phase` (ACP schema LOW-confidence details; resume reconciliation inventory; compaction × projector pins; platform drift; pi/strands steering references unverified). Full list in ROADMAP.md Research Flags section.
 - [Phase 15 UAT, deferred 2026-08-27]: Zed history-resume shows "Failed to Launch" — by-design v1 scope (loadSession:false); fix owned by Phase 18 Session Family (18-01/18-04), already planned. Do not re-diagnose as a Phase 15/16 regression.
+- [25-01 Task 3 precondition, 2026-08-28]: Phases 17-24 NOT executed (internal/perm, internal/tasks, internal/sandbox, internal/modesmatrix absent; only 15-16 landed) — 'strictly last' ordering violated, move inventory would be wrong. Executor halted BEFORE the rank-0 move; no kit/ paths created. Resolve by executing phases 17-24 first (then re-capture the test-ledger baseline) or by explicit operator override of the ROADMAP ordering.
 
 ## Deferred Items
 
@@ -112,6 +114,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-27T18:30:33.751Z
-Stopped at: Completed 16-06-PLAN.md
+Last session: 2026-08-28T12:21:46.879Z
+Stopped at: 25-01 halted at Task 3 precondition (phase-ordering blocker); Tasks 1-2 done (commit 03db89d)
 Resume file: None
