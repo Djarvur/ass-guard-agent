@@ -382,20 +382,9 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 		// Plan 02-05 replaced Send with Stream: chunks are read from the stream
 		// channel, emitted to the bus as AgentMessageChunk/ToolCall, and assembled
 		// into the final Response (ACP-04 — NO full-turn buffering).
-		if s.Semaphore != nil {
-			err := s.Semaphore.Acquire(ctx)
-			if err != nil {
-				s.recordCanceled(turnID, "semaphore acquire cancelled")
-
-				return stopCancelled, nil
-			}
-		}
-
-		resp, textBuf, streamErr := s.streamAndEmit(ctx, turnID, messages)
-		if s.Semaphore != nil {
-			s.Semaphore.Release()
-		}
-
+		resp, textBuf, streamErr := s.withSemaphore(ctx, func() (provider.Response, string, error) {
+			return s.streamAndEmit(ctx, turnID, messages)
+		})
 		if streamErr != nil {
 			if ctx.Err() != nil {
 				s.recordCanceled(turnID, "context cancelled during stream")
@@ -634,6 +623,31 @@ func (s *Session) toolExecOrStub() toolcat.ToolExecutor { //nolint:ireturn // To
 }
 
 // executeStub is retained for Phase-2 callers/tests that drive one tool call
+// withSemaphore bounds fn with the session's outbound-concurrency semaphore and
+// releases the slot on EVERY exit path — including a panic unwinding from fn
+// (16-REVIEW WR-02: the recover guards live at the runTurn/Prompt deferred
+// level, so a panic between Acquire and a straight-line Release previously
+// leaked the slot; after maxConc leaks every future turn blocked forever in
+// Acquire with no diagnostic). A cancelled Acquire consumes no slot and returns
+// the wrapped ctx error, which the caller routes to the canceled-transcript /
+// stopCancelled path like any other cancelled stream.
+func (s *Session) withSemaphore(
+	ctx context.Context, fn func() (provider.Response, string, error),
+) (provider.Response, string, error) {
+	if s.Semaphore == nil {
+		return fn()
+	}
+
+	aerr := s.Semaphore.Acquire(ctx)
+	if aerr != nil {
+		return provider.Response{}, "", fmt.Errorf("semaphore acquire: %w", aerr)
+	}
+
+	defer s.Semaphore.Release()
+
+	return fn()
+}
+
 // streamAndEmit opens Provider.Stream, reads chunks until the channel closes,
 // and emits each to the bus as AgentMessageChunk / ToolCall / UsageUpdate (D-18
 // step 4 — ACP-04 streaming, NO full-turn buffering). It returns the assembled
