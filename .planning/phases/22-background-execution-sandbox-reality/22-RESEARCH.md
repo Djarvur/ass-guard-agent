@@ -472,7 +472,7 @@ _, werr := ptm.WriteString(cmdText + "\necho __ASS_GUARD_DONE_$?__\n")
 | A7 | `.sb` template needs only targeted denies over `(allow default)` for v1 (no deny-default) | Pattern 4 | MEDIUM — seatbelt rule semantics are undocumented by Apple; live tests on the dev host pin the profile actually used |
 | A8 | ro-system path set (e.g. /usr, /bin, /System) suffices for typical tool children | Pattern 4 / Pitfall 1 | MEDIUM — discretion item; degrade-loudly covers gaps; may need per-distro tuning in verify phase |
 
-## Open Questions
+## Open Questions (RESOLVED in-plan — dispositions recorded in each plan's flagged_assumptions)
 
 1. **Bash `persistent` argument vs the closed captured schema** (`additionalProperties: false`, no persistent property [VERIFIED: coretools.json:168-196])
    - What we know: D-09 locks per-call opt-in via a Bash tool argument; the 08-05 discipline pins captured schemas byte-identical; the project pivoted off the mimicry bar 2026-08-25.
