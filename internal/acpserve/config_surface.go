@@ -179,13 +179,33 @@ func (s *ConfigSurface) Set(sessionID, optionID string, value any) ([]acp.Config
 		return nil, verr
 	}
 
-	if val == s.effectiveFor(bare, res.tier, res.model) {
+	// Idempotence basis (WR-05 gap closure): the ADDRESSED layer's current
+	// value, not the combined resolution. The project (default) scope keeps
+	// the combined comparison — D-10's anti-promotion guard on the Zed
+	// re-push scope; the global scope compares against the global layer ALONE
+	// (D-08: the layers are independently addressable write targets), so a
+	// legitimate global mutation is never classified as redundant and
+	// silently dropped.
+	basis := s.effectiveFor(bare, res.tier, res.model)
+	basisName := "the currently-effective value"
+
+	if scope == scopeGlobal {
+		g, gerr := s.globalOnlyResolvedLocked()
+		if gerr != nil {
+			return nil, fmt.Errorf("resolve global config layer: %w", gerr)
+		}
+
+		basis = s.effectiveFor(bare, g.tier, g.model)
+		basisName = "the global layer's current value"
+	}
+
+	if val == basis {
 		// D-10 guard on the set channel: a redundant client default (Zed
 		// re-pushes its stored defaults every connection) must not churn the
 		// operator's file — nor promote a blob-derived effective value into
 		// persisted explicit config. One structured line, refreshed set, done.
-		s.logf("option %q: value %q equals the currently-effective value — idempotent re-push, no layer write (D-10)",
-			optionID, val)
+		s.logf("option %q: value %q equals %s — idempotent re-push, no layer write (D-10)",
+			optionID, val, basisName)
 
 		return s.optionsLocked(), nil
 	}
@@ -312,6 +332,33 @@ func (s *ConfigSurface) resolveLocked() (*resolvedConfig, error) {
 	}
 
 	return &resolvedConfig{tier: tier, model: model, cfg: cfg}, nil
+}
+
+// globalOnlyResolvedLocked resolves the GLOBAL layer alone: the layer file
+// through modelrouting.Load when it exists, the embedded floor when the path
+// is empty or the file is absent. Tier/model resolve exactly like resolveLocked
+// but WITHOUT the project layer and WITHOUT the blob overlay (D-10 fills are
+// in-memory defaults for the combined view, never layer truth) — the
+// addressed-layer basis behind scope-aware idempotence and the _global twins.
+func (s *ConfigSurface) globalOnlyResolvedLocked() (*resolvedConfig, error) {
+	var paths []string
+
+	if s.globalPath != "" {
+		if _, serr := os.Stat(s.globalPath); serr == nil {
+			paths = append(paths, s.globalPath)
+		}
+	}
+
+	cfg, err := modelrouting.Load(paths...)
+	if err != nil {
+		return nil, fmt.Errorf("load global config layer: %w", err)
+	}
+
+	return &resolvedConfig{
+		tier:  cfg.SessionTier,
+		model: s.resolveModelLocked(cfg, cfg.SessionTier),
+		cfg:   cfg,
+	}, nil
 }
 
 // resolveModelLocked resolves one tier's model through the resolver (the
