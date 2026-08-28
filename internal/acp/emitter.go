@@ -121,14 +121,19 @@ type TurnEmitter struct {
 	sink NotificationSink
 	log  *log.Logger // stderr diagnostics (stall reports); nil-safe
 
-	// mu guards the enqueue/written counter pair driving Barrier(). NEVER held
-	// across a lane send (Pitfall 3 — a blocked producer holding mu would wedge
-	// the drain's bookkeeping; the send blocks OUTSIDE the critical section).
-	// Plain ints: counters grow by a few per turn and never wrap.
+	// mu guards the enqueue/written counter pair driving Barrier() plus the
+	// wake generation channel. NEVER held across a lane send (Pitfall 3 — a
+	// blocked producer holding mu would wedge the drain's bookkeeping; the send
+	// blocks OUTSIDE the critical section). Plain ints: counters grow by a few
+	// per turn and never wrap.
 	mu       sync.Mutex
 	enqueued int // notifications accepted toward the lanes (pre-send bump, abort-compensated)
 	written  int // notifications fully handed to the sink (post-write bump)
-	wake     chan struct{}
+	// wake is the CURRENT Barrier broadcast generation: writeOut closes it and
+	// swaps in a fresh channel under mu after each written frame, so every
+	// waiter parked on the closed generation re-checks written (CR-01 broadcast
+	// — a capacity-1 token channel woke only ONE of N concurrent waiters).
+	wake chan struct{}
 
 	// ctx is the emitter's root lifecycle ctx: cancelled by Stop() so blocked
 	// producers fail fast and the drain exits before Writer Close (Pitfall 8).
@@ -178,7 +183,7 @@ func NewTurnEmitter(sink NotificationSink, stderr io.Writer, cfg TurnEmitterConf
 		bg:             make(chan *Message, bgCap),
 		sink:           sink,
 		log:            lg,
-		wake:           make(chan struct{}, 1),
+		wake:           make(chan struct{}), // unbuffered: capacity is meaningless for close-broadcast
 		ctx:            ctx,
 		cancel:         cancel,
 		stallThreshold: threshold,
@@ -255,6 +260,14 @@ func (t *TurnEmitter) Stop() {
 // only one frame could possibly be mid-flight. The empty-queue case returns
 // immediately (a zero-activity turn must not delay its response).
 //
+// Wake discipline (CR-01 per-generation broadcast): waiters never consume
+// tokens. Each loop iteration snapshots the CURRENT wake generation under mu,
+// and writeOut closes that generation after EVERY written frame — so all
+// concurrent waiters re-check and either return or re-park on the fresh
+// generation. No waiter stalls at terminal state, none merges into another,
+// and none busy-spins: after a close fires, the next snapshot under mu always
+// sees the post-swap channel.
+//
 // ctx escape hatches: the CALLER's ctx dying (turn cancelled — the whole
 // connection is going away anyway) or the emitter being stopped both end the
 // wait without further ordering guarantees.
@@ -267,6 +280,7 @@ func (t *TurnEmitter) Barrier(ctx context.Context) {
 		t.mu.Lock()
 
 		done := t.written >= target
+		wake := t.wake // this generation's broadcast channel (same critical section as the check)
 
 		t.mu.Unlock()
 
@@ -275,7 +289,7 @@ func (t *TurnEmitter) Barrier(ctx context.Context) {
 		}
 
 		select {
-		case <-t.wake:
+		case <-wake: // closed by writeOut's broadcast → re-check; post-swap snapshots park on the fresh generation
 		case <-ctx.Done():
 			return
 		case <-t.ctx.Done():
@@ -292,19 +306,20 @@ func (t *TurnEmitter) newHandle(sessionID string, class frameClass) *EmitterHand
 
 // writeOut hands one frame to the sink and books it as fully written ONLY after
 // the sink call returns — Barrier's target arithmetic depends on that ordering.
-// Sink errors are swallowed best-effort (closed pipe on shutdown), mirroring
-// Writer.drain.
+// The written bump and the wake broadcast share ONE critical section: the
+// close + fresh-channel swap under mu turns the wake into a per-generation
+// BROADCAST, so every parked Barrier waiter re-checks after each written frame
+// (CR-01). Because the drain is writeOut's only caller, closes are serialized
+// and never double-close. Sink errors are swallowed best-effort (closed pipe
+// on shutdown), mirroring Writer.drain.
 func (t *TurnEmitter) writeOut(m *Message) {
 	_ = t.sink.Write(m) // best-effort flush (closed pipe on shutdown surfaces elsewhere)
 
 	t.mu.Lock()
 	t.written++
+	close(t.wake)                // broadcast: wake EVERY parked waiter (each re-checks under mu)
+	t.wake = make(chan struct{}) // fresh generation for waiters arriving after this frame
 	t.mu.Unlock()
-
-	select {
-	case t.wake <- struct{}{}:
-	default:
-	}
 }
 
 // drain is THE total-order point (D-02): foreground frames preempt always;
