@@ -894,8 +894,9 @@ func TestAskPark_PromptResponsePrecedesResolution(t *testing.T) { //nolint:cyclo
 
 // TestAskPark_CancelAndCloseDrainParkedChains (T4 pin 2 + W4): a parked chain
 // (first-turn ask, 1h timer — parked indefinitely) is DRAINED by BOTH
-// session-close routes: CloseSession (the session/cancel + logout path — the
-// ACP server calls it right after cancelTurn) and closeAllSessions (the serve
+// session-close routes: CloseSession (the logout path — 16-REVIEW CR-01 took
+// session/cancel OFF this path: a cancelled LIVE turn drains through
+// runOneTurn's request-ctx watchdog instead) and closeAllSessions (the serve
 // end). No decision, no injection after the drain; the goroutine is released
 // (chain count reaches zero).
 func TestAskPark_CancelAndCloseDrainParkedChains(t *testing.T) { //nolint:funlen // two-route drain battery

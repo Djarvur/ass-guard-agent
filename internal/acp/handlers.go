@@ -420,6 +420,16 @@ func (s *Server) handleSessionPrompt(ctx context.Context, params json.RawMessage
 // It is a notification (no id, no response): it looks up the session's cancel
 // func and calls it. The session/prompt handler observes the cancelled ctx,
 // aborts the turn, drains queued events, and returns stopReason "cancelled".
+//
+// ACP v1 cancel semantics are PER-TURN: the session persists and the client is
+// expected to re-prompt the same sessionId (the standard editor flow — escape,
+// then ask again). This handler therefore cancels ONLY the turn; it never
+// reaps session-scoped resources (16-REVIEW CR-01). Resource reaping stays on
+// the true session-end paths: logout (closeSessionIfPossible + the sessions
+// map delete, as handleLogout does) and serve teardown (the runner's
+// ctx-done CloseAllSessions). A parked engine chain of a LIVE cancelled turn
+// is drained transitively — runOneTurn's request-ctx watchdog folds the
+// cancelled turn ctx into the parked cancel (ENG-03).
 func (s *Server) handleSessionCancel(ctx context.Context, params json.RawMessage) (any, error) {
 	var p struct {
 		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
@@ -443,10 +453,12 @@ func (s *Server) handleSessionCancel(ctx context.Context, params json.RawMessage
 	}
 
 	st.cancelTurn()
-	// Plan 05-01 T4: reap the session's MCP host + other session-scoped
-	// resources. The TurnRunner's SessionCloser (if implemented) drains the
-	// subprocesses; cancelTurn already aborted the in-flight turn.
-	s.closeSessionIfPossible(p.SessionID)
+	// 16-REVIEW CR-01: NO closeSessionIfPossible here. The old call reaped the
+	// session's MCP host, transcript writer, session forwarder, and SessionEnd
+	// hook while the session stayed registered in s.sessions — every later
+	// session/prompt on the id then ran against the half-reaped Session (mcp__*
+	// calls dead, audit streaming dead, forwarding gone, SessionEnd fired
+	// twice-ish). Cancel means "abort this turn"; the session stays live.
 
 	return nil, nil //nolint:nilnil // nil result signals "no JSON-RPC response" (notification / unknown session)
 }

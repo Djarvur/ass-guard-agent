@@ -34,9 +34,12 @@ type TurnRunner interface {
 
 // SessionCloser is an OPTIONAL capability a TurnRunner may implement to release
 // session-scoped resources (Plan 05-01 T4). When the TurnRunner implements it,
-// logout/session-cancel call CloseSession(sessionID) so MCP subprocesses and
-// other session-scoped resources are reaped (D-02). It is a separate interface
-// (not part of TurnRunner) so stub runners need not implement it.
+// logout calls CloseSession(sessionID) so MCP subprocesses and other
+// session-scoped resources are reaped (D-02). session/cancel deliberately does
+// NOT route here (16-REVIEW CR-01): ACP cancel is per-turn, so cancelling must
+// leave the session — and its resources — live for the next prompt. It is a
+// separate interface (not part of TurnRunner) so stub runners need not
+// implement it.
 type SessionCloser interface {
 	CloseSession(sessionID string) error
 }
@@ -385,8 +388,9 @@ func (s *Server) Serve(ctx context.Context) error {
 
 // closeSessionIfPossible type-asserts the TurnRunner to SessionCloser and calls
 // CloseSession. A non-implementing runner is a no-op (backward-compatible).
-// Plan 05-01 T4: logout/session-cancel reach the session's MCP host via this
-// seam so subprocesses are reaped on session end.
+// Plan 05-01 T4: logout reaches the session's MCP host via this seam so
+// subprocesses are reaped on session end. Only logout calls it — session/cancel
+// is turn-scoped and must not reap (16-REVIEW CR-01).
 func (s *Server) closeSessionIfPossible(sessionID string) {
 	closer, ok := s.turnRunner.(SessionCloser)
 	if !ok {

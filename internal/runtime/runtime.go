@@ -780,8 +780,10 @@ func (r *Runner) runOneTurn(
 	// continuation parks. Post-settle injections hold the session turn mutex
 	// per turn (12-07 queue semantics) and stream through the session-lifetime
 	// forwarder (WINDOWS #3). cancelParkedChains — reached from
-	// CloseSession (session/cancel + logout) and closeAllSessions (serve end)
-	// — cancels the parked ctx (D-03 stays the only off-switch).
+	// CloseSession (logout) and closeAllSessions (serve end); a session/cancel
+	// of a LIVE turn drains its chain transitively via the request-ctx watchdog
+	// below (16-REVIEW CR-01: cancel must not reap the session, but the
+	// cancelled turn's parked chain still drains — ENG-03).
 	sessionID := sess.SessionID
 
 	//nolint:contextcheck // deliberately serveCtx-derived: the request ctx must not bound the parked chain
@@ -875,8 +877,8 @@ type parkedChain struct {
 }
 
 // registerParkedChain records a parked chain's cancel func for the session
-// (13-00): cancelParkedChains — CloseSession (session/cancel + logout) and
-// closeAllSessions (serve end) — drains every parked chain of that session.
+// (13-00): cancelParkedChains — CloseSession (logout) and closeAllSessions
+// (serve end) — drains every parked chain of that session.
 //
 //nolint:funcorder // park helper group
 func (r *Runner) registerParkedChain(sessionID string, pc *parkedChain) {
@@ -1430,14 +1432,16 @@ func (r *Runner) closeAllSessions() { //nolint:funcorder // shutdown helper grou
 	}
 }
 
-// CloseSession closes one session's MCP host (the logout/cancel path — Plan
-// 05-01 T4). It satisfies acp.SessionCloser; the ACP server calls it via type
-// assertion when handling logout/session-cancel. An unknown sessionID is a no-op.
+// CloseSession closes one session's MCP host (the logout path — Plan 05-01 T4).
+// It satisfies acp.SessionCloser; the ACP server calls it via type assertion
+// when handling logout. session/cancel deliberately does NOT route here
+// (16-REVIEW CR-01: ACP cancel is per-turn — a cancelled mid-turn chain is
+// drained instead by runOneTurn's request-ctx watchdog). An unknown sessionID
+// is a no-op.
 func (r *Runner) CloseSession(sessionID string) error {
-	// 13-00: session/cancel + logout reach here (the ACP server's
-	// closeSessionIfPossible) — drain the session's parked chains FIRST (no
-	// decision, no injection after the cancel; goroutines released — D-03
-	// stays the only off-switch).
+	// 13-00: logout reaches here (the ACP server's closeSessionIfPossible) —
+	// drain the session's parked chains FIRST (no decision, no injection after
+	// the session end; goroutines released — D-03 stays the only off-switch).
 	r.cancelParkedChains(sessionID)
 
 	if r.sessions == nil {
