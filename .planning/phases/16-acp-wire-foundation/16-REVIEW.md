@@ -1,147 +1,272 @@
 ---
 phase: 16-acp-wire-foundation
-reviewed: 2026-08-27T20:13:26Z
+reviewed: 2026-08-28T13:38:01Z
 depth: deep
-files_reviewed: 23
+files_reviewed: 34
 files_reviewed_list:
+  - .mise.toml
   - internal/acp/emitter.go
-  - internal/acp/request_registry.go
-  - internal/acp/server.go
-  - internal/acp/handlers.go
-  - internal/acp/types.go
-  - internal/acp/metrics.go
-  - internal/acp/framer.go
-  - internal/acp/emitter_test.go
   - internal/acp/emitter_soak_test.go
+  - internal/acp/emitter_test.go
+  - internal/acp/framer.go
+  - internal/acp/handlers.go
+  - internal/acp/handlers_test.go
+  - internal/acp/metrics.go
+  - internal/acp/request_registry.go
+  - internal/acp/request_registry_test.go
+  - internal/acp/server.go
+  - internal/acp/server_test.go
+  - internal/acp/types.go
   - internal/acpserve/acp_serve.go
+  - internal/acpserve/chip_truth_test.go
   - internal/acpserve/config_surface.go
-  - internal/runtime/runtime.go
-  - internal/runtime/cron_wiring.go
+  - internal/acpserve/config_test.go
+  - internal/acpserve/simulator_e2e_test.go
+  - internal/modelrouting/config.go
+  - internal/modelrouting/load.go
+  - internal/modelrouting/load_test.go
+  - internal/providerfactory/config_write.go
+  - internal/providerfactory/config_write_test.go
+  - internal/providerfactory/goconst_constants.go
   - internal/runtime/apply_model_test.go
+  - internal/runtime/cron_wiring.go
+  - internal/runtime/emitter_e2e_test.go
+  - internal/runtime/integration_test.go
+  - internal/runtime/runtime.go
   - internal/session/manager.go
   - internal/session/session.go
   - internal/session/transcript.go
   - internal/session/transcript_newkinds_test.go
-  - internal/modelrouting/config.go
-  - internal/modelrouting/load.go
-  - internal/providerfactory/config_write.go
-  - internal/providerfactory/goconst_constants.go
-  - .mise.toml
+  - internal/session/turn_model_test.go
 findings:
-  critical: 1
-  warning: 5
-  info: 5
-  total: 11
+  critical: 2
+  warning: 6
+  info: 6
+  total: 14
 status: issues_found
 ---
 
-# Phase 16: Code Review Report
+# Phase 16: Code Review Report (re-review after 16-07/16-08/16-09)
 
-**Reviewed:** 2026-08-27T20:13:26Z
+**Reviewed:** 2026-08-28T13:38:01Z
 **Depth:** deep
-**Files Reviewed:** 23
+**Files Reviewed:** 34
 **Status:** issues_found
 
 ## Summary
 
-Reviewed the Phase 16 diff (f799b07..HEAD): the ordered TurnEmitter, the outbound request registry, the config layer writer, the ACP-08 config surface, extended transcript kinds, and the simulator/soak coverage. Cross-file call chains were traced through acp → acpserve → runtime → session → event bus, with the phase's core claim (concurrency: emitter ordering, registry pending-map, cancel cascade) scrutinized hardest.
+Re-review of the phase-16 ACP wire foundation after the gap-closure plans landed. The 16-07 CR-01 Barrier broadcast fix is correct (per-generation close+swap under one critical section; the concurrent-waiter regression test with never-cancelled contexts genuinely pins the lost-wakeup), the 16-08 scope-aware idempotence basis is correct (addressed-layer comparison; the "global write persists when combined matches" test pins the silent-swallow fix), and the 16-09 wire-side chip pin (TestDefaultTurnModel_FollowsTierResolution) is correct for the layer path. The D-14/D-15/D-17/D-19 registry work, the atomic 0600 layer writer, and the extended transcript kinds (redaction-exempt raw_thinking, local_command, compaction) all hold up under adversarial tracing, including the Pitfall-8 teardown ordering (handlerWG → registry.Stop → emitter.Stop → Writer.Close).
 
-The primitives are well-built overall: the emitter's two-stage foreground select gives genuine preemption (the saturated-lane test pins it), the registry's `done` CAS gives exactly-once resolution with clean retry/late-response handling, the config writer's temp-then-rename is correctly ordered (0600 chmod before rename, temp removal on every failure path), and D-23's redaction exemption is genuinely type-scoped with a counting-fake test pinning zero redactor calls. The live-apply seam's turn-mutex serialization is verified by a mid-turn race test.
+Two blockers remain. First, the chip==wire invariant that 16-09 closed for the LAYER path is still open for the _meta blob path: the advertisement resolves currentValues through the surface's in-memory blob overlay, but the wire-side default (`Runner.defaultTurnModel`) reads only `schedCfg` and can never see blob fills — the exact divergence class (chip shows X, wire sends Y) the operator observed at turn-001. Second, `session/cancel` reaps session-scoped resources (MCP host, transcript writer, session forwarder, SessionEnd hook) while leaving the session registered and promptable — ACP cancel semantics are per-turn, so the routine cancel-then-re-prompt flow runs every later turn of that session without MCP tools and without audit streaming.
 
-One critical liveness defect was found: `Barrier` uses a capacity-1 wake channel that hands each token to at most one waiter, so two concurrent `session/prompt` turns can leave the second barrier waiting forever (its ctx never dies in production), hanging the prompt response. The soak test does not catch this because its concurrent barriers deliberately use short-lived ctxs that escape via `ctx.Done` — production passes the long-lived serve ctx. Five warnings and five info items follow.
-
-The previously recorded pre-stamp Model chip divergence (runtime.go:131 vs config_surface.go:320/:398) is NOT re-litigated here. WR-05 below is a distinct defect in the same surface (the `_global/` scoped twins), not that finding.
+Beyond the blockers: a cross-session contamination window in the engine's shared per-turn rebinding, a semaphore slot leak on the panic path the turn loop explicitly defends against, the ConfigSurface holding its mutex across blocking sends, a narrow cancelled-turn stop-reason mislabel, a swallowed fallback error with a nil-deref tail, and a documented-vs-implemented mismatch in the automation firing target.
 
 ## Narrative Findings (AI reviewer)
 
-### Critical Issues
+## Critical Issues
 
-#### CR-01: Barrier lost-wakeup hangs the prompt response with two concurrent waiters
+### CR-01: session/cancel half-reaps a session that stays registered and promptable
 
-**File:** `internal/acp/emitter.go:181,261-285,304-308` (caller: `internal/acp/handlers.go:400`)
-**Issue:** `writeOut` publishes one token into `wake` (capacity 1) per written frame; `Barrier` blocks receiving from it. Go hands a channel send to exactly ONE blocked receiver, so with two goroutines inside `Barrier` simultaneously, each wake token progresses at most one of them. When both waiters' targets are satisfied by the same final frame, the last token wakes only one; the other re-checks nothing (it never receives), the queue is empty so no further tokens are ever produced, and its `ctx`/emitter-ctx escape arms never fire in production — `handleSessionPrompt` passes the long-lived serve/request ctx, not a per-turn deadline. The result is a `session/prompt` response that never returns for the second concurrent turn (two sessions prompting on one connection is supported: requests dispatch on per-request goroutines and Barrier is per-turn). The single-waiter case is safe (stale tokens are consumed and re-checked), which is why every test — including the soak's four concurrent barriers, all deliberately given short-lived ctxs that exit via `ctx.Done` — passes.
-**Fix:** Broadcast instead of single-token handoff. Simplest correct shape: swap the channel per generation under `mu` and close it to wake all waiters.
+**File:** `internal/acp/handlers.go:446-451` (with `internal/runtime/runtime.go:1436-1456`, `internal/session/session.go:304-325`)
+
+**Issue:** In ACP v1, `session/cancel` cancels the current prompt **turn**; the session persists and the client is expected to re-prompt the same `sessionId` (the standard editor flow: user presses escape, then asks again). The handler cancels the turn (correct) but then calls `closeSessionIfPossible` → `Runner.CloseSession` → `Session.Close()`, which runs the once-chain: `ask.Disarm()`, the `SessionEnd` hook, and `OnClose` — which stops the session-lifetime chunk forwarder, cancels the TranscriptWriter ctx, reaps background tasks, and closes the MCP host. Crucially the handler does **not** delete the session from `Server.sessions` or `Runner.sessions`, so every later `session/prompt` on that id still resolves to the half-reaped `Session`:
+
+- `mcp__*` tool calls fail forever (host closed; `toolcat.MCPExecutor` answers "unknown server");
+- `request_shaped`/usage audit lines stop streaming (TranscriptWriter ctx dead);
+- server-driven turn forwarding for the session is gone (forwarder unsubscribed);
+- `SessionEnd` already fired, so hook-based lifecycle accounting is skewed.
+
+The half-reaped state is inconsistent under either interpretation — if cancel meant session-end, the session should be removed from both maps (as `handleLogout` does); if it means turn-cancel (the ACP meaning), no session-scoped resources should be reaped.
+
+**Fix:** Keep `cancelParkedChains` (the D-03 off-switch) and drop the resource reaping from the cancel path; reap only on `logout` and serve teardown:
 
 ```go
-// writeOut (after written++ under mu):
-t.wake-close under mu: ch := t.wake; close(ch); t.wake = make(chan struct{})
+// handleSessionCancel — cancel the turn only; the session stays live for the next prompt.
+st.cancelTurn()
+// removed: s.closeSessionIfPossible(p.SessionID)
+return nil, nil
+```
 
-// Barrier wait arm:
-t.mu.Lock(); ch := t.wake; t.mu.Unlock()
-select {
-case <-ch:            // generation closed — re-check written under mu
-case <-ctx.Done():    return
-case <-t.ctx.Done():  return
+If product intent really is "cancel ends the session", then delete the session from `s.sessions` in the same handler so the next prompt cannot reach the reaped Session — but that contradicts the ACP turn-cancel contract and the D-16 stopReason "cancelled" flow, which explicitly anticipates the client continuing.
+
+### CR-02: _meta blob fills break the chip==wire invariant (16-09 gap 4b not closed on the blob path)
+
+**File:** `internal/acpserve/config_surface.go:312-319` (with `internal/runtime/runtime.go:1067-1075, 1543-1563`)
+
+**Issue:** 16-09 pinned chip==wire for the layer path: the advertisement's bare `model` currentValue equals the resolver evaluation over the layer files, and the wire stamps the same value (`defaultTurnModel`). But the advertisement's `resolveLocked` also applies the **in-memory `_meta` blob overlay** (`blobFills` for `tier` and `model`, fills-unset per D-10), while the wire side cannot see it at all — `defaultTurnModel` reads only `r.schedCfg.SessionTier` + the resolver, and the blob lives privately inside the `ConfigSurface` (the acp→runtime seam carries no blob state). Concretely, on a connection whose initialize `_meta` carries `{"model":"glm-5.2"}` (or a `tier` fill) with no operator layer setting that slot and no editor stamp:
+
+- chip: `optionsLocked` → `resolveLocked` → model = blob fill (glm-5.2);
+- wire: `sessionFor` → `effectiveModelFor()` == "" → `defaultTurnModel()` → tier-resolved floor model (GLM-5.3).
+
+The user sees the chip claim one model while the provider request carries another — the exact operator-observed turn-001 divergence (`chip_truth_test.go:4-9`) that 16-09 declared "cannot recur without failing a test". The existing pins (`TestConfigAdvertisement_ResolverTruth`, `TestDefaultTurnModel_FollowsTierResolution`) exercise layers only, so the blob path is untested end-to-end; the simulator test only blobs `compaction-threshold`, which the wire legitimately ignores today.
+
+**Fix:** Make one side honest. Either (a) propagate the blob-resolved effective default across the seam — e.g. after `ApplyBlobDefaults` reports a change, have the composition stamp the runner's pre-stamp default (a distinct `SetDefaultTurnModel` writing `effectiveModel` without marking it an explicit editor stamp), or (b) stop advertising blob-filled values as `currentValue` for `model`/`tier` (keep fills visible only for the pending options that have no wire side), documenting the D-11 deviation. (a) preserves D-11 and is the smaller semantic change:
+
+```go
+// acpserve.Run, after the notify wiring:
+surface.SetBlobDefaultHook(func(model string) { // fired by ApplyBlobDefaults when tier/model moved
+    _ = runner.SetDefaultTurnModel(model) // stamps the default the wire will use pre-editor-stamp
+})
+```
+
+with `SetDefaultTurnModel` writing `r.effectiveModel` under `modelMu` exactly as `ApplyTurnModel` does, so chip and wire read the same slot.
+
+## Warnings
+
+### WR-01: Engine's shared per-turn rebinding cross-wires sessions under concurrency
+
+**File:** `internal/runtime/runtime.go:762-770`
+
+**Issue:** `runOneTurn` rebinds package-shared engine state to the *current* session on every engine-enabled turn: `r.hookExec.Commands/Turns/Boundaries = …(sess)` and `r.eng.Manager = sess.Manager`. Client turns serialize per session (`sessionTurnMu`), but two *different* sessions turn concurrently (per-request goroutines, distinct mutexes), and a parked engine chain (13-00) resumes **without** holding any of those mutexes after a rebind. A hook DAG or post-settle injection dispatched for session A after session B's `runOneTurn` rebound the executors sends prompt-turns and boundary writes into B's Manager/transcript. Engine decisions land in the wrong session's transcript; hook `send-prompt` turns run against the wrong session.
+
+**Fix:** Make the bindings per-invocation instead of shared mutable fields: pass the session-bound runners through the `BridgeConfig`/`Observe` call (a closure over `sess` captured at the `runOneTurn` site), or guard rebind + chain execution under a single engine-wide mutex. E.g. build a per-turn `*hookdag.Executor` copy and hand it to the adapter/dispatcher rather than storing it on the shared `r.hookExec`.
+
+### WR-02: Semaphore slot leaks when the turn panics between Acquire and Release
+
+**File:** `internal/session/session.go:385-397`
+
+**Issue:** `runTurn` acquires `s.Semaphore`, then calls `streamAndEmit` and `toolexec.DispatchBatch` (which executes arbitrary catalog/MCP tool code) before releasing. The recover guards live at the `runTurn`/`Prompt` deferred level, so a panic anywhere in that window unwinds past the `Release()` line and the slot is never returned. Repeated panics (a flaky MCP tool bridge is enough) permanently consume the concurrency budget — after `maxConc` leaks, every future turn blocks forever in `Acquire`, wedging the agent with no diagnostic.
+
+**Fix:** Release deterministically — acquire in a helper that defers the release, so every path between Acquire and Release (including panics recovered upstream) hands the slot back exactly once:
+
+```go
+func (s *Session) withSemaphore(ctx context.Context, fn func() (provider.Response, string, error)) (provider.Response, string, error) {
+    if s.Semaphore == nil {
+        return fn()
+    }
+    if err := s.Semaphore.Acquire(ctx); err != nil {
+        return provider.Response{}, "", err
+    }
+    defer s.Semaphore.Release()
+    return fn()
 }
 ```
-Alternatively a `sync.Cond` (with a deadline watchdog goroutine for ctx escape), or per-Barrier waiter channels registered in a slice that `writeOut` drains-and-closes. Add a regression test with two Barriers whose targets complete on the same final frame and long-lived ctxs.
 
-### Warnings
+### WR-03: ConfigSurface holds its mutex across blocking sends (notify lane) and the apply hook
 
-#### WR-01: Data race — `emitter.metrics` written after the sampler goroutine started
+**File:** `internal/acpserve/config_surface.go:200-213, 505-542` (with `internal/acp/handlers.go:104-128`)
 
-**File:** `internal/acp/server.go:183` (write) vs `internal/acp/emitter.go:145,384` (read)
-**Issue:** `NewTurnEmitter` starts `sampleLoop` before returning; `NewServer` then assigns `s.emitter.metrics = s.metrics` with no synchronization. `sampleStall` reads `t.metrics` from the sampler goroutine. This is an unsynchronized cross-goroutine write/read — a data race per the Go memory model that `-race` (the standing CI gate per D-04) can flag whenever a lane goes full in the startup window. Impact is bounded (worst case: one missed stall count), but it is exactly the defect class this phase claims to have under discipline.
-**Fix:** Arm metrics before the goroutines start — pass the `*Metrics` through `TurnEmitterConfig` (or a `NewTurnEmitter` parameter) and set the field in the constructor before `go em.drain()` / `go em.sampleLoop()`.
+**Issue:** `Set`/`ApplyBlobDefaults` run under `s.mu` and call `emitLocked` → `srv.NotifyConfigOptions` → `EmitterHandle.Notify`, a **blocking** send on the foreground lane (bounded 128; blocks while the emitter drain is wedged on a slow client), and `applyLocked` → `runner.ApplyTurnModel`, which blocks on every live session's turn mutex (the documented mid-turn wait). While blocked, `s.mu` is held, so every other config operation — including `handleInitialize`'s `applyMetaBlob` — queues behind client backpressure or an in-flight turn. This is the exact lock-across-blocking-send pattern the emitter explicitly avoids (Pitfall 3), and it puts the initialize handshake's latency under the worst client stall of the connection. No deadlock today (the turn path never takes `s.mu`), but the serialization is unbounded in time.
 
-#### WR-02: Session forwarder fan-in goroutines never exit — teardown contract is wrong
+**Fix:** Compute the refreshed option set under the lock, then send and apply outside it:
 
-**File:** `internal/runtime/cron_wiring.go:249,269-285,288-320` (contract source: `internal/event/bus.go:47-63,88-95`)
-**Issue:** The new `fanInEvents` machinery (3 pump goroutines + WaitGroup + merger + consumer = 5 goroutines per session forwarder, up from 1) exists so "the stream closes — and the goroutine exits — when stop unsubscribes and the sources drain closed". That is factually wrong: `Bus.Unsubscribe` removes the channel from the fan-out list but never closes it — only `Bus.Close` closes subscriber channels, and nothing in acpserve/runtime/cmd ever calls `Bus.Close`. After a session's stop() runs, the three pumps block forever on `range src`, `wg.Wait` never returns, `close(out)` never happens, and the consumer ranges `merged` forever. The result is a permanent 5-goroutine leak per closed session in any long-lived process, plus a comment that documents a mechanism the code does not have. (The pre-existing single forwarder goroutine had the same leak; this phase multiplied it and asserted the fix that isn't there.)
-**Fix:** Either have the stop() closure close the source channels it owns (making `Unsubscribe` + explicit `close(ch)` the teardown pair, mirroring `Bus.Close` semantics for private subscribers), or drop `fanInEvents` and select over the three channels directly like `startChunkForwarder` does (its exit is ctx/done-driven, not close-driven). At minimum, correct the comment so the next reader does not trust the phantom contract.
+```go
+s.mu.Lock()
+… persist/apply bookkeeping …
+frames := s.optionsLocked()
+notify, hook := s.notify, s.applyHook
+s.mu.Unlock()
+if notify != nil { notify(sessionID, frames) }
+```
 
-#### WR-03: Registry `send` TOCTOU vs `Writer.Close` — latent send-on-closed-channel panic
+(The apply hook already carries its own serialization contract via the turn mutex; moving it below the unlock preserves the persist-then-apply ordering for the responding caller while unblocking other config operations.)
 
-**File:** `internal/acp/request_registry.go:387-401` (send), `:319-348` (Stop); teardown at `internal/acp/server.go:326-332`; `internal/acp/framer.go:117-121,137-149`
-**Issue:** `send` reads `r.closed` under the registry mutex, then writes to the Writer outside it. `Serve`'s teardown sequence is `registry.Stop()` → `emitter.Stop()` → `out.Close()`, and `Writer.Write` is `w.ch <- msg` while `Close` does `close(w.ch)` — a Call that has passed the `closed` check but not yet executed its Write when teardown completes panics with "send on closed channel". Today every registry caller is a handler-scoped goroutine (the initialize probe), and `handlerWG.Wait` precedes `registry.Stop`, so the window is closed for current callers. But the shipped `Stop` contract claims "no write may race the closing Writer" while enforcing it only by caller convention; the first non-handler caller (server-driven turns, Phase 17 background asks) opens the panic path.
-**Fix:** Make the guard structural, not conventional: either give `Writer.Write` a closed check (atomic flag + recover/`sync.Once`-guarded send, or an RWMutex shared with Close), or have the Registry track in-flight Calls with a WaitGroup that `Stop` joins before returning (after marking closed so no new sends start). Document the remaining guarantee honestly either way.
+### WR-04: A cancelled turn can report `end_turn` and fire the Stop hook
 
-#### WR-04: ConfigSurface mutex held across the live-apply hook — one mid-turn Set blocks the whole config surface for the rest of the turn
+**File:** `internal/session/session.go:657-661, 567-577`
 
-**File:** `internal/acpserve/config_surface.go:149-207` (Set), `:435-464` (applyLocked); `internal/runtime/runtime.go:1470-1498`
-**Issue:** `Set` holds `s.mu` for its entire body, including `applyLocked` → `applyHook` → `Runner.ApplyTurnModel`, which blocks on the session's turn mutex until the in-flight turn finishes — deliberately (the mid-turn serialization is tested and correct in isolation). But because the wait happens under `s.mu`, one `session/set_config_option` arriving mid-turn stalls every other config operation until the turn ends: `Options()` (initialize and session/new advertisements), other Sets, and `ApplyBlobDefaults` all queue behind it. The requesting handler goroutine also stays blocked for the remainder of what can be a minutes-long agent turn, and `Serve`'s `handlerWG.Wait` teardown inherits the same wait. Waiting for the turn is the documented intent; holding the surface-wide lock while doing it is not.
-**Fix:** Snapshot, validate, and persist under `s.mu` (D-07's persist-then-apply ordering only needs the persist inside the lock); release `s.mu`, then invoke the apply hook and the notify emission. ApplyTurnModel's own modelMu/turnMu discipline already makes the apply safe outside the surface lock; the refresh for the return value can be re-taken under `s.mu` after the apply.
+**Issue:** `streamAndEmit`'s mid-loop cancellation check returns `(partial resp, text, nil)` — a **nil** error with ctx already cancelled (the `//nolint:nilerr` path). `runTurn`'s `streamErr != nil` guard therefore doesn't route to the cancelled branch. If the partial response carries no tool calls (only text chunks arrived before the abort), control falls to the Step-6 end_turn branch: it appends the partial assistant message, **fires the `Stop` hook**, and returns `mapStopReason("")` = `"end_turn"`. The D-16 contract ("report stopReason `cancelled`") is broken in this race window (ctx dies between chunk deliveries while the provider goroutine hasn't closed the stream yet), and hooks observe a Stop for a turn the user cancelled.
 
-#### WR-05: `_global/` option twins advertise the combined effective value — global-scope writes are mis-displayed and can be silently swallowed
+**Fix:** Make the mid-loop check honest — return the ctx error (the caller already maps it to `stopCancelled` via the `streamErr != nil` + `ctx.Err()` branch), and additionally re-check ctx before Step 6:
 
-**File:** `internal/acpserve/config_surface.go:182-191` (idempotence guard), `:513-530` (advertisement), `:398-404`, `:411-428`
-**Issue:** Two related defects in the D-08 scope surface. (1) The `_global/model` and `_global/tier` twins are built with `res.model`/`res.tier` — the PROJECT-won combined effective values — so the editor renders the project's value under "Model (global default)". (2) The idempotence guard `val == s.effectiveFor(bare, res.tier, res.model)` is scope-blind: `Set("_global/model", X)` where X equals the combined effective value returns "idempotent re-push, no layer write" and the global layer is never written — the operator's explicitly global-scoped mutation is silently dropped (it would not survive a later removal of the project-layer key). D-11's "current EFFECTIVE value" reads naturally for the project-scope options; for a global-default option the effective value of the GLOBAL layer is the truthful display, and the idempotence comparison must be against that layer's value.
-**Fix:** Resolve the global twins' `currentValue` from the global layer alone (load the global file through `modelrouting.Load(s.globalPath)`), and make the idempotence guard scope-aware: compare against the addressed layer's current value, not the combined resolution. Distinct from the recorded pre-stamp chip finding — this concerns the `_global/` namespace, not the tier-resolved vs profile-slug divergence.
+```go
+case blockText:
+    …
+    if err := ctx.Err(); err != nil {
+        return resp, sb.String(), err
+    }
+```
 
-### Info
+```go
+// before Step 6 in runTurn:
+if err := ctx.Err(); err != nil {
+    s.recordCanceled(turnID, "context cancelled before turn end")
+    return stopCancelled, nil
+}
+```
 
-#### IN-01: Dead redact call kept only to pin an import
+### WR-05: Fallback Manager construction error swallowed — nil-deref tail
+
+**File:** `internal/runtime/runtime.go:1014-1018`
+
+**Issue:** When `session.NewManager(dir, …)` fails, the fallback discards the second error: `mgr, _ = session.NewManager(filepath.Join(os.TempDir(), "ass-guard"), …)`. `NewManager` returns `(nil, err)` when its directory cannot be created/opened, so a double failure (read-only workdir + unwritable temp) leaves `mgr == nil`; the very next use `ecosys.NewHookRunner(…, mgr.Path())` dereferences nil. The panic is recovered by the server's dispatch recover (client gets -32603 on every prompt), but the session is permanently broken with only a generic internal error — the real cause (both transcript locations unwritable) is never logged.
+
+**Fix:** Log and surface the fallback failure; degrade deterministically instead of nil-deref:
+
+```go
+mgr, err := session.NewManager(dir, sessionID, redactorAdapter{})
+if err != nil {
+    log.Printf("ass-guard: transcript open failed for %s (%v); retrying in temp", dir, err)
+    mgr, err = session.NewManager(filepath.Join(os.TempDir(), "ass-guard"), sessionID, redactorAdapter{})
+    if err != nil {
+        log.Printf("ass-guard: transcript open failed in temp too: %v", err)
+        return nil // callers already nil-guard sessions (expandUserBlocks precedent)
+    }
+}
+```
+
+(then nil-guard `mgr` at the `NewHookRunner`/`s.Manager` sites, matching the existing `sess == nil || sess.Manager == nil` discipline).
+
+### WR-06: Automation firing target is "most recently created", not "most recently active"
+
+**File:** `internal/runtime/cron_wiring.go:59-68` (with `internal/runtime/runtime.go:1254-1257`)
+
+**Issue:** `currentSessionID`'s contract comment says "the most recently ACTIVE session (the firing target — the project's automations fire into the session the operator is driving)". The only writer is `sessionFor`, and only on **creation** (`r.lastSessionID = sessionID` at line 1257); re-prompting an older session never updates it. With two sessions on one connection (session/new is client-controlled), after creating session B every due automation fires into B even while the operator is actively driving A — turns (and their tool side effects) land in a session nobody is watching.
+
+**Fix:** Update the marker at turn start instead of construction: in `Run` (and the timer-resume path), after resolving `sess`, set `r.lastSessionID = sessionID` under `sessMu` — or record a `lastActiveAt` per session and have `currentSessionID` return the max.
+
+## Info
+
+### IN-01: Dead keep-alive call in handleSessionSetMode
 
 **File:** `internal/acp/handlers.go:489`
-**Issue:** `_ = redact.ScrubError(nil) // keep redact import live` in `handleSessionSetMode` is dead code masking an unused import — the compile error is the honest signal.
-**Fix:** Drop the line and the import; re-add both when real scrubbing lands.
 
-#### IN-02: `asciiDelete` misnames the UUID version bits
+**Issue:** `_ = redact.ScrubError(nil) // keep redact import live` — a no-op call whose only purpose is pinning an import. Dead code that will confuse the next reader; if the import were genuinely needed it would be used, not kept warm.
 
-**File:** `internal/acp/handlers.go:13,530`
-**Issue:** `const asciiDelete = 0x40` — 0x40 is `@`; ASCII DEL is 0x7F. The value is the RFC 4122 version-4 bit pattern (`0b0100_0000`) OR-ed into byte 6. The misleading name sits in a crypto-adjacent id path (the session package's twin names the same constant correctly: `uuidVersionV4`).
-**Fix:** Rename to `uuidVersionV4` (matching `internal/session/manager.go`), same for the variant constant.
+**Fix:** Remove the call; re-add the import when real scrubbing lands in this handler.
 
-#### IN-03: raw_thinking "verbatim / byte-identical / no re-serialization" overclaims the mechanism
+### IN-02: Misleading uuidV4 constant name `asciiDelete`
 
-**File:** `internal/session/manager.go:106-128`; comments at `internal/session/transcript.go:50-56,143-150`
-**Issue:** D-23's actual invariant — the Redactor never sees thinking bytes — is real and tested. But the comments claim the payload is "never re-serialized" and retained "byte-identical": `appendLineUnredacted` calls `json.Marshal(line)`, and Go's encoder re-processes embedded `json.RawMessage` through `compact` (stripping insignificant whitespace, HTML-escaping `<>&` under the default `escapeHTML`). The JSON value is preserved; the bytes are not guaranteed identical. Later phases lock against this transcript contract (D-20 is one-way), so the on-disk guarantee should be stated accurately.
-**Fix:** Reword the comments to "JSON-value-preserving; the Redactor is never invoked" (or marshal with an `escapeHTML=false` encoder if byte-fidelity is actually required).
+**File:** `internal/acp/handlers.go:13, 530`
 
-#### IN-04: Malformed response frame (id, no method, neither result nor error) produces a spurious -32601
+**Issue:** `const asciiDelete = 0x40` — 0x40 is `'@'`, not ASCII DEL (0x7F). The value is correct (it ORs the version nibble to 4 in `(b[6]&0x0F)|0x40`), but the name asserts a wrong fact about the code. `internal/session` names the same value `uuidVersionV4` correctly.
 
-**File:** `internal/acp/server.go:361-365`
-**Issue:** The response-interception condition requires `Result != nil || Error != nil`; a response-shaped frame carrying neither falls through to request dispatch, and `handleRequest` answers method `""` with a -32601 error echoing the peer's id — protocol garbage in reply to a malformed peer frame. Low likelihood (Zed controls that side), but the drop-and-log path used for unknown registry ids is the better neighbor.
-**Fix:** Treat `ID != nil && Method == ""` with neither payload field as a malformed response: log structured and drop, mirroring `registryUnknownResponseLogFormat`.
+**Fix:** Rename to `uuidVersionV4` (matching `internal/session/manager.go:141`), keeping the literal.
 
-#### IN-05: `SetNotify`/`SetApplyHook` write ConfigSurface fields without the surface mutex
+### IN-03: Duplicate identical error sentinels in the tool-loop bound
 
-**File:** `internal/acpserve/config_surface.go:126-134`
-**Issue:** `s.notify` and `s.applyHook` are read under `s.mu` (emitLocked/applyLocked) but written without it. Safe today only because the Run composition wires both strictly before `srv.Serve` starts reading stdin; any future late wiring or re-wiring is a data race.
-**Fix:** Take `s.mu` in both setters (they are called once at startup; the lock is free), or document the wired-before-serve constraint at the field declarations.
+**File:** `internal/session/session.go:23-24`
+
+**Issue:** `errToolLoopExceededMax` and `errToolLoopExceeded` carry the identical message "tool loop exceeded max iterations"; one goes to the transcript, one is returned. Two names for one fact invites drift, and `errors.Is` against either sentinel misses the other.
+
+**Fix:** Keep one sentinel; use it at both the `appendError` and the return site (distinguish by wrapping: `fmt.Errorf("session: %w", errToolLoopExceeded)` for the caller-facing form).
+
+### IN-04: optionsLocked comment contradicts the code for the _global pending twins
+
+**File:** `internal/acpserve/config_surface.go:580-584` vs `624-628` (and `233-245`)
+
+**Issue:** The comment says the twins "describe a layer FILE; the blob channel stays on the bare options", but for the pending twins the code calls `s.pendingCurrentLocked(...)`, which **does** apply `blobFills` — so `_global/permissions.mode` and `_global/compaction-threshold` advertise blob-derived values, contradicting the stated invariant. Relatedly, `ApplyBlobDefaults` strips the `_global/` prefix before lookup, so a `_global/model` blob key silently fills the bare option's slot (scope-flattening the comment never mentions).
+
+**Fix:** Either route the pending twins through a fill-less resolver (they have no layer truth today — plain defaults), or amend the comment to state that pending options (bare and twins) advertise the blob fill and that blob keys are scope-flattened by design. Either way, make comment and code agree and pin the chosen semantics in `config_test.go`.
+
+### IN-05: Toolchain pin (go 1.26) diverges from the documented supported floor (1.25)
+
+**File:** `.mise.toml:2` (with `go.mod`: `go 1.26`)
+
+**Issue:** The workspace stack document says to pin `go 1.25` in go.mod as the supported floor; the repo declares `go 1.26` and mise installs 1.26. That raises the minimum toolchain above the documented floor and silently changes the compatibility contract for contributors and CI.
+
+**Fix:** Either lower go.mod to `go 1.25` (the code uses nothing newer than `sync.WaitGroup.Go`, which is 1.25) or update the stack document to record 1.26 as the floor. One line either way; the point is that doc and build agree.
+
+### IN-06: A blank stdin line produces a spurious -32700 error frame
+
+**File:** `internal/acp/framer.go:63-66` (with `internal/acp/server.go:344-353`)
+
+**Issue:** `readFrame` returns `errEmptyFrameLine` for a blank line, and `Serve` routes every read error that isn't EOF to `handleParseError`, which writes a `{"id":null,"error":{"code":-32700}}` frame to stdout. A client (or transport layer) that emits a stray blank line gets a protocol-level error response for a frame it never sent; the line is information-free — there is nothing to parse or report.
+
+**Fix:** Treat an empty line as a silent skip — return a `(nil, nil)` sentinel from `readFrame` and `continue` in `Serve` when both are nil, or special-case `errEmptyFrameLine` before `handleParseError`.
 
 ---
 
-_Reviewed: 2026-08-27T20:13:26Z_
+_Reviewed: 2026-08-28T13:38:01Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: deep_
