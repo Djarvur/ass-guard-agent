@@ -8,6 +8,7 @@
 #                 (config.yaml / scheduling.yaml / internal/scheduler)
 #   turn-behavior — internal/engine + internal/session + internal/coreexec +
 #                 internal/runtime-equivalent wiring (cmd/ass-guard serve path)
+#   kit/ equivalents for the SEED-001 extraction (Phase 25, D-20/Pitfall 1) sit beside the legacy paths — both retained.
 #
 # Protocol: exit 0 + the no-change report when nothing matches; exit 3 with
 # the matched classes + the gate instruction when any matches.
@@ -27,13 +28,18 @@ set -eu
 CLASSES='
 profile:profiles/
 model:internal/provider
+model:kit/provider
 model:internal/shaper
+model:kit/shaper
 model:internal/scheduler
 model:config.yaml
 model:scheduling.yaml
 turn-behavior:internal/engine
+turn-behavior:kit/engine
 turn-behavior:internal/session
+turn-behavior:kit/session
 turn-behavior:internal/coreexec
+turn-behavior:kit/runtime
 turn-behavior:cmd/ass-guard
 turn-behavior:internal/evalharness
 turn-behavior:internal/evalsuite
@@ -57,6 +63,12 @@ selftest() {
     check "internal/engine/decide.go"
     check "internal/session/ask.go"
     check "cmd/ass-guard/acp_serve.go"
+    # Phase 25 (D-20): the kit layout must fire the gate too — hypothetical
+    # post-extraction paths for the three turn-behavior + one model entries.
+    check "kit/engine/decide.go"
+    check "kit/session/ask.go"
+    check "kit/runtime/runner.go"
+    check "kit/provider/stream.go"
     for clean in "docs/README.md" ".planning/STATE.md" "scripts/eval-change-class.sh"; do
         out=$(match_class "$clean")
         if [ -n "$out" ]; then
