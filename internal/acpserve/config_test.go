@@ -221,96 +221,115 @@ func TestConfigSurface_GlobalTwinsAdvertiseGlobalLayer(t *testing.T) {
 	t.Run("model-twin-shows-global-layer", func(t *testing.T) {
 		t.Parallel()
 
-		f := newSurfaceFixture(t)
-		// Project layer wins the COMBINED model with GLM-5.3; the global layer
-		// (whose own session_tier stays at the heavy default) binds glm-5.2.
-		writeLayer(t, f.projectPath, "tiers:\n  heavy:\n    model: "+testModelPrimary+"\n")
-		writeLayer(t, f.globalPath, "tiers:\n  heavy:\n    model: "+testModelFallback+"\n")
-
-		opts := f.surface.Options()
-		assertEight(t, opts, "model twin advertisement")
-
-		// Invariant: the BARE entries keep the combined (project-won) values
-		// (D-11 chain resolution for the default scope, unchanged).
-		if got := optionByID(t, opts, optModel).CurrentValue; got != testModelPrimary {
-			t.Errorf("bare model currentValue = %q; want the combined %q (D-11 unchanged)", got, testModelPrimary)
-		}
-
-		if got := optionByID(t, opts, optTier).CurrentValue; got != testTierHeavy {
-			t.Errorf("bare tier currentValue = %q; want the combined heavy (D-11 unchanged)", got)
-		}
-
-		if got := optionByID(t, opts, optGlobalPrefix+optModel).CurrentValue; got != testModelFallback {
-			t.Errorf("_global/model currentValue = %q; want the global layer's own %q (not the project's value under a global label)",
-				got, testModelFallback)
-		}
+		globalTwinsModelTwinSubtest(t)
 	})
 
 	t.Run("tier-twin-shows-global-layer", func(t *testing.T) {
 		t.Parallel()
 
-		f := newSurfaceFixture(t)
-		// Project layer pins the COMBINED tier to heavy; the global layer's own
-		// session_tier is light (with its light binding declared).
-		writeLayer(t, f.projectPath, "session_tier: "+testTierHeavy+"\n")
-		writeLayer(t, f.globalPath,
-			"tiers:\n  light:\n    model: "+testModelPrimary+"\nsession_tier: "+testTierLight+"\n")
-
-		opts := f.surface.Options()
-		assertEight(t, opts, "tier twin advertisement")
-
-		if got := optionByID(t, opts, optTier).CurrentValue; got != testTierHeavy {
-			t.Errorf("bare tier currentValue = %q; want the combined heavy (project wins, D-11 unchanged)", got)
-		}
-
-		if got := optionByID(t, opts, optGlobalPrefix+optTier).CurrentValue; got != testTierLight {
-			t.Errorf("_global/tier currentValue = %q; want the global layer's own %q", got, testTierLight)
-		}
-
-		// The model twin resolves the GLOBAL layer's own tier (light → GLM-5.3),
-		// one coherent layer view.
-		if got := optionByID(t, opts, optGlobalPrefix+optModel).CurrentValue; got != testModelPrimary {
-			t.Errorf("_global/model currentValue = %q; want the global layer's light binding %q", got, testModelPrimary)
-		}
+		globalTwinsTierTwinSubtest(t)
 	})
 
 	t.Run("absent-global-file-shows-embedded-floor", func(t *testing.T) {
 		t.Parallel()
 
-		f := newSurfaceFixture(t)
-		// Project layer wins the combined view with glm-5.2; NO global file —
-		// the twins describe the global layer, which resolves to the floor.
-		writeLayer(t, f.projectPath, "tiers:\n  heavy:\n    model: "+testModelFallback+"\n")
-
-		changed, err := f.surface.ApplyBlobDefaults(map[string]json.RawMessage{
-			optTier: json.RawMessage(`"` + testTierLight + `"`),
-		})
-		if err != nil {
-			t.Fatalf("ApplyBlobDefaults: %v", err)
-		}
-
-		if !changed {
-			t.Fatal("blob tier fill over the unset slot did not report changed")
-		}
-
-		opts := f.surface.Options()
-		assertEight(t, opts, "floor advertisement")
-
-		// The blob fill shows on the BARE tier (in-memory combined view) but
-		// never on the twins (they describe a layer file, not the overlay).
-		if got := optionByID(t, opts, optTier).CurrentValue; got != testTierLight {
-			t.Errorf("bare tier currentValue = %q; want the in-memory blob fill light", got)
-		}
-
-		if got := optionByID(t, opts, optGlobalPrefix+optModel).CurrentValue; got != testModelPrimary {
-			t.Errorf("_global/model currentValue = %q; want the embedded floor's %q (not the project's %q)",
-				got, testModelPrimary, testModelFallback)
-		}
-
-		if got := optionByID(t, opts, optGlobalPrefix+optTier).CurrentValue; got != testTierHeavy {
-			t.Errorf("_global/tier currentValue = %q; want the embedded floor's heavy (never the blob fill)", got)
-		}
+		globalTwinsAbsentGlobalFileSubtest(t)
 	})
+}
+
+// globalTwinsModelTwinSubtest: the project layer wins the COMBINED model; the
+// global layer (whose own session_tier stays at the heavy default) binds the
+// other model. The bare entries keep the combined values (D-11 unchanged);
+// the model twin shows the global layer's own binding.
+func globalTwinsModelTwinSubtest(t *testing.T) {
+	t.Helper()
+
+	f := newSurfaceFixture(t)
+	writeLayer(t, f.projectPath, "tiers:\n  heavy:\n    model: "+testModelPrimary+"\n")
+	writeLayer(t, f.globalPath, "tiers:\n  heavy:\n    model: "+testModelFallback+"\n")
+
+	opts := f.surface.Options()
+	assertEight(t, opts, "model twin advertisement")
+
+	if got := optionByID(t, opts, optModel).CurrentValue; got != testModelPrimary {
+		t.Errorf("bare model currentValue = %q; want the combined %q (D-11 unchanged)", got, testModelPrimary)
+	}
+
+	if got := optionByID(t, opts, optTier).CurrentValue; got != testTierHeavy {
+		t.Errorf("bare tier currentValue = %q; want the combined heavy (D-11 unchanged)", got)
+	}
+
+	if got := optionByID(t, opts, optGlobalPrefix+optModel).CurrentValue; got != testModelFallback {
+		t.Errorf("_global/model currentValue = %q; want the global layer's own %q (project value under a global label)",
+			got, testModelFallback)
+	}
+}
+
+// globalTwinsTierTwinSubtest: the project layer pins the COMBINED tier to
+// heavy; the global layer's own session_tier is light (binding declared). The
+// twins resolve as one coherent global-layer view: tier twin = light, model
+// twin = the global layer's light binding.
+func globalTwinsTierTwinSubtest(t *testing.T) {
+	t.Helper()
+
+	f := newSurfaceFixture(t)
+	writeLayer(t, f.projectPath, "session_tier: "+testTierHeavy+"\n")
+	writeLayer(t, f.globalPath,
+		"tiers:\n  light:\n    model: "+testModelPrimary+"\nsession_tier: "+testTierLight+"\n")
+
+	opts := f.surface.Options()
+	assertEight(t, opts, "tier twin advertisement")
+
+	if got := optionByID(t, opts, optTier).CurrentValue; got != testTierHeavy {
+		t.Errorf("bare tier currentValue = %q; want the combined heavy (project wins, D-11 unchanged)", got)
+	}
+
+	if got := optionByID(t, opts, optGlobalPrefix+optTier).CurrentValue; got != testTierLight {
+		t.Errorf("_global/tier currentValue = %q; want the global layer's own %q", got, testTierLight)
+	}
+
+	if got := optionByID(t, opts, optGlobalPrefix+optModel).CurrentValue; got != testModelPrimary {
+		t.Errorf("_global/model currentValue = %q; want the global layer's light binding %q",
+			got, testModelPrimary)
+	}
+}
+
+// globalTwinsAbsentGlobalFileSubtest: no global layer file — the twins
+// describe the global LAYER, which resolves to the embedded floor, never the
+// project's values nor a blob fill (the bare tier shows the blob fill; the
+// twins do not).
+func globalTwinsAbsentGlobalFileSubtest(t *testing.T) {
+	t.Helper()
+
+	f := newSurfaceFixture(t)
+	writeLayer(t, f.projectPath, "tiers:\n  heavy:\n    model: "+testModelFallback+"\n")
+
+	changed, err := f.surface.ApplyBlobDefaults(map[string]json.RawMessage{
+		optTier: json.RawMessage(`"` + testTierLight + `"`),
+	})
+	if err != nil {
+		t.Fatalf("ApplyBlobDefaults: %v", err)
+	}
+
+	if !changed {
+		t.Fatal("blob tier fill over the unset slot did not report changed")
+	}
+
+	opts := f.surface.Options()
+	assertEight(t, opts, "floor advertisement")
+
+	if got := optionByID(t, opts, optTier).CurrentValue; got != testTierLight {
+		t.Errorf("bare tier currentValue = %q; want the in-memory blob fill light", got)
+	}
+
+	if got := optionByID(t, opts, optGlobalPrefix+optModel).CurrentValue; got != testModelPrimary {
+		t.Errorf("_global/model currentValue = %q; want the embedded floor's %q (not the project's %q)",
+			got, testModelPrimary, testModelFallback)
+	}
+
+	if got := optionByID(t, opts, optGlobalPrefix+optTier).CurrentValue; got != testTierHeavy {
+		t.Errorf("_global/tier currentValue = %q; want the embedded floor's heavy (never the blob fill)", got)
+	}
 }
 
 func TestConfigSurface_SetPersistsThroughLoader(t *testing.T) {
@@ -581,69 +600,83 @@ func TestScopeRouting_GlobalWritePersistsWhenCombinedMatches(t *testing.T) {
 	t.Run("differing-addressed-layer-value-persists", func(t *testing.T) {
 		t.Parallel()
 
-		f := newSurfaceFixture(t)
-		// Project layer wins the COMBINED resolution with GLM-5.3; the global
-		// layer's own value is glm-5.2.
-		writeLayer(t, f.projectPath, "tiers:\n  heavy:\n    model: "+testModelPrimary+"\n")
-		writeLayer(t, f.globalPath, "tiers:\n  heavy:\n    model: "+testModelFallback+"\n")
-
-		opts, err := f.surface.Set("sess-1", "_global/model", testModelPrimary)
-		if err != nil {
-			t.Fatalf("Set(_global/model) equal to the combined effective: %v", err)
-		}
-
-		assertEight(t, opts, "global-scope set response")
-
-		// Read back through the REAL loader: the global file must carry the
-		// written value (the silent swallow kept glm-5.2 on disk).
-		cfg, err := modelrouting.Load(f.globalPath)
-		if err != nil {
-			t.Fatalf("reload global layer: %v", err)
-		}
-
-		if cfg.Tiers[testTierHeavy].Model != testModelPrimary {
-			t.Errorf("global tiers.heavy.model = %q; want the explicitly global write %q persisted",
-				cfg.Tiers[testTierHeavy].Model, testModelPrimary)
-		}
-
-		if got := strings.Count(f.stderr.String(), "idempotent"); got != 0 {
-			t.Errorf("legitimate global mutation classified as an idempotent re-push (%d log lines) — silent swallow",
-				got)
-		}
+		globalWritePersistsSubtest(t)
 	})
 
 	t.Run("addressed-layer-true-idempotence", func(t *testing.T) {
 		t.Parallel()
 
-		f := newSurfaceFixture(t)
-		// The GLOBAL layer genuinely holds glm-5.2; no project layer — the
-		// combined effective is glm-5.2 as well.
-		writeLayer(t, f.globalPath, "tiers:\n  heavy:\n    model: "+testModelFallback+"\n")
-		writeLayer(t, f.projectPath, unrelatedLayer)
-
-		globalBefore := readLayerBytes(t, f.globalPath)
-
-		opts, err := f.surface.Set("sess-1", "_global/model", testModelFallback)
-		if err != nil {
-			t.Fatalf("Set(_global/model) equal to the global layer's value: %v", err)
-		}
-
-		assertEight(t, opts, "global idempotent response")
-
-		if got := readLayerBytes(t, f.globalPath); got != globalBefore {
-			t.Errorf("true global idempotence churned the global file:\nbefore=%q\nafter=%q",
-				globalBefore, got)
-		}
-
-		if got := strings.Count(f.stderr.String(), "idempotent"); got != 1 {
-			t.Errorf("idempotent log lines = %d; want exactly 1 (the addressed layer holds the value) (stderr=%q)",
-				got, f.stderr.String())
-		}
-
-		if f.notifyCount() != 0 {
-			t.Error("global idempotent re-push emitted a config_option_update (nothing changed)")
-		}
+		globalTrueIdempotenceSubtest(t)
 	})
+}
+
+// globalWritePersistsSubtest: the project layer wins the COMBINED resolution
+// with GLM-5.3; the global layer's own value is glm-5.2. Setting
+// _global/model = GLM-5.3 (the combined value) must persist — read back
+// through the REAL loader, not the silent swallow.
+func globalWritePersistsSubtest(t *testing.T) {
+	t.Helper()
+
+	f := newSurfaceFixture(t)
+	writeLayer(t, f.projectPath, "tiers:\n  heavy:\n    model: "+testModelPrimary+"\n")
+	writeLayer(t, f.globalPath, "tiers:\n  heavy:\n    model: "+testModelFallback+"\n")
+
+	opts, err := f.surface.Set("sess-1", "_global/model", testModelPrimary)
+	if err != nil {
+		t.Fatalf("Set(_global/model) equal to the combined effective: %v", err)
+	}
+
+	assertEight(t, opts, "global-scope set response")
+
+	cfg, err := modelrouting.Load(f.globalPath)
+	if err != nil {
+		t.Fatalf("reload global layer: %v", err)
+	}
+
+	if cfg.Tiers[testTierHeavy].Model != testModelPrimary {
+		t.Errorf("global tiers.heavy.model = %q; want the explicitly global write %q persisted",
+			cfg.Tiers[testTierHeavy].Model, testModelPrimary)
+	}
+
+	if got := strings.Count(f.stderr.String(), "idempotent"); got != 0 {
+		t.Errorf("legitimate global mutation classified as an idempotent re-push (%d log lines) — silent swallow",
+			got)
+	}
+}
+
+// globalTrueIdempotenceSubtest: the GLOBAL layer genuinely holds glm-5.2 (the
+// combined effective is glm-5.2 as well — no project overlay). The guard must
+// still fire when the ADDRESSED layer holds the value: no file churn, one
+// structured log line, no config_option_update.
+func globalTrueIdempotenceSubtest(t *testing.T) {
+	t.Helper()
+
+	f := newSurfaceFixture(t)
+	writeLayer(t, f.globalPath, "tiers:\n  heavy:\n    model: "+testModelFallback+"\n")
+	writeLayer(t, f.projectPath, unrelatedLayer)
+
+	globalBefore := readLayerBytes(t, f.globalPath)
+
+	opts, err := f.surface.Set("sess-1", "_global/model", testModelFallback)
+	if err != nil {
+		t.Fatalf("Set(_global/model) equal to the global layer's value: %v", err)
+	}
+
+	assertEight(t, opts, "global idempotent response")
+
+	if got := readLayerBytes(t, f.globalPath); got != globalBefore {
+		t.Errorf("true global idempotence churned the global file:\nbefore=%q\nafter=%q",
+			globalBefore, got)
+	}
+
+	if got := strings.Count(f.stderr.String(), "idempotent"); got != 1 {
+		t.Errorf("idempotent log lines = %d; want exactly 1 (the addressed layer holds the value) (stderr=%q)",
+			got, f.stderr.String())
+	}
+
+	if f.notifyCount() != 0 {
+		t.Error("global idempotent re-push emitted a config_option_update (nothing changed)")
+	}
 }
 
 func TestSetIdempotent_BlobDerivedEffective(t *testing.T) {

@@ -179,33 +179,20 @@ func (s *ConfigSurface) Set(sessionID, optionID string, value any) ([]acp.Config
 		return nil, verr
 	}
 
-	// Idempotence basis (WR-05 gap closure): the ADDRESSED layer's current
-	// value, not the combined resolution. The project (default) scope keeps
-	// the combined comparison — D-10's anti-promotion guard on the Zed
-	// re-push scope; the global scope compares against the global layer ALONE
-	// (D-08: the layers are independently addressable write targets), so a
-	// legitimate global mutation is never classified as redundant and
-	// silently dropped.
-	basis := s.effectiveFor(bare, res.tier, res.model)
-	basisName := "the currently-effective value"
-
-	if scope == scopeGlobal {
-		g, gerr := s.globalOnlyResolvedLocked()
-		if gerr != nil {
-			return nil, fmt.Errorf("resolve global config layer: %w", gerr)
-		}
-
-		basis = s.effectiveFor(bare, g.tier, g.model)
-		basisName = "the global layer's current value"
+	// Idempotence basis: the ADDRESSED layer's current value, not the combined
+	// resolution (WR-05 gap closure — see the helper's contract).
+	basis, berr := s.idempotenceBasisLocked(bare, scope, res)
+	if berr != nil {
+		return nil, berr
 	}
 
-	if val == basis {
+	if val == basis.value {
 		// D-10 guard on the set channel: a redundant client default (Zed
 		// re-pushes its stored defaults every connection) must not churn the
 		// operator's file — nor promote a blob-derived effective value into
 		// persisted explicit config. One structured line, refreshed set, done.
 		s.logf("option %q: value %q equals %s — idempotent re-push, no layer write (D-10)",
-			optionID, val, basisName)
+			optionID, val, basis.where)
 
 		return s.optionsLocked(), nil
 	}
@@ -334,6 +321,41 @@ func (s *ConfigSurface) resolveLocked() (*resolvedConfig, error) {
 	return &resolvedConfig{tier: tier, model: model, cfg: cfg}, nil
 }
 
+// idempotenceBasis is the addressed-layer value a set is compared against for
+// the idempotence guard, with the basis's human name for the log line.
+type idempotenceBasis struct {
+	value string
+	where string
+}
+
+// idempotenceBasisLocked returns the value a set is compared against for the
+// idempotence guard. The basis is the ADDRESSED layer's current value (WR-05
+// gap closure): the project (default) scope keeps the combined comparison —
+// D-10's anti-promotion guard on the Zed re-push scope; the global scope
+// compares against the global layer ALONE (D-08: the layers are independently
+// addressable write targets), so a legitimate global mutation is never
+// classified as redundant and silently dropped.
+func (s *ConfigSurface) idempotenceBasisLocked(
+	bare, scope string, res *resolvedConfig,
+) (idempotenceBasis, error) {
+	if scope != scopeGlobal {
+		return idempotenceBasis{
+			value: s.effectiveFor(bare, res.tier, res.model),
+			where: "the currently-effective value",
+		}, nil
+	}
+
+	g, gerr := s.globalOnlyResolvedLocked()
+	if gerr != nil {
+		return idempotenceBasis{}, fmt.Errorf("resolve global config layer: %w", gerr)
+	}
+
+	return idempotenceBasis{
+		value: s.effectiveFor(bare, g.tier, g.model),
+		where: "the global layer's current value",
+	}, nil
+}
+
 // globalOnlyResolvedLocked resolves the GLOBAL layer alone: the layer file
 // through modelrouting.Load when it exists, the embedded floor when the path
 // is empty or the file is absent. Tier/model resolve exactly like resolveLocked
@@ -344,7 +366,8 @@ func (s *ConfigSurface) globalOnlyResolvedLocked() (*resolvedConfig, error) {
 	var paths []string
 
 	if s.globalPath != "" {
-		if _, serr := os.Stat(s.globalPath); serr == nil {
+		_, serr := os.Stat(s.globalPath)
+		if serr == nil {
 			paths = append(paths, s.globalPath)
 		}
 	}
@@ -520,6 +543,21 @@ func (s *ConfigSurface) emitLocked(sessionID string) {
 
 // --- advertisement (callers hold s.mu) ---
 
+// floorResolvedLocked resolves the embedded floor alone (no layer files, no
+// blob overlay) — the degradation target when a layer file cannot be loaded.
+func (s *ConfigSurface) floorResolvedLocked() (*resolvedConfig, error) {
+	cfg, err := modelrouting.Load()
+	if err != nil {
+		return nil, fmt.Errorf("load embedded floor: %w", err)
+	}
+
+	return &resolvedConfig{
+		tier:  cfg.SessionTier,
+		model: s.resolveModelLocked(cfg, cfg.SessionTier),
+		cfg:   cfg,
+	}, nil
+}
+
 // optionsLocked builds the eight-entry menu. A layer-load failure degrades to
 // the embedded floor (loudly); only a floor failure leaves the advertisement
 // empty.
@@ -528,17 +566,31 @@ func (s *ConfigSurface) optionsLocked() []acp.ConfigOptionFrame {
 	if err != nil {
 		s.logf("layer load failed during advertisement (falling back to the embedded floor): %v", err)
 
-		cfg, lerr := modelrouting.Load()
-		if lerr != nil {
-			s.logf("advertisement unavailable (embedded floor failed: %v)", lerr)
+		f, ferr := s.floorResolvedLocked()
+		if ferr != nil {
+			s.logf("advertisement unavailable (embedded floor failed: %v)", ferr)
 
 			return nil
 		}
 
-		res = &resolvedConfig{
-			tier:  cfg.SessionTier,
-			model: s.resolveModelLocked(cfg, cfg.SessionTier),
-			cfg:   cfg,
+		res = f
+	}
+
+	// The _global twins describe the GLOBAL LAYER alone (WR-05 gap 4a): their
+	// current values come from the global layer's own resolution — never the
+	// project-won combined view, never the blob overlay (the twins describe a
+	// layer FILE; the blob channel stays on the bare options). An unresolvable
+	// global layer degrades loudly to the embedded floor, then to the combined
+	// view as the last resort so the menu stays whole.
+	gRes, gerr := s.globalOnlyResolvedLocked()
+	if gerr != nil {
+		s.logf("global layer load failed during advertisement (twins fall back to the embedded floor): %v", gerr)
+
+		gRes, gerr = s.floorResolvedLocked()
+		if gerr != nil {
+			s.logf("embedded floor failed for the _global twins (%v); keeping the combined values", gerr)
+
+			gRes = res
 		}
 	}
 
@@ -566,9 +618,9 @@ func (s *ConfigSurface) optionsLocked() []acp.ConfigOptionFrame {
 			"Context compaction trigger (phase "+phasePendingCompaction+")",
 			categoryCustom, s.pendingCurrentLocked(optCompactionThresh), pendingValues(optCompactionThresh)),
 		build(optGlobalPrefix+optModel, "Model (global default)", "Model default in the global config layer",
-			categoryModel, res.model, models),
+			categoryModel, gRes.model, models),
 		build(optGlobalPrefix+optTier, "Session tier (global default)", "Tier default in the global config layer",
-			categoryModelConfig, res.tier, tiers),
+			categoryModelConfig, gRes.tier, tiers),
 		build(optGlobalPrefix+optPermissionsMode, "Permission mode (global default)",
 			"Global permission gating default",
 			categoryMode, s.pendingCurrentLocked(optPermissionsMode), pendingValues(optPermissionsMode)),
