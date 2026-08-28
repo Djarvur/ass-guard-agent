@@ -387,9 +387,11 @@ func (d *ACPDispatcher) PopulateContinue(dec *engine.Decision) {
 }
 
 // Hook launches the hook-DAG matching the trigger derived from the signal. The
-// hook executor's seams (CommandRunner/TurnRunner/BoundaryOpener) are wired by
-// runOneTurn for the active session before Observe runs, so Hook just selects
-// the matching hook + executes it. The signal shape is "hook:<id>"; v1 maps
+// dispatcher carries the PER-TURN hook executor whose seams
+// (CommandRunner/TurnRunner/BoundaryOpener) are bound to the active session at
+// construction (runOneTurn — 16-REVIEW WR-01: per-invocation wiring, the shared
+// runner templates are never rebound), so Hook just selects the matching hook +
+// executes it. The signal shape is "hook:<id>"; v1 maps
 // proposal-ready/changes-proposed to post-phase, everything else to
 // post-implement.
 func (d *ACPDispatcher) Hook(ctx context.Context, hookSignal, sourceTurnID string) string {

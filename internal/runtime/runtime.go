@@ -303,6 +303,10 @@ func (r *Runner) SetupEngine() error {
 	}
 
 	r.hookCfg = hooks
+	// 16-REVIEW WR-01: the shared executor + engine are Bus/Log TEMPLATES only.
+	// The session-bound wiring (hook seams, decision Manager, dispatcher) is
+	// built PER-TURN in runOneTurn — never rebound on these shared instances
+	// (a rebind cross-wires concurrent sessions and parked 13-00 chains).
 	r.hookExec = &hookdag.Executor{Bus: r.bus, Log: slog.Default()}
 
 	// Learning store (LRN-01..04) — versioned .ass-guard/learned.yaml.
@@ -315,24 +319,9 @@ func (r *Runner) SetupEngine() error {
 		log.Printf("ass-guard: learning store open failed (continuing without learning): %v", lerr)
 	}
 
-	// The engine + dispatcher (ActionDispatcher wiring hook→hookdag, ask→store).
+	// The engine template (Bus/Log only — see the WR-01 note on r.hookExec;
+	// the ActionDispatcher is per-turn too).
 	r.eng = &engine.Engine{Bus: r.bus, Log: slog.Default()}
-	// nextPromptFor resolves DYNAMICALLY through the pattern-table interface so
-	// the table remains the single source of truth (tests may swap it after
-	// setup; the dispatcher follows).
-	r.eng.Dispatcher = enginebridge.NewACPDispatcher(&enginebridge.BridgeConfig{
-		Hooks:   r.hookExec,
-		HookCfg: r.hookCfg,
-		Learned: r.learned,
-		Bus:     r.bus,
-		NextPromptFor: func(patternID string) string {
-			if np, ok := r.patternTable.(patternNextPrompter); ok {
-				return np.NextPromptFor(patternID)
-			}
-
-			return ""
-		},
-	})
 	r.engineEnabled = true
 
 	return nil
@@ -756,18 +745,41 @@ func (r *Runner) runOneTurn(
 		// Backward-compatible path: no engine wrap.
 		return sess.Prompt(ctx, blocks) //nolint:wrapcheck // session delegation
 	}
-	// Wire the hook-DAG seams to the active session so ActionHook can launch the
-	// post-implement/post-phase DAG against the real Session Core (HOOK-05 —
-	// send-prompt IS a turn; fresh-context IS a boundary).
-	if r.hookExec != nil {
-		r.hookExec.Commands = enginebridge.NewRealCommandRunner()
-		r.hookExec.Turns = enginebridge.NewHookSessionTurnRunner(sess)
-		r.hookExec.Boundaries = enginebridge.NewHookSessionBoundaryOpener(sess.Manager)
+	// 16-REVIEW WR-01: the engine wiring is PER-INVOCATION, not a rebind of
+	// shared state. The old code pointed r.hookExec's seams and r.eng.Manager
+	// at the current session on every engine-enabled turn; two sessions turning
+	// concurrently — and a parked 13-00 chain resuming AFTER a later session's
+	// rebind — then executed hook DAGs and wrote engine decisions into the
+	// WRONG session's transcript. SetupEngine's r.hookExec/r.eng stay
+	// session-free templates (Bus/Log only); this turn gets its own
+	// session-bound executor, dispatcher, and engine instance.
+	turnExec := &hookdag.Executor{
+		// The hook-DAG seams bind to the ACTIVE session so ActionHook can launch
+		// the post-implement/post-phase DAG against the real Session Core
+		// (HOOK-05 — send-prompt IS a turn; fresh-context IS a boundary).
+		Bus:        r.hookExec.Bus,
+		Log:        r.hookExec.Log,
+		Commands:   enginebridge.NewRealCommandRunner(),
+		Turns:      enginebridge.NewHookSessionTurnRunner(sess),
+		Boundaries: enginebridge.NewHookSessionBoundaryOpener(sess.Manager),
 	}
-	// Wire the engine's transcript writer to the active session's Manager so
+
+	turnDispatcher := enginebridge.NewACPDispatcher(&enginebridge.BridgeConfig{
+		Hooks:         turnExec,
+		HookCfg:       r.hookCfg,
+		Learned:       r.learned,
+		Bus:           r.bus,
+		NextPromptFor: r.nextPromptFor,
+	})
+
 	// engine_decision lines land in THIS session's transcript (the Manager is
-	// per-session; SetupEngine could not bind it).
-	r.eng.Manager = sess.Manager
+	// per-session; the shared Engine template carries none).
+	turnEng := &engine.Engine{
+		Bus:        r.eng.Bus,
+		Log:        r.eng.Log,
+		Manager:    sess.Manager,
+		Dispatcher: turnDispatcher,
+	}
 
 	// 13-00 THE PARK (the manager ruling's route 1): the engine chain runs on
 	// a goroutine under a per-session parked-chain ctx derived from serveCtx
@@ -838,7 +850,7 @@ func (r *Runner) runOneTurn(
 	r.chainEnter(sessionID)
 
 	go func() {
-		stop, err := r.eng.Observe(parkedCtx, adapter, r.patternTable, blocks)
+		stop, err := turnEng.Observe(parkedCtx, adapter, r.patternTable, blocks)
 
 		// Idle + unregister BEFORE the report so a WaitChainIdle following
 		// the response never waits on a finished chain.
@@ -1549,6 +1561,18 @@ func (r *Runner) StartScheduler(ctx context.Context) { r.startScheduler(ctx) }
 // CloseAllSessions closes every live session at serve end (the ctx-done
 // subprocess reap).
 func (r *Runner) CloseAllSessions() { r.closeAllSessions() }
+
+// nextPromptFor resolves the pattern table's next-command field (08-06
+// chaining) DYNAMICALLY through the capability interface so the table remains
+// the single source of truth — tests may swap it after setup and the per-turn
+// dispatchers follow.
+func (r *Runner) nextPromptFor(patternID string) string {
+	if np, ok := r.patternTable.(patternNextPrompter); ok {
+		return np.NextPromptFor(patternID)
+	}
+
+	return ""
+}
 
 // effectiveModelFor returns the editor-stamped effective model ("" = none —
 // the tier-resolved config default governs, see defaultTurnModel).
