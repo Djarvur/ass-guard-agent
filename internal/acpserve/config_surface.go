@@ -98,6 +98,13 @@ type ConfigSurface struct {
 	// for models on the session's own provider.
 	applyHook func(model string) error
 
+	// blobHook is the chip==wire seam for the blob channel (16-REVIEW CR-02):
+	// fired by ApplyBlobDefaults when a _meta fill MOVED the effective model.
+	// The Run composition binds runner.SetDefaultTurnModel here so the wire's
+	// pre-editor-stamp default tracks the advertisement on the blob path (16-09
+	// gap 4b pinned the LAYER path only).
+	blobHook func(model string) error
+
 	// blobRaw holds EVERY initialize _meta key verbatim (D-10 round-trip
 	// survival: unknown keys are retained byte-identical, never executed).
 	blobRaw map[string]json.RawMessage
@@ -131,6 +138,15 @@ func (s *ConfigSurface) SetNotify(n func(sessionID string, opts []acp.ConfigOpti
 // runner.ApplyTurnModel here).
 func (s *ConfigSurface) SetApplyHook(h func(model string) error) {
 	s.applyHook = h
+}
+
+// SetBlobDefaultHook wires the blob-channel chip==wire seam (16-REVIEW CR-02).
+// The hook receives the blob-resolved effective model whenever ApplyBlobDefaults
+// moved tier/model; the Run composition binds runner.SetDefaultTurnModel so the
+// wire stamps what the chip advertises (D-11 effective values are wire values,
+// on the _meta path like on the layer path).
+func (s *ConfigSurface) SetBlobDefaultHook(h func(model string) error) {
+	s.blobHook = h
 }
 
 // Options returns the full eight-entry menu in v1 SessionConfigOption shapes,
@@ -203,6 +219,59 @@ func (s *ConfigSurface) ApplyBlobDefaults(meta map[string]json.RawMessage) (bool
 		return false, fmt.Errorf("resolve config before blob application: %w", err)
 	}
 
+	s.applyFillsLocked(meta)
+
+	after, err := s.snapshotLocked()
+	if err != nil {
+		s.mu.Unlock()
+
+		return false, fmt.Errorf("resolve config after blob application: %w", err)
+	}
+
+	if before == after {
+		s.mu.Unlock()
+
+		return false, nil // explicit config won in every slot — nothing moved
+	}
+
+	// 16-REVIEW CR-02: when the blob moved tier/model, the WIRE must move with
+	// the chip. Capture the blob-resolved effective model here (under the lock)
+	// and fire the composition's hook outside it — the hook stamps the runner's
+	// pre-editor-stamp default so defaultTurnModel can no longer diverge from
+	// the advertisement. Only a real tier/model delta fires: permMode/
+	// compaction movement is pending-option state with no wire side.
+	blobModel := ""
+	if after.model != "" && after.model != before.model {
+		blobModel = after.model
+	}
+
+	frames := s.optionsLocked()
+
+	notify, blobHook := s.notify, s.blobHook
+
+	s.mu.Unlock()
+
+	if blobHook != nil && blobModel != "" {
+		berr := blobHook(blobModel)
+		if berr != nil {
+			s.logf("blob default wire stamp of model %q failed (advertisement unchanged, wire may diverge): %v",
+				blobModel, berr)
+		}
+	}
+
+	// Out-of-band change: the full set follows application (sessionless at
+	// initialize). Sent lock-free — see the WR-03 note above.
+	if notify != nil {
+		notify("", frames)
+	}
+
+	return true, nil
+}
+
+// applyFillsLocked retains every _meta key verbatim and fills the recognized
+// unset slots (callers hold s.mu) — ApplyBlobDefaults's loop body, extracted to
+// keep the change-detection flow readable.
+func (s *ConfigSurface) applyFillsLocked(meta map[string]json.RawMessage) {
 	for k, raw := range meta {
 		s.blobRaw[k] = append(json.RawMessage(nil), raw...) // verbatim, byte-identical
 
@@ -230,33 +299,6 @@ func (s *ConfigSurface) ApplyBlobDefaults(meta map[string]json.RawMessage) (bool
 				k, str, phase)
 		}
 	}
-
-	after, err := s.snapshotLocked()
-	if err != nil {
-		s.mu.Unlock()
-
-		return false, fmt.Errorf("resolve config after blob application: %w", err)
-	}
-
-	if before == after {
-		s.mu.Unlock()
-
-		return false, nil // explicit config won in every slot — nothing moved
-	}
-
-	frames := s.optionsLocked()
-
-	notify := s.notify
-
-	s.mu.Unlock()
-
-	// Out-of-band change: the full set follows application (sessionless at
-	// initialize). Sent lock-free — see the WR-03 note above.
-	if notify != nil {
-		notify("", frames)
-	}
-
-	return true, nil
 }
 
 // setOutcome carries Set's lock-free tail inputs from setLocked: the refreshed

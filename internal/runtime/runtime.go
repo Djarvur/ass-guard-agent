@@ -1510,6 +1510,34 @@ func (r *Runner) ApplyTurnModel(model string) error {
 	return nil
 }
 
+// SetDefaultTurnModel stamps the model the wire carries when the editor has
+// stamped nothing (16-REVIEW CR-02): the serve composition binds it as the
+// ConfigSurface's blob-default hook, so an initialize _meta fill of tier/model
+// reaches the wire exactly as it reaches the advertisement — chip==wire on the
+// BLOB path (16-09 gap 4b pinned the layer path only; the un-stamped blob fill
+// left the wire on the tier-resolved config model while the chip showed the
+// fill — the operator-observed turn-001 divergence class).
+//
+// It writes the SAME effective-model slot ApplyTurnModel writes, under modelMu
+// ("a distinct writer for a distinct semantics", not a second slot). Two
+// deliberate differences from ApplyTurnModel:
+//
+//   - No live-session restamp: the blob lands during initialize — the
+//     connection's first frame — before any session exists; sessions created
+//     later pick the stamp up at construction (sessionFor).
+//   - Precedence stays honest (D-12): the surface fires the hook only when a
+//     fill MOVED the effective model, which fills-unset guarantees means no
+//     operator layer sets the slot. An explicit editor write persists to a
+//     layer (inerting any later fill) and overrides a blob default through the
+//     normal ApplyTurnModel path.
+func (r *Runner) SetDefaultTurnModel(model string) error {
+	r.modelMu.Lock()
+	r.effectiveModel = model
+	r.modelMu.Unlock()
+
+	return nil
+}
+
 // SetEmitter injects the server-driven-turn chunk emitter (WINDOWS #3:
 // strictly between server construction and scheduler start).
 func (r *Runner) SetEmitter(emit func(sessionID string) acp.ChunkEmitter) { r.emitFor = emit }

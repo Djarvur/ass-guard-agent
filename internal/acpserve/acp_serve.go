@@ -224,6 +224,14 @@ func Run( //nolint:funlen // :320-425
 	})
 	surface.SetApplyHook(runner.ApplyTurnModel)
 
+	// 16-REVIEW CR-02: the initialize _meta blob channel must reach the WIRE,
+	// not just the chip. The hook stamps the runner's pre-editor-stamp default
+	// whenever a blob fill moved tier/model, so defaultTurnModel can never
+	// diverge from the advertisement on the blob path (16-09 gap 4b pinned the
+	// layer path only; the unstamped fill was the operator-observed turn-001
+	// chip-shows-X/wire-sends-Y divergence class).
+	surface.SetBlobDefaultHook(runner.SetDefaultTurnModel)
+
 	// 12-07 (ACP-04/D-02): the per-project schedule store + the scheduler
 	// goroutine on the serve-lifetime ctx (no daemon, no port — Close/ctx
 	// owns its lifecycle). A failed open degrades to a serve WITHOUT
