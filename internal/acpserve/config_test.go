@@ -210,6 +210,109 @@ func TestConfigSurface_ExplicitLayerEffectiveValues(t *testing.T) {
 	}
 }
 
+// TestConfigSurface_GlobalTwinsAdvertiseGlobalLayer pins layer-true twin
+// display (16-08 gap closure: WR-05 gap 4a): the _global/ twins advertise the
+// GLOBAL layer's own resolved values — never the project-won combined values
+// under a "(global default)" label, and never a blob fill (the twins describe
+// a layer FILE; the blob channel stays on the bare options).
+func TestConfigSurface_GlobalTwinsAdvertiseGlobalLayer(t *testing.T) {
+	t.Parallel()
+
+	t.Run("model-twin-shows-global-layer", func(t *testing.T) {
+		t.Parallel()
+
+		f := newSurfaceFixture(t)
+		// Project layer wins the COMBINED model with GLM-5.3; the global layer
+		// (whose own session_tier stays at the heavy default) binds glm-5.2.
+		writeLayer(t, f.projectPath, "tiers:\n  heavy:\n    model: "+testModelPrimary+"\n")
+		writeLayer(t, f.globalPath, "tiers:\n  heavy:\n    model: "+testModelFallback+"\n")
+
+		opts := f.surface.Options()
+		assertEight(t, opts, "model twin advertisement")
+
+		// Invariant: the BARE entries keep the combined (project-won) values
+		// (D-11 chain resolution for the default scope, unchanged).
+		if got := optionByID(t, opts, optModel).CurrentValue; got != testModelPrimary {
+			t.Errorf("bare model currentValue = %q; want the combined %q (D-11 unchanged)", got, testModelPrimary)
+		}
+
+		if got := optionByID(t, opts, optTier).CurrentValue; got != testTierHeavy {
+			t.Errorf("bare tier currentValue = %q; want the combined heavy (D-11 unchanged)", got)
+		}
+
+		if got := optionByID(t, opts, optGlobalPrefix+optModel).CurrentValue; got != testModelFallback {
+			t.Errorf("_global/model currentValue = %q; want the global layer's own %q (not the project's value under a global label)",
+				got, testModelFallback)
+		}
+	})
+
+	t.Run("tier-twin-shows-global-layer", func(t *testing.T) {
+		t.Parallel()
+
+		f := newSurfaceFixture(t)
+		// Project layer pins the COMBINED tier to heavy; the global layer's own
+		// session_tier is light (with its light binding declared).
+		writeLayer(t, f.projectPath, "session_tier: "+testTierHeavy+"\n")
+		writeLayer(t, f.globalPath,
+			"tiers:\n  light:\n    model: "+testModelPrimary+"\nsession_tier: "+testTierLight+"\n")
+
+		opts := f.surface.Options()
+		assertEight(t, opts, "tier twin advertisement")
+
+		if got := optionByID(t, opts, optTier).CurrentValue; got != testTierHeavy {
+			t.Errorf("bare tier currentValue = %q; want the combined heavy (project wins, D-11 unchanged)", got)
+		}
+
+		if got := optionByID(t, opts, optGlobalPrefix+optTier).CurrentValue; got != testTierLight {
+			t.Errorf("_global/tier currentValue = %q; want the global layer's own %q", got, testTierLight)
+		}
+
+		// The model twin resolves the GLOBAL layer's own tier (light → GLM-5.3),
+		// one coherent layer view.
+		if got := optionByID(t, opts, optGlobalPrefix+optModel).CurrentValue; got != testModelPrimary {
+			t.Errorf("_global/model currentValue = %q; want the global layer's light binding %q", got, testModelPrimary)
+		}
+	})
+
+	t.Run("absent-global-file-shows-embedded-floor", func(t *testing.T) {
+		t.Parallel()
+
+		f := newSurfaceFixture(t)
+		// Project layer wins the combined view with glm-5.2; NO global file —
+		// the twins describe the global layer, which resolves to the floor.
+		writeLayer(t, f.projectPath, "tiers:\n  heavy:\n    model: "+testModelFallback+"\n")
+
+		changed, err := f.surface.ApplyBlobDefaults(map[string]json.RawMessage{
+			optTier: json.RawMessage(`"` + testTierLight + `"`),
+		})
+		if err != nil {
+			t.Fatalf("ApplyBlobDefaults: %v", err)
+		}
+
+		if !changed {
+			t.Fatal("blob tier fill over the unset slot did not report changed")
+		}
+
+		opts := f.surface.Options()
+		assertEight(t, opts, "floor advertisement")
+
+		// The blob fill shows on the BARE tier (in-memory combined view) but
+		// never on the twins (they describe a layer file, not the overlay).
+		if got := optionByID(t, opts, optTier).CurrentValue; got != testTierLight {
+			t.Errorf("bare tier currentValue = %q; want the in-memory blob fill light", got)
+		}
+
+		if got := optionByID(t, opts, optGlobalPrefix+optModel).CurrentValue; got != testModelPrimary {
+			t.Errorf("_global/model currentValue = %q; want the embedded floor's %q (not the project's %q)",
+				got, testModelPrimary, testModelFallback)
+		}
+
+		if got := optionByID(t, opts, optGlobalPrefix+optTier).CurrentValue; got != testTierHeavy {
+			t.Errorf("_global/tier currentValue = %q; want the embedded floor's heavy (never the blob fill)", got)
+		}
+	})
+}
+
 func TestConfigSurface_SetPersistsThroughLoader(t *testing.T) {
 	t.Parallel()
 
