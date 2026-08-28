@@ -1010,6 +1010,13 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop // groupi
 	}
 
 	if s, ok := r.sessions[sessionID]; ok {
+		// 16-REVIEW WR-06: reuse is ACTIVITY. The firing-target contract
+		// (currentSessionID) is most-recently-ACTIVE — re-prompting an older
+		// session (or an automation firing into it) must make it the target
+		// again, not leave the marker on the last-CREATED session (sessMu is
+		// held for the whole construction, so this write is race-free).
+		r.lastSessionID = sessionID
+
 		return s
 	}
 
