@@ -553,6 +553,18 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 
 			continue // loop to project again with the results
 		}
+		// 16-REVIEW WR-04: re-check BEFORE the end_turn bookkeeping. The
+		// streamAndEmit cancellation checks only fire while chunks are still
+		// moving — a ctx dying between the last delivered chunk and here
+		// previously fell through to end_turn: the partial assistant message was
+		// appended, the Stop hook fired for a turn the user cancelled, and the
+		// response claimed end_turn (the D-16 "cancelled" contract broken).
+		if ctx.Err() != nil {
+			s.recordCanceled(turnID, "context cancelled before turn end")
+
+			return stopCancelled, nil
+		}
+
 		// Step 6: end_turn — append the assembled assistant message + stopReason.
 		assistantText := textBuf
 		_ = s.Manager.AppendAssistantMessage(turnID, assistantText)
@@ -654,7 +666,7 @@ func (s *Session) withSemaphore(
 // Response (tool_calls + FinishReason) + the concatenated assistant text. ctx
 // cancellation closes the stream (the provider aborts the in-flight request).
 //
-//nolint:cyclop // one switch over the full chunk-type vocabulary (text/tool/usage/done/error)
+//nolint:cyclop,funlen // one switch over the full chunk-type vocabulary; the WR-04 ctx gate adds two checks
 func (s *Session) streamAndEmit(
 	ctx context.Context, turnID string, messages []provider.Message,
 ) (provider.Response, string, error) {
@@ -671,7 +683,11 @@ func (s *Session) streamAndEmit(
 	for chunk := range ch {
 		err := ctx.Err()
 		if err != nil {
-			return resp, sb.String(), nil //nolint:nilerr // cancellation recorded as a transcript line
+			// 16-REVIEW WR-04: return the ctx error HONESTLY — `(partial, nil)`
+			// skipped runTurn's cancelled branch (end_turn + Stop hook fired for
+			// a user-cancelled turn; D-16 broken). The caller maps this error to
+			// recordCanceled + stopCancelled via the streamErr + ctx.Err() path.
+			return resp, sb.String(), err
 		}
 
 		switch chunk.Type {
