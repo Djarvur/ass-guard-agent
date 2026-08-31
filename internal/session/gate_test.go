@@ -3,6 +3,8 @@ package session //nolint:testpackage // internal package test (drives the real t
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -188,11 +190,14 @@ func newGateSession(
 func toolResultsFor(t *testing.T, s *Session, callID string) []Line {
 	t.Helper()
 
+	lines := linesOf(s)
+
 	var out []Line
 
-	for _, l := range linesOf(s) {
+	for i := range lines {
+		l := &lines[i]
 		if l.Type == TypeToolResult && l.ToolCallID == callID {
-			out = append(out, l)
+			out = append(out, *l)
 		}
 	}
 
@@ -205,7 +210,7 @@ func toolResultsFor(t *testing.T, s *Session, callID string) []Line {
 // answer persists the rule BEFORE the gated call executes, the result is
 // appended loud, the SAME turn resumes, and the follow-up identical call hits
 // the allow rule with ZERO further surface firings.
-func TestGatePermissionSuspend(t *testing.T) {
+func TestGatePermissionSuspend(t *testing.T) { //nolint:cyclop,funlen // flat end-to-end battery
 	t.Parallel()
 
 	block := make(chan struct{})
@@ -489,6 +494,11 @@ func TestGateChokepoint_SubagentBranchGated(t *testing.T) {
 		t.Errorf("surface fired %d times; want 1", surf.fired())
 	}
 
+	// The dispatch completes slightly before its result lands on the
+	// transcript (DispatchSubagent's goroutine hands it back) — wait for the
+	// append, then assert its form.
+	gateWaitFor(t, func() bool { return len(toolResultsFor(t, s, gateCall1)) == 1 })
+
 	results := toolResultsFor(t, s, gateCall1)
 	if len(results) != 1 || results[0].IsError {
 		t.Errorf("subagent result = %+v; want exactly one non-error result", results)
@@ -593,4 +603,543 @@ func TestGateAskKindsParity(t *testing.T) {
 	if PendingAskKindPermission == "" || PendingAskKindPermission == PendingAskKindPlanApproval {
 		t.Fatal("PendingAskKindPermission must be a distinct non-empty kind")
 	}
+}
+
+// TestGateOutcomeMatrix pins the full dialog outcome matrix (D-01/D-03, both
+// directions): reject_once denies WITHOUT persisting (the next call asks
+// again), reject_always persists the deny rule BEFORE the denial result (the
+// next matching call denies with NO dialog), and allow_once executes WITHOUT
+// persisting (no trust recorded).
+func TestGateOutcomeMatrix(t *testing.T) { //nolint:funlen // three full-loop subtests
+	t.Parallel()
+
+	t.Run("reject_once denies and asks again", func(t *testing.T) {
+		t.Parallel()
+
+		block := make(chan struct{})
+
+		store := &fakePermStore{}
+		surf := &fakeGateSurface{
+			answers: []AskOutcome{
+				{Selected: acp.PermOptionRejectOnce},
+				{Selected: acp.PermOptionAllowOnce}, // the second dialog's answer
+			},
+			block: block,
+		}
+
+		s := newGateSession(t, []provider.Response{
+			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+				{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+				{ID: gateCall2, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+			{FinishReason: stopEndTurn},
+		}, PermModeGated, store, surf)
+
+		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+		if err != nil {
+			t.Fatalf("Prompt: %v", err)
+		}
+
+		if stop != stopAsk {
+			t.Fatalf("stop = %q; want the ask marker", stop)
+		}
+
+		gateWaitFor(t, func() bool { return surf.fired() == 1 })
+		close(block)
+
+		// The rejection lands as a denial result, NO rule is written, and the
+		// follow-up identical call asks AGAIN (second fire).
+		gateWaitFor(t, func() bool { return len(toolResultsFor(t, s, gateCall1)) == 1 })
+
+		results := toolResultsFor(t, s, gateCall1)
+		if len(results) != 1 || !results[0].IsError {
+			t.Fatalf("reject_once result = %+v; want exactly one error result", results)
+		}
+
+		if snaps := store.snapshotOrder(); len(snaps) != 0 {
+			t.Errorf("reject_once persisted %v; want no rule writes", snaps)
+		}
+
+		gateWaitFor(t, func() bool { return surf.fired() == 2 })
+	})
+
+	t.Run("reject_always persists deny before the denial", func(t *testing.T) {
+		t.Parallel()
+
+		block := make(chan struct{})
+
+		store := &fakePermStore{}
+		surf := &fakeGateSurface{
+			answers: []AskOutcome{{Selected: acp.PermOptionRejectAlways}},
+			block:   block,
+		}
+
+		s := newGateSession(t, []provider.Response{
+			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+				{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+				{ID: gateCall2, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+			{FinishReason: stopEndTurn},
+		}, PermModeGated, store, surf)
+
+		_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+		if err != nil {
+			t.Fatalf("Prompt: %v", err)
+		}
+
+		gateWaitFor(t, func() bool { return surf.fired() == 1 })
+		close(block)
+
+		// The deny rule is persisted BEFORE the denial result (D-03), and the
+		// follow-up matching call DENIES with NO dialog.
+		gateWaitFor(t, func() bool {
+			return len(store.snapshotOrder()) == 2 // forbid + exec? no — forbid only
+		})
+
+		order := store.snapshotOrder()
+		if len(order) != 1 || order[0] != "forbid:"+gateToolWrite {
+			t.Fatalf("reject_always order = %v; want exactly [forbid:Write]", order)
+		}
+
+		gateWaitFor(t, func() bool { return len(toolResultsFor(t, s, gateCall1)) == 1 })
+
+		results := toolResultsFor(t, s, gateCall1)
+		if len(results) != 1 || !results[0].IsError {
+			t.Fatalf("reject_always result = %+v; want exactly one error result", results)
+		}
+
+		gateWaitFor(t, func() bool { return len(toolResultsFor(t, s, gateCall2)) == 1 })
+
+		if surf.fired() != 1 {
+			t.Errorf("surface fired %d times; want 1 (the follow-up call denies by rule, no dialog)", surf.fired())
+		}
+
+		results2 := toolResultsFor(t, s, gateCall2)
+		if len(results2) != 1 || !results2[0].IsError {
+			t.Errorf("follow-up denial result = %+v; want one error result", results2)
+		}
+	})
+
+	t.Run("allow_once executes without persisting", func(t *testing.T) {
+		t.Parallel()
+
+		block := make(chan struct{})
+
+		store := &fakePermStore{}
+		surf := &fakeGateSurface{
+			answers: []AskOutcome{{Selected: acp.PermOptionAllowOnce}},
+			block:   block,
+		}
+
+		s := newGateSession(t, []provider.Response{
+			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+				{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+			{FinishReason: stopEndTurn},
+		}, PermModeGated, store, surf)
+
+		_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+		if err != nil {
+			t.Fatalf("Prompt: %v", err)
+		}
+
+		gateWaitFor(t, func() bool { return surf.fired() == 1 })
+		close(block)
+
+		gateWaitFor(t, func() bool { return len(store.snapshotOrder()) == 1 })
+
+		order := store.snapshotOrder()
+		if len(order) != 1 || order[0] != "exec:"+gateToolWrite {
+			t.Fatalf("allow_once order = %v; want execution with NO rule write", order)
+		}
+
+		results := toolResultsFor(t, s, gateCall1)
+		if len(results) != 1 || results[0].IsError {
+			t.Errorf("allow_once result = %+v; want exactly one non-error result", results)
+		}
+	})
+}
+
+// TestGateAutomationDecline pins D-07's fail-safe: on an automation-origin
+// turn (no human present) an ask-class call DECLINES with a client-visible
+// transcript note + structured log — in BOTH modes — while deny and allow
+// rules stay enforced. The human-turn control case DOES suspend.
+func TestGateAutomationDecline(t *testing.T) { //nolint:funlen // the four-row matrix reads as one flow
+	t.Parallel()
+
+	newAutomationCase := func(t *testing.T, mode string, automation bool, deny []string) (*Session, *fakePermStore, *fakeGateSurface) {
+		t.Helper()
+
+		store := &fakePermStore{deny: deny}
+		surf := &fakeGateSurface{}
+
+		s := newGateSession(t, []provider.Response{
+			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+				{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+			{FinishReason: stopEndTurn},
+		}, mode, store, surf)
+
+		s.SetTurnOriginAutomation(automation)
+
+		return s, store, surf
+	}
+
+	t.Run("gated automation declines without a dialog", func(t *testing.T) {
+		t.Parallel()
+
+		s, store, surf := newAutomationCase(t, PermModeGated, true, nil)
+
+		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+		if err != nil {
+			t.Fatalf("Prompt: %v", err)
+		}
+
+		if stop != stopEndTurn {
+			t.Fatalf("stop = %q; want end_turn (a decline never suspends)", stop)
+		}
+
+		if surf.fired() != 0 {
+			t.Errorf("surface fired %d times; want 0 (never a dialog nobody answers)", surf.fired())
+		}
+
+		if order := store.snapshotOrder(); len(order) != 0 {
+			t.Errorf("declined call executed: %v", order)
+		}
+
+		results := toolResultsFor(t, s, gateCall1)
+		if len(results) != 1 || !results[0].IsError {
+			t.Fatalf("decline result = %+v; want one error result", results)
+		}
+
+		if !strings.Contains(string(results[0].Output), "Permission declined") {
+			t.Errorf("decline note = %s; want the client-visible decline form", results[0].Output)
+		}
+	})
+
+	t.Run("ungated automation declines too (D-07 in BOTH modes)", func(t *testing.T) {
+		t.Parallel()
+
+		s, _, surf := newAutomationCase(t, PermModeUngated, true, nil)
+
+		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+		if err != nil {
+			t.Fatalf("Prompt: %v", err)
+		}
+
+		if stop != stopEndTurn {
+			t.Fatalf("stop = %q; want end_turn", stop)
+		}
+
+		if surf.fired() != 0 {
+			t.Errorf("surface fired %d times; want 0", surf.fired())
+		}
+
+		results := toolResultsFor(t, s, gateCall1)
+		if len(results) != 1 || !results[0].IsError {
+			t.Fatalf("decline result = %+v; want one error result (never a silent allow)", results)
+		}
+	})
+
+	t.Run("rules still enforced on automation turns", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("deny rule denies", func(t *testing.T) {
+			t.Parallel()
+
+			s, _, surf := newAutomationCase(t, PermModeGated, true, []string{gateToolWrite})
+
+			_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+			if err != nil {
+				t.Fatalf("Prompt: %v", err)
+			}
+
+			results := toolResultsFor(t, s, gateCall1)
+			if len(results) != 1 || !results[0].IsError ||
+				!strings.Contains(string(results[0].Output), "Permission denied") {
+				t.Fatalf("deny-on-automation result = %+v; want the DENIED form (rules run before the decline)", results)
+			}
+
+			if surf.fired() != 0 {
+				t.Errorf("surface fired %d times; want 0", surf.fired())
+			}
+		})
+
+		t.Run("allow rule executes", func(t *testing.T) {
+			t.Parallel()
+
+			block := make(chan struct{})
+			close(block) // unused in this path; keep the surface inert
+
+			store := &fakePermStore{allow: []string{gateToolWrite}}
+			surf := &fakeGateSurface{block: block}
+
+			s := newGateSession(t, []provider.Response{
+				{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+					{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+				{FinishReason: stopEndTurn},
+			}, PermModeGated, store, surf)
+
+			s.SetTurnOriginAutomation(true)
+
+			stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+			if err != nil {
+				t.Fatalf("Prompt: %v", err)
+			}
+
+			if stop != stopEndTurn {
+				t.Fatalf("stop = %q; want end_turn (an allow rule short-circuits the decline)", stop)
+			}
+
+			if order := store.snapshotOrder(); len(order) != 1 || order[0] != "exec:"+gateToolWrite {
+				t.Fatalf("allow-on-automation order = %v; want exactly one exec", order)
+			}
+
+			if surf.fired() != 0 {
+				t.Errorf("surface fired %d times; want 0", surf.fired())
+			}
+		})
+	})
+
+	t.Run("human control case suspends", func(t *testing.T) {
+		t.Parallel()
+
+		block := make(chan struct{})
+
+		store := &fakePermStore{}
+		surf := &fakeGateSurface{block: block}
+
+		s := newGateSession(t, []provider.Response{
+			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+				{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+			{FinishReason: stopEndTurn},
+		}, PermModeGated, store, surf)
+
+		// The origin marker defaults to false (client turn) — set it
+		// explicitly to pin the per-turn signal's polarity.
+		s.SetTurnOriginAutomation(false)
+
+		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+		if err != nil {
+			t.Fatalf("Prompt: %v", err)
+		}
+
+		if stop != stopAsk {
+			t.Fatalf("stop = %q; want the ask marker (the human control case suspends)", stop)
+		}
+
+		gateWaitFor(t, func() bool { return surf.fired() == 1 })
+		close(block)
+	})
+}
+
+// TestGateDegradedClient pins the -32601 fail-safe (16-D-18): a client that
+// cannot answer permission asks produces a decline (never a silent allow)
+// and the degradation is STICKY for the session — the next gated call
+// declines without a new surface round-trip. A generic (transient) failure
+// is NOT sticky: the next call asks again.
+func TestGateDegradedClient(t *testing.T) { //nolint:funlen // two full-loop subtests
+	t.Parallel()
+
+	t.Run("unsupported client is sticky", func(t *testing.T) {
+		t.Parallel()
+
+		store := &fakePermStore{}
+		surf := &fakeGateSurface{
+			answers: []AskOutcome{{Err: errFakeUnsupported, Unsupported: true}},
+		}
+
+		s := newGateSession(t, []provider.Response{
+			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+				{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+				{ID: gateCall2, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+			{FinishReason: stopEndTurn},
+		}, PermModeGated, store, surf)
+
+		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+		if err != nil {
+			t.Fatalf("Prompt: %v", err)
+		}
+
+		if stop != stopAsk {
+			t.Fatalf("stop = %q; want the ask marker (the first ask still fires before degrading)", stop)
+		}
+
+		gateWaitFor(t, func() bool { return len(toolResultsFor(t, s, gateCall1)) == 1 })
+
+		results := toolResultsFor(t, s, gateCall1)
+		if len(results) != 1 || !results[0].IsError ||
+			!strings.Contains(string(results[0].Output), "Permission declined") {
+			t.Fatalf("degraded result = %+v; want the decline form", results)
+		}
+
+		if order := store.snapshotOrder(); len(order) != 0 {
+			t.Errorf("degraded call executed: %v", order)
+		}
+
+		// The second gated call declines WITHOUT a new surface round-trip.
+		gateWaitFor(t, func() bool { return len(toolResultsFor(t, s, gateCall2)) == 1 })
+
+		if surf.fired() != 1 {
+			t.Errorf("surface fired %d times; want 1 (sticky degradation — no retry storm)", surf.fired())
+		}
+	})
+
+	t.Run("transient failure is not sticky", func(t *testing.T) {
+		t.Parallel()
+
+		store := &fakePermStore{}
+		surf := &fakeGateSurface{
+			answers: []AskOutcome{
+				{Err: errFakeTransient},
+				{Selected: acp.PermOptionAllowOnce},
+			},
+		}
+
+		s := newGateSession(t, []provider.Response{
+			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+				{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+				{ID: gateCall2, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+			{FinishReason: stopEndTurn},
+		}, PermModeGated, store, surf)
+
+		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+		if err != nil {
+			t.Fatalf("Prompt: %v", err)
+		}
+
+		gateWaitFor(t, func() bool { return len(toolResultsFor(t, s, gateCall1)) == 1 })
+
+		// The second gated call asks AGAIN (a transient failure never
+		// widens into a sticky degradation).
+		gateWaitFor(t, func() bool { return surf.fired() == 2 })
+		gateWaitFor(t, func() bool { return len(store.snapshotOrder()) == 1 })
+	})
+}
+
+// Test-local failure sentinels for the degraded-client battery.
+var (
+	errFakeUnsupported = errors.New("fake: client does not implement session/request_permission")
+	errFakeTransient   = errors.New("fake: transient registry failure")
+)
+
+// TestGateMCPNamespace pins the rule-subject namespace mapping (Pitfall 7):
+// the gate's rule subject for a fake-registered MCP tool is the canonical
+// mcp__server__tool name (via 17-01's MCPName/SplitMCPName) — a rule written
+// in that namespace matches, and a bare-server rule selects the whole
+// namespace. Both directions of the mapping are pinned.
+func TestGateMCPNamespace(t *testing.T) { //nolint:funlen // the mapping table reads as one flow
+	t.Parallel()
+
+	const (
+		mcpSrv       = "srv"
+		mcpTool      = "tool1"
+		mcpFullName  = "mcp__srv__tool1"
+		mcpSrvBare   = "mcp__srv"
+		mcpInputTest = `{"query":"x"}`
+	)
+
+	// Direction 1 (build): the gate subject of the fake-registered tool equals
+	// the MCPName-built namespace name; Direction 2 (split): SplitMCPName
+	// recovers the pair.
+	s := newGateSession(t, []provider.Response{{FinishReason: stopEndTurn}}, PermModeGated,
+		&fakePermStore{}, &fakeGateSurface{})
+
+	s.Catalog.Register(toolcat.Tool{
+		Name:        mcpFullName,
+		Mutability:  toolcat.MutabilityMutating,
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+		Execute: func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+			return json.RawMessage(`{"output":"mcp ok"}`), nil
+		},
+	})
+
+	subject := s.ruleSubject(mcpFullName)
+	if subject != perm.MCPName(mcpSrv, mcpTool) {
+		t.Errorf("ruleSubject = %q; want the canonical %q", subject, perm.MCPName(mcpSrv, mcpTool))
+	}
+
+	gotSrv, gotTool, ok := perm.SplitMCPName(subject)
+	if !ok || gotSrv != mcpSrv || gotTool != mcpTool {
+		t.Errorf("SplitMCPName(%q) = (%q,%q,%v); want (srv,tool1,true)", subject, gotSrv, gotTool, ok)
+	}
+
+	// Behavior: a rule in the namespace form matches the fake-registered
+	// tool's gate subject (allow → executes, no dialog); a bare-server rule
+	// selects the whole namespace (deny → denied, no dialog).
+	newMCPCase := func(t *testing.T, rule, ruleList string) (*Session, *fakePermStore, *fakeGateSurface) {
+		t.Helper()
+
+		store := &fakePermStore{}
+		switch ruleList {
+		case "deny":
+			store.deny = []string{rule}
+		case "allow":
+			store.allow = []string{rule}
+		}
+
+		surf := &fakeGateSurface{}
+
+		s := newGateSession(t, []provider.Response{
+			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+				{ID: gateCall1, Name: mcpFullName, Input: json.RawMessage(mcpInputTest)}}},
+			{FinishReason: stopEndTurn},
+		}, PermModeGated, store, surf)
+
+		s.Catalog.Register(toolcat.Tool{
+			Name:        mcpFullName,
+			Mutability:  toolcat.MutabilityMutating,
+			InputSchema: json.RawMessage(`{"type":"object"}`),
+			Execute: func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+				store.noteExec(mcpFullName)
+
+				return json.RawMessage(`{"output":"mcp ok"}`), nil
+			},
+		})
+
+		return s, store, surf
+	}
+
+	t.Run("allow rule in namespace form executes", func(t *testing.T) {
+		t.Parallel()
+
+		s, store, surf := newMCPCase(t, mcpFullName, "allow")
+
+		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+		if err != nil {
+			t.Fatalf("Prompt: %v", err)
+		}
+
+		if stop != stopEndTurn || surf.fired() != 0 {
+			t.Fatalf("stop=%q fired=%d; want end_turn with zero dialogs (the namespace allow matched)", stop, surf.fired())
+		}
+
+		if order := store.snapshotOrder(); len(order) != 1 || order[0] != "exec:"+mcpFullName {
+			t.Errorf("order = %v; want exactly one mcp exec", order)
+		}
+	})
+
+	t.Run("bare-server deny selects the whole namespace", func(t *testing.T) {
+		t.Parallel()
+
+		s, store, surf := newMCPCase(t, mcpSrvBare, "deny")
+
+		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+		if err != nil {
+			t.Fatalf("Prompt: %v", err)
+		}
+
+		if stop != stopEndTurn || surf.fired() != 0 {
+			t.Fatalf("stop=%q fired=%d; want end_turn with zero dialogs", stop, surf.fired())
+		}
+
+		if order := store.snapshotOrder(); len(order) != 0 {
+			t.Errorf("denied mcp call executed: %v", order)
+		}
+
+		results := toolResultsFor(t, s, gateCall1)
+		if len(results) != 1 || !results[0].IsError {
+			t.Errorf("denial result = %+v; want one error result", results)
+		}
+	})
 }
