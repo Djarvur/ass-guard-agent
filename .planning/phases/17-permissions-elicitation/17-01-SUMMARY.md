@@ -150,7 +150,7 @@ Each task was committed atomically (TDD RED→GREEN):
 **Impact on plan:** None on scope; the fix tightened the crash-safety semantics the plan pinned.
 
 ## Issues Encountered
-- The first `mise ci` run failed once in the long `-race` suite; the failing package could not be reproduced — three subsequent full runs (`go test -race -count=1 ./...` ×2, `mise test`, `mise ci` ×2) were all green. Not attributable to this plan's changes (new leaf package only; no existing file touched). Treated as a transient flake in an unrelated package per the scope boundary.
+- The standing `-race` gate failed transiently twice during this plan's verification (first `mise ci` run, and one later run), each time printing a bare `[test] FAIL` summary whose failing package was lost to output truncation. Could not be reproduced: six subsequent dedicated runs (`go test -race -count=1 ./...` ×3, `mise test` ×3, plus green `mise ci` runs) were all green, all 38 packages ok. Not attributable to this plan's changes (new leaf package only; no existing file touched — the only concurrent difference in the failing runs was machine load from adjacent commands). Logged to the phase's deferred-items watchlist: if the flake recurs at 17-02, capture full output (`mise ci 2>&1 | tee`) before investigating.
 
 ## TDD Gate Compliance
 - Both tasks followed RED→GREEN with `test(17-01)` commits preceding `feat(17-01)` commits; no REFACTOR commits needed (lint-clean at GREEN).
