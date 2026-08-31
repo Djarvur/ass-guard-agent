@@ -6,12 +6,26 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/perm"
 )
 
+// CC-parity rule and tool strings, named once so the spec spelling has a
+// single definition across the battery.
+const (
+	toolBash         = "Bash"
+	toolWrite        = "Write"
+	toolMcpIssue     = "mcp__github__get_issue"
+	ruleGit          = "Bash(git *)"
+	ruleRm           = "Bash(rm *)"
+	ruleMcpGetGlob   = "mcp__github__get_*"
+	ruleMcpPuppeteer = "mcp__puppeteer"
+	ruleMcpStar      = "mcp__*"
+	ruleUnclosed     = "Bash(git"
+)
+
 // TestRules is the CC-parity grammar battery (D-02): every quoted semantic
 // from 17-RESEARCH §CC Rule Model is a pinned table row named after the
 // parity fact it locks. Evaluation order bugs here are silent privilege
 // escalation (T-17-01), so the order rows assert the verdict even when the
 // competing rule is strictly more specific.
-func TestRules(t *testing.T) {
+func TestRules(t *testing.T) { //nolint:funlen // one row per CC-parity fact — the table IS the spec
 	t.Parallel()
 
 	tests := []struct {
@@ -28,7 +42,7 @@ func TestRules(t *testing.T) {
 			name:  "order-beats-specificity/broad-deny-beats-narrower-allow",
 			deny:  []string{"Bash(aws *)"},
 			allow: []string{"Bash(aws s3 ls)"},
-			tool:  "Bash",
+			tool:  toolBash,
 			arg:   "aws s3 rm bucket/insecure",
 			want:  perm.VerdictDeny,
 		},
@@ -36,7 +50,7 @@ func TestRules(t *testing.T) {
 			name:  "order-beats-specificity/exact-allow-still-deny",
 			deny:  []string{"Bash(aws *)"},
 			allow: []string{"Bash(aws s3 ls)"},
-			tool:  "Bash",
+			tool:  toolBash,
 			arg:   "aws s3 ls",
 			want:  perm.VerdictDeny,
 		},
@@ -44,17 +58,17 @@ func TestRules(t *testing.T) {
 		// --- ask-beats-allow: a matching ask prompts even when a more specific allow also matches ---
 		{
 			name:  "ask-beats-allow/specific-allow-does-not-bypass",
-			ask:   []string{"Write"},
+			ask:   []string{toolWrite},
 			allow: []string{"Write(*.go)"},
-			tool:  "Write",
+			tool:  toolWrite,
 			arg:   "main.go",
 			want:  perm.VerdictAsk,
 		},
 		{
 			name:  "ask-beats-allow/any-write-input",
-			ask:   []string{"Write"},
+			ask:   []string{toolWrite},
 			allow: []string{"Write(*.go)"},
-			tool:  "Write",
+			tool:  toolWrite,
 			arg:   "notes.txt",
 			want:  perm.VerdictAsk,
 		},
@@ -62,17 +76,17 @@ func TestRules(t *testing.T) {
 		// --- deny-beats-allow: a deny anywhere beats any allow ---
 		{
 			name:  "deny-beats-allow/bare-deny-over-allow-specifier",
-			deny:  []string{"Write"},
+			deny:  []string{toolWrite},
 			allow: []string{"Write(*)"},
-			tool:  "Write",
+			tool:  toolWrite,
 			arg:   "anything",
 			want:  perm.VerdictDeny,
 		},
 		{
 			name:  "deny-beats-allow/specific-deny-over-exact-allow",
-			deny:  []string{"Bash(rm *)"},
+			deny:  []string{ruleRm},
 			allow: []string{"Bash(rm -rf /tmp/x)"},
-			tool:  "Bash",
+			tool:  toolBash,
 			arg:   "rm -rf /tmp/x",
 			want:  perm.VerdictDeny,
 		},
@@ -80,45 +94,45 @@ func TestRules(t *testing.T) {
 		// --- compound-worst-match: split on && || ; | |& & and newlines; every subcommand matched independently ---
 		{
 			name:  "compound-worst-match/deny-subcommand-worst",
-			deny:  []string{"Bash(rm *)"},
-			allow: []string{"Bash(git *)"},
-			tool:  "Bash",
+			deny:  []string{ruleRm},
+			allow: []string{ruleGit},
+			tool:  toolBash,
 			arg:   "git status && rm -rf /tmp/x",
 			want:  perm.VerdictDeny,
 		},
 		{
 			name:  "compound-worst-match/all-allow-subcommands",
-			allow: []string{"Bash(git *)"},
-			tool:  "Bash",
+			allow: []string{ruleGit},
+			tool:  toolBash,
 			arg:   "git status && git log",
 			want:  perm.VerdictAllow,
 		},
 		{
 			name:  "compound-worst-match/ask-subcommand-beats-allow",
 			ask:   []string{"Bash(npm *)"},
-			allow: []string{"Bash(git *)"},
-			tool:  "Bash",
+			allow: []string{ruleGit},
+			tool:  toolBash,
 			arg:   "git status && npm publish",
 			want:  perm.VerdictAsk,
 		},
 		{
 			name:  "compound-worst-match/unmatched-subcommand-failsafe",
-			allow: []string{"Bash(git *)"},
-			tool:  "Bash",
+			allow: []string{ruleGit},
+			tool:  toolBash,
 			arg:   "git status && curl example.com",
 			want:  perm.Unmatched,
 		},
 		{
 			name: "compound-worst-match/all-separators-split",
-			deny: []string{"Bash(rm *)"},
-			tool: "Bash",
+			deny: []string{ruleRm},
+			tool: toolBash,
 			arg:  "echo hi; ls | rm -rf x & sleep 1 || true\nsafe",
 			want: perm.VerdictDeny,
 		},
 		{
 			name:  "compound-worst-match/single-segment-no-split",
-			allow: []string{"Bash(git *)"},
-			tool:  "Bash",
+			allow: []string{ruleGit},
+			tool:  toolBash,
 			arg:   "git status",
 			want:  perm.VerdictAllow,
 		},
@@ -126,54 +140,54 @@ func TestRules(t *testing.T) {
 		// --- mcp-namespace: mcp__server__tool rules, bare server = whole server ---
 		{
 			name:  "mcp-namespace/tool-glob-allow",
-			allow: []string{"mcp__github__get_*"},
-			tool:  "mcp__github__get_issue",
+			allow: []string{ruleMcpGetGlob},
+			tool:  toolMcpIssue,
 			want:  perm.VerdictAllow,
 		},
 		{
 			name: "mcp-namespace/whole-server-deny",
-			deny: []string{"mcp__puppeteer"},
+			deny: []string{ruleMcpPuppeteer},
 			tool: "mcp__puppeteer__click",
 			want: perm.VerdictDeny,
 		},
 		{
 			name: "mcp-namespace/whole-server-deny-exact-name",
-			deny: []string{"mcp__puppeteer"},
-			tool: "mcp__puppeteer",
+			deny: []string{ruleMcpPuppeteer},
+			tool: ruleMcpPuppeteer,
 			want: perm.VerdictDeny,
 		},
 		{
 			name: "mcp-namespace/no-cross-server-match",
-			deny: []string{"mcp__puppeteer"},
-			tool: "mcp__github__get_issue",
+			deny: []string{ruleMcpPuppeteer},
+			tool: toolMcpIssue,
 			want: perm.Unmatched,
 		},
 		{
 			name: "mcp-namespace/deny-name-glob-matches",
-			deny: []string{"mcp__github__get_*"},
-			tool: "mcp__github__get_issue",
+			deny: []string{ruleMcpGetGlob},
+			tool: toolMcpIssue,
 			want: perm.VerdictDeny,
 		},
 
-		// --- unanchored-allow-skip: "*", "B*", "mcp__*" are inert in the allow list (CC asymmetry) ---
+		// --- unanchored-allow-skip: "*", "B*", ruleMcpStar are inert in the allow list (CC asymmetry) ---
 		{
 			name:  "unanchored-allow-skip/star-inert",
 			allow: []string{"*"},
-			tool:  "Bash",
+			tool:  toolBash,
 			arg:   "anything",
 			want:  perm.Unmatched,
 		},
 		{
 			name:  "unanchored-allow-skip/prefix-glob-inert",
 			allow: []string{"B*"},
-			tool:  "Bash",
+			tool:  toolBash,
 			arg:   "ls",
 			want:  perm.Unmatched,
 		},
 		{
 			name:  "unanchored-allow-skip/mcp-star-inert",
-			allow: []string{"mcp__*"},
-			tool:  "mcp__github__get_issue",
+			allow: []string{ruleMcpStar},
+			tool:  toolMcpIssue,
 			want:  perm.Unmatched,
 		},
 		{
@@ -184,16 +198,16 @@ func TestRules(t *testing.T) {
 		},
 		{
 			name: "unanchored-allow-skip/same-glob-deny-matches",
-			deny: []string{"mcp__*"},
-			tool: "mcp__github__get_issue",
+			deny: []string{ruleMcpStar},
+			tool: toolMcpIssue,
 			want: perm.VerdictDeny,
 		},
 
 		// --- malformed-skip: bad lines are skipped with warnings; valid lines still apply; never panics ---
 		{
 			name: "malformed-skip/valid-line-still-applies",
-			deny: []string{"", "Bash(git", "Wri te", "Write"},
-			tool: "Write",
+			deny: []string{"", ruleUnclosed, "Wri te", toolWrite},
+			tool: toolWrite,
 			arg:  "x",
 			want: perm.VerdictDeny,
 		},
@@ -201,8 +215,8 @@ func TestRules(t *testing.T) {
 		// --- grammar details pinned by D-02's syntax ---
 		{
 			name: "bare-tool-matches-any-input",
-			ask:  []string{"Write"},
-			tool: "Write",
+			ask:  []string{toolWrite},
+			tool: toolWrite,
 			want: perm.VerdictAsk,
 		},
 		{
@@ -214,43 +228,43 @@ func TestRules(t *testing.T) {
 		{
 			name: "colon-star-suffix-equals-trailing-star",
 			deny: []string{"Bash(ls:*)"},
-			tool: "Bash",
+			tool: toolBash,
 			arg:  "ls -la",
 			want: perm.VerdictDeny,
 		},
 		{
 			name: "colon-star-suffix-space-star-identical",
 			deny: []string{"Bash(ls *)"},
-			tool: "Bash",
+			tool: toolBash,
 			arg:  "ls -la",
 			want: perm.VerdictDeny,
 		},
 		{
 			name: "colon-star-mid-pattern-is-literal",
 			deny: []string{"Bash(echo a:b:*c)"},
-			tool: "Bash",
+			tool: toolBash,
 			arg:  "echo a:b:*c",
 			want: perm.VerdictDeny,
 		},
 		{
 			name: "colon-star-mid-pattern-literal-no-wildcard",
 			deny: []string{"Bash(echo a:b:*c)"},
-			tool: "Bash",
+			tool: toolBash,
 			arg:  "echo a:bXc",
 			want: perm.Unmatched,
 		},
 		{
 			name: "exact-specifier-no-prefix-creep",
 			deny: []string{"Bash(git status)"},
-			tool: "Bash",
+			tool: toolBash,
 			arg:  "git statusx",
 			want: perm.Unmatched,
 		},
 		{
-			name:  "bare-tool-does-not-match-suffix-extended-name",
-			deny:  []string{"Write"},
-			tool:  "WriteExtra",
-			want:  perm.Unmatched,
+			name: "bare-tool-does-not-match-suffix-extended-name",
+			deny: []string{toolWrite},
+			tool: "WriteExtra",
+			want: perm.Unmatched,
 		},
 	}
 
@@ -277,13 +291,13 @@ func TestRulesParse(t *testing.T) {
 		in   string
 		want perm.Rule
 	}{
-		{in: "Write", want: perm.Rule{Tool: "Write"}},
-		{in: "  Write  ", want: perm.Rule{Tool: "Write"}},
-		{in: "Bash(git *)", want: perm.Rule{Tool: "Bash", Pattern: "git *"}},
-		{in: "Bash(ls:*)", want: perm.Rule{Tool: "Bash", Pattern: "ls *"}},
-		{in: "Bash(git status)", want: perm.Rule{Tool: "Bash", Pattern: "git status"}},
-		{in: "mcp__github__get_*", want: perm.Rule{Tool: "mcp__github__get_*"}},
-		{in: "Write(*)", want: perm.Rule{Tool: "Write", Pattern: "*"}},
+		{in: toolWrite, want: perm.Rule{Tool: toolWrite}},
+		{in: "  Write  ", want: perm.Rule{Tool: toolWrite}},
+		{in: ruleGit, want: perm.Rule{Tool: toolBash, Pattern: "git *"}},
+		{in: "Bash(ls:*)", want: perm.Rule{Tool: toolBash, Pattern: "ls *"}},
+		{in: "Bash(git status)", want: perm.Rule{Tool: toolBash, Pattern: "git status"}},
+		{in: ruleMcpGetGlob, want: perm.Rule{Tool: ruleMcpGetGlob}},
+		{in: "Write(*)", want: perm.Rule{Tool: toolWrite, Pattern: "*"}},
 	}
 
 	for _, tt := range ok {
@@ -306,7 +320,7 @@ func TestRulesParse(t *testing.T) {
 	bad := []string{
 		"",
 		"   ",
-		"Bash(git",
+		ruleUnclosed,
 		"Bash git)",
 		")Write",
 		"Bash()",
@@ -332,14 +346,14 @@ func TestRulesWarnings(t *testing.T) {
 	t.Parallel()
 
 	// Unanchored allow globs: exactly one warning each, all skipped as inert.
-	_, warns := perm.NewRuleSet(nil, nil, []string{"*", "B*", "mcp__*", "mcp__puppeteer__*", "Write"})
+	_, warns := perm.NewRuleSet(nil, nil, []string{"*", "B*", ruleMcpStar, "mcp__puppeteer__*", toolWrite})
 	if len(warns) != 3 {
 		t.Fatalf("unanchored allow warnings = %d (%+v); want 3", len(warns), warns)
 	}
 
 	for _, w := range warns {
 		switch w.Rule {
-		case "*", "B*", "mcp__*":
+		case "*", "B*", ruleMcpStar:
 		default:
 			t.Errorf("unexpected unanchored-allow warning for rule %q", w.Rule)
 		}
@@ -350,14 +364,14 @@ func TestRulesWarnings(t *testing.T) {
 	}
 
 	// Malformed lines: one warning each, parse failures named as the reason.
-	_, warns = perm.NewRuleSet([]string{"", "Bash(git", "Write"}, nil, nil)
+	_, warns = perm.NewRuleSet([]string{"", ruleUnclosed, toolWrite}, nil, nil)
 	if len(warns) != 2 {
 		t.Fatalf("malformed warnings = %d (%+v); want 2", len(warns), warns)
 	}
 
 	for _, w := range warns {
 		switch w.Rule {
-		case "", "Bash(git":
+		case "", ruleUnclosed:
 		default:
 			t.Errorf("unexpected malformed warning for rule %q", w.Rule)
 		}
@@ -368,7 +382,7 @@ func TestRulesWarnings(t *testing.T) {
 	}
 
 	// A clean rule set carries no warnings.
-	_, warns = perm.NewRuleSet([]string{"Bash(rm *)"}, []string{"Write"}, []string{"Bash(git *)"})
+	_, warns = perm.NewRuleSet([]string{ruleRm}, []string{toolWrite}, []string{ruleGit})
 	if len(warns) != 0 {
 		t.Errorf("clean rule set warnings = %+v; want none", warns)
 	}
@@ -379,20 +393,20 @@ func TestRulesWarnings(t *testing.T) {
 func TestRulesMCPHelpers(t *testing.T) {
 	t.Parallel()
 
-	if got := perm.MCPName("github", "get_issue"); got != "mcp__github__get_issue" {
+	if got := perm.MCPName("github", "get_issue"); got != toolMcpIssue {
 		t.Errorf("MCPName = %q; want mcp__github__get_issue", got)
 	}
 
-	server, tool, ok := perm.SplitMCPName("mcp__github__get_issue")
+	server, tool, ok := perm.SplitMCPName(toolMcpIssue)
 	if !ok || server != "github" || tool != "get_issue" {
 		t.Errorf("SplitMCPName = (%q, %q, %v); want (github, get_issue, true)", server, tool, ok)
 	}
 
-	if _, _, ok := perm.SplitMCPName("Write"); ok {
+	if _, _, ok := perm.SplitMCPName(toolWrite); ok {
 		t.Error("SplitMCPName(Write) ok = true; want false (not an MCP name)")
 	}
 
-	if _, _, ok := perm.SplitMCPName("mcp__puppeteer"); ok {
+	if _, _, ok := perm.SplitMCPName(ruleMcpPuppeteer); ok {
 		t.Error("SplitMCPName(mcp__puppeteer) ok = true; want false (server-only, no tool part)")
 	}
 
@@ -406,7 +420,8 @@ func TestRulesMCPHelpers(t *testing.T) {
 
 			gotServer, gotTool, ok := perm.SplitMCPName(name)
 			if !ok || gotServer != server || gotTool != tool {
-				t.Errorf("round-trip %q = (%q, %q, %v); want (%q, %q, true)", name, gotServer, gotTool, ok, server, tool)
+				t.Errorf("round-trip %q = (%q, %q, %v)", name, gotServer, gotTool, ok)
+				t.Errorf("want (%q, %q, true)", server, tool)
 			}
 		}
 	}
