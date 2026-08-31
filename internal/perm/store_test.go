@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -20,15 +19,15 @@ const (
 	testToolBash  = "Bash"
 )
 
-// discardLogger builds a logger that swallows output (warnings stay
-// assertable via Warnings() without flooding test logs).
-func discardLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
-}
+// writersN is the concurrent-writers count for the serialization test.
+const writersN = 8
+
+// errRenameBoom is the static failure the rename seam injects (T-17-02).
+var errRenameBoom = errors.New("rename boom")
 
 // newStore opens a Store against a temp permissions.yaml so every test is
 // isolated. Returns the store and its path for byte-level assertions.
-func newStore(t *testing.T) (*Store, string) {
+func newStore(t *testing.T) (*Store, string) { //nolint:gocritic // unnamedResult: house config forbids named returns
 	t.Helper()
 
 	path := filepath.Join(t.TempDir(), "permissions.yaml")
@@ -44,7 +43,7 @@ func newStore(t *testing.T) (*Store, string) {
 // silenceStore keeps load-time warning logs out of test output (the warnings
 // themselves are asserted via Warnings()).
 func silenceStore(s *Store) {
-	s.log = discardLogger()
+	s.log = slog.New(slog.DiscardHandler)
 }
 
 // TestStoreOpenCreatesEmptyFloor verifies Open on an absent path creates the
@@ -60,18 +59,18 @@ func TestStoreOpenCreatesEmptyFloor(t *testing.T) {
 		t.Fatalf("Open: %v", err)
 	}
 
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("Open did not create %q: %v", path, err)
+	info, statErr := os.Stat(path)
+	if statErr != nil {
+		t.Fatalf("Open did not create %q: %v", path, statErr)
 	}
 
 	if got := info.Mode().Perm(); got != filePermOwner {
 		t.Errorf("file perm = %v; want %v", got, filePermOwner)
 	}
 
-	dirInfo, err := os.Stat(filepath.Dir(path))
-	if err != nil {
-		t.Fatalf("Stat parent dir: %v", err)
+	dirInfo, dirErr := os.Stat(filepath.Dir(path))
+	if dirErr != nil {
+		t.Fatalf("Stat parent dir: %v", dirErr)
 	}
 
 	if got := dirInfo.Mode().Perm(); got != dirPerm {
@@ -90,8 +89,17 @@ func TestStoreOpenLoadsExisting(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "permissions.yaml")
-	raw := []byte("deny:\n    - \"Bash(rm -rf *)\"\nask:\n    - \"Write\"\nallow:\n    - \"Bash(git *)\"\n    - mcp__github__get_issue\n")
-	if err := os.WriteFile(path, raw, filePermOwner); err != nil {
+
+	raw := []byte("deny:\n" +
+		"    - \"Bash(rm -rf *)\"\n" +
+		"ask:\n" +
+		"    - \"Write\"\n" +
+		"allow:\n" +
+		"    - \"Bash(git *)\"\n" +
+		"    - mcp__github__get_issue\n")
+
+	err := os.WriteFile(path, raw, filePermOwner)
+	if err != nil {
 		t.Fatalf("seed file: %v", err)
 	}
 
@@ -102,24 +110,21 @@ func TestStoreOpenLoadsExisting(t *testing.T) {
 
 	rs := s.Rules()
 
-	if got := rs.Evaluate("Bash", "rm -rf /tmp/x"); got != VerdictDeny {
-		t.Errorf("Evaluate(deny rule) = %v; want VerdictDeny", got)
+	cases := []struct {
+		tool, arg string
+		want      Verdict
+	}{
+		{testToolBash, "rm -rf /tmp/x", VerdictDeny},
+		{testToolWrite, "main.go", VerdictAsk},
+		{testToolBash, "git status", VerdictAllow},
+		{"mcp__github__get_issue", "", VerdictAllow},
+		{testToolBash, "make world", Unmatched},
 	}
 
-	if got := rs.Evaluate("Write", "main.go"); got != VerdictAsk {
-		t.Errorf("Evaluate(ask rule) = %v; want VerdictAsk", got)
-	}
-
-	if got := rs.Evaluate("Bash", "git status"); got != VerdictAllow {
-		t.Errorf("Evaluate(allow rule) = %v; want VerdictAllow", got)
-	}
-
-	if got := rs.Evaluate("mcp__github__get_issue", ""); got != VerdictAllow {
-		t.Errorf("Evaluate(mcp allow rule) = %v; want VerdictAllow", got)
-	}
-
-	if got := rs.Evaluate("Bash", "make world"); got != Unmatched {
-		t.Errorf("Evaluate(unmatched) = %v; want Unmatched", got)
+	for _, tc := range cases {
+		if got := rs.Evaluate(tc.tool, tc.arg); got != tc.want {
+			t.Errorf("Evaluate(%q, %q) = %v; want %v", tc.tool, tc.arg, got, tc.want)
+		}
 	}
 }
 
@@ -131,7 +136,8 @@ func TestStoreAllowToolPersistsAndSurvivesRestart(t *testing.T) {
 
 	s, path := newStore(t)
 
-	if err := s.AllowTool(testToolWrite); err != nil {
+	err := s.AllowTool(testToolWrite)
+	if err != nil {
 		t.Fatalf("AllowTool: %v", err)
 	}
 
@@ -139,9 +145,9 @@ func TestStoreAllowToolPersistsAndSurvivesRestart(t *testing.T) {
 		t.Errorf("Evaluate after AllowTool = %v; want VerdictAllow", got)
 	}
 
-	reopened, err := Open(path)
-	if err != nil {
-		t.Fatalf("re-Open: %v", err)
+	reopened, reopenErr := Open(path)
+	if reopenErr != nil {
+		t.Fatalf("re-Open: %v", reopenErr)
 	}
 
 	if got := reopened.Rules().Evaluate(testToolWrite, "main.go"); got != VerdictAllow {
@@ -156,11 +162,13 @@ func TestStoreForbidToolPersists(t *testing.T) {
 
 	s, path := newStore(t)
 
-	if err := s.ForbidTool(testToolWrite); err != nil {
+	err := s.ForbidTool(testToolWrite)
+	if err != nil {
 		t.Fatalf("ForbidTool: %v", err)
 	}
 
-	if err := s.AllowTool(testToolBash); err != nil {
+	err = s.AllowTool(testToolBash)
+	if err != nil {
 		t.Fatalf("AllowTool: %v", err)
 	}
 
@@ -168,9 +176,9 @@ func TestStoreForbidToolPersists(t *testing.T) {
 		t.Errorf("Evaluate after ForbidTool = %v; want VerdictDeny", got)
 	}
 
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
+	raw, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatalf("ReadFile: %v", readErr)
 	}
 
 	for _, want := range []string{"- " + testToolWrite, "- " + testToolBash} {
@@ -188,22 +196,24 @@ func TestStoreIdempotentNoop(t *testing.T) {
 
 	s, path := newStore(t)
 
-	if err := s.AllowTool(testToolWrite); err != nil {
+	err := s.AllowTool(testToolWrite)
+	if err != nil {
 		t.Fatalf("AllowTool: %v", err)
 	}
 
-	before, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
+	before, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatalf("ReadFile: %v", readErr)
 	}
 
-	if err := s.AllowTool(testToolWrite); err != nil {
+	err = s.AllowTool(testToolWrite)
+	if err != nil {
 		t.Fatalf("second AllowTool: %v", err)
 	}
 
-	after, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
+	after, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatalf("ReadFile: %v", readErr)
 	}
 
 	if !bytes.Equal(before, after) {
@@ -214,17 +224,19 @@ func TestStoreIdempotentNoop(t *testing.T) {
 		t.Errorf("entry count = %d; want 1 (no duplicate lines)", n)
 	}
 
-	if err := s.ForbidTool(testToolWrite); err != nil {
+	err = s.ForbidTool(testToolWrite)
+	if err != nil {
 		t.Fatalf("ForbidTool: %v", err)
 	}
 
-	if err := s.ForbidTool(testToolWrite); err != nil {
+	err = s.ForbidTool(testToolWrite)
+	if err != nil {
 		t.Fatalf("second ForbidTool: %v", err)
 	}
 
-	final, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
+	final, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatalf("ReadFile: %v", readErr)
 	}
 
 	if n := strings.Count(string(final), "- "+testToolWrite); n != 2 {
@@ -240,19 +252,23 @@ func TestStoreRejectsNonSimpleEntries(t *testing.T) {
 
 	s, path := newStore(t)
 
-	if err := s.AllowTool("Bash(git *)"); err == nil {
+	err := s.AllowTool("Bash(git *)")
+	if err == nil {
 		t.Error("AllowTool(specifier) = nil error; want error")
 	}
 
-	if err := s.AllowTool("mcp__github__get_*"); err == nil {
+	err = s.AllowTool("mcp__github__get_*")
+	if err == nil {
 		t.Error("AllowTool(glob) = nil error; want error")
 	}
 
-	if err := s.ForbidTool("Wri te"); err == nil {
+	err = s.ForbidTool("Wri te")
+	if err == nil {
 		t.Error("ForbidTool(name with space) = nil error; want error")
 	}
 
-	if err := s.ForbidTool(""); err == nil {
+	err = s.ForbidTool("")
+	if err == nil {
 		t.Error("ForbidTool(empty) = nil error; want error")
 	}
 
@@ -269,38 +285,41 @@ func TestStoreRejectsNonSimpleEntries(t *testing.T) {
 // TestStoreRenameFailureLeavesFileIntact proves the atomic discipline: a
 // failed rename returns an error and leaves the prior file byte-identical
 // with no temp leftover (T-17-02).
-func TestStoreRenameFailureLeavesFileIntact(t *testing.T) { //nolint:paralleltest // renameFunc seam is package-global — serial family
+func TestStoreRenameFailureLeavesFileIntact(t *testing.T) { //nolint:paralleltest // renameFunc seam is global — serial
 	s, path := newStore(t)
 
-	if err := s.AllowTool("Alpha"); err != nil {
+	err := s.AllowTool("Alpha")
+	if err != nil {
 		t.Fatalf("AllowTool: %v", err)
 	}
 
-	before, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
+	before, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatalf("ReadFile: %v", readErr)
 	}
 
 	saved := renameFunc
-	renameFunc = func(_, _ string) error { return errors.New("boom") }
+	renameFunc = func(_, _ string) error { return errRenameBoom }
+
 	defer func() { renameFunc = saved }()
 
-	if err := s.AllowTool("Beta"); err == nil {
+	err = s.AllowTool("Beta")
+	if err == nil {
 		t.Fatal("AllowTool with failing rename = nil error; want error")
 	}
 
-	after, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
+	after, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatalf("ReadFile: %v", readErr)
 	}
 
 	if !bytes.Equal(before, after) {
 		t.Errorf("failed rename mutated the file:\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 
-	leftovers, err := filepath.Glob(path + ".tmp")
-	if err != nil {
-		t.Fatalf("Glob: %v", err)
+	leftovers, globErr := filepath.Glob(path + ".tmp")
+	if globErr != nil {
+		t.Fatalf("Glob: %v", globErr)
 	}
 
 	if len(leftovers) != 0 {
@@ -319,7 +338,8 @@ func TestStoreStaleTmpIgnored(t *testing.T) {
 
 	path := filepath.Join(t.TempDir(), "permissions.yaml")
 
-	if err := os.WriteFile(path+".tmp", []byte("garbage"), filePermOwner); err != nil {
+	err := os.WriteFile(path+".tmp", []byte("garbage"), filePermOwner)
+	if err != nil {
 		t.Fatalf("seed tmp: %v", err)
 	}
 
@@ -328,7 +348,8 @@ func TestStoreStaleTmpIgnored(t *testing.T) {
 		t.Fatalf("Open: %v", err)
 	}
 
-	if err := s.ForbidTool(testToolWrite); err != nil {
+	err = s.ForbidTool(testToolWrite)
+	if err != nil {
 		t.Fatalf("ForbidTool: %v", err)
 	}
 
@@ -344,8 +365,15 @@ func TestStoreMalformedLineTolerated(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "permissions.yaml")
-	raw := []byte("deny:\n    - \"Wri te\"\n    - \"Write\"\nallow:\n    - \"Bash(git *)\"\n")
-	if err := os.WriteFile(path, raw, filePermOwner); err != nil {
+
+	raw := []byte("deny:\n" +
+		"    - \"Wri te\"\n" +
+		"    - \"Write\"\n" +
+		"allow:\n" +
+		"    - \"Bash(git *)\"\n")
+
+	err := os.WriteFile(path, raw, filePermOwner)
+	if err != nil {
 		t.Fatalf("seed file: %v", err)
 	}
 
@@ -384,28 +412,34 @@ func TestStoreRicherRulesSurviveDialogWrites(t *testing.T) {
 
 	s, path := newStore(t)
 
-	if err := s.ForbidTool("Bash(rm -rf *)"); err == nil {
+	err := s.ForbidTool("Bash(rm -rf *)")
+	if err == nil {
 		t.Fatal("ForbidTool(specifier) = nil error; want error (D-01 boundary)")
 	}
 
 	// Seed the specifier rule by hand (operator-owned file), then click.
-	raw := []byte("deny:\n    - \"Bash(rm -rf *)\"\nallow: []\n")
-	if err := os.WriteFile(path, raw, filePermOwner); err != nil {
-		t.Fatalf("seed file: %v", err)
+	raw := []byte("deny:\n" +
+		"    - \"Bash(rm -rf *)\"\n" +
+		"allow: []\n")
+
+	seedErr := os.WriteFile(path, raw, filePermOwner)
+	if seedErr != nil {
+		t.Fatalf("seed file: %v", seedErr)
 	}
 
-	s2, err := Open(path)
+	s2, openErr := Open(path)
+	if openErr != nil {
+		t.Fatalf("Open: %v", openErr)
+	}
+
+	err = s2.AllowTool(testToolWrite)
 	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-
-	if err := s2.AllowTool(testToolWrite); err != nil {
 		t.Fatalf("AllowTool: %v", err)
 	}
 
-	after, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile: %v", err)
+	after, readErr := os.ReadFile(path)
+	if readErr != nil {
+		t.Fatalf("ReadFile: %v", readErr)
 	}
 
 	if !strings.Contains(string(after), "Bash(rm -rf *)") {
@@ -424,7 +458,8 @@ func TestStoreCopyOnRead(t *testing.T) {
 
 	s, _ := newStore(t)
 
-	if err := s.AllowTool(testToolWrite); err != nil {
+	err := s.AllowTool(testToolWrite)
+	if err != nil {
 		t.Fatalf("AllowTool: %v", err)
 	}
 
@@ -450,11 +485,7 @@ func TestStoreConcurrentWritesSerialize(t *testing.T) {
 	var wg sync.WaitGroup
 
 	for i := range writersN {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			name := fmt.Sprintf("Tool%d", i)
 
 			var err error
@@ -467,14 +498,17 @@ func TestStoreConcurrentWritesSerialize(t *testing.T) {
 			if err != nil {
 				t.Errorf("write %q: %v", name, err)
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
 
 	rs := s.Rules()
-	if len(rs.Deny) != writersN/2 || len(rs.Allow) != writersN/2 {
-		t.Errorf("after concurrent writes: deny=%d allow=%d; want %d/%d", len(rs.Deny), len(rs.Allow), writersN/2, writersN/2)
+
+	half := writersN / 2
+	if len(rs.Deny) != half || len(rs.Allow) != half {
+		t.Errorf("after concurrent writes: deny=%d allow=%d", len(rs.Deny), len(rs.Allow))
+		t.Errorf("want %d/%d", half, half)
 	}
 }
 
@@ -485,19 +519,17 @@ func TestStoreFilePermHardAfterSave(t *testing.T) {
 
 	s, path := newStore(t)
 
-	if err := s.AllowTool(testToolWrite); err != nil {
+	err := s.AllowTool(testToolWrite)
+	if err != nil {
 		t.Fatalf("AllowTool: %v", err)
 	}
 
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("Stat: %v", err)
+	info, statErr := os.Stat(path)
+	if statErr != nil {
+		t.Fatalf("Stat: %v", statErr)
 	}
 
 	if got := info.Mode().Perm(); got != filePermOwner {
 		t.Errorf("file perm after save = %v; want %v", got, filePermOwner)
 	}
 }
-
-// writersN is the concurrent-writers count for the serialization test.
-const writersN = 8
