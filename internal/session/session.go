@@ -122,6 +122,18 @@ type Session struct {
 	//nolint:containedctx // deliberate serve-lifetime ctx storage (see SetAskBroker)
 	askResumeCtx context.Context
 
+	// gate is the permission-gate chokepoint's injected dependencies (17-02,
+	// ACP-01): nil = the gate is unwired and every call executes (the v1.1
+	// zero-dialog behavior — "available, not default" preserved for sessions
+	// that never opt in). Wired via SetPermissionGate.
+	gate *GateDeps
+
+	// automationTurn marks the CURRENT turn as automation-origin (12-07
+	// engine-driven firing; 17-02 D-07's human-present signal). Set by the
+	// runtime entry around the firing turn; client-driven turns never set
+	// it. The gate reads it per call.
+	automationTurn atomic.Bool
+
 	closeOnce sync.Once
 
 	turnCounter atomic.Int64
@@ -416,9 +428,29 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 
 			batchIDs := make([]string, 0, len(resp.ToolCalls))
 
+			// 17-02: a gated ask-class call suspended this iteration — the
+			// suspension is applied AFTER the batch's survivors dispatch and
+			// record (the same shape as the ask suspension below).
+			var gateSuspended *pendingPermission
+
 			for _, tc := range resp.ToolCalls {
 				callID := toolCallIDOf(tc)
 				if isSubagentTool(tc.Name) {
+					// 17-02 THE permission chokepoint — subagent branch (D-05:
+					// ONE pipeline; subagents bypass DispatchBatch but NEVER
+					// the gate — no second permission path).
+					if v := s.gateCall(turnID, callID, tc.Name, tc.Input); v.action != gateExecute {
+						if v.action == gateSuspend {
+							gateSuspended = &pendingPermission{callID: callID, tool: tc.Name, input: tc.Input}
+
+							continue
+						}
+
+						s.appendToolResultLoud(turnID, callID, tc.Name, v.result, true)
+
+						continue
+					}
+
 					// 12-02: a subagent_type matching a discovered agent
 					// definition dispatches with the definition's Prompt (a
 					// per-dispatch system block) and Tools (the restricted
@@ -466,6 +498,22 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 				// mirrored; read-only exploration continues.
 				if s.planModeBlocks(tc.Name) {
 					s.appendToolResultLoud(turnID, callID, tc.Name, planModeRefusal(), true)
+
+					continue
+				}
+
+				// 17-02 THE permission chokepoint — beside the plan-mode gate
+				// (D-04/D-05): rule evaluation runs in BOTH modes (deny still
+				// denies ungated); the ask class opens the native dialog only
+				// when gated + human, declines fail-safe on automation turns.
+				if v := s.gateCall(turnID, callID, tc.Name, tc.Input); v.action != gateExecute {
+					if v.action == gateSuspend {
+						gateSuspended = &pendingPermission{callID: callID, tool: tc.Name, input: tc.Input}
+
+						continue
+					}
+
+					s.appendToolResultLoud(turnID, callID, tc.Name, v.result, true)
 
 					continue
 				}
@@ -529,6 +577,17 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 					s.planMode.Enter()
 					s.appendPlanModeMarker(planModeCauseEnter, callID, turnID)
 				}
+			}
+
+			// 17-02: a gated ask-class call suspended — the batch's survivors
+			// (if any) were dispatched + recorded above. The turn ends with
+			// the ask marker: suspendForPermission enqueues on the ask queue,
+			// the dialog answer drives the resume, and NO turn lock is held
+			// across the human wait (RESEARCH Pitfall 2).
+			if gateSuspended != nil {
+				s.suspendForPermission(turnID, gateSuspended.callID, gateSuspended.tool, gateSuspended.input)
+
+				return stopAsk, nil
 			}
 
 			if suspendedCallID != "" {

@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -12,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
@@ -26,6 +28,7 @@ import (
 	mcp "github.com/Djarvur/ass-guard-agent/internal/mcp"
 	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
 	"github.com/Djarvur/ass-guard-agent/internal/openspec"
+	"github.com/Djarvur/ass-guard-agent/internal/perm"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/redact"
@@ -189,6 +192,19 @@ type Runner struct {
 	schedStop            func()
 	catchUpOnce          sync.Once
 	emitFor              func(sessionID string) acp.ChunkEmitter
+
+	// 17-02 (ACP-01): the permission-gate composition. permAskFire is the
+	// permission-ask surface callback injected from the serve composition
+	// (acpserve) after the acp Server exists — the onSurface-callback
+	// precedent; internal/session stays free of internal/acp imports. nil =
+	// unwired surface (the gate fails a gated ask safe with a decline —
+	// never a silent allow). permMode is the LIVE permission-mode accessor
+	// (ungated|gated; Task 17-02-3's permissions.mode apply target): the gate
+	// reads it PER CALL, so a set_config_option flip lands on the running
+	// session without recreation (Pitfall 8). Boot default: ungated
+	// (criterion 4 — "available, not default").
+	permAskFire func(e *session.AskEntry) session.AskOutcome
+	permMode    atomic.Value // string
 
 	// 13-00 park state: parkedCancels holds each session's parked-chain ctx
 	// cancels (drained by CloseSession/closeAllSessions — the D-03 off-switch
@@ -995,6 +1011,11 @@ func (r *Runner) WaitChainIdle(ctx context.Context, sessionID string) bool {
 // waits are seconds-scale; 10ms keeps the poll cheap.
 const chainIdlePollInterval = 10 * time.Millisecond
 
+// errPermissionAskSurfaceUnwired is the runtime-side sentinel for the gate's
+// fire wrapper when the serve composition has not injected the acpserve
+// surface yet (the fail-safe decline path — never a silent allow).
+var errPermissionAskSurfaceUnwired = errors.New("permission ask surface not wired")
+
 // sessionFor returns the Session for sessionID, creating it on first use.
 func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop // grouping keeps the turn pipeline together
 	ctx context.Context, sessionID string,
@@ -1262,6 +1283,38 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop // groupi
 	// (Session.planMode nil), the mutating-tool gate never fires, and
 	// ExitPlanMode answers "not in plan mode" (the live-session finding).
 	s.SetPlanMode(planMode)
+
+	// 17-02 (ACP-01): the permission gate — THE one per-call chokepoint. The
+	// perm store opens on the project's .ass-guard floor (0600 atomic, 17-01);
+	// an open failure degrades LOUDLY to a rule-less session (deny rules
+	// cannot be enforced without a store; the fail-safe story is untouched —
+	// ungated stays today's behavior and gated still declines ask-class calls
+	// rather than silent-allowing them). The mode accessor is runner-owned and
+	// LIVE (Pitfall 8); the fire callback is read at CALL time so a late
+	// injection from the serve composition is picked up.
+	permDeps := session.GateDeps{
+		Mode:  r.PermMode,
+		Queue: session.NewAskQueue(),
+		Fire: func(e *session.AskEntry) session.AskOutcome {
+			if r.permAskFire == nil {
+				return session.AskOutcome{Err: errPermissionAskSurfaceUnwired}
+			}
+
+			return r.permAskFire(e)
+		},
+	}
+
+	permStore, permErr := perm.Open(filepath.Join(dir, ".ass-guard", "permissions.yaml"))
+	if permErr != nil {
+		log.Printf("ass-guard: permissions store disabled for %s (%v) — deny/allow rules UNENFORCED for this session",
+			dir, permErr)
+	} else {
+		permDeps.Rules = permStore.Rules
+		permDeps.Allow = permStore.AllowTool
+		permDeps.Forbid = permStore.ForbidTool
+	}
+
+	s.SetPermissionGate(permDeps)
 	// Phase-4 TOOL-04/05: inject the catalog-backed real executor (WebSearch/
 	// WebFetch delegate to the configured backend; others call catalog
 	// Tool.Execute). Phase 5 wraps it in toolcat.MCPExecutor so mcp__* calls
@@ -1581,6 +1634,33 @@ func (r *Runner) SetDefaultTurnModel(model string) error {
 // SetEmitter injects the server-driven-turn chunk emitter (WINDOWS #3:
 // strictly between server construction and scheduler start).
 func (r *Runner) SetEmitter(emit func(sessionID string) acp.ChunkEmitter) { r.emitFor = emit }
+
+// SetPermissionAskFire injects the permission-ask surface callback (17-02,
+// ACP-01): the serve composition binds the acpserve surface's Fire
+// (registry-backed session/request_permission) after the acp Server exists —
+// internal/session never imports internal/acp (the onSurface-callback
+// precedent). The gate enqueues through it; nil until injected (an unwired
+// surface fails gated asks safe with a decline — never a silent allow).
+func (r *Runner) SetPermissionAskFire(f func(e *session.AskEntry) session.AskOutcome) {
+	r.permAskFire = f
+}
+
+// SetPermMode flips the LIVE permission-mode accessor (17-02 Task 3: the
+// permissions.mode apply target — persist-then-apply, 16-D-07 ordering). The
+// gate reads the accessor per call, so the very next tool call in any live
+// session sees the new mode (Pitfall 8 — no session recreation).
+func (r *Runner) SetPermMode(mode string) { r.permMode.Store(mode) }
+
+// PermMode returns the live permission mode — the gate's per-call read and
+// the ConfigSurface's advertisement truth (chip==wire). The boot default is
+// ungated: zero dialogs until the operator opts in (criterion 4).
+func (r *Runner) PermMode() string {
+	if m, ok := r.permMode.Load().(string); ok && m != "" {
+		return m
+	}
+
+	return session.PermModeUngated
+}
 
 // StartScheduler launches the due-check goroutine (the serve composition's
 // post-emitter step — see cron_wiring.go).

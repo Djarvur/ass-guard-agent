@@ -303,7 +303,7 @@ func TestPlanMode_BlockedSet(t *testing.T) {
 
 	cases := map[string]bool{ // name -> want blocked
 		toolBash:              true,
-		"Write":               true,
+		toolWrite:             true,
 		"SendMessage":         true, // capture: refused in plan mode (read-only in catalog, side-effecting in target)
 		"TaskStop":            true, // capture: refused
 		"CronCreate":          true, // capture: 'changes persistent state'

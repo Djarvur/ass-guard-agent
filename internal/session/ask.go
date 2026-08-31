@@ -5,9 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
+	"github.com/Djarvur/ass-guard-agent/internal/provider"
+	"github.com/Djarvur/ass-guard-agent/internal/toolexec"
 )
 
 // Ask suspension (12-01, ACP-01 + D-01): a model-authored question mid-turn
@@ -72,8 +77,15 @@ type PendingAsk struct {
 	SurfacedAt time.Time     `json:"surfacedAt"` //nolint:tagliatelle // on-disk form
 	// Kind distinguishes the suspension surface (12-04): an ordinary model
 	// question ("") vs a plan approval ("plan_approval" — the ExitPlanMode
-	// resume renders the approved/denied forms and flips the plan-mode state).
+	// resume renders the approved/denied forms and flips the plan-mode state)
+	// vs a gated tool call's permission suspension (17-02 "permission" — the
+	// dialog outcome drives the resume, which EXECUTES the gated call).
 	Kind string `json:"kind,omitempty"`
+	// Tool + Input carry the gated call's identity for the permission kind
+	// (17-02): the resume variant persists the always-rule (when chosen) and
+	// executes THIS call before re-entering the turn.
+	Tool  string          `json:"tool,omitempty"`
+	Input json.RawMessage `json:"input,omitempty"`
 	// settle is the per-suspension one-shot completion signal (13-00): armed
 	// by Surface, closed by resumeAskClaimed AFTER the resumed runTurn
 	// returns. It rides the struct so the winning driver (claim copy) closes
@@ -89,6 +101,12 @@ const PendingAskKindPlanApproval = "plan_approval"
 // PendingAskKindQuestion is the explicit ordinary-question Kind (the zero
 // value; the constant exists for readability at the construction site).
 const PendingAskKindQuestion = ""
+
+// PendingAskKindPermission marks a gated tool call's permission suspension
+// (17-02, ACP-01): the native dialog outcome — not an operator reply —
+// drives the resume, which persists the always-rule (when chosen) BEFORE
+// executing the gated call (the ACP-01 trust prohibition).
+const PendingAskKindPermission = "permission"
 
 // AskBroker holds the per-session pending ask + the D-01 timeout timer. It is
 // deliberately Await-free: Surface records + notifies; Claim atomically hands
@@ -425,6 +443,144 @@ func marshalAskForm(form string) json.RawMessage {
 	}
 
 	return out
+}
+
+// resumePermissionAsk is the permission ask's resume variant (17-02) — the
+// mirror of resumeAskClaimed whose outcome is the native DIALOG answer, not a
+// reply string. allow_* executes the gated call (allow_always persists the
+// rule FIRST — the ACP-01 prohibition; a persist failure downgrades the click
+// to once-only semantics with a loud structured log, never a silent widening);
+// reject_once appends the denial form; cancelled appends the cancelled-NORMAL
+// form (never an error); any surface failure declines fail-safe (never a
+// silent allow). The result lands loud, the SAME turn's model loop re-enters,
+// and the suspension's settle signal closes only after the resumed turn
+// returns (the 13-00 discipline).
+//
+//nolint:contextcheck // the queue passes the stored serve-lifetime ctx
+func (s *Session) resumePermissionAsk(ctx context.Context, p *PendingAsk, outcome AskOutcome) string {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	var result json.RawMessage
+
+	isErr := false
+
+	executed := false
+
+	switch {
+	case outcome.Err != nil:
+		// Fail-safe decline: surface failure / degraded client. The decline
+		// note IS the transcript line (loud structured family); the log rode
+		// the failure site.
+		result, isErr = permissionDeclineForm(p.Tool, outcome.Err.Error()), true
+
+		slog.Warn("permission ask failed — declining fail-safe (never a silent allow)",
+			"turnID", p.TurnID, "callID", p.CallID, "tool", p.Tool, "error", outcome.Err.Error())
+	case outcome.Cancelled:
+		// Cancelled-NORMAL (criterion 2's letter): NOT an error result.
+		result = permissionCancelledForm(p.Tool)
+	case outcome.Selected == permOptAllowAlways:
+		// Trust BEFORE execution: the rule write happens first; a write
+		// failure downgrades this click to once-only semantics (the ACP-01
+		// prohibition — never silently widen what the file could not record).
+		aerr := s.permissionPersistAllow(p.Tool)
+		if aerr != nil {
+			slog.Error("allow_always persist failed — the click degrades to once-only (never widening silently)",
+				"tool", p.Tool, "error", aerr.Error())
+		}
+
+		result, isErr = s.executeGatedCall(ctx, p)
+		executed = !isErr
+	case outcome.Selected == permOptAllowOnce:
+		result, isErr = s.executeGatedCall(ctx, p)
+		executed = !isErr
+	case outcome.Selected == permOptRejectOnce, outcome.Selected == permOptRejectAlways:
+		// reject_always' deny-rule persistence (D-03) rides the outcome
+		// matrix task; the denial result itself is here.
+		result, isErr = permissionDenyForm(p.Tool), true
+	default:
+		// An unknown option id is untrusted dialog input — fail-safe decline.
+		result, isErr = permissionDeclineForm(p.Tool, "the dialog returned an unknown option"), true
+
+		slog.Warn("permission ask returned an unknown option — declining fail-safe",
+			"turnID", p.TurnID, "callID", p.CallID, "tool", p.Tool, "selected", outcome.Selected)
+	}
+
+	s.appendToolResultLoud(p.TurnID, p.CallID, p.Tool, result, isErr)
+
+	if executed {
+		// The boundary discipline the batch site applies to every executed
+		// call (SESS-02/03) — the resume's execution is no exception.
+		_ = s.MaybeAppendBoundary(p.Tool, p.CallID, p.TurnID)
+
+		// The plan-mode flip the batch site applies to a successful
+		// EnterPlanMode (12-04) — the resume's execution is no exception.
+		if p.Tool == toolNameEnterPlanMode && s.planMode != nil {
+			s.planMode.Enter()
+			s.appendPlanModeMarker(planModeCauseEnter, p.CallID, p.TurnID)
+		}
+	}
+
+	stop, _ := s.runTurn(ctx, p.TurnID)
+
+	// 13-00: the settle signal closes AFTER the resumed runTurn returns —
+	// turn COMPLETION, not the claim, not the render.
+	if p.settle != nil {
+		close(p.settle)
+	}
+
+	return stop
+}
+
+// executeGatedCall runs the allowed call through the SAME execution path the
+// loop would have used — the subagent dispatch for Task/Agent (they bypass
+// DispatchBatch), the deadline-wrapped batch for everything else (RESEARCH
+// Pattern 2: the gated call keeps its per-tool deadline; the human wait
+// already happened ABOVE the wrap — Pitfall 1).
+func (s *Session) executeGatedCall(ctx context.Context, p *PendingAsk) (json.RawMessage, bool) {
+	if isSubagentTool(p.Tool) {
+		var agentDef *ecosys.Agent
+		if def, ok := s.agentDefFor(p.Input); ok {
+			agentDef = &def
+		}
+
+		result, derr := s.DispatchSubagent(ctx, p.TurnID, p.CallID, extractSubagentPrompt(p.Input), agentDef)
+		if derr != nil {
+			errJSON, mErr := json.Marshal(map[string]string{mapKeyError: derr.Error()})
+			if mErr != nil {
+				errJSON = []byte(`{"error":"marshal error failed"}`)
+			}
+
+			return errJSON, true
+		}
+
+		payload, isErr := subagentResultPayload(result)
+
+		return boundedToolResult(payload), isErr
+	}
+
+	results, batchErr := toolexec.DispatchBatch(ctx, s.toolExecOrStub(), s.Catalog,
+		[]provider.ToolCall{{ID: p.CallID, Name: p.Tool, Input: p.Input}})
+	if batchErr != nil {
+		// DispatchBatch surfaces per-call errors in results; a non-nil
+		// top-level error is a cancelled-ctx path — the result below reflects
+		// whatever partial outcome exists (never a silently empty append).
+		slog.Warn("gated call batch dispatch error", "tool", p.Tool, "error", batchErr.Error())
+	}
+
+	if len(results) == 0 {
+		out, mErr := json.Marshal(map[string]string{mapKeyError: "gated call produced no result"})
+		if mErr != nil {
+			return json.RawMessage(`{"error":"gated call produced no result"}`), true
+		}
+
+		return out, true
+	}
+
+	res := results[0]
+
+	return boundedToolResult(res.Output), res.IsError
 }
 
 // planOf extracts the plan text from an approval question (the question wraps

@@ -232,6 +232,14 @@ func Run( //nolint:funlen // :320-425
 	// chip-shows-X/wire-sends-Y divergence class).
 	surface.SetBlobDefaultHook(runner.SetDefaultTurnModel)
 
+	// 17-02 (ACP-01): the permission-ask surface rides the 16-03 registry —
+	// its fire callback is injected runner-side so internal/session never
+	// imports internal/acp (the onSurface-callback precedent). Injected
+	// BEFORE the scheduler starts so the first automation firing already
+	// asks through the wire.
+	permAsker := NewPermissionAsk(ctx, srv.Registry(), stderr)
+	runner.SetPermissionAskFire(permAsker.Fire)
+
 	// 12-07 (ACP-04/D-02): the per-project schedule store + the scheduler
 	// goroutine on the serve-lifetime ctx (no daemon, no port — Close/ctx
 	// owns its lifecycle). A failed open degrades to a serve WITHOUT

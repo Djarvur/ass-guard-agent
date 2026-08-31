@@ -287,4 +287,62 @@ const (
 	// D-13 capability probe subject, and the vehicle for Phase 17's real
 	// permission/question forms.
 	methodElicitationCreate = "elicitation/create"
+
+	// MethodRequestPermission is the agent→client permission request (17-02,
+	// ACP-01; schema/v1 RequestPermissionRequest x-method). The ask surface
+	// (internal/acpserve) dispatches it through the 16-03 registry under the
+	// HUMAN-ASK class. Exported: the ask surface lives one package up; the
+	// handler-owned method constants above stay unexported.
+	MethodRequestPermission = "session/request_permission"
+)
+
+// --- 17-02 permission-ask wire vocabulary (ACP-01) ---
+//
+// Field names pinned VERBATIM against the canonical ACP v1 schema (17-RESEARCH
+// §Wire Shapes, defs RequestPermissionRequest, PermissionOption,
+// SelectedPermissionOutcome — parsed from schema/v1/schema.json). v1 spellings
+// ONLY (Pitfall 7).
+
+// PermissionOptionKind is the COMPLETE v1 enum (schema PermissionOptionKind):
+// allow/reject × once/always — exactly ACP-01's option set. The dialog option
+// names must stay neutral and symmetric (the ACP-01 values prohibition).
+const (
+	PermOptionAllowOnce    = "allow_once"    // "Allow this operation only this time."
+	PermOptionAllowAlways  = "allow_always"  // "Allow this operation and remember the choice."
+	PermOptionRejectOnce   = "reject_once"   // "Reject this operation only this time."
+	PermOptionRejectAlways = "reject_always" // "Reject this operation and remember the choice."
+)
+
+// PermissionOption is one selectable option of the permission dialog (schema
+// PermissionOption; required: optionId, name, kind).
+type PermissionOption struct {
+	OptionID string `json:"optionId"` //nolint:tagliatelle // ACP wire field (required)
+	Name     string `json:"name"`     // required — the human label (neutral, symmetric)
+	Kind     string `json:"kind"`     // required — PermOption* values
+}
+
+// RequestPermissionFrame is the session/request_permission payload (schema
+// RequestPermissionRequest; required: sessionId, toolCall, options). toolCall
+// is the SAME ToolCallUpdate shape as the streaming update — the dialog shows
+// what it is authorizing.
+type RequestPermissionFrame struct {
+	SessionID string              `json:"sessionId"` //nolint:tagliatelle // ACP wire field (required)
+	ToolCall  ToolCallUpdateFrame `json:"toolCall"`  // required
+	Options   []PermissionOption  `json:"options"`   // required
+}
+
+// PermissionOutcomeFrame is the session/request_permission RESPONSE (schema
+// RequestPermissionOutcome): either {"outcome":"cancelled"} or
+// {"outcome":"selected","optionId":"…"}. Per the schema's normative text, a
+// client cancelling the turn MUST answer every pending request_permission
+// with the cancelled outcome.
+type PermissionOutcomeFrame struct {
+	Outcome  string `json:"outcome"`            // "selected" | "cancelled"
+	OptionID string `json:"optionId,omitempty"` //nolint:tagliatelle // ACP wire field (required when selected)
+}
+
+// Permission outcome discriminators (schema RequestPermissionOutcome).
+const (
+	PermissionOutcomeSelected  = "selected"
+	PermissionOutcomeCancelled = "cancelled"
 )

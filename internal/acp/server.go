@@ -291,6 +291,15 @@ func (s *Server) TurnEmitter() *TurnEmitter {
 	return s.emitter
 }
 
+// Registry exposes the outbound-request registry (16-02/16-03) — the 17-02
+// composition seam: the acpserve ask surface dispatches
+// session/request_permission through it (HUMAN-ASK class) and the acpserve
+// Run composition binds the fire callback runner-side (internal/session stays
+// free of internal/acp imports). Non-nil after NewServer.
+func (s *Server) Registry() *Registry {
+	return s.registry
+}
+
 // NotifyConfigOptions emits one config_option_update session/update
 // notification through the emitter's FOREGROUND lane (16-05: out-of-band
 // configuration changes — D-10's post-blob-application notification and
