@@ -2,46 +2,46 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Claude Code Parity
-current_phase: 25
-current_phase_name: seed-001-kit-extraction-strictly-last
-current_plan: 1
-status: executing
-stopped_at: 16-09 complete (gap 4b chip truthfulness — runner default follows the tier resolution, chip==wire pinned both sides; commits 1f21829/f4f0b69/16c269e); all five 16-VERIFICATION gaps closed, phase close awaits operator live-Zed (WINDOWS #11); 25-01 still halted at Task 3 phase-ordering precondition
-last_updated: "2026-08-28T13:16:22Z"
-last_activity: 2026-08-28
-last_activity_desc: Phase 25 execution started
+current_phase: 17
+current_phase_name: Permissions + Elicitation
+current_plan: Not started
+status: planning
+stopped_at: "Phase 16 closed 2026-09-01 (UAT 4/4 passed incl. operator product-intent sign-offs; SECURITY verified threats_open:0); transitioned to Phase 17 (Permissions + Elicitation), ready to plan"
+last_updated: "2026-08-31T22:19:42.619Z"
+last_activity: 2026-09-01
+last_activity_desc: Phase 16 complete, transitioned to Phase 17
 progress:
   total_phases: 11
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 69
   completed_plans: 16
-  percent: 10
-state_head: 9ba2baa14bf99d55b37abcf41ae713e522306276
+  percent: 18
+state_head: 858b29d5048173db3c84a1b4fe8dbf5bfb92f5c5
 ---
 
 # State: ass-guard-agent (working name)
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-08-27)
+See: .planning/PROJECT.md (updated 2026-09-01)
 **Core value:** A hands-off coding agent that feels native in the editor: full SDD workflows run end-to-end without manual continues, and the agent surfaces through the client's own UX — clickable permission prompts, native file diffs, session management. (Pivoted 2026-08-25 from the mimicry bar.)
-**Current focus:** Phase 25 — seed-001-kit-extraction-strictly-last
+**Current focus:** Phase 17 — Permissions + Elicitation
 
 ## Current Position
 
-Phase: 25 (seed-001-kit-extraction-strictly-last) — EXECUTING
-Current Plan: 1
+Phase: 17 — Permissions + Elicitation
+Current Plan: Not started
 Total Plans in Phase: 9
-Status: Executing Phase 25
-Last activity: 2026-08-28 — Phase 25 execution started
+Status: Ready to plan
+Last activity: 2026-09-01 — Phase 16 complete, transitioned to Phase 17
 
-Progress: [████████░░░░░░░░░░░] 8/29 plans ([█░░░░░░░░░] 9%)
+Progress: [█████░░░░░░░░░░░░░░░] 16/69 plans (23%)
 
 ## Performance Metrics
 
 **Velocity (v1.0 history, for calibration):** 36 plans / 8 phases in 6 days; `mise ci` gate green at every phase close. **v1.1:** 51 plans / 5 phases over ~7 active days.
 
-**By Phase (v1.2):** Phase 16: 6/6 plans executed (16-06 ✓ 2026-08-27) — phase closes pending the operator live-Zed confirmation (WINDOWS #11).
+**By Phase (v1.2):** Phase 15: 7/7 ✓ closed 2026-08-27. Phase 16: 9/9 ✓ closed 2026-09-01 (UAT 4/4 passed — operator confirmed blob-tier override, cancel-keeps-session, per-turn hook concurrency; SECURITY verified threats_open: 0).
 **Per-Plan Metrics:**
 
 | Plan | Duration | Tasks | Files |
@@ -121,6 +121,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-08-28T13:16:22Z
-Stopped at: 16-09 complete (gap 4b chip truthfulness — runner default follows the tier resolution, chip==wire pinned both sides; commits 1f21829/f4f0b69/16c269e); all five 16-VERIFICATION gaps closed, phase close awaits operator live-Zed (WINDOWS #11); 25-01 still halted at Task 3 phase-ordering precondition
+Last session: 2026-09-01 (operator UAT sign-offs via /gsd-manager)
+Stopped at: Phase 16 complete — ready to plan Phase 17 (Permissions + Elicitation)
 Resume file: None

@@ -46,7 +46,7 @@ Operator decisions at close (2026-08-23…25): D-09 REVERSED (session resume = m
 **Explicitly deferred from v1.2:** Telegram peer → v1.3 pool, LOWEST priority per operator 2026-08-26 (steering queue SEEDG-01 is built transport-neutral as its prerequisite). dsh profile #2 dropped entirely (operator 2026-08-26; mimicry bar abandoned).
 
 - [x] **Phase 15: internal/runtime Carve (Step 0)** - Mechanical verbatim move of sessionTurnRunner into internal/runtime so seven later feature clusters land in their final home (completed 2026-08-27)
-- [ ] **Phase 16: ACP Wire Foundation** - Outbound id'd requests, one ordered TurnEmitter, transcript line-type extensions, initialize capability overhaul
+- [x] **Phase 16: ACP Wire Foundation** - Outbound id'd requests, one ordered TurnEmitter, transcript line-type extensions, initialize capability overhaul (completed 2026-09-01)
 - [ ] **Phase 17: Permissions + Elicitation** - Clickable permission asks and structured form asks through the editor; ONE gate pipeline locked
 - [ ] **Phase 18: Session Family** - list / load-resume / close-delete with full replay and live-state reconciliation
 - [ ] **Phase 19: Compaction + cache_control** - Threshold-triggered compaction marker plus parity-faithful cache_control emission
@@ -476,7 +476,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 15. internal/runtime Carve | v1.2 | 7/7 | Complete    | 2026-08-27 |
-| 16. ACP Wire Foundation | v1.2 | 9/9 | In Progress|  |
+| 16. ACP Wire Foundation | v1.2 | 9/9 | Complete    | 2026-09-01 |
 | 17. Permissions + Elicitation | v1.2 | 0/? | Not started | - |
 | 18. Session Family | v1.2 | 0/? | Not started | - |
 | 19. Compaction + cache_control | v1.2 | 0/5 | Not started | - |
