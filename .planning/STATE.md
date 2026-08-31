@@ -4,17 +4,17 @@ milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 17
 current_phase_name: Permissions + Elicitation
-current_plan: Not started
-status: planning
-stopped_at: "Phase 16 closed 2026-09-01 (UAT 4/4 passed incl. operator product-intent sign-offs; SECURITY verified threats_open:0); transitioned to Phase 17 (Permissions + Elicitation), ready to plan"
-last_updated: "2026-08-31T22:19:42.619Z"
+current_plan: 2
+status: executing
+stopped_at: Completed 17-01-PLAN.md
+last_updated: "2026-08-31T23:10:13.295Z"
 last_activity: 2026-09-01
 last_activity_desc: Phase 16 complete, transitioned to Phase 17
 progress:
   total_phases: 11
   completed_phases: 2
   total_plans: 69
-  completed_plans: 16
+  completed_plans: 17
   percent: 18
 state_head: 858b29d5048173db3c84a1b4fe8dbf5bfb92f5c5
 ---
@@ -29,13 +29,13 @@ See: .planning/PROJECT.md (updated 2026-09-01)
 
 ## Current Position
 
-Phase: 17 — Permissions + Elicitation
-Current Plan: Not started
-Total Plans in Phase: 9
-Status: Ready to plan
-Last activity: 2026-09-01 — Phase 16 complete, transitioned to Phase 17
+Phase: 17 (Permissions + Elicitation) — EXECUTING
+Current Plan: 2
+Total Plans in Phase: 5
+Status: Ready to execute
+Last activity: 2026-09-01 — Phase 17 execution started
 
-Progress: [█████░░░░░░░░░░░░░░░] 16/69 plans (23%)
+Progress: [█████░░░░░░░░░░░░░░░] 16/69 plans ([███░░░░░░░] 25%)
 
 ## Performance Metrics
 
@@ -62,6 +62,7 @@ Progress: [█████░░░░░░░░░░░░░░░] 16/69 p
 | Phase 16 P07 | 11 min | 2 tasks | 2 files |
 | Phase 16 P08 | 12 min | 2 tasks | 2 files |
 | Phase 16 P09 | 9 min | 2 tasks | 3 files |
+| Phase 17 P01 | 36 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -101,6 +102,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase ?]: 16-07: adjacency probe decided — concurrent Barrier waiters stay separate, each re-checks written independently; pinned by TestTurnEmitterBarrierConcurrentWaiters with never-cancelled ctxs (no Done escape)
 - [Phase ?]: 16-08: WR-05 closed at one root cause — Set's idempotence basis is scope-aware (global scope compares against the global layer ALONE via globalOnlyResolvedLocked; project scope keeps the combined D-10 guard) and the _global twins resolve the global layer's own tier/model (no blobFills, embedded-floor fallback); gaps 3+4a+5 closed, 4b (chip truthfulness) remains for 16-09
 - [Phase ?]: 16-09 CHIP-TRUTHFULNESS DECISION (implemented, Phases 18/20 build on it): the RUNNER's default turn model follows the tier resolution via Runner.defaultTurnModel (resolver → static binding → "", mirroring resolveModelLocked) — the profile slug is OUT of the precedence chain (mimicry-bar leftover) and only governs with nil schedCfg; explicit editor stamps keep absolute precedence (D-12); chip==wire pinned from both sides (TestDefaultTurnModel_FollowsTierResolution + TestConfigAdvertisement_ResolverTruth)
+- [Phase 17]: Compound fail-safe semantics pinned in perm.RuleSet: unmatched subcommand dominates allows (deny=any/ask=any/allow=ALL subcommands) — an allow rule must cover every subcommand
+- [Phase 17]: D-02 grammar leaves effect assignment to the owning list (NewRuleSet); ParseRule stays single-string with EffectNone placeholder
+- [Phase 17]: perm.Store commits in-memory state only after a successful atomic save — failed writes leave file AND rule set unchanged; warning sink = returned []Warning diagnostics
 
 ### Pending Todos
 
@@ -121,6 +125,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-01 (operator UAT sign-offs via /gsd-manager)
-Stopped at: Phase 16 complete — ready to plan Phase 17 (Permissions + Elicitation)
+Last session: 2026-08-31T23:10:04.534Z
+Stopped at: Completed 17-01-PLAN.md
 Resume file: None

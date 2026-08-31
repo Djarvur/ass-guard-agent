@@ -153,12 +153,12 @@ Plans:
   4. Default remains ungated (safety-model amendment "available, not default"): with default config, zero new dialogs appear versus v1.1 behavior; mode flips via editor configOptions take effect on the running session.
   5. The gate pipeline precedence (hook verdict → permission ask → execute) is implemented at ONE chokepoint and documented, with permissions.yaml persisted choices surviving restarts.
 
-**Plans**: 5 plans
+**Plans**: 1/5 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 17-01-PLAN.md — internal/perm: CC-parity rule grammar + permissions.yaml store (D-01..D-03, both directions, 0600 atomic)
+- [x] 17-01-PLAN.md — internal/perm: CC-parity rule grammar + permissions.yaml store (D-01..D-03, both directions, 0600 atomic)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -477,7 +477,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 |-------|-----------|----------------|--------|-----------|
 | 15. internal/runtime Carve | v1.2 | 7/7 | Complete    | 2026-08-27 |
 | 16. ACP Wire Foundation | v1.2 | 9/9 | Complete    | 2026-09-01 |
-| 17. Permissions + Elicitation | v1.2 | 0/? | Not started | - |
+| 17. Permissions + Elicitation | v1.2 | 1/5 | In Progress|  |
 | 18. Session Family | v1.2 | 0/? | Not started | - |
 | 19. Compaction + cache_control | v1.2 | 0/5 | Not started | - |
 | 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 0/6 | Planned | - |
