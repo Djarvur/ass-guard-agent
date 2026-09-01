@@ -380,7 +380,7 @@ func TestElicitationMapping(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,fun
 		f := BuildElicitationForm([]session.AskQuestion{elicQ2()}, false, "", elicSess1, "")
 		p := elicProp(t, &f, "q1")
 
-		if p["type"] != "array" || p["title"] != "Areas" {
+		if p["type"] != propTypeArray || p["title"] != elicHdrAreas {
 			t.Errorf("property q1 = %v; want type array + title Areas", p)
 		}
 
@@ -464,7 +464,7 @@ func TestElicitationMapping(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,fun
 		f := BuildElicitationForm([]session.AskQuestion{elicQBool()}, true, "", elicSess1, "")
 		p := elicProp(t, &f, "q1")
 
-		if p["type"] != "boolean" {
+		if p["type"] != propTypeBool {
 			t.Errorf("advertised boolean property = %v; want type boolean", p)
 		}
 	})
@@ -538,7 +538,7 @@ func TestElicitationMapping(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,fun
 			t.Errorf("mode = %q; want form", f.Mode)
 		}
 
-		if f.RequestedSchema.Type != "object" {
+		if f.RequestedSchema.Type != propTypeObject {
 			t.Errorf("requestedSchema.type = %q; want object", f.RequestedSchema.Type)
 		}
 
@@ -775,13 +775,15 @@ func TestAskSurfaceDispatchElicitation(t *testing.T) { //nolint:gocognit,gocyclo
 // subset — required presence, per-property type, enum/oneOf const membership
 // by EXACT string equality, array item-wise checks, minLength/maxLength by
 // RUNE count. No regexp, no Unicode normalization (the encoding edge).
-func TestValidateElicitationContent(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen,lll,maintidx // one table over the validation vocabulary
+func TestValidateElicitationContent(t *testing.T) { //nolint:gocognit,cyclop,funlen,lll // one table over the validation vocabulary
 	t.Parallel()
 
 	strSchema := func(extra string) acp.ElicitationSchema {
+		prop := `{"type":"` + propTypeString + `","title":"T"` + extra + `}`
+
 		return acp.ElicitationSchema{
-			Type:       "object",
-			Properties: map[string]json.RawMessage{"q1": json.RawMessage(`{"type":"` + propTypeString + `","title":"T"` + extra + `}`)},
+			Type:       propTypeObject,
+			Properties: map[string]json.RawMessage{"q1": json.RawMessage(prop)},
 			Required:   []string{"q1"},
 		}
 	}
@@ -848,7 +850,7 @@ func TestValidateElicitationContent(t *testing.T) { //nolint:gocognit,gocyclo,cy
 	t.Run("length_bounds_rune_counted", func(t *testing.T) {
 		t.Parallel()
 
-		bounded := `,"minLength":2,"maxLength":5}`[1:]
+		bounded := `,"minLength":2,"maxLength":5`
 
 		schema := strSchema(bounded)
 
@@ -872,21 +874,23 @@ func TestValidateElicitationContent(t *testing.T) { //nolint:gocognit,gocyclo,cy
 	t.Run("no_normalization_exact_bytes", func(t *testing.T) {
 		t.Parallel()
 
-		oneOf := `,"oneOf":[{"const":"café","title":"café"}]}`[1:]
+		nfc := "caf\u00e9"         // U+00E9 — the composed form
+		decomposed := "cafe\u0301" // e + combining acute — different bytes, same glyph
 
-		schema := strSchema(oneOf)
+		schema := strSchema(`,"oneOf":[{"const":"` + nfc + `","title":"` + nfc + `"}]`)
 
-		// Different bytes, same meaning — WITHOUT normalization this violates.
+		payload, _ := json.Marshal(nfc)
+
 		if v := ValidateElicitationContent(schema,
-			map[string]json.RawMessage{"q1": json.RawMessage(`"café"`)}); v != "" {
+			map[string]json.RawMessage{"q1": payload}); v != "" {
 			t.Errorf("the exact const must pass: %q", v)
 		}
 
-		decomposed := "cafe\u0301" // e + combining acute — different bytes, same glyph
-		payload, _ := json.Marshal(decomposed)
+		// Different bytes, same meaning — WITHOUT normalization this violates.
+		dpayload, _ := json.Marshal(decomposed)
 
 		if v := ValidateElicitationContent(schema,
-			map[string]json.RawMessage{"q1": payload}); v == "" {
+			map[string]json.RawMessage{"q1": dpayload}); v == "" {
 			t.Error("a decomposed-variant value must violate (no Unicode normalization)")
 		}
 	})
@@ -894,11 +898,13 @@ func TestValidateElicitationContent(t *testing.T) { //nolint:gocognit,gocyclo,cy
 	t.Run("array_itemwise_enum", func(t *testing.T) {
 		t.Parallel()
 
+		items := `{"type":"` + propTypeArray + `","title":"T",` +
+			`"items":{"type":"` + propTypeString + `","enum":["a","b"]}}`
+
 		schema := acp.ElicitationSchema{
-			Type: "object",
-			Properties: map[string]json.RawMessage{"q1": json.RawMessage(
-				`{"type":"array","title":"T","items":{"type":"` + propTypeString + `","enum":["a","b"]}}`)},
-			Required: []string{"q1"},
+			Type:       propTypeObject,
+			Properties: map[string]json.RawMessage{"q1": json.RawMessage(items)},
+			Required:   []string{"q1"},
 		}
 
 		if v := ValidateElicitationContent(schema,

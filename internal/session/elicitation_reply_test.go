@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -111,8 +112,9 @@ func elicitResult(t *testing.T, s *Session) string {
 
 	var form string
 
-	if uerr := json.Unmarshal(results[0].Content, &form); uerr != nil {
-		t.Fatalf("unmarshal result form: %v (raw %s)", uerr, results[0].Content)
+	uerr := json.Unmarshal(results[0].Output, &form)
+	if uerr != nil {
+		t.Fatalf("unmarshal result form: %v (raw %s)", uerr, results[0].Output)
 	}
 
 	return form
@@ -123,7 +125,7 @@ func elicitResult(t *testing.T, s *Session) string {
 // answered form (the fixture's answered template); multi-field replies render
 // in schema property order as title=value lines joined by newlines with array
 // values comma-joined and booleans true/false.
-func TestStructuredReplyRender(t *testing.T) {
+func TestStructuredReplyRender(t *testing.T) { //nolint:funlen // pinned-serialization goldens
 	t.Parallel()
 
 	t.Run("single_string_byte_identity", func(t *testing.T) {
@@ -233,10 +235,16 @@ func TestElicitationParity(t *testing.T) {
 // the real suspension + queue: an invalid accept re-asks EXACTLY once (a NEW
 // queue entry with the violation noted) and a second failure routes to the
 // 12-D-01 non-answer; decline and cancel route directly with zero re-asks.
-func TestElicitationRevalidation(t *testing.T) { //nolint:funlen,cyclop,gocyclo // one flat battery over the D-10 routing
+func TestElicitationRevalidation(t *testing.T) { //nolint:funlen,cyclop,gocognit // D-10 battery
 	t.Parallel()
 
-	fireOutcomes := func(t *testing.T, outcomes ...AskOutcome) (fired func() int, lastNote func() string) {
+	// fireOutcomes builds the injected fire: programmable outcomes + the
+	// fired-count / last-carried-note probes.
+	fireOutcomes := func(t *testing.T, outcomes ...AskOutcome) (
+		func(ctx context.Context, e *AskEntry) AskOutcome,
+		func() int,
+		func() string,
+	) {
 		t.Helper()
 
 		var (
@@ -245,7 +253,7 @@ func TestElicitationRevalidation(t *testing.T) { //nolint:funlen,cyclop,gocyclo 
 			note  string
 		)
 
-		fire := func(_ context.Context, e *AskEntry) AskOutcome {
+		fireFn := func(_ context.Context, e *AskEntry) AskOutcome {
 			mu.Lock()
 
 			count++
@@ -262,8 +270,17 @@ func TestElicitationRevalidation(t *testing.T) { //nolint:funlen,cyclop,gocyclo 
 			return ans
 		}
 
-		return func() int { mu.Lock(); defer mu.Unlock(); return count },
-			func() string { mu.Lock(); defer mu.Unlock(); return note }
+		return fireFn, func() int {
+				mu.Lock()
+				defer mu.Unlock()
+
+				return count
+			}, func() string {
+				mu.Lock()
+				defer mu.Unlock()
+
+				return note
+			}
 	}
 
 	waitResult := func(t *testing.T, s *Session) string {
@@ -280,7 +297,7 @@ func TestElicitationRevalidation(t *testing.T) { //nolint:funlen,cyclop,gocyclo 
 		s := newElicitSession(t, elicFixtureQs())
 		pending := suspendElicit(t, s)
 
-		fired, lastNote := fireOutcomes(t,
+		fire, fired, lastNote := fireOutcomes(t,
 			AskOutcome{Elicit: ElicitAccept, Violation: `value "x" is not one of the offered choices`},
 			AskOutcome{Elicit: ElicitAccept, Violation: `missing required property "q2"`},
 		)
@@ -309,7 +326,7 @@ func TestElicitationRevalidation(t *testing.T) { //nolint:funlen,cyclop,gocyclo 
 		s := newElicitSession(t, elicFixtureQs())
 		pending := suspendElicit(t, s)
 
-		fired, _ := fireOutcomes(t, AskOutcome{Elicit: ElicitDecline})
+		fire, fired, _ := fireOutcomes(t, AskOutcome{Elicit: ElicitDecline})
 
 		s.EnqueueElicitationAsk(pending, fire)
 
@@ -330,7 +347,7 @@ func TestElicitationRevalidation(t *testing.T) { //nolint:funlen,cyclop,gocyclo 
 		s := newElicitSession(t, elicFixtureQs())
 		pending := suspendElicit(t, s)
 
-		fired, _ := fireOutcomes(t, AskOutcome{Cancelled: true})
+		fire, fired, _ := fireOutcomes(t, AskOutcome{Cancelled: true})
 
 		s.EnqueueElicitationAsk(pending, fire)
 
@@ -351,7 +368,7 @@ func TestElicitationRevalidation(t *testing.T) { //nolint:funlen,cyclop,gocyclo 
 		s := newElicitSession(t, []AskQuestion{{Question: elicitQText, Header: elicitHdrQ1}})
 		pending := suspendElicit(t, s)
 
-		fired, _ := fireOutcomes(t, AskOutcome{
+		fire, fired, _ := fireOutcomes(t, AskOutcome{
 			Elicit:  ElicitAccept,
 			Content: map[string]json.RawMessage{"q1": json.RawMessage(`"` + elicitReply + `"`)},
 		})
@@ -380,7 +397,7 @@ func TestElicitationRevalidation(t *testing.T) { //nolint:funlen,cyclop,gocyclo 
 			"q2": json.RawMessage(`"` + elicitAnswer2 + `"`),
 		}
 
-		fired, _ := fireOutcomes(t, AskOutcome{Elicit: ElicitAccept, Content: content})
+		fire, fired, _ := fireOutcomes(t, AskOutcome{Elicit: ElicitAccept, Content: content})
 
 		s.EnqueueElicitationAsk(pending, fire)
 
@@ -401,7 +418,7 @@ func TestElicitationRevalidation(t *testing.T) { //nolint:funlen,cyclop,gocyclo 
 		s := newElicitSession(t, []AskQuestion{{Question: elicitQText, Header: elicitHdrQ1}})
 		pending := suspendElicit(t, s)
 
-		fired, _ := fireOutcomes(t, AskOutcome{Fallback: true})
+		fire, fired, _ := fireOutcomes(t, AskOutcome{Fallback: true})
 
 		s.EnqueueElicitationAsk(pending, fire)
 
@@ -444,7 +461,10 @@ func TestResolveAskStructured(t *testing.T) {
 
 	form := elicitResult(t, s)
 
-	if want := RenderAskAnswered([]AskQuestion{{Question: elicitQText, Header: elicitHdrQ1}}, elicitReply); form != want {
+	want := RenderAskAnswered(
+		[]AskQuestion{{Question: elicitQText, Header: elicitHdrQ1}}, elicitReply)
+
+	if form != want {
 		t.Errorf("form = %q; want the captured answered form %q", form, want)
 	}
 

@@ -20,8 +20,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"slices"
+	"sort"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/coreexec"
@@ -189,9 +192,14 @@ type elicChoiceOption struct {
 	Description string `json:"description,omitempty"`
 }
 
-// propTypeString is the JSON-schema string type discriminator (shared by the
-// builder variants and their goldens).
-const propTypeString = "string"
+// JSON-schema type discriminators (shared by the builder variants, the
+// validator, and the goldens).
+const (
+	propTypeString = "string"
+	propTypeObject = "object"
+	propTypeArray  = "array"
+	propTypeBool   = "boolean"
+)
 
 // elicStringProp is the string property variant: free-text when OneOf is
 // empty, a single-select enum otherwise ("When enum or oneOf is set, this
@@ -285,7 +293,7 @@ func BuildElicitationForm(
 	qs []session.AskQuestion, boolAdvertised bool, note, sessionID, callID string,
 ) acp.ElicitationFormFrame {
 	schema := acp.ElicitationSchema{
-		Type:       "object",
+		Type:       propTypeObject,
 		Properties: make(map[string]json.RawMessage, len(qs)),
 		Required:   make([]string, 0, len(qs)),
 	}
@@ -296,10 +304,10 @@ func BuildElicitationForm(
 		switch {
 		case q.MultiSelect:
 			schema.Properties[key] = mustPropJSON(elicArrayProp{
-				Type: "array", Title: q.Header, Items: multiSelectItems(q),
+				Type: propTypeArray, Title: q.Header, Items: multiSelectItems(q),
 			})
 		case isBooleanAsk(q) && boolAdvertised:
-			schema.Properties[key] = mustPropJSON(elicBoolProp{Type: "boolean", Title: q.Header})
+			schema.Properties[key] = mustPropJSON(elicBoolProp{Type: propTypeBool, Title: q.Header})
 		case len(q.Options) > 0:
 			// Single-choice AND the boolean-not-advertised branch (the
 			// conservative two-value string oneOf — D-08 as locked).
@@ -359,6 +367,199 @@ func oneOfStringProperty(title string, opts []session.AskOption) elicStringProp 
 	}
 
 	return elicStringProp{Type: propTypeString, Title: title, OneOf: oneOf}
+}
+
+// The D-10 validator's closed-subset schema views (parsed from the raw
+// property variants the builder produced). Only the fields the subset reads
+// are modeled; unknown schema fields are ignored by construction.
+
+// elicConstView is one const option of a oneOf/anyOf choice set.
+type elicConstView struct {
+	Const string `json:"const"`
+}
+
+// (elicItemsView/elicPropView carry wire-verbatim camelCase tags — see the
+// per-field //nolint:tagliatelle markers.)
+
+// elicItemsView is the multi-select items schema view.
+type elicItemsView struct {
+	Type  string          `json:"type"`
+	Enum  []string        `json:"enum,omitempty"`
+	AnyOf []elicConstView `json:"anyOf,omitempty"` //nolint:tagliatelle // ACP wire field
+	OneOf []elicConstView `json:"oneOf,omitempty"` //nolint:tagliatelle // ACP wire field
+}
+
+// elicPropView is one property schema view: the closed validation subset —
+// type, choice membership, and length bounds. Membership uses EXACT Go string
+// equality; lengths are RUNE counts; there is deliberately no pattern engine
+// of any kind and no Unicode rewriting (the encoding edge is pinned by test; the RFD's
+// bounded-matcher MUST is satisfied by the matcher's absence — T-17-13).
+type elicPropView struct {
+	Type      string          `json:"type"`
+	OneOf     []elicConstView `json:"oneOf,omitempty"` //nolint:tagliatelle // ACP wire field
+	Enum      []string        `json:"enum,omitempty"`
+	Items     *elicItemsView  `json:"items,omitempty"`
+	MinLength *int            `json:"minLength,omitempty"` //nolint:tagliatelle // ACP wire field
+	MaxLength *int            `json:"maxLength,omitempty"` //nolint:tagliatelle // ACP wire field
+}
+
+// ValidateElicitationContent re-validates one accept payload against the
+// requested schema it claims to answer (17-04 D-10, T-17-11): the closed
+// subset — required presence, per-property type, enum/oneOf const membership
+// by exact string equality, array item-wise checks, minLength/maxLength by
+// rune count. Unknown content keys are IGNORED (never rendered — the renderer
+// walks the schema's own property order), so extra data can neither execute
+// nor surface. Returns "" when the content is valid, else one human-readable
+// violation (the first, in required-then-sorted-key order).
+func ValidateElicitationContent(schema acp.ElicitationSchema, content map[string]json.RawMessage) string {
+	if len(schema.Required) == 0 && len(schema.Properties) == 0 {
+		return ""
+	}
+
+	if content == nil {
+		// A null/absent content object on accept is itself a violation — the
+		// empty edge is the missing-required family.
+		return missingRequiredViolation(schema.Required)
+	}
+
+	for _, name := range schema.Required {
+		if _, ok := content[name]; !ok {
+			return fmt.Sprintf("missing required property %q", name)
+		}
+	}
+
+	keys := make([]string, 0, len(content))
+	for k := range content {
+		if _, known := schema.Properties[k]; known {
+			keys = append(keys, k)
+		}
+	}
+
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		var prop elicPropView
+
+		uerr := json.Unmarshal(schema.Properties[k], &prop)
+		if uerr != nil {
+			continue // an unparseable property schema validates as free-form
+		}
+
+		if v := validatePropValue(k, &prop, content[k]); v != "" {
+			return v
+		}
+	}
+
+	return ""
+}
+
+// missingRequiredViolation names the first required property (deterministic).
+func missingRequiredViolation(required []string) string {
+	if len(required) == 0 {
+		return "missing content object"
+	}
+
+	return fmt.Sprintf("missing required property %q", required[0])
+}
+
+// validatePropValue checks one value against one property view.
+func validatePropValue(key string, prop *elicPropView, raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return fmt.Sprintf("property %q: a JSON null is not a content value", key)
+	}
+
+	switch prop.Type {
+	case propTypeString:
+		return validateStringValue(key, prop, raw)
+	case propTypeBool:
+		var b bool
+
+		if json.Unmarshal(raw, &b) != nil {
+			return fmt.Sprintf("property %q: expected a boolean", key)
+		}
+
+		return ""
+	case propTypeArray:
+		return validateArrayValue(key, prop, raw)
+	default:
+		// An unrecognized property type validates as free-form (the builder
+		// only emits string/boolean/array).
+		return ""
+	}
+}
+
+// validateStringValue checks a string value: type, choice membership, bounds.
+func validateStringValue(key string, prop *elicPropView, raw json.RawMessage) string {
+	var s string
+
+	if json.Unmarshal(raw, &s) != nil {
+		return fmt.Sprintf("property %q: expected a string", key)
+	}
+
+	if len(prop.OneOf) > 0 && !elicConstMatch(prop.OneOf, s) {
+		return fmt.Sprintf("property %q: value %q is not one of the offered choices", key, s)
+	}
+
+	if len(prop.Enum) > 0 && !slices.Contains(prop.Enum, s) {
+		return fmt.Sprintf("property %q: value %q is not one of the offered choices", key, s)
+	}
+
+	if prop.MinLength != nil && utf8.RuneCountInString(s) < *prop.MinLength {
+		return fmt.Sprintf("property %q: length %d is below the minimum of %d",
+			key, utf8.RuneCountInString(s), *prop.MinLength)
+	}
+
+	if prop.MaxLength != nil && utf8.RuneCountInString(s) > *prop.MaxLength {
+		return fmt.Sprintf("property %q: length %d exceeds the maximum of %d",
+			key, utf8.RuneCountInString(s), *prop.MaxLength)
+	}
+
+	return ""
+}
+
+// validateArrayValue checks a multi-select value: array-of-strings shape plus
+// item-wise enum/anyOf membership.
+func validateArrayValue(key string, prop *elicPropView, raw json.RawMessage) string {
+	var arr []json.RawMessage
+
+	if json.Unmarshal(raw, &arr) != nil {
+		return fmt.Sprintf("property %q: expected an array of strings", key)
+	}
+
+	for i, item := range arr {
+		var s string
+
+		if json.Unmarshal(item, &s) != nil {
+			return fmt.Sprintf("property %q: item %d is not a string", key, i)
+		}
+
+		if prop.Items == nil {
+			continue
+		}
+
+		switch {
+		case len(prop.Items.Enum) > 0 && !slices.Contains(prop.Items.Enum, s):
+			return fmt.Sprintf("property %q: item %q is not one of the offered choices", key, s)
+		case len(prop.Items.AnyOf) > 0 && !elicConstMatch(prop.Items.AnyOf, s):
+			return fmt.Sprintf("property %q: item %q is not one of the offered choices", key, s)
+		case len(prop.Items.OneOf) > 0 && !elicConstMatch(prop.Items.OneOf, s):
+			return fmt.Sprintf("property %q: item %q is not one of the offered choices", key, s)
+		}
+	}
+
+	return ""
+}
+
+// elicConstMatch reports membership by EXACT Go string equality (the encoding
+// edge: no normalization, no case folding).
+func elicConstMatch(consts []elicConstView, s string) bool {
+	for _, c := range consts {
+		if c.Const == s {
+			return true
+		}
+	}
+
+	return false
 }
 
 // ElicitationAskConfig carries the dispatcher's injected dependencies.
@@ -470,7 +671,7 @@ func (e *ElicitationAsk) Fire(ctx context.Context, entry *session.AskEntry) sess
 		return e.rpcErrorFallback(entry, qs, msg.Error)
 	}
 
-	return e.parseOutcome(entry, qs, msg.Result)
+	return e.parseOutcome(entry, qs, frame.RequestedSchema, msg.Result)
 }
 
 // fallback publishes the plain-text surface and reports the fallback outcome
@@ -504,7 +705,7 @@ func (e *ElicitationAsk) rpcErrorFallback(
 // D-10 resolution), decline, cancel; malformed or unknown actions land on the
 // plain-text fallback.
 func (e *ElicitationAsk) parseOutcome(
-	entry *session.AskEntry, qs []session.AskQuestion, raw json.RawMessage,
+	entry *session.AskEntry, qs []session.AskQuestion, schema acp.ElicitationSchema, raw json.RawMessage,
 ) session.AskOutcome {
 	var of acp.ElicitationOutcomeFrame
 
@@ -517,9 +718,13 @@ func (e *ElicitationAsk) parseOutcome(
 
 	switch of.Action {
 	case acp.ElicitationActionAccept:
-		// The content is UNTRUSTED — the D-10 validator re-checks it against
-		// the requested schema at the resolution boundary.
-		return session.AskOutcome{Elicit: acp.ElicitationActionAccept, Content: of.Content}
+		// The content is UNTRUSTED input claiming to match requestedSchema —
+		// re-validated HERE (T-17-11, the RFD's defense-in-depth); the D-10
+		// loop at the resolution boundary turns a violation into the one
+		// bounded re-ask.
+		violation := ValidateElicitationContent(schema, of.Content)
+
+		return session.AskOutcome{Elicit: acp.ElicitationActionAccept, Content: of.Content, Violation: violation}
 	case acp.ElicitationActionDecline:
 		return session.AskOutcome{Elicit: acp.ElicitationActionDecline}
 	case acp.ElicitationActionCancel:

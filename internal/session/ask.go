@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -296,6 +297,90 @@ func (b *AskBroker) stopTimerLocked() {
 // sides of the wire.
 func StructuredPropertyKey(i int) string { return fmt.Sprintf("q%d", i+1) }
 
+// Elicitation-family action vocabulary (17-04) — wire-agnostic mirrors of the
+// ACP elicitation actions (cancel rides AskOutcome.Cancelled). Parity with the
+// acp constants is pinned by TestElicitationParity; internal/session never
+// imports internal/acp in production code.
+const (
+	ElicitAccept  = "accept"
+	ElicitDecline = "decline"
+)
+
+// RenderStructuredReply renders one elicitation accept's content map into the
+// CAPTURED answered form (17-04, A10 — the pinned serialization; Pitfall 6's
+// whole point is that the model's view of an answered question must not
+// drift):
+//
+//   - a single property carrying a STRING value renders through the legacy
+//     renderer (RenderAskAnswered) — byte-identical to today's single-answer
+//     path, the zcode-interactive-results.json golden stays green;
+//   - otherwise one "title=value" line per property in schema property order
+//     (the stable q1..qN keys map 1:1 onto the questions' order), joined by
+//     "\n": array values comma-join their elements, booleans render
+//     true/false, missing values render empty. The lines ride the captured
+//     answered wrapper.
+//
+// The title is the question's header (D-08: headers → property titles); an
+// empty header falls back to the stable key. Content is already VALIDATED at
+// this point (the D-10 loop) — unknown keys are simply never rendered.
+func RenderStructuredReply(qs []AskQuestion, content map[string]json.RawMessage) string {
+	if len(qs) == 1 && content != nil {
+		if raw, ok := content[StructuredPropertyKey(0)]; ok {
+			var reply string
+
+			if json.Unmarshal(raw, &reply) == nil && string(raw) != "null" {
+				return RenderAskAnswered(qs, reply)
+			}
+		}
+	}
+
+	lines := make([]string, 0, len(qs))
+	for i, q := range qs {
+		key := StructuredPropertyKey(i)
+
+		title := q.Header
+		if title == "" {
+			title = key
+		}
+
+		lines = append(lines, title+"="+renderStructuredValue(content[key]))
+	}
+
+	return fmt.Sprintf(
+		"User has answered your questions: %s. You can now continue with the user's answers in mind.",
+		strings.Join(lines, "\n"),
+	)
+}
+
+// renderStructuredValue renders one accept content value per the pinned
+// serialization: strings verbatim, arrays comma-joined, booleans true/false,
+// anything else (missing/null/unexpected) empty.
+func renderStructuredValue(raw json.RawMessage) string {
+	if len(raw) == 0 || string(raw) == "null" {
+		return ""
+	}
+
+	var s string
+
+	if json.Unmarshal(raw, &s) == nil {
+		return s
+	}
+
+	var arr []string
+
+	if json.Unmarshal(raw, &arr) == nil {
+		return strings.Join(arr, ",")
+	}
+
+	var b bool
+
+	if json.Unmarshal(raw, &b) == nil {
+		return strconv.FormatBool(b)
+	}
+
+	return ""
+}
+
 // RenderAskAnswered renders the CAPTURED answered form (re-pinned by the
 // 12-05 re-record, 2026-08-20, sess_6e4b5cc7, zcode 0.16.3 — 15 observations;
 // provenance recorded in internal/coreexec/testdata/zcode-interactive-results.json):
@@ -425,20 +510,177 @@ func (s *Session) resumeAskClaimed( //nolint:contextcheck // the timer path pass
 		form = RenderAskNonAnswer(s.ask.Timeout())
 	}
 
+	return s.resumeAskForm(ctx, p, form, isErr)
+}
+
+// resumeAskForm is the shared resume tail (17-04): the rendered form lands as
+// the pending call's tool result, the SAME turn's model loop re-enters, and
+// the suspension's settle signal closes only after the resumed turn returns
+// (the 13-00 discipline — exactly-once is the claim discipline's).
+func (s *Session) resumeAskForm(
+	ctx context.Context, p PendingAsk, //nolint:gocritic // hugeParam: one-shot resume payload
+	form string, isErr bool,
+) string {
 	s.appendToolResultLoud(p.TurnID, p.CallID, "ask", marshalAskForm(form), isErr)
 
 	stop, _ := s.runTurn(ctx, p.TurnID)
 
-	// 13-00: the settle signal closes AFTER the resumed runTurn returns —
-	// turn COMPLETION, not the claim, not the render. Exactly-once is the
-	// claim discipline's (only the winning driver reaches here, and each
-	// resume closes only its own p.settle — Surface always arms fresh).
 	if p.settle != nil {
 		close(p.settle)
 	}
 
 	return stop
 }
+
+// ResolveAskStructured is the widened structured-reply seam (17-04, ACP-02):
+// a structured elicitation accept resolves the pending ask exactly like
+// ResolveAsk — the content map renders into the CAPTURED answered form
+// (RenderStructuredReply), lands as the pending call's tool result, and the
+// suspended turn resumes. Fails with errNoPendingAsk when the D-01 timer or an
+// operator reply already won the claim.
+func (s *Session) ResolveAskStructured(
+	ctx context.Context, content map[string]json.RawMessage,
+) (string, error) {
+	if s.ask == nil {
+		return "", errNoPendingAsk
+	}
+
+	p, ok := s.ask.Claim()
+	if !ok {
+		return "", errNoPendingAsk
+	}
+
+	return s.resumeAskForm(ctx, p, RenderStructuredReply(p.Questions, content), false), nil
+}
+
+// EnqueueElicitationAsk enqueues the question-family pending ask on the ask
+// queue (17-04, D-09): the capability-gated dispatcher (internal/acpserve)
+// fires the surface — the elicitation form on a capable client, today's
+// plain-text path verbatim on a degraded one — and the resolution drives the
+// D-10 bounded loop + the captured-form resume. The executor suspension
+// contract is UNTOUCHED: the broker still owns the pending ask; the queue
+// entry is the SURFACE only. calldepth: fire is read at call time (the
+// runtime's late-injected ask fire).
+func (s *Session) EnqueueElicitationAsk(
+	p PendingAsk, //nolint:gocritic // hugeParam: one-shot enqueue payload
+	fire func(ctx context.Context, e *AskEntry) AskOutcome,
+) {
+	s.enqueueElicitationAsk(p, fire, "", 0)
+}
+
+// enqueueElicitationAsk is one surface round for the question family; note/
+// attempt carry the D-10 bounded re-ask state (attempt 0 = the initial ask,
+// 1 = THE one re-ask — never a third).
+func (s *Session) enqueueElicitationAsk(
+	p PendingAsk, //nolint:gocritic // hugeParam: one-shot enqueue payload
+	fire func(ctx context.Context, e *AskEntry) AskOutcome, note string, attempt int,
+) {
+	q := s.gateQueue()
+	if q == nil || fire == nil {
+		// No queue/surface wired: the runtime's plain-text onSurface path
+		// already ran — the broker's reply routing + D-01 timer own the ask.
+		return
+	}
+
+	input, mErr := json.Marshal(p.Questions)
+	if mErr != nil {
+		input = json.RawMessage(`[]`)
+	}
+
+	entry := &AskEntry{
+		TurnID:            p.TurnID,
+		SessionID:         s.SessionID,
+		CallID:            p.CallID,
+		Tool:              elicitAskToolName,
+		Title:             elicitAskToolName,
+		Input:             input,
+		Class:             AskClassForeground,
+		Note:              note,
+		PlainTextFallback: true,
+	}
+	// The queue's pump always hands a live per-firing ctx; a nil (unwireable
+	// caller) is handled downstream by the surface's own serve-ctx fallback.
+	entry.SetFire(func(ctx context.Context) AskOutcome {
+		return fire(ctx, entry)
+	})
+
+	q.Enqueue(entry, func(_ *AskEntry, out AskOutcome) {
+		s.resolveElicitationAsk(p, fire, attempt, out)
+	})
+}
+
+// resolveElicitationAsk routes one question-family surface outcome (the D-10
+// loop's decision point): valid accepts render through the structured seam and
+// resume; an invalid accept re-asks EXACTLY once (a NEW queue entry — same
+// turn, same class, the violation named in the form message; never a bypass of
+// the firing monopoly); decline/cancel and a second violation route to the
+// 12-D-01 non-answer; a fallback outcome leaves the ask to the broker's reply
+// routing + D-01 timer untouched.
+func (s *Session) resolveElicitationAsk(
+	p PendingAsk, //nolint:gocritic // hugeParam: one-shot resolution payload
+	fire func(ctx context.Context, e *AskEntry) AskOutcome, attempt int, out AskOutcome,
+) {
+	switch elicitationVerdict(&out, attempt) {
+	case elicitFallen:
+		// The plain-text surface was published; the v1.1 path owns the rest.
+	case elicitAcceptOK:
+		_, _ = s.ResolveAskStructured(s.askResumeCtx, out.Content)
+	case elicitReask:
+		s.enqueueElicitationAsk(p, fire, out.Violation, attempt+1)
+	case elicitNonAnswer:
+		s.resumeElicitationNonAnswer()
+	}
+}
+
+// resumeElicitationNonAnswer lands decline/cancel/a-second-violation on the
+// 12-D-01 non-answer form (the bounded loop's floor — the user always lands
+// somewhere). The claim is the same atomic race the reply and timer run;
+// losing it means another driver already resolved the ask (nothing to do).
+func (s *Session) resumeElicitationNonAnswer() {
+	if s.ask == nil {
+		return
+	}
+
+	p, ok := s.ask.Claim()
+	if !ok {
+		return
+	}
+
+	_ = s.resumeAskForm(s.askResumeCtx, p, RenderAskNonAnswer(s.ask.Timeout()), false)
+}
+
+// elicitationVerdict classifies one surface outcome for the D-10 loop
+// (shared by the question and engine families).
+type elicitVerdict uint8
+
+const (
+	elicitFallen    elicitVerdict = iota // plain-text fallback — the family's v1.1 path owns it
+	elicitAcceptOK                       // valid accept — render + land
+	elicitReask                          // invalid accept, first offense — the ONE re-ask
+	elicitNonAnswer                      // decline/cancel/second violation — the non-answer landing
+)
+
+func elicitationVerdict(
+	out *AskOutcome, attempt int,
+) elicitVerdict {
+	switch {
+	case out.Fallback:
+		return elicitFallen
+	case out.Cancelled, out.Elicit == ElicitDecline:
+		// Decline is an ANSWER-SHAPED refusal (D-10): no re-ask, ever.
+		return elicitNonAnswer
+	case out.Elicit == ElicitAccept && out.Violation == "":
+		return elicitAcceptOK
+	case out.Elicit == ElicitAccept && attempt == 0:
+		return elicitReask
+	default:
+		// A second schema violation (or an unrecognized shape): the non-answer.
+		return elicitNonAnswer
+	}
+}
+
+// elicitAskToolName is the queue-entry tool label for question-family asks.
+const elicitAskToolName = "AskUserQuestion"
 
 // marshalAskForm marshals an ask result form (a plain string — the 08-08
 // plainContent seam renders JSON-string outputs unquoted). A string Marshal
