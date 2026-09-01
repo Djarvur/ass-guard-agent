@@ -13,8 +13,8 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### ACP Completeness
 
-- [ ] **ACP-01**: User sees clickable permission asks via `session/request_permission` (allow/reject × once/always options; cancelled handled as a normal response when turn dies mid-ask); new `permissions.mode: ungated|gated` config switchable via editor configOptions — available, not default (safety-model amendment)
-- [ ] **ACP-02**: Learning-store and engine asks surface as structured forms via `elicitation/create` (form mode) with plain-text AskBroker fallback and -32601 probe-and-degrade on older clients; url mode deferred
+- [x] **ACP-01**: User sees clickable permission asks via `session/request_permission` (allow/reject × once/always options; cancelled handled as a normal response when turn dies mid-ask); new `permissions.mode: ungated|gated` config switchable via editor configOptions — available, not default (safety-model amendment)
+- [x] **ACP-02**: Learning-store and engine asks surface as structured forms via `elicitation/create` (form mode) with plain-text AskBroker fallback and -32601 probe-and-degrade on older clients; url mode deferred
 - [x] **ACP-03**: Zed renders live turn activity: `tool_call`/`tool_call_update` streaming (kind/status/diff/locations), `plan` updates mirroring TodoWrite, `agent_thought_chunk` — all through one ordered inline TurnEmitter with explicit backpressure policy
 - [ ] **ACP-04**: Editor autocompletes `/` commands: `available_commands_update` sent on session start and on discovery change
 - [ ] **ACP-05**: User can list sessions from the editor via `session/list` (header-scan, cursor pagination)
@@ -105,8 +105,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RUNT-01 | Phase 15 | Complete |
 | ACP-03 | Phase 16 | Complete |
 | ACP-08 | Phase 16 | Complete |
-| ACP-01 | Phase 17 | Pending |
-| ACP-02 | Phase 17 | Pending |
+| ACP-01 | Phase 17 | Complete |
+| ACP-02 | Phase 17 | Complete |
 | ACP-05 | Phase 18 | Pending |
 | ACP-06 | Phase 18 | Pending |
 | ACP-07 | Phase 18 | Pending |

@@ -153,7 +153,7 @@ Plans:
   4. Default remains ungated (safety-model amendment "available, not default"): with default config, zero new dialogs appear versus v1.1 behavior; mode flips via editor configOptions take effect on the running session.
   5. The gate pipeline precedence (hook verdict → permission ask → execute) is implemented at ONE chokepoint and documented, with permissions.yaml persisted choices surviving restarts.
 
-**Plans**: 4/5 plans executed
+**Plans**: 5/5 plans executed
 
 Plans:
 **Wave 1**
@@ -171,7 +171,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 17-05-PLAN.md — Chokepoint documentation + Zed-simulator E2E + live-Zed operator checkpoint (criterion 5, criteria 1+3 manual legs)
+- [x] 17-05-PLAN.md — Chokepoint documentation + Zed-simulator E2E + live-Zed operator checkpoint (criterion 5, criteria 1+3 manual legs)
 
 ### Phase 18: Session Family
 
@@ -477,7 +477,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 |-------|-----------|----------------|--------|-----------|
 | 15. internal/runtime Carve | v1.2 | 7/7 | Complete    | 2026-08-27 |
 | 16. ACP Wire Foundation | v1.2 | 9/9 | Complete    | 2026-09-01 |
-| 17. Permissions + Elicitation | v1.2 | 4/5 | In Progress|  |
+| 17. Permissions + Elicitation | v1.2 | 5/5 | In Progress|  |
 | 18. Session Family | v1.2 | 0/? | Not started | - |
 | 19. Compaction + cache_control | v1.2 | 0/5 | Not started | - |
 | 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 0/6 | Planned | - |
