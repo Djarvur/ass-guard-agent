@@ -62,6 +62,15 @@ const compoundTool = "Bash"
 // reasonUnanchoredAllow is the warning reason for an inert allow glob.
 const reasonUnanchoredAllow = "unanchored allow glob skipped (allow globs require a literal mcp__<server>__ prefix)"
 
+// reasonMidStarTool is the warning reason for a tool selector carrying a star
+// that is NOT trailing (17-REVIEW WR-03): the matcher honors only a TRAILING
+// star — every other star is literal — so a mid-star selector ("Bash*git",
+// "mcp__github__issue*c") is unmatchable by construction. The rule is skipped
+// LOUDLY instead of being accepted as a silently dead line (for a deny rule
+// that is a false sense of coverage). Trailing-star globs and bare stars are
+// untouched.
+const reasonMidStarTool = "mid-pattern star in tool selector never matches (rule skipped)"
+
 // Parse-rule validation sentinels — every malformed shape degrades to an
 // error (the caller skips + warns), never a panic.
 var (
@@ -416,6 +425,15 @@ func parseList(lines []string, eff Effect, ws []Warning) ([]Rule, []Warning) {
 		r, err := ParseRule(line)
 		if err != nil {
 			ws = append(ws, Warning{Rule: line, Reason: err.Error()})
+
+			continue
+		}
+
+		// WR-03: a tool selector whose star is not trailing can never match —
+		// warn-and-skip in EVERY list (the inert-allow-glob precedent), never
+		// a silently dead rule.
+		if i := strings.Index(r.Tool, "*"); i >= 0 && i != len(r.Tool)-1 {
+			ws = append(ws, Warning{Rule: line, Reason: reasonMidStarTool})
 
 			continue
 		}

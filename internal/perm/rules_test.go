@@ -439,6 +439,36 @@ func TestRulesWarnings(t *testing.T) {
 		}
 	}
 
+	// WR-03: a mid-pattern star in a TOOL selector is unmatchable by
+	// construction — warn-and-skip in EVERY list (pre-fix these parsed
+	// cleanly, matched nothing, and warned nowhere; for deny rules that was a
+	// false sense of coverage).
+	denyMidStar := []string{"Bash*git", "mcp__github__issue*c"}
+	allowMidStar := []string{"mcp__github__issue*c", ruleGit}
+
+	_, warns = perm.NewRuleSet(denyMidStar, nil, allowMidStar)
+	if len(warns) != 3 {
+		t.Fatalf("mid-star tool warnings = %d (%+v); want 3", len(warns), warns)
+	}
+
+	for _, w := range warns {
+		switch w.Rule {
+		case "Bash*git", "mcp__github__issue*c":
+		default:
+			t.Errorf("unexpected warning for rule %q (want only mid-star tool selectors)", w.Rule)
+		}
+
+		if w.Reason == "" {
+			t.Errorf("warning for rule %q has empty reason", w.Rule)
+		}
+	}
+
+	// The trailing-star glob stays live (legitimate globs untouched).
+	rs, _ := perm.NewRuleSet(nil, nil, []string{ruleMcpGetGlob})
+	if got := rs.Evaluate(toolMcpIssue, "x"); got != perm.VerdictAllow {
+		t.Errorf("trailing-star glob Evaluate = %v; want VerdictAllow", got)
+	}
+
 	// A clean rule set carries no warnings.
 	_, warns = perm.NewRuleSet([]string{ruleRm}, []string{toolWrite}, []string{ruleGit})
 	if len(warns) != 0 {
