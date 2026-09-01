@@ -479,6 +479,80 @@ func projectedToolUseIDs(t *testing.T, s *Session, turnID string) []string {
 	return ids
 }
 
+// TestGateResumeRunsUnderResumeSerial pins the CR-02 session-side contract:
+// the permission ask's resume (an ASYNC driver — the queue's pump goroutine)
+// is routed through the injected resume serializer, never run bare. The
+// runtime composition injects the per-session turn mutex; this test injects a
+// tracking wrapper and asserts the resume ENTERED it exactly once with zero
+// overlap.
+func TestGateResumeRunsUnderResumeSerial(t *testing.T) {
+	t.Parallel()
+
+	block := make(chan struct{})
+
+	store := &fakePermStore{}
+	surf := &fakeGateSurface{
+		answers: []AskOutcome{{Selected: acp.PermOptionAllowOnce}},
+		block:   block,
+	}
+
+	s := newGateSession(t, []provider.Response{
+		{
+			FinishReason: blockToolUse,
+			ToolCalls: []provider.ToolCall{
+				{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)},
+			},
+		},
+		{FinishReason: stopEndTurn},
+	}, PermModeGated, store, surf)
+
+	var (
+		trackMu sync.Mutex
+
+		entered     int
+		inFlight    int
+		maxInFlight int
+	)
+
+	s.SetResumeSerial(func(f func()) {
+		trackMu.Lock()
+		entered++
+		inFlight++
+		if inFlight > maxInFlight {
+			maxInFlight = inFlight
+		}
+		trackMu.Unlock()
+
+		f()
+
+		trackMu.Lock()
+		inFlight--
+		trackMu.Unlock()
+	})
+
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+
+	gateWaitFor(t, func() bool { return surf.fired() == 1 })
+
+	close(block) // the operator answers → the pump resolves → the resume
+
+	gateWaitFor(t, func() bool { return len(toolResultsFor(t, s, gateCall1)) == 1 })
+
+	trackMu.Lock()
+	defer trackMu.Unlock()
+
+	if entered != 1 {
+		t.Errorf("resume serializer entered %d times; want exactly 1 (the async resume must be wrapped)", entered)
+	}
+
+	if maxInFlight != 1 {
+		t.Errorf("max concurrent serialized resumes = %d; want 1 (per-session turn serialization)", maxInFlight)
+	}
+}
+
 // TestGateChokepoint_UngatedDefaultNoDialog pins criterion 4's default leg:
 // ungated (the DEFAULT mode), an ask-class call with no matching rule executes
 // immediately with ZERO surface invocations — "zero new dialogs on default

@@ -384,7 +384,13 @@ func (s *Session) suspendForPermission(turnID, callID, tool string, input json.R
 	}
 
 	deps.Queue.Enqueue(entry, func(_ *AskEntry, outcome AskOutcome) {
-		s.resumePermissionAsk(s.askResumeCtx, &p, &outcome)
+		// CR-02: the queue's pump resolution is an ASYNC resume driver — the
+		// resumed model loop must hold the per-session turn serialization the
+		// runtime's Run path holds (a dialog answer racing a new client prompt
+		// previously ran TWO turn loops on one transcript). The sync reply
+		// path (routeAskReply inside Run) bypasses this wrapper — Run already
+		// holds the mutex.
+		s.runResumed(func() { s.resumePermissionAsk(s.askResumeCtx, &p, &outcome) })
 	})
 }
 

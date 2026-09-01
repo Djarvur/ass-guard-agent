@@ -1304,6 +1304,20 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	// timer; resumes run under the serve-lifetime ctx).
 	//nolint:contextcheck // the serve-lifetime ctx is a stored field, not derived here
 	s.SetAskBroker(r.serveCtxOrBackground(), askBroker)
+	// 17-REVIEW CR-02: serialize every ASYNC resume driver (the ask queue's
+	// pump resolution — permission AND question families — and the D-01
+	// timer) on the SAME per-session turn mutex Run holds for its whole turn.
+	// The session cannot import the runtime, so the guarded execution is
+	// injected as a func (the OnSuspended/ParkMu injection precedent). The
+	// sync reply path (routeAskReply inside Run) already holds the mutex and
+	// bypasses this wrapper — it is not reentrant.
+	turnMu := r.sessionTurnMu(sessionID)
+	s.SetResumeSerial(func(f func()) {
+		turnMu.Lock()
+		defer turnMu.Unlock()
+
+		f()
+	})
 	// 12-09 (G-12-3): wire the per-session plan-mode state onto the Session —
 	// without this the Enter flip at the tool-result site is skipped
 	// (Session.planMode nil), the mutating-tool gate never fires, and

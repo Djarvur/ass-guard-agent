@@ -20,6 +20,7 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
+	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 )
 
 // Test-local constants (goconst): the interactive tool under test, its wiring
@@ -560,6 +561,148 @@ func (p *askToolCallProvider) Stream(
 
 func (p *askToolCallProvider) ToolResultMessage(string, json.RawMessage) (json.RawMessage, error) {
 	return json.RawMessage(`{}`), nil
+}
+
+// cr02GateTool is the mutating tool the CR-02 mutex pins gate on; cr02PermFire
+// is the blocking permission surface (the dialog stays open until release).
+const cr02GateTool = "Write"
+
+// TestAskWiring_ResumeHoldsTurnMutex (17-REVIEW CR-02, the race pin): a
+// gated turn suspends with the dialog OPEN; while the session's turn mutex is
+// held (a client turn in flight), the dialog answer must NOT run the resumed
+// model loop — the async resume waits on the SAME per-session serialization
+// the Run path holds. Pre-fix, the pump's resolve appended the tool result and
+// ran the full resumed turn WHILE the mutex was held (two concurrent turn
+// drivers on one transcript).
+func TestAskWiring_ResumeHoldsTurnMutex(t *testing.T) { //nolint:funlen // the full suspend/race/resume chain
+	t.Parallel()
+
+	r, _ := newExpansionRunner(t, true,
+		scriptedResp{toolCalls: []provider.ToolCall{{
+			ID: "call_cr02_w", Name: cr02GateTool, Input: json.RawMessage(`{"file_path":"x"}`),
+		}}},
+		scriptedResp{text: "resumed turn closed"},
+	)
+
+	// A mutating tool in the SHARED catalog (sessionFor clones it) makes the
+	// scripted call ask-class; gated mode routes it to the dialog.
+	r.catalog.Register(toolcat.Tool{
+		Name:        cr02GateTool,
+		Mutability:  toolcat.MutabilityMutating,
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+		Execute: func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+			return json.RawMessage(`{"output":"written"}`), nil
+		},
+	})
+
+	r.SetPermMode(session.PermModeGated)
+
+	dialogOpen := make(chan struct{}, 1)
+
+	release := make(chan struct{})
+
+	r.SetPermissionAskFire(func(_ context.Context, _ *session.AskEntry) session.AskOutcome {
+		dialogOpen <- struct{}{}
+		<-release
+
+		return session.AskOutcome{Selected: acp.PermOptionAllowOnce}
+	})
+
+	const sid = "sess-cr02-mu"
+
+	stop, err := r.Run(context.Background(), sid, &noopEmitter{},
+		[]acp.ContentBlock{{Type: blockText, Text: "gated work"}})
+	if err != nil {
+		t.Fatalf("Run 1: %v", err)
+	}
+
+	if stop != stopEndTurn {
+		t.Fatalf("stop = %q; want end_turn (the suspended turn maps to a completed turn)", stop)
+	}
+
+	<-dialogOpen // the dialog is open; the answer has not arrived
+
+	// Hold the session's turn mutex — "a client turn is in flight".
+	mu := r.sessionTurnMu(sid)
+	mu.Lock()
+
+	close(release) // the operator answers NOW, against the held mutex
+
+	time.Sleep(150 * time.Millisecond) // window for a buggy unserialized resume to append
+
+	if got := len(transcriptLinesOfType(t, r, sid, session.TypeToolResult)); got != 0 {
+		mu.Unlock()
+		t.Fatalf("the dialog resume ran WHILE the turn mutex was held (%d tool results already) — "+
+			"the async resume bypassed the per-session turn serialization (CR-02)", got)
+	}
+
+	mu.Unlock()
+
+	// With the mutex free, the queued resume proceeds: the gated call's result
+	// lands and the resumed turn closes.
+	deadline := time.Now().Add(5 * time.Second)
+
+	for time.Now().Before(deadline) {
+		if len(transcriptLinesOfType(t, r, sid, session.TypeToolResult)) == 1 {
+			break
+		}
+
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	if got := len(transcriptLinesOfType(t, r, sid, session.TypeToolResult)); got != 1 {
+		t.Fatalf("the queued resume never landed after the mutex was released (%d results)", got)
+	}
+
+	idleCtx, idleCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer idleCancel()
+
+	if !r.WaitChainIdle(idleCtx, sid) {
+		t.Fatal("the engine chain did not go idle — the parked chain wedged behind the serialized resume")
+	}
+}
+
+// TestAskWiring_TimerResumeHoldsTurnMutex (CR-02's D-01 leg, the pre-existing
+// shape): the timer fires while the turn mutex is held — its resume must queue
+// behind the mutex, not run detached alongside the active turn.
+func TestAskWiring_TimerResumeHoldsTurnMutex(t *testing.T) { //nolint:funlen // the full timer-race chain
+	t.Parallel()
+
+	r, _ := newAskWiringRunner(t, 50*time.Millisecond)
+
+	const sid = "sess-cr02-timer"
+
+	_, err := r.Run(context.Background(), sid, &noopEmitter{},
+		[]acp.ContentBlock{{Type: blockText, Text: "I need to add a cache — ask me which library first"}})
+	if err != nil {
+		t.Fatalf("Run 1: %v", err)
+	}
+
+	// Hold the turn mutex BEFORE the 50ms timer fires.
+	mu := r.sessionTurnMu(sid)
+	mu.Lock()
+
+	time.Sleep(150 * time.Millisecond) // the timer fires and must BLOCK on the mutex
+
+	if got := len(transcriptLinesOfType(t, r, sid, session.TypeToolResult)); got != 0 {
+		mu.Unlock()
+		t.Fatalf("the D-01 timer resume ran WHILE the turn mutex was held (%d tool results already) — "+
+			"the timer resume bypassed the per-session turn serialization (CR-02)", got)
+	}
+
+	mu.Unlock()
+
+	deadline := time.Now().Add(5 * time.Second)
+
+	for time.Now().Before(deadline) {
+		if len(transcriptLinesOfType(t, r, sid, session.TypeToolResult)) == 1 {
+			return
+		}
+
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	t.Fatal("the timer resume never landed after the mutex was released")
 }
 
 // TestAskWiring_ServerLevelSurface (the 12-01 live-witness finding, pinned):

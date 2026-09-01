@@ -122,6 +122,18 @@ type Session struct {
 	//nolint:containedctx // deliberate serve-lifetime ctx storage (see SetAskBroker)
 	askResumeCtx context.Context
 
+	// resumeSerial serializes the ASYNC resume drivers (the ask queue's pump
+	// resolution, the D-01 timer, the drain resolutions) against the runtime's
+	// per-session turn mutex (17-REVIEW CR-02: the 12-07 discipline — the
+	// whole turn, ask-reply resumes included, holds the session mutex — was
+	// violated by every asynchronous resume, letting a dialog answer race a
+	// new client prompt into TWO concurrent model loops on one transcript).
+	// Composition injects the mutex-guarded execution (runtime's sessionFor:
+	// r.sessionTurnMu(sessionID)); the SYNC reply path (routeAskReply inside
+	// Run) bypasses it — it already holds the mutex, and the func is not
+	// reentrant. nil (bare sessions, tests) = no serialization.
+	resumeSerial func(func())
+
 	// gate is the permission-gate chokepoint's injected dependencies (17-02,
 	// ACP-01): nil = the gate is unwired and every call executes (the v1.1
 	// zero-dialog behavior — "available, not default" preserved for sessions

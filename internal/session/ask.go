@@ -417,6 +417,27 @@ func RenderAskNonAnswer(timeout time.Duration) string {
 	)
 }
 
+// SetResumeSerial wires the async-resume serializer (17-REVIEW CR-02): f runs
+// its argument under the runtime's per-session turn mutex, so every ASYNC
+// resume driver (the ask queue's pump resolution, the D-01 timer, a drain
+// resolution) holds the same serialization a client turn does — a dialog
+// answer can never run a model loop concurrent with a client prompt's turn.
+// The sync reply path (routeAskReply → ResolveAsk inside Run) must NOT be
+// wrapped: Run already holds the mutex and f is not reentrant.
+func (s *Session) SetResumeSerial(f func(func())) { s.resumeSerial = f }
+
+// runResumed runs fn under the injected resume serializer (nil = direct call —
+// bare sessions and tests without composition wiring keep today's behavior).
+func (s *Session) runResumed(fn func()) {
+	if s.resumeSerial != nil {
+		s.resumeSerial(fn)
+
+		return
+	}
+
+	fn()
+}
+
 // SetAskBroker wires the per-session ask broker (the AskUserQuestion
 // suspension surface). resumeCtx is the context timer-driven resumes run under
 // — the suspending turn's ctx dies with its prompt response, so the D-01 timer
@@ -427,7 +448,12 @@ func (s *Session) SetAskBroker(resumeCtx context.Context, b *AskBroker) {
 	s.askResumeCtx = resumeCtx
 
 	if b != nil {
-		b.SetOnTimeout(func(p PendingAsk) { s.resumeAskClaimed(s.askResumeCtx, p, nil) })
+		// CR-02: the timer's resume is an ASYNC driver — it takes the
+		// per-session turn serialization like any turn (the timer goroutine
+		// holds nothing; a queued resume waits out the active turn).
+		b.SetOnTimeout(func(p PendingAsk) {
+			s.runResumed(func() { s.resumeAskClaimed(s.askResumeCtx, p, nil) })
+		})
 	}
 }
 
@@ -605,7 +631,10 @@ func (s *Session) enqueueElicitationAsk(
 	})
 
 	q.Enqueue(entry, func(_ *AskEntry, out AskOutcome) {
-		s.resolveElicitationAsk(p, fire, attempt, out)
+		// CR-02: the queue's pump resolution is an ASYNC resume driver — the
+		// structured accept (or non-answer) drives a full model loop and must
+		// hold the per-session turn serialization.
+		s.runResumed(func() { s.resolveElicitationAsk(p, fire, attempt, out) })
 	})
 }
 
