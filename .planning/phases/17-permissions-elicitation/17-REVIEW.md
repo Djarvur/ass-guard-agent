@@ -39,7 +39,11 @@ findings:
   warning: 4
   info: 3
   total: 12
-status: findings_found
+status: fixed
+fixed_at: 2026-09-01T08:00:00Z
+fix_iteration: 1
+findings_fixed: 12
+fix_report: 17-REVIEW-FIX.md
 ---
 
 # Phase 17: Code Review Report
@@ -58,6 +62,8 @@ However, five critical defects survive that battery, all at the seams the tests 
 ## Critical Issues
 
 ### CR-01: Multi-call batch drops all but the last permission suspension (lost ask, unpaired tool_use, provider-breaking)
+>
+> **Status (fix iteration 1): fixed: requires human verification** — commit `a9d8ea4`. runTurn collects EVERY batch suspension into a slice (was a single overwritten pointer); the projector drops still-unanswered tool_use from the projected batch (pair-safety — the mid-suspension resume state). Pins: TestGatePermissionSuspend_MultiCallBatch, TestPairingInvariant_ProjectorWindow (updated pin).
 
 **File:** `internal/session/session.go:439-527` (declaration at 439; overwrites at 449 and 516; single consumption at 592-596)
 
@@ -86,6 +92,8 @@ if len(gateSuspensions) > 0 {
 Add a gate_test case with two mutating `ToolCalls` in one `provider.Response` asserting two `ask_suspended` records, two surface firings (sequentially, via the queue), and two tool results.
 
 ### CR-02: Resume paths re-enter `runTurn` without the per-session turn mutex — overlapping turn drivers on one session
+>
+> **Status (fix iteration 1): fixed: requires human verification** — commit `a13054e`. Session.SetResumeSerial(func(func())) injected at composition (runtime sessionFor → r.sessionTurnMu); every ASYNC resume driver (gate queue resolve, elicitation queue resolve, D-01 timer) runs under it. The sync reply path inside Run bypasses it (not reentrant). Pins: TestAskWiring_ResumeHoldsTurnMutex, TestAskWiring_TimerResumeHoldsTurnMutex, TestGateResumeRunsUnderResumeSerial — all RED-proofed without the wiring.
 
 **File:** `internal/session/gate.go:386-388` (queue resolve → `resumePermissionAsk`), `internal/session/ask.go:819-849` (`resumePermissionAsk` → `runTurn`, no lock), `internal/session/ask.go:430` (D-01 timer → `resumeAskClaimed`, no lock); contrast `internal/runtime/runtime.go:512-515` and `internal/runtime/cron_wiring.go:35`
 
@@ -94,6 +102,8 @@ Add a gate_test case with two mutating `ToolCalls` in one `provider.Response` as
 **Fix:** Serialize the resume. The session cannot import runtime, so inject the mutex at composition the way `OnSuspended` injects `ParkMu` — e.g. give `GateDeps` (or a new session hook) a `ResumeSerial func(func())` wired in `sessionFor` to `r.sessionTurnMu(sessionID)`-guarded execution, and wrap the `deps.Queue.Enqueue(..., resolve)` callback and the broker's `SetOnTimeout` body with it. routeAskReply already holds the mutex via Run and must not double-lock (use a non-reentrant wrapper only on the async paths).
 
 ### CR-03: `session/cancel` drain runs full model resumes inline in the reader goroutine — connection stalls
+>
+> **Status (fix iteration 1): fixed** — commit `e2afc1a`. DrainTurn invokes each drained resolve on its own goroutine; the reader goroutine returns immediately. Resolves stay serialized against turns via CR-02's resume serializer. Pin: TestAskQueueDrainResolvesAsync (RED-proofed).
 
 **File:** `internal/acp/server.go:375-380` (notifications dispatched inline), `internal/acp/handlers.go:518` (`drainAsksIfPossible` in the cancel handler), `internal/session/askqueue.go:306-310` (`DrainTurn` resolves drained entries synchronously), `internal/session/ask.go:841` (each resolve runs `runTurn`)
 
@@ -102,6 +112,8 @@ Add a gate_test case with two mutating `ToolCalls` in one `provider.Response` as
 **Fix:** Decouple resolution from the drain caller: in `DrainTurn`, invoke each drained `qa.resolve` on its own goroutine (`go qa.resolve(qa.entry, AskOutcome{Cancelled: true})`), preserving the cancel-func invocation outside the mutex as today. Add a test asserting `session/cancel` returns the reader to service while a queued ask's resume is still running (fake provider that blocks until released).
 
 ### CR-04: D-07 automation-decline is unwired — `SetTurnOriginAutomation` has zero production callers
+>
+> **Status (fix iteration 1): fixed: requires human verification** — commit `90f22ed`. runAutomationTurn brackets the firing turn with sess.SetTurnOriginAutomation(true)/defer false, mirroring the provenance bracket. Pin: TestCronWiring_AutomationTurnDeclinesGatedAsk — gated automation turn declines fail-safe with zero surface fires (RED-proofed).
 
 **File:** `internal/session/gate.go:145-149` (the setter), `internal/runtime/cron_wiring.go:133-206` (`runAutomationTurn` sets `r.automationProvenance` only)
 
@@ -119,6 +131,8 @@ if sess := r.sessionFor(ctx, sessionID); sess != nil {
 (matching the provenance set/reset shape already there), and add a wiring test that drives `runAutomationTurn` against a gated session asserting the decline note + zero surface fires.
 
 ### CR-05: Permission suspensions are invisible to the engine ask-wait — chains exit silently or spin on a stale settle channel
+>
+> **Status (fix iteration 1): fixed: requires human verification** — commit `f154e7d`. AskBroker.ArmSettle(ch) publishes the permission suspension's settle channel on the engine seam; suspendForPermission arms it right after creating p.settle. Pins: TestGatePermissionSuspensionArmsSettle (session seam) + TestAskWiring_ChainSurvivesPermissionDialogResume (engine-on chain parks while the dialog is open, resumes and injects after the answer) — RED-proofed.
 
 **File:** `internal/session/gate.go:353` (`p.settle` armed locally, never published), `internal/session/ask.go:199-200` (the broker settle seam only `Surface` arms), `internal/runtime/enginebridge/enginebridge.go:203-211` (`AskSettle` returns `sess.AskSettleChan()`), `internal/engine/observe.go:291-301` (`waitAskSettled`)
 
@@ -129,6 +143,8 @@ if sess := r.sessionFor(ctx, sessionID); sess != nil {
 ## Warnings
 
 ### WR-01: Corrupt permissions.yaml disables ALL deny/allow rules for the session (fail-open on a security control)
+>
+> **Status (fix iteration 1): fixed** — commit `4dcd299`. Option (b): typed perm.ErrCorrupt + perm.OpenRepaired — a corrupt document is quarantined byte-intact to permissions.yaml.corrupt, the floor 0600 file is recreated (dialog writes work), and the degradation logs LOUD; runtime sessionFor now opens through OpenRepaired. Pins: TestOpenCorruptDocumentTypedError, TestOpenRepairedQuarantinesCorruptFile, TestOpenRepairedHealthyFileUnchanged.
 
 **File:** `internal/runtime/runtime.go:1354-1362`, root cause `internal/perm/store.go:176-180`
 
@@ -137,6 +153,8 @@ if sess := r.sessionFor(ctx, sessionID); sess != nil {
 **Fix:** Degrade fail-closed, not rule-less: on `Open` failure, either (a) keep the store wired with an empty rule set PLUS a client-visible `session/update` note and a poisoned `deny` fallback is too aggressive — minimally, retry on next session and surface the failure in the advertisement; or (b) quarantine the unreadable file (rename to `permissions.yaml.corrupt`), recreate the floor 0600 file so dialog writes still work, and log loudly. At minimum add a store_test for the parse-error path documenting the chosen semantics.
 
 ### WR-02: Compound splitting ignores quoting and command substitution — allow-prefix bypass and false compounds
+>
+> **Status (fix iteration 1): fixed** — commit `bbbf71a`. SplitCompound is quote-aware (single/double quotes stop separator splitting); evaluateSingle refuses to let an ALLOW match a substitution-bearing command ($(…)/backtick, live inside double quotes, escaped or single-quoted = literal) while deny/ask still match the raw subject. Pins: 8 TestRules rows + TestSplitCompoundQuotes (RED-proofed).
 
 **File:** `internal/perm/rules.go:229-254` (`SplitCompound`), `internal/perm/rules.go:191-199` (`Evaluate`)
 
@@ -145,6 +163,8 @@ if sess := r.sessionFor(ctx, sessionID); sess != nil {
 **Fix:** Minimum viable hardening: (a) before splitting, refuse/ask on any `$(...)`/backtick occurrence in the primary arg (fail-safe ask in gated; unmatched in ungated is the mode decision, but at minimum never let an allow match a substitution-bearing command — e.g. `evaluateSingle` returns Unmatched when `strings.Contains_any(primaryArg, "$(`")`); (b) add a quote-awareness pass (track single/double-quote state while scanning so separators inside quotes don't split). Add table rows for both to `rules_test.go`.
 
 ### WR-03: Mid-pattern star in a tool selector is a silently dead rule — accepted with no warning, never matches
+>
+> **Status (fix iteration 1): fixed** — commit `a4c6760`. parseList warn-and-skips any tool selector whose star is not trailing, in EVERY list (the inert-allow-glob precedent). Pin: TestRulesWarnings mid-star rows (RED-proofed).
 
 **File:** `internal/perm/rules.go:390-404` (`validToolName` admits `*` anywhere), `internal/perm/rules.go:327-337` (`matchesTool` honors only a TRAILING star), `internal/perm/rules.go:367-375` (`unanchoredAllowGlob` inspects the FIRST star)
 
@@ -153,6 +173,8 @@ if sess := r.sessionFor(ctx, sessionID); sess != nil {
 **Fix:** In `parseList` (or `ParseRule`), warn-and-keep (or warn-and-skip) when a TOOL selector contains a star that is not trailing: `if i := strings.Index(tool, "*"); i >= 0 && i != len(tool)-1 { ws = append(ws, Warning{Rule: line, Reason: "mid-pattern star in tool selector never matches"}) }`. Add rows to `TestRulesWarnings`.
 
 ### WR-04: Store load path never tightens permissions on an existing loose file or directory
+>
+> **Status (fix iteration 1): fixed** — commit `b107220`. Open tightens the store dir (0750) after MkdirAll and the existing file (0600) after a successful load — stat → compare → chmod, loud structured warning on correction. Pin: TestOpenTightensLoosePerms (RED-proofed).
 
 **File:** `internal/perm/store.go:63-90` (`Open`), `internal/perm/store.go:237-266` (`save` chmods only its own temp file)
 
@@ -163,6 +185,8 @@ if sess := r.sessionFor(ctx, sessionID); sess != nil {
 ## Info
 
 ### IN-01: Import-keep hack in `handleSessionSetMode`
+>
+> **Status (fix iteration 1): fixed** — commit `012961a`. Dropped the dead redact.ScrubError(nil) call and the now-unused import from handlers.go (server.go's redact users keep the package live).
 
 **File:** `internal/acp/handlers.go:571`
 
@@ -171,6 +195,8 @@ if sess := r.sessionFor(ctx, sessionID); sess != nil {
 **Fix:** Drop the call (the package has other redact users in server.go, so the import survives) or add a real scrub when this handler grows behavior.
 
 ### IN-02: Fixed sleep stands in for the pump in the fallback test
+>
+> **Status (fix iteration 1): fixed** — commit `19815cd`. The fallback subtest waits on gateWaitFor(fired() == 1) instead of a fixed 50ms sleep.
 
 **File:** `internal/session/elicitation_reply_test.go:425`
 
@@ -179,6 +205,8 @@ if sess := r.sessionFor(ctx, sessionID); sess != nil {
 **Fix:** Replace with `gateWaitFor(t, func() bool { return fired() == 1 })` — the subsequent zero-results/pending assertions are already stable.
 
 ### IN-03: `AppendAskSuspended` error silently discarded at the suspension site
+>
+> **Status (fix iteration 1): fixed** — commit `f91e5c5`. The AppendAskSuspended error at the suspension site is logged (slog.Warn with turn/call/tool); the suspension itself still proceeds.
 
 **File:** `internal/session/gate.go:360`
 
