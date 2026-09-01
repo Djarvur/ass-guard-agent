@@ -320,6 +320,165 @@ func TestGatePermissionSuspend(t *testing.T) { //nolint:cyclop,funlen // flat en
 	}
 }
 
+// TestGatePermissionSuspend_MultiCallBatch pins the CR-01 fix: TWO gated
+// ask-class calls in ONE provider response (a normal batch shape —
+// DispatchBatch exists precisely for batches) BOTH suspend. The overwrite bug
+// dropped every suspension but the last: the dropped call kept its recorded
+// tool_call line but never got an ask_suspended marker, a queue entry, or a
+// tool result — the unpaired tool_use then broke the next provider request.
+// Pins: two ask_suspended records, two surface firings fired SEQUENTIALLY by
+// the queue (one outstanding, D-11), the mid-suspension projection carries NO
+// unpaired tool_use (the CR-01 projector pair-safety filter), and both calls
+// land non-error results after their answers.
+func TestGatePermissionSuspend_MultiCallBatch(t *testing.T) { //nolint:funlen,cyclop // the full two-dialog chain
+	t.Parallel()
+
+	block1 := make(chan struct{})
+	block2 := make(chan struct{})
+
+	store := &fakePermStore{}
+	surf := &fakeGateSurface{
+		answers: []AskOutcome{
+			{Selected: acp.PermOptionAllowOnce},
+			{Selected: acp.PermOptionAllowOnce},
+		},
+		block: block1,
+	}
+
+	s := newGateSession(t, []provider.Response{
+		{
+			FinishReason: blockToolUse,
+			ToolCalls: []provider.ToolCall{
+				{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)},
+				{ID: gateCall2, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)},
+			},
+		},
+		{FinishReason: stopEndTurn}, // the first resume's closing turn
+		{FinishReason: stopEndTurn}, // the second resume's closing turn
+	}, PermModeGated, store, surf)
+
+	stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+
+	if stop != stopAsk {
+		t.Fatalf("stop = %q; want the ask-suspension marker %q", stop, stopAsk)
+	}
+
+	// BOTH calls suspended: two ask_suspended audit markers (the overwrite bug
+	// produced exactly one).
+	sawCall1, sawCall2 := false, false
+
+	for _, l := range linesOf(s) {
+		if l.Type != TypeAskSuspended {
+			continue
+		}
+
+		switch l.ToolCallID {
+		case gateCall1:
+			sawCall1 = true
+		case gateCall2:
+			sawCall2 = true
+		}
+	}
+
+	if !sawCall1 || !sawCall2 {
+		t.Fatalf("ask_suspended records: call1=%v call2=%v; want BOTH (every batch suspension survives)",
+			sawCall1, sawCall2)
+	}
+
+	// The queue fired ONLY the first dialog (one outstanding — D-11): the
+	// second suspension is queued behind it, not dropped.
+	gateWaitFor(t, func() bool { return surf.fired() == 1 })
+
+	if e := surf.lastEntry(); e == nil || e.CallID != gateCall1 {
+		t.Fatalf("first fired entry = %+v; want call1 (batch order preserved)", e)
+	}
+
+	// Projection pair-safety mid-suspension: NEITHER call has a result yet, so
+	// the projected window must carry ZERO tool_use blocks (a projected
+	// unpaired tool_use is what the provider rejects).
+	turnID := s.CurrentTurnID()
+
+	if ids := projectedToolUseIDs(t, s, turnID); len(ids) != 0 {
+		t.Errorf("projected tool_use ids = %v while both calls are unanswered; want none (pair-safety)", ids)
+	}
+
+	// Retarget the NEXT fire's gate to block2 while dialog 1 is still open, so
+	// the second dialog deterministically parks mid-round-trip.
+	surf.mu.Lock()
+	surf.block = block2
+	surf.mu.Unlock()
+
+	close(block1) // answer 1 (allow_once) → result lands → resume → dialog 2 parks
+
+	// Dialog 2 fired; call1's result is in, call2's is not.
+	gateWaitFor(t, func() bool { return surf.fired() == 2 })
+
+	if e := surf.lastEntry(); e == nil || e.CallID != gateCall2 {
+		t.Fatalf("second fired entry = %+v; want call2 (the queued suspension fired, not dropped)", e)
+	}
+
+	gateWaitFor(t, func() bool { return len(toolResultsFor(t, s, gateCall1)) == 1 })
+
+	if results := toolResultsFor(t, s, gateCall2); len(results) != 0 {
+		t.Errorf("call2 has a result before its dialog was answered: %+v", results)
+	}
+
+	// THE CR-01 pin: with call2 still unanswered, the resumed projection
+	// carries ONLY call1's tool_use — never the unpaired call2 (pre-fix, the
+	// whole batch was projected against one result and the provider rejected
+	// the resumed request).
+	ids := projectedToolUseIDs(t, s, turnID)
+	if len(ids) != 1 || ids[0] != gateCall1 {
+		t.Errorf("mid-suspension projected tool_use ids = %v; want exactly [call1] (unpaired call2 dropped)", ids)
+	}
+
+	close(block2) // answer 2 → result lands → final resume
+
+	gateWaitFor(t, func() bool {
+		return len(toolResultsFor(t, s, gateCall1)) == 1 && len(toolResultsFor(t, s, gateCall2)) == 1
+	})
+
+	// Both results non-error; the final projection is fully paired.
+	for _, call := range []string{gateCall1, gateCall2} {
+		results := toolResultsFor(t, s, call)
+		if len(results) != 1 || results[0].IsError {
+			t.Errorf("tool_result for %s = %+v; want exactly one non-error result", call, results)
+		}
+	}
+
+	if ids := projectedToolUseIDs(t, s, turnID); len(ids) != 2 {
+		t.Errorf("final projected tool_use ids = %v; want both calls (fully paired batch)", ids)
+	}
+
+	if got := surf.fired(); got != 2 {
+		t.Errorf("surface fired %d times; want exactly 2 (one per suspension, zero re-asks)", got)
+	}
+}
+
+// projectedToolUseIDs returns every tool-call id carried by the projected
+// window's assistant messages (the provider request's tool_use surface).
+func projectedToolUseIDs(t *testing.T, s *Session, turnID string) []string {
+	t.Helper()
+
+	messages, err := s.Projector.Project(turnID)
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+
+	var ids []string
+
+	for _, m := range messages {
+		for _, tc := range m.ToolCalls {
+			ids = append(ids, tc.ID)
+		}
+	}
+
+	return ids
+}
+
 // TestGateChokepoint_UngatedDefaultNoDialog pins criterion 4's default leg:
 // ungated (the DEFAULT mode), an ask-class call with no matching rule executes
 // immediately with ZERO surface invocations — "zero new dialogs on default

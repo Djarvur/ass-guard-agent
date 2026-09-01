@@ -179,6 +179,21 @@ func accumulateMidTurn(lines []Line, turnID string) []provider.Message {
 		}
 	}
 
+	// CR-01 pair-safety pre-scan: the call ids that DO have a tool_result in
+	// the window. A multi-call batch can be only PARTIALLY answered at resume
+	// time (17-02's multi-permission suspension: dialog k answered while
+	// dialog k+1 is still open) — projecting the still-pending tool_use would
+	// hand the provider an unpaired tool_use block and the request would be
+	// rejected. Only ANSWERED calls are projected; a call's tool_use rejoins
+	// the batch at the projection after its own resume lands its result.
+	hasResult := make(map[string]bool)
+
+	for i := anchor; i < len(lines); i++ {
+		if lines[i].TurnID == turnID && lines[i].Type == TypeToolResult {
+			hasResult[lines[i].ToolCallID] = true
+		}
+	}
+
 	var (
 		out     []provider.Message
 		pending []provider.ToolCall
@@ -186,10 +201,22 @@ func accumulateMidTurn(lines []Line, turnID string) []provider.Message {
 	)
 
 	flushBatch := func() {
-		if len(pending) > 0 {
-			out = append(out, provider.Message{Role: roleAssistant, ToolCalls: pending})
-			pending = nil
+		if len(pending) == 0 {
+			return
 		}
+
+		batch := make([]provider.ToolCall, 0, len(pending))
+		for _, tc := range pending {
+			if hasResult[tc.ID] {
+				batch = append(batch, tc)
+			}
+		}
+
+		if len(batch) > 0 {
+			out = append(out, provider.Message{Role: roleAssistant, ToolCalls: batch})
+		}
+
+		pending = nil
 	}
 
 	for i := anchor; i < len(lines); i++ {

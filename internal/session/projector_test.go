@@ -748,8 +748,8 @@ func TestPairingInvariant_ProjectorWindow(t *testing.T) {
 	_ = m.AppendUserMessage("turnP", []ContentBlock{{Type: blockText, Text: "multi-batch turn"}})
 
 	// Batch 1: two calls + results. Batch 2: one call + result. Interleaved
-	// assistant text. Then a dangling tool_call (dispatch pending) whose batch
-	// is flushed WITHOUT results — legal mid-iteration state.
+	// assistant text. Then a dangling tool_call whose result has not landed —
+	// the multi-permission-suspension resume state (17-REVIEW CR-01).
 	_ = m.AppendToolCall("turnP", "p1", toolRead, json.RawMessage(`{"file_path":"a"}`))
 	_ = m.AppendToolCall("turnP", "p2", toolBash, json.RawMessage(`{"command":"ls"}`))
 	_ = m.AppendToolResult("turnP", "p1", json.RawMessage(`{"o":"1"}`), false)
@@ -782,12 +782,41 @@ func TestPairingInvariant_ProjectorWindow(t *testing.T) {
 		}
 	}
 
-	// The dangling p4 batch flushes as an assistant message WITHOUT results —
-	// still pair-safe (no orphaned results), and present so the next iteration
-	// sees the pending call.
-	var last = msgs[len(msgs)-1]
-	if last.Role != roleAssistant || len(last.ToolCalls) != 1 || last.ToolCalls[0].ID != "p4" {
-		t.Errorf("last window message = %s; want the dangling p4 batch", msgSummary(&last))
+	// The UNANSWERED p4 call is NOT projected (CR-01): a projected tool_use
+	// without its tool_result is an unpaired block the Anthropic-protocol
+	// provider rejects — the pre-fix shape that broke every resumed turn
+	// after a partial batch answer. (The old pin projected the dangling batch
+	// deliberately; that state is only reachable across a suspension resume,
+	// where projecting it IS the bug.) p1..p3 (answered) all still project,
+	// and the window ends at p3's result.
+	for _, id := range []string{"p1", "p2", "p3"} {
+		found := false
+
+		for _, mm := range msgs {
+			for _, tc := range mm.ToolCalls {
+				if tc.ID == id {
+					found = true
+				}
+			}
+		}
+
+		if !found {
+			t.Errorf("answered call %q missing from the projected window", id)
+		}
+	}
+
+	for _, mm := range msgs {
+		for _, tc := range mm.ToolCalls {
+			if tc.ID == "p4" {
+				t.Errorf("unanswered call p4 projected — unpaired tool_use (CR-01 pair-safety violated):\n%s",
+					msgSummaryList(msgs))
+			}
+		}
+	}
+
+	last := msgs[len(msgs)-1]
+	if last.Role != roleToolMsg || last.ToolCallID != "p3" {
+		t.Errorf("last window message = %s; want p3's tool result (p4 contributes nothing)", msgSummary(&last))
 	}
 }
 

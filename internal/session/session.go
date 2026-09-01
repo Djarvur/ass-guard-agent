@@ -433,10 +433,16 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 
 			batchIDs := make([]string, 0, len(resp.ToolCalls))
 
-			// 17-02: a gated ask-class call suspended this iteration — the
-			// suspension is applied AFTER the batch's survivors dispatch and
-			// record (the same shape as the ask suspension below).
-			var gateSuspended *pendingPermission
+			// 17-02: gated ask-class calls suspended this iteration — the
+			// suspensions are applied AFTER the batch's survivors dispatch and
+			// record (the same shape as the ask suspension below). A SLICE, not
+			// a single slot (17-REVIEW CR-01): a multi-call batch can suspend
+			// MORE THAN ONE gated ask (e.g. Write + Bash in one response), and
+			// a single pointer silently dropped every suspension but the last
+			// — the dropped call kept its recorded tool_call line but never got
+			// an ask marker, a queue entry, or a tool result (the unpaired
+			// tool_use that breaks the next provider request).
+			var gateSuspensions []pendingPermission
 
 			for _, tc := range resp.ToolCalls {
 				callID := toolCallIDOf(tc)
@@ -446,7 +452,8 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 					// the gate — no second permission path).
 					if v := s.gateCall(turnID, callID, tc.Name, tc.Input); v.action != gateExecute {
 						if v.action == gateSuspend {
-							gateSuspended = &pendingPermission{callID: callID, tool: tc.Name, input: tc.Input}
+							gateSuspensions = append(gateSuspensions,
+								pendingPermission{callID: callID, tool: tc.Name, input: tc.Input})
 
 							continue
 						}
@@ -513,7 +520,8 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 				// when gated + human, declines fail-safe on automation turns.
 				if v := s.gateCall(turnID, callID, tc.Name, tc.Input); v.action != gateExecute {
 					if v.action == gateSuspend {
-						gateSuspended = &pendingPermission{callID: callID, tool: tc.Name, input: tc.Input}
+						gateSuspensions = append(gateSuspensions,
+							pendingPermission{callID: callID, tool: tc.Name, input: tc.Input})
 
 						continue
 					}
@@ -584,14 +592,18 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 				}
 			}
 
-			// 17-02: a gated ask-class call suspended — the batch's survivors
-			// (if any) were dispatched + recorded above. The turn ends with
-			// the ask marker: suspendForPermission enqueues on the ask queue,
-			// the dialog answer drives the resume, and NO turn lock is held
-			// across the human wait (RESEARCH Pitfall 2).
-			if gateSuspended != nil {
-				s.suspendForPermission(turnID, gateSuspended.callID, gateSuspended.tool, gateSuspended.input)
+			// 17-02: gated ask-class call(s) suspended — the batch's survivors
+			// (if any) were dispatched + recorded above. EVERY suspension is
+			// applied in batch order (CR-01); the queue serializes their firing
+			// (one outstanding — D-11) and each dialog answer drives its own
+			// resume of the SAME turn. The turn ends with the ask marker: no
+			// turn lock is held across the human wait (RESEARCH Pitfall 2).
+			for i := range gateSuspensions {
+				s.suspendForPermission(turnID,
+					gateSuspensions[i].callID, gateSuspensions[i].tool, gateSuspensions[i].input)
+			}
 
+			if len(gateSuspensions) > 0 {
 				return stopAsk, nil
 			}
 
