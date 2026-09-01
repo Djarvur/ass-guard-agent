@@ -3,6 +3,7 @@ package acpserve //nolint:testpackage // internal package test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -360,22 +361,22 @@ func TestConfigSurface_SetPersistsThroughLoader(t *testing.T) {
 	}
 }
 
-func TestConfigSurface_PendingNoOp(t *testing.T) {
+func TestConfigSurface_PendingNoOp_Compaction(t *testing.T) {
 	t.Parallel()
 
 	f := newSurfaceFixture(t)
 
 	before := f.notifyCount()
 
-	opts, err := f.surface.Set("sess-1", optPermissionsMode, testPermGated)
+	opts, err := f.surface.Set("sess-1", optCompactionThresh, testCompactionBlob)
 	if err != nil {
-		t.Fatalf("Set(pending permissions.mode): %v (D-05: accepted no-op, never an error)", err)
+		t.Fatalf("Set(pending compaction-threshold): %v (D-05: accepted no-op, never an error)", err)
 	}
 
 	assertEight(t, opts, "pending response")
 
-	if got := optionByID(t, opts, optPermissionsMode).CurrentValue; got != testPermUngated {
-		t.Errorf("permissions.mode currentValue = %q; want UNCHANGED ungated", got)
+	if got := optionByID(t, opts, optCompactionThresh).CurrentValue; got != testCompactionDefval {
+		t.Errorf("compaction-threshold currentValue = %q; want UNCHANGED %q", got, testCompactionDefval)
 	}
 
 	if f.notifyCount() != before {
@@ -391,6 +392,283 @@ func TestConfigSurface_PendingNoOp(t *testing.T) {
 	if !os.IsNotExist(statErr) {
 		t.Error("pending no-op wrote a layer file (pending ids never persist)")
 	}
+
+	// permissions.mode is NO LONGER a pending id (the real handler landed in
+	// 17-02): its pending-handler log line is gone from the surface behavior.
+	f2 := newSurfaceFixture(t)
+	if _, err := f2.surface.Set("sess-1", optPermissionsMode, testPermGated); err == nil {
+		if got := f2.stderr.String(); strings.Contains(got, "pending handler") {
+			t.Error("permissions.mode still logs the pending-handler line (the real handler must own it)")
+		}
+	}
+}
+
+// TestPermissionsModeFlip pins the REAL permissions.mode handler (17-02,
+// ACP-01 criterion 4 + Pitfall 8): persist-then-apply (D-07) through
+// WriteLayerOption on the routed layer, the live apply hook fired with the
+// new value, the advertisement resolving the effective truth (D-11), typed
+// rejects for invalid values (D-09), the D-10 idempotent re-push guard, the
+// _global/ scope routing, and the ungated boot default.
+func TestPermissionsModeFlip(t *testing.T) { //nolint:funlen,gocyclo,gocognit // one battery over the six behaviors
+	t.Parallel()
+
+	// wiredFixture adds the runner-side live accessor + apply hook (the
+	// composition's SetPermModeRead/SetPermModeHook wiring) to the base
+	// fixture, recording the layer content AT APPLY TIME — the
+	// persist-BEFORE-apply ordering is observed as "the file already carries
+	// the new value when the hook runs".
+	type wiredFixture struct {
+		*surfaceFixture
+		mode         string
+		applied      []string
+		layerAtApply []string
+		mu           sync.Mutex
+	}
+
+	newWired := func(t *testing.T) *wiredFixture {
+		t.Helper()
+
+		w := &wiredFixture{surfaceFixture: newSurfaceFixture(t)}
+
+		w.surface.SetPermModeRead(func() string {
+			w.mu.Lock()
+			defer w.mu.Unlock()
+
+			return w.mode
+		})
+		w.surface.SetPermModeHook(func(m string) error {
+			w.mu.Lock()
+			defer w.mu.Unlock()
+
+			// D-07 ordering: the hook fires ONLY after a successful persist —
+			// capture the layer as it stands right now as proof.
+			raw, rerr := os.ReadFile(w.projectPath)
+			if rerr != nil {
+				w.layerAtApply = append(w.layerAtApply, "READ-FAIL:"+rerr.Error())
+			} else {
+				w.layerAtApply = append(w.layerAtApply, string(raw))
+			}
+
+			w.applied = append(w.applied, m)
+			w.mode = m
+
+			return nil
+		})
+
+		return w
+	}
+
+	t.Run("persist-then-apply on the project layer", func(t *testing.T) {
+		t.Parallel()
+
+		w := newWired(t)
+		before := w.notifyCount()
+
+		opts, err := w.surface.Set("sess-1", optPermissionsMode, testPermGated)
+		if err != nil {
+			t.Fatalf("Set(permissions.mode=gated): %v", err)
+		}
+
+		assertEight(t, opts, "mode flip response")
+
+		w.mu.Lock()
+		applied, layers := append([]string(nil), w.applied...), append([]string(nil), w.layerAtApply...)
+		w.mu.Unlock()
+
+		if len(applied) != 1 || applied[0] != testPermGated {
+			t.Fatalf("apply hook calls = %v; want exactly [gated]", applied)
+		}
+
+		if len(layers) != 1 || !strings.Contains(layers[0], testPermGated) {
+			t.Fatalf("layer content at apply time = %q; want permissions.mode=gated ALREADY persisted (D-07)",
+				layers)
+		}
+
+		m, lerr := readLayerMap(w.projectPath)
+		if lerr != nil {
+			t.Fatalf("written layer does not parse: %v", lerr)
+		}
+
+		if !mapHasPath(m, keyPermissions, "mode") {
+			t.Errorf("layer missing permissions.mode key path: %+v", m)
+		}
+
+		if got := optionByID(t, opts, optPermissionsMode).CurrentValue; got != testPermGated {
+			t.Errorf("advertisement currentValue = %q; want gated (the live accessor's truth)", got)
+		}
+
+		if w.notifyCount() != before+1 {
+			t.Errorf("notify count = %d; want exactly one out-of-band update for an applied write", w.notifyCount())
+		}
+
+		// Flip back to ungated: same semantics, the live apply sees ungated.
+		if _, err := w.surface.Set("sess-1", optPermissionsMode, testPermUngated); err != nil {
+			t.Fatalf("Set(permissions.mode=ungated): %v", err)
+		}
+
+		w.mu.Lock()
+		defer w.mu.Unlock()
+
+		if len(w.applied) != 2 || w.applied[1] != testPermUngated {
+			t.Errorf("flip-back apply calls = %v; want [gated ungated]", w.applied)
+		}
+	})
+
+	t.Run("invalid value is a typed reject and touches nothing", func(t *testing.T) {
+		t.Parallel()
+
+		w := newWired(t)
+
+		_, err := w.surface.Set("sess-1", optPermissionsMode, "bogus")
+		if err == nil {
+			t.Fatal("Set(permissions.mode=bogus) succeeded; want a typed reject (D-09)")
+		}
+
+		var violation *acp.ConfigViolationError
+		if !errors.As(err, &violation) {
+			t.Fatalf("error = %v; want *acp.ConfigViolationError", err)
+		}
+
+		if violation.OptionID != optPermissionsMode || violation.Violation == "" {
+			t.Errorf("violation = %+v; want the option key + a violation detail", violation)
+		}
+
+		w.mu.Lock()
+		defer w.mu.Unlock()
+
+		if len(w.applied) != 0 {
+			t.Errorf("apply hook fired for an invalid value: %v", w.applied)
+		}
+
+		if _, statErr := os.Stat(w.projectPath); !os.IsNotExist(statErr) {
+			t.Error("invalid value wrote a layer file (session state untouched on reject)")
+		}
+	})
+
+	t.Run("idempotent re-push is a logged no-op with no layer write", func(t *testing.T) {
+		t.Parallel()
+
+		w := newWired(t)
+
+		if _, err := w.surface.Set("sess-1", optPermissionsMode, testPermGated); err != nil {
+			t.Fatalf("initial Set: %v", err)
+		}
+
+		raw, rerr := os.ReadFile(w.projectPath)
+		if rerr != nil {
+			t.Fatalf("read layer after first set: %v", rerr)
+		}
+
+		before := w.notifyCount()
+
+		if _, err := w.surface.Set("sess-1", optPermissionsMode, testPermGated); err != nil {
+			t.Fatalf("re-push Set: %v", err)
+		}
+
+		w.mu.Lock()
+		appliedCount := len(w.applied)
+		w.mu.Unlock()
+
+		if appliedCount != 1 {
+			t.Errorf("apply hook fired %d times; want 1 (the re-push must not re-apply)", appliedCount)
+		}
+
+		if w.notifyCount() != before {
+			t.Error("idempotent re-push emitted a config_option_update")
+		}
+
+		if got := w.stderr.String(); !strings.Contains(got, "idempotent re-push") {
+			t.Errorf("re-push not logged as idempotent (stderr=%q)", got)
+		}
+
+		raw2, rerr2 := os.ReadFile(w.projectPath)
+		if rerr2 != nil || string(raw2) != string(raw) {
+			t.Error("idempotent re-push churned the layer file (D-10)")
+		}
+	})
+
+	t.Run("re-push of an accessor-derived value never persists", func(t *testing.T) {
+		t.Parallel()
+
+		w := newWired(t)
+
+		// The accessor already reports gated (e.g. boot layer truth) but THIS
+		// fixture has no layer file at the addressed (global-empty) scope —
+		// actually the boot case is the accessor carrying ungated default
+		// while nothing is persisted: re-pushing the EFFECTIVE value must not
+		// promote it into a layer file (D-10).
+		w.mu.Lock()
+		w.mode = testPermUngated
+		w.mu.Unlock()
+
+		before := w.notifyCount()
+
+		if _, err := w.surface.Set("sess-1", optPermissionsMode, testPermUngated); err != nil {
+			t.Fatalf("re-push Set(ungated): %v", err)
+		}
+
+		if _, statErr := os.Stat(w.projectPath); !os.IsNotExist(statErr) {
+			t.Error("re-push of the effective default wrote a layer file (D-10 anti-promotion)")
+		}
+
+		if w.notifyCount() != before {
+			t.Error("idempotent re-push emitted a config_option_update")
+		}
+	})
+
+	t.Run("global scope routes to the global layer", func(t *testing.T) {
+		t.Parallel()
+
+		w := newWired(t)
+
+		opts, err := w.surface.Set("sess-1", optGlobalPrefix+optPermissionsMode, testPermGated)
+		if err != nil {
+			t.Fatalf("Set(_global/permissions.mode=gated): %v", err)
+		}
+
+		m, lerr := readLayerMap(w.globalPath)
+		if lerr != nil {
+			t.Fatalf("global layer does not parse: %v", lerr)
+		}
+
+		if !mapHasPath(m, keyPermissions, "mode") {
+			t.Errorf("global layer missing permissions.mode: %+v", m)
+		}
+
+		if _, statErr := os.Stat(w.projectPath); !os.IsNotExist(statErr) {
+			t.Error("global-scoped write touched the project layer")
+		}
+
+		if got := optionByID(t, opts, optGlobalPrefix+optPermissionsMode).CurrentValue; got != testPermGated {
+			t.Errorf("_global twin currentValue = %q; want the global layer's own gated truth", got)
+		}
+	})
+
+	t.Run("boot default is ungated", func(t *testing.T) {
+		t.Parallel()
+
+		f := newSurfaceFixture(t)
+
+		if got := f.surface.EffectivePermMode(); got != testPermUngated {
+			t.Errorf("EffectivePermMode = %q; want the ungated boot default (criterion 4)", got)
+		}
+
+		opts := f.surface.Options()
+		if got := optionByID(t, opts, optPermissionsMode).CurrentValue; got != testPermUngated {
+			t.Errorf("advertisement currentValue = %q; want ungated", got)
+		}
+	})
+
+	t.Run("boot reads a hand-edited layer (chip==wire after restart)", func(t *testing.T) {
+		t.Parallel()
+
+		f := newSurfaceFixture(t)
+		writeLayer(t, f.projectPath, "permissions:\n  mode: gated\n")
+
+		if got := f.surface.EffectivePermMode(); got != testPermGated {
+			t.Errorf("EffectivePermMode = %q; want the hand-edited gated (the boot seeds the accessor)", got)
+		}
+	})
 }
 
 func TestConfigSurface_ConcurrentMutation(t *testing.T) {

@@ -1149,3 +1149,85 @@ func TestGateMCPNamespace(t *testing.T) { //nolint:funlen,cyclop // the mapping 
 		}
 	})
 }
+
+// TestGatePermissionModeFlip pins criterion 4's live-flip leg at the session
+// level (Pitfall 8): the permissions.mode handler's apply hook flips the
+// SHARED mode accessor, and the very next mutating call in the SAME session
+// changes gate behavior — no session recreation, no restart. Flipping back
+// restores the dialog-free default with deny rules still enforced.
+func TestGatePermissionModeFlip(t *testing.T) {
+	t.Parallel()
+
+	mode := PermModeUngated
+
+	store := &fakePermStore{}
+	surf := &fakeGateSurface{
+		answers: []AskOutcome{{Selected: acp.PermOptionAllowOnce}},
+	}
+
+	s := newGateSessionFunc(t, []provider.Response{
+		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+			{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+			{ID: gateCall2, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+			{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+		{FinishReason: stopEndTurn},
+	}, func() string { return mode }, store, surf)
+
+	// Ungated (the boot default): the first identical call executes with zero
+	// surface invocations.
+	stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+	if err != nil {
+		t.Fatalf("prompt 1: %v", err)
+	}
+
+	if stop != stopEndTurn || surf.fired() != 0 {
+		t.Fatalf("stop=%q fired=%d; want end_turn/0 under the ungated boot default", stop, surf.fired())
+	}
+
+	// The handler's apply hook flips the accessor — no session recreation.
+	mode = PermModeGated
+
+	stop, err = s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+	if err != nil {
+		t.Fatalf("prompt 2: %v", err)
+	}
+
+	if stop != stopAsk {
+		t.Fatalf("stop = %q; want the ask marker (the flip reached the RUNNING session)", stop)
+	}
+
+	gateWaitFor(t, func() bool { return surf.fired() == 1 })
+
+	if order := store.snapshotOrder(); len(order) != 1 || order[0] != "exec:"+gateToolWrite {
+		t.Fatalf("post-flip order = %v; want only the first turn's ungated exec (the gated call suspends)", order)
+	}
+
+	// Flip back: the next identical call executes with no dialog; a deny rule
+	// still denies in the dialog-free mode.
+	mode = PermModeUngated
+	store.deny = []string{gateToolWrite}
+
+	stop, err = s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+	if err != nil {
+		t.Fatalf("prompt 3: %v", err)
+	}
+
+	if stop != stopEndTurn {
+		t.Fatalf("stop = %q; want end_turn after the flip back", stop)
+	}
+
+	if surf.fired() != 1 {
+		t.Errorf("surface fired %d times; want 1 (flip-back restored the dialog-free default)", surf.fired())
+	}
+
+	results := toolResultsFor(t, s, gateCall1)
+	if len(results) != 2 {
+		t.Fatalf("deny-rule results = %d; want 2 (turn 1 ungated exec + turn 3 ungated deny)", len(results))
+	}
+
+	if !results[1].IsError {
+		t.Errorf("flip-back denial result = %+v; want an error result (deny still denies ungated)", results[1])
+	}
+}
