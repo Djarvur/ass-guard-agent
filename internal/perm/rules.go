@@ -225,22 +225,35 @@ func SplitMCPName(name string) (server, tool string, ok bool) { //nolint:nonamed
 // SplitCompound splits a shell command line into its subcommands on the CC
 // compound separators (&&, ||, ;, |, |&, and newlines), trimming whitespace
 // and dropping empty segments — every returned subcommand is matched
-// independently against the rule set.
+// independently against the rule set. The scan is QUOTE-AWARE (17-REVIEW
+// WR-02): separators inside single or double quotes split nothing ("git
+// commit -m \"fix a && b\"" is ONE subcommand, not two false compounds).
 func SplitCompound(cmd string) []string {
 	var subs []string
 
 	start := 0
 
+	var quote byte // 0 = unquoted; else the active quote character (' or ")
+
 	for i := 0; i < len(cmd); {
-		if n := separatorLen(cmd, i); n > 0 {
-			if sub := strings.TrimSpace(cmd[start:i]); sub != "" {
-				subs = append(subs, sub)
+		if quote == 0 {
+			switch c := cmd[i]; c {
+			case '\'', '"':
+				quote = c
+			default:
+				if n := separatorLen(cmd, i); n > 0 {
+					if sub := strings.TrimSpace(cmd[start:i]); sub != "" {
+						subs = append(subs, sub)
+					}
+
+					i += n
+					start = i
+
+					continue
+				}
 			}
-
-			i += n
-			start = i
-
-			continue
+		} else if cmd[i] == quote {
+			quote = 0
 		}
 
 		i++
@@ -253,8 +266,63 @@ func SplitCompound(cmd string) []string {
 	return subs
 }
 
+// hasSubstitution reports whether the command carries shell command
+// substitution — `$(...)` or backticks. Shell semantics honored to the extent
+// the guard needs (WR-02): substitution is LIVE inside double quotes and only
+// dead inside single quotes; an unquoted backslash escapes the next byte. The
+// guard is intentionally one-sided: a deny or ask rule still matches a
+// substitution-bearing command (deny stays strong), but an ALLOW never can —
+// the substitution's payload executes without appearing as a separate
+// subcommand, so allowing it would defeat the compound discipline ("an allow
+// must cover EVERY subcommand") with no separator anywhere in the visible
+// text.
+func hasSubstitution(cmd string) bool {
+	var quote byte // 0 = unquoted; '\'' = literal span; '"' = double-quote span
+
+	for i := 0; i < len(cmd); i++ {
+		c := cmd[i]
+
+		switch {
+		case quote == '\'':
+			if c == '\'' {
+				quote = 0
+			}
+		case quote == '"':
+			switch c {
+			case '"':
+				quote = 0
+			case '\\':
+				i++ // skip the escaped byte ("\" / "\$" are literal)
+			case '`':
+				return true
+			case '$':
+				if i+1 < len(cmd) && cmd[i+1] == '(' {
+					return true
+				}
+			}
+		case c == '\'':
+			quote = '\''
+		case c == '"':
+			quote = '"'
+		case c == '\\':
+			i++ // skip the escaped byte (a quoted separator, or an escaped \$)
+		case c == '`':
+			return true
+		case c == '$':
+			if i+1 < len(cmd) && cmd[i+1] == '(' {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
 // evaluateSingle scans the three lists in the fixed order; the first match
-// decides (D-02).
+// decides (D-02). The ALLOW scan is substitution-guarded (WR-02): an allow
+// never matches a command substitution — its payload would execute under the
+// allow without ever appearing as a split subcommand. Deny and ask scan the
+// raw subject (a deny that matches `rm $(x)` still denies).
 func (rs RuleSet) evaluateSingle(toolName, primaryArg string) Verdict {
 	for i := range rs.Deny {
 		if rs.Deny[i].matches(toolName, primaryArg) {
@@ -266,6 +334,10 @@ func (rs RuleSet) evaluateSingle(toolName, primaryArg string) Verdict {
 		if rs.Ask[i].matches(toolName, primaryArg) {
 			return VerdictAsk
 		}
+	}
+
+	if hasSubstitution(primaryArg) {
+		return Unmatched // fail safe: the dialog (or the mode decision) owns it
 	}
 
 	for i := range rs.Allow {
