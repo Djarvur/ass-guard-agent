@@ -649,3 +649,83 @@ func TestOpenRepairedHealthyFileUnchanged(t *testing.T) {
 		t.Errorf("Evaluate = %v; want VerdictDeny (the valid rule loaded)", got)
 	}
 }
+
+// TestOpenTightensLoosePerms (WR-04): Open on an EXISTING loose file and
+// directory tightens them to the 0600/0750 discipline — pre-fix only files the
+// store created or rewrote were hard, so a hand-created 0644 permissions.yaml
+// stayed world/group-readable indefinitely.
+func TestOpenTightensLoosePerms(t *testing.T) {
+	t.Parallel()
+
+	dir := filepath.Join(t.TempDir(), "ass-guard")
+
+	if merr := os.MkdirAll(dir, 0o777); merr != nil {
+		t.Fatalf("seed loose dir: %v", merr)
+	}
+
+	path := filepath.Join(dir, "permissions.yaml")
+
+	raw := []byte("deny:\n    - \"Bash(rm *)\"\n")
+
+	if werr := os.WriteFile(path, raw, 0o644); werr != nil {
+		t.Fatalf("seed loose file: %v", werr)
+	}
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	silenceStore(s)
+
+	info, serr := os.Stat(path)
+	if serr != nil {
+		t.Fatalf("Stat file: %v", serr)
+	}
+
+	if got := info.Mode().Perm(); got != filePermOwner {
+		t.Errorf("file perm after Open = %v; want %v (loose 0644 tightened)", got, filePermOwner)
+	}
+
+	dinfo, serr := os.Stat(dir)
+	if serr != nil {
+		t.Fatalf("Stat dir: %v", serr)
+	}
+
+	if got := dinfo.Mode().Perm(); got != dirPerm {
+		t.Errorf("dir perm after Open = %v; want %v (loose 0777 tightened)", got, dirPerm)
+	}
+
+	// The rules still load (the tighten never touches content).
+	if got := s.Rules().Evaluate(testToolBash, "rm x"); got != VerdictDeny {
+		t.Errorf("Evaluate = %v; want VerdictDeny (rules intact after tighten)", got)
+	}
+}
+
+// TestOpenKeepsTightPermsQuietShape (WR-04 scoping): an already-tight store
+// opens with the discipline unchanged (the tighten is a no-op).
+func TestOpenKeepsTightPermsQuietShape(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "permissions.yaml")
+
+	if werr := os.WriteFile(path, []byte("allow:\n    - \"Read\"\n"), filePermOwner); werr != nil {
+		t.Fatalf("seed tight file: %v", werr)
+	}
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	silenceStore(s)
+
+	info, serr := os.Stat(path)
+	if serr != nil {
+		t.Fatalf("Stat: %v", serr)
+	}
+
+	if got := info.Mode().Perm(); got != filePermOwner {
+		t.Errorf("file perm = %v; want %v", got, filePermOwner)
+	}
+}

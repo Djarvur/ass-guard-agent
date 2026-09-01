@@ -79,6 +79,13 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("perm: mkdir %q: %w", dir, err)
 	}
 
+	// WR-04: the 0600/0750 discipline is only automatic on files the store
+	// CREATES or REWRITES — an existing loose file (hand-created 0644, or a
+	// pre-phase 0755 directory) previously stayed loose forever, leaking the
+	// trust store's contents (which tools an operator denied) to other local
+	// users until the next dialog click rewrote the file. Tighten on load.
+	tightenPerm(dir, dirPerm)
+
 	_, err = os.Stat(path)
 	switch {
 	case os.IsNotExist(err):
@@ -93,9 +100,35 @@ func Open(path string) (*Store, error) {
 		if lerr != nil {
 			return nil, lerr
 		}
+
+		tightenPerm(path, filePermOwner)
 	}
 
 	return s, nil
+}
+
+// tightenPerm tightens path to want when its current permission bits are
+// LOOSER (WR-04). A correction is LOUD (structured warning); a stat or chmod
+// failure is logged and non-fatal — Open's own error paths own the fatal
+// cases.
+func tightenPerm(path string, want os.FileMode) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return
+	}
+
+	if info.Mode().Perm()&^want == 0 {
+		return // no bits looser than want
+	}
+
+	if cerr := os.Chmod(path, want); cerr != nil {
+		slog.Warn("perm: could not tighten loose permissions on the trust store",
+			"path", path, "want", want.String(), "error", cerr.Error())
+
+		return
+	}
+
+	slog.Warn("perm: tightened loose permissions on the trust store", "path", path, "mode", want.String())
 }
 
 // OpenRepaired opens the store with the WR-01 fail-safe for a corrupt
