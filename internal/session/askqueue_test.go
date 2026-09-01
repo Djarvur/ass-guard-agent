@@ -742,6 +742,106 @@ func TestAskQueueDrainAll(t *testing.T) { //nolint:funlen,paralleltest // full d
 		runtime.NumGoroutine(), baseline)
 }
 
+// TestAskQueueDrainResolvesAsync pins the CR-03 fix: the drain caller (the ACP
+// reader goroutine on the session/cancel path) must NOT block on the drained
+// entries' resolutions — each resolve is a full resumed model loop, and the
+// reader stalling on it freezes the whole connection. The QUEUED entry's drain
+// resolve runs on its own goroutine: the drain returns while the resolve is
+// still running, and the resolve completes afterwards.
+func TestAskQueueDrainResolvesAsync(t *testing.T) { //nolint:paralleltest // goroutine-leak baseline idiom
+	baseline := runtime.NumGoroutine()
+
+	q := NewAskQueue()
+
+	// The OPEN dialog of the dead turn: resolves through the fire-ctx cancel
+	// (the pump's normal completion path — unaffected by CR-03).
+	openEntry := &AskEntry{TurnID: queueTurn1, Class: AskClassForeground}
+	openEntry.fire = func(ctx context.Context) AskOutcome {
+		<-ctx.Done()
+
+		return AskOutcome{Cancelled: true}
+	}
+
+	resolvedOpen := make(chan AskOutcome, 1)
+
+	q.Enqueue(openEntry, func(_ *AskEntry, o AskOutcome) { resolvedOpen <- o })
+
+	// The QUEUED-but-unfired ask of the same turn: its fire must never run,
+	// and its resolve — a full resumed model loop — must not block the drain.
+	queuedFires := &qAtomic{}
+
+	resolveStarted := make(chan struct{})
+
+	release := make(chan struct{})
+
+	queuedEntry := &AskEntry{TurnID: queueTurn1, Class: AskClassForeground}
+	queuedEntry.fire = func(_ context.Context) AskOutcome {
+		queuedFires.add()
+
+		return AskOutcome{Selected: queueOption}
+	}
+
+	q.Enqueue(queuedEntry, func(_ *AskEntry, _ AskOutcome) {
+		close(resolveStarted)
+		<-release
+	})
+
+	gateWaitFor(t, func() bool { return q.Pending() == 1 })
+
+	drained := make(chan struct{})
+
+	go func() {
+		q.DrainTurn(queueTurn1)
+		close(drained)
+	}()
+
+	// The drain must return even though the queued resolve is still blocked —
+	// pre-fix, DrainTurn invoked the resolve synchronously and could not
+	// return before release (the reader goroutine stalled for a whole model
+	// turn).
+	select {
+	case <-resolveStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the drained resolve never started")
+	}
+
+	select {
+	case <-drained:
+	case <-time.After(2 * time.Second):
+		t.Fatal("DrainTurn blocked on the drained entry's resolution (CR-03: the reader goroutine stalls)")
+	}
+
+	close(release)
+
+	// The open dialog resolved cancelled through the ctx cascade, and the
+	// drained queued entry never fired (the zombie-ask ban).
+	select {
+	case o := <-resolvedOpen:
+		if !o.Cancelled {
+			t.Fatalf("open entry outcome = %+v; want cancelled", o)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the open entry never resolved after the drain")
+	}
+
+	if got := queuedFires.get(); got != 0 {
+		t.Fatalf("the drained queued entry fired %d time(s) — zombie ask (D-13 ban)", got)
+	}
+
+	// Clean teardown: the resolve goroutine exits (the leak-check idiom).
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if runtime.NumGoroutine() <= baseline+2 {
+			return
+		}
+
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	t.Errorf("goroutine leak: %d goroutines after the drained resolve exited; baseline was %d",
+		runtime.NumGoroutine(), baseline)
+}
+
 // TestGateTurnDeath pins criterion 2 end-to-end at the session level (D-13):
 // a gated turn suspends with the dialog open (held), a SECOND prompt's gated
 // ask queues behind it, and the teardown drain (the seam every teardown path

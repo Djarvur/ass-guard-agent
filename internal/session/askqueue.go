@@ -303,9 +303,20 @@ func (q *AskQueue) DrainTurn(turnID string) {
 		cancel()
 	}
 
+	// Each drained resolve runs on ITS OWN goroutine (17-REVIEW CR-03): a
+	// resolve is a full resume (append + a complete model loop — drained turns
+	// DO resume with the cancelled-normal result), and the drain is invoked
+	// from the ACP reader goroutine (session/cancel is dispatched inline by
+	// design). Resolving synchronously stalled the whole connection for the
+	// duration of every drained turn's model loop — no frames read, a second
+	// cancel or even teardown unprocessable. The session-stays-responsive
+	// contract (permissions-gate.md §5) holds by construction; the resolves
+	// themselves are serialized against turns by the session's resume
+	// serializer (CR-02), and the drain caller's ordering guarantees (the
+	// cancel-func invocation above) are untouched.
 	for _, qa := range drained {
 		if qa.resolve != nil {
-			qa.resolve(qa.entry, AskOutcome{Cancelled: true})
+			go qa.resolve(qa.entry, AskOutcome{Cancelled: true})
 		}
 	}
 }
