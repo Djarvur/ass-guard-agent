@@ -367,7 +367,16 @@ func (s *Session) suspendForPermission(turnID, callID, tool string, input json.R
 		payload = json.RawMessage(`{"tool":"unknown"}`)
 	}
 
-	_ = s.Manager.AppendAskSuspended(turnID, callID, payload)
+	// IN-03: the audit marker write is checked like every other transcript
+	// write in the suspension path — a silent failure here would proceed with
+	// no ask_suspended record and no diagnostics, degrading the resume-path
+	// reconstruction the projector relies on. A failure is LOUD but never
+	// blocks the suspension (the dialog still opens; the queue entry carries
+	// the identity).
+	if aErr := s.Manager.AppendAskSuspended(turnID, callID, payload); aErr != nil {
+		slog.Warn("permission gate: ask_suspended marker write failed",
+			"turnID", turnID, "callID", callID, "tool", tool, "error", aErr.Error())
+	}
 
 	entry := &AskEntry{
 		TurnID:    turnID,
