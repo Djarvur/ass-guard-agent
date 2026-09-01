@@ -1365,7 +1365,13 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 		},
 	}
 
-	permStore, permErr := perm.Open(filepath.Join(dir, ".ass-guard", "permissions.yaml"))
+	// 17-REVIEW WR-01: OpenRepaired fails SAFE on a corrupt document — the
+	// unreadable file is quarantined (.corrupt), the floor file recreated, and
+	// the degradation logged LOUDLY, so a hand-edit accident can never silently
+	// zero the trust store (a deny rule that simply stopped denying). A
+	// residual error here is environmental (mkdir/stat/create) — the session
+	// degrades rule-less with the loud log, exactly as before.
+	permStore, permErr := perm.OpenRepaired(filepath.Join(dir, ".ass-guard", "permissions.yaml"))
 	if permErr != nil {
 		log.Printf("ass-guard: permissions store disabled for %s (%v) — deny/allow rules UNENFORCED for this session",
 			dir, permErr)

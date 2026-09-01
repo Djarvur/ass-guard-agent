@@ -34,6 +34,15 @@ var renameFunc = os.Rename //nolint:gochecknoglobals // same-package test-inject
 // restricted to simple tool entries — richer rules stay hand-edit-only (D-01).
 var errNotSimpleEntry = errors.New("dialog writes are restricted to simple tool entries")
 
+// ErrCorrupt marks a DOCUMENT-level parse failure of an existing permissions
+// file (17-REVIEW WR-01). It is distinct from a malformed rule LINE (those are
+// skipped with a Warning — the tolerant hand-edit surface is about lines): a
+// corrupt document (a stray tab, a duplicate key, a truncated write) previously
+// degraded the session to "deny/allow rules UNENFORCED" silently — a deny rule
+// like Bash(rm *) simply stopped denying. The typed error is what OpenRepaired
+// keys the quarantine on; Open still returns it verbatim.
+var ErrCorrupt = errors.New("perm: corrupt permissions document")
+
 // fileEnvelope is the on-disk permissions.yaml envelope: three ordered lists
 // of CC-parity rule strings (D-02). The dialog writes only simple entries
 // into the allow/deny lists (D-01/D-03); richer rules are hand-edit-only but
@@ -87,6 +96,37 @@ func Open(path string) (*Store, error) {
 	}
 
 	return s, nil
+}
+
+// OpenRepaired opens the store with the WR-01 fail-safe for a corrupt
+// document: the unreadable file is QUARANTINED to "<path>.corrupt" (any prior
+// quarantine is replaced — the newest evidence wins), the floor 0600 file is
+// recreated so dialog writes still work, and the degradation is LOUD — the
+// operator's deny rules are not enforced until the file is restored. Only a
+// document-level parse failure takes the quarantine path (a recoverable,
+// known-cause state); environmental failures (mkdir/stat/create) and every
+// healthy open pass through unchanged.
+func OpenRepaired(path string) (*Store, error) {
+	s, err := Open(path)
+	if err == nil || !errors.Is(err, ErrCorrupt) {
+		return s, err
+	}
+
+	corrupt := path + ".corrupt"
+
+	if rmErr := os.Remove(corrupt); rmErr != nil && !os.IsNotExist(rmErr) {
+		return nil, fmt.Errorf("perm: clear stale quarantine %q: %w", corrupt, rmErr)
+	}
+
+	if rerr := os.Rename(path, corrupt); rerr != nil {
+		return nil, fmt.Errorf("perm: quarantine %q: %w", path, rerr)
+	}
+
+	slog.Error("perm: permissions file is corrupt — quarantined; "+
+		"DENY/ALLOW RULES ARE NOT ENFORCED for this session until the file is restored",
+		"file", path, "quarantined", corrupt)
+
+	return Open(path)
 }
 
 // Rules returns a parsed snapshot of the current rule set (copy-on-read —
@@ -175,7 +215,7 @@ func (s *Store) load() error {
 	if len(raw) > 0 {
 		uerr := yaml.Unmarshal(raw, &env)
 		if uerr != nil {
-			return fmt.Errorf("perm: parse %q: %w", s.path, uerr)
+			return fmt.Errorf("perm: parse %q: %w: %w", s.path, ErrCorrupt, uerr)
 		}
 	}
 

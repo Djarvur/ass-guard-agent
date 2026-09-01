@@ -533,3 +533,119 @@ func TestStoreFilePermHardAfterSave(t *testing.T) {
 		t.Errorf("file perm after save = %v; want %v", got, filePermOwner)
 	}
 }
+
+// corruptDocFixture is a DOCUMENT-level YAML parse failure (a tab indent —
+// invalid YAML everywhere), distinct from a malformed rule LINE (tolerated
+// with a Warning).
+const corruptDocFixture = "deny:\n\t- \"Write\"\n"
+
+// TestOpenCorruptDocumentTypedError (WR-01): a corrupt document is reported
+// through the typed ErrCorrupt sentinel — the key OpenRepaired's quarantine
+// branches on — while Open's behavior otherwise stays verbatim.
+func TestOpenCorruptDocumentTypedError(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "permissions.yaml")
+
+	if werr := os.WriteFile(path, []byte(corruptDocFixture), filePermOwner); werr != nil {
+		t.Fatalf("seed corrupt file: %v", werr)
+	}
+
+	_, err := Open(path)
+	if err == nil {
+		t.Fatal("Open succeeded on a corrupt document")
+	}
+
+	if !errors.Is(err, ErrCorrupt) {
+		t.Fatalf("error = %v; want it to wrap ErrCorrupt", err)
+	}
+}
+
+// TestOpenRepairedQuarantinesCorruptFile (WR-01, the fail-safe degrade): a
+// corrupt document is quarantined byte-intact to "<path>.corrupt", the floor
+// 0600 file is recreated (dialog writes work again), and the resulting store
+// is usable — never the silent rule-less session the raw parse failure used
+// to produce.
+func TestOpenRepairedQuarantinesCorruptFile(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	path := filepath.Join(dir, "permissions.yaml")
+
+	raw := []byte("deny:\n    - \"Bash(rm *)\"\nallow:\n    - \"Read\"\n" + corruptDocFixture)
+
+	if werr := os.WriteFile(path, raw, filePermOwner); werr != nil {
+		t.Fatalf("seed corrupt file: %v", werr)
+	}
+
+	s, err := OpenRepaired(path)
+	if err != nil {
+		t.Fatalf("OpenRepaired: %v", err)
+	}
+
+	silenceStore(s)
+
+	// The unreadable file was quarantined BYTE-INTACT (the operator's evidence).
+	quarantined, rerr := os.ReadFile(path + ".corrupt")
+	if rerr != nil {
+		t.Fatalf("quarantined file missing: %v", rerr)
+	}
+
+	if string(quarantined) != string(raw) {
+		t.Errorf("quarantined bytes differ from the original file")
+	}
+
+	// The floor file was recreated (0600) and dialog writes work.
+	if err := s.AllowTool(testToolWrite); err != nil {
+		t.Errorf("AllowTool on the recreated store: %v", err)
+	}
+
+	info, serr := os.Stat(path)
+	if serr != nil {
+		t.Fatalf("Stat recreated file: %v", serr)
+	}
+
+	if got := info.Mode().Perm(); got != filePermOwner {
+		t.Errorf("recreated file perm = %v; want %v", got, filePermOwner)
+	}
+
+	// The store starts from the floor (the old rules are quarantined, not
+	// loaded) — the LOUD quarantine log is what tells the operator to restore.
+	rs := s.Rules()
+	if got := rs.Evaluate(testToolBash, "rm x"); got != Unmatched {
+		t.Errorf("Evaluate after quarantine = %v; want Unmatched (floor store)", got)
+	}
+}
+
+// TestOpenRepairedHealthyFileUnchanged (WR-01 scoping): a healthy or
+// line-malformed file never takes the quarantine path — OpenRepaired behaves
+// exactly like Open.
+func TestOpenRepairedHealthyFileUnchanged(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	path := filepath.Join(dir, "permissions.yaml")
+
+	raw := []byte("deny:\n    - \"Wri te\"\n    - \"Write\"\n")
+
+	if werr := os.WriteFile(path, raw, filePermOwner); werr != nil {
+		t.Fatalf("seed file: %v", werr)
+	}
+
+	s, err := OpenRepaired(path)
+	if err != nil {
+		t.Fatalf("OpenRepaired on a line-malformed file: %v", err)
+	}
+
+	silenceStore(s)
+
+	if _, serr := os.Stat(path + ".corrupt"); !os.IsNotExist(serr) {
+		t.Error("a line-malformed (not document-corrupt) file was quarantined — scoping broken")
+	}
+
+	if got := s.Rules().Evaluate(testToolWrite, "x"); got != VerdictDeny {
+		t.Errorf("Evaluate = %v; want VerdictDeny (the valid rule loaded)", got)
+	}
+}
