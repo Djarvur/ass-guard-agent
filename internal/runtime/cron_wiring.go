@@ -150,6 +150,20 @@ func (r *Runner) runAutomationTurn(ctx context.Context, sessionID string, a *sch
 		return
 	}
 
+	// D-07's human-present signal (17-REVIEW CR-04): the firing brackets its
+	// turn with the automation-origin flag, so the gate treats EVERY ask-class
+	// call of this turn as human-absent — fail-safe DECLINE in both modes,
+	// never a dialog nobody would answer, and the decline note is the
+	// documented audit trail. Pre-fix the flag had zero production callers:
+	// cron turns opened foreground-classified dialogs that preempted real
+	// foreground asks and waited out the HUMAN-ASK window with nobody
+	// answering. Set/reset mirrors the provenance bracket below; the turn
+	// mutex is already held (this IS the turn), so no concurrent turn reads a
+	// half-bracketed state.
+	sess.SetTurnOriginAutomation(true)
+
+	defer sess.SetTurnOriginAutomation(false)
+
 	mu := r.sessionTurnMu(sessionID)
 
 	queued := !mu.TryLock()

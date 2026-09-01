@@ -2,14 +2,17 @@ package runtime //nolint:testpackage // internal package test
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
+	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/sched"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
+	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 )
 
 // The cron wiring battery (12-07 Task 2): queue-behind-active-turn, engine
@@ -293,6 +296,109 @@ func TestCronWiring_FireOnceCatchUp(t *testing.T) { //nolint:cyclop,funlen // fl
 		if l.Type == session.TypeUserMessage && strings.Contains(string(l.Content), "missed its window") {
 			t.Error("second restart re-fired the missed window — lastFired must make catch-up exactly-once")
 		}
+	}
+}
+
+// TestCronWiring_AutomationTurnDeclinesGatedAsk (17-REVIEW CR-04, the D-07
+// wiring pin): an automation firing against a GATED session must mark the
+// session's turn as automation-origin — ask-class calls DECLINE fail-safe
+// (the client-visible decline note + structured log) with ZERO surface
+// firings and zero queued dialogs. Pre-fix, SetTurnOriginAutomation had zero
+// production callers: cron turns were treated as human-present, opened
+// foreground-classified dialogs nobody would answer, and never landed the
+// documented decline note.
+func TestCronWiring_AutomationTurnDeclinesGatedAsk(t *testing.T) { //nolint:funlen // the full gated-firing chain
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	r, _, store := newCronRunner(t, dir,
+		scriptedResp{toolCalls: []provider.ToolCall{{
+			ID: "call_cron_w", Name: "Write", Input: json.RawMessage(`{"file_path":"x"}`),
+		}}},
+		scriptedResp{text: "the automation turn closed"},
+	)
+
+	// A mutating tool in the shared catalog (the session clone inherits it)
+	// makes the scripted call ask-class.
+	r.catalog.Register(toolcat.Tool{
+		Name:        "Write",
+		Mutability:  toolcat.MutabilityMutating,
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+		Execute: func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+			return json.RawMessage(`{"output":"written"}`), nil
+		},
+	})
+
+	r.SetPermMode(session.PermModeGated)
+
+	var fireMu sync.Mutex
+
+	fired := 0
+
+	r.SetPermissionAskFire(func(_ context.Context, _ *session.AskEntry) session.AskOutcome {
+		fireMu.Lock()
+		fired++
+		fireMu.Unlock()
+
+		return session.AskOutcome{}
+	})
+
+	// The overdue automation (the clock pin pattern of the queue-semantics test).
+	store.SetNow(func() time.Time { return time.Now().Add(-2 * time.Hour) })
+
+	_, err := store.Create(&sched.Automation{
+		Title: "cron gated", Prompt: "run the gated automation", Cron: "0 * * * *", Recurring: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	store.SetNow(time.Now)
+
+	// The firing target exists (sessionFor wires the gate onto the session).
+	sess := r.sessionFor(context.Background(), "sess-cron-gate")
+
+	r.fireDueAutomations(context.Background())
+
+	// THE D-07 pins: the decline note lands (never a dialog), the surface
+	// never fired, and no ask_suspended marker exists (no suspension, no
+	// zombie queue entry).
+	deadline := time.Now().Add(5 * time.Second)
+
+	sawDecline := false
+
+	for time.Now().Before(deadline) && !sawDecline {
+		lines, lerr := sess.Manager.ReadAll()
+		if lerr != nil {
+			t.Fatal(lerr)
+		}
+
+		for _, l := range lines {
+			if l.Type == session.TypeToolResult && strings.Contains(string(l.Output), "Permission declined") {
+				sawDecline = true
+			}
+
+			if l.Type == session.TypeAskSuspended {
+				t.Errorf("the automation turn suspended for a dialog (ask_suspended for %q) — "+
+					"D-07 requires a decline (CR-04: the automation flag was never set)", l.ToolCallID)
+			}
+		}
+
+		if !sawDecline {
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+
+	if !sawDecline {
+		t.Fatal("no Permission declined tool result — the gated ask-class call neither declined nor asked")
+	}
+
+	fireMu.Lock()
+	defer fireMu.Unlock()
+
+	if fired != 0 {
+		t.Errorf("permission surface fired %d time(s) on an automation turn; want 0 (never a dialog nobody answers)", fired)
 	}
 }
 
