@@ -204,7 +204,7 @@ func TestRegistryTimeoutFallback(t *testing.T) {
 
 	sink := &registrySink{}
 	stderr := &strings.Builder{}
-	reg := NewRegistry(sink, stderr, WithRegistryTimeouts(RegistryConfig{FastControlTimeout: 4 * time.Millisecond}))
+	reg := NewRegistry(sink, stderr, WithRegistryTimeouts(RegistryConfig{FastControlTimeout: testFastWindow}))
 
 	ch := make(chan registryOutcome, 1)
 
@@ -254,6 +254,15 @@ func TestRegistryTimeoutFallback(t *testing.T) {
 	}
 }
 
+// testFastWindow is the shrunken FAST-CONTROL window for the ladder tests.
+// 25ms (not the historical 4ms): under full-suite parallel load the test
+// goroutine's Deliver lost the race to the 8ms ladder twice (17-02, same
+// machine-load family as the 17-01 deferred flake — captured in
+// .planning/phases/17-permissions-elicitation/deferred-items.md), and the
+// extra margin cannot mask a real regression — the zero-retry proof sleeps
+// past two windows on either side of the D-14 boundary.
+const testFastWindow = 25 * time.Millisecond
+
 // TestRegistryRequestCancelledResponse proves the -32800 fast path: an error
 // response carrying CodeRequestCancelled resolves immediately as cancelled with
 // ZERO retries (exactly one outbound frame).
@@ -262,7 +271,7 @@ func TestRegistryRequestCancelledResponse(t *testing.T) {
 
 	sink := &registrySink{}
 	reg := NewRegistry(sink, &strings.Builder{},
-		WithRegistryTimeouts(RegistryConfig{FastControlTimeout: 4 * time.Millisecond}))
+		WithRegistryTimeouts(RegistryConfig{FastControlTimeout: testFastWindow}))
 
 	outcome := callAsync(reg, TimeoutFastControl)
 
@@ -280,7 +289,7 @@ func TestRegistryRequestCancelledResponse(t *testing.T) {
 		t.Fatalf("err = %v; want ErrRequestCancelled", oc.err)
 	}
 
-	time.Sleep(15 * time.Millisecond) // > two windows: prove no retry fired
+	time.Sleep(3 * testFastWindow) // > two windows: prove no retry fired
 
 	if got := sink.count(); got != 1 {
 		t.Errorf("outbound frames after -32800 = %d; want exactly 1 (no retry)", got)

@@ -1233,6 +1233,11 @@ func TestGatePermissionModeFlip(t *testing.T) { //nolint:funlen // one flow acro
 		t.Errorf("surface fired %d times; want 1 (flip-back restored the dialog-free default)", surf.fired())
 	}
 
+	// The resume chain settles asynchronously (the queue's pump may consume
+	// the next stream either side of prompt 3) — wait for the CONVERGED
+	// state: two call results, the second the ungated deny-rule denial.
+	gateWaitFor(t, func() bool { return len(toolResultsFor(t, s, gateCall1)) == 2 })
+
 	results := toolResultsFor(t, s, gateCall1)
 	if len(results) != 2 {
 		t.Fatalf("deny-rule results = %d; want 2 (turn 1 ungated exec + turn 3 ungated deny)", len(results))
