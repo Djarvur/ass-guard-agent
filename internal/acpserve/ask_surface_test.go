@@ -770,3 +770,159 @@ func TestAskSurfaceDispatchElicitation(t *testing.T) { //nolint:gocognit,gocyclo
 		}
 	})
 }
+
+// TestValidateElicitationContent pins the D-10 validator (T-17-11): the closed
+// subset — required presence, per-property type, enum/oneOf const membership
+// by EXACT string equality, array item-wise checks, minLength/maxLength by
+// RUNE count. No regexp, no Unicode normalization (the encoding edge).
+func TestValidateElicitationContent(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen,lll,maintidx // one table over the validation vocabulary
+	t.Parallel()
+
+	strSchema := func(extra string) acp.ElicitationSchema {
+		return acp.ElicitationSchema{
+			Type:       "object",
+			Properties: map[string]json.RawMessage{"q1": json.RawMessage(`{"type":"` + propTypeString + `","title":"T"` + extra + `}`)},
+			Required:   []string{"q1"},
+		}
+	}
+
+	t.Run("valid_single_string", func(t *testing.T) {
+		t.Parallel()
+
+		if v := ValidateElicitationContent(strSchema(``),
+			map[string]json.RawMessage{"q1": json.RawMessage(`"ok"`)}); v != "" {
+			t.Errorf("valid content flagged: %q", v)
+		}
+	})
+
+	t.Run("nil_content_missing_required", func(t *testing.T) {
+		t.Parallel()
+
+		if v := ValidateElicitationContent(strSchema(``), nil); v == "" {
+			t.Error("a null/absent content object must itself be a violation (missing required)")
+		}
+	})
+
+	t.Run("missing_required_property", func(t *testing.T) {
+		t.Parallel()
+
+		if v := ValidateElicitationContent(strSchema(``), map[string]json.RawMessage{}); v == "" {
+			t.Error("a missing required property must violate")
+		}
+	})
+
+	t.Run("wrong_type", func(t *testing.T) {
+		t.Parallel()
+
+		if v := ValidateElicitationContent(strSchema(``),
+			map[string]json.RawMessage{"q1": json.RawMessage(`true`)}); v == "" {
+			t.Error("a boolean value for a string property must violate")
+		}
+	})
+
+	t.Run("json_null_value_violates", func(t *testing.T) {
+		t.Parallel()
+
+		if v := ValidateElicitationContent(strSchema(``),
+			map[string]json.RawMessage{"q1": json.RawMessage(`null`)}); v == "" {
+			t.Error("a JSON null value must violate (null is not an ElicitationContentValue)")
+		}
+	})
+
+	t.Run("oneOf_membership_exact_equality", func(t *testing.T) {
+		t.Parallel()
+
+		oneOf := `,"oneOf":[{"const":"a","title":"a"},{"const":"b","title":"b"}]`
+
+		if v := ValidateElicitationContent(strSchema(oneOf),
+			map[string]json.RawMessage{"q1": json.RawMessage(`"a"`)}); v != "" {
+			t.Errorf("a listed const flagged: %q", v)
+		}
+
+		if v := ValidateElicitationContent(strSchema(oneOf),
+			map[string]json.RawMessage{"q1": json.RawMessage(`"c"`)}); v == "" {
+			t.Error("a value outside the oneOf consts must violate")
+		}
+	})
+
+	t.Run("length_bounds_rune_counted", func(t *testing.T) {
+		t.Parallel()
+
+		bounded := `,"minLength":2,"maxLength":5}`[1:]
+
+		schema := strSchema(bounded)
+
+		// "héllo" is 5 runes / 6 bytes — rune-count semantics accept it.
+		if v := ValidateElicitationContent(schema,
+			map[string]json.RawMessage{"q1": json.RawMessage(`"héllo"`)}); v != "" {
+			t.Errorf("5-rune value within maxLength flagged (byte counting?): %q", v)
+		}
+
+		if v := ValidateElicitationContent(schema,
+			map[string]json.RawMessage{"q1": json.RawMessage(`"abcdef"`)}); v == "" {
+			t.Error("a 6-rune value over maxLength must violate")
+		}
+
+		if v := ValidateElicitationContent(schema,
+			map[string]json.RawMessage{"q1": json.RawMessage(`"a"`)}); v == "" {
+			t.Error("a 1-rune value under minLength must violate")
+		}
+	})
+
+	t.Run("no_normalization_exact_bytes", func(t *testing.T) {
+		t.Parallel()
+
+		oneOf := `,"oneOf":[{"const":"café","title":"café"}]}`[1:]
+
+		schema := strSchema(oneOf)
+
+		// Different bytes, same meaning — WITHOUT normalization this violates.
+		if v := ValidateElicitationContent(schema,
+			map[string]json.RawMessage{"q1": json.RawMessage(`"café"`)}); v != "" {
+			t.Errorf("the exact const must pass: %q", v)
+		}
+
+		decomposed := "cafe\u0301" // e + combining acute — different bytes, same glyph
+		payload, _ := json.Marshal(decomposed)
+
+		if v := ValidateElicitationContent(schema,
+			map[string]json.RawMessage{"q1": payload}); v == "" {
+			t.Error("a decomposed-variant value must violate (no Unicode normalization)")
+		}
+	})
+
+	t.Run("array_itemwise_enum", func(t *testing.T) {
+		t.Parallel()
+
+		schema := acp.ElicitationSchema{
+			Type: "object",
+			Properties: map[string]json.RawMessage{"q1": json.RawMessage(
+				`{"type":"array","title":"T","items":{"type":"` + propTypeString + `","enum":["a","b"]}}`)},
+			Required: []string{"q1"},
+		}
+
+		if v := ValidateElicitationContent(schema,
+			map[string]json.RawMessage{"q1": json.RawMessage(`["a","b"]`)}); v != "" {
+			t.Errorf("listed items flagged: %q", v)
+		}
+
+		if v := ValidateElicitationContent(schema,
+			map[string]json.RawMessage{"q1": json.RawMessage(`["a","z"]`)}); v == "" {
+			t.Error("an item outside the enum must violate (item-wise)")
+		}
+
+		if v := ValidateElicitationContent(schema,
+			map[string]json.RawMessage{"q1": json.RawMessage(`["a",3]`)}); v == "" {
+			t.Error("a non-string item must violate")
+		}
+	})
+
+	t.Run("unknown_content_keys_ignored", func(t *testing.T) {
+		t.Parallel()
+
+		if v := ValidateElicitationContent(strSchema(``),
+			map[string]json.RawMessage{"q1": json.RawMessage(`"ok"`), "extra": json.RawMessage(`1`)}); v != "" {
+			t.Errorf("unknown content keys are ignored (never rendered): %q", v)
+		}
+	})
+}
