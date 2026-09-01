@@ -1017,7 +1017,7 @@ const chainIdlePollInterval = 10 * time.Millisecond
 var errPermissionAskSurfaceUnwired = errors.New("permission ask surface not wired")
 
 // sessionFor returns the Session for sessionID, creating it on first use.
-func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop // grouping keeps the turn pipeline together
+func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo // turn pipeline grouping
 	ctx context.Context, sessionID string,
 ) *session.Session {
 	// sessMu spans the WHOLE construction: a concurrent sessionFor for the
@@ -1295,6 +1295,16 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop // groupi
 	permDeps := session.GateDeps{
 		Mode:  r.PermMode,
 		Queue: session.NewAskQueue(),
+		// The MCP namespace resolver (Pitfall 7): canonicalize through
+		// 17-01's helpers — the catalog registers MCP tools under their full
+		// mcp__<server>__<tool> names, so the mapping is a rebuild + identity.
+		Subject: func(tool string) string {
+			if srv, tl, ok := perm.SplitMCPName(tool); ok {
+				return perm.MCPName(srv, tl)
+			}
+
+			return tool
+		},
 		Fire: func(e *session.AskEntry) session.AskOutcome {
 			if r.permAskFire == nil {
 				return session.AskOutcome{Err: errPermissionAskSurfaceUnwired}

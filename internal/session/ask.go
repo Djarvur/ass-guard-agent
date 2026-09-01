@@ -462,50 +462,7 @@ func (s *Session) resumePermissionAsk(ctx context.Context, p *PendingAsk, outcom
 		ctx = context.Background()
 	}
 
-	var result json.RawMessage
-
-	isErr := false
-
-	executed := false
-
-	switch {
-	case outcome.Err != nil:
-		// Fail-safe decline: surface failure / degraded client. The decline
-		// note IS the transcript line (loud structured family); the log rode
-		// the failure site.
-		result, isErr = permissionDeclineForm(p.Tool, outcome.Err.Error()), true
-
-		slog.Warn("permission ask failed — declining fail-safe (never a silent allow)",
-			"turnID", p.TurnID, "callID", p.CallID, "tool", p.Tool, "error", outcome.Err.Error())
-	case outcome.Cancelled:
-		// Cancelled-NORMAL (criterion 2's letter): NOT an error result.
-		result = permissionCancelledForm(p.Tool)
-	case outcome.Selected == permOptAllowAlways:
-		// Trust BEFORE execution: the rule write happens first; a write
-		// failure downgrades this click to once-only semantics (the ACP-01
-		// prohibition — never silently widen what the file could not record).
-		aerr := s.permissionPersistAllow(p.Tool)
-		if aerr != nil {
-			slog.Error("allow_always persist failed — the click degrades to once-only (never widening silently)",
-				"tool", p.Tool, "error", aerr.Error())
-		}
-
-		result, isErr = s.executeGatedCall(ctx, p)
-		executed = !isErr
-	case outcome.Selected == permOptAllowOnce:
-		result, isErr = s.executeGatedCall(ctx, p)
-		executed = !isErr
-	case outcome.Selected == permOptRejectOnce, outcome.Selected == permOptRejectAlways:
-		// reject_always' deny-rule persistence (D-03) rides the outcome
-		// matrix task; the denial result itself is here.
-		result, isErr = permissionDenyForm(p.Tool), true
-	default:
-		// An unknown option id is untrusted dialog input — fail-safe decline.
-		result, isErr = permissionDeclineForm(p.Tool, "the dialog returned an unknown option"), true
-
-		slog.Warn("permission ask returned an unknown option — declining fail-safe",
-			"turnID", p.TurnID, "callID", p.CallID, "tool", p.Tool, "selected", outcome.Selected)
-	}
+	result, isErr, executed := s.resolvePermissionOutcome(ctx, p, outcome)
 
 	s.appendToolResultLoud(p.TurnID, p.CallID, p.Tool, result, isErr)
 
@@ -531,6 +488,83 @@ func (s *Session) resumePermissionAsk(ctx context.Context, p *PendingAsk, outcom
 	}
 
 	return stop
+}
+
+// resolvePermissionOutcome maps one dialog outcome to the append-ready result
+// form (the 17-02 outcome matrix): Err → fail-safe decline (Unsupported marks
+// the sticky 16-D-18 degradation); cancelled → cancelled-NORMAL (never an
+// error); allow_always → persist-THEN-execute (the ACP-01 prohibition — a
+// persist failure downgrades the click to once-only with a loud log);
+// allow_once → execute; reject_once → denial with no rule written;
+// reject_always → persist the deny rule BEFORE the denial result (D-03);
+// anything else (untrusted dialog input) → fail-safe decline.
+func (s *Session) resolvePermissionOutcome(
+	ctx context.Context, p *PendingAsk, outcome AskOutcome,
+) (json.RawMessage, bool, bool) {
+	var (
+		result   json.RawMessage
+		isErr    bool
+		executed bool
+	)
+
+	switch {
+	case outcome.Err != nil:
+		// Fail-safe decline: surface failure / degraded client. The decline
+		// note IS the transcript line (loud structured family); the log rode
+		// the failure site. An UNSUPPORTED client (-32601) degrades STICKY
+		// for the session (16-D-18) — later asks decline without a new
+		// round-trip; a transient failure stays non-sticky.
+		if outcome.Unsupported {
+			s.markPermDegraded()
+		}
+
+		result, isErr = permissionDeclineForm(p.Tool, outcome.Err.Error()), true
+
+		slog.Warn("permission ask failed — declining fail-safe (never a silent allow)",
+			"turnID", p.TurnID, "callID", p.CallID, "tool", p.Tool, "error", outcome.Err.Error())
+	case outcome.Cancelled:
+		// Cancelled-NORMAL (criterion 2's letter): NOT an error result.
+		result = permissionCancelledForm(p.Tool)
+	case outcome.Selected == permOptAllowAlways:
+		// Trust BEFORE execution: the rule write happens first; a write
+		// failure downgrades this click to once-only semantics (the ACP-01
+		// prohibition — never silently widen what the file could not record).
+		aerr := s.permissionPersistAllow(p.Tool)
+		if aerr != nil {
+			slog.Error("allow_always persist failed — the click degrades to once-only (never widening silently)",
+				"tool", p.Tool, "error", aerr.Error())
+		}
+
+		result, isErr = s.executeGatedCall(ctx, p)
+		executed = !isErr
+	case outcome.Selected == permOptAllowOnce:
+		result, isErr = s.executeGatedCall(ctx, p)
+		executed = !isErr
+	case outcome.Selected == permOptRejectOnce:
+		// A one-time rejection writes NO rule — the next identical call asks
+		// again (D-01/D-03's no-persist direction).
+		result, isErr = permissionDenyForm(p.Tool), true
+	case outcome.Selected == permOptRejectAlways:
+		// D-03's other direction: the deny rule is persisted BEFORE the
+		// denial result lands, so the next matching call denies with no
+		// dialog. A persist failure still denies THIS call (loud log) —
+		// a failed write must never turn a rejection into an execution.
+		ferr := s.permissionPersistForbid(p.Tool)
+		if ferr != nil {
+			slog.Error("reject_always persist failed — the denial still lands, but the rule was not recorded",
+				"tool", p.Tool, "error", ferr.Error())
+		}
+
+		result, isErr = permissionDenyForm(p.Tool), true
+	default:
+		// An unknown option id is untrusted dialog input — fail-safe decline.
+		result, isErr = permissionDeclineForm(p.Tool, "the dialog returned an unknown option"), true
+
+		slog.Warn("permission ask returned an unknown option — declining fail-safe",
+			"turnID", p.TurnID, "callID", p.CallID, "tool", p.Tool, "selected", outcome.Selected)
+	}
+
+	return result, isErr, executed
 }
 
 // executeGatedCall runs the allowed call through the SAME execution path the

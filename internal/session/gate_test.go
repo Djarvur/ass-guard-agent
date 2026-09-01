@@ -610,7 +610,7 @@ func TestGateAskKindsParity(t *testing.T) {
 // again), reject_always persists the deny rule BEFORE the denial result (the
 // next matching call denies with NO dialog), and allow_once executes WITHOUT
 // persisting (no trust recorded).
-func TestGateOutcomeMatrix(t *testing.T) { //nolint:funlen // three full-loop subtests
+func TestGateOutcomeMatrix(t *testing.T) { //nolint:funlen,cyclop // three full-loop subtests
 	t.Parallel()
 
 	t.Run("reject_once denies and asks again", func(t *testing.T) {
@@ -656,11 +656,15 @@ func TestGateOutcomeMatrix(t *testing.T) { //nolint:funlen // three full-loop su
 			t.Fatalf("reject_once result = %+v; want exactly one error result", results)
 		}
 
-		if snaps := store.snapshotOrder(); len(snaps) != 0 {
-			t.Errorf("reject_once persisted %v; want no rule writes", snaps)
-		}
-
+		// The second dialog fires (the call asks AGAIN), its answer resolves,
+		// and ONLY the execution is recorded — no rule write in either
+		// direction.
 		gateWaitFor(t, func() bool { return surf.fired() == 2 })
+		gateWaitFor(t, func() bool { return len(store.snapshotOrder()) == 1 })
+
+		if snaps := store.snapshotOrder(); snaps[0] != "exec:"+gateToolWrite {
+			t.Errorf("reject_once order = %v; want no rule writes, just the second call's exec", snaps)
+		}
 	})
 
 	t.Run("reject_always persists deny before the denial", func(t *testing.T) {
@@ -691,10 +695,9 @@ func TestGateOutcomeMatrix(t *testing.T) { //nolint:funlen // three full-loop su
 		close(block)
 
 		// The deny rule is persisted BEFORE the denial result (D-03), and the
-		// follow-up matching call DENIES with NO dialog.
-		gateWaitFor(t, func() bool {
-			return len(store.snapshotOrder()) == 2 // forbid + exec? no — forbid only
-		})
+		// follow-up matching call DENIES with NO dialog (so the order slice
+		// ends at exactly the one forbid write).
+		gateWaitFor(t, func() bool { return len(store.snapshotOrder()) == 1 })
 
 		order := store.snapshotOrder()
 		if len(order) != 1 || order[0] != "forbid:"+gateToolWrite {
@@ -763,10 +766,12 @@ func TestGateOutcomeMatrix(t *testing.T) { //nolint:funlen // three full-loop su
 // turn (no human present) an ask-class call DECLINES with a client-visible
 // transcript note + structured log — in BOTH modes — while deny and allow
 // rules stay enforced. The human-turn control case DOES suspend.
-func TestGateAutomationDecline(t *testing.T) { //nolint:funlen // the four-row matrix reads as one flow
+func TestGateAutomationDecline(t *testing.T) { //nolint:funlen,gocognit,cyclop,gocyclo // the four-row matrix
 	t.Parallel()
 
-	newAutomationCase := func(t *testing.T, mode string, automation bool, deny []string) (*Session, *fakePermStore, *fakeGateSurface) {
+	newAutomationCase := func(
+		t *testing.T, mode string, automation bool, deny []string,
+	) (*Session, *fakePermStore, *fakeGateSurface) {
 		t.Helper()
 
 		store := &fakePermStore{deny: deny}
@@ -855,7 +860,7 @@ func TestGateAutomationDecline(t *testing.T) { //nolint:funlen // the four-row m
 			results := toolResultsFor(t, s, gateCall1)
 			if len(results) != 1 || !results[0].IsError ||
 				!strings.Contains(string(results[0].Output), "Permission denied") {
-				t.Fatalf("deny-on-automation result = %+v; want the DENIED form (rules run before the decline)", results)
+				t.Fatalf("deny-on-automation result = %+v; want the DENIED form", results)
 			}
 
 			if surf.fired() != 0 {
@@ -1003,7 +1008,7 @@ func TestGateDegradedClient(t *testing.T) { //nolint:funlen // two full-loop sub
 			{FinishReason: stopEndTurn},
 		}, PermModeGated, store, surf)
 
-		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+		_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
 		if err != nil {
 			t.Fatalf("Prompt: %v", err)
 		}
@@ -1028,7 +1033,7 @@ var (
 // mcp__server__tool name (via 17-01's MCPName/SplitMCPName) — a rule written
 // in that namespace matches, and a bare-server rule selects the whole
 // namespace. Both directions of the mapping are pinned.
-func TestGateMCPNamespace(t *testing.T) { //nolint:funlen // the mapping table reads as one flow
+func TestGateMCPNamespace(t *testing.T) { //nolint:funlen,cyclop // the mapping table reads as one flow
 	t.Parallel()
 
 	const (
@@ -1071,6 +1076,7 @@ func TestGateMCPNamespace(t *testing.T) { //nolint:funlen // the mapping table r
 		t.Helper()
 
 		store := &fakePermStore{}
+
 		switch ruleList {
 		case "deny":
 			store.deny = []string{rule}
@@ -1111,7 +1117,7 @@ func TestGateMCPNamespace(t *testing.T) { //nolint:funlen // the mapping table r
 		}
 
 		if stop != stopEndTurn || surf.fired() != 0 {
-			t.Fatalf("stop=%q fired=%d; want end_turn with zero dialogs (the namespace allow matched)", stop, surf.fired())
+			t.Fatalf("stop=%q fired=%d; want end_turn, zero dialogs (allow matched)", stop, surf.fired())
 		}
 
 		if order := store.snapshotOrder(); len(order) != 1 || order[0] != "exec:"+mcpFullName {

@@ -67,6 +67,9 @@ var errPermissionStoreUnwired = errors.New("permission store not wired")
 // client-visible note.
 const declineNoHumanReason = "no human is present to approve it (automation turn)"
 
+// declineDegradedReason names the degraded-client decline cause (16-D-18).
+const declineDegradedReason = "the connected client cannot answer permission asks"
+
 // gateAction is the chokepoint's verdict for one tool call.
 type gateAction uint8
 
@@ -124,6 +127,10 @@ type GateDeps struct {
 	// one-outstanding discipline; the broker's single-slot discipline
 	// demoted to the queue's fired-head invariant).
 	Queue *AskQueue
+	// Subject resolves the rule-matching subject for one call — the injected
+	// MCP namespace resolver built on perm.MCPName/perm.SplitMCPName
+	// (Pitfall 7). nil = the same canonicalization inline.
+	Subject func(tool string) string
 }
 
 // SetPermissionGate wires the chokepoint (nil-unset fields degrade per their
@@ -183,16 +190,11 @@ func (s *Session) gateCall(turnID, callID, tool string, input json.RawMessage) g
 		}
 	}
 
-	// ── Step 3: the mode decision for the dialog set (D-05/D-06).
-	if s.gateMode() != PermModeGated {
-		// Ungated (the default): the ask step evaluated the rules and returns
-		// allow WITHOUT a dialog — criterion 4's zero-new-dialogs default.
-		return gateVerdict{action: gateExecute}
-	}
-
-	// ── Step 4: the human-present decision (D-07). An automation turn NEVER
-	// opens a dialog nobody would answer: fail-safe decline, deny/allow rules
-	// already enforced above.
+	// ── Step 3: the human-present decision (D-07). An automation turn NEVER
+	// opens a dialog nobody would answer — in BOTH modes (ungated included):
+	// fail-safe decline, deny/allow rules already enforced above. The decline
+	// note is the transcript line (the audit trail visible in the next
+	// foreground session); the structured log rode the decision.
 	if s.automationTurn.Load() {
 		slog.Warn("permission gate: ask-class call declined on an automation turn (D-07 fail-safe)",
 			"turnID", turnID, "callID", callID, "tool", tool)
@@ -203,9 +205,30 @@ func (s *Session) gateCall(turnID, callID, tool string, input json.RawMessage) g
 		}
 	}
 
-	// Gated + human turn: suspend. The session site records the pending ask,
-	// enqueues on the ask queue, and ends the turn with the ask marker — the
-	// turn mutex is released; the dialog answer drives the resume.
+	// ── Step 4: the mode decision for the dialog set (D-05/D-06).
+	if s.gateMode() != PermModeGated {
+		// Ungated (the default): the ask step evaluated the rules and returns
+		// allow WITHOUT a dialog — criterion 4's zero-new-dialogs default.
+		return gateVerdict{action: gateExecute}
+	}
+
+	// ── Step 5: the degraded-client guard (16-D-18). A client that answered
+	// -32601 once cannot answer permission asks at all — decline sticky, no
+	// new round-trip, never a silent allow.
+	if s.permDegraded() {
+		slog.Warn("permission gate: ask-class call declined on a degraded (non-ask-capable) client",
+			"turnID", turnID, "callID", callID, "tool", tool)
+
+		return gateVerdict{
+			action: gateDeclineAutomation,
+			result: permissionDeclineForm(tool, declineDegradedReason),
+		}
+	}
+
+	// Gated + human turn + capable client: suspend. The session site records
+	// the pending ask, enqueues on the ask queue, and ends the turn with the
+	// ask marker — the turn mutex is released; the dialog answer drives the
+	// resume.
 	return gateVerdict{action: gateSuspend}
 }
 
@@ -238,15 +261,29 @@ func (s *Session) gateAskClass(tool string) bool {
 	return t.IsMutating() || !t.IsConcurrencySafe()
 }
 
-// ruleSubject resolves the rule-matching subject for one call: the catalog
-// tool name. MCP tools are cataloged under their full mcp__<server>__<tool>
-// namespace (internal/mcp Host.Register), so the D-02 namespace maps
-// identity-side; bare mcp__<server> rules match the whole server through the
-// grammar's namespace prefix rule (17-01). The host-knowledge reverse mapping
-// (RESEARCH Pitfall 7) rides the injected resolver in the namespace task.
+// ruleSubject resolves the rule-matching subject for one call through the
+// injected namespace resolver; the default canonicalizes MCP names through
+// perm.MCPName/perm.SplitMCPName (identity for non-MCP tools — the catalog
+// already registers MCP tools under their full mcp__<server>__<tool>
+// namespace, Pitfall 7).
 func (s *Session) ruleSubject(tool string) string {
+	if s.gate != nil && s.gate.Subject != nil {
+		return s.gate.Subject(tool)
+	}
+
+	if server, tl, ok := perm.SplitMCPName(tool); ok {
+		return perm.MCPName(server, tl)
+	}
+
 	return tool
 }
+
+// markPermDegraded records the sticky -32601 degradation for the session
+// (16-D-18): every later gated ask declines without a new surface round-trip.
+func (s *Session) markPermDegraded() { s.permDegradedFlag.Store(true) }
+
+// permDegraded reports the sticky degradation.
+func (s *Session) permDegraded() bool { return s.permDegradedFlag.Load() }
 
 // gateDialogKind derives the dialog card's tool kind from the catalog class
 // (the ToolCallUpdate shape's optional kind): mutating → edit, else execute.
@@ -363,6 +400,16 @@ func (s *Session) permissionPersistAllow(tool string) error {
 	}
 
 	return s.gate.Allow(tool)
+}
+
+// permissionPersistForbid records a reject_always click (D-03) through the
+// injected store writer — BEFORE the denial result lands.
+func (s *Session) permissionPersistForbid(tool string) error {
+	if s.gate == nil || s.gate.Forbid == nil {
+		return errPermissionStoreUnwired
+	}
+
+	return s.gate.Forbid(tool)
 }
 
 // permissionDenyForm renders the structured denial result (isErr=true): a

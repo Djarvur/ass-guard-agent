@@ -46,6 +46,11 @@ type AskOutcome struct {
 	// replies). The ask routes to the fail-safe decline — never a silent
 	// allow, never a retry storm.
 	Err error
+	// Unsupported marks the -32601 degrade family (the client cannot answer
+	// this ask method at all): the session records the degradation STICKY for
+	// the session (16-D-18) so later asks decline without a new round-trip.
+	// A plain Err (timeout, transient transport failure) is not sticky.
+	Unsupported bool
 }
 
 // AskEntry is one queued ask. The enqueue site fills the identity fields and

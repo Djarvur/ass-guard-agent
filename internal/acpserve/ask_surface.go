@@ -124,12 +124,15 @@ func (p *PermissionAsk) Fire(e *session.AskEntry) session.AskOutcome {
 	if msg.Error != nil {
 		if msg.Error.Code == acp.CodeMethodNotFound {
 			// A pre-permission client answers -32601 (the 16-D-18 degrade
-			// family): Err → decline-with-note; the session records the
-			// degradation sticky for the session.
+			// family): Err+Unsupported → decline-with-note; the session
+			// records the degradation sticky for the session.
 			p.log.Printf("client does not implement %s (-32601) — failing safe (decline, sticky)",
 				acp.MethodRequestPermission)
 
-			return session.AskOutcome{Err: fmt.Errorf("%w (-32601)", errPermissionUnsupported)}
+			return session.AskOutcome{
+				Err:         fmt.Errorf("%w (-32601)", errPermissionUnsupported),
+				Unsupported: true,
+			}
 		}
 
 		return session.AskOutcome{Err: fmt.Errorf("%w: code %d: %s",

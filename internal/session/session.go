@@ -134,6 +134,11 @@ type Session struct {
 	// it. The gate reads it per call.
 	automationTurn atomic.Bool
 
+	// permDegradedFlag is the sticky 16-D-18 degradation for permission asks:
+	// once the client answers -32601, every later gated ask declines without
+	// a new surface round-trip (never a silent allow, never a retry storm).
+	permDegradedFlag atomic.Bool
+
 	closeOnce sync.Once
 
 	turnCounter atomic.Int64
