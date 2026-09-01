@@ -373,7 +373,8 @@ func (s *Session) suspendForPermission(turnID, callID, tool string, input json.R
 	// reconstruction the projector relies on. A failure is LOUD but never
 	// blocks the suspension (the dialog still opens; the queue entry carries
 	// the identity).
-	if aErr := s.Manager.AppendAskSuspended(turnID, callID, payload); aErr != nil {
+	aErr := s.Manager.AppendAskSuspended(turnID, callID, payload)
+	if aErr != nil {
 		slog.Warn("permission gate: ask_suspended marker write failed",
 			"turnID", turnID, "callID", callID, "tool", tool, "error", aErr.Error())
 	}

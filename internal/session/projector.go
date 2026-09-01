@@ -168,16 +168,7 @@ func splitAtResetBoundary(lines []Line, turnID string) (before, after []Line) {
 // tool_result would break the provider's tool_use/tool_result pairing
 // invariant.
 func accumulateMidTurn(lines []Line, turnID string) []provider.Message {
-	// The anchor is the current turn's user_message ONLY (between-turn reset,
-	// SESS-04 revised 08-09): boundary lines are audit markers + the NEXT
-	// turn's reset point, never the producing turn's wipe.
-	anchor := 0
-
-	for i := range lines {
-		if lines[i].Type == TypeUserMessage && lines[i].TurnID == turnID {
-			anchor = i + 1
-		}
-	}
+	anchor := turnAnchorOf(lines, turnID)
 
 	// CR-01 pair-safety pre-scan: the call ids that DO have a tool_result in
 	// the window. A multi-call batch can be only PARTIALLY answered at resume
@@ -186,13 +177,7 @@ func accumulateMidTurn(lines []Line, turnID string) []provider.Message {
 	// hand the provider an unpaired tool_use block and the request would be
 	// rejected. Only ANSWERED calls are projected; a call's tool_use rejoins
 	// the batch at the projection after its own resume lands its result.
-	hasResult := make(map[string]bool)
-
-	for i := anchor; i < len(lines); i++ {
-		if lines[i].TurnID == turnID && lines[i].Type == TypeToolResult {
-			hasResult[lines[i].ToolCallID] = true
-		}
-	}
+	hasResult := resultIDsOf(lines, anchor, turnID)
 
 	var (
 		out     []provider.Message
@@ -251,6 +236,36 @@ func accumulateMidTurn(lines []Line, turnID string) []provider.Message {
 	flushBatch()
 
 	return out
+}
+
+// turnAnchorOf returns the accumulate anchor: just past the current turn's
+// user_message (between-turn reset, SESS-04 revised 08-09) — boundary lines
+// are audit markers + the NEXT turn's reset point, never the producing turn's
+// wipe.
+func turnAnchorOf(lines []Line, turnID string) int {
+	anchor := 0
+
+	for i := range lines {
+		if lines[i].Type == TypeUserMessage && lines[i].TurnID == turnID {
+			anchor = i + 1
+		}
+	}
+
+	return anchor
+}
+
+// resultIDsOf returns the set of call ids carrying a tool_result line in the
+// current turn's window from anchor (the CR-01 projection pair-safety set).
+func resultIDsOf(lines []Line, anchor int, turnID string) map[string]bool {
+	hasResult := make(map[string]bool)
+
+	for i := anchor; i < len(lines); i++ {
+		if lines[i].TurnID == turnID && lines[i].Type == TypeToolResult {
+			hasResult[lines[i].ToolCallID] = true
+		}
+	}
+
+	return hasResult
 }
 
 // plainContent renders a tool-result Output as the model-visible Content

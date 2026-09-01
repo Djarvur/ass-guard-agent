@@ -1577,12 +1577,29 @@ func TestAskWiring_ElicitationQueueRoundTrip(t *testing.T) { //nolint:funlen,cyc
 	}
 
 	// The resumed turn streamed through the provider (two stream calls total).
-	prov.mu.Lock()
-	streams := prov.calls
-	prov.mu.Unlock()
+	// The result append and the first Stream are sequential WITHIN the resume,
+	// but this test observes them through independent polls — under a loaded
+	// -race run the result can be seen before the stream counter is (the
+	// repo's known flake family), so wait for the stream rather than assume
+	// its ordering against the previous ReadAll.
+	deadline := time.Now().Add(5 * time.Second)
 
-	if streams != 2 {
-		t.Errorf("provider stream calls = %d; want 2 (suspend + resumed turn)", streams)
+	var streams int
+
+	for {
+		prov.mu.Lock()
+		streams = prov.calls
+		prov.mu.Unlock()
+
+		if streams >= 2 {
+			break
+		}
+
+		if time.Now().After(deadline) {
+			t.Fatalf("provider stream calls = %d; want 2 (suspend + resumed turn)", streams)
+		}
+
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
