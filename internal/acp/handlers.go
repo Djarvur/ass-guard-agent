@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-
-	"github.com/Djarvur/ass-guard-agent/internal/redact"
 )
 
 const asciiDelete = 0x40
@@ -568,8 +566,6 @@ func (s *Server) handleLogout(ctx context.Context, params json.RawMessage) (any,
 // mode; this is a no-op that returns an empty result (forward-compatible with a
 // future plan-mode / act-mode split).
 func (s *Server) handleSessionSetMode(ctx context.Context, params json.RawMessage) (any, error) {
-	_ = redact.ScrubError(nil) // keep redact import live for future scrubbing here
-
 	return map[string]any{}, nil
 }
 
