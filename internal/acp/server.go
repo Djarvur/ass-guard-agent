@@ -215,10 +215,6 @@ const (
 	CapabilityDegraded                 // probe failed (-32601/cancelled/ladder) — sticky, no re-probe (D-18)
 )
 
-// capElicitationForm is the capability key of the D-13 probe subject (form
-// elicitation support — Phase 17's ask surfaces consult it).
-const capElicitationForm = "elicitation.form"
-
 // capabilityCache is the D-13/D-18 sticky per-connection capability cache:
 // negotiation happens ONCE (advertisement at initialize, else one probe) and
 // a result — ok or degraded — STAYS for the connection lifetime. No flapping,

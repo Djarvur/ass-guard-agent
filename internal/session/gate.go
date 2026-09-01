@@ -384,7 +384,7 @@ func (s *Session) suspendForPermission(turnID, callID, tool string, input json.R
 	}
 
 	deps.Queue.Enqueue(entry, func(_ *AskEntry, outcome AskOutcome) {
-		s.resumePermissionAsk(s.askResumeCtx, &p, outcome)
+		s.resumePermissionAsk(s.askResumeCtx, &p, &outcome)
 	})
 }
 

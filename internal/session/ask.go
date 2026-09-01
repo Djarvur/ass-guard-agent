@@ -289,6 +289,13 @@ func (b *AskBroker) stopTimerLocked() {
 	}
 }
 
+// StructuredPropertyKey is the STABLE derived property key for the i-th
+// question of an ask (17-04, D-08): q1, q2, … — deterministic, shared by the
+// form builder (internal/acpserve) and the structured-reply seam (the accept
+// content map is keyed by these), so property order is question order on both
+// sides of the wire.
+func StructuredPropertyKey(i int) string { return fmt.Sprintf("q%d", i+1) }
+
 // RenderAskAnswered renders the CAPTURED answered form (re-pinned by the
 // 12-05 re-record, 2026-08-20, sess_6e4b5cc7, zcode 0.16.3 — 15 observations;
 // provenance recorded in internal/coreexec/testdata/zcode-interactive-results.json):
@@ -457,7 +464,7 @@ func marshalAskForm(form string) json.RawMessage {
 // returns (the 13-00 discipline).
 //
 //nolint:contextcheck // the queue passes the stored serve-lifetime ctx
-func (s *Session) resumePermissionAsk(ctx context.Context, p *PendingAsk, outcome AskOutcome) string {
+func (s *Session) resumePermissionAsk(ctx context.Context, p *PendingAsk, outcome *AskOutcome) string {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -499,7 +506,7 @@ func (s *Session) resumePermissionAsk(ctx context.Context, p *PendingAsk, outcom
 // reject_always → persist the deny rule BEFORE the denial result (D-03);
 // anything else (untrusted dialog input) → fail-safe decline.
 func (s *Session) resolvePermissionOutcome(
-	ctx context.Context, p *PendingAsk, outcome AskOutcome,
+	ctx context.Context, p *PendingAsk, outcome *AskOutcome,
 ) (json.RawMessage, bool, bool) {
 	var (
 		result   json.RawMessage

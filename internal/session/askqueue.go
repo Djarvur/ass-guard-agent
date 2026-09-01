@@ -69,6 +69,25 @@ type AskOutcome struct {
 	// the session (16-D-18) so later asks decline without a new round-trip.
 	// A plain Err (timeout, transient transport failure) is not sticky.
 	Unsupported bool
+	// Elicit is the elicitation-family action (17-04): "accept" or "decline"
+	// (cancel rides Cancelled; a degraded surface rides Fallback). Wire
+	// parity with the acp constants is pinned by test.
+	Elicit string
+	// Content is the accept payload's raw content map (17-04) — UNTRUSTED
+	// input; the D-10 validator re-checks it against the requested schema
+	// before anything consumes it.
+	Content map[string]json.RawMessage
+	// Violation is the D-10 schema violation of an INVALID accept payload
+	// (17-04, validated by the surface against the requested schema): empty
+	// when the content is valid; non-empty, the resolution re-asks ONCE with
+	// the violation named, then routes to the non-answer.
+	Violation string
+	// Fallback marks the plain-text degraded surface (17-04): the ask's
+	// plain-text form was published instead of a structured round-trip. For
+	// question-family asks the queue entry then resolves WITHOUT driving any
+	// resume — the broker's reply routing + D-01 timer own the ask, exactly
+	// the v1.1 path.
+	Fallback bool
 }
 
 // AskEntry is one queued ask. The enqueue site fills the identity fields and
@@ -87,6 +106,17 @@ type AskEntry struct {
 	// Class is the D-11 priority class; Seq the FIFO order within it.
 	Class AskClass
 	Seq   uint64
+	// Note is the D-10 re-ask annotation (17-04): the previous attempt's
+	// schema violation, named in the re-ask's form message. Empty on a first
+	// ask.
+	Note string
+	// PlainTextFallback marks an ask whose degraded plain-text surface can
+	// still be ANSWERED (question-family asks — the broker's reply routing +
+	// D-01 timer own them), so the surface publishes the question text on
+	// degrade. Asks that no plain-text reply can resolve (engine asks —
+	// their landing is the caller's advisory note) carry false and the
+	// surface skips the dead-end publish.
+	PlainTextFallback bool
 
 	// fire performs the surface round-trip (assigned by the enqueue site from
 	// GateDeps.Fire; nil = unwirable surface → fail-safe Err outcome). The

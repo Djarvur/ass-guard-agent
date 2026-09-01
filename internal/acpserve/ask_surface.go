@@ -20,8 +20,11 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strings"
+	"sync"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
+	"github.com/Djarvur/ass-guard-agent/internal/coreexec"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
 )
 
@@ -165,4 +168,423 @@ func (p *PermissionAsk) Fire(ctx context.Context, e *session.AskEntry) session.A
 
 		return session.AskOutcome{Err: fmt.Errorf("%w %q", errPermissionOutcomeUnknown, of.Outcome)}
 	}
+}
+
+// --- 17-04 elicitation surface (ACP-02, D-08/D-09): the D-08 typed mapping
+// from AskQuestion shapes to ElicitationSchema properties, and the
+// capability-gated dispatcher — sticky elicitation-form capability (16-D-13/
+// D-18) → elicitation/create under HUMAN-ASK; degraded → today's plain-text
+// path verbatim (the v1.1 route is the FALLBACK, not the primary). ---
+
+// Wire-verbatim property-variant shapes (the D-08 mapping builds exactly
+// these; the MCP-legacy enumNames key never appears — RFD ban). Field names
+// pinned against schema/v1 ElicitationPropertySchema variants.
+
+// elicChoiceOption is one titled const of a single-select oneOf (or a
+// multi-select items.anyOf): the option label is the const AND the title —
+// the enum names are the labels, never a separate name table.
+type elicChoiceOption struct {
+	Const       string `json:"const"`
+	Title       string `json:"title,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+// propTypeString is the JSON-schema string type discriminator (shared by the
+// builder variants and their goldens).
+const propTypeString = "string"
+
+// elicStringProp is the string property variant: free-text when OneOf is
+// empty, a single-select enum otherwise ("When enum or oneOf is set, this
+// represents a single-select enum").
+type elicStringProp struct {
+	Type  string             `json:"type"`
+	Title string             `json:"title,omitempty"`
+	OneOf []elicChoiceOption `json:"oneOf,omitempty"` //nolint:tagliatelle // ACP wire field
+}
+
+// elicBoolProp is the boolean property variant (ONLY when the client
+// advertised boolean support — D-08's conservative gate).
+type elicBoolProp struct {
+	Type  string `json:"type"`
+	Title string `json:"title,omitempty"`
+}
+
+// elicItemsEnum is a multi-select's items without per-option descriptions.
+type elicItemsEnum struct {
+	Type string   `json:"type"`
+	Enum []string `json:"enum"`
+}
+
+// elicItemsAnyOf is a multi-select's items WITH descriptions (the RFD's
+// "anyOf for titled multi-select").
+type elicItemsAnyOf struct {
+	AnyOf []elicChoiceOption `json:"anyOf"` //nolint:tagliatelle // ACP wire field
+}
+
+// elicArrayProp is the array property variant ("Multi-select enums use the
+// Array variant").
+type elicArrayProp struct {
+	Type  string `json:"type"`
+	Title string `json:"title,omitempty"`
+	Items any    `json:"items"` // elicItemsEnum | elicItemsAnyOf
+}
+
+// isBooleanAsk reports whether a question is a BOOLEAN ask (17-04, D-08): a
+// single-choice question whose two option labels are exactly yes/no
+// (case-insensitive). The captured AskQuestion schema carries no boolean flag,
+// so the authored yes/no pair is the pinned convention; anything else maps per
+// its own row of the D-08 table.
+func isBooleanAsk(q session.AskQuestion) bool {
+	if q.MultiSelect || len(q.Options) != 2 {
+		return false
+	}
+
+	return strings.EqualFold(q.Options[0].Label, "yes") && strings.EqualFold(q.Options[1].Label, "no")
+}
+
+// elicitationMessage composes the request message: the question text(s)
+// verbatim (the D-08 row "the question text lands in the request message"),
+// prefixed by the D-10 re-ask note when one rides the entry.
+func elicitationMessage(qs []session.AskQuestion, note string) string {
+	texts := make([]string, 0, len(qs))
+	for _, q := range qs {
+		texts = append(texts, q.Question)
+	}
+
+	msg := strings.Join(texts, " · ")
+	if note != "" {
+		msg = "previous answer invalid: " + note + " — " + msg
+	}
+
+	return msg
+}
+
+// mustPropJSON marshals a built property variant. Marshaling these plain
+// structs cannot fail; the fallback keeps the schema valid regardless.
+func mustPropJSON(v any) json.RawMessage {
+	out, err := json.Marshal(v)
+	if err != nil {
+		return json.RawMessage(`{"type":"` + propTypeString + `"}`)
+	}
+
+	return out
+}
+
+// BuildElicitationForm builds the elicitation/create frame for one ask (THE
+// D-08 mapping; must_haves' frame builder). Every ask kind has a defined
+// rendering: single-choice → string property with oneOf titled consts;
+// multiSelect → array property (items enum, anyOf-titled when descriptions
+// exist); free-text / empty-Options → string property; boolean ask → boolean
+// property ONLY when boolAdvertised, else a two-value string oneOf. Headers
+// become property titles; the question text lands in the message; N questions
+// → N properties (stable keys q1..qN, session.StructuredPropertyKey), every
+// one required. The builder consumes exactly the AskQuestion slice + the
+// capability bit + the re-ask note — no other data source (the disclosure-
+// parity bound: an elicitation form must not say more than the plain-text ask).
+func BuildElicitationForm(
+	qs []session.AskQuestion, boolAdvertised bool, note, sessionID, callID string,
+) acp.ElicitationFormFrame {
+	schema := acp.ElicitationSchema{
+		Type:       "object",
+		Properties: make(map[string]json.RawMessage, len(qs)),
+		Required:   make([]string, 0, len(qs)),
+	}
+
+	for i, q := range qs {
+		key := session.StructuredPropertyKey(i)
+
+		switch {
+		case q.MultiSelect:
+			schema.Properties[key] = mustPropJSON(elicArrayProp{
+				Type: "array", Title: q.Header, Items: multiSelectItems(q),
+			})
+		case isBooleanAsk(q) && boolAdvertised:
+			schema.Properties[key] = mustPropJSON(elicBoolProp{Type: "boolean", Title: q.Header})
+		case len(q.Options) > 0:
+			// Single-choice AND the boolean-not-advertised branch (the
+			// conservative two-value string oneOf — D-08 as locked).
+			schema.Properties[key] = mustPropJSON(oneOfStringProperty(q.Header, q.Options))
+		default:
+			schema.Properties[key] = mustPropJSON(elicStringProp{Type: propTypeString, Title: q.Header})
+		}
+
+		schema.Required = append(schema.Required, key)
+	}
+
+	return acp.ElicitationFormFrame{
+		Message:         elicitationMessage(qs, note),
+		Mode:            acp.ElicitationModeForm,
+		RequestedSchema: schema,
+		SessionID:       sessionID,
+		ToolCallID:      callID,
+	}
+}
+
+// multiSelectItems picks the items variant: anyOf-titled when any option
+// carries a description, else the plain enum of labels.
+func multiSelectItems(q session.AskQuestion) any {
+	titled := false
+
+	for _, o := range q.Options {
+		if o.Description != "" {
+			titled = true
+
+			break
+		}
+	}
+
+	if !titled {
+		labels := make([]string, 0, len(q.Options))
+		for _, o := range q.Options {
+			labels = append(labels, o.Label)
+		}
+
+		return elicItemsEnum{Type: propTypeString, Enum: labels}
+	}
+
+	opts := make([]elicChoiceOption, 0, len(q.Options))
+	for _, o := range q.Options {
+		opts = append(opts, elicChoiceOption{Const: o.Label, Title: o.Label, Description: o.Description})
+	}
+
+	return elicItemsAnyOf{AnyOf: opts}
+}
+
+// oneOfStringProperty builds the single-select string property: one titled
+// const per option label (the enum names ARE the labels).
+func oneOfStringProperty(title string, opts []session.AskOption) elicStringProp {
+	oneOf := make([]elicChoiceOption, 0, len(opts))
+	for _, o := range opts {
+		oneOf = append(oneOf, elicChoiceOption{Const: o.Label, Title: o.Label, Description: o.Description})
+	}
+
+	return elicStringProp{Type: propTypeString, Title: title, OneOf: oneOf}
+}
+
+// ElicitationAskConfig carries the dispatcher's injected dependencies.
+type ElicitationAskConfig struct {
+	// Ctx is the serve-lifetime context: the ask outlives its suspending turn
+	// (the askResumeCtx precedent). Fire's ctx (the queue's per-firing drain
+	// seam) takes precedence when non-nil.
+	//
+	//nolint:containedctx // deliberate serve-lifetime ctx storage (see NewPermissionAsk)
+	Ctx context.Context
+
+	// Registry is the 16-03 outbound registry (ids, D-14 ladder, 16-D-19
+	// cascade — never rebuilt here).
+	Registry *acp.Registry
+
+	// Stderr (nil-tolerated) receives structured diagnostics — never stdout
+	// (transport discipline).
+	Stderr io.Writer
+
+	// CapOK reads the sticky elicitation-form capability (16-D-13/D-18): the
+	// initialize-time advertisement-or-probe result for the connection. nil =
+	// unknown → conservative fallback (today's plain-text path).
+	CapOK func() bool
+
+	// BoolAdvertised reads the boolean config-option capability (D-08's
+	// conservative boolean gate). nil = not advertised.
+	BoolAdvertised func() bool
+
+	// Fallback publishes the plain-text ask surface — the v1.1 route VERBATIM
+	// (same bus shape, byte-parity content). The composition binds it to the
+	// runner's subscriber-backed publish seam.
+	Fallback func(turnID, text string)
+}
+
+// ElicitationAsk dispatches question-family asks (AskUserQuestion, engine/
+// learning asks) through elicitation/create, gated by the sticky capability,
+// with today's plain-text path as the verbatim fallback branch. One per serve.
+type ElicitationAsk struct {
+	cfg      ElicitationAskConfig
+	registry *acp.Registry
+
+	//nolint:containedctx // deliberate serve-lifetime ctx storage (see ElicitationAskConfig.Ctx)
+	ctx context.Context
+
+	log  *log.Logger
+	fb   func(turnID, text string)
+	capF func() bool
+	bcap func() bool
+
+	// degraded is the STICKY mid-session degradation (16-D-18 family): a
+	// client that answered -32601 despite a successful negotiation cannot
+	// answer elicitation at all — later asks skip the round-trip.
+	mu       sync.Mutex
+	degraded bool
+}
+
+// NewElicitationAsk constructs the dispatcher.
+func NewElicitationAsk(cfg ElicitationAskConfig) *ElicitationAsk {
+	lg := log.New(io.Discard, "", 0)
+	if cfg.Stderr != nil {
+		lg = log.New(cfg.Stderr, "ass-guard/acpserve/elicitation: ", log.LstdFlags|log.Lmsgprefix)
+	}
+
+	return &ElicitationAsk{
+		cfg:      cfg,
+		registry: cfg.Registry,
+		ctx:      cfg.Ctx,
+		log:      lg,
+		fb:       cfg.Fallback,
+		capF:     cfg.CapOK,
+		bcap:     cfg.BoolAdvertised,
+	}
+}
+
+// Fire performs one question-ask surface round: capability-gated
+// elicitation/create (HUMAN-ASK window) with the plain-text fallback routing.
+// ctx is the queue-owned per-firing cancellation seam (17-03 D-13); nil falls
+// back to the serve-lifetime ctx. The outcome mapping degrades fail-safe:
+// EVERY degraded or malformed case lands on the plain-text fallback (the ask
+// stays answerable exactly as v1.1) — never a dead ask, never a fabricated
+// answer.
+func (e *ElicitationAsk) Fire(ctx context.Context, entry *session.AskEntry) session.AskOutcome {
+	ctx = e.fireCtx(ctx)
+
+	qs := parseAskQuestions(entry.Input)
+
+	if !e.capable() {
+		// Probe-degraded / -32601-sticky client: today's plain-text path
+		// verbatim (the D-09 fallback; byte-parity pinned by test).
+		return e.fallback(entry, qs)
+	}
+
+	frame := BuildElicitationForm(qs, e.boolAdvertised(), entry.Note, entry.SessionID, entry.CallID)
+
+	msg, err := e.registry.Call(ctx, acp.MethodElicitationCreate, frame, acp.TimeoutHumanAsk)
+	if err != nil {
+		if errors.Is(err, acp.ErrRequestCancelled) {
+			// Turn death / client cancel / the -32800 answer / the shutdown
+			// drain: the cancelled family.
+			return session.AskOutcome{Cancelled: true}
+		}
+
+		e.log.Printf("elicitation ask failed — falling back to plain text: callID=%s: %v", entry.CallID, err)
+
+		return e.fallback(entry, qs)
+	}
+
+	if msg.Error != nil {
+		return e.rpcErrorFallback(entry, qs, msg.Error)
+	}
+
+	return e.parseOutcome(entry, qs, msg.Result)
+}
+
+// fallback publishes the plain-text surface and reports the fallback outcome
+// (the dispatcher's degrade landing).
+func (e *ElicitationAsk) fallback(entry *session.AskEntry, qs []session.AskQuestion) session.AskOutcome {
+	e.publishFallback(entry, qs)
+
+	return session.AskOutcome{Fallback: true}
+}
+
+// rpcErrorFallback maps a JSON-RPC error response: -32601 degrades STICKY
+// (16-D-18 — the client cannot answer elicitation at all), every other error
+// degrades transiently; both land on the plain-text fallback.
+func (e *ElicitationAsk) rpcErrorFallback(
+	entry *session.AskEntry, qs []session.AskQuestion, rpcErr *acp.RPCError,
+) session.AskOutcome {
+	if rpcErr.Code == acp.CodeMethodNotFound {
+		e.markDegraded()
+		e.log.Printf("client answered -32601 for %s — degrading sticky (plain-text fallback)",
+			acp.MethodElicitationCreate)
+
+		return e.fallback(entry, qs)
+	}
+
+	e.log.Printf("elicitation ask answered with jsonrpc error %d — falling back to plain text", rpcErr.Code)
+
+	return e.fallback(entry, qs)
+}
+
+// parseOutcome maps the response body: accept (untrusted content rides to the
+// D-10 resolution), decline, cancel; malformed or unknown actions land on the
+// plain-text fallback.
+func (e *ElicitationAsk) parseOutcome(
+	entry *session.AskEntry, qs []session.AskQuestion, raw json.RawMessage,
+) session.AskOutcome {
+	var of acp.ElicitationOutcomeFrame
+
+	uerr := json.Unmarshal(raw, &of)
+	if uerr != nil {
+		e.log.Printf("malformed elicitation outcome — falling back to plain text: %v", uerr)
+
+		return e.fallback(entry, qs)
+	}
+
+	switch of.Action {
+	case acp.ElicitationActionAccept:
+		// The content is UNTRUSTED — the D-10 validator re-checks it against
+		// the requested schema at the resolution boundary.
+		return session.AskOutcome{Elicit: acp.ElicitationActionAccept, Content: of.Content}
+	case acp.ElicitationActionDecline:
+		return session.AskOutcome{Elicit: acp.ElicitationActionDecline}
+	case acp.ElicitationActionCancel:
+		return session.AskOutcome{Cancelled: true}
+	default:
+		e.log.Printf("unknown elicitation action %q — falling back to plain text", of.Action)
+
+		return e.fallback(entry, qs)
+	}
+}
+
+// fireCtx resolves the round-trip ctx: the queue's per-firing drain seam takes
+// precedence; nil falls back to the stored serve-lifetime ctx (the
+// askResumeCtx precedent — the suspending turn's ctx died with its response).
+func (e *ElicitationAsk) fireCtx(ctx context.Context) context.Context {
+	if ctx != nil {
+		return ctx
+	}
+
+	return e.ctx
+}
+
+// capable reports the sticky capability: the initialize-time negotiation AND
+// no mid-session -32601 degradation.
+func (e *ElicitationAsk) capable() bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if e.degraded {
+		return false
+	}
+
+	return e.capF != nil && e.capF()
+}
+
+// markDegraded records the sticky -32601 degradation.
+func (e *ElicitationAsk) markDegraded() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	e.degraded = true
+}
+
+// boolAdvertised resolves the D-08 boolean gate (nil reader = conservative
+// not-advertised).
+func (e *ElicitationAsk) boolAdvertised() bool { return e.bcap != nil && e.bcap() }
+
+// publishFallback delivers the plain-text ask surface — today's path verbatim
+// (the dispatcher's fallback branch, never the primary). Unwired fallback =
+// the surface simply does not publish (the broker's reply routing + D-01
+// timer still own a question ask).
+func (e *ElicitationAsk) publishFallback(entry *session.AskEntry, qs []session.AskQuestion) {
+	if e.fb == nil {
+		return
+	}
+
+	e.fb(entry.TurnID, coreexec.RenderAskSurface(qs))
+}
+
+// parseAskQuestions decodes the entry's question payload (the AskUserQuestion
+// executor's Output shape — the marshaled []AskQuestion).
+func parseAskQuestions(input json.RawMessage) []session.AskQuestion {
+	var qs []session.AskQuestion
+
+	_ = json.Unmarshal(input, &qs)
+
+	return qs
 }

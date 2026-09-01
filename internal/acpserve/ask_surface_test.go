@@ -25,6 +25,21 @@ const (
 	gateToolWrite = "Write"
 	gatePathInput = `{"path":"x"}`
 	jsonrpcV20    = "2.0"
+
+	// 17-04 battery vocabulary (goconst).
+	elicSess1      = "sess-1"
+	elicTurn1      = "sess-1-turn-001"
+	elicCall1      = "call_ask_1"
+	elicQText1     = "Which cache library should we use?"
+	elicHdrCache   = "Cache"
+	elicHdrAreas   = "Areas"
+	elicHdrTicket  = "Ticket"
+	elicHdrProceed = "Proceed"
+	elicOptFast    = "ristretto"
+	elicOptDisk    = "bigcache"
+	elicAreaAPI    = "api"
+	elicAreaDocs   = "docs"
+	elicReaskNote  = `value "x" is not one of the offered choices`
 )
 
 // permAskSink records frames the registry writes (the NotificationSink fake).
@@ -47,8 +62,8 @@ func (s *permAskSink) Write(m *acp.Message) error {
 // gateAskEntry is the fire payload one suspended gated call produces.
 func gateAskEntry() *session.AskEntry {
 	return &session.AskEntry{
-		TurnID:    "sess-1-turn-001",
-		SessionID: "sess-1",
+		TurnID:    elicTurn1,
+		SessionID: elicSess1,
 		CallID:    "call_gate_1",
 		Tool:      gateToolWrite,
 		Title:     gateToolWrite,
@@ -251,40 +266,49 @@ func TestPermissionAskDispatch(t *testing.T) { //nolint:cyclop,funlen // one tab
 // (one per row of the locked table), the frame shape, and the capability-gated
 // dispatch with today's plain-text path as the verbatim fallback. ---
 
-// elicQ1/Q2 are the mapping battery's question fixtures.
-var (
-	elicQ1 = session.AskQuestion{
-		Question: "Which cache library should we use?",
-		Header:   "Cache",
+// The mapping battery's question fixtures (constructors — no globals).
+func elicQ1() session.AskQuestion {
+	return session.AskQuestion{
+		Question: elicQText1,
+		Header:   elicHdrCache,
 		Options: []session.AskOption{
-			{Label: "ristretto", Description: "fast in-memory cache"},
-			{Label: "bigcache", Description: "simple disk-backed cache"},
+			{Label: elicOptFast, Description: "fast in-memory cache"},
+			{Label: elicOptDisk, Description: "simple disk-backed cache"},
 		},
 	}
-	elicQ2 = session.AskQuestion{
-		Question: "Which areas should the review cover?",
-		Header:   "Areas",
+}
+
+func elicQ2() session.AskQuestion {
+	return session.AskQuestion{
+		Question:    "Which areas should the review cover?",
+		Header:      elicHdrAreas,
 		MultiSelect: true,
 		Options: []session.AskOption{
-			{Label: "api"}, {Label: "docs"},
+			{Label: elicAreaAPI}, {Label: elicAreaDocs},
 		},
 	}
-	elicQFree = session.AskQuestion{Question: "What is the ticket id?", Header: "Ticket"}
-	elicQBool = session.AskQuestion{
+}
+
+func elicQFree() session.AskQuestion {
+	return session.AskQuestion{Question: "What is the ticket id?", Header: elicHdrTicket}
+}
+
+func elicQBool() session.AskQuestion {
+	return session.AskQuestion{
 		Question: "Proceed without tests?",
-		Header:   "Proceed",
+		Header:   elicHdrProceed,
 		Options:  []session.AskOption{{Label: "Yes"}, {Label: "No"}},
 	}
-)
+}
 
 // elicEntry builds the fire payload one question suspension produces.
 func elicEntry() *session.AskEntry {
 	return &session.AskEntry{
-		TurnID:    "sess-1-turn-001",
-		SessionID: "sess-1",
-		CallID:    "call_ask_1",
+		TurnID:    elicTurn1,
+		SessionID: elicSess1,
+		CallID:    elicCall1,
 		Tool:      "AskUserQuestion",
-		Input:     mustMarshalQs([]session.AskQuestion{elicQ1}),
+		Input:     mustMarshalQs([]session.AskQuestion{elicQ1()}),
 		Class:     session.AskClassForeground,
 	}
 }
@@ -299,7 +323,7 @@ func mustMarshalQs(qs []session.AskQuestion) json.RawMessage {
 }
 
 // elicProp decodes one built property's raw shape.
-func elicProp(t *testing.T, f acp.ElicitationFormFrame, key string) map[string]any {
+func elicProp(t *testing.T, f *acp.ElicitationFormFrame, key string) map[string]any {
 	t.Helper()
 
 	raw, ok := f.RequestedSchema.Properties[key]
@@ -309,7 +333,8 @@ func elicProp(t *testing.T, f acp.ElicitationFormFrame, key string) map[string]a
 
 	var m map[string]any
 
-	if uerr := json.Unmarshal(raw, &m); uerr != nil {
+	uerr := json.Unmarshal(raw, &m)
+	if uerr != nil {
 		t.Fatalf("unmarshal property %q: %v", key, uerr)
 	}
 
@@ -323,16 +348,16 @@ func elicProp(t *testing.T, f acp.ElicitationFormFrame, key string) map[string]a
 // N properties all required; the banned MCP-legacy enumNames key never
 // appears; the question text lands in the message; the D-10 re-ask note rides
 // the message.
-func TestElicitationMapping(t *testing.T) {
+func TestElicitationMapping(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen,lll,maintidx // one golden table over the D-08 rows
 	t.Parallel()
 
 	t.Run("single_choice_oneOf_titled_consts", func(t *testing.T) {
 		t.Parallel()
 
-		f := BuildElicitationForm([]session.AskQuestion{elicQ1}, false, "", "sess-1", "call_ask_1")
-		p := elicProp(t, f, "q1")
+		f := BuildElicitationForm([]session.AskQuestion{elicQ1()}, false, "", elicSess1, elicCall1)
+		p := elicProp(t, &f, "q1")
 
-		if p["type"] != "string" || p["title"] != "Cache" {
+		if p["type"] != propTypeString || p["title"] != elicHdrCache {
 			t.Errorf("property q1 = %v; want type string + title Cache", p)
 		}
 
@@ -343,7 +368,7 @@ func TestElicitationMapping(t *testing.T) {
 
 		first, _ := oneOf[0].(map[string]any)
 
-		if first["const"] != "ristretto" || first["title"] != "ristretto" ||
+		if first["const"] != elicOptFast || first["title"] != "ristretto" ||
 			first["description"] != "fast in-memory cache" {
 			t.Errorf("oneOf[0] = %v; want const/title/description of the option label", first)
 		}
@@ -352,8 +377,8 @@ func TestElicitationMapping(t *testing.T) {
 	t.Run("multiselect_array_enum", func(t *testing.T) {
 		t.Parallel()
 
-		f := BuildElicitationForm([]session.AskQuestion{elicQ2}, false, "", "sess-1", "")
-		p := elicProp(t, f, "q1")
+		f := BuildElicitationForm([]session.AskQuestion{elicQ2()}, false, "", elicSess1, "")
+		p := elicProp(t, &f, "q1")
 
 		if p["type"] != "array" || p["title"] != "Areas" {
 			t.Errorf("property q1 = %v; want type array + title Areas", p)
@@ -369,7 +394,7 @@ func TestElicitationMapping(t *testing.T) {
 		}
 
 		enum, ok := items["enum"].([]any)
-		if !ok || len(enum) != 2 || enum[0] != "api" || enum[1] != "docs" {
+		if !ok || len(enum) != 2 || enum[0] != elicAreaAPI || enum[1] != "docs" {
 			t.Errorf("items.enum = %v; want [api docs]", items["enum"])
 		}
 	})
@@ -377,11 +402,21 @@ func TestElicitationMapping(t *testing.T) {
 	t.Run("multiselect_anyOf_titled_when_descriptions", func(t *testing.T) {
 		t.Parallel()
 
-		q := elicQ2
-		q.Options = []session.AskOption{{Label: "api", Description: "the surface"}, {Label: "docs"}}
+		q := elicQ2()
+		q.Options = []session.AskOption{
+			{Label: elicAreaAPI, Description: "the surface"}, {Label: elicAreaDocs},
+		}
 
-		f := BuildElicitationForm([]session.AskQuestion{q}, false, "", "sess-1", "")
-		items := elicProp(t, f, "q1")["items"].(map[string]any)
+		f := BuildElicitationForm([]session.AskQuestion{q}, false, "", elicSess1, "")
+
+		props := elicProp(t, &f, "q1")
+
+		itemsRaw := props["items"]
+
+		items, iok := itemsRaw.(map[string]any)
+		if !iok {
+			t.Fatalf("items = %v; want the items schema", itemsRaw)
+		}
 
 		anyOf, ok := items["anyOf"].([]any)
 		if !ok || len(anyOf) != 2 {
@@ -390,7 +425,7 @@ func TestElicitationMapping(t *testing.T) {
 
 		first, _ := anyOf[0].(map[string]any)
 
-		if first["const"] != "api" || first["description"] != "the surface" {
+		if first["const"] != elicAreaAPI || first["description"] != "the surface" {
 			t.Errorf("anyOf[0] = %v; want the titled const with description", first)
 		}
 	})
@@ -398,8 +433,8 @@ func TestElicitationMapping(t *testing.T) {
 	t.Run("free_text_string", func(t *testing.T) {
 		t.Parallel()
 
-		f := BuildElicitationForm([]session.AskQuestion{elicQFree}, false, "", "sess-1", "")
-		p := elicProp(t, f, "q1")
+		f := BuildElicitationForm([]session.AskQuestion{elicQFree()}, false, "", elicSess1, "")
+		p := elicProp(t, &f, "q1")
 
 		if p["type"] != "string" || p["title"] != "Ticket" {
 			t.Errorf("property q1 = %v; want the free-text string property", p)
@@ -415,10 +450,10 @@ func TestElicitationMapping(t *testing.T) {
 
 		q := session.AskQuestion{Question: "Say something", Header: "H", Options: []session.AskOption{}}
 
-		f := BuildElicitationForm([]session.AskQuestion{q}, false, "", "sess-1", "")
-		p := elicProp(t, f, "q1")
+		f := BuildElicitationForm([]session.AskQuestion{q}, false, "", elicSess1, "")
+		p := elicProp(t, &f, "q1")
 
-		if p["type"] != "string" {
+		if p["type"] != propTypeString {
 			t.Errorf("empty-Options property = %v; want the free-text string property (edge probe: empty)", p)
 		}
 	})
@@ -426,8 +461,8 @@ func TestElicitationMapping(t *testing.T) {
 	t.Run("boolean_advertised", func(t *testing.T) {
 		t.Parallel()
 
-		f := BuildElicitationForm([]session.AskQuestion{elicQBool}, true, "", "sess-1", "")
-		p := elicProp(t, f, "q1")
+		f := BuildElicitationForm([]session.AskQuestion{elicQBool()}, true, "", elicSess1, "")
+		p := elicProp(t, &f, "q1")
 
 		if p["type"] != "boolean" {
 			t.Errorf("advertised boolean property = %v; want type boolean", p)
@@ -437,10 +472,10 @@ func TestElicitationMapping(t *testing.T) {
 	t.Run("boolean_not_advertised_two_value_string_oneOf", func(t *testing.T) {
 		t.Parallel()
 
-		f := BuildElicitationForm([]session.AskQuestion{elicQBool}, false, "", "sess-1", "")
-		p := elicProp(t, f, "q1")
+		f := BuildElicitationForm([]session.AskQuestion{elicQBool()}, false, "", elicSess1, "")
+		p := elicProp(t, &f, "q1")
 
-		if p["type"] != "string" {
+		if p["type"] != propTypeString {
 			t.Errorf("unadvertised boolean property = %v; want the conservative string select", p)
 		}
 
@@ -459,7 +494,7 @@ func TestElicitationMapping(t *testing.T) {
 	t.Run("n_questions_n_properties_all_required", func(t *testing.T) {
 		t.Parallel()
 
-		qs := []session.AskQuestion{elicQ1, elicQ2, elicQFree}
+		qs := []session.AskQuestion{elicQ1(), elicQ2(), elicQFree()}
 
 		f := BuildElicitationForm(qs, false, "", "sess-1", "")
 
@@ -482,7 +517,7 @@ func TestElicitationMapping(t *testing.T) {
 	t.Run("never_enumNames", func(t *testing.T) {
 		t.Parallel()
 
-		qs := []session.AskQuestion{elicQ1, elicQ2}
+		qs := []session.AskQuestion{elicQ1(), elicQ2()}
 
 		raw, err := json.Marshal(BuildElicitationForm(qs, false, "", "sess-1", ""))
 		if err != nil {
@@ -497,7 +532,7 @@ func TestElicitationMapping(t *testing.T) {
 	t.Run("frame_shape_and_message", func(t *testing.T) {
 		t.Parallel()
 
-		f := BuildElicitationForm([]session.AskQuestion{elicQ1}, false, "", "sess-1", "call_ask_1")
+		f := BuildElicitationForm([]session.AskQuestion{elicQ1()}, false, "", elicSess1, elicCall1)
 
 		if f.Mode != acp.ElicitationModeForm {
 			t.Errorf("mode = %q; want form", f.Mode)
@@ -518,8 +553,9 @@ func TestElicitationMapping(t *testing.T) {
 
 		var wire map[string]any
 
-		if uerr := json.Unmarshal(raw, &wire); uerr != nil {
-			t.Fatalf("unmarshal frame: %v", uerr)
+		werr := json.Unmarshal(raw, &wire)
+		if werr != nil {
+			t.Fatalf("unmarshal frame: %v", werr)
 		}
 
 		for _, key := range []string{"message", "mode", "requestedSchema", "sessionId", "toolCallId"} {
@@ -528,7 +564,7 @@ func TestElicitationMapping(t *testing.T) {
 			}
 		}
 
-		if msg, _ := wire["message"].(string); !strings.Contains(msg, elicQ1.Question) {
+		if msg, _ := wire["message"].(string); !strings.Contains(msg, elicQ1().Question) {
 			t.Errorf("message %q does not carry the question text", msg)
 		}
 	})
@@ -536,8 +572,8 @@ func TestElicitationMapping(t *testing.T) {
 	t.Run("reask_note_in_message", func(t *testing.T) {
 		t.Parallel()
 
-		f := BuildElicitationForm([]session.AskQuestion{elicQ1}, false, `value "x" is not one of the offered choices`,
-			"sess-1", "")
+		f := BuildElicitationForm([]session.AskQuestion{elicQ1()}, false, elicReaskNote,
+			elicSess1, "")
 
 		if !strings.HasPrefix(f.Message, "previous answer invalid: ") {
 			t.Errorf("re-ask message = %q; want the violation named first", f.Message)
@@ -550,7 +586,7 @@ func TestElicitationMapping(t *testing.T) {
 // mapped to the session-native outcomes); degraded → the plain-text fallback
 // publishing byte-parity RenderAskSurface content with NO registry write;
 // -32601 → fallback + STICKY degradation (the second ask never re-round-trips).
-func TestAskSurfaceDispatchElicitation(t *testing.T) { //nolint:funlen,cyclop // one battery over the dispatch vocabulary
+func TestAskSurfaceDispatchElicitation(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen,lll // one battery over the dispatch vocabulary
 	t.Parallel()
 
 	newSurface := func(t *testing.T, capOK bool) (*ElicitationAsk, *permAskSink, *[]string) {

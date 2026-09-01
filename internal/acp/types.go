@@ -283,10 +283,11 @@ const (
 	// v1.2 — Assumption A8).
 	methodCancelRequest = "$/cancel_request"
 
-	// methodElicitationCreate is the agent→client elicitation request — the
+	// MethodElicitationCreate is the agent→client elicitation request — the
 	// D-13 capability probe subject, and the vehicle for Phase 17's real
-	// permission/question forms.
-	methodElicitationCreate = "elicitation/create"
+	// permission/question forms. Exported: the ask surface lives one package
+	// up (the MethodRequestPermission precedent).
+	MethodElicitationCreate = "elicitation/create"
 
 	// MethodRequestPermission is the agent→client permission request (17-02,
 	// ACP-01; schema/v1 RequestPermissionRequest x-method). The ask surface
@@ -346,3 +347,79 @@ const (
 	PermissionOutcomeSelected  = "selected"
 	PermissionOutcomeCancelled = "cancelled"
 )
+
+// --- 17-04 elicitation wire vocabulary (ACP-02) ---
+//
+// Field names pinned VERBATIM against the canonical ACP v1 schema (17-RESEARCH
+// §Wire Shapes, defs CreateElicitationRequest, ElicitationSchema,
+// CreateElicitationResponse — parsed from schema/v1/schema.json). v1 spellings
+// ONLY (Pitfall 7). Schema properties ride as json.RawMessage per property so
+// every ElicitationPropertySchema variant's exact shape is built and delivered
+// verbatim (the D-08 mapping) — never flattened into a lowest-common-denominator
+// struct.
+
+const (
+	// ElicitationModeForm is the form-mode discriminator (the only mode
+	// ass-guard sends; url mode is wire-defined but explicitly deferred).
+	ElicitationModeForm = "form"
+)
+
+// Elicitation response actions (schema CreateElicitationResponse). decline is
+// an ANSWER-SHAPED refusal (D-10: it routes to the non-answer form with NO
+// re-ask — unlike an invalid accept payload, which re-asks once); cancel is
+// the dismissed dialog.
+const (
+	ElicitationActionAccept  = "accept"
+	ElicitationActionDecline = "decline"
+	ElicitationActionCancel  = "cancel"
+)
+
+// Sticky capability keys (the 16-D-13/D-18 per-connection negotiation cache;
+// Server.Capability consults them).
+const (
+	// CapElicitationForm is the form-elicitation capability — the D-13 probe
+	// subject, and the sticky state Phase 17's question-family dispatcher
+	// consults per ask.
+	CapElicitationForm = "elicitation.form"
+
+	// CapBooleanConfigOption is the client's boolean config-option
+	// advertisement (session.configOptions.boolean) — D-08's conservative
+	// boolean-property gate reads the same connection capability family.
+	CapBooleanConfigOption = "session.configOptions.boolean"
+)
+
+// ElicitationFormFrame is the elicitation/create payload (schema
+// CreateElicitationRequest): a human-readable message + the form-mode
+// discriminator + the requestedSchema the accept content must match. ass-guard
+// always asks in the session scope (sessionId + optional toolCallId).
+type ElicitationFormFrame struct {
+	Message         string            `json:"message"`
+	Mode            string            `json:"mode"`                 // ElicitationModeForm
+	RequestedSchema ElicitationSchema `json:"requestedSchema"`      //nolint:tagliatelle // ACP wire field (required)
+	SessionID       string            `json:"sessionId,omitempty"`  //nolint:tagliatelle // ACP wire field
+	ToolCallID      string            `json:"toolCallId,omitempty"` //nolint:tagliatelle // ACP wire field
+}
+
+// ElicitationSchema is the form-mode requestedSchema (schema
+// ElicitationSchema): the "object" discriminator + named properties + required.
+// Each property value IS its ElicitationPropertySchema variant verbatim (raw)
+// — single-select string+oneOf titled consts, multi-select array items,
+// boolean, free-text string (the D-08 mapping builds the exact variants; the
+// MCP-legacy enumNames key never appears — RFD ban).
+type ElicitationSchema struct {
+	Type       string                     `json:"type"` // "object"
+	Title      string                     `json:"title,omitempty"`
+	Properties map[string]json.RawMessage `json:"properties"`
+	Required   []string                   `json:"required,omitempty"`
+}
+
+// ElicitationOutcomeFrame is the elicitation/create RESPONSE (schema
+// CreateElicitationResponse): the action discriminator; accept carries the
+// content object matching requestedSchema (values are
+// string|number|integer|boolean|array-of-string). The content is UNTRUSTED
+// input — the D-10 validator re-checks it against the requestedSchema before
+// anything consumes it (RFD defense-in-depth).
+type ElicitationOutcomeFrame struct {
+	Action  string                     `json:"action"`
+	Content map[string]json.RawMessage `json:"content,omitempty"`
+}

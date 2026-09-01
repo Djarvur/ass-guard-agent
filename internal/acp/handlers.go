@@ -114,27 +114,42 @@ func (s *Server) handleInitialize(ctx context.Context, params json.RawMessage) (
 				Elicitation struct {
 					Form *json.RawMessage `json:"form,omitempty"`
 				} `json:"elicitation"`
+				Session struct {
+					ConfigOptions struct {
+						Boolean *json.RawMessage `json:"boolean,omitempty"`
+					} `json:"configOptions"` //nolint:tagliatelle // ACP wire field
+				} `json:"session"`
 			} `json:"clientCapabilities"` //nolint:tagliatelle // ACP wire field
 		}
 
 		// Tolerant parse (unknown shapes treated as absent — schema-tolerant
 		// style): a parse miss just falls through to the probe path.
 		unmarshalErr := json.Unmarshal(params, &p)
-		if unmarshalErr == nil && p.ClientCapabilities.Elicitation.Form != nil {
-			s.capabilities.set(capElicitationForm, CapabilityOK)
-			s.log.Printf("capability %s: advertised by client (no probe)", capElicitationForm)
+		if unmarshalErr == nil {
+			// 17-04 (D-08): the boolean config-option advertisement rides the
+			// same negotiation — the conservative boolean-property gate reads
+			// it (CapBooleanConfigOption; unadvertised degrades to the
+			// two-value string select, the CapabilityUnknown zero value).
+			if p.ClientCapabilities.Session.ConfigOptions.Boolean != nil {
+				s.capabilities.set(CapBooleanConfigOption, CapabilityOK)
+			}
 
-			return s.initializeResult(), nil
+			if p.ClientCapabilities.Elicitation.Form != nil {
+				s.capabilities.set(CapElicitationForm, CapabilityOK)
+				s.log.Printf("capability %s: advertised by client (no probe)", CapElicitationForm)
+
+				return s.initializeResult(), nil
+			}
 		}
 	}
 
 	// Sticky check (D-18): already negotiated for this connection — never
 	// re-probe, no flapping.
-	if state := s.capabilities.get(capElicitationForm); state != CapabilityUnknown {
+	if state := s.capabilities.get(CapElicitationForm); state != CapabilityUnknown {
 		return s.initializeResult(), nil
 	}
 
-	s.capabilities.set(capElicitationForm, s.probeElicitationCapability(ctx))
+	s.capabilities.set(CapElicitationForm, s.probeElicitationCapability(ctx))
 
 	return s.initializeResult(), nil
 }
@@ -247,12 +262,12 @@ func (s *Server) probeElicitationCapability(ctx context.Context) CapabilityState
 		},
 	}
 
-	msg, callErr := s.registry.Call(ctx, methodElicitationCreate, payload, TimeoutFastControl)
+	msg, callErr := s.registry.Call(ctx, MethodElicitationCreate, payload, TimeoutFastControl)
 
 	switch {
 	case callErr != nil && errors.Is(callErr, ErrRequestCancelled):
 		s.metrics.noteProbeFallback()
-		s.log.Printf("capability probe %s: cancelled — degrading (D-13/D-18)", capElicitationForm)
+		s.log.Printf("capability probe %s: cancelled — degrading (D-13/D-18)", CapElicitationForm)
 
 		return CapabilityDegraded
 	case callErr != nil:
@@ -262,21 +277,21 @@ func (s *Server) probeElicitationCapability(ctx context.Context) CapabilityState
 			s.metrics.noteProbeTimeout()
 			s.metrics.noteProbeTimeout()
 			s.metrics.noteProbeFallback()
-			s.log.Printf("capability probe %s: fallback after retry — degrading (D-14)", capElicitationForm)
+			s.log.Printf("capability probe %s: fallback after retry — degrading (D-14)", CapElicitationForm)
 		} else {
 			s.metrics.noteProbeFallback()
-			s.log.Printf("capability probe %s: %v — degrading", capElicitationForm, callErr)
+			s.log.Printf("capability probe %s: %v — degrading", CapElicitationForm, callErr)
 		}
 
 		return CapabilityDegraded
 	case msg.Error != nil:
 		s.metrics.noteProbeFallback()
 		s.log.Printf("capability probe %s: answered with jsonrpc error %d — degrading (D-13)",
-			capElicitationForm, msg.Error.Code)
+			CapElicitationForm, msg.Error.Code)
 
 		return CapabilityDegraded
 	default:
-		s.log.Printf("capability probe %s: answered — ok", capElicitationForm)
+		s.log.Printf("capability probe %s: answered — ok", CapElicitationForm)
 
 		return CapabilityOK
 	}

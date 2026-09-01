@@ -732,8 +732,8 @@ func readProbeFrame(t *testing.T, h *pipeHarness) string {
 	t.Helper()
 
 	req := h.readFrame(t)
-	if req.Method != methodElicitationCreate {
-		t.Fatalf("expected a %s probe; got method=%q", methodElicitationCreate, req.Method)
+	if req.Method != MethodElicitationCreate {
+		t.Fatalf("expected a %s probe; got method=%q", MethodElicitationCreate, req.Method)
 	}
 
 	var pp struct {
@@ -793,7 +793,7 @@ func TestInitializeProbe(t *testing.T) {
 
 		readInitializeResponse(t, h) // FIRST frame after initialize — no probe preceded it
 
-		if got := h.srv.Capability(capElicitationForm); got != CapabilityOK {
+		if got := h.srv.Capability(CapElicitationForm); got != CapabilityOK {
 			t.Errorf("capability = %v; want CapabilityOK (advertisement-first)", got)
 		}
 	})
@@ -813,7 +813,7 @@ func TestInitializeProbe(t *testing.T) {
 
 		readInitializeResponse(t, h) // initialize STILL responds (always-respond rule)
 
-		if got := h.srv.Capability(capElicitationForm); got != CapabilityOK {
+		if got := h.srv.Capability(CapElicitationForm); got != CapabilityOK {
 			t.Errorf("capability = %v; want CapabilityOK after a result answer", got)
 		}
 	})
@@ -833,7 +833,7 @@ func TestInitializeProbe(t *testing.T) {
 
 		readInitializeResponse(t, h)
 
-		if got := h.srv.Capability(capElicitationForm); got != CapabilityDegraded {
+		if got := h.srv.Capability(CapElicitationForm); got != CapabilityDegraded {
 			t.Errorf("capability = %v; want CapabilityDegraded after -32601", got)
 		}
 	})
@@ -856,7 +856,7 @@ func TestCapabilityStickiness(t *testing.T) {
 	})
 	h.readFrame(t) // initialize response
 
-	if got := h.srv.Capability(capElicitationForm); got != CapabilityDegraded {
+	if got := h.srv.Capability(CapElicitationForm); got != CapabilityDegraded {
 		t.Fatalf("capability = %v; want CapabilityDegraded", got)
 	}
 
@@ -864,7 +864,7 @@ func TestCapabilityStickiness(t *testing.T) {
 	h.send(t, newRequest(1, methodInitialize, map[string]any{keyProtocolVersion: 1}))
 	readProbeResponse(t, h, "1")
 
-	if got := h.srv.Capability(capElicitationForm); got != CapabilityDegraded {
+	if got := h.srv.Capability(CapElicitationForm); got != CapabilityDegraded {
 		t.Errorf("second query capability = %v; want CapabilityDegraded (sticky, D-18)", got)
 	}
 }
@@ -888,7 +888,7 @@ func TestProbeTimeoutFallback(t *testing.T) {
 
 	readInitializeResponse(t, h) // initialize responds even when the probe falls back
 
-	if got := h.srv.Capability(capElicitationForm); got != CapabilityDegraded {
+	if got := h.srv.Capability(CapElicitationForm); got != CapabilityDegraded {
 		t.Errorf("capability = %v; want CapabilityDegraded after the ladder", got)
 	}
 
