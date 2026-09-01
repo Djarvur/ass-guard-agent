@@ -198,12 +198,14 @@ type Runner struct {
 	// (acpserve) after the acp Server exists — the onSurface-callback
 	// precedent; internal/session stays free of internal/acp imports. nil =
 	// unwired surface (the gate fails a gated ask safe with a decline —
-	// never a silent allow). permMode is the LIVE permission-mode accessor
+	// never a silent allow). The ctx parameter is the ask queue's per-firing
+	// cancellation seam (17-03 D-13: the drain cancels an OPEN dialog through
+	// it). permMode is the LIVE permission-mode accessor
 	// (ungated|gated; Task 17-02-3's permissions.mode apply target): the gate
 	// reads it PER CALL, so a set_config_option flip lands on the running
 	// session without recreation (Pitfall 8). Boot default: ungated
 	// (criterion 4 — "available, not default").
-	permAskFire func(e *session.AskEntry) session.AskOutcome
+	permAskFire func(ctx context.Context, e *session.AskEntry) session.AskOutcome
 	permMode    atomic.Value // string
 
 	// 13-00 park state: parkedCancels holds each session's parked-chain ctx
@@ -1292,9 +1294,22 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo /
 	// rather than silent-allowing them). The mode accessor is runner-owned and
 	// LIVE (Pitfall 8); the fire callback is read at CALL time so a late
 	// injection from the serve composition is picked up.
+	//
+	// 17-03 (D-12): the session's ask queue notes ride the SUBSCRIBER-BACKED
+	// bus path — the session-lifetime chunk forwarder (armed just below, for
+	// this session's whole life) or the live client turn's own forwarder
+	// delivers the AgentMessageChunk; a bare post-turn publish would be
+	// dropped when no subscriber exists (the 13-03 timing hazard).
+	askQueue := session.NewAskQueue()
+	askQueue.SetNoteEmitter(func(e *session.AskEntry, note string) {
+		r.bus.Publish(event.AgentMessageChunk{
+			TurnID: e.TurnID, MessageID: e.TurnID, Content: note,
+		})
+	})
+
 	permDeps := session.GateDeps{
 		Mode:  r.PermMode,
-		Queue: session.NewAskQueue(),
+		Queue: askQueue,
 		// The MCP namespace resolver (Pitfall 7): canonicalize through
 		// 17-01's helpers — the catalog registers MCP tools under their full
 		// mcp__<server>__<tool> names, so the mapping is a rebuild + identity.
@@ -1305,12 +1320,12 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo /
 
 			return tool
 		},
-		Fire: func(e *session.AskEntry) session.AskOutcome {
+		Fire: func(ctx context.Context, e *session.AskEntry) session.AskOutcome {
 			if r.permAskFire == nil {
 				return session.AskOutcome{Err: errPermissionAskSurfaceUnwired}
 			}
 
-			return r.permAskFire(e)
+			return r.permAskFire(ctx, e)
 		},
 	}
 
@@ -1651,7 +1666,7 @@ func (r *Runner) SetEmitter(emit func(sessionID string) acp.ChunkEmitter) { r.em
 // internal/session never imports internal/acp (the onSurface-callback
 // precedent). The gate enqueues through it; nil until injected (an unwired
 // surface fails gated asks safe with a decline — never a silent allow).
-func (r *Runner) SetPermissionAskFire(f func(e *session.AskEntry) session.AskOutcome) {
+func (r *Runner) SetPermissionAskFire(f func(ctx context.Context, e *session.AskEntry) session.AskOutcome) {
 	r.permAskFire = f
 }
 

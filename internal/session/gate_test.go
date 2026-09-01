@@ -94,7 +94,7 @@ type fakeGateSurface struct {
 	block   chan struct{}
 }
 
-func (f *fakeGateSurface) Fire(e *AskEntry) AskOutcome {
+func (f *fakeGateSurface) Fire(_ context.Context, e *AskEntry) AskOutcome {
 	f.mu.Lock()
 
 	f.entries = append(f.entries, e)

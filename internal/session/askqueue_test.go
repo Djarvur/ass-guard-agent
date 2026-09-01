@@ -57,37 +57,38 @@ func (r *qRecorder) resolveCount() int {
 	return len(r.resolved)
 }
 
-func (r *qRecorder) fireOrder() []uint64 {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	return append([]uint64(nil), r.fired...)
+// qNames is a mutex-guarded string order recorder (a len()-poll on a channel
+// does not synchronize with its senders — the memory-model-honest shape).
+type qNames struct {
+	mu    sync.Mutex
+	names []string
 }
 
-// qBlockedFire returns a fire func that records its start, blocks until the
-// test releases it (or the queue's drain cancels the fire ctx — returning the
-// cancelled family), and then reports a selected outcome.
-func qBlockedFire(rec *qRecorder, release <-chan struct{}) func(context.Context) AskOutcome {
-	return func(ctx context.Context) AskOutcome {
-		rec.noteFire(0) // presence only; order assertions use per-entry recorders
+func (n *qNames) add(name string) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
 
-		if ctx == nil {
-			panic("queue must hand every fire a cancellable ctx (the D-13 drain seam)")
-		}
+	n.names = append(n.names, name)
+}
 
-		select {
-		case <-release:
-			return AskOutcome{Selected: queueOption}
-		case <-ctx.Done():
-			return AskOutcome{Cancelled: true}
-		}
-	}
+func (n *qNames) len() int {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	return len(n.names)
+}
+
+func (n *qNames) all() []string {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	return append([]string(nil), n.names...)
 }
 
 // TestAskQueueSerialization pins D-11's one-modal invariant: while entry A is
 // fired (unresolved), a second enqueue B is QUEUED, not fired; resolving A
 // fires B.
-func TestAskQueueSerialization(t *testing.T) {
+func TestAskQueueSerialization(t *testing.T) { //nolint:funlen // flat serialization battery
 	t.Parallel()
 
 	q := NewAskQueue()
@@ -98,6 +99,7 @@ func TestAskQueueSerialization(t *testing.T) {
 	entryA := &AskEntry{TurnID: queueTurn1, Class: AskClassForeground}
 	entryA.fire = func(ctx context.Context) AskOutcome {
 		started <- struct{}{}
+
 		rec.noteFire(entryA.Seq)
 
 		select {
@@ -109,8 +111,10 @@ func TestAskQueueSerialization(t *testing.T) {
 	}
 
 	resolvedA := make(chan AskOutcome, 1)
+
 	q.Enqueue(entryA, func(_ *AskEntry, o AskOutcome) {
 		rec.noteResolve(entryA.Seq)
+
 		resolvedA <- o
 	})
 
@@ -125,8 +129,10 @@ func TestAskQueueSerialization(t *testing.T) {
 	}
 
 	resolvedB := make(chan AskOutcome, 1)
+
 	q.Enqueue(entryB, func(_ *AskEntry, o AskOutcome) {
 		rec.noteResolve(entryB.Seq)
+
 		resolvedB <- o
 	})
 
@@ -172,7 +178,7 @@ func TestAskQueueSerialization(t *testing.T) {
 // preempts the WAITING queue head (a background entry waiting fires after the
 // later foreground entry), two same-class entries fire in enqueue order, and
 // an OPEN entry is never preempted regardless of class.
-func TestAskQueuePriority(t *testing.T) {
+func TestAskQueuePriority(t *testing.T) { //nolint:cyclop,funlen // three ordering subtests in one family
 	t.Parallel()
 
 	t.Run("foreground preempts the waiting background head", func(t *testing.T) {
@@ -180,12 +186,12 @@ func TestAskQueuePriority(t *testing.T) {
 
 		q := NewAskQueue()
 		release := make(chan struct{})
-		order := make(chan string, 8)
+		order := &qNames{}
 
 		// A (fg) is open and blocked.
 		entryA := &AskEntry{TurnID: queueTurn1, Class: AskClassForeground}
 		entryA.fire = func(ctx context.Context) AskOutcome {
-			order <- "A-open"
+			order.add("A-open")
 
 			select {
 			case <-release:
@@ -196,12 +202,12 @@ func TestAskQueuePriority(t *testing.T) {
 		}
 		q.Enqueue(entryA, nil)
 
-		<-order // A opened
+		gateWaitFor(t, func() bool { return order.len() == 1 }) // A opened
 
 		// B (bg) waits, then C (fg) arrives LATER — C must fire before B.
 		entryB := &AskEntry{TurnID: queueTurn1, Class: AskClassBackground}
 		entryB.fire = func(_ context.Context) AskOutcome {
-			order <- "B"
+			order.add("B")
 
 			return AskOutcome{Selected: queueOption}
 		}
@@ -209,7 +215,7 @@ func TestAskQueuePriority(t *testing.T) {
 
 		entryC := &AskEntry{TurnID: queueTurn1, Class: AskClassForeground}
 		entryC.fire = func(_ context.Context) AskOutcome {
-			order <- "C"
+			order.add("C")
 
 			return AskOutcome{Selected: queueOption}
 		}
@@ -217,16 +223,9 @@ func TestAskQueuePriority(t *testing.T) {
 
 		close(release)
 
-		gateWaitFor(t, func() bool { return len(order) == 3 })
+		gateWaitFor(t, func() bool { return order.len() == 3 })
 
-		close(order)
-
-		got := make([]string, 0, 3)
-		for v := range order {
-			got = append(got, v)
-		}
-
-		if got[0] != "A-open" || got[1] != "C" || got[2] != "B" {
+		if got := order.all(); got[0] != "A-open" || got[1] != "C" || got[2] != "B" {
 			t.Fatalf("fire order = %v; want [A-open C B] (fg preempts the waiting bg head)", got)
 		}
 	})
@@ -236,12 +235,12 @@ func TestAskQueuePriority(t *testing.T) {
 
 		q := NewAskQueue()
 		release := make(chan struct{})
-		started := make(chan string, 8)
+		order := &qNames{}
 
 		// A (bg) is OPEN — a later fg enqueue must queue behind it.
 		entryA := &AskEntry{TurnID: queueTurn1, Class: AskClassBackground}
 		entryA.fire = func(ctx context.Context) AskOutcome {
-			started <- "A"
+			order.add("A")
 
 			select {
 			case <-release:
@@ -252,28 +251,28 @@ func TestAskQueuePriority(t *testing.T) {
 		}
 		q.Enqueue(entryA, nil)
 
-		<-started
+		gateWaitFor(t, func() bool { return order.len() == 1 })
 
 		entryB := &AskEntry{TurnID: queueTurn1, Class: AskClassForeground}
 		entryB.fire = func(_ context.Context) AskOutcome {
-			started <- "B"
+			order.add("B")
 
 			return AskOutcome{Selected: queueOption}
 		}
 		q.Enqueue(entryB, nil)
 
-		select {
-		case <-started:
-			t.Fatal("the open background entry was preempted by a foreground enqueue")
-		case <-time.After(20 * time.Millisecond):
+		time.Sleep(20 * time.Millisecond)
+
+		if got := order.len(); got != 1 {
+			t.Fatalf("fires while A is open = %d; want 1 (the open entry is never preempted)", got)
 		}
 
 		close(release)
 
-		gateWaitFor(t, func() bool { return len(started) == 2 })
+		gateWaitFor(t, func() bool { return order.len() == 2 })
 
-		if <-started != "B" {
-			t.Fatal("B should fire first after A resolved")
+		if got := order.all(); got[1] != "B" {
+			t.Fatalf("fire order = %v; B should fire first after A resolved", got)
 		}
 	})
 
@@ -282,11 +281,11 @@ func TestAskQueuePriority(t *testing.T) {
 
 		q := NewAskQueue()
 		release := make(chan struct{})
-		order := make(chan string, 8)
+		order := &qNames{}
 
 		entryA := &AskEntry{TurnID: queueTurn1, Class: AskClassBackground}
 		entryA.fire = func(ctx context.Context) AskOutcome {
-			order <- "A"
+			order.add("A")
 
 			select {
 			case <-release:
@@ -297,12 +296,12 @@ func TestAskQueuePriority(t *testing.T) {
 		}
 		q.Enqueue(entryA, nil)
 
-		<-order
+		gateWaitFor(t, func() bool { return order.len() == 1 })
 
 		for _, name := range []string{"B", "C"} {
 			e := &AskEntry{TurnID: queueTurn1, Class: AskClassBackground}
 			e.fire = func(_ context.Context) AskOutcome {
-				order <- name
+				order.add(name)
 
 				return AskOutcome{Selected: queueOption}
 			}
@@ -311,15 +310,9 @@ func TestAskQueuePriority(t *testing.T) {
 
 		close(release)
 
-		gateWaitFor(t, func() bool { return len(order) == 3 })
+		gateWaitFor(t, func() bool { return order.len() == 3 })
 
-		close(order)
-
-		got := make([]string, 0, 3)
-		for v := range order {
-			got = append(got, v)
-		}
-
+		got := order.all()
 		if got[0] != "A" || got[1] != "B" || got[2] != "C" {
 			t.Fatalf("fire order = %v; want [A B C] (FIFO within a class)", got)
 		}
@@ -336,6 +329,7 @@ func TestAskQueueNotes(t *testing.T) {
 	q := NewAskQueue()
 
 	notes := make(chan string, 8)
+
 	q.SetNoteEmitter(func(_ *AskEntry, note string) { notes <- note })
 
 	release := make(chan struct{})
@@ -368,18 +362,21 @@ func TestAskQueueNotes(t *testing.T) {
 	}
 	q.Enqueue(entryC, nil) // queues behind B — one note
 
-	select {
-	case n := <-notes:
-		t.Fatalf("immediate-fire enqueue emitted a note %q (spam must be dead by construction)", n)
-	case <-time.After(20 * time.Millisecond):
-	}
-
+	// The two QUEUED enqueues emitted their notes; the immediate fire emitted
+	// none — exactly two notes total, never a third (spam dead by
+	// construction).
 	if got := <-notes; got != "ask queued — 1 pending" {
 		t.Errorf("first queued note = %q; want %q", got, "ask queued — 1 pending")
 	}
 
 	if got := <-notes; got != "ask queued — 2 pending" {
 		t.Errorf("second queued note = %q; want %q", got, "ask queued — 2 pending")
+	}
+
+	select {
+	case n := <-notes:
+		t.Fatalf("unexpected extra note %q (the immediate fire must emit none)", n)
+	case <-time.After(20 * time.Millisecond):
 	}
 
 	if got := q.Enqueued(); got != 3 {
@@ -399,6 +396,7 @@ func TestAskQueueNoteNoSubscriber(t *testing.T) {
 	q := NewAskQueue()
 
 	got := make(chan string, 1)
+
 	q.SetNoteEmitter(func(_ *AskEntry, note string) { got <- note })
 
 	block := make(chan struct{})
@@ -436,7 +434,7 @@ func TestAskQueueNoteNoSubscriber(t *testing.T) {
 // producer goroutines under -race: one-outstanding holds (never two fires
 // in flight), FIFO-within-class holds (per-class fire order ascending by
 // Seq), and no entry is double-fired or lost.
-func TestAskQueueConcurrency(t *testing.T) {
+func TestAskQueueConcurrency(t *testing.T) { //nolint:funlen // the interleaved producer battery
 	t.Parallel()
 
 	const (

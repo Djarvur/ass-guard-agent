@@ -590,6 +590,7 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 			// the dialog answer drives the resume, and NO turn lock is held
 			// across the human wait (RESEARCH Pitfall 2).
 			if gateSuspended != nil {
+				//nolint:contextcheck // the queue pump owns its fire ctx
 				s.suspendForPermission(turnID, gateSuspended.callID, gateSuspended.tool, gateSuspended.input)
 
 				return stopAsk, nil

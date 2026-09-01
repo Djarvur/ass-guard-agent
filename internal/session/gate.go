@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -121,8 +122,11 @@ type GateDeps struct {
 	// before the denial result lands (D-03).
 	Forbid func(tool string) error
 	// Fire performs one ask surface round-trip (the acpserve registry-backed
-	// permission ask). nil = unwirable surface → fail-safe decline.
-	Fire func(e *AskEntry) AskOutcome
+	// permission ask). The queue hands it the per-firing cancellable ctx it
+	// owns — the D-13 drain cancels an OPEN dialog through it (the registry
+	// surfaces the cancellation as the cancelled outcome family). nil =
+	// unwirable surface → fail-safe decline.
+	Fire func(ctx context.Context, e *AskEntry) AskOutcome
 	// Queue is the ask queue owning every dialog firing (D-11's
 	// one-outstanding discipline; the broker's single-slot discipline
 	// demoted to the queue's fired-head invariant).
@@ -365,14 +369,18 @@ func (s *Session) suspendForPermission(turnID, callID, tool string, input json.R
 		Input:     p.Input,
 		Class:     s.gateEntryClass(),
 	}
-	entry.fire = func() AskOutcome {
+	entry.fire = func(ctx context.Context) AskOutcome { //nolint:contextcheck // the queue's drain ctx; turn ctx is gone
 		if deps.Fire == nil {
 			// The unwirable-surface fail-safe (the flagged assumption):
 			// decline — never a silent allow.
 			return AskOutcome{Err: errPermissionSurfaceUnwired}
 		}
 
-		return deps.Fire(entry)
+		if ctx == nil {
+			ctx = context.Background()
+		}
+
+		return deps.Fire(ctx, entry)
 	}
 
 	deps.Queue.Enqueue(entry, func(_ *AskEntry, outcome AskOutcome) {

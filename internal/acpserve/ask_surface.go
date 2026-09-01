@@ -99,12 +99,19 @@ var (
 // under HUMAN-ASK → outcome mapping. It runs on the ask queue's pump
 // goroutine (one outstanding ask, D-11); the HUMAN-ASK window means a human
 // may think for the full configured wait (16-D-17) — the queue holds no lock
-// while they do.
-func (p *PermissionAsk) Fire(e *session.AskEntry) session.AskOutcome {
+// while they do. ctx is the queue-owned per-firing cancellation seam (17-03
+// D-13: the turn-death drain cancels an OPEN dialog through it — the registry
+// resolves the entry cancelled AND cascades $/cancel_request); nil falls back
+// to the serve-lifetime ctx.
+func (p *PermissionAsk) Fire(ctx context.Context, e *session.AskEntry) session.AskOutcome { //nolint:contextcheck,lll // ctx is the queue's drain seam; nil falls back to the serve ctx
+	if ctx == nil {
+		ctx = p.ctx
+	}
+
 	frame := BuildPermissionAsk(e.SessionID, e.CallID, e.Title, e.Input)
 	frame.ToolCall.Kind = e.Kind
 
-	msg, err := p.registry.Call(p.ctx, acp.MethodRequestPermission, frame, acp.TimeoutHumanAsk)
+	msg, err := p.registry.Call(ctx, acp.MethodRequestPermission, frame, acp.TimeoutHumanAsk)
 	if err != nil {
 		if errors.Is(err, acp.ErrRequestCancelled) {
 			// Turn death / client cancel / the -32800 answer / shutdown drain:

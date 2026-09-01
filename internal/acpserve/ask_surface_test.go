@@ -63,7 +63,7 @@ func fireAsync(t *testing.T, pa *PermissionAsk) <-chan session.AskOutcome {
 
 	out := make(chan session.AskOutcome, 1)
 
-	go func() { out <- pa.Fire(gateAskEntry()) }()
+	go func() { out <- pa.Fire(context.Background(), gateAskEntry()) }()
 
 	return out
 }
