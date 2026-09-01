@@ -22,6 +22,9 @@ import (
 // is injected, the due walk is driven directly, and the queue semantics use
 // the REAL per-session turn mutex.
 
+// cronExprHourly is the hourly cron expression the battery's automations use.
+const cronExprHourly = "0 * * * *"
+
 // newCronRunner builds an engine-on runner over dir with a scripted provider
 // (the expansion harness) plus a REAL schedule store.
 //
@@ -314,7 +317,7 @@ func TestCronWiring_AutomationTurnDeclinesGatedAsk(t *testing.T) { //nolint:funl
 
 	r, _, store := newCronRunner(t, dir,
 		scriptedResp{toolCalls: []provider.ToolCall{{
-			ID: "call_cron_w", Name: "Write", Input: json.RawMessage(`{"file_path":"x"}`),
+			ID: "call_cron_w", Name: toolNameWrite, Input: json.RawMessage(`{"file_path":"x"}`),
 		}}},
 		scriptedResp{text: "the automation turn closed"},
 	)
@@ -322,7 +325,7 @@ func TestCronWiring_AutomationTurnDeclinesGatedAsk(t *testing.T) { //nolint:funl
 	// A mutating tool in the shared catalog (the session clone inherits it)
 	// makes the scripted call ask-class.
 	r.catalog.Register(toolcat.Tool{
-		Name:        "Write",
+		Name:        toolNameWrite,
 		Mutability:  toolcat.MutabilityMutating,
 		InputSchema: json.RawMessage(`{"type":"object"}`),
 		Execute: func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
@@ -348,7 +351,7 @@ func TestCronWiring_AutomationTurnDeclinesGatedAsk(t *testing.T) { //nolint:funl
 	store.SetNow(func() time.Time { return time.Now().Add(-2 * time.Hour) })
 
 	_, err := store.Create(&sched.Automation{
-		Title: "cron gated", Prompt: "run the gated automation", Cron: "0 * * * *", Recurring: true,
+		Title: "cron gated", Prompt: "run the gated automation", Cron: cronExprHourly, Recurring: true,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -398,7 +401,8 @@ func TestCronWiring_AutomationTurnDeclinesGatedAsk(t *testing.T) { //nolint:funl
 	defer fireMu.Unlock()
 
 	if fired != 0 {
-		t.Errorf("permission surface fired %d time(s) on an automation turn; want 0 (never a dialog nobody answers)", fired)
+		t.Errorf("permission surface fired %d time(s) on an automation turn; "+
+			"want 0 (never a dialog nobody answers)", fired)
 	}
 }
 

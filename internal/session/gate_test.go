@@ -330,7 +330,7 @@ func TestGatePermissionSuspend(t *testing.T) { //nolint:cyclop,funlen // flat en
 // the queue (one outstanding, D-11), the mid-suspension projection carries NO
 // unpaired tool_use (the CR-01 projector pair-safety filter), and both calls
 // land non-error results after their answers.
-func TestGatePermissionSuspend_MultiCallBatch(t *testing.T) { //nolint:funlen,cyclop // the full two-dialog chain
+func TestGatePermissionSuspend_MultiCallBatch(t *testing.T) { //nolint:funlen,cyclop,gocyclo // two-dialog chain
 	t.Parallel()
 
 	block1 := make(chan struct{})
@@ -485,7 +485,7 @@ func projectedToolUseIDs(t *testing.T, s *Session, turnID string) []string {
 // runtime composition injects the per-session turn mutex; this test injects a
 // tracking wrapper and asserts the resume ENTERED it exactly once with zero
 // overlap.
-func TestGateResumeRunsUnderResumeSerial(t *testing.T) {
+func TestGateResumeRunsUnderResumeSerial(t *testing.T) { //nolint:funlen // the serializer tracking battery
 	t.Parallel()
 
 	block := make(chan struct{})
@@ -518,9 +518,11 @@ func TestGateResumeRunsUnderResumeSerial(t *testing.T) {
 		trackMu.Lock()
 		entered++
 		inFlight++
+
 		if inFlight > maxInFlight {
 			maxInFlight = inFlight
 		}
+
 		trackMu.Unlock()
 
 		f()

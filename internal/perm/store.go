@@ -121,7 +121,8 @@ func tightenPerm(path string, want os.FileMode) {
 		return // no bits looser than want
 	}
 
-	if cerr := os.Chmod(path, want); cerr != nil {
+	cerr := os.Chmod(path, want)
+	if cerr != nil {
 		slog.Warn("perm: could not tighten loose permissions on the trust store",
 			"path", path, "want", want.String(), "error", cerr.Error())
 
@@ -147,11 +148,13 @@ func OpenRepaired(path string) (*Store, error) {
 
 	corrupt := path + ".corrupt"
 
-	if rmErr := os.Remove(corrupt); rmErr != nil && !os.IsNotExist(rmErr) {
+	rmErr := os.Remove(corrupt)
+	if rmErr != nil && !os.IsNotExist(rmErr) {
 		return nil, fmt.Errorf("perm: clear stale quarantine %q: %w", corrupt, rmErr)
 	}
 
-	if rerr := os.Rename(path, corrupt); rerr != nil {
+	rerr := os.Rename(path, corrupt)
+	if rerr != nil {
 		return nil, fmt.Errorf("perm: quarantine %q: %w", path, rerr)
 	}
 

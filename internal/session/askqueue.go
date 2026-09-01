@@ -322,25 +322,37 @@ func (q *AskQueue) DrainTurn(turnID string) {
 }
 
 // DrainAll drains every turn present (session close + serve shutdown): the
-// same DrainTurn core applied per turn id, so the open dialog resolves
-// cancelled and every queued ask drains cancelled-normal without firing.
+// open dialog resolves cancelled through its fire-ctx cancellation (the pump's
+// normal completion path) and every queued ask drains cancelled-normal without
+// firing. ATOMIC (CR-03 follow-up): the whole drain state is claimed under ONE
+// mutex pass — looping DrainTurn per turn id would leave a window in which the
+// pump, woken by the first cancel, promotes and fires a not-yet-drained queued
+// entry (the zombie-ask ban violated by scheduling luck). The drained resolves
+// run on their own goroutines, exactly as in DrainTurn.
 func (q *AskQueue) DrainAll() {
 	q.mu.Lock()
 
-	turnIDs := make([]string, 0, len(q.queued)+1)
+	drained := q.queued
+	q.queued = nil
+
+	var cancel context.CancelFunc
 
 	if q.open != nil {
-		turnIDs = append(turnIDs, q.open.qa.entry.TurnID)
-	}
-
-	for _, qa := range q.queued {
-		turnIDs = append(turnIDs, qa.entry.TurnID)
+		cancel = q.open.cancel
 	}
 
 	q.mu.Unlock()
 
-	for _, id := range turnIDs {
-		q.DrainTurn(id)
+	// Cancel outside the mutex (the DrainTurn discipline): the pump's fire
+	// observes the cancelled ctx and, finding the queue already empty, exits.
+	if cancel != nil {
+		cancel()
+	}
+
+	for _, qa := range drained {
+		if qa.resolve != nil {
+			go qa.resolve(qa.entry, AskOutcome{Cancelled: true})
+		}
 	}
 }
 

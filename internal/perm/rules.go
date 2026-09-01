@@ -277,47 +277,30 @@ func SplitCompound(cmd string) []string {
 
 // hasSubstitution reports whether the command carries shell command
 // substitution — `$(...)` or backticks. Shell semantics honored to the extent
-// the guard needs (WR-02): substitution is LIVE inside double quotes and only
-// dead inside single quotes; an unquoted backslash escapes the next byte. The
-// guard is intentionally one-sided: a deny or ask rule still matches a
-// substitution-bearing command (deny stays strong), but an ALLOW never can —
-// the substitution's payload executes without appearing as a separate
-// subcommand, so allowing it would defeat the compound discipline ("an allow
-// must cover EVERY subcommand") with no separator anywhere in the visible
-// text.
+// the guard needs (WR-02): substitution is LIVE inside double quotes (only
+// single quotes make the span literal) and an unquoted backslash escapes the
+// next byte. The guard is intentionally one-sided: a deny or ask rule still
+// matches a substitution-bearing command (deny stays strong), but an ALLOW
+// never can — the substitution's payload executes without appearing as a
+// separate subcommand, so allowing it would defeat the compound discipline
+// ("an allow must cover EVERY subcommand") with no separator anywhere in the
+// visible text.
 func hasSubstitution(cmd string) bool {
-	var quote byte // 0 = unquoted; '\'' = literal span; '"' = double-quote span
-
 	for i := 0; i < len(cmd); i++ {
-		c := cmd[i]
+		switch c := cmd[i]; c {
+		case '\'':
+			// The single-quoted span is fully literal: skip it whole.
+			end := strings.IndexByte(cmd[i+1:], '\'')
+			if end < 0 {
+				return false // unterminated: nothing after it can substitute
+			}
 
-		switch {
-		case quote == '\'':
-			if c == '\'' {
-				quote = 0
-			}
-		case quote == '"':
-			switch c {
-			case '"':
-				quote = 0
-			case '\\':
-				i++ // skip the escaped byte ("\" / "\$" are literal)
-			case '`':
-				return true
-			case '$':
-				if i+1 < len(cmd) && cmd[i+1] == '(' {
-					return true
-				}
-			}
-		case c == '\'':
-			quote = '\''
-		case c == '"':
-			quote = '"'
-		case c == '\\':
-			i++ // skip the escaped byte (a quoted separator, or an escaped \$)
-		case c == '`':
+			i += end + 1
+		case '\\':
+			i++ // the escaped byte is literal (\" "\$" \$( are not substitutions)
+		case '`':
 			return true
-		case c == '$':
+		case '$':
 			if i+1 < len(cmd) && cmd[i+1] == '(' {
 				return true
 			}

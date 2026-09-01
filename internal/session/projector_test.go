@@ -790,34 +790,34 @@ func TestPairingInvariant_ProjectorWindow(t *testing.T) {
 	// where projecting it IS the bug.) p1..p3 (answered) all still project,
 	// and the window ends at p3's result.
 	for _, id := range []string{"p1", "p2", "p3"} {
-		found := false
-
-		for _, mm := range msgs {
-			for _, tc := range mm.ToolCalls {
-				if tc.ID == id {
-					found = true
-				}
-			}
-		}
-
-		if !found {
+		if !projectedHasCall(msgs, id) {
 			t.Errorf("answered call %q missing from the projected window", id)
 		}
 	}
 
-	for _, mm := range msgs {
-		for _, tc := range mm.ToolCalls {
-			if tc.ID == "p4" {
-				t.Errorf("unanswered call p4 projected — unpaired tool_use (CR-01 pair-safety violated):\n%s",
-					msgSummaryList(msgs))
-			}
-		}
+	if projectedHasCall(msgs, "p4") {
+		t.Errorf("unanswered call p4 projected — unpaired tool_use (CR-01 pair-safety violated):\n%s",
+			msgSummaryList(msgs))
 	}
 
 	last := msgs[len(msgs)-1]
 	if last.Role != roleToolMsg || last.ToolCallID != "p3" {
 		t.Errorf("last window message = %s; want p3's tool result (p4 contributes nothing)", msgSummary(&last))
 	}
+}
+
+// projectedHasCall reports whether any assistant batch in the projected
+// window carries the given tool-call id.
+func projectedHasCall(msgs []provider.Message, id string) bool {
+	for _, mm := range msgs {
+		for _, tc := range mm.ToolCalls {
+			if tc.ID == id {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 // TestProjector_ToolResultRedactionCarry (08-07 T3 Test 4, LOG-03 extends to

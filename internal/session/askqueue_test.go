@@ -748,7 +748,7 @@ func TestAskQueueDrainAll(t *testing.T) { //nolint:funlen,paralleltest // full d
 // reader stalling on it freezes the whole connection. The QUEUED entry's drain
 // resolve runs on its own goroutine: the drain returns while the resolve is
 // still running, and the resolve completes afterwards.
-func TestAskQueueDrainResolvesAsync(t *testing.T) { //nolint:paralleltest // goroutine-leak baseline idiom
+func TestAskQueueDrainResolvesAsync(t *testing.T) { //nolint:funlen,paralleltest // drain chain; baseline idiom
 	baseline := runtime.NumGoroutine()
 
 	q := NewAskQueue()

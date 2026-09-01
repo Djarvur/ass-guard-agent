@@ -36,14 +36,19 @@ const (
 	wiringAskCache   = "ask me which library"
 
 	// The chained-ask batteries' shared literals (goconst).
-	handoffToApply   = "handoff to apply"
-	postProposeRowID = "post-propose-handoff"
-	cwdKey           = "cwd"
-	methodSessNew    = "session/new"
-	methodSessPrmt   = "session/prompt"
-	sessionUpdate    = "session/update"
-	promptListKey    = "prompt"
-	cwdForFrames     = "/tmp"
+	handoffToApply      = "handoff to apply"
+	postProposeRowID    = "post-propose-handoff"
+	postExploreRowID    = "post-explore-handoff"
+	chainExploreDone    = "exploration complete — handoff to propose"
+	chainProposeDone    = "proposal written — handoff to apply"
+	chainApplyDone      = "applied everything; nothing further to do"
+	chainHandoffPropose = "handoff to propose"
+	cwdKey              = "cwd"
+	methodSessNew       = "session/new"
+	methodSessPrmt      = "session/prompt"
+	sessionUpdate       = "session/update"
+	promptListKey       = "prompt"
+	cwdForFrames        = "/tmp"
 )
 
 // wiringAskInput is the plan's Test-1 question shape (one question, two
@@ -378,8 +383,8 @@ func TestAskWiring_ChainSurvivesAskTimerResume(t *testing.T) { //nolint:cyclop,f
 			ID: wiringAskCall, Name: wiringAskTool,
 			Input: json.RawMessage(wiringAskInput),
 		}}},
-		scriptedResp{text: "proposal written — handoff to apply", finish: stopEndTurn},
-		scriptedResp{text: "applied everything; nothing further to do", finish: stopEndTurn},
+		scriptedResp{text: chainProposeDone, finish: stopEndTurn},
+		scriptedResp{text: chainApplyDone, finish: stopEndTurn},
 	)
 
 	r.askTimeout = 50 * time.Millisecond
@@ -387,7 +392,7 @@ func TestAskWiring_ChainSurvivesAskTimerResume(t *testing.T) { //nolint:cyclop,f
 	// The seeded chain rows: explore→propose→apply (the flagship shape).
 	cfg := &openspec.OpenSpecConfig{Patterns: []openspec.PatternEntry{
 		{
-			ID: "post-explore-handoff", Regex: "handoff to propose",
+			ID: postExploreRowID, Regex: chainHandoffPropose,
 			Action: actionContinue, Next: "/opsx:propose ask-chain",
 		},
 		{ID: postProposeRowID, Regex: handoffToApply, Action: actionContinue, Next: "/opsx:apply ask-chain"},
@@ -565,7 +570,7 @@ func (p *askToolCallProvider) ToolResultMessage(string, json.RawMessage) (json.R
 
 // cr02GateTool is the mutating tool the CR-02 mutex pins gate on; cr02PermFire
 // is the blocking permission surface (the dialog stays open until release).
-const cr02GateTool = "Write"
+const cr02GateTool = toolNameWrite
 
 // TestAskWiring_ResumeHoldsTurnMutex (17-REVIEW CR-02, the race pin): a
 // gated turn suspends with the dialog OPEN; while the session's turn mutex is
@@ -603,6 +608,7 @@ func TestAskWiring_ResumeHoldsTurnMutex(t *testing.T) { //nolint:funlen // the f
 
 	r.SetPermissionAskFire(func(_ context.Context, _ *session.AskEntry) session.AskOutcome {
 		dialogOpen <- struct{}{}
+
 		<-release
 
 		return session.AskOutcome{Selected: acp.PermOptionAllowOnce}
@@ -665,7 +671,7 @@ func TestAskWiring_ResumeHoldsTurnMutex(t *testing.T) { //nolint:funlen // the f
 // TestAskWiring_TimerResumeHoldsTurnMutex (CR-02's D-01 leg, the pre-existing
 // shape): the timer fires while the turn mutex is held — its resume must queue
 // behind the mutex, not run detached alongside the active turn.
-func TestAskWiring_TimerResumeHoldsTurnMutex(t *testing.T) { //nolint:funlen // the full timer-race chain
+func TestAskWiring_TimerResumeHoldsTurnMutex(t *testing.T) {
 	t.Parallel()
 
 	r, _ := newAskWiringRunner(t, 50*time.Millisecond)
@@ -714,11 +720,11 @@ func TestAskWiring_TimerResumeHoldsTurnMutex(t *testing.T) { //nolint:funlen // 
 // chain continues to the apply stage. Pre-fix, the permission family never
 // armed AskSettleChan, so waitAskSettled saw nil and the chain died at the
 // dialog (decisions + remaining injections lost).
-func TestAskWiring_ChainSurvivesPermissionDialogResume(t *testing.T) { //nolint:funlen,cyclop // the full park/resume chain
+func TestAskWiring_ChainSurvivesPermissionDialogResume(t *testing.T) { //nolint:funlen,cyclop // park/resume chain
 	t.Parallel()
 
 	r, _ := newExpansionRunner(t, true,
-		scriptedResp{text: "exploration complete — handoff to propose"},
+		scriptedResp{text: chainExploreDone},
 		scriptedResp{toolCalls: []provider.ToolCall{{
 			ID: "call_cr05_w", Name: cr02GateTool, Input: json.RawMessage(`{"file_path":"x"}`),
 		}}},
@@ -744,6 +750,7 @@ func TestAskWiring_ChainSurvivesPermissionDialogResume(t *testing.T) { //nolint:
 
 	r.SetPermissionAskFire(func(_ context.Context, _ *session.AskEntry) session.AskOutcome {
 		dialogOpen <- struct{}{}
+
 		<-release
 
 		return session.AskOutcome{Selected: acp.PermOptionAllowOnce}
@@ -752,7 +759,7 @@ func TestAskWiring_ChainSurvivesPermissionDialogResume(t *testing.T) { //nolint:
 	// The seeded explore→propose→apply chain (the flagship shape).
 	cfg := &openspec.OpenSpecConfig{Patterns: []openspec.PatternEntry{
 		{
-			ID: "post-explore-handoff", Regex: "handoff to propose",
+			ID: postExploreRowID, Regex: chainHandoffPropose,
 			Action: actionContinue, Next: "/opsx:propose ask-chain",
 		},
 		{ID: postProposeRowID, Regex: handoffToApply, Action: actionContinue, Next: "/opsx:apply ask-chain"},
@@ -1301,15 +1308,15 @@ func TestAskPark_ReplyDuringParkResumesAndQueuesInjection(t *testing.T) { //noli
 			ID: wiringAskCall, Name: wiringAskTool,
 			Input: json.RawMessage(wiringAskInput),
 		}}},
-		scriptedResp{text: "proposal written — handoff to apply", finish: stopEndTurn},
-		scriptedResp{text: "applied everything; nothing further to do", finish: stopEndTurn},
+		scriptedResp{text: chainProposeDone, finish: stopEndTurn},
+		scriptedResp{text: chainApplyDone, finish: stopEndTurn},
 	)
 
 	r.askTimeout = time.Hour // the REPLY must win — no timer competition
 
 	cfg := &openspec.OpenSpecConfig{Patterns: []openspec.PatternEntry{
 		{
-			ID: "post-explore-handoff", Regex: "handoff to propose",
+			ID: postExploreRowID, Regex: chainHandoffPropose,
 			Action: actionContinue, Next: "/opsx:propose park-subj",
 		},
 		{ID: postProposeRowID, Regex: handoffToApply, Action: actionContinue, Next: "/opsx:apply park-subj"},

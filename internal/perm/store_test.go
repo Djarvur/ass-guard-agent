@@ -547,7 +547,8 @@ func TestOpenCorruptDocumentTypedError(t *testing.T) {
 
 	path := filepath.Join(t.TempDir(), "permissions.yaml")
 
-	if werr := os.WriteFile(path, []byte(corruptDocFixture), filePermOwner); werr != nil {
+	werr := os.WriteFile(path, []byte(corruptDocFixture), filePermOwner)
+	if werr != nil {
 		t.Fatalf("seed corrupt file: %v", werr)
 	}
 
@@ -575,7 +576,8 @@ func TestOpenRepairedQuarantinesCorruptFile(t *testing.T) {
 
 	raw := []byte("deny:\n    - \"Bash(rm *)\"\nallow:\n    - \"Read\"\n" + corruptDocFixture)
 
-	if werr := os.WriteFile(path, raw, filePermOwner); werr != nil {
+	werr := os.WriteFile(path, raw, filePermOwner)
+	if werr != nil {
 		t.Fatalf("seed corrupt file: %v", werr)
 	}
 
@@ -592,13 +594,14 @@ func TestOpenRepairedQuarantinesCorruptFile(t *testing.T) {
 		t.Fatalf("quarantined file missing: %v", rerr)
 	}
 
-	if string(quarantined) != string(raw) {
+	if !bytes.Equal(quarantined, raw) {
 		t.Errorf("quarantined bytes differ from the original file")
 	}
 
 	// The floor file was recreated (0600) and dialog writes work.
-	if err := s.AllowTool(testToolWrite); err != nil {
-		t.Errorf("AllowTool on the recreated store: %v", err)
+	aErr := s.AllowTool(testToolWrite)
+	if aErr != nil {
+		t.Errorf("AllowTool on the recreated store: %v", aErr)
 	}
 
 	info, serr := os.Stat(path)
@@ -630,7 +633,8 @@ func TestOpenRepairedHealthyFileUnchanged(t *testing.T) {
 
 	raw := []byte("deny:\n    - \"Wri te\"\n    - \"Write\"\n")
 
-	if werr := os.WriteFile(path, raw, filePermOwner); werr != nil {
+	werr := os.WriteFile(path, raw, filePermOwner)
+	if werr != nil {
 		t.Fatalf("seed file: %v", werr)
 	}
 
@@ -641,7 +645,8 @@ func TestOpenRepairedHealthyFileUnchanged(t *testing.T) {
 
 	silenceStore(s)
 
-	if _, serr := os.Stat(path + ".corrupt"); !os.IsNotExist(serr) {
+	_, serr := os.Stat(path + ".corrupt")
+	if !os.IsNotExist(serr) {
 		t.Error("a line-malformed (not document-corrupt) file was quarantined — scoping broken")
 	}
 
@@ -659,7 +664,8 @@ func TestOpenTightensLoosePerms(t *testing.T) {
 
 	dir := filepath.Join(t.TempDir(), "ass-guard")
 
-	if merr := os.MkdirAll(dir, 0o777); merr != nil {
+	merr := os.MkdirAll(dir, 0o777)
+	if merr != nil {
 		t.Fatalf("seed loose dir: %v", merr)
 	}
 
@@ -667,7 +673,8 @@ func TestOpenTightensLoosePerms(t *testing.T) {
 
 	raw := []byte("deny:\n    - \"Bash(rm *)\"\n")
 
-	if werr := os.WriteFile(path, raw, 0o644); werr != nil {
+	werr := os.WriteFile(path, raw, 0o644)
+	if werr != nil {
 		t.Fatalf("seed loose file: %v", werr)
 	}
 
@@ -709,7 +716,8 @@ func TestOpenKeepsTightPermsQuietShape(t *testing.T) {
 
 	path := filepath.Join(t.TempDir(), "permissions.yaml")
 
-	if werr := os.WriteFile(path, []byte("allow:\n    - \"Read\"\n"), filePermOwner); werr != nil {
+	werr := os.WriteFile(path, []byte("allow:\n    - \"Read\"\n"), filePermOwner)
+	if werr != nil {
 		t.Fatalf("seed tight file: %v", werr)
 	}
 

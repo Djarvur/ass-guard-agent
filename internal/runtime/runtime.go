@@ -1312,6 +1312,7 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	// sync reply path (routeAskReply inside Run) already holds the mutex and
 	// bypasses this wrapper — it is not reentrant.
 	turnMu := r.sessionTurnMu(sessionID)
+
 	s.SetResumeSerial(func(f func()) {
 		turnMu.Lock()
 		defer turnMu.Unlock()
