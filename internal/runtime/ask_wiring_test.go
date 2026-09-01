@@ -705,6 +705,144 @@ func TestAskWiring_TimerResumeHoldsTurnMutex(t *testing.T) { //nolint:funlen // 
 	t.Fatal("the timer resume never landed after the mutex was released")
 }
 
+// TestAskWiring_ChainSurvivesPermissionDialogResume (17-REVIEW CR-05, the
+// engine-on gate pin — the permission-family sibling of
+// TestAskWiring_ChainSurvivesAskTimerResume): an INJECTED engine turn's gated
+// call suspends on the permission dialog; the chain must PARK (stay alive)
+// while the dialog is open — not exit silently on a nil settle channel — and
+// after the operator allows, the resumed turn must feed the engine so the
+// chain continues to the apply stage. Pre-fix, the permission family never
+// armed AskSettleChan, so waitAskSettled saw nil and the chain died at the
+// dialog (decisions + remaining injections lost).
+func TestAskWiring_ChainSurvivesPermissionDialogResume(t *testing.T) { //nolint:funlen,cyclop // the full park/resume chain
+	t.Parallel()
+
+	r, _ := newExpansionRunner(t, true,
+		scriptedResp{text: "exploration complete — handoff to propose"},
+		scriptedResp{toolCalls: []provider.ToolCall{{
+			ID: "call_cr05_w", Name: cr02GateTool, Input: json.RawMessage(`{"file_path":"x"}`),
+		}}},
+		scriptedResp{text: "proposal written — handoff to apply"},
+		scriptedResp{text: "applied everything; nothing further to do"},
+	)
+
+	// The gated mutating tool + gated mode (the dialog leg).
+	r.catalog.Register(toolcat.Tool{
+		Name:        cr02GateTool,
+		Mutability:  toolcat.MutabilityMutating,
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+		Execute: func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+			return json.RawMessage(`{"output":"written"}`), nil
+		},
+	})
+
+	r.SetPermMode(session.PermModeGated)
+
+	dialogOpen := make(chan struct{}, 1)
+
+	release := make(chan struct{})
+
+	r.SetPermissionAskFire(func(_ context.Context, _ *session.AskEntry) session.AskOutcome {
+		dialogOpen <- struct{}{}
+		<-release
+
+		return session.AskOutcome{Selected: acp.PermOptionAllowOnce}
+	})
+
+	// The seeded explore→propose→apply chain (the flagship shape).
+	cfg := &openspec.OpenSpecConfig{Patterns: []openspec.PatternEntry{
+		{
+			ID: "post-explore-handoff", Regex: "handoff to propose",
+			Action: actionContinue, Next: "/opsx:propose ask-chain",
+		},
+		{ID: postProposeRowID, Regex: handoffToApply, Action: actionContinue, Next: "/opsx:apply ask-chain"},
+	}}
+
+	pt, err := openspec.FromConfig(cfg)
+	if err != nil {
+		t.Fatalf("FromConfig: %v", err)
+	}
+
+	r.patternTable = pt
+
+	const sid = "sess-cr05-chain"
+
+	stop, err := r.Run(context.Background(), sid, &noopEmitter{},
+		[]acp.ContentBlock{{Type: blockText, Text: "/opsx:explore ask-chain"}})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if stop != stopEndTurn {
+		t.Fatalf("Run stop = %q; want end_turn (the suspension maps to a completed turn)", stop)
+	}
+
+	<-dialogOpen // the gated dialog is open; the chain must be parked behind it
+
+	// PIN (a): the chain is PARKED — alive, waiting on the settle seam — while
+	// the dialog is open. Pre-fix, the nil AskSettleChan made Observe exit
+	// silently here (the chain went idle with the dialog unanswered).
+	parkCtx, parkCancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer parkCancel()
+
+	if r.WaitChainIdle(parkCtx, sid) {
+		t.Error("the engine chain exited while the permission dialog was open — " +
+			"the suspension was engine-invisible (CR-05: nil settle seam)")
+	}
+
+	close(release) // the operator allows → resume → settle → the chain continues
+
+	idleCtx, idleCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer idleCancel()
+
+	if !r.WaitChainIdle(idleCtx, sid) {
+		t.Fatal("the engine chain did not go idle within 15s — the chain wedged behind the dialog")
+	}
+
+	// PIN (b): the apply-stage turn EXISTS — the chain survived the dialog and
+	// injected the remaining stage.
+	if got := lastUserMessageText(t, r, sid); !strings.Contains(got, "Apply the change:") {
+		t.Errorf("last user_message = %q; want the apply-stage turn — the chain died at the gated dialog", got)
+	}
+
+	// PIN (c): a continue decision exists for the gated (suspended) turn after
+	// its completion — the resumed turn fed Decide.
+	lines, rerr := r.sessions[sid].Manager.ReadAll()
+	if rerr != nil {
+		t.Fatalf("ReadAll: %v", rerr)
+	}
+
+	askIdx, askTurnID := -1, ""
+
+	for i := range lines {
+		if lines[i].Type == session.TypeAskSuspended {
+			askIdx, askTurnID = i, lines[i].TurnID
+
+			break
+		}
+	}
+
+	if askIdx < 0 {
+		t.Fatal("no ask_suspended line — the gated call never suspended")
+	}
+
+	decided := false
+
+	for i := range lines {
+		if i > askIdx && lines[i].Type == session.TypeEngineDecision &&
+			lines[i].TurnID == askTurnID && lines[i].Name == actionContinue {
+			decided = true
+
+			break
+		}
+	}
+
+	if !decided {
+		t.Errorf("no continue engine_decision for the gated turn %q after its completion — "+
+			"the resumed turn never fed the engine (CR-05)", askTurnID)
+	}
+}
+
 // TestAskWiring_ServerLevelSurface (the 12-01 live-witness finding, pinned):
 // through the REAL acp.Server (stdio frames, the adapter emitter, the Writer —
 // the exact live path), the rendered question surface MUST reach the client as

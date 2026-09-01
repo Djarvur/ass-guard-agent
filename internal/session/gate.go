@@ -352,6 +352,16 @@ func (s *Session) suspendForPermission(turnID, callID, tool string, input json.R
 	}
 	p.settle = make(chan struct{})
 
+	// CR-05: publish the suspension's settle signal on the broker seam the
+	// engine's ask-wait consumes (AskSettleChan). Surface arms that seam for
+	// the question family; the permission family bypasses Surface, so without
+	// this publish an engine-driven turn's gated dialog was engine-invisible
+	// (nil channel → the chain exits at the suspension; a stale earlier
+	// channel → hot-spin misreporting the dialog as settled).
+	if b := s.ask; b != nil {
+		b.ArmSettle(p.settle)
+	}
+
 	payload, mErr := json.Marshal(map[string]string{"tool": tool})
 	if mErr != nil {
 		payload = json.RawMessage(`{"tool":"unknown"}`)

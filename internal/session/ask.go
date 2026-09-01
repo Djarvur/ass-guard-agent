@@ -281,6 +281,19 @@ func (b *AskBroker) SettleChan() <-chan struct{} {
 	return b.settleCh
 }
 
+// ArmSettle publishes ch as the CURRENT suspension's settle signal — the same
+// seam Surface arms, for suspensions that bypass Surface (17-REVIEW CR-05: the
+// permission family never surfaced through the broker, so its settle channel
+// stayed invisible to the engine's ask-wait — engine chains exited silently at
+// a gated dialog, or hot-spun on a stale, already-closed channel from an
+// earlier question ask). Mutex-guarded replace, Surface's semantics.
+func (b *AskBroker) ArmSettle(ch chan struct{}) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.settleCh = ch
+}
+
 // stopTimerLocked stops + clears the timer (caller holds mu).
 func (b *AskBroker) stopTimerLocked() {
 	if b.timer != nil {

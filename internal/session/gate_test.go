@@ -553,6 +553,76 @@ func TestGateResumeRunsUnderResumeSerial(t *testing.T) {
 	}
 }
 
+// TestGatePermissionSuspensionArmsSettle pins the CR-05 fix at the session
+// seam: a permission suspension PUBLISHES its settle signal on the broker
+// (AskSettleChan — the channel the engine's ask-wait consumes). While the
+// dialog is open the channel is live; it closes only after the resumed turn
+// returns. Pre-fix the seam stayed nil for the whole permission family, so
+// engine chains exited silently at a gated dialog.
+func TestGatePermissionSuspensionArmsSettle(t *testing.T) {
+	t.Parallel()
+
+	block := make(chan struct{})
+
+	store := &fakePermStore{}
+	surf := &fakeGateSurface{
+		answers: []AskOutcome{{Selected: acp.PermOptionAllowOnce}},
+		block:   block,
+	}
+
+	s := newGateSession(t, []provider.Response{
+		{
+			FinishReason: blockToolUse,
+			ToolCalls: []provider.ToolCall{
+				{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)},
+			},
+		},
+		{FinishReason: stopEndTurn},
+	}, PermModeGated, store, surf)
+
+	// Wire the broker so the settle seam exists (composition always does; the
+	// bare gate fixtures skip it because they never consult the seam).
+	s.SetAskBroker(context.Background(), NewAskBroker(0, nil))
+
+	stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+
+	if stop != stopAsk {
+		t.Fatalf("stop = %q; want the ask marker", stop)
+	}
+
+	gateWaitFor(t, func() bool { return surf.fired() == 1 })
+
+	// THE CR-05 pin: the suspension armed the seam — the engine's wait would
+	// block here instead of seeing nil (exit) or a stale channel (hot-spin).
+	settle := s.AskSettleChan()
+	if settle == nil {
+		t.Fatal("AskSettleChan is nil while the permission dialog is open — " +
+			"the suspension never armed the broker settle seam (CR-05)")
+	}
+
+	select {
+	case <-settle:
+		t.Fatal("the settle signal closed before the dialog was answered")
+	default:
+	}
+
+	close(block) // the operator allows → resume runs → settle closes after the turn returns
+
+	// The settle signal closes AFTER the resumed runTurn returns — the 13-00
+	// completion discipline, now driven by the dialog answer.
+	gateWaitFor(t, func() bool {
+		select {
+		case <-settle:
+			return true
+		default:
+			return false
+		}
+	})
+}
+
 // TestGateChokepoint_UngatedDefaultNoDialog pins criterion 4's default leg:
 // ungated (the DEFAULT mode), an ask-class call with no matching rule executes
 // immediately with ZERO surface invocations — "zero new dialogs on default
