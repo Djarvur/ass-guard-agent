@@ -422,7 +422,10 @@ func TestElicitationRevalidation(t *testing.T) { //nolint:funlen,cyclop,gocognit
 
 		s.EnqueueElicitationAsk(pending, fire)
 
-		time.Sleep(50 * time.Millisecond) // the queue's pump: the fallback outcome resolves the entry
+		// IN-02: wait on the observable signal (the queue's pump fired the
+		// fallback entry) instead of a fixed sleep — the repo's known flake
+		// family under loaded -race runs; the sibling tests use gateWaitFor.
+		gateWaitFor(t, func() bool { return fired() == 1 })
 
 		if n := fired(); n != 1 {
 			t.Fatalf("asks fired = %d; want one", n)
