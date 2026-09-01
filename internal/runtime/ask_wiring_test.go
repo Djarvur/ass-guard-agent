@@ -6,13 +6,16 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/coreexec"
 	"github.com/Djarvur/ass-guard-agent/internal/event"
+	"github.com/Djarvur/ass-guard-agent/internal/learning"
 	"github.com/Djarvur/ass-guard-agent/internal/openspec"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
@@ -1127,4 +1130,254 @@ func TestAskPark_ReplyDuringParkResumesAndQueuesInjection(t *testing.T) { //noli
 	if got := lastUserMessageText(t, r, sid); !strings.Contains(got, "Apply the change:") {
 		t.Errorf("last user_message = %q; want the expanded apply body", got)
 	}
+}
+
+// wiringWaitFor polls cond until true or the deadline expires (the elicitation
+// queue fires + resumes asynchronously — the pump goroutine owns the round
+// trip; results-based waiting, never fixed sleeps).
+func wiringWaitFor(t *testing.T, cond func() bool) {
+	t.Helper()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+
+		time.Sleep(2 * time.Millisecond)
+	}
+
+	t.Fatal("condition never became true within 2s")
+}
+
+// TestAskWiring_ElicitationQueueRoundTrip pins 17-04 Task 3's family
+// conversion end-to-end at the REAL wiring site: the AskUserQuestion
+// suspension enqueues a FOREGROUND-class queue entry (one entry — the ONE
+// firing path), the injected ask fire receives the questions-shaped payload,
+// and the structured accept renders through the captured answered form into
+// the resumed turn's tool result. The executor suspension contract (ErrSuspended
+// + questions in Output, coreexec untouched) is observed intact: the first
+// turn stops with the ask marker and appends NO tool result of its own.
+func TestAskWiring_ElicitationQueueRoundTrip(t *testing.T) { //nolint:funlen,cyclop,gocyclo,gocognit,lll // flat end-to-end battery
+	t.Parallel()
+
+	r, prov := newAskWiringRunner(t, time.Hour)
+
+	var (
+		fireMu    sync.Mutex
+		firedEnts []*session.AskEntry
+	)
+
+	// release holds the dialog OPEN until the test has verified the suspended
+	// state (the fakeGateSurface hold discipline — a real human decides on a
+	// human timescale; the instant accept would race Run 1's return).
+	release := make(chan struct{})
+
+	r.SetAskFire(func(_ context.Context, e *session.AskEntry) session.AskOutcome {
+		fireMu.Lock()
+
+		firedEnts = append(firedEnts, e)
+
+		fireMu.Unlock()
+
+		<-release
+
+		return session.AskOutcome{
+			Elicit:  acp.ElicitationActionAccept,
+			Content: map[string]json.RawMessage{"q1": json.RawMessage(`"ristretto"`)},
+		}
+	})
+
+	em := &noopEmitter{}
+
+	stop1, err := r.Run(context.Background(), "sess-ask-elicit", em,
+		[]acp.ContentBlock{{Type: blockText, Text: wiringAskMe}})
+	if err != nil {
+		t.Fatalf("Run 1: %v", err)
+	}
+
+	if stop1 != stopEndTurn {
+		t.Fatalf("Run 1 stop = %q; want end_turn (the suspension maps to a completed turn)", stop1)
+	}
+
+	sess := r.sessions["sess-ask-elicit"]
+
+	if sess == nil || !sess.HasPendingAsk() {
+		t.Fatal("no pending ask after the suspending turn (the broker still owns the ask)")
+	}
+
+	// The suspension itself appended NO tool result — ErrSuspended contract.
+	lines, rerr := sess.Manager.ReadAll()
+	if rerr == nil {
+		for i := range lines {
+			if lines[i].Type == session.TypeToolResult && lines[i].ToolCallID == wiringAskCall {
+				t.Fatalf("tool result landed before the resolution (callID %s)", wiringAskCall)
+			}
+		}
+	}
+
+	// Now answer: release the dialog; the accept resumes the SAME turn
+	// (async to Run 1).
+	close(release)
+
+	// The queue fires + the accept resumes the SAME turn.
+	wiringWaitFor(t, func() bool {
+		lines, rerr := sess.Manager.ReadAll()
+		if rerr != nil {
+			return false
+		}
+
+		for i := range lines {
+			if lines[i].Type == session.TypeToolResult && lines[i].ToolCallID == wiringAskCall {
+				return true
+			}
+		}
+
+		return false
+	})
+
+	fireMu.Lock()
+
+	ents := append([]*session.AskEntry(nil), firedEnts...)
+
+	fireMu.Unlock()
+
+	if len(ents) != 1 {
+		t.Fatalf("queue fired the surface %d times; want exactly one", len(ents))
+	}
+
+	if ents[0].Class != session.AskClassForeground {
+		t.Errorf("entry class = %v; want foreground (D-11)", ents[0].Class)
+	}
+
+	var qs []session.AskQuestion
+
+	uerr := json.Unmarshal(ents[0].Input, &qs)
+	if uerr != nil || len(qs) != 1 {
+		t.Fatalf("entry input = %s (%v); want the marshaled questions payload", ents[0].Input, uerr)
+	}
+
+	afterLines, aerr := sess.Manager.ReadAll()
+	if aerr != nil {
+		t.Fatalf("ReadAll: %v", aerr)
+	}
+
+	lines = afterLines
+
+	var form string
+
+	found := false
+
+	for i := range lines {
+		if lines[i].Type == session.TypeToolResult && lines[i].ToolCallID == wiringAskCall {
+			ferr := json.Unmarshal(lines[i].Output, &form)
+			if ferr != nil {
+				t.Fatalf("unmarshal result form: %v", ferr)
+			}
+
+			found = true
+		}
+	}
+
+	if !found {
+		t.Fatal("no tool result for the suspended call after the accept")
+	}
+
+	want := session.RenderAskAnswered(qs, "ristretto")
+	if form != want {
+		t.Errorf("result form = %q; want the captured answered form %q", form, want)
+	}
+
+	// The resumed turn streamed through the provider (two stream calls total).
+	prov.mu.Lock()
+	streams := prov.calls
+	prov.mu.Unlock()
+
+	if streams != 2 {
+		t.Errorf("provider stream calls = %d; want 2 (suspend + resumed turn)", streams)
+	}
+}
+
+// TestAskWiring_EngineAskConversion pins the engine-ask glue (17-04): an ask-
+// pending decision converts into a background elicitation entry whose accept
+// writes the learning store through the EXISTING store API, and whose decline
+// lands the advisory non-answer note through the subscriber-backed chunk path.
+func TestAskWiring_EngineAskConversion(t *testing.T) { //nolint:funlen // one battery over the conversion glue
+	t.Parallel()
+
+	situation := "text:wiring-engine-situation"
+
+	newRig := func(t *testing.T) (*Runner, *session.Session, *learning.Store) {
+		t.Helper()
+
+		st, lerr := learning.Open(filepath.Join(t.TempDir(), "learned.yaml"))
+		if lerr != nil {
+			t.Fatalf("learning open: %v", lerr)
+		}
+
+		r := &Runner{bus: event.NewBus(), learned: st}
+
+		sess := &session.Session{SessionID: "sess-engine-w"}
+		sess.SetPermissionGate(session.GateDeps{Queue: session.NewAskQueue()})
+
+		return r, sess, st
+	}
+
+	t.Run("accept_writes_learning_entry", func(t *testing.T) {
+		t.Parallel()
+
+		r, sess, st := newRig(t)
+		r.SetAskFire(func(_ context.Context, _ *session.AskEntry) session.AskOutcome {
+			return session.AskOutcome{
+				Elicit:  acp.ElicitationActionAccept,
+				Content: map[string]json.RawMessage{"q1": json.RawMessage(`"proceed to propose"`)},
+			}
+		})
+
+		r.enqueueEngineAsk(sess, "turn-e1", situation)
+
+		// The accept lands synchronously inside the resolution; poll the store.
+		wiringWaitFor(t, func() bool {
+			_, ok := st.Lookup(situation)
+
+			return ok
+		})
+
+		e, _ := st.Lookup(situation)
+		if e.Answer != "proceed to propose" {
+			t.Errorf("stored answer = %q; want the structured seam's single-field value", e.Answer)
+		}
+	})
+
+	t.Run("decline_lands_advisory_note", func(t *testing.T) {
+		t.Parallel()
+
+		r, sess, st := newRig(t)
+		r.SetAskFire(func(_ context.Context, _ *session.AskEntry) session.AskOutcome {
+			return session.AskOutcome{Elicit: acp.ElicitationActionDecline}
+		})
+
+		chunks := r.bus.Subscribe("AgentMessageChunk", event.BufAgentMessageChunk)
+		defer r.bus.Unsubscribe("AgentMessageChunk", chunks)
+
+		r.enqueueEngineAsk(sess, "turn-e2", situation)
+
+		deadline := time.After(2 * time.Second)
+
+		for {
+			select {
+			case e := <-chunks:
+				if c, ok := e.(event.AgentMessageChunk); ok && c.Content == advisoryNoteText {
+					// The advisory note landed subscriber-backed.
+					if _, stored := st.Lookup(situation); stored {
+						t.Error("decline must not write the learning store")
+					}
+
+					return
+				}
+			case <-deadline:
+				t.Fatal("the advisory note never landed on a decline")
+			}
+		}
+	})
 }

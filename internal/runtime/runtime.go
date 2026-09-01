@@ -208,6 +208,13 @@ type Runner struct {
 	permAskFire func(ctx context.Context, e *session.AskEntry) session.AskOutcome
 	permMode    atomic.Value // string
 
+	// 17-04 (ACP-02/D-09): the elicitation-ask surface callback — the SAME
+	// injection shape as permAskFire, bound by the serve composition after
+	// the acp Server exists. The question-family enqueue (the AskBroker
+	// onSurface body) and the engine-ask conversion both fire through it;
+	// nil = unwired surface (today's plain-text publish stays primary).
+	askFire func(ctx context.Context, e *session.AskEntry) session.AskOutcome
+
 	// 13-00 park state: parkedCancels holds each session's parked-chain ctx
 	// cancels (drained by CloseSession/closeAllSessions — the D-03 off-switch
 	// extended to parked chains); activeChains counts running engine chains
@@ -484,7 +491,7 @@ func (r *Runner) invocationFor( //nolint:funcorder,nonamedreturns // sibling of 
 }
 
 // Run drives one session/prompt through the real Session Core.
-func (r *Runner) Run(
+func (r *Runner) Run( //nolint:funlen // the turn pipeline's composition root
 	ctx context.Context, sessionID string,
 	emit acp.ChunkEmitter, prompt []acp.ContentBlock,
 ) (string, error) {
@@ -574,8 +581,14 @@ func (r *Runner) Run(
 	close(promptDone)
 	<-done
 
-	if adv := <-advDone; adv != nil && r.advisoryNoteDue(sessionID, adv.class) {
-		_ = emit.AgentMessageChunk(adv.turnID, adv.text)
+	if adv := <-advDone; adv != nil {
+		if adv.askSignal != "" {
+			// 17-04 (D-09): the engine ask rides the ask queue as a form; the
+			// plain advisory note stays its degraded landing.
+			r.enqueueEngineAsk(sess, adv.turnID, adv.askSignal)
+		} else if r.advisoryNoteDue(sessionID, adv.class) {
+			_ = emit.AgentMessageChunk(adv.turnID, adv.text)
+		}
 	}
 
 	return mapAskStop(stop), err
@@ -1019,7 +1032,7 @@ const chainIdlePollInterval = 10 * time.Millisecond
 var errPermissionAskSurfaceUnwired = errors.New("permission ask surface not wired")
 
 // sessionFor returns the Session for sessionID, creating it on first use.
-func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo // turn pipeline grouping
+func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,gocognit // turn pipeline grouping
 	ctx context.Context, sessionID string,
 ) *session.Session {
 	// sessMu spans the WHOLE construction: a concurrent sessionFor for the
@@ -1183,19 +1196,31 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo /
 		WorkDir: dir, Todos: coreexec.NewTodoStore(), Hooks: hookRunner, Tasks: taskRegistry,
 	})
 
+	// The session variable is declared BEFORE the broker literal so the
+	// onSurface closure can hand the pending ask to the queue at FIRE time
+	// (mid-turn — sess is fully constructed by then; the 09-01 capturer
+	// precedent: closures read late-bound variables, never stale copies).
+	var sess *session.Session
+
 	// 12-01 (ACP-01/D-01): the per-session AskUserQuestion surface. The
-	// broker holds the pending ask; its surface callback publishes the
-	// rendered question to the BUS as an AgentMessageChunk — Run's chunk
-	// forwarder turns it into the client-visible session/update JUST BEFORE
-	// the suspended turn's response. Timer-driven resumes run under the
-	// serve-lifetime ctx (the suspending turn's ctx dies with its response).
-	// The executor registration is the SAME Execute-only override discipline
-	// as RegisterCore (the captured schema is never rewritten).
+	// broker holds the pending ask; its surface callback routes the ask.
+	// 17-04 (ACP-02/D-09): a QUESTION-shaped ask enqueues on the ask queue —
+	// the ONE firing path — whose fire is the capability-gated elicitation
+	// dispatcher (the plain-text publish is the dispatcher's FALLBACK branch
+	// now, verbatim). Non-question kinds (plan approval keeps its captured
+	// string-reply forms) and the unwired-surface degrade keep today's
+	// direct publish. Timer-driven resumes run under the serve-lifetime ctx
+	// (the suspending turn's ctx dies with its response). The executor
+	// registration is the SAME Execute-only override discipline as
+	// RegisterCore (the captured schema is never rewritten).
 	askBroker := session.NewAskBroker(r.askTimeout, func(p session.PendingAsk) {
-		r.bus.Publish(event.AgentMessageChunk{
-			TurnID: p.TurnID, MessageID: p.TurnID,
-			Content: coreexec.RenderAskSurface(p.Questions),
-		})
+		if p.Kind != session.PendingAskKindQuestion || r.askFire == nil || sess == nil {
+			r.PublishAskChunk(p.TurnID, coreexec.RenderAskSurface(p.Questions))
+
+			return
+		}
+
+		sess.EnqueueElicitationAsk(p, r.askFire)
 	})
 	coreexec.RegisterAsk(sCatalog, askBroker)
 
@@ -1214,12 +1239,11 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo /
 	})
 
 	// 09-01 T2 (AUD-02): the late-bound capturer closure. sess is declared
-	// BEFORE the Session literal and assigned after — the closure reads
-	// CurrentTurnID() at FIRE time (mid-turn), so it sees the in-flight turn.
-	// Header VALUES are dropped at the closure (_ per Pitfall 9 discipline:
-	// values never enter audit artifacts; names ride 09-06 events only).
-	var sess *session.Session
-
+	// BEFORE the Session literal (moved above the ask-broker literal, 17-04)
+	// and assigned after — the closure reads CurrentTurnID() at FIRE time
+	// (mid-turn), so it sees the in-flight turn. Header VALUES are dropped
+	// at the closure (_ per Pitfall 9 discipline: values never enter audit
+	// artifacts; names ride 09-06 events only).
 	capturer := func(body []byte, headers map[string]string) {
 		// 09-06 (Pitfall 9 audit-path discipline): header NAMES only — sorted,
 		// shape evidence for the TIER-2 identity invariant. VALUES are never
@@ -1302,9 +1326,7 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo /
 	// dropped when no subscriber exists (the 13-03 timing hazard).
 	askQueue := session.NewAskQueue()
 	askQueue.SetNoteEmitter(func(e *session.AskEntry, note string) {
-		r.bus.Publish(event.AgentMessageChunk{
-			TurnID: e.TurnID, MessageID: e.TurnID, Content: note,
-		})
+		r.PublishAskChunk(e.TurnID, note)
 	})
 
 	permDeps := session.GateDeps{
@@ -1670,6 +1692,60 @@ func (r *Runner) SetPermissionAskFire(f func(ctx context.Context, e *session.Ask
 	r.permAskFire = f
 }
 
+// SetAskFire injects the elicitation-ask surface callback (17-04, ACP-02/
+// D-09): the serve composition binds the acpserve ElicitationAsk's Fire
+// (capability-gated elicitation/create with the plain-text fallback inside)
+// after the acp Server exists. nil = unwired — every question-family ask
+// keeps today's direct plain-text publish verbatim.
+func (r *Runner) SetAskFire(f func(ctx context.Context, e *session.AskEntry) session.AskOutcome) {
+	r.askFire = f
+}
+
+// PublishAskChunk publishes one client-visible ask-surface chunk (17-04):
+// the plain-text fallback's delivery seam and the queue-note emitter's sink —
+// the same bus shape the AskBroker onSurface callback has always used.
+// Subscriber-backed at every call site: the queue note rides the
+// session-lifetime forwarder composition (17-03), and the post-turn
+// engine-ask note publishes through the same always-subscribed path (the
+// 13-03 timing hazard dead by construction).
+func (r *Runner) PublishAskChunk(turnID, text string) {
+	r.bus.Publish(event.AgentMessageChunk{
+		TurnID: turnID, MessageID: turnID, Content: text,
+	})
+}
+
+// enqueueEngineAsk converts one engine ask-pending decision into a
+// background-class elicitation queue entry (17-04, D-09/D-11): an accept
+// writes the learning-store entry through the EXISTING store API (A9 —
+// RecordCandidate, the ask-once-remember candidate write); decline/cancel (or
+// a degraded surface) render today's advisory non-answer note. The note is
+// emitted subscriber-backed (PublishAskChunk → the session-lifetime
+// forwarder) — never a bare post-turn publish.
+func (r *Runner) enqueueEngineAsk( //nolint:funcorder // the 17-04 engine-ask conversion group
+	sess *session.Session, turnID, situation string,
+) {
+	if r.askFire == nil {
+		// Surface unwired (stub runners, tests): today's advisory note.
+		r.PublishAskChunk(turnID, advisoryNoteText)
+
+		return
+	}
+
+	sess.EnqueueEngineAsk(turnID, situation, r.askFire,
+		func(answer string) {
+			if r.learned == nil {
+				return
+			}
+
+			//nolint:noinlineerr // one-shot persist: log-and-continue, never a dead landing
+			if err := r.learned.RecordCandidate(situation, answer, turnID); err != nil {
+				log.Printf("ass-guard: engine ask answer persist failed (situation %s): %v",
+					situation, err)
+			}
+		},
+		func() { r.PublishAskChunk(turnID, advisoryNoteText) })
+}
+
 // SetPermMode flips the LIVE permission-mode accessor (17-02 Task 3: the
 // permissions.mode apply target — persist-then-apply, 16-D-07 ordering). The
 // gate reads the accessor per call, so the very next tool call in any live
@@ -1802,11 +1878,41 @@ type advisoryNote struct {
 	turnID string
 	class  string
 	text   string
+	// askSignal is non-empty when the last captured decision was an ENGINE
+	// ask-pending (action "ask" whose signal is not the suspended marker —
+	// that one is the broker's). 17-04's family conversion turns it into a
+	// background elicitation queue entry instead of the advisory note.
+	askSignal string
+}
+
+// advisoryFromDecision projects one engine decision into its client-note
+// shape (17-04): the ask-pending surface (action "ask", signal not the
+// suspended marker — that one is the broker's) becomes an engine-ask note;
+// an advisory-class signal becomes the advisory note; everything else nil.
+func advisoryFromDecision(
+	d event.EngineDecision, //nolint:gocritic // hugeParam: value projection
+) *advisoryNote {
+	if d.Action == engine.ActionAsk.String() && d.Signal != engine.SignalAskSuspended {
+		// 17-04 (D-09): the engine ask-pending surface.
+		return &advisoryNote{turnID: d.TurnID, askSignal: d.Signal}
+	}
+
+	if class, ok := strings.CutPrefix(d.Signal, engine.SignalAdvisory); ok {
+		return &advisoryNote{
+			turnID: d.TurnID,
+			class:  class,
+			text:   advisoryNoteText,
+		}
+	}
+
+	return nil
 }
 
 // collectAdvisory drains EngineDecision events until promptDone, capturing
 // the LAST advisory-signal decision (the note rides its turn id).
-func (r *Runner) collectAdvisory(advCh <-chan event.Event, promptDone <-chan struct{}, advDone chan<- *advisoryNote) {
+func (r *Runner) collectAdvisory( //nolint:gocognit // one drain loop, two drain phases
+	advCh <-chan event.Event, promptDone <-chan struct{}, advDone chan<- *advisoryNote,
+) {
 	defer r.bus.Unsubscribe("EngineDecision", advCh)
 
 	var last *advisoryNote
@@ -1820,11 +1926,9 @@ func (r *Runner) collectAdvisory(advCh <-chan event.Event, promptDone <-chan str
 				return
 			}
 
-			if d, isDec := e.(event.EngineDecision); isDec && strings.HasPrefix(d.Signal, engine.SignalAdvisory) {
-				last = &advisoryNote{
-					turnID: d.TurnID,
-					class:  strings.TrimPrefix(d.Signal, engine.SignalAdvisory),
-					text:   advisoryNoteText,
+			if d, isDec := e.(event.EngineDecision); isDec {
+				if note := advisoryFromDecision(d); note != nil {
+					last = note
 				}
 			}
 		case <-promptDone:
@@ -1832,12 +1936,9 @@ func (r *Runner) collectAdvisory(advCh <-chan event.Event, promptDone <-chan str
 			for {
 				select {
 				case e := <-advCh:
-					d, isDec := e.(event.EngineDecision)
-					if isDec && strings.HasPrefix(d.Signal, engine.SignalAdvisory) {
-						last = &advisoryNote{
-							turnID: d.TurnID,
-							class:  strings.TrimPrefix(d.Signal, engine.SignalAdvisory),
-							text:   advisoryNoteText,
+					if d, isDec := e.(event.EngineDecision); isDec {
+						if note := advisoryFromDecision(d); note != nil {
+							last = note
 						}
 					}
 				default:

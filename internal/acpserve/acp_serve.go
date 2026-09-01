@@ -240,6 +240,26 @@ func Run( //nolint:funlen // :320-425
 	permAsker := NewPermissionAsk(ctx, srv.Registry(), stderr)
 	runner.SetPermissionAskFire(permAsker.Fire)
 
+	// 17-04 (ACP-02/D-09): the elicitation-ask surface rides the same
+	// registry + capability machinery — the sticky elicitation-form
+	// capability (16-D-13/D-18) gates the elicitation/create dispatch and
+	// D-08's conservative boolean-property gate reads the connection's
+	// boolean advertisement; the plain-text fallback publishes through the
+	// runner's subscriber-backed chunk seam (today's path verbatim). The
+	// question-family enqueue and the engine-ask conversion both fire
+	// through this one dispatcher (the ONE firing path is the ask queue).
+	elicitAsker := NewElicitationAsk(ElicitationAskConfig{
+		Ctx:      ctx,
+		Registry: srv.Registry(),
+		Stderr:   stderr,
+		CapOK:    func() bool { return srv.Capability(acp.CapElicitationForm) == acp.CapabilityOK },
+		BoolAdvertised: func() bool {
+			return srv.Capability(acp.CapBooleanConfigOption) == acp.CapabilityOK
+		},
+		Fallback: runner.PublishAskChunk,
+	})
+	runner.SetAskFire(elicitAsker.Fire)
+
 	// 17-02 Task 3: the permissions.mode live seams — the advertisement reads
 	// the runner's accessor (chip==wire with the gate), the apply hook flips
 	// it after every successful persist, and the boot seeds the accessor from

@@ -328,7 +328,7 @@ func RenderStructuredReply(qs []AskQuestion, content map[string]json.RawMessage)
 		if raw, ok := content[StructuredPropertyKey(0)]; ok {
 			var reply string
 
-			if json.Unmarshal(raw, &reply) == nil && string(raw) != "null" {
+			if json.Unmarshal(raw, &reply) == nil && string(raw) != jsonNull {
 				return RenderAskAnswered(qs, reply)
 			}
 		}
@@ -356,7 +356,7 @@ func RenderStructuredReply(qs []AskQuestion, content map[string]json.RawMessage)
 // serialization: strings verbatim, arrays comma-joined, booleans true/false,
 // anything else (missing/null/unexpected) empty.
 func renderStructuredValue(raw json.RawMessage) string {
-	if len(raw) == 0 || string(raw) == "null" {
+	if len(raw) == 0 || string(raw) == jsonNull {
 		return ""
 	}
 
@@ -681,6 +681,116 @@ func elicitationVerdict(
 
 // elicitAskToolName is the queue-entry tool label for question-family asks.
 const elicitAskToolName = "AskUserQuestion"
+
+// jsonNull is the JSON null literal (the accept edge: null is not a value).
+const jsonNull = "null"
+
+// elicitEngineToolName is the queue-entry tool label for engine asks.
+const elicitEngineToolName = "engine-ask"
+
+// EnqueueEngineAsk enqueues an engine/learning ask as a BACKGROUND-class
+// elicitation entry (17-04, D-09/D-11): the ask surfaces as a structured form
+// on a capable client (the plain-text advisory note stays the degraded
+// surface — engine asks are not reply-answerable, so no dead-end question
+// text is published). An accept hands the single answer string to onAccept
+// (the learning-store write is the CALLER'S — persistence behavior unchanged,
+// A9); decline/cancel/degrade hand onDecline (today's advisory non-answer
+// note, 12-D-05 shape). An invalid accept rides the SAME D-10 bounded loop
+// (one re-ask, then onDecline).
+func (s *Session) EnqueueEngineAsk( //nolint:funlen // the engine family's one enqueue + D-10 landing
+	turnID, situation string,
+	fire func(ctx context.Context, e *AskEntry) AskOutcome,
+	onAccept func(answer string), onDecline func(),
+) {
+	q := s.gateQueue()
+	if q == nil || fire == nil {
+		return
+	}
+
+	qs := []AskQuestion{{Question: situation, Header: engineAskHeader}}
+
+	input, mErr := json.Marshal(qs)
+	if mErr != nil {
+		input = json.RawMessage(`[]`)
+	}
+
+	entry := &AskEntry{
+		TurnID:    turnID,
+		SessionID: s.SessionID,
+		Tool:      elicitEngineToolName,
+		Title:     elicitEngineToolName,
+		Input:     input,
+		Class:     AskClassBackground,
+	}
+	entry.SetFire(func(ctx context.Context) AskOutcome { return fire(ctx, entry) })
+
+	var attempt int
+
+	var land func(AskOutcome)
+
+	land = func(out AskOutcome) {
+		switch elicitationVerdict(&out, attempt) {
+		case elicitFallen, elicitNonAnswer:
+			if onDecline != nil {
+				onDecline()
+			}
+		case elicitAcceptOK:
+			answer, ok := engineAskAnswer(out.Content)
+			if ok && onAccept != nil {
+				onAccept(answer)
+
+				return
+			}
+
+			if onDecline != nil {
+				onDecline()
+			}
+		case elicitReask:
+			// THE one bounded re-ask (D-10): a NEW queue entry, same turn +
+			// class, the violation named in the form message.
+			attempt++
+
+			reask := &AskEntry{
+				TurnID: turnID, SessionID: s.SessionID,
+				Tool: elicitEngineToolName, Title: elicitEngineToolName,
+				Input: input, Class: AskClassBackground, Note: out.Violation,
+			}
+			reask.SetFire(func(ctx context.Context) AskOutcome { return fire(ctx, reask) })
+
+			q.Enqueue(reask, func(_ *AskEntry, out AskOutcome) { land(out) })
+
+			return
+		}
+	}
+
+	q.Enqueue(entry, func(_ *AskEntry, out AskOutcome) { land(out) })
+}
+
+// engineAskHeader is the synthetic form title for engine asks (D-08: the
+// property title carries the header; the question text carries the situation).
+const engineAskHeader = "Engine"
+
+// engineAskAnswer extracts the single free-text answer from an engine ask's
+// accept content (the structured seam's single-field value — the raw answer
+// string is what the learning store persists, exactly today's answer shape).
+func engineAskAnswer(content map[string]json.RawMessage) (string, bool) {
+	if len(content) != 1 {
+		return "", false
+	}
+
+	raw, ok := content[StructuredPropertyKey(0)]
+	if !ok {
+		return "", false
+	}
+
+	var answer string
+
+	if json.Unmarshal(raw, &answer) != nil || string(raw) == "null" {
+		return "", false
+	}
+
+	return answer, true
+}
 
 // marshalAskForm marshals an ask result form (a plain string — the 08-08
 // plainContent seam renders JSON-string outputs unquoted). A string Marshal

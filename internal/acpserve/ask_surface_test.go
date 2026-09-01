@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/coreexec"
+	"github.com/Djarvur/ass-guard-agent/internal/learning"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
 )
 
@@ -40,6 +42,7 @@ const (
 	elicAreaAPI    = "api"
 	elicAreaDocs   = "docs"
 	elicReaskNote  = `value "x" is not one of the offered choices`
+	elicViolation  = `expected a string`
 )
 
 // permAskSink records frames the registry writes (the NotificationSink fake).
@@ -929,6 +932,182 @@ func TestValidateElicitationContent(t *testing.T) { //nolint:gocognit,cyclop,fun
 		if v := ValidateElicitationContent(strSchema(``),
 			map[string]json.RawMessage{"q1": json.RawMessage(`"ok"`), "extra": json.RawMessage(`1`)}); v != "" {
 			t.Errorf("unknown content keys are ignored (never rendered): %q", v)
+		}
+	})
+}
+
+// TestFamilyConversionEngineAsk pins the engine/learning ask round-trip
+// (17-04, D-09/D-11) through the REAL ask queue and the REAL learning store:
+// a background-class entry, an accept writing the learning entry through the
+// existing store API (A9), and decline/cancel producing the advisory
+// non-answer landing. An invalid accept rides the D-10 loop (one re-ask).
+func TestFamilyConversionEngineAsk(t *testing.T) { //nolint:cyclop,funlen,gocognit // one flat round-trip battery
+	t.Parallel()
+
+	newEngineSession := func(t *testing.T) *session.Session {
+		t.Helper()
+
+		s := &session.Session{SessionID: "sess-engine-1"}
+		s.SetPermissionGate(session.GateDeps{Queue: session.NewAskQueue()})
+
+		return s
+	}
+
+	store := func(t *testing.T) *learning.Store {
+		t.Helper()
+
+		st, err := learning.Open(filepath.Join(t.TempDir(), "learned.yaml"))
+		if err != nil {
+			t.Fatalf("learning open: %v", err)
+		}
+
+		return st
+	}
+
+	const situation = "text:engine-ask-situation"
+
+	newFire := func(t *testing.T, outcomes ...session.AskOutcome) (
+		func(ctx context.Context, e *session.AskEntry) session.AskOutcome, func() []*session.AskEntry,
+	) {
+		t.Helper()
+
+		var (
+			mu      sync.Mutex
+			entries []*session.AskEntry
+		)
+
+		fire := func(_ context.Context, e *session.AskEntry) session.AskOutcome {
+			mu.Lock()
+
+			entries = append(entries, e)
+
+			mu.Unlock()
+
+			if len(outcomes) == 0 {
+				return session.AskOutcome{}
+			}
+
+			ans := outcomes[0]
+			outcomes = outcomes[1:]
+
+			return ans
+		}
+
+		return fire, func() []*session.AskEntry {
+			mu.Lock()
+			defer mu.Unlock()
+
+			return append([]*session.AskEntry(nil), entries...)
+		}
+	}
+
+	t.Run("accept_writes_learning_entry", func(t *testing.T) {
+		t.Parallel()
+
+		s := newEngineSession(t)
+		learned := store(t)
+		fire, fired := newFire(t, session.AskOutcome{
+			Elicit:  acp.ElicitationActionAccept,
+			Content: map[string]json.RawMessage{"q1": json.RawMessage(`"continue after explore"`)},
+		})
+
+		accepted := make(chan string, 1)
+		declined := make(chan struct{}, 1)
+
+		// The runtime's own onAccept composition (enqueueEngineAsk): the
+		// structured seam's answer persists through the EXISTING store API.
+		s.EnqueueEngineAsk("turn-1", situation, fire,
+			func(answer string) {
+				rerr := learned.RecordCandidate(situation, answer, "turn-1")
+				if rerr != nil {
+					t.Errorf("RecordCandidate: %v", rerr)
+				}
+
+				accepted <- answer
+			},
+			func() { declined <- struct{}{} },
+		)
+
+		select {
+		case answer := <-accepted:
+			if answer != "continue after explore" {
+				t.Errorf("answer = %q; want the structured seam's single-field value", answer)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("accept never landed")
+		}
+
+		entries := fired()
+		if len(entries) != 1 {
+			t.Fatalf("entries = %d; want one", len(entries))
+		}
+
+		if entries[0].Class != session.AskClassBackground {
+			t.Errorf("class = %v; want the subagent/engine background class (D-11)", entries[0].Class)
+		}
+
+		e, ok := learned.Lookup(situation)
+		if !ok {
+			t.Fatal("learning store has no entry for the situation")
+		}
+
+		if e.Answer != "continue after explore" {
+			t.Errorf("stored answer = %q", e.Answer)
+		}
+	})
+
+	t.Run("decline_produces_advisory_landing", func(t *testing.T) {
+		t.Parallel()
+
+		s := newEngineSession(t)
+		learned := store(t)
+		fire, fired := newFire(t, session.AskOutcome{Elicit: acp.ElicitationActionDecline})
+
+		declined := make(chan struct{}, 1)
+
+		s.EnqueueEngineAsk("turn-2", situation, fire, nil, func() { declined <- struct{}{} })
+
+		select {
+		case <-declined:
+		case <-time.After(2 * time.Second):
+			t.Fatal("decline never landed")
+		}
+
+		if _, ok := learned.Lookup(situation); ok {
+			t.Error("decline must not write the learning store")
+		}
+
+		if n := len(fired()); n != 1 {
+			t.Errorf("asks fired = %d; decline is terminal (zero re-asks)", n)
+		}
+	})
+
+	t.Run("invalid_accept_reasks_once", func(t *testing.T) {
+		t.Parallel()
+
+		s := newEngineSession(t)
+		fire, fired := newFire(t,
+			session.AskOutcome{Elicit: acp.ElicitationActionAccept, Violation: elicViolation},
+			session.AskOutcome{Elicit: acp.ElicitationActionAccept, Violation: elicViolation},
+		)
+
+		declined := make(chan struct{}, 1)
+
+		s.EnqueueEngineAsk("turn-3", situation, fire, nil, func() { declined <- struct{}{} })
+
+		select {
+		case <-declined:
+		case <-time.After(2 * time.Second):
+			t.Fatal("the second violation never landed on the decline path")
+		}
+
+		entries := fired()
+		if len(entries) != 2 {
+			t.Fatalf("asks fired = %d; want exactly two (initial + the ONE re-ask)", len(entries))
+		}
+
+		if entries[1].Note != elicViolation {
+			t.Errorf("re-ask note = %q; want the violation carried", entries[1].Note)
 		}
 	})
 }
