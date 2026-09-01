@@ -69,7 +69,9 @@ const (
 	keyModel       = "model"
 	keySessionTier = "session_tier"
 
-	phasePendingMode       = "Phase 17"
+	keyPermissions = "permissions"
+	keyPermMode    = "mode"
+
 	phasePendingCompaction = "Phase 19"
 )
 
@@ -104,6 +106,13 @@ type ConfigSurface struct {
 	// pre-editor-stamp default tracks the advertisement on the blob path (16-09
 	// gap 4b pinned the LAYER path only).
 	blobHook func(model string) error
+
+	// 17-02: the permissions.mode live seams — permModeRead is the runner's
+	// LIVE accessor (the gate's per-call truth; the advertisement's
+	// currentValue so chip==wire), permModeHook the apply hook fired AFTER a
+	// successful persist (D-07 persist-then-apply; the runner's SetPermMode).
+	permModeRead func() string
+	permModeHook func(mode string) error
 
 	// blobRaw holds EVERY initialize _meta key verbatim (D-10 round-trip
 	// survival: unknown keys are retained byte-identical, never executed).
@@ -149,6 +158,47 @@ func (s *ConfigSurface) SetBlobDefaultHook(h func(model string) error) {
 	s.blobHook = h
 }
 
+// SetPermModeRead wires the LIVE permission-mode accessor (17-02 Task 3): the
+// runner's per-call gate truth. The advertisement's permissions.mode
+// currentValue resolves through it so the editor never shows a value the gate
+// is not enforcing (chip==wire, D-11).
+func (s *ConfigSurface) SetPermModeRead(read func() string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.permModeRead = read
+}
+
+// SetPermModeHook wires the permissions.mode live-apply seam (17-02 Task 3).
+// Called ONLY after a successful layer persist (D-07 persist-then-apply); the
+// Run composition binds runner.SetPermMode so the flip reaches every live
+// session's gate on its very next tool call (Pitfall 8).
+func (s *ConfigSurface) SetPermModeHook(h func(mode string) error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.permModeHook = h
+}
+
+// EffectivePermMode resolves the BOOT permission mode from the layer files
+// (project > global > the ungated default) — the composition calls it once at
+// startup to seed the runner's live accessor, so a hand-edited
+// `permissions: {mode: gated}` gates after a restart exactly as advertised.
+func (s *ConfigSurface) EffectivePermMode() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if m := s.layerPermMode(s.projectPath); m != "" {
+		return m
+	}
+
+	if m := s.layerPermMode(s.globalPath); m != "" {
+		return m
+	}
+
+	return permModeUngated
+}
+
 // Options returns the full eight-entry menu in v1 SessionConfigOption shapes,
 // every currentValue the option's current EFFECTIVE value (D-11).
 func (s *ConfigSurface) Options() []acp.ConfigOptionFrame {
@@ -174,7 +224,7 @@ func (s *ConfigSurface) Set(sessionID, optionID string, value any) ([]acp.Config
 
 	outcome, serr := s.setLocked(optionID, value)
 
-	notify, hook := s.notify, s.applyHook
+	notify, hook, modeHook := s.notify, s.applyHook, s.permModeHook
 
 	s.mu.Unlock()
 
@@ -182,11 +232,22 @@ func (s *ConfigSurface) Set(sessionID, optionID string, value any) ([]acp.Config
 		return nil, serr
 	}
 
-	if outcome.doApply && hook != nil {
-		herr := hook(outcome.applyModel)
-		if herr != nil {
-			s.logf("live apply of model %q failed (config persisted, live state unchanged): %v",
-				outcome.applyModel, herr)
+	if outcome.doApply {
+		switch {
+		case outcome.applyPermMode != "":
+			if modeHook != nil {
+				merr := modeHook(outcome.applyPermMode)
+				if merr != nil {
+					s.logf("live apply of permission mode %q failed (config persisted, live state unchanged): %v",
+						outcome.applyPermMode, merr)
+				}
+			}
+		case hook != nil:
+			herr := hook(outcome.applyModel)
+			if herr != nil {
+				s.logf("live apply of model %q failed (config persisted, live state unchanged): %v",
+					outcome.applyModel, herr)
+			}
 		}
 	}
 
@@ -290,13 +351,8 @@ func (s *ConfigSurface) applyFillsLocked(meta map[string]json.RawMessage) {
 		s.blobFills[bare] = str
 
 		if isPendingOption(bare) {
-			phase := phasePendingMode
-			if bare == optCompactionThresh {
-				phase = phasePendingCompaction
-			}
-
 			s.logf("option %q: blob default %q accepted as a pending-handler no-op (handler lands in %s, D-05)",
-				k, str, phase)
+				k, str, phasePendingCompaction)
 		}
 	}
 }
@@ -308,14 +364,19 @@ func (s *ConfigSurface) applyFillsLocked(meta map[string]json.RawMessage) {
 type setOutcome struct {
 	frames     []acp.ConfigOptionFrame
 	applyModel string
-	doApply    bool
-	doNotify   bool
+	// applyPermMode carries the permissions.mode live-apply target (17-02):
+	// non-empty (with doApply) fires permModeHook instead of the model hook.
+	applyPermMode string
+	doApply       bool
+	doNotify      bool
 }
 
 // setLocked is Set's lock-holding half (callers hold s.mu): validate →
 // idempotence guard → persist → drop the superseded blob fill → resolve the
 // live-apply target → compute the refreshed frame set. The hook is NOT invoked
 // here — the outcome hands the apply to the lock-free caller.
+//
+//nolint:funlen // validate → guard → persist → apply-target reads as one flow
 func (s *ConfigSurface) setLocked(optionID string, value any) (setOutcome, error) {
 	parsed := splitScope(optionID)
 
@@ -341,6 +402,15 @@ func (s *ConfigSurface) setLocked(optionID string, value any) (setOutcome, error
 		frames, perr := s.setPendingLocked(optionID, scope, bare, val)
 
 		return setOutcome{frames: frames}, perr
+	}
+
+	if bare == optPermissionsMode {
+		frames, applyMode, merr := s.setPermModeLocked(optionID, scope, val)
+
+		return setOutcome{
+			frames: frames, applyPermMode: applyMode,
+			doApply: applyMode != "", doNotify: applyMode != "",
+		}, merr
 	}
 
 	verr := s.validateSettableLocked(bare, optionID, val, res.cfg)
@@ -400,7 +470,7 @@ func (s *ConfigSurface) snapshotLocked() (effectiveState, error) {
 	return effectiveState{
 		tier:       res.tier,
 		model:      res.model,
-		permMode:   s.pendingCurrentLocked(optPermissionsMode),
+		permMode:   s.effectivePermModeLocked(),
 		compaction: s.pendingCurrentLocked(optCompactionThresh),
 	}, nil
 }
@@ -530,28 +600,125 @@ func (s *ConfigSurface) pendingCurrentLocked(bare string) string {
 
 // --- mutation helpers (callers hold s.mu) ---
 
-// setPendingLocked handles an advertised-but-unhandled id: validate the value
-// (never accept garbage into a pending slot), log one structured line, persist
-// nothing, return the set unchanged (D-05).
+// setPendingLocked handles an advertised-but-unhandled id (compaction-
+// threshold only since 17-02 — permissions.mode is a real option): validate
+// the value (never accept garbage into a pending slot), log one structured
+// line, persist nothing, return the set unchanged (D-05).
 func (s *ConfigSurface) setPendingLocked(
 	optionID, scope, bare, val string,
 ) ([]acp.ConfigOptionFrame, error) {
-	if !slices.Contains(pendingValues(bare), val) {
+	if !slices.Contains(selectValues(bare), val) {
 		return nil, &acp.ConfigViolationError{
 			OptionID:  optionID,
 			Violation: fmt.Sprintf("value %q is not one of the offered options", val),
 		}
 	}
 
-	phase := phasePendingMode
-	if bare == optCompactionThresh {
-		phase = phasePendingCompaction
-	}
-
 	s.logf("option %q (scope %s): pending handler (lands in %s) — value %q accepted as a logged no-op (D-05)",
-		optionID, scope, phase, val)
+		optionID, scope, phasePendingCompaction, val)
 
 	return s.optionsLocked(), nil
+}
+
+// setPermModeLocked is the REAL permissions.mode handler (17-02, ACP-01): a
+// first-class sibling of tier/model — typed two-value validation (D-09), the
+// scope-aware idempotence guard (D-10/WR-05), persistence through
+// WriteLayerOption on the routed layer (D-07's persist half), and the live
+// apply target for the caller's hook invocation (Pitfall 8 — the accessor
+// flip lands on the RUNNING session).
+func (s *ConfigSurface) setPermModeLocked(
+	optionID, scope, val string,
+) ([]acp.ConfigOptionFrame, string, error) {
+	if !slices.Contains(selectValues(optPermissionsMode), val) {
+		return nil, "", &acp.ConfigViolationError{
+			OptionID:  optionID,
+			Violation: fmt.Sprintf("value %q is not one of the offered options", val),
+		}
+	}
+
+	// Idempotence basis (WR-05): the ADDRESSED scope's value — project
+	// compares the effective (accessor) value; global compares the global
+	// layer's own value.
+	basis, where := s.effectivePermModeLocked(), "the currently-effective value"
+	if scope == scopeGlobal {
+		basis = s.globalPermModeLocked()
+		where = "the global layer's current value"
+	}
+
+	if val == basis {
+		s.logf("option %q: value %q equals %s — idempotent re-push, no layer write (D-10)",
+			optionID, val, where)
+
+		return s.optionsLocked(), "", nil
+	}
+
+	layerPath, lerr := s.layerForScope(scope)
+	if lerr != nil {
+		return nil, "", &acp.ConfigPersistError{OptionID: optionID, Err: lerr}
+	}
+
+	werr := providerfactory.WriteLayerOption(layerPath, []string{keyPermissions, keyPermMode}, val)
+	if werr != nil {
+		return nil, "", &acp.ConfigPersistError{OptionID: optionID, Err: werr}
+	}
+
+	// An explicit editor write supersedes any blob fill for this option.
+	delete(s.blobFills, optPermissionsMode)
+
+	s.logf("option %q (scope %s): persisted %q — live apply follows (D-07 persist-then-apply)",
+		optionID, scope, val)
+
+	return s.optionsLocked(), val, nil
+}
+
+// effectivePermModeLocked resolves the EFFECTIVE permission mode (callers
+// hold s.mu): the live accessor's value when wired — the gate's actual truth,
+// so the advertisement can never show a mode the gate is not enforcing —
+// else the just-persisted layer truth (the apply hook runs after the frames
+// are computed — WR-03's lock-free split), else the blob fill, else the
+// ungated default.
+func (s *ConfigSurface) effectivePermModeLocked() string {
+	if s.permModeRead != nil {
+		if m := s.permModeRead(); m != "" {
+			return m
+		}
+	}
+
+	if m := s.layerPermMode(s.projectPath); m != "" {
+		return m
+	}
+
+	if m := s.layerPermMode(s.globalPath); m != "" {
+		return m
+	}
+
+	return s.pendingCurrentLocked(optPermissionsMode)
+}
+
+// globalPermModeLocked resolves the GLOBAL layer's own permissions.mode (the
+// _global twin describes a layer FILE — no accessor, no blob overlay),
+// ungated default.
+func (s *ConfigSurface) globalPermModeLocked() string {
+	if m := s.layerPermMode(s.globalPath); m != "" {
+		return m
+	}
+
+	return permModeUngated
+}
+
+// layerPermMode reads one layer file's permissions.mode value ("" when the
+// file is absent/unreadable/unset).
+func (s *ConfigSurface) layerPermMode(path string) string {
+	if path == "" {
+		return ""
+	}
+
+	m, err := readLayerMap(path)
+	if err != nil {
+		return ""
+	}
+
+	return layerValue(m, keyPermissions, keyPermMode)
 }
 
 // validateSettableLocked applies the D-09 menu membership check for the
@@ -715,20 +882,21 @@ func (s *ConfigSurface) optionsLocked() []acp.ConfigOptionFrame {
 	return []acp.ConfigOptionFrame{
 		build(optModel, "Model", "Model the agent sends requests to", categoryModel, res.model, models),
 		build(optTier, "Session tier", "Model scheduling tier", categoryModelConfig, res.tier, tiers),
-		build(optPermissionsMode, "Permission mode", "Tool permission gating (phase "+phasePendingMode+")",
-			categoryMode, s.pendingCurrentLocked(optPermissionsMode), pendingValues(optPermissionsMode)),
+		build(optPermissionsMode, "Permission mode",
+			"Tool permission gating (deny/allow rules always enforced; gated asks per tool call)",
+			categoryMode, s.effectivePermModeLocked(), selectValues(optPermissionsMode)),
 		build(optCompactionThresh, "Compaction threshold",
 			"Context compaction trigger (phase "+phasePendingCompaction+")",
-			categoryCustom, s.pendingCurrentLocked(optCompactionThresh), pendingValues(optCompactionThresh)),
+			categoryCustom, s.pendingCurrentLocked(optCompactionThresh), selectValues(optCompactionThresh)),
 		build(optGlobalPrefix+optModel, "Model (global default)", "Model default in the global config layer",
 			categoryModel, gRes.model, models),
 		build(optGlobalPrefix+optTier, "Session tier (global default)", "Tier default in the global config layer",
 			categoryModelConfig, gRes.tier, tiers),
 		build(optGlobalPrefix+optPermissionsMode, "Permission mode (global default)",
 			"Global permission gating default",
-			categoryMode, s.pendingCurrentLocked(optPermissionsMode), pendingValues(optPermissionsMode)),
+			categoryMode, s.globalPermModeLocked(), selectValues(optPermissionsMode)),
 		build(optGlobalPrefix+optCompactionThresh, "Compaction threshold (global default)", "Global compaction default",
-			categoryCustom, s.pendingCurrentLocked(optCompactionThresh), pendingValues(optCompactionThresh)),
+			categoryCustom, s.pendingCurrentLocked(optCompactionThresh), selectValues(optCompactionThresh)),
 	}
 }
 
@@ -783,6 +951,34 @@ func (s *ConfigSurface) layerForScope(scope string) (string, error) {
 	return s.projectPath, nil
 }
 
+// layerValue returns the string value at a nested key path of a generic map
+// ("" when any step is missing or not a string).
+func layerValue(m map[string]any, keyPath ...string) string {
+	cur := m
+
+	for i, k := range keyPath {
+		v, ok := cur[k]
+		if !ok {
+			return ""
+		}
+
+		if i == len(keyPath)-1 {
+			s, _ := v.(string)
+
+			return s
+		}
+
+		next, ok := v.(map[string]any)
+		if !ok {
+			return ""
+		}
+
+		cur = next
+	}
+
+	return ""
+}
+
 func (s *ConfigSurface) logf(format string, args ...any) {
 	if s.stderr == nil {
 		return
@@ -812,13 +1008,14 @@ func isMenuOption(bare string) bool {
 }
 
 // isPendingOption reports the advertised-but-unhandled ids (D-05): accepted
-// and logged, never persisted — real handlers land in Phases 17/19.
+// and logged, never persisted. Since 17-02 only compaction-threshold remains
+// pending (its handler lands in Phase 19); permissions.mode is a real option.
 func isPendingOption(bare string) bool {
-	return bare == optPermissionsMode || bare == optCompactionThresh
+	return bare == optCompactionThresh
 }
 
-// pendingValues is the fixed offered set of the pending options.
-func pendingValues(bare string) []string {
+// selectValues is the fixed offered set of a select option.
+func selectValues(bare string) []string {
 	if bare == optPermissionsMode {
 		return []string{permModeUngated, permModeGated}
 	}

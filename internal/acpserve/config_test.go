@@ -1,6 +1,7 @@
 package acpserve //nolint:testpackage // internal package test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -396,7 +397,9 @@ func TestConfigSurface_PendingNoOp_Compaction(t *testing.T) {
 	// permissions.mode is NO LONGER a pending id (the real handler landed in
 	// 17-02): its pending-handler log line is gone from the surface behavior.
 	f2 := newSurfaceFixture(t)
-	if _, err := f2.surface.Set("sess-1", optPermissionsMode, testPermGated); err == nil {
+
+	_, setErr := f2.surface.Set("sess-1", optPermissionsMode, testPermGated)
+	if setErr == nil {
 		if got := f2.stderr.String(); strings.Contains(got, "pending handler") {
 			t.Error("permissions.mode still logs the pending-handler line (the real handler must own it)")
 		}
@@ -409,7 +412,9 @@ func TestConfigSurface_PendingNoOp_Compaction(t *testing.T) {
 // new value, the advertisement resolving the effective truth (D-11), typed
 // rejects for invalid values (D-09), the D-10 idempotent re-push guard, the
 // _global/ scope routing, and the ungated boot default.
-func TestPermissionsModeFlip(t *testing.T) { //nolint:funlen,gocyclo,gocognit // one battery over the six behaviors
+//
+//nolint:funlen,gocyclo,gocognit,cyclop,maintidx // one battery over the six behaviors
+func TestPermissionsModeFlip(t *testing.T) {
 	t.Parallel()
 
 	// wiredFixture adds the runner-side live accessor + apply hook (the
@@ -419,6 +424,7 @@ func TestPermissionsModeFlip(t *testing.T) { //nolint:funlen,gocyclo,gocognit //
 	// the new value when the hook runs".
 	type wiredFixture struct {
 		*surfaceFixture
+
 		mode         string
 		applied      []string
 		layerAtApply []string
@@ -502,8 +508,9 @@ func TestPermissionsModeFlip(t *testing.T) { //nolint:funlen,gocyclo,gocognit //
 		}
 
 		// Flip back to ungated: same semantics, the live apply sees ungated.
-		if _, err := w.surface.Set("sess-1", optPermissionsMode, testPermUngated); err != nil {
-			t.Fatalf("Set(permissions.mode=ungated): %v", err)
+		_, ferr := w.surface.Set("sess-1", optPermissionsMode, testPermUngated)
+		if ferr != nil {
+			t.Fatalf("Set(permissions.mode=ungated): %v", ferr)
 		}
 
 		w.mu.Lock()
@@ -540,7 +547,8 @@ func TestPermissionsModeFlip(t *testing.T) { //nolint:funlen,gocyclo,gocognit //
 			t.Errorf("apply hook fired for an invalid value: %v", w.applied)
 		}
 
-		if _, statErr := os.Stat(w.projectPath); !os.IsNotExist(statErr) {
+		_, statErr := os.Stat(w.projectPath)
+		if !os.IsNotExist(statErr) {
 			t.Error("invalid value wrote a layer file (session state untouched on reject)")
 		}
 	})
@@ -550,8 +558,9 @@ func TestPermissionsModeFlip(t *testing.T) { //nolint:funlen,gocyclo,gocognit //
 
 		w := newWired(t)
 
-		if _, err := w.surface.Set("sess-1", optPermissionsMode, testPermGated); err != nil {
-			t.Fatalf("initial Set: %v", err)
+		_, gerr := w.surface.Set("sess-1", optPermissionsMode, testPermGated)
+		if gerr != nil {
+			t.Fatalf("initial Set: %v", gerr)
 		}
 
 		raw, rerr := os.ReadFile(w.projectPath)
@@ -561,8 +570,9 @@ func TestPermissionsModeFlip(t *testing.T) { //nolint:funlen,gocyclo,gocognit //
 
 		before := w.notifyCount()
 
-		if _, err := w.surface.Set("sess-1", optPermissionsMode, testPermGated); err != nil {
-			t.Fatalf("re-push Set: %v", err)
+		_, rerr = w.surface.Set("sess-1", optPermissionsMode, testPermGated)
+		if rerr != nil {
+			t.Fatalf("re-push Set: %v", rerr)
 		}
 
 		w.mu.Lock()
@@ -582,7 +592,7 @@ func TestPermissionsModeFlip(t *testing.T) { //nolint:funlen,gocyclo,gocognit //
 		}
 
 		raw2, rerr2 := os.ReadFile(w.projectPath)
-		if rerr2 != nil || string(raw2) != string(raw) {
+		if rerr2 != nil || !bytes.Equal(raw2, raw) {
 			t.Error("idempotent re-push churned the layer file (D-10)")
 		}
 	})
@@ -603,11 +613,13 @@ func TestPermissionsModeFlip(t *testing.T) { //nolint:funlen,gocyclo,gocognit //
 
 		before := w.notifyCount()
 
-		if _, err := w.surface.Set("sess-1", optPermissionsMode, testPermUngated); err != nil {
+		_, err := w.surface.Set("sess-1", optPermissionsMode, testPermUngated)
+		if err != nil {
 			t.Fatalf("re-push Set(ungated): %v", err)
 		}
 
-		if _, statErr := os.Stat(w.projectPath); !os.IsNotExist(statErr) {
+		_, statErr := os.Stat(w.projectPath)
+		if !os.IsNotExist(statErr) {
 			t.Error("re-push of the effective default wrote a layer file (D-10 anti-promotion)")
 		}
 
@@ -621,9 +633,9 @@ func TestPermissionsModeFlip(t *testing.T) { //nolint:funlen,gocyclo,gocognit //
 
 		w := newWired(t)
 
-		opts, err := w.surface.Set("sess-1", optGlobalPrefix+optPermissionsMode, testPermGated)
-		if err != nil {
-			t.Fatalf("Set(_global/permissions.mode=gated): %v", err)
+		opts, gerr := w.surface.Set("sess-1", optGlobalPrefix+optPermissionsMode, testPermGated)
+		if gerr != nil {
+			t.Fatalf("Set(_global/permissions.mode=gated): %v", gerr)
 		}
 
 		m, lerr := readLayerMap(w.globalPath)
@@ -635,7 +647,8 @@ func TestPermissionsModeFlip(t *testing.T) { //nolint:funlen,gocyclo,gocognit //
 			t.Errorf("global layer missing permissions.mode: %+v", m)
 		}
 
-		if _, statErr := os.Stat(w.projectPath); !os.IsNotExist(statErr) {
+		projStat, projErr := os.Stat(w.projectPath)
+		if !os.IsNotExist(projErr) || projStat != nil {
 			t.Error("global-scoped write touched the project layer")
 		}
 

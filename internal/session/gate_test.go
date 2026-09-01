@@ -1155,7 +1155,7 @@ func TestGateMCPNamespace(t *testing.T) { //nolint:funlen,cyclop // the mapping 
 // SHARED mode accessor, and the very next mutating call in the SAME session
 // changes gate behavior — no session recreation, no restart. Flipping back
 // restores the dialog-free default with deny rules still enforced.
-func TestGatePermissionModeFlip(t *testing.T) {
+func TestGatePermissionModeFlip(t *testing.T) { //nolint:funlen // one flow across three prompts
 	t.Parallel()
 
 	mode := PermModeUngated
@@ -1165,11 +1165,17 @@ func TestGatePermissionModeFlip(t *testing.T) {
 		answers: []AskOutcome{{Selected: acp.PermOptionAllowOnce}},
 	}
 
+	// The fake provider serves responses per STREAM (each turn loop iteration
+	// is one stream): prompt 1 = [Write, end_turn]; prompt 2 = [Write] (the
+	// gated suspension; the resume executes and closes on the next stream);
+	// prompt 3 = [Write] (denied ungated) + [end_turn].
 	s := newGateSessionFunc(t, []provider.Response{
 		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
 			{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+		{FinishReason: stopEndTurn},
 		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
 			{ID: gateCall2, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+		{FinishReason: stopEndTurn},
 		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
 			{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
 		{FinishReason: stopEndTurn},
@@ -1200,8 +1206,13 @@ func TestGatePermissionModeFlip(t *testing.T) {
 
 	gateWaitFor(t, func() bool { return surf.fired() == 1 })
 
-	if order := store.snapshotOrder(); len(order) != 1 || order[0] != "exec:"+gateToolWrite {
-		t.Fatalf("post-flip order = %v; want only the first turn's ungated exec (the gated call suspends)", order)
+	// The suspended call resolves (allow_once — no rule written) and only the
+	// two executions are recorded: turn 1's ungated exec + the resumed gated
+	// exec. No allow/forbid entry ever lands.
+	gateWaitFor(t, func() bool { return len(store.snapshotOrder()) == 2 })
+
+	if order := store.snapshotOrder(); order[0] != "exec:"+gateToolWrite || order[1] != "exec:"+gateToolWrite {
+		t.Fatalf("order = %v; want exactly the two execs, no rule writes (allow_once)", order)
 	}
 
 	// Flip back: the next identical call executes with no dialog; a deny rule
@@ -1230,4 +1241,39 @@ func TestGatePermissionModeFlip(t *testing.T) {
 	if !results[1].IsError {
 		t.Errorf("flip-back denial result = %+v; want an error result (deny still denies ungated)", results[1])
 	}
+}
+
+// newGateSessionFunc is newGateSession with a live mode accessor (the
+// TestGatePermissionModeFlip seam — the same shared accessor the
+// permissions.mode apply hook flips).
+func newGateSessionFunc(
+	t *testing.T, responses []provider.Response, modeFn func() string,
+	store *fakePermStore, surf *fakeGateSurface,
+) *Session {
+	t.Helper()
+
+	s := newTestSessionWithCatalog(t, responses)
+
+	s.SetPermissionGate(GateDeps{
+		Rules:  store.Rules,
+		Mode:   modeFn,
+		Allow:  store.Allow,
+		Forbid: store.Forbid,
+		Fire:   surf.Fire,
+		Queue:  NewAskQueue(),
+	})
+
+	s.Catalog.Register(toolcat.Tool{
+		Name:        gateToolWrite,
+		Mutability:  toolcat.MutabilityMutating,
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+		Execute: func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
+			store.noteExec(gateToolWrite)
+
+			return json.RawMessage(`{"output":"written"}`), nil
+		},
+	})
+	s.SetToolExecutor(&toolexec.RealExecutor{Catalog: s.Catalog})
+
+	return s
 }

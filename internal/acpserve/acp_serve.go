@@ -240,6 +240,19 @@ func Run( //nolint:funlen // :320-425
 	permAsker := NewPermissionAsk(ctx, srv.Registry(), stderr)
 	runner.SetPermissionAskFire(permAsker.Fire)
 
+	// 17-02 Task 3: the permissions.mode live seams — the advertisement reads
+	// the runner's accessor (chip==wire with the gate), the apply hook flips
+	// it after every successful persist, and the boot seeds the accessor from
+	// the layer resolution so a hand-edited `permissions: {mode: gated}`
+	// gates after a restart exactly as advertised.
+	surface.SetPermModeRead(runner.PermMode)
+	surface.SetPermModeHook(func(mode string) error {
+		runner.SetPermMode(mode)
+
+		return nil
+	})
+	runner.SetPermMode(surface.EffectivePermMode())
+
 	// 12-07 (ACP-04/D-02): the per-project schedule store + the scheduler
 	// goroutine on the serve-lifetime ctx (no daemon, no port — Close/ctx
 	// owns its lifecycle). A failed open degrades to a serve WITHOUT
