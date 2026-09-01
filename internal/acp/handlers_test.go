@@ -1,12 +1,14 @@
 package acp //nolint:testpackage // internal package test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // The 16-05 config-options wire surface tests (ACP-08): advertisement with
@@ -613,4 +615,175 @@ func assertViolationData(t *testing.T, data any, wantOptionID string) {
 	if v == "" {
 		t.Error("error data violation is empty; want a violation detail string")
 	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 17-03 (D-13): the teardown-drain wiring. The ONE drain function (the
+// session's ask-queue drain) is reachable from all three teardown paths, each
+// pinned here and at the queue/session level: the session/cancel notification
+// (before/with cancelTurn), the session-close path (logout, before the reap),
+// and serve shutdown (the acpserve composition — behavior-tested beside the
+// real registry in the acpserve drain battery).
+
+// drainRecordingRunner is a TurnRunner implementing the AskDrainer capability
+// and SessionCloser, recording the teardown event order so the tests can pin
+// drain-before-cancel and drain-before-close.
+type drainRecordingRunner struct {
+	mu     sync.Mutex
+	events []string
+}
+
+func (r *drainRecordingRunner) record(e string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.events = append(r.events, e)
+}
+
+func (r *drainRecordingRunner) Run(
+	ctx context.Context, _ string, emit ChunkEmitter, _ []ContentBlock,
+) (string, error) {
+	r.record("run")
+
+	_ = emit.AgentMessageChunk("m1", "x")
+
+	<-ctx.Done() // block until session/cancel aborts the turn
+
+	r.record("run-cancelled")
+
+	return stopCancelled, nil
+}
+
+// DrainAsks satisfies acp.AskDrainer (the session/cancel teardown seam).
+func (r *drainRecordingRunner) DrainAsks(sessionID string) {
+	r.record("drain:" + sessionID)
+}
+
+// DrainSessionAsks satisfies acp.AskDrainer (the session-close teardown seam).
+func (r *drainRecordingRunner) DrainSessionAsks(sessionID string) {
+	r.record("drain-session:" + sessionID)
+}
+
+// DrainAllAsks satisfies acp.AskDrainer (the serve-shutdown teardown seam).
+func (r *drainRecordingRunner) DrainAllAsks() {
+	r.record("drain-all")
+}
+
+// CloseSession satisfies acp.SessionCloser (logout's reap).
+func (r *drainRecordingRunner) CloseSession(sessionID string) error {
+	r.record("closed:" + sessionID)
+
+	return nil
+}
+
+func (r *drainRecordingRunner) recorded() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return append([]string(nil), r.events...)
+}
+
+// indexOf returns the first index of want in items, or -1.
+func indexOf(items []string, want string) int {
+	for i, v := range items {
+		if v == want {
+			return i
+		}
+	}
+
+	return -1
+}
+
+// TestSessionCancelDrainOnCancel pins the cancel-path wiring: the
+// session/cancel notification drains the session's ask queue BEFORE/with the
+// turn cancel — the open dialog resolves and queued asks never survive the
+// abort (D-13; the ACP cancel contract covers ALL pending permission
+// requests).
+func TestSessionCancelDrainOnCancel(t *testing.T) {
+	t.Parallel()
+
+	runner := &drainRecordingRunner{}
+	h := newPipeHarness(t, WithTurnRunner(runner))
+	sid := handshakeRecordingSession(t, h)
+
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		h.send(t, newRequest(2, "session/prompt", promptRequest(sid, "hi")))
+	}()
+
+	gateWaitForEvent(t, func() bool {
+		events := runner.recorded()
+
+		return len(events) > 0 && events[0] == "run"
+	})
+
+	// The editor flow: escape mid-turn (a notification — dispatched inline).
+	h.send(t, newNotification("session/cancel", map[string]any{keySessionID: sid}))
+
+	<-done
+
+	awaitResponseID(t, h, "2")
+
+	events := runner.recorded()
+
+	drainIdx := indexOf(events, "drain:"+sid)
+	cancelIdx := indexOf(events, "run-cancelled")
+
+	if drainIdx == -1 {
+		t.Fatalf("session/cancel never drained the ask queue; events = %v", events)
+	}
+
+	if cancelIdx == -1 || drainIdx > cancelIdx {
+		t.Errorf("drain (idx %d) must land before/with the turn cancel (idx %d); events = %v",
+			drainIdx, cancelIdx, events)
+	}
+}
+
+// TestSessionCancelDrainOnLogout pins the session-close wiring: logout drains
+// the session's asks BEFORE the resource reap (CloseSession) — no dialog and
+// no queued ask outlives the session (T-17-09).
+func TestSessionCancelDrainOnLogout(t *testing.T) {
+	t.Parallel()
+
+	runner := &drainRecordingRunner{}
+	h := newPipeHarness(t, WithTurnRunner(runner))
+	sid := handshakeRecordingSession(t, h)
+
+	h.send(t, newRequest(2, "logout", map[string]any{keySessionID: sid}))
+	awaitResponseID(t, h, "2")
+
+	events := runner.recorded()
+
+	drainIdx := indexOf(events, "drain-session:"+sid)
+	closeIdx := indexOf(events, "closed:"+sid)
+
+	if drainIdx == -1 {
+		t.Fatalf("logout never drained the session's asks; events = %v", events)
+	}
+
+	if closeIdx == -1 || drainIdx > closeIdx {
+		t.Errorf("drain (idx %d) must land before the session close (idx %d); events = %v",
+			drainIdx, closeIdx, events)
+	}
+}
+
+// gateWaitForEvent polls cond until true or the deadline expires (the
+// cancel/close notifications dispatch inline while the prompt runs on its own
+// goroutine — the same async shape the session tests use).
+func gateWaitForEvent(t *testing.T, cond func() bool) {
+	t.Helper()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+
+		time.Sleep(2 * time.Millisecond)
+	}
+
+	t.Fatal("condition never became true within 2s")
 }

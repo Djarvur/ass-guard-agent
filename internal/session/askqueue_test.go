@@ -2,6 +2,9 @@ package session //nolint:testpackage // internal package test (drives the queue'
 
 import (
 	"context"
+	"encoding/json"
+	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -532,5 +535,283 @@ func TestAskQueueConcurrency(t *testing.T) { //nolint:funlen // the interleaved 
 
 	if got := q.Pending(); got != 0 {
 		t.Errorf("Pending = %d; want 0", got)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// D-13: the turn-scoped drain (Task 2). DrainTurn resolves the OPEN dialog of
+// one turn (through the queue-owned fire-ctx cancellation — a registry-backed
+// fire cascades $/cancel_request) and drains that turn's queued-but-unfired
+// asks as cancelled-normal WITHOUT firing. Entries of other turns are
+// untouched.
+
+// qAtomic is a tiny atomic int counter for fire-invocation proofs.
+type qAtomic struct {
+	mu sync.Mutex
+	v  int
+}
+
+func (a *qAtomic) add() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	a.v++
+}
+
+func (a *qAtomic) get() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	return a.v
+}
+
+// TestAskQueueDrainTurn pins the D-13 drain semantics: the open entry of the
+// dead turn resolves cancelled through its fire-ctx cancellation, the dead
+// turn's queued entry drains cancelled-normal with ZERO fires (the zombie-ask
+// ban), and another turn's waiting entry is untouched.
+func TestAskQueueDrainTurn(t *testing.T) { //nolint:funlen // the full scoped-drain chain
+	t.Parallel()
+
+	q := NewAskQueue()
+	release := make(chan struct{})
+
+	// The open dialog of turn-1: its fire blocks until the drain cancels the
+	// queue-owned ctx.
+	openEntry := &AskEntry{TurnID: queueTurn1, Class: AskClassForeground}
+	openEntry.fire = func(ctx context.Context) AskOutcome {
+		select {
+		case <-release:
+			return AskOutcome{Selected: queueOption}
+		case <-ctx.Done():
+			return AskOutcome{Cancelled: true}
+		}
+	}
+
+	resolvedOpen := make(chan AskOutcome, 1)
+	q.Enqueue(openEntry, func(_ *AskEntry, o AskOutcome) { resolvedOpen <- o })
+
+	// A queued-but-unfired ask of the SAME (dead) turn: its fire must never
+	// be invoked.
+	queuedFires := &qAtomic{}
+
+	queuedEntry := &AskEntry{TurnID: queueTurn1, Class: AskClassForeground}
+	queuedEntry.fire = func(_ context.Context) AskOutcome {
+		queuedFires.add()
+
+		return AskOutcome{Selected: queueOption}
+	}
+
+	resolvedQueued := make(chan AskOutcome, 1)
+	q.Enqueue(queuedEntry, func(_ *AskEntry, o AskOutcome) { resolvedQueued <- o })
+
+	// Another turn's ask: the turn-1 drain must leave it untouched.
+	otherEntry := &AskEntry{TurnID: queueTurn2, Class: AskClassBackground}
+	otherEntry.fire = func(ctx context.Context) AskOutcome {
+		select {
+		case <-release:
+			return AskOutcome{Selected: queueOption}
+		case <-ctx.Done():
+			return AskOutcome{Cancelled: true}
+		}
+	}
+
+	resolvedOther := make(chan AskOutcome, 1)
+	q.Enqueue(otherEntry, func(_ *AskEntry, o AskOutcome) { resolvedOther <- o })
+
+	gateWaitFor(t, func() bool { return q.Pending() == 2 })
+
+	// Turn death for turn-1.
+	q.DrainTurn(queueTurn1)
+
+	select {
+	case o := <-resolvedOpen:
+		if !o.Cancelled {
+			t.Fatalf("open entry outcome = %+v; want cancelled (the drain cancels the fire ctx)", o)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the open entry never resolved after the drain")
+	}
+
+	select {
+	case o := <-resolvedQueued:
+		if !o.Cancelled {
+			t.Fatalf("queued entry outcome = %+v; want cancelled-normal", o)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the queued entry never drained")
+	}
+
+	if got := queuedFires.get(); got != 0 {
+		t.Fatalf("the drained queued entry fired %d time(s) — zombie ask (D-13 ban)", got)
+	}
+
+	// The other turn's entry is untouched and still live.
+	if got := q.Pending(); got != 1 {
+		t.Fatalf("Pending after the scoped drain = %d; want 1 (the other turn's entry survives)", got)
+	}
+
+	close(release)
+
+	select {
+	case o := <-resolvedOther:
+		if !o.Cancelled && o.Selected != queueOption {
+			t.Fatalf("other turn's outcome = %+v; want selected (it fired normally)", o)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the other turn's entry never fired after the drain")
+	}
+}
+
+// TestAskQueueDrainAll pins the session/serve-scope drain (the same
+// drain-one-turn core applied to every turn present): everything resolves
+// cancelled, drained queued entries never fire, and the pump goroutine exits
+// (the goroutine-leak check follows the repo's baseline+settle idiom).
+func TestAskQueueDrainAll(t *testing.T) { //nolint:funlen // the full shutdown-drain chain
+	baseline := runtime.NumGoroutine()
+
+	q := NewAskQueue()
+
+	openEntry := &AskEntry{TurnID: queueTurn1, Class: AskClassForeground}
+	openEntry.fire = func(ctx context.Context) AskOutcome {
+		<-ctx.Done()
+
+		return AskOutcome{Cancelled: true}
+	}
+
+	resolvedOpen := make(chan AskOutcome, 1)
+	q.Enqueue(openEntry, func(_ *AskEntry, o AskOutcome) { resolvedOpen <- o })
+
+	queuedFires := &qAtomic{}
+
+	var queuedResolved sync.WaitGroup
+
+	queuedResolved.Add(2)
+
+	for _, turn := range []string{queueTurn1, queueTurn2} {
+		e := &AskEntry{TurnID: turn, Class: AskClassBackground}
+		e.fire = func(_ context.Context) AskOutcome {
+			queuedFires.add()
+
+			return AskOutcome{Selected: queueOption}
+		}
+
+		q.Enqueue(e, func(*AskEntry, AskOutcome) { queuedResolved.Done() })
+	}
+
+	gateWaitFor(t, func() bool { return q.Pending() == 2 })
+
+	q.DrainAll()
+
+	if o := <-resolvedOpen; !o.Cancelled {
+		t.Fatalf("open entry outcome = %+v; want cancelled", o)
+	}
+
+	queuedResolved.Wait()
+
+	if got := queuedFires.get(); got != 0 {
+		t.Fatalf("drained queued entries fired %d time(s); want 0", got)
+	}
+
+	if got := q.Pending(); got != 0 {
+		t.Errorf("Pending after the full drain = %d; want 0", got)
+	}
+
+	// The pump goroutine exits once the drained state settles (the repo's
+	// emitter-soak idiom: baseline + settle window).
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if runtime.NumGoroutine() <= baseline+2 {
+			return
+		}
+
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	t.Errorf("goroutine leak: %d goroutines after the shutdown drain; baseline was %d",
+		runtime.NumGoroutine(), baseline)
+}
+
+// TestGateTurnDeath pins criterion 2 end-to-end at the session level (D-13):
+// a gated turn suspends with the dialog open (held), a SECOND prompt's gated
+// ask queues behind it, and the teardown drain (the seam every teardown path
+// reaches) — resolves the OPEN dialog cancelled via the fire-ctx cancellation
+// (a registry-backed fire cascades $/cancel_request on the wire),
+// — appends the cancelled-NORMAL result and resumes the SAME turn (no error
+// result, no hang),
+// — drains the queued-but-unfired ask of the other turn as cancelled-normal
+// with ZERO additional surface fires (the firing monopoly + zombie-ask ban).
+func TestGateTurnDeath(t *testing.T) { //nolint:funlen,cyclop // the full death chain, flat
+	t.Parallel()
+
+	store := &fakePermStore{}
+	surf := &fakeGateSurface{hold: true}
+
+	s := newGateSession(t, []provider.Response{
+		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+			{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+		{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+			{ID: gateCall2, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+		{FinishReason: stopEndTurn}, // whichever resume runs first
+		{FinishReason: stopEndTurn}, // ...and the second
+	}, PermModeGated, store, surf)
+
+	stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+	if err != nil {
+		t.Fatalf("prompt 1: %v", err)
+	}
+
+	if stop != stopAsk {
+		t.Fatalf("stop1 = %q; want the ask marker", stop)
+	}
+
+	gateWaitFor(t, func() bool { return surf.fired() == 1 })
+
+	// A second prompt while the dialog is open: its gated call's ask QUEUES
+	// (one outstanding — D-11) and the prompt suspends.
+	stop2, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "second prompt"}})
+	if err != nil {
+		t.Fatalf("prompt 2 while dialog open: %v", err)
+	}
+
+	if stop2 != stopAsk {
+		t.Fatalf("stop2 = %q; want the ask marker (the ask queued behind the open dialog)", stop2)
+	}
+
+	gateWaitFor(t, func() bool { return s.HasQueuedAsks() && s.HasOpenAsk() })
+
+	// Teardown (the shared drain the cancel/close/shutdown paths reach).
+	s.DrainPermissionAsks()
+
+	// The OPEN dialog resolved cancelled: the cancelled-NORMAL result is
+	// appended (NEVER an error result — criterion 2's letter) and the turn
+	// resumes.
+	gateWaitFor(t, func() bool { return len(toolResultsFor(t, s, gateCall1)) == 1 })
+
+	r1 := toolResultsFor(t, s, gateCall1)
+	if len(r1) != 1 || r1[0].IsError {
+		t.Fatalf("drained open-dialog result = %+v; want exactly one NON-error (cancelled-normal) result", r1)
+	}
+
+	if !strings.Contains(string(r1[0].Output), "cancelled") {
+		t.Errorf("result output = %s; want the cancelled-normal form", r1[0].Output)
+	}
+
+	// The queued ask drained as cancelled-normal too — appended, never fired.
+	gateWaitFor(t, func() bool { return len(toolResultsFor(t, s, gateCall2)) == 1 })
+
+	r2 := toolResultsFor(t, s, gateCall2)
+	if len(r2) != 1 || r2[0].IsError {
+		t.Fatalf("drained queued result = %+v; want exactly one NON-error (cancelled-normal) result", r2)
+	}
+
+	// The firing monopoly: through the WHOLE lifecycle (suspend + queued ask
+	// + drain) the surface fired exactly once — zero ask-method calls outside
+	// the queue's fire step.
+	if got := surf.fired(); got != 1 {
+		t.Errorf("surface fired %d time(s); want exactly 1 (firing monopoly)", got)
+	}
+
+	if order := store.snapshotOrder(); len(order) != 0 {
+		t.Errorf("dead turns executed gated calls: %v", order)
 	}
 }

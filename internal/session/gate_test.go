@@ -87,14 +87,17 @@ func (f *fakePermStore) snapshotOrder() []string {
 
 // fakeGateSurface is the injected ask fire: it records every enqueued entry,
 // pops pre-programmed answers, and can block mid-round-trip (an open dialog).
+// hold=true pins the fire until the queue's drain cancels the fire ctx (the
+// turn-death battery) — answering Cancelled, like a registry-backed ask.
 type fakeGateSurface struct {
 	mu      sync.Mutex
 	entries []*AskEntry
 	answers []AskOutcome
 	block   chan struct{}
+	hold    bool
 }
 
-func (f *fakeGateSurface) Fire(_ context.Context, e *AskEntry) AskOutcome {
+func (f *fakeGateSurface) Fire(ctx context.Context, e *AskEntry) AskOutcome {
 	f.mu.Lock()
 
 	f.entries = append(f.entries, e)
@@ -106,8 +109,15 @@ func (f *fakeGateSurface) Fire(_ context.Context, e *AskEntry) AskOutcome {
 	}
 
 	block := f.block
+	hold := f.hold
 
 	f.mu.Unlock()
+
+	if hold {
+		<-ctx.Done()
+
+		return AskOutcome{Cancelled: true}
+	}
 
 	if block != nil {
 		<-block
