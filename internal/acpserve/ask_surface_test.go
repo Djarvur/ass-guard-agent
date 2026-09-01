@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
+	"github.com/Djarvur/ass-guard-agent/internal/coreexec"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
 )
 
@@ -241,6 +243,494 @@ func TestPermissionAskDispatch(t *testing.T) { //nolint:cyclop,funlen // one tab
 		var timeout *acp.RequestTimeoutError
 		if got.Err == nil || !errors.As(got.Err, &timeout) {
 			t.Errorf("outcome = %+v; want a *RequestTimeoutError fail-safe Err", got)
+		}
+	})
+}
+
+// --- 17-04 elicitation battery (ACP-02, D-08/D-09): the D-08 mapping goldens
+// (one per row of the locked table), the frame shape, and the capability-gated
+// dispatch with today's plain-text path as the verbatim fallback. ---
+
+// elicQ1/Q2 are the mapping battery's question fixtures.
+var (
+	elicQ1 = session.AskQuestion{
+		Question: "Which cache library should we use?",
+		Header:   "Cache",
+		Options: []session.AskOption{
+			{Label: "ristretto", Description: "fast in-memory cache"},
+			{Label: "bigcache", Description: "simple disk-backed cache"},
+		},
+	}
+	elicQ2 = session.AskQuestion{
+		Question: "Which areas should the review cover?",
+		Header:   "Areas",
+		MultiSelect: true,
+		Options: []session.AskOption{
+			{Label: "api"}, {Label: "docs"},
+		},
+	}
+	elicQFree = session.AskQuestion{Question: "What is the ticket id?", Header: "Ticket"}
+	elicQBool = session.AskQuestion{
+		Question: "Proceed without tests?",
+		Header:   "Proceed",
+		Options:  []session.AskOption{{Label: "Yes"}, {Label: "No"}},
+	}
+)
+
+// elicEntry builds the fire payload one question suspension produces.
+func elicEntry() *session.AskEntry {
+	return &session.AskEntry{
+		TurnID:    "sess-1-turn-001",
+		SessionID: "sess-1",
+		CallID:    "call_ask_1",
+		Tool:      "AskUserQuestion",
+		Input:     mustMarshalQs([]session.AskQuestion{elicQ1}),
+		Class:     session.AskClassForeground,
+	}
+}
+
+func mustMarshalQs(qs []session.AskQuestion) json.RawMessage {
+	out, err := json.Marshal(qs)
+	if err != nil {
+		panic(err)
+	}
+
+	return out
+}
+
+// elicProp decodes one built property's raw shape.
+func elicProp(t *testing.T, f acp.ElicitationFormFrame, key string) map[string]any {
+	t.Helper()
+
+	raw, ok := f.RequestedSchema.Properties[key]
+	if !ok {
+		t.Fatalf("property %q missing; properties = %v", key, f.RequestedSchema.Properties)
+	}
+
+	var m map[string]any
+
+	if uerr := json.Unmarshal(raw, &m); uerr != nil {
+		t.Fatalf("unmarshal property %q: %v", key, uerr)
+	}
+
+	return m
+}
+
+// TestElicitationMapping pins the D-08 table row by row: single-choice →
+// string oneOf titled consts; multiSelect → array items (enum, anyOf-titled
+// when descriptions exist); free-text/empty-Options → string; boolean ask →
+// boolean ONLY when advertised, else a two-value string oneOf; N questions →
+// N properties all required; the banned MCP-legacy enumNames key never
+// appears; the question text lands in the message; the D-10 re-ask note rides
+// the message.
+func TestElicitationMapping(t *testing.T) {
+	t.Parallel()
+
+	t.Run("single_choice_oneOf_titled_consts", func(t *testing.T) {
+		t.Parallel()
+
+		f := BuildElicitationForm([]session.AskQuestion{elicQ1}, false, "", "sess-1", "call_ask_1")
+		p := elicProp(t, f, "q1")
+
+		if p["type"] != "string" || p["title"] != "Cache" {
+			t.Errorf("property q1 = %v; want type string + title Cache", p)
+		}
+
+		oneOf, ok := p["oneOf"].([]any)
+		if !ok || len(oneOf) != 2 {
+			t.Fatalf("oneOf = %v; want 2 titled consts", p["oneOf"])
+		}
+
+		first, _ := oneOf[0].(map[string]any)
+
+		if first["const"] != "ristretto" || first["title"] != "ristretto" ||
+			first["description"] != "fast in-memory cache" {
+			t.Errorf("oneOf[0] = %v; want const/title/description of the option label", first)
+		}
+	})
+
+	t.Run("multiselect_array_enum", func(t *testing.T) {
+		t.Parallel()
+
+		f := BuildElicitationForm([]session.AskQuestion{elicQ2}, false, "", "sess-1", "")
+		p := elicProp(t, f, "q1")
+
+		if p["type"] != "array" || p["title"] != "Areas" {
+			t.Errorf("property q1 = %v; want type array + title Areas", p)
+		}
+
+		items, ok := p["items"].(map[string]any)
+		if !ok {
+			t.Fatalf("items = %v; want the items schema", p["items"])
+		}
+
+		if items["type"] != "string" {
+			t.Errorf("items.type = %v; want string", items["type"])
+		}
+
+		enum, ok := items["enum"].([]any)
+		if !ok || len(enum) != 2 || enum[0] != "api" || enum[1] != "docs" {
+			t.Errorf("items.enum = %v; want [api docs]", items["enum"])
+		}
+	})
+
+	t.Run("multiselect_anyOf_titled_when_descriptions", func(t *testing.T) {
+		t.Parallel()
+
+		q := elicQ2
+		q.Options = []session.AskOption{{Label: "api", Description: "the surface"}, {Label: "docs"}}
+
+		f := BuildElicitationForm([]session.AskQuestion{q}, false, "", "sess-1", "")
+		items := elicProp(t, f, "q1")["items"].(map[string]any)
+
+		anyOf, ok := items["anyOf"].([]any)
+		if !ok || len(anyOf) != 2 {
+			t.Fatalf("items.anyOf = %v; want 2 titled options when descriptions exist", items["anyOf"])
+		}
+
+		first, _ := anyOf[0].(map[string]any)
+
+		if first["const"] != "api" || first["description"] != "the surface" {
+			t.Errorf("anyOf[0] = %v; want the titled const with description", first)
+		}
+	})
+
+	t.Run("free_text_string", func(t *testing.T) {
+		t.Parallel()
+
+		f := BuildElicitationForm([]session.AskQuestion{elicQFree}, false, "", "sess-1", "")
+		p := elicProp(t, f, "q1")
+
+		if p["type"] != "string" || p["title"] != "Ticket" {
+			t.Errorf("property q1 = %v; want the free-text string property", p)
+		}
+
+		if _, has := p["oneOf"]; has {
+			t.Errorf("free-text property carries oneOf: %v", p)
+		}
+	})
+
+	t.Run("empty_options_free_text", func(t *testing.T) {
+		t.Parallel()
+
+		q := session.AskQuestion{Question: "Say something", Header: "H", Options: []session.AskOption{}}
+
+		f := BuildElicitationForm([]session.AskQuestion{q}, false, "", "sess-1", "")
+		p := elicProp(t, f, "q1")
+
+		if p["type"] != "string" {
+			t.Errorf("empty-Options property = %v; want the free-text string property (edge probe: empty)", p)
+		}
+	})
+
+	t.Run("boolean_advertised", func(t *testing.T) {
+		t.Parallel()
+
+		f := BuildElicitationForm([]session.AskQuestion{elicQBool}, true, "", "sess-1", "")
+		p := elicProp(t, f, "q1")
+
+		if p["type"] != "boolean" {
+			t.Errorf("advertised boolean property = %v; want type boolean", p)
+		}
+	})
+
+	t.Run("boolean_not_advertised_two_value_string_oneOf", func(t *testing.T) {
+		t.Parallel()
+
+		f := BuildElicitationForm([]session.AskQuestion{elicQBool}, false, "", "sess-1", "")
+		p := elicProp(t, f, "q1")
+
+		if p["type"] != "string" {
+			t.Errorf("unadvertised boolean property = %v; want the conservative string select", p)
+		}
+
+		oneOf, ok := p["oneOf"].([]any)
+		if !ok || len(oneOf) != 2 {
+			t.Fatalf("oneOf = %v; want exactly the two value options", p["oneOf"])
+		}
+
+		first, _ := oneOf[0].(map[string]any)
+
+		if first["const"] != "Yes" {
+			t.Errorf("oneOf[0].const = %v; want the authored label Yes", first["const"])
+		}
+	})
+
+	t.Run("n_questions_n_properties_all_required", func(t *testing.T) {
+		t.Parallel()
+
+		qs := []session.AskQuestion{elicQ1, elicQ2, elicQFree}
+
+		f := BuildElicitationForm(qs, false, "", "sess-1", "")
+
+		if len(f.RequestedSchema.Properties) != 3 {
+			t.Errorf("properties = %d; want one per question", len(f.RequestedSchema.Properties))
+		}
+
+		if len(f.RequestedSchema.Required) != 3 {
+			t.Fatalf("required = %v; want every property required", f.RequestedSchema.Required)
+		}
+
+		for i, name := range f.RequestedSchema.Required {
+			want := session.StructuredPropertyKey(i)
+			if name != want {
+				t.Errorf("required[%d] = %q; want the stable derived key %q", i, name, want)
+			}
+		}
+	})
+
+	t.Run("never_enumNames", func(t *testing.T) {
+		t.Parallel()
+
+		qs := []session.AskQuestion{elicQ1, elicQ2}
+
+		raw, err := json.Marshal(BuildElicitationForm(qs, false, "", "sess-1", ""))
+		if err != nil {
+			t.Fatalf("marshal frame: %v", err)
+		}
+
+		if strings.Contains(string(raw), "enumNames") {
+			t.Error("frame carries the banned MCP-legacy enumNames key (RFD ban)")
+		}
+	})
+
+	t.Run("frame_shape_and_message", func(t *testing.T) {
+		t.Parallel()
+
+		f := BuildElicitationForm([]session.AskQuestion{elicQ1}, false, "", "sess-1", "call_ask_1")
+
+		if f.Mode != acp.ElicitationModeForm {
+			t.Errorf("mode = %q; want form", f.Mode)
+		}
+
+		if f.RequestedSchema.Type != "object" {
+			t.Errorf("requestedSchema.type = %q; want object", f.RequestedSchema.Type)
+		}
+
+		if f.SessionID != "sess-1" || f.ToolCallID != "call_ask_1" {
+			t.Errorf("scope = (%q, %q); want the session scope (+ optional toolCallId)", f.SessionID, f.ToolCallID)
+		}
+
+		raw, err := json.Marshal(f)
+		if err != nil {
+			t.Fatalf("marshal frame: %v", err)
+		}
+
+		var wire map[string]any
+
+		if uerr := json.Unmarshal(raw, &wire); uerr != nil {
+			t.Fatalf("unmarshal frame: %v", uerr)
+		}
+
+		for _, key := range []string{"message", "mode", "requestedSchema", "sessionId", "toolCallId"} {
+			if _, ok := wire[key]; !ok {
+				t.Errorf("frame missing camelCase wire field %q (v1 verbatim)", key)
+			}
+		}
+
+		if msg, _ := wire["message"].(string); !strings.Contains(msg, elicQ1.Question) {
+			t.Errorf("message %q does not carry the question text", msg)
+		}
+	})
+
+	t.Run("reask_note_in_message", func(t *testing.T) {
+		t.Parallel()
+
+		f := BuildElicitationForm([]session.AskQuestion{elicQ1}, false, `value "x" is not one of the offered choices`,
+			"sess-1", "")
+
+		if !strings.HasPrefix(f.Message, "previous answer invalid: ") {
+			t.Errorf("re-ask message = %q; want the violation named first", f.Message)
+		}
+	})
+}
+
+// TestAskSurfaceDispatchElicitation pins the capability-gated dispatch: ok →
+// one elicitation/create round-trip under the registry (accept/decline/cancel
+// mapped to the session-native outcomes); degraded → the plain-text fallback
+// publishing byte-parity RenderAskSurface content with NO registry write;
+// -32601 → fallback + STICKY degradation (the second ask never re-round-trips).
+func TestAskSurfaceDispatchElicitation(t *testing.T) { //nolint:funlen,cyclop // one battery over the dispatch vocabulary
+	t.Parallel()
+
+	newSurface := func(t *testing.T, capOK bool) (*ElicitationAsk, *permAskSink, *[]string) {
+		t.Helper()
+
+		sink := &permAskSink{got: make(chan *acp.Message, 4)}
+		reg := acp.NewRegistry(sink, io.Discard)
+
+		var pubMu sync.Mutex
+
+		var published []string
+
+		ea := NewElicitationAsk(ElicitationAskConfig{
+			Ctx:      context.Background(),
+			Registry: reg,
+			Stderr:   io.Discard,
+			CapOK:    func() bool { return capOK },
+			Fallback: func(turnID, text string) {
+				pubMu.Lock()
+				defer pubMu.Unlock()
+
+				published = append(published, turnID+"\x00"+text)
+			},
+		})
+
+		return ea, sink, &published
+	}
+
+	t.Run("ok_accept_round_trip", func(t *testing.T) {
+		t.Parallel()
+
+		ea, sink, _ := newSurface(t, true)
+
+		out := make(chan session.AskOutcome, 1)
+
+		go func() { out <- ea.Fire(context.Background(), elicEntry()) }()
+
+		req := waitForRequest(t, sink)
+
+		if req.Method != acp.MethodElicitationCreate {
+			t.Errorf("method = %q; want %q", req.Method, acp.MethodElicitationCreate)
+		}
+
+		reg := ea.registry
+		reg.Deliver(&acp.Message{JSONRPC: jsonrpcV20, ID: req.ID,
+			Result: json.RawMessage(`{"action":"accept","content":{"q1":"ristretto"}}`)})
+
+		select {
+		case got := <-out:
+			if got.Elicit != acp.ElicitationActionAccept || got.Violation != "" {
+				t.Fatalf("outcome = %+v; want a clean accept", got)
+			}
+
+			if string(got.Content["q1"]) != `"ristretto"` {
+				t.Errorf("content[q1] = %s; want the raw accept value", got.Content["q1"])
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("Fire never resolved within 2s")
+		}
+	})
+
+	t.Run("ok_decline", func(t *testing.T) {
+		t.Parallel()
+
+		ea, sink, _ := newSurface(t, true)
+
+		out := make(chan session.AskOutcome, 1)
+
+		go func() { out <- ea.Fire(context.Background(), elicEntry()) }()
+
+		req := waitForRequest(t, sink)
+		ea.registry.Deliver(&acp.Message{JSONRPC: jsonrpcV20, ID: req.ID,
+			Result: json.RawMessage(`{"action":"decline"}`)})
+
+		select {
+		case got := <-out:
+			if got.Elicit != acp.ElicitationActionDecline || got.Cancelled || got.Err != nil {
+				t.Errorf("outcome = %+v; want the decline action (an answer-shaped refusal)", got)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("Fire never resolved within 2s")
+		}
+	})
+
+	t.Run("ok_cancel", func(t *testing.T) {
+		t.Parallel()
+
+		ea, sink, _ := newSurface(t, true)
+
+		out := make(chan session.AskOutcome, 1)
+
+		go func() { out <- ea.Fire(context.Background(), elicEntry()) }()
+
+		req := waitForRequest(t, sink)
+		ea.registry.Deliver(&acp.Message{JSONRPC: jsonrpcV20, ID: req.ID,
+			Result: json.RawMessage(`{"action":"cancel"}`)})
+
+		select {
+		case got := <-out:
+			if !got.Cancelled {
+				t.Errorf("outcome = %+v; want the cancelled family", got)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("Fire never resolved within 2s")
+		}
+	})
+
+	t.Run("degraded_fallback_parity", func(t *testing.T) {
+		t.Parallel()
+
+		ea, sink, published := newSurface(t, false)
+
+		got := ea.Fire(context.Background(), elicEntry())
+
+		if !got.Fallback {
+			t.Errorf("outcome = %+v; want the plain-text fallback outcome", got)
+		}
+
+		if len(*published) != 1 {
+			t.Fatalf("fallback publishes = %d; want exactly the plain-text publish", len(*published))
+		}
+
+		turnID, text, _ := strings.Cut((*published)[0], "\x00")
+		if turnID != "sess-1-turn-001" {
+			t.Errorf("fallback turnID = %q", turnID)
+		}
+
+		var qs []session.AskQuestion
+
+		_ = json.Unmarshal(elicEntry().Input, &qs)
+		if want := coreexec.RenderAskSurface(qs); text != want {
+			t.Errorf("fallback text = %q; want byte-parity RenderAskSurface %q", text, want)
+		}
+
+		sink.mu.Lock()
+		n := len(sink.msgs)
+		sink.mu.Unlock()
+
+		if n != 0 {
+			t.Errorf("degraded surface wrote %d registry frames; want zero", n)
+		}
+	})
+
+	t.Run("method_not_found_sticky_fallback", func(t *testing.T) {
+		t.Parallel()
+
+		ea, sink, published := newSurface(t, true)
+
+		out := make(chan session.AskOutcome, 2)
+
+		go func() { out <- ea.Fire(context.Background(), elicEntry()) }()
+
+		req := waitForRequest(t, sink)
+		ea.registry.Deliver(&acp.Message{JSONRPC: jsonrpcV20, ID: req.ID,
+			Error: &acp.RPCError{Code: acp.CodeMethodNotFound, Message: "not found"}})
+
+		select {
+		case got := <-out:
+			if !got.Fallback {
+				t.Errorf("outcome = %+v; want the probe-degraded fallback (-32601)", got)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("Fire never resolved within 2s")
+		}
+
+		// Sticky (16-D-18): the second ask degrades without a new round-trip.
+		if got := ea.Fire(context.Background(), elicEntry()); !got.Fallback {
+			t.Errorf("second outcome = %+v; want the sticky fallback", got)
+		}
+
+		sink.mu.Lock()
+		n := len(sink.msgs)
+		sink.mu.Unlock()
+
+		if n != 1 {
+			t.Errorf("registry frames = %d; want exactly the first ask (no re-probe)", n)
+		}
+
+		if len(*published) != 2 {
+			t.Errorf("fallback publishes = %d; want one per degraded ask", len(*published))
 		}
 	})
 }
