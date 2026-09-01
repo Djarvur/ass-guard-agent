@@ -22,6 +22,7 @@ import (
 const (
 	gateToolWrite = "Write"
 	gatePathInput = `{"path":"x"}`
+	jsonrpcV20    = "2.0"
 )
 
 // permAskSink records frames the registry writes (the NotificationSink fake).
@@ -39,13 +40,6 @@ func (s *permAskSink) Write(m *acp.Message) error {
 	s.got <- m
 
 	return nil
-}
-
-func (s *permAskSink) requests() []*acp.Message {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	return append([]*acp.Message(nil), s.msgs...)
 }
 
 // gateAskEntry is the fire payload one suspended gated call produces.
@@ -111,7 +105,9 @@ func TestPermissionAskFrame(t *testing.T) {
 	}
 
 	var wire map[string]any
-	if uerr := json.Unmarshal(raw, &wire); uerr != nil {
+
+	uerr := json.Unmarshal(raw, &wire)
+	if uerr != nil {
 		t.Fatalf("unmarshal frame: %v", uerr)
 	}
 
@@ -152,7 +148,7 @@ func TestPermissionAskFrame(t *testing.T) {
 // ask: selected → Selected, cancelled → Cancelled, -32800 → Cancelled,
 // -32601 → Err (fail-safe decline, never allow), timeout → Err (D-14
 // fallback).
-func TestPermissionAskDispatch(t *testing.T) {
+func TestPermissionAskDispatch(t *testing.T) { //nolint:cyclop,funlen // one table over the wire outcome vocabulary
 	t.Parallel()
 
 	answer := func(t *testing.T, respond func(req *acp.Message) *acp.Message) session.AskOutcome {
@@ -160,7 +156,7 @@ func TestPermissionAskDispatch(t *testing.T) {
 
 		sink := &permAskSink{got: make(chan *acp.Message, 4)}
 		reg := acp.NewRegistry(sink, io.Discard)
-		pa := NewPermissionAsk(reg, context.Background(), io.Discard)
+		pa := NewPermissionAsk(context.Background(), reg, io.Discard)
 
 		out := fireAsync(t, pa)
 		req := waitForRequest(t, sink)
@@ -185,8 +181,9 @@ func TestPermissionAskDispatch(t *testing.T) {
 	}
 
 	t.Run("selected", func(t *testing.T) {
+		t.Parallel()
 		got := answer(t, func(req *acp.Message) *acp.Message {
-			return &acp.Message{JSONRPC: "2.0", ID: req.ID,
+			return &acp.Message{JSONRPC: jsonrpcV20, ID: req.ID,
 				Result: json.RawMessage(`{"outcome":"selected","optionId":"` + acp.PermOptionAllowAlways + `"}`)}
 		})
 
@@ -196,8 +193,9 @@ func TestPermissionAskDispatch(t *testing.T) {
 	})
 
 	t.Run("cancelled outcome", func(t *testing.T) {
+		t.Parallel()
 		got := answer(t, func(req *acp.Message) *acp.Message {
-			return &acp.Message{JSONRPC: "2.0", ID: req.ID,
+			return &acp.Message{JSONRPC: jsonrpcV20, ID: req.ID,
 				Result: json.RawMessage(`{"outcome":"cancelled"}`)}
 		})
 
@@ -207,8 +205,9 @@ func TestPermissionAskDispatch(t *testing.T) {
 	})
 
 	t.Run("client cancelled -32800", func(t *testing.T) {
+		t.Parallel()
 		got := answer(t, func(req *acp.Message) *acp.Message {
-			return &acp.Message{JSONRPC: "2.0", ID: req.ID,
+			return &acp.Message{JSONRPC: jsonrpcV20, ID: req.ID,
 				Error: &acp.RPCError{Code: acp.CodeRequestCancelled, Message: "cancelled"}}
 		})
 
@@ -218,8 +217,9 @@ func TestPermissionAskDispatch(t *testing.T) {
 	})
 
 	t.Run("method not found -32601", func(t *testing.T) {
+		t.Parallel()
 		got := answer(t, func(req *acp.Message) *acp.Message {
-			return &acp.Message{JSONRPC: "2.0", ID: req.ID,
+			return &acp.Message{JSONRPC: jsonrpcV20, ID: req.ID,
 				Error: &acp.RPCError{Code: acp.CodeMethodNotFound, Message: "not found"}}
 		})
 
@@ -229,10 +229,12 @@ func TestPermissionAskDispatch(t *testing.T) {
 	})
 
 	t.Run("timeout fallback", func(t *testing.T) {
+		t.Parallel()
+
 		sink := &permAskSink{got: make(chan *acp.Message, 4)}
 		reg := acp.NewRegistry(sink, io.Discard,
 			acp.WithRegistryTimeouts(acp.RegistryConfig{HumanAskTimeout: 2 * time.Millisecond}))
-		pa := NewPermissionAsk(reg, context.Background(), io.Discard)
+		pa := NewPermissionAsk(context.Background(), reg, io.Discard)
 
 		got := <-fireAsync(t, pa)
 
