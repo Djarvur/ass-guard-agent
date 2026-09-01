@@ -4,17 +4,17 @@ milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 17
 current_phase_name: Permissions + Elicitation
-current_plan: 3
+current_plan: 4
 status: executing
-stopped_at: Completed 17-02-PLAN.md
-last_updated: "2026-09-01T00:25:49.773Z"
+stopped_at: Completed 17-03-PLAN.md
+last_updated: "2026-09-01T01:34:44.012Z"
 last_activity: 2026-09-01
 last_activity_desc: Phase 16 complete, transitioned to Phase 17
 progress:
   total_phases: 11
   completed_phases: 2
   total_plans: 69
-  completed_plans: 17
+  completed_plans: 19
   percent: 18
 state_head: 858b29d5048173db3c84a1b4fe8dbf5bfb92f5c5
 ---
@@ -30,12 +30,12 @@ See: .planning/PROJECT.md (updated 2026-09-01)
 ## Current Position
 
 Phase: 17 (Permissions + Elicitation) — EXECUTING
-Current Plan: 3
+Current Plan: 4
 Total Plans in Phase: 5
 Status: Ready to execute
 Last activity: 2026-09-01 — Phase 17 execution started
 
-Progress: [█████░░░░░░░░░░░░░░░] 16/69 plans ([███░░░░░░░] 25%)
+Progress: [█████░░░░░░░░░░░░░░░] 16/69 plans ([███░░░░░░░] 28%)
 
 ## Performance Metrics
 
@@ -64,6 +64,7 @@ Progress: [█████░░░░░░░░░░░░░░░] 16/69 p
 | Phase 16 P09 | 9 min | 2 tasks | 3 files |
 | Phase 17 P01 | 36 min | 2 tasks | 4 files |
 | Phase 17 P02 | 52 min | 3 tasks | 17 files |
+| Phase 17 P03 | 48 min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -106,6 +107,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 17]: Compound fail-safe semantics pinned in perm.RuleSet: unmatched subcommand dominates allows (deny=any/ask=any/allow=ALL subcommands) — an allow rule must cover every subcommand
 - [Phase 17]: D-02 grammar leaves effect assignment to the owning list (NewRuleSet); ParseRule stays single-string with EffectNone placeholder
 - [Phase 17]: perm.Store commits in-memory state only after a successful atomic save — failed writes leave file AND rule set unchanged; warning sink = returned []Warning diagnostics
+- [Phase 17]: 17-03: the ask queue's fire seam is ctx-aware — the drain cancels an OPEN dialog through the queue-owned per-firing ctx (registry cascades $//cancel_request) with no id plumbing across the session/acp boundary — The only way D-13 can resolve a registry-backed dialog without internal/session importing internal/acp; nil falls back to the serve ctx
+- [Phase 17]: 17-03: cancel-path drain scope is the whole session's queue (ACP cancel contract covers ALL pending permission requests); turn-scoped drain lives at the queue level (DrainTurn), DrainAll is its per-turn loop — one shared function for all three teardown paths — Matches the ACP cancelled-outcome normative text verbatim and keeps the scoping proof where the scoping lives
+- [Phase 17]: 17-03: the enqueue that finds the queue idle promotes its entry to the open slot synchronously — D-12 note counts and Pending() are deterministic by construction (the async-pump-pop draft raced the count) — Notes are user-visible; a race-dependent pending count would be a visible lie
 
 ### Pending Todos
 
@@ -126,6 +130,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-01T00:25:49.748Z
-Stopped at: Completed 17-02-PLAN.md
+Last session: 2026-09-01T01:34:43.985Z
+Stopped at: Completed 17-03-PLAN.md
 Resume file: None
