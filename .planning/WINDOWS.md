@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 3
+open_count: 6
 waived_count: 0
 fixed_count: 8
-total_count: 11
-last_updated: 2026-08-27T19:57:39.950Z
+total_count: 14
+last_updated: 2026-09-01T02:47:33.676Z
 ---
 
 # Broken Windows Ledger
@@ -26,6 +26,9 @@ last_updated: 2026-08-27T19:57:39.950Z
 | 9 | 12 | deviation | cmd/ass-guard/e2e_opsx_test.go |  | 12-08 finding: the Phase-8 flagship proof predates REAL asks (12-01) — a mid-chain AskUserQuestion now suspends the chain at the no-chain-suspension pin; the E2E runners carry askTimeout=45s (D-01's documented hands-off mode: the bounded timeout returns the capture-shaped non-answer and the model proceeds) | fixed | 260821-close: root closed by 13-00's engine-visible ask resume (Rule-4 route 1, commits c528236..bc07dab) — chains survive mid-chain asks, pinned by TestAskWiring_ChainSurvivesAskTimerResume + the park battery; flagship green THROUGH asks ×3 (eval-20260820-161520 / 163220 / 205550-k1.json); 13-VERIFICATION 3/3 PASS | 2026-08-20T13:29:34.929Z | 2026-08-20T21:20:00.000Z |
 | 10 | 15 | unmet-truth | .planning/phases/15-internal-runtime-carve-step-0/15-07-SUMMARY.md |  | PENDING-OPERATOR-CONFIRMATION: live-Zed editor-session identity check (ROADMAP criterion 2) not yet executed by operator | open |  | 2026-08-26T13:57:30.775Z |  |
 | 11 | 16 | unmet-truth | .planning/phases/16-acp-wire-foundation/16-06-SUMMARY.md |  | PENDING-OPERATOR-CONFIRMATION: live-Zed operator confirmation of ROADMAP criteria 1 and 4 (native tool cards/plan panel/streaming tokens + config options in Zed's settings UI; editor model switch changes the next request) not yet executed; the 16-06 simulator + soak prove the wire, the five-item checklist awaits the operator | fixed | 260827-confirm: operator-delegated live-Zed exercise, machine-verified by the orchestrator (2026-08-27) — all five items PASS: native tool cards with live diffs, TodoWrite plan panel, streamed message tokens, config chips in Zed's message bar with layer-matched values, and editor model switch changing the next request (session chip glm-5.2→GLM-5.3; project layer persisted tiers.heavy.model GLM-5.3; transcript_b7fd0737 turn-002 all 3 requests GLM-5.3). One recorded finding (pre-stamp Model chip untruthful vs profile-default wire model) handed to the Phase 16 verifier via deferred-items.md; 16-06 SUMMARY marker flipped OPERATOR-CONFIRMED | 2026-08-27T18:30:14.289Z | 2026-08-27T19:57:39.950Z |
+| 12 | 17 | deviation | internal/acpserve/acp_serve.go |  | 17-04 Rule-3 wiring deviation: ElicitationAsk composition + SetAskFire injection live in acp_serve.go (beyond the plan's file list; the key_links' wiring seams) | open |  | 2026-09-01T02:47:24.814Z |  |
+| 13 | 17 | deviation | internal/runtime/ask_wiring_test.go |  | 17-04 Rule-3 wiring deviation: the Run-level AskUserQuestion round-trip test lives in ask_wiring_test.go (beyond the plan's file list; the real harness exists only there) | open |  | 2026-09-01T02:47:33.475Z |  |
+| 14 | 17 | deviation | internal/session/askqueue.go |  | 17-04 Rule-3 contract deviation: AskOutcome elicitation fields (Elicit/Content/Violation/Fallback) + AskEntry.Note/PlainTextFallback live beside the queue types (beyond the plan's file list; the dispatcher's input/outcome contract) | open |  | 2026-09-01T02:47:33.676Z |  |
 
 ````json
 [
@@ -160,6 +163,42 @@ last_updated: 2026-08-27T19:57:39.950Z
     "reason": "260827-confirm: operator-delegated live-Zed exercise, machine-verified by the orchestrator (2026-08-27) — all five items PASS: native tool cards with live diffs, TodoWrite plan panel, streamed message tokens, config chips in Zed's message bar with layer-matched values, and editor model switch changing the next request (session chip glm-5.2→GLM-5.3; project layer persisted tiers.heavy.model GLM-5.3; transcript_b7fd0737 turn-002 all 3 requests GLM-5.3). One recorded finding (pre-stamp Model chip untruthful vs profile-default wire model) handed to the Phase 16 verifier via deferred-items.md; 16-06 SUMMARY marker flipped OPERATOR-CONFIRMED",
     "recorded_at": "2026-08-27T18:30:14.289Z",
     "resolved_at": "2026-08-27T19:57:39.950Z"
+  },
+  {
+    "id": 12,
+    "kind": "deviation",
+    "phase": "17",
+    "file": "internal/acpserve/acp_serve.go",
+    "line": null,
+    "description": "17-04 Rule-3 wiring deviation: ElicitationAsk composition + SetAskFire injection live in acp_serve.go (beyond the plan's file list; the key_links' wiring seams)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T02:47:24.814Z",
+    "resolved_at": null
+  },
+  {
+    "id": 13,
+    "kind": "deviation",
+    "phase": "17",
+    "file": "internal/runtime/ask_wiring_test.go",
+    "line": null,
+    "description": "17-04 Rule-3 wiring deviation: the Run-level AskUserQuestion round-trip test lives in ask_wiring_test.go (beyond the plan's file list; the real harness exists only there)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T02:47:33.475Z",
+    "resolved_at": null
+  },
+  {
+    "id": 14,
+    "kind": "deviation",
+    "phase": "17",
+    "file": "internal/session/askqueue.go",
+    "line": null,
+    "description": "17-04 Rule-3 contract deviation: AskOutcome elicitation fields (Elicit/Content/Violation/Fallback) + AskEntry.Note/PlainTextFallback live beside the queue types (beyond the plan's file list; the dispatcher's input/outcome contract)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-01T02:47:33.676Z",
+    "resolved_at": null
   }
 ]
 ````
