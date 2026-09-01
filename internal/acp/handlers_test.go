@@ -633,13 +633,6 @@ type drainRecordingRunner struct {
 	events []string
 }
 
-func (r *drainRecordingRunner) record(e string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	r.events = append(r.events, e)
-}
-
 func (r *drainRecordingRunner) Run(
 	ctx context.Context, _ string, emit ChunkEmitter, _ []ContentBlock,
 ) (string, error) {
@@ -674,6 +667,13 @@ func (r *drainRecordingRunner) CloseSession(sessionID string) error {
 	r.record("closed:" + sessionID)
 
 	return nil
+}
+
+func (r *drainRecordingRunner) record(e string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.events = append(r.events, e)
 }
 
 func (r *drainRecordingRunner) recorded() []string {

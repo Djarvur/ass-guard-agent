@@ -291,11 +291,15 @@ func TestGatePermissionSuspend(t *testing.T) { //nolint:cyclop,funlen // flat en
 	// The dialog "opens": release the fire with allow_always. The rule write
 	// MUST land BEFORE the gated call executes (ACP-01 prohibition), the call
 	// runs, the turn resumes, and the SECOND identical call executes with no
-	// second dialog.
+	// second dialog. Wait on the RESULTS (the second exec's transcript append
+	// lands after its noteExec — asserting on the order slice alone races that
+	// millisecond window under full-suite load, the 17-01/17-02 flake family).
 	close(block)
 
 	gateWaitFor(t, func() bool {
-		return len(store.snapshotOrder()) == 3 // allow + exec(call1) + exec(call2)
+		return len(store.snapshotOrder()) == 3 && // allow + exec(call1) + exec(call2)
+			len(toolResultsFor(t, s, gateCall1)) == 1 &&
+			len(toolResultsFor(t, s, gateCall2)) == 1
 	})
 
 	order := store.snapshotOrder()

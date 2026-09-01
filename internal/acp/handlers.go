@@ -17,6 +17,49 @@ const versionMask = 0x0F
 
 var errMissingSessionid = errors.New("session/prompt: missing sessionId")
 
+// AskDrainer is an OPTIONAL capability a TurnRunner may implement (17-03,
+// D-13/T-17-09): the teardown-drain seam for the session's ask queue. THE one
+// drain is reachable from all three teardown paths — the session/cancel
+// notification (handleSessionCancel, before/with cancelTurn), the session-close
+// path (handleLogout, before the reap), and serve shutdown (the acpserve
+// composition). Turn death resolves the OPEN permission dialog cancelled
+// through the registry's ResolveCancelled + $/cancel_request cascade (16-D-19)
+// and drains queued-but-unfired asks as cancelled-normal — no orphaned dialogs,
+// no zombie asks. It is a separate interface (not part of TurnRunner) so stub
+// runners need not implement it.
+type AskDrainer interface {
+	// DrainAsks drains the session's asks on a turn cancellation: the ACP
+	// cancel contract covers ALL pending session/request_permission requests
+	// (the cancelled-outcome normative text), so the open dialog resolves and
+	// queued asks drain before/with the turn cancel.
+	DrainAsks(sessionID string)
+	// DrainSessionAsks drains every ask of the session on session close —
+	// nothing dialog-shaped outlives the session.
+	DrainSessionAsks(sessionID string)
+}
+
+// drainAsksIfPossible type-asserts the TurnRunner to AskDrainer and drains the
+// session's ask queue (the D-13 teardown seam). A non-implementing runner is a
+// no-op (backward-compatible — stub runners and pre-17 sessions).
+func (s *Server) drainAsksIfPossible(sessionID string) {
+	drainer, ok := s.turnRunner.(AskDrainer)
+	if !ok {
+		return
+	}
+
+	drainer.DrainAsks(sessionID)
+}
+
+// drainSessionAsksIfPossible is the session-close variant (logout).
+func (s *Server) drainSessionAsksIfPossible(sessionID string) {
+	drainer, ok := s.turnRunner.(AskDrainer)
+	if !ok {
+		return
+	}
+
+	drainer.DrainSessionAsks(sessionID)
+}
+
 // registerHandlers populates the method→handler map with the canonical ACP v1
 // method set (VERIFIED-FACTS #3): initialize, session/new, session/prompt,
 // session/cancel, session/load (no-op per D-09), logout, session/set_mode,
@@ -452,6 +495,13 @@ func (s *Server) handleSessionCancel(ctx context.Context, params json.RawMessage
 		return nil, nil //nolint:nilnil // nil result signals "no JSON-RPC response" (notification / unknown session)
 	}
 
+	// 17-03 (D-13): the ask-queue drain runs BEFORE/with the turn cancel —
+	// the ACP cancel contract covers ALL pending session/request_permission
+	// requests: the OPEN dialog resolves cancelled (the registry cascade
+	// closes it on the wire) and queued-but-unfired asks drain cancelled-normal
+	// immediately (no zombie asks firing for a dead turn).
+	s.drainAsksIfPossible(p.SessionID)
+
 	st.cancelTurn()
 	// 16-REVIEW CR-01: NO closeSessionIfPossible here. The old call reaped the
 	// session's MCP host, transcript writer, session forwarder, and SessionEnd
@@ -484,6 +534,11 @@ func (s *Server) handleLogout(ctx context.Context, params json.RawMessage) (any,
 	}
 
 	if p.SessionID != "" {
+		// 17-03 (D-13/T-17-09): no dialog or queued ask outlives the session —
+		// the open dialog resolves cancelled (the cascade closes it on the
+		// wire) and queued asks drain cancelled-normal BEFORE the reap.
+		s.drainSessionAsksIfPossible(p.SessionID)
+
 		// Plan 05-01 T4: reap the session's MCP host before dropping it.
 		s.closeSessionIfPossible(p.SessionID)
 		s.mu.Lock()

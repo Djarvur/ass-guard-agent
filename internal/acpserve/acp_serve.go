@@ -271,8 +271,15 @@ func Run( //nolint:funlen // :320-425
 	// Phase 5 (Plan 05-02 T4): when the server-level ctx is cancelled
 	// (SIGINT/SIGTERM), close every live session's MCP host so no subprocess
 	// outlives the ass-guard process. Serve returns after ctx cancellation.
+	// 17-03 (D-13/T-17-09): the ask-queue drain runs FIRST — the third
+	// teardown path (with the session/cancel notification and logout): every
+	// OPEN permission dialog resolves cancelled through the registry cascade
+	// and every queued ask drains cancelled-normal while the writer is still
+	// open (no orphaned dialogs, no zombie asks, no writes to a closed writer).
 	go func() {
 		<-ctx.Done()
+
+		runner.DrainAllAsks()
 
 		runner.CloseAllSessions() //nolint:contextcheck // the reap is ctx-driven by design
 	}()

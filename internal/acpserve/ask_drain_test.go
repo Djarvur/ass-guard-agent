@@ -1,4 +1,4 @@
-package acpserve
+package acpserve //nolint:testpackage // drives the queue + REAL surface composition (unexported fire seam via SetFire)
 
 import (
 	"context"
@@ -30,7 +30,9 @@ type drainSink struct {
 
 func (s *drainSink) Write(m *acp.Message) error {
 	s.mu.Lock()
+
 	closed := s.closed
+
 	if closed {
 		s.afterGood++
 	}
@@ -72,7 +74,8 @@ func waitForCascade(t *testing.T, sink *drainSink, reqID string) *acp.Message {
 					RequestID string `json:"requestId"` //nolint:tagliatelle // ACP wire field
 				}
 
-				if uerr := json.Unmarshal(m.Params, &p); uerr != nil {
+				uerr := json.Unmarshal(m.Params, &p)
+				if uerr != nil {
 					t.Fatalf("decode cascade params: %v", uerr)
 				}
 
@@ -92,9 +95,9 @@ func waitForCascade(t *testing.T, sink *drainSink, reqID string) *acp.Message {
 // production shape: the queue promotes and calls the surface round-trip).
 func drainAskEntry(pa *PermissionAsk) *session.AskEntry {
 	e := gateAskEntry()
-	e.fire = func(ctx context.Context) session.AskOutcome {
+	e.SetFire(func(ctx context.Context) session.AskOutcome {
 		return pa.Fire(ctx, e)
-	}
+	})
 
 	return e
 }
@@ -113,7 +116,10 @@ func TestPermissionAskDrainCascade(t *testing.T) {
 	q := session.NewAskQueue()
 
 	resolved := make(chan session.AskOutcome, 1)
-	q.Enqueue(drainAskEntry(pa), func(_ *session.AskEntry, o session.AskOutcome) { resolved <- o })
+
+	resolve := func(_ *session.AskEntry, o session.AskOutcome) { resolved <- o }
+
+	q.Enqueue(drainAskEntry(pa), resolve)
 
 	req := waitForRequest(t, &sink.permAskSink)
 	reqID := acp.NormalizeRequestID(req.ID)
@@ -146,7 +152,7 @@ func TestPermissionAskDrainCascade(t *testing.T) {
 // the full drain resolves everything cancelled, drained queued asks never
 // fire, the pump goroutine exits (baseline+settle idiom), and no write is
 // attempted after the registry closed (Pitfall 8).
-func TestAskQueueShutdownDrain(t *testing.T) {
+func TestAskQueueShutdownDrain(t *testing.T) { //nolint:funlen,paralleltest // full chain; not parallel (goroutines)
 	baseline := runtime.NumGoroutine()
 
 	sink := &drainSink{permAskSink: permAskSink{got: make(chan *acp.Message, 8)}}
@@ -158,7 +164,9 @@ func TestAskQueueShutdownDrain(t *testing.T) {
 
 	resolved := make(chan session.AskOutcome, 2)
 
-	q.Enqueue(drainAskEntry(pa), func(_ *session.AskEntry, o session.AskOutcome) { resolved <- o })
+	resolve := func(_ *session.AskEntry, o session.AskOutcome) { resolved <- o }
+
+	q.Enqueue(drainAskEntry(pa), resolve)
 
 	queuedFires := 0 // touched only via the atomic below (pump goroutine visibility)
 
@@ -166,13 +174,13 @@ func TestAskQueueShutdownDrain(t *testing.T) {
 
 	queued := gateAskEntry()
 	queued.TurnID = "sess-1-turn-002"
-	queued.fire = func(_ context.Context) session.AskOutcome {
+	queued.SetFire(func(_ context.Context) session.AskOutcome {
 		fireMu.Lock()
 		queuedFires++
 		fireMu.Unlock()
 
 		return session.AskOutcome{Selected: acp.PermOptionAllowOnce}
-	}
+	})
 
 	q.Enqueue(queued, func(_ *session.AskEntry, o session.AskOutcome) { resolved <- o })
 

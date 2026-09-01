@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Djarvur/ass-guard-agent/internal/provider"
 )
 
 // The 17-03 ask-queue battery (D-11/D-12): ONE outstanding fired ask at a
@@ -569,7 +571,7 @@ func (a *qAtomic) get() int {
 // dead turn resolves cancelled through its fire-ctx cancellation, the dead
 // turn's queued entry drains cancelled-normal with ZERO fires (the zombie-ask
 // ban), and another turn's waiting entry is untouched.
-func TestAskQueueDrainTurn(t *testing.T) { //nolint:funlen // the full scoped-drain chain
+func TestAskQueueDrainTurn(t *testing.T) { //nolint:funlen,cyclop // the full scoped-drain chain
 	t.Parallel()
 
 	q := NewAskQueue()
@@ -588,6 +590,7 @@ func TestAskQueueDrainTurn(t *testing.T) { //nolint:funlen // the full scoped-dr
 	}
 
 	resolvedOpen := make(chan AskOutcome, 1)
+
 	q.Enqueue(openEntry, func(_ *AskEntry, o AskOutcome) { resolvedOpen <- o })
 
 	// A queued-but-unfired ask of the SAME (dead) turn: its fire must never
@@ -602,6 +605,7 @@ func TestAskQueueDrainTurn(t *testing.T) { //nolint:funlen // the full scoped-dr
 	}
 
 	resolvedQueued := make(chan AskOutcome, 1)
+
 	q.Enqueue(queuedEntry, func(_ *AskEntry, o AskOutcome) { resolvedQueued <- o })
 
 	// Another turn's ask: the turn-1 drain must leave it untouched.
@@ -616,6 +620,7 @@ func TestAskQueueDrainTurn(t *testing.T) { //nolint:funlen // the full scoped-dr
 	}
 
 	resolvedOther := make(chan AskOutcome, 1)
+
 	q.Enqueue(otherEntry, func(_ *AskEntry, o AskOutcome) { resolvedOther <- o })
 
 	gateWaitFor(t, func() bool { return q.Pending() == 2 })
@@ -645,17 +650,22 @@ func TestAskQueueDrainTurn(t *testing.T) { //nolint:funlen // the full scoped-dr
 		t.Fatalf("the drained queued entry fired %d time(s) — zombie ask (D-13 ban)", got)
 	}
 
-	// The other turn's entry is untouched and still live.
-	if got := q.Pending(); got != 1 {
-		t.Fatalf("Pending after the scoped drain = %d; want 1 (the other turn's entry survives)", got)
+	// The other turn's entry was NOT resolved by the drain (a broken scoping
+	// would have delivered Cancelled here). The pump may legitimately promote
+	// it once the open slot frees — its fire blocks until release, so the
+	// outcome stays pending either way.
+	select {
+	case o := <-resolvedOther:
+		t.Fatalf("the other turn's entry resolved during the drain: %+v (scoping broken)", o)
+	case <-time.After(20 * time.Millisecond):
 	}
 
 	close(release)
 
 	select {
 	case o := <-resolvedOther:
-		if !o.Cancelled && o.Selected != queueOption {
-			t.Fatalf("other turn's outcome = %+v; want selected (it fired normally)", o)
+		if o.Cancelled || o.Selected != queueOption {
+			t.Fatalf("other turn's outcome = %+v; want selected (it survived and fired normally)", o)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("the other turn's entry never fired after the drain")
@@ -666,7 +676,7 @@ func TestAskQueueDrainTurn(t *testing.T) { //nolint:funlen // the full scoped-dr
 // drain-one-turn core applied to every turn present): everything resolves
 // cancelled, drained queued entries never fire, and the pump goroutine exits
 // (the goroutine-leak check follows the repo's baseline+settle idiom).
-func TestAskQueueDrainAll(t *testing.T) { //nolint:funlen // the full shutdown-drain chain
+func TestAskQueueDrainAll(t *testing.T) { //nolint:funlen,paralleltest // full drain chain; not parallel (goroutines)
 	baseline := runtime.NumGoroutine()
 
 	q := NewAskQueue()
@@ -679,6 +689,7 @@ func TestAskQueueDrainAll(t *testing.T) { //nolint:funlen // the full shutdown-d
 	}
 
 	resolvedOpen := make(chan AskOutcome, 1)
+
 	q.Enqueue(openEntry, func(_ *AskEntry, o AskOutcome) { resolvedOpen <- o })
 
 	queuedFires := &qAtomic{}
@@ -740,7 +751,7 @@ func TestAskQueueDrainAll(t *testing.T) { //nolint:funlen // the full shutdown-d
 // result, no hang),
 // — drains the queued-but-unfired ask of the other turn as cancelled-normal
 // with ZERO additional surface fires (the firing monopoly + zombie-ask ban).
-func TestGateTurnDeath(t *testing.T) { //nolint:funlen,cyclop // the full death chain, flat
+func TestGateTurnDeath(t *testing.T) { //nolint:funlen // the full death chain
 	t.Parallel()
 
 	store := &fakePermStore{}

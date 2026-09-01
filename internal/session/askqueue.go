@@ -96,6 +96,12 @@ type AskEntry struct {
 	fire func(ctx context.Context) AskOutcome
 }
 
+// SetFire wires the surface round-trip for one entry. The enqueue sites build
+// the closure from GateDeps.Fire inside this package; the exported setter
+// exists for the acpserve drain battery, which drives the REAL PermissionAsk
+// surface under the REAL registry (the cascade proof).
+func (e *AskEntry) SetFire(f func(ctx context.Context) AskOutcome) { e.fire = f }
+
 // queuedAsk pairs the entry with its session-side completion (the resume).
 type queuedAsk struct {
 	entry   *AskEntry
@@ -104,9 +110,16 @@ type queuedAsk struct {
 
 // openAsk is the one OUTSTANDING ask: promoted out of the waiting slice at
 // the moment it begins firing (deterministically — by the enqueue that found
-// the queue idle, or by the pump between rounds).
+// the queue idle, or by the pump between rounds). ctx/cancel are the
+// queue-owned fire context: the D-13 drain cancels an OPEN dialog through it
+// (a registry-backed fire surfaces the cancellation as the cancelled outcome
+// family AND cascades $/cancel_request).
 type openAsk struct {
 	qa queuedAsk
+
+	//nolint:containedctx // the queue-owned per-firing ctx (the D-13 drain seam); lives exactly one fire round-trip
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 // AskQueue is the one-outstanding ask queue with D-11 priority classes and
@@ -182,7 +195,7 @@ func (q *AskQueue) Enqueue(e *AskEntry, resolve func(*AskEntry, AskOutcome)) {
 		// (the pump goroutine's pop can never race the count).
 		q.firing = true
 		q.pumpRunning = true
-		q.open = &openAsk{qa: qa}
+		q.open = newOpenAsk(qa)
 		startPump = true
 	} else {
 		q.queued = append(q.queued, qa)
@@ -211,6 +224,91 @@ func (q *AskQueue) Pending() int {
 	defer q.mu.Unlock()
 
 	return len(q.queued)
+}
+
+// Open reports whether an ask is currently fired-and-unresolved.
+func (q *AskQueue) Open() bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	return q.open != nil
+}
+
+// DrainTurn is the D-13 turn-scoped drain (THE one shared drain function —
+// every teardown path reaches the queue through it): the dead turn's OPEN
+// dialog resolves cancelled through its fire-ctx cancellation (a
+// registry-backed fire cascades $/cancel_request on the wire), and its
+// queued-but-unfired asks resolve cancelled-normal IMMEDIATELY without firing
+// (the zombie-ask ban; their results land through the same loud resume seam).
+// Entries of other turns are untouched. Safe to call concurrently and
+// repeatedly (already-drained turns no-op).
+func (q *AskQueue) DrainTurn(turnID string) {
+	q.mu.Lock()
+
+	var drained []queuedAsk
+
+	kept := make([]queuedAsk, 0, len(q.queued))
+
+	for _, qa := range q.queued {
+		if qa.entry.TurnID == turnID {
+			drained = append(drained, qa)
+		} else {
+			kept = append(kept, qa)
+		}
+	}
+
+	q.queued = kept
+
+	var cancel context.CancelFunc
+
+	if q.open != nil && q.open.qa.entry.TurnID == turnID {
+		cancel = q.open.cancel
+	}
+
+	q.mu.Unlock()
+
+	// Cancel outside the mutex: the pump's fire observes the cancelled ctx
+	// (its resolution is the pump's normal completion path — exactly once).
+	if cancel != nil {
+		cancel()
+	}
+
+	for _, qa := range drained {
+		if qa.resolve != nil {
+			qa.resolve(qa.entry, AskOutcome{Cancelled: true})
+		}
+	}
+}
+
+// DrainAll drains every turn present (session close + serve shutdown): the
+// same DrainTurn core applied per turn id, so the open dialog resolves
+// cancelled and every queued ask drains cancelled-normal without firing.
+func (q *AskQueue) DrainAll() {
+	q.mu.Lock()
+
+	turnIDs := make([]string, 0, len(q.queued)+1)
+
+	if q.open != nil {
+		turnIDs = append(turnIDs, q.open.qa.entry.TurnID)
+	}
+
+	for _, qa := range q.queued {
+		turnIDs = append(turnIDs, qa.entry.TurnID)
+	}
+
+	q.mu.Unlock()
+
+	for _, id := range turnIDs {
+		q.DrainTurn(id)
+	}
+}
+
+// newOpenAsk promotes one entry to the outstanding slot with its queue-owned
+// fire context (the drain seam).
+func newOpenAsk(qa queuedAsk) *openAsk {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	return &openAsk{qa: qa, ctx: ctx, cancel: cancel}
 }
 
 // popHeadLocked selects and removes the next entry to fire (caller holds mu):
@@ -256,25 +354,19 @@ func (q *AskQueue) pump() {
 				return
 			}
 
-			promoted := &openAsk{qa: q.popHeadLocked()}
+			promoted := newOpenAsk(q.popHeadLocked())
 			q.open = promoted
 			cur = promoted
 		}
 
 		q.mu.Unlock()
 
-		// The fire ctx is the queue-owned cancellation seam: the drain cancels
-		// it to resolve an OPEN dialog through the surface's own cancelled
-		// family (a registry-backed fire cascades $/cancel_request). The ctx
-		// is released as soon as the round-trip returns.
-		fctx, fcancel := context.WithCancel(context.Background())
-
 		outcome := AskOutcome{Err: errPermissionSurfaceUnwired}
 		if cur.qa.entry.fire != nil {
-			outcome = cur.qa.entry.fire(fctx)
+			outcome = cur.qa.entry.fire(cur.ctx)
 		}
 
-		fcancel()
+		cur.cancel() // release the round-trip's ctx resources
 
 		q.mu.Lock()
 
@@ -285,5 +377,43 @@ func (q *AskQueue) pump() {
 		if cur.qa.resolve != nil {
 			cur.qa.resolve(cur.qa.entry, outcome)
 		}
+	}
+}
+
+// gateQueue returns the wired ask queue (nil when the gate or queue is not
+// wired — every drain accessor degrades to a no-op).
+func (s *Session) gateQueue() *AskQueue {
+	if s.gate == nil {
+		return nil
+	}
+
+	return s.gate.Queue
+}
+
+// HasOpenAsk reports whether an ask is currently fired-and-unresolved (the
+// one outstanding dialog).
+func (s *Session) HasOpenAsk() bool {
+	q := s.gateQueue()
+
+	return q != nil && q.Open()
+}
+
+// HasQueuedAsks reports whether asks are queued-but-unfired behind the open
+// dialog.
+func (s *Session) HasQueuedAsks() bool {
+	q := s.gateQueue()
+
+	return q != nil && q.Pending() > 0
+}
+
+// DrainPermissionAsks is the session-side teardown drain (D-13/T-17-09): the
+// open dialog resolves cancelled through the registry cascade and every
+// queued-but-unfired ask drains cancelled-normal immediately — no orphaned
+// dialogs, no zombie asks. THE one drain every teardown path reaches: the
+// session/cancel notification (via the runner's AskDrainer capability), the
+// session-close path (logout), and serve shutdown (CloseAllSessions' sibling).
+func (s *Session) DrainPermissionAsks() {
+	if q := s.gateQueue(); q != nil {
+		q.DrainAll()
 	}
 }

@@ -1691,6 +1691,52 @@ func (r *Runner) PermMode() string {
 // post-emitter step — see cron_wiring.go).
 func (r *Runner) StartScheduler(ctx context.Context) { r.startScheduler(ctx) }
 
+// DrainAsks drains one session's ask queue — the session/cancel teardown
+// (17-03, D-13/T-17-09; the acp.AskDrainer capability): the OPEN permission
+// dialog resolves cancelled through the queue-owned fire-ctx cancellation (the
+// registry cascades $/cancel_request) and queued-but-unfired asks drain
+// cancelled-normal immediately. THE one shared drain, reached from all three
+// teardown paths (cancel notification, logout, serve shutdown).
+func (r *Runner) DrainAsks(sessionID string) {
+	if r.sessions == nil {
+		return
+	}
+
+	r.sessMu.Lock()
+	s, ok := r.sessions[sessionID]
+	r.sessMu.Unlock()
+
+	if ok {
+		s.DrainPermissionAsks()
+	}
+}
+
+// DrainSessionAsks is DrainAsks' session-close twin (logout): identical drain,
+// distinct seam so the ACP layer can order drain-before-reap on both paths.
+func (r *Runner) DrainSessionAsks(sessionID string) { r.DrainAsks(sessionID) }
+
+// DrainAllAsks drains EVERY live session's ask queue (the serve-shutdown
+// teardown — the acpserve ctx-done composition): no dialog outlives the serve
+// lifetime (T-17-09).
+func (r *Runner) DrainAllAsks() {
+	if r.sessions == nil {
+		return
+	}
+
+	r.sessMu.Lock()
+	sessions := make([]*session.Session, 0, len(r.sessions))
+
+	for _, s := range r.sessions {
+		sessions = append(sessions, s)
+	}
+
+	r.sessMu.Unlock()
+
+	for _, s := range sessions {
+		s.DrainPermissionAsks()
+	}
+}
+
 // CloseAllSessions closes every live session at serve end (the ctx-done
 // subprocess reap).
 func (r *Runner) CloseAllSessions() { r.closeAllSessions() }
