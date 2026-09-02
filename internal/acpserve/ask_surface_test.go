@@ -171,7 +171,7 @@ func TestPermissionAskFrame(t *testing.T) {
 // outcome object — the shape live Zed 1.18.0 answers with (17-UAT G-17-1;
 // https://agentclientprotocol.com/protocol/v1/tool-calls) — while the flat
 // one-level shape and unknown inner discriminators fail safe.
-func TestPermissionAskDispatch(t *testing.T) { //nolint:cyclop,funlen // one table over the wire outcome vocabulary
+func TestPermissionAskDispatch(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen // wire outcome table
 	t.Parallel()
 
 	answer := func(t *testing.T, respond func(req *acp.Message) *acp.Message) session.AskOutcome {
@@ -207,7 +207,8 @@ func TestPermissionAskDispatch(t *testing.T) { //nolint:cyclop,funlen // one tab
 		t.Parallel()
 		got := answer(t, func(req *acp.Message) *acp.Message {
 			return &acp.Message{JSONRPC: jsonrpcV20, ID: req.ID,
-				Result: json.RawMessage(`{"outcome":{"outcome":"selected","optionId":"` + acp.PermOptionAllowAlways + `"}}`)}
+				Result: json.RawMessage(`{"outcome":{"outcome":"selected","optionId":"` +
+					acp.PermOptionAllowAlways + `"}}`)}
 		})
 
 		if got.Selected != acp.PermOptionAllowAlways || got.Cancelled || got.Err != nil {

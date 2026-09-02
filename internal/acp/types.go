@@ -332,14 +332,27 @@ type RequestPermissionFrame struct {
 	Options   []PermissionOption  `json:"options"`   // required
 }
 
-// PermissionOutcomeFrame is the session/request_permission RESPONSE (schema
-// RequestPermissionOutcome): either {"outcome":"cancelled"} or
-// {"outcome":"selected","optionId":"…"}. Per the schema's normative text, a
-// client cancelling the turn MUST answer every pending request_permission
-// with the cancelled outcome.
-type PermissionOutcomeFrame struct {
-	Outcome  string `json:"outcome"`            // "selected" | "cancelled"
+// PermissionOutcome is the NESTED union object that is the VALUE of the
+// session/request_permission response's outcome field (schema def
+// RequestPermissionOutcome): selected carries optionId, cancelled carries
+// nothing — {"outcome":"selected","optionId":"…"} / {"outcome":"cancelled"}.
+// Shape verified against the canonical example at
+// https://agentclientprotocol.com/protocol/v1/tool-calls and the live Zed
+// 1.18.0 wire (17-UAT G-17-1).
+type PermissionOutcome struct {
+	Outcome  string `json:"outcome"`            // "selected" | "cancelled" (the INNER discriminator)
 	OptionID string `json:"optionId,omitempty"` //nolint:tagliatelle // ACP wire field (required when selected)
+}
+
+// PermissionOutcomeFrame is the session/request_permission RESPONSE (schema
+// RequestPermissionResponse): result.outcome IS the nested union object —
+// {"outcome":{"outcome":"selected","optionId":"…"}} or
+// {"outcome":{"outcome":"cancelled"}} — never a flat discriminator (the flat
+// one-level shape fails to decode, by design: fail-safe decline). Per the
+// schema's normative text, a client cancelling the turn MUST answer every
+// pending request_permission with the cancelled outcome.
+type PermissionOutcomeFrame struct {
+	Outcome PermissionOutcome `json:"outcome"` // the nested union object (schema RequestPermissionOutcome)
 }
 
 // Permission outcome discriminators (schema RequestPermissionOutcome).

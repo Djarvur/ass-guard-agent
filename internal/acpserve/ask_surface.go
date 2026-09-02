@@ -161,15 +161,18 @@ func (p *PermissionAsk) Fire(ctx context.Context, e *session.AskEntry) session.A
 		return session.AskOutcome{Err: fmt.Errorf("%w: %w", errPermissionOutcomeBad, uerr)}
 	}
 
-	switch of.Outcome {
+	switch of.Outcome.Outcome {
 	case acp.PermissionOutcomeCancelled:
 		return session.AskOutcome{Cancelled: true}
 	case acp.PermissionOutcomeSelected:
-		return session.AskOutcome{Selected: of.OptionID}
+		// An empty optionId needs no guard here: it falls through to the
+		// session gate's default unknown-option fail-safe branch (internal/
+		// session/ask.go resolvePermissionOutcome) — the correct decline.
+		return session.AskOutcome{Selected: of.Outcome.OptionID}
 	default:
-		p.log.Printf("unknown permission outcome %q (failing safe)", of.Outcome)
+		p.log.Printf("unknown permission outcome %q (failing safe)", of.Outcome.Outcome)
 
-		return session.AskOutcome{Err: fmt.Errorf("%w %q", errPermissionOutcomeUnknown, of.Outcome)}
+		return session.AskOutcome{Err: fmt.Errorf("%w %q", errPermissionOutcomeUnknown, of.Outcome.Outcome)}
 	}
 }
 
