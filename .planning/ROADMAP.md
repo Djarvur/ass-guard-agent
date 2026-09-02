@@ -153,7 +153,7 @@ Plans:
   4. Default remains ungated (safety-model amendment "available, not default"): with default config, zero new dialogs appear versus v1.1 behavior; mode flips via editor configOptions take effect on the running session.
   5. The gate pipeline precedence (hook verdict → permission ask → execute) is implemented at ONE chokepoint and documented, with permissions.yaml persisted choices surviving restarts.
 
-**Plans**: 6 plans (5 executed; 1 gap closure)
+**Plans**: 6/6 plans executed (5 executed; 1 gap closure)
 
 Plans:
 **Wave 1**
@@ -175,7 +175,7 @@ Plans:
 
 **Wave 5** *(gap closure — UAT G-17-1 blocker)*
 
-- [ ] 17-06-PLAN.md — GAP G-17-1: decode the canonical ACP v1 NESTED request_permission outcome (types.go + ask_surface.go + both test clients canonical; RED-proven pins; criterion 1 un-blocks, UAT Test 2 re-testable)
+- [x] 17-06-PLAN.md — GAP G-17-1: decode the canonical ACP v1 NESTED request_permission outcome (types.go + ask_surface.go + both test clients canonical; RED-proven pins; criterion 1 un-blocks, UAT Test 2 re-testable)
 
 ### Phase 18: Session Family
 
@@ -481,7 +481,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 |-------|-----------|----------------|--------|-----------|
 | 15. internal/runtime Carve | v1.2 | 7/7 | Complete    | 2026-08-27 |
 | 16. ACP Wire Foundation | v1.2 | 9/9 | Complete    | 2026-09-01 |
-| 17. Permissions + Elicitation | v1.2 | 5/5 | In Progress|  |
+| 17. Permissions + Elicitation | v1.2 | 6/6 | In Progress|  |
 | 18. Session Family | v1.2 | 0/? | Not started | - |
 | 19. Compaction + cache_control | v1.2 | 0/5 | Not started | - |
 | 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 0/6 | Planned | - |

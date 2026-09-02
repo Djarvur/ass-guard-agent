@@ -6,17 +6,17 @@ current_phase: 17
 current_phase_name: Permissions + Elicitation
 current_plan: 5
 status: verifying
-stopped_at: Completed 17-05-PLAN.md (Phase 17 plans 5/5 — ready for verification)
-last_updated: "2026-09-01T03:39:01.861Z"
+stopped_at: Completed 17-06-PLAN.md (G-17-1 gap closure — canonical nested permission outcome)
+last_updated: "2026-09-02T21:32:28.257Z"
 last_activity: 2026-09-01
 last_activity_desc: Phase 16 complete, transitioned to Phase 17
+state_head: f372db4413a953ae33cbb1283ed3c6b121253301
 progress:
   total_phases: 11
-  completed_phases: 3
-  total_plans: 69
-  completed_plans: 21
-  percent: 27
-state_head: 858b29d5048173db3c84a1b4fe8dbf5bfb92f5c5
+  completed_phases: 2
+  total_plans: 70
+  completed_plans: 22
+  percent: 18
 ---
 
 # State: ass-guard-agent (working name)
@@ -35,7 +35,7 @@ Total Plans in Phase: 5
 Status: Phase complete — ready for verification
 Last activity: 2026-09-01 — Phase 17 execution started
 
-Progress: [█████░░░░░░░░░░░░░░░] 16/69 plans ([███░░░░░░░] 30%)
+Progress: [█████░░░░░░░░░░░░░░░] 16/69 plans ([██░░░░░░░░] 18%)
 
 ## Performance Metrics
 
@@ -67,6 +67,7 @@ Progress: [█████░░░░░░░░░░░░░░░] 16/69 p
 | Phase 17 P03 | 48 min | 2 tasks | 12 files |
 | Phase 17 P04 | 51 min | 3 tasks | 12 files |
 | Phase 17 P05 | 29 min | 3 tasks | 2 files |
+| Phase 17 P06 | 12 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -117,6 +118,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 17]: 17-04: engine asks are not reply-answerable — PlainTextFallback=false suppresses the dead-end question publish, the degraded surface is the advisory note; accept persists through the learning store existing RecordCandidate API (persistence unchanged, only the surface) — A9 answers-persist-as-today plus the D-07 advisory shape; a dead-end question nobody can answer serves no one
 - [Phase 17]: The chokepoint contract is a doc+grep pair: docs/permissions-gate.md names gateCall verbatim and the no-second-gate property is a re-runnable region check (perm.RuleSet.Evaluate call sites in internal/session non-test sources appear in gate.go only)
 - [Phase 17]: Whole-Run E2E batteries asserting on-disk effects need Options.EngineEnabled=true — the zero value wires the canned stub executor and every non-mcp call lands "stubbed (engine disabled)" without failing the turn
+- [Phase 17]: 17-06 (G-17-1): PermissionOutcomeFrame is the canonical v1 NESTED outcome object — one wire field typed as the new inner PermissionOutcome struct (outcome discriminator + optionId); the old flat shape now fails the decode (errPermissionOutcomeBad) instead of being silently accepted — wire truth re-verified at the tool-calls example page + schema page during execution — Live Zed 1.18.0 answers the nested union; the flat type made every dialog answer fail-safe-decline. Hard-rejecting the flat dialect keeps nonconformance fail-safe by construction
+- [Phase 17]: 17-06: elicitation response shape deliberately NOT nested — CreateElicitationResponse is canonical FLAT action + optional content (permAnswerAccept/ElicitationOutcomeFrame untouched, comment added citing the 17-06 schema verification) — One protocol, two union encodings; each decode site is pinned to its own schema def so nobody unifies them by mistake
 
 ### Pending Todos
 
@@ -137,6 +140,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-01T03:38:51.818Z
-Stopped at: Completed 17-05-PLAN.md (Phase 17 plans 5/5 — ready for verification)
+Last session: 2026-09-02T21:32:16.692Z
+Stopped at: Completed 17-06-PLAN.md (G-17-1 gap closure — canonical nested permission outcome)
 Resume file: None
