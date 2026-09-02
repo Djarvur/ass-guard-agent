@@ -374,15 +374,23 @@ func permAwait(t *testing.T, cli *simClient, st *permStory, pred func(*permStory
 }
 
 // permAnswerSelected answers a request_permission frame with a selected option.
+// The result is the CANONICAL v1 NESTED outcome object — the shape the example
+// at https://agentclientprotocol.com/protocol/v1/tool-calls pins and live Zed
+// 1.18.0 answers with (17-UAT G-17-1): {"outcome":{"outcome":"selected",
+// "optionId":"…"}} — so the simulator exercises the same decode the real
+// client exercises.
 func permAnswerSelected(t *testing.T, cli *simClient, rawID, optionID string) {
 	t.Helper()
 
-	cli.sendf(`{"jsonrpc":"2.0","id":` + rawID + `,"result":{"outcome":"selected","optionId":` +
-		simJSONStr(optionID) + `}}`)
+	cli.sendf(`{"jsonrpc":"2.0","id":` + rawID + `,"result":{"outcome":{"outcome":"selected","optionId":` +
+		simJSONStr(optionID) + `}}}`)
 }
 
 // permAnswerAccept answers an elicitation/create frame with an accept whose
-// content answers the single q1 property.
+// content answers the single q1 property. The FLAT action discriminator with
+// sibling content is canonical for elicitation (schema CreateElicitationResponse
+// — verified against the v1 schema page during 17-06; do NOT nest it like the
+// permission outcome).
 func permAnswerAccept(t *testing.T, cli *simClient, rawID, value string) {
 	t.Helper()
 

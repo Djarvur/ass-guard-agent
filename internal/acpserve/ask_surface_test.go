@@ -167,7 +167,10 @@ func TestPermissionAskFrame(t *testing.T) {
 // TestPermissionAskDispatch pins the outcome mapping for one registry-backed
 // ask: selected → Selected, cancelled → Cancelled, -32800 → Cancelled,
 // -32601 → Err (fail-safe decline, never allow), timeout → Err (D-14
-// fallback).
+// fallback). The selected/cancelled payloads are the CANONICAL v1 nested
+// outcome object — the shape live Zed 1.18.0 answers with (17-UAT G-17-1;
+// https://agentclientprotocol.com/protocol/v1/tool-calls) — while the flat
+// one-level shape and unknown inner discriminators fail safe.
 func TestPermissionAskDispatch(t *testing.T) { //nolint:cyclop,funlen // one table over the wire outcome vocabulary
 	t.Parallel()
 
@@ -204,7 +207,7 @@ func TestPermissionAskDispatch(t *testing.T) { //nolint:cyclop,funlen // one tab
 		t.Parallel()
 		got := answer(t, func(req *acp.Message) *acp.Message {
 			return &acp.Message{JSONRPC: jsonrpcV20, ID: req.ID,
-				Result: json.RawMessage(`{"outcome":"selected","optionId":"` + acp.PermOptionAllowAlways + `"}`)}
+				Result: json.RawMessage(`{"outcome":{"outcome":"selected","optionId":"` + acp.PermOptionAllowAlways + `"}}`)}
 		})
 
 		if got.Selected != acp.PermOptionAllowAlways || got.Cancelled || got.Err != nil {
@@ -216,11 +219,45 @@ func TestPermissionAskDispatch(t *testing.T) { //nolint:cyclop,funlen // one tab
 		t.Parallel()
 		got := answer(t, func(req *acp.Message) *acp.Message {
 			return &acp.Message{JSONRPC: jsonrpcV20, ID: req.ID,
-				Result: json.RawMessage(`{"outcome":"cancelled"}`)}
+				Result: json.RawMessage(`{"outcome":{"outcome":"cancelled"}}`)}
 		})
 
 		if !got.Cancelled || got.Err != nil {
 			t.Errorf("outcome = %+v; want cancelled", got)
+		}
+	})
+
+	t.Run("flat outcome nonconformance", func(t *testing.T) {
+		t.Parallel()
+		got := answer(t, func(req *acp.Message) *acp.Message {
+			// The pre-17-06 wrong shape: a one-level outcome string with
+			// optionId as its sibling — the shape Zed never sends.
+			return &acp.Message{JSONRPC: jsonrpcV20, ID: req.ID,
+				Result: json.RawMessage(`{"outcome":"selected","optionId":"` + acp.PermOptionAllowAlways + `"}`)}
+		})
+
+		if got.Err == nil || got.Cancelled || got.Selected != "" {
+			t.Errorf("outcome = %+v; want a fail-safe Err (never an allow)", got)
+		}
+
+		if !errors.Is(got.Err, errPermissionOutcomeBad) {
+			t.Errorf("outcome Err = %v; want the errPermissionOutcomeBad family", got.Err)
+		}
+	})
+
+	t.Run("unknown inner discriminator", func(t *testing.T) {
+		t.Parallel()
+		got := answer(t, func(req *acp.Message) *acp.Message {
+			return &acp.Message{JSONRPC: jsonrpcV20, ID: req.ID,
+				Result: json.RawMessage(`{"outcome":{"outcome":"banana"}}`)}
+		})
+
+		if got.Err == nil || got.Cancelled || got.Selected != "" {
+			t.Errorf("outcome = %+v; want a fail-safe Err (never an allow)", got)
+		}
+
+		if !errors.Is(got.Err, errPermissionOutcomeUnknown) {
+			t.Errorf("outcome Err = %v; want the errPermissionOutcomeUnknown family", got.Err)
 		}
 	})
 
