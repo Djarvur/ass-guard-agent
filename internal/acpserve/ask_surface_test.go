@@ -170,7 +170,9 @@ func TestPermissionAskFrame(t *testing.T) {
 // fallback). The selected/cancelled payloads are the CANONICAL v1 nested
 // outcome object — the shape live Zed 1.18.0 answers with (17-UAT G-17-1;
 // https://agentclientprotocol.com/protocol/v1/tool-calls) — while the flat
-// one-level shape and unknown inner discriminators fail safe.
+// one-level shape and unknown inner discriminators fail safe. A selected
+// answer without optionId passes through as the empty selection — the session
+// gate owns that decline (WR-01 pins both sides of the seam).
 func TestPermissionAskDispatch(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen // wire outcome table
 	t.Parallel()
 
@@ -213,6 +215,22 @@ func TestPermissionAskDispatch(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,
 
 		if got.Selected != acp.PermOptionAllowAlways || got.Cancelled || got.Err != nil {
 			t.Errorf("outcome = %+v; want selected allow_always", got)
+		}
+	})
+
+	t.Run("selected without optionId passes through empty", func(t *testing.T) {
+		t.Parallel()
+		got := answer(t, func(req *acp.Message) *acp.Message {
+			// The canonical selected shape minus optionId: the SURFACE passes
+			// the empty selection through untouched — the session gate's
+			// default unknown-option branch owns the decline (pinned in
+			// internal/session gate_test.go, WR-01).
+			return &acp.Message{JSONRPC: jsonrpcV20, ID: req.ID,
+				Result: json.RawMessage(`{"outcome":{"outcome":"selected"}}`)}
+		})
+
+		if got.Selected != "" || got.Err != nil || got.Cancelled {
+			t.Errorf("outcome = %+v; want the pass-through shape: Selected empty, no Err, not cancelled", got)
 		}
 	})
 

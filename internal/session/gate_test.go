@@ -925,10 +925,13 @@ func TestGateAskKindsParity(t *testing.T) {
 }
 
 // TestGateOutcomeMatrix pins the full dialog outcome matrix (D-01/D-03, both
-// directions): reject_once denies WITHOUT persisting (the next call asks
-// again), reject_always persists the deny rule BEFORE the denial result (the
-// next matching call denies with NO dialog), and allow_once executes WITHOUT
-// persisting (no trust recorded).
+// directions) plus its untrusted-input leg: reject_once denies WITHOUT
+// persisting (the next call asks again), reject_always persists the deny rule
+// BEFORE the denial result (the next matching call denies with NO dialog),
+// allow_once executes WITHOUT persisting (no trust recorded), and a Selected
+// that is empty or non-canonical (untrusted dialog input — the 17-06
+// selected-without-optionId wire shape lands here as "") DECLINES fail-safe
+// via the gate's default unknown-option branch (WR-01 pin).
 func TestGateOutcomeMatrix(t *testing.T) { //nolint:funlen,cyclop // three full-loop subtests
 	t.Parallel()
 
@@ -1077,6 +1080,71 @@ func TestGateOutcomeMatrix(t *testing.T) { //nolint:funlen,cyclop // three full-
 		results := toolResultsFor(t, s, gateCall1)
 		if len(results) != 1 || results[0].IsError {
 			t.Errorf("allow_once result = %+v; want exactly one non-error result", results)
+		}
+	})
+
+	t.Run("unknown option id declines fail-safe", func(t *testing.T) {
+		t.Parallel()
+
+		// Both untrusted shapes of a selected answer: the canonical nested
+		// outcome minus optionId (the surface passes it through as "" — WR-01)
+		// and a non-canonical id nothing offered. The gate's default branch
+		// must decline BOTH — an empty selection is never special-cased.
+		cases := []struct{ name, selected string }{
+			{"empty optionId (selected without optionId)", ""},
+			{"non-canonical optionId", "banana_opt"},
+		}
+
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
+
+				block := make(chan struct{})
+
+				store := &fakePermStore{}
+				surf := &fakeGateSurface{
+					answers: []AskOutcome{{Selected: tc.selected}},
+					block:   block,
+				}
+
+				s := newGateSession(t, []provider.Response{
+					{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+						{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+					{FinishReason: stopEndTurn},
+				}, PermModeGated, store, surf)
+
+				stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+				if err != nil {
+					t.Fatalf("Prompt: %v", err)
+				}
+
+				if stop != stopAsk {
+					t.Fatalf("stop = %q; want the ask marker", stop)
+				}
+
+				gateWaitFor(t, func() bool { return surf.fired() == 1 })
+				close(block)
+
+				gateWaitFor(t, func() bool { return len(toolResultsFor(t, s, gateCall1)) == 1 })
+
+				// THE WR-01 pin: the default unknown-option branch declines —
+				// ONE error result carrying the unknown-option decline form
+				// (distinct from the deny-rule form), zero executions, zero
+				// rule writes in either direction.
+				results := toolResultsFor(t, s, gateCall1)
+				if len(results) != 1 || !results[0].IsError {
+					t.Fatalf("unknown-option result = %+v; want exactly one error result (the decline)", results)
+				}
+
+				if !strings.Contains(string(results[0].Output), "Permission declined") ||
+					!strings.Contains(string(results[0].Output), "the dialog returned an unknown option") {
+					t.Errorf("decline note = %s; want the unknown-option decline form", results[0].Output)
+				}
+
+				if order := store.snapshotOrder(); len(order) != 0 {
+					t.Errorf("unknown-option answer executed or wrote a rule: %v; want zero activity", order)
+				}
+			})
 		}
 	})
 }
