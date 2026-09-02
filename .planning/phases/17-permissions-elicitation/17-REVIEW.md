@@ -13,7 +13,7 @@ findings:
   warning: 1
   info: 0
   total: 1
-status: issues_found
+status: fixed
 ---
 
 # Phase 17: Code Review Report — Gap-Closure 17-06 Re-Review
@@ -100,6 +100,8 @@ None.
 ## Warnings
 
 ### WR-01: The selected-without-optionId fail-safe path is load-bearing, documented, and unpinned by any test
+
+**Fixed:** commit `2f56969` — gate battery rows `TestGateOutcomeMatrix/unknown_option_id_declines_fail-safe/{empty_optionId_(selected_without_optionId), non-canonical_optionId}` (decline form + zero executions/rule writes) and dispatch subtest `TestPermissionAskDispatch/selected_without_optionId_passes_through_empty` (pass-through shape `Selected == ""`, no Err, not cancelled). All pass against current code under `-race`.
 
 **File:** `internal/acpserve/ask_surface.go:167-171` (the claim), `internal/session/ask.go:960-965` (the relied-on branch), `internal/acpserve/ask_surface_test.go:206-263` (the battery that stops one case short)
 
