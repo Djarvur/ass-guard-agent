@@ -153,7 +153,7 @@ Plans:
   4. Default remains ungated (safety-model amendment "available, not default"): with default config, zero new dialogs appear versus v1.1 behavior; mode flips via editor configOptions take effect on the running session.
   5. The gate pipeline precedence (hook verdict → permission ask → execute) is implemented at ONE chokepoint and documented, with permissions.yaml persisted choices surviving restarts.
 
-**Plans**: 5/5 plans executed
+**Plans**: 6 plans (5 executed; 1 gap closure)
 
 Plans:
 **Wave 1**
@@ -172,6 +172,10 @@ Plans:
 **Wave 4** *(blocked on Wave 3 completion)*
 
 - [x] 17-05-PLAN.md — Chokepoint documentation + Zed-simulator E2E + live-Zed operator checkpoint (criterion 5, criteria 1+3 manual legs)
+
+**Wave 5** *(gap closure — UAT G-17-1 blocker)*
+
+- [ ] 17-06-PLAN.md — GAP G-17-1: decode the canonical ACP v1 NESTED request_permission outcome (types.go + ask_surface.go + both test clients canonical; RED-proven pins; criterion 1 un-blocks, UAT Test 2 re-testable)
 
 ### Phase 18: Session Family
 
