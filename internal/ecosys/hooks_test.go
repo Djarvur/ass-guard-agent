@@ -507,6 +507,7 @@ func TestPreToolUseVerdict(t *testing.T) { //nolint:paralleltest // mutates the 
 		}, "s", work, "")
 
 		ctx, cancel := context.WithCancel(context.Background())
+
 		go func() {
 			time.Sleep(200 * time.Millisecond)
 			cancel()
