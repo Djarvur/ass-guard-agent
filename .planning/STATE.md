@@ -4,13 +4,13 @@ milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 18
 current_phase_name: Session Family
-current_plan: 2
+current_plan: 3
 status: executing
-stopped_at: Completed 18-01-PLAN.md (session/load replay spine tracer + vocabulary/gate)
-last_updated: "2026-09-03T11:27:52.091Z"
+stopped_at: Completed 18-02-PLAN.md (reconciliation engine)
+last_updated: "2026-09-03T12:01:05.539Z"
 last_activity: 2026-09-03
 last_activity_desc: Phase 18 execution started
-state_head: c1472b50a36c984d7744f5e671be942655800d8e
+state_head: b7554e213143c9b8e2325c277cdf7d130c82dbf5
 progress:
   total_phases: 11
   completed_phases: 3
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-03)
 ## Current Position
 
 Phase: 18 (Session Family) — EXECUTING
-Current Plan: 2
+Current Plan: 3
 Total Plans in Phase: 6
 Status: Ready to execute
 Last activity: 2026-09-03 — Phase 18 execution started
@@ -69,6 +69,7 @@ Progress: [██████░░░░░░░░░░░░░░░░] 2
 | Phase 17 P05 | 29 min | 3 tasks | 2 files |
 | Phase 17 P06 | 12 min | 2 tasks | 4 files |
 | Phase 18 P01 | 48 min | 2 tasks | 18 files |
+| Phase 18 P02 | 23 min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -125,6 +126,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 18]: 18-01: replay error lines — toolCallID-carrying closes the call as terminal failed tool_call_update; bare renders as agent chunk 'component: message'
 - [Phase 18]: 18-01: symlink guard strengthened to Lstat link-bit rejection + Stat regular-file check (Stat alone resolved symlink→regular cleanly — RED battery caught it)
 - [Phase 18]: 18-01: idempotent re-load returns the v1 response without re-replaying; concurrent second load typed-busy; load rejections side-effect-free by ordering (checks precede ResumeSession)
+- [Phase 18]: Reconciliation engine built transcript-pure (18-02): Reconcile classifies all ten kill -9 inventory rows with keyed pair matching, engine-authored closure payloads, and Seed{MaxTurns,PlanMode}; Manager.AppendSynthetic is the 18-05 append seam through the redaction-disciplined appendLine
 
 ### Pending Todos
 
@@ -147,6 +149,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-03T11:27:51.530Z
-Stopped at: Completed 18-01-PLAN.md (session/load replay spine tracer + vocabulary/gate)
+Last session: 2026-09-03T12:01:05.049Z
+Stopped at: Completed 18-02-PLAN.md (reconciliation engine)
 Resume file: None
