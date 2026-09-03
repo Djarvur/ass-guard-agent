@@ -26,11 +26,13 @@ import (
 )
 
 // HookConfig is one parsed hook command from a plugin bundle's
-// hooks/hooks.json (12-02): the lifecycle Event it fires at, the Matcher
-// (a tool-name regex for the tool events; empty/"*" matches all), the shell
-// Command (run via `sh -c`), its per-hook timeout, and provenance (the
-// hooks.json Path + the bundle's PluginRoot, exported to the hook's env as
-// CLAUDE_PLUGIN_ROOT — the documented expansion vehicle).
+// hooks/hooks.json (12-02) or a settings.json scope (21-01 PAR-03): the
+// lifecycle Event it fires at, the Matcher (a tool-name regex for the tool
+// events; empty/"*" matches all — CC's two-path exact/alternatives dialect
+// applies to the settings scopes), the shell Command (run via `sh -c`), its
+// per-hook timeout, provenance (the source file's Path + the bundle's
+// PluginRoot, exported to the hook's env as CLAUDE_PLUGIN_ROOT — the
+// documented expansion vehicle), and the discovery Scope (21-01).
 type HookConfig struct {
 	Event      string
 	Matcher    string
@@ -38,7 +40,24 @@ type HookConfig struct {
 	TimeoutSec int
 	Path       string
 	PluginRoot string
+
+	// Scope tags where the hook was discovered (21-01 PAR-03/D-03). The zero
+	// value is scopePlugin so every pre-21-01 construction is unchanged.
+	Scope HookScope
 }
+
+// HookScope is the discovery scope of a hook (21-01 PAR-03): the two
+// settings.json scopes (project = repo-shipped, user = operator-owned) and
+// the plugin bundles. The D-03 firing order (project → user → plugin) is
+// resolved by scopeRank at runner construction — the enum's numeric order is
+// an implementation detail, NOT the firing order.
+type HookScope int
+
+const (
+	scopePlugin  HookScope = iota // plugin-bundled hooks/hooks.json (zero value)
+	scopeProject                  // project .claude/settings.json (repo-shipped)
+	scopeUser                     // user ~/.claude/settings.json (operator-owned)
+)
 
 // HookOutcome is one Fire result: Proceed=false ONLY for an exit-2 PreToolUse
 // refusal (the operator-configured policy channel — the hook-table safety
@@ -118,10 +137,18 @@ func NewHookRunner(hooks []HookConfig, sessionID, workDir, transcriptPath string
 
 // parseHooksJSON reads one hooks/hooks.json (the live-measured shape: a
 // top-level object with a `hooks` map keyed by event name → matcher groups →
-// command entries) into HookConfigs. Deterministic event order (sorted keys).
-// A malformed file or non-command hook entry skips with a warning; an unmapped
-// event parses + warns (observe-only).
+// command entries) into HookConfigs tagged scopePlugin.
 func parseHooksJSON(path, pluginRoot string) []HookConfig {
+	return parseHooksFile(path, pluginRoot, scopePlugin)
+}
+
+// parseHooksFile is the shared hooks-file reader for plugin bundles
+// (12-02) and settings.json scopes (21-01): a top-level object with a
+// `hooks` map keyed by event name → matcher groups → command entries.
+// Deterministic event order (sorted keys). A malformed file or non-command
+// hook entry skips with a warning; an unmapped event parses + warns
+// (observe-only). The scope tag is set at parse time (D-03).
+func parseHooksFile(path, pluginRoot string, scope HookScope) []HookConfig {
 	data, ok := readCapped(path, pluginArtifactMaxBytes)
 	if !ok {
 		return nil
@@ -172,7 +199,7 @@ func parseHooksJSON(path, pluginRoot string) []HookConfig {
 
 				out = append(out, HookConfig{
 					Event: ev, Matcher: group.Matcher, Command: h.Command,
-					TimeoutSec: h.Timeout, Path: path, PluginRoot: pluginRoot,
+					TimeoutSec: h.Timeout, Path: path, PluginRoot: pluginRoot, Scope: scope,
 				})
 			}
 		}
@@ -252,7 +279,10 @@ func (r *HookRunner) PostToolUse(ctx context.Context, toolName string, input, ou
 
 // matchingHooks returns the hooks bound to event that match toolName (the
 // matcher applies only to the tool events; empty/"*" matches every tool).
-// An invalid matcher regex warns and matches nothing (never fatal).
+// Settings-scope hooks match by CC's two-path dialect (matchSettingsHook);
+// plugin hooks keep the legacy compile-everything-as-regex behavior
+// byte-for-byte (D-02: existing plugin hooks unchanged). An invalid matcher
+// regex warns and matches nothing (never fatal).
 func (r *HookRunner) matchingHooks(event, toolName string) []HookConfig {
 	var out []HookConfig
 
@@ -273,6 +303,14 @@ func (r *HookRunner) matchingHooks(event, toolName string) []HookConfig {
 			continue
 		}
 
+		if isSettingsScope(h.Scope) {
+			if matchSettingsHook(h.Matcher, toolName) {
+				out = append(out, h)
+			}
+
+			continue
+		}
+
 		re, err := regexp.Compile(h.Matcher)
 		if err != nil {
 			logPluginSkipf("hooks %s: invalid matcher %q (%v) — hook never fires", h.Path, h.Matcher, err)
@@ -286,6 +324,61 @@ func (r *HookRunner) matchingHooks(event, toolName string) []HookConfig {
 	}
 
 	return out
+}
+
+// isSettingsScope reports whether the scope uses CC's settings matcher
+// dialect (the two settings.json scopes; plugin bundles stay legacy).
+func isSettingsScope(s HookScope) bool {
+	return s == scopeProject || s == scopeUser
+}
+
+// matchSettingsHook implements CC's two-path matcher dialect for
+// settings-scope hooks (21-01, Pitfall 3): a matcher whose every rune is
+// alphanumeric, underscore, hyphen, space, comma, or pipe splits on pipes,
+// commas, and spaces into EXACT alternatives compared with == against the
+// tool name; anything else compiles as an unanchored regex. KNOWN DIVERGENCE
+// (resolved open question 2): plugin hooks deliberately keep the legacy
+// compile-everything-as-regex behavior, so plugin matcher "Edit" still
+// matches "NotebookEdit" while settings matcher "Edit" does not.
+func matchSettingsHook(matcher, toolName string) bool {
+	if settingsMatcherExactSet(matcher) {
+		for _, alt := range strings.FieldsFunc(matcher, func(r rune) bool {
+			return r == '|' || r == ',' || r == ' '
+		}) {
+			if alt == toolName {
+				return true
+			}
+		}
+
+		return false
+	}
+
+	re, err := regexp.Compile(matcher)
+	if err != nil {
+		logPluginSkipf("settings hook: invalid matcher %q (%v) — hook never fires", matcher, err)
+
+		return false
+	}
+
+	return re.MatchString(toolName)
+}
+
+// settingsMatcherExactSet reports whether every rune of matcher is in CC's
+// exact-set: alphanumeric, underscore, hyphen, space, comma, or pipe. Such
+// matchers take the exact/alternatives path; any other rune (dot, star,
+// paren, slash, ...) forces the regex path. The matcher is non-empty here
+// (the caller handled the empty/"*" catch-alls first).
+func settingsMatcherExactSet(matcher string) bool {
+	for _, r := range matcher {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '_' || r == '-' || r == ' ' || r == ',' || r == '|':
+		default:
+			return false
+		}
+	}
+
+	return true
 }
 
 // hookExecResult is one hook execution's classification.

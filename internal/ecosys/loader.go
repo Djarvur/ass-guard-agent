@@ -110,7 +110,74 @@ func loadAll(claudeDir, assguardDir string) (Registry, map[string]ServerConfig, 
 	hooks = append(hooks, pluginHooks...)
 	merged.Hooks = append(hooks, merged.Hooks...)
 
+	// 21-01 PAR-03: the settings.json scopes join the flat hooks slice AFTER
+	// the plugin hooks. Merge order here is irrelevant to firing — the runner
+	// partitions by scope at construction (D-03) — and the loader's overlay
+	// precedence above stays untouched (Pitfall 1: other consumers depend on
+	// it). Every settings failure path degrades to a stderr warning + skip,
+	// never an error up through Load (Pitfall 8).
+	merged.Hooks = append(merged.Hooks, loadSettingsHooks(claudeDir, scopeProject)...)
+	merged.Hooks = append(merged.Hooks, loadSettingsHooks(claudeDir, scopeUser)...)
+
 	return merged, pluginMCP, nil
+}
+
+// settingsJSONName is the Claude-Code settings file hooks are read from
+// (project <project>/.claude/settings.json and user ~/.claude/settings.json
+// — the SAME files CC reads; read-only, never written).
+const settingsJSONName = "settings.json"
+
+// loadSettingsHooks reads one settings scope's hooks entries (21-01
+// PAR-03/D-02): scopeProject reads <claudeDir>/settings.json; scopeUser
+// reads ~/.claude/settings.json. The hooks key layout is the SAME
+// hooks → event → matcher-group → {type,command,timeout} shape the plugin
+// hooks.json parser accepts (CC-compatible). A malformed file degrades to a
+// stderr warning + skip; an absent file contributes nothing silently
+// (absent is normal); an oversized file skips with a warning (the
+// pluginArtifactMaxBytes discipline). NEVER returns an error — a repo must
+// not be able to brick session construction (Pitfall 8).
+func loadSettingsHooks(claudeDir string, scope HookScope) []HookConfig {
+	var path string
+
+	switch scope {
+	case scopeProject:
+		if claudeDir == "" {
+			return nil // no project context — no project settings
+		}
+
+		path = filepath.Join(claudeDir, settingsJSONName)
+	case scopeUser:
+		home, err := os.UserHomeDir()
+		if err != nil {
+			logPluginSkipf("user settings hooks: home dir unavailable (skipped): %v", err)
+
+			return nil
+		}
+
+		path = filepath.Join(home, claudeDirName, settingsJSONName)
+	default:
+		return nil // plugin scope has its own loader (parseHooksJSON)
+	}
+
+	// Oversized settings skip loudly (readCapped re-guards the read itself).
+	if info, err := os.Stat(path); err == nil && info.Size() > pluginArtifactMaxBytes {
+		logPluginSkipf("settings %s exceeds %d bytes (hooks skipped)", path, pluginArtifactMaxBytes)
+
+		return nil
+	}
+
+	hooks := parseHooksFile(path, "", scope)
+
+	// Settings entries default to the 60s bound at parse time (the plan's
+	// A2 divergence note: CC's documented command-hook default is 600s; the
+	// existing 60s bound is kept to bound tool-loop latency).
+	for i := range hooks {
+		if hooks[i].TimeoutSec <= 0 {
+			hooks[i].TimeoutSec = hookDefaultTimeoutSec
+		}
+	}
+
+	return hooks
 }
 
 // loadTreeMerged loads user-scope then overlays project-scope (project wins).

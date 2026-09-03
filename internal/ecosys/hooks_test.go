@@ -418,11 +418,15 @@ func TestHookMatcherDialect(t *testing.T) {
 		{"settings comma alternatives", scopeProject, "Edit,Write", "Write", true},
 		{"settings comma with space", scopeProject, "Edit, Write", "Write", true},
 
-		// Any char outside the exact-set → unanchored regex path.
+		// Any char outside the exact-set → unanchored regex path. The parens
+		// row proves REGEX semantics: Go reads "Bash(git *)" as "Bash" + a
+		// capture group "git *", so it matches "Bashgit" — an exact-string
+		// comparison ("Bash(git *)" == tool) could never fire there.
 		{"settings regex dot-star", scopeProject, "mcp__github__.*", "mcp__github__get_issue", true},
 		{"settings regex dot-star miss", scopeProject, "mcp__github__.*", "mcp__fs__read", false},
 		{"settings regex unanchored", scopeProject, "Edit.*", "NotebookEdit", true},
-		{"settings regex parens", scopeProject, "Bash(git *)", "Bash(git )", true},
+		{"settings regex parens group", scopeProject, "Bash(git *)", "Bashgit", true},
+		{"settings regex parens literal miss", scopeProject, "Bash(git *)", "Bash(git )", false},
 
 		// Catch-alls keep their meaning in both scopes.
 		{"settings empty matcher catch-all", scopeProject, "", "Anything", true},
