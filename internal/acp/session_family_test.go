@@ -356,10 +356,6 @@ const (
 	keyCursor         = "cursor"
 	keyNextCursor     = "nextCursor"
 	keySessions       = "sessions"
-	keySessionCaps    = "sessionCapabilities"
-	keyUpdatedAt      = "updatedAt"
-	keyTitle          = "title"
-	keyStopReason     = "stopReason"
 	resumeMethod      = "session/resume"
 
 	// listLiveSessions exceeds the engine's default page (50) so the RPC
@@ -515,9 +511,18 @@ func TestHandleSessionListRoundTrip(t *testing.T) {
 		t.Errorf("row 0 title = %v; want the first user prompt %q", row0.Title, "prompt 0")
 	}
 
-	if row0.UpdatedAt == nil || *row0.UpdatedAt != listBaseTime.Format(time.RFC3339) {
-		t.Errorf("row 0 updatedAt = %v; want %s (RFC3339 of lastActivity)",
-			row0.UpdatedAt, listBaseTime.Format(time.RFC3339))
+	if row0.UpdatedAt == nil {
+		t.Fatal("row 0 updatedAt = nil; want the RFC3339 lastActivity")
+	}
+
+	gotAt, perr := time.Parse(time.RFC3339, *row0.UpdatedAt)
+	if perr != nil {
+		t.Fatalf("row 0 updatedAt %q is not RFC3339: %v", *row0.UpdatedAt, perr)
+	}
+
+	if !gotAt.Equal(listBaseTime) {
+		t.Errorf("row 0 updatedAt = %s; want the RFC3339 instant of lastActivity %s",
+			*row0.UpdatedAt, listBaseTime.Format(time.RFC3339))
 	}
 
 	if row1 := page1.Sessions[1]; row1.Title != nil {

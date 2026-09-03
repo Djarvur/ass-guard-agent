@@ -472,3 +472,74 @@ type LoadSessionResponse struct {
 	ConfigOptions any             `json:"configOptions"`   // SessionConfigOption[] | null
 	Modes         any             `json:"modes"`           // SessionModeState | null
 }
+
+// --- 18-04 session/list + session/close + session/delete wire vocabulary
+// (ACP-05/ACP-07) ---
+//
+// Field names pinned VERBATIM against the canonical ACP v1 schema (18-RESEARCH
+// §Wire Shapes, defs ListSessionsRequest/Response, SessionInfo,
+// CloseSessionRequest/Response, DeleteSessionRequest/Response). v1 spellings
+// ONLY (Pitfall 7). Nullable-vs-required distinctions are load-bearing:
+// sessions is REQUIRED on the response (an empty store is [], never null);
+// SessionInfo's cwd/sessionId are required while title/updatedAt are nullable;
+// nextCursor is always present, null when the page is exhausted. delete is a
+// spec-unstable surface — best-effort semantics live in the handler, the wire
+// shape stays exactly v1.
+
+// ListSessionsRequest is the session/list payload: the opaque continuation
+// cursor a previous page returned (null/absent = first page) and the client's
+// cwd. Cwd is recorded but NEVER used for store resolution — enumeration
+// scope is the SERVER's workspace (T-18-02: a crafted cwd cannot point the
+// scan at another project's sessions; cross-project enumeration would leak
+// other projects' session existence and titles).
+type ListSessionsRequest struct {
+	Meta   json.RawMessage `json:"_meta,omitempty"` //nolint:tagliatelle // ACP wire field
+	Cursor *string         `json:"cursor,omitempty"`
+	Cwd    *string         `json:"cwd,omitempty"`
+}
+
+// ListSessionsResponse is the session/list result. Sessions is REQUIRED and
+// non-nil by construction so an empty store serializes as [] (never null);
+// NextCursor is always present, null when no rows remain.
+type ListSessionsResponse struct {
+	Meta       json.RawMessage `json:"_meta,omitempty"` //nolint:tagliatelle // ACP wire field
+	NextCursor *string         `json:"nextCursor"`      //nolint:tagliatelle // ACP wire field (required, nullable)
+	Sessions   []SessionInfo   `json:"sessions"`        // required; never null
+}
+
+// SessionInfo is one v1 list row. Cwd is the SERVER's workDir (required —
+// every listed session lives under it); Title and UpdatedAt are nullable —
+// the title rides ONLY when the session carried a real first user prompt
+// (the engine's TitlePresent flag; the fallback literal stays server-side so
+// the client renders its own placeholder), and UpdatedAt is the header's
+// lastActivity as an RFC3339 string.
+type SessionInfo struct {
+	Meta                  json.RawMessage `json:"_meta,omitempty"`                 //nolint:tagliatelle // ACP wire field
+	AdditionalDirectories []string        `json:"additionalDirectories,omitempty"` //nolint:tagliatelle // ACP wire field
+	Cwd                   string          `json:"cwd"`                             // required
+	SessionID             string          `json:"sessionId"`                       //nolint:tagliatelle // ACP wire field (required)
+	Title                 *string         `json:"title"`                           // nullable
+	UpdatedAt             *string         `json:"updatedAt"`                       //nolint:tagliatelle // ACP wire field (nullable)
+}
+
+// CloseSessionRequest is the session/close payload (sessionId required).
+type CloseSessionRequest struct {
+	Meta      json.RawMessage `json:"_meta,omitempty"` //nolint:tagliatelle // ACP wire field
+	SessionID string          `json:"sessionId"`       //nolint:tagliatelle // ACP wire field (required)
+}
+
+// CloseSessionResponse is the session/close result — an empty object ({}).
+type CloseSessionResponse struct {
+	Meta json.RawMessage `json:"_meta,omitempty"` //nolint:tagliatelle // ACP wire field
+}
+
+// DeleteSessionRequest is the session/delete payload (sessionId required).
+type DeleteSessionRequest struct {
+	Meta      json.RawMessage `json:"_meta,omitempty"` //nolint:tagliatelle // ACP wire field
+	SessionID string          `json:"sessionId"`       //nolint:tagliatelle // ACP wire field (required)
+}
+
+// DeleteSessionResponse is the session/delete result — an empty object ({}).
+type DeleteSessionResponse struct {
+	Meta json.RawMessage `json:"_meta,omitempty"` //nolint:tagliatelle // ACP wire field
+}

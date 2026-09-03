@@ -8,6 +8,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
+
+	"github.com/Djarvur/ass-guard-agent/internal/session"
 )
 
 const asciiDelete = 0x40
@@ -63,14 +66,18 @@ func (s *Server) drainSessionAsksIfPossible(sessionID string) {
 // registerHandlers populates the method→handler map with the canonical ACP v1
 // method set (VERIFIED-FACTS #3): initialize, session/new, session/prompt,
 // session/cancel, session/load (18-01 — full replay through the ordered
-// emitter; the D-09 no-op ended with Phase 18), logout, session/set_mode,
-// session/set_config_option (16-05/ACP-08).
+// emitter; the D-09 no-op ended with Phase 18), session/list (18-04 — the
+// 18-03 header-scan engine behind the wire), logout, session/set_mode,
+// session/set_config_option (16-05/ACP-08). The v1 no-replay session/resume
+// method is deliberately NOT registered (18-RESEARCH A3): D-03's
+// reconcile-then-accept makes full load the only safe resume path.
 func (s *Server) registerHandlers() {
 	s.handlers[methodInitialize] = s.handleInitialize
 	s.handlers["session/new"] = s.handleSessionNew
 	s.handlers["session/prompt"] = s.handleSessionPrompt
 	s.handlers["session/cancel"] = s.handleSessionCancel
 	s.handlers["session/load"] = s.handleSessionLoad
+	s.handlers["session/list"] = s.handleSessionList
 	s.handlers["logout"] = s.handleLogout
 	s.handlers["session/set_mode"] = s.handleSessionSetMode
 	s.handlers[methodCancelRequest] = s.handleCancelRequestNoOp
@@ -192,11 +199,24 @@ func (s *Server) applyMetaBlob(params json.RawMessage) {
 // loadSession:true since 18-01 — ACP-06's replay spine is live) plus the
 // configOptions advertisement (16-05) via the shared builder — omitted
 // entirely when no surface is wired.
+//
+// 18-04 (Pitfall 8): the v1 capability SPLIT — session/list|close|delete
+// advertise under the NESTED sessionCapabilities object (each an empty
+// object: supported, no further negotiation), while session/load stays under
+// the TOP-LEVEL loadSession flag. The v1 no-replay session/resume method is
+// deliberately absent (18-RESEARCH A3): D-03's reconcile-then-accept makes
+// full load the only safe resume path, and capability-gated clients fall
+// back to load.
 func (s *Server) initializeResult() initializeResponse {
 	return initializeResponse{
 		ProtocolVersion: 1,
 		AgentCapabilities: map[string]any{
 			"loadSession": true, // 18-01/ACP-06: session/load restores + replays past sessions
+			"sessionCapabilities": map[string]any{ // 18-04/ACP-05+ACP-07: nested v1 gating
+				"list":   map[string]any{},
+				"close":  map[string]any{},
+				"delete": map[string]any{},
+			},
 		},
 		AgentInfo: map[string]any{
 			"name":    "ass-guard",
@@ -716,6 +736,82 @@ func (s *Server) LoadSession(ctx context.Context, sessionID string) (LoadSession
 // null in this plan (plan-mode seeding lands with 18-05).
 func (s *Server) loadSessionResult() LoadSessionResponse {
 	return LoadSessionResponse{ConfigOptions: s.configOptionsFor()}
+}
+
+// handleSessionList enumerates the store's sessions through the 18-03 engine
+// (on-demand header scan, tombstone stat-filter, composite opaque cursor) and
+// maps the lean headers to v1 SessionInfo rows. The store root is the
+// SERVER's workDir (T-18-02: the client-supplied cwd is recorded but never
+// widens the enumeration scope — cross-project listing would leak other
+// projects' session existence and titles). A malformed cursor is the typed
+// invalid-params rejection BEFORE any scan (the engine's ErrInvalidCursor);
+// store-level failures surface as the scrubbed internal class.
+func (s *Server) handleSessionList(_ context.Context, params json.RawMessage) (any, error) {
+	var p ListSessionsRequest
+
+	if len(params) > 0 {
+		if uerr := json.Unmarshal(params, &p); uerr != nil {
+			return nil, &RPCError{
+				Code:    CodeInvalidParams,
+				Message: "session/list params: " + uerr.Error(),
+			}
+		}
+	}
+
+	cursor := ""
+	if p.Cursor != nil {
+		cursor = *p.Cursor
+	}
+
+	workDir := s.storeWorkDir()
+
+	headers, next, err := session.ListSessions(workDir, cursor, 0)
+	if err != nil {
+		if errors.Is(err, session.ErrInvalidCursor) {
+			return nil, &RPCError{
+				Code:    CodeInvalidParams,
+				Message: fmt.Sprintf("session/list: %v", err),
+			}
+		}
+
+		return nil, fmt.Errorf("session/list %s: %w", workDir, err)
+	}
+
+	// Non-nil by construction: an empty store serializes as [] (never null).
+	resp := ListSessionsResponse{Sessions: make([]SessionInfo, 0, len(headers))}
+
+	for i := range headers {
+		resp.Sessions = append(resp.Sessions, sessionInfoOf(&headers[i], workDir))
+	}
+
+	if next != "" {
+		resp.NextCursor = &next
+	}
+
+	return resp, nil
+}
+
+// sessionInfoOf maps one engine header to its v1 wire row: cwd is the
+// server's workDir, updatedAt is the header's lastActivity as RFC3339, and
+// the title rides ONLY when the header's TitlePresent flag is set — the
+// flag 18-03 ships, never a string comparison against the fallback literal
+// (a fallback-titled row keeps title null so the client renders its own
+// placeholder).
+func sessionInfoOf(h *session.SessionHeader, workDir string) SessionInfo {
+	info := SessionInfo{
+		SessionID: h.SessionID,
+		Cwd:       workDir,
+	}
+
+	if h.TitlePresent {
+		title := h.Title
+		info.Title = &title
+	}
+
+	updatedAt := h.LastActivity.Format(time.RFC3339)
+	info.UpdatedAt = &updatedAt
+
+	return info
 }
 
 // handleLogout drops the session. It accepts an optional sessionId param.
