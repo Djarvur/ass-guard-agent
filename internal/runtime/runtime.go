@@ -176,11 +176,11 @@ type Runner struct {
 	// enters the prompt; an absolute @path additionally needs an explicit
 	// allow just to be ADMITTED (nil admits nothing outside the workspace —
 	// ingress resolution is never a whole-FS existence oracle, T-21-14).
-	// nil = implicit allow for in-workspace files (the pre-join default, so
-	// this plan is 17-independent); the 21-06 join wires internal/perm's
-	// rule set here (perm.RuleSet.Evaluate(tool, path): VerdictDeny → deny,
+	// 21-06 join: sessionFor wires this to the perm rule-set provider the
+	// gate consumes (perm.RuleSet.Evaluate(tool, path): VerdictDeny → deny,
 	// else allow) — ONE consumption site riding the existing seam, never a
-	// second gate pipeline.
+	// second gate pipeline; nil (a rule-less session) keeps the implicit
+	// in-workspace allow.
 	readRuleEvaluator func(tool, path string) bool
 
 	// 21-05 (PAR-06/D-09): the image-ingress limit set. Zero →
@@ -1706,6 +1706,13 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	permDeps := session.GateDeps{
 		Mode:  r.PermMode,
 		Queue: askQueue,
+		// 21-06 (PAR-03/D-04): the hook-verdict HEAD — the session's
+		// HookRunner (plugin bundles + both settings.json scopes, D-03
+		// firing order) resolves PreToolUse verdicts; the gate head is the
+		// ONE consumption site (nil-runner verdicts are a safe no-decision).
+		// Deny blocks before rules; ask suspends even ungated; a USER-scope
+		// allow executes; no-decision falls through to the rule evaluation.
+		PreToolUseVerdict: hookRunner.PreToolUseVerdict,
 		// The MCP namespace resolver (Pitfall 7): canonicalize through
 		// 17-01's helpers — the catalog registers MCP tools under their full
 		// mcp__<server>__<tool> names, so the mapping is a rebuild + identity.
@@ -1739,6 +1746,21 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 		permDeps.Rules = permStore.Rules
 		permDeps.Allow = permStore.AllowTool
 		permDeps.Forbid = permStore.ForbidTool
+
+		// 21-06 (PAR-06 ↔ PAR-03 join): the 21-04 Read-rule consult seam is
+		// backed by the SAME rule-set provider the gate consumes — mentions
+		// and tool calls answer to ONE rule authority. Only VerdictDeny
+		// denies a mention (ask/allow/unmatched all expand). Wired ONCE per
+		// Runner (all sessions share the workDir, so the first session's
+		// store is the standing provider; the gate itself keeps each
+		// session's live store) — the once-guard keeps concurrent
+		// sessionFor construction race-free against turn-time reads. A
+		// rule-less session keeps the nil implicit-allow default.
+		if r.readRuleEvaluator == nil {
+			r.readRuleEvaluator = func(tool, path string) bool {
+				return permStore.Rules().Evaluate(tool, path) != perm.VerdictDeny
+			}
+		}
 	}
 
 	s.SetPermissionGate(permDeps)

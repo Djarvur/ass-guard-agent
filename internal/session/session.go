@@ -524,8 +524,10 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 				if isSubagentTool(tc.Name) {
 					// 17-02 THE permission chokepoint — subagent branch (D-05:
 					// ONE pipeline; subagents bypass DispatchBatch but NEVER
-					// the gate — no second permission path).
-					if v := s.gateCall(turnID, callID, tc.Name, tc.Input); v.action != gateExecute {
+					// the gate — no second permission path). 21-06: the
+					// hook-verdict head (ctx bounds hook execution) runs here
+					// too — BOTH branches consume verdicts at the one head.
+					if v := s.gateCall(ctx, turnID, callID, tc.Name, tc.Input); v.action != gateExecute {
 						if v.action == gateSuspend {
 							gateSuspensions = append(gateSuspensions,
 								pendingPermission{callID: callID, tool: tc.Name, input: tc.Input})
@@ -593,7 +595,10 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 				// (D-04/D-05): rule evaluation runs in BOTH modes (deny still
 				// denies ungated); the ask class opens the native dialog only
 				// when gated + human, declines fail-safe on automation turns.
-				if v := s.gateCall(turnID, callID, tc.Name, tc.Input); v.action != gateExecute {
+				// 21-06: the hook-verdict head runs FIRST here (ctx bounds
+				// hook execution) — precedence hook verdict → permission ask
+				// → execute, at this one chokepoint.
+				if v := s.gateCall(ctx, turnID, callID, tc.Name, tc.Input); v.action != gateExecute {
 					if v.action == gateSuspend {
 						gateSuspensions = append(gateSuspensions,
 							pendingPermission{callID: callID, tool: tc.Name, input: tc.Input})

@@ -15,8 +15,12 @@ import (
 // one per-call pipeline — hook verdict → permission rules → mode/class/human
 // decision — invoked for EVERY tool call in runTurn's loop, in BOTH dispatch
 // branches (batch-eligible AND subagent). One pipeline, one seam: Phase 21's
-// hooks join at its HEAD (the GATE PIPELINE LOCK); there is no second
-// permission path for subagents or engine turns.
+// hooks joined at its HEAD (the GATE PIPELINE LOCK, live since 21-06); there
+// is no second permission path for subagents or engine turns. The documented
+// precedence, verbatim: hook verdict → permission ask → execute — hooks are
+// checked BEFORE permission rules (D-04, CC parity), the ask carries the
+// call only when neither a hook nor a rule decided it, and execution is the
+// fall-through.
 //
 // Why here and not lower (17-RESEARCH Pattern 1): toolexec's per-call
 // deadline wrap (executeBounded, default 120s) would deadline-kill any
@@ -160,8 +164,9 @@ func (s *Session) SetPermissionGate(deps GateDeps) { s.gate = &deps }
 func (s *Session) SetTurnOriginAutomation(v bool) { s.automationTurn.Store(v) }
 
 // gateCall is THE per-call permission pipeline (D-04/D-05). See the
-// package-file doc for the placement rationale.
-func (s *Session) gateCall(turnID, callID, tool string, input json.RawMessage) gateVerdict {
+// package-file doc for the placement rationale and the precedence contract:
+// hook verdict → permission ask → execute, decided at this one chokepoint.
+func (s *Session) gateCall(ctx context.Context, turnID, callID, tool string, input json.RawMessage) gateVerdict {
 	_ = turnID
 	_ = callID
 
@@ -173,11 +178,15 @@ func (s *Session) gateCall(turnID, callID, tool string, input json.RawMessage) g
 	}
 
 	// ── Step 1: hook verdict head (D-04 — hooks are checked BEFORE permission
-	// rules; CC parity, the blocking-hook precedent). PHASE 21 JOINS HERE, at
-	// this exact seam: a blocking hook deny returns gateDeny; PAR-03's
-	// deny-only authority (hooks never grant allow) means every allow case
-	// still falls through to the rules below. Today: implicit allow — no hook
-	// surface exists at the turn loop yet.
+	// rules; CC parity, the blocking-hook precedent). 21-06: the join is LIVE
+	// — one delegation to the injected PreToolUseVerdict (21-01's ecosys
+	// seam, the deny-wins resolver) and one total mapping; NO-DECISION is the
+	// only fall-through (T-21-20: deny, ask, allow, and none each have
+	// exactly one gateVerdict target, so a deny can never be spoofed into a
+	// fall-through by a mapping gap).
+	if v, decided := s.gateHookVerdict(ctx, tool, input); decided {
+		return v
+	}
 
 	// ── Step 2: permission rules — evaluated in BOTH modes (D-05, Pitfall 5):
 	// "ungated = no dialogs" never means "no evaluation".
@@ -245,6 +254,40 @@ func (s *Session) gateCall(turnID, callID, tool string, input json.RawMessage) g
 	// ask marker — the turn mutex is released; the dialog answer drives the
 	// resume.
 	return gateVerdict{action: gateSuspend}
+}
+
+// gateHookVerdict is the HEAD of gateCall (21-06, D-04): ONE delegation to
+// the injected PreToolUseVerdict and ONE mapping onto the gateVerdict enum —
+// the head consults NOTHING else. decided=false means no decision (or no
+// hook surface wired): the caller falls through to rule evaluation exactly
+// as the pre-join implicit-allow head did. The mapping:
+//
+//	deny  → gateDeny carrying the FIRST denying hook's reason as the
+//	        structured error result (the resolver picked the reason, D-03)
+//	ask   → gateSuspend UNCONDITIONALLY (D-04: even ungated — the
+//	        operator's escalation lever rides the EXISTING queued
+//	        permission ask from 17-02/17-03; no new ask path exists)
+//	allow → gateExecute (USER scope only — 21-01's resolver already
+//	        demoted every non-user allow, so the gate never sees a project
+//	        allow, D-01; the allow is hook-scoped, never persisted)
+//	none  → fall through to the rules (silence never approves, Pitfall 4)
+func (s *Session) gateHookVerdict(
+	ctx context.Context, tool string, input json.RawMessage,
+) (verdict gateVerdict, decided bool) { //nolint:nonamedreturns // the ok-pair idiom
+	if s.gate == nil || s.gate.PreToolUseVerdict == nil {
+		return gateVerdict{}, false // no hook surface — the pre-join implicit allow
+	}
+
+	switch v, reason := s.gate.PreToolUseVerdict(ctx, tool, input); v {
+	case ecosys.VerdictDeny:
+		return gateVerdict{action: gateDeny, result: permissionHookDenyForm(tool, reason)}, true
+	case ecosys.VerdictAsk:
+		return gateVerdict{action: gateSuspend}, true
+	case ecosys.VerdictAllow:
+		return gateVerdict{action: gateExecute}, true
+	default:
+		return gateVerdict{}, false // VerdictNone — NO-DECISION
+	}
 }
 
 // gateMode resolves the live mode through the injected accessor (empty → the
@@ -463,6 +506,25 @@ func permissionDenyForm(tool string) json.RawMessage {
 	out, err := json.Marshal(map[string]string{
 		mapKeyError: fmt.Sprintf("Permission denied: %s is denied by the project permission rules; "+
 			"the call was not executed.", tool),
+	})
+	if err != nil {
+		return json.RawMessage(`{"error":"permission denied (form render failed)"}`)
+	}
+
+	return out
+}
+
+// permissionHookDenyForm renders the structured hook-denial result
+// (isErr=true): a blocking PreToolUse hook refused the call BEFORE rule
+// evaluation (D-04), carrying the first denying hook's reason (D-03).
+func permissionHookDenyForm(tool, reason string) json.RawMessage {
+	if reason == "" {
+		reason = "no reason given"
+	}
+
+	out, err := json.Marshal(map[string]string{
+		mapKeyError: fmt.Sprintf("Permission denied: %s is denied by a PreToolUse hook (%s); "+
+			"the call was not executed.", tool, reason),
 	})
 	if err != nil {
 		return json.RawMessage(`{"error":"permission denied (form render failed)"}`)
