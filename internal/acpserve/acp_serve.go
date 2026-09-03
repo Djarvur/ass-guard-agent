@@ -338,6 +338,21 @@ func Run( //nolint:funlen // :320-425
 	runner.SetEmitter(srv.Emitter) // WINDOWS #3: server-driven turns reach the client
 	runner.StartScheduler(ctx)
 
+	// 18-06 (D-10, one load engine — two entrypoints): the CLI resume trio's
+	// resolved target loads through the SAME Server.LoadSession core
+	// session/load uses (adopt+reconcile → replay through the ordered emitter
+	// → D-03 gate — 18-01/18-05), BEFORE Serve begins reading stdin: the
+	// replayed frames reach the client with zero client input, and any
+	// follow-up prompt continues the turn sequence. A load failure is a LOUD
+	// fatal naming the target — the CLI user asked for THAT session, never a
+	// silently fresh serve.
+	if opts.ResumeTarget != "" {
+		_, lerr := srv.LoadSession(ctx, opts.ResumeTarget)
+		if lerr != nil {
+			return fmt.Errorf("resume target %s: %w", opts.ResumeTarget, lerr)
+		}
+	}
+
 	// Phase 5 (Plan 05-02 T4): when the server-level ctx is cancelled
 	// (SIGINT/SIGTERM), close every live session's MCP host so no subprocess
 	// outlives the ass-guard process. Serve returns after ctx cancellation.
