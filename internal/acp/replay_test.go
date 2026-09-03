@@ -5,9 +5,12 @@ package acp //nolint:testpackage // internal package test
 // emitter (the tolerant-reader + full agent-visible vocabulary pin).
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -363,5 +366,335 @@ func TestReplayTranscriptRejectsBadSource(t *testing.T) {
 	err = ReplayTranscript(rec, dir, replayFixtureSID)
 	if !errors.Is(err, errReplayNotRegular) {
 		t.Errorf("symlink replay error = %v; want errReplayNotRegular", err)
+	}
+}
+
+// --- 18-05: the full load-path ordering battery (D-02/D-03/ACP-06) ---
+
+// loadOrderingSID fixtures' session id (a loadSessIDPattern-clean UUID form).
+const loadOrderingSID = "bbbbbbbb-0b0b-4c0c-8d0d-0e0e0e0e0e0e"
+
+// updKindAvailableCommands is the v1 sessionUpdate kind the load path
+// re-advertises the resumed session's command set with (18-05, ACP-06
+// "commands re-advertised").
+const updKindAvailableCommands = "available_commands_update"
+
+// modeStateView is the test-side view of the response's v1 modes field.
+type modeStateView struct {
+	AvailableModes []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"availableModes"` //nolint:tagliatelle // ACP wire field
+	CurrentModeID string `json:"currentModeId"` //nolint:tagliatelle // ACP wire field
+}
+
+// danglingPlanModeLines is the class-01 + row-6 fixture: a user-message turn
+// with a dangling Bash tool_call and an open chunk stream, whose LAST
+// plan_mode line is an enter, and no session_end.
+func danglingPlanModeLines(sid string) []string {
+	turn := sid + "-turn-001"
+
+	return []string{
+		`{"type":"session_start","timestamp":"2026-09-02T12:00:00Z","text":"` + sid + `"}`,
+		`{"type":"user_message","turnID":"` + turn + `","timestamp":"2026-09-02T12:00:00Z",` +
+			`"content":[{"type":"text","text":"run it"}]}`,
+		`{"type":"agent_message_chunk","turnID":"` + turn + `","timestamp":"2026-09-02T12:00:00Z",` +
+			`"messageID":"` + turn + `","text":"working "}`,
+		`{"type":"tool_call","turnID":"` + turn + `","timestamp":"2026-09-02T12:00:00Z",` +
+			`"toolCallID":"call-9","name":"Bash","input":{"command":"make test"}}`,
+		`{"type":"plan_mode","turnID":"` + turn + `","timestamp":"2026-09-02T12:00:00Z",` +
+			`"cause":"plan_mode_enter","toolCallID":"call-8"}`,
+	}
+}
+
+// danglingPlainLines is the same dangling shape with NO plan_mode line (the
+// modes-null arm).
+func danglingPlainLines(sid string) []string {
+	turn := sid + "-turn-001"
+
+	return []string{
+		`{"type":"session_start","timestamp":"2026-09-02T12:00:00Z","text":"` + sid + `"}`,
+		`{"type":"user_message","turnID":"` + turn + `","timestamp":"2026-09-02T12:00:00Z",` +
+			`"content":[{"type":"text","text":"run it"}]}`,
+		`{"type":"tool_call","turnID":"` + turn + `","timestamp":"2026-09-02T12:00:00Z",` +
+			`"toolCallID":"call-9","name":"Bash","input":{"command":"make test"}}`,
+	}
+}
+
+// manyChunkLines pads a fixture with chunk lines so an unread client pipe
+// deterministically parks the replay mid-stream (the 18-01 gate-test trick).
+func manyChunkLines(sid string, n int) []string {
+	turn := sid + "-turn-001"
+
+	out := make([]string, 0, n+1)
+
+	for i := range n {
+		out = append(out, `{"type":"agent_message_chunk","turnID":"`+turn+
+			`","timestamp":"2026-09-02T12:00:00Z","messageID":"`+turn+`","text":"c`+
+			strconv.Itoa(i)+`"}`)
+	}
+
+	return out
+}
+
+// sendPrompt sends one session/prompt for the id (the battery's shared shape).
+func sendPrompt(t *testing.T, h *pipeHarness, reqID int, sessionID, text string) {
+	t.Helper()
+
+	h.send(t, newRequest(reqID, "session/prompt", map[string]any{
+		keySessionID:  sessionID,
+		testKeyPrompt: []any{map[string]string{testKeyTxtBlock: blockText, blockText: text}},
+	}))
+}
+
+// decodeLoadModes decodes the load response's modes field (nil-safe).
+func decodeLoadModes(t *testing.T, msg *Message) *modeStateView {
+	t.Helper()
+
+	var res struct {
+		Modes *modeStateView `json:"modes"`
+	}
+
+	uerr := json.Unmarshal(msg.Result, &res)
+	if uerr != nil {
+		t.Fatalf("unmarshal load result: %v (raw=%s)", uerr, string(msg.Result))
+	}
+
+	return res.Modes
+}
+
+// TestLoadFullOrdering pins the D-03/D-02/ACP-06 ordering contract end-to-end
+// through the Server load core: the client pipe receives the replay INCLUDING
+// the synthetic closures' terminal frames, then the available_commands_update
+// re-advertisement, then the response — whose modes field carries the seeded
+// plan-mode state exactly when the fixture's last plan_mode line is an enter
+// (null otherwise); a prompt DURING the parked replay is typed-rejected, and
+// a prompt after load is accepted with the turn id continuing the sequence.
+//
+//nolint:funlen,gocyclo,cyclop // one ordered wire-flow assertion end-to-end
+func TestLoadFullOrdering(t *testing.T) {
+	t.Parallel()
+
+	store := t.TempDir()
+	sid := loadOrderingSID
+
+	// Enough chunk lines that the unread client pipe + shrunken foreground
+	// lane park the replay mid-stream (the D-03 during-replay arm).
+	lines := append(danglingPlanModeLines(sid), manyChunkLines(sid, 60)...)
+
+	writeLoadFixture(t, store, sid, lines)
+
+	runner := newFakeResumeRunner(store)
+
+	h := newPipeHarness(t,
+		WithWorkDir(store),
+		WithTurnRunner(runner),
+		WithTurnEmitter(TurnEmitterConfig{ForegroundCapacity: 1}))
+
+	sendLoad(t, h, 1, sid, store)
+
+	// One frame read: the replay is provably underway; the unread pipe parks it.
+	first := h.readFrame(t)
+	if first.Method != methodSessionUpdate {
+		t.Fatalf("first frame after load = %v; want a session/update", first.Method)
+	}
+
+	// The concurrent prompt: typed rejection naming the replay state (D-03).
+	sendPrompt(t, h, 2, sid, "too early")
+
+	during := readUntilResponse(t, h, 2, nil)
+	if during.Error == nil {
+		t.Fatalf("prompt during replay accepted: %s (D-03 violated)", string(during.Result))
+	}
+
+	if !strings.Contains(during.Error.Message, "replay") {
+		t.Errorf("prompt-during-replay message = %q; want it to name the replay state",
+			during.Error.Message)
+	}
+
+	// Drain: collect the wire story until the load response.
+	var (
+		kinds        []string
+		sawClosure   bool
+		sawCommands  bool
+		commandsAt   = -1
+		lastReplayAt = -1
+	)
+
+	loadResp := readUntilResponse(t, h, 1, func(u *updateFrame) {
+		at := len(kinds)
+		kinds = append(kinds, u.Update.SessionUpdate)
+
+		switch u.Update.SessionUpdate {
+		case updKindToolCallUpdate:
+			// The synthetic closure renders as a terminal failed update for
+			// the dangling call (isError=true -> StatusFailed).
+			if u.Update.ToolCallID == "call-9" && u.Update.Status == StatusFailed {
+				sawClosure = true
+				lastReplayAt = at
+			}
+		case updKindAvailableCommands:
+			sawCommands = true
+			commandsAt = at
+		case updKindAgentMessageChunk, updKindToolCall:
+			lastReplayAt = at
+		}
+	})
+
+	if loadResp.Error != nil {
+		t.Fatalf("session/load errored: %+v", loadResp.Error)
+	}
+
+	if !sawClosure {
+		t.Errorf("replay missing the closure's terminal frame (call-9 failed); kinds=%v", kinds)
+	}
+
+	if !sawCommands {
+		t.Fatalf("no available_commands_update frame after the replay frames; kinds=%v", kinds)
+	}
+
+	if commandsAt < lastReplayAt {
+		t.Errorf("available_commands_update at %d precedes the last replay frame at %d; "+
+			"want it AFTER the replay, BEFORE the response (kinds=%v)", commandsAt, lastReplayAt, kinds)
+	}
+
+	if len(loadResp.Result) == 0 || !json.Valid(loadResp.Result) {
+		t.Fatalf("load result malformed: %s", string(loadResp.Result))
+	}
+
+	// modes carries the seeded plan-mode state (the fixture's last plan_mode
+	// line is an enter): the v1 SessionModeState shape with currentModeId plan.
+	modes := decodeLoadModes(t, loadResp)
+	if modes == nil {
+		t.Fatalf("load response modes = null; want the seeded plan-mode state (raw=%s)",
+			string(loadResp.Result))
+	}
+
+	if modes.CurrentModeID != "plan" {
+		t.Errorf("modes.currentModeId = %q; want \"plan\" (the persisted target)", modes.CurrentModeID)
+	}
+
+	if len(modes.AvailableModes) < 2 {
+		t.Errorf("modes.availableModes = %+v; want the default+plan pair", modes.AvailableModes)
+	}
+
+	// The post-load prompt is accepted; its turn id continues the sequence.
+	sendPrompt(t, h, 3, sid, "after load")
+
+	after := readUntilResponse(t, h, 3, nil)
+	if after.Error != nil {
+		t.Fatalf("post-load prompt errored: %+v (the gate must open after replay)", after.Error)
+	}
+
+	wantTurn := sid + "-turn-002"
+
+	found := false
+
+	for _, id := range fixtureTurnIDs(t, store, sid) {
+		if id == wantTurn {
+			found = true
+		}
+	}
+
+	if !found {
+		t.Errorf("post-load turn id did not continue the sequence: no %q on disk", wantTurn)
+	}
+}
+
+// TestLoadModesNullWithoutPlanMode pins the modes-null arm: a dangling fixture
+// with NO plan_mode line answers modes null (the client assumes defaults).
+func TestLoadModesNullWithoutPlanMode(t *testing.T) {
+	t.Parallel()
+
+	store := t.TempDir()
+	sid := loadOrderingSID
+
+	writeLoadFixture(t, store, sid, danglingPlainLines(sid))
+
+	h := newPipeHarness(t, WithWorkDir(store), WithTurnRunner(newFakeResumeRunner(store)))
+
+	sendLoad(t, h, 1, sid, store)
+
+	loadResp := readUntilResponse(t, h, 1, nil)
+	if loadResp.Error != nil {
+		t.Fatalf("session/load errored: %+v", loadResp.Error)
+	}
+
+	if modes := decodeLoadModes(t, loadResp); modes != nil {
+		t.Errorf("load response modes = %+v; want null (no plan_mode line on the transcript)", modes)
+	}
+
+	if !strings.Contains(string(loadResp.Result), `"modes":null`) {
+		t.Errorf("load result = %s; want the modes key present and null", string(loadResp.Result))
+	}
+}
+
+// TestLoadDoubleRegistration pins the 18-05 registration guard: loading an
+// already-registered live session id returns the TYPED already-active error,
+// while a load whose predecessor died mid-load (closures appended,
+// registration never reached — constructed by calling ResumeSession directly
+// without the handler) completes successfully (kill-during-replay
+// idempotency, the second ResumeSession classifies clean).
+func TestLoadDoubleRegistration(t *testing.T) {
+	t.Parallel()
+
+	store := t.TempDir()
+	sid := loadOrderingSID
+
+	writeLoadFixture(t, store, sid, danglingPlainLines(sid))
+
+	runner := newFakeResumeRunner(store)
+	h := newPipeHarness(t, WithWorkDir(store), WithTurnRunner(runner))
+
+	sendLoad(t, h, 1, sid, store)
+
+	first := readUntilResponse(t, h, 1, nil)
+	if first.Error != nil {
+		t.Fatalf("first session/load errored: %+v", first.Error)
+	}
+
+	// The already-registered live id: the typed already-active error.
+	sendLoad(t, h, 2, sid, store)
+
+	second := readUntilResponse(t, h, 2, nil)
+	if second.Error == nil {
+		t.Fatalf("second session/load of the live id succeeded: %s (want the typed already-active error)",
+			string(second.Result))
+	}
+
+	if second.Error.Code == 0 {
+		t.Error("already-active error code = 0; want a typed JSON-RPC error code")
+	}
+
+	if !strings.Contains(second.Error.Message, "already active") {
+		t.Errorf("already-active message = %q; want it to name the already-active state",
+			second.Error.Message)
+	}
+
+	// The simulated mid-load interruption: the runner resumed (closures on
+	// disk) but the handler-side registration never happened.
+	sid2 := "cccccccc-0b0b-4c0c-8d0d-0e0e0e0e0e0e"
+
+	writeLoadFixture(t, store, sid2, danglingPlainLines(sid2))
+
+	rerr := runner.ResumeSession(context.Background(), sid2)
+	if rerr != nil {
+		t.Fatalf("direct ResumeSession: %v", rerr)
+	}
+
+	sendLoad(t, h, 3, sid2, store)
+
+	third := readUntilResponse(t, h, 3, nil)
+	if third.Error != nil {
+		t.Fatalf("load after the simulated mid-load interruption errored: %+v (idempotency violated)",
+			third.Error)
+	}
+
+	// The interrupted-then-completed session accepts prompts.
+	sendPrompt(t, h, 4, sid2, "continue")
+
+	fourth := readUntilResponse(t, h, 4, nil)
+	if fourth.Error != nil {
+		t.Fatalf("post-load prompt on the interrupted-then-completed session errored: %+v", fourth.Error)
 	}
 }

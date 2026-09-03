@@ -119,50 +119,91 @@ func fixtureTurnIDs(t *testing.T, storeDir, sessionID string) []string {
 
 // fakeResumeRunner is the Session-family test TurnRunner: it implements the
 // TurnRunner seam AND the 18-01 SessionLoader optional capability the way
-// runtime.Runner does — ResumeSession adopts the transcript's id seeding the
-// turn counter from the transcript maxima; Run then advances the counter
-// (Add-then-format, Session.nextTurnID semantics) and appends the new turn's
-// line, making the id-continuation contract observable on disk.
+// runtime.Runner does — 18-05 widened the mirror to the FULL resume contract:
+// ResumeSession reconciles the transcript (session.Reconcile), appends every
+// provenance-marked closure through Manager.AppendSynthetic, seeds the turn
+// counter from the maxima, and records the seeded plan-mode state for
+// ModeStateProvider (LoadedModes). Run then advances the counter (Add-then-
+// format, Session.nextTurnID semantics) and appends the new turn's line,
+// making the id-continuation contract observable on disk.
 type fakeResumeRunner struct {
 	workDir string
 
-	mu   sync.Mutex
-	seed map[string]int64 // sessionID -> current turn counter
+	mu    sync.Mutex
+	seed  map[string]int64 // sessionID -> current turn counter
+	modes map[string]any    // sessionID -> seeded v1 SessionModeState shape (nil = wire null)
 }
 
 func newFakeResumeRunner(workDir string) *fakeResumeRunner {
-	return &fakeResumeRunner{workDir: workDir, seed: map[string]int64{}}
+	return &fakeResumeRunner{workDir: workDir, seed: map[string]int64{}, modes: map[string]any{}}
 }
 
-// ResumeSession seeds the per-session counter from the transcript's max
-// <sessionID>-turn-%03d suffix (Pitfall 2: ids continue, never restart).
+// passthroughRedactor is the fake's no-op session.Redactor (synthetic
+// closures cross the same append path live lines do — content unchanged).
+type passthroughRedactor struct{}
+
+func (passthroughRedactor) Redact(b []byte) ([]byte, error) { return b, nil }        //nolint:wrapcheck // passthrough
+func (passthroughRedactor) ScrubError(err error) string     { return err.Error() } //nolint:wrapcheck // passthrough
+
+// fakeModesShape mirrors the v1 SessionModeState shape the production load
+// path builds (availableModes + currentModeId; the fake pins the wire shape
+// independently of session's builder).
+func fakeModesShape(seed session.Seed) any {
+	if !seed.PlanModePresent {
+		return nil
+	}
+
+	current := "default"
+	if seed.PlanMode == session.PlanModeCauseEnter {
+		current = "plan"
+	}
+
+	return map[string]any{
+		"availableModes": []map[string]string{
+			{"id": "default", "name": "Default"},
+			{"id": "plan", "name": "Plan"},
+		},
+		"currentModeId": current,
+	}
+}
+
+// ResumeSession performs the full 18-05 transcript-side resume (the
+// runtime.Runner mirror): reconcile → append closures → seed (counter +
+// plan-mode target).
 func (f *fakeResumeRunner) ResumeSession(_ context.Context, sessionID string) error {
-	ids := scanTurnIDs(filepath.Join(f.workDir, ".ass-guard", "transcript_"+sessionID+".jsonl"))
+	mgr, err := session.NewManager(f.workDir, sessionID, passthroughRedactor{})
+	if err != nil {
+		return err //nolint:wrapcheck // test fake: the typed construction error
+	}
 
-	prefix := sessionID + "-turn-"
+	defer func() { _ = mgr.Close() }()
 
-	var turnMax int64
+	lines, _ := mgr.ReadAll()
 
-	for _, id := range ids {
-		if !strings.HasPrefix(id, prefix) {
-			continue
-		}
+	closures, seed := session.Reconcile(sessionID, lines)
 
-		n, err := strconv.ParseInt(strings.TrimPrefix(id, prefix), 10, 64)
-		if err != nil || n <= 0 {
-			continue
-		}
-
-		if n > turnMax {
-			turnMax = n
+	for i := range closures {
+		if aerr := mgr.AppendSynthetic(&closures[i]); aerr != nil {
+			return aerr //nolint:wrapcheck // test fake: the append error verbatim
 		}
 	}
 
 	f.mu.Lock()
-	f.seed[sessionID] = turnMax
+	f.seed[sessionID] = seed.MaxTurns
+	f.modes[sessionID] = fakeModesShape(seed)
 	f.mu.Unlock()
 
 	return nil
+}
+
+// LoadedModes satisfies the acp ModeStateProvider optional capability the way
+// runtime.Runner does: the seeded plan-mode state for the load response's
+// modes field (nil = wire null).
+func (f *fakeResumeRunner) LoadedModes(sessionID string) any {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return f.modes[sessionID]
 }
 
 // Run appends the next turn's user_message line (counter+1, %03d) and emits
@@ -213,8 +254,8 @@ func (f *fakeResumeRunner) Run(
 	return stopEndTurn, nil
 }
 
-// scanTurnIDs is the fake's transcript turnID reader (nil on any open error —
-// the seed then degrades to 0, the same loud-degrade contract the runtime has).
+// scanTurnIDs is the package tests' transcript turnID reader (nil on any
+// open error; fixtureTurnIDs is the asserting variant).
 func scanTurnIDs(path string) []string {
 	f, err := os.Open(path)
 	if err != nil {
@@ -249,6 +290,13 @@ type updateFrame struct {
 		Status        string          `json:"status,omitempty"`
 		MessageID     string          `json:"messageId,omitempty"` //nolint:tagliatelle // ACP wire field
 		Content       json.RawMessage `json:"content,omitempty"`
+
+		// AvailableCommands carries the available_commands_update payload
+		// (18-05): the full v1 AvailableCommand set.
+		AvailableCommands []struct {
+			Name        string  `json:"name"`
+			Description *string `json:"description"`
+		} `json:"availableCommands,omitempty"` //nolint:tagliatelle // ACP wire field
 	} `json:"update"`
 }
 
