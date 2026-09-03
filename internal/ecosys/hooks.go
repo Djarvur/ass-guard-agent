@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -148,6 +149,10 @@ func NewHookRunner(hooks []HookConfig, sessionID, workDir, transcriptPath string
 	}
 }
 
+// scopeRankPlugin is the lowest D-03 firing rank (the plugin tier; future
+// scopes sort with it — fail-soft).
+const scopeRankPlugin = 2
+
 // scopeRank is the D-03 firing rank: project settings first, then user
 // settings, then plugin bundles. Ordering ONLY — authority is deny-wins in
 // ResolveVerdict, never this rank.
@@ -157,8 +162,10 @@ func scopeRank(s HookScope) int {
 		return 0
 	case scopeUser:
 		return 1
+	case scopePlugin:
+		return scopeRankPlugin
 	default:
-		return 2 // scopePlugin — the lowest firing tier
+		return scopeRankPlugin
 	}
 }
 
@@ -289,7 +296,9 @@ func (r *HookRunner) Fire(ctx context.Context, event string, fields map[string]a
 // This is the structured seam the Phase-17 gate head consumes when 21-06
 // joins hooks to gateCall — the RESOLUTION site; consumption stays the
 // gate's alone. Nil runner is a safe no-op (no decision).
-func (r *HookRunner) PreToolUseVerdict(ctx context.Context, toolName string, input json.RawMessage) (Verdict, string) {
+func (r *HookRunner) PreToolUseVerdict(
+	ctx context.Context, toolName string, input json.RawMessage,
+) (verdict Verdict, reason string) { //nolint:nonamedreturns // the D-02 verdict pair
 	if r == nil {
 		return verdictNone, ""
 	}
@@ -304,15 +313,15 @@ func (r *HookRunner) PreToolUseVerdict(ctx context.Context, toolName string, inp
 			keyToolInput: input,
 		})
 
-		v, reason := parseHookVerdict(res.stdout, res.runErr)
+		v, resReason := parseHookVerdict(res.stdout, res.runErr)
 		if res.refused {
 			// Exit 2 already yields deny; upgrade the reason to
 			// classifyHookRun's stderr-first extraction (D-02 — the only
 			// place stderr exists).
-			reason = res.message
+			resReason = res.message
 		}
 
-		results = append(results, ScopedResult{Scope: matches[i].Scope, Verdict: v, Reason: reason})
+		results = append(results, ScopedResult{Scope: matches[i].Scope, Verdict: v, Reason: resReason})
 	}
 
 	return ResolveVerdict(results)
@@ -324,9 +333,9 @@ func (r *HookRunner) PreToolUseVerdict(ctx context.Context, toolName string, inp
 // refuses with the reason, everything else proceeds. The executor leg keeps
 // this pair until 21-06 disposes it at the gate join (Pitfall 2: no
 // double-fire before the gate head goes live).
-func (r *HookRunner) PreToolUse( //nolint:nonamedreturns // implements the coreexec.ToolHooks pair
+func (r *HookRunner) PreToolUse(
 	ctx context.Context, toolName string, input json.RawMessage,
-) (proceed bool, message string) {
+) (proceed bool, message string) { //nolint:nonamedreturns // implements the coreexec.ToolHooks pair
 	if v, reason := r.PreToolUseVerdict(ctx, toolName, input); v == verdictDeny {
 		return false, reason
 	}
@@ -409,15 +418,11 @@ func isSettingsScope(s HookScope) bool {
 // matches "NotebookEdit" while settings matcher "Edit" does not.
 func matchSettingsHook(matcher, toolName string) bool {
 	if settingsMatcherExactSet(matcher) {
-		for _, alt := range strings.FieldsFunc(matcher, func(r rune) bool {
+		alts := strings.FieldsFunc(matcher, func(r rune) bool {
 			return r == '|' || r == ',' || r == ' '
-		}) {
-			if alt == toolName {
-				return true
-			}
-		}
+		})
 
-		return false
+		return slices.Contains(alts, toolName)
 	}
 
 	re, err := regexp.Compile(matcher)

@@ -147,20 +147,23 @@ func loadSettingsHooks(claudeDir string, scope HookScope) []HookConfig {
 
 		path = filepath.Join(claudeDir, settingsJSONName)
 	case scopeUser:
-		home, err := os.UserHomeDir()
-		if err != nil {
-			logPluginSkipf("user settings hooks: home dir unavailable (skipped): %v", err)
+		home, uerr := os.UserHomeDir()
+		if uerr != nil {
+			logPluginSkipf("user settings hooks: home dir unavailable (skipped): %v", uerr)
 
 			return nil
 		}
 
 		path = filepath.Join(home, claudeDirName, settingsJSONName)
-	default:
+	case scopePlugin:
 		return nil // plugin scope has its own loader (parseHooksJSON)
+	default:
+		return nil
 	}
 
 	// Oversized settings skip loudly (readCapped re-guards the read itself).
-	if info, err := os.Stat(path); err == nil && info.Size() > pluginArtifactMaxBytes {
+	info, statErr := os.Stat(path)
+	if statErr == nil && info.Size() > pluginArtifactMaxBytes {
 		logPluginSkipf("settings %s exceeds %d bytes (hooks skipped)", path, pluginArtifactMaxBytes)
 
 		return nil

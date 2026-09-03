@@ -76,7 +76,7 @@ const (
 // exit-2 reason here is the capped stdout (the only channel this signature
 // sees); the composed runner path upgrades it to classifyHookRun's
 // stderr-first extraction.
-func parseHookVerdict(stdout string, runErr error) (Verdict, string) {
+func parseHookVerdict(stdout string, runErr error) (verdict Verdict, reason string) { //nolint:nonamedreturns // D-02
 	if runErr != nil {
 		var exitErr *exec.ExitError
 		if errors.As(runErr, &exitErr) && exitErr.ExitCode() == hookRefusalExitCode {
@@ -93,9 +93,9 @@ func parseHookVerdict(stdout string, runErr error) (Verdict, string) {
 
 	var raw struct {
 		HookSpecificOutput struct {
-			PermissionDecision       string `json:"permissionDecision"`
-			PermissionDecisionReason string `json:"permissionDecisionReason"`
-		} `json:"hookSpecificOutput"`
+			PermissionDecision       string `json:"permissionDecision"`       //nolint:tagliatelle // CC wire field
+			PermissionDecisionReason string `json:"permissionDecisionReason"` //nolint:tagliatelle // CC wire field
+		} `json:"hookSpecificOutput"` //nolint:tagliatelle // CC wire field
 	}
 
 	// Schema-invalid JSON (truncated body, wrong-typed fields) unmarshals to
@@ -130,7 +130,7 @@ func parseHookVerdict(stdout string, runErr error) (Verdict, string) {
 //     widen trust (D-01/T-21-01).
 //   - ask survives unless a deny exists (D-04).
 //   - All no-decision (or empty input) → verdictNone.
-func ResolveVerdict(results []ScopedResult) (Verdict, string) { //nolint:nonamedreturns // documents the pair
+func ResolveVerdict(results []ScopedResult) (verdict Verdict, reason string) { //nolint:nonamedreturns // D-01..D-04
 	var (
 		firstDeny *ScopedResult
 		firstAsk  *ScopedResult
@@ -186,6 +186,8 @@ func scopeName(s HookScope) string {
 		return "project"
 	case scopeUser:
 		return "user"
+	case scopePlugin:
+		return "plugin"
 	default:
 		return "plugin"
 	}
