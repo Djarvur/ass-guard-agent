@@ -204,8 +204,8 @@ func TestHookJoin_ReadRuleEvaluatorBackedByPerm(t *testing.T) { //nolint:paralle
 			t.Fatal("sessionFor returned nil")
 		}
 
-		if r.readRuleEvaluator == nil {
-			t.Fatal("readRuleEvaluator not wired by the 21-06 join (still the nil implicit-allow default)")
+		if r.permStore.Load() == nil {
+			t.Fatal("the Runner-scoped perm store was not opened (mention seam still implicit-allow)")
 		}
 
 		got := r.expandUserBlocks(sess, []session.ContentBlock{
@@ -235,8 +235,8 @@ func TestHookJoin_ReadRuleEvaluatorBackedByPerm(t *testing.T) { //nolint:paralle
 			t.Fatal("sessionFor returned nil")
 		}
 
-		if r.readRuleEvaluator == nil {
-			t.Fatal("readRuleEvaluator not wired by the 21-06 join")
+		if r.permStore.Load() == nil {
+			t.Fatal("the Runner-scoped perm store was not opened")
 		}
 
 		got := r.expandUserBlocks(sess, []session.ContentBlock{
@@ -247,4 +247,55 @@ func TestHookJoin_ReadRuleEvaluatorBackedByPerm(t *testing.T) { //nolint:paralle
 			t.Errorf("ask rule must not deny a mention (only VerdictDeny does):\n%q", got[0].Text)
 		}
 	})
+}
+
+// TestHookJoin_OneLiveRuleAuthority (21-REVIEW WR-03): the perm store is
+// RUNNER-scoped — session B's reject_always dialog click (Store.ForbidTool,
+// the gate's Forbid seam) lands in the SAME live instance session A's gate
+// and the @-mention Read-rule consult answer to. The old wiring pinned the
+// FIRST-wired session's store into the mention seam forever, so the click
+// governed B's gate while A's mention gating stayed on the stale snapshot —
+// a Read path rejected in B could still expand via @mention in B.
+func TestHookJoin_OneLiveRuleAuthority(t *testing.T) { //nolint:paralleltest // HOME pin
+	r, _ := memRunner(t, func(dir string) { mentionFixture(t, dir) })
+
+	sessA := r.sessionFor(context.Background(), "sess-authority-a")
+	if sessA == nil {
+		t.Fatal("sessionFor A returned nil")
+	}
+
+	// Before any rule exists: the mention expands (implicit allow).
+	before := r.expandUserBlocks(sessA, []session.ContentBlock{
+		{Type: blockText, Text: "review @notes.md"},
+	})
+	if !strings.Contains(before[0].Text, mentionFileBody) {
+		t.Fatalf("pre-rule mention did not expand:\n%q", before[0].Text)
+	}
+
+	// Session B is constructed AFTER A wired the seam — the divergence case.
+	if sessB := r.sessionFor(context.Background(), "sess-authority-b"); sessB == nil {
+		t.Fatal("sessionFor B returned nil")
+	}
+
+	st := r.permStore.Load()
+	if st == nil {
+		t.Fatal("the Runner-scoped perm store was never opened by sessionFor")
+	}
+
+	// The reject_always click: the dialog write the gate's Forbid seam makes.
+	if err := st.ForbidTool("Read"); err != nil {
+		t.Fatalf("ForbidTool (the reject_always click): %v", err)
+	}
+
+	after := r.expandUserBlocks(sessA, []session.ContentBlock{
+		{Type: blockText, Text: "review @notes.md"},
+	})
+	if !strings.Contains(after[0].Text, "[@notes.md] could not be expanded:") {
+		t.Fatalf("session B's reject_always click did not govern session A's mention gating "+
+			"(divergent rule authorities):\n%q", after[0].Text)
+	}
+
+	if strings.Contains(after[0].Text, mentionFileBody) {
+		t.Fatalf("denied @file content leaked into the prompt:\n%q", after[0].Text)
+	}
 }

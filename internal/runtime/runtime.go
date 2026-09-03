@@ -176,12 +176,23 @@ type Runner struct {
 	// enters the prompt; an absolute @path additionally needs an explicit
 	// allow just to be ADMITTED (nil admits nothing outside the workspace —
 	// ingress resolution is never a whole-FS existence oracle, T-21-14).
-	// 21-06 join: sessionFor wires this to the perm rule-set provider the
-	// gate consumes (perm.RuleSet.Evaluate(tool, path): VerdictDeny → deny,
-	// else allow) — ONE consumption site riding the existing seam, never a
-	// second gate pipeline; nil (a rule-less session) keeps the implicit
-	// in-workspace allow.
+	// TESTS inject custom evaluators here; production consults the
+	// Runner-scoped perm store below (readRuleEval — ONE rule authority with
+	// the gate, 21-REVIEW WR-02/WR-03) and NEVER writes this field, so the
+	// lock-free turn-time reads are race-free by construction.
 	readRuleEvaluator func(tool, path string) bool
+
+	// permStore is the Runner-scoped perm store (21-REVIEW WR-02/WR-03): ONE
+	// live rule authority per project/serve. All sessions share the workDir
+	// (hence one permissions.yaml) — per-session stores were one FILE but N
+	// divergent in-memory instances: an allow_always/reject_always click in
+	// session B updated B's memory while other seams kept consulting a stale
+	// instance. Opened lazily by the first sessionFor that succeeds (under
+	// sessMu) and published ATOMICALLY, so the lock-free turn-time mention
+	// reads (readRuleEval) race cleanly. A failed open leaves it nil (the
+	// session degrades rule-less with the loud log) and the NEXT sessionFor
+	// retries — residual errors are environmental and can be transient.
+	permStore atomic.Pointer[perm.Store]
 
 	// 21-05 (PAR-06/D-09): the image-ingress limit set. Zero →
 	// DefaultImageLimits (Anthropic's documented classes, pinned by the
@@ -552,12 +563,13 @@ func (r *Runner) resolveMention( //nolint:funcorder,cyclop // one resolution lad
 	switch {
 	case filepath.IsAbs(m.Path):
 		// The nil default admits NO absolute path (no rules are declared to
-		// admit any); a wired evaluator admits and gates in the one consult.
-		if r.readRuleEvaluator == nil {
+		// admit any); a wired authority admits and gates in the one consult.
+		allow, wired := r.readRuleEval(toolNameRead, m.Path)
+		if !wired {
 			return mentionNote(m.Token, mentionClassOutside), "", mentionFormUnresolved
 		}
 
-		if !r.readRuleEvaluator(toolNameRead, m.Path) {
+		if !allow {
 			return mentionNote(m.Token, mentionClassDenied), "", mentionFormDenied
 		}
 
@@ -600,15 +612,32 @@ func (r *Runner) resolveMention( //nolint:funcorder,cyclop // one resolution lad
 	return mentionFileSection(m.Token, content), abs, mentionFormFile
 }
 
-// readAllows consults the injected Read-rule evaluator for one path (21-04,
-// PAR-06): nil = implicit allow — the pre-21-06 default preserves today's
-// behavior while the seam waits for the 21-06 join to wire the perm rule set.
-func (r *Runner) readAllows(path string) bool {
-	if r.readRuleEvaluator == nil {
-		return true
+// readRuleEval consults the Read-rule authority for one path: the injected
+// evaluator seam first (tests pin custom evaluators), else the Runner-scoped
+// perm store — the SAME live rule authority the gate consumes (21-06's
+// PAR-06 ↔ PAR-03 join; the 21-REVIEW WR-02/WR-03 hoist made it live and
+// race-free). Only VerdictDeny denies. ok=false is the nil default: no seam
+// and no store — the pre-21-06 implicit-allow shape (and absolute paths
+// stay unadmitted).
+func (r *Runner) readRuleEval(tool, path string) (allow, wired bool) {
+	if f := r.readRuleEvaluator; f != nil {
+		return f(tool, path), true
 	}
 
-	return r.readRuleEvaluator(toolNameRead, path)
+	if st := r.permStore.Load(); st != nil {
+		return st.Rules().Evaluate(tool, path) != perm.VerdictDeny, true
+	}
+
+	return false, false
+}
+
+// readAllows consults the Read-rule authority for one path (21-04, PAR-06):
+// the nil default (no seam, no store) is the implicit allow — the pre-21-06
+// behavior preserved for rule-less runners.
+func (r *Runner) readAllows(path string) bool {
+	allow, wired := r.readRuleEval(toolNameRead, path)
+
+	return !wired || allow
 }
 
 // mentionNote renders one fixed-form loud note (D-10: the turn proceeds; the
@@ -1738,29 +1767,32 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	// zero the trust store (a deny rule that simply stopped denying). A
 	// residual error here is environmental (mkdir/stat/create) — the session
 	// degrades rule-less with the loud log, exactly as before.
-	permStore, permErr := perm.OpenRepaired(filepath.Join(dir, ".ass-guard", "permissions.yaml"))
-	if permErr != nil {
-		log.Printf("ass-guard: permissions store disabled for %s (%v) — deny/allow rules UNENFORCED for this session",
-			dir, permErr)
-	} else {
+	//
+	// 21-REVIEW WR-02/WR-03: the store is RUNNER-scoped (21-06's PAR-06 ↔
+	// PAR-03 join, hoisted): ONE live instance every session's gate AND the
+	// @-mention Read-rule consult (readRuleEval) answer to — the sessions
+	// already share the workDir/file, so per-session instances were one file
+	// but N divergent in-memory authorities. sessMu is held here; the atomic
+	// publish keeps the lock-free turn-time mention reads race-free. Only
+	// VerdictDeny denies a mention (ask/allow/unmatched all expand); a nil
+	// store (failed open) keeps the nil implicit-allow default and the next
+	// sessionFor retries.
+	permStore := r.permStore.Load()
+	if permStore == nil {
+		st, permErr := perm.OpenRepaired(filepath.Join(dir, ".ass-guard", "permissions.yaml"))
+		if permErr != nil {
+			log.Printf("ass-guard: permissions store disabled for %s (%v) — deny/allow rules UNENFORCED for this session",
+				dir, permErr)
+		} else {
+			permStore = st
+			r.permStore.Store(st)
+		}
+	}
+
+	if permStore != nil {
 		permDeps.Rules = permStore.Rules
 		permDeps.Allow = permStore.AllowTool
 		permDeps.Forbid = permStore.ForbidTool
-
-		// 21-06 (PAR-06 ↔ PAR-03 join): the 21-04 Read-rule consult seam is
-		// backed by the SAME rule-set provider the gate consumes — mentions
-		// and tool calls answer to ONE rule authority. Only VerdictDeny
-		// denies a mention (ask/allow/unmatched all expand). Wired ONCE per
-		// Runner (all sessions share the workDir, so the first session's
-		// store is the standing provider; the gate itself keeps each
-		// session's live store) — the once-guard keeps concurrent
-		// sessionFor construction race-free against turn-time reads. A
-		// rule-less session keeps the nil implicit-allow default.
-		if r.readRuleEvaluator == nil {
-			r.readRuleEvaluator = func(tool, path string) bool {
-				return permStore.Rules().Evaluate(tool, path) != perm.VerdictDeny
-			}
-		}
 	}
 
 	s.SetPermissionGate(permDeps)
