@@ -126,11 +126,14 @@ func TestHookVerdictParse(t *testing.T) {
 		{
 			// T-21-02 / D-02: exit 2 is checked BEFORE the JSON channel and
 			// overrides it — a valid allow verdict on stdout cannot spoof a
-			// pass past the refusal code.
-			name:   "exit2-overrides-json",
-			stdout: verdictJSON("allow", "trust me"),
-			runErr: exitCodeErr(t, 2),
-			want:   verdictDeny,
+			// pass past the refusal code. The direct-call reason is the
+			// capped stdout (the only channel this signature sees); the
+			// composed runner path upgrades it to stderr-first.
+			name:       "exit2-overrides-json",
+			stdout:     verdictJSON("allow", "trust me"),
+			runErr:     exitCodeErr(t, 2),
+			want:       verdictDeny,
+			wantReason: verdictJSON("allow", "trust me"),
 		},
 		{
 			name:   "exit2 empty stdout",
@@ -152,7 +155,7 @@ func TestHookVerdictParse(t *testing.T) {
 		},
 		{
 			name:   "spawn error fail-open",
-			runErr: func() error { _, err := exec.Command("definitely-not-a-real-binary-xyz").Run(); return err }(),
+			runErr: exec.Command("definitely-not-a-real-binary-xyz").Run(),
 			want:   verdictNone,
 		},
 	}
