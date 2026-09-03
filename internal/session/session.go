@@ -862,7 +862,18 @@ func (s *Session) streamAndEmit(
 			// DISPLAY text — the thinking FIELD VALUE — for the live
 			// agent_thought_chunk frame. Redacted blocks append too (no display
 			// text exists, so no publish).
-			_ = s.Manager.AppendRawThinking(turnID, s.Profile.Model, chunk.Raw)
+			//
+			// 21-REVIEW WR-05: a failed write is LOUD (the ask_suspended
+			// pattern, gate.go's CR-05) — a silently dropped thinking line
+			// corrupts replay with no diagnostic trail (the projector folds
+			// thinking from the transcript, so the next request would replay
+			// the assistant unit without its signed block — a provider 400
+			// pointing nowhere). Loud but never blocking: the display publish
+			// still fires.
+			if tErr := s.Manager.AppendRawThinking(turnID, s.Profile.Model, chunk.Raw); tErr != nil {
+				slog.Warn("raw_thinking transcript write failed",
+					"turnID", turnID, "model", s.Profile.Model, "error", tErr.Error())
+			}
 
 			if s.Bus != nil {
 				if txt := thinkingDisplayText(chunk.Raw); txt != "" {
