@@ -1460,3 +1460,88 @@ func TestLoadGateRejectsPromptDuringReplay(t *testing.T) {
 		t.Fatalf("post-load prompt errored: %+v (gate must open after replay)", after.Error)
 	}
 }
+
+// TestSessionDeleteDuringLoadNeverResurrects is the D-07 interleaving pin
+// (review CR-01): a session/delete racing an in-flight session/load — the
+// delete lands while the load's replay is parked mid-stream on the unread
+// client pipe, LONG after the load's opening tombstone check — must never
+// yield a live session. The delete wins: its marker is on disk and its
+// response answered success BEFORE the load's map insert, so the load's own
+// response is the TYPED deleted error and no sessionState exists for the id
+// (deleted stays deleted; prompts never append to a tombstoned transcript).
+//
+//nolint:funlen // one deterministic concurrency scenario end-to-end (the D-07 pin)
+func TestSessionDeleteDuringLoadNeverResurrects(t *testing.T) {
+	t.Parallel()
+
+	store := t.TempDir()
+	sid := "55555555-6666-4777-8888-999999999999"
+
+	// The wide replay window of the real bug: more chunk lines than the writer
+	// buffer + the capacity-1 foreground lane can absorb (the D-03 gate test's
+	// construction), so the load is PROVABLY mid-replay after its first frame
+	// and stays parked until the client starts draining.
+	const chunkLines = 400
+
+	lines := make([]string, 0, chunkLines+2)
+	lines = append(lines, `{"type":"session_start","timestamp":"`+fixtureTimestamp+`","text":"`+sid+`"}`)
+
+	for i := range chunkLines {
+		turn := sid + "-turn-001"
+
+		lines = append(lines, `{"type":"agent_message_chunk","turnID":"`+turn+
+			`","timestamp":"`+fixtureTimestamp+`","messageID":"`+turn+`","text":"c`+
+			strconv.Itoa(i)+`"}`)
+	}
+
+	lines = append(lines, `{"type":"session_end","timestamp":"`+fixtureTimestamp+`"}`)
+
+	writeLoadFixture(t, store, sid, lines)
+
+	h := newPipeHarness(t,
+		WithWorkDir(store),
+		WithTurnRunner(newFakeResumeRunner(store)),
+		WithTurnEmitter(TurnEmitterConfig{ForegroundCapacity: 1}),
+		WithSessionStore(sessionBackedStore{}))
+
+	sendLoad(t, h, 1, sid, store)
+
+	// Read ONE frame: the load is provably past its opening tombstone check
+	// and mid-replay; the unread pipe parks the rest.
+	first := h.readFrame(t)
+	if first.Method != methodSessionUpdate {
+		t.Fatalf("first frame after load = %v; want a session/update chunk", first.Method)
+	}
+
+	// The racing delete (the bug's client B): the close lookup misses (the id
+	// is still loading, never in s.sessions), the marker write wins the race,
+	// and the delete answers success.
+	h.send(t, newRequest(2, methodSessionDelete, map[string]any{keySessionID: sid}))
+
+	if delResp := readUntilResponse(t, h, 2, nil); delResp.Error != nil {
+		t.Fatalf("session/delete errored: %+v", delResp.Error)
+	}
+
+	if _, serr := os.Stat(filepath.Join(store, ".ass-guard", sid+".deleted")); serr != nil {
+		t.Fatalf("tombstone marker missing after delete: %v", serr)
+	}
+
+	// Drain the parked replay to its conclusion: the load's LAST gate (the
+	// map insert) must refuse — the typed deleted error, never a live session
+	// for a tombstoned id (D-07).
+	loadResp := readUntilResponse(t, h, 1, nil)
+	if loadResp.Error == nil {
+		t.Fatal("session/load succeeded after a delete raced it — resurrected session (D-07 violated)")
+	}
+
+	if loadResp.Error.Code != CodeInvalidRequest {
+		t.Errorf("delete-during-load code = %d; want %d (typed)", loadResp.Error.Code, CodeInvalidRequest)
+	}
+
+	if !strings.Contains(loadResp.Error.Message, "deleted") {
+		t.Errorf("delete-during-load message = %q; want it to name the delete", loadResp.Error.Message)
+	}
+
+	// And nothing prompt-accepting exists for the id afterwards.
+	assertPromptNotAccepted(t, h, 3, sid)
+}

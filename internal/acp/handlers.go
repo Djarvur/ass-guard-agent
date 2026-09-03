@@ -778,11 +778,29 @@ func (s *Server) LoadSession(ctx context.Context, sessionID string) (LoadSession
 	// the load response is written only after the last replayed frame.
 	s.emitter.Barrier(ctx)
 
-	// D-03 reconcile-then-accept: the map insert and the ready flip are the
-	// LAST steps before the response — a prompt never interleaves with
-	// replayed frames.
+	// D-03 reconcile-then-accept, D-07 resurrect guard (review CR-01): the
+	// insert is the LAST step, so it is also the LAST tombstone check — a
+	// session/delete that raced the replay wrote its marker while this load
+	// held no lock, and the insert must lose. The stat and the insert share
+	// ONE s.mu critical section, and handleSessionDelete writes its marker
+	// BEFORE its close lookup, so whichever side wins the mutex deleted stays
+	// deleted: marker-first fails here; insert-first is closed for real by the
+	// delete's closeSessionSequence.
 	s.mu.Lock()
+
+	if _, derr := os.Stat(filepath.Join(storeDir, sessionID+".deleted")); derr == nil {
+		s.mu.Unlock()
+
+		return zero, &RPCError{
+			Code: CodeInvalidRequest,
+			Message: fmt.Sprintf(
+				"session/load: session %s was deleted during replay (deleted stays deleted, D-07)",
+				sessionID),
+		}
+	}
+
 	s.sessions[sessionID] = st
+
 	s.mu.Unlock()
 
 	st.setReady()
@@ -995,14 +1013,22 @@ func (s *Server) handleSessionDelete(ctx context.Context, params json.RawMessage
 		}
 	}
 
-	s.closeSessionSequence(p.SessionID)
-
+	// D-07 write-first ordering (review CR-01): the marker lands BEFORE the
+	// close lookup. LoadSession re-stats the marker under s.mu in ONE critical
+	// section with its map insert, so once the marker exists no racing load
+	// can insert past it; a load whose insert already happened is found by the
+	// closeSequence below and closed for real. Either interleaving leaves
+	// deleted-stays-deleted holding — close-first would reopen a window where
+	// the lookup misses, the load inserts, and the marker lands on a live,
+	// never-closed session.
 	var failedSteps []string
 
 	terr := s.sessionStore.Tombstone(s.storeWorkDir(), p.SessionID)
 	if terr != nil {
 		failedSteps = append(failedSteps, "tombstone: "+terr.Error())
 	}
+
+	s.closeSessionSequence(p.SessionID)
 
 	if s.ckptStore != nil {
 		derr := s.ckptStore.DeleteSession(ctx, p.SessionID)
