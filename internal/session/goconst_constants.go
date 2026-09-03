@@ -4,6 +4,7 @@ package session
 const blockText = "text"
 const blockToolUse = "tool_use"
 const chunkErrorType = "error"
+const chunkTypeThinking = "thinking"
 const stopEndTurn = "end_turn"
 const stopCancelled = "cancelled"
 const stopDone = "done"

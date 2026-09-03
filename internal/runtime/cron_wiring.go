@@ -253,14 +253,15 @@ func (r *Runner) startSessionForwarder(sessionID string) (func(), bool) {
 	}
 
 	ch := r.bus.Subscribe("AgentMessageChunk", event.BufAgentMessageChunk)
+	thoughtCh := r.bus.Subscribe("AgentThoughtChunk", event.BufAgentThoughtChunk)
 	toolCh := r.bus.Subscribe("ToolCall", event.BufToolCall)
 	toolUpdCh := r.bus.Subscribe("ToolCallUpdate", event.BufToolCallUpdate)
 
-	// Merge the three per-kind channels into one stream (per-kind FIFO is kept
-	// by each source goroutine; cross-kind interleaving was already best-effort
+	// Merge the per-kind channels into one stream (per-kind FIFO is kept by
+	// each source goroutine; cross-kind interleaving was already best-effort
 	// under the previous single select). The stream closes — and the goroutine
 	// exits — when stop unsubscribes and the sources drain closed.
-	merged := fanInEvents(ch, toolCh, toolUpdCh)
+	merged := fanInEvents(ch, thoughtCh, toolCh, toolUpdCh)
 
 	prefix := sessionID + "-turn-"
 	toolEmit, _ := emit.(acp.ActivityEmitter)
@@ -270,6 +271,10 @@ func (r *Runner) startSessionForwarder(sessionID string) (func(), bool) {
 		case event.AgentMessageChunk:
 			if strings.HasPrefix(c.TurnID, prefix) {
 				_ = emit.AgentMessageChunk(c.MessageID, c.Content)
+			}
+		case event.AgentThoughtChunk:
+			if strings.HasPrefix(c.TurnID, prefix) {
+				forwardThoughtChunk(toolEmit, c)
 			}
 		case event.ToolCall:
 			if strings.HasPrefix(c.TurnID, prefix) {
@@ -294,6 +299,7 @@ func (r *Runner) startSessionForwarder(sessionID string) (func(), bool) {
 
 	return func() {
 		r.bus.Unsubscribe("AgentMessageChunk", ch)
+		r.bus.Unsubscribe("AgentThoughtChunk", thoughtCh)
 		r.bus.Unsubscribe("ToolCall", toolCh)
 		r.bus.Unsubscribe("ToolCallUpdate", toolUpdCh)
 	}, true

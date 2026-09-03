@@ -10,6 +10,7 @@ import (
 // buffer blocks the producer (backpressure) rather than dropping events.
 const (
 	BufAgentMessageChunk = 128 // the streaming hot path; absorb bursts
+	BufAgentThoughtChunk = 32  // PAR-05: thinking fragments stream per response block
 	BufToolCall          = 16
 	BufToolCallUpdate    = 32
 	BufUsageUpdate       = 8
@@ -51,6 +52,20 @@ type AgentMessageChunk struct {
 
 // Kind returns the event discriminator.
 func (AgentMessageChunk) Kind() string { return "AgentMessageChunk" }
+
+// AgentThoughtChunk is one streamed thinking fragment of an assistant turn
+// (PAR-05, 21-03 — provider SSE thinking block → bus → agent_thought_chunk,
+// D-13). Mirrors AgentMessageChunk; Content is the DISPLAY text (the thinking
+// FIELD VALUE extracted from the assembled block) — the transcript keeps the
+// verbatim provider bytes (D-12), this event never feeds storage.
+type AgentThoughtChunk struct {
+	TurnID    string
+	MessageID string
+	Content   string
+}
+
+// Kind returns the event discriminator.
+func (AgentThoughtChunk) Kind() string { return "AgentThoughtChunk" }
 
 // ToolCall is a model-selected tool invocation, published when the provider
 // response carries tool_use blocks.

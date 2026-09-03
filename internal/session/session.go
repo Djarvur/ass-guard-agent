@@ -850,6 +850,22 @@ func (s *Session) streamAndEmit(
 					TurnID: turnID, MessageID: turnID, Content: chunk.Text,
 				})
 			}
+		case chunkTypeThinking:
+			// PAR-05 (21-03, D-12/D-13): the raw block lands in the transcript
+			// VERBATIM through the redactor-exempt AppendRawThinking path (the
+			// manager.go endpoint's first production caller); the bus carries the
+			// DISPLAY text — the thinking FIELD VALUE — for the live
+			// agent_thought_chunk frame. Redacted blocks append too (no display
+			// text exists, so no publish).
+			_ = s.Manager.AppendRawThinking(turnID, s.Profile.Model, chunk.Raw)
+
+			if s.Bus != nil {
+				if txt := thinkingDisplayText(chunk.Raw); txt != "" {
+					s.Bus.Publish(event.AgentThoughtChunk{
+						TurnID: turnID, MessageID: turnID, Content: txt,
+					})
+				}
+			}
 		case blockToolUse:
 			if chunk.ToolCall != nil {
 				tc := *chunk.ToolCall
@@ -895,6 +911,22 @@ func (s *Session) streamAndEmit(
 // recordCanceled appends a canceled line (D-16).
 func (s *Session) recordCanceled(turnID, reason string) {
 	_ = s.Manager.AppendCanceled(turnID, now(), reason)
+}
+
+// thinkingDisplayText extracts the thinking FIELD VALUE from an assembled
+// thinking-block payload for DISPLAY (the live agent_thought_chunk frame,
+// PAR-05 21-03). This minimal unmarshal feeds ONLY the bus event's Content —
+// never storage: the transcript keeps the verbatim RawMessage (D-12), and the
+// projector (not this site) owns the field extraction for outgoing requests.
+// Empty for redacted blocks (no thinking field) — callers skip the publish.
+func thinkingDisplayText(raw json.RawMessage) string {
+	var v struct {
+		Thinking string `json:"thinking"`
+	}
+
+	_ = json.Unmarshal(raw, &v)
+
+	return v.Thinking
 }
 
 // appendToolResultLoud is the G-12-3b loudness gate (12-10): EVERY

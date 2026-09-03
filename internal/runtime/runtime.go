@@ -528,18 +528,22 @@ func (r *Runner) Run( //nolint:funlen // the turn pipeline's composition root
 	// 16-01: ToolCall / ToolCallUpdate subscriptions join it — the ACP-03 live
 	// tool cards ride the same forwarder → ActivityEmitter path (the emitter's
 	// single drain owns the notification order).
+	// 21-03 (PAR-05/D-13): AgentThoughtChunk joins the same forwarder — the
+	// live agent_thought_chunk frames ride the ordered emitter chain.
 	ch := r.bus.Subscribe("AgentMessageChunk", event.BufAgentMessageChunk)
+	thoughtCh := r.bus.Subscribe("AgentThoughtChunk", event.BufAgentThoughtChunk)
 	toolCh := r.bus.Subscribe("ToolCall", event.BufToolCall)
 	toolUpdCh := r.bus.Subscribe("ToolCallUpdate", event.BufToolCallUpdate)
 
 	defer r.bus.Unsubscribe("AgentMessageChunk", ch)
+	defer r.bus.Unsubscribe("AgentThoughtChunk", thoughtCh)
 	defer r.bus.Unsubscribe("ToolCall", toolCh)
 	defer r.bus.Unsubscribe("ToolCallUpdate", toolUpdCh)
 
 	done := make(chan struct{})
 	promptDone := make(chan struct{})
 
-	startChunkForwarder(ctx, ch, toolCh, toolUpdCh, emit, promptDone, done)
+	startChunkForwarder(ctx, ch, thoughtCh, toolCh, toolUpdCh, emit, promptDone, done)
 
 	blocks := toContentBlocks(prompt)
 
@@ -617,9 +621,11 @@ const stopAskACP = "ask"
 // ActivityEmitter seam, until the turn completes; then any buffered events
 // drain before the goroutine exits (the caller signals promptDone + waits on
 // done). A plain ChunkEmitter (legacy fakes) silently skips the tool frames.
+// 21-03 (PAR-05/D-13): AgentThoughtChunk events join the same forwarder as
+// agent_thought_chunk frames through the ActivityEmitter assertion.
 func startChunkForwarder(
 	ctx context.Context,
-	ch, toolCh, toolUpdCh <-chan event.Event,
+	ch, thoughtCh, toolCh, toolUpdCh <-chan event.Event,
 	emit acp.ChunkEmitter,
 	promptDone, done chan struct{},
 ) {
@@ -635,6 +641,12 @@ func startChunkForwarder(
 		for {
 			select {
 			case e, ok := <-ch:
+				if !ok {
+					return
+				}
+
+				route(e)
+			case e, ok := <-thoughtCh:
 				if !ok {
 					return
 				}
@@ -660,6 +672,8 @@ func startChunkForwarder(
 					select {
 					case e := <-ch:
 						route(e)
+					case e := <-thoughtCh:
+						route(e)
 					case e := <-toolCh:
 						route(e)
 					case e := <-toolUpdCh:
@@ -675,17 +689,32 @@ func startChunkForwarder(
 
 // routeBusEvent forwards one bus event of the forwarder-supported kinds to the
 // right emitter method (AgentMessageChunk → text chunk; ToolCall /
-// ToolCallUpdate → the ACP-03 tool-card frames). Shared by the per-Run and the
-// session-lifetime forwarders.
+// ToolCallUpdate → the ACP-03 tool-card frames; AgentThoughtChunk → the
+// agent_thought_chunk frame via the ActivityEmitter seam — 21-03, PAR-05).
+// Shared by the per-Run and the session-lifetime forwarders.
 func routeBusEvent(e event.Event, emit acp.ChunkEmitter, toolEmit acp.ActivityEmitter) {
 	switch c := e.(type) {
 	case event.AgentMessageChunk:
 		_ = emit.AgentMessageChunk(c.MessageID, c.Content)
+	case event.AgentThoughtChunk:
+		forwardThoughtChunk(toolEmit, c)
 	case event.ToolCall:
 		forwardToolCall(toolEmit, e)
 	case event.ToolCallUpdate:
 		forwardToolCallUpdate(toolEmit, e)
 	}
+}
+
+// forwardThoughtChunk mirrors one bus AgentThoughtChunk event as a v1
+// agent_thought_chunk frame (PAR-05, 21-03). A nil emitter (plain
+// ChunkEmitter fake) is a no-op — the same 16-01 type-assert skip the tool
+// cards use; the frame vocabulary itself is additive (16-D-20).
+func forwardThoughtChunk(toolEmit acp.ActivityEmitter, c event.AgentThoughtChunk) {
+	if toolEmit == nil {
+		return
+	}
+
+	_ = toolEmit.ThoughtChunk(c.MessageID, acp.ContentBlock{Type: blockText, Text: c.Content})
 }
 
 // forwardToolCall mirrors one bus ToolCall event as a v1 tool_call frame: the
