@@ -1,0 +1,3 @@
+{"type":"session_start","timestamp":"2026-09-02T10:15:00Z","text":"sess_recon"}
+{"type":"user_message","turnID":"sess_recon-turn-001","timestamp":"2026-09-02T10:15:01Z","content":[{"type":"text","text":"research the session package layout"}]}
+{"type":"subagent_dispatch","turnID":"sess_recon-turn-002","timestamp":"2026-09-02T10:15:02Z","parentTurnID":"sess_recon-turn-001","subagentTurnID":"sess_recon-turn-002","toolCallID":"call_1","restrictedTools":["Read","Glob","Grep","WebFetch","WebSearch"]}

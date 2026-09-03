@@ -1,0 +1,2 @@
+{"type":"session_start","timestamp":"2026-09-02T10:05:00Z","text":"sess_recon"}
+{"type":"user_message","turnID":"sess_recon-turn-001","timestamp":"2026-09-02T10:05:01Z","content":[{"type":"text","text":"summarize the working tree changes"}]}

@@ -1,0 +1,7 @@
+{"type":"session_start","timestamp":"2026-09-02T10:40:00Z","text":"sess_recon"}
+{"type":"user_message","turnID":"sess_recon-turn-001","timestamp":"2026-09-02T10:40:01Z","content":[{"type":"text","text":"count the session line kinds"}]}
+{"type":"assistant_message","turnID":"sess_recon-turn-001","timestamp":"2026-09-02T10:40:02Z","text":"there are sixteen kinds"}
+{"type":"user_message","turnID":"sess_recon-turn-002","timestamp":"2026-09-02T10:41:01Z","content":[{"type":"text","text":"show the pairing rules"}]}
+{"type":"tool_call","turnID":"sess_recon-turn-002","timestamp":"2026-09-02T10:41:02Z","toolCallID":"call_1","name":"Read","input":{"path":"internal/session/transcript.go"}}
+{"type":"tool_result","turnID":"sess_recon-turn-002","timestamp":"2026-09-02T10:41:03Z","toolCallID":"call_1","output":"transcript.go: 156 lines"}
+{"type":"assistant_message","turnID":"sess_recon-turn-002","timestamp":"2026-09-02T10:41:04Z","text":"pairs match by toolCallID, never adjacency"}

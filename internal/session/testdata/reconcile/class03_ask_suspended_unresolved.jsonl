@@ -1,0 +1,4 @@
+{"type":"session_start","timestamp":"2026-09-02T10:10:00Z","text":"sess_recon"}
+{"type":"user_message","turnID":"sess_recon-turn-001","timestamp":"2026-09-02T10:10:01Z","content":[{"type":"text","text":"which session store should we ship?"}]}
+{"type":"tool_call","turnID":"sess_recon-turn-001","timestamp":"2026-09-02T10:10:02Z","toolCallID":"call_1","name":"AskUserQuestion","input":{"questions":[{"question":"Which store?","options":[{"label":"sqlite","description":"embedded"},{"label":"flat files","description":"append-only"}]}]}}
+{"type":"ask_suspended","turnID":"sess_recon-turn-001","timestamp":"2026-09-02T10:10:03Z","toolCallID":"call_1","input":[{"question":"Which store?","options":[{"label":"sqlite","description":"embedded"},{"label":"flat files","description":"append-only"}]}]}

@@ -1,0 +1,7 @@
+{"type":"session_start","timestamp":"2026-09-02T10:30:00Z","text":"sess_recon"}
+{"type":"user_message","turnID":"sess_recon-turn-001","timestamp":"2026-09-02T10:30:01Z","content":[{"type":"text","text":"first turn"}]}
+{"type":"assistant_message","turnID":"sess_recon-turn-001","timestamp":"2026-09-02T10:30:02Z","text":"first turn done"}
+{"type":"user_message","turnID":"sess_recon-turn-002","timestamp":"2026-09-02T10:31:01Z","content":[{"type":"text","text":"second turn"}]}
+{"type":"assistant_message","turnID":"sess_recon-turn-002","timestamp":"2026-09-02T10:31:02Z","text":"second turn done"}
+{"type":"user_message","turnID":"sess_recon-turn-004","timestamp":"2026-09-02T10:33:01Z","content":[{"type":"text","text":"fourth turn (003 died before its first line)"}]}
+{"type":"assistant_message","turnID":"sess_recon-turn-004","timestamp":"2026-09-02T10:33:02Z","text":"fourth turn done"}

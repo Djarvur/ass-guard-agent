@@ -1,0 +1,4 @@
+{"type":"session_start","timestamp":"2026-09-02T10:20:00Z","text":"sess_recon"}
+{"type":"user_message","turnID":"sess_recon-turn-001","timestamp":"2026-09-02T10:20:01Z","content":[{"type":"text","text":"describe the transcript format"}]}
+{"type":"agent_message_chunk","turnID":"sess_recon-turn-001","timestamp":"2026-09-02T10:20:02Z","messageID":"sess_recon-turn-001","text":"The transcript is an append-only JSONL file"}
+{"type":"agent_message_chunk","turnID":"sess_recon-turn-001","timestamp":"2026-09-02T10:20:03Z","messageID":"sess_recon-turn-001","text":" where every line is one structured event."}

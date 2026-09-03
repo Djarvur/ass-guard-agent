@@ -1,0 +1,5 @@
+{"type":"session_start","timestamp":"2026-09-02T10:25:00Z","text":"sess_recon"}
+{"type":"user_message","turnID":"sess_recon-turn-001","timestamp":"2026-09-02T10:25:01Z","content":[{"type":"text","text":"plan the schema migration"}]}
+{"type":"tool_call","turnID":"sess_recon-turn-001","timestamp":"2026-09-02T10:25:02Z","toolCallID":"call_1","name":"EnterPlanMode","input":{}}
+{"type":"tool_result","turnID":"sess_recon-turn-001","timestamp":"2026-09-02T10:25:03Z","toolCallID":"call_1","output":"Entered plan mode. You should now focus on exploring the codebase and designing an implementation approach."}
+{"type":"plan_mode","turnID":"sess_recon-turn-001","timestamp":"2026-09-02T10:25:03Z","cause":"plan_mode_enter","toolCallID":"call_1"}
