@@ -44,3 +44,11 @@ not fixed — pre-existing, unrelated to the plan's changed files).
   goconst_constants.go, events.go, session.go, projector.go, shaper.go,
   provider.go, runtime.go, cron_wiring.go + their tests); the red is the
   ledgered exhaustruct_v5 drift elsewhere.
+
+## 21-04 execution discovery (out of scope — not fixed)
+
+- `internal/runtime/advisory_wiring_test.go` `TestAdvisoryWiring_QuestionEndingNote`
+  — flaky under full-package `go test -race -count=2` load (failed once at 34.69s
+  wall; 5/5 green in isolation, 3/3 green in full single-count runs). Pre-existing,
+  unrelated to 21-04: the test's prompts carry no `@` tokens, so the mention pass
+  is a no-op for it. Load/timing sensitivity in the real-acp.Server pipe battery.
