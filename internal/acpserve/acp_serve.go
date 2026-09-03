@@ -220,7 +220,11 @@ func Run( //nolint:funlen // :320-425
 		// cwd. opts.WorkDir is the eagerly-resolved --work-dir (runACPServeCmd
 		// resolves before Run); "" degrades to the process cwd inside the
 		// server (the same resolution ResolveWorkDir applies).
-		acp.WithWorkDir(opts.WorkDir))
+		acp.WithWorkDir(opts.WorkDir),
+		// 18-04 (ACP-05/ACP-07): session/list + session/delete ride the
+		// session-backed storage seam (the 18-03 engine + the tombstone
+		// writer — session_store.go; acp stays session-free per 25-D-13).
+		acp.WithSessionStore(sessionStoreAdapter{}))
 
 	surface.SetNotify(func(sessionID string, opts []acp.ConfigOptionFrame) {
 		nerr := srv.NotifyConfigOptions(sessionID, opts)

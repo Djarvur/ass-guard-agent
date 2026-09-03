@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/redact"
 )
@@ -55,6 +56,53 @@ type SessionCloser interface {
 // optional-capability shape as SessionCloser/AskDrainer.
 type SessionLoader interface {
 	ResumeSession(ctx context.Context, sessionID string) error
+}
+
+// CheckpointStore is the OPTIONAL checkpoint-removal seam (18-04, D-08):
+// session/delete sweeps the deleted session's checkpoint objects through the
+// store's session-scoped removal surface (*checkpoint.Store satisfies it via
+// the acpserve composition). It is a separate interface defined at the point
+// of use — not part of TurnRunner — so stub runners and store-less setups
+// need not implement it; a nil store skips the step (delete stays
+// best-effort).
+type CheckpointStore interface {
+	// DeleteSession removes every checkpoint object belonging to the session.
+	DeleteSession(ctx context.Context, sessionID string) error
+}
+
+// ErrInvalidListCursor is the typed rejection for a malformed session/list
+// cursor: length-capped and shape-validated BEFORE any scan (the engine's
+// T-18-06 discipline). A SessionStore implementation translates its own
+// cursor error into this type so the handler can map it to invalid-params.
+var ErrInvalidListCursor = errors.New("invalid list cursor")
+
+// ListedSession is the storage engine's lean header as seen by the acp layer
+// (18-04): the session package's SessionHeader mirrored field-for-field.
+// acp deliberately does NOT import internal/session (25-D-13 keeps the
+// frontend decoupled from the session kit seam — the replay.go precedent),
+// so the SessionStore seam speaks its own copy and the composition adapts.
+type ListedSession struct {
+	SessionID    string
+	Title        string
+	TitlePresent bool
+	LastActivity time.Time
+}
+
+// SessionStore is the OPTIONAL storage seam behind session/list and
+// session/delete (18-04, ACP-05/ACP-07): the header-scan enumeration engine
+// (18-03) and the tombstone marker writer (18-04). The acpserve composition
+// injects the internal/session-backed implementation; absent (the default),
+// list and delete answer the typed not-available error — the degrade never
+// crashes acpserve-less setups (the ConfigSurface pattern).
+type SessionStore interface {
+	// ListSessions returns one page of session headers under the workspace's
+	// .ass-guard store, ordered (lastActivity desc, sessionId asc); cursor
+	// "" selects the first page, limit <= 0 the engine default. A malformed
+	// cursor yields an error wrapping ErrInvalidListCursor.
+	ListSessions(dir, cursor string, limit int) (headers []ListedSession, nextCursor string, err error)
+	// Tombstone writes the zero-byte <id>.deleted marker beside the
+	// session's transcript (D-07 — the marker IS the delete).
+	Tombstone(dir, sessionID string) error
 }
 
 // ConfigSurface is the acp-side seam for the v1.2 editor-driven configuration
@@ -120,6 +168,16 @@ type Server struct {
 	// flag default degrades to cwd here).
 	workDir string
 
+	// ckptStore is the optional checkpoint-removal seam session/delete sweeps
+	// checkpoint objects through (18-04/D-08); nil = no store wired, the
+	// delete path skips the checkpoint step.
+	ckptStore CheckpointStore
+
+	// sessionStore is the optional storage seam behind session/list and
+	// session/delete (18-04); nil = no store wired, both methods answer the
+	// typed not-available error.
+	sessionStore SessionStore
+
 	// loading tracks sessions mid-session/load (18-01/D-03): the id is
 	// registered at load start and cleared on every exit path. A prompt
 	// arriving for a loading id gets the typed replay-in-progress error — it
@@ -130,15 +188,39 @@ type Server struct {
 
 // sessionState is one live session (created by session/new, or by session/load
 // after replay completes). It carries the active turn's cancel func so
-// session/cancel can abort the turn (D-16), and the D-03 ready flag gating
+// session/cancel can abort the turn (D-16), the D-03 ready flag gating
 // prompt acceptance: a state exists before it is ready only inside the load
 // path's final insert→flip window — session/new marks its states ready at
-// construction (no replay to wait for).
+// construction (no replay to wait for) — and the 18-04 turn drain set: every
+// in-flight prompt's Run registers in turnWG so session/close can
+// cancel-and-WAIT (D-12) instead of racing the turn goroutine.
 type sessionState struct {
 	id     string
 	mu     sync.Mutex
 	cancel context.CancelFunc
 	ready  bool
+	turnWG sync.WaitGroup
+}
+
+// waitTurnDrain blocks until every in-flight turn of the session has
+// returned, bounded by timeout (18-04/D-12): true = drained, false = timed
+// out (the caller force-closes loudly — a wedged turn never wedges the
+// close). The waiter goroutine of a timed-out wait exits by itself once the
+// turns eventually unwind; it holds no resources beyond that.
+func (s *sessionState) waitTurnDrain(timeout time.Duration) bool {
+	done := make(chan struct{})
+
+	go func() {
+		s.turnWG.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
 }
 
 // setReady flips the D-03 ready flag — the last step of session/load before
@@ -221,6 +303,22 @@ func WithConfigSurface(cs ConfigSurface) ServerOption {
 // back to Getwd).
 func WithWorkDir(dir string) ServerOption {
 	return func(s *Server) { s.workDir = dir }
+}
+
+// WithCheckpointStore installs the checkpoint-removal seam session/delete
+// sweeps the deleted session's checkpoint objects through (18-04/D-08). The
+// acpserve composition injects the workspace *checkpoint.Store; absent (the
+// default), delete skips the checkpoint step — best-effort, never a crash.
+func WithCheckpointStore(cs CheckpointStore) ServerOption {
+	return func(s *Server) { s.ckptStore = cs }
+}
+
+// WithSessionStore installs the storage seam behind session/list and
+// session/delete (18-04): the 18-03 header-scan engine + the tombstone
+// writer, session-backed by the acpserve composition. Absent (the default),
+// both methods answer the typed not-available error.
+func WithSessionStore(ss SessionStore) ServerOption {
+	return func(s *Server) { s.sessionStore = ss }
 }
 
 // NewServer builds a Server reading frames from in, writing frames to out, and

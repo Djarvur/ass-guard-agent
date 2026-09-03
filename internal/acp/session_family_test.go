@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -19,6 +20,7 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/checkpoint"
+	"github.com/Djarvur/ass-guard-agent/internal/session"
 )
 
 // fixtureSessionID is a loadSessIDPattern-clean RFC 4122 v4 UUID form id (the
@@ -352,6 +354,44 @@ func assertPromptNotAccepted(t *testing.T, h *pipeHarness, reqID int, sessionID 
 
 // --- 18-04: session/list round-trip + capability advertisement battery ---
 
+// sessionBackedStore adapts the REAL 18-03/18-04 session-package surfaces to
+// the acp.SessionStore seam for this battery (the production adapter lives
+// in internal/acpserve/session_store.go; this test-local twin exists because
+// package-acp tests cannot import acpserve — acpserve imports acp). The
+// round-trip therefore drives the real engine through the real injection
+// path.
+type sessionBackedStore struct{}
+
+func (sessionBackedStore) ListSessions(
+	dir, cursor string, limit int,
+) ([]ListedSession, string, error) {
+	headers, next, err := session.ListSessions(dir, cursor, limit)
+	if err != nil {
+		if errors.Is(err, session.ErrInvalidCursor) {
+			return nil, "", fmt.Errorf("session/list %s: %w: %w", dir, ErrInvalidListCursor, err)
+		}
+
+		return nil, "", fmt.Errorf("session/list %s: %w", dir, err)
+	}
+
+	out := make([]ListedSession, len(headers))
+
+	for i, h := range headers {
+		out[i] = ListedSession{
+			SessionID:    h.SessionID,
+			Title:        h.Title,
+			TitlePresent: h.TitlePresent,
+			LastActivity: h.LastActivity,
+		}
+	}
+
+	return out, next, nil
+}
+
+func (sessionBackedStore) Tombstone(dir, sessionID string) error {
+	return session.Tombstone(dir, sessionID) //nolint:wrapcheck // thin test twin of the acpserve adapter
+}
+
 // Repeated 18-04 wire literals (goconst — the sibling tests' vocabulary).
 const (
 	methodSessionList   = "session/list"
@@ -372,7 +412,9 @@ const (
 
 // listBaseTime pins fixture transcript mtimes — the 18-03 engine's
 // lastActivity source — so engine order is deterministic (desc mtime).
-var listBaseTime = time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+func listBaseTime() time.Time {
+	return time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+}
 
 // listFixtureID mints a sessIDPattern-valid UUID-form id whose fixed-width
 // hex tail orders with i.
@@ -444,7 +486,8 @@ func decodeListResponse(t *testing.T, msg *Message, wantID int) listResult {
 
 	var res listResult
 
-	if uerr := json.Unmarshal(msg.Result, &res); uerr != nil {
+	uerr := json.Unmarshal(msg.Result, &res)
+	if uerr != nil {
 		t.Fatalf("unmarshal list result: %v (raw=%s)", uerr, string(msg.Result))
 	}
 
@@ -459,7 +502,7 @@ func decodeListResponse(t *testing.T, msg *Message, wantID int) listResult {
 // NO tombstoned row; the page-one cursor drives page two without re-emission
 // and exhausts with a null nextCursor.
 //
-//nolint:funlen // one ordered wire-flow assertion end-to-end
+//nolint:funlen,gocyclo,cyclop // one ordered wire-flow assertion end-to-end
 func TestHandleSessionListRoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -472,21 +515,21 @@ func TestHandleSessionListRoundTrip(t *testing.T) {
 			prompt = "" // no user_message: title stays null (fallback is server-side)
 		}
 
-		writeListSession(t, store, listFixtureID(i), prompt, listBaseTime.Add(-time.Duration(i)*time.Minute))
+		writeListSession(t, store, listFixtureID(i), prompt, listBaseTime().Add(-time.Duration(i)*time.Minute))
 	}
 
 	// The tombstoned session: NEWEST mtime of all — it must never appear on
 	// any page (the 18-03 stat filter made visible through the RPC).
 	tombID := listFixtureID(listTombIndex)
 
-	writeListSession(t, store, tombID, "delete me", listBaseTime)
+	writeListSession(t, store, tombID, "delete me", listBaseTime())
 
 	err := os.WriteFile(filepath.Join(store, ".ass-guard", tombID+".deleted"), nil, 0o600)
 	if err != nil {
 		t.Fatalf("write tombstone: %v", err)
 	}
 
-	h := newPipeHarness(t, WithWorkDir(store))
+	h := newPipeHarness(t, WithWorkDir(store), WithSessionStore(sessionBackedStore{}))
 
 	// Page one: null cursor, 50 of the 52 live rows in engine order.
 	sendList(t, h, 1, nil)
@@ -504,7 +547,8 @@ func TestHandleSessionListRoundTrip(t *testing.T) {
 	row0 := page1.Sessions[0]
 
 	if row0.SessionID != listFixtureID(0) {
-		t.Errorf("first row sessionId = %s; want %s (engine order: lastActivity desc)", row0.SessionID, listFixtureID(0))
+		t.Errorf("first row sessionId = %s; want %s (engine order: lastActivity desc)",
+			row0.SessionID, listFixtureID(0))
 	}
 
 	if row0.Cwd != store {
@@ -524,9 +568,9 @@ func TestHandleSessionListRoundTrip(t *testing.T) {
 		t.Fatalf("row 0 updatedAt %q is not RFC3339: %v", *row0.UpdatedAt, perr)
 	}
 
-	if !gotAt.Equal(listBaseTime) {
+	if !gotAt.Equal(listBaseTime()) {
 		t.Errorf("row 0 updatedAt = %s; want the RFC3339 instant of lastActivity %s",
-			*row0.UpdatedAt, listBaseTime.Format(time.RFC3339))
+			*row0.UpdatedAt, listBaseTime().Format(time.RFC3339))
 	}
 
 	if row1 := page1.Sessions[1]; row1.Title != nil {
@@ -557,7 +601,8 @@ func TestHandleSessionListRoundTrip(t *testing.T) {
 
 	for i, want := range want2 {
 		if page2.Sessions[i].SessionID != want {
-			t.Errorf("page two row %d = %s; want %s (no re-emission, tuple order)", i, page2.Sessions[i].SessionID, want)
+			t.Errorf("page two row %d = %s; want %s (no re-emission, tuple order)",
+				i, page2.Sessions[i].SessionID, want)
 		}
 	}
 
@@ -591,7 +636,7 @@ func TestHandleSessionListEmptyStore(t *testing.T) {
 		t.Fatalf("mkdir store: %v", err)
 	}
 
-	h := newPipeHarness(t, WithWorkDir(store))
+	h := newPipeHarness(t, WithWorkDir(store), WithSessionStore(sessionBackedStore{}))
 
 	sendList(t, h, 0, nil)
 
@@ -788,7 +833,7 @@ func (r *blockingCloseRunner) closeCalls() []string {
 // answers the aborted turn stopReason "cancelled", and a second close of the
 // already-closed id is the empty-object success.
 //
-//nolint:funlen // one deterministic drain-ordering scenario end-to-end
+//nolint:funlen,gocyclo,cyclop // one deterministic drain-ordering scenario end-to-end
 func TestSessionCloseCancelsAndDrains(t *testing.T) {
 	t.Parallel()
 
@@ -809,7 +854,28 @@ func TestSessionCloseCancelsAndDrains(t *testing.T) {
 
 	h.send(t, newRequest(3, methodSessionClose, map[string]any{keySessionID: sid}))
 
-	closeResp := readUntilResponse(t, h, 3, nil)
+	// The close response and the aborted prompt response may arrive in EITHER
+	// order (close's drain waits for Run's RETURN, not the prompt handler's
+	// response write) — collect by id instead of racing the two reads.
+	var closeResp, promptResp *Message
+
+	for closeResp == nil || promptResp == nil {
+		frame := h.readFrame(t)
+
+		if frame.ID == nil {
+			continue // notifications (none expected here)
+		}
+
+		switch string(frame.ID) {
+		case "3":
+			closeResp = frame
+		case "2":
+			promptResp = frame
+		default:
+			t.Fatalf("unexpected response id %s while collecting close+prompt responses", string(frame.ID))
+		}
+	}
+
 	if closeResp.Error != nil {
 		t.Fatalf("session/close errored: %+v", closeResp.Error)
 	}
@@ -841,7 +907,6 @@ func TestSessionCloseCancelsAndDrains(t *testing.T) {
 		t.Error("closed session still registered in the map")
 	}
 
-	promptResp := readUntilResponse(t, h, 2, nil)
 	if promptResp.Error != nil {
 		t.Fatalf("aborted turn errored: %+v (D-16 wants stopReason cancelled)", promptResp.Error)
 	}
@@ -850,7 +915,8 @@ func TestSessionCloseCancelsAndDrains(t *testing.T) {
 		StopReason string `json:"stopReason"` //nolint:tagliatelle // ACP wire field
 	}
 
-	if uerr := json.Unmarshal(promptResp.Result, &pr); uerr != nil {
+	uerr := json.Unmarshal(promptResp.Result, &pr)
+	if uerr != nil {
 		t.Fatalf("decode prompt result: %v (raw=%s)", uerr, string(promptResp.Result))
 	}
 
@@ -902,7 +968,7 @@ func TestSessionCloseAlreadyClosed(t *testing.T) {
 // artifacts present, drops the session from the list, and a second delete of
 // the same id is the idempotent success (marker rewrite).
 //
-//nolint:funlen // one ordered delete-flow assertion end-to-end
+//nolint:funlen,gocyclo,cyclop // one ordered delete-flow assertion end-to-end
 func TestSessionDeleteTombstones(t *testing.T) {
 	t.Parallel()
 
@@ -937,13 +1003,15 @@ func TestSessionDeleteTombstones(t *testing.T) {
 		t.Fatalf("checkpoint open: %v", oerr)
 	}
 
-	if serr := ckpt.Snapshot(context.Background(), sid, sid+"-turn-001"); serr != nil {
+	serr := ckpt.Snapshot(context.Background(), sid, sid+"-turn-001")
+	if serr != nil {
 		t.Fatalf("checkpoint snapshot: %v", serr)
 	}
 
 	h := newPipeHarness(t,
 		WithWorkDir(store),
 		WithTurnRunner(newFakeResumeRunner(store)),
+		WithSessionStore(sessionBackedStore{}),
 		WithCheckpointStore(ckpt))
 
 	sendLoad(t, h, 1, sid, store)
@@ -983,7 +1051,8 @@ func TestSessionDeleteTombstones(t *testing.T) {
 		t.Error("delete mutated the transcript bytes (D-07: tombstone, never rewrite)")
 	}
 
-	if _, aerr := os.Stat(auditFile); aerr != nil {
+	_, aerr := os.Stat(auditFile)
+	if aerr != nil {
 		t.Errorf("audit artifact removed by delete: %v (D-08/D-20 — audit survives unconditionally)", aerr)
 	}
 

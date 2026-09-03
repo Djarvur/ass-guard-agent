@@ -9,8 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"time"
-
-	"github.com/Djarvur/ass-guard-agent/internal/session"
 )
 
 const asciiDelete = 0x40
@@ -78,6 +76,8 @@ func (s *Server) registerHandlers() {
 	s.handlers["session/cancel"] = s.handleSessionCancel
 	s.handlers["session/load"] = s.handleSessionLoad
 	s.handlers["session/list"] = s.handleSessionList
+	s.handlers["session/close"] = s.handleSessionClose
+	s.handlers["session/delete"] = s.handleSessionDelete
 	s.handlers["logout"] = s.handleLogout
 	s.handlers["session/set_mode"] = s.handleSessionSetMode
 	s.handlers[methodCancelRequest] = s.handleCancelRequestNoOp
@@ -469,7 +469,18 @@ func (s *Server) handleSessionPrompt(ctx context.Context, params json.RawMessage
 	// single drain owns the notification order.
 	emit := s.Emitter(p.SessionID)
 
-	stopReason, err := s.turnRunner.Run(turnCtx, p.SessionID, emit, p.Prompt)
+	// 18-04 (D-12): the turn registers in the session's drain set BEFORE Run
+	// so session/close can cancel-and-WAIT; Done fires when Run returns (not
+	// when the whole handler returns — close's drain covers the turn, not the
+	// response write). The zero WaitGroup is nil-safe for sessions with no
+	// turn yet.
+	st.turnWG.Add(1)
+
+	stopReason, err := func() (string, error) {
+		defer st.turnWG.Done()
+
+		return s.turnRunner.Run(turnCtx, p.SessionID, emit, p.Prompt)
+	}()
 
 	// Updates-before-response (16-01, Pitfall 4 — the verified cancel contract):
 	// the turn's notifications ride the emitter's async lanes, so the handler
@@ -738,19 +749,29 @@ func (s *Server) loadSessionResult() LoadSessionResponse {
 	return LoadSessionResponse{ConfigOptions: s.configOptionsFor()}
 }
 
-// handleSessionList enumerates the store's sessions through the 18-03 engine
-// (on-demand header scan, tombstone stat-filter, composite opaque cursor) and
-// maps the lean headers to v1 SessionInfo rows. The store root is the
-// SERVER's workDir (T-18-02: the client-supplied cwd is recorded but never
-// widens the enumeration scope — cross-project listing would leak other
-// projects' session existence and titles). A malformed cursor is the typed
-// invalid-params rejection BEFORE any scan (the engine's ErrInvalidCursor);
-// store-level failures surface as the scrubbed internal class.
+// handleSessionList enumerates the store's sessions through the injected
+// SessionStore seam (the 18-03 header-scan engine: on-demand scan, tombstone
+// stat-filter, composite opaque cursor) and maps the lean headers to v1
+// SessionInfo rows. The store root is the SERVER's workDir (T-18-02: the
+// client-supplied cwd is recorded but never widens the enumeration scope —
+// cross-project listing would leak other projects' session existence and
+// titles). A malformed cursor is the typed invalid-params rejection BEFORE
+// any scan (the seam's ErrInvalidListCursor); store-level failures surface
+// as the scrubbed internal class. A nil seam (acpserve-less setups) answers
+// the typed not-available error — the ConfigSurface degrade.
 func (s *Server) handleSessionList(_ context.Context, params json.RawMessage) (any, error) {
+	if s.sessionStore == nil {
+		return nil, &RPCError{
+			Code:    CodeInvalidRequest,
+			Message: "session/list not available (no session store wired)",
+		}
+	}
+
 	var p ListSessionsRequest
 
 	if len(params) > 0 {
-		if uerr := json.Unmarshal(params, &p); uerr != nil {
+		uerr := json.Unmarshal(params, &p)
+		if uerr != nil {
 			return nil, &RPCError{
 				Code:    CodeInvalidParams,
 				Message: "session/list params: " + uerr.Error(),
@@ -765,9 +786,9 @@ func (s *Server) handleSessionList(_ context.Context, params json.RawMessage) (a
 
 	workDir := s.storeWorkDir()
 
-	headers, next, err := session.ListSessions(workDir, cursor, 0)
+	headers, next, err := s.sessionStore.ListSessions(workDir, cursor, 0)
 	if err != nil {
-		if errors.Is(err, session.ErrInvalidCursor) {
+		if errors.Is(err, ErrInvalidListCursor) {
 			return nil, &RPCError{
 				Code:    CodeInvalidParams,
 				Message: fmt.Sprintf("session/list: %v", err),
@@ -797,7 +818,7 @@ func (s *Server) handleSessionList(_ context.Context, params json.RawMessage) (a
 // flag 18-03 ships, never a string comparison against the fallback literal
 // (a fallback-titled row keeps title null so the client renders its own
 // placeholder).
-func sessionInfoOf(h *session.SessionHeader, workDir string) SessionInfo {
+func sessionInfoOf(h *ListedSession, workDir string) SessionInfo {
 	info := SessionInfo{
 		SessionID: h.SessionID,
 		Cwd:       workDir,
@@ -812,6 +833,146 @@ func sessionInfoOf(h *session.SessionHeader, workDir string) SessionInfo {
 	info.UpdatedAt = &updatedAt
 
 	return info
+}
+
+// closeDrainTimeout bounds session/close's wait on a session's in-flight
+// turns (18-04/D-12): a wedged turn never wedges the close — the timeout
+// logs ONE loud structured line naming the session and force-closes.
+const closeDrainTimeout = 30 * time.Second
+
+// closeSessionSequence is the D-12 cancel-and-drain core session/close and
+// session/delete share: drain the session's asks (17-D-13 aimed at the whole
+// session — the open dialog resolves cancelled through the registry cascade
+// and queued asks drain cancelled-normal), cancel the in-flight turn, WAIT
+// bounded for the turn goroutine to return, reap session-scoped resources
+// through the SessionCloser seam, and drop the sessions-map entry. An absent
+// session is a no-op — the callers' idempotent branch.
+func (s *Server) closeSessionSequence(sessionID string) {
+	s.mu.Lock()
+	st, ok := s.sessions[sessionID]
+	s.mu.Unlock()
+
+	if !ok {
+		return
+	}
+
+	// 17-D-13: nothing dialog-shaped outlives the session.
+	s.drainSessionAsksIfPossible(sessionID)
+
+	st.cancelTurn()
+
+	if !st.waitTurnDrain(closeDrainTimeout) {
+		s.log.Printf("session/close: session %s turn drain timed out after %s — force-closing "+
+			"(the turn goroutine may still be unwinding)", sessionID, closeDrainTimeout)
+	}
+
+	s.closeSessionIfPossible(sessionID)
+
+	s.mu.Lock()
+	delete(s.sessions, sessionID)
+	s.mu.Unlock()
+}
+
+// handleSessionClose is session/close (18-04, ACP-07/D-12): cancel-and-drain.
+// Idempotent by contract — closing an unknown or already-closed id returns
+// the empty success result, never an error.
+func (s *Server) handleSessionClose(_ context.Context, params json.RawMessage) (any, error) {
+	var p CloseSessionRequest
+
+	if len(params) > 0 {
+		uerr := json.Unmarshal(params, &p)
+		if uerr != nil {
+			return nil, &RPCError{
+				Code:    CodeInvalidParams,
+				Message: "session/close params: " + uerr.Error(),
+			}
+		}
+	}
+
+	if p.SessionID == "" {
+		return nil, &RPCError{
+			Code:    CodeInvalidParams,
+			Message: "session/close: sessionId is required",
+		}
+	}
+
+	s.closeSessionSequence(p.SessionID)
+
+	return CloseSessionResponse{}, nil
+}
+
+// handleSessionDelete is session/delete (18-04, ACP-07 / D-07/D-08): close if
+// open, write the zero-byte tombstone marker beside the transcript through
+// the SessionStore seam, remove the session's checkpoint objects through the
+// CheckpointStore seam — and NEVER touch the transcript bytes or the audit
+// subtree (D-20: the tombstone IS the delete until the grace sweep purges;
+// the audit trail survives unconditionally). Best-effort on a spec-unstable
+// surface: every step runs, and partial failures collect into ONE typed
+// error carrying per-step detail. A nil session store (acpserve-less
+// setups) answers the typed not-available error — the tombstone IS the
+// delete, and without the store there is no delete.
+func (s *Server) handleSessionDelete(ctx context.Context, params json.RawMessage) (any, error) {
+	if s.sessionStore == nil {
+		return nil, &RPCError{
+			Code:    CodeInvalidRequest,
+			Message: "session/delete not available (no session store wired)",
+		}
+	}
+
+	var p DeleteSessionRequest
+
+	if len(params) > 0 {
+		uerr := json.Unmarshal(params, &p)
+		if uerr != nil {
+			return nil, &RPCError{
+				Code:    CodeInvalidParams,
+				Message: "session/delete params: " + uerr.Error(),
+			}
+		}
+	}
+
+	if p.SessionID == "" {
+		return nil, &RPCError{
+			Code:    CodeInvalidParams,
+			Message: "session/delete: sessionId is required",
+		}
+	}
+
+	// T-18-09: traversal-safe structural rejection BEFORE any path join.
+	if !loadSessIDPattern.MatchString(p.SessionID) {
+		return nil, &RPCError{
+			Code:    CodeInvalidParams,
+			Message: fmt.Sprintf("session/delete: malformed sessionId %q", p.SessionID),
+		}
+	}
+
+	s.closeSessionSequence(p.SessionID)
+
+	var failedSteps []string
+
+	terr := s.sessionStore.Tombstone(s.storeWorkDir(), p.SessionID)
+	if terr != nil {
+		failedSteps = append(failedSteps, "tombstone: "+terr.Error())
+	}
+
+	if s.ckptStore != nil {
+		derr := s.ckptStore.DeleteSession(ctx, p.SessionID)
+		if derr != nil {
+			failedSteps = append(failedSteps, "checkpoint removal: "+derr.Error())
+		}
+	}
+
+	if len(failedSteps) > 0 {
+		return nil, &RPCError{
+			Code: CodeInternalError,
+			Message: fmt.Sprintf(
+				"session/delete %s: partial failure — steps reported in data; "+
+					"the on-disk tombstone state is authoritative", p.SessionID),
+			Data: map[string]any{"failedSteps": failedSteps},
+		}
+	}
+
+	return DeleteSessionResponse{}, nil
 }
 
 // handleLogout drops the session. It accepts an optional sessionId param.

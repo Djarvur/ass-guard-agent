@@ -243,6 +243,40 @@ func (s *Store) List() ([]Entry, error) {
 	return s.listRefs(context.Background())
 }
 
+// DeleteSession removes EVERY checkpoint ref belonging to the session (18-04,
+// D-08: the session/delete artifact sweep — the transcript is tombstoned, not
+// removed, but the deleted session's checkpoint objects go now). Under the
+// whole-store lock; only refs returned by the store's own grammar-validated
+// listing are ever deleted, so the caller's session id never reaches git as
+// a refspec. A session with no refs is a no-op (idempotent).
+func (s *Store) DeleteSession(ctx context.Context, sessionID string) error {
+	if sessionID == "" {
+		return errEmptySessionID
+	}
+
+	return s.withLock(ctx, func() error {
+		entries, err := s.listRefs(ctx)
+		if err != nil {
+			return err
+		}
+
+		var errs []error
+
+		for _, e := range entries {
+			if e.SessionID != sessionID {
+				continue
+			}
+
+			_, derr := s.git(ctx, "update-ref", "-d", e.Ref)
+			if derr != nil {
+				errs = append(errs, fmt.Errorf("checkpoint: delete %s: %w", e.Ref, derr))
+			}
+		}
+
+		return errors.Join(errs...)
+	})
+}
+
 // Restore returns the workspace to the checkpoint's recorded pre-turn state:
 // a force checkout of the ref's tree over the whole workspace, then a clean
 // that removes files created after the snapshot (never .ass-guard/, the

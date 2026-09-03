@@ -514,12 +514,12 @@ type ListSessionsResponse struct {
 // the client renders its own placeholder), and UpdatedAt is the header's
 // lastActivity as an RFC3339 string.
 type SessionInfo struct {
-	Meta                  json.RawMessage `json:"_meta,omitempty"`                 //nolint:tagliatelle // ACP wire field
-	AdditionalDirectories []string        `json:"additionalDirectories,omitempty"` //nolint:tagliatelle // ACP wire field
+	Meta                  json.RawMessage `json:"_meta,omitempty"`                 //nolint:tagliatelle // wire
+	AdditionalDirectories []string        `json:"additionalDirectories,omitempty"` //nolint:tagliatelle // wire
 	Cwd                   string          `json:"cwd"`                             // required
-	SessionID             string          `json:"sessionId"`                       //nolint:tagliatelle // ACP wire field (required)
+	SessionID             string          `json:"sessionId"`                       //nolint:tagliatelle // wire
 	Title                 *string         `json:"title"`                           // nullable
-	UpdatedAt             *string         `json:"updatedAt"`                       //nolint:tagliatelle // ACP wire field (nullable)
+	UpdatedAt             *string         `json:"updatedAt"`                       //nolint:tagliatelle // wire
 }
 
 // CloseSessionRequest is the session/close payload (sessionId required).
