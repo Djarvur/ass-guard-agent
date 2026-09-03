@@ -33,7 +33,8 @@ func writeResumeFixtureTranscript(t *testing.T, workDir string) {
 
 	store := filepath.Join(workDir, ".ass-guard")
 
-	if err := os.MkdirAll(store, 0o750); err != nil {
+	err := os.MkdirAll(store, 0o750)
+	if err != nil {
 		t.Fatalf("mkdir store: %v", err)
 	}
 
@@ -46,9 +47,10 @@ func writeResumeFixtureTranscript(t *testing.T, workDir string) {
 		`{"type":"session_end","timestamp":"2026-09-03T10:00:03Z"}`,
 	}
 
-	if err := os.WriteFile(filepath.Join(store, "transcript_"+resumeFixtureID+".jsonl"),
-		[]byte(strings.Join(lines, "\n")+"\n"), 0o600); err != nil {
-		t.Fatalf("write fixture transcript: %v", err)
+	werr := os.WriteFile(filepath.Join(store, "transcript_"+resumeFixtureID+".jsonl"),
+		[]byte(strings.Join(lines, "\n")+"\n"), 0o600)
+	if werr != nil {
+		t.Fatalf("write fixture transcript: %v", werr)
 	}
 }
 
@@ -191,6 +193,8 @@ func TestResumeTargetLoadsBeforeServe(t *testing.T) {
 // serve starts normally (initialize answers) and ZERO replay-side frames
 // appear on the pipe.
 func TestResumeTargetAbsentIsNoop(t *testing.T) {
+	t.Parallel()
+
 	workDir := t.TempDir()
 
 	srvInR, srvInW := io.Pipe()
@@ -221,7 +225,7 @@ func TestResumeTargetAbsentIsNoop(t *testing.T) {
 		`"clientCapabilities":{"elicitation":{"form":{}}}}}`)
 
 	m := cli.nextResponse(`"n1"`)
-	if !strings.Contains(string(m.Result), "agentCapabilities") { //nolint:tagliatelle // ACP wire field
+	if !strings.Contains(string(m.Result), "agentCapabilities") {
 		t.Fatalf("initialize response malformed: %s", string(m.Result))
 	}
 
@@ -247,6 +251,8 @@ func TestResumeTargetAbsentIsNoop(t *testing.T) {
 // makes Run return an error NAMING the target (the CLI user asked for THAT
 // session) — never a silently fresh serve.
 func TestResumeTargetFailureIsLoud(t *testing.T) {
+	t.Parallel()
+
 	const missing = "99999999-9999-4999-8999-999999999999"
 
 	var stdout, stderr syncBuffer
@@ -271,9 +277,7 @@ func TestResumeTargetFailureIsLoud(t *testing.T) {
 
 	// The typed unknown-session rejection rides inside (the load engine's
 	// error, not a generic one).
-	var rpcErr *acp.RPCError
-
-	if !errors.As(err, &rpcErr) {
+	if _, ok := errors.AsType[*acp.RPCError](err); !ok {
 		t.Errorf("Run error = %T (%v); want the load engine's *acp.RPCError wrapped", err, err)
 	}
 }
