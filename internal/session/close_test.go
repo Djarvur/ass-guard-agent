@@ -137,3 +137,6 @@ func (panicProvider) Stream(
 func (panicProvider) ToolResultMessage(_ string, _ json.RawMessage) (json.RawMessage, error) {
 	return json.RawMessage(`{}`), nil
 }
+
+// SupportsImages: the fake is text-only (21-05 D-11 seam stub).
+func (panicProvider) SupportsImages() bool { return false }

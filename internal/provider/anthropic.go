@@ -147,6 +147,11 @@ func (p *AnthropicProvider) ToolResultMessage(toolCallID string, result json.Raw
 	return data, nil
 }
 
+// SupportsImages reports the Anthropic protocol's native image support
+// (21-05, D-11): the Messages API carries image content blocks
+// (ImageBlockParam + Base64ImageSourceParam) — true.
+func (p *AnthropicProvider) SupportsImages() bool { return true }
+
 // orEmpty returns b as-is, or a single space if empty, so JSON object fields
 // never carry a null where a string is expected.
 func orEmpty(b json.RawMessage) json.RawMessage {

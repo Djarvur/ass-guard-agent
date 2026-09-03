@@ -90,6 +90,9 @@ func (p *gatedStreamProvider) ToolResultMessage(string, json.RawMessage) (json.R
 	return json.RawMessage(`{}`), nil
 }
 
+// SupportsImages: the fake is text-only (21-05 D-11 seam stub).
+func (p *gatedStreamProvider) SupportsImages() bool { return false }
+
 func TestApplyTurnModel(t *testing.T) { //nolint:paralleltest // drives a background turn with real timing
 	gated := newGatedStreamProvider()
 	runner := newModelTestRunner(t, gated, testModelBefore)

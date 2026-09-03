@@ -179,6 +179,9 @@ func (f *fakeProvider) ToolResultMessage(toolCallID string, result json.RawMessa
 	return json.RawMessage(`{"role":"user","content":"stub"}`), nil
 }
 
+// SupportsImages: the fake is text-only (21-05 D-11 seam stub).
+func (f *fakeProvider) SupportsImages() bool { return false }
+
 // streamedProfiles returns a copy of the profiles Stream was called with
 // (test seam for per-dispatch system-block assertions).
 func (f *fakeProvider) streamedProfiles() []*profile.Profile {
@@ -704,6 +707,9 @@ func (c *convergingProvider) Stream(
 func (c *convergingProvider) ToolResultMessage(_ string, _ json.RawMessage) (json.RawMessage, error) {
 	return json.RawMessage(`{}`), nil
 }
+
+// SupportsImages: the fake is text-only (21-05 D-11 seam stub).
+func (c *convergingProvider) SupportsImages() bool { return false }
 
 // TestConverge_ModelSeesOwnToolResults (08-07 T2 Test 4, THE convergence
 // test): a model that returns end_turn only once its own tool result reaches

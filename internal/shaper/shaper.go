@@ -2,8 +2,10 @@ package shaper
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
@@ -37,6 +39,12 @@ const typeRedactedThinking = "redacted_thinking"
 type Message struct {
 	Role    string
 	Content string
+	// Blocks is the ORDERED rich-content rendering (PAR-06, 21-05): text and
+	// image blocks in their original content-block order. When non-empty it
+	// IS the wire rendering — the Content string stays the text-concatenation
+	// view for consumers like the projector's extractText. Additive: nil for
+	// every pre-image message, so legacy rendering stays byte-identical.
+	Blocks []Block
 	// ToolCalls is the assistant mid-turn batch (empty for plain text turns).
 	ToolCalls []ToolCall
 	// ThinkingBlocks carries the assistant message's provider thinking blocks
@@ -47,6 +55,25 @@ type Message struct {
 	ToolCallID string
 	ToolName   string
 	IsError    bool
+}
+
+// Block is one entry of a Message's ordered rich rendering: exactly one of
+// Text or Image is set (content-block order is parity-relevant — an image
+// between two text blocks renders in position).
+type Block struct {
+	Text  string
+	Image *ImageBlock
+}
+
+// ImageBlock is one image content block carried on a user Message (PAR-06,
+// 21-05): the Ref is the ingress-persisted path (the lean transcript line's
+// dataRef) whose bytes are read AT SHAPE TIME and mapped onto the SDK's
+// Base64ImageSourceParam. Only the Ref + canonical media type travel here —
+// dims/resize provenance never reach the wire (the SDK param carries only the
+// source).
+type ImageBlock struct {
+	Ref       string
+	MediaType string
 }
 
 // ThinkingBlock is one provider thinking block, extracted ONCE by the
@@ -181,6 +208,8 @@ func RenderHeaderValue(template string) string {
 // tool-role messages GROUP into one user-role param carrying one tool_result
 // block per message (the canonical Anthropic batch form — the capture's
 // per-result message granularity is preserved by block order).
+//
+//nolint:funlen // one per-protocol rendering ladder; flagged pre-21-05 too
 func toMessageParams(messages []Message) ([]anthropic.MessageParam, error) {
 	out := make([]anthropic.MessageParam, 0, len(messages))
 
@@ -227,10 +256,15 @@ func toMessageParams(messages []Message) ([]anthropic.MessageParam, error) {
 			}
 		}
 
-		if len(m.ToolCalls) == 0 {
+		switch {
+		case len(m.Blocks) > 0:
+			// Rich rendering (PAR-06, 21-05): the ordered block list IS the
+			// wire content — Content is the text-concatenation view only.
+			blocks = append(blocks, richBlocks(m.Blocks)...)
+		case len(m.ToolCalls) == 0:
 			// Text-only: exactly the pre-08-07 rendering (byte-compat).
 			blocks = append(blocks, anthropic.NewTextBlock(m.Content))
-		} else {
+		default:
 			// Assistant batch: optional text block FIRST, then tool_use blocks.
 			if m.Content != "" {
 				blocks = append(blocks, anthropic.NewTextBlock(m.Content))
@@ -256,6 +290,68 @@ func toMessageParams(messages []Message) ([]anthropic.MessageParam, error) {
 // toolResultBlock renders one tool-role Message as a native tool_result block.
 func toolResultBlock(m *Message) anthropic.ContentBlockParamUnion {
 	return anthropic.NewToolResultBlock(m.ToolCallID, m.Content, m.IsError)
+}
+
+// richBlocks renders a Message's ordered rich block list (PAR-06, 21-05):
+// text blocks in position; image blocks via the shape-time Ref read (a
+// missing Ref drops that block loudly and continues).
+func richBlocks(in []Block) []anthropic.ContentBlockParamUnion {
+	out := make([]anthropic.ContentBlockParamUnion, 0, len(in))
+
+	for i := range in {
+		blk := &in[i]
+
+		if blk.Image != nil {
+			if imgParam, ok := imageBlockParam(blk.Image); ok {
+				out = append(out, imgParam)
+			}
+
+			continue
+		}
+
+		if blk.Text != "" {
+			out = append(out, anthropic.NewTextBlock(blk.Text))
+		}
+	}
+
+	return out
+}
+
+// imgDropNotePrefix is the shaper's loud degrade-note prefix (the D-10/D-11
+// note family): a missing Ref at shape time (disk loss between ingress and
+// shape) drops the block + ONE note — Shape still succeeds with the remaining
+// blocks (degrade-softly, never a 400-spamming empty block, never a dead
+// turn). stderr only (transport discipline).
+const imgDropNotePrefix = "ass-guard: image content block dropped"
+
+// LoadImageBytes reads a Ref's bytes back for shape-time mapping (21-05,
+// PAR-06): the Ref is an ingress-persisted path under the session .ass-guard
+// images dir (the runtime's imgscale persists them; the shaper — the layer
+// that reads — owns the reader so the dependency edge stays one-directional).
+func LoadImageBytes(ref string) ([]byte, error) {
+	data, err := os.ReadFile(ref)
+	if err != nil {
+		return nil, fmt.Errorf("load image ref: %w", err)
+	}
+
+	return data, nil
+}
+
+// imageBlockParam renders one image Block onto the SDK param (PAR-06, 21-05):
+// the Ref'd bytes are read AT SHAPE TIME via LoadImageBytes and base64-mapped
+// onto Base64ImageSourceParam — SDK param structs only, never hand-marshaled
+// JSON (RESEARCH Don't-Hand-Roll). ok=false is the degrade path: the block is
+// DROPPED (contributes no param — never a phantom empty block that would
+// 400), one loud note lands on stderr, and shaping continues.
+func imageBlockParam(b *ImageBlock) (block anthropic.ContentBlockParamUnion, ok bool) {
+	data, err := LoadImageBytes(b.Ref)
+	if err != nil {
+		log.Printf("%s at shape time: ref unreadable (%s) — remaining blocks continue", imgDropNotePrefix, b.Ref)
+
+		return anthropic.ContentBlockParamUnion{}, false
+	}
+
+	return anthropic.NewImageBlockBase64(b.MediaType, base64.StdEncoding.EncodeToString(data)), true
 }
 
 // RenderToolResultParam renders ONE tool-role Message to the Anthropic-native

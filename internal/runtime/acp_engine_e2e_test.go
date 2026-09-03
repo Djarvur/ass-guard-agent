@@ -105,6 +105,9 @@ func (p *scriptedACPProvider) ToolResultMessage(_ string, _ json.RawMessage) (js
 	return json.RawMessage(`{"role":"user","content":"stub"}`), nil
 }
 
+// SupportsImages: the fake is text-only (21-05 D-11 seam stub).
+func (p *scriptedACPProvider) SupportsImages() bool { return false }
+
 func (p *scriptedACPProvider) callCount() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()

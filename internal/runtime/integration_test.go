@@ -59,6 +59,9 @@ func (m *mockStreamProvider) ToolResultMessage(string, json.RawMessage) (json.Ra
 	return json.RawMessage(`{}`), nil
 }
 
+// SupportsImages: the fake is text-only (21-05 D-11 seam stub).
+func (m *mockStreamProvider) SupportsImages() bool { return false }
+
 // driveACP starts runACPServe with a mock provider and returns the client pipe
 // ends. The test writes client frames to cliW and reads from cliR.
 func driveACP(t *testing.T, mp provider.Provider) ( //nolint:nonamedreturns // names document the teardown triple

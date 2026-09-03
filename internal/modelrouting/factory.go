@@ -233,6 +233,10 @@ func (p noCredentialProvider) ToolResultMessage(toolCallID string, result json.R
 	return nil, p.noCredentialError()
 }
 
+// SupportsImages mirrors the wrapped provider kind's image capability
+// conservatively: an unconfigured provider never carries images.
+func (p noCredentialProvider) SupportsImages() bool { return false }
+
 func (p noCredentialProvider) noCredentialError() error {
 	return &provider.ProviderError{
 		Kind:     provider.KindStructural,

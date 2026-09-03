@@ -55,6 +55,9 @@ func (p *midStreamCancelProvider) ToolResultMessage(string, json.RawMessage) (js
 	return json.RawMessage(`{}`), nil
 }
 
+// SupportsImages: the fake is text-only (21-05 D-11 seam stub).
+func (p *midStreamCancelProvider) SupportsImages() bool { return false }
+
 func TestCancelledMidStreamReportsCancelled(t *testing.T) {
 	t.Parallel()
 

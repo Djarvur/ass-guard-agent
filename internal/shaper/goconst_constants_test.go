@@ -4,3 +4,4 @@ package shaper_test
 const roleUser = "user"
 const profileZcode = "zcode"
 const synthModel = "synth-model"
+const roleAssistant = "assistant"

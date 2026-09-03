@@ -54,6 +54,9 @@ func (p *questionClosingProvider) ToolResultMessage(string, json.RawMessage) (js
 	return json.RawMessage(`{}`), nil
 }
 
+// SupportsImages: the fake is text-only (21-05 D-11 seam stub).
+func (p *questionClosingProvider) SupportsImages() bool { return false }
+
 // TestAdvisoryWiring_QuestionEndingNote (13-03 T1 Test 4, wiring level):
 // through the REAL acp.Server, a turn ending unmatched+question-shaped yields
 // exactly ONE agent_message_chunk session/update carrying the advisory note

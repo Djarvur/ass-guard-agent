@@ -219,3 +219,6 @@ func (r *reconProvider) Stream(
 func (r *reconProvider) ToolResultMessage(string, json.RawMessage) (json.RawMessage, error) {
 	return json.RawMessage(`{}`), nil
 }
+
+// SupportsImages: the fake is text-only (21-05 D-11 seam stub).
+func (r *reconProvider) SupportsImages() bool { return false }

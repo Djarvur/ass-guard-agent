@@ -76,6 +76,9 @@ func (r *wireModelRecorder) ToolResultMessage(string, json.RawMessage) (json.Raw
 	return json.RawMessage(`{}`), nil
 }
 
+// SupportsImages: the fake is text-only (21-05 D-11 seam stub).
+func (r *wireModelRecorder) SupportsImages() bool { return false }
+
 // nopChunkEmitter satisfies acp.ChunkEmitter for turns that stream no chunks.
 type nopChunkEmitter struct{}
 

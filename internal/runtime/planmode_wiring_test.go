@@ -105,6 +105,9 @@ func (p *planModeScriptProvider) ToolResultMessage(string, json.RawMessage) (jso
 	return json.RawMessage(`{}`), nil
 }
 
+// SupportsImages: the fake is text-only (21-05 D-11 seam stub).
+func (p *planModeScriptProvider) SupportsImages() bool { return false }
+
 // newPlanModeWiringRunner builds an ENGINE-ON runner scripted with the
 // plan-mode scenario and a long D-01 timeout (the approval reply must win).
 func newPlanModeWiringRunner(t *testing.T) (*Runner, *planModeScriptProvider) {

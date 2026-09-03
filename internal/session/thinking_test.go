@@ -51,6 +51,9 @@ func (p *scriptedThinkingProvider) ToolResultMessage(string, json.RawMessage) (j
 	return json.RawMessage(`{}`), nil
 }
 
+// SupportsImages: the fake is text-only (21-05 D-11 seam stub).
+func (p *scriptedThinkingProvider) SupportsImages() bool { return false }
+
 // newThinkingSession builds a bare Session over a counting-redactor Manager +
 // bus + the scripted provider (the thinking battery's fixture).
 func newThinkingSession(

@@ -176,6 +176,9 @@ func (p *scriptedProvider) ToolResultMessage(_ string, _ json.RawMessage) (json.
 	return json.RawMessage(`{}`), nil
 }
 
+// SupportsImages: the fake is text-only (21-05 D-11 seam stub).
+func (p *scriptedProvider) SupportsImages() bool { return false }
+
 // TestSessionForMCPProfileCopy verifies sessionFor builds a per-session profile
 // COPY containing base + MCP decls, that r.profile is never mutated, and that
 // two sessions have independent copies (T4 Test 1).

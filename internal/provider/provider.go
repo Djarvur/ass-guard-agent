@@ -33,6 +33,14 @@ type Provider interface {
 	// the marshaled native message — each protocol's shape (Anthropic user+
 	// tool_result; OpenAI role:tool + tool_call_id).
 	ToolResultMessage(toolCallID string, result json.RawMessage) (json.RawMessage, error)
+	// SupportsImages reports whether the adapter's protocol can carry image
+	// content blocks in outgoing requests (21-05, PAR-06/D-11): only the
+	// adapter knows its protocol's image support. false → the turn path drops
+	// image blocks with EXACTLY ONE loud note naming the provider and the
+	// turn proceeds with the text — never silent, never a dead turn. This is
+	// an interface method (not a registry) so a missed adapter fails to
+	// COMPILE, not silently at runtime.
+	SupportsImages() bool
 }
 
 // StreamChunk is one streamed fragment of a model response. Type discriminates:
@@ -87,6 +95,16 @@ type ToolCall = shaper.ToolCall
 // pattern as Message/ToolCall — so the projector-extracted field values flow
 // untouched from the transcript projection into the outgoing request shape.
 type ThinkingBlock = shaper.ThinkingBlock
+
+// Block is one entry of a Message's ordered rich rendering (PAR-06, 21-05) —
+// an alias of shaper.Block (the Message pattern): text/image blocks in
+// content-block order.
+type Block = shaper.Block
+
+// ImageBlock is one Ref'd image content block (PAR-06, 21-05) — an alias of
+// shaper.ImageBlock: the Ref + canonical media type the shaper reads at shape
+// time; dims/provenance never reach the wire.
+type ImageBlock = shaper.ImageBlock
 
 // RequestCapturer is invoked by an adapter with the verbatim outgoing request
 // body + header set after the Shaper produces them and before the provider

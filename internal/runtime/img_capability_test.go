@@ -94,9 +94,9 @@ func (p *noImageProvider) messagesWithImages() int {
 
 	n := 0
 
-	for _, msgs := range p.received {
-		for _, m := range msgs {
-			for _, b := range m.Blocks {
+	for i := range p.received {
+		for j := range p.received[i] {
+			for _, b := range p.received[i][j].Blocks {
 				if b.Image != nil {
 					n++
 				}
@@ -113,11 +113,12 @@ func pngPromptBlocks(t *testing.T) []acp.ContentBlock {
 
 	var buf bytes.Buffer
 
-	img := image.NewRGBA(image.Rect(0, 0, 8, 8)) //nolint:mnd // fixture dims
+	img := image.NewRGBA(image.Rect(0, 0, 8, 8))
 	img.Set(0, 0, color.RGBA{R: 255, A: 255})
 
-	if err := png.Encode(&buf, img); err != nil {
-		t.Fatalf("encode png: %v", err)
+	werr := png.Encode(&buf, img)
+	if werr != nil {
+		t.Fatalf("encode png: %v", werr)
 	}
 
 	return []acp.ContentBlock{
@@ -131,7 +132,7 @@ func pngPromptBlocks(t *testing.T) []acp.ContentBlock {
 
 // newCapabilityRunner builds a minimal Runner over a temp workspace with the
 // given provider factory (engine off — the plain turn path).
-func newCapabilityRunner(t *testing.T, make func(provider.RequestCapturer) provider.Provider) *Runner {
+func newCapabilityRunner(t *testing.T, factory func(provider.RequestCapturer) provider.Provider) *Runner {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -140,7 +141,7 @@ func newCapabilityRunner(t *testing.T, make func(provider.RequestCapturer) provi
 		bus:          event.NewBus(),
 		profile:      profile.Profile{Name: "imgcap"},
 		workDir:      dir,
-		makeProvider: make,
+		makeProvider: factory,
 		stderr:       &bytes.Buffer{},
 	}
 
@@ -157,8 +158,9 @@ func newCapabilityRunner(t *testing.T, make func(provider.RequestCapturer) provi
 // provider whose SupportsImages() is false, an image block in the prompt is
 // dropped from the outgoing request, EXACTLY ONE loud note naming the
 // provider lands on stderr, and the turn completes normally with the text.
-func TestImageCapability_D11DropAndNote(t *testing.T) { //nolint:funlen // one e2e flow, branch-dense assertions
-	t.Parallel()
+// Deliberately sequential: a full Run turn must not add contention to the
+// timing-sensitive tests sharing the parallel batch.
+func TestImageCapability_D11DropAndNote(t *testing.T) { //nolint:paralleltest // full-turn e2e
 
 	prov := &noImageProvider{supports: false}
 
@@ -174,7 +176,7 @@ func TestImageCapability_D11DropAndNote(t *testing.T) { //nolint:funlen // one e
 	}
 
 	// EXACTLY ONE note — never zero (silent), never two.
-	stderr := r.stderr.(*bytes.Buffer)
+	stderr, _ := r.stderr.(*bytes.Buffer)
 
 	if got := strings.Count(stderr.String(), imgD11Marker); got != 1 {
 		t.Errorf("D-11 notes = %d; want exactly 1; stderr: %q", got, stderr.String())
@@ -209,7 +211,8 @@ func TestImageCapability_D11DropAndNote(t *testing.T) { //nolint:funlen // one e
 
 		var blocks []session.ContentBlock
 
-		if uerr := json.Unmarshal(lines[i].Content, &blocks); uerr != nil {
+		uerr := json.Unmarshal(lines[i].Content, &blocks)
+		if uerr != nil {
 			t.Fatalf("unmarshal user_message: %v", uerr)
 		}
 
@@ -228,8 +231,11 @@ func TestImageCapability_D11DropAndNote(t *testing.T) { //nolint:funlen // one e
 // a pasted image produces the corresponding image content block in the
 // OUTGOING request body (ingress → transcript Ref → projection fold → shaper
 // base64 mapping), with the transcript line staying lean.
-func TestImageCapability_ImageReachesOutgoingRequest(t *testing.T) { //nolint:funlen // one e2e flow
-	t.Parallel()
+// Deliberately sequential: a full Run turn against a real SSE backend must
+// not add contention to the timing-sensitive tests sharing the parallel batch.
+//
+//nolint:funlen // one e2e flow
+func TestImageCapability_ImageReachesOutgoingRequest(t *testing.T) { //nolint:paralleltest // full-turn e2e
 
 	var bodyMu sync.Mutex
 
@@ -251,7 +257,7 @@ func TestImageCapability_ImageReachesOutgoingRequest(t *testing.T) { //nolint:fu
 	}))
 	defer srv.Close()
 
-	r := newCapabilityRunner(t, func(cap provider.RequestCapturer) provider.Provider {
+	r := newCapabilityRunner(t, func(capturer provider.RequestCapturer) provider.Provider {
 		return provider.NewAnthropicProvider(shaper.New(),
 			provider.WithAnthropicAPIKey("test-key"),
 			provider.WithAnthropicBaseURL(srv.URL),
@@ -262,8 +268,8 @@ func TestImageCapability_ImageReachesOutgoingRequest(t *testing.T) { //nolint:fu
 
 				bodyMu.Unlock()
 
-				if cap != nil {
-					cap(body, nil)
+				if capturer != nil {
+					capturer(body, nil)
 				}
 			}),
 		)
@@ -312,7 +318,8 @@ func TestImageCapability_ImageReachesOutgoingRequest(t *testing.T) { //nolint:fu
 		if lines[i].Type == session.TypeUserMessage {
 			blocks = nil
 
-			if uerr := json.Unmarshal(lines[i].Content, &blocks); uerr != nil {
+			uerr := json.Unmarshal(lines[i].Content, &blocks)
+			if uerr != nil {
 				t.Fatalf("unmarshal user_message content: %v", uerr)
 			}
 		}
@@ -373,21 +380,23 @@ func TestImageCapability_OpenAIShapeBodyHasNoImage(t *testing.T) {
 }
 
 // plantPngRef persists a tiny PNG in a temp dir, returning its path + base64.
-func plantPngRef(t *testing.T) (ref string, b64 string) {
+func plantPngRef(t *testing.T) (ref, b64 string) { //nolint:nonamedreturns // tight fixture helper
 	t.Helper()
 
 	var buf bytes.Buffer
 
-	img := image.NewRGBA(image.Rect(0, 0, 4, 4)) //nolint:mnd // fixture dims
+	img := image.NewRGBA(image.Rect(0, 0, 4, 4))
 	img.Set(0, 0, color.RGBA{R: 255, A: 255})
 
-	if err := png.Encode(&buf, img); err != nil {
-		t.Fatalf("encode png: %v", err)
+	werr := png.Encode(&buf, img)
+	if werr != nil {
+		t.Fatalf("encode png: %v", werr)
 	}
 
 	ref = filepath.Join(t.TempDir(), "ref.png")
 
-	if werr := os.WriteFile(ref, buf.Bytes(), 0o600); werr != nil {
+	werr = os.WriteFile(ref, buf.Bytes(), 0o600)
+	if werr != nil {
 		t.Fatalf("plant ref: %v", werr)
 	}
 

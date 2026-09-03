@@ -263,19 +263,6 @@ func encodeScaled(
 	return buf.Bytes(), imgJPEGMedia, nil
 }
 
-// LoadImageBytes reads a Ref's bytes back for the shaper (21-05 Task 2's
-// Ref reader): the Ref is an ingress-persisted path under the session
-// .ass-guard images dir. A missing/unreadable Ref is the shaper's loud
-// degrade (drop the block, never a dead turn).
-func LoadImageBytes(ref string) ([]byte, error) {
-	data, err := os.ReadFile(ref)
-	if err != nil {
-		return nil, fmt.Errorf("load image ref: %w", err)
-	}
-
-	return data, nil
-}
-
 // imageRefFor derives the sha-keyed file name for ingested bytes: the
 // ORIGINAL persists as <sha256>.<ext>; a scaled derivative as
 // <sha256>.<w>x<h>.<ext> (idempotent by construction — the same bytes always

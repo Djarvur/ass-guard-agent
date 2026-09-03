@@ -1127,6 +1127,9 @@ func (p *captureFiringProvider) ToolResultMessage(_ string, _ json.RawMessage) (
 	return json.RawMessage(`{"role":"user","content":"stub"}`), nil
 }
 
+// SupportsImages: the fake is text-only (21-05 D-11 seam stub).
+func (p *captureFiringProvider) SupportsImages() bool { return false }
+
 func (p *captureFiringProvider) Stream(
 	ctx context.Context, _ *profile.Profile, _ []provider.Message,
 ) (<-chan provider.StreamChunk, error) {

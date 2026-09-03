@@ -121,6 +121,36 @@ func encodeJPEG(t *testing.T, w, h int) []byte {
 	return buf.Bytes()
 }
 
+// encodeNoisePNG renders an incompressible LCG-noise PNG (poor compression
+// forces the over-bytes class at small dims).
+func encodeNoisePNG(t *testing.T, w, h int) []byte {
+	t.Helper()
+
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	seed := uint32(0x9E3779B9)
+
+	for y := range h {
+		for x := range w {
+			seed = seed*1664525 + 1013904223
+			img.SetRGBA(x, y, color.RGBA{
+				R: uint8(seed >> 24),
+				G: uint8(seed >> 16),
+				B: uint8(seed >> 8),
+				A: 255,
+			})
+		}
+	}
+
+	var buf bytes.Buffer
+
+	err := png.Encode(&buf, img)
+	if err != nil {
+		t.Fatalf("encode noise png %dx%d: %v", w, h, err)
+	}
+
+	return buf.Bytes()
+}
+
 // encodePNG renders the gradient as a PNG of the given dims.
 func encodePNG(t *testing.T, w, h int) []byte {
 	t.Helper()
@@ -297,34 +327,66 @@ func TestValidateAndScale_WithinLimitsPassthrough(t *testing.T) {
 
 // --- Family 2: over-dims downscale fits the 1568 px long edge ---
 
+// imgHeavyEnv gates the LITERAL plan-scale fixtures (a 9000×6000 JPEG against
+// DefaultImageLimits ≈ 54 MP — under -race that fixture holds ~1 GB of
+// shadowed pixel memory, and running it in the default suite starves the
+// timing-sensitive tests that share the parallel batch). Default runs prove
+// the identical code path at a cheaper scale; ASSGUARD_IMG_HEAVY=1 runs the
+// plan's literal numbers (e.g. from the 21-05 acceptance command).
+const imgHeavyEnv = "ASSGUARD_IMG_HEAVY"
+
 // TestValidateAndScale_OverDimsDownscalesToTargetLongEdge proves D-09's
-// auto-downscale: a 9000×6000 JPEG (over the 8000×8000 provider cap)
-// downscale-fits the 1568 px long edge via the pure-Go scaler, records the
-// resize provenance, and the output decodes at the scaled dims.
-func TestValidateAndScale_OverDimsDownscalesToTargetLongEdge(t *testing.T) { //nolint:paralleltest // 216MB fixture
+// auto-downscale: an over-dims JPEG downscale-fits the REAL 1568 px long-edge
+// target via the pure-Go scaler, records the resize provenance, and the
+// output decodes at the scaled dims. The default row scales the LIMITS with
+// the fixture (2000×1334 over a 1600×1600 cap — same 3:2 shape, same
+// 1568×1045 result as the plan's 9000×6000 row); ASSGUARD_IMG_HEAVY=1 runs
+// the plan's literal 9000×6000 against DefaultImageLimits.
+// The env-branched fixture keeps this test deliberately sequential.
+//
+//nolint:paralleltest,funlen // env-branched fixture row
+func TestValidateAndScale_OverDimsDownscalesToTargetLongEdge(t *testing.T) {
 	const (
-		overDimsW   = 9000
-		overDimsH   = 6000
-		wantScaledH = 1045 // 6000 * 1568 / 9000
+		planW       = 9000
+		planH       = 6000
+		cheapW      = 2000
+		cheapH      = 1334
+		wantScaledH = 1045 // long edge lands at 1568; the short edge at 1045
 	)
 
-	data := encodeJPEG(t, overDimsW, overDimsH)
+	overW, overH := cheapW, cheapH
+	limits := ImageLimits{
+		MaxW:           1600, // the cheap row keeps the REAL 1568 target
+		MaxH:           1600,
+		MaxBytes:       DefaultImageLimits.MaxBytes,
+		TargetLongEdge: 1568,
+	}
 
-	got := validate(t, data, imgJPEGMedia, DefaultImageLimits)
+	if os.Getenv(imgHeavyEnv) != "" {
+		overW, overH = planW, planH
+		limits = DefaultImageLimits
+	} else {
+		t.Log("cheap fixture row; set " + imgHeavyEnv + "=1 for the plan's literal 9000x6000 defaults row")
+	}
+
+	data := encodeJPEG(t, overW, overH)
+
+	got := validate(t, data, imgJPEGMedia, limits)
 
 	if !got.scaled {
 		t.Fatal("didScale = false for an over-dims image; want true")
 	}
 
-	if got.origW != overDimsW || got.origH != overDimsH {
+	if got.origW != overW || got.origH != overH {
 		t.Errorf("provenance orig dims = (%d,%d); want (%d,%d)",
-			got.origW, got.origH, overDimsW, overDimsH)
+			got.origW, got.origH, overW, overH)
 	}
 
-	// The 1568 long edge: 9000 → 1568, 6000 → 1045 (rounding down keeps within).
-	if got.w != DefaultImageLimits.TargetLongEdge {
+	// The 1568 long edge: the long side lands at 1568, the short at 1045
+	// (rounding down keeps within) — the plan row's exact output dims.
+	if got.w != limits.TargetLongEdge {
 		t.Errorf("scaled width = %d; want %d (the target long edge)",
-			got.w, DefaultImageLimits.TargetLongEdge)
+			got.w, limits.TargetLongEdge)
 	}
 
 	if got.h != wantScaledH {
@@ -349,20 +411,26 @@ func TestValidateAndScale_OverDimsDownscalesToTargetLongEdge(t *testing.T) { //n
 // --- Family 3: over-bytes downscale lands within the cap ---
 
 // TestValidateAndScale_OverBytesDownscalesWithinCap proves the byte-cap leg:
-// a noise PNG within dims but over the byte cap downscales until the
+// a gradient PNG within dims but over the byte cap downscales until the
 // re-encoded output fits the cap (custom small limits keep the fixture cheap;
 // the code path is the production one).
 func TestValidateAndScale_OverBytesDownscalesWithinCap(t *testing.T) {
 	t.Parallel()
 
-	// Cheap fixture scale: MB-scale gradient PNG, dims within, bytes over.
+	// Cheap fixture scale: a gradient PNG whose bytes exceed a small cap
+	// while its dims stay within (the trigger is byte-side).
 	const (
-		overBytesW   = 4000
-		overBytesCap = 200 << 10
+		overBytesW   = 400
+		overBytesCap = 150 << 10
 	)
 
-	limits := ImageLimits{MaxW: 8000, MaxH: 8000, MaxBytes: overBytesCap, TargetLongEdge: 200}
-	data := encodePNG(t, overBytesW, overBytesW)
+	limits := ImageLimits{
+		MaxW:           8000, // cheap fixture scale
+		MaxH:           8000,
+		MaxBytes:       overBytesCap,
+		TargetLongEdge: 200,
+	}
+	data := encodeNoisePNG(t, overBytesW, overBytesW)
 
 	if int64(len(data)) <= limits.MaxBytes {
 		t.Fatalf("fixture too small (%d bytes) to exceed the %d-byte cap", len(data), limits.MaxBytes)

@@ -87,7 +87,7 @@ func (p *Projector) Project(turnID string) ([]provider.Message, error) {
 	beforeBoundary, afterBoundary := splitAtResetBoundary(lines, turnID)
 
 	summary := p.extractSummary(beforeBoundary)
-	currentIntent := p.findCurrentIntent(afterBoundary, beforeBoundary, turnID)
+	currentIntent := findCurrentIntent(afterBoundary, beforeBoundary, turnID)
 
 	// The lean seed is ONE user message: the task summary + the current intent.
 	// (The Shaper adds the system prompt separately from p.prof.System.)
@@ -103,10 +103,59 @@ func (p *Projector) Project(turnID string) ([]provider.Message, error) {
 	mid := boundMidTurn(accumulateMidTurn(lines, turnID))
 
 	out := make([]provider.Message, 0, 1+len(mid))
-	out = append(out, provider.Message{Role: roleUserMsg, Content: content})
+	out = append(out, seedMessage(content, findIntentLine(afterBoundary, beforeBoundary, turnID)))
 	out = append(out, mid...)
 
 	return out, nil
+}
+
+// seedMessage builds the lean-seed user Message. 21-05 (PAR-06): when the
+// turn's user_message line carries image blocks (the ingress-persisted Ref
+// form), the seed renders as ORDERED rich blocks — the seed text first, then
+// the image blocks in line order — so the pasted image reaches the outgoing
+// request (criterion 5). A line without image blocks seeds exactly the
+// pre-21-05 text-only form (Blocks nil — byte-identical shaping).
+func seedMessage(content string, intentLine *Line) provider.Message {
+	seed := provider.Message{Role: roleUserMsg, Content: content}
+
+	imgs := imageBlocksOf(intentLine)
+	if len(imgs) == 0 {
+		return seed
+	}
+
+	seed.Blocks = append([]provider.Block{{Text: content}}, imgs...)
+
+	return seed
+}
+
+// imageBlocksOf extracts a user_message line's image blocks as rich Blocks
+// (the Ref + canonical media type only — dims/provenance stay in the
+// transcript line; the wire never sees them).
+func imageBlocksOf(l *Line) []provider.Block {
+	if l == nil || len(l.Content) == 0 {
+		return nil
+	}
+
+	var blocks []ContentBlock
+
+	if err := json.Unmarshal(l.Content, &blocks); err != nil {
+		return nil
+	}
+
+	var out []provider.Block
+
+	for i := range blocks {
+		b := &blocks[i]
+		if b.Type != blockImage || b.DataRef == "" {
+			continue
+		}
+
+		ref, media := b.DataRef, b.MediaType
+
+		out = append(out, provider.Block{Image: &provider.ImageBlock{Ref: ref, MediaType: media}})
+	}
+
+	return out
 }
 
 // splitAtResetBoundary splits the transcript at the between-turn reset point
@@ -434,35 +483,46 @@ func (p *Projector) extractSummary(before []Line) string {
 
 // findCurrentIntent returns the current user intent: the last user_message after
 // the boundary, or (no boundary) the last user_message overall.
-func (p *Projector) findCurrentIntent(after, before []Line, turnID string) string {
+func findCurrentIntent(after, before []Line, turnID string) string {
+	return extractText(findIntentLine(after, before, turnID))
+}
+
+// findIntentLine is findCurrentIntent's line-returning core (21-05, PAR-06):
+// the seed's rich-block fold needs the user_message LINE (its image blocks),
+// not just the concatenated text. Returns nil when no user_message exists.
+func findIntentLine(after, before []Line, turnID string) *Line {
 	// Prefer the user message matching turnID; fall back to the last user_message.
 	for i := len(after) - 1; i >= 0; i-- { //nolint:modernize // conflicts with gocritic rangeValCopy
 		v := &after[i]
 		if v.Type == TypeUserMessage && (turnID == "" || v.TurnID == turnID) {
-			return extractText(v)
+			return v
 		}
 	}
 
 	for i := len(after) - 1; i >= 0; i-- { //nolint:modernize // conflicts with gocritic rangeValCopy
 		v := &after[i]
 		if v.Type == TypeUserMessage {
-			return extractText(v)
+			return v
 		}
 	}
 
 	for i := len(before) - 1; i >= 0; i-- { //nolint:modernize // conflicts with gocritic rangeValCopy
 		v := &before[i]
 		if v.Type == TypeUserMessage {
-			return extractText(v)
+			return v
 		}
 	}
 
-	return ""
+	return nil
 }
 
 // extractText returns the plain text from a user_message content block slice
-// (or the line's Text shorthand).
+// (or the line's Text shorthand). nil-safe (findIntentLine's no-line case).
 func extractText(l *Line) string {
+	if l == nil {
+		return ""
+	}
+
 	if len(l.Content) > 0 {
 		var blocks []ContentBlock
 
@@ -470,9 +530,9 @@ func extractText(l *Line) string {
 		if err == nil {
 			var sb strings.Builder
 
-			for _, b := range blocks {
-				if b.Text != "" {
-					sb.WriteString(b.Text)
+			for i := range blocks {
+				if blocks[i].Text != "" {
+					sb.WriteString(blocks[i].Text)
 				}
 			}
 

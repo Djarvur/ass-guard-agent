@@ -756,6 +756,16 @@ func (r *Runner) Run( //nolint:funlen // the turn pipeline's composition root
 
 	blocks := toContentBlocks(prompt)
 
+	// 21-05 (PAR-06/D-11): provider-capability validation FIRST — a provider
+	// whose protocol cannot carry image content blocks gets them dropped
+	// here with EXACTLY ONE loud note naming it, BEFORE ingress persists
+	// anything and BEFORE the transcript append (an undeliverable image
+	// never becomes a Ref line). The turn proceeds with the text — never
+	// silent, never a dead turn. The shaper stays pure (no capability flag):
+	// the turn path is the one seam that knows both the blocks and the
+	// session's provider.
+	blocks = r.dropUnsupportedImages(sess, blocks)
+
 	// 21-05 (PAR-06/D-09): image ingress at the turn entry — BEFORE the
 	// transcript append and before either turn path (engine or plain) sees
 	// the blocks: validate (DecodeConfig-first), auto-downscale, persist
@@ -1848,6 +1858,48 @@ func sourceMediaOf(data []byte) string {
 	}
 
 	return mediaTypesByFormat[format]
+}
+
+// dropUnsupportedImages is the D-11 leg (21-05, PAR-06): when the session's
+// provider declares no image support, every image block is dropped with
+// EXACTLY ONE loud note NAMING THE PROVIDER — the turn proceeds with the
+// text, never silent, never a dead turn. Runs BEFORE ingress (nothing is
+// persisted for an undeliverable image) and BEFORE the transcript append.
+// A nil provider (test-constructed sessions) or an image-capable provider
+// passes the blocks through untouched.
+func (r *Runner) dropUnsupportedImages(
+	sess *session.Session, blocks []session.ContentBlock,
+) []session.ContentBlock {
+	if sess == nil || sess.Provider == nil || sess.Provider.SupportsImages() {
+		return blocks
+	}
+
+	hasImage := false
+
+	for _, b := range blocks {
+		if b.Type == blockImage {
+			hasImage = true
+
+			break
+		}
+	}
+
+	if !hasImage {
+		return blocks
+	}
+
+	out := make([]session.ContentBlock, 0, len(blocks))
+	for _, b := range blocks {
+		if b.Type != blockImage {
+			out = append(out, b)
+		}
+	}
+
+	_, _ = fmt.Fprintf(r.stderrOrDefault(),
+		"ass-guard: image content dropped: provider %T does not support images "+
+			"(D-11) — the turn proceeds with text only\n", sess.Provider)
+
+	return out
 }
 
 // ingressImages is the image ingress tier (21-05, PAR-06/D-09): every image

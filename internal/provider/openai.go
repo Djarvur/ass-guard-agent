@@ -139,7 +139,8 @@ func (p *OpenAIProvider) buildRequest(prof *profile.Profile, messages []Message)
 // {role:"tool", tool_call_id, content}.
 func toOpenAIMessages(messages []Message) []openai.ChatCompletionMessage {
 	msgs := make([]openai.ChatCompletionMessage, 0, len(messages))
-	for _, m := range messages {
+	for i := range messages {
+		m := &messages[i]
 		cm := openai.ChatCompletionMessage{Role: m.Role, Content: m.Content}
 
 		for _, tc := range m.ToolCalls {
@@ -252,6 +253,14 @@ func (p *OpenAIProvider) ToolResultMessage(toolCallID string, result json.RawMes
 
 	return data, nil
 }
+
+// SupportsImages reports the OpenAI-shape adapter's TEXT-ONLY status today
+// (21-05, D-11): this adapter maps to Chat Completions string content only —
+// the go-openai MultiContent surface is explicitly OUT of PAR-06's letter
+// (21-RESEARCH's Alternatives row blesses drop+loud-note instead). Image
+// blocks are dropped at the turn path with one loud note naming this
+// provider; the turn proceeds with the text.
+func (p *OpenAIProvider) SupportsImages() bool { return false }
 
 // Stream is not implemented for the OpenAI-shape adapter in Phase 2 (the
 // streaming path is Anthropic-shape only — ACP-04 is exercised against the Z.ai

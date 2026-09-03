@@ -72,6 +72,9 @@ func (p *countingProvider) ToolResultMessage(
 	return nil, errNotUsed
 }
 
+// SupportsImages: the fake is text-only (21-05 D-11 seam stub).
+func (p *countingProvider) SupportsImages() bool { return false }
+
 func (p *countingProvider) count() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()

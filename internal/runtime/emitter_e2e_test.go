@@ -129,6 +129,9 @@ func (p *pacedStreamProvider) ToolResultMessage(string, json.RawMessage) (json.R
 	return json.RawMessage(`{}`), nil
 }
 
+// SupportsImages: the fake is text-only (21-05 D-11 seam stub).
+func (p *pacedStreamProvider) SupportsImages() bool { return false }
+
 // TestTurnEmitterEndToEnd proves the tracer slice: initialize → session/new →
 // session/prompt over a REAL acp.Server over pipes, with the real Runner fixture
 // and the emitter-backed notification path. Asserts:

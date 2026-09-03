@@ -74,6 +74,9 @@ func (f *fakeProvider) ToolResultMessage(string, json.RawMessage) (json.RawMessa
 	return nil, errToolresultmessageNotImplemented
 }
 
+// SupportsImages: the fake is text-only (21-05 D-11 seam stub).
+func (f *fakeProvider) SupportsImages() bool { return false }
+
 func (f *fakeProvider) callCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()

@@ -568,6 +568,9 @@ func (p *askToolCallProvider) ToolResultMessage(string, json.RawMessage) (json.R
 	return json.RawMessage(`{}`), nil
 }
 
+// SupportsImages: the fake is text-only (21-05 D-11 seam stub).
+func (p *askToolCallProvider) SupportsImages() bool { return false }
+
 // cr02GateTool is the mutating tool the CR-02 mutex pins gate on; cr02PermFire
 // is the blocking permission surface (the dialog stays open until release).
 const cr02GateTool = toolNameWrite

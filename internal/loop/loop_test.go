@@ -33,6 +33,9 @@ func (f *fakeProvider) ToolResultMessage(toolCallID string, result json.RawMessa
 	return json.RawMessage(`{"role":"user","content":"stub"}`), nil
 }
 
+// SupportsImages: the fake is text-only (21-05 D-11 seam stub).
+func (f *fakeProvider) SupportsImages() bool { return false }
+
 // Stream satisfies the Phase-2-expanded Provider interface. The Phase-1 test
 // harness loop only exercises Send; Stream is a stub that returns a non-streamed
 // error so it is never accidentally used here.
