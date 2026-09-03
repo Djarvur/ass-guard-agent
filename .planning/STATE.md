@@ -5,17 +5,17 @@ milestone_name: Claude Code Parity
 current_phase: 21
 current_phase_name: Context & Policy Parity Closures
 current_plan: 6
-status: executing
-stopped_at: Completed 21-05-PLAN.md
-last_updated: "2026-09-03T22:28:24.680Z"
+status: verifying
+stopped_at: Completed 21-06-PLAN.md
+last_updated: "2026-09-03T22:56:56.082Z"
 last_activity: 2026-09-03
 last_activity_desc: Phase 21 execution started
-state_head: ed74b2d2a35e59e95cb5086746728175cfb3619d
+state_head: 9762759a6da896c0d610bdd7185f1f199275df2b
 progress:
   total_phases: 11
   completed_phases: 3
   total_plans: 70
-  completed_plans: 33
+  completed_plans: 34
   percent: 27
 ---
 
@@ -32,7 +32,7 @@ See: .planning/PROJECT.md (updated 2026-09-03)
 Phase: 21 (Context & Policy Parity Closures) — EXECUTING
 Current Plan: 6
 Total Plans in Phase: 6
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-09-03 — Phase 21 execution started
 
 Progress: [██████░░░░░░░░░░░░░░░░] 22/70 plans ([███░░░░░░░] 27%)
@@ -79,6 +79,7 @@ Progress: [██████░░░░░░░░░░░░░░░░] 2
 | Phase 21 P03 | 55 min | 3 tasks | 19 files |
 | Phase 21 P04 | 25 min | 2 tasks | 6 files |
 | 21-context-policy-parity-closures/05 | 109 min | 2 tasks | 38 files |
+| Phase 21 P21-06 | 20 min | 2 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -151,6 +152,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 21]: Mention provenance is per attempt, not per success: forms file|dir|denied|unresolved record every @token's outcome, making the Read-rule gate observable in the transcript
 - [Phase 21]: 21-05 D-11 seam: the turn path consults Provider.SupportsImages and strips+notes before ingress; the shaper stays pure
 - [Phase 21]: 21-05 pixel-bomb law is two-tier: provider limits trigger D-09 downscale; a 100 Mpx decode-safety ceiling refuses at the config stage
+- [Phase 21]: The 21-06 hook-gate join maps the four-valued PreToolUse verdict TOTALLY at gateCall's head (ask suspends even ungated, D-04); the executor consultation leg is deleted, not stubbed — one gate, one consultation site, one result form per decision
+- [Phase 21]: Precedence hook verdict -> permission ask -> execute is documented AT the chokepoint (gateCall doc) and enforced by grep audits: zero executor consultation sites, the gate head the sole PreToolUseVerdict consumer
 
 ### Pending Todos
 
@@ -173,6 +176,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-03T22:28:17.550Z
-Stopped at: Completed 21-05-PLAN.md
+Last session: 2026-09-03T22:56:36.771Z
+Stopped at: Completed 21-06-PLAN.md
 Resume file: None
