@@ -3,9 +3,11 @@ package runtime //nolint:testpackage // internal package test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
@@ -297,5 +299,51 @@ func TestHookJoin_OneLiveRuleAuthority(t *testing.T) { //nolint:paralleltest // 
 
 	if strings.Contains(after[0].Text, mentionFileBody) {
 		t.Fatalf("denied @file content leaked into the prompt:\n%q", after[0].Text)
+	}
+}
+
+// TestHookJoin_MentionSeamRaceFree (21-REVIEW WR-02): the old wiring wrote
+// readRuleEvaluator inside sessionFor (under sessMu) while turn-time mention
+// consults read the field with NO lock — a session B construction could race
+// session A's in-flight readAllows with no happens-before edge. The hoisted
+// store is published through r.permStore (atomic) and the evaluator field is
+// production-read-only, so this hammer — concurrent sessionFor construction
+// against live mention resolution — must stay clean under -race.
+func TestHookJoin_MentionSeamRaceFree(t *testing.T) { //nolint:paralleltest // HOME pin
+	r, dir := memRunner(t, func(dir string) { mentionFixture(t, dir) })
+
+	target := filepath.Join(dir, "notes.md")
+
+	var wg sync.WaitGroup
+
+	// The writer side: concurrent session construction (the async catch-up
+	// firing racing the first Run — 12-07's reachable sequence).
+	for i := range 4 {
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+
+			if s := r.sessionFor(context.Background(), fmt.Sprintf("sess-race-%d", i)); s == nil {
+				t.Error("sessionFor returned nil under concurrency")
+			}
+		}()
+	}
+
+	// The reader side: lock-free turn-time consults while construction runs.
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+
+		for range 200 {
+			_ = r.readAllows(target)
+		}
+	}()
+
+	wg.Wait()
+
+	if r.permStore.Load() == nil {
+		t.Fatal("the shared perm store never opened under concurrent sessionFor")
 	}
 }
