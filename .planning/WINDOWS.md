@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 7
+open_count: 6
 waived_count: 0
-fixed_count: 8
+fixed_count: 9
 total_count: 15
-last_updated: 2026-09-01T03:34:40.899Z
+last_updated: 2026-09-03T10:24:28.543Z
 ---
 
 # Broken Windows Ledger
@@ -29,7 +29,7 @@ last_updated: 2026-09-01T03:34:40.899Z
 | 12 | 17 | deviation | internal/acpserve/acp_serve.go |  | 17-04 Rule-3 wiring deviation: ElicitationAsk composition + SetAskFire injection live in acp_serve.go (beyond the plan's file list; the key_links' wiring seams) | open |  | 2026-09-01T02:47:24.814Z |  |
 | 13 | 17 | deviation | internal/runtime/ask_wiring_test.go |  | 17-04 Rule-3 wiring deviation: the Run-level AskUserQuestion round-trip test lives in ask_wiring_test.go (beyond the plan's file list; the real harness exists only there) | open |  | 2026-09-01T02:47:33.475Z |  |
 | 14 | 17 | deviation | internal/session/askqueue.go |  | 17-04 Rule-3 contract deviation: AskOutcome elicitation fields (Elicit/Content/Violation/Fallback) + AskEntry.Note/PlainTextFallback live beside the queue types (beyond the plan's file list; the dispatcher's input/outcome contract) | open |  | 2026-09-01T02:47:33.676Z |  |
-| 15 | 17 | unmet-truth | .planning/phases/17-permissions-elicitation/17-05-SUMMARY.md |  | PENDING-OPERATOR-CONFIRMATION: live-Zed operator confirmation of ROADMAP criteria 1 and 3 (native four-option permission dialog with persistence + native elicitation form rendering, seven-step checklist) not yet executed; the 17-05 simulator battery + docs prove the wire and the pipeline, the live legs await the operator | open |  | 2026-09-01T03:34:40.899Z |  |
+| 15 | 17 | unmet-truth | .planning/phases/17-permissions-elicitation/17-05-SUMMARY.md |  | PENDING-OPERATOR-CONFIRMATION: live-Zed operator confirmation of ROADMAP criteria 1 and 3 (native four-option permission dialog with persistence + native elicitation form rendering, seven-step checklist) not yet executed; the 17-05 simulator battery + docs prove the wire and the pipeline, the live legs await the operator | fixed |  | 2026-09-01T03:34:40.899Z | 2026-09-03T10:24:28.543Z |
 
 ````json
 [
@@ -208,10 +208,10 @@ last_updated: 2026-09-01T03:34:40.899Z
     "file": ".planning/phases/17-permissions-elicitation/17-05-SUMMARY.md",
     "line": null,
     "description": "PENDING-OPERATOR-CONFIRMATION: live-Zed operator confirmation of ROADMAP criteria 1 and 3 (native four-option permission dialog with persistence + native elicitation form rendering, seven-step checklist) not yet executed; the 17-05 simulator battery + docs prove the wire and the pipeline, the live legs await the operator",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-09-01T03:34:40.899Z",
-    "resolved_at": null
+    "resolved_at": "2026-09-03T10:24:28.543Z"
   }
 ]
 ````

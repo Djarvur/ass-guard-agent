@@ -148,7 +148,7 @@ None - plan executed exactly as written (no production code changed; the two tas
 
 ## Operator Checkpoint (Task 3 — blocking-human)
 
-PENDING-OPERATOR-CONFIRMATION
+OPERATOR-CONFIRMED (2026-09-03, Zed 1.18.0 — per-step disposition recorded in WINDOWS ledger #15; interim defect G-17-1 found by this checkpoint, fixed by 17-06, and re-verified live: four-option dialog, always-persistence both directions, native elicitation form with answer-landing, clean cancel. Step 6 mode-flip not run live — deterministic stage-5 coverage stands.)
 
 The seven-step live-Zed checklist (from the plan's checkpoint task; WINDOWS ledger #15 carries the same record — record PASS/FAIL per step plus the Zed version there, then flip this marker to OPERATOR-CONFIRMED):
 
