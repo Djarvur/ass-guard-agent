@@ -1212,6 +1212,52 @@ func TestProjector_ThinkingOrphanDroppedWithTurn(t *testing.T) {
 	}
 }
 
+// TestProjector_ThinkingNeverDuplicatedAcrossBatchAndText (21-REVIEW WR-04):
+// an assistant_message line following UNFLUSHED tool calls while the thinking
+// stash is non-empty must not paste the same signed block onto BOTH the
+// flushed batch message and the text message — duplicated signed thinking is
+// a provider 400 shape (Pitfall 5's family). The batch consumes the stash;
+// the text message follows it only when NO batch took it.
+func TestProjector_ThinkingNeverDuplicatedAcrossBatchAndText(t *testing.T) {
+	t.Parallel()
+
+	m := newTestManager(t, "s-thdup")
+	p := NewProjector(fakeProfile("sys"), m)
+
+	_ = m.AppendUserMessage("turnT", []ContentBlock{{Type: blockText, Text: "go"}})
+	_ = m.AppendRawThinking("turnT", fixtureModelSlug, json.RawMessage(thSignedRaw))
+	_ = m.AppendToolCall("turnT", "call_1", toolBash, json.RawMessage(`{"command":"ls"}`))
+	// The ordering hazard: assistant text lands while call_1's batch is still
+	// unflushed (its tool_result arrives only AFTER the text line).
+	_ = m.AppendAssistantMessage("turnT", "interim note")
+	_ = m.AppendToolResult("turnT", "call_1", json.RawMessage(`"files"`), false)
+
+	msgs, err := p.Project("turnT")
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+
+	total, carriers := 0, []int{}
+
+	for i := range msgs {
+		if n := len(msgs[i].ThinkingBlocks); n > 0 {
+			total += n
+			carriers = append(carriers, i)
+		}
+	}
+
+	if total != 1 || len(carriers) != 1 {
+		t.Fatalf("thinking appears %d time(s) on %v; want EXACTLY ONCE (an emitted batch consumes the stash — "+
+			"duplicated signed thinking is a provider 400 shape):\n%s", total, carriers, msgSummaryList(msgs))
+	}
+
+	// The one carrier is the assistant BATCH (the fold), never the text message.
+	batch := msgs[carriers[0]]
+	if batch.Role != roleAssistant || len(batch.ToolCalls) != 1 {
+		t.Fatalf("thinking carrier = %s; want the assistant batch carrying call_1", msgSummary(&batch))
+	}
+}
+
 // TestProjector_ThinkingBoundaryAdjacent pins the flagged PAR-05 boundary row:
 // a boundary line landing MID-thinking-turn (the mutating tool's result
 // boundary, SESS-02/03) never splits thinking from its assistant message —

@@ -246,7 +246,9 @@ func accumulateMidTurn(lines []Line, turnID string) []provider.Message {
 		names           = map[string]string{} // callID -> tool name (pairing resolution)
 	)
 
-	flushBatch := func() {
+	flushBatch := func() bool {
+		emitted := false
+
 		if len(pending) > 0 {
 			batch := make([]provider.ToolCall, 0, len(pending))
 			for _, tc := range pending {
@@ -262,11 +264,15 @@ func accumulateMidTurn(lines []Line, turnID string) []provider.Message {
 				out = append(out, provider.Message{
 					Role: roleAssistant, ThinkingBlocks: pendingThinking, ToolCalls: batch,
 				})
+
+				emitted = true
 			}
 		}
 
 		pending = nil
 		pendingThinking = nil
+
+		return emitted
 	}
 
 	for i := anchor; i < len(lines); i++ {
@@ -297,16 +303,20 @@ func accumulateMidTurn(lines []Line, turnID string) []provider.Message {
 			})
 		case TypeAssistantMessage:
 			// End-of-turn thinking rides WITH the final assistant text
-			// message — captured BEFORE flushBatch (which resets the stash).
+			// message — but never ALSO with a batch flushed ahead of it
+			// (21-REVIEW WR-04): an emitted batch CONSUMES the stash (the
+			// fold), so capturing the stash before the flush would paste the
+			// same signed thinking onto TWO messages — a provider 400 shape.
+			// Flush-first discipline: the stash survives the flush only when
+			// no batch took it.
 			th := pendingThinking
-
-			flushBatch()
+			if flushBatch() {
+				th = nil // the emitted batch took the stash with it
+			}
 
 			out = append(out, provider.Message{
 				Role: roleAssistant, Content: l.Text, ThinkingBlocks: th,
 			})
-
-			pendingThinking = nil
 		}
 	}
 
