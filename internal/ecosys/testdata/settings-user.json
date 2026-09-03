@@ -1,0 +1,19 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {"type": "command", "command": "$HOME/.claude/hooks/user-guard.sh"}
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {"type": "command", "command": "echo user-session-start", "timeout": 10}
+        ]
+      }
+    ]
+  }
+}

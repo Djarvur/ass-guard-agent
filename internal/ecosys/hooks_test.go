@@ -3,7 +3,9 @@ package ecosys //nolint:testpackage // internal package test (accesses unexporte
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -219,4 +221,239 @@ func TestFireNeverPanics(t *testing.T) { //nolint:paralleltest // mutates the pa
 	})
 
 	assert.Contains(t, buf.String(), "Stop", "the missing-binary skip warns")
+}
+
+// --- 21-01 Task 1: settings-scope hook loading (PAR-03) ---
+
+// plantSettings writes content as one tree's settings.json (creating the
+// parent dir) and returns the path.
+func plantSettings(t *testing.T, path, content string) {
+	t.Helper()
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(path), dirPerms))
+	require.NoError(t, os.WriteFile(path, []byte(content), filePerms))
+}
+
+// plantSettingsFixture copies a committed settings fixture into path.
+func plantSettingsFixture(t *testing.T, fixture, path string) {
+	t.Helper()
+
+	data, err := os.ReadFile(filepath.Join("testdata", fixture))
+	require.NoError(t, err, "fixture %s must be committed", fixture)
+
+	plantSettings(t, path, string(data))
+}
+
+// TestSettingsHooksProjectScope (21-01 Task 1) verifies a project
+// .claude/settings.json's hooks entries — the SAME hooks → event →
+// matcher-group → {type,command,timeout} shape the plugin parser accepts —
+// load into the registry tagged Scope=project, with the 60s default applied
+// when a command entry omits its timeout (D-02: CC-compatible layout).
+func TestSettingsHooksProjectScope(t *testing.T) {
+	buf := captureShadowLogger(t)
+
+	t.Setenv("HOME", t.TempDir()) // no user settings — project scope only
+
+	proj := t.TempDir()
+	plantSettingsFixture(t, "settings-project.json",
+		filepath.Join(proj, claudeDirName, settingsJSONName))
+
+	reg, err := Load(filepath.Join(proj, claudeDirName), filepath.Join(proj, assguardDirName))
+	require.NoError(t, err)
+
+	byEvent := map[string][]HookConfig{}
+	for _, h := range reg.Hooks {
+		assert.Equal(t, scopeProject, h.Scope, "settings hooks carry the project scope tag")
+		byEvent[h.Event] = append(byEvent[h.Event], h)
+	}
+
+	pre := byEvent[hookEventPreToolUse]
+	require.Len(t, pre, 2, "both PreToolUse matcher groups must parse")
+
+	assert.Equal(t, "Edit|Write", pre[0].Matcher)
+	assert.Equal(t, "./scripts/deny-edits.sh", pre[0].Command)
+	assert.Equal(t, 5, pre[0].TimeoutSec, "explicit timeout preserved")
+	assert.Equal(t, filepath.Join(proj, claudeDirName, settingsJSONName), pre[0].Path,
+		"provenance names the settings.json")
+
+	assert.Equal(t, "Bash", pre[1].Matcher)
+	assert.Equal(t, hookDefaultTimeoutSec, pre[1].TimeoutSec,
+		"absent timeout defaults to the 60s bound at parse time")
+
+	post := byEvent[hookEventPostToolUse]
+	require.Len(t, post, 1)
+	assert.Equal(t, ".*", post[0].Matcher, "regex matcher preserved verbatim")
+
+	assert.Empty(t, buf.String(), "a well-formed settings file contributes zero warnings")
+}
+
+// TestSettingsHooksUserScope verifies a user ~/.claude/settings.json (HOME
+// redirected) loads with Scope=user even when no project settings exist.
+func TestSettingsHooksUserScope(t *testing.T) {
+	buf := captureShadowLogger(t)
+
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	plantSettingsFixture(t, "settings-user.json",
+		filepath.Join(home, claudeDirName, settingsJSONName))
+
+	proj := t.TempDir() // project .claude/ exists but holds no settings.json
+	require.NoError(t, os.MkdirAll(filepath.Join(proj, claudeDirName), dirPerms))
+
+	reg, err := Load(filepath.Join(proj, claudeDirName), filepath.Join(proj, assguardDirName))
+	require.NoError(t, err)
+
+	byEvent := map[string][]HookConfig{}
+	for _, h := range reg.Hooks {
+		assert.Equal(t, scopeUser, h.Scope, "user settings hooks carry the user scope tag")
+		byEvent[h.Event] = append(byEvent[h.Event], h)
+	}
+
+	pre := byEvent[hookEventPreToolUse]
+	require.Len(t, pre, 1)
+	assert.Empty(t, pre[0].Matcher, "empty matcher (catch-all) preserved verbatim")
+	assert.Equal(t, "$HOME/.claude/hooks/user-guard.sh", pre[0].Command)
+	assert.Equal(t, hookDefaultTimeoutSec, pre[0].TimeoutSec)
+
+	sess := byEvent[hookEventSessionStart]
+	require.Len(t, sess, 1)
+	assert.Equal(t, 10, sess[0].TimeoutSec)
+
+	assert.Empty(t, buf.String())
+}
+
+// TestSettingsHooksMalformed verifies every malformed settings shape degrades
+// loudly-but-softly: zero hooks contributed, ONE stderr warning naming the
+// file path, and Load still returns a nil error (Pitfall 8 — a repo must not
+// be able to brick session construction).
+func TestSettingsHooksMalformed(t *testing.T) { //nolint:paralleltest // mutates the package logger seam
+	cases := map[string]string{
+		"truncated bytes":     `{"hooks": {`,
+		"hooks wrong type":    `{"hooks": 3}`,
+		"group wrong type":    `{"hooks": {"PreToolUse": "not-a-list"}}`,
+		"empty hooks map":     `{"hooks": {}}`,
+		"no hooks key at all": `{"model": "opus"}`,
+	}
+
+	for name, content := range cases {
+		t.Run(name, func(t *testing.T) {
+			buf := captureShadowLogger(t)
+
+			t.Setenv("HOME", t.TempDir()) // no user settings
+
+			proj := t.TempDir()
+			settingsPath := filepath.Join(proj, claudeDirName, settingsJSONName)
+			plantSettings(t, settingsPath, content)
+
+			reg, err := Load(filepath.Join(proj, claudeDirName), filepath.Join(proj, assguardDirName))
+
+			require.NoError(t, err, "malformed settings must never fail Load (Pitfall 8)")
+			assert.Empty(t, reg.Hooks, "a malformed settings file contributes zero hooks")
+			assert.Contains(t, buf.String(), settingsPath,
+				"the skip warning names the offending file path")
+		})
+	}
+}
+
+// TestSettingsHooksOversized verifies a settings.json beyond readCapped's
+// plugin-artifact cap is skipped with a warning — the same discipline as
+// hooks.json (an untrusted file cannot pin the loader).
+func TestSettingsHooksOversized(t *testing.T) { //nolint:paralleltest // mutates the package logger seam
+	buf := captureShadowLogger(t)
+
+	t.Setenv("HOME", t.TempDir())
+
+	proj := t.TempDir()
+	settingsPath := filepath.Join(proj, claudeDirName, settingsJSONName)
+	plantSettings(t, settingsPath,
+		`{"junk": "`+strings.Repeat("x", pluginArtifactMaxBytes)+`"}`)
+
+	reg, err := Load(filepath.Join(proj, claudeDirName), filepath.Join(proj, assguardDirName))
+
+	require.NoError(t, err)
+	assert.Empty(t, reg.Hooks, "an oversized settings file contributes zero hooks")
+	assert.Contains(t, buf.String(), settingsPath, "the oversize skip warns")
+}
+
+// TestSettingsHooksMissing verifies absent settings files are the normal
+// case: zero contributions and ZERO warnings.
+func TestSettingsHooksMissing(t *testing.T) { //nolint:paralleltest // mutates the package logger seam
+	buf := captureShadowLogger(t)
+
+	t.Setenv("HOME", t.TempDir()) // no user file
+
+	proj := t.TempDir() // no project .claude/ at all
+
+	reg, err := Load(filepath.Join(proj, claudeDirName), filepath.Join(proj, assguardDirName))
+
+	require.NoError(t, err)
+	assert.Empty(t, reg.Hooks)
+	assert.Empty(t, buf.String(), "absent settings files must not warn")
+}
+
+// TestHookMatcherDialect pins CC's two-path matcher dialect for settings
+// hooks (21-01, Pitfall 3) against the legacy compile-everything regex
+// behavior kept for plugin hooks (D-02: existing plugin hooks unchanged).
+func TestHookMatcherDialect(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		scope   HookScope
+		matcher string
+		tool    string
+		want    bool
+	}{
+		// Settings exact path: matcher "Edit" matches ONLY the tool named
+		// Edit — the divergence from legacy substring/regex matching.
+		{"settings exact fires on exact", scopeProject, "Edit", "Edit", true},
+		{"settings exact not substring", scopeProject, "Edit", "NotebookEdit", false},
+		{"settings exact not substring user scope", scopeUser, "Edit", "NotebookEdit", false},
+		{"settings exact full-name only", scopeUser, "NotebookEdit", "NotebookEdit", true},
+
+		// Alternatives (pipes and commas both split).
+		{"settings pipe alternatives Edit", scopeProject, "Edit|Write", "Edit", true},
+		{"settings pipe alternatives Write", scopeProject, "Edit|Write", "Write", true},
+		{"settings pipe alternatives miss", scopeProject, "Edit|Write", "Read", false},
+		{"settings comma alternatives", scopeProject, "Edit,Write", "Write", true},
+		{"settings comma with space", scopeProject, "Edit, Write", "Write", true},
+
+		// Any char outside the exact-set → unanchored regex path.
+		{"settings regex dot-star", scopeProject, "mcp__github__.*", "mcp__github__get_issue", true},
+		{"settings regex dot-star miss", scopeProject, "mcp__github__.*", "mcp__fs__read", false},
+		{"settings regex unanchored", scopeProject, "Edit.*", "NotebookEdit", true},
+		{"settings regex parens", scopeProject, "Bash(git *)", "Bash(git )", true},
+
+		// Catch-alls keep their meaning in both scopes.
+		{"settings empty matcher catch-all", scopeProject, "", "Anything", true},
+		{"settings star catch-all", scopeUser, "*", "Anything", true},
+
+		// Legacy plugin scope: EVERY non-empty matcher compiles as an
+		// unanchored regex — "Edit" still matches "NotebookEdit" (D-02).
+		{"plugin legacy substring match", scopePlugin, "Edit", "NotebookEdit", true},
+		{"plugin legacy exact match", scopePlugin, "Edit", "Edit", true},
+		{"plugin legacy regex", scopePlugin, "mcp__github__.*", "mcp__github__get_issue", true},
+		{"plugin legacy miss", scopePlugin, "Edit", "Write", false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			r := NewHookRunner([]HookConfig{{
+				Event: hookEventPreToolUse, Matcher: tc.matcher,
+				Command: "true", Scope: tc.scope,
+			}}, "s", "", "")
+
+			matches := r.matchingHooks(hookEventPreToolUse, tc.tool)
+
+			if tc.want {
+				assert.Len(t, matches, 1, "matcher %q must fire on tool %q (scope %d)",
+					tc.matcher, tc.tool, tc.scope)
+			} else {
+				assert.Empty(t, matches, "matcher %q must NOT fire on tool %q (scope %d)",
+					tc.matcher, tc.tool, tc.scope)
+			}
+		})
+	}
 }
