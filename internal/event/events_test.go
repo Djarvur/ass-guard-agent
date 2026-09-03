@@ -68,3 +68,27 @@ func TestPhase4BufferConstsPositive(t *testing.T) {
 		t.Errorf("BufHookProgress = %d; want > 0", event.BufHookProgress)
 	}
 }
+
+// TestAgentThoughtChunkKind verifies the PAR-05 thought-chunk event mirrors
+// AgentMessageChunk (21-03, D-13): Kind discriminator + TurnID/MessageID/
+// Content fields, value-receiver kind, positive buffer const.
+func TestAgentThoughtChunkKind(t *testing.T) {
+	t.Parallel()
+
+	e := event.AgentThoughtChunk{TurnID: "t1", MessageID: "m1", Content: "pondering"}
+	if got := e.Kind(); got != "AgentThoughtChunk" {
+		t.Errorf("AgentThoughtChunk.Kind() = %q; want AgentThoughtChunk", got)
+	}
+
+	// Value receiver: a zero value reports its kind (the bus fan-out depends
+	// on it — guards against an accidental pointer-receiver change).
+	if got := (event.AgentThoughtChunk{}).Kind(); got != "AgentThoughtChunk" {
+		t.Errorf("zero AgentThoughtChunk.Kind() = %q; want AgentThoughtChunk", got)
+	}
+
+	var _ event.Event = event.AgentThoughtChunk{}
+
+	if event.BufAgentThoughtChunk <= 0 {
+		t.Errorf("BufAgentThoughtChunk = %d; want > 0", event.BufAgentThoughtChunk)
+	}
+}

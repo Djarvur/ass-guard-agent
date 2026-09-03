@@ -23,6 +23,7 @@ const (
 	testCwdTmpPath = "/tmp"
 	keyPrompt      = "prompt"
 	keyMcpServers  = "mcpServers"
+	chunkThinking  = "thinking"
 )
 
 // The Task-1 tracer (16-01): ONE frame path end-to-end. A bus ToolCall event
@@ -36,15 +37,17 @@ const (
 // count must equal the notification frames observed on stdout.
 
 // emitPhase is one paced publication stage of the fake provider stream: a text
-// chunk or a tool_use chunk, followed by a pause so each bus publication is
-// observed (and forwarded + enqueued) BEFORE the next one fires. The pacing is
-// what makes "emission order" well-defined for the assertion below.
+// chunk, a tool_use chunk, or a thinking chunk (PAR-05, 21-03), followed by a
+// pause so each bus publication is observed (and forwarded + enqueued) BEFORE
+// the next one fires. The pacing is what makes "emission order" well-defined
+// for the assertions below.
 type emitPhase struct {
-	text     string        // when non-empty: a text chunk (AgentMessageChunk on the bus)
-	toolID   string        // when non-empty: a tool_use chunk (ToolCall on the bus)
-	toolName string        //   … its captured tool name
-	input    string        //   … its raw input JSON
-	pause    time.Duration // sleep AFTER producing this phase's stream chunk
+	text       string        // when non-empty: a text chunk (AgentMessageChunk on the bus)
+	toolID     string        // when non-empty: a tool_use chunk (ToolCall on the bus)
+	toolName   string        //   … its captured tool name
+	input      string        //   … its raw input JSON
+	thoughtRaw string        // when non-empty: a thinking chunk (AgentThoughtChunk on the bus)
+	pause      time.Duration // sleep AFTER producing this phase's stream chunk
 }
 
 // pacedStreamProvider streams emitPhases then the done chunk — ONCE. The
@@ -98,6 +101,8 @@ func (p *pacedStreamProvider) Stream(
 					ToolCall:   &provider.ToolCall{ID: ph.toolID, Name: ph.toolName, Input: json.RawMessage(ph.input)},
 					ToolCallID: ph.toolID,
 				}
+			case ph.thoughtRaw != "":
+				chunk = provider.StreamChunk{Type: chunkThinking, Raw: json.RawMessage(ph.thoughtRaw)}
 			}
 
 			select {
@@ -264,6 +269,117 @@ func TestTurnEmitterEndToEnd(t *testing.T) { //nolint:funlen // full end-to-end 
 	if written != len(updates) {
 		t.Fatalf("notification leak: emitter wrote %d but stdout carried %d update frames",
 			written, len(updates))
+	}
+}
+
+// TestThoughtForward pins PAR-05's live leg (21-03, D-13): a provider thinking
+// chunk streams through streamAndEmit → the AgentThoughtChunk bus event → the
+// runtime forwarder → emit.ThoughtChunk, arriving on stdout as an
+// agent_thought_chunk frame BEFORE the turn's agent_message_chunk (the
+// ordered-emitter guarantee, 16-D-02).
+func TestThoughtForward(t *testing.T) { //nolint:funlen // full end-to-end scenario
+	t.Parallel()
+
+	mp := &pacedStreamProvider{
+		finish: stopEndTurn,
+		phases: []emitPhase{
+			{thoughtRaw: `{"type":"thinking","thinking":"weighing options","signature":"sig-tf"}`, pause: 15 * time.Millisecond},
+			{text: "A", pause: 15 * time.Millisecond},
+		},
+	}
+
+	bus := event.NewBus()
+	prof := profile.Profile{Name: profileZcode, System: []profile.TextBlock{{Type: blockText, Text: "thought e2e"}}}
+	runner := &Runner{
+		bus:          bus,
+		profile:      prof,
+		workDir:      t.TempDir(),
+		maxConc:      2,
+		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return mp },
+	}
+
+	srvInR, cliW := io.Pipe()
+	cliR, srvOutW := io.Pipe()
+
+	stderr := &bytes.Buffer{}
+
+	srv := acp.NewServer(srvInR, srvOutW, stderr, acp.WithTurnRunner(runner),
+		acp.WithTurnEmitter(acp.TurnEmitterConfig{}))
+	runner.SetEmitter(srv.Emitter)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+
+	go func() { _ = srv.Serve(ctx); close(done) }()
+
+	t.Cleanup(func() {
+		cancel()
+
+		_ = cliW.Close()
+		_ = srvOutW.Close()
+		_ = srvInR.Close()
+		_ = cliR.Close()
+
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Errorf("server did not exit")
+		}
+	})
+
+	sendFrame(t, cliW, &acp.Message{
+		JSONRPC: protocolVersion20, ID: json.RawMessage("0"), Method: methodInitialize,
+		Params: rawJSON(map[string]any{keyProtoVersion: 1,
+			keyClientCapabilities: map[string]any{
+				keyElicitation: map[string]any{keyForm: map[string]any{}},
+			}}),
+	})
+
+	frames := readFrames(t, cliR, 1)
+	if len(frames) == 0 || !strings.Contains(string(frames[0].Result), "agentCapabilities") {
+		t.Fatalf("no initialize response: %+v", frames)
+	}
+
+	sendFrame(t, cliW, &acp.Message{
+		JSONRPC: protocolVersion20, ID: json.RawMessage("1"), Method: methodSessNew,
+		Params: rawJSON(map[string]any{cwdKey: testCwdTmpPath, keyMcpServers: []any{}}),
+	})
+	frames = readFrames(t, cliR, 1)
+
+	var snew struct {
+		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+	}
+
+	snewErr := json.Unmarshal(frames[0].Result, &snew)
+	if snewErr != nil || snew.SessionID == "" {
+		t.Fatalf("no sessionId from session/new: %v %+v", snewErr, frames)
+	}
+
+	sendFrame(t, cliW, &acp.Message{
+		JSONRPC: protocolVersion20, ID: json.RawMessage("2"), Method: methodSessPrmt,
+		Params: rawJSON(map[string]any{
+			keySessionID: snew.SessionID,
+			keyPrompt:    []map[string]any{{keyType: blockText, blockText: "hi"}},
+		}),
+	})
+
+	br := bufio.NewReader(cliR)
+
+	updates := readSessionUpdatesUntilResponse(t, br, "2")
+
+	want := []string{
+		"agent_thought_chunk||",
+		"agent_message_chunk||",
+	}
+	if len(updates) < len(want) {
+		t.Fatalf("expected at least %d notification frames, got %d: %v", len(want), len(updates), updates)
+	}
+
+	for i, w := range want {
+		if updates[i] != w {
+			t.Fatalf("emission order broken at %d:\n got: %v\nwant prefix: %v (thought before message, 16-D-02)",
+				i, updates, want)
+		}
 	}
 }
 
