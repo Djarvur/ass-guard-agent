@@ -2,10 +2,13 @@ package provider_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -509,3 +512,298 @@ func TestSend_ToolUseReplayedBlockSingleCall(t *testing.T) {
 
 // ensure profile.Load type is exercised (keeps the test helper honest).
 var _ = profile.Profile{}
+
+// thinkingView is the TEST-ONLY minimal unmarshal view of a thinking chunk's
+// Raw payload (PAR-05, D-12: the production path never unmarshals provider
+// thinking bytes — assertions decode them here, in the test, exclusively).
+type thinkingView struct {
+	Type      string `json:"type"`
+	Thinking  string `json:"thinking"`
+	Signature string `json:"signature"`
+	Data      string `json:"data"`
+}
+
+// decodeThinking unmarshals one thinking chunk's Raw payload (test-only view).
+func decodeThinking(t *testing.T, c provider.StreamChunk) thinkingView {
+	t.Helper()
+
+	if c.Type != chunkThinking {
+		t.Fatalf("chunk Type = %q; want %q", c.Type, chunkThinking)
+	}
+
+	var v thinkingView
+	if err := json.Unmarshal(c.Raw, &v); err != nil {
+		t.Fatalf("unmarshal thinking Raw: %v\nraw: %s", err, c.Raw)
+	}
+
+	return v
+}
+
+// streamFrames runs one Stream call against a scripted SSE server emitting
+// frames and drains the channel (the TestStreamThinking battery's harness).
+func streamFrames(t *testing.T, frames ...string) []provider.StreamChunk {
+	t.Helper()
+
+	srv := httptest.NewServer(sseHandler(frames...))
+	defer srv.Close()
+
+	prof := loadProfile(t, "minimal")
+	p := provider.NewAnthropicProvider(shaper.New(),
+		provider.WithAnthropicAPIKey("test-key"),
+		provider.WithAnthropicBaseURL(srv.URL),
+	)
+
+	ch, err := p.Stream(context.Background(), &prof, []shaper.Message{{Role: roleUser, Content: "think"}})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+
+	return readAllChunks(t, ch)
+}
+
+// thinkingChunks filters the thinking-typed chunks out of a drained stream.
+func thinkingChunks(chunks []provider.StreamChunk) []provider.StreamChunk {
+	var out []provider.StreamChunk
+
+	for _, c := range chunks {
+		if c.Type == chunkThinking {
+			out = append(out, c)
+		}
+	}
+
+	return out
+}
+
+// TestStreamThinking_SignedBlockAccumulatesDeltas is PAR-05 hop 1's core: a
+// content_block_start of type thinking opens the accumulator, thinking_delta
+// strings concatenate IN ORDER, the signature_delta is captured, and
+// content_block_stop emits ONE thinking chunk whose Raw field values equal the
+// delta concatenations exactly (D-12: assembled from raw delta strings, never
+// a typed round-trip).
+func TestStreamThinking_SignedBlockAccumulatesDeltas(t *testing.T) {
+	t.Parallel()
+
+	const sig = "EqQBCkgIBRABGAIiQK1hwdFP7q2OoMkD+vLk="
+
+	chunks := streamFrames(t,
+		`{"type":"content_block_start","index":0,"content_block":{"type":"thinking"}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Let me "}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"consider the tools."}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"`+sig+`"}}`,
+		`{"type":"content_block_stop","index":0}`,
+		`{"type":"message_delta","delta":{"stop_reason":"end_turn"}}`,
+		`{"type":"message_stop"}`,
+	)
+
+	got := thinkingChunks(chunks)
+	if len(got) != 1 {
+		t.Fatalf("thinking chunks = %d; want exactly 1 (chunks: %+v)", len(got), got)
+	}
+
+	v := decodeThinking(t, got[0])
+	if v.Thinking != "Let me consider the tools." {
+		t.Errorf("field thinking = %q; want the exact delta concatenation", v.Thinking)
+	}
+
+	if v.Signature != sig {
+		t.Errorf("field signature = %q; want %q (the exact signature_delta string)", v.Signature, sig)
+	}
+
+	if v.Type != chunkThinking {
+		t.Errorf("field type = %q; want %q", v.Type, chunkThinking)
+	}
+
+	if v.Data != "" {
+		t.Errorf("field data = %q; want empty (signed blocks carry no data)", v.Data)
+	}
+}
+
+// TestStreamThinking_RedactedEmitsImmediately pins the redacted_thinking
+// short-circuit (RESEARCH Pattern 4 hop 1): the block arrives FULLY-FORMED in
+// content_block_start (data field, no deltas, no signature) and must emit
+// IMMEDIATELY — filtering thinking by the single type name would drop it.
+func TestStreamThinking_RedactedEmitsImmediately(t *testing.T) {
+	t.Parallel()
+
+	const blob = "enc-9f2b7c4d-e1aa-4d8eopaquepayload"
+
+	// Deliberately NO content_block_stop and NO deltas after the start: the
+	// emission must come from the start event alone.
+	chunks := streamFrames(t,
+		`{"type":"content_block_start","index":0,`+
+			`"content_block":{"type":"redacted_thinking","data":"`+blob+`"}}`,
+		`{"type":"message_delta","delta":{"stop_reason":"end_turn"}}`,
+		`{"type":"message_stop"}`,
+	)
+
+	got := thinkingChunks(chunks)
+	if len(got) != 1 {
+		t.Fatalf("thinking chunks = %d; want exactly 1 (immediate emission; chunks: %+v)", len(got), got)
+	}
+
+	v := decodeThinking(t, got[0])
+	if v.Type != blockRedactedThinking {
+		t.Errorf("field type = %q; want %q", v.Type, blockRedactedThinking)
+	}
+
+	if v.Data != blob {
+		t.Errorf("field data = %q; want the verbatim provider value %q", v.Data, blob)
+	}
+
+	if v.Signature != "" {
+		t.Errorf("field signature = %q; want empty — redacted blocks carry NO signature; none may be invented",
+			v.Signature)
+	}
+}
+
+// TestStreamThinking_InterleavedWithTextAndToolUse proves the accumulator is
+// SIBLING state: a thinking block between text deltas and a tool_use block
+// emits all three chunk types in stream order while the existing text and
+// tool-use emissions stay byte-identical to their pre-change forms.
+func TestStreamThinking_InterleavedWithTextAndToolUse(t *testing.T) {
+	t.Parallel()
+
+	chunks := streamFrames(t,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}`,
+		`{"type":"content_block_start","index":1,"content_block":{"type":"thinking"}}`,
+		`{"type":"content_block_delta","index":1,"delta":{"type":"thinking_delta","thinking":"pondering"}}`,
+		`{"type":"content_block_delta","index":1,"delta":{"type":"signature_delta","signature":"sig-1"}}`,
+		`{"type":"content_block_stop","index":1}`,
+		`{"type":"content_block_start","index":2,`+
+			`"content_block":{"type":"tool_use","id":"tc-th-1","name":"Bash","input":{}}}`,
+		`{"type":"content_block_delta","index":2,`+
+			`"delta":{"type":"input_json_delta","partial_json":"{\"command\":\"ls\"}"}}`,
+		`{"type":"content_block_stop","index":2}`,
+		`{"type":"content_block_delta","index":3,"delta":{"type":"text_delta","text":" world"}}`,
+		`{"type":"message_delta","delta":{"stop_reason":"end_turn"}}`,
+		`{"type":"message_stop"}`,
+	)
+
+	// Stream order: text, thinking, tool_use, text — each type emits exactly
+	// its own events; nothing is swallowed or duplicated.
+	var seq []string
+
+	var text strings.Builder
+
+	var tool *provider.ToolCall
+
+	for _, c := range chunks {
+		switch c.Type {
+		case blockTextChunk:
+			seq = append(seq, blockTextChunk)
+			text.WriteString(c.Text)
+		case chunkThinking:
+			seq = append(seq, chunkThinking)
+		case blockToolUse:
+			seq = append(seq, blockToolUse)
+			if c.ToolCall != nil {
+				tool = c.ToolCall
+			}
+		}
+	}
+
+	wantSeq := []string{blockTextChunk, chunkThinking, blockToolUse, blockTextChunk}
+	if !slices.Equal(seq, wantSeq) {
+		t.Errorf("chunk-type sequence = %v; want %v (stream order preserved)", seq, wantSeq)
+	}
+
+	if text.String() != "Hello world" {
+		t.Errorf("streamed text = %q; want %q (buffered text chunks unaffected)", text.String(), "Hello world")
+	}
+
+	if tool == nil {
+		t.Fatal("no tool_use chunk with a populated ToolCall")
+	}
+
+	if tool.ID != "tc-th-1" || tool.Name != "Bash" || string(tool.Input) != `{"command":"ls"}` {
+		t.Errorf("ToolCall = %+v; want {tc-th-1 Bash {\"command\":\"ls\"}} (tool-use lifecycle unaffected)", tool)
+	}
+}
+
+// TestStreamThinking_FlushOnTerminationWithoutStop pins the flush-at-EOF rule:
+// a stream that ENDS (server closes cleanly) while a thinking block is still
+// open flushes it exactly as flushToolUse does at its termination call sites.
+func TestStreamThinking_FlushOnTerminationWithoutStop(t *testing.T) {
+	t.Parallel()
+
+	// No content_block_stop, no message_stop — the connection just ends.
+	chunks := streamFrames(t,
+		`{"type":"content_block_start","index":0,"content_block":{"type":"thinking"}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"cut off"}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig-eof"}}`,
+	)
+
+	got := thinkingChunks(chunks)
+	if len(got) != 1 {
+		t.Fatalf("thinking chunks = %d; want exactly 1 (EOF flush; chunks: %+v)", len(got), got)
+	}
+
+	v := decodeThinking(t, got[0])
+	if v.Thinking != "cut off" || v.Signature != "sig-eof" {
+		t.Errorf("flushed block = {%q %q}; want {cut off sig-eof}", v.Thinking, v.Signature)
+	}
+}
+
+// TestStreamThinking_MultipleBlocksEmitInOrder: several thinking blocks —
+// signed, redacted, signed — in ONE response each emit their own chunk, in
+// block order.
+func TestStreamThinking_MultipleBlocksEmitInOrder(t *testing.T) {
+	t.Parallel()
+
+	chunks := streamFrames(t,
+		`{"type":"content_block_start","index":0,"content_block":{"type":"thinking"}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"first"}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig-a"}}`,
+		`{"type":"content_block_stop","index":0}`,
+		`{"type":"content_block_start","index":1,`+
+			`"content_block":{"type":"redacted_thinking","data":"blob-b"}}`,
+		`{"type":"content_block_start","index":2,"content_block":{"type":"thinking"}}`,
+		`{"type":"content_block_delta","index":2,"delta":{"type":"thinking_delta","thinking":"third"}}`,
+		`{"type":"content_block_delta","index":2,"delta":{"type":"signature_delta","signature":"sig-c"}}`,
+		`{"type":"content_block_stop","index":2}`,
+		`{"type":"message_delta","delta":{"stop_reason":"end_turn"}}`,
+		`{"type":"message_stop"}`,
+	)
+
+	got := thinkingChunks(chunks)
+	if len(got) != 3 {
+		t.Fatalf("thinking chunks = %d; want 3 (one per block; chunks: %+v)", len(got), got)
+	}
+
+	type triple struct{ th, sig, data string }
+
+	want := []triple{
+		{"first", "sig-a", ""},
+		{"", "", "blob-b"},
+		{"third", "sig-c", ""},
+	}
+
+	for i, w := range want {
+		v := decodeThinking(t, got[i])
+		if v.Thinking != w.th || v.Signature != w.sig || v.Data != w.data {
+			t.Errorf("block %d = {%q %q %q}; want {%q %q %q} (block order preserved)",
+				i, v.Thinking, v.Signature, v.Data, w.th, w.sig, w.data)
+		}
+	}
+}
+
+// TestStreamThinking_SingleFlushOnCleanEnd pins the no-double-emit rule under
+// -race: a block closed by content_block_stop followed by a CLEAN stream end
+// ([DONE]-equivalent termination) flushes exactly ONCE — the termination
+// handler must not re-emit what the stop handler already flushed.
+func TestStreamThinking_SingleFlushOnCleanEnd(t *testing.T) {
+	t.Parallel()
+
+	chunks := streamFrames(t,
+		`{"type":"content_block_start","index":0,"content_block":{"type":"thinking"}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"once"}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig-1"}}`,
+		`{"type":"content_block_stop","index":0}`,
+		`{"type":"message_delta","delta":{"stop_reason":"end_turn"}}`,
+		`{"type":"message_stop"}`,
+	)
+
+	if got := len(thinkingChunks(chunks)); got != 1 {
+		t.Errorf("thinking chunks = %d; want exactly 1 (no double-emit between stop and termination)", got)
+	}
+}
