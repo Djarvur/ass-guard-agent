@@ -17,6 +17,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Djarvur/ass-guard-agent/internal/checkpoint"
 )
 
 // fixtureSessionID is a loadSessIDPattern-clean RFC 4122 v4 UUID form id (the
@@ -352,11 +354,13 @@ func assertPromptNotAccepted(t *testing.T, h *pipeHarness, reqID int, sessionID 
 
 // Repeated 18-04 wire literals (goconst — the sibling tests' vocabulary).
 const (
-	methodSessionList = "session/list"
-	keyCursor         = "cursor"
-	keyNextCursor     = "nextCursor"
-	keySessions       = "sessions"
-	resumeMethod      = "session/resume"
+	methodSessionList   = "session/list"
+	methodSessionClose  = "session/close"
+	methodSessionDelete = "session/delete"
+	keyCursor           = "cursor"
+	keyNextCursor       = "nextCursor"
+	keySessions         = "sessions"
+	resumeMethod        = "session/resume"
 
 	// listLiveSessions exceeds the engine's default page (50) so the RPC
 	// round-trip drives a REAL page boundary: page one holds 50 rows, page
@@ -673,6 +677,352 @@ func TestInitializeAdvertisesSessionCapabilities(t *testing.T) {
 
 	if _, registered := h.srv.handlers[resumeMethod]; registered {
 		t.Errorf("%s registered in the handler map (A3)", resumeMethod)
+	}
+}
+
+// --- 18-04: session/close cancel-and-drain + session/delete tombstone ---
+
+// blockingCloseRunner is the 18-04 close-battery TurnRunner: Run parks on
+// ctx.Done (the in-flight turn the close must cancel-and-drain), and the
+// runner records the teardown seams — CloseSession (SessionCloser) and the
+// ask drains (AskDrainer) — plus a stand-in parked-ask queue, so the test
+// asserts the D-12 ordering: close returns only after Run returned AND the
+// session's asks drained.
+//
+// Inherited-coverage note: the queue-level cancellation semantics (the open
+// dialog resolving cancelled through the registry cascade) are pinned at the
+// 17 seams — internal/session/askqueue_test.go (TestAskQueueDrainAll) and
+// internal/acpserve/ask_drain_test.go; THIS runner pins the drain CONTRACT
+// the close path calls (the AskDrainer seam fires before close returns).
+type blockingCloseRunner struct {
+	startOnce sync.Once
+	doneOnce  sync.Once
+	started   chan struct{}
+	finished  chan struct{}
+
+	mu     sync.Mutex
+	asks   map[string]int
+	drains []string
+	closes []string
+}
+
+func newBlockingCloseRunner() *blockingCloseRunner {
+	return &blockingCloseRunner{
+		started:  make(chan struct{}),
+		finished: make(chan struct{}),
+		asks:     map[string]int{},
+	}
+}
+
+// Run parks until the turn ctx is cancelled, then reports the D-16
+// stopReason for a cancelled turn.
+func (r *blockingCloseRunner) Run(
+	ctx context.Context, _ string, _ ChunkEmitter, _ []ContentBlock,
+) (string, error) {
+	r.startOnce.Do(func() { close(r.started) })
+
+	<-ctx.Done() // park until the close path cancels the turn
+
+	r.doneOnce.Do(func() { close(r.finished) })
+
+	return stopCancelled, nil
+}
+
+// CloseSession satisfies SessionCloser (the reap seam the close path rides).
+func (r *blockingCloseRunner) CloseSession(sessionID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.closes = append(r.closes, sessionID)
+
+	return nil
+}
+
+// DrainAsks satisfies AskDrainer's turn-scoped half (session/cancel).
+func (r *blockingCloseRunner) DrainAsks(sessionID string) { r.drainSession(sessionID) }
+
+// DrainSessionAsks satisfies AskDrainer's session-close half — the seam
+// session/close calls: parked asks resolve cancelled, the queue empties.
+func (r *blockingCloseRunner) DrainSessionAsks(sessionID string) { r.drainSession(sessionID) }
+
+func (r *blockingCloseRunner) drainSession(sessionID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.drains = append(r.drains, sessionID)
+	delete(r.asks, sessionID)
+}
+
+func (r *blockingCloseRunner) parkAsk(sessionID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.asks[sessionID]++
+}
+
+func (r *blockingCloseRunner) pendingAsks(sessionID string) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return r.asks[sessionID]
+}
+
+func (r *blockingCloseRunner) sessionDrains() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return append([]string(nil), r.drains...)
+}
+
+func (r *blockingCloseRunner) closeCalls() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return append([]string(nil), r.closes...)
+}
+
+// TestSessionCloseCancelsAndDrains pins D-12: session/close on a session with
+// an in-flight turn (stub parked in Run) and ONE parked ask returns only
+// after the turn's Run has returned AND the ask drained (17-D-13 aimed at the
+// whole session), reaps through the SessionCloser seam, drops the map entry,
+// answers the aborted turn stopReason "cancelled", and a second close of the
+// already-closed id is the empty-object success.
+//
+//nolint:funlen // one deterministic drain-ordering scenario end-to-end
+func TestSessionCloseCancelsAndDrains(t *testing.T) {
+	t.Parallel()
+
+	runner := newBlockingCloseRunner()
+	h := newPipeHarness(t, WithTurnRunner(runner))
+
+	sid := handshakeRecordingSession(t, h)
+
+	runner.parkAsk(sid)
+
+	h.send(t, newRequest(2, "session/prompt", promptRequest(sid, "long turn")))
+
+	select {
+	case <-runner.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("stub turn never started")
+	}
+
+	h.send(t, newRequest(3, methodSessionClose, map[string]any{keySessionID: sid}))
+
+	closeResp := readUntilResponse(t, h, 3, nil)
+	if closeResp.Error != nil {
+		t.Fatalf("session/close errored: %+v", closeResp.Error)
+	}
+
+	// The drain wait is observable: close returned strictly AFTER Run.
+	select {
+	case <-runner.finished:
+	default:
+		t.Error("session/close returned before the in-flight turn's Run returned (D-12 drain violated)")
+	}
+
+	if got := runner.pendingAsks(sid); got != 0 {
+		t.Errorf("parked ask survived close: %d pending (the drain resolves it cancelled)", got)
+	}
+
+	if drains := runner.sessionDrains(); len(drains) != 1 || drains[0] != sid {
+		t.Errorf("close-path ask drains = %v; want exactly [%s]", drains, sid)
+	}
+
+	if closes := runner.closeCalls(); len(closes) != 1 || closes[0] != sid {
+		t.Errorf("CloseSession calls = %v; want exactly [%s]", closes, sid)
+	}
+
+	h.srv.mu.Lock()
+	_, alive := h.srv.sessions[sid]
+	h.srv.mu.Unlock()
+
+	if alive {
+		t.Error("closed session still registered in the map")
+	}
+
+	promptResp := readUntilResponse(t, h, 2, nil)
+	if promptResp.Error != nil {
+		t.Fatalf("aborted turn errored: %+v (D-16 wants stopReason cancelled)", promptResp.Error)
+	}
+
+	var pr struct {
+		StopReason string `json:"stopReason"` //nolint:tagliatelle // ACP wire field
+	}
+
+	if uerr := json.Unmarshal(promptResp.Result, &pr); uerr != nil {
+		t.Fatalf("decode prompt result: %v (raw=%s)", uerr, string(promptResp.Result))
+	}
+
+	if pr.StopReason != stopCancelled {
+		t.Errorf("aborted turn stopReason = %q; want %q", pr.StopReason, stopCancelled)
+	}
+
+	h.send(t, newRequest(4, methodSessionClose, map[string]any{keySessionID: sid}))
+
+	second := readUntilResponse(t, h, 4, nil)
+	if second.Error != nil {
+		t.Fatalf("second close errored: %+v (D-12 idempotency)", second.Error)
+	}
+
+	if got := strings.TrimSpace(string(second.Result)); got != "{}" {
+		t.Errorf("close result = %s; want the empty object {}", got)
+	}
+}
+
+// TestSessionCloseAlreadyClosed: close of an unknown/never-created id is the
+// empty-object success — never an error (D-12 idempotency).
+func TestSessionCloseAlreadyClosed(t *testing.T) {
+	t.Parallel()
+
+	h := newPipeHarness(t)
+
+	h.send(t, newRequest(0, methodSessionClose,
+		map[string]any{keySessionID: "00000000-0000-4000-8000-00000000000f"}))
+
+	msg := h.readFrame(t)
+
+	if msg.ID == nil || string(msg.ID) != "0" {
+		t.Fatalf("close response id = %v; want 0", msg.ID)
+	}
+
+	if msg.Error != nil {
+		t.Fatalf("close of unknown id errored: %+v (want the idempotent success)", msg.Error)
+	}
+
+	if got := strings.TrimSpace(string(msg.Result)); got != "{}" {
+		t.Errorf("close result = %s; want the empty object {}", got)
+	}
+}
+
+// TestSessionDeleteTombstones pins the delete contract (D-07/D-08/D-20):
+// deleting an OPEN session closes it, writes the zero-byte 0600 marker
+// beside the transcript, removes the session's checkpoint objects through
+// the store surface, leaves the transcript bytes UNCHANGED and the audit
+// artifacts present, drops the session from the list, and a second delete of
+// the same id is the idempotent success (marker rewrite).
+//
+//nolint:funlen // one ordered delete-flow assertion end-to-end
+func TestSessionDeleteTombstones(t *testing.T) {
+	t.Parallel()
+
+	store := t.TempDir()
+	sid := "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+
+	writeLoadFixture(t, store, sid, cleanSessionFixtureLines(sid))
+
+	transcript := filepath.Join(store, ".ass-guard", "transcript_"+sid+".jsonl")
+
+	before, rerr := os.ReadFile(transcript)
+	if rerr != nil {
+		t.Fatalf("read transcript before delete: %v", rerr)
+	}
+
+	auditDir := filepath.Join(store, ".ass-guard", "audit")
+
+	err := os.MkdirAll(auditDir, 0o750)
+	if err != nil {
+		t.Fatalf("mkdir audit dir: %v", err)
+	}
+
+	auditFile := filepath.Join(auditDir, "mirror.jsonl")
+
+	err = os.WriteFile(auditFile, []byte("{\"v\":1}\n"), 0o600)
+	if err != nil {
+		t.Fatalf("write audit artifact: %v", err)
+	}
+
+	ckpt, oerr := checkpoint.Open(store)
+	if oerr != nil {
+		t.Fatalf("checkpoint open: %v", oerr)
+	}
+
+	if serr := ckpt.Snapshot(context.Background(), sid, sid+"-turn-001"); serr != nil {
+		t.Fatalf("checkpoint snapshot: %v", serr)
+	}
+
+	h := newPipeHarness(t,
+		WithWorkDir(store),
+		WithTurnRunner(newFakeResumeRunner(store)),
+		WithCheckpointStore(ckpt))
+
+	sendLoad(t, h, 1, sid, store)
+
+	if loadResp := readUntilResponse(t, h, 1, nil); loadResp.Error != nil {
+		t.Fatalf("session/load errored: %+v", loadResp.Error)
+	}
+
+	h.send(t, newRequest(2, methodSessionDelete, map[string]any{keySessionID: sid}))
+
+	delResp := readUntilResponse(t, h, 2, nil)
+	if delResp.Error != nil {
+		t.Fatalf("session/delete errored: %+v", delResp.Error)
+	}
+
+	marker := filepath.Join(store, ".ass-guard", sid+".deleted")
+
+	mfi, serr := os.Stat(marker)
+	if serr != nil {
+		t.Fatalf("tombstone marker missing after delete: %v", serr)
+	}
+
+	if mfi.Size() != 0 {
+		t.Errorf("marker size = %d; want the zero-byte tombstone (D-07)", mfi.Size())
+	}
+
+	if mfi.Mode().Perm() != 0o600 {
+		t.Errorf("marker perms = %o; want 0600", mfi.Mode().Perm())
+	}
+
+	after, rerr := os.ReadFile(transcript)
+	if rerr != nil {
+		t.Fatalf("read transcript after delete: %v", rerr)
+	}
+
+	if !bytes.Equal(before, after) {
+		t.Error("delete mutated the transcript bytes (D-07: tombstone, never rewrite)")
+	}
+
+	if _, aerr := os.Stat(auditFile); aerr != nil {
+		t.Errorf("audit artifact removed by delete: %v (D-08/D-20 — audit survives unconditionally)", aerr)
+	}
+
+	entries, lerr := ckpt.List()
+	if lerr != nil {
+		t.Fatalf("checkpoint list after delete: %v", lerr)
+	}
+
+	for _, e := range entries {
+		if e.SessionID == sid {
+			t.Errorf("checkpoint %s survived delete", e.Ref)
+		}
+	}
+
+	h.srv.mu.Lock()
+	_, alive := h.srv.sessions[sid]
+	h.srv.mu.Unlock()
+
+	if alive {
+		t.Error("deleted session still registered in the map")
+	}
+
+	sendList(t, h, 3, nil)
+
+	for _, row := range decodeListResponse(t, h.readFrame(t), 3).Sessions {
+		if row.SessionID == sid {
+			t.Error("tombstoned session still listed after delete")
+		}
+	}
+
+	h.send(t, newRequest(4, methodSessionDelete, map[string]any{keySessionID: sid}))
+
+	if second := readUntilResponse(t, h, 4, nil); second.Error != nil {
+		t.Fatalf("second delete errored: %+v (idempotent)", second.Error)
+	}
+
+	mfi2, serr2 := os.Stat(marker)
+	if serr2 != nil || mfi2.Size() != 0 {
+		t.Errorf("marker after second delete = (%v, %d bytes); want present and zero-byte", serr2, mfi2.Size())
 	}
 }
 
