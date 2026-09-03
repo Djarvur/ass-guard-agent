@@ -92,6 +92,12 @@ const (
 	// gateDeclineAutomation — gated or not, an automation turn never opens a
 	// dialog (D-07): decline with a client-visible note + structured log.
 	gateDeclineAutomation
+	// gateAskHook — a PreToolUse hook returned ask: the operator's
+	// escalation lever. NOT a final verdict: gateCall funnels it through the
+	// Step 3/Step 5 fail-safes (the D-07 automation decline, the 16-D-18
+	// degraded-client decline) before suspending — a hook ask is still an
+	// ASK, so it never opens a dialog nobody would answer (21-REVIEW WR-01).
+	gateAskHook
 )
 
 // gateVerdict is gateCall's outcome. result carries the append-ready denial/
@@ -117,8 +123,9 @@ type GateDeps struct {
 	// one call (21-01's ecosys seam — the deny-wins resolver over the D-03
 	// scope order). It is the HEAD of this pipeline (D-04: hooks are checked
 	// BEFORE permission rules): deny → gateDeny with the first denying
-	// hook's reason; ask → gateSuspend EVEN UNGATED (the operator's
-	// escalation lever, riding the existing queued permission ask); allow →
+	// hook's reason; ask → the ask path (Steps 3/5 fail-safes first, then a
+	// suspend EVEN UNGATED — the operator's escalation lever, riding the
+	// existing queued permission ask; 21-REVIEW WR-01); allow →
 	// gateExecute (USER scope only — the resolver demoted every non-user
 	// allow, D-01); no-decision → fall through to the rules. nil = no hook
 	// surface (the pre-join implicit allow).
@@ -183,39 +190,56 @@ func (s *Session) gateCall(ctx context.Context, turnID, callID, tool string, inp
 	// seam, the deny-wins resolver) and one total mapping; NO-DECISION is the
 	// only fall-through (T-21-20: deny, ask, allow, and none each have
 	// exactly one gateVerdict target, so a deny can never be spoofed into a
-	// fall-through by a mapping gap).
+	// fall-through by a mapping gap). A hook ASK is the one non-final mapping
+	// (21-REVIEW WR-01): it descends into the ask path below instead of
+	// returning, so the Step 3/Step 5 fail-safes apply to it exactly as they
+	// do to a rule ask — the alternative (an unconditional gateSuspend)
+	// opened dialogs on automation turns and degraded clients, contradicting
+	// the D-07/16-D-18 contracts this same pipeline enforces.
+	askFromHook := false
+
 	if v, decided := s.gateHookVerdict(ctx, tool, input); decided {
-		return v
+		if v.action != gateAskHook {
+			return v
+		}
+
+		askFromHook = true
 	}
 
 	// ── Step 2: permission rules — evaluated in BOTH modes (D-05, Pitfall 5):
-	// "ungated = no dialogs" never means "no evaluation".
-	var rules perm.RuleSet
-	if deps.Rules != nil {
-		rules = deps.Rules()
-	}
+	// "ungated = no dialogs" never means "no evaluation". SKIPPED when the
+	// hook head already asked: the hook verdict precedes the rules (D-04),
+	// so its ask IS the decision — the rules cannot overrule the escalation
+	// lever in either direction.
+	if !askFromHook {
+		var rules perm.RuleSet
+		if deps.Rules != nil {
+			rules = deps.Rules()
+		}
 
-	verdict := rules.Evaluate(s.ruleSubject(tool), primaryArgOf(tool, input))
+		verdict := rules.Evaluate(s.ruleSubject(tool), primaryArgOf(tool, input))
 
-	switch verdict {
-	case perm.VerdictDeny:
-		// A deny anywhere beats any allow, in both modes.
-		return gateVerdict{action: gateDeny, result: permissionDenyForm(tool)}
-	case perm.VerdictAllow:
-		return gateVerdict{action: gateExecute}
-	case perm.VerdictAsk:
-		// An explicit ask rule routes to the dialog set REGARDLESS of tool
-		// class (D-06: the file tunes ask subjects per pattern).
-	case perm.Unmatched:
-		if !s.gateAskClass(tool) {
-			// Read-only concurrent class → allow without a dialog (D-06's
-			// "everything else").
+		switch verdict {
+		case perm.VerdictDeny:
+			// A deny anywhere beats any allow, in both modes.
+			return gateVerdict{action: gateDeny, result: permissionDenyForm(tool)}
+		case perm.VerdictAllow:
 			return gateVerdict{action: gateExecute}
+		case perm.VerdictAsk:
+			// An explicit ask rule routes to the dialog set REGARDLESS of tool
+			// class (D-06: the file tunes ask subjects per pattern).
+		case perm.Unmatched:
+			if !s.gateAskClass(tool) {
+				// Read-only concurrent class → allow without a dialog (D-06's
+				// "everything else").
+				return gateVerdict{action: gateExecute}
+			}
 		}
 	}
 
 	// ── Step 3: the human-present decision (D-07). An automation turn NEVER
-	// opens a dialog nobody would answer — in BOTH modes (ungated included):
+	// opens a dialog nobody would answer — in BOTH modes (ungated included),
+	// and for BOTH ask sources (rule ask and hook ask — 21-REVIEW WR-01):
 	// fail-safe decline, deny/allow rules already enforced above. The decline
 	// note is the transcript line (the audit trail visible in the next
 	// foreground session); the structured log rode the decision.
@@ -229,16 +253,19 @@ func (s *Session) gateCall(ctx context.Context, turnID, callID, tool string, inp
 		}
 	}
 
-	// ── Step 4: the mode decision for the dialog set (D-05/D-06).
-	if s.gateMode() != PermModeGated {
+	// ── Step 4: the mode decision for the dialog set (D-05/D-06) — the
+	// RULE-ask path only: a hook ask suspends EVEN UNGATED (D-04, the
+	// operator's escalation lever), so it never consults the mode.
+	if !askFromHook && s.gateMode() != PermModeGated {
 		// Ungated (the default): the ask step evaluated the rules and returns
 		// allow WITHOUT a dialog — criterion 4's zero-new-dialogs default.
 		return gateVerdict{action: gateExecute}
 	}
 
-	// ── Step 5: the degraded-client guard (16-D-18). A client that answered
-	// -32601 once cannot answer permission asks at all — decline sticky, no
-	// new round-trip, never a silent allow.
+	// ── Step 5: the degraded-client guard (16-D-18) — for BOTH ask sources
+	// (21-REVIEW WR-01). A client that answered -32601 once cannot answer
+	// permission asks at all — decline sticky, no new round-trip, never a
+	// silent allow.
 	if s.permDegraded() {
 		slog.Warn("permission gate: ask-class call declined on a degraded (non-ask-capable) client",
 			"turnID", turnID, "callID", callID, "tool", tool)
@@ -264,9 +291,12 @@ func (s *Session) gateCall(ctx context.Context, turnID, callID, tool string, inp
 //
 //	deny  → gateDeny carrying the FIRST denying hook's reason as the
 //	        structured error result (the resolver picked the reason, D-03)
-//	ask   → gateSuspend UNCONDITIONALLY (D-04: even ungated — the
-//	        operator's escalation lever rides the EXISTING queued
-//	        permission ask from 17-02/17-03; no new ask path exists)
+//	ask   → gateAskHook (21-REVIEW WR-01): NOT a final verdict — gateCall
+//	        funnels it through the Step 3/Step 5 fail-safes (the D-07
+//	        automation decline, the 16-D-18 degraded-client decline) and
+//	        only then suspends, EVEN UNGATED (D-04: the operator's
+//	        escalation lever rides the EXISTING queued permission ask from
+//	        17-02/17-03; no new ask path exists)
 //	allow → gateExecute (USER scope only — 21-01's resolver already
 //	        demoted every non-user allow, so the gate never sees a project
 //	        allow, D-01; the allow is hook-scoped, never persisted)
@@ -282,7 +312,7 @@ func (s *Session) gateHookVerdict(
 	case ecosys.VerdictDeny:
 		return gateVerdict{action: gateDeny, result: permissionHookDenyForm(tool, reason)}, true
 	case ecosys.VerdictAsk:
-		return gateVerdict{action: gateSuspend}, true
+		return gateVerdict{action: gateAskHook}, true
 	case ecosys.VerdictAllow:
 		return gateVerdict{action: gateExecute}, true
 	default:

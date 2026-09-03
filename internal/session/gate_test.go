@@ -2123,3 +2123,130 @@ func TestGateHookVerdict(t *testing.T) { //nolint:funlen,cyclop,gocyclo,gocognit
 		}
 	})
 }
+
+// TestGateHookAskFailSafes pins the hook-ask × fail-safe interactions
+// (21-REVIEW WR-01): a PreToolUse ask verdict is still an ASK, so the D-07
+// automation decline and the 16-D-18 degraded-client guard apply BEFORE the
+// suspension — a hook ask never opens a dialog nobody would answer and never
+// re-fires a surface round-trip a sticky-degraded client cannot answer. The
+// human + capable-client control still suspends (the escalation lever's
+// ungated suspend is pinned by the TestGateHookVerdict battery above).
+func TestGateHookAskFailSafes(t *testing.T) {
+	t.Parallel()
+
+	askVerdict := func(context.Context, string, json.RawMessage) (ecosys.Verdict, string) {
+		return ecosys.VerdictAsk, "operator review required"
+	}
+
+	t.Run("automation turn declines fail-safe (D-07), even ungated", func(t *testing.T) {
+		t.Parallel()
+
+		store := &fakePermStore{}
+		surf := &fakeGateSurface{}
+
+		s := newHookGateSession(t, []provider.Response{
+			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+				{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+			{FinishReason: stopEndTurn},
+		}, PermModeUngated, store, surf, askVerdict)
+
+		s.SetTurnOriginAutomation(true)
+
+		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+		if err != nil {
+			t.Fatalf("Prompt: %v", err)
+		}
+
+		if stop != stopEndTurn {
+			t.Fatalf("stop = %q; want end_turn (a hook ask on an automation turn declines, never suspends)", stop)
+		}
+
+		if surf.fired() != 0 {
+			t.Errorf("surface fired %d times; want 0 (no dialog nobody would answer)", surf.fired())
+		}
+
+		if order := store.snapshotOrder(); len(order) != 0 {
+			t.Errorf("declined hook-asked call executed: %v", order)
+		}
+
+		results := toolResultsFor(t, s, gateCall1)
+		if len(results) != 1 || !results[0].IsError {
+			t.Fatalf("automation-decline result = %+v; want one error result", results)
+		}
+
+		if !strings.Contains(string(results[0].Output), "Permission declined") ||
+			!strings.Contains(string(results[0].Output), "no human is present") {
+			t.Errorf("automation-decline note = %s; want the D-07 decline form", results[0].Output)
+		}
+	})
+
+	t.Run("degraded client declines without a surface round-trip (16-D-18)", func(t *testing.T) {
+		t.Parallel()
+
+		store := &fakePermStore{}
+		surf := &fakeGateSurface{}
+
+		s := newHookGateSession(t, []provider.Response{
+			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+				{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+			{FinishReason: stopEndTurn},
+		}, PermModeGated, store, surf, askVerdict)
+
+		s.SetTurnOriginAutomation(false) // human turn — only the degradation declines
+		s.markPermDegraded()
+
+		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+		if err != nil {
+			t.Fatalf("Prompt: %v", err)
+		}
+
+		if stop != stopEndTurn {
+			t.Fatalf("stop = %q; want end_turn (a hook ask on a degraded client declines, never suspends)", stop)
+		}
+
+		if surf.fired() != 0 {
+			t.Errorf("surface fired %d times; want 0 (the sticky guard suppresses the round-trip)", surf.fired())
+		}
+
+		if order := store.snapshotOrder(); len(order) != 0 {
+			t.Errorf("declined hook-asked call executed: %v", order)
+		}
+
+		results := toolResultsFor(t, s, gateCall1)
+		if len(results) != 1 || !results[0].IsError {
+			t.Fatalf("degraded-decline result = %+v; want one error result", results)
+		}
+
+		if !strings.Contains(string(results[0].Output), "Permission declined") ||
+			!strings.Contains(string(results[0].Output), "cannot answer permission asks") {
+			t.Errorf("degraded-decline note = %s; want the 16-D-18 decline form", results[0].Output)
+		}
+	})
+
+	t.Run("human turn with a capable client still suspends (gated control)", func(t *testing.T) {
+		t.Parallel()
+
+		store := &fakePermStore{}
+
+		block := make(chan struct{})
+		surf := &fakeGateSurface{block: block}
+
+		s := newHookGateSession(t, []provider.Response{
+			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+				{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+			{FinishReason: stopEndTurn},
+		}, PermModeGated, store, surf, askVerdict)
+
+		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+		if err != nil {
+			t.Fatalf("Prompt: %v", err)
+		}
+
+		if stop != stopAsk {
+			t.Fatalf("stop = %q; want the ask marker (the fail-safes must not swallow a askable hook ask)", stop)
+		}
+
+		gateWaitFor(t, func() bool { return surf.fired() == 1 })
+		close(block)
+	})
+}
