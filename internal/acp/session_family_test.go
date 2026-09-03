@@ -264,13 +264,14 @@ func chunkTextOf(t *testing.T, u *updateFrame) string {
 
 // readUntilResponse reads frames (handing each session/update to cb) until the
 // response with the given integer id arrives; bounded so a pathological frame
-// stream fails instead of hanging.
+// stream fails instead of hanging. The bound comfortably exceeds the writer
+// buffer + lane capacities of the slowed-replay gate test.
 func readUntilResponse(t *testing.T, h *pipeHarness, wantID int, cb func(*updateFrame)) *Message {
 	t.Helper()
 
 	want := strconv.Itoa(wantID)
 
-	const maxFrames = 256
+	const maxFrames = 1024
 
 	for range maxFrames {
 		msg := h.readFrame(t)
@@ -585,5 +586,96 @@ func TestSessionLoadTraversalIDRejected(t *testing.T) {
 
 	if len(entries) != 0 {
 		t.Errorf("traversal rejections left files in the store: %v", entries)
+	}
+}
+
+// TestLoadGateRejectsPromptDuringReplay is the D-03 gate under concurrency:
+// while a load's replay is still streaming (paused mid-stream by an unread
+// client pipe — the io.Pipe backpressure fills the writer buffer + the shrunken
+// foreground lane, blocking the replay's next enqueue), a concurrent
+// session/prompt for that id returns the TYPED replay-in-progress error; after
+// the load completes, the SAME prompt is accepted. Run under -race: the ready
+// flag and the sessions map are accessed from concurrent handler goroutines.
+func TestLoadGateRejectsPromptDuringReplay(t *testing.T) {
+	t.Parallel()
+
+	store := t.TempDir()
+	sid := "44444444-5555-6666-8777-888888888888"
+
+	// 400 chunk lines: more than the writer buffer (256) + lane capacity can
+	// absorb, so replay deterministically parks mid-stream until the client
+	// starts draining.
+	const chunkLines = 400
+
+	lines := []string{
+		`{"type":"session_start","timestamp":"` + fixtureTimestamp + `","text":"` + sid + `"}`,
+	}
+	for i := range chunkLines {
+		turn := sid + "-turn-001"
+
+		lines = append(lines, `{"type":"agent_message_chunk","turnID":"`+turn+
+			`","timestamp":"`+fixtureTimestamp+`","messageID":"`+turn+`","text":"c`+
+			strconv.Itoa(i)+`"}`)
+	}
+	lines = append(lines, `{"type":"session_end","timestamp":"`+fixtureTimestamp+`"}`)
+
+	writeLoadFixture(t, store, sid, lines)
+
+	runner := newFakeResumeRunner(store)
+
+	// Foreground lane of 1: the replay's second pending frame already blocks
+	// once the drain stalls on the unread client pipe.
+	h := newPipeHarness(t,
+		WithWorkDir(store),
+		WithTurnRunner(runner),
+		WithTurnEmitter(TurnEmitterConfig{ForegroundCapacity: 1}))
+
+	sendLoad(t, h, 1, sid, store)
+
+	// Read ONE frame: replay is provably underway (its first chunk reached
+	// the client), so the loading marker is set. The unread pipe then stalls
+	// the drain; the lane (capacity 1) fills; the replay parks mid-stream.
+	first := h.readFrame(t)
+	if first.Method != methodSessionUpdate {
+		t.Fatalf("first frame after load = %v; want a session/update chunk", first.Method)
+	}
+
+	// The concurrent prompt: typed rejection naming the replay state — never
+	// a turn interleaved with the replayed frames.
+	h.send(t, newRequest(2, "session/prompt", map[string]any{
+		keySessionID:  sid,
+		testKeyPrompt: []any{map[string]string{testKeyTxtBlock: blockText, blockText: "early"}},
+	}))
+
+	during := readUntilResponse(t, h, 2, nil)
+	if during.Error == nil {
+		t.Fatalf("prompt during replay accepted: %s (D-03 violated)", string(during.Result))
+	}
+
+	if during.Error.Code != CodeInvalidRequest {
+		t.Errorf("prompt-during-replay code = %d; want %d (typed)", during.Error.Code, CodeInvalidRequest)
+	}
+
+	if !strings.Contains(during.Error.Message, "replay") {
+		t.Errorf("prompt-during-replay message = %q; want it to name the replay state",
+			during.Error.Message)
+	}
+
+	// Drain the rest: the parked replay resumes, the load response lands
+	// AFTER its last replayed frame (updates-before-response).
+	loadResp := readUntilResponse(t, h, 1, nil)
+	if loadResp.Error != nil {
+		t.Fatalf("session/load errored: %+v", loadResp.Error)
+	}
+
+	// The SAME prompt is accepted now that the session is ready.
+	h.send(t, newRequest(3, "session/prompt", map[string]any{
+		keySessionID:  sid,
+		testKeyPrompt: []any{map[string]string{testKeyTxtBlock: blockText, blockText: "after"}},
+	}))
+
+	after := readUntilResponse(t, h, 3, nil)
+	if after.Error != nil {
+		t.Fatalf("post-load prompt errored: %+v (gate must open after replay)", after.Error)
 	}
 }
