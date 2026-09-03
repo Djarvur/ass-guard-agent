@@ -462,3 +462,141 @@ func appendRawUnknownLine(t *testing.T, m *Manager, turnID string) {
 		t.Fatalf("write unknown-kind line: %v", werr)
 	}
 }
+
+// --- 21-05 (PAR-06/D-09) image-variant ContentBlock battery ---
+
+// Image-variant fixture values (unique markers).
+const (
+	imgRefPath   = "/ws/.ass-guard/images/abc123.png"
+	imgMediaTyp  = "image/png"
+	imgOrigW     = 9000
+	imgOrigH     = 6000
+	imgOrigSize  = 1234567
+	imgScaledW   = 1568
+	imgScaledH   = 1045
+	imgTurnIDStr = "turn_img"
+)
+
+// TestContentBlockRoundTrip pins the omitempty discipline on the ContentBlock
+// image-variant fields (21-05): a PRE-CHANGE-shaped text-only block and a
+// pre-change-shaped user_message line marshal byte-identically after the
+// field additions, while the image variant carries Ref + metadata + resize
+// provenance through a marshal→read round-trip.
+func TestContentBlockRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	t.Run("text-only block marshals byte-identically", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := json.Marshal(ContentBlock{Type: blockText, Text: fixtureUserText})
+		if err != nil {
+			t.Fatalf("Marshal: %v", err)
+		}
+
+		// The EXACT pre-change shape: type + text only — the image fields'
+		// omitempty must not add a single byte.
+		if want := `{"type":"text","text":"hello"}`; string(got) != want {
+			t.Errorf("text-only marshal = %s; want %s (byte-identical)", got, want)
+		}
+	})
+
+	t.Run("pre-change user_message line round-trips unchanged", func(t *testing.T) {
+		t.Parallel()
+
+		path := filepath.Join(t.TempDir(), "prechange.jsonl")
+
+		fixture := `{"type":"user_message","turnID":"t1","timestamp":"2026-09-01T00:00:00Z",` +
+			`"content":[{"type":"text","text":"hi"}]}` + "\n"
+
+		if err := os.WriteFile(path, []byte(fixture), filePermOwner); err != nil {
+			t.Fatalf("write fixture: %v", err)
+		}
+
+		lines, err := readTranscriptFile(path)
+		if err != nil {
+			t.Fatalf("readTranscriptFile: %v", err)
+		}
+
+		if len(lines) != 1 || lines[0].Type != userMessageType {
+			t.Fatalf("round-trip lost the line: %+v", lines)
+		}
+
+		var blocks []ContentBlock
+
+		if err := json.Unmarshal(lines[0].Content, &blocks); err != nil {
+			t.Fatalf("unmarshal content: %v", err)
+		}
+
+		if len(blocks) != 1 || blocks[0].Type != blockText || blocks[0].Text != "hi" {
+			t.Errorf("pre-change block drifted: %+v; want text hi", blocks[0])
+		}
+
+		remarshaled, err := json.Marshal(blocks[0])
+		if err != nil {
+			t.Fatalf("re-marshal: %v", err)
+		}
+
+		if want := `{"type":"text","text":"hi"}`; string(remarshaled) != want {
+			t.Errorf("re-marshal = %s; want %s", remarshaled, want)
+		}
+	})
+
+	t.Run("image variant carries ref, metadata, provenance", func(t *testing.T) {
+		t.Parallel()
+
+		m := newTestManager(t, "sess-imgcb")
+
+		blocks := []ContentBlock{{
+			Type:       blockImage,
+			DataRef:    imgRefPath,
+			MediaType:  imgMediaTyp,
+			Width:      imgScaledW,
+			Height:     imgScaledH,
+			OrigWidth:  imgOrigW,
+			OrigHeight: imgOrigH,
+			OrigSize:   imgOrigSize,
+			Scaled:     true,
+		}}
+
+		if err := m.AppendUserMessage(imgTurnIDStr, blocks); err != nil {
+			t.Fatalf("AppendUserMessage: %v", err)
+		}
+
+		lines, err := m.ReadAll()
+		if err != nil {
+			t.Fatalf("ReadAll: %v", err)
+		}
+
+		var got []ContentBlock
+
+		if err := json.Unmarshal(lines[len(lines)-1].Content, &got); err != nil {
+			t.Fatalf("unmarshal image content: %v", err)
+		}
+
+		if len(got) != 1 {
+			t.Fatalf("blocks = %d; want 1", len(got))
+		}
+
+		b := got[0]
+		switch {
+		case b.DataRef != imgRefPath:
+			t.Errorf("DataRef = %q; want %q", b.DataRef, imgRefPath)
+		case b.MediaType != imgMediaTyp:
+			t.Errorf("MediaType = %q; want %q", b.MediaType, imgMediaTyp)
+		case b.Width != imgScaledW || b.Height != imgScaledH:
+			t.Errorf("dims = (%d,%d); want (%d,%d)", b.Width, b.Height, imgScaledW, imgScaledH)
+		case b.OrigWidth != imgOrigW || b.OrigHeight != imgOrigH:
+			t.Errorf("orig dims = (%d,%d); want (%d,%d)", b.OrigWidth, b.OrigHeight, imgOrigW, imgOrigH)
+		case b.OrigSize != imgOrigSize:
+			t.Errorf("OrigSize = %d; want %d", b.OrigSize, imgOrigSize)
+		case !b.Scaled:
+			t.Error("Scaled = false; want true (the resize provenance flag)")
+		}
+
+		// NO base64 payload field on the lean image line (09-05 discipline).
+		raw := string(lines[len(lines)-1].Content)
+		if strings.Contains(raw, `"data"`) {
+			t.Errorf("image line carries inline data: %s; want Ref-only", raw)
+		}
+	})
+}
