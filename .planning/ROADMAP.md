@@ -189,7 +189,7 @@ Plans:
   3. `ass-guard --resume` works anywhere (CLI flag), not only from the editor.
   4. Closing a session stops its work cleanly; deleting tombstones the record (never rm) so audit history survives — deleted sessions disappear from the list but remain investigable on disk.
 
-**Plans**: 3/6 plans executed
+**Plans**: 5/6 plans executed
 
 Plans:
 **Wave 1**
@@ -200,8 +200,8 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 18-04-PLAN.md — list/close/delete RPC + tombstone lifecycle + startup sweep (ACP-05, ACP-07)
-- [ ] 18-05-PLAN.md — Reconciliation wired into load + kill -9 matrix E2E (criterion 2, ACP-06)
+- [x] 18-04-PLAN.md — list/close/delete RPC + tombstone lifecycle + startup sweep (ACP-05, ACP-07)
+- [x] 18-05-PLAN.md — Reconciliation wired into load + kill -9 matrix E2E (criterion 2, ACP-06)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -482,7 +482,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 | 15. internal/runtime Carve | v1.2 | 7/7 | Complete    | 2026-08-27 |
 | 16. ACP Wire Foundation | v1.2 | 9/9 | Complete    | 2026-09-01 |
 | 17. Permissions + Elicitation | v1.2 | 6/6 | Complete    | 2026-09-03 |
-| 18. Session Family | v1.2 | 3/6 | In Progress|  |
+| 18. Session Family | v1.2 | 5/6 | In Progress|  |
 | 19. Compaction + cache_control | v1.2 | 0/5 | Not started | - |
 | 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 0/6 | Planned | - |
 | 21. Context & Policy Parity Closures | v1.2 | 0/? | Not started | - |
