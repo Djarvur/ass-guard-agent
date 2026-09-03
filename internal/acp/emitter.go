@@ -16,6 +16,8 @@ import (
 // spellings against schema/v1; v2 renames plan→plan_update, which we NEVER emit).
 const (
 	keySessionUpdate         = "sessionUpdate"
+	keyUpdate                = "update" // the session/update params' payload key
+	keyAvailableCommands     = "availableCommands"
 	updKindAgentMessageChunk = "agent_message_chunk"
 	updKindToolCall          = "tool_call"
 	updKindToolCallUpdate    = "tool_call_update"
@@ -603,7 +605,7 @@ func (h *EmitterHandle) applyOptionalCardFields(
 // full lane blocks WITHOUT holding the lock — Pitfall 3). If the emitter stops
 // mid-block the bump is compensated, because that frame will never be written.
 func (h *EmitterHandle) enqueueUpdate(update map[string]any) error {
-	params := map[string]any{keySessionID: h.sessionID, "update": update}
+	params := map[string]any{keySessionID: h.sessionID, keyUpdate: update}
 
 	raw, err := json.Marshal(params)
 	if err != nil {

@@ -172,14 +172,67 @@ func (s *Session) nextTurnID() string { //nolint:funcorder // ordering groups re
 	return fmt.Sprintf("%s-turn-%03d", s.SessionID, n)
 }
 
-// SeedResume seeds the turn counter from the transcript maxima (18-01, ACP-06
-// — "continued id sequences from transcript maxima"): the resume path calls it
-// with MaxTurnCounter's result so the next nextTurnID() continues the on-disk
-// sequence instead of restarting at 001 (18-RESEARCH Pitfall 2 — replayed and
-// new frames must never collide). Exported because the resume orchestration
-// lives at the runtime layer, one package up.
-func (s *Session) SeedResume(maxTurns int64) {
+// SeedResume seeds the turn counter from the transcript maxima AND applies
+// the reconciled plan-mode target (18-01/18-05, ACP-06 — "continued id
+// sequences from transcript maxima" + the row-6 state seed): the resume path
+// calls it with Reconcile's Seed so the next nextTurnID() continues the
+// on-disk sequence instead of restarting at 001 (18-RESEARCH Pitfall 2 —
+// replayed and new frames must never collide) and the plan-mode state
+// restores from the LAST plan_mode line's persisted target instead of the
+// fresh default (Pitfall 3). planMode is the seed's target cause
+// (PlanModeCauseEnter / PlanModeCauseExit); empty leaves the state untouched
+// (the session never recorded a transition). Exported because the resume
+// orchestration lives at the runtime layer, one package up.
+func (s *Session) SeedResume(maxTurns int64, planMode string) {
 	s.turnCounter.Store(maxTurns)
+
+	if planMode == "" || s.planMode == nil {
+		return
+	}
+
+	switch planMode {
+	case PlanModeCauseEnter:
+		s.planMode.Enter()
+	case PlanModeCauseExit:
+		s.planMode.Exit()
+	}
+}
+
+// The session's v1 mode identifiers (18-05, ACP-06): ass-guard advertises
+// exactly the default/plan pair — the one mode-like state it has (16-RESEARCH
+// noted configOptions supersede modes; the load response still carries the
+// seeded plan-mode state per the 18-05 plan).
+const (
+	// ModeIDDefault names the ordinary (non-plan) mode.
+	ModeIDDefault = "default"
+	// ModeIDPlan names plan mode (12-04, ACP-02).
+	ModeIDPlan = "plan"
+)
+
+// ModesState builds the v1 SessionModeState shape for the load response
+// (18-05): availableModes (the default/plan pair) + currentModeId from the
+// live state. nil when the session never recorded a plan-mode transition —
+// the wire modes field then stays null and the client assumes its defaults
+// (schema/v1 SessionModeState: availableModes + currentModeId, both
+// required; a session whose LAST transition was an exit still reports the
+// shape with the default mode current).
+func (s *Session) ModesState() any {
+	if s.planMode == nil || !s.planMode.Used() {
+		return nil
+	}
+
+	current := ModeIDDefault
+	if s.planMode.IsOn() {
+		current = ModeIDPlan
+	}
+
+	return map[string]any{
+		"availableModes": []map[string]string{
+			{"id": ModeIDDefault, "name": "Default"},
+			{"id": ModeIDPlan, "name": "Plan"},
+		},
+		"currentModeId": current,
+	}
 }
 
 // CurrentTurnID returns the id of the most-recently STARTED turn, or "" when

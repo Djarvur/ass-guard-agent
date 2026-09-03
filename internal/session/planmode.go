@@ -22,6 +22,7 @@ import (
 type PlanModeState struct {
 	mu        sync.Mutex
 	on        bool
+	used      bool // any transition was recorded (live or resume-seeded)
 	enteredAt time.Time
 }
 
@@ -38,6 +39,8 @@ func (p *PlanModeState) Enter() {
 		p.on = true
 		p.enteredAt = time.Now().UTC()
 	}
+
+	p.used = true
 }
 
 // Exit flips the state OFF (an APPROVED ExitPlanMode resume — the only path
@@ -47,6 +50,7 @@ func (p *PlanModeState) Exit() {
 	defer p.mu.Unlock()
 
 	p.on = false
+	p.used = true
 }
 
 // IsOn reports the current state.
@@ -55,6 +59,18 @@ func (p *PlanModeState) IsOn() bool {
 	defer p.mu.Unlock()
 
 	return p.on
+}
+
+// Used reports whether ANY transition was ever recorded (18-05): a session
+// that never touched plan mode — live or on resume — reports no mode state
+// (the load response's modes field stays null; the client assumes defaults),
+// while a session whose LAST transition was an exit still reports the v1
+// shape with the default mode current.
+func (p *PlanModeState) Used() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	return p.used
 }
 
 // Marker causes + line type: schema-stable audit lines (the ask_suspended

@@ -685,16 +685,40 @@ func (s *Server) LoadSession(ctx context.Context, sessionID string) (LoadSession
 		}
 	}
 
-	// One load at a time per id (D-03); an already-live ready session is an
-	// idempotent success — re-replaying would duplicate frames.
+	// 18-05 registration guard (checked under the sessions-map mutex, in ONE
+	// critical section with the loading begin so no window exists where a
+	// concurrent load slips past both): an ALREADY-REGISTERED live session id
+	// rejects with the typed already-active error — the transcript was already
+	// reconciled, replayed, and seeded; a second load would re-replay frames
+	// onto a live session (18-01's idempotent-success shape ended with the
+	// reconciliation wiring: the closure append makes a re-load observably
+	// destructive, so it must refuse). A concurrent second load of the same
+	// id keeps the typed busy error (one load at a time, D-03).
 	s.mu.Lock()
-	st, live := s.sessions[sessionID]
+
+	_, live := s.sessions[sessionID]
+
+	alreadyLoading := false
+
+	if !live {
+		_, alreadyLoading = s.loading[sessionID]
+		if !alreadyLoading {
+			s.loading[sessionID] = struct{}{}
+		}
+	}
+
 	s.mu.Unlock()
 
 	switch {
-	case live && st.isReady():
-		return s.loadSessionResult(), nil
-	case live, !s.beginLoading(sessionID):
+	case live:
+		return zero, &RPCError{
+			Code: CodeInvalidRequest,
+			Message: fmt.Sprintf(
+				"session/load: session %s is already active (loaded live on this connection) — "+
+					"prompt it directly; re-loading would duplicate replayed frames",
+				sessionID),
+		}
+	case alreadyLoading:
 		return zero, &RPCError{
 			Code: CodeInvalidRequest,
 			Message: fmt.Sprintf(
@@ -705,12 +729,13 @@ func (s *Server) LoadSession(ctx context.Context, sessionID string) (LoadSession
 
 	defer s.endLoading(sessionID)
 
-	st = &sessionState{id: sessionID}
+	st := &sessionState{id: sessionID}
 
-	// D-01/Pitfall 2: the runner adopts the transcript's session id and seeds
-	// the turn counter from the transcript maxima. SessionLoader is an
-	// OPTIONAL capability — stub runners skip it (replay itself is
-	// transcript-driven and runner-independent).
+	// D-01/D-03 ordering's foundation (18-05): the runner adopts the
+	// transcript's session id, appends the provenance-marked closures, and
+	// seeds the state (turn counter + plan-mode target) — ALL before replay.
+	// SessionLoader is an OPTIONAL capability — stub runners skip it (replay
+	// itself is transcript-driven and runner-independent).
 	loader, canResume := s.turnRunner.(SessionLoader)
 	if canResume {
 		rerr := loader.ResumeSession(ctx, sessionID)
@@ -719,11 +744,34 @@ func (s *Server) LoadSession(ctx context.Context, sessionID string) (LoadSession
 		}
 	}
 
+	// The seeded mode state (18-05/ACP-06): read AFTER ResumeSession so the
+	// response's modes carries what the transcript seeded (nil → wire null,
+	// the 18-01 degrade for non-implementing runners).
+	var modes any
+
+	if modeProvider, ok := s.turnRunner.(ModeStateProvider); ok {
+		modes = modeProvider.LoadedModes(sessionID)
+	}
+
 	// Replay through THE ordered emitter path live turns use (16-D-02): the
-	// per-session FOREGROUND-lane handle, the same single drain.
+	// per-session FOREGROUND-lane handle, the same single drain. The file read
+	// here is the POST-CLOSURE transcript — ResumeSession above appended the
+	// synthetic closures, so they replay as ordinary terminal frames (D-02:
+	// subtle in the UI, unambiguous on disk).
 	rerr := ReplayTranscript(s.Emitter(sessionID), s.storeWorkDir(), sessionID)
 	if rerr != nil {
 		return zero, fmt.Errorf("session/load replay %s: %w", sessionID, rerr)
+	}
+
+	// 18-05/ACP-06 "commands re-advertised": the available_commands_update
+	// frame rides AFTER the last replayed frame and BEFORE the response, so
+	// the restored session's command set re-fires for the client's
+	// autocomplete (v1 full-replacement semantics). Best-effort: a failed
+	// enqueue (serve teardown race) degrades loudly, never fails the load.
+	cerr := s.NotifyAvailableCommands(sessionID)
+	if cerr != nil {
+		s.log.Printf("session/load: available_commands_update enqueue failed for %s (continuing): %v",
+			sessionID, cerr)
 	}
 
 	// Updates-before-response (16-01's turn-end barrier contract mirrored):
@@ -739,14 +787,15 @@ func (s *Server) LoadSession(ctx context.Context, sessionID string) (LoadSession
 
 	st.setReady()
 
-	return s.loadSessionResult(), nil
+	return s.loadSessionResult(modes), nil
 }
 
-// loadSessionResult builds the v1 LoadSessionResponse (18-01): configOptions
-// from the shared 16-05 advertisement builder (nil surface → null), modes
-// null in this plan (plan-mode seeding lands with 18-05).
-func (s *Server) loadSessionResult() LoadSessionResponse {
-	return LoadSessionResponse{ConfigOptions: s.configOptionsFor()}
+// loadSessionResult builds the v1 LoadSessionResponse: configOptions from
+// the shared 16-05 advertisement builder (nil surface → null) and modes
+// from the seeded plan-mode state (18-05 — the v1 SessionModeState shape,
+// or null when the session never recorded a mode transition).
+func (s *Server) loadSessionResult(modes any) LoadSessionResponse {
+	return LoadSessionResponse{ConfigOptions: s.configOptionsFor(), Modes: modes}
 }
 
 // handleSessionList enumerates the store's sessions through the injected

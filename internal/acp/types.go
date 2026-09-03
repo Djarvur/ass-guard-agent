@@ -205,6 +205,24 @@ const (
 // "config_option_update"; its payload carries the FULL refreshed set).
 const KindConfigOptionUpdate = "config_option_update"
 
+// KindAvailableCommandsUpdate is the v1 sessionUpdate kind announcing that
+// the agent's available commands are ready or changed (schema/v1
+// SessionUpdate const "available_commands_update"; its payload carries the
+// FULL command set — full-replacement semantics, like the plan kind). 18-05:
+// the session/load path re-advertises the resumed session's command set
+// after replay (ACP-06 "commands re-advertised"); Phase 20's session-start
+// advertisement re-fires the same kind.
+const KindAvailableCommandsUpdate = "available_commands_update"
+
+// AvailableCommandFrame is one v1 AvailableCommand (schema/v1 def
+// AvailableCommand): the command name + optional human-readable description
+// + optional input spec. ass-guard's discovered commands carry exactly the
+// name/description pair; input stays absent (nullable per the schema).
+type AvailableCommandFrame struct {
+	Name        string `json:"name"`                  // required (e.g. "opsx:explore")
+	Description string `json:"description,omitempty"` // nullable per the schema
+}
+
 // ConfigOptionTypeSelect is the v1 SessionConfigOption type discriminator for
 // the single-value selector variant (the only variant ass-guard advertises).
 const ConfigOptionTypeSelect = "select"

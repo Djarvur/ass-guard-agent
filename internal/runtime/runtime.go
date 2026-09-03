@@ -1031,15 +1031,23 @@ const chainIdlePollInterval = 10 * time.Millisecond
 // surface yet (the fail-safe decline path — never a silent allow).
 var errPermissionAskSurfaceUnwired = errors.New("permission ask surface not wired")
 
-// ResumeSession is the 18-01 SessionLoader seam (ACP-06/D-01): it adopts the
-// PAST session's id — sessionFor opens the Manager under the transcript's own
-// sessionID (transcript_<id>.jsonl IS the session identity on resume) — and
-// seeds the turn counter from the transcript maxima so the next turn id
-// continues the on-disk sequence (Pitfall 2). Called by the acp session/load
-// handler BEFORE replay; reconstruction is transcript-local (D-01) — no
-// provider call happens here. A ReadAll failure degrades LOUDLY but still
-// seeds what was readable (the AUD-03 audit-write discipline): a partially
-// readable transcript yields a partial seed, never a refused resume.
+// ResumeSession is the 18-01 SessionLoader seam, widened by 18-05 to the
+// FULL transcript-side resume contract (ACP-06/D-01 — one place, the D-01
+// ordering's foundation): it adopts the PAST session's id (sessionFor opens
+// the Manager under the transcript's own sessionID — transcript_<id>.jsonl
+// IS the session identity on resume), classifies every dangling expectation
+// (session.Reconcile), APPENDS each provenance-marked synthetic closure
+// through Manager.AppendSynthetic (D-02 — on disk, never a rewrite; the acp
+// load core then replays the post-closure file), and seeds the session state
+// (turn counter from the maxima, Pitfall 2; plan-mode target from the LAST
+// plan_mode line, Pitfall 3). Called by the acp session/load handler BEFORE
+// replay; reconstruction is transcript-local (D-01) — no provider call
+// happens here. A ReadAll failure degrades LOUDLY but still seeds what was
+// readable (the AUD-03 audit-write discipline): a partially readable
+// transcript yields a partial seed, never a refused resume. A closure append
+// failure is loud and non-fatal — the closures already on disk stay, the
+// next ResumeSession re-classifies and re-appends only what is missing
+// (idempotent by construction, the kill-during-replay row's guarantee).
 func (r *Runner) ResumeSession(ctx context.Context, sessionID string) error {
 	sess := r.sessionFor(ctx, sessionID)
 	if sess == nil {
@@ -1054,15 +1062,53 @@ func (r *Runner) ResumeSession(ctx context.Context, sessionID string) error {
 		// Loud degrade (plan-pinned): seed what was readable — ReadAll skips
 		// non-conforming lines, so a nil slice seeds 0 and the sequence starts
 		// fresh rather than the load refusing.
-		log.Printf("ass-guard: resume read failed for %s (%v); seeding turn counter from what was readable",
+		log.Printf("ass-guard: resume read failed for %s (%v); seeding from what was readable",
 			sessionID, rerr)
 	}
 
-	turnMax := session.MaxTurnCounter(sessionID, lines)
-	sess.SeedResume(turnMax)
+	closures, seed := session.Reconcile(sessionID, lines)
+
+	for i := range closures {
+		aerr := sess.Manager.AppendSynthetic(&closures[i])
+		if aerr != nil {
+			log.Printf("ass-guard: resume closure append failed for %s (%s): %v — "+
+				"continuing (the next resume re-appends what is missing)",
+				sessionID, closures[i].Type, aerr)
+		}
+	}
+
+	planTarget := ""
+	if seed.PlanModePresent {
+		planTarget = seed.PlanMode
+	}
+
+	sess.SeedResume(seed.MaxTurns, planTarget)
 
 	return nil
 }
+
+// LoadedModes satisfies the acp ModeStateProvider optional capability
+// (18-05, ACP-06): the resumed session's v1 SessionModeState-shaped data for
+// the load response's modes field — read AFTER ResumeSession seeded the
+// session (the load core's call order), nil when the session never recorded
+// a mode transition (wire modes null; the client assumes defaults).
+func (r *Runner) LoadedModes(sessionID string) any {
+	r.sessMu.Lock()
+	sess := r.sessions[sessionID]
+	r.sessMu.Unlock()
+
+	if sess == nil {
+		return nil
+	}
+
+	return sess.ModesState()
+}
+
+// CommandRegistry exposes the discovered slash-command registry (08-04) for
+// the acpserve composition's available_commands_update adapter (18-05/ACP-06
+// "commands re-advertised"; Phase 20's session/new advertisement reuses the
+// same source).
+func (r *Runner) CommandRegistry() ecosys.Registry { return r.reg }
 
 // sessionFor returns the Session for sessionID, creating it on first use.
 func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,gocognit // turn pipeline grouping

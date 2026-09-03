@@ -85,7 +85,8 @@ func (p *countingProvider) count() int {
 func writeResumeFixture(t *testing.T, dir, sid string, lines []string) {
 	t.Helper()
 
-	if err := os.MkdirAll(filepath.Join(dir, ".ass-guard"), 0o750); err != nil {
+	err := os.MkdirAll(filepath.Join(dir, ".ass-guard"), 0o750)
+	if err != nil {
 		t.Fatalf("mkdir fixture store: %v", err)
 	}
 
@@ -93,8 +94,9 @@ func writeResumeFixture(t *testing.T, dir, sid string, lines []string) {
 
 	path := filepath.Join(dir, ".ass-guard", "transcript_"+sid+".jsonl")
 
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatalf("write fixture transcript: %v", err)
+	werr := os.WriteFile(path, []byte(body), 0o600)
+	if werr != nil {
+		t.Fatalf("write fixture transcript: %v", werr)
 	}
 }
 
@@ -154,6 +156,29 @@ func newResumeRunner(t *testing.T, dir string, prov provider.Provider) *Runner {
 	}
 }
 
+// assertResumeClosures scans re-read transcript lines for the class-01
+// closure set (the three booleans the caller asserts).
+//
+//nolint:nonamedreturns // the names document the triple for the caller
+func assertResumeClosures(t *testing.T, sid string, lines []session.Line) (failedResult, canceled, ended bool) {
+	t.Helper()
+
+	for i := range lines {
+		l := &lines[i]
+
+		switch {
+		case l.Type == session.TypeToolResult && l.ToolCallID == "call-1":
+			failedResult = failedResult || (l.IsError && l.Cause == session.InterruptedCause)
+		case l.Type == session.TypeCanceled && l.TurnID == sid+"-turn-001":
+			canceled = canceled || l.Cause == session.InterruptedCause
+		case l.Type == session.TypeSessionEnd:
+			ended = ended || l.Cause == session.InterruptedCause
+		}
+	}
+
+	return failedResult, canceled, ended
+}
+
 // TestResumeSessionReconcilesAndSeeds pins the D-01 resume contract at the
 // runner seam: ResumeSession over the class-01 fixture appends the
 // provenance-marked closures ON DISK (the failed tool_result with the
@@ -187,29 +212,7 @@ func TestResumeSessionReconcilesAndSeeds(t *testing.T) {
 		t.Fatalf("re-read transcript: %v", err)
 	}
 
-	var (
-		sawFailedResult bool
-		sawCanceled     bool
-		sawSessionEnd   bool
-	)
-
-	for i := range lines {
-		l := &lines[i]
-		switch {
-		case l.Type == session.TypeToolResult && l.ToolCallID == "call-1":
-			if l.IsError && l.Cause == session.InterruptedCause {
-				sawFailedResult = true
-			}
-		case l.Type == session.TypeCanceled && l.TurnID == sid+"-turn-001":
-			if l.Cause == session.InterruptedCause {
-				sawCanceled = true
-			}
-		case l.Type == session.TypeSessionEnd:
-			if l.Cause == session.InterruptedCause {
-				sawSessionEnd = true
-			}
-		}
-	}
+	sawFailedResult, sawCanceled, sawSessionEnd := assertResumeClosures(t, sid, lines)
 
 	if !sawFailedResult {
 		t.Error("transcript lacks the failed tool_result closure (call-1, isError, cause=interrupted)")
@@ -296,6 +299,7 @@ func TestResumeNoProviderCalls(t *testing.T) {
 
 	go func() {
 		_ = srv.Serve(ctx)
+
 		close(served)
 	}()
 

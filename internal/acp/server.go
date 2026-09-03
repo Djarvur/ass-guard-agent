@@ -51,11 +51,41 @@ type SessionCloser interface {
 // session/load calls ResumeSession BEFORE replay so the runner adopts the
 // transcript's session id and seeds its turn counter from the transcript
 // maxima — the next turn id continues the on-disk sequence instead of
-// restarting at 001 (Pitfall 2). It is a separate interface (not part of
+// restarting at 001 (Pitfall 2). 18-05 widened the runner-side contract to
+// the FULL transcript-side resume (reconcile → append closures → seed);
+// the interface shape is unchanged. It is a separate interface (not part of
 // TurnRunner) so stub runners need not implement it — the same
 // optional-capability shape as SessionCloser/AskDrainer.
 type SessionLoader interface {
 	ResumeSession(ctx context.Context, sessionID string) error
+}
+
+// ModeStateProvider is an OPTIONAL capability a TurnRunner may implement
+// (18-05, ACP-06): after SessionLoader.ResumeSession seeded the session's
+// live state from the transcript, the load core reads the seeded plan-mode
+// state to build the v1 modes field of LoadSessionResponse. The returned
+// value is the ready-to-serialize SessionModeState shape (availableModes +
+// currentModeId) or nil — nil keeps the wire modes null (the client assumes
+// its defaults; a session that never recorded a mode transition has no mode
+// state to report). A non-implementing runner degrades to modes null, the
+// 18-01 shape.
+type ModeStateProvider interface {
+	LoadedModes(sessionID string) any
+}
+
+// CommandSource is the OPTIONAL seam behind available_commands_update
+// (18-05/ACP-06 "commands re-advertised"): the composition-root command
+// registry the load path re-advertises from after replay (Phase 20's
+// session/new advertisement reuses the same seam). The frame carries the
+// FULL set per v1 full-replacement semantics; absent (the default) the load
+// path still re-advertises with the EMPTY set — an acpserve-less server's
+// command truth is genuinely empty, and the client's autocomplete stays
+// coherent (the degrade never skips the frame).
+type CommandSource interface {
+	// AvailableCommands returns the complete current command set, sorted
+	// deterministically by the source (never nil-semantic: an empty slice is
+	// the empty set).
+	AvailableCommands() []AvailableCommandFrame
 }
 
 // CheckpointStore is the OPTIONAL checkpoint-removal seam (18-04, D-08):
@@ -177,6 +207,11 @@ type Server struct {
 	// session/delete (18-04); nil = no store wired, both methods answer the
 	// typed not-available error.
 	sessionStore SessionStore
+
+	// commandSrc is the optional command-registry seam behind
+	// available_commands_update (18-05); nil = the load path re-advertises
+	// the empty set (the acpserve-less degrade).
+	commandSrc CommandSource
 
 	// loading tracks sessions mid-session/load (18-01/D-03): the id is
 	// registered at load start and cleared on every exit path. A prompt
@@ -319,6 +354,14 @@ func WithCheckpointStore(cs CheckpointStore) ServerOption {
 // both methods answer the typed not-available error.
 func WithSessionStore(ss SessionStore) ServerOption {
 	return func(s *Server) { s.sessionStore = ss }
+}
+
+// WithCommandSource installs the command-registry seam behind
+// available_commands_update (18-05/ACP-06): the load path re-advertises the
+// resumed session's command set from it after replay. Absent (the default),
+// the re-advertisement carries the empty set.
+func WithCommandSource(cs CommandSource) ServerOption {
+	return func(s *Server) { s.commandSrc = cs }
 }
 
 // NewServer builds a Server reading frames from in, writing frames to out, and
@@ -471,13 +514,45 @@ func (s *Server) NotifyConfigOptions(sessionID string, opts []ConfigOptionFrame)
 
 	raw, err := json.Marshal(map[string]any{
 		keySessionID: sessionID,
-		"update": map[string]any{
+		keyUpdate: map[string]any{
 			keySessionUpdate: KindConfigOptionUpdate,
 			"configOptions":  opts,
 		},
 	})
 	if err != nil {
 		return fmt.Errorf("marshal config_option_update: %w", err)
+	}
+
+	return s.emitter.newHandle(sessionID, classForeground).Notify(
+		&Message{JSONRPC: protocolVersion20, Method: methodSessionUpdate, Params: raw})
+}
+
+// NotifyAvailableCommands emits one available_commands_update session/update
+// notification through the FOREGROUND lane (18-05/ACP-06: the resumed
+// session's command set re-advertised after replay — the client rebuilds its
+// autocomplete for the restored session). The frame carries the COMPLETE
+// current set (v1 full-replacement semantics — the same discipline the plan
+// kind uses): an absent CommandSource advertises the EMPTY set (never a
+// skipped frame — the degrade keeps the client's view coherent). Best-effort:
+// enqueue errors return (serve teardown races).
+func (s *Server) NotifyAvailableCommands(sessionID string) error {
+	cmds := []AvailableCommandFrame{}
+
+	if s.commandSrc != nil {
+		if got := s.commandSrc.AvailableCommands(); got != nil {
+			cmds = got
+		}
+	}
+
+	raw, err := json.Marshal(map[string]any{
+		keySessionID: sessionID,
+		keyUpdate: map[string]any{
+			keySessionUpdate:     KindAvailableCommandsUpdate,
+			keyAvailableCommands: cmds,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("marshal available_commands_update: %w", err)
 	}
 
 	return s.emitter.newHandle(sessionID, classForeground).Notify(
@@ -579,24 +654,12 @@ func (s *Server) storeWorkDir() string {
 	return wd
 }
 
-// beginLoading registers a session id as mid-session/load under s.mu (18-01/
-// D-03). It returns false when a load is already in flight for the id — one
-// load at a time per id; the caller surfaces the typed busy error.
-func (s *Server) beginLoading(sessionID string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if _, busy := s.loading[sessionID]; busy {
-		return false
-	}
-
-	s.loading[sessionID] = struct{}{}
-
-	return true
-}
-
 // endLoading clears the mid-load marker — EVERY load exit path calls it
 // (rejections included: a failed load must not leave a ghost busy marker).
+// (18-05: the marker's SET moved inline into LoadSession's registration
+// guard — the live-check and the loading-begin share ONE critical section so
+// no window exists where a concurrent load slips past both; only the clear
+// stayed a helper.)
 func (s *Server) endLoading(sessionID string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

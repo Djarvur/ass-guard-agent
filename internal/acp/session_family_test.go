@@ -131,7 +131,7 @@ type fakeResumeRunner struct {
 
 	mu    sync.Mutex
 	seed  map[string]int64 // sessionID -> current turn counter
-	modes map[string]any    // sessionID -> seeded v1 SessionModeState shape (nil = wire null)
+	modes map[string]any   // sessionID -> seeded v1 SessionModeState shape (nil = wire null)
 }
 
 func newFakeResumeRunner(workDir string) *fakeResumeRunner {
@@ -142,8 +142,14 @@ func newFakeResumeRunner(workDir string) *fakeResumeRunner {
 // closures cross the same append path live lines do — content unchanged).
 type passthroughRedactor struct{}
 
-func (passthroughRedactor) Redact(b []byte) ([]byte, error) { return b, nil }        //nolint:wrapcheck // passthrough
-func (passthroughRedactor) ScrubError(err error) string     { return err.Error() } //nolint:wrapcheck // passthrough
+func (passthroughRedactor) Redact(b []byte) ([]byte, error) { return b, nil }
+func (passthroughRedactor) ScrubError(err error) string     { return err.Error() }
+
+// fakeModeEntry builds one availableModes row (the production ids verbatim —
+// session.ModeIDDefault/ModeIDPlan).
+func fakeModeEntry(id, name string) map[string]string {
+	return map[string]string{"id": id, "name": name}
+}
 
 // fakeModesShape mirrors the v1 SessionModeState shape the production load
 // path builds (availableModes + currentModeId; the fake pins the wire shape
@@ -153,15 +159,15 @@ func fakeModesShape(seed session.Seed) any {
 		return nil
 	}
 
-	current := "default"
+	current := session.ModeIDDefault
 	if seed.PlanMode == session.PlanModeCauseEnter {
-		current = "plan"
+		current = session.ModeIDPlan
 	}
 
 	return map[string]any{
 		"availableModes": []map[string]string{
-			{"id": "default", "name": "Default"},
-			{"id": "plan", "name": "Plan"},
+			fakeModeEntry(session.ModeIDDefault, "Default"),
+			fakeModeEntry(session.ModeIDPlan, "Plan"),
 		},
 		"currentModeId": current,
 	}
@@ -183,7 +189,8 @@ func (f *fakeResumeRunner) ResumeSession(_ context.Context, sessionID string) er
 	closures, seed := session.Reconcile(sessionID, lines)
 
 	for i := range closures {
-		if aerr := mgr.AppendSynthetic(&closures[i]); aerr != nil {
+		aerr := mgr.AppendSynthetic(&closures[i])
+		if aerr != nil {
 			return aerr //nolint:wrapcheck // test fake: the append error verbatim
 		}
 	}
@@ -252,33 +259,6 @@ func (f *fakeResumeRunner) Run(
 	}
 
 	return stopEndTurn, nil
-}
-
-// scanTurnIDs is the package tests' transcript turnID reader (nil on any
-// open error; fixtureTurnIDs is the asserting variant).
-func scanTurnIDs(path string) []string {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil
-	}
-
-	defer func() { _ = f.Close() }()
-
-	var ids []string
-
-	sc := bufio.NewScanner(f)
-
-	for sc.Scan() {
-		var l struct {
-			TurnID string `json:"turnID"` //nolint:tagliatelle // on-disk format
-		}
-
-		if json.Unmarshal(sc.Bytes(), &l) == nil && l.TurnID != "" {
-			ids = append(ids, l.TurnID)
-		}
-	}
-
-	return ids
 }
 
 // updateFrame is the test-side view of one session/update notification.
@@ -1217,9 +1197,12 @@ func TestSessionLoadReplaysCleanSession(t *testing.T) {
 	// assistant_message final chunk), then the tool_call, then the terminal
 	// tool_call_update — transcript order, and nothing for the bookkeeping
 	// kinds (user_message/session_start/boundary/session_end emit no frame).
+	// 18-05: the available_commands_update re-advertisement closes the replay
+	// (ACP-06 "commands re-advertised") — after the last replayed frame,
+	// before the response.
 	wantKinds := []string{
 		updKindAgentMessageChunk, updKindAgentMessageChunk, updKindAgentMessageChunk,
-		updKindToolCall, updKindToolCallUpdate,
+		updKindToolCall, updKindToolCallUpdate, "available_commands_update",
 	}
 
 	if strings.Join(kinds, ",") != strings.Join(wantKinds, ",") {

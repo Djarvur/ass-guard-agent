@@ -3,8 +3,6 @@ package session
 import (
 	"encoding/json"
 	"slices"
-	"strconv"
-	"strings"
 )
 
 // Reconciliation engine (18-02, ACP-06 / 18-CONTEXT D-01/D-02): a PURE
@@ -121,7 +119,12 @@ func scanTranscript(sessionID string, lines []Line) reconcileScan {
 		openAsks:      make(map[string]int),
 		openDispatch:  make(map[string]int),
 	}
-	sc.seed.MaxTurns = reconcileMaxTurn(sessionID, lines)
+
+	// 18-05 scanner unification: the seed's max-turn scan delegates to
+	// seed.go's MaxTurnCounter — exactly ONE suffix-scanner implementation
+	// survives (the 18-02 local duplication existed for same-wave
+	// independence; both plans have now landed).
+	sc.seed.MaxTurns = MaxTurnCounter(sessionID, lines)
 
 	for i := range lines {
 		l := &lines[i]
@@ -321,63 +324,7 @@ func (sc *reconcileScan) closures(lines []Line) []Line {
 	return res
 }
 
-// reconcileTurnIDSuffixLen mirrors nextTurnID's zero-padded %03d width (the
-// format is fixed at Session.nextTurnID; wider all-digit suffixes remain
-// valid — %03d is a minimum width).
-const reconcileTurnIDSuffixLen = 3
-
-// reconcileMaxTurn scans for TurnID values of the exact <sessionID>-turn-%03d
-// shape this session mints and returns the largest suffix (0 when none) — a
-// MAX scan, never a count (gaps in the sequence are real: a turn can die
-// before its first line lands).
-//
-// DELIBERATE local duplication of seed.go's MaxTurnCounter (same-wave plans
-// must not consume each other's artifacts — 18-01 lands beside this plan in
-// the same wave). 18-05 Task 1 unifies the scanners when it wires both into
-// the load path: Reconcile's scan delegates to MaxTurnCounter so exactly one
-// implementation survives.
-func reconcileMaxTurn(sessionID string, lines []Line) int64 {
-	prefix := sessionID + "-turn-"
-
-	var turnMax int64
-
-	for i := range lines {
-		id := lines[i].TurnID
-		if !strings.HasPrefix(id, prefix) {
-			continue
-		}
-
-		suffix := strings.TrimPrefix(id, prefix)
-		if !reconcileIsTurnSuffix(suffix) {
-			continue
-		}
-
-		n, err := strconv.ParseInt(suffix, 10, 64)
-		if err != nil || n <= 0 {
-			continue
-		}
-
-		if n > turnMax {
-			turnMax = n
-		}
-	}
-
-	return turnMax
-}
-
-// reconcileIsTurnSuffix reports whether s matches the %03d shape's alphabet:
-// at least reconcileTurnIDSuffixLen characters, all ASCII digits (ParseInt
-// alone would accept "+5"/"-5", which nextTurnID can never produce).
-func reconcileIsTurnSuffix(s string) bool {
-	if len(s) < reconcileTurnIDSuffixLen {
-		return false
-	}
-
-	for i := range len(s) {
-		if s[i] < '0' || s[i] > '9' {
-			return false
-		}
-	}
-
-	return true
-}
+// (18-05) The turn-suffix scan lives ONCE in seed.go: MaxTurnCounter. The
+// 18-02-era local copy (reconcileMaxTurn/reconcileIsTurnSuffix) was deleted
+// when 18-05 wired both plans into one load path — Reconcile's seed routes
+// through MaxTurnCounter so a future format change has exactly one site.

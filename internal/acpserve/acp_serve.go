@@ -258,6 +258,11 @@ func Run( //nolint:funlen // :320-425
 		// session-backed storage seam (the 18-03 engine + the tombstone
 		// writer — session_store.go; acp stays session-free per 25-D-13).
 		acp.WithSessionStore(sessionStoreAdapter{}),
+		// 18-05 (ACP-06 "commands re-advertised"): the load path re-advertises
+		// the resumed session's command set from the runner's discovered
+		// registry after replay (command_source.go — the same composition-root
+		// adapter convention).
+		acp.WithCommandSource(commandSourceAdapter{runner: runner}),
 		// 18-04 (D-08): the checkpoint-removal seam behind session/delete.
 		acp.WithCheckpointStore(ckptDeleter))
 
