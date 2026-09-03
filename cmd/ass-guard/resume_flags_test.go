@@ -408,6 +408,8 @@ func TestResumeTargetResolution(t *testing.T) {
 // no --prompt delegates to the serve flow (the testable seam) carrying the
 // resolved target — direct id form, bare-picker form, and the cwd-scoped -c
 // form.
+//
+//nolint:paralleltest // swaps package-level seam vars + t.Chdir — deliberately sequential
 func TestRootResumeDelegation(t *testing.T) {
 	// NOT parallel: the subtests swap package-level seams (delegation + picker).
 	const id = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
@@ -429,6 +431,13 @@ func TestRootResumeDelegation(t *testing.T) {
 
 	t.Run("bare --resume delegates with the picked id", func(t *testing.T) {
 		const picked = "77777777-7777-4777-8777-777777777777"
+
+		// picker mode lists the cwd store first — give it a session to list.
+		dir := t.TempDir()
+		writeResumeFixtureStore(t, dir,
+			resumeFixture{id: "66666666-6666-4666-8666-666666666666", title: "the listed row",
+				lastActivity: time.Now().Add(-time.Minute), tombstone: false})
+		t.Chdir(dir)
 
 		captured := interceptServeDelegate(t)
 		interceptPicker(t, picked)

@@ -29,12 +29,34 @@ import (
 
 var errIsRequired = errors.New("--prompt is required")
 
+// errUnknownCommand backs the root's legacy positional-arg rejection (18-06
+// keeps it verbatim for the non-resume path; the message shape mirrors
+// cobra's own unknown-command error).
+var errUnknownCommand = errors.New("unknown command")
+
 func main() {
 	err := newRootCmd().Execute()
 	if err != nil {
 		// cobra already prints the error; exit non-zero. Diagnostics go to stderr.
 		os.Exit(1)
 	}
+}
+
+// rootArgsValidator is the root's positional-arg policy (18-06, D-10): the
+// root takes a positional arg ONLY on the resume path — the `--resume
+// <target>` space form leaves the target in args (pflag's NoOptDefVal
+// contract). Without a resume flag the legacy root behavior stays:
+// positional args are unknown subcommands.
+func rootArgsValidator(cmd *cobra.Command, args []string) error {
+	if readResumeFlags(cmd, args).active() {
+		return cobra.MaximumNArgs(1)(cmd, args)
+	}
+
+	if len(args) > 0 {
+		return fmt.Errorf("%w %q for %q", errUnknownCommand, args[0], cmd.CommandPath())
+	}
+
+	return nil
 }
 
 func newRootCmd() *cobra.Command {
@@ -44,6 +66,8 @@ func newRootCmd() *cobra.Command {
 		profilesDir string
 		auditLog    string
 		versionFlag bool
+		resumeFlag  string
+		continueIt  bool
 	)
 
 	root := &cobra.Command{
@@ -54,6 +78,7 @@ func newRootCmd() *cobra.Command {
 			"and prints the parsed tool-calls as JSON to STDERR. stdout stays byte-clean " +
 			"(reserved for ACP frames). Needs ZAI_API_KEY in the environment.",
 		SilenceUsage: true,
+		Args:         rootArgsValidator,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// --version takes precedence over the tracer default RunE. Output goes
 			// to STDERR (transport discipline — stdout stays clean for ACP frames).
@@ -61,6 +86,15 @@ func newRootCmd() *cobra.Command {
 				fmt.Fprintln(os.Stderr, "ass-guard version "+version.String())
 
 				return nil
+			}
+
+			// 18-06 (D-10): the CC-parity resume trio is typed at the ROOT, so
+			// `ass-guard --resume[ <id|name>]` and `ass-guard --continue`/`-c`
+			// delegate into the serve flow with the resolved target — the flag
+			// works in any launch context, not only via editor RPC.
+			rf := readResumeFlags(cmd, args)
+			if rf.active() {
+				return runRootResume(cmd, rf)
 			}
 
 			return runTrace(cmd.Context(), prompt, profileName, profilesDir, auditLog)
@@ -72,6 +106,7 @@ func newRootCmd() *cobra.Command {
 		"directory containing profile bundles")
 	root.PersistentFlags().StringVar(&auditLog, "audit-log", "",
 		"write the redacted verbatim shaped request to this file (LOG-01); empty = stderr")
+	registerResumeFlags(root, &resumeFlag, &continueIt)
 	root.Flags().BoolVar(&versionFlag, "version", false,
 		"print the ass-guard version (build-time-injected) to stderr and exit")
 
@@ -83,6 +118,19 @@ func newRootCmd() *cobra.Command {
 	root.AddCommand(newCheckpointCmd())
 
 	return root
+}
+
+// registerResumeFlags registers the 18-06 D-10 trio as ROOT-persistent flags
+// (extracted from newRootCmd for length): --resume with NoOptDefVal lets bare
+// `--resume` parse to the picker sentinel, `--resume=<target>` carry the
+// target directly, and the space form leave the target in args (see
+// pickSentinel); --continue/-c is the cwd-scoped zero-ceremony resume.
+func registerResumeFlags(root *cobra.Command, resumeFlag *string, continueIt *bool) {
+	root.PersistentFlags().StringVar(resumeFlag, "resume", "",
+		"resume a past session by id or title prefix; bare opens the picker (D-10)")
+	root.PersistentFlags().Lookup("resume").NoOptDefVal = pickSentinel
+	root.PersistentFlags().BoolVarP(continueIt, "continue", "c", false,
+		"resume the most recent session in the current directory (D-10)")
 }
 
 // runTrace loads the profile, runs one turn, and writes the tool-calls as JSON

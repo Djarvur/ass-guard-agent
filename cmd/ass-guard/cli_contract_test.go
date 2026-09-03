@@ -158,560 +158,648 @@ func TestCLIBinaryContractProfile(t *testing.T) {
 }
 
 // The golden blocks below are byte-exact transcriptions of the built binary's
-// --help output (see the file comment). <TMP> stands for the temp cwd that the
-// cwd-derived flag defaults embed at runtime. The //nolint:dupword directives
-// are load-bearing: cobra's own "Available Commands" rows repeat each command
-// name in the name and Short columns ("list        list checkpoints, ..."),
-// and that repetition is the pinned truth, not an authoring defect.
+// --help output (see the file comment), regenerated in 18-06 for the
+// root-persistent --resume/--continue/-c flags. <TMP> stands for the temp cwd
+// that the cwd-derived flag defaults embed at runtime. The //nolint:dupword
+// directives are load-bearing: cobra's own "Available Commands" rows repeat
+// each command name in the name and Short columns, and that repetition is the
+// pinned truth, not an authoring defect.
 
 //nolint:dupword // cobra help rows repeat command names by construction
-const goldenRoot = `Loads the named profile (default: zcode), shapes one outgoing request via the Profile` +
-	` Shaper, sends it to the Anthropic-protocol provider (Z.ai GLM by default), and prints the parsed tool-calls as` +
-	` JSON to STDERR. stdout stays byte-clean (reserved for ACP frames). Needs ZAI_API_KEY in the environment.` +
+const goldenRoot = "Loads the named profile (default: zcode), shapes one outgoing request via the Profile Shaper," +
+	" sends it to the Anthropic-protocol provider (Z.ai GLM by default), and prints the parsed" +
+	" tool-calls as JSON to STDERR. stdout stays byte-clean (reserved for ACP frames). Needs" +
+	" ZAI_API_KEY in the environment." +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Usage:` +
+	"Usage:" +
 	"\n" +
-	`  ass-guard [flags]` +
+	"  ass-guard [flags]" +
 	"\n" +
-	`  ass-guard [command]` +
+	"  ass-guard [command]" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Available Commands:` +
+	"Available Commands:" +
 	"\n" +
-	`  acp           ACP (IDE-native) interface` +
+	"  acp           ACP (IDE-native) interface" +
 	"\n" +
-	`  checkpoint    Shadow-git workspace checkpoints (EARLY-01): list and restore pre-turn snapshots` +
+	"  checkpoint    Shadow-git workspace checkpoints (EARLY-01): list and restore pre-turn snapshots" +
 	"\n" +
-	`  completion    Generate the autocompletion script for the specified shell` +
+	"  completion    Generate the autocompletion script for the specified shell" +
 	"\n" +
-	`  help          Help about any command` +
+	"  help          Help about any command" +
 	"\n" +
-	`  learning      Inspect and revert the learned-config store` +
+	"  learning      Inspect and revert the learned-config store" +
 	"\n" +
-	`  model-routing Inspect and validate the model scheduling config` +
+	"  model-routing Inspect and validate the model scheduling config" +
 	"\n" +
-	`  parity        run the behavioral mimicry A/B parity gate (MIMC-03, the north-star gate)` +
+	"  parity        run the behavioral mimicry A/B parity gate (MIMC-03, the north-star gate)" +
 	"\n" +
-	`  profile       profile operations (drift detection, inspection)` +
+	"  profile       profile operations (drift detection, inspection)" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Flags:` +
+	"Flags:" +
 	"\n" +
-	`      --audit-log string      write the redacted verbatim shaped request to this file (LOG-01); empty = stderr` +
+	"      --audit-log string            write the redacted verbatim shaped request to this file (LOG-01);" +
+	" empty = stderr" +
 	"\n" +
-	`  -h, --help                  help for ass-guard` +
+	"  -c, --continue                    resume the most recent session in the current directory (D-10)" +
 	"\n" +
-	`      --profile string        profile name to load (default "zcode")` +
+	"  -h, --help                        help for ass-guard" +
 	"\n" +
-	`      --profiles-dir string   directory containing profile bundles (default "<TMP>/profiles")` +
+	"      --profile string              profile name to load (default \"zcode\")" +
 	"\n" +
-	`      --prompt string         prompt to send through the loop (required for the tracer)` +
+	"      --profiles-dir string         directory containing profile bundles (default \"<TMP>/profiles\")" +
 	"\n" +
-	`      --version               print the ass-guard version (build-time-injected) to stderr and exit` +
+	"      --prompt string               prompt to send through the loop (required for the tracer)" +
 	"\n" +
-	`` +
+	"      --resume string[=\"@picker\"]   resume a past session by id or title prefix; bare opens the picker" +
+	" (D-10)" +
 	"\n" +
-	`Use "ass-guard [command] --help" for more information about a command.` +
+	"      --version                     print the ass-guard version (build-time-injected) to stderr and exit" +
+	"\n" +
+	"" +
+	"\n" +
+	"Use \"ass-guard [command] --help\" for more information about a command." +
 	"\n"
 
-const goldenACP = `ACP (IDE-native) interface` +
+const goldenACP = "ACP (IDE-native) interface" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Usage:` +
+	"Usage:" +
 	"\n" +
-	`  ass-guard acp [command]` +
+	"  ass-guard acp [command]" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Available Commands:` +
+	"Available Commands:" +
 	"\n" +
-	`  serve       Run the ACP v1 server over stdio (the entrypoint Zed spawns)` +
+	"  serve       Run the ACP v1 server over stdio (the entrypoint Zed spawns)" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Flags:` +
+	"Flags:" +
 	"\n" +
-	`  -h, --help   help for acp` +
+	"  -h, --help   help for acp" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Global Flags:` +
+	"Global Flags:" +
 	"\n" +
-	`      --audit-log string      write the redacted verbatim shaped request to this file (LOG-01); empty = stderr` +
+	"      --audit-log string            write the redacted verbatim shaped request to this file (LOG-01);" +
+	" empty = stderr" +
 	"\n" +
-	`      --profile string        profile name to load (default "zcode")` +
+	"  -c, --continue                    resume the most recent session in the current directory (D-10)" +
 	"\n" +
-	`      --profiles-dir string   directory containing profile bundles (default "<TMP>/profiles")` +
+	"      --profile string              profile name to load (default \"zcode\")" +
 	"\n" +
-	`      --prompt string         prompt to send through the loop (required for the tracer)` +
+	"      --profiles-dir string         directory containing profile bundles (default \"<TMP>/profiles\")" +
 	"\n" +
-	`` +
+	"      --prompt string               prompt to send through the loop (required for the tracer)" +
 	"\n" +
-	`Use "ass-guard acp [command] --help" for more information about a command.` +
+	"      --resume string[=\"@picker\"]   resume a past session by id or title prefix; bare opens the picker" +
+	" (D-10)" +
+	"\n" +
+	"" +
+	"\n" +
+	"Use \"ass-guard acp [command] --help\" for more information about a command." +
 	"\n"
 
-const goldenACPServe = `Speaks ACP v1 (newline-delimited JSON-RPC) over stdio. stdout carries ONLY valid ACP` +
-	` frames; all diagnostics go to stderr (transport discipline). The lifecycle is initialize → session/new →` +
-	` session/prompt with streamed session/update notifications (ACP-04). session/load restores a past session` +
-	` and replays it through the same ordered frames (ACP-06, 18-01). Needs ZAI_API_KEY for real model turns;` +
-	` the server skeleton works without it for the ACP handshake.` +
+const goldenACPServe = "Speaks ACP v1 (newline-delimited JSON-RPC) over stdio. stdout carries ONLY valid ACP" +
+	" frames; all diagnostics go to stderr (transport discipline). The lifecycle is initialize" +
+	" → session/new → session/prompt with streamed session/update notifications (ACP-04)." +
+	" session/load restores a past session and replays it through the same ordered frames" +
+	" (ACP-06, 18-01). Needs ZAI_API_KEY for real model turns; the server skeleton works" +
+	" without it for the ACP handshake." +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Usage:` +
+	"Usage:" +
 	"\n" +
-	`  ass-guard acp serve [flags]` +
+	"  ass-guard acp serve [flags]" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Flags:` +
+	"Flags:" +
 	"\n" +
-	`      --ask-timeout duration   how long an unanswered AskUserQuestion waits before the turn resumes with the` +
-	` non-answer form (D-01); 0 = block forever (interactive mode) (default 10m0s)` +
+	"      --ask-timeout duration   how long an unanswered AskUserQuestion waits before the turn resumes with" +
+	" the non-answer form (D-01); 0 = block forever (interactive mode) (default 10m0s)" +
 	"\n" +
-	`  -h, --help                   help for serve` +
+	"  -h, --help                   help for serve" +
 	"\n" +
-	`      --max-concurrent int     max concurrent outbound provider calls across parent + subagents (PARA-04)` +
-	` (default 6)` +
+	"      --max-concurrent int     max concurrent outbound provider calls across parent + subagents (PARA-04)" +
+	" (default 6)" +
 	"\n" +
-	`      --no-engine              disable the Phase-4 unified engine (fall back to manual continue — D-04)` +
+	"      --no-engine              disable the Phase-4 unified engine (fall back to manual continue — D-04)" +
 	"\n" +
-	`      --profile string         profile name to load (PROF-01) (default "zcode")` +
+	"      --profile string         profile name to load (PROF-01) (default \"zcode\")" +
 	"\n" +
-	`      --profiles-dir string    directory containing profile bundles (default "<TMP>/profiles")` +
+	"      --profiles-dir string    directory containing profile bundles (default \"<TMP>/profiles\")" +
 	"\n" +
-	`      --work-dir string        working directory for .ass-guard/ transcripts (default: cwd)` +
+	"      --work-dir string        working directory for .ass-guard/ transcripts (default: cwd)" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Global Flags:` +
+	"Global Flags:" +
 	"\n" +
-	`      --audit-log string   write the redacted verbatim shaped request to this file (LOG-01); empty = stderr` +
+	"      --audit-log string            write the redacted verbatim shaped request to this file (LOG-01);" +
+	" empty = stderr" +
 	"\n" +
-	`      --prompt string      prompt to send through the loop (required for the tracer)` +
-	"\n"
-
-//nolint:dupword // cobra help rows repeat command names by construction
-const goldenCheckpoint = `Operates the per-workspace shadow-git checkpoint store under` +
-	` .ass-guard/checkpoints/shadow.git. Every parent turn snapshots the workspace BEFORE its mutations; ` +
-	"`" +
-	`checkpoint list` +
-	"`" +
-	` shows the workspace's recovery history and ` +
-	"`" +
-	`checkpoint restore <sessionID-turn-NNN>` +
-	"`" +
-	` returns the workspace to that pre-turn state (the user's repository git state is` +
-	` never touched). All output is written to stderr — stdout stays reserved for ACP frames.` +
+	"  -c, --continue                    resume the most recent session in the current directory (D-10)" +
 	"\n" +
-	`` +
+	"      --prompt string               prompt to send through the loop (required for the tracer)" +
 	"\n" +
-	`Usage:` +
-	"\n" +
-	`  ass-guard checkpoint [command]` +
-	"\n" +
-	`` +
-	"\n" +
-	`Available Commands:` +
-	"\n" +
-	`  list        list checkpoints, oldest first (empty store: "no checkpoints", exit 0)` +
-	"\n" +
-	`  restore     restore the workspace to a checkpoint's pre-turn state` +
-	"\n" +
-	`` +
-	"\n" +
-	`Flags:` +
-	"\n" +
-	`  -h, --help   help for checkpoint` +
-	"\n" +
-	`` +
-	"\n" +
-	`Global Flags:` +
-	"\n" +
-	`      --audit-log string      write the redacted verbatim shaped request to this file (LOG-01); empty = stderr` +
-	"\n" +
-	`      --profile string        profile name to load (default "zcode")` +
-	"\n" +
-	`      --profiles-dir string   directory containing profile bundles (default "<TMP>/profiles")` +
-	"\n" +
-	`      --prompt string         prompt to send through the loop (required for the tracer)` +
-	"\n" +
-	`` +
-	"\n" +
-	`Use "ass-guard checkpoint [command] --help" for more information about a command.` +
-	"\n"
-
-const goldenCheckpointList = `list checkpoints, oldest first (empty store: "no checkpoints", exit 0)` +
-	"\n" +
-	`` +
-	"\n" +
-	`Usage:` +
-	"\n" +
-	`  ass-guard checkpoint list [flags]` +
-	"\n" +
-	`` +
-	"\n" +
-	`Flags:` +
-	"\n" +
-	`  -h, --help              help for list` +
-	"\n" +
-	`      --work-dir string   workspace whose checkpoints to operate on (default: cwd)` +
-	"\n" +
-	`` +
-	"\n" +
-	`Global Flags:` +
-	"\n" +
-	`      --audit-log string      write the redacted verbatim shaped request to this file (LOG-01); empty = stderr` +
-	"\n" +
-	`      --profile string        profile name to load (default "zcode")` +
-	"\n" +
-	`      --profiles-dir string   directory containing profile bundles (default "<TMP>/profiles")` +
-	"\n" +
-	`      --prompt string         prompt to send through the loop (required for the tracer)` +
-	"\n"
-
-const goldenCheckpointRestore = `restore the workspace to a checkpoint's pre-turn state` +
-	"\n" +
-	`` +
-	"\n" +
-	`Usage:` +
-	"\n" +
-	`  ass-guard checkpoint restore <sessionID-turn-NNN> [flags]` +
-	"\n" +
-	`` +
-	"\n" +
-	`Flags:` +
-	"\n" +
-	`  -h, --help              help for restore` +
-	"\n" +
-	`      --work-dir string   workspace whose checkpoints to operate on (default: cwd)` +
-	"\n" +
-	`` +
-	"\n" +
-	`Global Flags:` +
-	"\n" +
-	`      --audit-log string      write the redacted verbatim shaped request to this file (LOG-01); empty = stderr` +
-	"\n" +
-	`      --profile string        profile name to load (default "zcode")` +
-	"\n" +
-	`      --profiles-dir string   directory containing profile bundles (default "<TMP>/profiles")` +
-	"\n" +
-	`      --prompt string         prompt to send through the loop (required for the tracer)` +
+	"      --resume string[=\"@picker\"]   resume a past session by id or title prefix; bare opens the picker" +
+	" (D-10)" +
 	"\n"
 
 //nolint:dupword // cobra help rows repeat command names by construction
-const goldenLearning = `Inspect and revert the learned-config store` +
+const goldenCheckpoint = "Operates the per-workspace shadow-git checkpoint store under" +
+	" .ass-guard/checkpoints/shadow.git. Every parent turn snapshots the workspace BEFORE its" +
+	" mutations; `checkpoint list` shows the workspace's recovery history and `checkpoint" +
+	" restore <sessionID-turn-NNN>` returns the workspace to that pre-turn state (the user's" +
+	" repository git state is never touched). All output is written to stderr — stdout stays" +
+	" reserved for ACP frames." +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Usage:` +
+	"Usage:" +
 	"\n" +
-	`  ass-guard learning [command]` +
+	"  ass-guard checkpoint [command]" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Available Commands:` +
+	"Available Commands:" +
 	"\n" +
-	`  list        list every learned entry (id, situation, answer, confidence, status, expiry)` +
+	"  list        list checkpoints, oldest first (empty store: \"no checkpoints\", exit 0)" +
 	"\n" +
-	`  revert      revert one learned entry by id (LRN-04)` +
+	"  restore     restore the workspace to a checkpoint's pre-turn state" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Flags:` +
+	"Flags:" +
 	"\n" +
-	`  -h, --help   help for learning` +
+	"  -h, --help   help for checkpoint" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Global Flags:` +
+	"Global Flags:" +
 	"\n" +
-	`      --audit-log string      write the redacted verbatim shaped request to this file (LOG-01); empty = stderr` +
+	"      --audit-log string            write the redacted verbatim shaped request to this file (LOG-01);" +
+	" empty = stderr" +
 	"\n" +
-	`      --profile string        profile name to load (default "zcode")` +
+	"  -c, --continue                    resume the most recent session in the current directory (D-10)" +
 	"\n" +
-	`      --profiles-dir string   directory containing profile bundles (default "<TMP>/profiles")` +
+	"      --profile string              profile name to load (default \"zcode\")" +
 	"\n" +
-	`      --prompt string         prompt to send through the loop (required for the tracer)` +
+	"      --profiles-dir string         directory containing profile bundles (default \"<TMP>/profiles\")" +
 	"\n" +
-	`` +
+	"      --prompt string               prompt to send through the loop (required for the tracer)" +
 	"\n" +
-	`Use "ass-guard learning [command] --help" for more information about a command.` +
+	"      --resume string[=\"@picker\"]   resume a past session by id or title prefix; bare opens the picker" +
+	" (D-10)" +
+	"\n" +
+	"" +
+	"\n" +
+	"Use \"ass-guard checkpoint [command] --help\" for more information about a command." +
 	"\n"
 
-const goldenLearningList = `list every learned entry (id, situation, answer, confidence, status, expiry)` +
+const goldenCheckpointList = "list checkpoints, oldest first (empty store: \"no checkpoints\", exit 0)" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Usage:` +
+	"Usage:" +
 	"\n" +
-	`  ass-guard learning list [flags]` +
+	"  ass-guard checkpoint list [flags]" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Flags:` +
+	"Flags:" +
 	"\n" +
-	`  -h, --help             help for list` +
+	"  -h, --help              help for list" +
 	"\n" +
-	`      --learned string   path to learned.yaml (default: .ass-guard/learned.yaml)` +
+	"      --work-dir string   workspace whose checkpoints to operate on (default: cwd)" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Global Flags:` +
+	"Global Flags:" +
 	"\n" +
-	`      --audit-log string      write the redacted verbatim shaped request to this file (LOG-01); empty = stderr` +
+	"      --audit-log string            write the redacted verbatim shaped request to this file (LOG-01);" +
+	" empty = stderr" +
 	"\n" +
-	`      --profile string        profile name to load (default "zcode")` +
+	"  -c, --continue                    resume the most recent session in the current directory (D-10)" +
 	"\n" +
-	`      --profiles-dir string   directory containing profile bundles (default "<TMP>/profiles")` +
+	"      --profile string              profile name to load (default \"zcode\")" +
 	"\n" +
-	`      --prompt string         prompt to send through the loop (required for the tracer)` +
+	"      --profiles-dir string         directory containing profile bundles (default \"<TMP>/profiles\")" +
+	"\n" +
+	"      --prompt string               prompt to send through the loop (required for the tracer)" +
+	"\n" +
+	"      --resume string[=\"@picker\"]   resume a past session by id or title prefix; bare opens the picker" +
+	" (D-10)" +
 	"\n"
 
-const goldenLearningRevert = `revert one learned entry by id (LRN-04)` +
+const goldenCheckpointRestore = "restore the workspace to a checkpoint's pre-turn state" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Usage:` +
+	"Usage:" +
 	"\n" +
-	`  ass-guard learning revert <id> [flags]` +
+	"  ass-guard checkpoint restore <sessionID-turn-NNN> [flags]" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Flags:` +
+	"Flags:" +
 	"\n" +
-	`  -h, --help             help for revert` +
+	"  -h, --help              help for restore" +
 	"\n" +
-	`      --learned string   path to learned.yaml (default: .ass-guard/learned.yaml)` +
+	"      --work-dir string   workspace whose checkpoints to operate on (default: cwd)" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Global Flags:` +
+	"Global Flags:" +
 	"\n" +
-	`      --audit-log string      write the redacted verbatim shaped request to this file (LOG-01); empty = stderr` +
+	"      --audit-log string            write the redacted verbatim shaped request to this file (LOG-01);" +
+	" empty = stderr" +
 	"\n" +
-	`      --profile string        profile name to load (default "zcode")` +
+	"  -c, --continue                    resume the most recent session in the current directory (D-10)" +
 	"\n" +
-	`      --profiles-dir string   directory containing profile bundles (default "<TMP>/profiles")` +
+	"      --profile string              profile name to load (default \"zcode\")" +
 	"\n" +
-	`      --prompt string         prompt to send through the loop (required for the tracer)` +
+	"      --profiles-dir string         directory containing profile bundles (default \"<TMP>/profiles\")" +
+	"\n" +
+	"      --prompt string               prompt to send through the loop (required for the tracer)" +
+	"\n" +
+	"      --resume string[=\"@picker\"]   resume a past session by id or title prefix; bare opens the picker" +
+	" (D-10)" +
 	"\n"
 
 //nolint:dupword // cobra help rows repeat command names by construction
-const goldenModelRouting = `Inspect and validate the model scheduling config` +
+const goldenLearning = "Inspect and revert the learned-config store" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Usage:` +
+	"Usage:" +
 	"\n" +
-	`  ass-guard model-routing [command]` +
+	"  ass-guard learning [command]" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Available Commands:` +
+	"Available Commands:" +
 	"\n" +
-	`  resolve     resolve a tier to a concrete (provider, model) at a given time` +
+	"  list        list every learned entry (id, situation, answer, confidence, status, expiry)" +
 	"\n" +
-	`  validate    load + validate the model-routing config (D-10 load-time guarantee)` +
+	"  revert      revert one learned entry by id (LRN-04)" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Flags:` +
+	"Flags:" +
 	"\n" +
-	`  -h, --help   help for model-routing` +
+	"  -h, --help   help for learning" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Global Flags:` +
+	"Global Flags:" +
 	"\n" +
-	`      --audit-log string      write the redacted verbatim shaped request to this file (LOG-01); empty = stderr` +
+	"      --audit-log string            write the redacted verbatim shaped request to this file (LOG-01);" +
+	" empty = stderr" +
 	"\n" +
-	`      --profile string        profile name to load (default "zcode")` +
+	"  -c, --continue                    resume the most recent session in the current directory (D-10)" +
 	"\n" +
-	`      --profiles-dir string   directory containing profile bundles (default "<TMP>/profiles")` +
+	"      --profile string              profile name to load (default \"zcode\")" +
 	"\n" +
-	`      --prompt string         prompt to send through the loop (required for the tracer)` +
+	"      --profiles-dir string         directory containing profile bundles (default \"<TMP>/profiles\")" +
 	"\n" +
-	`` +
+	"      --prompt string               prompt to send through the loop (required for the tracer)" +
 	"\n" +
-	`Use "ass-guard model-routing [command] --help" for more information about a command.` +
+	"      --resume string[=\"@picker\"]   resume a past session by id or title prefix; bare opens the picker" +
+	" (D-10)" +
+	"\n" +
+	"" +
+	"\n" +
+	"Use \"ass-guard learning [command] --help\" for more information about a command." +
 	"\n"
 
-const goldenModelRoutingValidate = `load + validate the model-routing config (D-10 load-time guarantee)` +
+const goldenLearningList = "list every learned entry (id, situation, answer, confidence, status, expiry)" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Usage:` +
+	"Usage:" +
 	"\n" +
-	`  ass-guard model-routing validate [flags]` +
+	"  ass-guard learning list [flags]" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Flags:` +
+	"Flags:" +
 	"\n" +
-	`      --config string   path to config.yaml (default: embedded zero-config floor)` +
+	"  -h, --help             help for list" +
 	"\n" +
-	`  -h, --help            help for validate` +
+	"      --learned string   path to learned.yaml (default: .ass-guard/learned.yaml)" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Global Flags:` +
+	"Global Flags:" +
 	"\n" +
-	`      --audit-log string      write the redacted verbatim shaped request to this file (LOG-01); empty = stderr` +
+	"      --audit-log string            write the redacted verbatim shaped request to this file (LOG-01);" +
+	" empty = stderr" +
 	"\n" +
-	`      --profile string        profile name to load (default "zcode")` +
+	"  -c, --continue                    resume the most recent session in the current directory (D-10)" +
 	"\n" +
-	`      --profiles-dir string   directory containing profile bundles (default "<TMP>/profiles")` +
+	"      --profile string              profile name to load (default \"zcode\")" +
 	"\n" +
-	`      --prompt string         prompt to send through the loop (required for the tracer)` +
+	"      --profiles-dir string         directory containing profile bundles (default \"<TMP>/profiles\")" +
+	"\n" +
+	"      --prompt string               prompt to send through the loop (required for the tracer)" +
+	"\n" +
+	"      --resume string[=\"@picker\"]   resume a past session by id or title prefix; bare opens the picker" +
+	" (D-10)" +
 	"\n"
 
-const goldenModelRoutingResolve = `resolve a tier to a concrete (provider, model) at a given time` +
+const goldenLearningRevert = "revert one learned entry by id (LRN-04)" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Usage:` +
+	"Usage:" +
 	"\n" +
-	`  ass-guard model-routing resolve [flags]` +
+	"  ass-guard learning revert <id> [flags]" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Flags:` +
+	"Flags:" +
 	"\n" +
-	`      --at string        RFC3339 time to resolve at (default: now)` +
+	"  -h, --help             help for revert" +
 	"\n" +
-	`      --config string    path to config.yaml (default: embedded zero-config floor)` +
+	"      --learned string   path to learned.yaml (default: .ass-guard/learned.yaml)" +
 	"\n" +
-	`  -h, --help             help for resolve` +
+	"" +
 	"\n" +
-	`      --json             emit machine-readable JSON to stdout (default: human form to stderr)` +
+	"Global Flags:" +
 	"\n" +
-	`      --project string   per-project key (default: global)` +
+	"      --audit-log string            write the redacted verbatim shaped request to this file (LOG-01);" +
+	" empty = stderr" +
 	"\n" +
-	`      --tier string      tier to resolve (heavy|good|light) — required` +
+	"  -c, --continue                    resume the most recent session in the current directory (D-10)" +
 	"\n" +
-	`` +
+	"      --profile string              profile name to load (default \"zcode\")" +
 	"\n" +
-	`Global Flags:` +
+	"      --profiles-dir string         directory containing profile bundles (default \"<TMP>/profiles\")" +
 	"\n" +
-	`      --audit-log string      write the redacted verbatim shaped request to this file (LOG-01); empty = stderr` +
+	"      --prompt string               prompt to send through the loop (required for the tracer)" +
 	"\n" +
-	`      --profile string        profile name to load (default "zcode")` +
-	"\n" +
-	`      --profiles-dir string   directory containing profile bundles (default "<TMP>/profiles")` +
-	"\n" +
-	`      --prompt string         prompt to send through the loop (required for the tracer)` +
+	"      --resume string[=\"@picker\"]   resume a past session by id or title prefix; bare opens the picker" +
+	" (D-10)" +
 	"\n"
 
-const goldenParity = `run the behavioral mimicry A/B parity gate (MIMC-03, the north-star gate)` +
+//nolint:dupword // cobra help rows repeat command names by construction
+const goldenModelRouting = "Inspect and validate the model scheduling config" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Usage:` +
+	"Usage:" +
 	"\n" +
-	`  ass-guard parity [flags]` +
+	"  ass-guard model-routing [command]" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Flags:` +
+	"Available Commands:" +
 	"\n" +
-	`      --cache-pin string        corpus cache_control placement pin fixture (14-02 JSONL; empty = skip the` +
-	` placement check) (default "<TMP>/internal/profile/testdata/context-behavior/cache-control.jsonl")` +
+	"  resolve     resolve a tier to a concrete (provider, model) at a given time" +
 	"\n" +
-	`      --from-rollout string     generate the suite from a zcode rollout JSONL (same-session = matching system` +
-	` prompt + tools)` +
+	"  validate    load + validate the model-routing config (D-10 load-time guarantee)" +
 	"\n" +
-	`  -h, --help                    help for parity` +
+	"" +
 	"\n" +
-	`      --profile string          profile to load for the ass-guard arm (default "zcode")` +
+	"Flags:" +
 	"\n" +
-	`      --profiles-dir string     directory containing profile bundles (default "<TMP>/profiles")` +
+	"  -h, --help   help for model-routing" +
 	"\n" +
-	`      --results string          results JSON output path (default "parity-results.json")` +
+	"" +
 	"\n" +
-	`      --suite string            curated divergence suite JSON (ignored if --from-rollout is set) (default` +
-	` "<TMP>/internal/parity/suite/curated_suite.json")` +
+	"Global Flags:" +
 	"\n" +
-	`      --surprise-check string   optional second suite JSON to run after the curated suite passes` +
+	"      --audit-log string            write the redacted verbatim shaped request to this file (LOG-01);" +
+	" empty = stderr" +
 	"\n" +
-	`` +
+	"  -c, --continue                    resume the most recent session in the current directory (D-10)" +
 	"\n" +
-	`Global Flags:` +
+	"      --profile string              profile name to load (default \"zcode\")" +
 	"\n" +
-	`      --audit-log string   write the redacted verbatim shaped request to this file (LOG-01); empty = stderr` +
+	"      --profiles-dir string         directory containing profile bundles (default \"<TMP>/profiles\")" +
 	"\n" +
-	`      --prompt string      prompt to send through the loop (required for the tracer)` +
+	"      --prompt string               prompt to send through the loop (required for the tracer)" +
+	"\n" +
+	"      --resume string[=\"@picker\"]   resume a past session by id or title prefix; bare opens the picker" +
+	" (D-10)" +
+	"\n" +
+	"" +
+	"\n" +
+	"Use \"ass-guard model-routing [command] --help\" for more information about a command." +
 	"\n"
 
-const goldenProfile = `profile operations (drift detection, inspection)` +
+const goldenModelRoutingValidate = "load + validate the model-routing config (D-10 load-time guarantee)" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Usage:` +
+	"Usage:" +
 	"\n" +
-	`  ass-guard profile [command]` +
+	"  ass-guard model-routing validate [flags]" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Available Commands:` +
+	"Flags:" +
 	"\n" +
-	`  check       diff a fresh capture against the profile's tiered manifest (PROF-04 drift detector)` +
+	"      --config string   path to config.yaml (default: embedded zero-config floor)" +
 	"\n" +
-	`` +
+	"  -h, --help            help for validate" +
 	"\n" +
-	`Flags:` +
+	"" +
 	"\n" +
-	`  -h, --help   help for profile` +
+	"Global Flags:" +
 	"\n" +
-	`` +
+	"      --audit-log string            write the redacted verbatim shaped request to this file (LOG-01);" +
+	" empty = stderr" +
 	"\n" +
-	`Global Flags:` +
+	"  -c, --continue                    resume the most recent session in the current directory (D-10)" +
 	"\n" +
-	`      --audit-log string      write the redacted verbatim shaped request to this file (LOG-01); empty = stderr` +
+	"      --profile string              profile name to load (default \"zcode\")" +
 	"\n" +
-	`      --profile string        profile name to load (default "zcode")` +
+	"      --profiles-dir string         directory containing profile bundles (default \"<TMP>/profiles\")" +
 	"\n" +
-	`      --profiles-dir string   directory containing profile bundles (default "<TMP>/profiles")` +
+	"      --prompt string               prompt to send through the loop (required for the tracer)" +
 	"\n" +
-	`      --prompt string         prompt to send through the loop (required for the tracer)` +
-	"\n" +
-	`` +
-	"\n" +
-	`Use "ass-guard profile [command] --help" for more information about a command.` +
+	"      --resume string[=\"@picker\"]   resume a past session by id or title prefix; bare opens the picker" +
+	" (D-10)" +
 	"\n"
 
-const goldenProfileCheck = `diff a fresh capture against the profile's tiered manifest (PROF-04 drift detector)` +
+const goldenModelRoutingResolve = "resolve a tier to a concrete (provider, model) at a given time" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Usage:` +
+	"Usage:" +
 	"\n" +
-	`  ass-guard profile check <name> [flags]` +
+	"  ass-guard model-routing resolve [flags]" +
 	"\n" +
-	`` +
+	"" +
 	"\n" +
-	`Flags:` +
+	"Flags:" +
 	"\n" +
-	`      --capture-file string   fixture JSON capture (a model_io line) — bypasses the live path` +
+	"      --at string        RFC3339 time to resolve at (default: now)" +
 	"\n" +
-	`  -h, --help                  help for check` +
+	"      --config string    path to config.yaml (default: embedded zero-config floor)" +
 	"\n" +
-	`      --profiles-dir string   directory containing profile bundles (default "<TMP>/profiles")` +
+	"  -h, --help             help for resolve" +
 	"\n" +
-	`      --zcode-bin string      zcode binary (live path; operator-gated) (default "zcode")` +
+	"      --json             emit machine-readable JSON to stdout (default: human form to stderr)" +
 	"\n" +
-	`` +
+	"      --project string   per-project key (default: global)" +
 	"\n" +
-	`Global Flags:` +
+	"      --tier string      tier to resolve (heavy|good|light) — required" +
 	"\n" +
-	`      --audit-log string   write the redacted verbatim shaped request to this file (LOG-01); empty = stderr` +
+	"" +
 	"\n" +
-	`      --profile string     profile name to load (default "zcode")` +
+	"Global Flags:" +
 	"\n" +
-	`      --prompt string      prompt to send through the loop (required for the tracer)` +
+	"      --audit-log string            write the redacted verbatim shaped request to this file (LOG-01);" +
+	" empty = stderr" +
+	"\n" +
+	"  -c, --continue                    resume the most recent session in the current directory (D-10)" +
+	"\n" +
+	"      --profile string              profile name to load (default \"zcode\")" +
+	"\n" +
+	"      --profiles-dir string         directory containing profile bundles (default \"<TMP>/profiles\")" +
+	"\n" +
+	"      --prompt string               prompt to send through the loop (required for the tracer)" +
+	"\n" +
+	"      --resume string[=\"@picker\"]   resume a past session by id or title prefix; bare opens the picker" +
+	" (D-10)" +
+	"\n"
+
+const goldenParity = "run the behavioral mimicry A/B parity gate (MIMC-03, the north-star gate)" +
+	"\n" +
+	"" +
+	"\n" +
+	"Usage:" +
+	"\n" +
+	"  ass-guard parity [flags]" +
+	"\n" +
+	"" +
+	"\n" +
+	"Flags:" +
+	"\n" +
+	"      --cache-pin string        corpus cache_control placement pin fixture (14-02 JSONL; empty = skip the" +
+	" placement check) (default \"<TMP>/internal/profile/testdata/context-behavior/cache-control.jsonl\")" +
+	"\n" +
+	"      --from-rollout string     generate the suite from a zcode rollout JSONL (same-session = matching" +
+	" system prompt + tools)" +
+	"\n" +
+	"  -h, --help                    help for parity" +
+	"\n" +
+	"      --profile string          profile to load for the ass-guard arm (default \"zcode\")" +
+	"\n" +
+	"      --profiles-dir string     directory containing profile bundles (default \"<TMP>/profiles\")" +
+	"\n" +
+	"      --results string          results JSON output path (default \"parity-results.json\")" +
+	"\n" +
+	"      --suite string            curated divergence suite JSON (ignored if --from-rollout is set) (default" +
+	" \"<TMP>/internal/parity/suite/curated_suite.json\")" +
+	"\n" +
+	"      --surprise-check string   optional second suite JSON to run after the curated suite passes" +
+	"\n" +
+	"" +
+	"\n" +
+	"Global Flags:" +
+	"\n" +
+	"      --audit-log string            write the redacted verbatim shaped request to this file (LOG-01);" +
+	" empty = stderr" +
+	"\n" +
+	"  -c, --continue                    resume the most recent session in the current directory (D-10)" +
+	"\n" +
+	"      --prompt string               prompt to send through the loop (required for the tracer)" +
+	"\n" +
+	"      --resume string[=\"@picker\"]   resume a past session by id or title prefix; bare opens the picker" +
+	" (D-10)" +
+	"\n"
+
+const goldenProfile = "profile operations (drift detection, inspection)" +
+	"\n" +
+	"" +
+	"\n" +
+	"Usage:" +
+	"\n" +
+	"  ass-guard profile [command]" +
+	"\n" +
+	"" +
+	"\n" +
+	"Available Commands:" +
+	"\n" +
+	"  check       diff a fresh capture against the profile's tiered manifest (PROF-04 drift detector)" +
+	"\n" +
+	"" +
+	"\n" +
+	"Flags:" +
+	"\n" +
+	"  -h, --help   help for profile" +
+	"\n" +
+	"" +
+	"\n" +
+	"Global Flags:" +
+	"\n" +
+	"      --audit-log string            write the redacted verbatim shaped request to this file (LOG-01);" +
+	" empty = stderr" +
+	"\n" +
+	"  -c, --continue                    resume the most recent session in the current directory (D-10)" +
+	"\n" +
+	"      --profile string              profile name to load (default \"zcode\")" +
+	"\n" +
+	"      --profiles-dir string         directory containing profile bundles (default \"<TMP>/profiles\")" +
+	"\n" +
+	"      --prompt string               prompt to send through the loop (required for the tracer)" +
+	"\n" +
+	"      --resume string[=\"@picker\"]   resume a past session by id or title prefix; bare opens the picker" +
+	" (D-10)" +
+	"\n" +
+	"" +
+	"\n" +
+	"Use \"ass-guard profile [command] --help\" for more information about a command." +
+	"\n"
+
+const goldenProfileCheck = "diff a fresh capture against the profile's tiered manifest (PROF-04 drift detector)" +
+	"\n" +
+	"" +
+	"\n" +
+	"Usage:" +
+	"\n" +
+	"  ass-guard profile check <name> [flags]" +
+	"\n" +
+	"" +
+	"\n" +
+	"Flags:" +
+	"\n" +
+	"      --capture-file string   fixture JSON capture (a model_io line) — bypasses the live path" +
+	"\n" +
+	"  -h, --help                  help for check" +
+	"\n" +
+	"      --profiles-dir string   directory containing profile bundles (default \"<TMP>/profiles\")" +
+	"\n" +
+	"      --zcode-bin string      zcode binary (live path; operator-gated) (default \"zcode\")" +
+	"\n" +
+	"" +
+	"\n" +
+	"Global Flags:" +
+	"\n" +
+	"      --audit-log string            write the redacted verbatim shaped request to this file (LOG-01);" +
+	" empty = stderr" +
+	"\n" +
+	"  -c, --continue                    resume the most recent session in the current directory (D-10)" +
+	"\n" +
+	"      --profile string              profile name to load (default \"zcode\")" +
+	"\n" +
+	"      --prompt string               prompt to send through the loop (required for the tracer)" +
+	"\n" +
+	"      --resume string[=\"@picker\"]   resume a past session by id or title prefix; bare opens the picker" +
+	" (D-10)" +
 	"\n"

@@ -21,5 +21,13 @@ type Options struct {
 	// AuditLogPath is the --audit-log operator override (09-06): "" → the
 	// default per-session mirror under <workdir>/.ass-guard/audit/; "-" →
 	// stderr; a path → the single-file mirror (D-02).
+	//
+	// ResumeTarget is the 18-06 CLI resume surface's resolved target (D-10):
+	// `ass-guard --resume[ <id|name>]` / `--continue`/`-c` (and the inherited
+	// forms under `acp serve`) resolve BEFORE Run and land the id here; Run
+	// loads it through the SAME Server.LoadSession core session/load uses
+	// (one engine, two entrypoints) — a load failure is a loud fatal, never a
+	// silent fresh serve. Empty (the default) performs no initial load.
 	AuditLogPath string
+	ResumeTarget string
 }
