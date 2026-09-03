@@ -123,7 +123,10 @@ const (
 // HookRunner executes Registry.Hooks at the mapped lifecycle seams:
 //
 //   - UserPromptSubmit       — turn entry (post-expansion; session.Prompt)
-//   - PreToolUse/PostToolUse — the tool-exec chokepoint (coreexec)
+//   - PreToolUse             — the session gate head's verdict consult (21-06:
+//     PreToolUseVerdict, consumed ONLY by
+//     internal/session's gateCall)
+//   - PostToolUse            — the executor-side observation seam (coreexec)
 //   - Stop/SubagentStop      — parent/subagent turn end
 //   - SessionStart/SessionEnd — session create/close
 //
@@ -331,24 +334,11 @@ func (r *HookRunner) PreToolUseVerdict(
 	return ResolveVerdict(results)
 }
 
-// PreToolUse implements the coreexec.ToolHooks seam: consults the hook table
-// BEFORE the tool runs; (false, message) refuses the call. A thin delegation
-// to PreToolUseVerdict preserving today's boolean refusal semantics — deny
-// refuses with the reason, everything else proceeds. The executor leg keeps
-// this pair until 21-06 disposes it at the gate join (Pitfall 2: no
-// double-fire before the gate head goes live).
-func (r *HookRunner) PreToolUse(
-	ctx context.Context, toolName string, input json.RawMessage,
-) (proceed bool, message string) { //nolint:nonamedreturns // implements the coreexec.ToolHooks pair
-	if v, reason := r.PreToolUseVerdict(ctx, toolName, input); v == VerdictDeny {
-		return false, reason
-	}
-
-	return true, ""
-}
-
-// PostToolUse implements the coreexec.ToolHooks seam: observes the completed
-// result (never blocks).
+// PostToolUse implements the coreexec.ToolHooks seam (reduced to observation
+// at the 21-06 gate join): observes the completed result (never blocks).
+// The boolean PreToolUse pair this runner once exposed for the executor was
+// DELETED at the join — PreToolUseVerdict is the verdict surface, and the
+// session gate head (internal/session/gate.go) is its ONE consumer.
 func (r *HookRunner) PostToolUse(ctx context.Context, toolName string, input, output json.RawMessage) {
 	_ = r.Fire(ctx, hookEventPostToolUse, map[string]any{
 		keyToolName:     toolName,

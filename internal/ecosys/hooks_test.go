@@ -83,8 +83,9 @@ func TestHookMatcher(t *testing.T) {
 // stdin payload and exit-code routing: `cat` as the hook command proves the
 // payload carries session_id, hook_event_name, tool_name, tool_input, cwd,
 // transcript_path; exit 0 proceeds; exit 2 REFUSES with the hook's stderr as
-// the refusal message. (21-01: the payload observation rides Fire — the
-// delegated PreToolUse no longer echoes stdout on proceed, only verdicts.)
+// the refusal message. (21-01: the payload observation rides Fire. 21-06:
+// the boolean PreToolUse pair was deleted at the gate join — the refusal
+// assertion rides PreToolUseVerdict, the surface the gate head consumes.)
 func TestPreToolUseStdinAndExitRouting(t *testing.T) {
 	t.Parallel()
 
@@ -110,14 +111,15 @@ func TestPreToolUseStdinAndExitRouting(t *testing.T) {
 		assert.Contains(t, payload.Message, field, "stdin payload must carry %s", field)
 	}
 
-	// Exit 2 → refusal with the hook's stderr as the message.
+	// Exit 2 → deny verdict with the hook's stderr as the reason (the
+	// legacy channel, D-02 — stderr-first extraction in the composed path).
 	r2 := NewHookRunner([]HookConfig{
 		{Event: hookEventPreToolUse, Matcher: toolBash, Command: `echo refuse-reason >&2; exit 2`},
 	}, "sess-1", work, "")
 
-	proceed, msg := r2.PreToolUse(context.Background(), toolBash, json.RawMessage(`{}`))
-	assert.False(t, proceed, "exit 2 on PreToolUse must REFUSE the call")
-	assert.Contains(t, msg, "refuse-reason", "the refusal message is the hook's stderr")
+	v, reason := r2.PreToolUseVerdict(context.Background(), toolBash, json.RawMessage(`{}`))
+	assert.Equal(t, VerdictDeny, v, "exit 2 on PreToolUse must DENY the call")
+	assert.Contains(t, reason, "refuse-reason", "the denial reason is the hook's stderr")
 }
 
 // TestPostToolUsePayload verifies PostToolUse receives tool_output in the
@@ -574,35 +576,12 @@ func TestPreToolUseVerdict(t *testing.T) { //nolint:paralleltest // mutates the 
 	})
 }
 
-// TestPreToolUseDelegation (21-01 Task 3, Pitfall 2) verifies the executor
-// leg's boolean contract survives the delegation: deny → (false, reason);
-// allow/ask/no-decision → (true, "") — internal/coreexec stays untouched
-// until 21-06 disposes the leg at the gate join.
-func TestPreToolUseDelegation(t *testing.T) {
-	t.Parallel()
-
-	work := t.TempDir()
-	toolInput := json.RawMessage(`{}`)
-
-	denyJSONCmd := "printf '%s' '" + verdictJSON("deny", "blocked") + "'"
-	allowJSONCmd := "printf '%s' '" + verdictJSON("allow", "ok") + "'"
-
-	denier := NewHookRunner([]HookConfig{
-		{Event: hookEventPreToolUse, Command: denyJSONCmd, Scope: ScopeUser},
-	}, "s", work, "")
-
-	proceed, msg := denier.PreToolUse(context.Background(), toolBash, toolInput)
-	assert.False(t, proceed, "deny refuses the executor call")
-	assert.Equal(t, "blocked", msg)
-
-	allower := NewHookRunner([]HookConfig{
-		{Event: hookEventPreToolUse, Command: allowJSONCmd, Scope: ScopeUser},
-	}, "s", work, "")
-
-	proceed, msg = allower.PreToolUse(context.Background(), toolBash, toolInput)
-	assert.True(t, proceed, "allow proceeds")
-	assert.Empty(t, msg)
-}
+// (TestPreToolUseDelegation, 21-01 Task 3, was deleted at the 21-06 gate
+// join: it pinned the executor leg's boolean refusal pair — HookRunner's
+// PreToolUse method and coreexec's consultation — both disposed so hook
+// verdicts consume at internal/session's gateCall head ONLY. The verdict
+// semantics it covered (deny reason, user-scope allow) live in
+// TestPreToolUseVerdict and the session TestGateHookVerdict battery.)
 
 // TestHookMatcherDialect pins CC's two-path matcher dialect for settings
 // hooks (21-01, Pitfall 3) against the legacy compile-everything regex

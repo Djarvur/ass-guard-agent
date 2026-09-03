@@ -7,14 +7,15 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 )
 
-// ToolHooks is the PreToolUse/PostToolUse seam at the tool-exec chokepoint
-// (12-02 Task 4): PreToolUse consults the operator-configured hook table
-// BEFORE the tool runs (proceed=false REFUSES the call — the hook's message
-// becomes the tool result; the hook-table safety model, NOT a new
-// confirmation tier); PostToolUse observes the completed result (never
-// blocks). Implemented structurally by ecosys.HookRunner.
+// ToolHooks is the PostToolUse observation seam at the tool-exec chokepoint
+// (12-02 Task 4; reduced at the 21-06 gate join): PostToolUse observes the
+// completed result (never blocks). The PreToolUse consultation leg this
+// seam once carried was DISPOSED when hook verdicts joined Phase 17's
+// single gate pipeline at internal/session's gateCall head (21-06, 21-RESEARCH
+// Pitfall 2: two consultation sites meant double hook firing and two result
+// forms per denial). Policy is the gate's alone; observation stays
+// executor-side. Implemented structurally by ecosys.HookRunner.
 type ToolHooks interface {
-	PreToolUse(ctx context.Context, toolName string, input json.RawMessage) (proceed bool, message string)
 	PostToolUse(ctx context.Context, toolName string, input, output json.RawMessage)
 }
 
@@ -23,7 +24,7 @@ type ToolHooks interface {
 // pattern generalized): WorkDir is the session's working directory (Bash's
 // cmd.Dir; absolute-path rendering for Write/Edit texts), Todos is the
 // per-session todo store (D-16 isolation: every session gets its own), and
-// Hooks is the optional PreToolUse/PostToolUse seam (nil = no hook wrap).
+// Hooks is the optional PostToolUse observation seam (nil = no hook wrap).
 type Config struct {
 	WorkDir string
 	Todos   *TodoStore
@@ -42,8 +43,8 @@ type Config struct {
 // mimicry target, never rewritten by an implementation). A missing catalog
 // entry is skipped, not fatal (forward-compat with catalog revisions that
 // rename tools). When cfg.Hooks is set, each stub is wrapped with the
-// PreToolUse/PostToolUse seam (an exit-2 refusal returns the structured
-// {"error":"hook: …"} result — the captured failure convention).
+// PostToolUse observation seam (the PreToolUse leg was disposed at the
+// 21-06 gate join — hook verdicts consume at the session gate head only).
 func RegisterCore(catalog *toolcat.Catalog, cfg Config) {
 	if catalog == nil {
 		return
@@ -66,19 +67,18 @@ func RegisterCore(catalog *toolcat.Catalog, cfg Config) {
 	}
 }
 
-// withHooks wraps one core stub with the PreToolUse/PostToolUse seam. A
-// PreToolUse refusal short-circuits execution and returns the structured
-// error form (IsError) carrying the hook's message as the tool result.
+// withHooks wraps one core stub with the PostToolUse observation seam: the
+// tool runs, then the hook observes the completed output. It never blocks
+// and never refuses — the 12-02 PreToolUse consultation that lived here was
+// deleted at the 21-06 gate join (a dead policy seam beside the gate head
+// was a double-fire and bypass hazard, 21-RESEARCH Pitfall 2 / Open
+// Question 1; Phase 25 re-homes the shape if the kit needs it).
 func withHooks(name string, exec toolcat.Stub, hooks ToolHooks) toolcat.Stub {
 	if hooks == nil {
 		return exec
 	}
 
 	return func(ctx context.Context, args json.RawMessage) (json.RawMessage, error) {
-		if proceed, message := hooks.PreToolUse(ctx, name, args); !proceed {
-			return marshalStructured("hook: "+message, errHookRefused)
-		}
-
 		out, err := exec(ctx, args)
 
 		hooks.PostToolUse(ctx, name, args, out)
