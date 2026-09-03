@@ -1214,7 +1214,14 @@ func TestAskPark_CancelAndCloseDrainParkedChains(t *testing.T) { //nolint:funlen
 			t.Fatalf("Run: %v", err)
 		}
 
-		before := countEngineDecisions(t, r, sid)
+		// WR-03: CloseSession EVICTS the cache entry, so the transcript reads
+		// hold the session reference itself — the manager outlives the reap.
+		parkSess := r.sessions[sid]
+		if parkSess == nil {
+			t.Fatal("Run constructed no session")
+		}
+
+		before := countEngineDecisions(t, parkSess)
 
 		err = r.CloseSession(sid)
 		if err != nil {
@@ -1229,7 +1236,7 @@ func TestAskPark_CancelAndCloseDrainParkedChains(t *testing.T) { //nolint:funlen
 		}
 
 		// No post-drain decision/injection: the count is stable.
-		if after := countEngineDecisions(t, r, sid); after != before {
+		if after := countEngineDecisions(t, parkSess); after != before {
 			t.Errorf("engine_decision count went %d → %d after the cancel drain; "+
 				"want stable (no decision, no injection)", before, after)
 		}
@@ -1256,7 +1263,12 @@ func TestAskPark_CancelAndCloseDrainParkedChains(t *testing.T) { //nolint:funlen
 			t.Fatalf("Run: %v", err)
 		}
 
-		before := countEngineDecisions(t, r, sid)
+		endSess := r.sessions[sid]
+		if endSess == nil {
+			t.Fatal("Run constructed no session")
+		}
+
+		before := countEngineDecisions(t, endSess)
 
 		r.closeAllSessions()
 
@@ -1267,17 +1279,20 @@ func TestAskPark_CancelAndCloseDrainParkedChains(t *testing.T) { //nolint:funlen
 			t.Fatal("the parked chain did not drain after closeAllSessions (goroutine leak)")
 		}
 
-		if after := countEngineDecisions(t, r, sid); after != before {
+		if after := countEngineDecisions(t, endSess); after != before {
 			t.Errorf("engine_decision count went %d → %d after the serve-end drain; want stable", before, after)
 		}
 	})
 }
 
 // countEngineDecisions counts the session's engine_decision transcript lines.
-func countEngineDecisions(t *testing.T, r *Runner, sessionID string) int {
+// Takes the *session.Session (not the runner + id): CloseSession evicts the
+// cache entry (WR-03), so post-close reads must hold the reference — the
+// manager's ReadAll outlives the reap chain.
+func countEngineDecisions(t *testing.T, sess *session.Session) int {
 	t.Helper()
 
-	lines, err := r.sessions[sessionID].Manager.ReadAll()
+	lines, err := sess.Manager.ReadAll()
 	if err != nil {
 		t.Fatalf("ReadAll: %v", err)
 	}

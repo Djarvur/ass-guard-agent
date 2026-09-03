@@ -326,6 +326,72 @@ func TestResumeSessionSerializesWithTurnMutex(t *testing.T) {
 	}
 }
 
+// TestInProcessReloadAfterCloseRebuildsSession pins the close→re-load
+// lifecycle (review WR-03): Runner.CloseSession runs the reap chain
+// (closeOnce: ask disarm, SessionEnd hook, OnClose → writer ctx cancel, task
+// registry, MCP host, forwarder), so it must EVICT the cache entry — an
+// in-process re-load of the same id (close-then-restore on one editor
+// connection) reconstructs a FULL session instead of adopting the cached
+// half-reaped one whose mcp__* calls would route to a closed host and whose
+// audit streaming silently stopped. The same 16-REVIEW CR-01 class, on the
+// runner side.
+func TestInProcessReloadAfterCloseRebuildsSession(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	sid := resumeFixtureSID
+
+	writeResumeFixture(t, dir, sid, resumeClass01Lines(sid))
+
+	r := newResumeRunner(t, dir, &countingProvider{})
+
+	// The first load adopts the transcript's id and seeds the state.
+	if rerr := r.ResumeSession(context.Background(), sid); rerr != nil {
+		t.Fatalf("first ResumeSession: %v", rerr)
+	}
+
+	r.sessMu.Lock()
+	first := r.sessions[sid]
+	r.sessMu.Unlock()
+
+	if first == nil {
+		t.Fatal("first ResumeSession constructed no session")
+	}
+
+	// session/close's reap (the ACP SessionCloser seam).
+	if cerr := r.CloseSession(sid); cerr != nil {
+		t.Fatalf("CloseSession: %v", cerr)
+	}
+
+	// The half-reaped entry must be gone: nothing may hand the closed session
+	// to a later turn or load.
+	r.sessMu.Lock()
+	_, cached := r.sessions[sid]
+	r.sessMu.Unlock()
+
+	if cached {
+		t.Fatal("CloseSession left the half-reaped session in r.sessions (WR-03)")
+	}
+
+	// The in-process re-load rebuilds: a NEW session over the same transcript,
+	// seeded and functional (the counter continues the on-disk sequence).
+	if rerr := r.ResumeSession(context.Background(), sid); rerr != nil {
+		t.Fatalf("re-load ResumeSession: %v", rerr)
+	}
+
+	r.sessMu.Lock()
+	second := r.sessions[sid]
+	r.sessMu.Unlock()
+
+	if second == nil || second == first {
+		t.Fatal("re-load adopted the closed session instead of rebuilding (WR-03)")
+	}
+
+	if got := second.CurrentTurnID(); got != sid+"-turn-001" {
+		t.Errorf("rebuilt CurrentTurnID = %q; want the re-seeded %q", got, sid+"-turn-001")
+	}
+}
+
 // TestResumeNoProviderCalls pins D-01's zero-LLM resume at the full load
 // path: the exported acp Server load core (resume → replay → gate → respond)
 // over an every-class dangling fixture invokes the counting stub provider

@@ -1684,12 +1684,18 @@ func (r *Runner) closeAllSessions() { //nolint:funcorder // shutdown helper grou
 	}
 }
 
-// CloseSession closes one session's MCP host (the logout path — Plan 05-01 T4).
-// It satisfies acp.SessionCloser; the ACP server calls it via type assertion
-// when handling logout. session/cancel deliberately does NOT route here
-// (16-REVIEW CR-01: ACP cancel is per-turn — a cancelled mid-turn chain is
-// drained instead by runOneTurn's request-ctx watchdog). An unknown sessionID
-// is a no-op.
+// CloseSession closes one session's MCP host AND evicts it from the session
+// cache (the logout/close/delete reap path — Plan 05-01 T4, widened by review
+// WR-03). It satisfies acp.SessionCloser; the ACP server calls it via type
+// assertion when handling logout and the session/close/delete sequences. The
+// closed Session's resources (MCP host, TranscriptWriter ctx, session
+// forwarder, SessionEnd hook) are unrecoverable — the reap chain runs exactly
+// once — so a later sessionFor of the same id must RECONSTRUCT a full session
+// instead of adopting the half-reaped cache entry (the editor's
+// close-then-restore flow on one connection; the same class as 16-REVIEW
+// CR-01). session/cancel deliberately does NOT route here (16-REVIEW CR-01:
+// ACP cancel is per-turn — a cancelled mid-turn chain is drained instead by
+// runOneTurn's request-ctx watchdog). An unknown sessionID is a no-op.
 func (r *Runner) CloseSession(sessionID string) error {
 	// 13-00: logout reaches here (the ACP server's closeSessionIfPossible) —
 	// drain the session's parked chains FIRST (no decision, no injection after
@@ -1700,8 +1706,15 @@ func (r *Runner) CloseSession(sessionID string) error {
 		return nil
 	}
 
+	// WR-03: evict BEFORE Close — the map must never hand out a session whose
+	// reap is starting, and eviction-before-reap keeps a concurrent sessionFor
+	// from joining a session mid-close (in-flight turns hold the pointer and
+	// finish on the closing session, exactly as before).
 	r.sessMu.Lock()
 	s, ok := r.sessions[sessionID]
+	if ok {
+		delete(r.sessions, sessionID)
+	}
 	r.sessMu.Unlock()
 
 	if ok {
