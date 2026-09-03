@@ -28,11 +28,16 @@ package acp
 //	tool_result              → terminal tool_call_update keyed by toolCallID
 //	                           (status completed|failed from isError;
 //	                           locations/diff omitted on replay)
+//	error                    → a toolCallID-carrying line closes that call as
+//	                           a terminal tool_call_update (status failed);
+//	                           a bare line renders as an agent_message_chunk
+//	                           carrying the error text ("component: message")
 //	session_start/end, user_message, boundary, usage, request_shaped,
 //	command_provenance, subagent_dispatch/result, engine_decision,
 //	ask_suspended, plan_mode, raw_thinking, local_command, compaction,
-//	canceled, error          → NO frame (bookkeeping/audit; 18-01 Task 2
-//	                           completes the error-line row)
+//	canceled                 → NO frame (bookkeeping/audit — canceled turns
+//	                           emit nothing beyond what their tool lines
+//	                           already emitted)
 //
 // Transparency (ACP-03 prohibition, extended to replay): every emitted frame
 // corresponds to an EXISTING transcript line — no fabricated activity, no
@@ -88,6 +93,7 @@ const (
 	replayKindAssistantMessage  = "assistant_message"
 	replayKindToolCall          = "tool_call"
 	replayKindToolResult        = "tool_result"
+	replayKindError             = "error"
 )
 
 // replayLine is the reader's view of one transcript line — the fields the
@@ -107,6 +113,23 @@ type replayLine struct {
 	Input      json.RawMessage `json:"input,omitempty"`
 	Output     json.RawMessage `json:"output,omitempty"`
 	IsError    bool            `json:"isError,omitempty"` //nolint:tagliatelle // on-disk format
+
+	// error (Task 2: the agent-visible error-line row)
+	Component string `json:"component,omitempty"`
+	Message   string `json:"message,omitempty"`
+}
+
+// errorText composes the replayed error line's text: "component: message",
+// degrading to whichever field is present.
+func (l *replayLine) errorText() string {
+	switch {
+	case l.Component != "" && l.Message != "":
+		return l.Component + ": " + l.Message
+	case l.Message != "":
+		return l.Message
+	default:
+		return l.Component
+	}
 }
 
 // ReplayTranscript streams dir/.ass-guard/transcript_<sessionID>.jsonl as
@@ -130,9 +153,17 @@ func ReplayTranscript(emit ChunkEmitter, dir, sessionID string) error {
 
 	path := filepath.Join(dir, ".ass-guard", "transcript_"+sessionID+".jsonl")
 
-	// os.Stat (not Lstat) resolves symlinks before the mode check (T-18-03):
-	// a non-regular store entry — a planted symlink to a device or directory
-	// — is rejected as unknown; the O_RDONLY open below never follows it.
+	// T-18-03, two-layer source guard: (1) os.Lstat sees the symlink bit
+	// ITSELF — the store never legitimately contains links, so ANY link at
+	// the transcript path rejects (a link to a regular file would otherwise
+	// resolve cleanly through Stat); (2) the resolved os.Stat mode check
+	// rejects the non-link non-regular shapes (directory, device, fifo).
+	// The O_RDONLY open below therefore never follows a planted link.
+	linfo, lerr := os.Lstat(path)
+	if lerr == nil && linfo.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("replay: session %q: %w", sessionID, errReplayNotRegular)
+	}
+
 	info, serr := os.Stat(path)
 	if serr != nil {
 		return fmt.Errorf("replay: session %q not found: %w", sessionID, serr)
@@ -233,6 +264,35 @@ func replayLineFrame(l *replayLine, emit ChunkEmitter, toolEmit ActivityEmitter)
 		})
 		if err != nil {
 			return fmt.Errorf("replay tool update: %w", err)
+		}
+
+		return nil
+
+	case replayKindError:
+		// Task 2 (18-01): error lines are agent-visible. A toolCallID-carrying
+		// error closes THAT call as failed (the terminal update — the client
+		// can pair it with the card); a bare error renders as an
+		// agent_message_chunk carrying the error text so the restored
+		// conversation shows what went wrong.
+		if l.ToolCallID != "" {
+			if toolEmit == nil {
+				return nil
+			}
+
+			uerr := toolEmit.ToolCallUpdate(&ToolCallUpdateFrame{
+				ToolCallID: l.ToolCallID,
+				Status:     StatusFailed,
+			})
+			if uerr != nil {
+				return fmt.Errorf("replay error update: %w", uerr)
+			}
+
+			return nil
+		}
+
+		eerr := emit.AgentMessageChunk(replayMessageID(l), l.errorText())
+		if eerr != nil {
+			return fmt.Errorf("replay error chunk: %w", eerr)
 		}
 
 		return nil
