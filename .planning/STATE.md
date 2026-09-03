@@ -5,17 +5,17 @@ milestone_name: Claude Code Parity
 current_phase: 18
 current_phase_name: Session Family
 current_plan: 6
-status: executing
-stopped_at: Completed 18-05-PLAN.md
-last_updated: "2026-09-03T15:21:49.475Z"
+status: verifying
+stopped_at: Completed 18-06-PLAN.md
+last_updated: "2026-09-03T16:25:56.473Z"
 last_activity: 2026-09-03
 last_activity_desc: Phase 18 execution started
-state_head: c7dce90f0a62eead1b642258b47f713091d19181
+state_head: c28f68a8afbd63079366c67ebd5ff349342e6e8f
 progress:
   total_phases: 11
   completed_phases: 3
   total_plans: 70
-  completed_plans: 27
+  completed_plans: 28
   percent: 27
 ---
 
@@ -32,7 +32,7 @@ See: .planning/PROJECT.md (updated 2026-09-03)
 Phase: 18 (Session Family) — EXECUTING
 Current Plan: 6
 Total Plans in Phase: 6
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-09-03 — Phase 18 execution started
 
 Progress: [██████░░░░░░░░░░░░░░░░] 22/70 plans ([███░░░░░░░] 27%)
@@ -73,6 +73,7 @@ Progress: [██████░░░░░░░░░░░░░░░░] 2
 | Phase 18 P03 | 19min | 2 tasks | 2 files |
 | Phase 18 P04 | 64 min | 3 tasks | 15 files |
 | Phase 18-05 P05 | 72min | 2 tasks | 12 files |
+| Phase 18 P06 | 60 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -132,6 +133,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 18]: Reconciliation engine built transcript-pure (18-02): Reconcile classifies all ten kill -9 inventory rows with keyed pair matching, engine-authored closure payloads, and Seed{MaxTurns,PlanMode}; Manager.AppendSynthetic is the 18-05 append seam through the redaction-disciplined appendLine
 - [Phase 18]: Tombstone spelling locked: <sessionID>.deleted sibling (matches 18-04 SweepTombstones suffix-with-validating-id); open failures on structurally valid transcripts propagate per SessionReader.read precedent
 - [Phase 18]: HasCheckpoints probes checkpoint loose-ref layout via one ReadDir (never checkpoint.Open, which creates the store); transcript reads capped at 64 KiB total via io.LimitReader
+- [Phase 18]: 18-06: one resolver (resolveResumeTarget in cmd), two entrypoints — root RunE delegates via the runServeWithResumeTarget seam, serve RunE resolves inherited cmd.Flags(); id-form passes without existence check (the load engine owns that error), names match titles with traversal pre-scan rejection (T-18-13)
+- [Phase 18]: 18-06: CLI-contract goldens are regenerated FROM the binary's output (15-01 transcription rule) — root-persistent flags shift every help surface's alignment, so regeneration beat hand-editing
 
 ### Pending Todos
 
@@ -154,6 +157,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-03T15:21:48.713Z
-Stopped at: Completed 18-05-PLAN.md
+Last session: 2026-09-03T16:25:55.339Z
+Stopped at: Completed 18-06-PLAN.md
 Resume file: None

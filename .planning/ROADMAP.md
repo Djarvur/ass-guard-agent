@@ -189,7 +189,7 @@ Plans:
   3. `ass-guard --resume` works anywhere (CLI flag), not only from the editor.
   4. Closing a session stops its work cleanly; deleting tombstones the record (never rm) so audit history survives — deleted sessions disappear from the list but remain investigable on disk.
 
-**Plans**: 5/6 plans executed
+**Plans**: 6/6 plans executed
 
 Plans:
 **Wave 1**
@@ -205,7 +205,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 18-06-PLAN.md — CLI trio (--resume/--continue) + numbered picker + serve injection (criterion 3, ACP-06)
+- [x] 18-06-PLAN.md — CLI trio (--resume/--continue) + numbered picker + serve injection (criterion 3, ACP-06)
 
 ### Phase 19: Compaction + cache_control
 
@@ -482,7 +482,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 | 15. internal/runtime Carve | v1.2 | 7/7 | Complete    | 2026-08-27 |
 | 16. ACP Wire Foundation | v1.2 | 9/9 | Complete    | 2026-09-01 |
 | 17. Permissions + Elicitation | v1.2 | 6/6 | Complete    | 2026-09-03 |
-| 18. Session Family | v1.2 | 5/6 | In Progress|  |
+| 18. Session Family | v1.2 | 6/6 | In Progress|  |
 | 19. Compaction + cache_control | v1.2 | 0/5 | Not started | - |
 | 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 0/6 | Planned | - |
 | 21. Context & Policy Parity Closures | v1.2 | 0/? | Not started | - |
