@@ -1057,6 +1057,18 @@ func (r *Runner) ResumeSession(ctx context.Context, sessionID string) error {
 		return fmt.Errorf("session %s unavailable: transcript manager could not be created", sessionID)
 	}
 
+	// 17-REVIEW CR-02 discipline, extended to the load path (review WR-01):
+	// ReadAll → Reconcile → AppendSynthetic → SeedResume mutates the transcript
+	// and the turn counter, so the block holds the SAME per-session turn mutex
+	// Run holds for a whole turn (and every async resume driver serializes
+	// through). A claimed timer resume still mid-model-loop when the ACP entry
+	// drops (close/logout) is untracked by turnWG; an immediate re-load racing
+	// it would otherwise double-append one transcript and re-store the turn
+	// counter underneath a turn that already minted its next id.
+	turnMu := r.sessionTurnMu(sessionID)
+	turnMu.Lock()
+	defer turnMu.Unlock()
+
 	lines, rerr := sess.Manager.ReadAll()
 	if rerr != nil {
 		// Loud degrade (plan-pinned): seed what was readable — ReadAll skips

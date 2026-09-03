@@ -272,6 +272,60 @@ func TestResumeSessionSeedsPlanMode(t *testing.T) {
 	}
 }
 
+// TestResumeSessionSerializesWithTurnMutex pins the 17-REVIEW CR-02
+// discipline extended to the load path (review WR-01): the whole
+// reconcile-append-seed block runs under the SAME per-session turn mutex Run
+// holds for its whole turn. A ResumeSession racing an in-flight turn (the
+// close→claimed-timer-resume→immediate-reload interleaving) must QUEUE
+// behind it — otherwise both append to one transcript and the seed re-stores
+// the turn counter underneath a turn that already minted its next id.
+func TestResumeSessionSerializesWithTurnMutex(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	sid := resumeFixtureSID
+
+	writeResumeFixture(t, dir, sid, resumeClass01Lines(sid))
+
+	r := newResumeRunner(t, dir, &countingProvider{})
+
+	// Warm the session cache: the FIRST ResumeSession pays sessionFor's whole
+	// construction (manager, MCP host, perm store), so the run under test — a
+	// cache hit — is fast when unserialized and its blocking is attributable
+	// to the mutex alone. The warm run also appends the fixture's closures,
+	// leaving the second run a pure no-op reconcile.
+	if rerr := r.ResumeSession(context.Background(), sid); rerr != nil {
+		t.Fatalf("warm-up ResumeSession: %v", rerr)
+	}
+
+	// An in-flight turn holds the session's turn mutex (Run's whole-turn
+	// serialization, 12-07 D-02) for the entire model loop.
+	turnMu := r.sessionTurnMu(sid)
+	turnMu.Lock()
+
+	done := make(chan error, 1)
+
+	go func() { done <- r.ResumeSession(context.Background(), sid) }()
+
+	select {
+	case <-done:
+		t.Fatal("ResumeSession completed while the session turn mutex was held — " +
+			"the resume block does not serialize with in-flight turns (WR-01)")
+	case <-time.After(75 * time.Millisecond):
+	}
+
+	turnMu.Unlock()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("ResumeSession after unlock: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("ResumeSession never completed after the turn mutex was released")
+	}
+}
+
 // TestResumeNoProviderCalls pins D-01's zero-LLM resume at the full load
 // path: the exported acp Server load core (resume → replay → gate → respond)
 // over an every-class dangling fixture invokes the counting stub provider
