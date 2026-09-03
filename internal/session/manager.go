@@ -379,6 +379,17 @@ func (m *Manager) AppendCompaction(turnID, preRef, postRef string, input, output
 	})
 }
 
+// AppendSynthetic appends one reconciliation closure line (18-02, D-02): the
+// 18-05 load path calls it for every closure Reconcile returned, with the
+// line's Cause already set to InterruptedCause. It routes through the SAME
+// marshal→redact→mutex→single-write path as every other append — synthetic
+// content crosses the Redactor exactly like live content (16-D-23's exemption
+// is type-scoped to raw_thinking), and there is deliberately no second write
+// path (append-only, never a rewrite).
+func (m *Manager) AppendSynthetic(line *Line) error {
+	return m.appendLine(line)
+}
+
 // ReadAll reads every line from the transcript in append order.
 func (m *Manager) ReadAll() ([]Line, error) {
 	m.mu.Lock()
