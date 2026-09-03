@@ -2,46 +2,46 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Claude Code Parity
-current_phase: 17
-current_phase_name: Permissions + Elicitation
-current_plan: 5
-status: verifying
-stopped_at: Completed 17-06-PLAN.md (G-17-1 gap closure — canonical nested permission outcome)
-last_updated: "2026-09-02T21:32:28.257Z"
-last_activity: 2026-09-01
-last_activity_desc: Phase 16 complete, transitioned to Phase 17
-state_head: f372db4413a953ae33cbb1283ed3c6b121253301
+current_phase: 18
+current_phase_name: Session Family
+current_plan: Not started
+status: planning
+stopped_at: Phase 17 complete, ready to plan Phase 18
+last_updated: "2026-09-03T10:27:30.021Z"
+last_activity: 2026-09-03
+last_activity_desc: Phase 17 complete, transitioned to Phase 18
+state_head: f6ac86a035f877d9b68843f003849b1fea5ff9dd
 progress:
   total_phases: 11
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 70
   completed_plans: 22
-  percent: 18
+  percent: 27
 ---
 
 # State: ass-guard-agent (working name)
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-01)
+See: .planning/PROJECT.md (updated 2026-09-03)
 **Core value:** A hands-off coding agent that feels native in the editor: full SDD workflows run end-to-end without manual continues, and the agent surfaces through the client's own UX — clickable permission prompts, native file diffs, session management. (Pivoted 2026-08-25 from the mimicry bar.)
-**Current focus:** Phase 17 — Permissions + Elicitation
+**Current focus:** Phase 18 — Session Family
 
 ## Current Position
 
-Phase: 17 (Permissions + Elicitation) — EXECUTING
-Current Plan: 5
+Phase: 18 — Session Family
+Current Plan: Not started
 Total Plans in Phase: 5
-Status: Phase complete — ready for verification
-Last activity: 2026-09-01 — Phase 17 execution started
+Status: Ready to plan
+Last activity: 2026-09-03 — Phase 17 complete, transitioned to Phase 18
 
-Progress: [█████░░░░░░░░░░░░░░░] 16/69 plans ([██░░░░░░░░] 18%)
+Progress: [██████░░░░░░░░░░░░░░░░] 22/70 plans ([███░░░░░░░░] 31%)
 
 ## Performance Metrics
 
 **Velocity (v1.0 history, for calibration):** 36 plans / 8 phases in 6 days; `mise ci` gate green at every phase close. **v1.1:** 51 plans / 5 phases over ~7 active days.
 
-**By Phase (v1.2):** Phase 15: 7/7 ✓ closed 2026-08-27. Phase 16: 9/9 ✓ closed 2026-09-01 (UAT 4/4 passed — operator confirmed blob-tier override, cancel-keeps-session, per-turn hook concurrency; SECURITY verified threats_open: 0).
+**By Phase (v1.2):** Phase 15: 7/7 ✓ closed 2026-08-27. Phase 16: 9/9 ✓ closed 2026-09-01 (UAT 4/4 passed — operator confirmed blob-tier override, cancel-keeps-session, per-turn hook concurrency; SECURITY verified threats_open: 0). Phase 17: 6/6 ✓ closed 2026-09-03 (UAT 4/4 after gap closure: permission round-trip + always-persistence both directions live-verified, native elicitation form + answer-landing; G-17-1 canonical-nested-outcome fix found by UAT and re-verified live; WINDOWS #15 operator-confirmed).
 **Per-Plan Metrics:**
 
 | Plan | Duration | Tasks | Files |
@@ -129,6 +129,8 @@ None yet.
 
 - [RESEARCH FLAGS / planning-time]: Phases 16/18/19/22/23 flagged for `--research-phase` (ACP schema LOW-confidence details; resume reconciliation inventory; compaction × projector pins; platform drift; pi/strands steering references unverified). Full list in ROADMAP.md Research Flags section.
 - [Phase 15 UAT, deferred 2026-08-27]: Zed history-resume shows "Failed to Launch" — by-design v1 scope (loadSession:false); fix owned by Phase 18 Session Family (18-01/18-04), already planned. Do not re-diagnose as a Phase 15/16 regression.
+- [Phase 17 review, deferred 2026-09-03, operator non-blocking]: CR-04 — SetTurnOriginAutomation set before TryLock stays true while an automation turn queues/runs; overlapping foreground turns get ask-class calls D-07-declined instead of dialogs (fail-safe direction). Proper fix: per-turn origin. Evidence in 17-UAT.md Deferred Follow-Ups.
+- [Phase 17 review, deferred 2026-09-03, operator non-blocking, security-adjacent]: hasSubstitution (a710b75 rewrite, internal/perm/rules.go) dropped double-quote tracking — `git "log 'x $(cmd) y'"` under-detects live substitution and an allow rule can match a substitution-bearing command (WR-02 violation). Verified in live shell. Deserves a fix ticket in the next phase touching internal/perm.
 - [25-01 Task 3 precondition, 2026-08-28]: Phases 17-24 NOT executed (internal/perm, internal/tasks, internal/sandbox, internal/modesmatrix absent; only 15-16 landed) — 'strictly last' ordering violated, move inventory would be wrong. Executor halted BEFORE the rank-0 move; no kit/ paths created. Resolve by executing phases 17-24 first (then re-capture the test-ledger baseline) or by explicit operator override of the ROADMAP ordering.
 
 ## Deferred Items
@@ -140,6 +142,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-02T21:32:16.692Z
-Stopped at: Completed 17-06-PLAN.md (G-17-1 gap closure — canonical nested permission outcome)
+Last session: 2026-09-03T10:30:00Z
+Stopped at: Phase 17 complete, ready to plan Phase 18
 Resume file: None

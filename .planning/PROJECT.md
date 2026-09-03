@@ -163,6 +163,8 @@ Delivered the hands-off OpenSpec promise end-to-end (zero-continue product proof
 | opencode excluded as mimicry target (2026-08-14) | Operator runs MiniMax + DeepSeek via an opencode subscription; the profile should match the harness the target model behaves in — deepseek-harness is the candidate for DeepSeek turns. | — Pending — profile #2 scoping at next milestone |
 | Chip truthfulness: runner default follows the tier resolution; profile slug leaves the precedence chain (Phase 16-09, operator-confirmed) | The model chip must show what the wire will use; a mimicry-leftover profile slug silently overriding config broke that. Explicit editor stamps keep absolute precedence (D-12). Phases 18/20 build on this. | ✓ Good — UAT 2026-09-01, pinned by TestDefaultTurnModel_FollowsTierResolution |
 | `_meta` blob fills are in-memory only; layer files stay operator-owned (Phase 16 D-10, operator-confirmed) | A redundant Zed re-push must never become persisted operator config, and a blob fill must never mutate files the operator owns — ownership boundary drawn at the layer files. | ✓ Good — UAT 2026-09-01 (blob-tier override accepted as product intent) |
+| Wire shapes pin to the canonical schema, and the test client models the REAL client (Phase 17 G-17-1 lesson) | A flat-string decode of the request_permission outcome passed the whole E2E battery because the simulator answered the same wrong shape — tests were green against a nonconformant client while live Zed failed every dialog answer. Canonical truth comes from the spec (agentclientprotocol.com schema), and simulator answers must mirror the real client's bytes, never our own codec. | ✓ Good — fixed by 17-06 gap closure (nested outcome, simulator corrected, flat shape now hard-rejected); found by live UAT 2026-09-03 |
+| Permission-dialog persistence is bare tool×project (Phase 17 D-01, operator-confirmed) | One Always-click persists the whole tool for the project; richer patterns (paths, prefixes) are hand-edit-only — the dialog never writes them. Keeps the trust store predictable and the UX honest about scope. | ✓ Good — live-verified both directions (allow + deny) 2026-09-03 |
 
 ## Evolution
 
@@ -182,4 +184,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-09-01 after Phase 16 (ACP Wire Foundation) closed — TurnEmitter + id'd requests + extended transcript lines shipped; editor-driven config and chip truthfulness operator-validated; UAT 4/4, SECURITY threats_open: 0*
+*Last updated: 2026-09-03 after Phase 17 (Permissions + Elicitation) closed — clickable permission dialogs (allow/reject × once/always, persisted) + native elicitation forms shipped; UAT 4/4 after gap closure G-17-1 (canonical nested outcome, found by live UAT); WINDOWS #15 operator-confirmed*

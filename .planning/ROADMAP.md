@@ -47,7 +47,7 @@ Operator decisions at close (2026-08-23…25): D-09 REVERSED (session resume = m
 
 - [x] **Phase 15: internal/runtime Carve (Step 0)** - Mechanical verbatim move of sessionTurnRunner into internal/runtime so seven later feature clusters land in their final home (completed 2026-08-27)
 - [x] **Phase 16: ACP Wire Foundation** - Outbound id'd requests, one ordered TurnEmitter, transcript line-type extensions, initialize capability overhaul (completed 2026-09-01)
-- [ ] **Phase 17: Permissions + Elicitation** - Clickable permission asks and structured form asks through the editor; ONE gate pipeline locked
+- [x] **Phase 17: Permissions + Elicitation** - Clickable permission asks and structured form asks through the editor; ONE gate pipeline locked (completed 2026-09-03)
 - [ ] **Phase 18: Session Family** - list / load-resume / close-delete with full replay and live-state reconciliation
 - [ ] **Phase 19: Compaction + cache_control** - Threshold-triggered compaction marker plus parity-faithful cache_control emission
 - [ ] **Phase 20: Built-in Commands + Skills + Per-Agent Model** - Resolver chain, class-B/class-A command families, slash-invocable skills, per-agent model dispatch
@@ -481,7 +481,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 |-------|-----------|----------------|--------|-----------|
 | 15. internal/runtime Carve | v1.2 | 7/7 | Complete    | 2026-08-27 |
 | 16. ACP Wire Foundation | v1.2 | 9/9 | Complete    | 2026-09-01 |
-| 17. Permissions + Elicitation | v1.2 | 6/6 | In Progress|  |
+| 17. Permissions + Elicitation | v1.2 | 6/6 | Complete    | 2026-09-03 |
 | 18. Session Family | v1.2 | 0/? | Not started | - |
 | 19. Compaction + cache_control | v1.2 | 0/5 | Not started | - |
 | 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 0/6 | Planned | - |

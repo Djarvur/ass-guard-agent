@@ -1,7 +1,7 @@
 ---
 phase: 17-permissions-elicitation
 verified: 2026-09-02T21:53:17Z
-status: human_needed
+status: passed
 score: 5/5 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
@@ -9,14 +9,17 @@ re_verification:
   previous_status: human_needed
   previous_score: 5/5
   gaps_closed:
+
     - "G-17-1 (blocker): request_permission responses now decode the CANONICAL ACP v1 nested outcome object — PermissionOutcomeFrame reshaped (inner PermissionOutcome struct, internal/acp/types.go:342-356), Fire switches on the INNER discriminator and maps Selected from the inner optionId (internal/acpserve/ask_surface.go:164-177), the flat shape now fails the decode (errPermissionOutcomeBad), and all three flat-shape test sites corrected (commits 1538673 RED / f372db4 GREEN / d445ab3 docs)"
     - "WR-01 (re-review warning): the selected-without-optionId fail-safe path pinned by commit 2f56969 — TestGateOutcomeMatrix/unknown_option_id_declines_fail-safe/{empty_optionId,non-canonical_optionId} + TestPermissionAskDispatch/selected_without_optionId_passes_through_empty, all green under -race in this verification"
   gaps_remaining: []
   regressions: []
 human_verification:
+
   - test: "Live-Zed re-run of UAT Test 1 (WINDOWS ledger #15, seven-step checklist): in a scratch project set permissions.mode: gated, prompt a mutating tool call, answer the dialog"
     expected: "Zed's native four-option dialog renders (four-option set already operator-confirmed 2026-09-02; A1 caveat closed); with the 17-06 canonical nested decode, an allow_always answer now EXECUTES the call and persists the rule (permissions.yaml gains the allow entry; second identical call runs with no dialog); reject_always denies with no further dialog; every leg persists instead of fail-safe-declining (the original G-17-1 symptom — 'malformed permission outcome: cannot unmarshal object' on every answer — must be gone)"
     why_human: "The machine-side decode is proven (dispatch 8/8 subtests + TestPermissionsE2E 5/5 green with the canonical-answer simulator), but the live Zed 1.18.0 round-trip is the gap's originating evidence and its re-run is pending with the operator — a deterministic simulator proves the wire, not the editor's dialog"
+
   - test: "Live-Zed re-run of UAT Test 2 (WINDOWS #15 steps 4-5, now UN-BLOCKED): in the same gated session, prompt an AskUserQuestion / trigger a learning-store or engine ask"
     expected: "The ask renders as Zed's native structured form (elicitation/create) — previously untestable because the AskUserQuestion tool call was itself permission-gated and every dialog answer fail-safe-declined before elicitation/create was ever sent; answering lands the answer as the tool result; on a pre-elicitation client the ask degrades to the plain-text path (that degrade leg already PASSED in UAT)"
     why_human: "Native form rendering and answer UX are visual/editor-side behaviors; the capable + degraded simulator scenarios prove the wire frames and byte-parity fallback only"
