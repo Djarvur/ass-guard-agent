@@ -4,18 +4,18 @@ milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 18
 current_phase_name: Session Family
-current_plan: 4
+current_plan: 5
 status: executing
-stopped_at: Completed 18-03-PLAN.md (session list engine)
-last_updated: "2026-09-03T12:31:10.938Z"
+stopped_at: Completed 18-04-PLAN.md (session family RPC + tombstone lifecycle)
+last_updated: "2026-09-03T13:52:48.341Z"
 last_activity: 2026-09-03
 last_activity_desc: Phase 18 execution started
-state_head: f8a8539e38bbbd5a2535ac5225e63633ef4e60f1
+state_head: d0f529843d938e653267b2fdf2f081d7b0edec4e
 progress:
   total_phases: 11
   completed_phases: 3
   total_plans: 70
-  completed_plans: 24
+  completed_plans: 25
   percent: 27
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-03)
 ## Current Position
 
 Phase: 18 (Session Family) — EXECUTING
-Current Plan: 4
+Current Plan: 5
 Total Plans in Phase: 6
 Status: Ready to execute
 Last activity: 2026-09-03 — Phase 18 execution started
@@ -71,6 +71,7 @@ Progress: [██████░░░░░░░░░░░░░░░░] 2
 | Phase 18 P01 | 48 min | 2 tasks | 18 files |
 | Phase 18 P02 | 23 min | 2 tasks | 12 files |
 | Phase 18 P03 | 19min | 2 tasks | 2 files |
+| Phase 18 P04 | 64 min | 3 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -152,6 +153,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-03T12:30:49.346Z
-Stopped at: Completed 18-03-PLAN.md (session list engine)
+Last session: 2026-09-03T13:52:47.759Z
+Stopped at: Completed 18-04-PLAN.md (session family RPC + tombstone lifecycle)
 Resume file: None

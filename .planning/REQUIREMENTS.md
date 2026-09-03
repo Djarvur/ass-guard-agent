@@ -17,9 +17,9 @@ Requirements for this milestone. Each maps to roadmap phases.
 - [x] **ACP-02**: Learning-store and engine asks surface as structured forms via `elicitation/create` (form mode) with plain-text AskBroker fallback and -32601 probe-and-degrade on older clients; url mode deferred
 - [x] **ACP-03**: Zed renders live turn activity: `tool_call`/`tool_call_update` streaming (kind/status/diff/locations), `plan` updates mirroring TodoWrite, `agent_thought_chunk` — all through one ordered inline TurnEmitter with explicit backpressure policy
 - [ ] **ACP-04**: Editor autocompletes `/` commands: `available_commands_update` sent on session start and on discovery change
-- [ ] **ACP-05**: User can list sessions from the editor via `session/list` (header-scan, cursor pagination)
+- [x] **ACP-05**: User can list sessions from the editor via `session/list` (header-scan, cursor pagination)
 - [x] **ACP-06**: User can resume any past session via `session/load` — full replay through TurnEmitter plus live-state reconciliation (synthetic interrupted-closures for dangling expectations, continued id sequences from transcript maxima, orphaned in-flight tool_calls closed as failed, commands re-advertised); `--resume` anywhere
-- [ ] **ACP-07**: User can close or delete a session via `session/close` / `session/delete` with tombstoning (never rm — D-20 audit invariant); delete is spec-unstable → best-effort
+- [x] **ACP-07**: User can close or delete a session via `session/close` / `session/delete` with tombstoning (never rm — D-20 audit invariant); delete is spec-unstable → best-effort
 - [x] **ACP-08**: Editor drives configuration: `configOptions[]` advertised at initialize/new/load/resume responses, Zed settings payload read at initialize, `session/set_config_option` handled (tier/model defaults switchable from editor UI); API keys stay env/file, never editor settings
 
 ### Built-in Chat Commands
@@ -107,9 +107,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ACP-08 | Phase 16 | Complete |
 | ACP-01 | Phase 17 | Complete |
 | ACP-02 | Phase 17 | Complete |
-| ACP-05 | Phase 18 | Pending |
+| ACP-05 | Phase 18 | Complete |
 | ACP-06 | Phase 18 | Complete |
-| ACP-07 | Phase 18 | Pending |
+| ACP-07 | Phase 18 | Complete |
 | PAR-01 | Phase 19 | Pending |
 | PAR-02 | Phase 19 | Pending |
 | ACP-04 | Phase 20 | Pending |
