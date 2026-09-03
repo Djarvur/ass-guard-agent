@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"sync"
 
 	"github.com/Djarvur/ass-guard-agent/internal/redact"
@@ -42,6 +43,18 @@ type TurnRunner interface {
 // implement it.
 type SessionCloser interface {
 	CloseSession(sessionID string) error
+}
+
+// SessionLoader is an OPTIONAL capability a TurnRunner may implement (18-01,
+// ACP-06/D-01): the resume seam. When the TurnRunner implements it,
+// session/load calls ResumeSession BEFORE replay so the runner adopts the
+// transcript's session id and seeds its turn counter from the transcript
+// maxima — the next turn id continues the on-disk sequence instead of
+// restarting at 001 (Pitfall 2). It is a separate interface (not part of
+// TurnRunner) so stub runners need not implement it — the same
+// optional-capability shape as SessionCloser/AskDrainer.
+type SessionLoader interface {
+	ResumeSession(ctx context.Context, sessionID string) error
 }
 
 // ConfigSurface is the acp-side seam for the v1.2 editor-driven configuration
@@ -98,14 +111,51 @@ type Server struct {
 	emitCfg      TurnEmitterConfig // composition-root knobs via WithTurnEmitter
 	registryCfg  RegistryConfig    // D-17 timeout windows via WithRegistryConfig (tests shrink FAST-CONTROL)
 	handlerWG    sync.WaitGroup    // tracks in-flight request goroutines so Close is safe
+
+	// workDir is the store root session/load resolves .ass-guard/ under
+	// (18-01): the acpserve composition injects it via WithWorkDir so the load
+	// handler stats tombstones and replays transcripts against the SERVER's
+	// workspace — never the client-supplied cwd (T-18-02). "" means the
+	// process cwd (acpserve's WorkDir resolution resolves eagerly; the empty
+	// flag default degrades to cwd here).
+	workDir string
+
+	// loading tracks sessions mid-session/load (18-01/D-03): the id is
+	// registered at load start and cleared on every exit path. A prompt
+	// arriving for a loading id gets the typed replay-in-progress error — it
+	// never interleaves with replayed frames (the map insert into s.sessions
+	// is the LAST step of load).
+	loading map[string]struct{}
 }
 
-// sessionState is one live session (created by session/new). It carries the
-// active turn's cancel func so session/cancel can abort the turn (D-16).
+// sessionState is one live session (created by session/new, or by session/load
+// after replay completes). It carries the active turn's cancel func so
+// session/cancel can abort the turn (D-16), and the D-03 ready flag gating
+// prompt acceptance: a state exists before it is ready only inside the load
+// path's final insert→flip window — session/new marks its states ready at
+// construction (no replay to wait for).
 type sessionState struct {
 	id     string
 	mu     sync.Mutex
 	cancel context.CancelFunc
+	ready  bool
+}
+
+// setReady flips the D-03 ready flag — the last step of session/load before
+// the response is built (reconcile-then-accept).
+func (s *sessionState) setReady() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.ready = true
+}
+
+// isReady reports whether the session accepts prompts (D-03 gate).
+func (s *sessionState) isReady() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.ready
 }
 
 func (s *sessionState) setCancel(c context.CancelFunc) {
@@ -162,6 +212,17 @@ func WithConfigSurface(cs ConfigSurface) ServerOption {
 	return func(s *Server) { s.configSurf = cs }
 }
 
+// WithWorkDir sets the store root the session/load path resolves .ass-guard/
+// under (18-01): tombstone stats + transcript reads + the replay source all
+// resolve against the SERVER's workspace, never the client-supplied cwd
+// (T-18-02 — a crafted cwd cannot point replay at another directory's
+// session). "" (the default) means the process cwd, matching acpserve's
+// WorkDir resolution (which resolves the --work-dir flag eagerly and falls
+// back to Getwd).
+func WithWorkDir(dir string) ServerOption {
+	return func(s *Server) { s.workDir = dir }
+}
+
 // NewServer builds a Server reading frames from in, writing frames to out, and
 // diagnostics to stderrSink (must NEVER be stdout — transport discipline).
 // Construction arms the TurnEmitter over the same Writer: notifications route
@@ -175,6 +236,7 @@ func NewServer(in io.Reader, out, stderrSink io.Writer, opts ...ServerOption) *S
 		log:        log.New(stderrSink, "ass-guard/acp: ", log.LstdFlags|log.Lshortfile),
 		handlers:   map[string]Handler{},
 		sessions:   map[string]*sessionState{},
+		loading:    map[string]struct{}{},
 		turnRunner: stubNoChunkRunner{},
 	}
 	for _, o := range opts {
@@ -405,6 +467,56 @@ func (s *Server) closeSessionIfPossible(sessionID string) {
 	_ = closer.CloseSession(sessionID)
 }
 
+// storeWorkDir resolves the workspace the session/load path resolves
+// .ass-guard/ under (18-01/T-18-02): WithWorkDir's composition-root value, or
+// the process cwd when unset (acpserve's eager resolution leaves "" only for
+// acpserve-less constructions — tests, hand-built servers).
+func (s *Server) storeWorkDir() string {
+	if s.workDir != "" {
+		return s.workDir
+	}
+
+	wd, _ := os.Getwd() // no flag to resolve; cwd IS the documented default
+
+	return wd
+}
+
+// beginLoading registers a session id as mid-session/load under s.mu (18-01/
+// D-03). It returns false when a load is already in flight for the id — one
+// load at a time per id; the caller surfaces the typed busy error.
+func (s *Server) beginLoading(sessionID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if _, busy := s.loading[sessionID]; busy {
+		return false
+	}
+
+	s.loading[sessionID] = struct{}{}
+
+	return true
+}
+
+// endLoading clears the mid-load marker — EVERY load exit path calls it
+// (rejections included: a failed load must not leave a ghost busy marker).
+func (s *Server) endLoading(sessionID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.loading, sessionID)
+}
+
+// isLoading reports whether a session/load is in flight for the id (the
+// prompt-gate consults it to name the replay state, D-03).
+func (s *Server) isLoading(sessionID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	_, ok := s.loading[sessionID]
+
+	return ok
+}
+
 // handleRequest looks up the handler, calls it, and writes the response (result
 // or error). Errors are scrubbed via redact.ScrubError before reaching the wire
 // (T-02-03 — error responses never leak a credential).
@@ -422,8 +534,8 @@ func (s *Server) handleRequest(ctx context.Context, msg *Message) {
 	result, err := handler(ctx, msg.Params)
 	if err != nil {
 		// A handler may return a *RPCError to surface a specific JSON-RPC code
-		// (e.g. session/load's -32601 no-op, D-09). Any other error is scrubbed
-		// and wrapped as a generic -32603 internal error (T-02-03).
+		// (e.g. session/load's typed rejections, 18-01). Any other error is
+		// scrubbed and wrapped as a generic -32603 internal error (T-02-03).
 		rpcErr := &RPCError{}
 		if errors.As(err, &rpcErr) {
 			s.writeError(msg.ID, rpcErr)

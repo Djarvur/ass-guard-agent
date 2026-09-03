@@ -40,9 +40,9 @@ type Message struct {
 }
 
 // RPCError is the JSON-RPC 2.0 error object. It implements the error interface
-// so handlers can return a specific JSON-RPC code (e.g. -32601 method-not-found
-// for session/load's D-09 no-op) and handleRequest surfaces it verbatim instead
-// of wrapping it as a generic -32603.
+// so handlers can return a specific JSON-RPC code (e.g. session/load's typed
+// rejections, 18-01) and handleRequest surfaces it verbatim instead of
+// wrapping it as a generic -32603.
 type RPCError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
@@ -435,4 +435,40 @@ type ElicitationSchema struct {
 type ElicitationOutcomeFrame struct {
 	Action  string                     `json:"action"`
 	Content map[string]json.RawMessage `json:"content,omitempty"`
+}
+
+// --- 18-01 session/load wire vocabulary (ACP-06) ---
+//
+// Field names pinned VERBATIM against the canonical ACP v1 schema (18-RESEARCH
+// §Wire Shapes, defs LoadSessionRequest / LoadSessionResponse). v1 spellings
+// ONLY (Pitfall 7): the RESPONSE carries exactly _meta / configOptions /
+// modes — NO sessionId field (the request's sessionId persists as THE session
+// id; the v2 draft shapes and any currentMode spelling never appear here).
+
+// LoadSessionRequest is the session/load payload: the REQUIRED sessionId of
+// the past session to restore, the client's cwd, and the session-scoped
+// configuration. Cwd is recorded but NEVER used for store resolution — the
+// store root is the server's workspace (T-18-02: a crafted cwd cannot point
+// replay at another directory's session).
+type LoadSessionRequest struct {
+	Meta      json.RawMessage `json:"_meta,omitempty"` //nolint:tagliatelle // ACP wire field
+	SessionID string          `json:"sessionId"`       //nolint:tagliatelle // ACP wire field (required)
+	Cwd       string          `json:"cwd"`             // required per v1; recorded only (T-18-02)
+	// McpServers is required per v1 (tolerant []any — the load path does not
+	// spawn servers from it; the session's own MCP composition stands).
+	McpServers            []any    `json:"mcpServers"`            //nolint:tagliatelle // ACP wire field
+	AdditionalDirectories []string `json:"additionalDirectories"` //nolint:tagliatelle // ACP wire field
+}
+
+// LoadSessionResponse is the session/load result: EXACTLY the v1 fields —
+// configOptions (SessionConfigOption[] | null) and modes
+// (SessionModeState | null). Both keys are always present (nullable, never
+// omitted). Modes stays null in 18-01 (plan-mode seeding lands with 18-05);
+// ConfigOptions rides the shared 16-05 advertisement builder (nil surface →
+// null). There is deliberately NO sessionId field — its presence is the
+// Pitfall-7 failure mode the response-shape test pins against.
+type LoadSessionResponse struct {
+	Meta          json.RawMessage `json:"_meta,omitempty"` //nolint:tagliatelle // ACP wire field
+	ConfigOptions any             `json:"configOptions"`   // SessionConfigOption[] | null
+	Modes         any             `json:"modes"`           // SessionModeState | null
 }

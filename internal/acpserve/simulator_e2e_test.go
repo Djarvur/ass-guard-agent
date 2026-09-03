@@ -518,7 +518,7 @@ func simStageInitialize(t *testing.T, cli *simClient) {
 }
 
 // simAssertInitializeResult pins the v1 handshake shape (protocolVersion 1,
-// loadSession honestly false, the advertised menu present).
+// loadSession true — the 18-01 replay spine, the advertised menu present).
 func simAssertInitializeResult(t *testing.T, raw json.RawMessage) {
 	t.Helper()
 
@@ -539,8 +539,8 @@ func simAssertInitializeResult(t *testing.T, raw json.RawMessage) {
 		t.Errorf("protocolVersion = %d; want 1 (Zed speaks v1)", resp.ProtocolVersion)
 	}
 
-	if resp.AgentCapabilities.LoadSession {
-		t.Error("agentCapabilities.loadSession = true; want honestly false")
+	if !resp.AgentCapabilities.LoadSession {
+		t.Error("agentCapabilities.loadSession = false; want true (18-01/ACP-06 — replay is live)")
 	}
 
 	assertEight(t, resp.ConfigOptions, "initialize response advertisement")

@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 )
 
 const asciiDelete = 0x40
@@ -60,7 +62,8 @@ func (s *Server) drainSessionAsksIfPossible(sessionID string) {
 
 // registerHandlers populates the method→handler map with the canonical ACP v1
 // method set (VERIFIED-FACTS #3): initialize, session/new, session/prompt,
-// session/cancel, session/load (no-op per D-09), logout, session/set_mode,
+// session/cancel, session/load (18-01 — full replay through the ordered
+// emitter; the D-09 no-op ended with Phase 18), logout, session/set_mode,
 // session/set_config_option (16-05/ACP-08).
 func (s *Server) registerHandlers() {
 	s.handlers[methodInitialize] = s.handleInitialize
@@ -76,7 +79,9 @@ func (s *Server) registerHandlers() {
 
 // initializeResponse is the initialize result (INITIALIZATION.md / VERIFIED-
 // FACTS #3). The field name is `agentCapabilities` (NOT capabilities/serverInfo),
-// protocolVersion is integer 1, and loadSession is false (D-09 — NO replay).
+// protocolVersion is integer 1, and loadSession is TRUE since 18-01 (ACP-06 —
+// session/load replays past sessions through the ordered emitter; D-09's
+// no-replay scope ended with Phase 18).
 // configOptions (16-05) advertises the v1.2 menu with effective current values
 // when a ConfigSurface is wired; omitted entirely without one (the degrade —
 // existing acpserve-less handshakes stay byte-compatible).
@@ -184,13 +189,14 @@ func (s *Server) applyMetaBlob(params json.RawMessage) {
 }
 
 // initializeResult builds the initialize response (integer protocolVersion 1,
-// loadSession:false per D-09) plus the configOptions advertisement (16-05) via
-// the shared builder — omitted entirely when no surface is wired.
+// loadSession:true since 18-01 — ACP-06's replay spine is live) plus the
+// configOptions advertisement (16-05) via the shared builder — omitted
+// entirely when no surface is wired.
 func (s *Server) initializeResult() initializeResponse {
 	return initializeResponse{
 		ProtocolVersion: 1,
 		AgentCapabilities: map[string]any{
-			"loadSession": false,
+			"loadSession": true, // 18-01/ACP-06: session/load restores + replays past sessions
 		},
 		AgentInfo: map[string]any{
 			"name":    "ass-guard",
@@ -318,6 +324,7 @@ func (s *Server) handleSessionNew(ctx context.Context, params json.RawMessage) (
 
 	id := newSessionID()
 	st := &sessionState{id: id}
+	st.setReady() // live from construction — no replay to wait for (18-01 D-03 gate)
 
 	s.mu.Lock()
 	s.sessions[id] = st
@@ -426,13 +433,9 @@ func (s *Server) handleSessionPrompt(ctx context.Context, params json.RawMessage
 		return nil, errMissingSessionid
 	}
 
-	s.mu.Lock()
-	st, ok := s.sessions[p.SessionID]
-	s.mu.Unlock()
-
-	if !ok {
-		//nolint:err113 // dynamic error message
-		return nil, fmt.Errorf("session/prompt: unknown sessionId %q", p.SessionID)
+	st, gerr := s.promptSessionState(p.SessionID)
+	if gerr != nil {
+		return nil, gerr
 	}
 
 	turnCtx, cancel := context.WithCancel(ctx)
@@ -470,6 +473,45 @@ func (s *Server) handleSessionPrompt(ctx context.Context, params json.RawMessage
 	}
 
 	return sessionPromptResult{StopReason: stopReason}, nil
+}
+
+// promptSessionState looks up the session a session/prompt targets and applies
+// the 18-01 D-03 ready-gate: a session whose load is still replaying (or in
+// the insert→ready window of a completing load) yields the TYPED error naming
+// the replay state — a prompt never interleaves with replayed frames
+// (reconcile-then-accept, linearizable resume). An unknown id keeps the
+// unknown-session error shape.
+func (s *Server) promptSessionState(sessionID string) (*sessionState, error) {
+	s.mu.Lock()
+	st, ok := s.sessions[sessionID]
+	s.mu.Unlock()
+
+	if !ok {
+		if s.isLoading(sessionID) {
+			return nil, &RPCError{
+				Code: CodeInvalidRequest,
+				Message: fmt.Sprintf(
+					"session/prompt: session %s is replaying (session/load in progress) — "+
+						"prompts are accepted only after replay completes (D-03)",
+					sessionID),
+			}
+		}
+
+		//nolint:err113 // dynamic error message
+		return nil, fmt.Errorf("session/prompt: unknown sessionId %q", sessionID)
+	}
+
+	if !st.isReady() {
+		return nil, &RPCError{
+			Code: CodeInvalidRequest,
+			Message: fmt.Sprintf(
+				"session/prompt: session %s is not ready (replay completing) — "+
+					"prompts are accepted only after replay completes (D-03)",
+				sessionID),
+		}
+	}
+
+	return st, nil
 }
 
 // handleSessionCancel cancels the active turn for the session (D-16 mechanism).
@@ -526,14 +568,154 @@ func (s *Server) handleSessionCancel(ctx context.Context, params json.RawMessage
 	return nil, nil //nolint:nilnil // nil result signals "no JSON-RPC response" (notification / unknown session)
 }
 
-// handleSessionLoad is a NO-OP per D-09 (NO replay in v1). It returns a -32601
-// method-not-supported error; loadSession is advertised false in initialize.
-// There is deliberately NO replay code path (Pitfall 6 — scope-creep guard).
+// handleSessionLoad is the thin params-parse wrapper over the exported
+// LoadSession core (18-01): parse + required-field check, then delegate —
+// the 18-06 CLI --resume/--continue path reuses the same core (one engine,
+// two entrypoints).
 func (s *Server) handleSessionLoad(ctx context.Context, params json.RawMessage) (any, error) {
-	return nil, &RPCError{
-		Code:    CodeMethodNotFound,
-		Message: "session/load not supported (loadSession is false; replay is out of v1 scope — D-09)",
+	var p LoadSessionRequest
+
+	if len(params) > 0 {
+		uerr := json.Unmarshal(params, &p)
+		if uerr != nil {
+			return nil, &RPCError{
+				Code:    CodeInvalidParams,
+				Message: "session/load params: " + uerr.Error(),
+			}
+		}
 	}
+
+	if p.SessionID == "" {
+		return nil, &RPCError{
+			Code:    CodeInvalidParams,
+			Message: "session/load: sessionId is required",
+		}
+	}
+
+	return s.LoadSession(ctx, p.SessionID)
+}
+
+// LoadSession is the exported session/load core (18-01, ACP-06): validate →
+// resume (adopt + seed) → replay → gate → respond. The RPC handler is the
+// thin wrapper; the CLI resume path (18-06) funnels here too.
+//
+// The order IS the D-03 contract: structural rejection happens BEFORE any
+// file open (T-18-01); the tombstone/existence checks happen BEFORE any
+// session construction (a rejection creates no sessionState, no transcript);
+// the runner adopts the transcript's id and seeds the turn counter from the
+// transcript maxima (SessionLoader — reconstruction is transcript-local, no
+// provider call, D-01); replay streams through THE ordered emitter live turns
+// use (16-D-02); the Barrier flushes every replayed frame so the response is
+// written only after the last one (updates-before-response — the 16-01
+// turn-end barrier contract mirrored); and ONLY THEN does the session enter
+// the prompt-accepting map (the map insert and ready flip are the LAST steps
+// before the response is built).
+//
+//nolint:funlen // the load pipeline is one ordered flow
+func (s *Server) LoadSession(ctx context.Context, sessionID string) (LoadSessionResponse, error) {
+	var zero LoadSessionResponse
+
+	// T-18-01: traversal-safe structural rejection BEFORE any file open
+	// (loadSessIDPattern's provenance comment explains the construction).
+	if !loadSessIDPattern.MatchString(sessionID) {
+		return zero, &RPCError{
+			Code:    CodeInvalidParams,
+			Message: fmt.Sprintf("session/load: malformed sessionId %q", sessionID),
+		}
+	}
+
+	storeDir := filepath.Join(s.storeWorkDir(), ".ass-guard")
+
+	// D-07 tombstone: a zero-byte <id>.deleted marker beside the transcript
+	// refuses the load — deleted stays deleted; load never resurrects and
+	// never creates a fresh session under the client-supplied id.
+	_, terr := os.Stat(filepath.Join(storeDir, sessionID+".deleted"))
+	if terr == nil {
+		return zero, &RPCError{
+			Code: CodeInvalidRequest,
+			Message: fmt.Sprintf(
+				"session/load: session %s is deleted (tombstone %s.deleted present)",
+				sessionID, sessionID),
+		}
+	}
+
+	// Existence + regular-file check (T-18-03: os.Stat resolves symlinks; a
+	// non-regular entry — a planted link — is the typed unknown-session
+	// error, and the replay open never follows it).
+	transcript := filepath.Join(storeDir, "transcript_"+sessionID+".jsonl")
+
+	info, serr := os.Stat(transcript)
+	if serr != nil || !info.Mode().IsRegular() {
+		return zero, &RPCError{
+			Code: CodeInvalidRequest,
+			Message: fmt.Sprintf(
+				"session/load: unknown session %s (no readable transcript_%s.jsonl)",
+				sessionID, sessionID),
+		}
+	}
+
+	// One load at a time per id (D-03); an already-live ready session is an
+	// idempotent success — re-replaying would duplicate frames.
+	s.mu.Lock()
+	st, live := s.sessions[sessionID]
+	s.mu.Unlock()
+
+	switch {
+	case live && st.isReady():
+		return s.loadSessionResult(), nil
+	case live, !s.beginLoading(sessionID):
+		return zero, &RPCError{
+			Code: CodeInvalidRequest,
+			Message: fmt.Sprintf(
+				"session/load: session %s is already loading (replay in progress)",
+				sessionID),
+		}
+	}
+
+	defer s.endLoading(sessionID)
+
+	st = &sessionState{id: sessionID}
+
+	// D-01/Pitfall 2: the runner adopts the transcript's session id and seeds
+	// the turn counter from the transcript maxima. SessionLoader is an
+	// OPTIONAL capability — stub runners skip it (replay itself is
+	// transcript-driven and runner-independent).
+	loader, canResume := s.turnRunner.(SessionLoader)
+	if canResume {
+		rerr := loader.ResumeSession(ctx, sessionID)
+		if rerr != nil {
+			return zero, fmt.Errorf("session/load resume %s: %w", sessionID, rerr)
+		}
+	}
+
+	// Replay through THE ordered emitter path live turns use (16-D-02): the
+	// per-session FOREGROUND-lane handle, the same single drain.
+	rerr := ReplayTranscript(s.Emitter(sessionID), s.storeWorkDir(), sessionID)
+	if rerr != nil {
+		return zero, fmt.Errorf("session/load replay %s: %w", sessionID, rerr)
+	}
+
+	// Updates-before-response (16-01's turn-end barrier contract mirrored):
+	// the load response is written only after the last replayed frame.
+	s.emitter.Barrier(ctx)
+
+	// D-03 reconcile-then-accept: the map insert and the ready flip are the
+	// LAST steps before the response — a prompt never interleaves with
+	// replayed frames.
+	s.mu.Lock()
+	s.sessions[sessionID] = st
+	s.mu.Unlock()
+
+	st.setReady()
+
+	return s.loadSessionResult(), nil
+}
+
+// loadSessionResult builds the v1 LoadSessionResponse (18-01): configOptions
+// from the shared 16-05 advertisement builder (nil surface → null), modes
+// null in this plan (plan-mode seeding lands with 18-05).
+func (s *Server) loadSessionResult() LoadSessionResponse {
+	return LoadSessionResponse{ConfigOptions: s.configOptionsFor()}
 }
 
 // handleLogout drops the session. It accepts an optional sessionId param.

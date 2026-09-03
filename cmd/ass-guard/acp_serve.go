@@ -46,8 +46,9 @@ func newACPServeCmd() *cobra.Command {
 		Long: "Speaks ACP v1 (newline-delimited JSON-RPC) over stdio. stdout carries ONLY " +
 			"valid ACP frames; all diagnostics go to stderr (transport discipline). " +
 			"The lifecycle is initialize → session/new → session/prompt with streamed " +
-			"session/update notifications (ACP-04). session/load is a no-op (D-09 — NO " +
-			"replay in v1). Needs ZAI_API_KEY for real model turns; the server skeleton " +
+			"session/update notifications (ACP-04). session/load restores a past " +
+			"session and replays it through the same ordered frames (ACP-06, 18-01). " +
+			"Needs ZAI_API_KEY for real model turns; the server skeleton " +
 			"works without it for the ACP handshake.",
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {

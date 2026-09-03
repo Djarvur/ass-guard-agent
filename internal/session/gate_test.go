@@ -932,7 +932,9 @@ func TestGateAskKindsParity(t *testing.T) {
 // that is empty or non-canonical (untrusted dialog input — the 17-06
 // selected-without-optionId wire shape lands here as "") DECLINES fail-safe
 // via the gate's default unknown-option branch (WR-01 pin).
-func TestGateOutcomeMatrix(t *testing.T) { //nolint:funlen,cyclop // three full-loop subtests
+//
+//nolint:funlen,cyclop,gocyclo,gocognit,maintidx // three full-loop subtests (lint v2 drift)
+func TestGateOutcomeMatrix(t *testing.T) {
 	t.Parallel()
 
 	t.Run("reject_once denies and asks again", func(t *testing.T) {

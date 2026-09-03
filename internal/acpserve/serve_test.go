@@ -64,8 +64,8 @@ func TestACPServeWiresStdoutClean(t *testing.T) {
 		t.Errorf("stdout missing agentCapabilities in initialize response: %s", out)
 	}
 
-	if !strings.Contains(out, `"loadSession":false`) {
-		t.Errorf("stdout missing loadSession:false: %s", out)
+	if !strings.Contains(out, `"loadSession":true`) {
+		t.Errorf("stdout missing loadSession:true (18-01/ACP-06): %s", out)
 	}
 
 	for i, line := range strings.Split(strings.TrimRight(out, "\n"), "\n") {

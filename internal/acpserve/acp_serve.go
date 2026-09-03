@@ -214,7 +214,13 @@ func Run( //nolint:funlen // :320-425
 	srv := acp.NewServer(in, out, stderr,
 		acp.WithTurnRunner(runner),
 		acp.WithTurnEmitter(acp.TurnEmitterConfig{}),
-		acp.WithConfigSurface(surface))
+		acp.WithConfigSurface(surface),
+		// 18-01 (ACP-06/T-18-02): the load handler stats tombstones and reads
+		// transcripts against the SERVER's workspace — never the client's
+		// cwd. opts.WorkDir is the eagerly-resolved --work-dir (runACPServeCmd
+		// resolves before Run); "" degrades to the process cwd inside the
+		// server (the same resolution ResolveWorkDir applies).
+		acp.WithWorkDir(opts.WorkDir))
 
 	surface.SetNotify(func(sessionID string, opts []acp.ConfigOptionFrame) {
 		nerr := srv.NotifyConfigOptions(sessionID, opts)

@@ -174,7 +174,8 @@ func newNotification(method string, params map[string]any) *Message {
 
 // TestInitializeReturnsAgentCapabilities verifies the initialize response uses
 // the exact field name `agentCapabilities` (NOT capabilities/serverInfo), an
-// integer protocolVersion: 1, and loadSession:false (D-09 — NO replay in v1).
+// integer protocolVersion: 1, and loadSession:true (18-01/ACP-06 — the replay
+// spine is live; D-09's no-replay scope ended with Phase 18).
 func TestInitializeReturnsAgentCapabilities(t *testing.T) {
 	t.Parallel()
 	h := newPipeHarness(t)
@@ -209,13 +210,8 @@ func TestInitializeReturnsAgentCapabilities(t *testing.T) {
 	}
 
 	if ls, _ := res.AgentCapabilities["loadSession"].(bool); !ls {
-		// loadSession:false is correct (D-09 — NO replay); we assert the field
-		// is PRESENT and FALSE.
-		if _, ok := res.AgentCapabilities["loadSession"]; !ok {
-			t.Errorf("agentCapabilities.loadSession missing; want loadSession:false (D-09)")
-		}
-	} else {
-		t.Errorf("agentCapabilities.loadSession = true; want false (D-09 — NO replay in v1)")
+		t.Errorf("agentCapabilities.loadSession = %v; want true (18-01/ACP-06 — replay is live)",
+			res.AgentCapabilities["loadSession"])
 	}
 
 	if res.Capabilities != nil {
@@ -573,7 +569,9 @@ func TestErrorResponseShape(t *testing.T) {
 	h.readFrame(t)
 	h.send(t, newRequest(1, "session/new", map[string]any{keyCwd: testCwdTmp, keyMcpServers: []any{}}))
 	h.readFrame(t)
-	// session/load must be a -32601 method-not-supported error (D-09 no-op).
+	// session/load with a malformed id is the convenient typed-error example
+	// (18-01: the structural rejection is the load pipeline's first gate —
+	// the D-09 -32601 no-op ended with Phase 18).
 	h.send(t, newRequest(2, "session/load", map[string]any{keySessionID: "x"}))
 
 	var loadResp *Message
@@ -596,11 +594,11 @@ func TestErrorResponseShape(t *testing.T) {
 	}
 
 	if loadResp.Error == nil {
-		t.Fatal("session/load returned a result; want a -32601 error (D-09 no-op)")
+		t.Fatal("session/load returned a result; want a -32602 typed error (18-01)")
 	}
 
-	if loadResp.Error.Code != CodeMethodNotFound {
-		t.Errorf("session/load error code = %d; want -32601 (method not found)", loadResp.Error.Code)
+	if loadResp.Error.Code != CodeInvalidParams {
+		t.Errorf("session/load error code = %d; want -32602 (malformed sessionId)", loadResp.Error.Code)
 	}
 }
 

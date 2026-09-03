@@ -213,7 +213,8 @@ func TestConfigAdvertise(t *testing.T) {
 	h := newPipeHarness(t, WithConfigSurface(f))
 
 	// initialize: the advertisement carries the full menu with the fake's
-	// effective values, and loadSession stays false (truthful — Phase 18).
+	// effective values, and loadSession is true (18-01 — the replay spine is
+	// live).
 	h.send(t, newRequest(0, methodInitialize, zedLikeInitializeParams()))
 	initResp := h.readFrame(t)
 
@@ -233,8 +234,8 @@ func TestConfigAdvertise(t *testing.T) {
 	}
 
 	ls, ok := ires.AgentCapabilities["loadSession"].(bool)
-	if !ok || ls {
-		t.Errorf("agentCapabilities.loadSession = %v; want present and false (truthful until Phase 18)",
+	if !ok || !ls {
+		t.Errorf("agentCapabilities.loadSession = %v; want present and true (18-01/ACP-06)",
 			ires.AgentCapabilities["loadSession"])
 	}
 

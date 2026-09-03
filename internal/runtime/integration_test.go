@@ -270,9 +270,13 @@ func TestIntegration_RealStreamingThroughACP(t *testing.T) { //nolint:funlen // 
 	t.Fatalf("never saw the session/prompt response (chunks=%d)", chunks)
 }
 
-// TestIntegration_SessionLoadNoOp verifies session/load returns a -32601 error
-// (D-09 — NO replay in v1).
-func TestIntegration_SessionLoadNoOp(t *testing.T) {
+// TestIntegration_SessionLoadMalformedRejected verifies session/load with a
+// malformed sessionId rejects with the typed -32602 BEFORE any file open
+// (18-01/T-18-01 — the D-09 -32601 no-op ended with Phase 18; load is real,
+// and the structural rejection is the first gate of the pipeline). Runs
+// against the REAL runner wiring (driveACP) so the integration pin covers the
+// composed server, not just the handler unit.
+func TestIntegration_SessionLoadMalformedRejected(t *testing.T) {
 	t.Parallel()
 
 	mp := &mockStreamProvider{finish: stopEndTurn}
@@ -300,8 +304,9 @@ func TestIntegration_SessionLoadNoOp(t *testing.T) {
 		t.Fatalf("session/load did not return an error: %+v", frames)
 	}
 
-	if frames[0].Error.Code != -32601 {
-		t.Errorf("session/load error code = %d; want -32601 (D-09)", frames[0].Error.Code)
+	if frames[0].Error.Code != -32602 {
+		t.Errorf("session/load error code = %d; want -32602 (malformed sessionId, 18-01)",
+			frames[0].Error.Code)
 	}
 }
 

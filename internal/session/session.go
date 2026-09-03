@@ -172,6 +172,16 @@ func (s *Session) nextTurnID() string { //nolint:funcorder // ordering groups re
 	return fmt.Sprintf("%s-turn-%03d", s.SessionID, n)
 }
 
+// SeedResume seeds the turn counter from the transcript maxima (18-01, ACP-06
+// — "continued id sequences from transcript maxima"): the resume path calls it
+// with MaxTurnCounter's result so the next nextTurnID() continues the on-disk
+// sequence instead of restarting at 001 (18-RESEARCH Pitfall 2 — replayed and
+// new frames must never collide). Exported because the resume orchestration
+// lives at the runtime layer, one package up.
+func (s *Session) SeedResume(maxTurns int64) {
+	s.turnCounter.Store(maxTurns)
+}
+
 // CurrentTurnID returns the id of the most-recently STARTED turn, or "" when
 // no turn has started. It is a non-incrementing atomic read (09-01, AUD-02):
 // the serve-path capturer closure calls it when a RequestShaped event fires so

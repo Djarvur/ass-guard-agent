@@ -6,6 +6,7 @@ package acp //nolint:testpackage // internal package test
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -18,22 +19,26 @@ import (
 	"time"
 )
 
-// fixtureSessionID is a sessIDPattern-clean RFC 4122 v4 UUID form id (the
+// fixtureSessionID is a loadSessIDPattern-clean RFC 4122 v4 UUID form id (the
 // branch internal/acp newSessionID mints and transcript_<id>.jsonl names).
 const fixtureSessionID = "11111111-2222-4333-8444-555555555555"
 
 // fixtureTimestamp is a fixed RFC 3339 stamp for deterministic fixture lines.
 const fixtureTimestamp = "2026-09-01T10:00:00Z"
 
+// fixtureToolCallID is the one tool call the clean fixture carries (goconst).
+const fixtureToolCallID = "call-1"
+
 // writeLoadFixture writes the .ass-guard store transcript for sessionID from
-// raw JSONL lines (hand-written session.NewLine-shaped JSON — the plan's
-// fixture discipline; no session-package dependency on the acp test side).
+// raw JSONL lines (hand-written session.Line-shaped JSON — the plan's fixture
+// discipline; no session-package dependency on the acp test side).
 func writeLoadFixture(t *testing.T, storeDir, sessionID string, lines []string) {
 	t.Helper()
 
 	dir := filepath.Join(storeDir, ".ass-guard")
 
-	if err := os.MkdirAll(dir, 0o750); err != nil {
+	err := os.MkdirAll(dir, 0o750)
+	if err != nil {
 		t.Fatalf("mkdir fixture store: %v", err)
 	}
 
@@ -41,7 +46,8 @@ func writeLoadFixture(t *testing.T, storeDir, sessionID string, lines []string) 
 
 	path := filepath.Join(dir, "transcript_"+sessionID+".jsonl")
 
-	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+	err = os.WriteFile(path, []byte(body), 0o600)
+	if err != nil {
 		t.Fatalf("write fixture transcript: %v", err)
 	}
 }
@@ -54,7 +60,7 @@ func cleanSessionFixtureLines(sid string) []string {
 
 	return []string{
 		`{"type":"session_start","timestamp":"` + fixtureTimestamp + `","text":"` + sid + `"}`,
-		`{"type":"user_message","turnID":"` + turn + `","timestamp":"` + fixtureTimestamp +`",` +
+		`{"type":"user_message","turnID":"` + turn + `","timestamp":"` + fixtureTimestamp + `",` +
 			`"content":[{"type":"text","text":"list the files"}]}`,
 		`{"type":"agent_message_chunk","turnID":"` + turn + `","timestamp":"` + fixtureTimestamp + `",` +
 			`"messageID":"` + turn + `","text":"Here "}`,
@@ -63,9 +69,9 @@ func cleanSessionFixtureLines(sid string) []string {
 		`{"type":"assistant_message","turnID":"` + turn + `","timestamp":"` + fixtureTimestamp + `",` +
 			`"text":"Here is the listing."}`,
 		`{"type":"tool_call","turnID":"` + turn + `","timestamp":"` + fixtureTimestamp + `",` +
-			`"toolCallID":"call-1","name":"Bash","input":{"command":"ls"}}`,
+			`"toolCallID":"` + fixtureToolCallID + `","name":"Bash","input":{"command":"ls"}}`,
 		`{"type":"tool_result","turnID":"` + turn + `","timestamp":"` + fixtureTimestamp + `",` +
-			`"toolCallID":"call-1","output":{"stdout":"a.go"},"isError":false}`,
+			`"toolCallID":"` + fixtureToolCallID + `","output":{"stdout":"a.go"},"isError":false}`,
 		`{"type":"boundary","turnID":"` + turn + `","timestamp":"` + fixtureTimestamp + `",` +
 			`"cause":"mutating-command:Bash"}`,
 		`{"type":"session_end","timestamp":"` + fixtureTimestamp + `"}`,
@@ -99,7 +105,8 @@ func fixtureTurnIDs(t *testing.T, storeDir, sessionID string) []string {
 		}
 	}
 
-	if err := sc.Err(); err != nil {
+	err = sc.Err()
+	if err != nil {
 		t.Fatalf("scan transcript turn ids: %v", err)
 	}
 
@@ -130,7 +137,7 @@ func (f *fakeResumeRunner) ResumeSession(_ context.Context, sessionID string) er
 
 	prefix := sessionID + "-turn-"
 
-	var max int64
+	var turnMax int64
 
 	for _, id := range ids {
 		if !strings.HasPrefix(id, prefix) {
@@ -142,13 +149,13 @@ func (f *fakeResumeRunner) ResumeSession(_ context.Context, sessionID string) er
 			continue
 		}
 
-		if n > max {
-			max = n
+		if n > turnMax {
+			turnMax = n
 		}
 	}
 
 	f.mu.Lock()
-	f.seed[sessionID] = max
+	f.seed[sessionID] = turnMax
 	f.mu.Unlock()
 
 	return nil
@@ -168,9 +175,8 @@ func (f *fakeResumeRunner) Run(
 	next := fmt.Sprintf("%s-turn-%03d", sessionID, n)
 
 	line, merr := json.Marshal(map[string]any{
-		"type": "user_message", "turnID": next,
+		testKeyTxtBlock: "user_message", "turnID": next,
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
-		"content":   []map[string]string{{"type": "text", "text": "next"}},
 	})
 	if merr != nil {
 		return "", fmt.Errorf("fake runner marshal: %w", merr)
@@ -183,17 +189,20 @@ func (f *fakeResumeRunner) Run(
 		return "", fmt.Errorf("fake runner open transcript: %w", oerr)
 	}
 
-	if _, werr := fout.Write(append(line, '\n')); werr != nil {
+	_, werr := fout.Write(append(line, '\n'))
+	if werr != nil {
 		_ = fout.Close()
 
 		return "", fmt.Errorf("fake runner append: %w", werr)
 	}
 
-	if cerr := fout.Close(); cerr != nil {
+	cerr := fout.Close()
+	if cerr != nil {
 		return "", fmt.Errorf("fake runner close: %w", cerr)
 	}
 
-	if eerr := emit.AgentMessageChunk(next, "turn ok"); eerr != nil {
+	eerr := emit.AgentMessageChunk(next, "turn ok")
+	if eerr != nil {
 		return "", fmt.Errorf("fake runner emit: %w", eerr)
 	}
 
@@ -245,7 +254,8 @@ func chunkTextOf(t *testing.T, u *updateFrame) string {
 
 	var cb ContentBlock
 
-	if uerr := json.Unmarshal(u.Update.Content, &cb); uerr != nil {
+	uerr := json.Unmarshal(u.Update.Content, &cb)
+	if uerr != nil {
 		t.Fatalf("unmarshal chunk content: %v (raw=%s)", uerr, string(u.Update.Content))
 	}
 
@@ -272,7 +282,8 @@ func readUntilResponse(t *testing.T, h *pipeHarness, wantID int, cb func(*update
 		if msg.Method == methodSessionUpdate {
 			var u updateFrame
 
-			if uerr := json.Unmarshal(msg.Params, &u); uerr != nil {
+			uerr := json.Unmarshal(msg.Params, &u)
+			if uerr != nil {
 				t.Fatalf("unmarshal session/update params: %v (raw=%s)", uerr, string(msg.Params))
 			}
 
@@ -285,6 +296,16 @@ func readUntilResponse(t *testing.T, h *pipeHarness, wantID int, cb func(*update
 	t.Fatalf("no response with id %s within %d frames", want, maxFrames)
 
 	return nil
+}
+
+// sendLoad sends one session/load request for the id (the shared request
+// shape of the battery).
+func sendLoad(t *testing.T, h *pipeHarness, reqID int, sessionID, cwd string) {
+	t.Helper()
+
+	h.send(t, newRequest(reqID, "session/load", map[string]any{
+		keySessionID: sessionID, keyCwd: cwd, keyMcpServers: []any{},
+	}))
 }
 
 // assertLoadRejected pins the typed-error contract: a typed JSON-RPC code (not
@@ -301,7 +322,7 @@ func assertLoadRejected(t *testing.T, msg *Message, wantID int, wantCause string
 	}
 
 	if msg.Error.Code == 0 {
-		t.Errorf("load rejection code = 0; want a typed JSON-RPC error code")
+		t.Error("load rejection code = 0; want a typed JSON-RPC error code")
 	}
 
 	if !strings.Contains(msg.Error.Message, wantCause) {
@@ -315,8 +336,8 @@ func assertPromptNotAccepted(t *testing.T, h *pipeHarness, reqID int, sessionID 
 	t.Helper()
 
 	h.send(t, newRequest(reqID, "session/prompt", map[string]any{
-		"sessionId": sessionID,
-		"prompt":    []any{map[string]string{"type": "text", "text": "hi"}},
+		keySessionID:  sessionID,
+		testKeyPrompt: []any{map[string]string{testKeyTxtBlock: blockText, blockText: "hi"}},
 	}))
 
 	msg := h.readFrame(t)
@@ -331,6 +352,8 @@ func assertPromptNotAccepted(t *testing.T, h *pipeHarness, reqID int, sessionID 
 // response, the response carries the exact v1 shape (configOptions + modes,
 // NO sessionId), and the session accepts prompts whose turn id continues the
 // fixture's sequence (max 001 -> next 002).
+//
+//nolint:funlen,gocyclo,cyclop // one ordered wire-flow assertion end-to-end (the tracer)
 func TestSessionLoadReplaysCleanSession(t *testing.T) {
 	t.Parallel()
 
@@ -356,7 +379,8 @@ func TestSessionLoadReplaysCleanSession(t *testing.T) {
 		} `json:"agentCapabilities"` //nolint:tagliatelle // ACP wire field
 	}
 
-	if uerr := json.Unmarshal(initResp.Result, &ires); uerr != nil {
+	uerr := json.Unmarshal(initResp.Result, &ires)
+	if uerr != nil {
 		t.Fatalf("unmarshal initialize result: %v (raw=%s)", uerr, string(initResp.Result))
 	}
 
@@ -365,9 +389,7 @@ func TestSessionLoadReplaysCleanSession(t *testing.T) {
 	}
 
 	// session/load: replay frames stream BEFORE the response is readable.
-	h.send(t, newRequest(1, "session/load", map[string]any{
-		"sessionId": sid, "cwd": store, "mcpServers": []any{},
-	}))
+	sendLoad(t, h, 1, sid, store)
 
 	var (
 		kinds      []string
@@ -384,10 +406,10 @@ func TestSessionLoadReplaysCleanSession(t *testing.T) {
 		case updKindAgentMessageChunk:
 			chunkText.WriteString(chunkTextOf(t, u))
 		case updKindToolCall:
-			sawTool = u.Update.ToolCallID == "call-1" && u.Update.Title == "Bash"
+			sawTool = u.Update.ToolCallID == fixtureToolCallID && u.Update.Title == "Bash"
 		case updKindToolCallUpdate:
-			sawUpdOK = u.Update.ToolCallID == "call-1" && u.Update.Status == StatusCompleted
-			sawUpdFail = u.Update.ToolCallID == "call-1"
+			sawUpdOK = u.Update.ToolCallID == fixtureToolCallID && u.Update.Status == StatusCompleted
+			sawUpdFail = u.Update.ToolCallID == fixtureToolCallID
 		}
 	})
 
@@ -423,7 +445,8 @@ func TestSessionLoadReplaysCleanSession(t *testing.T) {
 	// Response shape: exactly configOptions + modes present; no sessionId key.
 	var res map[string]any
 
-	if uerr := json.Unmarshal(loadResp.Result, &res); uerr != nil {
+	uerr = json.Unmarshal(loadResp.Result, &res)
+	if uerr != nil {
 		t.Fatalf("unmarshal load result: %v (raw=%s)", uerr, string(loadResp.Result))
 	}
 
@@ -435,14 +458,14 @@ func TestSessionLoadReplaysCleanSession(t *testing.T) {
 		t.Error("load response missing modes key (v1 required property)")
 	}
 
-	if _, ok := res["sessionId"]; ok {
+	if _, ok := res[keySessionID]; ok {
 		t.Error("load response carries a sessionId key; v1 LoadSessionResponse has NONE (Pitfall 7)")
 	}
 
 	// Post-load prompt accepted; its turn id continues the fixture sequence.
 	h.send(t, newRequest(2, "session/prompt", map[string]any{
-		"sessionId": sid,
-		"prompt":    []any{map[string]string{"type": "text", "text": "again"}},
+		keySessionID:  sid,
+		testKeyPrompt: []any{map[string]string{testKeyTxtBlock: blockText, blockText: "again"}},
 	}))
 
 	promptResp := readUntilResponse(t, h, 2, nil)
@@ -479,7 +502,8 @@ func TestSessionLoadTombstonedRejected(t *testing.T) {
 
 	tomb := filepath.Join(store, ".ass-guard", sid+".deleted")
 
-	if err := os.WriteFile(tomb, nil, 0o600); err != nil {
+	err := os.WriteFile(tomb, nil, 0o600)
+	if err != nil {
 		t.Fatalf("write tombstone: %v", err)
 	}
 
@@ -490,9 +514,7 @@ func TestSessionLoadTombstonedRejected(t *testing.T) {
 
 	h := newPipeHarness(t, WithWorkDir(store), WithTurnRunner(newFakeResumeRunner(store)))
 
-	h.send(t, newRequest(0, "session/load", map[string]any{
-		"sessionId": sid, "cwd": store, "mcpServers": []any{},
-	}))
+	sendLoad(t, h, 0, sid, store)
 
 	assertLoadRejected(t, h.readFrame(t), 0, "deleted")
 
@@ -501,7 +523,7 @@ func TestSessionLoadTombstonedRejected(t *testing.T) {
 		t.Fatalf("read transcript after: %v", rerr)
 	}
 
-	if string(before) != string(after) {
+	if !bytes.Equal(before, after) {
 		t.Error("tombstoned load mutated the transcript bytes; rejection must be side-effect free")
 	}
 
@@ -515,7 +537,8 @@ func TestSessionLoadUnknownIDRejected(t *testing.T) {
 
 	store := t.TempDir()
 
-	if err := os.MkdirAll(filepath.Join(store, ".ass-guard"), 0o750); err != nil {
+	err := os.MkdirAll(filepath.Join(store, ".ass-guard"), 0o750)
+	if err != nil {
 		t.Fatalf("mkdir store: %v", err)
 	}
 
@@ -523,13 +546,12 @@ func TestSessionLoadUnknownIDRejected(t *testing.T) {
 
 	h := newPipeHarness(t, WithWorkDir(store), WithTurnRunner(newFakeResumeRunner(store)))
 
-	h.send(t, newRequest(0, "session/load", map[string]any{
-		"sessionId": sid, "cwd": store, "mcpServers": []any{},
-	}))
+	sendLoad(t, h, 0, sid, store)
 
 	assertLoadRejected(t, h.readFrame(t), 0, sid)
 
-	if _, err := os.Stat(filepath.Join(store, ".ass-guard", "transcript_"+sid+".jsonl")); err == nil {
+	_, err = os.Stat(filepath.Join(store, ".ass-guard", "transcript_"+sid+".jsonl"))
+	if err == nil {
 		t.Error("unknown-id load created a transcript file; load never creates a fresh session")
 	}
 
@@ -543,18 +565,17 @@ func TestSessionLoadTraversalIDRejected(t *testing.T) {
 
 	store := t.TempDir()
 
-	if err := os.MkdirAll(filepath.Join(store, ".ass-guard"), 0o750); err != nil {
+	err := os.MkdirAll(filepath.Join(store, ".ass-guard"), 0o750)
+	if err != nil {
 		t.Fatalf("mkdir store: %v", err)
 	}
 
 	h := newPipeHarness(t, WithWorkDir(store), WithTurnRunner(newFakeResumeRunner(store)))
 
 	for i, sid := range []string{"../../etc/passwd", "..", "a/b"} {
-		h.send(t, newRequest(i, "session/load", map[string]any{
-			"sessionId": sid, "cwd": store, "mcpServers": []any{},
-		}))
+		sendLoad(t, h, i, sid, store)
 
-		assertLoadRejected(t, h.readFrame(t), i, "sessionId")
+		assertLoadRejected(t, h.readFrame(t), i, keySessionID)
 	}
 
 	entries, derr := os.ReadDir(filepath.Join(store, ".ass-guard"))
