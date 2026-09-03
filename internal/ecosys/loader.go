@@ -116,8 +116,8 @@ func loadAll(claudeDir, assguardDir string) (Registry, map[string]ServerConfig, 
 	// precedence above stays untouched (Pitfall 1: other consumers depend on
 	// it). Every settings failure path degrades to a stderr warning + skip,
 	// never an error up through Load (Pitfall 8).
-	merged.Hooks = append(merged.Hooks, loadSettingsHooks(claudeDir, scopeProject)...)
-	merged.Hooks = append(merged.Hooks, loadSettingsHooks(claudeDir, scopeUser)...)
+	merged.Hooks = append(merged.Hooks, loadSettingsHooks(claudeDir, ScopeProject)...)
+	merged.Hooks = append(merged.Hooks, loadSettingsHooks(claudeDir, ScopeUser)...)
 
 	return merged, pluginMCP, nil
 }
@@ -128,7 +128,7 @@ func loadAll(claudeDir, assguardDir string) (Registry, map[string]ServerConfig, 
 const settingsJSONName = "settings.json"
 
 // loadSettingsHooks reads one settings scope's hooks entries (21-01
-// PAR-03/D-02): scopeProject reads <claudeDir>/settings.json; scopeUser
+// PAR-03/D-02): ScopeProject reads <claudeDir>/settings.json; ScopeUser
 // reads ~/.claude/settings.json. The hooks key layout is the SAME
 // hooks → event → matcher-group → {type,command,timeout} shape the plugin
 // hooks.json parser accepts (CC-compatible). A malformed file degrades to a
@@ -140,13 +140,13 @@ func loadSettingsHooks(claudeDir string, scope HookScope) []HookConfig {
 	var path string
 
 	switch scope {
-	case scopeProject:
+	case ScopeProject:
 		if claudeDir == "" {
 			return nil // no project context — no project settings
 		}
 
 		path = filepath.Join(claudeDir, settingsJSONName)
-	case scopeUser:
+	case ScopeUser:
 		home, uerr := os.UserHomeDir()
 		if uerr != nil {
 			logPluginSkipf("user settings hooks: home dir unavailable (skipped): %v", uerr)
@@ -155,7 +155,7 @@ func loadSettingsHooks(claudeDir string, scope HookScope) []HookConfig {
 		}
 
 		path = filepath.Join(home, claudeDirName, settingsJSONName)
-	case scopePlugin:
+	case ScopePlugin:
 		return nil // plugin scope has its own loader (parseHooksJSON)
 	default:
 		return nil

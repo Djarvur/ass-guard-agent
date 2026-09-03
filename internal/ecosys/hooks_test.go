@@ -266,7 +266,7 @@ func TestSettingsHooksProjectScope(t *testing.T) {
 
 	byEvent := map[string][]HookConfig{}
 	for _, h := range reg.Hooks {
-		assert.Equal(t, scopeProject, h.Scope, "settings hooks carry the project scope tag")
+		assert.Equal(t, ScopeProject, h.Scope, "settings hooks carry the project scope tag")
 		byEvent[h.Event] = append(byEvent[h.Event], h)
 	}
 
@@ -308,7 +308,7 @@ func TestSettingsHooksUserScope(t *testing.T) {
 
 	byEvent := map[string][]HookConfig{}
 	for _, h := range reg.Hooks {
-		assert.Equal(t, scopeUser, h.Scope, "user settings hooks carry the user scope tag")
+		assert.Equal(t, ScopeUser, h.Scope, "user settings hooks carry the user scope tag")
 		byEvent[h.Event] = append(byEvent[h.Event], h)
 	}
 
@@ -405,11 +405,11 @@ func TestHookScopeOrder(t *testing.T) {
 	t.Parallel()
 
 	scrambled := []HookConfig{
-		{Event: hookEventPreToolUse, Command: "u1", Scope: scopeUser},
-		{Event: hookEventPreToolUse, Command: "p1", Scope: scopePlugin},
-		{Event: hookEventPreToolUse, Command: "pr1", Scope: scopeProject},
-		{Event: hookEventPreToolUse, Command: "u2", Scope: scopeUser},
-		{Event: hookEventPreToolUse, Command: "p2", Scope: scopePlugin},
+		{Event: hookEventPreToolUse, Command: "u1", Scope: ScopeUser},
+		{Event: hookEventPreToolUse, Command: "p1", Scope: ScopePlugin},
+		{Event: hookEventPreToolUse, Command: "pr1", Scope: ScopeProject},
+		{Event: hookEventPreToolUse, Command: "u2", Scope: ScopeUser},
+		{Event: hookEventPreToolUse, Command: "p2", Scope: ScopePlugin},
 	}
 
 	r := NewHookRunner(scrambled, "s", t.TempDir(), "")
@@ -455,23 +455,23 @@ func TestPreToolUseVerdict(t *testing.T) { //nolint:paralleltest // mutates the 
 
 	t.Run("project deny json", func(t *testing.T) {
 		r := NewHookRunner([]HookConfig{
-			{Event: hookEventPreToolUse, Command: denyJSONCmd, Scope: scopeProject},
+			{Event: hookEventPreToolUse, Command: denyJSONCmd, Scope: ScopeProject},
 		}, "s", work, "")
 
 		v, reason := r.PreToolUseVerdict(context.Background(), toolBash, toolInput)
 
-		assert.Equal(t, verdictDeny, v)
+		assert.Equal(t, VerdictDeny, v)
 		assert.Equal(t, "no edits from hook", reason)
 	})
 
 	t.Run("user allow json applies", func(t *testing.T) {
 		r := NewHookRunner([]HookConfig{
-			{Event: hookEventPreToolUse, Command: allowJSONCmd, Scope: scopeUser},
+			{Event: hookEventPreToolUse, Command: allowJSONCmd, Scope: ScopeUser},
 		}, "s", work, "")
 
 		v, reason := r.PreToolUseVerdict(context.Background(), toolBash, toolInput)
 
-		assert.Equal(t, verdictAllow, v)
+		assert.Equal(t, VerdictAllow, v)
 		assert.Equal(t, "operator approved", reason)
 	})
 
@@ -479,12 +479,12 @@ func TestPreToolUseVerdict(t *testing.T) { //nolint:paralleltest // mutates the 
 		buf.Reset()
 
 		r := NewHookRunner([]HookConfig{
-			{Event: hookEventPreToolUse, Command: allowJSONCmd, Scope: scopeProject},
+			{Event: hookEventPreToolUse, Command: allowJSONCmd, Scope: ScopeProject},
 		}, "s", work, "")
 
 		v, reason := r.PreToolUseVerdict(context.Background(), toolBash, toolInput)
 
-		assert.Equal(t, verdictNone, v, "repo-shipped allow must never widen trust (D-01)")
+		assert.Equal(t, VerdictNone, v, "repo-shipped allow must never widen trust (D-01)")
 		assert.Empty(t, reason)
 		assert.Equal(t, 1, strings.Count(buf.String(), "ignored allow"),
 			"exactly one loud ignored-allow warning: %q", buf.String())
@@ -492,18 +492,18 @@ func TestPreToolUseVerdict(t *testing.T) { //nolint:paralleltest // mutates the 
 
 	t.Run("timeout fails open", func(t *testing.T) {
 		r := NewHookRunner([]HookConfig{
-			{Event: hookEventPreToolUse, Command: "sleep 30", TimeoutSec: 1, Scope: scopeUser},
+			{Event: hookEventPreToolUse, Command: "sleep 30", TimeoutSec: 1, Scope: ScopeUser},
 		}, "s", work, "")
 
 		v, reason := r.PreToolUseVerdict(context.Background(), toolBash, toolInput)
 
-		assert.Equal(t, verdictNone, v, "a timed-out hook contributes no verdict (PAR-03)")
+		assert.Equal(t, VerdictNone, v, "a timed-out hook contributes no verdict (PAR-03)")
 		assert.Empty(t, reason)
 	})
 
 	t.Run("ctx cancel fails open", func(t *testing.T) {
 		r := NewHookRunner([]HookConfig{
-			{Event: hookEventPreToolUse, Command: "sleep 30", TimeoutSec: 60, Scope: scopeUser},
+			{Event: hookEventPreToolUse, Command: "sleep 30", TimeoutSec: 60, Scope: ScopeUser},
 		}, "s", work, "")
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -515,31 +515,31 @@ func TestPreToolUseVerdict(t *testing.T) { //nolint:paralleltest // mutates the 
 
 		v, reason := r.PreToolUseVerdict(ctx, toolBash, toolInput)
 
-		assert.Equal(t, verdictNone, v,
+		assert.Equal(t, VerdictNone, v,
 			"the flagged PAR-03 concurrency pin: cancellation mid-hook yields no-decision")
 		assert.Empty(t, reason)
 	})
 
 	t.Run("exit2 legacy deny reason from stderr", func(t *testing.T) {
 		r := NewHookRunner([]HookConfig{
-			{Event: hookEventPreToolUse, Command: "echo legacy-refusal >&2; exit 2", Scope: scopeProject},
+			{Event: hookEventPreToolUse, Command: "echo legacy-refusal >&2; exit 2", Scope: ScopeProject},
 		}, "s", work, "")
 
 		v, reason := r.PreToolUseVerdict(context.Background(), toolBash, toolInput)
 
-		assert.Equal(t, verdictDeny, v)
+		assert.Equal(t, VerdictDeny, v)
 		assert.Contains(t, reason, "legacy-refusal",
 			"the exit-2 reason is classifyHookRun's stderr-first extraction")
 	})
 
 	t.Run("exit2 overrides json allow at runner", func(t *testing.T) {
 		r := NewHookRunner([]HookConfig{
-			{Event: hookEventPreToolUse, Command: allowJSONCmd + "; exit 2", Scope: scopeProject},
+			{Event: hookEventPreToolUse, Command: allowJSONCmd + "; exit 2", Scope: ScopeProject},
 		}, "s", work, "")
 
 		v, _ := r.PreToolUseVerdict(context.Background(), toolBash, toolInput)
 
-		assert.Equal(t, verdictDeny, v,
+		assert.Equal(t, VerdictDeny, v,
 			"exit 2 blocks even when stdout carries a valid allow verdict (T-21-02)")
 	})
 
@@ -547,14 +547,14 @@ func TestPreToolUseVerdict(t *testing.T) { //nolint:paralleltest // mutates the 
 		marker := filepath.Join(t.TempDir(), "marker")
 
 		r := NewHookRunner([]HookConfig{
-			{Event: hookEventPreToolUse, Command: "echo g >> " + marker, Scope: scopePlugin},
-			{Event: hookEventPreToolUse, Command: "echo u >> " + marker, Scope: scopeUser},
-			{Event: hookEventPreToolUse, Command: "echo p >> " + marker, Scope: scopeProject},
+			{Event: hookEventPreToolUse, Command: "echo g >> " + marker, Scope: ScopePlugin},
+			{Event: hookEventPreToolUse, Command: "echo u >> " + marker, Scope: ScopeUser},
+			{Event: hookEventPreToolUse, Command: "echo p >> " + marker, Scope: ScopeProject},
 		}, "s", work, "")
 
 		v, _ := r.PreToolUseVerdict(context.Background(), toolBash, toolInput)
 
-		assert.Equal(t, verdictNone, v, "silent hooks contribute no verdict")
+		assert.Equal(t, VerdictNone, v, "silent hooks contribute no verdict")
 
 		data, err := os.ReadFile(marker)
 		require.NoError(t, err)
@@ -564,12 +564,12 @@ func TestPreToolUseVerdict(t *testing.T) { //nolint:paralleltest // mutates the 
 
 	t.Run("no matching hooks is no decision", func(t *testing.T) {
 		r := NewHookRunner([]HookConfig{
-			{Event: hookEventPreToolUse, Matcher: "Edit", Command: denyJSONCmd, Scope: scopeProject},
+			{Event: hookEventPreToolUse, Matcher: "Edit", Command: denyJSONCmd, Scope: ScopeProject},
 		}, "s", work, "")
 
 		v, reason := r.PreToolUseVerdict(context.Background(), toolBash, toolInput)
 
-		assert.Equal(t, verdictNone, v)
+		assert.Equal(t, VerdictNone, v)
 		assert.Empty(t, reason)
 	})
 }
@@ -588,7 +588,7 @@ func TestPreToolUseDelegation(t *testing.T) {
 	allowJSONCmd := "printf '%s' '" + verdictJSON("allow", "ok") + "'"
 
 	denier := NewHookRunner([]HookConfig{
-		{Event: hookEventPreToolUse, Command: denyJSONCmd, Scope: scopeUser},
+		{Event: hookEventPreToolUse, Command: denyJSONCmd, Scope: ScopeUser},
 	}, "s", work, "")
 
 	proceed, msg := denier.PreToolUse(context.Background(), toolBash, toolInput)
@@ -596,7 +596,7 @@ func TestPreToolUseDelegation(t *testing.T) {
 	assert.Equal(t, "blocked", msg)
 
 	allower := NewHookRunner([]HookConfig{
-		{Event: hookEventPreToolUse, Command: allowJSONCmd, Scope: scopeUser},
+		{Event: hookEventPreToolUse, Command: allowJSONCmd, Scope: ScopeUser},
 	}, "s", work, "")
 
 	proceed, msg = allower.PreToolUse(context.Background(), toolBash, toolInput)
@@ -619,38 +619,38 @@ func TestHookMatcherDialect(t *testing.T) {
 	}{
 		// Settings exact path: matcher "Edit" matches ONLY the tool named
 		// Edit — the divergence from legacy substring/regex matching.
-		{"settings exact fires on exact", scopeProject, "Edit", "Edit", true},
-		{"settings exact not substring", scopeProject, "Edit", "NotebookEdit", false},
-		{"settings exact not substring user scope", scopeUser, "Edit", "NotebookEdit", false},
-		{"settings exact full-name only", scopeUser, "NotebookEdit", "NotebookEdit", true},
+		{"settings exact fires on exact", ScopeProject, "Edit", "Edit", true},
+		{"settings exact not substring", ScopeProject, "Edit", "NotebookEdit", false},
+		{"settings exact not substring user scope", ScopeUser, "Edit", "NotebookEdit", false},
+		{"settings exact full-name only", ScopeUser, "NotebookEdit", "NotebookEdit", true},
 
 		// Alternatives (pipes and commas both split).
-		{"settings pipe alternatives Edit", scopeProject, "Edit|Write", "Edit", true},
-		{"settings pipe alternatives Write", scopeProject, "Edit|Write", "Write", true},
-		{"settings pipe alternatives miss", scopeProject, "Edit|Write", "Read", false},
-		{"settings comma alternatives", scopeProject, "Edit,Write", "Write", true},
-		{"settings comma with space", scopeProject, "Edit, Write", "Write", true},
+		{"settings pipe alternatives Edit", ScopeProject, "Edit|Write", "Edit", true},
+		{"settings pipe alternatives Write", ScopeProject, "Edit|Write", "Write", true},
+		{"settings pipe alternatives miss", ScopeProject, "Edit|Write", "Read", false},
+		{"settings comma alternatives", ScopeProject, "Edit,Write", "Write", true},
+		{"settings comma with space", ScopeProject, "Edit, Write", "Write", true},
 
 		// Any char outside the exact-set → unanchored regex path. The parens
 		// row proves REGEX semantics: Go reads "Bash(git *)" as "Bash" + a
 		// capture group "git *", so it matches "Bashgit" — an exact-string
 		// comparison ("Bash(git *)" == tool) could never fire there.
-		{"settings regex dot-star", scopeProject, "mcp__github__.*", "mcp__github__get_issue", true},
-		{"settings regex dot-star miss", scopeProject, "mcp__github__.*", "mcp__fs__read", false},
-		{"settings regex unanchored", scopeProject, "Edit.*", "NotebookEdit", true},
-		{"settings regex parens group", scopeProject, "Bash(git *)", "Bashgit", true},
-		{"settings regex parens literal miss", scopeProject, "Bash(git *)", "Bash(git )", false},
+		{"settings regex dot-star", ScopeProject, "mcp__github__.*", "mcp__github__get_issue", true},
+		{"settings regex dot-star miss", ScopeProject, "mcp__github__.*", "mcp__fs__read", false},
+		{"settings regex unanchored", ScopeProject, "Edit.*", "NotebookEdit", true},
+		{"settings regex parens group", ScopeProject, "Bash(git *)", "Bashgit", true},
+		{"settings regex parens literal miss", ScopeProject, "Bash(git *)", "Bash(git )", false},
 
 		// Catch-alls keep their meaning in both scopes.
-		{"settings empty matcher catch-all", scopeProject, "", "Anything", true},
-		{"settings star catch-all", scopeUser, "*", "Anything", true},
+		{"settings empty matcher catch-all", ScopeProject, "", "Anything", true},
+		{"settings star catch-all", ScopeUser, "*", "Anything", true},
 
 		// Legacy plugin scope: EVERY non-empty matcher compiles as an
 		// unanchored regex — "Edit" still matches "NotebookEdit" (D-02).
-		{"plugin legacy substring match", scopePlugin, "Edit", "NotebookEdit", true},
-		{"plugin legacy exact match", scopePlugin, "Edit", "Edit", true},
-		{"plugin legacy regex", scopePlugin, "mcp__github__.*", "mcp__github__get_issue", true},
-		{"plugin legacy miss", scopePlugin, "Edit", "Write", false},
+		{"plugin legacy substring match", ScopePlugin, "Edit", "NotebookEdit", true},
+		{"plugin legacy exact match", ScopePlugin, "Edit", "Edit", true},
+		{"plugin legacy regex", ScopePlugin, "mcp__github__.*", "mcp__github__get_issue", true},
+		{"plugin legacy miss", ScopePlugin, "Edit", "Write", false},
 	}
 
 	for _, tc := range cases {

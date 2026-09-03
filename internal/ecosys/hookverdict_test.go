@@ -57,71 +57,71 @@ func TestHookVerdictParse(t *testing.T) {
 		{
 			name:       "deny decision with reason",
 			stdout:     verdictJSON("deny", "Destructive command blocked by hook"),
-			want:       verdictDeny,
+			want:       VerdictDeny,
 			wantReason: "Destructive command blocked by hook",
 		},
 		{
 			name:       "ask decision with reason",
 			stdout:     verdictJSON("ask", "operator review required"),
-			want:       verdictAsk,
+			want:       VerdictAsk,
 			wantReason: "operator review required",
 		},
 		{
 			name:       "allow decision with reason",
 			stdout:     verdictJSON("allow", "trusted command"),
-			want:       verdictAllow,
+			want:       VerdictAllow,
 			wantReason: "trusted command",
 		},
 		{
 			name:   "deny with empty reason",
 			stdout: verdictJSON("deny", ""),
-			want:   verdictDeny,
+			want:   VerdictDeny,
 		},
 		{
 			name:   "leading whitespace before JSON still parses",
 			stdout: "\n  \t" + verdictJSON("deny", "ws-gate"),
-			want:   verdictDeny, wantReason: "ws-gate",
+			want:   VerdictDeny, wantReason: "ws-gate",
 		},
 		{
 			// Pitfall 4: schema-invalid output is NEVER honored.
 			name:   "missing permissionDecision",
 			stdout: `{"hookSpecificOutput":{"hookEventName":"PreToolUse"}}`,
-			want:   verdictNone,
+			want:   VerdictNone,
 		},
 		{
 			name:   "unknown permissionDecision value",
 			stdout: verdictJSON("maybe", "x"),
-			want:   verdictNone,
+			want:   VerdictNone,
 		},
 		{
 			name:   "wrong-typed permissionDecision",
 			stdout: `{"hookSpecificOutput":{"permissionDecision":5}}`,
-			want:   verdictNone,
+			want:   VerdictNone,
 		},
 		{
 			name:   "wrong-typed reason",
 			stdout: `{"hookSpecificOutput":{"permissionDecision":"deny","permissionDecisionReason":7}}`,
-			want:   verdictNone,
+			want:   VerdictNone,
 		},
 		{
 			name:   "json without hookSpecificOutput",
 			stdout: `{"decision":"deny","reason":"nope"}`,
-			want:   verdictNone,
+			want:   VerdictNone,
 		},
 		{
 			name:   "truncated json object",
 			stdout: `{"hookSpecificOutput":`,
-			want:   verdictNone,
+			want:   VerdictNone,
 		},
 		{
 			name:   "plain-text stdout",
 			stdout: "hook ran fine, no verdict",
-			want:   verdictNone,
+			want:   VerdictNone,
 		},
 		{
 			name:   "empty stdout",
 			stdout: "",
-			want:   verdictNone,
+			want:   VerdictNone,
 		},
 		{
 			// T-21-02 / D-02: exit 2 is checked BEFORE the JSON channel and
@@ -132,31 +132,31 @@ func TestHookVerdictParse(t *testing.T) {
 			name:       "exit2-overrides-json",
 			stdout:     verdictJSON("allow", "trust me"),
 			runErr:     exitCodeErr(t, 2),
-			want:       verdictDeny,
+			want:       VerdictDeny,
 			wantReason: verdictJSON("allow", "trust me"),
 		},
 		{
 			name:   "exit2 empty stdout",
 			stdout: "",
 			runErr: exitCodeErr(t, 2),
-			want:   verdictDeny,
+			want:   VerdictDeny,
 		},
 		{
 			// PAR-03 letter: hook EXECUTION failure is fail-open — the hook
 			// contributes NO verdict.
 			name:   "exit1 non-refusal fail-open",
 			runErr: exitCodeErr(t, 1),
-			want:   verdictNone,
+			want:   VerdictNone,
 		},
 		{
 			name:   "timeout error fail-open",
 			runErr: context.DeadlineExceeded,
-			want:   verdictNone,
+			want:   VerdictNone,
 		},
 		{
 			name:   "spawn error fail-open",
 			runErr: exec.Command("definitely-not-a-real-binary-xyz").Run(),
-			want:   verdictNone,
+			want:   VerdictNone,
 		},
 	}
 
@@ -189,102 +189,102 @@ func TestHookVerdictResolve(t *testing.T) { //nolint:paralleltest // mutates the
 		{
 			name: "deny-wins over user allow",
 			results: []ScopedResult{
-				{Scope: scopeProject, Verdict: verdictDeny, Reason: "project says no"},
-				{Scope: scopeUser, Verdict: verdictAllow},
+				{Scope: ScopeProject, Verdict: VerdictDeny, Reason: "project says no"},
+				{Scope: ScopeUser, Verdict: VerdictAllow},
 			},
-			want:       verdictDeny,
+			want:       VerdictDeny,
 			wantReason: "project says no",
 		},
 		{
 			name: "first-deny-reason in scope order",
 			results: []ScopedResult{
-				{Scope: scopeProject, Verdict: verdictDeny, Reason: "first"},
-				{Scope: scopeUser, Verdict: verdictDeny, Reason: "second"},
+				{Scope: ScopeProject, Verdict: VerdictDeny, Reason: "first"},
+				{Scope: ScopeUser, Verdict: VerdictDeny, Reason: "second"},
 			},
-			want:       verdictDeny,
+			want:       VerdictDeny,
 			wantReason: "first",
 		},
 		{
 			name: "user deny carries its reason",
 			results: []ScopedResult{
-				{Scope: scopeProject, Verdict: verdictNone},
-				{Scope: scopeUser, Verdict: verdictDeny, Reason: "user blocks"},
+				{Scope: ScopeProject, Verdict: VerdictNone},
+				{Scope: ScopeUser, Verdict: VerdictDeny, Reason: "user blocks"},
 			},
-			want:       verdictDeny,
+			want:       VerdictDeny,
 			wantReason: "user blocks",
 		},
 		{
 			name: "plugin deny beats user allow",
 			results: []ScopedResult{
-				{Scope: scopeUser, Verdict: verdictAllow},
-				{Scope: scopePlugin, Verdict: verdictDeny, Reason: "plugin blocks"},
+				{Scope: ScopeUser, Verdict: VerdictAllow},
+				{Scope: ScopePlugin, Verdict: VerdictDeny, Reason: "plugin blocks"},
 			},
-			want:       verdictDeny,
+			want:       VerdictDeny,
 			wantReason: "plugin blocks",
 		},
 		{
 			name: "project-allow-demoted to no-decision",
 			results: []ScopedResult{
-				{Scope: scopeProject, Verdict: verdictAllow, Reason: "repo grants itself"},
+				{Scope: ScopeProject, Verdict: VerdictAllow, Reason: "repo grants itself"},
 			},
-			want:     verdictNone,
+			want:     VerdictNone,
 			wantWarn: 1,
 		},
 		{
 			name: "project-allow-demoted beside user allow",
 			results: []ScopedResult{
-				{Scope: scopeProject, Verdict: verdictAllow, Reason: "repo grants itself"},
-				{Scope: scopeUser, Verdict: verdictAllow, Reason: "operator grants"},
+				{Scope: ScopeProject, Verdict: VerdictAllow, Reason: "repo grants itself"},
+				{Scope: ScopeUser, Verdict: VerdictAllow, Reason: "operator grants"},
 			},
-			want:       verdictAllow,
+			want:       VerdictAllow,
 			wantReason: "operator grants",
 			wantWarn:   1,
 		},
 		{
 			name: "plugin-allow-demoted to no-decision",
 			results: []ScopedResult{
-				{Scope: scopePlugin, Verdict: verdictAllow},
+				{Scope: ScopePlugin, Verdict: VerdictAllow},
 			},
-			want:     verdictNone,
+			want:     VerdictNone,
 			wantWarn: 1,
 		},
 		{
 			name: "ask-survives user allow",
 			results: []ScopedResult{
-				{Scope: scopeProject, Verdict: verdictAsk, Reason: "check this"},
-				{Scope: scopeUser, Verdict: verdictAllow},
+				{Scope: ScopeProject, Verdict: VerdictAsk, Reason: "check this"},
+				{Scope: ScopeUser, Verdict: VerdictAllow},
 			},
-			want:       verdictAsk,
+			want:       VerdictAsk,
 			wantReason: "check this",
 		},
 		{
 			name: "ask suppressed by deny",
 			results: []ScopedResult{
-				{Scope: scopeProject, Verdict: verdictAsk, Reason: "check this"},
-				{Scope: scopeUser, Verdict: verdictDeny, Reason: "no"},
+				{Scope: ScopeProject, Verdict: VerdictAsk, Reason: "check this"},
+				{Scope: ScopeUser, Verdict: VerdictDeny, Reason: "no"},
 			},
-			want:       verdictDeny,
+			want:       VerdictDeny,
 			wantReason: "no",
 		},
 		{
 			name: "silent-is-nothing",
 			results: []ScopedResult{
-				{Scope: scopeProject, Verdict: verdictNone},
-				{Scope: scopeUser, Verdict: verdictNone},
-				{Scope: scopePlugin, Verdict: verdictNone},
+				{Scope: ScopeProject, Verdict: VerdictNone},
+				{Scope: ScopeUser, Verdict: VerdictNone},
+				{Scope: ScopePlugin, Verdict: VerdictNone},
 			},
-			want: verdictNone,
+			want: VerdictNone,
 		},
 		{
 			name: "empty input is no-decision",
-			want: verdictNone,
+			want: VerdictNone,
 		},
 		{
 			name: "user allow alone applies",
 			results: []ScopedResult{
-				{Scope: scopeUser, Verdict: verdictAllow, Reason: "granted"},
+				{Scope: ScopeUser, Verdict: VerdictAllow, Reason: "granted"},
 			},
-			want:       verdictAllow,
+			want:       VerdictAllow,
 			wantReason: "granted",
 		},
 	}

@@ -43,7 +43,7 @@ type HookConfig struct {
 	PluginRoot string
 
 	// Scope tags where the hook was discovered (21-01 PAR-03/D-03). The zero
-	// value is scopePlugin so every pre-21-01 construction is unchanged.
+	// value is ScopePlugin so every pre-21-01 construction is unchanged.
 	Scope HookScope
 }
 
@@ -54,10 +54,14 @@ type HookConfig struct {
 // an implementation detail, NOT the firing order.
 type HookScope int
 
+// The scope constants are exported at the 21-06 gate join: D-01's
+// scope-split authority (only USER scope may allow) is a property of the
+// verdict the gate consumes, so joined-level tests and consumers construct
+// scoped hooks by name.
 const (
-	scopePlugin  HookScope = iota // plugin-bundled hooks/hooks.json (zero value)
-	scopeProject                  // project .claude/settings.json (repo-shipped)
-	scopeUser                     // user ~/.claude/settings.json (operator-owned)
+	ScopePlugin  HookScope = iota // plugin-bundled hooks/hooks.json (zero value)
+	ScopeProject                  // project .claude/settings.json (repo-shipped)
+	ScopeUser                     // user ~/.claude/settings.json (operator-owned)
 )
 
 // HookOutcome is one Fire result: Proceed=false ONLY for an exit-2 PreToolUse
@@ -158,11 +162,11 @@ const scopeRankPlugin = 2
 // ResolveVerdict, never this rank.
 func scopeRank(s HookScope) int {
 	switch s {
-	case scopeProject:
+	case ScopeProject:
 		return 0
-	case scopeUser:
+	case ScopeUser:
 		return 1
-	case scopePlugin:
+	case ScopePlugin:
 		return scopeRankPlugin
 	default:
 		return scopeRankPlugin
@@ -171,9 +175,9 @@ func scopeRank(s HookScope) int {
 
 // parseHooksJSON reads one hooks/hooks.json (the live-measured shape: a
 // top-level object with a `hooks` map keyed by event name → matcher groups →
-// command entries) into HookConfigs tagged scopePlugin.
+// command entries) into HookConfigs tagged ScopePlugin.
 func parseHooksJSON(path, pluginRoot string) []HookConfig {
-	return parseHooksFile(path, pluginRoot, scopePlugin)
+	return parseHooksFile(path, pluginRoot, ScopePlugin)
 }
 
 // parseHooksFile is the shared hooks-file reader for plugin bundles
@@ -300,7 +304,7 @@ func (r *HookRunner) PreToolUseVerdict(
 	ctx context.Context, toolName string, input json.RawMessage,
 ) (verdict Verdict, reason string) { //nolint:nonamedreturns // the D-02 verdict pair
 	if r == nil {
-		return verdictNone, ""
+		return VerdictNone, ""
 	}
 
 	matches := r.matchingHooks(hookEventPreToolUse, toolName)
@@ -336,7 +340,7 @@ func (r *HookRunner) PreToolUseVerdict(
 func (r *HookRunner) PreToolUse(
 	ctx context.Context, toolName string, input json.RawMessage,
 ) (proceed bool, message string) { //nolint:nonamedreturns // implements the coreexec.ToolHooks pair
-	if v, reason := r.PreToolUseVerdict(ctx, toolName, input); v == verdictDeny {
+	if v, reason := r.PreToolUseVerdict(ctx, toolName, input); v == VerdictDeny {
 		return false, reason
 	}
 
@@ -405,7 +409,7 @@ func (r *HookRunner) matchingHooks(event, toolName string) []HookConfig {
 // isSettingsScope reports whether the scope uses CC's settings matcher
 // dialect (the two settings.json scopes; plugin bundles stay legacy).
 func isSettingsScope(s HookScope) bool {
-	return s == scopeProject || s == scopeUser
+	return s == ScopeProject || s == ScopeUser
 }
 
 // matchSettingsHook implements CC's two-path matcher dialect for

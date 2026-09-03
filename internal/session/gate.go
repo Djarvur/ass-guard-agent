@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/internal/perm"
 )
 
@@ -108,6 +109,16 @@ type pendingPermission struct {
 // internal/runtime; the session stays free of internal/acp imports — the
 // fire callback is injected from the acpserve surface via the runner).
 type GateDeps struct {
+	// PreToolUseVerdict resolves the combined PreToolUse hook verdict for
+	// one call (21-01's ecosys seam — the deny-wins resolver over the D-03
+	// scope order). It is the HEAD of this pipeline (D-04: hooks are checked
+	// BEFORE permission rules): deny → gateDeny with the first denying
+	// hook's reason; ask → gateSuspend EVEN UNGATED (the operator's
+	// escalation lever, riding the existing queued permission ask); allow →
+	// gateExecute (USER scope only — the resolver demoted every non-user
+	// allow, D-01); no-decision → fall through to the rules. nil = no hook
+	// surface (the pre-join implicit allow).
+	PreToolUseVerdict func(ctx context.Context, tool string, input json.RawMessage) (ecosys.Verdict, string)
 	// Rules provides the live rule-set snapshot consulted per call (17-01's
 	// perm.Store.Rules). nil = an empty rule set (nothing matches).
 	Rules func() perm.RuleSet

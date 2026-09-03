@@ -39,15 +39,19 @@ import (
 // Verdict is the four-valued per-hook outcome (D-02/Pitfall 4): deny / ask /
 // allow from an explicit permissionDecision (or the exit-2 legacy deny), and
 // NO-DECISION for everything else. Silence NEVER approves: exit-0 without
-// valid decision JSON and schema-invalid JSON both yield verdictNone
+// valid decision JSON and schema-invalid JSON both yield VerdictNone
 // (fail-open — the call proceeds through the normal flow).
 type Verdict int
 
+// The verdict constants are exported by necessity at the 21-06 gate join:
+// the session gate head (internal/session/gate.go) maps this four-valued
+// enum onto the 17 gateVerdict actions, so the enum is a consumed contract,
+// not a package-internal detail.
 const (
-	verdictNone  Verdict = iota // no decision — silence, schema-invalid, or execution failure
-	verdictDeny                 // explicit deny (JSON permissionDecision "deny" or legacy exit 2)
-	verdictAsk                  // explicit ask — the operator escalation lever (D-04)
-	verdictAllow                // explicit allow — honored from USER scope only (D-01)
+	VerdictNone  Verdict = iota // no decision — silence, schema-invalid, or execution failure
+	VerdictDeny                 // explicit deny (JSON permissionDecision "deny" or legacy exit 2)
+	VerdictAsk                  // explicit ask — the operator escalation lever (D-04)
+	VerdictAllow                // explicit allow — honored from USER scope only (D-01)
 )
 
 // ScopedResult is one hook's parsed verdict paired with its discovery scope.
@@ -69,7 +73,7 @@ const (
 // parseHookVerdict classifies ONE hook execution into a Verdict. The exit-2
 // check comes FIRST and overrides everything (D-02/T-21-02: a refusal code
 // blocks even when stdout carries a valid JSON allow); any other execution
-// failure is fail-open (verdictNone, PAR-03 letter); a clean run takes the
+// failure is fail-open (VerdictNone, PAR-03 letter); a clean run takes the
 // JSON channel, which admits a verdict ONLY from a stdout whose first
 // non-whitespace character is `{` and whose hookSpecificOutput body is
 // schema-valid (permissionDecision allow/deny/ask + string reason). The
@@ -80,15 +84,15 @@ func parseHookVerdict(stdout string, runErr error) (verdict Verdict, reason stri
 	if runErr != nil {
 		var exitErr *exec.ExitError
 		if errors.As(runErr, &exitErr) && exitErr.ExitCode() == hookRefusalExitCode {
-			return verdictDeny, capHookOutput(stdout)
+			return VerdictDeny, capHookOutput(stdout)
 		}
 
-		return verdictNone, ""
+		return VerdictNone, ""
 	}
 
 	body := strings.TrimLeft(stdout, " \t\r\n")
 	if !strings.HasPrefix(body, "{") {
-		return verdictNone, "" // non-JSON stdout — no decision
+		return VerdictNone, "" // non-JSON stdout — no decision
 	}
 
 	var raw struct {
@@ -101,18 +105,18 @@ func parseHookVerdict(stdout string, runErr error) (verdict Verdict, reason stri
 	// Schema-invalid JSON (truncated body, wrong-typed fields) unmarshals to
 	// an error → no decision — never honored (Pitfall 4).
 	if json.Unmarshal([]byte(body), &raw) != nil {
-		return verdictNone, ""
+		return VerdictNone, ""
 	}
 
 	switch raw.HookSpecificOutput.PermissionDecision {
 	case decisionDeny:
-		return verdictDeny, raw.HookSpecificOutput.PermissionDecisionReason
+		return VerdictDeny, raw.HookSpecificOutput.PermissionDecisionReason
 	case decisionAsk:
-		return verdictAsk, raw.HookSpecificOutput.PermissionDecisionReason
+		return VerdictAsk, raw.HookSpecificOutput.PermissionDecisionReason
 	case decisionAllow:
-		return verdictAllow, raw.HookSpecificOutput.PermissionDecisionReason
+		return VerdictAllow, raw.HookSpecificOutput.PermissionDecisionReason
 	default:
-		return verdictNone, "" // missing or unknown decision value
+		return VerdictNone, "" // missing or unknown decision value
 	}
 }
 
@@ -129,7 +133,7 @@ func parseHookVerdict(stdout string, runErr error) (verdict Verdict, reason stri
 //     package warning sink per demoted result — repo-shipped files can never
 //     widen trust (D-01/T-21-01).
 //   - ask survives unless a deny exists (D-04).
-//   - All no-decision (or empty input) → verdictNone.
+//   - All no-decision (or empty input) → VerdictNone.
 func ResolveVerdict(results []ScopedResult) (verdict Verdict, reason string) { //nolint:nonamedreturns // D-01..D-04
 	var (
 		firstDeny *ScopedResult
@@ -141,16 +145,16 @@ func ResolveVerdict(results []ScopedResult) (verdict Verdict, reason string) { /
 		res := &results[i]
 
 		switch res.Verdict {
-		case verdictDeny:
+		case VerdictDeny:
 			if firstDeny == nil {
 				firstDeny = res
 			}
-		case verdictAsk:
+		case VerdictAsk:
 			if firstAsk == nil {
 				firstAsk = res
 			}
-		case verdictAllow:
-			if res.Scope == scopeUser {
+		case VerdictAllow:
+			if res.Scope == ScopeUser {
 				if userAllow == nil {
 					userAllow = res
 				}
@@ -162,31 +166,31 @@ func ResolveVerdict(results []ScopedResult) (verdict Verdict, reason string) { /
 			// warning per demoted result — never silent, never a decision.
 			logPluginSkipf("ignored allow from %s-scope hook (D-01: deny-only authority): %q",
 				scopeName(res.Scope), res.Reason)
-		case verdictNone:
+		case VerdictNone:
 			// Contributes nothing.
 		}
 	}
 
 	switch {
 	case firstDeny != nil:
-		return verdictDeny, firstDeny.Reason
+		return VerdictDeny, firstDeny.Reason
 	case firstAsk != nil:
-		return verdictAsk, firstAsk.Reason
+		return VerdictAsk, firstAsk.Reason
 	case userAllow != nil:
-		return verdictAllow, userAllow.Reason
+		return VerdictAllow, userAllow.Reason
 	default:
-		return verdictNone, ""
+		return VerdictNone, ""
 	}
 }
 
 // scopeName renders a scope for warnings (the loud-demotion wording).
 func scopeName(s HookScope) string {
 	switch s {
-	case scopeProject:
+	case ScopeProject:
 		return "project"
-	case scopeUser:
+	case ScopeUser:
 		return "user"
-	case scopePlugin:
+	case ScopePlugin:
 		return "plugin"
 	default:
 		return "plugin"

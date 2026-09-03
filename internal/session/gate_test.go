@@ -170,15 +170,30 @@ func newGateSession(
 ) *Session {
 	t.Helper()
 
+	return newHookGateSession(t, responses, mode, store, surf, nil)
+}
+
+// newHookGateSession is newGateSession plus the 21-06 hook-verdict head
+// wiring: the injected PreToolUseVerdict (a scripted verdict fake or a REAL
+// script-hook ecosys.HookRunner) joins the gate deps exactly as the runtime
+// composition does — nil keeps the hookless pre-join gate.
+func newHookGateSession(
+	t *testing.T, responses []provider.Response, mode string,
+	store *fakePermStore, surf *fakeGateSurface,
+	verdict func(ctx context.Context, tool string, input json.RawMessage) (ecosys.Verdict, string),
+) *Session {
+	t.Helper()
+
 	s := newTestSessionWithCatalog(t, responses)
 
 	s.SetPermissionGate(GateDeps{
-		Rules:  store.Rules,
-		Mode:   func() string { return mode },
-		Allow:  store.Allow,
-		Forbid: store.Forbid,
-		Fire:   surf.Fire,
-		Queue:  NewAskQueue(),
+		PreToolUseVerdict: verdict,
+		Rules:             store.Rules,
+		Mode:              func() string { return mode },
+		Allow:             store.Allow,
+		Forbid:            store.Forbid,
+		Fire:              surf.Fire,
+		Queue:             NewAskQueue(),
 	})
 
 	s.Catalog.Register(toolcat.Tool{
@@ -1670,4 +1685,436 @@ func newGateSessionFunc(
 	s.SetToolExecutor(&toolexec.RealExecutor{Catalog: s.Catalog})
 
 	return s
+}
+
+// ── 21-06 Task 1: the hook-verdict head battery (PAR-03, D-01/D-03/D-04) ──
+//
+// The joined head, end-to-end: REAL script hooks (printf'd
+// hookSpecificOutput JSON through the real ecosys runner + deny-wins
+// resolver) and scripted verdict fakes drive the gate — deny blocks at the
+// chokepoint with the FIRST denying hook's reason in BOTH dispatch branches,
+// ask opens the dialog EVEN UNGATED (D-04), a user-scope allow executes
+// without consulting rules or opening a dialog, and no-decision falls
+// through to the untouched 17-02 tree below the head.
+
+// hookVerdictJSON renders one CC hookSpecificOutput verdict stdout body
+// (decision + reason; the battery's reasons carry no characters a JSON
+// string would escape).
+func hookVerdictJSON(decision, reason string) string {
+	return `{"hookSpecificOutput":{"permissionDecision":"` + decision +
+		`","permissionDecisionReason":"` + reason + `"}}`
+}
+
+// hookPrintfCmd wraps a stdout body in a printf script (single-quoted — the
+// battery's bodies carry no single quotes).
+func hookPrintfCmd(body string) string {
+	return "printf '%s' '" + body + "'"
+}
+
+// hookDeny/hookAsk/hookAllow build one PreToolUse HookConfig emitting the
+// given verdict JSON at the given discovery scope.
+func hookDeny(matcher, reason string, scope ecosys.HookScope) ecosys.HookConfig {
+	return ecosys.HookConfig{
+		Event: "PreToolUse", Matcher: matcher, Scope: scope,
+		Command: hookPrintfCmd(hookVerdictJSON("deny", reason)),
+	}
+}
+
+func hookAllow(matcher, reason string, scope ecosys.HookScope) ecosys.HookConfig {
+	return ecosys.HookConfig{
+		Event: "PreToolUse", Matcher: matcher, Scope: scope,
+		Command: hookPrintfCmd(hookVerdictJSON("allow", reason)),
+	}
+}
+
+// TestGateHookVerdict is the 21-06 join battery: settings.json hook
+// verdicts consume at Phase 17's single gateCall head.
+func TestGateHookVerdict(t *testing.T) { //nolint:funlen,cyclop,gocyclo,gocognit,maintidx // the joined-head matrix
+	t.Parallel()
+
+	t.Run("script deny blocks end-to-end (batch branch)", func(t *testing.T) {
+		t.Parallel()
+
+		store := &fakePermStore{}
+		surf := &fakeGateSurface{}
+
+		runner := ecosys.NewHookRunner([]ecosys.HookConfig{
+			hookDeny(gateToolWrite, "no writes today", ecosys.ScopeProject),
+		}, "sess-hook-deny", t.TempDir(), "")
+
+		s := newHookGateSession(t, []provider.Response{
+			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+				{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+			{FinishReason: stopEndTurn},
+		}, PermModeUngated, store, surf, runner.PreToolUseVerdict)
+
+		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+		if err != nil {
+			t.Fatalf("Prompt: %v", err)
+		}
+
+		if stop != stopEndTurn {
+			t.Fatalf("stop = %q; want end_turn (a hook deny appends the denial, the turn continues)", stop)
+		}
+
+		if order := store.snapshotOrder(); len(order) != 0 {
+			t.Errorf("hook-denied call executed: %v", order)
+		}
+
+		if surf.fired() != 0 {
+			t.Errorf("surface fired %d times; want 0 (a deny never opens a dialog)", surf.fired())
+		}
+
+		results := toolResultsFor(t, s, gateCall1)
+		if len(results) != 1 || !results[0].IsError {
+			t.Fatalf("hook-deny result = %+v; want exactly one error result (the transcript denial line)", results)
+		}
+
+		if !strings.Contains(string(results[0].Output), "Permission denied") ||
+			!strings.Contains(string(results[0].Output), "no writes today") {
+			t.Errorf("hook-deny form = %s; want the structured denial carrying the hook's reason", results[0].Output)
+		}
+	})
+
+	t.Run("script deny blocks end-to-end (subagent branch)", func(t *testing.T) {
+		t.Parallel()
+
+		store := &fakePermStore{}
+		surf := &fakeGateSurface{}
+
+		runner := ecosys.NewHookRunner([]ecosys.HookConfig{
+			hookDeny(gateToolTask, "no subagents today", ecosys.ScopeProject),
+		}, "sess-hook-deny-sub", t.TempDir(), "")
+
+		s := newHookGateSession(t, []provider.Response{
+			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+				{ID: gateCall1, Name: gateToolTask, Input: json.RawMessage(`{"prompt":"explore"}`)}}},
+			{FinishReason: stopEndTurn},
+		}, PermModeUngated, store, surf, runner.PreToolUseVerdict)
+
+		s.Catalog.Register(toolcat.Tool{
+			Name:        gateToolTask,
+			Mutability:  toolcat.MutabilityMutating,
+			InputSchema: json.RawMessage(`{"type":"object"}`),
+		})
+
+		sub := &countingSubagentRunner{}
+		s.subagentRunner = sub
+
+		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+		if err != nil {
+			t.Fatalf("Prompt: %v", err)
+		}
+
+		if stop != stopEndTurn {
+			t.Fatalf("stop = %q; want end_turn", stop)
+		}
+
+		if sub.dispatched() != 0 {
+			t.Errorf("subagent dispatched %d times; want 0 (the hook deny sits BEFORE DispatchSubagent)", sub.dispatched())
+		}
+
+		if order := store.snapshotOrder(); len(order) != 0 {
+			t.Errorf("hook-denied subagent call executed: %v", order)
+		}
+
+		results := toolResultsFor(t, s, gateCall1)
+		if len(results) != 1 || !results[0].IsError ||
+			!strings.Contains(string(results[0].Output), "no subagents today") {
+			t.Fatalf("subagent-branch hook-deny result = %+v; want the structured denial with the reason", results)
+		}
+	})
+
+	t.Run("the FIRST denying hook's reason wins (D-03)", func(t *testing.T) {
+		t.Parallel()
+
+		store := &fakePermStore{}
+		surf := &fakeGateSurface{}
+
+		runner := ecosys.NewHookRunner([]ecosys.HookConfig{
+			hookDeny("", "first-deny-reason-marker", ecosys.ScopeProject),
+			hookDeny("", "second-deny-reason-marker", ecosys.ScopeProject),
+		}, "sess-hook-deny-order", t.TempDir(), "")
+
+		s := newHookGateSession(t, []provider.Response{
+			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+				{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+			{FinishReason: stopEndTurn},
+		}, PermModeUngated, store, surf, runner.PreToolUseVerdict)
+
+		_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+		if err != nil {
+			t.Fatalf("Prompt: %v", err)
+		}
+
+		results := toolResultsFor(t, s, gateCall1)
+		if len(results) != 1 || !results[0].IsError {
+			t.Fatalf("deny-order result = %+v; want one error result", results)
+		}
+
+		if !strings.Contains(string(results[0].Output), "first-deny-reason-marker") {
+			t.Errorf("deny reason = %s; want the FIRST denying hook's reason", results[0].Output)
+		}
+
+		if strings.Contains(string(results[0].Output), "second-deny-reason-marker") {
+			t.Errorf("deny reason = %s; must not carry the second denying hook's reason", results[0].Output)
+		}
+	})
+
+	t.Run("hook ask in ungated mode opens the dialog (D-04)", func(t *testing.T) {
+		t.Parallel()
+
+		block := make(chan struct{})
+
+		store := &fakePermStore{}
+		surf := &fakeGateSurface{
+			answers: []AskOutcome{{Selected: acp.PermOptionAllowOnce}},
+			block:   block,
+		}
+
+		askVerdict := func(context.Context, string, json.RawMessage) (ecosys.Verdict, string) {
+			return ecosys.VerdictAsk, "operator review required"
+		}
+
+		s := newHookGateSession(t, []provider.Response{
+			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+				{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+			{FinishReason: stopEndTurn},
+		}, PermModeUngated, store, surf, askVerdict)
+
+		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+		if err != nil {
+			t.Fatalf("Prompt: %v", err)
+		}
+
+		if stop != stopAsk {
+			t.Fatalf("stop = %q; want the ask marker (a hook ask suspends EVEN UNGATED — D-04)", stop)
+		}
+
+		gateWaitFor(t, func() bool { return surf.fired() == 1 })
+
+		if order := store.snapshotOrder(); len(order) != 0 {
+			t.Fatalf("executor ran while the hook-asked dialog was open: %v", order)
+		}
+
+		close(block) // the operator answers allow_once
+
+		gateWaitFor(t, func() bool { return len(store.snapshotOrder()) == 1 })
+
+		if order := store.snapshotOrder(); order[0] != "exec:"+gateToolWrite {
+			t.Errorf("allow_once on the hook ask = %v; want exactly the exec (no rule write)", order)
+		}
+
+		results := toolResultsFor(t, s, gateCall1)
+		if len(results) != 1 || results[0].IsError {
+			t.Errorf("hook-ask allow_once result = %+v; want one non-error result", results)
+		}
+	})
+
+	t.Run("hook ask answered reject_once denies without a rule write", func(t *testing.T) {
+		t.Parallel()
+
+		block := make(chan struct{})
+
+		store := &fakePermStore{}
+		surf := &fakeGateSurface{
+			answers: []AskOutcome{{Selected: acp.PermOptionRejectOnce}},
+			block:   block,
+		}
+
+		askVerdict := func(context.Context, string, json.RawMessage) (ecosys.Verdict, string) {
+			return ecosys.VerdictAsk, "operator review required"
+		}
+
+		s := newHookGateSession(t, []provider.Response{
+			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+				{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+			{FinishReason: stopEndTurn},
+		}, PermModeUngated, store, surf, askVerdict)
+
+		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+		if err != nil {
+			t.Fatalf("Prompt: %v", err)
+		}
+
+		if stop != stopAsk {
+			t.Fatalf("stop = %q; want the ask marker", stop)
+		}
+
+		gateWaitFor(t, func() bool { return surf.fired() == 1 })
+
+		close(block) // the operator answers reject_once
+
+		gateWaitFor(t, func() bool { return len(toolResultsFor(t, s, gateCall1)) == 1 })
+
+		results := toolResultsFor(t, s, gateCall1)
+		if len(results) != 1 || !results[0].IsError {
+			t.Fatalf("reject_once result = %+v; want one error result (the denial)", results)
+		}
+
+		if order := store.snapshotOrder(); len(order) != 0 {
+			t.Errorf("reject_once order = %v; want zero activity (no exec, no rule write)", order)
+		}
+	})
+
+	t.Run("hookless ungated control stays dialog-free (criterion 4 coexists)", func(t *testing.T) {
+		t.Parallel()
+
+		store := &fakePermStore{}
+		surf := &fakeGateSurface{}
+
+		// No verdict wired: the pre-join hookless gate — the join added ZERO
+		// dialogs to hookless sessions (17's criterion 4 inside the join
+		// battery).
+		s := newHookGateSession(t, []provider.Response{
+			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+				{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+			{FinishReason: stopEndTurn},
+		}, PermModeUngated, store, surf, nil)
+
+		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+		if err != nil {
+			t.Fatalf("Prompt: %v", err)
+		}
+
+		if stop != stopEndTurn {
+			t.Fatalf("stop = %q; want end_turn", stop)
+		}
+
+		if surf.fired() != 0 {
+			t.Errorf("surface fired %d times; want 0 (hookless ungated never opens a dialog)", surf.fired())
+		}
+
+		if order := store.snapshotOrder(); len(order) != 1 || order[0] != "exec:"+gateToolWrite {
+			t.Errorf("order = %v; want exactly one exec", order)
+		}
+	})
+
+	t.Run("user-scope allow executes without rules or dialog (D-01)", func(t *testing.T) {
+		t.Parallel()
+
+		store := &fakePermStore{}
+		surf := &fakeGateSurface{}
+
+		runner := ecosys.NewHookRunner([]ecosys.HookConfig{
+			hookAllow(gateToolWrite, "trusted operator flow", ecosys.ScopeUser),
+		}, "sess-hook-allow", t.TempDir(), "")
+
+		// GATED mode + ask-class tool + no rules: without the hook this call
+		// suspends — the user allow is the ONLY thing that can skip the ask.
+		s := newHookGateSession(t, []provider.Response{
+			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+				{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+			{FinishReason: stopEndTurn},
+		}, PermModeGated, store, surf, runner.PreToolUseVerdict)
+
+		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+		if err != nil {
+			t.Fatalf("Prompt: %v", err)
+		}
+
+		if stop != stopEndTurn {
+			t.Fatalf("stop = %q; want end_turn (the user-scope allow executes, no suspension)", stop)
+		}
+
+		if surf.fired() != 0 {
+			t.Errorf("surface fired %d times; want 0 (the allow consulted no dialog)", surf.fired())
+		}
+
+		if order := store.snapshotOrder(); len(order) != 1 || order[0] != "exec:"+gateToolWrite {
+			t.Errorf("user-allow order = %v; want exactly one exec, NO rule write (the allow is hook-scoped)", order)
+		}
+	})
+
+	t.Run("the same call without the hook asks (the allow was hook-scoped)", func(t *testing.T) {
+		t.Parallel()
+
+		store := &fakePermStore{}
+		surf := &fakeGateSurface{}
+
+		s := newHookGateSession(t, []provider.Response{
+			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+				{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+			{FinishReason: stopEndTurn},
+		}, PermModeGated, store, surf, nil)
+
+		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+		if err != nil {
+			t.Fatalf("Prompt: %v", err)
+		}
+
+		if stop != stopAsk {
+			t.Fatalf("stop = %q; want the ask marker (the hook's allow never persisted — rules/mode apply again)", stop)
+		}
+
+		gateWaitFor(t, func() bool { return surf.fired() == 1 })
+	})
+
+	t.Run("silent hook falls through to the rules (no decision)", func(t *testing.T) {
+		t.Parallel()
+
+		store := &fakePermStore{}
+		surf := &fakeGateSurface{}
+
+		runner := ecosys.NewHookRunner([]ecosys.HookConfig{
+			{Event: "PreToolUse", Matcher: gateToolWrite, Command: "exit 0", Scope: ecosys.ScopeProject},
+		}, "sess-hook-silent", t.TempDir(), "")
+
+		s := newHookGateSession(t, []provider.Response{
+			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+				{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+			{FinishReason: stopEndTurn},
+		}, PermModeUngated, store, surf, runner.PreToolUseVerdict)
+
+		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+		if err != nil {
+			t.Fatalf("Prompt: %v", err)
+		}
+
+		if stop != stopEndTurn {
+			t.Fatalf("stop = %q; want end_turn", stop)
+		}
+
+		if order := store.snapshotOrder(); len(order) != 1 || order[0] != "exec:"+gateToolWrite {
+			t.Errorf("silent-hook order = %v; want the pre-join ungated fall-through (one exec)", order)
+		}
+
+		if surf.fired() != 0 {
+			t.Errorf("surface fired %d times; want 0", surf.fired())
+		}
+	})
+
+	t.Run("timed-out hook falls through to the rules (fail-open, PAR-03)", func(t *testing.T) {
+		t.Parallel()
+
+		store := &fakePermStore{}
+		surf := &fakeGateSurface{}
+
+		runner := ecosys.NewHookRunner([]ecosys.HookConfig{
+			{Event: "PreToolUse", Matcher: gateToolWrite, Command: "sleep 5", TimeoutSec: 1, Scope: ecosys.ScopeUser},
+		}, "sess-hook-timeout", t.TempDir(), "")
+
+		s := newHookGateSession(t, []provider.Response{
+			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
+				{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
+			{FinishReason: stopEndTurn},
+		}, PermModeUngated, store, surf, runner.PreToolUseVerdict)
+
+		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
+		if err != nil {
+			t.Fatalf("Prompt: %v", err)
+		}
+
+		if stop != stopEndTurn {
+			t.Fatalf("stop = %q; want end_turn", stop)
+		}
+
+		if order := store.snapshotOrder(); len(order) != 1 || order[0] != "exec:"+gateToolWrite {
+			t.Errorf("timed-out-hook order = %v; want the fail-open fall-through (one exec)", order)
+		}
+
+		if surf.fired() != 0 {
+			t.Errorf("surface fired %d times; want 0", surf.fired())
+		}
+	})
 }
