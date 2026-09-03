@@ -348,6 +348,329 @@ func assertPromptNotAccepted(t *testing.T, h *pipeHarness, reqID int, sessionID 
 	}
 }
 
+// --- 18-04: session/list round-trip + capability advertisement battery ---
+
+// Repeated 18-04 wire literals (goconst — the sibling tests' vocabulary).
+const (
+	methodSessionList = "session/list"
+	keyCursor         = "cursor"
+	keyNextCursor     = "nextCursor"
+	keySessions       = "sessions"
+	keySessionCaps    = "sessionCapabilities"
+	keyUpdatedAt      = "updatedAt"
+	keyTitle          = "title"
+	keyStopReason     = "stopReason"
+	resumeMethod      = "session/resume"
+
+	// listLiveSessions exceeds the engine's default page (50) so the RPC
+	// round-trip drives a REAL page boundary: page one holds 50 rows, page
+	// two the remaining 2.
+	listLiveSessions = 52
+	listPageSize     = 50
+	listTombIndex    = 999
+)
+
+// listBaseTime pins fixture transcript mtimes — the 18-03 engine's
+// lastActivity source — so engine order is deterministic (desc mtime).
+var listBaseTime = time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+
+// listFixtureID mints a sessIDPattern-valid UUID-form id whose fixed-width
+// hex tail orders with i.
+func listFixtureID(i int) string {
+	return fmt.Sprintf("%08x-1111-4222-8333-%012x", i, i)
+}
+
+// writeListSession writes one conforming transcript (opener + optional first
+// user prompt — empty prompt leaves the engine's fallback title) with a
+// pinned mtime, returning the transcript path.
+func writeListSession(t *testing.T, storeDir, sessionID, prompt string, mtime time.Time) string {
+	t.Helper()
+
+	lines := []string{
+		`{"type":"session_start","timestamp":"` + fixtureTimestamp + `","text":"` + sessionID + `"}`,
+	}
+
+	if prompt != "" {
+		lines = append(lines, `{"type":"user_message","turnID":"`+sessionID+`-turn-001","timestamp":"`+
+			fixtureTimestamp+`","content":[{"type":"text","text":"`+prompt+`"}]}`)
+	}
+
+	writeLoadFixture(t, storeDir, sessionID, lines)
+
+	path := filepath.Join(storeDir, ".ass-guard", "transcript_"+sessionID+".jsonl")
+
+	err := os.Chtimes(path, mtime, mtime)
+	if err != nil {
+		t.Fatalf("chtimes transcript %s: %v", sessionID, err)
+	}
+
+	return path
+}
+
+// listRow is the test-side view of one v1 SessionInfo row.
+type listRow struct {
+	SessionID string  `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+	Cwd       string  `json:"cwd"`
+	Title     *string `json:"title"`
+	UpdatedAt *string `json:"updatedAt"` //nolint:tagliatelle // ACP wire field
+}
+
+// listResult is the test-side view of ListSessionsResponse.
+type listResult struct {
+	NextCursor *string   `json:"nextCursor"` //nolint:tagliatelle // ACP wire field
+	Sessions   []listRow `json:"sessions"`
+}
+
+// sendList sends one session/list request; cursor nil is the first page.
+func sendList(t *testing.T, h *pipeHarness, reqID int, cursor *string) {
+	t.Helper()
+
+	h.send(t, newRequest(reqID, methodSessionList, map[string]any{
+		keyCursor: cursor, keyCwd: testCwdTmp,
+	}))
+}
+
+// decodeListResponse reads and decodes the session/list response for wantID.
+func decodeListResponse(t *testing.T, msg *Message, wantID int) listResult {
+	t.Helper()
+
+	if msg.ID == nil || string(msg.ID) != strconv.Itoa(wantID) {
+		t.Fatalf("list response id = %v; want %d", msg.ID, wantID)
+	}
+
+	if msg.Error != nil {
+		t.Fatalf("session/list errored: %+v", msg.Error)
+	}
+
+	var res listResult
+
+	if uerr := json.Unmarshal(msg.Result, &res); uerr != nil {
+		t.Fatalf("unmarshal list result: %v (raw=%s)", uerr, string(msg.Result))
+	}
+
+	return res
+}
+
+// TestHandleSessionListRoundTrip drives session/list over a store of 52 live
+// sessions plus one tombstoned: page one (null cursor) returns 50 rows in
+// engine order (lastActivity desc) with the workDir as cwd, RFC3339
+// updatedAt, title only where the header carries a real first prompt (the
+// fallback stays server-side so the client renders its own placeholder), and
+// NO tombstoned row; the page-one cursor drives page two without re-emission
+// and exhausts with a null nextCursor.
+//
+//nolint:funlen // one ordered wire-flow assertion end-to-end
+func TestHandleSessionListRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	store := t.TempDir()
+
+	for i := range listLiveSessions {
+		prompt := "prompt " + strconv.Itoa(i)
+
+		if i == 1 {
+			prompt = "" // no user_message: title stays null (fallback is server-side)
+		}
+
+		writeListSession(t, store, listFixtureID(i), prompt, listBaseTime.Add(-time.Duration(i)*time.Minute))
+	}
+
+	// The tombstoned session: NEWEST mtime of all — it must never appear on
+	// any page (the 18-03 stat filter made visible through the RPC).
+	tombID := listFixtureID(listTombIndex)
+
+	writeListSession(t, store, tombID, "delete me", listBaseTime)
+
+	err := os.WriteFile(filepath.Join(store, ".ass-guard", tombID+".deleted"), nil, 0o600)
+	if err != nil {
+		t.Fatalf("write tombstone: %v", err)
+	}
+
+	h := newPipeHarness(t, WithWorkDir(store))
+
+	// Page one: null cursor, 50 of the 52 live rows in engine order.
+	sendList(t, h, 1, nil)
+
+	page1 := decodeListResponse(t, h.readFrame(t), 1)
+
+	if len(page1.Sessions) != listPageSize {
+		t.Fatalf("page one rows = %d; want %d (default page)", len(page1.Sessions), listPageSize)
+	}
+
+	if page1.NextCursor == nil || *page1.NextCursor == "" {
+		t.Fatalf("page one nextCursor = %v; want a continuation cursor", page1.NextCursor)
+	}
+
+	row0 := page1.Sessions[0]
+
+	if row0.SessionID != listFixtureID(0) {
+		t.Errorf("first row sessionId = %s; want %s (engine order: lastActivity desc)", row0.SessionID, listFixtureID(0))
+	}
+
+	if row0.Cwd != store {
+		t.Errorf("row cwd = %q; want the server workDir %q (enumeration scope is the project)", row0.Cwd, store)
+	}
+
+	if row0.Title == nil || *row0.Title != "prompt 0" {
+		t.Errorf("row 0 title = %v; want the first user prompt %q", row0.Title, "prompt 0")
+	}
+
+	if row0.UpdatedAt == nil || *row0.UpdatedAt != listBaseTime.Format(time.RFC3339) {
+		t.Errorf("row 0 updatedAt = %v; want %s (RFC3339 of lastActivity)",
+			row0.UpdatedAt, listBaseTime.Format(time.RFC3339))
+	}
+
+	if row1 := page1.Sessions[1]; row1.Title != nil {
+		t.Errorf("fallback-titled row carried title %q; want null (TitlePresent drives the mapping)", *row1.Title)
+	}
+
+	for i, row := range page1.Sessions {
+		if row.SessionID == tombID {
+			t.Errorf("tombstoned session listed at page-one index %d (D-07 stat filter violated)", i)
+		}
+	}
+
+	// Page two: the cursor from page one — the remaining 2 rows, strictly
+	// after the cursor tuple, no re-emission, null nextCursor.
+	sendList(t, h, 2, page1.NextCursor)
+
+	page2 := decodeListResponse(t, h.readFrame(t), 2)
+
+	if len(page2.Sessions) != listLiveSessions-listPageSize {
+		t.Fatalf("page two rows = %d; want %d", len(page2.Sessions), listLiveSessions-listPageSize)
+	}
+
+	if page2.NextCursor != nil {
+		t.Errorf("exhausted page nextCursor = %v; want null", *page2.NextCursor)
+	}
+
+	want2 := []string{listFixtureID(listPageSize), listFixtureID(listPageSize + 1)}
+
+	for i, want := range want2 {
+		if page2.Sessions[i].SessionID != want {
+			t.Errorf("page two row %d = %s; want %s (no re-emission, tuple order)", i, page2.Sessions[i].SessionID, want)
+		}
+	}
+
+	page1IDs := make(map[string]struct{}, len(page1.Sessions))
+
+	for _, row := range page1.Sessions {
+		page1IDs[row.SessionID] = struct{}{}
+	}
+
+	for _, row := range page2.Sessions {
+		if _, seen := page1IDs[row.SessionID]; seen {
+			t.Errorf("page two re-emitted %s (cursor must never re-emit a row)", row.SessionID)
+		}
+
+		if row.SessionID == tombID {
+			t.Error("tombstoned session listed on page two (D-07 stat filter violated)")
+		}
+	}
+}
+
+// TestHandleSessionListEmptyStore pins the empty-store wire shape: the
+// sessions array serializes as [] (NEVER null) with a null nextCursor — the
+// raw response bytes carry the empty-array token.
+func TestHandleSessionListEmptyStore(t *testing.T) {
+	t.Parallel()
+
+	store := t.TempDir()
+
+	err := os.MkdirAll(filepath.Join(store, ".ass-guard"), 0o750)
+	if err != nil {
+		t.Fatalf("mkdir store: %v", err)
+	}
+
+	h := newPipeHarness(t, WithWorkDir(store))
+
+	sendList(t, h, 0, nil)
+
+	msg := h.readFrame(t)
+
+	if msg.ID == nil || string(msg.ID) != "0" {
+		t.Fatalf("list response id = %v; want 0", msg.ID)
+	}
+
+	if msg.Error != nil {
+		t.Fatalf("session/list on empty store errored: %+v", msg.Error)
+	}
+
+	raw := string(msg.Result)
+
+	if !strings.Contains(raw, `"`+keySessions+`":[]`) {
+		t.Errorf("empty-store result = %s; want the sessions array to serialize as [] (never null)", raw)
+	}
+
+	if !strings.Contains(raw, `"`+keyNextCursor+`":null`) {
+		t.Errorf("empty-store result = %s; want a null nextCursor", raw)
+	}
+}
+
+// TestInitializeAdvertisesSessionCapabilities pins the v1 capability split
+// (Pitfall 8): session/list|close|delete advertise under the NESTED
+// sessionCapabilities object as exactly three empty entries, session/load
+// stays under the TOP-LEVEL loadSession flag, and the v1 no-replay
+// session/resume method appears NOWHERE (18-RESEARCH A3 — reconcile-then-
+// accept makes full load the only safe resume path).
+func TestInitializeAdvertisesSessionCapabilities(t *testing.T) {
+	t.Parallel()
+
+	h := newPipeHarness(t)
+
+	h.send(t, newRequest(0, methodInitialize, zedLikeInitializeParams()))
+
+	msg := h.readFrame(t)
+
+	if msg.Error != nil {
+		t.Fatalf("initialize errored: %+v", msg.Error)
+	}
+
+	var res struct {
+		AgentCapabilities struct {
+			LoadSession         bool           `json:"loadSession"`         //nolint:tagliatelle // ACP wire field
+			SessionCapabilities map[string]any `json:"sessionCapabilities"` //nolint:tagliatelle // ACP wire field
+		} `json:"agentCapabilities"` //nolint:tagliatelle // ACP wire field
+	}
+
+	uerr := json.Unmarshal(msg.Result, &res)
+	if uerr != nil {
+		t.Fatalf("unmarshal initialize result: %v (raw=%s)", uerr, string(msg.Result))
+	}
+
+	if !res.AgentCapabilities.LoadSession {
+		t.Error("agentCapabilities.loadSession = false; want true (18-01 top-level flag)")
+	}
+
+	caps := res.AgentCapabilities.SessionCapabilities
+
+	want := map[string]struct{}{"list": {}, "close": {}, "delete": {}}
+
+	if len(caps) != len(want) {
+		t.Errorf("sessionCapabilities = %v; want exactly the keys %v", caps, want)
+	}
+
+	for k, v := range caps {
+		if _, ok := want[k]; !ok {
+			t.Errorf("sessionCapabilities carries unexpected entry %q", k)
+
+			continue
+		}
+
+		if obj, isObj := v.(map[string]any); !isObj || len(obj) != 0 {
+			t.Errorf("sessionCapabilities[%q] = %v; want an empty object", k, v)
+		}
+	}
+
+	if strings.Contains(string(msg.Result), resumeMethod) {
+		t.Errorf("initialize result mentions %s; the no-replay resume method is NOT advertised (A3)", resumeMethod)
+	}
+
+	if _, registered := h.srv.handlers[resumeMethod]; registered {
+		t.Errorf("%s registered in the handler map (A3)", resumeMethod)
+	}
+}
+
 // TestSessionLoadReplaysCleanSession is the 18-01 tracer: a cleanly-closed
 // past session replays as ordered session/update frames BEFORE the load
 // response, the response carries the exact v1 shape (configOptions + modes,
