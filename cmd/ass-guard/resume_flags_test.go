@@ -10,9 +10,11 @@ package main
 // pick seam.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -481,4 +483,212 @@ func TestRootResumeDelegation(t *testing.T) {
 			t.Errorf("delegated target = %q; want the cwd-newest %q", captured.target, fresh)
 		}
 	})
+}
+
+// --- 18-06 Task 2: the D-11 numbered picker (pipe-safe terminal I/O) ---
+
+// pickerRows builds three distinct header rows for the picker tests.
+func pickerRows(now time.Time) []session.SessionHeader {
+	return []session.SessionHeader{
+		{SessionID: "sess_row_one", Title: "first session", TitlePresent: true,
+			LastActivity: now.Add(-90 * time.Second)},
+		{SessionID: "sess_row_two", Title: "second session", TitlePresent: true,
+			LastActivity: now.Add(-3 * time.Hour)},
+		{SessionID: "sess_row_three", Title: "third session", TitlePresent: true,
+			LastActivity: now.Add(-3 * 24 * time.Hour)},
+	}
+}
+
+// TestPickerSelectsByNumber: three rows on the writer as
+// `N) <title>  (<rel time>)` plus ONE prompt line; stdin "2" selects the
+// second id.
+func TestPickerSelectsByNumber(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+	rows := pickerRows(now)
+
+	var out bytes.Buffer
+
+	id, err := SelectSession(rows, strings.NewReader("2\n"), &out)
+	if err != nil {
+		t.Fatalf("SelectSession: %v", err)
+	}
+
+	if id != rows[1].SessionID {
+		t.Errorf("selected %q; want the second row %q", id, rows[1].SessionID)
+	}
+
+	rendered := out.String()
+
+	// One line per row plus one prompt line — exactly.
+	lines := strings.Split(strings.TrimRight(rendered, "\n"), "\n")
+	if len(lines) != len(rows)+1 {
+		t.Fatalf("picker wrote %d lines; want %d rows + 1 prompt:\n%s", len(lines), len(rows), rendered)
+	}
+
+	for i, want := range []string{
+		"1) first session  (", "2) second session  (", "3) third session  (",
+	} {
+		if !strings.HasPrefix(lines[i], want) {
+			t.Errorf("row %d = %q; want prefix %q", i+1, lines[i], want)
+		}
+	}
+
+	if !strings.Contains(lines[0], "m ago") { // 90s -> the minutes bucket
+		t.Errorf("row 1 relative time = %q; want the minutes bucket", lines[0])
+	}
+
+	if !strings.Contains(lines[len(lines)-1], "?") {
+		t.Errorf("last line %q is not a selection prompt", lines[len(lines)-1])
+	}
+}
+
+// TestPickerRetriesOnceThenFails: one invalid entry re-prompts; a SECOND
+// invalid entry errors; immediate EOF errors; an empty stdin line counts as
+// invalid (and a valid retry after it succeeds).
+func TestPickerRetriesOnceThenFails(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+
+	t.Run("second invalid entry errors", func(t *testing.T) {
+		t.Parallel()
+
+		var out bytes.Buffer
+
+		_, err := SelectSession(pickerRows(now), strings.NewReader("abc\n9\n"), &out)
+		if err == nil {
+			t.Fatal("picker accepted two invalid entries; want the typed error")
+		}
+
+		if n := strings.Count(out.String(), "?"); n != 2 {
+			t.Errorf("prompt printed %d times; want exactly 2 (initial + one re-prompt): %q", n, out.String())
+		}
+	})
+
+	t.Run("EOF immediately errors", func(t *testing.T) {
+		t.Parallel()
+
+		var out bytes.Buffer
+
+		_, err := SelectSession(pickerRows(now), strings.NewReader(""), &out)
+		if err == nil {
+			t.Fatal("picker returned nil error on immediate EOF")
+		}
+	})
+
+	t.Run("empty line counts as invalid then a valid retry succeeds", func(t *testing.T) {
+		t.Parallel()
+
+		var out bytes.Buffer
+
+		id, err := SelectSession(pickerRows(now), strings.NewReader("\n3\n"), &out)
+		if err != nil {
+			t.Fatalf("picker: %v", err)
+		}
+
+		if id != "sess_row_three" {
+			t.Errorf("selected %q; want the third row after the retry", id)
+		}
+	})
+}
+
+// TestPickerRelativeTime pins FormatRelativeTime's buckets by word (the
+// exact locale formatting is discretion; the BUCKET is the contract): 90s ->
+// minutes, 3h -> hours, 3d -> days, 30d -> weeks, 0-age -> just-now.
+func TestPickerRelativeTime(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+
+	cases := []struct {
+		age  time.Duration
+		want string
+	}{
+		{0, "just now"},
+		{30 * time.Second, "just now"},
+		{90 * time.Second, "m ago"},
+		{3 * time.Hour, "h ago"},
+		{3 * 24 * time.Hour, "d ago"},
+		{30 * 24 * time.Hour, "w ago"},
+	}
+
+	for _, tc := range cases {
+		got := FormatRelativeTime(now.Add(-tc.age), now)
+		if !strings.Contains(got, tc.want) {
+			t.Errorf("FormatRelativeTime(-%v) = %q; want the %q bucket", tc.age, got, tc.want)
+		}
+	}
+}
+
+// TestPickerPipeSafe drives SelectSession through an io.Pipe reader and a
+// bytes.Buffer writer — the exact surfaces `ass-guard --resume` uses over
+// ssh/pipes (no *os.File anywhere in the signature or the drive path).
+func TestPickerPipeSafe(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+	rows := pickerRows(now)
+
+	pr, pw := io.Pipe()
+
+	go func() {
+		_, _ = pw.Write([]byte("1\n"))
+		_ = pw.Close()
+	}()
+
+	var out bytes.Buffer
+
+	id, err := SelectSession(rows, pr, &out)
+	if err != nil {
+		t.Fatalf("pipe-driven SelectSession: %v", err)
+	}
+
+	if id != rows[0].SessionID {
+		t.Errorf("selected %q; want the first row %q", id, rows[0].SessionID)
+	}
+}
+
+// TestPickerTruncatesTitles: a 200-rune title renders as EXACTLY 60 runes
+// (unicode-safe) followed by the two-space time bucket.
+func TestPickerTruncatesTitles(t *testing.T) {
+	t.Parallel()
+
+	now := time.Now()
+	long := strings.Repeat("α", 200) // multibyte — proves rune-safe truncation
+
+	rows := []session.SessionHeader{{
+		SessionID: "sess_long", Title: long, TitlePresent: true,
+		LastActivity: now.Add(-90 * time.Second),
+	}}
+
+	var out bytes.Buffer
+
+	if _, err := SelectSession(rows, strings.NewReader("1\n"), &out); err != nil {
+		t.Fatalf("SelectSession: %v", err)
+	}
+
+	first := strings.SplitN(out.String(), "\n", 2)[0]
+
+	// Row shape: "1) " + 60 runes + "  (" + bucket + ")".
+	if !strings.HasPrefix(first, "1) ") {
+		t.Fatalf("row = %q; want the numbered prefix", first)
+	}
+
+	rest := strings.TrimPrefix(first, "1) ")
+
+	idx := strings.Index(rest, "  (")
+	if idx < 0 {
+		t.Fatalf("row %q lacks the two-space time bucket separator", first)
+	}
+
+	title := rest[:idx]
+	if got := len([]rune(title)); got != 60 {
+		t.Errorf("title rendered as %d runes; want exactly 60", got)
+	}
+
+	if title != strings.Repeat("α", 60) {
+		t.Errorf("title = %.60q…; want the first 60 α runes", title)
+	}
 }
