@@ -1899,7 +1899,12 @@ func TestGateHookVerdict(t *testing.T) { //nolint:funlen,cyclop,gocyclo,gocognit
 
 		close(block) // the operator answers allow_once
 
-		gateWaitFor(t, func() bool { return len(store.snapshotOrder()) == 1 })
+		// Wait on the RESULT, not the order slice alone (noteExec fires inside
+		// the tool; the transcript append lands after it — the 17-01/17-02
+		// flake family's documented discipline).
+		gateWaitFor(t, func() bool {
+			return len(store.snapshotOrder()) == 1 && len(toolResultsFor(t, s, gateCall1)) == 1
+		})
 
 		if order := store.snapshotOrder(); order[0] != "exec:"+gateToolWrite {
 			t.Errorf("allow_once on the hook ask = %v; want exactly the exec (no rule write)", order)
