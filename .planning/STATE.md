@@ -4,18 +4,18 @@ milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 21
 current_phase_name: Context & Policy Parity Closures
-current_plan: 2
+current_plan: 3
 status: executing
-stopped_at: Completed 21-01-PLAN.md
-last_updated: "2026-09-03T18:14:30.843Z"
+stopped_at: Completed 21-02-PLAN.md
+last_updated: "2026-09-03T18:52:51.673Z"
 last_activity: 2026-09-03
 last_activity_desc: Phase 21 execution started
-state_head: 685e882105dd86f4077b390734b808753969e874
+state_head: 4cddcc34d046318848ff2147b0c98060b5ff8c21
 progress:
   total_phases: 11
   completed_phases: 3
   total_plans: 70
-  completed_plans: 29
+  completed_plans: 30
   percent: 27
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-03)
 ## Current Position
 
 Phase: 21 (Context & Policy Parity Closures) — EXECUTING
-Current Plan: 2
+Current Plan: 3
 Total Plans in Phase: 6
 Status: Ready to execute
 Last activity: 2026-09-03 — Phase 21 execution started
@@ -75,6 +75,7 @@ Progress: [██████░░░░░░░░░░░░░░░░] 2
 | Phase 18-05 P05 | 72min | 2 tasks | 12 files |
 | Phase 18 P06 | 60 min | 3 tasks | 8 files |
 | Phase 21 P01 | 46 min | 3 tasks | 7 files |
+| Phase 21 P02 | 34 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -139,6 +140,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 21]: 21-01: plugin-scope allow verdicts demote alongside project-scope (only user scope widens trust — one loud warning per demoted result)
 - [Phase 21]: 21-01: exit-2 reason in the composed path is classifyHookRun's stderr-first extraction; parseHookVerdict direct calls fall back to capped stdout
 - [Phase 21]: 21-01: scope partition (D-03 project-user-plugin) resolves at NewHookRunner construction via scopeRank — loader merge untouched; Verdict constants unexported until 21-06 exports by necessity
+- [Phase 21]: PAR-04 memory budget is whole-file fits-or-skips (over-budget files skipped with per-file notes, never partially cut); per-file 24 KB cap at discovery, 64 KB budget at injection — Deterministic and observably loud; partial budget cuts would entangle note length with accounting
+- [Phase 21]: ~/.ass-guard existence-gate: ANY present memory candidate there (even unreadable) blocks ~/.claude/CLAUDE.md (D-07 conservative reading); memory framing header is operator text pending a re-capture pin — D-07 win-on-conflict read conservatively; CC's native framing is not captured on this machine
 
 ### Pending Todos
 
@@ -161,6 +164,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-03T18:14:29.215Z
-Stopped at: Completed 21-01-PLAN.md
+Last session: 2026-09-03T18:52:50.969Z
+Stopped at: Completed 21-02-PLAN.md
 Resume file: None
