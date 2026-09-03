@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -389,6 +390,215 @@ func TestSettingsHooksMissing(t *testing.T) { //nolint:paralleltest // mutates t
 	require.NoError(t, err)
 	assert.Empty(t, reg.Hooks)
 	assert.Empty(t, buf.String(), "absent settings files must not warn")
+}
+
+// --- 21-01 Task 3: scope partition + the PreToolUseVerdict seam ---
+
+// TestHookScopeOrder (21-01 Task 3, D-03) verifies NewHookRunner partitions a
+// deliberately scrambled input slice into the deterministic firing order
+// project → user → plugin (stable within scope) — resolved at CONSTRUCTION,
+// so the runtime.go call site keeps its signature — and that the caller's
+// slice is never mutated.
+func TestHookScopeOrder(t *testing.T) {
+	t.Parallel()
+
+	scrambled := []HookConfig{
+		{Event: hookEventPreToolUse, Command: "u1", Scope: scopeUser},
+		{Event: hookEventPreToolUse, Command: "p1", Scope: scopePlugin},
+		{Event: hookEventPreToolUse, Command: "pr1", Scope: scopeProject},
+		{Event: hookEventPreToolUse, Command: "u2", Scope: scopeUser},
+		{Event: hookEventPreToolUse, Command: "p2", Scope: scopePlugin},
+	}
+
+	r := NewHookRunner(scrambled, "s", t.TempDir(), "")
+
+	matches := r.matchingHooks(hookEventPreToolUse, toolBash)
+
+	got := make([]string, 0, len(matches))
+	for _, h := range matches {
+		got = append(got, h.Command)
+	}
+
+	assert.Equal(t, []string{"pr1", "u1", "u2", "p1", "p2"}, got,
+		"D-03 firing order: project → user → plugin, stable within scope")
+
+	assert.Equal(t, []string{"u1", "p1", "pr1", "u2", "p2"},
+		commandsOf(scrambled), "the caller's slice must not be mutated")
+}
+
+// commandsOf extracts the commands for an order assertion.
+func commandsOf(hooks []HookConfig) []string {
+	out := make([]string, 0, len(hooks))
+	for _, h := range hooks {
+		out = append(out, h.Command)
+	}
+
+	return out
+}
+
+// TestPreToolUseVerdict (21-01 Task 3) is the script-driven integration
+// battery: matching hooks run SEQUENTIALLY in partitioned D-03 order under
+// the existing runOne bounds, verdicts resolve through ResolveVerdict, and
+// every failure mode fails open with NO-DECISION (PAR-03 letter — including
+// the ctx-cancel row that pins the flagged PAR-03 concurrency assumption:
+// sequential execution, cancel → no-decision).
+func TestPreToolUseVerdict(t *testing.T) { //nolint:paralleltest // mutates the package logger seam
+	buf := captureShadowLogger(t)
+
+	work := t.TempDir()
+	toolInput := json.RawMessage(`{"command":"ls"}`)
+
+	denyJSONCmd := "printf '%s' '" + verdictJSON("deny", "no edits from hook") + "'"
+	allowJSONCmd := "printf '%s' '" + verdictJSON("allow", "operator approved") + "'"
+
+	t.Run("project deny json", func(t *testing.T) {
+		r := NewHookRunner([]HookConfig{
+			{Event: hookEventPreToolUse, Command: denyJSONCmd, Scope: scopeProject},
+		}, "s", work, "")
+
+		v, reason := r.PreToolUseVerdict(context.Background(), toolBash, toolInput)
+
+		assert.Equal(t, verdictDeny, v)
+		assert.Equal(t, "no edits from hook", reason)
+	})
+
+	t.Run("user allow json applies", func(t *testing.T) {
+		r := NewHookRunner([]HookConfig{
+			{Event: hookEventPreToolUse, Command: allowJSONCmd, Scope: scopeUser},
+		}, "s", work, "")
+
+		v, reason := r.PreToolUseVerdict(context.Background(), toolBash, toolInput)
+
+		assert.Equal(t, verdictAllow, v)
+		assert.Equal(t, "operator approved", reason)
+	})
+
+	t.Run("project allow demoted loud", func(t *testing.T) {
+		buf.Reset()
+
+		r := NewHookRunner([]HookConfig{
+			{Event: hookEventPreToolUse, Command: allowJSONCmd, Scope: scopeProject},
+		}, "s", work, "")
+
+		v, reason := r.PreToolUseVerdict(context.Background(), toolBash, toolInput)
+
+		assert.Equal(t, verdictNone, v, "repo-shipped allow must never widen trust (D-01)")
+		assert.Empty(t, reason)
+		assert.Equal(t, 1, strings.Count(buf.String(), "ignored allow"),
+			"exactly one loud ignored-allow warning: %q", buf.String())
+	})
+
+	t.Run("timeout fails open", func(t *testing.T) {
+		r := NewHookRunner([]HookConfig{
+			{Event: hookEventPreToolUse, Command: "sleep 30", TimeoutSec: 1, Scope: scopeUser},
+		}, "s", work, "")
+
+		v, reason := r.PreToolUseVerdict(context.Background(), toolBash, toolInput)
+
+		assert.Equal(t, verdictNone, v, "a timed-out hook contributes no verdict (PAR-03)")
+		assert.Empty(t, reason)
+	})
+
+	t.Run("ctx cancel fails open", func(t *testing.T) {
+		r := NewHookRunner([]HookConfig{
+			{Event: hookEventPreToolUse, Command: "sleep 30", TimeoutSec: 60, Scope: scopeUser},
+		}, "s", work, "")
+
+		ctx, cancel := context.WithCancel(context.Background())
+		go func() {
+			time.Sleep(200 * time.Millisecond)
+			cancel()
+		}()
+
+		v, reason := r.PreToolUseVerdict(ctx, toolBash, toolInput)
+
+		assert.Equal(t, verdictNone, v,
+			"the flagged PAR-03 concurrency pin: cancellation mid-hook yields no-decision")
+		assert.Empty(t, reason)
+	})
+
+	t.Run("exit2 legacy deny reason from stderr", func(t *testing.T) {
+		r := NewHookRunner([]HookConfig{
+			{Event: hookEventPreToolUse, Command: "echo legacy-refusal >&2; exit 2", Scope: scopeProject},
+		}, "s", work, "")
+
+		v, reason := r.PreToolUseVerdict(context.Background(), toolBash, toolInput)
+
+		assert.Equal(t, verdictDeny, v)
+		assert.Contains(t, reason, "legacy-refusal",
+			"the exit-2 reason is classifyHookRun's stderr-first extraction")
+	})
+
+	t.Run("exit2 overrides json allow at runner", func(t *testing.T) {
+		r := NewHookRunner([]HookConfig{
+			{Event: hookEventPreToolUse, Command: allowJSONCmd + "; exit 2", Scope: scopeProject},
+		}, "s", work, "")
+
+		v, _ := r.PreToolUseVerdict(context.Background(), toolBash, toolInput)
+
+		assert.Equal(t, verdictDeny, v,
+			"exit 2 blocks even when stdout carries a valid allow verdict (T-21-02)")
+	})
+
+	t.Run("sequential d-03 firing order", func(t *testing.T) {
+		marker := filepath.Join(t.TempDir(), "marker")
+
+		r := NewHookRunner([]HookConfig{
+			{Event: hookEventPreToolUse, Command: "echo g >> " + marker, Scope: scopePlugin},
+			{Event: hookEventPreToolUse, Command: "echo u >> " + marker, Scope: scopeUser},
+			{Event: hookEventPreToolUse, Command: "echo p >> " + marker, Scope: scopeProject},
+		}, "s", work, "")
+
+		v, _ := r.PreToolUseVerdict(context.Background(), toolBash, toolInput)
+
+		assert.Equal(t, verdictNone, v, "silent hooks contribute no verdict")
+
+		data, err := os.ReadFile(marker)
+		require.NoError(t, err)
+		assert.Equal(t, "p\nu\ng\n", string(data),
+			"hooks fire SEQUENTIALLY in D-03 order — never concurrently")
+	})
+
+	t.Run("no matching hooks is no decision", func(t *testing.T) {
+		r := NewHookRunner([]HookConfig{
+			{Event: hookEventPreToolUse, Matcher: "Edit", Command: denyJSONCmd, Scope: scopeProject},
+		}, "s", work, "")
+
+		v, reason := r.PreToolUseVerdict(context.Background(), toolBash, toolInput)
+
+		assert.Equal(t, verdictNone, v)
+		assert.Empty(t, reason)
+	})
+}
+
+// TestPreToolUseDelegation (21-01 Task 3, Pitfall 2) verifies the executor
+// leg's boolean contract survives the delegation: deny → (false, reason);
+// allow/ask/no-decision → (true, "") — internal/coreexec stays untouched
+// until 21-06 disposes the leg at the gate join.
+func TestPreToolUseDelegation(t *testing.T) {
+	t.Parallel()
+
+	work := t.TempDir()
+	toolInput := json.RawMessage(`{}`)
+
+	denyJSONCmd := "printf '%s' '" + verdictJSON("deny", "blocked") + "'"
+	allowJSONCmd := "printf '%s' '" + verdictJSON("allow", "ok") + "'"
+
+	denier := NewHookRunner([]HookConfig{
+		{Event: hookEventPreToolUse, Command: denyJSONCmd, Scope: scopeUser},
+	}, "s", work, "")
+
+	proceed, msg := denier.PreToolUse(context.Background(), toolBash, toolInput)
+	assert.False(t, proceed, "deny refuses the executor call")
+	assert.Equal(t, "blocked", msg)
+
+	allower := NewHookRunner([]HookConfig{
+		{Event: hookEventPreToolUse, Command: allowJSONCmd, Scope: scopeUser},
+	}, "s", work, "")
+
+	proceed, msg = allower.PreToolUse(context.Background(), toolBash, toolInput)
+	assert.True(t, proceed, "allow proceeds")
+	assert.Empty(t, msg)
 }
 
 // TestHookMatcherDialect pins CC's two-path matcher dialect for settings
