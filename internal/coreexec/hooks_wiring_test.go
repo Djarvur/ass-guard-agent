@@ -3,12 +3,18 @@ package coreexec //nolint:testpackage // asserts the unexported keyError convent
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 )
 
-// probeHooks is a fake ToolHooks recording its calls; refusal is configurable.
+// probeHooks is a fake ToolHooks recording its calls; refusal is configurable
+// (the pre-join PreToolUse refusal shape — post-join the leg is disposed, so
+// refuse only proves the executor NEVER consults it).
 type probeHooks struct {
 	refuse     bool
 	preCalled  []string
@@ -16,7 +22,7 @@ type probeHooks struct {
 	lastOutput json.RawMessage
 }
 
-func (p *probeHooks) PreToolUse( //nolint:nonamedreturns // mirrors the seam pair
+func (p *probeHooks) PreToolUse( //nolint:nonamedreturns // mirrors the pre-join seam pair
 	_ context.Context, toolName string, _ json.RawMessage,
 ) (proceed bool, message string) {
 	p.preCalled = append(p.preCalled, toolName)
@@ -32,11 +38,12 @@ func (p *probeHooks) PostToolUse(_ context.Context, toolName string, _, output j
 	p.lastOutput = output
 }
 
-// TestRegisterCoreHookRefusal (12-02 Task 4, Test 2 wiring) verifies the
-// PreToolUse exit-2-equivalent refusal at the RegisterCore chokepoint: the
-// tool call is REFUSED with the hook's message as the structured tool result
-// (is_error), and the underlying tool never runs.
-func TestRegisterCoreHookRefusal(t *testing.T) {
+// TestRegisterCorePreToolUseDisposal (21-06 Task 2, the reduced contract):
+// after the gate join the executor wrap consults NO PreToolUse — a hook that
+// would deny does NOT produce the legacy refusal result form at the
+// executor; the tool runs and denials arrive ONLY as gate results (one
+// result form per decision, 21-RESEARCH Pitfall 2).
+func TestRegisterCorePreToolUseDisposal(t *testing.T) {
 	t.Parallel()
 
 	cat := toolcat.NewCatalog()
@@ -50,32 +57,21 @@ func TestRegisterCoreHookRefusal(t *testing.T) {
 		t.Fatal("Bash not registered")
 	}
 
-	out, err := tool.Execute(context.Background(), json.RawMessage(`{"command":"echo must-not-run"}`))
-	if err == nil {
-		t.Error("a refused call must carry the error (IsError)")
+	out, err := tool.Execute(context.Background(), json.RawMessage(`{"command":"echo still-runs"}`))
+	if err != nil {
+		t.Fatalf("post-join the executor runs what the gate admitted: %v", err)
 	}
 
-	if string(out) == "" || !json.Valid(out) {
-		t.Fatalf("refusal result must be structured JSON, got %q", string(out))
+	if !contains(string(out), "still-runs") {
+		t.Errorf("a would-deny hook blocked at the executor (denials are gate results now), got %q", string(out))
 	}
 
-	var parsed map[string]any
-
-	uerr := json.Unmarshal(out, &parsed)
-	if uerr != nil {
-		t.Fatalf("parse refusal: %v", uerr)
+	if len(hooks.preCalled) != 0 {
+		t.Errorf("PreToolUse consulted at the executor: %v — the 21-06 join disposed this leg", hooks.preCalled)
 	}
 
-	if msg, _ := parsed[keyError].(string); msg == "" || !contains(msg, "operator policy") {
-		t.Errorf("refusal result must carry the hook's message, got %q", parsed[keyError])
-	}
-
-	if len(hooks.preCalled) != 1 || hooks.preCalled[0] != toolNameBash {
-		t.Errorf("PreToolUse calls = %v, want exactly [Bash]", hooks.preCalled)
-	}
-
-	if len(hooks.postCalled) != 0 {
-		t.Errorf("PostToolUse must not fire for a refused call, got %v", hooks.postCalled)
+	if len(hooks.postCalled) != 1 || hooks.postCalled[0] != toolNameBash {
+		t.Errorf("PostToolUse calls = %v; want exactly [Bash] (observation survives the join)", hooks.postCalled)
 	}
 }
 
@@ -130,6 +126,105 @@ func TestRegisterCoreNoHooksUnchanged(t *testing.T) {
 	if !contains(string(out), "plain") {
 		t.Errorf("plain Bash result = %q", string(out))
 	}
+}
+
+// markerCount reads the marker file and counts appended lines (0 when
+// absent).
+func markerCount(t *testing.T, path string) int {
+	t.Helper()
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0
+	}
+
+	return strings.Count(string(data), "\n")
+}
+
+// TestHooksOnceOnly (21-06 Task 2, Pitfall 2's double-fire regression pin):
+// a REAL script hook with an observable side effect (marker-file append)
+// fires EXACTLY ONCE per tool call post-join. The marker hook is registered
+// for BOTH PreToolUse and PostToolUse, so before the leg disposal each call
+// appended TWICE (the executor consultation + the observation, plus the gate
+// head's own consultation in the full composition); after the join the
+// PostToolUse observation is the executor's only hook leg.
+func TestHooksOnceOnly(t *testing.T) {
+	t.Parallel()
+
+	t.Run("side effect exactly once per call", func(t *testing.T) {
+		t.Parallel()
+
+		work := t.TempDir()
+		marker := filepath.Join(work, "marker.log")
+
+		appendCmd := "printf 'x\\n' >> '" + marker + "'"
+
+		runner := ecosys.NewHookRunner([]ecosys.HookConfig{
+			{Event: "PreToolUse", Matcher: toolNameBash, Command: appendCmd},
+			{Event: "PostToolUse", Matcher: toolNameBash, Command: appendCmd},
+		}, "sess-once", work, "")
+
+		cat := toolcat.NewCatalog()
+		cat.Register(toolcat.Tool{Name: toolNameBash})
+		RegisterCore(cat, Config{WorkDir: work, Hooks: runner})
+
+		tool, ok := cat.Get(toolNameBash)
+		if !ok {
+			t.Fatal("Bash not registered")
+		}
+
+		const calls = 2
+
+		for i := 0; i < calls; i++ {
+			out, err := tool.Execute(context.Background(), json.RawMessage(`{"command":"echo once"}`))
+			if err != nil || !contains(string(out), "once") {
+				t.Fatalf("call %d did not run for real (err=%v out=%s)", i, err, string(out))
+			}
+		}
+
+		if got := markerCount(t, marker); got != calls {
+			t.Errorf("hook side effect fired %d times for %d calls; want exactly %d (ONCE per call — "+
+				"the executor PreToolUse leg is disposed, Pitfall 2)", got, calls, calls)
+		}
+	})
+
+	t.Run("PostToolUse still observes the tool output", func(t *testing.T) {
+		t.Parallel()
+
+		work := t.TempDir()
+		payloadPath := filepath.Join(work, "payload.log")
+
+		// `cat` appends the hook's stdin payload (the documented PostToolUse
+		// JSON) to the file — the observation leg still carries the tool
+		// output after the join.
+		runner := ecosys.NewHookRunner([]ecosys.HookConfig{
+			{Event: "PostToolUse", Matcher: toolNameBash, Command: "cat >> '" + payloadPath + "'"},
+		}, "sess-post", work, "")
+
+		cat := toolcat.NewCatalog()
+		cat.Register(toolcat.Tool{Name: toolNameBash})
+		RegisterCore(cat, Config{WorkDir: work, Hooks: runner})
+
+		tool, _ := cat.Get(toolNameBash)
+
+		out, err := tool.Execute(context.Background(), json.RawMessage(`{"command":"echo observed-output"}`))
+		if err != nil {
+			t.Fatalf("execution: %v", err)
+		}
+
+		if !contains(string(out), "observed-output") {
+			t.Fatalf("Bash did not run: %s", string(out))
+		}
+
+		data, rerr := os.ReadFile(payloadPath)
+		if rerr != nil {
+			t.Fatalf("PostToolUse hook never fired (no payload file): %v", rerr)
+		}
+
+		if !contains(string(data), "tool_response") || !contains(string(data), "observed-output") {
+			t.Errorf("PostToolUse payload = %s; want the tool output as tool_response", string(data))
+		}
+	})
 }
 
 func contains(s, sub string) bool {
