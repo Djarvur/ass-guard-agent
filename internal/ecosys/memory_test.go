@@ -332,7 +332,7 @@ func TestMemoryDiscovery_AccumulateNoDedup(t *testing.T) { //nolint:paralleltest
 	memWrite(t, filepath.Join(repo, "CLAUDE.md"), twin)
 	memWrite(t, filepath.Join(deep, "AGENTS.md"), twin)
 
-	body := ecosys.MemoryInjection(repo)
+	body := ecosys.MemoryInjection(deep)
 	if got := strings.Count(body, twin); got != 2 {
 		t.Errorf("twin body occurrences = %d; want 2 (levels accumulate without dedup):\n%s", got, body)
 	}
