@@ -4,18 +4,18 @@ milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 21
 current_phase_name: Context & Policy Parity Closures
-current_plan: 3
+current_plan: 4
 status: executing
-stopped_at: Completed 21-02-PLAN.md
-last_updated: "2026-09-03T18:52:51.673Z"
+stopped_at: Completed 21-03-PLAN.md
+last_updated: "2026-09-03T19:56:16.147Z"
 last_activity: 2026-09-03
 last_activity_desc: Phase 21 execution started
-state_head: 4cddcc34d046318848ff2147b0c98060b5ff8c21
+state_head: a902b41df09c28406a7884d05e3bb825a735ca80
 progress:
   total_phases: 11
   completed_phases: 3
   total_plans: 70
-  completed_plans: 30
+  completed_plans: 31
   percent: 27
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-03)
 ## Current Position
 
 Phase: 21 (Context & Policy Parity Closures) — EXECUTING
-Current Plan: 3
+Current Plan: 4
 Total Plans in Phase: 6
 Status: Ready to execute
 Last activity: 2026-09-03 — Phase 21 execution started
@@ -76,6 +76,7 @@ Progress: [██████░░░░░░░░░░░░░░░░] 2
 | Phase 18 P06 | 60 min | 3 tasks | 8 files |
 | Phase 21 P01 | 46 min | 3 tasks | 7 files |
 | Phase 21 P02 | 34 min | 2 tasks | 4 files |
+| Phase 21 P03 | 55 min | 3 tasks | 19 files |
 
 ## Accumulated Context
 
@@ -142,6 +143,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 21]: 21-01: scope partition (D-03 project-user-plugin) resolves at NewHookRunner construction via scopeRank — loader merge untouched; Verdict constants unexported until 21-06 exports by necessity
 - [Phase 21]: PAR-04 memory budget is whole-file fits-or-skips (over-budget files skipped with per-file notes, never partially cut); per-file 24 KB cap at discovery, 64 KB budget at injection — Deterministic and observably loud; partial budget cuts would entangle note length with accounting
 - [Phase 21]: ~/.ass-guard existence-gate: ANY present memory candidate there (even unreadable) blocks ~/.claude/CLAUDE.md (D-07 conservative reading); memory framing header is operator text pending a re-capture pin — D-07 win-on-conflict read conservatively; CC's native framing is not captured on this machine
+- [Phase 21]: PAR-05 thinking identity contract is FIELD-VALUE identity, not envelope identity: delta strings assembled once at the provider, RawMessage stored verbatim, values extracted only at the projector, SDK re-serializes (21-03)
+- [Phase 21]: Redacted thinking blocks append to the transcript unconditionally but publish no agent_thought_chunk (no display text exists); thinking folds into its turn's assistant unit and drops with it when the unit never forms (21-03, Pitfall 5)
 
 ### Pending Todos
 
@@ -164,6 +167,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-03T18:52:50.969Z
-Stopped at: Completed 21-02-PLAN.md
+Last session: 2026-09-03T19:56:14.889Z
+Stopped at: Completed 21-03-PLAN.md
 Resume file: None
