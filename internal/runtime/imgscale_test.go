@@ -35,7 +35,6 @@ import (
 // fixture plumbing by accident).
 const (
 	imgSessionID = "sess-imgscale"
-	imgJPEGMedia = "image/jpeg"
 	imgPNGMedia  = "image/png"
 	imgGIFMedia  = "image/gif"
 	imgWebPMedia = "image/webp"
@@ -45,12 +44,14 @@ const (
 // decodeCountGate serializes the white-box decodePixels swap (the bomb test's
 // counting hook mutates a package var; non-parallel discipline + this mutex
 // keep concurrent families safe).
+//
+//nolint:gochecknoglobals // a test-seam mutex guarding the decodePixels swap
 var decodeCountGate sync.Mutex
 
 // withDecodeCounter swaps the pixel-decode seam for a counting wrapper for the
 // duration of one test (the pixel-bomb proof: config-stage refusals must never
 // reach a decode).
-func withDecodeCounter(t *testing.T) *counter { //nolint:paralleltest // mutates package var
+func withDecodeCounter(t *testing.T) *counter {
 	t.Helper()
 
 	decodeCountGate.Lock()
@@ -134,36 +135,6 @@ func encodePNG(t *testing.T, w, h int) []byte {
 	return buf.Bytes()
 }
 
-// encodeNoisePNG renders an incompressible random-ish noise PNG (poor
-// compression forces the over-bytes class at small dims).
-func encodeNoisePNG(t *testing.T, w, h int) []byte {
-	t.Helper()
-
-	img := image.NewRGBA(image.Rect(0, 0, w, h))
-	seed := uint32(0x9E3779B9)
-
-	for y := range h {
-		for x := range w {
-			seed = seed*1664525 + 1013904223 //nolint:mnd // LCG noise
-			img.SetRGBA(x, y, color.RGBA{
-				R: uint8(seed >> 24),
-				G: uint8(seed >> 16),
-				B: uint8(seed >> 8),
-				A: 255,
-			})
-		}
-	}
-
-	var buf bytes.Buffer
-
-	err := png.Encode(&buf, img)
-	if err != nil {
-		t.Fatalf("encode noise png %dx%d: %v", w, h, err)
-	}
-
-	return buf.Bytes()
-}
-
 // encodeGIF renders a small paletted GIF.
 func encodeGIF(t *testing.T, w, h int) []byte {
 	t.Helper()
@@ -194,23 +165,25 @@ func encodeGIF(t *testing.T, w, h int) []byte {
 // carrying the dims; x/image has no webp ENCODER, so the fixture is the
 // header craft — DecodeConfig reads the dims without the pixel payload).
 func craftWebPHeader(w, h int) []byte {
-	payload := []byte{0x2F} // VP8L signature
+	packedBits := uint32(w-1) | uint32(h-1)<<14
 
-	bits := uint32(w-1) | uint32(h-1)<<14 //nolint:mnd // VP8L packs 14 bits per dim
 	var packed [4]byte
 
-	binary.LittleEndian.PutUint32(packed[:], bits)
+	binary.LittleEndian.PutUint32(packed[:], packedBits)
+
+	payload := make([]byte, 0, 1+len(packed))
+	payload = append(payload, 0x2F) // VP8L signature
 	payload = append(payload, packed[:]...)
 
-	chunk := append([]byte("VP8L"), byte(len(payload)), 0, 0, 0)
+	chunk := make([]byte, 0, len("VP8L")+4+len(payload))
+	chunk = append(chunk, "VP8L"...)
+	chunk = binary.LittleEndian.AppendUint32(chunk, uint32(len(payload)))
 	chunk = append(chunk, payload...)
 
-	out := []byte("RIFF")
+	out := make([]byte, 0, len("RIFF")+4+len("WEBP")+len(chunk))
+	out = append(out, "RIFF"...)
 
-	var sz [4]byte
-
-	binary.LittleEndian.PutUint32(sz[:], uint32(4+len(chunk)))
-	out = append(out, sz[:]...)
+	out = binary.LittleEndian.AppendUint32(out, uint32(4+len(chunk)))
 	out = append(out, "WEBP"...)
 	out = append(out, chunk...)
 
@@ -236,6 +209,40 @@ func craftPNGBomb(w, h int) []byte {
 	return append(out, chunk...)
 }
 
+// scaleResult is the test-side view of ValidateAndScaleImage's provenance
+// tuple (one struct beats eight blank identifiers at every call site).
+type scaleResult struct {
+	data   []byte
+	media  string
+	w      int
+	h      int
+	origW  int
+	origH  int
+	scaled bool
+}
+
+// validate runs ValidateAndScaleImage, failing the test on error.
+func validate(t *testing.T, data []byte, media string, limits ImageLimits) scaleResult {
+	t.Helper()
+
+	scaled, outMedia, w, h, origW, origH, didScale, err := ValidateAndScaleImage(data, media, limits)
+	if err != nil {
+		t.Fatalf("ValidateAndScaleImage: %v", err)
+	}
+
+	return scaleResult{
+		data: scaled, media: outMedia, w: w, h: h,
+		origW: origW, origH: origH, scaled: didScale,
+	}
+}
+
+// validateErr runs ValidateAndScaleImage expecting failure, returning the error.
+func validateErr(data []byte, media string, limits ImageLimits) error {
+	_, _, _, _, _, _, _, err := ValidateAndScaleImage(data, media, limits) //nolint:dogsled // expect-failure wrapper
+
+	return err
+}
+
 // --- Family 1+4: within-limits passthrough (JPEG + PNG, format preserved) ---
 
 // TestValidateAndScale_WithinLimitsPassthrough proves the D-09 passthrough: a
@@ -251,31 +258,38 @@ func TestValidateAndScale_WithinLimitsPassthrough(t *testing.T) {
 		wantMedia    string
 		wantW, wantH int
 	}{
-		{name: "jpeg 800x600", data: encodeJPEG(t, 800, 600), declared: imgPNGMedia, wantMedia: imgJPEGMedia, wantW: 800, wantH: 600},
-		{name: "png 640x480", data: encodePNG(t, 640, 480), declared: imgPNGMedia, wantMedia: imgPNGMedia, wantW: 640, wantH: 480},
+		{
+			name: "jpeg 800x600", data: encodeJPEG(t, jpegW, jpegH),
+			declared: imgPNGMedia, wantMedia: imgJPEGMedia, wantW: jpegW, wantH: jpegH,
+		},
+		{
+			name: "png 640x480", data: encodePNG(t, pngW, pngH),
+			declared: imgPNGMedia, wantMedia: imgPNGMedia, wantW: pngW, wantH: pngH,
+		},
 	}
 
-	for _, c := range cases { //nolint:paralleltest // shared decodePixels-free path
+	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			scaled, media, w, h, origW, origH, didScale, err := ValidateAndScaleImage(c.data, c.declared, DefaultImageLimits)
-			if err != nil {
-				t.Fatalf("ValidateAndScaleImage: %v", err)
-			}
+			t.Parallel()
 
-			if didScale {
+			got := validate(t, c.data, c.declared, DefaultImageLimits)
+
+			if got.scaled {
 				t.Error("didScale = true for a within-limits image; want false (no re-encode)")
 			}
 
-			if !bytes.Equal(scaled, c.data) {
+			if !bytes.Equal(got.data, c.data) {
 				t.Error("within-limits bytes were re-encoded; want identical passthrough")
 			}
 
-			if media != c.wantMedia {
-				t.Errorf("media = %q; want %q (decoded format wins over the declared %q)", media, c.wantMedia, c.declared)
+			if got.media != c.wantMedia {
+				t.Errorf("media = %q; want %q (decoded format wins over the declared %q)",
+					got.media, c.wantMedia, c.declared)
 			}
 
-			if w != c.wantW || h != c.wantH || origW != c.wantW || origH != c.wantH {
-				t.Errorf("dims = (%d,%d) orig (%d,%d); want (%d,%d) both", w, h, origW, origH, c.wantW, c.wantH)
+			if got.w != c.wantW || got.h != c.wantH || got.origW != c.wantW || got.origH != c.wantH {
+				t.Errorf("dims = (%d,%d) orig (%d,%d); want (%d,%d) both",
+					got.w, got.h, got.origW, got.origH, c.wantW, c.wantH)
 			}
 		})
 	}
@@ -288,41 +302,47 @@ func TestValidateAndScale_WithinLimitsPassthrough(t *testing.T) {
 // downscale-fits the 1568 px long edge via the pure-Go scaler, records the
 // resize provenance, and the output decodes at the scaled dims.
 func TestValidateAndScale_OverDimsDownscalesToTargetLongEdge(t *testing.T) { //nolint:paralleltest // 216MB fixture
-	data := encodeJPEG(t, 9000, 6000)
+	const (
+		overDimsW   = 9000
+		overDimsH   = 6000
+		wantScaledH = 1045 // 6000 * 1568 / 9000
+	)
 
-	scaled, media, w, h, origW, origH, didScale, err := ValidateAndScaleImage(data, imgJPEGMedia, DefaultImageLimits)
-	if err != nil {
-		t.Fatalf("ValidateAndScaleImage: %v", err)
-	}
+	data := encodeJPEG(t, overDimsW, overDimsH)
 
-	if !didScale {
+	got := validate(t, data, imgJPEGMedia, DefaultImageLimits)
+
+	if !got.scaled {
 		t.Fatal("didScale = false for an over-dims image; want true")
 	}
 
-	if origW != 9000 || origH != 6000 {
-		t.Errorf("provenance orig dims = (%d,%d); want (9000,6000)", origW, origH)
+	if got.origW != overDimsW || got.origH != overDimsH {
+		t.Errorf("provenance orig dims = (%d,%d); want (%d,%d)",
+			got.origW, got.origH, overDimsW, overDimsH)
 	}
 
-	// 1568 long edge: 9000 → 1568, 6000 → 1045 (rounding down keeps within).
-	if w != DefaultImageLimits.TargetLongEdge {
-		t.Errorf("scaled width = %d; want %d (the target long edge)", w, DefaultImageLimits.TargetLongEdge)
+	// The 1568 long edge: 9000 → 1568, 6000 → 1045 (rounding down keeps within).
+	if got.w != DefaultImageLimits.TargetLongEdge {
+		t.Errorf("scaled width = %d; want %d (the target long edge)",
+			got.w, DefaultImageLimits.TargetLongEdge)
 	}
 
-	if h != 1045 { //nolint:mnd // 6000 * 1568 / 9000
-		t.Errorf("scaled height = %d; want 1045", h)
+	if got.h != wantScaledH {
+		t.Errorf("scaled height = %d; want %d", got.h, wantScaledH)
 	}
 
-	if media != imgJPEGMedia {
-		t.Errorf("media = %q; want %q (JPEG re-encoded at quality 85)", media, imgJPEGMedia)
+	if got.media != imgJPEGMedia {
+		t.Errorf("media = %q; want %q (JPEG re-encoded at quality 85)", got.media, imgJPEGMedia)
 	}
 
-	cfg, format, derr := image.DecodeConfig(bytes.NewReader(scaled))
+	cfg, format, derr := image.DecodeConfig(bytes.NewReader(got.data))
 	if derr != nil {
 		t.Fatalf("scaled output does not decode: %v", derr)
 	}
 
-	if format != "jpeg" || cfg.Width != w || cfg.Height != h {
-		t.Errorf("scaled output config = %s %dx%d; want jpeg %dx%d", format, cfg.Width, cfg.Height, w, h)
+	if format != "jpeg" || cfg.Width != got.w || cfg.Height != got.h {
+		t.Errorf("scaled output config = %s %dx%d; want jpeg %dx%d",
+			format, cfg.Width, cfg.Height, got.w, got.h)
 	}
 }
 
@@ -335,33 +355,36 @@ func TestValidateAndScale_OverDimsDownscalesToTargetLongEdge(t *testing.T) { //n
 func TestValidateAndScale_OverBytesDownscalesWithinCap(t *testing.T) {
 	t.Parallel()
 
-	limits := ImageLimits{MaxW: 8000, MaxH: 8000, MaxBytes: 50 << 10, TargetLongEdge: 200} //nolint:mnd // cheap fixture scale
+	// Cheap fixture scale: MB-scale gradient PNG, dims within, bytes over.
+	const (
+		overBytesW   = 4000
+		overBytesCap = 200 << 10
+	)
 
-	data := encodeNoisePNG(t, 400, 400) //nolint:mnd // ~330 KB PNG, dims within, bytes over
+	limits := ImageLimits{MaxW: 8000, MaxH: 8000, MaxBytes: overBytesCap, TargetLongEdge: 200}
+	data := encodePNG(t, overBytesW, overBytesW)
 
 	if int64(len(data)) <= limits.MaxBytes {
 		t.Fatalf("fixture too small (%d bytes) to exceed the %d-byte cap", len(data), limits.MaxBytes)
 	}
 
-	scaled, media, w, h, _, _, didScale, err := ValidateAndScaleImage(data, imgPNGMedia, limits)
-	if err != nil {
-		t.Fatalf("ValidateAndScaleImage: %v", err)
-	}
+	got := validate(t, data, imgPNGMedia, limits)
 
-	if !didScale {
+	if !got.scaled {
 		t.Fatal("didScale = false for an over-bytes image; want true")
 	}
 
-	if int64(len(scaled)) > limits.MaxBytes {
-		t.Errorf("scaled output = %d bytes; want <= %d (downscales until within the cap)", len(scaled), limits.MaxBytes)
+	if int64(len(got.data)) > limits.MaxBytes {
+		t.Errorf("scaled output = %d bytes; want <= %d (downscales until within the cap)",
+			len(got.data), limits.MaxBytes)
 	}
 
-	if w != limits.TargetLongEdge {
-		t.Errorf("scaled long edge = %d; want %d", w, limits.TargetLongEdge)
+	if got.w != limits.TargetLongEdge {
+		t.Errorf("scaled long edge = %d; want %d", got.w, limits.TargetLongEdge)
 	}
 
-	if media != imgPNGMedia {
-		t.Errorf("media = %q; want %q (format preserved when the re-encode fits)", media, imgPNGMedia)
+	if got.media != imgPNGMedia {
+		t.Errorf("media = %q; want %q (format preserved when the re-encode fits)", got.media, imgPNGMedia)
 	}
 }
 
@@ -376,11 +399,13 @@ func TestValidateAndScale_PixelBombRefusedBeforeDecode(t *testing.T) { //nolint:
 
 	bomb := craftPNGBomb(40000, 40000)
 
-	if len(bomb) > 256 { //nolint:mnd // the bomb IS tiny — a big fixture means the craft broke
+	const bombMaxBytes = 256 // the bomb IS tiny — a big fixture means the craft broke
+
+	if len(bomb) > bombMaxBytes {
 		t.Fatalf("bomb fixture = %d bytes; want a tiny header-only file", len(bomb))
 	}
 
-	_, _, _, _, _, _, _, err := ValidateAndScaleImage(bomb, imgPNGMedia, DefaultImageLimits)
+	err := validateErr(bomb, imgPNGMedia, DefaultImageLimits)
 	if err == nil {
 		t.Fatal("pixel bomb accepted; want a loud refusal")
 	}
@@ -392,7 +417,8 @@ func TestValidateAndScale_PixelBombRefusedBeforeDecode(t *testing.T) { //nolint:
 	}
 
 	if imgErr.Stage != stageConfig {
-		t.Errorf("refusal stage = %q; want %q (DecodeConfig-stage, before any pixel allocation)", imgErr.Stage, stageConfig)
+		t.Errorf("refusal stage = %q; want %q (DecodeConfig-stage, before any pixel allocation)",
+			imgErr.Stage, stageConfig)
 	}
 
 	if got := counts.get(); got != 0 {
@@ -410,7 +436,7 @@ func TestValidateAndScale_UndecodableBytesTypedError(t *testing.T) {
 
 	junk := []byte("definitely not an image, just bytes 0123456789")
 
-	_, _, _, _, _, _, _, err := ValidateAndScaleImage(junk, imgPNGMedia, DefaultImageLimits)
+	err := validateErr(junk, imgPNGMedia, DefaultImageLimits)
 	if err == nil {
 		t.Fatal("undecodable bytes accepted; want a typed error")
 	}
@@ -435,34 +461,38 @@ func TestValidateAndScale_UndecodableBytesTypedError(t *testing.T) {
 func TestValidateAndScale_GIFAndWebPAccepted(t *testing.T) {
 	t.Parallel()
 
-	gifData := encodeGIF(t, 60, 40)
-
-	_, media, w, h, _, _, didScale, err := ValidateAndScaleImage(gifData, imgGIFMedia, DefaultImageLimits)
-	if err != nil {
-		t.Fatalf("gif: %v", err)
+	gifRes := validate(t, encodeGIF(t, gifW, gifH), imgGIFMedia, DefaultImageLimits)
+	if gifRes.scaled || gifRes.media != imgGIFMedia || gifRes.w != gifW || gifRes.h != gifH {
+		t.Errorf("gif = media %q %dx%d scaled=%v; want passthrough %q %dx%d",
+			gifRes.media, gifRes.w, gifRes.h, gifRes.scaled, imgGIFMedia, gifW, gifH)
 	}
 
-	if didScale || media != imgGIFMedia || w != 60 || h != 40 { //nolint:mnd // fixture dims
-		t.Errorf("gif = media %q %dx%d scaled=%v; want passthrough %q 60x40", media, w, h, didScale, imgGIFMedia)
-	}
-
-	webpData := craftWebPHeader(61, 41) //nolint:mnd // fixture dims
-
-	_, media, w, h, _, _, didScale, err = ValidateAndScaleImage(webpData, imgWebPMedia, DefaultImageLimits)
-	if err != nil {
-		t.Fatalf("webp: %v (registration or acceptance broke)", err)
-	}
-
-	if didScale || media != imgWebPMedia || w != 61 || h != 41 {
-		t.Errorf("webp = media %q %dx%d scaled=%v; want passthrough %q 61x41", media, w, h, didScale, imgWebPMedia)
+	webpRes := validate(t, craftWebPHeader(webpW, webpH), imgWebPMedia, DefaultImageLimits)
+	if webpRes.scaled || webpRes.media != imgWebPMedia || webpRes.w != webpW || webpRes.h != webpH {
+		t.Errorf("webp = media %q %dx%d scaled=%v; want passthrough %q %dx%d",
+			webpRes.media, webpRes.w, webpRes.h, webpRes.scaled, imgWebPMedia, webpW, webpH)
 	}
 }
 
 // --- Ingress wiring (runtime seam) ---
 
+// Fixture dims (unique per family so expectations read locally).
+const (
+	jpegW = 800
+	jpegH = 600
+	pngW  = 640
+	pngH  = 480
+	gifW  = 60
+	gifH  = 40
+	webpW = 61
+	webpH = 41
+)
+
 // newImageRunner builds a Runner + minimal session over a temp workspace
 // (Manager only — the ingress writes next to the transcript and nothing else
 // of the session is consulted).
+//
+//nolint:nonamedreturns // mirrors the 21-04 helper's shape
 func newImageRunner(t *testing.T) (r *Runner, sess *session.Session, dir string) {
 	t.Helper()
 
@@ -491,7 +521,7 @@ func imagePromptBlocks(b64 string) []acp.ContentBlock {
 // blocks map through toContentBlocks into session blocks, ingress validates +
 // persists, and the rewritten block carries Ref + metadata + provenance —
 // NEVER the base64 payload.
-func TestImageIngress_MapsAndRewritesToRefForm(t *testing.T) {
+func TestImageIngress_MapsAndRewritesToRefForm(t *testing.T) { //nolint:cyclop,funlen // assertion-dense ingress proof
 	t.Parallel()
 
 	r, sess, dir := newImageRunner(t)
@@ -502,7 +532,7 @@ func TestImageIngress_MapsAndRewritesToRefForm(t *testing.T) {
 	acpBlocks := imagePromptBlocks(b64)
 	blocks := toContentBlocks(acpBlocks)
 
-	if blocks[1].Type != imgTypeImage || blocks[1].Data != b64 || blocks[1].MimeType != imgPNGMedia {
+	if blocks[1].Type != imgTypeImage || blocks[1].Data != b64 || blocks[1].MediaType != imgPNGMedia {
 		t.Fatalf("toContentBlocks dropped the image fields: %+v", blocks[1])
 	}
 
@@ -524,8 +554,15 @@ func TestImageIngress_MapsAndRewritesToRefForm(t *testing.T) {
 		t.Errorf("rewritten block = dataRef %q media %q; want a Ref + %q", img.DataRef, img.MediaType, imgPNGMedia)
 	}
 
-	if img.Width != 320 || img.Height != 200 || img.OrigWidth != 320 || img.OrigHeight != 200 { //nolint:mnd // fixture dims
-		t.Errorf("metadata dims = (%d,%d) orig (%d,%d); want (320,200) both", img.Width, img.Height, img.OrigWidth, img.OrigHeight)
+	const (
+		fixtureW = 320
+		fixtureH = 200
+	)
+
+	if img.Width != fixtureW || img.Height != fixtureH ||
+		img.OrigWidth != fixtureW || img.OrigHeight != fixtureH {
+		t.Errorf("metadata dims = (%d,%d) orig (%d,%d); want (%d,%d) both",
+			img.Width, img.Height, img.OrigWidth, img.OrigHeight, fixtureW, fixtureH)
 	}
 
 	if img.Scaled {
@@ -554,13 +591,19 @@ func TestImageIngress_MapsAndRewritesToRefForm(t *testing.T) {
 // TestImageIngress_PersistsOriginalAndScaled proves D-09's originals-preserved
 // contract on the downscale path: BOTH the sha-keyed original and the
 // dims-suffixed scaled file land on disk, original bytes byte-equal the input.
-func TestImageIngress_PersistsOriginalAndScaled(t *testing.T) {
+func TestImageIngress_PersistsOriginalAndScaled(t *testing.T) { //nolint:cyclop,funlen // assertion-dense ingress proof
 	t.Parallel()
 
-	r, sess, _ := newImageRunner(t)
-	r.imageLimits = ImageLimits{MaxW: 200, MaxH: 200, MaxBytes: 10 << 20, TargetLongEdge: 100} //nolint:mnd // cheap fixture scale
+	const (
+		fixtureBigW = 400
+		fixtureBigH = 300
+	)
 
-	pngData := encodePNG(t, 400, 300)
+	r, sess, _ := newImageRunner(t)
+	// Cheap fixture scale: 400x300 exceeds 200x200; long edge fits 100.
+	r.imageLimits = ImageLimits{MaxW: 200, MaxH: 200, MaxBytes: 10 << 20, TargetLongEdge: 100}
+
+	pngData := encodePNG(t, fixtureBigW, fixtureBigH)
 	b64 := base64.StdEncoding.EncodeToString(pngData)
 
 	out := r.ingressImages(sess, toContentBlocks(imagePromptBlocks(b64)))
@@ -574,13 +617,20 @@ func TestImageIngress_PersistsOriginalAndScaled(t *testing.T) {
 		t.Fatal("Scaled = false for an over-limit image; want true")
 	}
 
-	if img.Width != 100 || img.Height != 75 { //nolint:mnd // 300*100/400
-		t.Errorf("scaled dims = (%d,%d); want (100,75)", img.Width, img.Height)
+	const (
+		wantW = 100
+		wantH = 75 // 300*100/400
+		origW = 400
+		origH = 300
+	)
+
+	if img.Width != wantW || img.Height != wantH {
+		t.Errorf("scaled dims = (%d,%d); want (%d,%d)", img.Width, img.Height, wantW, wantH)
 	}
 
-	if img.OrigWidth != 400 || img.OrigHeight != 300 || img.OrigSize != int64(len(pngData)) { //nolint:mnd // fixture dims
-		t.Errorf("provenance = orig (%d,%d) size %d; want (400,300) size %d",
-			img.OrigWidth, img.OrigHeight, img.OrigSize, len(pngData))
+	if img.OrigWidth != origW || img.OrigHeight != origH || img.OrigSize != int64(len(pngData)) {
+		t.Errorf("provenance = orig (%d,%d) size %d; want (%d,%d) size %d",
+			img.OrigWidth, img.OrigHeight, img.OrigSize, origW, origH, len(pngData))
 	}
 
 	// The Ref points at the SCALED file; the ORIGINAL lives beside it.
@@ -590,8 +640,9 @@ func TestImageIngress_PersistsOriginalAndScaled(t *testing.T) {
 	}
 
 	cfg, _, derr := image.DecodeConfig(bytes.NewReader(scaledBytes))
-	if derr != nil || cfg.Width != 100 || cfg.Height != 75 { //nolint:mnd // fixture dims
-		t.Errorf("scaled file config = %dx%d err %v; want 100x75", cfg.Width, cfg.Height, derr)
+	if derr != nil || cfg.Width != wantW || cfg.Height != wantH {
+		t.Errorf("scaled file config = %dx%d err %v; want %dx%d",
+			cfg.Width, cfg.Height, derr, wantW, wantH)
 	}
 
 	dir := filepath.Dir(img.DataRef)
@@ -614,7 +665,7 @@ func TestImageIngress_PersistsOriginalAndScaled(t *testing.T) {
 		t.Fatal("no second (original) file beside the scaled Ref; want <sha>.<ext> + <sha>.<w>x<h>.<ext>")
 	}
 
-	if !strings.Contains(scaledBase, "100x75") { //nolint:mnd // fixture dims
+	if !strings.Contains(scaledBase, "100x75") {
 		t.Errorf("scaled file name %q lacks the dims suffix; want the <sha>.<w>x<h>.<ext> form", scaledBase)
 	}
 
@@ -641,7 +692,8 @@ func TestImageIngress_TranscriptLeanNoBase64(t *testing.T) {
 
 	out := r.ingressImages(sess, toContentBlocks(imagePromptBlocks(b64)))
 
-	if err := sess.Manager.AppendUserMessage("turn_1", out); err != nil {
+	err := sess.Manager.AppendUserMessage("turn_1", out)
+	if err != nil {
 		t.Fatalf("AppendUserMessage: %v", err)
 	}
 
@@ -672,8 +724,9 @@ func TestImageIngress_TranscriptLeanNoBase64(t *testing.T) {
 
 	var blocks []session.ContentBlock
 
-	if err := json.Unmarshal(lines[len(lines)-1].Content, &blocks); err != nil {
-		t.Fatalf("unmarshal user_message content: %v", err)
+	uerr := json.Unmarshal(lines[len(lines)-1].Content, &blocks)
+	if uerr != nil {
+		t.Fatalf("unmarshal user_message content: %v", uerr)
 	}
 
 	if len(blocks) != 2 || blocks[1].DataRef == "" || blocks[1].Data != "" {
@@ -687,7 +740,7 @@ func TestImageIngress_TranscriptLeanNoBase64(t *testing.T) {
 func TestImageIngress_IdempotentReIngress(t *testing.T) {
 	t.Parallel()
 
-	r, sess, _ := newImageRunner(t)
+	r, sess, dir := newImageRunner(t)
 
 	pngData := encodePNG(t, 320, 200)
 	b64 := base64.StdEncoding.EncodeToString(pngData)
@@ -696,9 +749,9 @@ func TestImageIngress_IdempotentReIngress(t *testing.T) {
 
 	// Fresh session state over the SAME workspace (a second session in the
 	// same dir re-derives the same sha-keyed Refs).
-	mgr2, err := session.NewManager(filepath.Dir(sess.Manager.Path()), imgSessionID+"-2", redactorAdapter{})
-	if err != nil {
-		t.Fatalf("NewManager(2): %v", err)
+	mgr2, merr := session.NewManager(dir, imgSessionID+"-2", redactorAdapter{})
+	if merr != nil {
+		t.Fatalf("NewManager(2): %v", merr)
 	}
 
 	t.Cleanup(func() { _ = mgr2.Close() })

@@ -482,6 +482,8 @@ const (
 // pre-change-shaped user_message line marshal byte-identically after the
 // field additions, while the image variant carries Ref + metadata + resize
 // provenance through a marshal→read round-trip.
+//
+//nolint:gocognit,gocyclo,cyclop,funlen // three subtests, branch-dense assertions
 func TestContentBlockRoundTrip(t *testing.T) {
 	t.Parallel()
 
@@ -508,13 +510,14 @@ func TestContentBlockRoundTrip(t *testing.T) {
 		fixture := `{"type":"user_message","turnID":"t1","timestamp":"2026-09-01T00:00:00Z",` +
 			`"content":[{"type":"text","text":"hi"}]}` + "\n"
 
-		if err := os.WriteFile(path, []byte(fixture), filePermOwner); err != nil {
-			t.Fatalf("write fixture: %v", err)
+		werr := os.WriteFile(path, []byte(fixture), filePermOwner)
+		if werr != nil {
+			t.Fatalf("write fixture: %v", werr)
 		}
 
-		lines, err := readTranscriptFile(path)
-		if err != nil {
-			t.Fatalf("readTranscriptFile: %v", err)
+		lines, rerr := readTranscriptFile(path)
+		if rerr != nil {
+			t.Fatalf("readTranscriptFile: %v", rerr)
 		}
 
 		if len(lines) != 1 || lines[0].Type != userMessageType {
@@ -523,17 +526,18 @@ func TestContentBlockRoundTrip(t *testing.T) {
 
 		var blocks []ContentBlock
 
-		if err := json.Unmarshal(lines[0].Content, &blocks); err != nil {
-			t.Fatalf("unmarshal content: %v", err)
+		uerr := json.Unmarshal(lines[0].Content, &blocks)
+		if uerr != nil {
+			t.Fatalf("unmarshal content: %v", uerr)
 		}
 
 		if len(blocks) != 1 || blocks[0].Type != blockText || blocks[0].Text != "hi" {
 			t.Errorf("pre-change block drifted: %+v; want text hi", blocks[0])
 		}
 
-		remarshaled, err := json.Marshal(blocks[0])
-		if err != nil {
-			t.Fatalf("re-marshal: %v", err)
+		remarshaled, merr := json.Marshal(blocks[0])
+		if merr != nil {
+			t.Fatalf("re-marshal: %v", merr)
 		}
 
 		if want := `{"type":"text","text":"hi"}`; string(remarshaled) != want {
@@ -558,19 +562,21 @@ func TestContentBlockRoundTrip(t *testing.T) {
 			Scaled:     true,
 		}}
 
-		if err := m.AppendUserMessage(imgTurnIDStr, blocks); err != nil {
-			t.Fatalf("AppendUserMessage: %v", err)
+		aerr := m.AppendUserMessage(imgTurnIDStr, blocks)
+		if aerr != nil {
+			t.Fatalf("AppendUserMessage: %v", aerr)
 		}
 
-		lines, err := m.ReadAll()
-		if err != nil {
-			t.Fatalf("ReadAll: %v", err)
+		lines, rerr := m.ReadAll()
+		if rerr != nil {
+			t.Fatalf("ReadAll: %v", rerr)
 		}
 
 		var got []ContentBlock
 
-		if err := json.Unmarshal(lines[len(lines)-1].Content, &got); err != nil {
-			t.Fatalf("unmarshal image content: %v", err)
+		uerr := json.Unmarshal(lines[len(lines)-1].Content, &got)
+		if uerr != nil {
+			t.Fatalf("unmarshal image content: %v", uerr)
 		}
 
 		if len(got) != 1 {

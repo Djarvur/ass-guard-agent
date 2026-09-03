@@ -53,11 +53,26 @@ type RPCError struct {
 func (e *RPCError) Error() string { return fmt.Sprintf("jsonrpc %d: %s", e.Code, e.Message) }
 
 // ContentBlock is one entry of an ACP prompt/content array (PROMPT-TURN.md). In
-// Phase 2 only the text block is exercised; the shape is forward-compatible with
-// the full content-block set.
+// Phase 2 only the text block was exercised; the shape is forward-compatible
+// with the full content-block set — 21-05 (PAR-06) realizes the image half:
+// the v1 image block shape (base64 data + mimeType; uri rides the additive
+// third field) joins additively, all omitempty so text-only blocks stay
+// byte-identical on the wire.
 type ContentBlock struct {
 	Type string `json:"type"`
 	Text string `json:"text,omitempty"`
+	// Data carries the image block's base64 payload (the v1 ImageBlock
+	// shape). NEVER recorded in the transcript — the ingress swaps it for a
+	// disk Ref + metadata before any line is appended (the 09-05
+	// metadata-in-line discipline).
+	Data string `json:"data,omitempty"`
+	// MimeType is the image block's declared media type. Advisory at
+	// ingress: the DECODED format wins (format detection by magic bytes,
+	// T-21-16 — a spoofed mimeType never shapes the outgoing block).
+	MimeType string `json:"mimeType,omitempty"` //nolint:tagliatelle // ACP wire field
+	// URI is the v1 image block's uri variant (unfetched today; additive
+	// forward-compatibility with the schema's union).
+	URI string `json:"uri,omitempty"`
 }
 
 // --- ACP-03 live-turn frame vocabulary (16-01) ---

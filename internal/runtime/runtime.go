@@ -1,10 +1,14 @@
 package runtime
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
 	"io"
 	"log"
 	"log/slog"
@@ -178,6 +182,12 @@ type Runner struct {
 	// else allow) — ONE consumption site riding the existing seam, never a
 	// second gate pipeline.
 	readRuleEvaluator func(tool, path string) bool
+
+	// 21-05 (PAR-06/D-09): the image-ingress limit set. Zero →
+	// DefaultImageLimits (Anthropic's documented classes, pinned by the
+	// CONTEXT discretion). Tests may pin a cheaper set; production keeps the
+	// default.
+	imageLimits ImageLimits
 
 	// mcpServers is the NON-project MCP set from ecosys.Discover (12-02:
 	// user-scope ~/.claude.json OVER plugin-bundled .mcp.json — the two lowest
@@ -745,6 +755,13 @@ func (r *Runner) Run( //nolint:funlen // the turn pipeline's composition root
 	startChunkForwarder(ctx, ch, thoughtCh, toolCh, toolUpdCh, emit, promptDone, done)
 
 	blocks := toContentBlocks(prompt)
+
+	// 21-05 (PAR-06/D-09): image ingress at the turn entry — BEFORE the
+	// transcript append and before either turn path (engine or plain) sees
+	// the blocks: validate (DecodeConfig-first), auto-downscale, persist
+	// originals, rewrite to the Ref+metadata form. Blocks without image
+	// payloads pass through byte-identically.
+	blocks = r.ingressImages(sess, blocks)
 
 	// 12-01 reply routing (ACP-01): a prompt arriving while an ask is pending
 	// is the OPERATOR'S ANSWER, not a new turn (see routeAskReply).
@@ -1798,6 +1815,149 @@ func (r *Runner) stderrOrDefault() io.Writer {
 	return os.Stderr
 }
 
+// imageLimitsFor returns the effective ingress limits: the Runner's pinned
+// set when non-zero, else DefaultImageLimits (D-09's Anthropic classes).
+func (r *Runner) imageLimitsFor() ImageLimits {
+	if r.imageLimits.MaxW != 0 || r.imageLimits.MaxH != 0 ||
+		r.imageLimits.MaxBytes != 0 || r.imageLimits.TargetLongEdge != 0 {
+		return r.imageLimits
+	}
+
+	return DefaultImageLimits
+}
+
+// sessionImagesDir derives the per-session images dir: beside the session's
+// transcript under .ass-guard (the same self-gitignored tree openTranscript
+// guarantees), falling back to the workdir tree when the session carries no
+// Manager (test harnesses).
+func (r *Runner) sessionImagesDir(sess *session.Session) string {
+	if sess != nil && sess.Manager != nil && sess.Manager.Path() != "" {
+		return filepath.Join(filepath.Dir(sess.Manager.Path()), "images")
+	}
+
+	return filepath.Join(r.workDirOrDefault(), ".ass-guard", "images")
+}
+
+// sourceMediaOf names the source bytes' DECODED format media type for the
+// persisted original's file name (header-only re-parse — no pixel decode; the
+// decoded format already won validation inside ValidateAndScaleImage).
+func sourceMediaOf(data []byte) string {
+	_, format, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return ""
+	}
+
+	return mediaTypesByFormat[format]
+}
+
+// ingressImages is the image ingress tier (21-05, PAR-06/D-09): every image
+// content block arriving on the prompt is validated BEFORE the transcript
+// append — base64 decoded, DecodeConfig-first validated (the pixel-bomb
+// guard), auto-downscaled when over the provider limits (pure Go), the
+// ORIGINAL bytes persisted sha-keyed under the session .ass-guard images dir
+// (plus the dims-suffixed scaled derivative when scaling ran; temp+rename
+// atomic writes, idempotent on re-ingress) — and the block reaching the
+// transcript carries ONLY Ref + metadata + resize provenance (the 09-05
+// metadata-in-line discipline; the base64 never enters a line).
+//
+// Every failure (decode, limits, persistence) drops the block with ONE loud
+// fixed-form stderr note naming the outcome class — never the bytes, never a
+// dead turn (the D-10 note family; the provider-capability drop is Task 2's
+// D-11 leg). Blocks without image payloads pass through untouched
+// (byte-identical).
+//
+//nolint:funlen,cyclop // one ingress pipeline; grouped with the turn seam
+func (r *Runner) ingressImages(
+	sess *session.Session, blocks []session.ContentBlock,
+) []session.ContentBlock {
+	hasImage := false
+
+	for _, b := range blocks {
+		if b.Type == blockImage && b.Data != "" {
+			hasImage = true
+
+			break
+		}
+	}
+
+	if !hasImage {
+		return blocks
+	}
+
+	imagesDir := r.sessionImagesDir(sess)
+	out := make([]session.ContentBlock, 0, len(blocks))
+
+	for _, b := range blocks {
+		if b.Type != blockImage || b.Data == "" {
+			out = append(out, b)
+
+			continue
+		}
+
+		raw, derr := base64.StdEncoding.DecodeString(b.Data)
+		if derr != nil {
+			r.imageDropNote("image block dropped at ingress: undecodable base64 payload")
+
+			continue
+		}
+
+		scaled, media, w, h, origW, origH, didScale, verr :=
+			ValidateAndScaleImage(raw, b.MediaType, r.imageLimitsFor())
+		if verr != nil {
+			r.imageDropNote("image block dropped at ingress: " + verr.Error())
+
+			continue
+		}
+
+		// Originals ALWAYS persist (D-09); the scaled derivative lands beside
+		// them when downscaling ran. Sha-keyed: re-ingress converges on the
+		// identical name + bytes.
+		sum := sha256.Sum256(raw)
+
+		origMedia := sourceMediaOf(raw)
+		if origMedia == "" {
+			origMedia = media
+		}
+
+		origRef := imageRefFor(imagesDir, sum, origMedia, 0, 0, false)
+		if perr := writeImageAtomic(imagesDir, origRef, raw); perr != nil {
+			r.imageDropNote("image block dropped at ingress: original persistence failed: " + perr.Error())
+
+			continue
+		}
+
+		ref := origRef
+		if didScale {
+			ref = imageRefFor(imagesDir, sum, media, w, h, true)
+			if perr := writeImageAtomic(imagesDir, ref, scaled); perr != nil {
+				r.imageDropNote("image block dropped at ingress: scaled persistence failed: " + perr.Error())
+
+				continue
+			}
+		}
+
+		out = append(out, session.ContentBlock{
+			Type:       blockImage,
+			DataRef:    ref,
+			MediaType:  media,
+			Width:      w,
+			Height:     h,
+			OrigWidth:  origW,
+			OrigHeight: origH,
+			OrigSize:   int64(len(raw)),
+			Scaled:     didScale,
+		})
+	}
+
+	return out
+}
+
+// imageDropNote emits ONE fixed-form ingress-degrade note on stderr (the
+// D-10/D-11 note family: the outcome class is named, never the bytes).
+func (r *Runner) imageDropNote(msg string) {
+	_, _ = fmt.Fprintln(r.stderrOrDefault(), "ass-guard: "+msg)
+}
+
 // resolveSubagentModel resolves the scheduler light tier for SUBAGENT
 // dispatches (14-05, EARLY-05 — the token-economics lever). It is the same
 // call shape the routing setup uses for tierHeavy, on the EXISTING tiers table
@@ -2375,10 +2535,19 @@ func (r *Runner) routeAskReply(
 }
 
 // toContentBlocks converts the ACP content blocks to session content blocks.
+// 21-05 (PAR-06): image blocks map through with their Data (the pre-ingress
+// base64 carrier — json:"-", never serialized) and declared MimeType; the
+// ingress (ingressImages) validates + swaps them for Ref form BEFORE the
+// transcript append.
 func toContentBlocks(in []acp.ContentBlock) []session.ContentBlock {
 	out := make([]session.ContentBlock, len(in))
 	for i, b := range in {
-		out[i] = session.ContentBlock{Type: b.Type, Text: b.Text}
+		out[i] = session.ContentBlock{
+			Type:      b.Type,
+			Text:      b.Text,
+			Data:      b.Data,
+			MediaType: b.MimeType,
+		}
 	}
 
 	return out

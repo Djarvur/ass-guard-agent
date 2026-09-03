@@ -12,3 +12,4 @@ const implementationCompleteMsg = "## Implementation Complete — ready for revi
 const actionContinue = "continue"
 const textListKey = "text"
 const chunkDone = "done"
+const blockImage = "image"

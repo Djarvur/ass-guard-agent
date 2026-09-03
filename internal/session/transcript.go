@@ -86,10 +86,37 @@ const (
 )
 
 // ContentBlock is one entry of a user/assistant message's content (mirrors the
-// ACP content block shape). Phase 2 exercises text blocks.
+// ACP content block shape). Phase 2 exercised text blocks; 21-05 (PAR-06/D-09)
+// adds the image variant — Ref + metadata + resize provenance ONLY (the 09-05
+// metadata-in-line/body-by-Ref discipline: the base64 payload NEVER enters the
+// transcript; originals live on disk under the session .ass-guard images dir).
+// Every image field is omitempty, so text-only blocks serialize byte-identically.
 type ContentBlock struct {
 	Type string `json:"type"`
 	Text string `json:"text,omitempty"`
+	// DataRef is the on-disk path of the ingress-persisted image bytes (the
+	// lean image line's Ref — what the shaper reads back at shape time).
+	DataRef string `json:"dataRef,omitempty"` //nolint:tagliatelle // on-disk format
+	// MediaType is the canonical media type the INGRESS validated (decoded
+	// format, not the declared mimeType — T-21-16).
+	MediaType string `json:"mediaType,omitempty"` //nolint:tagliatelle // on-disk format
+	// Width/Height are the final (possibly downscaled) pixel dims.
+	Width  int `json:"width,omitempty"`
+	Height int `json:"height,omitempty"`
+	// OrigWidth/OrigHeight/OrigSize are the D-09 resize provenance: the
+	// original dims and byte size (recorded even when no scaling was needed).
+	OrigWidth  int   `json:"origWidth,omitempty"`  //nolint:tagliatelle // on-disk format
+	OrigHeight int   `json:"origHeight,omitempty"` //nolint:tagliatelle // on-disk format
+	OrigSize   int64 `json:"origSize,omitempty"`   //nolint:tagliatelle // on-disk format
+	// Scaled marks that the outgoing bytes were auto-downscaled to fit the
+	// provider limits (D-09).
+	Scaled bool `json:"scaled,omitempty"`
+	// Data is the PRE-INGRESS base64 carrier (the ACP image block's payload,
+	// mapped by the runtime before ingressImages runs). It is NEVER
+	// serialized (json:"-"): the lean-line discipline is enforced by the type
+	// itself — even a path that skipped ingress cannot leak bytes into the
+	// transcript.
+	Data string `json:"-"`
 }
 
 // Line is one JSONL transcript entry. It is a flat struct: every type uses the
