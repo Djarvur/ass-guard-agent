@@ -1,32 +1,26 @@
 ---
-status: testing
+status: complete
 phase: 17-permissions-elicitation
 source: [17-VERIFICATION.md]
 started: 2026-09-01T05:05:00Z
-updated: 2026-09-02T20:30:00Z
+updated: 2026-09-03T10:25:00Z
 ---
 
 ## Current Test
 
-number: 1
-name: Live-Zed permission dialog round-trip incl. persistence — RE-RUN after G-17-1 fix (WINDOWS #15)
-expected: |
-  With the canonical nested outcome decode landed (17-06, commits 1538673/f372db4), an allow_always answer executes the call and persists the rule (second identical call runs with NO dialog); reject_always persists the deny and re-denies with no dialog; the original "malformed permission outcome" symptom on every answer is GONE. Four-option rendering + clean cancel already operator-confirmed (2026-09-02).
-awaiting: user response
+[testing complete]
 
 ## Tests
 
 ### 1. Live-Zed four-option permission dialog + always-persistence (WINDOWS #15)
 expected: In a scratch project set permissions.mode: gated via Zed settings/configOptions, prompt a mutating tool call. Zed's native permission dialog renders with FOUR options (Allow once / Always allow / Reject once / Always reject — A1 caveat: confirm the four-option set, not just allow/reject); allow_always persists (second identical call runs with no dialog); reject_always denies with no dialog; cancel closes cleanly.
-result: [pending]
-re-run: true
-note: "First run (2026-09-02): 4-option rendering + cancel CONFIRMED (operator screenshots); every answer failed on the flat-vs-nested outcome decode bug (issue, blocker). Gap G-17-1 fixed by 17-06 (canonical nested decode; simulator corrected; mise ci green) — re-running the persistence legs against the fixed binary."
+result: pass
+note: "RE-RUN 2026-09-03 session 931b2b3e (fixed binary, commits 1538673/f372db4): allow_always leg — turn-001 Write dialog → Always allow → rule persisted → turns 002/003 (hello.txt rewrite, second.txt) ran with ZERO dialogs; reject_always leg — turn-006 Bash → Always reject → denied + deny:[Bash] persisted, turn-007 repeat denied in 0.3ms with NO dialog; the 'malformed permission outcome' symptom GONE (was every answer on 2026-09-02 run). Four-option rendering + clean cancel operator-confirmed 2026-09-02 (screenshots). Persistence scope is bare-tool (D-01: tool×project, dialog never writes richer patterns) — second.txt without dialog is by design."
 
 ### 2. Live-Zed native elicitation form + answer lands as tool result (WINDOWS #15 steps 4-5)
 expected: Prompt an AskUserQuestion / trigger a learning-store or engine ask in the same gated session. The ask renders as Zed's native structured form (elicitation/create); answering lands the answer as the tool result; on a pre-elicitation client the ask degrades to the plain-text path.
-result: [pending]
-re-run: true
-note: "First run (2026-09-02): blocked by G-17-1 — the AskUserQuestion call was itself permission-gated, its dialog answer hit the decode bug, and the model degraded to the plain-text question (that degrade leg PASSED coherently). G-17-1 fixed — the native form + answer-lands-as-tool-result legs are now testable."
+result: pass
+note: "RE-RUN 2026-09-03: native question form rendered (operator: options + submit button), answer landed as the tool result ('User has answered your questions: …=«яблоко»', turn-005), model used the answer — confirmed on a repeat run by the operator. Plain-text degrade exercised live on 2026-09-02 (coherent model recovery). Watchlist note (single occurrence, self-recovered, not reproducible on re-run): turn-004, the FIRST AskUserQuestion immediately after its permission-allow click, returned the 12-D-01 non-answer form (isError + questions echoed, transcript 931b2b3e) instead of surfacing the question — candidate seam: permission-resume → elicitation dispatch (CR-05/ArmSettle territory); evidence preserved in ~/tmp/perm-uat transcript + audit. Deferred product note: single-select elicitation forms require a separate Submit click in Zed's renderer; auto-submit-on-option-click is a client-side/upstream concern (no v1 schema knob)."
 
 ### 3. Human review of the five concurrency fixes (17-REVIEW-FIX.md)
 expected: An experienced reviewer eyeballs each fix diff for concurrency-semantics correctness beyond what the pins assert (no lost wakeups, no lock-order inversions, no scheduling-window leaks): CR-01 (a9d8ea4 batch gate-suspension collection + projector hasResult filter), CR-02 (a13054e SetResumeSerial turn-mutex serialization of async resumes), CR-04 (90f22ed SetTurnOriginAutomation bracket), CR-05 (f154e7d AskBroker.ArmSettle for permission suspensions), atomic DrainAll (a710b75). All six pins are RED-proven and green under -race; concurrency invariants can hold in tests and still hide races.
@@ -41,9 +35,9 @@ note: "All four mechanical checks re-run by orchestrator live: go list -deps ./i
 ## Summary
 
 total: 4
-passed: 2
+passed: 4
 issues: 0
-pending: 2
+pending: 0
 skipped: 0
 blocked: 0
 
