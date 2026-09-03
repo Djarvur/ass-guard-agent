@@ -402,3 +402,110 @@ func plantPngRef(t *testing.T) (ref, b64 string) { //nolint:nonamedreturns // ti
 
 	return ref, base64.StdEncoding.EncodeToString(buf.Bytes())
 }
+
+// --- 21-REVIEW WR-07: an image-only prompt whose image is dropped must keep
+// a non-empty outgoing body ---
+
+// imgDropInBandPrefix is the fixed-form in-band placeholder's prefix (the
+// D-10/D-11 note family's in-band twin: names the drop class, never the
+// bytes).
+const imgDropInBandPrefix = "[image content could not be delivered: "
+
+// firstUserText returns the concatenated text of the first received user
+// message ("" when none arrived) — the WR-07 wire observable.
+func (p *noImageProvider) firstUserText() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	for i := range p.received {
+		for j := range p.received[i] {
+			m := &p.received[i][j]
+			if !strings.EqualFold(m.Role, "user") {
+				continue
+			}
+
+			if m.Content != "" {
+				return m.Content
+			}
+
+			var sb strings.Builder
+
+			for _, b := range m.Blocks {
+				if b.Image == nil {
+					sb.WriteString(b.Text)
+				}
+			}
+
+			return sb.String()
+		}
+	}
+
+	return ""
+}
+
+// TestImageCapability_ImageOnlyDropKeepsNonEmptyBody (21-REVIEW WR-07): when
+// the prompt's ONLY block was the dropped image, the D-11 leg must still
+// deliver a NON-EMPTY user message — the pre-fix shape handed the shaper an
+// empty seed (Content "" → NewTextBlock("")), which Anthropic rejects with
+// "text content blocks must be non-empty": a dead turn. The placeholder is
+// the in-band twin of the stderr note; the stderr note count stays ONE.
+//
+// Deliberately sequential: a full Run turn must not add contention to the
+// timing-sensitive tests sharing the parallel batch.
+func TestImageCapability_ImageOnlyDropKeepsNonEmptyBody(t *testing.T) { //nolint:paralleltest // full-turn e2e
+	prov := &noImageProvider{supports: false}
+
+	r := newCapabilityRunner(t, func(_ provider.RequestCapturer) provider.Provider { return prov })
+
+	// Image-ONLY prompt: no text block accompanies the payload.
+	prompt := []acp.ContentBlock{{
+		Type: blockImage,
+		Data: base64.StdEncoding.EncodeToString(encodePNG(t, 8, 8)),
+		MimeType: imgPNGMedia,
+	}}
+
+	stop, err := r.Run(context.Background(), imgSessionID, &noopEmitter{}, prompt)
+	if err != nil {
+		t.Fatalf("Run err = %v (an image-only drop must complete normally)", err)
+	}
+
+	if stop != stopEndTurn {
+		t.Errorf("stop = %q; want end_turn (never a dead turn)", stop)
+	}
+
+	if got := prov.firstUserText(); got == "" {
+		t.Fatal("the outgoing user message body is EMPTY after the image-only drop — " +
+			"the shaper would emit an empty text block and the provider would 400")
+	} else if !strings.Contains(got, imgDropInBandPrefix) {
+		t.Errorf("placeholder = %q; want the fixed-form in-band drop note", got)
+	}
+
+	// The stderr note discipline is unchanged: still EXACTLY ONE D-11 note.
+	stderr, _ := r.stderr.(*bytes.Buffer)
+
+	if got := strings.Count(stderr.String(), imgD11Marker); got != 1 {
+		t.Errorf("D-11 notes = %d; want exactly 1; stderr: %q", got, stderr.String())
+	}
+}
+
+// TestImageIngress_ImageOnlyDropKeepsTextBearingBlock (21-REVIEW WR-07): the
+// D-10 leg's corner — the prompt's only block is an image whose payload fails
+// ingress (undecodable base64) on an image-capable provider. The ingress must
+// leave a text-bearing placeholder block, never an EMPTY block list.
+func TestImageIngress_ImageOnlyDropKeepsTextBearingBlock(t *testing.T) {
+	t.Parallel()
+
+	r, sess, _ := newImageRunner(t)
+
+	out := r.ingressImages(sess, toContentBlocks([]acp.ContentBlock{
+		{Type: imgTypeImage, Data: "!!!not-base64!!!", MimeType: imgPNGMedia},
+	}))
+
+	if len(out) != 1 || out[0].Type != blockText || out[0].Text == "" {
+		t.Fatalf("ingress output = %+v; want exactly one NON-EMPTY text block (the in-band placeholder)", out)
+	}
+
+	if !strings.Contains(out[0].Text, imgDropInBandPrefix) {
+		t.Errorf("placeholder = %q; want the fixed-form in-band drop note", out[0].Text)
+	}
+}

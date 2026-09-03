@@ -1953,7 +1953,37 @@ func (r *Runner) dropUnsupportedImages(
 		"ass-guard: image content dropped: provider %T does not support images "+
 			"(D-11) — the turn proceeds with text only\n", sess.Provider)
 
-	return out
+	// 21-REVIEW WR-07: an image-ONLY prompt would leave the outgoing user
+	// message EMPTY (the shaper's byte-compat path emits NewTextBlock("") —
+	// an Anthropic 400, a dead turn). The in-band placeholder guarantees a
+	// text-bearing body.
+	return ensureTextBearingBlock(out, imgDropClassUnsupported)
+}
+
+// The in-band drop-note classes (21-REVIEW WR-07): fixed-form outcome
+// classes in the D-10/D-11 note family — never the bytes, never per-path
+// detail.
+const (
+	imgDropClassUnsupported = "provider does not support images"
+	imgDropClassIngress     = "image failed ingress validation"
+)
+
+// ensureTextBearingBlock guarantees blocks still carries a text-bearing
+// block after image drops (21-REVIEW WR-07): when the drop left no non-empty
+// text block (the image-only-prompt corner), ONE fixed-form placeholder text
+// block is appended so the outgoing user message is never empty. The class
+// names the drop's outcome — the in-band twin of the stderr note.
+func ensureTextBearingBlock(blocks []session.ContentBlock, class string) []session.ContentBlock {
+	for _, b := range blocks {
+		if b.Type == blockText && b.Text != "" {
+			return blocks
+		}
+	}
+
+	return append(blocks, session.ContentBlock{
+		Type: blockText,
+		Text: "[image content could not be delivered: " + class + "]",
+	})
 }
 
 // ingressImages is the image ingress tier (21-05, PAR-06/D-09): every image
@@ -1993,6 +2023,8 @@ func (r *Runner) ingressImages(
 	imagesDir := r.sessionImagesDir(sess)
 	out := make([]session.ContentBlock, 0, len(blocks))
 
+	dropped := false
+
 	for _, b := range blocks {
 		if b.Type != blockImage || b.Data == "" {
 			out = append(out, b)
@@ -2003,6 +2035,7 @@ func (r *Runner) ingressImages(
 		raw, derr := base64.StdEncoding.DecodeString(b.Data)
 		if derr != nil {
 			r.imageDropNote("image block dropped at ingress: undecodable base64 payload")
+			dropped = true
 
 			continue
 		}
@@ -2011,6 +2044,7 @@ func (r *Runner) ingressImages(
 			ValidateAndScaleImage(raw, b.MediaType, r.imageLimitsFor())
 		if verr != nil {
 			r.imageDropNote("image block dropped at ingress: " + verr.Error())
+			dropped = true
 
 			continue
 		}
@@ -2028,6 +2062,7 @@ func (r *Runner) ingressImages(
 		origRef := imageRefFor(imagesDir, sum, origMedia, 0, 0, false)
 		if perr := writeImageAtomic(imagesDir, origRef, raw); perr != nil {
 			r.imageDropNote("image block dropped at ingress: original persistence failed: " + perr.Error())
+			dropped = true
 
 			continue
 		}
@@ -2037,6 +2072,7 @@ func (r *Runner) ingressImages(
 			ref = imageRefFor(imagesDir, sum, media, w, h, true)
 			if perr := writeImageAtomic(imagesDir, ref, scaled); perr != nil {
 				r.imageDropNote("image block dropped at ingress: scaled persistence failed: " + perr.Error())
+				dropped = true
 
 				continue
 			}
@@ -2053,6 +2089,13 @@ func (r *Runner) ingressImages(
 			OrigSize:   int64(len(raw)),
 			Scaled:     didScale,
 		})
+	}
+
+	// 21-REVIEW WR-07: a drop that emptied the prompt (image-only input whose
+	// payload failed ingress) must still leave a text-bearing body — never an
+	// empty user message on the wire.
+	if dropped {
+		out = ensureTextBearingBlock(out, imgDropClassIngress)
 	}
 
 	return out
