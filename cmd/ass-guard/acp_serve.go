@@ -63,9 +63,6 @@ var (
 	errResumeUnknownName = errors.New("no session with that name")
 	// errResumeInvalidTarget: a target that can be neither an id nor a name.
 	errResumeInvalidTarget = errors.New("invalid resume target")
-	// errResumePickerUnavailable: interim default of the pick seam until
-	// picker.go (Task 2) wires SelectSession over the process stdio.
-	errResumePickerUnavailable = errors.New("the interactive session picker is not available")
 )
 
 // resumeFlags is the trio's parsed state as the RunEs read it from any
@@ -144,7 +141,7 @@ func continueMostRecent(dir string) (string, error) {
 // numbered picker over the process stdio; tests inject a fake).
 func pickerChoice(dir string, pick func([]session.SessionHeader) (string, error)) (string, error) {
 	if pick == nil {
-		return "", errResumePickerUnavailable
+		return "", fmt.Errorf("%w: no picker wired", errPickerInput)
 	}
 
 	rows, _, err := session.ListSessions(dir, "", 0)
@@ -242,14 +239,14 @@ func resolveServeResumeTarget(workDir string, rf resumeFlags) (string, error) {
 	return resolveResumeTarget(resolvedDir, rf, pickResumeSession)
 }
 
-// pickResumeSession is the D-11 picker composition edge: the CLI RunEs pass
-// it to resolveResumeTarget, and bare --resume reads the numbered choice over
-// the process stdio. Var so the resolution path stays testable; picker.go
-// (Task 2) wires SelectSession as the production body.
+// pickResumeSession is the D-11 picker composition edge: bare --resume reads
+// the numbered choice over the process stdio (rows on stderr, the number from
+// stdin — pipe-safe by construction). Var so the resolution path stays
+// testable (SelectSession itself takes io.Reader/io.Writer).
 //
 //nolint:gochecknoglobals // the testable-seam var pattern (the runACPServeCmd extraction precedent)
-var pickResumeSession = func([]session.SessionHeader) (string, error) {
-	return "", errResumePickerUnavailable
+var pickResumeSession = func(rows []session.SessionHeader) (string, error) {
+	return SelectSession(rows, os.Stdin, os.Stderr)
 }
 
 // resumeServeDelegate is everything the root resume branch forwards into the
