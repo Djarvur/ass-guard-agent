@@ -33,6 +33,7 @@ const (
 	listTestTitleCut   = 80
 	listTestFillerSize = 70 * 1024 // filler pushing the prompt beyond the 64 KiB prefix
 	listTestBaseYear   = 2026
+	listTestFallback   = "(no prompt)"
 )
 
 // listUUID returns a sessIDPattern-valid id whose lexicographic order matches
@@ -73,16 +74,18 @@ func writeListTranscript(t *testing.T, dir, id string, lines []Line) string {
 	t.Helper()
 
 	store := filepath.Join(dir, ".ass-guard")
-	if err := os.MkdirAll(store, dirPerm); err != nil {
+
+	err := os.MkdirAll(store, dirPerm)
+	if err != nil {
 		t.Fatalf("mkdir %s: %v", store, err)
 	}
 
 	var b bytes.Buffer
 
 	for i := range lines {
-		raw, err := json.Marshal(lines[i])
-		if err != nil {
-			t.Fatalf("marshal line: %v", err)
+		raw, merr := json.Marshal(lines[i])
+		if merr != nil {
+			t.Fatalf("marshal line: %v", merr)
 		}
 
 		b.Write(raw)
@@ -90,7 +93,9 @@ func writeListTranscript(t *testing.T, dir, id string, lines []Line) string {
 	}
 
 	path := filepath.Join(store, "transcript_"+id+".jsonl")
-	if err := os.WriteFile(path, b.Bytes(), filePermOwner); err != nil {
+
+	err = os.WriteFile(path, b.Bytes(), filePermOwner)
+	if err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}
 
@@ -101,9 +106,24 @@ func writeListTranscript(t *testing.T, dir, id string, lines []Line) string {
 func setListMtime(t *testing.T, path string, at time.Time) {
 	t.Helper()
 
-	if err := os.Chtimes(path, at, at); err != nil {
+	err := os.Chtimes(path, at, at)
+	if err != nil {
 		t.Fatalf("chtimes %s: %v", path, err)
 	}
+}
+
+// mustList runs ListSessions and fails the test on any error.
+func mustList( //nolint:nonamedreturns // (headers, next) is the page pair
+	t *testing.T, dir, cursor string, limit int,
+) (headers []SessionHeader, next string) {
+	t.Helper()
+
+	headers, next, err := ListSessions(dir, cursor, limit)
+	if err != nil {
+		t.Fatalf("ListSessions(%q, %q, %d): %v", dir, cursor, limit, err)
+	}
+
+	return headers, next
 }
 
 // listIDs projects a header page down to its id sequence.
@@ -116,6 +136,15 @@ func listIDs(headers []SessionHeader) []string {
 	return ids
 }
 
+// wantIDs asserts a page's id sequence.
+func wantIDs(t *testing.T, headers []SessionHeader, want []string, what string) {
+	t.Helper()
+
+	if ids := listIDs(headers); !reflect.DeepEqual(ids, want) {
+		t.Fatalf("%s: got %v, want %v", what, ids, want)
+	}
+}
+
 // b64 encodes a raw cursor payload the way the engine's codec is expected to.
 func b64(s string) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(s))
@@ -126,6 +155,8 @@ func listTestBase() time.Time {
 }
 
 func TestSessionListOrderingAndTiebreak(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	base := listTestBase()
 
@@ -144,20 +175,14 @@ func TestSessionListOrderingAndTiebreak(t *testing.T) {
 		setListMtime(t, path, at)
 	}
 
-	got1, next, err := ListSessions(dir, "", 0)
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-
+	got1, next := mustList(t, dir, "", 0)
 	if next != "" {
 		t.Fatalf("nextCursor = %q, want empty", next)
 	}
 
 	// lastActivity desc; equal-mtime pair ascending by id; exactly once each.
 	want := []string{listUUID(1), listUUID(3), listUUID(2), listUUID(5), listUUID(4)}
-	if ids := listIDs(got1); !reflect.DeepEqual(ids, want) {
-		t.Fatalf("order: got %v, want %v", ids, want)
-	}
+	wantIDs(t, got1, want, "order")
 
 	for _, h := range got1 {
 		if !h.LastActivity.Equal(forced[h.SessionID]) {
@@ -166,17 +191,15 @@ func TestSessionListOrderingAndTiebreak(t *testing.T) {
 	}
 
 	// identical call → identical slice: equal-mtime rows never flip (D-05).
-	got2, _, err := ListSessions(dir, "", 0)
-	if err != nil {
-		t.Fatalf("second list: %v", err)
-	}
-
+	got2, _ := mustList(t, dir, "", 0)
 	if !reflect.DeepEqual(got1, got2) {
 		t.Fatalf("identical calls differ:\n%v\n%v", got1, got2)
 	}
 }
 
 func TestSessionListCursorPagination(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	base := listTestBase()
 
@@ -187,42 +210,20 @@ func TestSessionListCursorPagination(t *testing.T) {
 	}
 
 	// Single-page reference: 7 rows, mtime desc → ids 7..1.
-	full, _, err := ListSessions(dir, "", 0)
-	if err != nil {
-		t.Fatalf("full list: %v", err)
-	}
+	full, _ := mustList(t, dir, "", 0)
 
 	wantFull := listIDs(full)
 	if len(wantFull) != listTestSeven {
 		t.Fatalf("full list has %d rows, want %d", len(wantFull), listTestSeven)
 	}
 
-	p1, c1, err := ListSessions(dir, "", listTestPageSize)
-	if err != nil {
-		t.Fatalf("page1: %v", err)
-	}
+	p1, c1 := mustList(t, dir, "", listTestPageSize)
+	p2, c2 := mustList(t, dir, c1, listTestPageSize)
+	p3, c3 := mustList(t, dir, c2, listTestPageSize)
 
-	p2, c2, err := ListSessions(dir, c1, listTestPageSize)
-	if err != nil {
-		t.Fatalf("page2: %v", err)
-	}
-
-	p3, c3, err := ListSessions(dir, c2, listTestPageSize)
-	if err != nil {
-		t.Fatalf("page3: %v", err)
-	}
-
-	if ids := listIDs(p1); !reflect.DeepEqual(ids, wantFull[0:listTestPageSize]) {
-		t.Fatalf("page1 = %v, want %v", ids, wantFull[0:listTestPageSize])
-	}
-
-	if ids := listIDs(p2); !reflect.DeepEqual(ids, wantFull[listTestPageSize:2*listTestPageSize]) {
-		t.Fatalf("page2 = %v, want %v", ids, wantFull[listTestPageSize:2*listTestPageSize])
-	}
-
-	if ids := listIDs(p3); !reflect.DeepEqual(ids, wantFull[2*listTestPageSize:]) {
-		t.Fatalf("page3 = %v, want %v", ids, wantFull[2*listTestPageSize:])
-	}
+	wantIDs(t, p1, wantFull[0:listTestPageSize], "page1")
+	wantIDs(t, p2, wantFull[listTestPageSize:2*listTestPageSize], "page2")
+	wantIDs(t, p3, wantFull[2*listTestPageSize:], "page3")
 
 	if c1 == "" || c2 == "" {
 		t.Fatalf("intermediate cursors must be non-empty: %q %q", c1, c2)
@@ -235,6 +236,7 @@ func TestSessionListCursorPagination(t *testing.T) {
 	// Every row exactly once, page order tracking the full order.
 	seen := append(listIDs(p1), listIDs(p2)...)
 	seen = append(seen, listIDs(p3)...)
+
 	if !reflect.DeepEqual(seen, wantFull) {
 		t.Fatalf("paged sequence %v != full order %v", seen, wantFull)
 	}
@@ -242,18 +244,14 @@ func TestSessionListCursorPagination(t *testing.T) {
 	// Stale cursor: delete the session c1 points at (page1's last row) — the
 	// next page still returns a consistent page (best-effort shift, D-05).
 	deadPath := filepath.Join(dir, ".ass-guard", "transcript_"+listUUID(5)+".jsonl")
-	if err := os.Remove(deadPath); err != nil {
+
+	err := os.Remove(deadPath)
+	if err != nil {
 		t.Fatalf("remove stale row: %v", err)
 	}
 
-	p2b, c2b, err := ListSessions(dir, c1, listTestPageSize)
-	if err != nil {
-		t.Fatalf("page2 after deletion: %v", err)
-	}
-
-	if ids := listIDs(p2b); !reflect.DeepEqual(ids, wantFull[listTestPageSize:2*listTestPageSize]) {
-		t.Fatalf("page2 after deletion = %v", ids)
-	}
+	p2b, c2b := mustList(t, dir, c1, listTestPageSize)
+	wantIDs(t, p2b, wantFull[listTestPageSize:2*listTestPageSize], "page2 after deletion")
 
 	if c2b != c2 {
 		t.Fatalf("cursor after deletion = %q, want %q", c2b, c2)
@@ -261,6 +259,8 @@ func TestSessionListCursorPagination(t *testing.T) {
 }
 
 func TestSessionListTombstoneFilter(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	base := listTestBase()
 
@@ -273,25 +273,22 @@ func TestSessionListTombstoneFilter(t *testing.T) {
 
 	// Zero-byte tombstone beside the transcript (D-07 spelling: <id>.deleted).
 	marker := filepath.Join(dir, ".ass-guard", deadID+".deleted")
-	if err := os.WriteFile(marker, nil, filePermOwner); err != nil {
+
+	err := os.WriteFile(marker, nil, filePermOwner)
+	if err != nil {
 		t.Fatalf("write marker: %v", err)
 	}
 
 	// The tombstoned transcript is UNREADABLE: if the engine opened it, the
 	// open failure would surface. Absence plus no error proves the stat filter
 	// ran BEFORE any open — zero transcript bytes read (D-07 read side).
-	if err := os.Chmod(deadPath, 0); err != nil {
+	err = os.Chmod(deadPath, 0)
+	if err != nil {
 		t.Fatalf("chmod dead transcript: %v", err)
 	}
 
-	got, _, err := ListSessions(dir, "", 0)
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-
-	if ids := listIDs(got); !reflect.DeepEqual(ids, []string{liveID}) {
-		t.Fatalf("tombstone filter: got %v, want [%s]", ids, liveID)
-	}
+	got, _ := mustList(t, dir, "", 0)
+	wantIDs(t, got, []string{liveID}, "tombstone filter")
 
 	fi, err := os.Stat(marker)
 	if err != nil {
@@ -304,30 +301,27 @@ func TestSessionListTombstoneFilter(t *testing.T) {
 }
 
 func TestSessionListEmptyAndSingle(t *testing.T) {
+	t.Parallel()
+
 	base := listTestBase()
 
 	// Empty store (.ass-guard exists, no transcripts).
 	empty := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(empty, ".ass-guard"), dirPerm); err != nil {
+
+	err := os.MkdirAll(filepath.Join(empty, ".ass-guard"), dirPerm)
+	if err != nil {
 		t.Fatalf("mkdir store: %v", err)
 	}
 
-	got, next, err := ListSessions(empty, "", 0)
-	if err != nil {
-		t.Fatalf("empty store: %v", err)
-	}
-
+	got, next := mustList(t, empty, "", 0)
 	if len(got) != 0 || next != "" {
 		t.Fatalf("empty store: got %d rows, next %q", len(got), next)
 	}
 
 	// Missing store dir entirely — same empty answer, not an error.
 	missing := filepath.Join(t.TempDir(), "absent")
-	got2, next2, err := ListSessions(missing, "", 0)
-	if err != nil {
-		t.Fatalf("missing store: %v", err)
-	}
 
+	got2, next2 := mustList(t, missing, "", 0)
 	if len(got2) != 0 || next2 != "" {
 		t.Fatalf("missing store: got %d rows, next %q", len(got2), next2)
 	}
@@ -339,17 +333,17 @@ func TestSessionListEmptyAndSingle(t *testing.T) {
 	path := writeListTranscript(t, single, only, standardListLines(t, only, base, "only one"))
 	setListMtime(t, path, base)
 
-	got3, next3, err := ListSessions(single, "", 0)
-	if err != nil {
-		t.Fatalf("single store: %v", err)
-	}
+	got3, next3 := mustList(t, single, "", 0)
+	wantIDs(t, got3, []string{only}, "single store")
 
-	if ids := listIDs(got3); !reflect.DeepEqual(ids, []string{only}) || next3 != "" {
-		t.Fatalf("single store: got %v, next %q", ids, next3)
+	if next3 != "" {
+		t.Fatalf("single store nextCursor = %q, want empty", next3)
 	}
 }
 
 func TestSessionListHeaderShape(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	base := listTestBase()
 
@@ -388,14 +382,12 @@ func TestSessionListHeaderShape(t *testing.T) {
 		t.Fatalf("checkpoint open: %v", err)
 	}
 
-	if err := cp.Snapshot(context.Background(), cpID, cpID+"-turn-001"); err != nil {
+	err = cp.Snapshot(context.Background(), cpID, cpID+"-turn-001")
+	if err != nil {
 		t.Fatalf("checkpoint snapshot: %v", err)
 	}
 
-	got, _, err := ListSessions(dir, "", 0)
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
+	got, _ := mustList(t, dir, "", 0)
 
 	by := map[string]SessionHeader{}
 	for _, h := range got {
@@ -406,8 +398,19 @@ func TestSessionListHeaderShape(t *testing.T) {
 		t.Fatalf("rows = %d, want 4", len(by))
 	}
 
+	checkHeaderRows(t, by, base, promptID, noneID, farID, cpID, longPrompt)
+}
+
+// checkHeaderRows asserts the four fixture rows' header shapes.
+func checkHeaderRows(
+	t *testing.T, by map[string]SessionHeader, base time.Time,
+	promptID, noneID, farID, cpID, longPrompt string,
+) {
+	t.Helper()
+
 	h := by[promptID]
 	wantTitle := string([]rune(longPrompt)[:listTestTitleCut])
+
 	if h.Title != wantTitle || !h.TitlePresent {
 		t.Fatalf("title = %q (present %v), want %d-rune cut", h.Title, h.TitlePresent, listTestTitleCut)
 	}
@@ -425,12 +428,12 @@ func TestSessionListHeaderShape(t *testing.T) {
 	}
 
 	n := by[noneID]
-	if n.Title != "(no prompt)" || n.TitlePresent {
+	if n.Title != listTestFallback || n.TitlePresent {
 		t.Fatalf("no-prompt title = %q (present %v), want fallback literal", n.Title, n.TitlePresent)
 	}
 
 	f := by[farID]
-	if f.Title != "(no prompt)" || f.TitlePresent {
+	if f.Title != listTestFallback || f.TitlePresent {
 		t.Fatalf("beyond-prefix title = %q (present %v), want fallback literal", f.Title, f.TitlePresent)
 	}
 
@@ -445,6 +448,8 @@ func TestSessionListHeaderShape(t *testing.T) {
 }
 
 func TestSessionListMalformedCursor(t *testing.T) {
+	t.Parallel()
+
 	base := listTestBase()
 
 	// Store with an UNREADABLE transcript: a malformed cursor must be
@@ -453,7 +458,9 @@ func TestSessionListMalformedCursor(t *testing.T) {
 	dir := t.TempDir()
 	writeListTranscript(t, dir, listUUID(1), standardListLines(t, listUUID(1), base, "ok"))
 	unreadable := writeListTranscript(t, dir, listUUID(2), standardListLines(t, listUUID(2), base, "no"))
-	if err := os.Chmod(unreadable, 0); err != nil {
+
+	err := os.Chmod(unreadable, 0)
+	if err != nil {
 		t.Fatalf("chmod: %v", err)
 	}
 
@@ -467,9 +474,9 @@ func TestSessionListMalformedCursor(t *testing.T) {
 	}
 
 	for _, cursor := range bad {
-		_, _, err := ListSessions(dir, cursor, 0)
-		if !errors.Is(err, ErrInvalidCursor) {
-			t.Errorf("cursor %q: want ErrInvalidCursor, got %v", cursor, err)
+		_, _, lerr := ListSessions(dir, cursor, 0)
+		if !errors.Is(lerr, ErrInvalidCursor) {
+			t.Errorf("cursor %q: want ErrInvalidCursor, got %v", cursor, lerr)
 		}
 	}
 
@@ -480,17 +487,17 @@ func TestSessionListMalformedCursor(t *testing.T) {
 	path := writeListTranscript(t, clean, id, standardListLines(t, id, base, "clean"))
 	setListMtime(t, path, base)
 
-	got, next, err := ListSessions(clean, b64("9000000000000000000|"+listUUID(9)), 0)
-	if err != nil {
-		t.Fatalf("well-formed cursor: %v", err)
-	}
+	got, next := mustList(t, clean, b64("9000000000000000000|"+listUUID(9)), 0)
+	wantIDs(t, got, []string{id}, "far-future cursor page")
 
-	if ids := listIDs(got); !reflect.DeepEqual(ids, []string{id}) || next != "" {
-		t.Fatalf("far-future cursor page = %v, next %q", ids, next)
+	if next != "" {
+		t.Fatalf("far-future cursor next = %q, want empty", next)
 	}
 }
 
 func TestSessionListCorruptFirstLine(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	base := listTestBase()
 
@@ -500,6 +507,7 @@ func TestSessionListCorruptFirstLine(t *testing.T) {
 	// First line is garbage; a valid user_message follows. The session is
 	// skipped without error (first line must be a conforming session_start).
 	bad := listUUID(2)
+
 	tail, err := json.Marshal(listUserLine(t, bad, base, "unreachable"))
 	if err != nil {
 		t.Fatalf("marshal tail: %v", err)
@@ -508,21 +516,20 @@ func TestSessionListCorruptFirstLine(t *testing.T) {
 	body := append([]byte("{not json\n"), tail...)
 	body = append(body, '\n')
 
-	if err := os.WriteFile(filepath.Join(dir, ".ass-guard", "transcript_"+bad+".jsonl"), body, filePermOwner); err != nil {
+	corrupt := filepath.Join(dir, ".ass-guard", "transcript_"+bad+".jsonl")
+
+	err = os.WriteFile(corrupt, body, filePermOwner)
+	if err != nil {
 		t.Fatalf("write corrupt transcript: %v", err)
 	}
 
-	got, _, err := ListSessions(dir, "", 0)
-	if err != nil {
-		t.Fatalf("list with corrupt first line: %v", err)
-	}
-
-	if ids := listIDs(got); !reflect.DeepEqual(ids, []string{good}) {
-		t.Fatalf("corrupt first line: got %v, want [%s]", ids, good)
-	}
+	got, _ := mustList(t, dir, "", 0)
+	wantIDs(t, got, []string{good}, "corrupt first line")
 }
 
 func TestSessionListBounds(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	base := listTestBase()
 
@@ -539,39 +546,23 @@ func TestSessionListBounds(t *testing.T) {
 	}
 
 	// limit 0 → default page of 50 plus a continuation cursor.
-	p, next, err := ListSessions(dir, "", 0)
-	if err != nil {
-		t.Fatalf("default limit: %v", err)
-	}
-
+	p, next := mustList(t, dir, "", 0)
 	if len(p) != listTestDefaultPg || next == "" {
 		t.Fatalf("limit 0: %d rows, next %q", len(p), next)
 	}
 
-	if ids := listIDs(p); !reflect.DeepEqual(ids, want[:listTestDefaultPg]) {
-		t.Fatalf("default page head mismatch")
-	}
+	wantIDs(t, p, want[:listTestDefaultPg], "default page head")
 
 	// limit > 100 clamps to 100.
-	p2, next2, err := ListSessions(dir, "", listTestLimitHuge)
-	if err != nil {
-		t.Fatalf("huge limit: %v", err)
-	}
-
+	p2, next2 := mustList(t, dir, "", listTestLimitHuge)
 	if len(p2) != listTestClampPg || next2 == "" {
 		t.Fatalf("limit %d: %d rows, next %q", listTestLimitHuge, len(p2), next2)
 	}
 
-	if ids := listIDs(p2); !reflect.DeepEqual(ids, want[:listTestClampPg]) {
-		t.Fatalf("clamped page head mismatch")
-	}
+	wantIDs(t, p2, want[:listTestClampPg], "clamped page head")
 
 	// Exhaustion under the clamp: 100 + 20, then an empty cursor.
-	q2, c2, err := ListSessions(dir, next2, listTestLimitHuge)
-	if err != nil {
-		t.Fatalf("second clamped page: %v", err)
-	}
-
+	q2, c2 := mustList(t, dir, next2, listTestLimitHuge)
 	if len(q2) != listTestStoreBig-listTestClampPg || c2 != "" {
 		t.Fatalf("tail page: %d rows, cursor %q", len(q2), c2)
 	}
