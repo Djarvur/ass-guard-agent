@@ -18,7 +18,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 - [x] **ACP-03**: Zed renders live turn activity: `tool_call`/`tool_call_update` streaming (kind/status/diff/locations), `plan` updates mirroring TodoWrite, `agent_thought_chunk` — all through one ordered inline TurnEmitter with explicit backpressure policy
 - [ ] **ACP-04**: Editor autocompletes `/` commands: `available_commands_update` sent on session start and on discovery change
 - [ ] **ACP-05**: User can list sessions from the editor via `session/list` (header-scan, cursor pagination)
-- [ ] **ACP-06**: User can resume any past session via `session/load` — full replay through TurnEmitter plus live-state reconciliation (synthetic interrupted-closures for dangling expectations, continued id sequences from transcript maxima, orphaned in-flight tool_calls closed as failed, commands re-advertised); `--resume` anywhere
+- [x] **ACP-06**: User can resume any past session via `session/load` — full replay through TurnEmitter plus live-state reconciliation (synthetic interrupted-closures for dangling expectations, continued id sequences from transcript maxima, orphaned in-flight tool_calls closed as failed, commands re-advertised); `--resume` anywhere
 - [ ] **ACP-07**: User can close or delete a session via `session/close` / `session/delete` with tombstoning (never rm — D-20 audit invariant); delete is spec-unstable → best-effort
 - [x] **ACP-08**: Editor drives configuration: `configOptions[]` advertised at initialize/new/load/resume responses, Zed settings payload read at initialize, `session/set_config_option` handled (tier/model defaults switchable from editor UI); API keys stay env/file, never editor settings
 
@@ -108,7 +108,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ACP-01 | Phase 17 | Complete |
 | ACP-02 | Phase 17 | Complete |
 | ACP-05 | Phase 18 | Pending |
-| ACP-06 | Phase 18 | Pending |
+| ACP-06 | Phase 18 | Complete |
 | ACP-07 | Phase 18 | Pending |
 | PAR-01 | Phase 19 | Pending |
 | PAR-02 | Phase 19 | Pending |

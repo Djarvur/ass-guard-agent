@@ -4,18 +4,18 @@ milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 18
 current_phase_name: Session Family
-current_plan: Not started
-status: planning
-stopped_at: Phase 17 complete, ready to plan Phase 18
-last_updated: "2026-09-03T10:27:30.021Z"
+current_plan: 2
+status: executing
+stopped_at: Completed 18-01-PLAN.md (session/load replay spine tracer + vocabulary/gate)
+last_updated: "2026-09-03T11:27:52.091Z"
 last_activity: 2026-09-03
-last_activity_desc: Phase 17 complete, transitioned to Phase 18
-state_head: f6ac86a035f877d9b68843f003849b1fea5ff9dd
+last_activity_desc: Phase 18 execution started
+state_head: c1472b50a36c984d7744f5e671be942655800d8e
 progress:
   total_phases: 11
   completed_phases: 3
   total_plans: 70
-  completed_plans: 22
+  completed_plans: 23
   percent: 27
 ---
 
@@ -29,13 +29,13 @@ See: .planning/PROJECT.md (updated 2026-09-03)
 
 ## Current Position
 
-Phase: 18 — Session Family
-Current Plan: Not started
-Total Plans in Phase: 5
-Status: Ready to plan
-Last activity: 2026-09-03 — Phase 17 complete, transitioned to Phase 18
+Phase: 18 (Session Family) — EXECUTING
+Current Plan: 2
+Total Plans in Phase: 6
+Status: Ready to execute
+Last activity: 2026-09-03 — Phase 18 execution started
 
-Progress: [██████░░░░░░░░░░░░░░░░] 22/70 plans ([███░░░░░░░░] 31%)
+Progress: [██████░░░░░░░░░░░░░░░░] 22/70 plans ([███░░░░░░░] 27%)
 
 ## Performance Metrics
 
@@ -68,6 +68,7 @@ Progress: [██████░░░░░░░░░░░░░░░░] 2
 | Phase 17 P04 | 51 min | 3 tasks | 12 files |
 | Phase 17 P05 | 29 min | 3 tasks | 2 files |
 | Phase 17 P06 | 12 min | 2 tasks | 4 files |
+| Phase 18 P01 | 48 min | 2 tasks | 18 files |
 
 ## Accumulated Context
 
@@ -120,6 +121,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 17]: Whole-Run E2E batteries asserting on-disk effects need Options.EngineEnabled=true — the zero value wires the canned stub executor and every non-mcp call lands "stubbed (engine disabled)" without failing the turn
 - [Phase 17]: 17-06 (G-17-1): PermissionOutcomeFrame is the canonical v1 NESTED outcome object — one wire field typed as the new inner PermissionOutcome struct (outcome discriminator + optionId); the old flat shape now fails the decode (errPermissionOutcomeBad) instead of being silently accepted — wire truth re-verified at the tool-calls example page + schema page during execution — Live Zed 1.18.0 answers the nested union; the flat type made every dialog answer fail-safe-decline. Hard-rejecting the flat dialect keeps nonconformance fail-safe by construction
 - [Phase 17]: 17-06: elicitation response shape deliberately NOT nested — CreateElicitationResponse is canonical FLAT action + optional content (permAnswerAccept/ElicitationOutcomeFrame untouched, comment added citing the 17-06 schema verification) — One protocol, two union encodings; each decode site is pinned to its own schema def so nobody unifies them by mistake
+- [Phase 18]: 18-01: D-03 gate = loading-set + ready-flag double gate — sessions-map insert stays load's LAST step; mid-load prompts typed-rejected via s.loading; session/new states born ready
+- [Phase 18]: 18-01: replay error lines — toolCallID-carrying closes the call as terminal failed tool_call_update; bare renders as agent chunk 'component: message'
+- [Phase 18]: 18-01: symlink guard strengthened to Lstat link-bit rejection + Stat regular-file check (Stat alone resolved symlink→regular cleanly — RED battery caught it)
+- [Phase 18]: 18-01: idempotent re-load returns the v1 response without re-replaying; concurrent second load typed-busy; load rejections side-effect-free by ordering (checks precede ResumeSession)
 
 ### Pending Todos
 
@@ -142,6 +147,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-03T10:30:00Z
-Stopped at: Phase 17 complete, ready to plan Phase 18
+Last session: 2026-09-03T11:27:51.530Z
+Stopped at: Completed 18-01-PLAN.md (session/load replay spine tracer + vocabulary/gate)
 Resume file: None
