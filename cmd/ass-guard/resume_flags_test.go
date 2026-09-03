@@ -26,6 +26,10 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/session"
 )
 
+// flagResumeCLI is the --resume flag's literal (goconst: repeated across the
+// parsing and delegation batteries).
+const flagResumeCLI = "--resume"
+
 // resumeFixture is one seeded store row: a conforming two-line transcript
 // (session_start opener + user_message title) named for id, mtime-pinned to
 // lastActivity (the list engine's LastActivity source), optionally
@@ -43,7 +47,8 @@ func writeResumeFixtureStore(t *testing.T, dir string, rows ...resumeFixture) {
 
 	store := filepath.Join(dir, ".ass-guard")
 
-	if err := os.MkdirAll(store, 0o750); err != nil {
+	err := os.MkdirAll(store, 0o750)
+	if err != nil {
 		t.Fatalf("mkdir store: %v", err)
 	}
 
@@ -61,17 +66,20 @@ func writeResumeFixtureStore(t *testing.T, dir string, rows ...resumeFixture) {
 
 		path := filepath.Join(store, "transcript_"+row.id+".jsonl")
 
-		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-			t.Fatalf("write transcript %s: %v", row.id, err)
+		werr := os.WriteFile(path, []byte(body), 0o600)
+		if werr != nil {
+			t.Fatalf("write transcript %s: %v", row.id, werr)
 		}
 
-		if err := os.Chtimes(path, row.lastActivity, row.lastActivity); err != nil {
-			t.Fatalf("chtimes %s: %v", row.id, err)
+		terr := os.Chtimes(path, row.lastActivity, row.lastActivity)
+		if terr != nil {
+			t.Fatalf("chtimes %s: %v", row.id, terr)
 		}
 
 		if row.tombstone {
-			if err := os.WriteFile(filepath.Join(store, row.id+".deleted"), nil, 0o600); err != nil {
-				t.Fatalf("write tombstone %s: %v", row.id, err)
+			mkerr := os.WriteFile(filepath.Join(store, row.id+".deleted"), nil, 0o600)
+			if mkerr != nil {
+				t.Fatalf("write tombstone %s: %v", row.id, mkerr)
 			}
 		}
 	}
@@ -85,7 +93,8 @@ func parseRootFlags(t *testing.T, args ...string) (*cobra.Command, resumeFlags) 
 
 	root := newRootCmd()
 
-	if err := root.ParseFlags(args); err != nil {
+	err := root.ParseFlags(args)
+	if err != nil {
 		t.Fatalf("parse %v: %v", args, err)
 	}
 
@@ -138,60 +147,38 @@ func interceptPicker(t *testing.T, answer string) *[]session.SessionHeader {
 // directly, the space form leaves the target in args (the NoOptDefVal
 // contract), --continue/-c both set the bool, and combining any resume flag
 // with --prompt is the typed combination error.
-func TestResumeFlagParsing(t *testing.T) {
+func TestResumeFlagParsing(t *testing.T) { //nolint:funlen // table battery + the conflict case, one subtest each
 	t.Parallel()
 
 	const id = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
 
-	t.Run("bare --resume parses to the picker sentinel", func(t *testing.T) {
+	t.Run("flag forms parse per the NoOptDefVal contract", func(t *testing.T) {
 		t.Parallel()
 
-		_, rf := parseRootFlags(t, "--resume")
-
-		if rf.resume != pickSentinel {
-			t.Errorf("bare --resume = %q; want the picker sentinel %q", rf.resume, pickSentinel)
+		cases := []struct {
+			name       string
+			args       []string
+			wantResume string
+			wantArgs   []string
+			wantCont   bool
+		}{
+			{"bare --resume parses to the picker sentinel", []string{flagResumeCLI},
+				pickSentinel, nil, false},
+			{"--resume=<id> carries the id", []string{flagResumeCLI + "=" + id},
+				id, nil, false},
+			{"--resume <id> space form leaves the id in args", []string{flagResumeCLI, id},
+				pickSentinel, []string{id}, false},
+			{"--continue sets the bool", []string{"--continue"}, "", nil, true},
+			{"-c sets the bool", []string{"-c"}, "", nil, true},
 		}
 
-		if len(rf.args) != 0 {
-			t.Errorf("bare --resume args = %v; want none", rf.args)
-		}
-	})
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
 
-	t.Run("--resume=<id> carries the id", func(t *testing.T) {
-		t.Parallel()
-
-		_, rf := parseRootFlags(t, "--resume="+id)
-
-		if rf.resume != id {
-			t.Errorf("--resume=%s = %q; want the id", id, rf.resume)
-		}
-	})
-
-	t.Run("--resume <id> space form leaves the id in args", func(t *testing.T) {
-		t.Parallel()
-
-		_, rf := parseRootFlags(t, "--resume", id)
-
-		if rf.resume != pickSentinel {
-			t.Errorf("space-form --resume = %q; want the sentinel (NoOptDefVal contract)", rf.resume)
-		}
-
-		if len(rf.args) != 1 || rf.args[0] != id {
-			t.Errorf("space-form args = %v; want [%s]", rf.args, id)
-		}
-	})
-
-	t.Run("--continue and -c both set the bool", func(t *testing.T) {
-		t.Parallel()
-
-		_, long := parseRootFlags(t, "--continue")
-		if !long.cont {
-			t.Error("--continue = false; want true")
-		}
-
-		_, short := parseRootFlags(t, "-c")
-		if !short.cont {
-			t.Error("-c = false; want true")
+				_, rf := parseRootFlags(t, tc.args...)
+				assertResumeFlags(t, rf, tc.wantResume, tc.wantCont, tc.wantArgs)
+			})
 		}
 	})
 
@@ -201,7 +188,7 @@ func TestResumeFlagParsing(t *testing.T) {
 		captured := interceptServeDelegate(t)
 
 		root := newRootCmd()
-		root.SetArgs([]string{"--resume", id, "--prompt", "hi"})
+		root.SetArgs([]string{flagResumeCLI, id, "--prompt", "hi"})
 
 		err := root.Execute()
 		if err == nil {
@@ -212,7 +199,7 @@ func TestResumeFlagParsing(t *testing.T) {
 			t.Fatalf("combination error = %v; want errResumeWithPrompt", err)
 		}
 
-		for _, name := range []string{"--resume", "--continue", "--prompt"} {
+		for _, name := range []string{flagResumeCLI, "--continue", "--prompt"} {
 			if !strings.Contains(err.Error(), name) {
 				t.Errorf("combination error %q does not name %s", err.Error(), name)
 			}
@@ -271,11 +258,45 @@ func TestContinueResolvesMostRecentCwd(t *testing.T) {
 	}
 }
 
+// assertResumeFlags asserts one parsed trio state against its expectation.
+func assertResumeFlags(t *testing.T, rf resumeFlags, wantResume string, wantCont bool, wantArgs []string) {
+	t.Helper()
+
+	if rf.resume != wantResume {
+		t.Errorf("resume = %q; want %q", rf.resume, wantResume)
+	}
+
+	if rf.cont != wantCont {
+		t.Errorf("cont = %v; want %v", rf.cont, wantCont)
+	}
+
+	if len(rf.args) != len(wantArgs) {
+		t.Fatalf("args = %v; want %v", rf.args, wantArgs)
+	}
+
+	for i := range wantArgs {
+		if rf.args[i] != wantArgs[i] {
+			t.Errorf("args[%d] = %q; want %q", i, rf.args[i], wantArgs[i])
+		}
+	}
+}
+
+// assertInvalidTarget asserts the typed pre-scan rejection of one hostile
+// target against the given store directory.
+func assertInvalidTarget(t *testing.T, dir, hostile string) {
+	t.Helper()
+
+	_, err := resolveResumeTarget(dir, resumeFlags{resume: hostile}, nil)
+	if !errors.Is(err, errResumeInvalidTarget) {
+		t.Fatalf("target %q against %s: %v; want errResumeInvalidTarget", hostile, dir, err)
+	}
+}
+
 // TestResumeTargetResolution pins the <id|name> semantics: pattern-valid ids
 // pass through untouched, names match title prefixes case-insensitively,
 // ambiguity lists every candidate, a miss names the directory searched, and
 // traversal-shaped targets reject BEFORE any store scan.
-func TestResumeTargetResolution(t *testing.T) {
+func TestResumeTargetResolution(t *testing.T) { //nolint:funlen // the seven-case resolution battery, one subtest each
 	t.Parallel()
 
 	base := time.Now().Add(-time.Hour)
@@ -355,20 +376,13 @@ func TestResumeTargetResolution(t *testing.T) {
 	t.Run("traversal-shaped target rejects before any file access", func(t *testing.T) {
 		t.Parallel()
 
-		const hostile = "../../../etc/passwd"
+		// The typed rejection against the populated store…
+		assertInvalidTarget(t, dir, "../../../etc/passwd")
 
-		_, err := resolveResumeTarget(dir, resumeFlags{resume: hostile}, nil)
-		if !errors.Is(err, errResumeInvalidTarget) {
-			t.Fatalf("traversal error = %v; want errResumeInvalidTarget", err)
-		}
-
-		// Before ANY file access: the same typed rejection fires against a
-		// store directory that does not exist (a scan would have errored
-		// differently or found nothing — never this typed reject).
-		_, err = resolveResumeTarget(t.TempDir(), resumeFlags{resume: hostile}, nil)
-		if !errors.Is(err, errResumeInvalidTarget) {
-			t.Fatalf("traversal against a missing store = %v; want the same typed reject (no scan ran)", err)
-		}
+		// …and against a store directory that does not exist: the same typed
+		// reject proves NO scan ran (a scan would have errored differently or
+		// found nothing — never this typed reject).
+		assertInvalidTarget(t, t.TempDir(), "../../../etc/passwd")
 	})
 
 	t.Run("bare sentinel funnels the store rows through the pick seam", func(t *testing.T) {
@@ -420,9 +434,10 @@ func TestRootResumeDelegation(t *testing.T) {
 		captured := interceptServeDelegate(t)
 
 		root := newRootCmd()
-		root.SetArgs([]string{"--resume", id})
+		root.SetArgs([]string{flagResumeCLI, id})
 
-		if err := root.Execute(); err != nil {
+		err := root.Execute()
+		if err != nil {
 			t.Fatalf("root Execute: %v", err)
 		}
 
@@ -434,20 +449,16 @@ func TestRootResumeDelegation(t *testing.T) {
 	t.Run("bare --resume delegates with the picked id", func(t *testing.T) {
 		const picked = "77777777-7777-4777-8777-777777777777"
 
-		// picker mode lists the cwd store first — give it a session to list.
-		dir := t.TempDir()
-		writeResumeFixtureStore(t, dir,
-			resumeFixture{id: "66666666-6666-4666-8666-666666666666", title: "the listed row",
-				lastActivity: time.Now().Add(-time.Minute), tombstone: false})
-		t.Chdir(dir)
+		chdirPickerFixture(t) // picker mode lists the cwd store first
 
 		captured := interceptServeDelegate(t)
 		interceptPicker(t, picked)
 
 		root := newRootCmd()
-		root.SetArgs([]string{"--resume"})
+		root.SetArgs([]string{flagResumeCLI})
 
-		if err := root.Execute(); err != nil {
+		err := root.Execute()
+		if err != nil {
 			t.Fatalf("root Execute: %v", err)
 		}
 
@@ -457,25 +468,15 @@ func TestRootResumeDelegation(t *testing.T) {
 	})
 
 	t.Run("-c delegates with the cwd-newest id", func(t *testing.T) {
-		const (
-			stale = "44444444-4444-4444-8444-444444444444"
-			fresh = "55555555-5555-4555-8555-555555555555"
-		)
-
-		dir := t.TempDir()
-		writeResumeFixtureStore(t, dir,
-			resumeFixture{id: stale, title: "older", lastActivity: time.Now().Add(-2 * time.Hour)},
-			resumeFixture{id: fresh, title: "newer", lastActivity: time.Now().Add(-1 * time.Hour)},
-		)
-
-		t.Chdir(dir) // --continue is cwd-scoped (D-10/CC parity)
+		fresh := chdirContinueFixture(t)
 
 		captured := interceptServeDelegate(t)
 
 		root := newRootCmd()
 		root.SetArgs([]string{"-c"})
 
-		if err := root.Execute(); err != nil {
+		err := root.Execute()
+		if err != nil {
 			t.Fatalf("root Execute: %v", err)
 		}
 
@@ -483,6 +484,39 @@ func TestRootResumeDelegation(t *testing.T) {
 			t.Errorf("delegated target = %q; want the cwd-newest %q", captured.target, fresh)
 		}
 	})
+}
+
+// chdirPickerFixture seeds a one-session cwd and chdirs into it (the bare
+// --resume delegation case: picker mode lists the cwd store first).
+func chdirPickerFixture(t *testing.T) {
+	t.Helper()
+
+	dir := t.TempDir()
+	writeResumeFixtureStore(t, dir,
+		resumeFixture{id: "66666666-6666-4666-8666-666666666666", title: "the listed row",
+			lastActivity: time.Now().Add(-time.Minute), tombstone: false})
+	t.Chdir(dir)
+}
+
+// chdirContinueFixture seeds a two-session cwd (distinct mtimes) and chdirs
+// into it, returning the newer session's id (the -c delegation case).
+func chdirContinueFixture(t *testing.T) string {
+	t.Helper()
+
+	const (
+		stale = "44444444-4444-4444-8444-444444444444"
+		fresh = "55555555-5555-4555-8555-555555555555"
+	)
+
+	dir := t.TempDir()
+	writeResumeFixtureStore(t, dir,
+		resumeFixture{id: stale, title: "older", lastActivity: time.Now().Add(-2 * time.Hour)},
+		resumeFixture{id: fresh, title: "newer", lastActivity: time.Now().Add(-1 * time.Hour)},
+	)
+
+	t.Chdir(dir) // --continue is cwd-scoped (D-10/CC parity)
+
+	return fresh
 }
 
 // --- 18-06 Task 2: the D-11 numbered picker (pipe-safe terminal I/O) ---
@@ -665,11 +699,12 @@ func TestPickerTruncatesTitles(t *testing.T) {
 
 	var out bytes.Buffer
 
-	if _, err := SelectSession(rows, strings.NewReader("1\n"), &out); err != nil {
+	_, err := SelectSession(rows, strings.NewReader("1\n"), &out)
+	if err != nil {
 		t.Fatalf("SelectSession: %v", err)
 	}
 
-	first := strings.SplitN(out.String(), "\n", 2)[0]
+	first, _, _ := strings.Cut(out.String(), "\n")
 
 	// Row shape: "1) " + 60 runes + "  (" + bucket + ")".
 	if !strings.HasPrefix(first, "1) ") {
@@ -678,12 +713,11 @@ func TestPickerTruncatesTitles(t *testing.T) {
 
 	rest := strings.TrimPrefix(first, "1) ")
 
-	idx := strings.Index(rest, "  (")
-	if idx < 0 {
+	title, _, found := strings.Cut(rest, "  (")
+	if !found {
 		t.Fatalf("row %q lacks the two-space time bucket separator", first)
 	}
 
-	title := rest[:idx]
 	if got := len([]rune(title)); got != 60 {
 		t.Errorf("title rendered as %d runes; want exactly 60", got)
 	}
