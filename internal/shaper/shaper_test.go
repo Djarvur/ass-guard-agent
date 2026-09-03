@@ -2,8 +2,11 @@ package shaper_test
 
 import (
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/anthropics/anthropic-sdk-go"
 
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
@@ -146,5 +149,106 @@ func TestShape_ZcodeProfile(t *testing.T) {
 
 	if !strings.EqualFold(params.Model, "GLM-5.3") {
 		t.Errorf("Model = %q, want GLM-5.3", params.Model)
+	}
+}
+
+// --- PAR-05 thinking-block mapping battery (21-03, Task 3 RED) ---
+
+// TestShaperThinking_MapsBothBlockTypesInOrder pins hop 5b: the
+// assistant-batch branch maps ThinkingBlocks to BOTH SDK param types —
+// thinking → ThinkingBlockParam{Signature, Thinking}, redacted_thinking →
+// RedactedThinkingBlockParam{Data} — in ORIGINAL order, before text+tool_use.
+// Filtering by type=="thinking" only would drop redacted blocks and 400.
+func TestShaperThinking_MapsBothBlockTypesInOrder(t *testing.T) {
+	t.Parallel()
+
+	p := loadFixture(t, "minimal")
+
+	messages := []shaper.Message{{
+		Role: "assistant",
+		ThinkingBlocks: []shaper.ThinkingBlock{
+			{Type: "thinking", Text: "first thought", Signature: "sig-1"},
+			{Type: "redacted_thinking", Data: "enc-opaque"},
+			{Type: "thinking", Text: "second thought", Signature: "sig-2"},
+		},
+		ToolCalls: []shaper.ToolCall{{ID: "tc-1", Name: "Bash", Input: []byte(`{"command":"ls"}`)}},
+	}}
+
+	params, _, err := shaper.New().Shape(&p, messages)
+	if err != nil {
+		t.Fatalf("Shape: %v", err)
+	}
+
+	if len(params.Messages) != 1 {
+		t.Fatalf("len(Messages) = %d; want 1", len(params.Messages))
+	}
+
+	blocks := params.Messages[0].Content
+	if len(blocks) != 4 {
+		t.Fatalf("len(content blocks) = %d; want 4 (thinking, redacted, thinking, tool_use)", len(blocks))
+	}
+
+	if b := blocks[0]; b.OfThinking == nil || b.OfThinking.Thinking != "first thought" || b.OfThinking.Signature != "sig-1" {
+		t.Errorf("block 0 = %+v; want ThinkingBlockParam{first thought, sig-1}", b)
+	}
+
+	if b := blocks[1]; b.OfRedactedThinking == nil || b.OfRedactedThinking.Data != "enc-opaque" {
+		t.Errorf("block 1 = %+v; want RedactedThinkingBlockParam{enc-opaque}", b)
+	}
+
+	if b := blocks[2]; b.OfThinking == nil || b.OfThinking.Thinking != "second thought" || b.OfThinking.Signature != "sig-2" {
+		t.Errorf("block 2 = %+v; want ThinkingBlockParam{second thought, sig-2}", b)
+	}
+
+	if b := blocks[3]; b.OfToolUse == nil || b.OfToolUse.ID != "tc-1" {
+		t.Errorf("block 3 = %+v; want the tool_use block AFTER the thinking blocks", b)
+	}
+}
+
+// TestShaperThinking_ZeroThinkingByteIdentical pins the additive-only
+// guarantee: a message with ZERO thinking blocks renders byte-identically to
+// the pre-change form (text block first, then tool_use blocks — the exact
+// append sequence the 08-07 shaping established).
+func TestShaperThinking_ZeroThinkingByteIdentical(t *testing.T) {
+	t.Parallel()
+
+	p := loadFixture(t, "minimal")
+
+	messages := []shaper.Message{
+		{Role: "user", Content: "go"},
+		{
+			Role:      "assistant",
+			Content:   "running it",
+			ToolCalls: []shaper.ToolCall{{ID: "tc-z", Name: "Read", Input: []byte(`{"file_path":"a"}`)}},
+		},
+		{Role: "assistant", Content: "plain answer"},
+	}
+
+	params, _, err := shaper.New().Shape(&p, messages)
+	if err != nil {
+		t.Fatalf("Shape: %v", err)
+	}
+
+	if len(params.Messages) != 3 {
+		t.Fatalf("len(Messages) = %d; want 3", len(params.Messages))
+	}
+
+	// The expected constructions are EXACTLY the pre-change forms.
+	want0 := []anthropic.ContentBlockParamUnion{anthropic.NewTextBlock("go")}
+	if !reflect.DeepEqual(params.Messages[0].Content, want0) {
+		t.Errorf("text-only message drifted: %+v; want %+v", params.Messages[0].Content, want0)
+	}
+
+	want1 := []anthropic.ContentBlockParamUnion{
+		anthropic.NewTextBlock("running it"),
+		anthropic.NewToolUseBlock("tc-z", any(map[string]any{"file_path": "a"}), "Read"),
+	}
+	if !reflect.DeepEqual(params.Messages[1].Content, want1) {
+		t.Errorf("text+tool message drifted: %+v; want %+v", params.Messages[1].Content, want1)
+	}
+
+	want2 := []anthropic.ContentBlockParamUnion{anthropic.NewTextBlock("plain answer")}
+	if !reflect.DeepEqual(params.Messages[2].Content, want2) {
+		t.Errorf("plain assistant message drifted: %+v; want %+v", params.Messages[2].Content, want2)
 	}
 }

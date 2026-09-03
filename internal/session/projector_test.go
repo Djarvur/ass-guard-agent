@@ -1,15 +1,25 @@
 package session //nolint:testpackage // internal package test
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/anthropics/anthropic-sdk-go"
 
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
+	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 )
 
 // fakeProfile builds a minimal profile with one system block for projector tests.
@@ -1063,5 +1073,500 @@ func TestPlainContent_InvalidJSONFallback(t *testing.T) {
 		if got := plainContent(json.RawMessage(tc.raw)); got != tc.want {
 			t.Errorf("%s: plainContent(%q) = %q; want %q", tc.name, tc.raw, got, tc.want)
 		}
+	}
+}
+
+// --- PAR-05 thinking projection battery (21-03, Task 3 RED) ---
+
+// thSignedRaw is a signed thinking-block payload fixture (assembled-shape).
+const thSignedRaw = `{"type":"thinking","thinking":"planning the batch","signature":"sig-p1"}`
+
+// TestProjector_ThinkingFoldsIntoAssistantBatch (Pitfall 5): raw_thinking
+// lines stash into the in-progress assistant accumulation and flush INTO the
+// assistant batch message ALONGSIDE its tool_use blocks — never as a separate
+// thinking-only message — and end-of-turn thinking rides WITH the final
+// assistant text message.
+func TestProjector_ThinkingFoldsIntoAssistantBatch(t *testing.T) {
+	t.Parallel()
+
+	m := newTestManager(t, "s-th1")
+	p := NewProjector(fakeProfile("sys"), m)
+
+	_ = m.AppendUserMessage("turnT", []ContentBlock{{Type: blockText, Text: "go"}})
+	_ = m.AppendRawThinking("turnT", fixtureModelSlug, json.RawMessage(thSignedRaw))
+	_ = m.AppendToolCall("turnT", "call_1", toolBash, json.RawMessage(`{"command":"ls"}`))
+	_ = m.AppendToolResult("turnT", "call_1", json.RawMessage(`"files"`), false)
+	_ = m.AppendAssistantMessage("turnT", "done")
+
+	msgs, err := p.Project("turnT")
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+
+	if len(msgs) != 4 {
+		t.Fatalf("len(msgs) = %d, want 4 (seed + thinking-folded batch + tool + text):\n%s",
+			len(msgs), msgSummaryList(msgs))
+	}
+
+	am := msgs[1]
+	if am.Role != roleAssistant || len(am.ToolCalls) != 1 {
+		t.Fatalf("msgs[1] = %s; want the assistant batch with call_1", msgSummary(&am))
+	}
+
+	// THE fold: the thinking block lives ON the batch message.
+	if len(am.ThinkingBlocks) != 1 {
+		t.Fatalf("batch ThinkingBlocks = %d, want exactly 1 (folded, not separate); got %+v",
+			len(am.ThinkingBlocks), am.ThinkingBlocks)
+	}
+
+	want := provider.ThinkingBlock{Type: "thinking", Text: "planning the batch", Signature: "sig-p1"}
+	if am.ThinkingBlocks[0] != want {
+		t.Errorf("folded block = %+v; want %+v (field values extracted untouched)", am.ThinkingBlocks[0], want)
+	}
+
+	if txt := msgs[3]; txt.Role != roleAssistant || txt.Content != "done" {
+		t.Errorf("msgs[3] = %s; want the final assistant text", msgSummary(&txt))
+	}
+}
+
+// TestProjector_ThinkingAttachesToAssistantText: a turn whose stream carried
+// thinking but NO tool calls attaches the block to the final assistant TEXT
+// message (the end-turn unit), still never standalone.
+func TestProjector_ThinkingAttachesToAssistantText(t *testing.T) {
+	t.Parallel()
+
+	m := newTestManager(t, "s-th2")
+	p := NewProjector(fakeProfile("sys"), m)
+
+	_ = m.AppendUserMessage("turnT", []ContentBlock{{Type: blockText, Text: "hi"}})
+	_ = m.AppendRawThinking("turnT", fixtureModelSlug, json.RawMessage(thSignedRaw))
+	_ = m.AppendAssistantMessage("turnT", "hello back")
+
+	msgs, err := p.Project("turnT")
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+
+	if len(msgs) != 2 {
+		t.Fatalf("len(msgs) = %d, want 2 (seed + assistant text):\n%s", len(msgs), msgSummaryList(msgs))
+	}
+
+	am := msgs[1]
+	if am.Role != roleAssistant || am.Content != "hello back" {
+		t.Fatalf("msgs[1] = %s; want the assistant text message", msgSummary(&am))
+	}
+
+	if len(am.ThinkingBlocks) != 1 {
+		t.Fatalf("text message ThinkingBlocks = %d, want 1 (end-of-turn thinking rides with its text message)",
+			len(am.ThinkingBlocks))
+	}
+}
+
+// TestProjector_ThinkingOrphanDroppedWithTurn (Pitfall 5's orphan rule): a
+// raw_thinking line whose assistant batch never forms — the turn truncated
+// before any assistant content — is dropped WITH its turn unit; a standalone
+// thinking-only assistant message must never be emitted (it would break the
+// provider's thinking/assistant-message pairing and 400).
+func TestProjector_ThinkingOrphanDroppedWithTurn(t *testing.T) {
+	t.Parallel()
+
+	m := newTestManager(t, "s-th3")
+	p := NewProjector(fakeProfile("sys"), m)
+
+	_ = m.AppendUserMessage("turnT", []ContentBlock{{Type: blockText, Text: "go"}})
+	_ = m.AppendRawThinking("turnT", fixtureModelSlug, json.RawMessage(thSignedRaw))
+	// Turn truncated: no tool result, no assistant message.
+
+	msgs, err := p.Project("turnT")
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+
+	for i := range msgs {
+		if len(msgs[i].ThinkingBlocks) > 0 {
+			t.Fatalf("msgs[%d] carries %d thinking block(s); want NONE (orphan dropped with its turn):\n%s",
+				i, len(msgs[i].ThinkingBlocks), msgSummaryList(msgs))
+		}
+	}
+
+	// Unanswered tool call variant: the batch is dropped (pair-safety), and the
+	// stashed thinking goes WITH it.
+	m2 := newTestManager(t, "s-th4")
+	p2 := NewProjector(fakeProfile("sys"), m2)
+
+	_ = m2.AppendUserMessage("turnU", []ContentBlock{{Type: blockText, Text: "go"}})
+	_ = m2.AppendRawThinking("turnU", fixtureModelSlug, json.RawMessage(thSignedRaw))
+	_ = m2.AppendToolCall("turnU", "call_9", toolBash, json.RawMessage(`{"command":"ls"}`))
+	// No tool_result for call_9 — unanswered.
+
+	msgs2, err := p2.Project("turnU")
+	if err != nil {
+		t.Fatalf("Project(unanswered): %v", err)
+	}
+
+	for i := range msgs2 {
+		if len(msgs2[i].ThinkingBlocks) > 0 {
+			t.Fatalf("unanswered-case msgs[%d] carries thinking; want NONE (dropped with its never-formed batch)",
+				i)
+		}
+	}
+}
+
+// TestProjector_ThinkingBoundaryAdjacent pins the flagged PAR-05 boundary row:
+// a boundary line landing MID-thinking-turn (the mutating tool's result
+// boundary, SESS-02/03) never splits thinking from its assistant message —
+// the projection window keeps the WHOLE turn unit (SESS-04 revised 08-09:
+// mid-turn boundaries never wipe the producing turn's window).
+func TestProjector_ThinkingBoundaryAdjacent(t *testing.T) {
+	t.Parallel()
+
+	m := newTestManager(t, "s-th5")
+	p := NewProjector(fakeProfile("sys"), m)
+
+	_ = m.AppendUserMessage("turnT", []ContentBlock{{Type: blockText, Text: "go"}})
+	_ = m.AppendRawThinking("turnT", fixtureModelSlug, json.RawMessage(thSignedRaw))
+	_ = m.AppendToolCall("turnT", "call_1", toolBash, json.RawMessage(`{"command":"ls"}`))
+	_ = m.AppendToolResult("turnT", "call_1", json.RawMessage(`"files"`), false)
+	// The mid-turn boundary (mutating Bash completed) — turnT's own window
+	// survives it.
+	_ = m.AppendBoundary(mutatingCommandBash, "call_1", "turnT")
+	_ = m.AppendAssistantMessage("turnT", "done")
+
+	msgs, err := p.Project("turnT")
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+
+	var batch *provider.Message
+
+	for i := range msgs {
+		if msgs[i].Role == roleAssistant && len(msgs[i].ToolCalls) == 1 {
+			batch = &msgs[i]
+		}
+	}
+
+	if batch == nil {
+		t.Fatalf("the assistant batch vanished across the mid-turn boundary:\n%s", msgSummaryList(msgs))
+	}
+
+	if len(batch.ThinkingBlocks) != 1 {
+		t.Fatalf("batch ThinkingBlocks across a mid-turn boundary = %d, want 1 (whole turn unit kept)",
+			len(batch.ThinkingBlocks))
+	}
+
+	// No standalone thinking-only message anywhere.
+	for i := range msgs {
+		if len(msgs[i].ThinkingBlocks) > 0 && len(msgs[i].ToolCalls) == 0 && msgs[i].Content == "" {
+			t.Fatalf("msgs[%d] is a standalone thinking-only message — never allowed:\n%s",
+				i, msgSummaryList(msgs))
+		}
+	}
+}
+
+// --- D-14 golden battery (PAR-05, 21-03 Task 3) ---
+
+// goldenThinkingCase is one committed wire-pair record from
+// testdata/thinking-golden/sse-thinking.jsonl.
+type goldenThinkingCase struct {
+	Name            string            `json:"name"`
+	Frames          []json.RawMessage `json:"frames"`
+	ExpectBlocks    []goldenBlockView `json:"expectBlocks"`
+	ToolCall        *goldenToolCall   `json:"toolCall"`
+	ToolResult      string            `json:"toolResult"`
+	AssistantText   string            `json:"assistantText"`
+	BoundaryMidTurn bool              `json:"boundaryMidTurn"`
+}
+
+// goldenBlockView is the D-14 oracle: the provider-side field VALUES each hop
+// must reproduce identically.
+type goldenBlockView struct {
+	Type      string `json:"type"`
+	Thinking  string `json:"thinking"`
+	Signature string `json:"signature"`
+	Data      string `json:"data"`
+}
+
+type goldenToolCall struct {
+	ID    string          `json:"id"`
+	Name  string          `json:"name"`
+	Input json.RawMessage `json:"input"`
+}
+
+// loadGoldenThinking parses the committed fixture; records without a name
+// (the provenance header) are skipped.
+func loadGoldenThinking(t *testing.T) []goldenThinkingCase {
+	t.Helper()
+
+	raw, err := os.ReadFile(filepath.Join("testdata", "thinking-golden", "sse-thinking.jsonl"))
+	if err != nil {
+		t.Fatalf("read golden fixture: %v", err)
+	}
+
+	var cases []goldenThinkingCase
+
+	for _, line := range strings.Split(string(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		var c goldenThinkingCase
+		if err := json.Unmarshal([]byte(line), &c); err != nil {
+			t.Fatalf("parse golden record: %v", err)
+		}
+
+		if c.Name != "" {
+			cases = append(cases, c)
+		}
+	}
+
+	if len(cases) == 0 {
+		t.Fatal("golden fixture carries no named cases")
+	}
+
+	return cases
+}
+
+// goldenView extracts the field values of one assembled block payload (the
+// battery's comparison instrument — production never unmarshals for storage).
+func goldenView(t *testing.T, raw json.RawMessage) goldenBlockView {
+	t.Helper()
+
+	var v goldenBlockView
+	if err := json.Unmarshal(raw, &v); err != nil {
+		t.Fatalf("unmarshal block payload %s: %v", raw, err)
+	}
+
+	return v
+}
+
+func (v goldenBlockView) String() string {
+	return fmt.Sprintf("{type:%s thinking:%q signature:%q data:%q}", v.Type, v.Thinking, v.Signature, v.Data)
+}
+
+// TestThinkingGolden replays the committed wire pairs through the REAL chain
+// — scripted SSE → drainSSE → StreamChunk → AppendRawThinking → projector →
+// shaper → toMessageParams — and asserts FIELD-VALUE identity at every hop
+// (D-14: the fixture's provider values == the chunk's Raw values == the
+// transcript's verbatim bytes == the projector's extraction == the outgoing
+// SDK param values), for both block types plus the boundary-adjacent case.
+// The replay pin (D-13's data path) rides hop 2: appended-then-re-read bytes
+// are identical.
+func TestThinkingGolden(t *testing.T) {
+	for _, c := range loadGoldenThinking(t) {
+		t.Run(c.Name, func(t *testing.T) { runGoldenThinkingCase(t, c) })
+	}
+}
+
+// runGoldenThinkingCase drives one wire-pair record through the five hops.
+//
+//nolint:funlen,gocognit // one labeled block per hop is the point
+func runGoldenThinkingCase(t *testing.T, c goldenThinkingCase) {
+	t.Helper()
+
+	// Hop 1: scripted SSE → drainSSE → thinking StreamChunks.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("content-type", "text/event-stream")
+
+		flusher, _ := w.(http.Flusher)
+		for _, f := range c.Frames {
+			fmt.Fprintf(w, "data: %s\n\n", f)
+
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+	}))
+	defer srv.Close()
+
+	prof := profile.Profile{Name: fixtureProfileName, Model: fixtureModelSlug, MaxTokens: 64}
+
+	ap := provider.NewAnthropicProvider(shaper.New(),
+		provider.WithAnthropicAPIKey("test-key"),
+		provider.WithAnthropicBaseURL(srv.URL),
+	)
+
+	ch, err := ap.Stream(context.Background(), &prof, []provider.Message{{Role: roleUserMsg, Content: "go"}})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+
+	var rawBlocks []json.RawMessage
+
+	deadline := time.After(5 * time.Second)
+
+	for open := true; open; {
+		select {
+		case chunk, ok := <-ch:
+			if !ok {
+				open = false
+
+				break
+			}
+
+			if chunk.Type == chunkTypeThinking {
+				rawBlocks = append(rawBlocks, chunk.Raw)
+			}
+		case <-deadline:
+			t.Fatal("golden stream did not close within 5s")
+		}
+	}
+
+	if len(rawBlocks) != len(c.ExpectBlocks) {
+		t.Fatalf("hop 1: thinking chunks = %d; want %d (fixture blocks)", len(rawBlocks), len(c.ExpectBlocks))
+	}
+
+	for i, want := range c.ExpectBlocks {
+		if got := goldenView(t, rawBlocks[i]); got != want {
+			t.Errorf("hop 1 (SSE→StreamChunk) block %d = %s; want %s", i, got, want)
+		}
+	}
+
+	// Hop 2: AppendRawThinking → transcript; the replay pin re-reads the bytes.
+	turnID := "tg-" + c.Name
+
+	m := newTestManager(t, "s-golden")
+
+	if err := m.AppendUserMessage(turnID, []ContentBlock{{Type: blockText, Text: "go"}}); err != nil {
+		t.Fatalf("AppendUserMessage: %v", err)
+	}
+
+	for _, raw := range rawBlocks {
+		if err := m.AppendRawThinking(turnID, fixtureModelSlug, raw); err != nil {
+			t.Fatalf("AppendRawThinking: %v", err)
+		}
+	}
+
+	lines, err := m.ReadAll()
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+
+	var stored []json.RawMessage
+
+	for i := range lines {
+		if lines[i].Type == TypeRawThinking {
+			stored = append(stored, lines[i].Content)
+		}
+	}
+
+	if len(stored) != len(rawBlocks) {
+		t.Fatalf("hop 2: stored raw_thinking lines = %d; want %d", len(stored), len(rawBlocks))
+	}
+
+	for i := range rawBlocks {
+		if !bytes.Equal(rawBlocks[i], stored[i]) {
+			t.Errorf("hop 2 replay pin: re-read bytes differ from appended bytes at block %d:\n append: %s\nre-read: %s",
+				i, rawBlocks[i], stored[i])
+		}
+
+		if got := goldenView(t, stored[i]); got != c.ExpectBlocks[i] {
+			t.Errorf("hop 2 (transcript) block %d = %s; want %s", i, got, c.ExpectBlocks[i])
+		}
+	}
+
+	// Complete the turn unit per the record: tool round (+ optional mid-turn
+	// boundary) and/or the final assistant text.
+	if c.ToolCall != nil {
+		if err := m.AppendToolCall(turnID, c.ToolCall.ID, c.ToolCall.Name, c.ToolCall.Input); err != nil {
+			t.Fatalf("AppendToolCall: %v", err)
+		}
+
+		if err := m.AppendToolResult(turnID, c.ToolCall.ID, json.RawMessage(c.ToolResult), false); err != nil {
+			t.Fatalf("AppendToolResult: %v", err)
+		}
+
+		if c.BoundaryMidTurn {
+			if err := m.AppendBoundary(mutatingCommandBash, c.ToolCall.ID, turnID); err != nil {
+				t.Fatalf("AppendBoundary: %v", err)
+			}
+		}
+	}
+
+	if c.AssistantText != "" {
+		if err := m.AppendAssistantMessage(turnID, c.AssistantText); err != nil {
+			t.Fatalf("AppendAssistantMessage: %v", err)
+		}
+	}
+
+	// Hop 3: projector — the ONLY field-extraction site on the replay path.
+	msgs, err := NewProjector(&profile.Profile{Name: fixtureProfileName}, m).Project(turnID)
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+
+	var projected []provider.ThinkingBlock
+
+	for i := range msgs {
+		if msgs[i].Role == roleAssistant {
+			projected = append(projected, msgs[i].ThinkingBlocks...)
+		}
+	}
+
+	if len(projected) != len(c.ExpectBlocks) {
+		t.Fatalf("hop 3: projected thinking blocks = %d; want %d (window: %s)",
+			len(projected), len(c.ExpectBlocks), msgSummaryList(msgs))
+	}
+
+	for i, want := range c.ExpectBlocks {
+		got := projected[i]
+
+		switch want.Type {
+		case chunkTypeThinking:
+			if got.Type != want.Type || got.Text != want.Thinking || got.Signature != want.Signature {
+				t.Errorf("hop 3 (projector) block %d = %+v; want {type:%s text:%q sig:%q}",
+					i, got, want.Type, want.Thinking, want.Signature)
+			}
+		case blockRedactedThinking:
+			if got.Type != want.Type || got.Data != want.Data {
+				t.Errorf("hop 3 (projector) block %d = %+v; want {type:%s data:%q}", i, got, want.Type, want.Data)
+			}
+		}
+	}
+
+	// Hop 4: shaper → outgoing SDK params (the SDK re-serializes; VALUES must
+	// survive untouched).
+	shaped, _, err := shaper.New().Shape(&prof, msgs)
+	if err != nil {
+		t.Fatalf("Shape: %v", err)
+	}
+
+	var (
+		gotSig   []string
+		gotThink []string
+		gotData  []string
+	)
+
+	for _, mp := range shaped.Messages {
+		if mp.Role != anthropic.MessageParamRoleAssistant {
+			continue
+		}
+
+		for _, b := range mp.Content {
+			switch {
+			case b.OfThinking != nil:
+				gotSig = append(gotSig, b.OfThinking.Signature)
+				gotThink = append(gotThink, b.OfThinking.Thinking)
+			case b.OfRedactedThinking != nil:
+				gotData = append(gotData, b.OfRedactedThinking.Data)
+			}
+		}
+	}
+
+	var wantSig, wantThink, wantData []string
+
+	for _, want := range c.ExpectBlocks {
+		switch want.Type {
+		case chunkTypeThinking:
+			wantSig = append(wantSig, want.Signature)
+			wantThink = append(wantThink, want.Thinking)
+		case blockRedactedThinking:
+			wantData = append(wantData, want.Data)
+		}
+	}
+
+	if !slices.Equal(gotSig, wantSig) || !slices.Equal(gotThink, wantThink) || !slices.Equal(gotData, wantData) {
+		t.Errorf("hop 4 (outgoing params) field values differ:\n sig: got %v want %v\n think: got %v want %v\n data: got %v want %v",
+			gotSig, wantSig, gotThink, wantThink, gotData, wantData)
 	}
 }
