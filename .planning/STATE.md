@@ -4,18 +4,18 @@ milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 18
 current_phase_name: Session Family
-current_plan: 3
+current_plan: 4
 status: executing
-stopped_at: Completed 18-02-PLAN.md (reconciliation engine)
-last_updated: "2026-09-03T12:01:05.539Z"
+stopped_at: Completed 18-03-PLAN.md (session list engine)
+last_updated: "2026-09-03T12:31:10.938Z"
 last_activity: 2026-09-03
 last_activity_desc: Phase 18 execution started
-state_head: b7554e213143c9b8e2325c277cdf7d130c82dbf5
+state_head: f8a8539e38bbbd5a2535ac5225e63633ef4e60f1
 progress:
   total_phases: 11
   completed_phases: 3
   total_plans: 70
-  completed_plans: 23
+  completed_plans: 24
   percent: 27
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-03)
 ## Current Position
 
 Phase: 18 (Session Family) — EXECUTING
-Current Plan: 3
+Current Plan: 4
 Total Plans in Phase: 6
 Status: Ready to execute
 Last activity: 2026-09-03 — Phase 18 execution started
@@ -70,6 +70,7 @@ Progress: [██████░░░░░░░░░░░░░░░░] 2
 | Phase 17 P06 | 12 min | 2 tasks | 4 files |
 | Phase 18 P01 | 48 min | 2 tasks | 18 files |
 | Phase 18 P02 | 23 min | 2 tasks | 12 files |
+| Phase 18 P03 | 19min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -127,6 +128,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 18]: 18-01: symlink guard strengthened to Lstat link-bit rejection + Stat regular-file check (Stat alone resolved symlink→regular cleanly — RED battery caught it)
 - [Phase 18]: 18-01: idempotent re-load returns the v1 response without re-replaying; concurrent second load typed-busy; load rejections side-effect-free by ordering (checks precede ResumeSession)
 - [Phase 18]: Reconciliation engine built transcript-pure (18-02): Reconcile classifies all ten kill -9 inventory rows with keyed pair matching, engine-authored closure payloads, and Seed{MaxTurns,PlanMode}; Manager.AppendSynthetic is the 18-05 append seam through the redaction-disciplined appendLine
+- [Phase 18]: Tombstone spelling locked: <sessionID>.deleted sibling (matches 18-04 SweepTombstones suffix-with-validating-id); open failures on structurally valid transcripts propagate per SessionReader.read precedent
+- [Phase 18]: HasCheckpoints probes checkpoint loose-ref layout via one ReadDir (never checkpoint.Open, which creates the store); transcript reads capped at 64 KiB total via io.LimitReader
 
 ### Pending Todos
 
@@ -149,6 +152,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-03T12:01:05.049Z
-Stopped at: Completed 18-02-PLAN.md (reconciliation engine)
+Last session: 2026-09-03T12:30:49.346Z
+Stopped at: Completed 18-03-PLAN.md (session list engine)
 Resume file: None
