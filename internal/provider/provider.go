@@ -82,6 +82,12 @@ type Response struct {
 // (08-07; the 08-06 gate's root cause 1 was a local no-ID struct here).
 type ToolCall = shaper.ToolCall
 
+// ThinkingBlock is one provider thinking block carried on an assistant Message
+// (PAR-05, 21-03). An alias of shaper.ThinkingBlock — the same one-directional
+// pattern as Message/ToolCall — so the projector-extracted field values flow
+// untouched from the transcript projection into the outgoing request shape.
+type ThinkingBlock = shaper.ThinkingBlock
+
 // RequestCapturer is invoked by an adapter with the verbatim outgoing request
 // body + header set after the Shaper produces them and before the provider
 // sends. The audit log (LOG-01, Plan 01-05) subscribes via this hook.

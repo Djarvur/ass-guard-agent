@@ -19,6 +19,8 @@ const uuidVariantSet = 0x80
 const variantMask = 0x3F
 const versionMask = 0x0F
 const roleTool = "tool"
+const typeThinking = "thinking"
+const typeRedactedThinking = "redacted_thinking"
 
 // Message is one conversational turn shaped into the outgoing request. It is
 // defined here (not in the provider package) to keep the dependency edge
@@ -37,10 +39,27 @@ type Message struct {
 	Content string
 	// ToolCalls is the assistant mid-turn batch (empty for plain text turns).
 	ToolCalls []ToolCall
+	// ThinkingBlocks carries the assistant message's provider thinking blocks
+	// (PAR-05, 21-03) — additive: empty for every pre-thinking message, so
+	// text/tool-only rendering stays byte-identical.
+	ThinkingBlocks []ThinkingBlock
 	// ToolCallID/ToolName/IsError describe one tool-role result message.
 	ToolCallID string
 	ToolName   string
 	IsError    bool
+}
+
+// ThinkingBlock is one provider thinking block, extracted ONCE by the
+// projector (PAR-05, 21-03). Type is "thinking" (Text+Signature carry the
+// signed block's field values) or "redacted_thinking" (Data carries the
+// encrypted payload). Field VALUES pass through UNTOUCHED from the provider's
+// bytes to the SDK param (D-14) — the SDK re-serializes; nothing here is ever
+// recomputed, reordered, or filtered by type.
+type ThinkingBlock struct {
+	Type      string
+	Text      string
+	Signature string
+	Data      string
 }
 
 // ToolCall is one zcode-normalized tool invocation (VERIFIED-FACTS.md item #1:
@@ -193,7 +212,21 @@ func toMessageParams(messages []Message) ([]anthropic.MessageParam, error) {
 			return nil, err
 		}
 
-		blocks := make([]anthropic.ContentBlockParamUnion, 0, 1+len(m.ToolCalls))
+		blocks := make([]anthropic.ContentBlockParamUnion, 0, 1+len(m.ToolCalls)+len(m.ThinkingBlocks))
+
+		// Thinking blocks lead the assistant message (PAR-05, 21-03): BOTH SDK
+		// param types, original order — filtering by type=="thinking" only
+		// would drop redacted blocks and the provider would 400. The guard
+		// keeps zero-thinking rendering byte-identical (additive-only).
+		for _, tb := range m.ThinkingBlocks {
+			switch tb.Type {
+			case typeThinking:
+				blocks = append(blocks, anthropic.NewThinkingBlock(tb.Signature, tb.Text))
+			case typeRedactedThinking:
+				blocks = append(blocks, anthropic.NewRedactedThinkingBlock(tb.Data))
+			}
+		}
+
 		if len(m.ToolCalls) == 0 {
 			// Text-only: exactly the pre-08-07 rendering (byte-compat).
 			blocks = append(blocks, anthropic.NewTextBlock(m.Content))

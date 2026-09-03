@@ -167,6 +167,17 @@ func splitAtResetBoundary(lines []Line, turnID string) (before, after []Line) {
 // the window (its batch was never accumulated) is dropped — an orphaned
 // tool_result would break the provider's tool_use/tool_result pairing
 // invariant.
+//
+// raw_thinking lines (PAR-05, 21-03) fold INTO their turn's assistant unit —
+// NEVER cut separately (Pitfall 5): the block stashes onto the in-progress
+// accumulation and flushes INTO the assistant batch (with its tool_use blocks,
+// original order), or rides with the turn's final assistant text message. A
+// thinking line whose assistant unit never forms (turn truncated before any
+// assistant content) is dropped WITH its turn unit — a standalone
+// thinking-only assistant message would break the provider's
+// thinking/assistant pairing and 400. Field VALUES are extracted here — the
+// ONLY extraction site on the replay path (D-14) — and pass through untouched
+// to the shaper.
 func accumulateMidTurn(lines []Line, turnID string) []provider.Message {
 	anchor := turnAnchorOf(lines, turnID)
 
@@ -180,28 +191,33 @@ func accumulateMidTurn(lines []Line, turnID string) []provider.Message {
 	hasResult := resultIDsOf(lines, anchor, turnID)
 
 	var (
-		out     []provider.Message
-		pending []provider.ToolCall
-		names   = map[string]string{} // callID -> tool name (pairing resolution)
+		out             []provider.Message
+		pending         []provider.ToolCall
+		pendingThinking []provider.ThinkingBlock
+		names           = map[string]string{} // callID -> tool name (pairing resolution)
 	)
 
 	flushBatch := func() {
-		if len(pending) == 0 {
-			return
-		}
+		if len(pending) > 0 {
+			batch := make([]provider.ToolCall, 0, len(pending))
+			for _, tc := range pending {
+				if hasResult[tc.ID] {
+					batch = append(batch, tc)
+				}
+			}
 
-		batch := make([]provider.ToolCall, 0, len(pending))
-		for _, tc := range pending {
-			if hasResult[tc.ID] {
-				batch = append(batch, tc)
+			// Thinking rides INTO the batch message (the fold); a batch that
+			// never forms (no answered calls) takes its stashed thinking with
+			// it — the orphan rule.
+			if len(batch) > 0 {
+				out = append(out, provider.Message{
+					Role: roleAssistant, ThinkingBlocks: pendingThinking, ToolCalls: batch,
+				})
 			}
 		}
 
-		if len(batch) > 0 {
-			out = append(out, provider.Message{Role: roleAssistant, ToolCalls: batch})
-		}
-
 		pending = nil
+		pendingThinking = nil
 	}
 
 	for i := anchor; i < len(lines); i++ {
@@ -214,6 +230,10 @@ func accumulateMidTurn(lines []Line, turnID string) []provider.Message {
 		case TypeToolCall:
 			pending = append(pending, provider.ToolCall{ID: l.ToolCallID, Name: l.Name, Input: l.Input})
 			names[l.ToolCallID] = l.Name
+		case TypeRawThinking:
+			if tb, ok := parseThinkingBlock(l.Content); ok {
+				pendingThinking = append(pendingThinking, tb)
+			}
 		case TypeToolResult:
 			flushBatch() // the batch is closed once its results start arriving
 
@@ -227,15 +247,54 @@ func accumulateMidTurn(lines []Line, turnID string) []provider.Message {
 				Content: plainContent(l.Output), IsError: l.IsError,
 			})
 		case TypeAssistantMessage:
+			// End-of-turn thinking rides WITH the final assistant text
+			// message — captured BEFORE flushBatch (which resets the stash).
+			th := pendingThinking
+
 			flushBatch()
 
-			out = append(out, provider.Message{Role: roleAssistant, Content: l.Text})
+			out = append(out, provider.Message{
+				Role: roleAssistant, Content: l.Text, ThinkingBlocks: th,
+			})
+
+			pendingThinking = nil
 		}
 	}
 
-	flushBatch()
+	flushBatch() // leftover thinking-only stashes drop here (the orphan rule)
 
 	return out
+}
+
+// parseThinkingBlock extracts the thinking-block FIELD VALUES from one
+// raw_thinking payload — the ONLY extraction site on the replay path (PAR-05,
+// D-14: values pass through untouched to the shaper; the SDK re-serializes).
+// ok is false for absent or unknown-shape payloads (tolerant — never panics,
+// never drops the surrounding turn).
+func parseThinkingBlock(raw json.RawMessage) (provider.ThinkingBlock, bool) {
+	if len(raw) == 0 {
+		return provider.ThinkingBlock{}, false
+	}
+
+	var v struct {
+		Type      string `json:"type"`
+		Thinking  string `json:"thinking"`
+		Signature string `json:"signature"`
+		Data      string `json:"data"`
+	}
+
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return provider.ThinkingBlock{}, false
+	}
+
+	switch v.Type {
+	case chunkTypeThinking:
+		return provider.ThinkingBlock{Type: v.Type, Text: v.Thinking, Signature: v.Signature}, true
+	case blockRedactedThinking:
+		return provider.ThinkingBlock{Type: v.Type, Data: v.Data}, true
+	default:
+		return provider.ThinkingBlock{}, false
+	}
 }
 
 // turnAnchorOf returns the accumulate anchor: just past the current turn's
