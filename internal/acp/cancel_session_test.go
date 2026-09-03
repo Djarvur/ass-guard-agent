@@ -10,6 +10,7 @@ package acp //nolint:testpackage // internal package test (drives srv.sessions d
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -180,5 +181,69 @@ func TestSessionCancelDoesNotReapTheSession(t *testing.T) {
 	closes := runner.closeCalls()
 	if len(closes) != 1 || closes[0] != sid {
 		t.Errorf("logout CloseSession calls = %v; want exactly [%s]", closes, sid)
+	}
+}
+
+// TestPromptRegistrationAbortsAfterCloseReaped pins the WR-02 half of the
+// D-12 linearizability: the prompt's gate pass and its turnWG registration
+// are two steps, so a session/close running ENTIRELY between them (the gate
+// already returned st; close's drain consumed a zero WaitGroup; the map entry
+// is gone) must convert the late registration into the typed error — the Add
+// would otherwise land on a dead sessionState and Run would execute against
+// reaped resources (MCP host closed, writer cancelled, forwarder stopped).
+// Sequenced deterministically at the method level: the wire window is
+// microseconds wide, but the interleaving is exactly gate → close → Add.
+//
+//nolint:funlen // one ordered interleaving, asserted end-to-end
+func TestPromptRegistrationAbortsAfterCloseReaped(t *testing.T) {
+	t.Parallel()
+
+	runner := &closerRecordingRunner{}
+	h := newPipeHarness(t, WithTurnRunner(runner))
+	sid := handshakeRecordingSession(t, h)
+
+	// The gate passes — the session is live and ready.
+	st, gerr := h.srv.promptSessionState(sid)
+	if gerr != nil {
+		t.Fatalf("promptSessionState: %v", gerr)
+	}
+
+	// The racing close runs to completion between the gate and the
+	// registration: drain, cancelTurn (no cancel func yet), zero-WG drain,
+	// reap, map delete.
+	h.srv.closeSessionSequence(sid)
+
+	h.srv.mu.Lock()
+	_, alive := h.srv.sessions[sid]
+	h.srv.mu.Unlock()
+
+	if alive {
+		t.Fatal("closeSessionSequence left the session in the map; sequencing broken")
+	}
+
+	rerr := h.srv.registerTurn(sid, st)
+	if rerr == nil {
+		t.Fatal("registerTurn accepted a session the close already reaped (WR-02)")
+	}
+
+	var rpcErr *RPCError
+
+	if !errors.As(rerr, &rpcErr) {
+		t.Fatalf("registerTurn error = %v; want the typed RPCError", rerr)
+	}
+
+	if rpcErr.Code != CodeInvalidRequest {
+		t.Errorf("registerTurn code = %d; want %d", rpcErr.Code, CodeInvalidRequest)
+	}
+
+	// The aborted registration leaves no ghost turn: the drain returns
+	// immediately instead of waiting out its timeout on a leaked Add.
+	if !st.waitTurnDrain(50 * time.Millisecond) {
+		t.Error("aborted registration leaked a turnWG count; a later close would drain a ghost turn")
+	}
+
+	// And the runner never saw a prompt for the reaped session.
+	if got := runner.promptCount(); got != 0 {
+		t.Errorf("runner ran %d turn(s) against the reaped session; want 0", got)
 	}
 }

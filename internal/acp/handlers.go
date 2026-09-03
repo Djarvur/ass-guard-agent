@@ -474,7 +474,9 @@ func (s *Server) handleSessionPrompt(ctx context.Context, params json.RawMessage
 	// when the whole handler returns — close's drain covers the turn, not the
 	// response write). The zero WaitGroup is nil-safe for sessions with no
 	// turn yet.
-	st.turnWG.Add(1)
+	if rerr := s.registerTurn(p.SessionID, st); rerr != nil {
+		return nil, rerr
+	}
 
 	stopReason, err := func() (string, error) {
 		defer st.turnWG.Done()
@@ -543,6 +545,37 @@ func (s *Server) promptSessionState(sessionID string) (*sessionState, error) {
 	}
 
 	return st, nil
+}
+
+// registerTurn enrolls one session/prompt turn in the session's drain set
+// (18-04/D-12) and closes the gate→registration window (review WR-02): the
+// gate pass and the Add are two steps, so a close running entirely between
+// them drains a ZERO WaitGroup and reaps the session's resources while the
+// prompt is still arriving. The Add lands FIRST, then liveness is
+// re-confirmed under s.mu — by IDENTITY, not mere presence: a re-load of the
+// same id constructs a NEW sessionState, and only the state the gate vetted
+// may run. A close ahead of the Add becomes the typed error (never a doomed
+// turn against reaped resources); a close after it finds the WaitGroup
+// occupied and waits. The two orders are linearizable — the D-12 contract.
+func (s *Server) registerTurn(sessionID string, st *sessionState) error {
+	st.turnWG.Add(1)
+
+	s.mu.Lock()
+	cur, live := s.sessions[sessionID]
+	s.mu.Unlock()
+
+	if live && cur == st {
+		return nil
+	}
+
+	st.turnWG.Done()
+
+	return &RPCError{
+		Code: CodeInvalidRequest,
+		Message: fmt.Sprintf(
+			"session/prompt: session %s closed while the prompt was arriving",
+			sessionID),
+	}
 }
 
 // handleSessionCancel cancels the active turn for the session (D-16 mechanism).
