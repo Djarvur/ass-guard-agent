@@ -25,14 +25,17 @@ const memInjHeader = "The following project memory files apply to this session:"
 // memRunner builds a Runner over a temp project carrying a .git boundary,
 // HOME pinned to an empty temp dir (hermetic user global), with plant
 // decorating the tree before the real Loader runs. Mirrors newSkillRunner.
-func memRunner(t *testing.T, plant func(dir string)) (*Runner, string) {
+//
+//nolint:nonamedreturns // gocritic unnamedResult prefers names for the pair
+func memRunner(t *testing.T, plant func(dir string)) (r *Runner, dir string) {
 	t.Helper()
 
 	t.Setenv("HOME", t.TempDir())
 
-	dir := t.TempDir()
+	dir = t.TempDir()
 
-	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o750); err != nil {
+	err := os.MkdirAll(filepath.Join(dir, ".git"), 0o750)
+	if err != nil {
 		t.Fatalf("mkdir .git boundary: %v", err)
 	}
 
@@ -42,7 +45,7 @@ func memRunner(t *testing.T, plant func(dir string)) (*Runner, string) {
 
 	prov := &scriptedACPProvider{}
 
-	r := &Runner{
+	r = &Runner{
 		bus:          event.NewBus(),
 		profile:      fakeProfileACP(),
 		workDir:      dir,
@@ -50,7 +53,8 @@ func memRunner(t *testing.T, plant func(dir string)) (*Runner, string) {
 		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return prov },
 	}
 
-	if err := r.SetupEngine(); err != nil {
+	err = r.SetupEngine()
+	if err != nil {
 		t.Fatalf("SetupEngine: %v", err)
 	}
 
@@ -67,17 +71,21 @@ func memPlantListingsAndMemory(t *testing.T, dir string) {
 	writeSkillFixtures(t, dir)
 
 	agentPath := filepath.Join(dir, ".claude", "agents", "reader.md")
-	if err := os.MkdirAll(filepath.Dir(agentPath), 0o750); err != nil {
+
+	err := os.MkdirAll(filepath.Dir(agentPath), 0o750)
+	if err != nil {
 		t.Fatalf("mkdir agents fixture dir: %v", err)
 	}
 
-	if err := os.WriteFile(agentPath,
-		[]byte("---\ndescription: Reads things carefully\n---\nYou read things.\n"), 0o600); err != nil {
+	err = os.WriteFile(agentPath,
+		[]byte("---\ndescription: Reads things carefully\n---\nYou read things.\n"), 0o600)
+	if err != nil {
 		t.Fatalf("write agent fixture: %v", err)
 	}
 
-	if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"),
-		[]byte("repo-memory-body-marker\n"), 0o600); err != nil {
+	err = os.WriteFile(filepath.Join(dir, "AGENTS.md"),
+		[]byte("repo-memory-body-marker\n"), 0o600)
+	if err != nil {
 		t.Fatalf("write AGENTS.md fixture: %v", err)
 	}
 }
@@ -125,6 +133,7 @@ func TestMemoryInjection_MemoryBlockIsLast(t *testing.T) { //nolint:paralleltest
 
 	skillsIdx := memBlockIndex(system, skillListingHeaderCaptured)
 	agentsIdx := memBlockIndex(system, "The following specialized agent types are available")
+
 	if skillsIdx < 0 || agentsIdx < 0 || agentsIdx < skillsIdx {
 		t.Errorf("listings absent or misordered (skills=%d agents=%d)", skillsIdx, agentsIdx)
 	}
@@ -195,7 +204,8 @@ func TestMemoryInjection_TruncationFlowsThrough(t *testing.T) { //nolint:paralle
 	big := strings.Repeat("t", 30000)
 
 	r, _ := memRunner(t, func(dir string) {
-		if err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(big), 0o600); err != nil {
+		err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(big), 0o600)
+		if err != nil {
 			t.Fatalf("write big AGENTS.md: %v", err)
 		}
 	})

@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -88,8 +89,8 @@ func DiscoverMemoryFiles(workDir string) []MemoryFile {
 	// Pinned order: user global first, then repo root → cwd (deepest last).
 	out = append(out, userGlobalMemory()...)
 
-	for i := len(levels) - 1; i >= 0; i-- {
-		out = append(out, levelMemory(levels[i])...)
+	for _, level := range slices.Backward(levels) {
+		out = append(out, levelMemory(level)...)
 	}
 
 	return out
@@ -122,7 +123,7 @@ func MemoryInjection(workDir string) string {
 		}
 
 		if len(f.Content) > remaining {
-			b.WriteString(fmt.Sprintf(memoryBudgetNoteFmt, f.Path, memoryTotalBudgetBytes))
+			fmt.Fprintf(&b, memoryBudgetNoteFmt, f.Path, memoryTotalBudgetBytes)
 
 			continue
 		}
@@ -130,7 +131,7 @@ func MemoryInjection(workDir string) string {
 		remaining -= len(f.Content)
 
 		if f.Truncated {
-			b.WriteString(fmt.Sprintf(memoryTruncNoteFmt, f.Path, f.OrigBytes, memoryPerFileCapBytes))
+			fmt.Fprintf(&b, memoryTruncNoteFmt, f.Path, f.OrigBytes, memoryPerFileCapBytes)
 			b.WriteString("\n\n")
 		}
 
@@ -280,6 +281,7 @@ func userGlobalMemory() []MemoryFile {
 
 	claudeDir := filepath.Join(home, claudeDirName)
 	claude := probeMemory(filepath.Join(claudeDir, claudeMDName))
+
 	if claude.regular {
 		return []MemoryFile{readMemoryEntry(claude.path, claudeDir)}
 	}
@@ -327,7 +329,7 @@ type memCacheEntry struct {
 // is never served stale within the keyed guarantee). memReads counts actual
 // file reads (cache misses) — the test hook behind MemoryCacheReads.
 var (
-	memCacheMu sync.Mutex
+	memCacheMu sync.Mutex                   //nolint:gochecknoglobals // guards the package read cache
 	memCache   = map[string]memCacheEntry{} //nolint:gochecknoglobals // package read cache
 	memReads   int                          //nolint:gochecknoglobals // test/diagnostic counter
 )
@@ -365,14 +367,14 @@ func memCachedRead(path string, info os.FileInfo) (string, bool) {
 func readMemoryPrefix(path string) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("open memory %s: %w", path, err)
 	}
 
 	defer f.Close() //nolint:errcheck // read-only handle
 
 	data, err := io.ReadAll(io.LimitReader(f, memoryPerFileCapBytes+1))
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("read memory %s: %w", path, err)
 	}
 
 	return string(data), nil
@@ -388,7 +390,7 @@ func truncateMemory(content string) (string, bool) {
 
 	cut := content[:memoryPerFileCapBytes]
 
-	for len(cut) > 0 {
+	for cut != "" {
 		r, size := utf8.DecodeLastRuneInString(cut)
 		if r != utf8.RuneError || size != 1 {
 			break // the trailing rune is complete

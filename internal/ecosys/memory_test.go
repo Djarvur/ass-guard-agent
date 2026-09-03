@@ -42,7 +42,8 @@ func memPinHome(t *testing.T) string {
 func memMkGitDir(t *testing.T, dir string) {
 	t.Helper()
 
-	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o750); err != nil {
+	err := os.MkdirAll(filepath.Join(dir, ".git"), 0o750)
+	if err != nil {
 		t.Fatalf("mkdir .git: %v", err)
 	}
 }
@@ -61,11 +62,13 @@ func memRepoDir(t *testing.T) string {
 func memWrite(t *testing.T, path, content string) {
 	t.Helper()
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+	err := os.MkdirAll(filepath.Dir(path), 0o750)
+	if err != nil {
 		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
 	}
 
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+	err = os.WriteFile(path, []byte(content), 0o600)
+	if err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}
 }
@@ -77,7 +80,8 @@ func memNoGitAbove(t *testing.T, dir string) {
 	t.Helper()
 
 	for {
-		if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+		_, statErr := os.Stat(filepath.Join(dir, ".git"))
+		if statErr == nil {
 			t.Skipf("ambient .git at %s — cwd-only span not provable here", dir)
 		}
 
@@ -99,6 +103,7 @@ func TestMemoryDiscovery_Collision(t *testing.T) { //nolint:paralleltest // HOME
 	repo := memRepoDir(t)
 	claude := filepath.Join(repo, "CLAUDE.md")
 	agents := filepath.Join(repo, "AGENTS.md")
+
 	memWrite(t, claude, "claude-wins-the-level")
 	memWrite(t, agents, "agents-is-shadowed")
 
@@ -213,6 +218,10 @@ func TestMemoryDiscovery_NoGitFallback(t *testing.T) { //nolint:paralleltest // 
 // collision and BLOCKS ~/.claude/CLAUDE.md; only when ~/.ass-guard has
 // neither file does ~/.claude/CLAUDE.md join.
 func TestMemoryDiscovery_UserGlobalPrecedence(t *testing.T) { //nolint:paralleltest,funlen // HOME pin
+	// memUserClaude is the ~/.claude/CLAUDE.md fixture body (goconst: reused
+	// across the four-combination table).
+	const memUserClaude = "user-claude-memory"
+
 	cases := []struct {
 		name      string
 		assguard  [2]string // {CLAUDE.md content, AGENTS.md content}; "" = absent
@@ -221,38 +230,38 @@ func TestMemoryDiscovery_UserGlobalPrecedence(t *testing.T) { //nolint:parallelt
 		wantNotIn []string
 	}{
 		{
-			name: "both in assguard — CLAUDE wins, user-claude blocked", //nolint:dupl // table rows
+			name:     "both in assguard — CLAUDE wins, user-claude blocked",
 			assguard: [2]string{"ag-claude-wins", "ag-agents-shadowed"},
-			claudeMD: "user-claude-memory",
+			claudeMD: memUserClaude,
 			wantIn:   []string{"ag-claude-wins"},
 			wantNotIn: []string{
-				"ag-agents-shadowed", "user-claude-memory",
+				"ag-agents-shadowed", memUserClaude,
 			},
 		},
 		{
 			name:      "assguard CLAUDE only — user-claude blocked",
 			assguard:  [2]string{"ag-claude-only", ""},
-			claudeMD:  "user-claude-memory",
+			claudeMD:  memUserClaude,
 			wantIn:    []string{"ag-claude-only"},
-			wantNotIn: []string{"user-claude-memory"},
+			wantNotIn: []string{memUserClaude},
 		},
 		{
 			name:      "assguard AGENTS only — user-claude blocked",
 			assguard:  [2]string{"", "ag-agents-only"},
-			claudeMD:  "user-claude-memory",
+			claudeMD:  memUserClaude,
 			wantIn:    []string{"ag-agents-only"},
-			wantNotIn: []string{"user-claude-memory"},
+			wantNotIn: []string{memUserClaude},
 		},
 		{
 			name:     "assguard empty — user-claude read",
 			assguard: [2]string{"", ""},
-			claudeMD: "user-claude-memory",
-			wantIn:   []string{"user-claude-memory"},
+			claudeMD: memUserClaude,
+			wantIn:   []string{memUserClaude},
 		},
 	}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) { //nolint:paralleltest // HOME pin
+	for _, tc := range cases { //nolint:paralleltest // subtests share the pinned HOME — serial
+		t.Run(tc.name, func(t *testing.T) {
 			home := memPinHome(t)
 			repo := memRepoDir(t)
 			memWrite(t, filepath.Join(repo, "AGENTS.md"), "repo-level-memory")
@@ -327,6 +336,7 @@ func TestMemoryDiscovery_AccumulateNoDedup(t *testing.T) { //nolint:paralleltest
 
 	repo := memRepoDir(t)
 	deep := filepath.Join(repo, "deep")
+
 	const twin = "twin-memory-body"
 
 	memWrite(t, filepath.Join(repo, "CLAUDE.md"), twin)
@@ -405,8 +415,10 @@ func TestMemoryDiscovery_TotalBudget(t *testing.T) { //nolint:paralleltest // HO
 
 	memWrite(t, filepath.Join(repo, "CLAUDE.md"), strings.Repeat("a", 30000)) // fits (capped)
 	memWrite(t, filepath.Join(m1, "CLAUDE.md"), strings.Repeat("b", 30000))   // fits (capped)
+
 	skipped1 := filepath.Join(m2, "AGENTS.md")
 	skipped2 := filepath.Join(deep, "AGENTS.md")
+
 	memWrite(t, skipped1, strings.Repeat("c", 30000)) // budget gone
 	memWrite(t, skipped2, strings.Repeat("d", 30000)) // budget gone
 
@@ -460,7 +472,9 @@ func TestMemoryDiscovery_UnreadableEntries(t *testing.T) { //nolint:paralleltest
 
 	// A DIRECTORY named AGENTS.md — present on disk but not a file.
 	agentsDir := filepath.Join(repo, "AGENTS.md")
-	if err := os.MkdirAll(agentsDir, 0o750); err != nil {
+
+	err := os.MkdirAll(agentsDir, 0o750)
+	if err != nil {
 		t.Fatalf("mkdir agents dir: %v", err)
 	}
 
@@ -481,11 +495,12 @@ func TestMemoryDiscovery_UnreadableEntries(t *testing.T) { //nolint:paralleltest
 		t.Skip("running as root — chmod 000 does not block reads")
 	}
 
-	if err := os.Chmod(lockPath, 0o000); err != nil {
+	err = os.Chmod(lockPath, 0o000)
+	if err != nil {
 		t.Fatalf("chmod: %v", err)
 	}
 
-	t.Cleanup(func() { _ = os.Chmod(lockPath, 0o600) }) //nolint:errcheck // best-effort restore
+	t.Cleanup(func() { _ = os.Chmod(lockPath, 0o600) })
 
 	files = ecosys.DiscoverMemoryFiles(repo)
 	if len(files) != 2 {
@@ -513,7 +528,9 @@ func TestMemoryDiscovery_Cache(t *testing.T) { //nolint:paralleltest // HOME pin
 	t1 := time.Now().Add(-1 * time.Hour)
 
 	memWrite(t, path, "cache-v1")
-	if err := os.Chtimes(path, t0, t0); err != nil {
+
+	err := os.Chtimes(path, t0, t0)
+	if err != nil {
 		t.Fatalf("chtimes t0: %v", err)
 	}
 
@@ -529,13 +546,16 @@ func TestMemoryDiscovery_Cache(t *testing.T) { //nolint:paralleltest // HOME pin
 
 	// Unchanged mtime+size → cache hit, zero new reads.
 	_ = ecosys.DiscoverMemoryFiles(repo)
+
 	if got := ecosys.MemoryCacheReads(); got != 1 {
 		t.Fatalf("reads after repeat discovery = %d; want 1 (cache hit)", got)
 	}
 
 	// New mtime (same size) → miss → re-read → fresh content.
 	memWrite(t, path, "cache-v2")
-	if err := os.Chtimes(path, t1, t1); err != nil {
+
+	err = os.Chtimes(path, t1, t1)
+	if err != nil {
 		t.Fatalf("chtimes t1: %v", err)
 	}
 
@@ -549,7 +569,9 @@ func TestMemoryDiscovery_Cache(t *testing.T) { //nolint:paralleltest // HOME pin
 
 	// Same mtime, different SIZE → still a miss (size is part of the key).
 	memWrite(t, path, "cache-v3-longer")
-	if err := os.Chtimes(path, t1, t1); err != nil {
+
+	err = os.Chtimes(path, t1, t1)
+	if err != nil {
 		t.Fatalf("chtimes t1 restore: %v", err)
 	}
 

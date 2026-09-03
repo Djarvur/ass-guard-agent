@@ -1252,6 +1252,19 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 			profile.TextBlock{Type: blockText, Text: agentListing})
 	}
 
+	// 21-02 (PAR-04): the memory injection — the FOURTH trailing-TextBlock
+	// dynamic merge (the exact skills/agent-listing vehicle): AGENTS.md /
+	// CLAUDE.md bodies discovered cwd→git-root + the user global, mtime-cached
+	// and D-08-capped, ride one block AFTER AgentListing so memory stays the
+	// closest-to-conversation static context. Zero memory files → no merge
+	// (the body renderer's render-then-skip contract); the double-append keeps
+	// the shared r.profile unmutated. The renderer cannot fail — every
+	// degradation is a note inside the body.
+	if memBody := ecosys.MemoryInjection(dir); memBody != "" {
+		prof.System = append(append([]profile.TextBlock(nil), prof.System...),
+			profile.TextBlock{Type: blockText, Text: memBody})
+	}
+
 	// Per-session catalog: clone the shared engine catalog (OpenSpec + core) so
 	// MCP tools never leak across sessions or back into r.catalog (D-16).
 	var sCatalog *toolcat.Catalog
