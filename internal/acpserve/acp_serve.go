@@ -12,9 +12,11 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/audit"
+	"github.com/Djarvur/ass-guard-agent/internal/checkpoint"
 	"github.com/Djarvur/ass-guard-agent/internal/event"
 	"github.com/Djarvur/ass-guard-agent/internal/firstrun"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
@@ -22,6 +24,7 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/providerfactory"
 	"github.com/Djarvur/ass-guard-agent/internal/runtime"
 	"github.com/Djarvur/ass-guard-agent/internal/sched"
+	"github.com/Djarvur/ass-guard-agent/internal/session"
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 )
 
@@ -211,6 +214,36 @@ func Run( //nolint:funlen // :320-425
 	surface := NewConfigSurface(
 		globalPath, providerfactory.ProjectConfigPath(opts.WorkDir), providerName, stderr)
 
+	// 18-04 (D-09): the grace-expired tombstone GC — ONE sweep at startup,
+	// after WorkDir resolution and before Serve (the chosen trigger point
+	// within the 30d contract). Physically purges ONLY tombstoned
+	// transcript+marker pairs past the configured grace; the audit subtree
+	// is never enumerated (D-20 — audit survives unconditionally). A sweep
+	// failure degrades loudly, never a serve refusal.
+	swept, sweepErr := session.SweepTombstones(opts.WorkDir, surface.EffectiveTombstoneGrace(), time.Now())
+	if sweepErr != nil {
+		log.Printf("ass-guard: tombstone sweep failed (continuing to serve): %v", sweepErr)
+	}
+
+	if len(swept) > 0 {
+		log.Printf("ass-guard: tombstone sweep purged %d grace-expired session(s): %v", len(swept), swept)
+	}
+
+	// 18-04 (D-08): session/delete's checkpoint sweep rides the same
+	// workspace store the runner opens per-session (Open is idempotent — one
+	// store per workspace). An open failure degrades loudly; delete then
+	// skips the checkpoint step (best-effort).
+	var ckptDeleter acp.CheckpointStore
+
+	//nolint:contextcheck // plan-pinned signature: Store.Open carries no ctx
+	st, coerr := checkpoint.Open(opts.WorkDir)
+	if coerr == nil {
+		ckptDeleter = st
+	} else {
+		log.Printf("ass-guard: checkpoint store unavailable for session/delete (%v) — "+
+			"deletes skip checkpoint removal", coerr)
+	}
+
 	srv := acp.NewServer(in, out, stderr,
 		acp.WithTurnRunner(runner),
 		acp.WithTurnEmitter(acp.TurnEmitterConfig{}),
@@ -224,7 +257,9 @@ func Run( //nolint:funlen // :320-425
 		// 18-04 (ACP-05/ACP-07): session/list + session/delete ride the
 		// session-backed storage seam (the 18-03 engine + the tombstone
 		// writer — session_store.go; acp stays session-free per 25-D-13).
-		acp.WithSessionStore(sessionStoreAdapter{}))
+		acp.WithSessionStore(sessionStoreAdapter{}),
+		// 18-04 (D-08): the checkpoint-removal seam behind session/delete.
+		acp.WithCheckpointStore(ckptDeleter))
 
 	surface.SetNotify(func(sessionID string, opts []acp.ConfigOptionFrame) {
 		nerr := srv.NotifyConfigOptions(sessionID, opts)

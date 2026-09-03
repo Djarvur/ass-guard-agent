@@ -10,7 +10,7 @@ package acpserve //nolint:testpackage // internal package test
 //
 // Deliberately a NEW file (no files_modified overlap with 16-08's
 // config_surface.go/config_test.go); the layer-file fixture style is copied
-// from config_test.go, whose helpers (writeLayer/optionByID/assertEight and
+// from config_test.go, whose helpers (writeLayer/optionByID/assertFullMenu and
 // the floor-slug constants) are reused in place.
 
 import (
@@ -42,7 +42,7 @@ func TestConfigAdvertisement_ResolverTruth(t *testing.T) {
 	surface := NewConfigSurface(globalPath, projectPath, "anthropic", nil)
 
 	opts := surface.Options()
-	assertEight(t, opts, "resolver-truth advertisement")
+	assertFullMenu(t, opts, "resolver-truth advertisement")
 
 	model := optionByID(t, opts, optModel)
 

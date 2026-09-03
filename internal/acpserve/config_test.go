@@ -127,11 +127,14 @@ func optionByID(t *testing.T, opts []acp.ConfigOptionFrame, id string) acp.Confi
 	return acp.ConfigOptionFrame{}
 }
 
-func assertEight(t *testing.T, opts []acp.ConfigOptionFrame, where string) {
+// assertFullMenu pins the menu SIZE (ten entries since 18-04 added the
+// tombstone-grace pair); per-option shape/value pins live in the per-option
+// tests.
+func assertFullMenu(t *testing.T, opts []acp.ConfigOptionFrame, where string) {
 	t.Helper()
 
-	if len(opts) != 8 {
-		t.Fatalf("%s: options = %d; want the eight-entry menu", where, len(opts))
+	if len(opts) != 10 {
+		t.Fatalf("%s: options = %d; want the ten-entry menu", where, len(opts))
 	}
 }
 
@@ -141,7 +144,7 @@ func TestConfigSurface_MenuDefaults(t *testing.T) {
 	f := newSurfaceFixture(t)
 
 	opts := f.surface.Options()
-	assertEight(t, opts, "defaults-only")
+	assertFullMenu(t, opts, "defaults-only")
 
 	model := optionByID(t, opts, optModel)
 	if model.Category != optModel || model.Type != acp.ConfigOptionTypeSelect {
@@ -251,7 +254,7 @@ func globalTwinsModelTwinSubtest(t *testing.T) {
 	writeLayer(t, f.globalPath, "tiers:\n  heavy:\n    model: "+testModelFallback+"\n")
 
 	opts := f.surface.Options()
-	assertEight(t, opts, "model twin advertisement")
+	assertFullMenu(t, opts, "model twin advertisement")
 
 	if got := optionByID(t, opts, optModel).CurrentValue; got != testModelPrimary {
 		t.Errorf("bare model currentValue = %q; want the combined %q (D-11 unchanged)", got, testModelPrimary)
@@ -280,7 +283,7 @@ func globalTwinsTierTwinSubtest(t *testing.T) {
 		"tiers:\n  light:\n    model: "+testModelPrimary+"\nsession_tier: "+testTierLight+"\n")
 
 	opts := f.surface.Options()
-	assertEight(t, opts, "tier twin advertisement")
+	assertFullMenu(t, opts, "tier twin advertisement")
 
 	if got := optionByID(t, opts, optTier).CurrentValue; got != testTierHeavy {
 		t.Errorf("bare tier currentValue = %q; want the combined heavy (project wins, D-11 unchanged)", got)
@@ -318,7 +321,7 @@ func globalTwinsAbsentGlobalFileSubtest(t *testing.T) {
 	}
 
 	opts := f.surface.Options()
-	assertEight(t, opts, "floor advertisement")
+	assertFullMenu(t, opts, "floor advertisement")
 
 	if got := optionByID(t, opts, optTier).CurrentValue; got != testTierLight {
 		t.Errorf("bare tier currentValue = %q; want the in-memory blob fill light", got)
@@ -374,7 +377,7 @@ func TestConfigSurface_PendingNoOp_Compaction(t *testing.T) {
 		t.Fatalf("Set(pending compaction-threshold): %v (D-05: accepted no-op, never an error)", err)
 	}
 
-	assertEight(t, opts, "pending response")
+	assertFullMenu(t, opts, "pending response")
 
 	if got := optionByID(t, opts, optCompactionThresh).CurrentValue; got != testCompactionDefval {
 		t.Errorf("compaction-threshold currentValue = %q; want UNCHANGED %q", got, testCompactionDefval)
@@ -475,7 +478,7 @@ func TestPermissionsModeFlip(t *testing.T) {
 			t.Fatalf("Set(permissions.mode=gated): %v", err)
 		}
 
-		assertEight(t, opts, "mode flip response")
+		assertFullMenu(t, opts, "mode flip response")
 
 		w.mu.Lock()
 		applied, layers := append([]string(nil), w.applied...), append([]string(nil), w.layerAtApply...)
@@ -792,7 +795,7 @@ func TestMetaBlob_FillsUnsetInMemory(t *testing.T) {
 		t.Fatalf("config_option_update count = %d; want exactly 1", f.notifyCount())
 	}
 
-	assertEight(t, f.notifyCalls[0], "blob notification")
+	assertFullMenu(t, f.notifyCalls[0], "blob notification")
 }
 
 func TestMetaBlob_UnknownKeysRetainedVerbatim(t *testing.T) {
@@ -917,7 +920,7 @@ func globalWritePersistsSubtest(t *testing.T) {
 		t.Fatalf("Set(_global/model) equal to the combined effective: %v", err)
 	}
 
-	assertEight(t, opts, "global-scope set response")
+	assertFullMenu(t, opts, "global-scope set response")
 
 	cfg, err := modelrouting.Load(f.globalPath)
 	if err != nil {
@@ -953,7 +956,7 @@ func globalTrueIdempotenceSubtest(t *testing.T) {
 		t.Fatalf("Set(_global/model) equal to the global layer's value: %v", err)
 	}
 
-	assertEight(t, opts, "global idempotent response")
+	assertFullMenu(t, opts, "global idempotent response")
 
 	if got := readLayerBytes(t, f.globalPath); got != globalBefore {
 		t.Errorf("true global idempotence churned the global file:\nbefore=%q\nafter=%q",
@@ -993,7 +996,7 @@ func TestSetIdempotent_BlobDerivedEffective(t *testing.T) {
 		t.Fatalf("idempotent Set: %v", err)
 	}
 
-	assertEight(t, opts, "idempotent response")
+	assertFullMenu(t, opts, "idempotent response")
 
 	if got := readLayerBytes(t, f.projectPath); got != projectBefore {
 		t.Errorf("idempotent re-push churned the layer file (D-10 guard failed):\nbefore=%q\nafter=%q",

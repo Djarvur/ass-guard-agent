@@ -48,8 +48,9 @@ func sweepMarker(t *testing.T, dir, sessionID string, at time.Time) string {
 func assertGone(t *testing.T, path, what string) {
 	t.Helper()
 
-	if _, serr := os.Stat(path); !errors.Is(serr, os.ErrNotExist) {
-		t.Errorf("%s still present after the sweep: %v", what, serr)
+	_, gerr := os.Stat(path)
+	if !errors.Is(gerr, os.ErrNotExist) {
+		t.Errorf("%s still present after the sweep: %v", what, gerr)
 	}
 }
 
@@ -57,8 +58,9 @@ func assertGone(t *testing.T, path, what string) {
 func assertPresent(t *testing.T, path, what string) {
 	t.Helper()
 
-	if _, serr := os.Lstat(path); serr != nil {
-		t.Errorf("%s removed or unreachable: %v", what, serr)
+	_, lerr := os.Lstat(path)
+	if lerr != nil {
+		t.Errorf("%s removed or unreachable: %v", what, lerr)
 	}
 }
 
@@ -98,7 +100,8 @@ func TestTombstoneWrite(t *testing.T) {
 		t.Errorf("marker perms = %o; want %o", fi.Mode().Perm(), filePermOwner)
 	}
 
-	if _, terr := os.Stat(transcript); terr != nil {
+	_, terr := os.Stat(transcript)
+	if terr != nil {
 		t.Errorf("transcript touched by the tombstone write: %v", terr)
 	}
 
@@ -124,7 +127,7 @@ func TestTombstoneWrite(t *testing.T) {
 // EXACT: a marker exactly at grace does NOT purge, one strictly past it
 // does.
 //
-//nolint:funlen // one ordered grace-scenario assertion end-to-end
+// One ordered grace-scenario assertion end-to-end.
 func TestSweepRespectsGrace(t *testing.T) {
 	t.Parallel()
 
@@ -193,7 +196,7 @@ func TestSweepRespectsGrace(t *testing.T) {
 // no transcript is removed — its pair is already gone, which also completes
 // a sweep interrupted mid-purge.
 //
-//nolint:funlen,gocyclo,cyclop // the never-touch matrix in one scenario
+//nolint:funlen // the never-touch matrix in one scenario
 func TestSweepNeverTouches(t *testing.T) {
 	t.Parallel()
 
@@ -219,7 +222,8 @@ func TestSweepNeverTouches(t *testing.T) {
 		t.Fatalf("write audit artifact: %v", err)
 	}
 
-	if cerr := os.Chtimes(auditFile, old, old); cerr != nil {
+	cerr := os.Chtimes(auditFile, old, old)
+	if cerr != nil {
 		t.Fatalf("chtimes audit artifact: %v", cerr)
 	}
 
@@ -230,8 +234,9 @@ func TestSweepNeverTouches(t *testing.T) {
 		t.Fatalf("write unrelated file: %v", err)
 	}
 
-	if cerr := os.Chtimes(unrelated, old, old); cerr != nil {
-		t.Fatalf("chtimes unrelated file: %v", cerr)
+	cerr2 := os.Chtimes(unrelated, old, old)
+	if cerr2 != nil {
+		t.Fatalf("chtimes unrelated file: %v", cerr2)
 	}
 
 	// Planted symlinks (T-18-03): a symlinked transcript under a valid

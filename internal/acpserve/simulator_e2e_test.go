@@ -509,7 +509,7 @@ func simStageInitialize(t *testing.T, cli *simClient) {
 	}
 
 	// The follow-up config_option_update carries the blob-applied FULL set.
-	assertEight(t, updateSet, "post-blob config_option_update")
+	assertFullMenu(t, updateSet, "post-blob config_option_update")
 
 	got := optionByID(t, updateSet, optCompactionThresh).CurrentValue
 	if got != testCompactionBlob {
@@ -543,10 +543,10 @@ func simAssertInitializeResult(t *testing.T, raw json.RawMessage) {
 		t.Error("agentCapabilities.loadSession = false; want true (18-01/ACP-06 — replay is live)")
 	}
 
-	assertEight(t, resp.ConfigOptions, "initialize response advertisement")
+	assertFullMenu(t, resp.ConfigOptions, "initialize response advertisement")
 }
 
-// simStageSessionNew: the eight-entry menu with effective currentValues —
+// simStageSessionNew: the ten-entry menu with effective currentValues —
 // the floor-resolved model/tier and the _meta blob fill (D-11).
 func simStageSessionNew(t *testing.T, cli *simClient, workDir string) string {
 	t.Helper()
@@ -570,7 +570,7 @@ func simStageSessionNew(t *testing.T, cli *simClient, workDir string) string {
 		t.Fatal("session/new returned no sessionId")
 	}
 
-	assertEight(t, resp.ConfigOptions, "session/new advertisement")
+	assertFullMenu(t, resp.ConfigOptions, "session/new advertisement")
 
 	if got := optionByID(t, resp.ConfigOptions, optModel).CurrentValue; got != testModelPrimary {
 		t.Errorf("model currentValue = %q; want the floor-resolved %q (D-11)", got, testModelPrimary)
@@ -769,7 +769,7 @@ func simAwaitSetConfirmation(t *testing.T, cli *simClient) {
 func simAssertOptionSet(t *testing.T, opts []acp.ConfigOptionFrame, where string) {
 	t.Helper()
 
-	assertEight(t, opts, where)
+	assertFullMenu(t, opts, where)
 
 	got := optionByID(t, opts, optModel).CurrentValue
 	if got != testModelFallback {

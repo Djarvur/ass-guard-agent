@@ -29,6 +29,7 @@ import (
 	"io"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -38,6 +39,7 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
 	"github.com/Djarvur/ass-guard-agent/internal/providerfactory"
+	"github.com/Djarvur/ass-guard-agent/internal/session"
 )
 
 // Menu vocabulary (D-06 enumeration + A7 scope namespace + v1 categories).
@@ -46,6 +48,7 @@ const (
 	optTier             = "tier"
 	optPermissionsMode  = "permissions.mode"
 	optCompactionThresh = "compaction-threshold"
+	optTombstoneGrace   = "tombstoneGraceDays"
 	optGlobalPrefix     = "_global/"
 
 	scopeGlobal  = "global"
@@ -60,6 +63,13 @@ const (
 	compactionMid      = "65"
 	compactionMidLower = "50"
 
+	// tombstoneGraceDefault mirrors session.DefaultTombstoneGrace (30d) as
+	// the menu's string current-value; graceDaysMin is the D-09 validation
+	// floor (T-18-10: integer >= 1, no upper clamp — a large grace only
+	// delays the purge).
+	tombstoneGraceDefault = "30"
+	graceDaysMin          = 1
+
 	categoryModel       = "model"
 	categoryModelConfig = "model_config"
 	categoryMode        = "mode"
@@ -72,7 +82,14 @@ const (
 	keyPermissions = "permissions"
 	keyPermMode    = "mode"
 
+	keyTombstone = "tombstone"
+	keyGraceDays = "graceDays"
+
 	phasePendingCompaction = "Phase 19"
+
+	// Idempotence-basis descriptions (WR-05 scope-aware guard log lines).
+	basisWhereEffective = "the currently-effective value"
+	basisWhereGlobal    = "the global layer's current value"
 )
 
 // errNoGlobalLayer guards a global-scoped write when the global path could not
@@ -197,6 +214,28 @@ func (s *ConfigSurface) EffectivePermMode() string {
 	}
 
 	return permModeUngated
+}
+
+// EffectiveTombstoneGrace resolves the GC grace the startup sweep runs with
+// (18-04/D-09): project layer > global layer > the 30-day default
+// (session.DefaultTombstoneGrace). A stored value that is not a whole number
+// of days >= 1 degrades loudly to the default — the sweep must always run
+// with a sane grace, never refuse to serve.
+func (s *ConfigSurface) EffectiveTombstoneGrace() time.Duration {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	raw := s.effectiveTombstoneGraceLocked()
+
+	days, err := strconv.Atoi(raw)
+	if err != nil || days < graceDaysMin {
+		s.logf("option %q: stored value %q is not a whole number of days >= %d — the sweep runs on the %sd default",
+			optTombstoneGrace, raw, graceDaysMin, tombstoneGraceDefault)
+
+		return session.DefaultTombstoneGrace
+	}
+
+	return time.Duration(days) * 24 * time.Hour
 }
 
 // Options returns the full eight-entry menu in v1 SessionConfigOption shapes,
@@ -413,6 +452,12 @@ func (s *ConfigSurface) setLocked(optionID string, value any) (setOutcome, error
 		}, merr
 	}
 
+	if bare == optTombstoneGrace {
+		frames, applied, gerr := s.setTombstoneGraceLocked(optionID, scope, val)
+
+		return setOutcome{frames: frames, doNotify: applied}, gerr
+	}
+
 	verr := s.validateSettableLocked(bare, optionID, val, res.cfg)
 	if verr != nil {
 		return setOutcome{}, verr
@@ -458,7 +503,7 @@ func (s *ConfigSurface) setLocked(optionID string, value any) (setOutcome, error
 // effectiveState is the comparable snapshot behind blob-application change
 // detection.
 type effectiveState struct {
-	tier, model, permMode, compaction string
+	tier, model, permMode, compaction, graceDays string
 }
 
 func (s *ConfigSurface) snapshotLocked() (effectiveState, error) {
@@ -472,6 +517,7 @@ func (s *ConfigSurface) snapshotLocked() (effectiveState, error) {
 		model:      res.model,
 		permMode:   s.effectivePermModeLocked(),
 		compaction: s.pendingCurrentLocked(optCompactionThresh),
+		graceDays:  s.effectiveTombstoneGraceLocked(),
 	}, nil
 }
 
@@ -525,7 +571,7 @@ func (s *ConfigSurface) idempotenceBasisLocked(
 	if scope != scopeGlobal {
 		return idempotenceBasis{
 			value: s.effectiveFor(bare, res.tier, res.model),
-			where: "the currently-effective value",
+			where: basisWhereEffective,
 		}, nil
 	}
 
@@ -536,7 +582,7 @@ func (s *ConfigSurface) idempotenceBasisLocked(
 
 	return idempotenceBasis{
 		value: s.effectiveFor(bare, g.tier, g.model),
-		where: "the global layer's current value",
+		where: basisWhereGlobal,
 	}, nil
 }
 
@@ -639,10 +685,10 @@ func (s *ConfigSurface) setPermModeLocked(
 	// Idempotence basis (WR-05): the ADDRESSED scope's value — project
 	// compares the effective (accessor) value; global compares the global
 	// layer's own value.
-	basis, where := s.effectivePermModeLocked(), "the currently-effective value"
+	basis, where := s.effectivePermModeLocked(), basisWhereEffective
 	if scope == scopeGlobal {
 		basis = s.globalPermModeLocked()
-		where = "the global layer's current value"
+		where = basisWhereGlobal
 	}
 
 	if val == basis {
@@ -704,6 +750,108 @@ func (s *ConfigSurface) globalPermModeLocked() string {
 	}
 
 	return permModeUngated
+}
+
+// setTombstoneGraceLocked is the tombstoneGraceDays handler (18-04/D-09): a
+// REAL option with persist-as-apply semantics — the sweep reads the grace
+// from the layer files at every run, so persisting IS applying (no live-apply
+// hook; the startup sweep is the consumer). Validation is integer >= 1 with
+// the 16-D-09 typed reject (T-18-10); the offered select values are a UI
+// affordance, any whole positive number of days is a valid write. applied
+// reports a real write (the out-of-band update fires); the idempotent
+// re-push answers with the refreshed set and no layer churn (D-10).
+func (s *ConfigSurface) setTombstoneGraceLocked(
+	optionID, scope, val string,
+) ([]acp.ConfigOptionFrame, bool, error) {
+	days, perr := strconv.Atoi(val)
+	if perr != nil {
+		return nil, false, &acp.ConfigViolationError{
+			OptionID:  optionID,
+			Violation: fmt.Sprintf("value %q is not a whole number of days", val),
+		}
+	}
+
+	if days < graceDaysMin {
+		return nil, false, &acp.ConfigViolationError{
+			OptionID: optionID,
+			Violation: fmt.Sprintf("grace must be at least %d day(s) (got %d) — "+
+				"the grace window is the only undo for a delete", graceDaysMin, days),
+		}
+	}
+
+	basis, where := s.effectiveTombstoneGraceLocked(), basisWhereEffective
+	if scope == scopeGlobal {
+		basis = s.globalTombstoneGraceLocked()
+		where = basisWhereGlobal
+	}
+
+	if val == basis {
+		s.logf("option %q: value %q equals %s — idempotent re-push, no layer write (D-10)", optionID, val, where)
+
+		return s.optionsLocked(), false, nil
+	}
+
+	layerPath, lerr := s.layerForScope(scope)
+	if lerr != nil {
+		return nil, false, &acp.ConfigPersistError{OptionID: optionID, Err: lerr}
+	}
+
+	werr := providerfactory.WriteLayerOption(layerPath, []string{keyTombstone, keyGraceDays}, val)
+	if werr != nil {
+		return nil, false, &acp.ConfigPersistError{OptionID: optionID, Err: werr}
+	}
+
+	// An explicit editor write supersedes any blob fill for this option.
+	delete(s.blobFills, optTombstoneGrace)
+
+	s.logf("option %q (scope %s): persisted %s day(s) — the next tombstone sweep reads it (D-09 persist-as-apply)",
+		optionID, scope, val)
+
+	return s.optionsLocked(), true, nil
+}
+
+// effectiveTombstoneGraceLocked resolves the effective grace DAYS string
+// (callers hold s.mu): the live layer truth (project > global), else the
+// initialize _meta blob fill, else the fixed default.
+func (s *ConfigSurface) effectiveTombstoneGraceLocked() string {
+	if v := s.layerGraceDays(s.projectPath); v != "" {
+		return v
+	}
+
+	if v := s.layerGraceDays(s.globalPath); v != "" {
+		return v
+	}
+
+	if fill, ok := s.blobFills[optTombstoneGrace]; ok {
+		return fill
+	}
+
+	return tombstoneGraceDefault
+}
+
+// globalTombstoneGraceLocked resolves the GLOBAL layer's own grace days (the
+// _global twin describes a layer FILE — no blob overlay), fixed default.
+func (s *ConfigSurface) globalTombstoneGraceLocked() string {
+	if v := s.layerGraceDays(s.globalPath); v != "" {
+		return v
+	}
+
+	return tombstoneGraceDefault
+}
+
+// layerGraceDays reads one layer file's tombstone.graceDays value ("" when
+// the file is absent/unreadable/unset).
+func (s *ConfigSurface) layerGraceDays(path string) string {
+	if path == "" {
+		return ""
+	}
+
+	m, err := readLayerMap(path)
+	if err != nil {
+		return ""
+	}
+
+	return layerValue(m, keyTombstone, keyGraceDays)
 }
 
 // layerPermMode reads one layer file's permissions.mode value ("" when the
@@ -828,7 +976,7 @@ func (s *ConfigSurface) floorResolvedLocked() (*resolvedConfig, error) {
 	}, nil
 }
 
-// optionsLocked builds the eight-entry menu. A layer-load failure degrades to
+// optionsLocked builds the ten-entry menu. A layer-load failure degrades to
 // the embedded floor (loudly); only a floor failure leaves the advertisement
 // empty.
 func (s *ConfigSurface) optionsLocked() []acp.ConfigOptionFrame {
@@ -867,6 +1015,15 @@ func (s *ConfigSurface) optionsLocked() []acp.ConfigOptionFrame {
 	models := sortedConfigKeys(res.cfg.Models)
 	tiers := sortedConfigKeys(res.cfg.Tiers)
 
+	return s.menuEntriesLocked(res, gRes, models, tiers)
+}
+
+// menuEntriesLocked builds the ten advertisement rows from the resolved
+// configs (callers hold s.mu) — optionsLocked's tail, split so the
+// resolution-degrade flow and the row construction read separately.
+func (s *ConfigSurface) menuEntriesLocked(
+	res, gRes *resolvedConfig, models, tiers []string,
+) []acp.ConfigOptionFrame {
 	build := func(id, name, desc, category, current string, values []string) acp.ConfigOptionFrame {
 		opts := make([]acp.ConfigOptionValue, 0, len(values))
 		for _, v := range values {
@@ -897,6 +1054,11 @@ func (s *ConfigSurface) optionsLocked() []acp.ConfigOptionFrame {
 			categoryMode, s.globalPermModeLocked(), selectValues(optPermissionsMode)),
 		build(optGlobalPrefix+optCompactionThresh, "Compaction threshold (global default)", "Global compaction default",
 			categoryCustom, s.pendingCurrentLocked(optCompactionThresh), selectValues(optCompactionThresh)),
+		build(optTombstoneGrace, "Tombstone grace",
+			"Days a deleted session stays recoverable before the GC sweep purges it (audit history survives)",
+			categoryCustom, s.effectiveTombstoneGraceLocked(), graceDayChoices()),
+		build(optGlobalPrefix+optTombstoneGrace, "Tombstone grace (global default)",
+			"Global tombstone-grace default", categoryCustom, s.globalTombstoneGraceLocked(), graceDayChoices()),
 	}
 }
 
@@ -1004,7 +1166,8 @@ func splitScope(optionID string) optionScope {
 }
 
 func isMenuOption(bare string) bool {
-	return bare == optModel || bare == optTier || bare == optPermissionsMode || bare == optCompactionThresh
+	return bare == optModel || bare == optTier || bare == optPermissionsMode ||
+		bare == optCompactionThresh || bare == optTombstoneGrace
 }
 
 // isPendingOption reports the advertised-but-unhandled ids (D-05): accepted
@@ -1012,6 +1175,13 @@ func isMenuOption(bare string) bool {
 // pending (its handler lands in Phase 19); permissions.mode is a real option.
 func isPendingOption(bare string) bool {
 	return bare == optCompactionThresh
+}
+
+// graceDayChoices is the tombstone-grace offered set — a UI AFFORDANCE, not
+// the validation boundary: the handler accepts any whole number of days >= 1
+// (T-18-10), the menu just offers the common retention windows.
+func graceDayChoices() []string {
+	return []string{"1", "7", "14", "30", "60", "90", "180", "365"}
 }
 
 // selectValues is the fixed offered set of a select option.

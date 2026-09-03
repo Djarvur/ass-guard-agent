@@ -1,4 +1,4 @@
-package acpserve
+package acpserve //nolint:testpackage // internal package test (optTombstoneGrace is unexported)
 
 // 18-04 (D-09) TestTombstoneGraceConfig: the tombstoneGraceDays option on
 // the Phase-16 config surface — default 30d, integer >= 1 validation with
@@ -49,7 +49,7 @@ func graceFixture(t *testing.T, work, sid string) string {
 // acpserve's startup sweep reads the grace) follows it, and invalid input
 // is the typed ConfigViolationError with violation detail (16-D-09).
 //
-//nolint:funlen,gocyclo,cyclop // one ordered config round-trip end-to-end
+//nolint:funlen,cyclop // one ordered config round-trip end-to-end
 func TestTombstoneGraceConfig(t *testing.T) {
 	t.Parallel()
 
@@ -118,15 +118,18 @@ func TestTombstoneGraceConfig(t *testing.T) {
 
 	tenDaysAgo := time.Now().UTC().Add(-10 * 24 * time.Hour)
 
-	if cerr := os.Chtimes(marker, tenDaysAgo, tenDaysAgo); cerr != nil {
+	cerr := os.Chtimes(marker, tenDaysAgo, tenDaysAgo)
+	if cerr != nil {
 		t.Fatalf("chtimes marker: %v", cerr)
 	}
 
-	if _, serr := session.SweepTombstones(work, session.DefaultTombstoneGrace, time.Now().UTC()); serr != nil {
+	_, serr := session.SweepTombstones(work, session.DefaultTombstoneGrace, time.Now().UTC())
+	if serr != nil {
 		t.Fatalf("default-grace sweep: %v", serr)
 	}
 
-	if _, lerr := os.Stat(transcript); lerr != nil {
+	_, lerr := os.Stat(transcript)
+	if lerr != nil {
 		t.Fatal("10d-old tombstoned pair purged under the 30d default (grace window broken)")
 	}
 
