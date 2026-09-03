@@ -116,7 +116,13 @@ func loadAll(claudeDir, assguardDir string) (Registry, map[string]ServerConfig, 
 	// precedence above stays untouched (Pitfall 1: other consumers depend on
 	// it). Every settings failure path degrades to a stderr warning + skip,
 	// never an error up through Load (Pitfall 8).
+	//
+	// 21-REVIEW WR-08: the project tree's settings.local.json (the gitignored
+	// personal-override file CC reads BESIDE settings.json) joins at the SAME
+	// project scope rank, read after settings.json (the local-overrides
+	// precedence direction) — hooks configured there FIRE.
 	merged.Hooks = append(merged.Hooks, loadSettingsHooks(claudeDir, ScopeProject)...)
+	merged.Hooks = append(merged.Hooks, loadSettingsLocalHooks(claudeDir)...)
 	merged.Hooks = append(merged.Hooks, loadSettingsHooks(claudeDir, ScopeUser)...)
 
 	return merged, pluginMCP, nil
@@ -127,15 +133,16 @@ func loadAll(claudeDir, assguardDir string) (Registry, map[string]ServerConfig, 
 // — the SAME files CC reads; read-only, never written).
 const settingsJSONName = "settings.json"
 
+// settingsLocalJSONName is the project tree's gitignored personal-override
+// settings file (21-REVIEW WR-08, CC parity): CC reads it BESIDE
+// settings.json — the standard place operators put hooks they do not ship —
+// so its hooks must fire too. Read-only, never written.
+const settingsLocalJSONName = "settings.local.json"
+
 // loadSettingsHooks reads one settings scope's hooks entries (21-01
 // PAR-03/D-02): ScopeProject reads <claudeDir>/settings.json; ScopeUser
-// reads ~/.claude/settings.json. The hooks key layout is the SAME
-// hooks → event → matcher-group → {type,command,timeout} shape the plugin
-// hooks.json parser accepts (CC-compatible). A malformed file degrades to a
-// stderr warning + skip; an absent file contributes nothing silently
-// (absent is normal); an oversized file skips with a warning (the
-// pluginArtifactMaxBytes discipline). NEVER returns an error — a repo must
-// not be able to brick session construction (Pitfall 8).
+// reads ~/.claude/settings.json. See parseSettingsHooks for the per-file
+// degradation discipline.
 func loadSettingsHooks(claudeDir string, scope HookScope) []HookConfig {
 	var path string
 
@@ -161,6 +168,35 @@ func loadSettingsHooks(claudeDir string, scope HookScope) []HookConfig {
 		return nil
 	}
 
+	return parseSettingsHooks(path, scope)
+}
+
+// loadSettingsLocalHooks reads the PROJECT tree's gitignored
+// personal-override settings file (21-REVIEW WR-08, CC parity):
+// <claudeDir>/settings.local.json. CC reads it beside settings.json — the
+// standard place operators put hooks they do not ship — so its hooks FIRE
+// (same ScopeProject rank, same parse, same degradation discipline); for a
+// deny hook that is security policy, never an optional extra.
+func loadSettingsLocalHooks(claudeDir string) []HookConfig {
+	if claudeDir == "" {
+		return nil // no project context — no local overrides
+	}
+
+	return parseSettingsHooks(filepath.Join(claudeDir, settingsLocalJSONName), ScopeProject)
+}
+
+// parseSettingsHooks reads ONE settings file's hooks entries with the
+// settings degradation discipline: the hooks key layout is the SAME
+// hooks → event → matcher-group → {type,command,timeout} shape the plugin
+// hooks.json parser accepts (CC-compatible). A malformed file degrades to a
+// stderr warning + skip; an absent file contributes nothing silently
+// (absent is normal); an oversized file skips with a warning (the
+// pluginArtifactMaxBytes discipline). NEVER returns an error — a repo must
+// not be able to brick session construction (Pitfall 8). Settings entries
+// default to the 60s bound at parse time (the plan's A2 divergence note:
+// CC's documented command-hook default is 600s; the existing 60s bound is
+// kept to bound tool-loop latency).
+func parseSettingsHooks(path string, scope HookScope) []HookConfig {
 	// Oversized settings skip loudly (readCapped re-guards the read itself).
 	info, statErr := os.Stat(path)
 	if statErr == nil && info.Size() > pluginArtifactMaxBytes {
@@ -171,9 +207,6 @@ func loadSettingsHooks(claudeDir string, scope HookScope) []HookConfig {
 
 	hooks := parseHooksFile(path, "", scope)
 
-	// Settings entries default to the 60s bound at parse time (the plan's
-	// A2 divergence note: CC's documented command-hook default is 600s; the
-	// existing 60s bound is kept to bound tool-loop latency).
 	for i := range hooks {
 		if hooks[i].TimeoutSec <= 0 {
 			hooks[i].TimeoutSec = hookDefaultTimeoutSec

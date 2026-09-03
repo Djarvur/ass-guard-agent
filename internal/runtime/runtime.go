@@ -1736,8 +1736,9 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 		Mode:  r.PermMode,
 		Queue: askQueue,
 		// 21-06 (PAR-03/D-04): the hook-verdict HEAD — the session's
-		// HookRunner (plugin bundles + both settings.json scopes, D-03
-		// firing order) resolves PreToolUse verdicts; the gate head is the
+		// HookRunner (plugin bundles + both settings.json scopes + the
+		// project settings.local.json override, D-03 firing order) resolves
+		// PreToolUse verdicts; the gate head is the
 		// ONE consumption site (nil-runner verdicts are a safe no-decision).
 		// Deny blocks before rules; ask suspends even ungated; a USER-scope
 		// allow executes; no-decision falls through to the rule evaluation.

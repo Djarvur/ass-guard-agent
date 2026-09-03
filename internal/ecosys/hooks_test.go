@@ -396,6 +396,46 @@ func TestSettingsHooksMissing(t *testing.T) { //nolint:paralleltest // mutates t
 	assert.Empty(t, buf.String(), "absent settings files must not warn")
 }
 
+// TestSettingsHooksLocalProjectScope (21-REVIEW WR-08, CC parity): the
+// project tree's gitignored personal-override file
+// <project>/.claude/settings.local.json is read BESIDE settings.json — the
+// standard place operators put hooks they do not ship. Its hooks load with
+// the project scope tag (so the D-03 firing order and the deny-wins resolver
+// treat them exactly like settings.json hooks — a deny hook there is
+// security policy and MUST fire), and the provenance names the local file.
+// Entries land AFTER settings.json's within the scope (CC's
+// local-overrides precedence direction).
+func TestSettingsHooksLocalProjectScope(t *testing.T) {
+	buf := captureShadowLogger(t)
+
+	t.Setenv("HOME", t.TempDir()) // no user settings — local scope only
+
+	proj := t.TempDir()
+	localPath := filepath.Join(proj, claudeDirName, settingsLocalJSONName)
+	plantSettingsFixture(t, "settings-local.json", localPath)
+
+	reg, err := Load(filepath.Join(proj, claudeDirName), filepath.Join(proj, assguardDirName))
+	require.NoError(t, err)
+
+	pre := []HookConfig{}
+	for _, h := range reg.Hooks {
+		if h.Event == hookEventPreToolUse {
+			pre = append(pre, h)
+		}
+	}
+
+	require.Len(t, pre, 1, "the settings.local.json PreToolUse hook must load")
+
+	assert.Equal(t, ScopeProject, pre[0].Scope,
+		"local entries carry the PROJECT scope tag (the D-03 firing rank — they fire)")
+	assert.Equal(t, "Bash", pre[0].Matcher)
+	assert.Equal(t, "./scripts/local-guard.sh", pre[0].Command)
+	assert.Equal(t, 15, pre[0].TimeoutSec, "explicit timeout preserved")
+	assert.Equal(t, localPath, pre[0].Path, "provenance names the settings.local.json")
+
+	assert.Empty(t, buf.String(), "a well-formed local settings file contributes zero warnings")
+}
+
 // --- 21-01 Task 3: scope partition + the PreToolUseVerdict seam ---
 
 // TestHookScopeOrder (21-01 Task 3, D-03) verifies NewHookRunner partitions a
