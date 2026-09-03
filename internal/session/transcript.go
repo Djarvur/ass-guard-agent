@@ -74,6 +74,15 @@ const (
 	// kind as inert (D-20 additive-only — it is NOT a TypeBoundary reset
 	// point today).
 	TypeCompaction = "compaction"
+
+	// TypeMentionProvenance records WHICH filesystem object answered one
+	// @-mention in the prompt (Phase 21 / PAR-06, D-10's provenance duty):
+	// the raw typed token + the resolved path + the expansion form
+	// (file|dir|denied|unresolved) as metadata NEXT TO the expanded user
+	// message — the AppendCommandProvenance discipline mirrored for
+	// mentions (typed-vs-expanded disambiguated on replay). Written
+	// pre-turn (empty turnID); the Projector treats it as an audit marker.
+	TypeMentionProvenance = "mention_provenance"
 )
 
 // ContentBlock is one entry of a user/assistant message's content (mirrors the

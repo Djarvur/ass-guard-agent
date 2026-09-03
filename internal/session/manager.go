@@ -249,6 +249,20 @@ func (m *Manager) AppendCommandProvenance(turnID, key, path, args string) error 
 	})
 }
 
+// AppendMentionProvenance records what one @-mention in the prompt expanded
+// to (21-04 / PAR-06, D-10's provenance duty): rawToken is the mention as
+// typed ("@docs/readme.md", quotes included), resolvedPath the absolute
+// object that answered it ("" when nothing resolved), form the expansion
+// form (file|dir|denied|unresolved). Mirrors AppendCommandProvenance exactly
+// — redacted append, metadata never replayed as message content, turnID may
+// be empty when written pre-turn (association is by append order).
+func (m *Manager) AppendMentionProvenance(turnID, rawToken, resolvedPath, form string) error {
+	return m.appendLine(&Line{
+		Type: TypeMentionProvenance, TurnID: turnID, Timestamp: now(),
+		Name: rawToken, CommandRef: resolvedPath, Text: form,
+	})
+}
+
 // AppendCanceled records that a turn was cancelled (D-16).
 func (m *Manager) AppendCanceled(turnID string, ts time.Time, reason string) error {
 	return m.appendLine(&Line{Type: TypeCanceled, TurnID: turnID, Timestamp: ts, Text: reason})

@@ -60,11 +60,10 @@ func mentionFixture(t *testing.T, dir string) {
 }
 
 // newMentionRunner builds a Runner over the planted temp workspace plus a
-// minimal session (Manager only — expandUserBlocks touches nothing else).
+// minimal session (Manager only — expandUserBlocks touches nothing else; no
+// registry discovery runs, so no HOME pin is needed).
 func newMentionRunner(t *testing.T, plant func(t *testing.T, dir string)) (r *Runner, sess *session.Session, dir string) {
 	t.Helper()
-
-	t.Setenv("HOME", t.TempDir())
 
 	dir = t.TempDir()
 	if plant != nil {

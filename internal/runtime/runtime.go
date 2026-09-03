@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -165,6 +166,18 @@ type Runner struct {
 	// expansion no-ops and turns proceed on plain text (graceful degradation).
 	reg           ecosys.Registry
 	cmdMutability map[string]string
+
+	// 21-04 (PAR-06/D-10): the Read-rule consult seam for @-mention
+	// expansion. Every @file consults it with tool "Read" BEFORE its content
+	// enters the prompt; an absolute @path additionally needs an explicit
+	// allow just to be ADMITTED (nil admits nothing outside the workspace —
+	// ingress resolution is never a whole-FS existence oracle, T-21-14).
+	// nil = implicit allow for in-workspace files (the pre-join default, so
+	// this plan is 17-independent); the 21-06 join wires internal/perm's
+	// rule set here (perm.RuleSet.Evaluate(tool, path): VerdictDeny → deny,
+	// else allow) — ONE consumption site riding the existing seam, never a
+	// second gate pipeline.
+	readRuleEvaluator func(tool, path string) bool
 
 	// mcpServers is the NON-project MCP set from ecosys.Discover (12-02:
 	// user-scope ~/.claude.json OVER plugin-bundled .mcp.json — the two lowest
@@ -404,8 +417,12 @@ func (r *Runner) LoadCommandRegistry() {
 // upcoming user message (D-02 — the typed command is metadata, replay shows
 // the model what it saw), and a mutating command opens a context boundary
 // BEFORE the turn (D-11 — the lean window resets for the expanded stage).
-// Every other case returns the blocks UNCHANGED (unknown /foo is ordinary
-// text — no match, nothing happens). All transcript-write errors degrade to
+// 21-04 (PAR-06/D-10): @-mention expansion rides the SAME seam as a second
+// pass over the (possibly command-expanded) text — file content sections,
+// one-level dir listings, loud fixed-form notes for the unresolvable, one
+// mention_provenance line per mention. Every other case returns the blocks
+// UNCHANGED (unknown /foo is ordinary text — no match, nothing happens;
+// zero mentions — byte-identical). All transcript-write errors degrade to
 // stderr logs — never ACP errors.
 func (r *Runner) expandUserBlocks( //nolint:funcorder // one pipeline; grouped with the turn seam
 	sess *session.Session, blocks []session.ContentBlock,
@@ -415,41 +432,223 @@ func (r *Runner) expandUserBlocks( //nolint:funcorder // one pipeline; grouped w
 		return blocks
 	}
 
+	out := blocks // borrowed until a change forces the copy (copy-on-write)
+
 	key, args, ok := ecosys.ParseInvocation(blocks[idx].Text)
-	if !ok {
-		return blocks
-	}
+	if ok {
+		if cmd, found := r.reg.Commands[key]; found {
+			out = append([]session.ContentBlock(nil), blocks...)
+			out[idx] = session.ContentBlock{Type: blockText, Text: cmd.Expand(args)}
 
-	cmd, found := r.reg.Commands[key]
-	if !found {
-		return blocks
-	}
+			if sess != nil && sess.Manager != nil {
+				// Mutating commands ALWAYS open the boundary first (D-11): the
+				// projector's ReadLastBoundary reset fires for the expanded
+				// stage exactly as for a tool-call boundary.
+				if r.cmdMutability[key] == openspec.MutabilityMutating {
+					err := sess.Manager.AppendBoundary(mutatingCommandCause+key, cmd.Path, "")
+					if err != nil {
+						log.Printf("ass-guard: command boundary write failed (continuing): %v", err)
+					}
+				}
 
-	out := append([]session.ContentBlock(nil), blocks...)
-	out[idx] = session.ContentBlock{Type: blockText, Text: cmd.Expand(args)}
-
-	if sess == nil || sess.Manager == nil {
-		return out
-	}
-
-	// Mutating commands ALWAYS open the boundary first (D-11): the projector's
-	// ReadLastBoundary reset fires for the expanded stage exactly as for a
-	// tool-call boundary.
-	if r.cmdMutability[key] == openspec.MutabilityMutating {
-		err := sess.Manager.AppendBoundary(mutatingCommandCause+key, cmd.Path, "")
-		if err != nil {
-			log.Printf("ass-guard: command boundary write failed (continuing): %v", err)
+				// Provenance records which file answered the invocation (CMD-05 /
+				// T-8-15): command key + source file + the typed args.
+				err := sess.Manager.AppendCommandProvenance("", key, cmd.Path, args)
+				if err != nil {
+					log.Printf("ass-guard: command provenance write failed (continuing): %v", err)
+				}
+			}
 		}
 	}
 
-	// Provenance records which file answered the invocation (CMD-05 /
-	// T-8-15): command key + source file + the typed args.
-	err := sess.Manager.AppendCommandProvenance("", key, cmd.Path, args)
-	if err != nil {
-		log.Printf("ass-guard: command provenance write failed (continuing): %v", err)
+	// 21-04: the mention pass runs AFTER the command-invocation logic and is
+	// a no-op without @ tokens (expandMentions returns the blocks untouched).
+	return r.expandMentions(sess, out, idx)
+}
+
+// Mention-expansion forms (the mention_provenance line's Text field — D-10's
+// outcome vocabulary; every mention produces exactly one form).
+const (
+	mentionFormFile       = "file"
+	mentionFormDir        = "dir"
+	mentionFormDenied     = "denied"
+	mentionFormUnresolved = "unresolved"
+)
+
+// Mention-note outcome classes (T-21-14's fixed-form family): a note names
+// the token and its class — never per-path filesystem detail, never content.
+const (
+	mentionClassMissing    = "not found"
+	mentionClassOutside    = "outside the admitted roots"
+	mentionClassDenied     = "denied by the Read rules"
+	mentionClassUnreadable = "could not be read"
+)
+
+// expandMentions applies @-mention expansion to the first text block (21-04,
+// PAR-06/D-10): each parsed mention resolves against the workspace, gains a
+// labeled section (file content / one-level dir listing) or a fixed-form
+// loud note, and appends one mention_provenance line (the
+// AppendCommandProvenance discipline — the :426-434 loud-continue failure
+// handling). Zero mentions returns blocks UNTOUCHED (the existing
+// early-return shape — byte-identical passthrough).
+func (r *Runner) expandMentions( //nolint:funcorder // one pipeline; grouped with the turn seam
+	sess *session.Session, blocks []session.ContentBlock, idx int,
+) []session.ContentBlock {
+	mentions := ecosys.ParseMentions(blocks[idx].Text)
+	if len(mentions) == 0 {
+		return blocks
 	}
 
+	var text strings.Builder
+	text.WriteString(blocks[idx].Text)
+
+	for _, m := range mentions {
+		section, resolved, form := r.resolveMention(m)
+		text.WriteString(section)
+
+		if sess == nil || sess.Manager == nil {
+			continue
+		}
+
+		err := sess.Manager.AppendMentionProvenance("", m.Token, resolved, form)
+		if err != nil {
+			log.Printf("ass-guard: mention provenance write failed (continuing): %v", err)
+		}
+	}
+
+	out := append([]session.ContentBlock(nil), blocks...)
+	out[idx] = session.ContentBlock{Type: blockText, Text: text.String()}
+
 	return out
+}
+
+// resolveMention resolves ONE parsed mention into (section, resolved, form):
+// the text to append (a labeled content/listing section, or the fixed-form
+// loud note), the absolute path that answered the mention ("" when nothing
+// did), and the provenance form. Resolution is bounded (T-21-14): relative
+// paths must stay inside the workspace root; absolute paths are admitted
+// ONLY by an explicit evaluator ruling — the nil default resolves nothing
+// outside the workspace, so ingress never becomes a whole-FS existence
+// oracle. Notes are fixed-form: token + outcome class, nothing else.
+func (r *Runner) resolveMention( //nolint:funcorder,cyclop // one resolution ladder; grouped with the turn seam
+	m ecosys.Mention,
+) (section, resolved, form string) {
+	root := r.workDirOrDefault()
+
+	var abs string
+
+	gated := false
+
+	switch {
+	case filepath.IsAbs(m.Path):
+		// The nil default admits NO absolute path (no rules are declared to
+		// admit any); a wired evaluator admits and gates in the one consult.
+		if r.readRuleEvaluator == nil {
+			return mentionNote(m.Token, mentionClassOutside), "", mentionFormUnresolved
+		}
+
+		if !r.readRuleEvaluator(toolNameRead, m.Path) {
+			return mentionNote(m.Token, mentionClassDenied), "", mentionFormDenied
+		}
+
+		abs, gated = m.Path, true
+	default:
+		abs = filepath.Join(root, m.Path)
+
+		if rel, err := filepath.Rel(root, abs); err != nil || rel == ".." || strings.HasPrefix(rel, "../") {
+			return mentionNote(m.Token, mentionClassOutside), "", mentionFormUnresolved
+		}
+	}
+
+	info, err := os.Stat(abs)
+	if err != nil {
+		return mentionNote(m.Token, mentionClassMissing), "", mentionFormUnresolved
+	}
+
+	m.IsDir = info.IsDir() // parse left it unknown; resolution owns it
+
+	if m.IsDir {
+		listing, lerr := mentionDirSection(m.Token, abs)
+		if lerr != nil {
+			return mentionNote(m.Token, mentionClassUnreadable), "", mentionFormUnresolved
+		}
+
+		return listing, abs, mentionFormDir
+	}
+
+	// The Read-rule gate: every @file consults the evaluator BEFORE its
+	// content enters the prompt (T-21-15; nil = implicit allow).
+	if !gated && !r.readAllows(abs) {
+		return mentionNote(m.Token, mentionClassDenied), "", mentionFormDenied
+	}
+
+	content, rerr := os.ReadFile(abs)
+	if rerr != nil {
+		return mentionNote(m.Token, mentionClassUnreadable), "", mentionFormUnresolved
+	}
+
+	return mentionFileSection(m.Token, content), abs, mentionFormFile
+}
+
+// readAllows consults the injected Read-rule evaluator for one path (21-04,
+// PAR-06): nil = implicit allow — the pre-21-06 default preserves today's
+// behavior while the seam waits for the 21-06 join to wire the perm rule set.
+func (r *Runner) readAllows(path string) bool {
+	if r.readRuleEvaluator == nil {
+		return true
+	}
+
+	return r.readRuleEvaluator(toolNameRead, path)
+}
+
+// mentionNote renders one fixed-form loud note (D-10: the turn proceeds; the
+// note names the token + the outcome class, never per-path detail or
+// content — the flagged privacy prohibition).
+func mentionNote(token, class string) string {
+	return "\n\n[" + token + "] could not be expanded: " + class + "."
+}
+
+// mentionFileSection renders one @file's labeled section: the raw-token
+// header line followed by the file's content verbatim.
+func mentionFileSection(token string, content []byte) string {
+	return "\n\n[" + token + "]\n" + string(content)
+}
+
+// mentionDirSection renders one @dir's ONE-LEVEL listing (D-10): one entry
+// per line — name + size in bytes, subdirectories marked with a trailing
+// slash. NO recursion: only the directory's immediate entries appear
+// (os.ReadDir never descends into the children).
+func mentionDirSection(token, dir string) (string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", fmt.Errorf("call: %w", err)
+	}
+
+	var b strings.Builder
+
+	b.WriteString("\n\n[")
+	b.WriteString(token)
+	b.WriteString("]\n")
+
+	for _, e := range entries {
+		suffix := ""
+		if e.IsDir() {
+			suffix = "/"
+		}
+
+		size := int64(0)
+		if info, ierr := e.Info(); ierr == nil {
+			size = info.Size()
+		}
+
+		b.WriteString(e.Name())
+		b.WriteString(suffix)
+		b.WriteString(" (")
+		b.WriteString(strconv.FormatInt(size, 10))
+		b.WriteString(" bytes)\n")
+	}
+
+	return b.String(), nil
 }
 
 // firstTextBlockIndex returns the index of the first text-typed block, or -1.
