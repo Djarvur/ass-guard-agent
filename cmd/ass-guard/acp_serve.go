@@ -94,7 +94,9 @@ func readResumeFlags(cmd *cobra.Command, args []string) resumeFlags {
 // untouched (validation BEFORE any file access, T-18-13; existence is the
 // load engine's typed unknown-session error — one checker, not two), and
 // anything else is a session NAME matched against titles (the name never
-// joins a path). --resume wins when both resume flags are typed.
+// joins a path). --resume wins when both resume flags are typed: the
+// explicit target loads, and only a TARGET-LESS combination falls back to
+// --continue's newest row (never the picker).
 func resolveResumeTarget(
 	dir string, rf resumeFlags, pick func([]session.SessionHeader) (string, error),
 ) (string, error) {
@@ -102,16 +104,22 @@ func resolveResumeTarget(
 		return "", errResumeWithPrompt
 	}
 
-	if rf.cont {
+	if rf.cont && rf.resume == "" {
 		return continueMostRecent(dir)
 	}
 
 	target := rf.resume
 
 	if target == pickSentinel {
-		if len(rf.args) > 0 {
+		switch {
+		case len(rf.args) > 0:
 			target = rf.args[0]
-		} else {
+		case rf.cont:
+			// Bare --resume + --continue: no explicit target, so the newest
+			// row wins (the --continue semantics; the picker stays out of the
+			// combination — an unattended serve start must not prompt).
+			return continueMostRecent(dir)
+		default:
 			return pickerChoice(dir, pick)
 		}
 	}

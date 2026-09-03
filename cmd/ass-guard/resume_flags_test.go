@@ -258,6 +258,74 @@ func TestContinueResolvesMostRecentCwd(t *testing.T) {
 	}
 }
 
+// TestResumeWinsOverContinue pins the documented precedence (review WR-04):
+// "--resume wins when both resume flags are typed." `--continue --resume
+// <id>` loads the EXPLICIT target — not the newest row, which silently
+// ignored the typed id (the bug) — and bare `--resume --continue` with no
+// target resolves as --continue (the newest row; the picker stays out of the
+// combination).
+func TestResumeWinsOverContinue(t *testing.T) {
+	t.Parallel()
+
+	base := time.Now().Add(-time.Hour)
+
+	const (
+		olderID  = "12341234-1234-4123-8123-123412341234"
+		targetID = "9abc9abc-9abc-4abc-8abc-9abc9abc9abc"
+		newerID  = "56785678-5678-4567-8567-567856785678"
+	)
+
+	dir := t.TempDir()
+
+	writeResumeFixtureStore(t, dir,
+		resumeFixture{id: olderID, title: "older row", lastActivity: base},
+		resumeFixture{id: targetID, title: "the explicit target", lastActivity: base.Add(15 * time.Minute)},
+		resumeFixture{id: newerID, title: "newest live row", lastActivity: base.Add(30 * time.Minute)},
+	)
+
+	t.Run("--continue --resume=<id> resolves the explicit id", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := resolveResumeTarget(dir, resumeFlags{resume: targetID, cont: true}, nil)
+		if err != nil {
+			t.Fatalf("resolution: %v", err)
+		}
+
+		if got != targetID {
+			t.Errorf("--continue --resume=%s resolved to %q; want the explicit target "+
+				"(--resume wins when both flags are typed)", targetID, got)
+		}
+	})
+
+	t.Run("--continue --resume <id> space form resolves the explicit id", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := resolveResumeTarget(dir,
+			resumeFlags{resume: pickSentinel, cont: true, args: []string{targetID}}, nil)
+		if err != nil {
+			t.Fatalf("resolution: %v", err)
+		}
+
+		if got != targetID {
+			t.Errorf("--continue --resume %s resolved to %q; want the explicit target", targetID, got)
+		}
+	})
+
+	t.Run("bare --resume --continue resolves the newest row", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := resolveResumeTarget(dir, resumeFlags{resume: pickSentinel, cont: true}, nil)
+		if err != nil {
+			t.Fatalf("resolution: %v", err)
+		}
+
+		if got != newerID {
+			t.Errorf("bare --resume --continue resolved to %q; want the newest row %q",
+				got, newerID)
+		}
+	})
+}
+
 // assertResumeFlags asserts one parsed trio state against its expectation.
 func assertResumeFlags(t *testing.T, rf resumeFlags, wantResume string, wantCont bool, wantArgs []string) {
 	t.Helper()
