@@ -130,9 +130,36 @@ type HookRunner struct {
 	TranscriptPath string
 }
 
-// NewHookRunner builds a runner over the discovered hooks for one session.
+// NewHookRunner builds a runner over the discovered hooks for one session,
+// partitioning them ONCE into the deterministic D-03 firing order
+// (project settings → user settings → plugin bundles; stable within scope).
+// The scope order resolves HERE, at construction — never in the loader's
+// merge (Pitfall 1: other consumers depend on overlay precedence) — so the
+// runtime call site keeps its signature and all-plugin inputs are unchanged.
 func NewHookRunner(hooks []HookConfig, sessionID, workDir, transcriptPath string) *HookRunner {
-	return &HookRunner{Hooks: hooks, SessionID: sessionID, WorkDir: workDir, TranscriptPath: transcriptPath}
+	ordered := append([]HookConfig(nil), hooks...) // never mutate the caller's slice
+
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return scopeRank(ordered[i].Scope) < scopeRank(ordered[j].Scope)
+	})
+
+	return &HookRunner{
+		Hooks: ordered, SessionID: sessionID, WorkDir: workDir, TranscriptPath: transcriptPath,
+	}
+}
+
+// scopeRank is the D-03 firing rank: project settings first, then user
+// settings, then plugin bundles. Ordering ONLY — authority is deny-wins in
+// ResolveVerdict, never this rank.
+func scopeRank(s HookScope) int {
+	switch s {
+	case scopeProject:
+		return 0
+	case scopeUser:
+		return 1
+	default:
+		return 2 // scopePlugin — the lowest firing tier
+	}
 }
 
 // parseHooksJSON reads one hooks/hooks.json (the live-measured shape: a
@@ -254,17 +281,57 @@ func (r *HookRunner) Fire(ctx context.Context, event string, fields map[string]a
 	return out
 }
 
+// PreToolUseVerdict runs every matching PreToolUse hook SEQUENTIALLY in the
+// partitioned D-03 order (never concurrently — the flagged PAR-03
+// concurrency guarantee) under the existing runOne bounds (per-hook timeout,
+// output cap, sanitized env, stdin payload), parses each execution into a
+// Verdict, and delegates the combined verdict to the pure ResolveVerdict.
+// This is the structured seam the Phase-17 gate head consumes when 21-06
+// joins hooks to gateCall — the RESOLUTION site; consumption stays the
+// gate's alone. Nil runner is a safe no-op (no decision).
+func (r *HookRunner) PreToolUseVerdict(ctx context.Context, toolName string, input json.RawMessage) (Verdict, string) {
+	if r == nil {
+		return verdictNone, ""
+	}
+
+	matches := r.matchingHooks(hookEventPreToolUse, toolName)
+
+	results := make([]ScopedResult, 0, len(matches))
+
+	for i := range matches {
+		res := r.runOne(ctx, &matches[i], hookEventPreToolUse, map[string]any{
+			keyToolName:  toolName,
+			keyToolInput: input,
+		})
+
+		v, reason := parseHookVerdict(res.stdout, res.runErr)
+		if res.refused {
+			// Exit 2 already yields deny; upgrade the reason to
+			// classifyHookRun's stderr-first extraction (D-02 — the only
+			// place stderr exists).
+			reason = res.message
+		}
+
+		results = append(results, ScopedResult{Scope: matches[i].Scope, Verdict: v, Reason: reason})
+	}
+
+	return ResolveVerdict(results)
+}
+
 // PreToolUse implements the coreexec.ToolHooks seam: consults the hook table
-// BEFORE the tool runs; (false, message) refuses the call.
+// BEFORE the tool runs; (false, message) refuses the call. A thin delegation
+// to PreToolUseVerdict preserving today's boolean refusal semantics — deny
+// refuses with the reason, everything else proceeds. The executor leg keeps
+// this pair until 21-06 disposes it at the gate join (Pitfall 2: no
+// double-fire before the gate head goes live).
 func (r *HookRunner) PreToolUse( //nolint:nonamedreturns // implements the coreexec.ToolHooks pair
 	ctx context.Context, toolName string, input json.RawMessage,
 ) (proceed bool, message string) {
-	out := r.Fire(ctx, hookEventPreToolUse, map[string]any{
-		keyToolName:  toolName,
-		keyToolInput: input,
-	})
+	if v, reason := r.PreToolUseVerdict(ctx, toolName, input); v == verdictDeny {
+		return false, reason
+	}
 
-	return out.Proceed, out.Message
+	return true, ""
 }
 
 // PostToolUse implements the coreexec.ToolHooks seam: observes the completed
@@ -386,6 +453,11 @@ type hookExecResult struct {
 	refused bool   // exit code 2
 	message string // refusal text (stderr, stdout fallback)
 	stdout  string // captured stdout (context payload)
+
+	// runErr is the raw exec error (nil on success; the ctx/timeout error on
+	// a killed run) — parseHookVerdict's exit-2-vs-execution-failure channel
+	// (21-01).
+	runErr error
 }
 
 // runOne executes ONE hook command with the documented bounds: `sh -c`,
@@ -430,11 +502,12 @@ func (r *HookRunner) runOne(ctx context.Context, h *HookConfig, event string, fi
 	// A timed-out hook is killed by tctx; the group-kill straggler race is
 	// bounded the same way as coreexec's Bash (a wrapper shell's orphan is
 	// parented to init and never blocks this path — the Wait already
-	// returned).
+	// returned). The raw runErr rides along so parseHookVerdict classifies
+	// the kill as execution failure → fail-open (21-01).
 	if tctx.Err() != nil {
 		logPluginSkipf("hook [%s] timeout after %ds (skipped): %s", event, timeoutSec, h.Command)
 
-		return hookExecResult{}
+		return hookExecResult{runErr: runErr}
 	}
 
 	return classifyHookRun(event, runErr, stdout.String(), stderr.String())
@@ -442,7 +515,8 @@ func (r *HookRunner) runOne(ctx context.Context, h *HookConfig, event string, fi
 
 // classifyHookRun maps a finished hook command's outcome to the documented
 // semantics: exit 2 refuses (stderr as the message, stdout fallback); any
-// other failure warns and skips; success captures (capped) stdout.
+// other failure warns and skips; success captures (capped) stdout. The raw
+// runErr rides on every result for parseHookVerdict (21-01).
 func classifyHookRun(event string, runErr error, stdout, stderr string) hookExecResult {
 	if runErr == nil {
 		return hookExecResult{stdout: capHookOutput(stdout)}
@@ -452,7 +526,7 @@ func classifyHookRun(event string, runErr error, stdout, stderr string) hookExec
 	if !errors.As(runErr, &exitErr) {
 		logPluginSkipf("hook [%s] failed to start (skipped): %v", event, runErr)
 
-		return hookExecResult{}
+		return hookExecResult{runErr: runErr}
 	}
 
 	if exitErr.ExitCode() == hookRefusalExitCode {
@@ -461,12 +535,12 @@ func classifyHookRun(event string, runErr error, stdout, stderr string) hookExec
 			msg = capHookOutput(stdout)
 		}
 
-		return hookExecResult{refused: true, message: msg}
+		return hookExecResult{refused: true, message: msg, runErr: runErr}
 	}
 
 	logPluginSkipf("hook [%s] exited %d (skipped): %s", event, exitErr.ExitCode(), capHookOutput(stderr))
 
-	return hookExecResult{}
+	return hookExecResult{runErr: runErr}
 }
 
 // buildPayload renders the documented stdin JSON: the base fields

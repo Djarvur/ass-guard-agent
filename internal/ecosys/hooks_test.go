@@ -82,8 +82,9 @@ func TestHookMatcher(t *testing.T) {
 // TestPreToolUseStdinAndExitRouting (Task 4, Test 2) verifies the documented
 // stdin payload and exit-code routing: `cat` as the hook command proves the
 // payload carries session_id, hook_event_name, tool_name, tool_input, cwd,
-// transcript_path; exit 0 proceeds (stdout captured); exit 2 REFUSES with the
-// hook's stderr as the refusal message.
+// transcript_path; exit 0 proceeds; exit 2 REFUSES with the hook's stderr as
+// the refusal message. (21-01: the payload observation rides Fire — the
+// delegated PreToolUse no longer echoes stdout on proceed, only verdicts.)
 func TestPreToolUseStdinAndExitRouting(t *testing.T) {
 	t.Parallel()
 
@@ -93,9 +94,10 @@ func TestPreToolUseStdinAndExitRouting(t *testing.T) {
 		{Event: hookEventPreToolUse, Matcher: toolBash, Command: "cat"},
 	}, "sess-1", work, "/transcript/audit.jsonl")
 
-	proceed, payload := r.PreToolUse(context.Background(), toolBash, json.RawMessage(`{"command":"ls"}`))
-
-	assert.True(t, proceed, "exit 0 must proceed")
+	payload := r.Fire(context.Background(), hookEventPreToolUse, map[string]any{
+		keyToolName:  toolBash,
+		keyToolInput: json.RawMessage(`{"command":"ls"}`),
+	})
 
 	for _, field := range []string{
 		`"session_id":"sess-1"`,
@@ -105,7 +107,7 @@ func TestPreToolUseStdinAndExitRouting(t *testing.T) {
 		`"cwd":"` + work + `"`,
 		`"transcript_path":"/transcript/audit.jsonl"`,
 	} {
-		assert.Contains(t, payload, field, "stdin payload must carry %s", field)
+		assert.Contains(t, payload.Message, field, "stdin payload must carry %s", field)
 	}
 
 	// Exit 2 → refusal with the hook's stderr as the message.
