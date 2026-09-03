@@ -2,20 +2,20 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Claude Code Parity
-current_phase: 18
-current_phase_name: Session Family
-current_plan: 6
-status: verifying
-stopped_at: Completed 18-06-PLAN.md
-last_updated: "2026-09-03T16:25:56.473Z"
+current_phase: 21
+current_phase_name: Context & Policy Parity Closures
+current_plan: 2
+status: executing
+stopped_at: Completed 21-01-PLAN.md
+last_updated: "2026-09-03T18:14:30.843Z"
 last_activity: 2026-09-03
-last_activity_desc: Phase 18 execution started
-state_head: c28f68a8afbd63079366c67ebd5ff349342e6e8f
+last_activity_desc: Phase 21 execution started
+state_head: 685e882105dd86f4077b390734b808753969e874
 progress:
   total_phases: 11
   completed_phases: 3
   total_plans: 70
-  completed_plans: 28
+  completed_plans: 29
   percent: 27
 ---
 
@@ -25,15 +25,15 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-09-03)
 **Core value:** A hands-off coding agent that feels native in the editor: full SDD workflows run end-to-end without manual continues, and the agent surfaces through the client's own UX — clickable permission prompts, native file diffs, session management. (Pivoted 2026-08-25 from the mimicry bar.)
-**Current focus:** Phase 18 — Session Family
+**Current focus:** Phase 21 — Context & Policy Parity Closures
 
 ## Current Position
 
-Phase: 18 (Session Family) — EXECUTING
-Current Plan: 6
+Phase: 21 (Context & Policy Parity Closures) — EXECUTING
+Current Plan: 2
 Total Plans in Phase: 6
-Status: Phase complete — ready for verification
-Last activity: 2026-09-03 — Phase 18 execution started
+Status: Ready to execute
+Last activity: 2026-09-03 — Phase 21 execution started
 
 Progress: [██████░░░░░░░░░░░░░░░░] 22/70 plans ([███░░░░░░░] 27%)
 
@@ -74,6 +74,7 @@ Progress: [██████░░░░░░░░░░░░░░░░] 2
 | Phase 18 P04 | 64 min | 3 tasks | 15 files |
 | Phase 18-05 P05 | 72min | 2 tasks | 12 files |
 | Phase 18 P06 | 60 min | 3 tasks | 8 files |
+| Phase 21 P01 | 46 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -135,6 +136,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 18]: HasCheckpoints probes checkpoint loose-ref layout via one ReadDir (never checkpoint.Open, which creates the store); transcript reads capped at 64 KiB total via io.LimitReader
 - [Phase 18]: 18-06: one resolver (resolveResumeTarget in cmd), two entrypoints — root RunE delegates via the runServeWithResumeTarget seam, serve RunE resolves inherited cmd.Flags(); id-form passes without existence check (the load engine owns that error), names match titles with traversal pre-scan rejection (T-18-13)
 - [Phase 18]: 18-06: CLI-contract goldens are regenerated FROM the binary's output (15-01 transcription rule) — root-persistent flags shift every help surface's alignment, so regeneration beat hand-editing
+- [Phase 21]: 21-01: plugin-scope allow verdicts demote alongside project-scope (only user scope widens trust — one loud warning per demoted result)
+- [Phase 21]: 21-01: exit-2 reason in the composed path is classifyHookRun's stderr-first extraction; parseHookVerdict direct calls fall back to capped stdout
+- [Phase 21]: 21-01: scope partition (D-03 project-user-plugin) resolves at NewHookRunner construction via scopeRank — loader merge untouched; Verdict constants unexported until 21-06 exports by necessity
 
 ### Pending Todos
 
@@ -157,6 +161,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-03T16:25:55.339Z
-Stopped at: Completed 18-06-PLAN.md
+Last session: 2026-09-03T18:14:29.215Z
+Stopped at: Completed 21-01-PLAN.md
 Resume file: None
