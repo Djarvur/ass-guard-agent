@@ -285,6 +285,21 @@ func (p *AnthropicProvider) drainSSE(ctx context.Context, body *sseBody, ch chan
 		emittedTools = map[string]struct{}{}
 	)
 
+	// Thinking-block lifecycle state (PAR-05, 21-03): a SIBLING of the
+	// tool-use tracker, never a refactor of it. content_block_start of type
+	// "thinking" opens the accumulator; thinking_delta strings concatenate
+	// into thText, the signature_delta into thSignature; content_block_stop
+	// emits ONE thinking chunk whose Raw carries the assembled block JSON
+	// (field values assembled from the raw delta strings — D-12: never a
+	// typed round-trip of provider bytes). redacted_thinking never opens the
+	// accumulator — it arrives fully-formed in content_block_start and emits
+	// immediately.
+	var (
+		thText      strings.Builder
+		thSignature strings.Builder
+		inThinking  bool
+	)
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -298,6 +313,7 @@ func (p *AnthropicProvider) drainSSE(ctx context.Context, body *sseBody, ch chan
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				flushToolUse(ctx, &tuName, &tuID, &tuInput, &inToolUse, emittedTools, ch)
+				flushThinking(ctx, &thText, &thSignature, &inThinking, ch)
 				sendDone(ch, finishReason, finalizeAssembled(&assembled))
 
 				return
@@ -312,6 +328,7 @@ func (p *AnthropicProvider) drainSSE(ctx context.Context, body *sseBody, ch chan
 			}
 
 			flushToolUse(ctx, &tuName, &tuID, &tuInput, &inToolUse, emittedTools, ch)
+			flushThinking(ctx, &thText, &thSignature, &inThinking, ch)
 			sendAbortError(ctx, ch, body.abortCause(), err)
 
 			return
@@ -325,6 +342,7 @@ func (p *AnthropicProvider) drainSSE(ctx context.Context, body *sseBody, ch chan
 		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
 		if payload == "[DONE]" {
 			flushToolUse(ctx, &tuName, &tuID, &tuInput, &inToolUse, emittedTools, ch)
+			flushThinking(ctx, &thText, &thSignature, &inThinking, ch)
 			sendDone(ch, finishReason, finalizeAssembled(&assembled))
 
 			return
@@ -345,13 +363,16 @@ func (p *AnthropicProvider) drainSSE(ctx context.Context, body *sseBody, ch chan
 
 		assembled.WriteString(payload)
 
-		// Handle tool-use lifecycle events (multi-event state machine).
+		// Handle tool-use + thinking lifecycle events (multi-event state
+		// machines; the thinking tracker is sibling state beside the tool-use
+		// one — neither touches the other's behavior).
 		evType, _ := ev[keyType].(string)
 		switch evType {
 		case "content_block_start":
 			cb, _ := ev["content_block"].(map[string]any)
 			if cb != nil {
-				if t, _ := cb[keyType].(string); t == blockToolUse {
+				t, _ := cb[keyType].(string)
+				if t == blockToolUse {
 					// flush previous if unclosed
 					flushToolUse(ctx, &tuName, &tuID, &tuInput, &inToolUse, emittedTools, ch)
 					tuName, _ = cb["name"].(string)
@@ -363,6 +384,26 @@ func (p *AnthropicProvider) drainSSE(ctx context.Context, body *sseBody, ch chan
 
 					continue // don't emit yet — wait for deltas
 				}
+				if t == chunkTypeThinking {
+					// flush previous if unclosed
+					flushThinking(ctx, &thText, &thSignature, &inThinking, ch)
+					thText.Reset()
+					thSignature.Reset()
+
+					inThinking = true
+
+					continue // don't emit yet — wait for deltas
+				}
+				if t == blockRedactedThinking {
+					// Fully-formed in the start event: flush any open block, then
+					// emit immediately — no deltas follow (RESEARCH Pattern 4).
+					flushThinking(ctx, &thText, &thSignature, &inThinking, ch)
+
+					data, _ := cb["data"].(string)
+					emitThinking(ctx, ch, marshalThinkingBlock(blockRedactedThinking, "", "", data))
+
+					continue
+				}
 			}
 		case "content_block_delta":
 			delta, _ := ev["delta"].(map[string]any)
@@ -373,9 +414,27 @@ func (p *AnthropicProvider) drainSSE(ctx context.Context, body *sseBody, ch chan
 					}
 				}
 			}
+			if delta != nil && inThinking {
+				dt, _ := delta[keyType].(string)
+				switch dt {
+				case deltaThinking:
+					if s, _ := delta[chunkTypeThinking].(string); s != "" {
+						thText.WriteString(s)
+					}
+				case deltaSignature:
+					if s, _ := delta["signature"].(string); s != "" {
+						thSignature.WriteString(s)
+					}
+				}
+			}
 		case "content_block_stop":
 			if inToolUse {
 				flushToolUse(ctx, &tuName, &tuID, &tuInput, &inToolUse, emittedTools, ch)
+
+				continue
+			}
+			if inThinking {
+				flushThinking(ctx, &thText, &thSignature, &inThinking, ch)
 
 				continue
 			}
@@ -453,6 +512,62 @@ func tuInputBytes(b *strings.Builder) json.RawMessage {
 	}
 
 	return json.RawMessage(s)
+}
+
+// flushThinking emits the accumulated thinking chunk if one is active, then
+// resets the state (PAR-05, 21-03). Called on content_block_stop, EOF, error,
+// and [DONE] — the SAME termination call sites flushToolUse uses — so a block
+// whose stop never arrives still flushes exactly once, and never twice.
+func flushThinking(
+	ctx context.Context, text, sig *strings.Builder, inUse *bool, ch chan<- StreamChunk,
+) {
+	if !*inUse {
+		return
+	}
+
+	*inUse = false
+
+	defer func() {
+		text.Reset()
+		sig.Reset()
+	}()
+
+	emitThinking(ctx, ch, marshalThinkingBlock(chunkTypeThinking, text.String(), sig.String(), ""))
+}
+
+// emitThinking sends one thinking chunk (bounded by ctx, like flushToolUse).
+func emitThinking(ctx context.Context, ch chan<- StreamChunk, raw json.RawMessage) {
+	select {
+	case ch <- StreamChunk{Type: chunkTypeThinking, Raw: raw}:
+	case <-ctx.Done():
+	}
+}
+
+// thinkingBlockJSON is the assembly view for the stored thinking-block bytes.
+// The PAR-05 precision contract is FIELD-VALUE identity, not envelope
+// identity: the transcript stores these assembled bytes whose field values
+// equal the provider's delta-concatenated values (built from the raw decoded
+// delta STRINGS, never by round-tripping provider JSON through a typed
+// unmarshal/remarshal — D-12).
+type thinkingBlockJSON struct {
+	Type      string `json:"type"`
+	Thinking  string `json:"thinking,omitempty"`
+	Signature string `json:"signature,omitempty"`
+	Data      string `json:"data,omitempty"`
+}
+
+// marshalThinkingBlock assembles one thinking-block payload from the raw
+// accumulated strings. A missing signature stores verbatim (the provider's own
+// bytes are the truth — an empty signature field is omitted, never invented).
+func marshalThinkingBlock(typ, thinking, signature, data string) json.RawMessage {
+	raw, err := json.Marshal(thinkingBlockJSON{
+		Type: typ, Thinking: thinking, Signature: signature, Data: data,
+	})
+	if err != nil { // all-string fields: unreachable, kept defensive
+		return json.RawMessage(`{"type":"` + typ + `"}`)
+	}
+
+	return raw
 }
 
 // parseAnthropicSSEEvent turns one decoded SSE event into a StreamChunk (and/or
