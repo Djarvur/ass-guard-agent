@@ -287,7 +287,7 @@ Plans:
   4. Extended thinking renders live in Zed as thought chunks, and thinking blocks round-trip byte-identical including the Anthropic cryptographic signature through transcript/redactor/projector — no 400s from edited or reordered signatures.
   5. Pasting an image reference or @-mention into the prompt produces the corresponding content block in the outgoing request (@ expansion gated by Read-tool rules with provenance; ingress validated per provider shape — unsupported shapes degrade loudly, not silently).
 
-**Plans**: 3/6 plans executed
+**Plans**: 4/6 plans executed
 
 Plans:
 **Wave 1**
@@ -301,7 +301,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 21-04-PLAN.md — @-mention expansion: parse-only extraction in ecosys + Read-rule-gated runtime expansion + per-mention provenance (PAR-06, D-10)
+- [x] 21-04-PLAN.md — @-mention expansion: parse-only extraction in ecosys + Read-rule-gated runtime expansion + per-mention provenance (PAR-06, D-10)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -485,7 +485,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 | 18. Session Family | v1.2 | 6/6 | In Progress|  |
 | 19. Compaction + cache_control | v1.2 | 0/5 | Not started | - |
 | 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 0/6 | Planned | - |
-| 21. Context & Policy Parity Closures | v1.2 | 3/6 | In Progress|  |
+| 21. Context & Policy Parity Closures | v1.2 | 4/6 | In Progress|  |
 | 22. Background Execution + Sandbox Reality | v1.2 | 0/? | Not started | - |
 | 23. SEED Gaps Close-out | v1.2 | 0/? | Not started | - |
 | 24. Documentation & Ops Tails | v1.2 | 0/? | Not started | - |

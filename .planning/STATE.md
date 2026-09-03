@@ -4,18 +4,18 @@ milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 21
 current_phase_name: Context & Policy Parity Closures
-current_plan: 4
+current_plan: 5
 status: executing
-stopped_at: Completed 21-03-PLAN.md
-last_updated: "2026-09-03T19:56:16.147Z"
+stopped_at: Completed 21-04-PLAN.md
+last_updated: "2026-09-03T20:27:18.718Z"
 last_activity: 2026-09-03
 last_activity_desc: Phase 21 execution started
-state_head: a902b41df09c28406a7884d05e3bb825a735ca80
+state_head: 9feb48cfb9287ae1be89e1ca51df000eefee5af6
 progress:
   total_phases: 11
   completed_phases: 3
   total_plans: 70
-  completed_plans: 31
+  completed_plans: 32
   percent: 27
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-03)
 ## Current Position
 
 Phase: 21 (Context & Policy Parity Closures) — EXECUTING
-Current Plan: 4
+Current Plan: 5
 Total Plans in Phase: 6
 Status: Ready to execute
 Last activity: 2026-09-03 — Phase 21 execution started
@@ -77,6 +77,7 @@ Progress: [██████░░░░░░░░░░░░░░░░] 2
 | Phase 21 P01 | 46 min | 3 tasks | 7 files |
 | Phase 21 P02 | 34 min | 2 tasks | 4 files |
 | Phase 21 P03 | 55 min | 3 tasks | 19 files |
+| Phase 21 P04 | 25 min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -145,6 +146,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 21]: ~/.ass-guard existence-gate: ANY present memory candidate there (even unreadable) blocks ~/.claude/CLAUDE.md (D-07 conservative reading); memory framing header is operator text pending a re-capture pin — D-07 win-on-conflict read conservatively; CC's native framing is not captured on this machine
 - [Phase 21]: PAR-05 thinking identity contract is FIELD-VALUE identity, not envelope identity: delta strings assembled once at the provider, RawMessage stored verbatim, values extracted only at the projector, SDK re-serializes (21-03)
 - [Phase 21]: Redacted thinking blocks append to the transcript unconditionally but publish no agent_thought_chunk (no display text exists); thinking folds into its turn's assistant unit and drops with it when the unit never forms (21-03, Pitfall 5)
+- [Phase 21]: Absolute @paths are admitted ONLY by an explicit evaluator ruling (nil resolves nothing outside the workspace root) — ingress can never serve as a whole-FS existence oracle; the 21-06 join wires internal/perm's rule set into the readRuleEvaluator seam
+- [Phase 21]: Mention provenance is per attempt, not per success: forms file|dir|denied|unresolved record every @token's outcome, making the Read-rule gate observable in the transcript
 
 ### Pending Todos
 
@@ -167,6 +170,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-03T19:56:14.889Z
-Stopped at: Completed 21-03-PLAN.md
+Last session: 2026-09-03T20:27:06.706Z
+Stopped at: Completed 21-04-PLAN.md
 Resume file: None
