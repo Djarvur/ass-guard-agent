@@ -269,39 +269,42 @@ func replayLineFrame(l *replayLine, emit ChunkEmitter, toolEmit ActivityEmitter)
 		return nil
 
 	case replayKindError:
-		// Task 2 (18-01): error lines are agent-visible. A toolCallID-carrying
-		// error closes THAT call as failed (the terminal update — the client
-		// can pair it with the card); a bare error renders as an
-		// agent_message_chunk carrying the error text so the restored
-		// conversation shows what went wrong.
-		if l.ToolCallID != "" {
-			if toolEmit == nil {
-				return nil
-			}
-
-			uerr := toolEmit.ToolCallUpdate(&ToolCallUpdateFrame{
-				ToolCallID: l.ToolCallID,
-				Status:     StatusFailed,
-			})
-			if uerr != nil {
-				return fmt.Errorf("replay error update: %w", uerr)
-			}
-
-			return nil
-		}
-
-		eerr := emit.AgentMessageChunk(replayMessageID(l), l.errorText())
-		if eerr != nil {
-			return fmt.Errorf("replay error chunk: %w", eerr)
-		}
-
-		return nil
+		return replayErrorFrame(l, emit, toolEmit)
 
 	default:
 		// Bookkeeping/audit kinds and unknown FUTURE kinds (16-D-20): no
 		// frame, no failure.
 		return nil
 	}
+}
+
+// replayErrorFrame maps ONE error line (Task 2, 18-01): a toolCallID-carrying
+// error closes THAT call as a terminal failed tool_call_update (the client can
+// pair it with the card); a bare error renders as an agent_message_chunk
+// carrying the error text so the restored conversation shows what went wrong.
+func replayErrorFrame(l *replayLine, emit ChunkEmitter, toolEmit ActivityEmitter) error {
+	if l.ToolCallID != "" {
+		if toolEmit == nil {
+			return nil // plain-ChunkEmitter degrade (forwarder precedent)
+		}
+
+		uerr := toolEmit.ToolCallUpdate(&ToolCallUpdateFrame{
+			ToolCallID: l.ToolCallID,
+			Status:     StatusFailed,
+		})
+		if uerr != nil {
+			return fmt.Errorf("replay error update: %w", uerr)
+		}
+
+		return nil
+	}
+
+	eerr := emit.AgentMessageChunk(replayMessageID(l), l.errorText())
+	if eerr != nil {
+		return fmt.Errorf("replay error chunk: %w", eerr)
+	}
+
+	return nil
 }
 
 // replayMessageID derives a chunk's messageId: the line's own messageID (live

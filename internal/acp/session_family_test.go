@@ -69,7 +69,7 @@ func cleanSessionFixtureLines(sid string) []string {
 		`{"type":"assistant_message","turnID":"` + turn + `","timestamp":"` + fixtureTimestamp + `",` +
 			`"text":"Here is the listing."}`,
 		`{"type":"tool_call","turnID":"` + turn + `","timestamp":"` + fixtureTimestamp + `",` +
-			`"toolCallID":"` + fixtureToolCallID + `","name":"Bash","input":{"command":"ls"}}`,
+			`"toolCallID":"` + fixtureToolCallID + `","name":"` + fixtureToolBash + `","input":{"command":"ls"}}`,
 		`{"type":"tool_result","turnID":"` + turn + `","timestamp":"` + fixtureTimestamp + `",` +
 			`"toolCallID":"` + fixtureToolCallID + `","output":{"stdout":"a.go"},"isError":false}`,
 		`{"type":"boundary","turnID":"` + turn + `","timestamp":"` + fixtureTimestamp + `",` +
@@ -407,7 +407,7 @@ func TestSessionLoadReplaysCleanSession(t *testing.T) {
 		case updKindAgentMessageChunk:
 			chunkText.WriteString(chunkTextOf(t, u))
 		case updKindToolCall:
-			sawTool = u.Update.ToolCallID == fixtureToolCallID && u.Update.Title == "Bash"
+			sawTool = u.Update.ToolCallID == fixtureToolCallID && u.Update.Title == fixtureToolBash
 		case updKindToolCallUpdate:
 			sawUpdOK = u.Update.ToolCallID == fixtureToolCallID && u.Update.Status == StatusCompleted
 			sawUpdFail = u.Update.ToolCallID == fixtureToolCallID
@@ -596,6 +596,8 @@ func TestSessionLoadTraversalIDRejected(t *testing.T) {
 // session/prompt for that id returns the TYPED replay-in-progress error; after
 // the load completes, the SAME prompt is accepted. Run under -race: the ready
 // flag and the sessions map are accessed from concurrent handler goroutines.
+//
+//nolint:funlen // one deterministic concurrency scenario end-to-end (the gate pin)
 func TestLoadGateRejectsPromptDuringReplay(t *testing.T) {
 	t.Parallel()
 
@@ -607,9 +609,9 @@ func TestLoadGateRejectsPromptDuringReplay(t *testing.T) {
 	// starts draining.
 	const chunkLines = 400
 
-	lines := []string{
-		`{"type":"session_start","timestamp":"` + fixtureTimestamp + `","text":"` + sid + `"}`,
-	}
+	lines := make([]string, 0, chunkLines+2)
+	lines = append(lines, `{"type":"session_start","timestamp":"`+fixtureTimestamp+`","text":"`+sid+`"}`)
+
 	for i := range chunkLines {
 		turn := sid + "-turn-001"
 
@@ -617,6 +619,7 @@ func TestLoadGateRejectsPromptDuringReplay(t *testing.T) {
 			`","timestamp":"`+fixtureTimestamp+`","messageID":"`+turn+`","text":"c`+
 			strconv.Itoa(i)+`"}`)
 	}
+
 	lines = append(lines, `{"type":"session_end","timestamp":"`+fixtureTimestamp+`"}`)
 
 	writeLoadFixture(t, store, sid, lines)
