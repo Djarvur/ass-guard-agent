@@ -1,6 +1,13 @@
 package shaper_test
 
 import (
+	"bytes"
+	"encoding/base64"
+	"image"
+	"image/color"
+	"image/png"
+	"log"
+	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -250,5 +257,202 @@ func TestShaperThinking_ZeroThinkingByteIdentical(t *testing.T) {
 	want2 := []anthropic.ContentBlockParamUnion{anthropic.NewTextBlock("plain answer")}
 	if !reflect.DeepEqual(params.Messages[2].Content, want2) {
 		t.Errorf("plain assistant message drifted: %+v; want %+v", params.Messages[2].Content, want2)
+	}
+}
+
+// --- PAR-06 image-block mapping battery (21-05, Task 2 RED) ---
+
+// Image-mapping fixture markers.
+const (
+	imgMediaPNG   = "image/png"
+	imgRefName    = "ingress.png"
+	imgNoteMarker = "ass-guard: image content block dropped"
+)
+
+// plantImageFile writes a tiny PNG into a temp dir and returns its path +
+// its base64 (the Ref'd-bytes shape ingress persists).
+func plantImageFile(t *testing.T) (ref string, b64 string) {
+	t.Helper()
+
+	var buf bytes.Buffer
+
+	img := image.NewRGBA(image.Rect(0, 0, 4, 4)) //nolint:mnd // fixture dims
+	img.Set(0, 0, color.RGBA{R: 255, A: 255})
+
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("encode png: %v", err)
+	}
+
+	ref = filepath.Join(t.TempDir(), imgRefName)
+
+	if err := os.WriteFile(ref, buf.Bytes(), 0o600); err != nil {
+		t.Fatalf("plant image: %v", err)
+	}
+
+	return ref, base64.StdEncoding.EncodeToString(buf.Bytes())
+}
+
+// TestImageCapability_MapsRefToBase64Param pins the shaper mapping: a Message
+// carrying an image block's Ref renders an anthropic.ImageBlockParam whose
+// Source is Base64ImageSourceParam{Data: base64 of the Ref'd file, MediaType:
+// the block's media type} — the file is read at SHAPE TIME; dims/provenance
+// fields never reach the wire (the SDK param carries only the source).
+func TestImageCapability_MapsRefToBase64Param(t *testing.T) {
+	t.Parallel()
+
+	ref, b64 := plantImageFile(t)
+
+	p := loadFixture(t, "minimal")
+
+	messages := []shaper.Message{{
+		Role: roleUser,
+		Blocks: []shaper.Block{
+			{Text: "describe this"},
+			{Image: &shaper.ImageBlock{Ref: ref, MediaType: imgMediaPNG}},
+		},
+	}}
+
+	params, _, err := shaper.New().Shape(&p, messages)
+	if err != nil {
+		t.Fatalf("Shape: %v", err)
+	}
+
+	if len(params.Messages) != 1 {
+		t.Fatalf("len(Messages) = %d; want 1", len(params.Messages))
+	}
+
+	blocks := params.Messages[0].Content
+	if len(blocks) != 2 {
+		t.Fatalf("len(content blocks) = %d; want 2 (text + image)", len(blocks))
+	}
+
+	if b := blocks[0]; b.OfImage != nil || b.OfText == nil || b.OfText.Text != "describe this" {
+		t.Errorf("block 0 = %+v; want the leading text block", b)
+	}
+
+	img := blocks[1].OfImage
+	if img == nil {
+		t.Fatalf("block 1 carries no ImageBlockParam: %+v", blocks[1])
+	}
+
+	src := img.Source.OfBase64
+	if src == nil {
+		t.Fatalf("image block source is not base64: %+v", img.Source)
+	}
+
+	if src.Data != b64 {
+		t.Errorf("source data = %.40s…; want the base64 of the Ref'd file (%.40s…)", src.Data, b64)
+	}
+
+	if src.MediaType != imgMediaPNG {
+		t.Errorf("source media type = %q; want %q", src.MediaType, imgMediaPNG)
+	}
+}
+
+// TestImageCapability_OrderPreserved pins content-block order parity: an
+// image block BETWEEN two text blocks renders in position.
+func TestImageCapability_OrderPreserved(t *testing.T) {
+	t.Parallel()
+
+	ref, _ := plantImageFile(t)
+
+	p := loadFixture(t, "minimal")
+
+	messages := []shaper.Message{{
+		Role: roleUser,
+		Blocks: []shaper.Block{
+			{Text: "before"},
+			{Image: &shaper.ImageBlock{Ref: ref, MediaType: imgMediaPNG}},
+			{Text: "after"},
+		},
+	}}
+
+	params, _, err := shaper.New().Shape(&p, messages)
+	if err != nil {
+		t.Fatalf("Shape: %v", err)
+	}
+
+	blocks := params.Messages[0].Content
+	if len(blocks) != 3 {
+		t.Fatalf("len(content blocks) = %d; want 3", len(blocks))
+	}
+
+	if blocks[0].OfImage != nil || blocks[0].OfText.Text != "before" {
+		t.Errorf("block 0 = %+v; want text 'before'", blocks[0])
+	}
+
+	if blocks[1].OfImage == nil {
+		t.Errorf("block 1 = %+v; want the image IN POSITION", blocks[1])
+	}
+
+	if blocks[2].OfImage != nil || blocks[2].OfText.Text != "after" {
+		t.Errorf("block 2 = %+v; want text 'after'", blocks[2])
+	}
+}
+
+// TestImageCapability_MissingRefDegrades pins the degrade-softly rule: a
+// missing Ref file at shape time (disk loss between ingress and shape) drops
+// the block with ONE loud error-class note — Shape still succeeds with the
+// remaining blocks (never a 400-spamming empty block, never a dead turn).
+func TestImageCapability_MissingRefDegrades(t *testing.T) { //nolint:paralleltest // swaps the global log writer
+	var notes bytes.Buffer
+
+	log.SetOutput(&notes)
+
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+	ref := filepath.Join(t.TempDir(), "missing.png")
+
+	p := loadFixture(t, "minimal")
+
+	messages := []shaper.Message{{
+		Role: roleUser,
+		Blocks: []shaper.Block{
+			{Text: "the text survives"},
+			{Image: &shaper.ImageBlock{Ref: ref, MediaType: imgMediaPNG}},
+		},
+	}}
+
+	params, _, err := shaper.New().Shape(&p, messages)
+	if err != nil {
+		t.Fatalf("Shape failed on a missing Ref: %v (want degrade-softly)", err)
+	}
+
+	blocks := params.Messages[0].Content
+	if len(blocks) != 1 || blocks[0].OfText == nil || blocks[0].OfText.Text != "the text survives" {
+		t.Errorf("blocks = %+v; want the surviving text block only", blocks)
+	}
+
+	if got := strings.Count(notes.String(), imgNoteMarker); got != 1 {
+		t.Errorf("loud notes = %d; want exactly 1 (%q)", got, notes.String())
+	}
+}
+
+// TestImageCapability_ZeroBlocksByteIdentical pins the additive-only
+// guarantee: a Message with NO Blocks renders byte-identically to the
+// pre-change form (one text block from Content).
+func TestImageCapability_ZeroBlocksByteIdentical(t *testing.T) {
+	t.Parallel()
+
+	p := loadFixture(t, "minimal")
+
+	messages := []shaper.Message{
+		{Role: roleUser, Content: "go"},
+		{Role: roleAssistant, Content: "plain answer"},
+	}
+
+	params, _, err := shaper.New().Shape(&p, messages)
+	if err != nil {
+		t.Fatalf("Shape: %v", err)
+	}
+
+	want0 := []anthropic.ContentBlockParamUnion{anthropic.NewTextBlock("go")}
+	if !reflect.DeepEqual(params.Messages[0].Content, want0) {
+		t.Errorf("user message drifted: %+v; want %+v", params.Messages[0].Content, want0)
+	}
+
+	want1 := []anthropic.ContentBlockParamUnion{anthropic.NewTextBlock("plain answer")}
+	if !reflect.DeepEqual(params.Messages[1].Content, want1) {
+		t.Errorf("assistant message drifted: %+v; want %+v", params.Messages[1].Content, want1)
 	}
 }

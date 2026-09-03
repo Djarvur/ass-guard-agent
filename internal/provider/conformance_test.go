@@ -193,3 +193,21 @@ func TestConformance_InterfaceSatisfied(t *testing.T) {
 
 	_ = profile.Profile{}
 }
+
+// TestConformance_ImageCapability pins D-11's adapter declarations: the
+// Anthropic adapter SUPPORTS image content blocks; the OpenAI-shape adapter
+// is text-only today (its MultiContent surface is explicitly out of PAR-06's
+// letter — RESEARCH's Alternatives row blesses drop+loud-note instead).
+func TestConformance_ImageCapability(t *testing.T) {
+	t.Parallel()
+
+	ant := provider.NewAnthropicProvider(shaper.New(), provider.WithAnthropicAPIKey("test-key"))
+	if !ant.SupportsImages() {
+		t.Error("Anthropic SupportsImages = false; want true (ImageBlockParam shape)")
+	}
+
+	oai := provider.NewOpenAIProvider(provider.WithOpenAIAPIKey("test-key"))
+	if oai.SupportsImages() {
+		t.Error("OpenAI-shape SupportsImages = true; want false (text-only today)")
+	}
+}
