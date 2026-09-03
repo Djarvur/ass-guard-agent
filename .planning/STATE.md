@@ -4,18 +4,18 @@ milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 21
 current_phase_name: Context & Policy Parity Closures
-current_plan: 5
+current_plan: 6
 status: executing
-stopped_at: Completed 21-04-PLAN.md
-last_updated: "2026-09-03T20:27:18.718Z"
+stopped_at: Completed 21-05-PLAN.md
+last_updated: "2026-09-03T22:28:24.680Z"
 last_activity: 2026-09-03
 last_activity_desc: Phase 21 execution started
-state_head: 9feb48cfb9287ae1be89e1ca51df000eefee5af6
+state_head: ed74b2d2a35e59e95cb5086746728175cfb3619d
 progress:
   total_phases: 11
   completed_phases: 3
   total_plans: 70
-  completed_plans: 32
+  completed_plans: 33
   percent: 27
 ---
 
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-03)
 ## Current Position
 
 Phase: 21 (Context & Policy Parity Closures) — EXECUTING
-Current Plan: 5
+Current Plan: 6
 Total Plans in Phase: 6
 Status: Ready to execute
 Last activity: 2026-09-03 — Phase 21 execution started
@@ -78,6 +78,7 @@ Progress: [██████░░░░░░░░░░░░░░░░] 2
 | Phase 21 P02 | 34 min | 2 tasks | 4 files |
 | Phase 21 P03 | 55 min | 3 tasks | 19 files |
 | Phase 21 P04 | 25 min | 2 tasks | 6 files |
+| 21-context-policy-parity-closures/05 | 109 min | 2 tasks | 38 files |
 
 ## Accumulated Context
 
@@ -148,6 +149,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 21]: Redacted thinking blocks append to the transcript unconditionally but publish no agent_thought_chunk (no display text exists); thinking folds into its turn's assistant unit and drops with it when the unit never forms (21-03, Pitfall 5)
 - [Phase 21]: Absolute @paths are admitted ONLY by an explicit evaluator ruling (nil resolves nothing outside the workspace root) — ingress can never serve as a whole-FS existence oracle; the 21-06 join wires internal/perm's rule set into the readRuleEvaluator seam
 - [Phase 21]: Mention provenance is per attempt, not per success: forms file|dir|denied|unresolved record every @token's outcome, making the Read-rule gate observable in the transcript
+- [Phase 21]: 21-05 D-11 seam: the turn path consults Provider.SupportsImages and strips+notes before ingress; the shaper stays pure
+- [Phase 21]: 21-05 pixel-bomb law is two-tier: provider limits trigger D-09 downscale; a 100 Mpx decode-safety ceiling refuses at the config stage
 
 ### Pending Todos
 
@@ -170,6 +173,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-03T20:27:06.706Z
-Stopped at: Completed 21-04-PLAN.md
+Last session: 2026-09-03T22:28:17.550Z
+Stopped at: Completed 21-05-PLAN.md
 Resume file: None

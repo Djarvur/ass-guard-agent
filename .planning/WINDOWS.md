@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 8
+open_count: 9
 waived_count: 0
 fixed_count: 9
-total_count: 17
-last_updated: 2026-09-03T19:54:40.279Z
+total_count: 18
+last_updated: 2026-09-03T22:27:52.112Z
 ---
 
 # Broken Windows Ledger
@@ -32,6 +32,7 @@ last_updated: 2026-09-03T19:54:40.279Z
 | 15 | 17 | unmet-truth | .planning/phases/17-permissions-elicitation/17-05-SUMMARY.md |  | PENDING-OPERATOR-CONFIRMATION: live-Zed operator confirmation of ROADMAP criteria 1 and 3 (native four-option permission dialog with persistence + native elicitation form rendering, seven-step checklist) not yet executed; the 17-05 simulator battery + docs prove the wire and the pipeline, the live legs await the operator | fixed |  | 2026-09-01T03:34:40.899Z | 2026-09-03T10:24:28.543Z |
 | 16 | 18 | deviation | .mise.toml |  | golangci-lint 2.12.2 panics on go1.27-requiring deps (pre-existing module-cache drift); 2.13.2 runs but exhaustruct_v5 flags 2222 pre-existing issues — mise ci's lint step red until a standalone pin-bump + exhaustruct-config migration lands (18-06 files verified clean; logged in 18-session-family/deferred-items.md) | open |  | 2026-09-03T16:26:32.677Z |  |
 | 17 | 21 | deviation | internal/session/testdata/thinking-golden/sse-thinking.jsonl |  | D-14 golden fixture is corpus_absent synthetic (A4 fallback): no thinking-bearing SSE captures exist in the corpus; provenance header records the hunt; replace with captured wire pairs when a thinking-enabled capture run lands | open |  | 2026-09-03T19:54:40.279Z |  |
+| 18 | 21 | deviation | internal/runtime/imgscale_test.go |  | plan-literal 9000x6000 over-dims fixture env-gated (ASSGUARD_IMG_HEAVY=1); cheap default row proves the same path (suite-health tuning) | open |  | 2026-09-03T22:27:52.112Z |  |
 
 ````json
 [
@@ -237,6 +238,18 @@ last_updated: 2026-09-03T19:54:40.279Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-03T19:54:40.279Z",
+    "resolved_at": null
+  },
+  {
+    "id": 18,
+    "kind": "deviation",
+    "phase": "21",
+    "file": "internal/runtime/imgscale_test.go",
+    "line": null,
+    "description": "plan-literal 9000x6000 over-dims fixture env-gated (ASSGUARD_IMG_HEAVY=1); cheap default row proves the same path (suite-health tuning)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-03T22:27:52.112Z",
     "resolved_at": null
   }
 ]
