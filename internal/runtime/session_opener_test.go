@@ -56,8 +56,8 @@ func openerLines(t *testing.T, workDir, id string) []session.Line {
 
 	var lines []session.Line
 
-	for _, b := range strings.Split(strings.TrimRight(string(raw), "\n"), "\n") {
-		if len(b) == 0 {
+	for b := range strings.SplitSeq(strings.TrimRight(string(raw), "\n"), "\n") {
+		if b == "" {
 			continue
 		}
 
@@ -78,7 +78,7 @@ func openerLines(t *testing.T, workDir, id string) []session.Line {
 // opener as the transcript's FIRST line (sessionID in Text), never appends a
 // second one on reopen (the resume shape: ResumeSession reopens through
 // sessionFor), and self-heals a zero-byte transcript.
-func TestSessionForWritesOpener(t *testing.T) {
+func TestSessionForWritesOpener(t *testing.T) { //nolint:cyclop,gocognit,funlen // three assertion pins, one per shape
 	t.Parallel()
 
 	const id = "sess_opener-pin"
@@ -136,7 +136,7 @@ func TestSessionForWritesOpener(t *testing.T) {
 		}
 
 		if count != 1 {
-			t.Fatalf("session_start lines = %d, want exactly 1 (append-only: reopen never duplicates the opener)", count)
+			t.Fatalf("session_start lines = %d, want exactly 1 (append-only: reopen never duplicates)", count)
 		}
 
 		if lines[0].Type != session.TypeSessionStart {

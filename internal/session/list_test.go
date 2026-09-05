@@ -535,7 +535,7 @@ func TestSessionListCorruptFirstLine(t *testing.T) {
 // timestamp is the legacy createdAt fallback; unknown types and zero
 // timestamps stay skipped — the tolerance is a bounded known-type whitelist,
 // never accept-anything.
-func TestSessionListLegacyShapeOpener(t *testing.T) { //nolint:funlen // four independent shape pins in the battery's subtest style
+func TestSessionListLegacyShapeOpener(t *testing.T) { //nolint:funlen // four shape pins in the battery's subtest idiom
 	t.Parallel()
 
 	base := listTestBase()
@@ -546,16 +546,16 @@ func TestSessionListLegacyShapeOpener(t *testing.T) { //nolint:funlen // four in
 		// The ~/tmp/perm-uat shape: user_message first, assistant_message
 		// second — MUST enumerate with createdAt from the FIRST line exactly.
 		dir := t.TempDir()
-		real := listUUID(2)
-		path := writeListTranscript(t, dir, real, []Line{
-			listUserLine(t, real, base, "first real prompt"),
-			{Type: TypeAssistantMessage, TurnID: real + "-turn-001",
+		live := listUUID(2)
+		path := writeListTranscript(t, dir, live, []Line{
+			listUserLine(t, live, base, "first real prompt"),
+			{Type: TypeAssistantMessage, TurnID: live + "-turn-001",
 				Timestamp: base.Add(time.Minute), Text: "reply"},
 		})
 		setListMtime(t, path, base.Add(2*time.Hour)) // lastActivity distinct from createdAt
 
 		got, _ := mustList(t, dir, "", 0)
-		wantIDs(t, got, []string{real}, "real shape")
+		wantIDs(t, got, []string{live}, "real shape")
 
 		if !got[0].CreatedAt.Equal(base) {
 			t.Fatalf("createdAt = %v, want the user_message line's timestamp %v exactly",
