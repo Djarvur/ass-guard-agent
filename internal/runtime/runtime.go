@@ -1470,6 +1470,31 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 		}
 	}
 
+	// G-18-1: the session_start opener is the transcript's FIRST line, so it
+	// can ONLY be written at creation — append-only discipline means never a
+	// rewrite, and an opener anywhere but first is useless to the list scan.
+	// The size gate is what makes resume safe: ResumeSession reopens the SAME
+	// transcript through this same path, and a transcript with bytes gets NO
+	// second opener (exactly one session_start line per transcript, still the
+	// first). A size-0 file also self-heals a kill -9 between create and
+	// first append. The gate covers whichever manager survived the fallback
+	// chain above and sits under r.sessMu (held for the whole construction) —
+	// race-free by construction. A stat or append failure degrades LOUDLY and
+	// construction continues (the AUD-03 audit-write discipline, never a
+	// serve refusal): a session that could not write its opener still runs
+	// turns; it just stays legacy-shaped for listing.
+	fi, serr := os.Stat(mgr.Path())
+	if serr != nil {
+		log.Printf("ass-guard: transcript stat failed for %s (%v) — session_start opener not written",
+			mgr.Path(), serr)
+	} else if fi.Size() == 0 {
+		aerr := mgr.AppendSessionStart(sessionID)
+		if aerr != nil {
+			log.Printf("ass-guard: session_start opener write failed for %s (%v) — session stays legacy-shaped",
+				sessionID, aerr)
+		}
+	}
+
 	maxConc := r.maxConc
 	if maxConc < 1 {
 		maxConc = provider.DefaultMaxConcurrent

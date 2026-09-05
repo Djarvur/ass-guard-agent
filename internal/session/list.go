@@ -3,8 +3,9 @@ package session
 // Session enumeration engine (18-03, ACP-05 / D-04..D-07): an on-demand
 // header scan over dir/.ass-guard/ transcripts — NO index file, nothing to
 // drift, the append-only discipline preserved (D-04). Per transcript the scan
-// touches ONLY the first line (createdAt from the session_start line's
-// Timestamp) plus a bounded prefix (<= 64 KiB, stopping at the first
+// touches ONLY the first line (createdAt from the opener line's Timestamp —
+// the preferred session_start, or any known type under the G-18-1 legacy
+// fallback) plus a bounded prefix (<= 64 KiB, stopping at the first
 // user_message line) for the title, plus os.Stat for mtime, tombstones, and
 // checkpoint availability — never a full transcript read.
 //
@@ -240,11 +241,13 @@ func listTranscriptID(name string) (string, bool) {
 	return strings.TrimSuffix(strings.TrimPrefix(name, transcriptFilePrefix), transcriptFileSuffix), true
 }
 
-// readTranscriptHeader reads ONLY the first line (createdAt — the line must
-// be a conforming session_start) plus the bounded prefix that follows,
-// stopping at the first user_message line (the title). keep is false when the
-// transcript is non-conforming (corrupt first line, wrong opener, zero
-// timestamp) and the session is skipped without error.
+// readTranscriptHeader reads ONLY the first line (createdAt — the opener is
+// the PREFERRED session_start line, or any KNOWN type with a valid timestamp
+// under the G-18-1 legacy fallback for pre-fix transcripts) plus the bounded
+// prefix that follows, stopping at the first user_message line (the title).
+// keep is false when the transcript is non-conforming (corrupt first line,
+// unknown opener type, zero timestamp) and the session is skipped without
+// error.
 func readTranscriptHeader(path, sessionID string) (SessionHeader, bool, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -268,8 +271,11 @@ func readTranscriptHeader(path, sessionID string) (SessionHeader, bool, error) {
 }
 
 // readHeaderOpener consumes lines up to and including the first non-empty one
-// and validates it as the conforming session_start opener. ok is false for a
-// corrupt opener, a wrong line type, a zero timestamp, or an empty file.
+// and validates it as the conforming opener: the preferred session_start
+// line, or any KNOWN line type with a valid timestamp under the G-18-1
+// legacy fallback (pre-fix transcripts began with user_message lines). ok is
+// false for a corrupt opener, an unknown line type, a zero timestamp, or an
+// empty file.
 func readHeaderOpener(sessionID string, br *bufio.Reader) (SessionHeader, bool) {
 	h := SessionHeader{SessionID: sessionID, Title: fallbackTitle}
 
@@ -289,9 +295,61 @@ func readHeaderOpener(sessionID string, br *bufio.Reader) (SessionHeader, bool) 
 	}
 }
 
-// conformingOpener parses line as the session_start opener, recording the
-// createdAt timestamp into h; false for an empty, corrupt, wrong-type, or
-// zero-timestamp line.
+// knownOpenerTypes is the bounded whitelist of the transcript vocabulary's
+// own line kinds (the Type* constants in transcript.go — the same vocabulary
+// the reader discipline already defines). G-18-1 legacy fallback: pre-fix
+// transcripts begin with an ordinary line (user_message in practice) because
+// nothing ever called AppendSessionStart, so enumeration accepts any KNOWN
+// kind with a valid timestamp as the createdAt source — while an unknown type
+// stays rejected: the tolerance is bounded to the vocabulary, never
+// accept-anything (T-18-07-01).
+var knownOpenerTypes = map[string]struct{}{ //nolint:gochecknoglobals // immutable whitelist table
+	TypeSessionStart:      {},
+	TypeUserMessage:       {},
+	TypeRequestShaped:     {},
+	TypeAgentMessageChunk: {},
+	TypeAssistantMessage:  {},
+	TypeToolCall:          {},
+	TypeToolResult:        {},
+	TypeBoundary:          {},
+	TypeSubagentDispatch:  {},
+	TypeSubagentResult:    {},
+	TypeUsage:             {},
+	TypeCanceled:          {},
+	TypeEngineDecision:    {},
+	TypeError:             {},
+	TypeSessionEnd:        {},
+	TypeCommandProvenance: {},
+	TypeAskSuspended:      {},
+	TypeRawThinking:       {},
+	TypeLocalCommand:      {},
+	TypeCompaction:        {},
+	TypeMentionProvenance: {},
+}
+
+// knownOpenerType reports whether t is one of the transcript vocabulary's own
+// line kinds (the knownOpenerTypes whitelist).
+func knownOpenerType(t string) bool {
+	_, ok := knownOpenerTypes[t]
+
+	return ok
+}
+
+// conformingOpener parses line as the transcript's opener, recording the
+// createdAt timestamp into h. TWO-TIER (G-18-1): the PREFERRED tier is the
+// session_start line every post-fix transcript begins with (the shape
+// sessionFor now writes); the LEGACY fallback tier accepts a first line of
+// any OTHER known type with a non-zero timestamp, so pre-fix sessions stay
+// enumerable forever. Still false for an empty, corrupt, unknown-type, or
+// zero-timestamp line. The fixtures' hand-written session_start openers made
+// the whole battery green against a shape real sessions never produced — the
+// G-17-1 "tests modeled a fiction" lesson; do NOT re-tighten this to
+// session_start-only. The legacy tier has a DOCUMENTED title consequence: the
+// opener consumes line 1 as createdAt and readHeaderTitle then scans from
+// line 2, so a legacy multi-prompt session's title is its SECOND user prompt
+// and a single-prompt legacy session shows the fallback title — INTENTIONAL
+// (the G-18-1 fix_direction kept the title scan unchanged); do NOT "fix"
+// readHeaderTitle either.
 func conformingOpener(line []byte, h *SessionHeader) bool {
 	if len(line) == 0 {
 		return false
@@ -303,13 +361,26 @@ func conformingOpener(line []byte, h *SessionHeader) bool {
 		return false
 	}
 
-	if l.Type != TypeSessionStart || l.Timestamp.IsZero() {
+	if l.Timestamp.IsZero() {
 		return false
 	}
 
-	h.CreatedAt = l.Timestamp
+	// Preferred tier: the session_start opener.
+	if l.Type == TypeSessionStart {
+		h.CreatedAt = l.Timestamp
 
-	return true
+		return true
+	}
+
+	// Legacy fallback tier (G-18-1): any other known type with a valid
+	// timestamp is a pre-fix transcript's de-facto opener.
+	if knownOpenerType(l.Type) {
+		h.CreatedAt = l.Timestamp
+
+		return true
+	}
+
+	return false
 }
 
 // readHeaderTitle scans the bounded prefix after the opener for the first
