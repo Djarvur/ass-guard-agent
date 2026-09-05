@@ -527,6 +527,106 @@ func TestSessionListCorruptFirstLine(t *testing.T) {
 	wantIDs(t, got, []string{good}, "corrupt first line")
 }
 
+// TestSessionListLegacyShapeOpener pins the transcript shape REAL sessions
+// produce (G-18-1): pre-fix transcripts begin with a user_message line, not
+// the hand-written session_start opener the fixtures modeled — the whole list
+// battery was green against a shape real sessions never produce (the G-17-1
+// fixture-fiction class). A first line of ANY known type with a valid
+// timestamp is the legacy createdAt fallback; unknown types and zero
+// timestamps stay skipped — the tolerance is a bounded known-type whitelist,
+// never accept-anything.
+func TestSessionListLegacyShapeOpener(t *testing.T) { //nolint:funlen // four independent shape pins in the battery's subtest style
+	t.Parallel()
+
+	base := listTestBase()
+
+	t.Run("real shape lists", func(t *testing.T) {
+		t.Parallel()
+
+		// The ~/tmp/perm-uat shape: user_message first, assistant_message
+		// second — MUST enumerate with createdAt from the FIRST line exactly.
+		dir := t.TempDir()
+		real := listUUID(2)
+		path := writeListTranscript(t, dir, real, []Line{
+			listUserLine(t, real, base, "first real prompt"),
+			{Type: TypeAssistantMessage, TurnID: real + "-turn-001",
+				Timestamp: base.Add(time.Minute), Text: "reply"},
+		})
+		setListMtime(t, path, base.Add(2*time.Hour)) // lastActivity distinct from createdAt
+
+		got, _ := mustList(t, dir, "", 0)
+		wantIDs(t, got, []string{real}, "real shape")
+
+		if !got[0].CreatedAt.Equal(base) {
+			t.Fatalf("createdAt = %v, want the user_message line's timestamp %v exactly",
+				got[0].CreatedAt, base)
+		}
+
+		if !got[0].LastActivity.Equal(base.Add(2 * time.Hour)) {
+			t.Fatalf("lastActivity = %v, want the pinned mtime", got[0].LastActivity)
+		}
+	})
+
+	t.Run("single-prompt legacy title", func(t *testing.T) {
+		t.Parallel()
+
+		// Knock-on 4 (accepted consequence, G-18-1 fix_direction b): the
+		// legacy opener consumes line 1 as the createdAt fallback, the title
+		// scan starts at line 2, and a single-prompt legacy session shows the
+		// fallback title with TitlePresent false.
+		dir := t.TempDir()
+		only := listUUID(3)
+		writeListTranscript(t, dir, only, []Line{listUserLine(t, only, base, "the only prompt")})
+
+		got, _ := mustList(t, dir, "", 0)
+		wantIDs(t, got, []string{only}, "single-prompt legacy")
+
+		if got[0].Title != listTestFallback || got[0].TitlePresent {
+			t.Fatalf("title = %q (present %v), want fallback literal with TitlePresent false",
+				got[0].Title, got[0].TitlePresent)
+		}
+	})
+
+	t.Run("still skipped unknown type", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		good := listUUID(1)
+		writeListTranscript(t, dir, good, standardListLines(t, good, base, "good"))
+
+		// A VALID timestamp but a type outside the known vocabulary; the
+		// conforming tail proves the engine honors ONLY line 1.
+		future := listUUID(4)
+		writeListTranscript(t, dir, future, []Line{
+			{Type: "future_kind", Timestamp: base},
+			listStartLine(future, base),
+			listUserLine(t, future, base, "unreachable"),
+		})
+
+		got, _ := mustList(t, dir, "", 0)
+		wantIDs(t, got, []string{good}, "unknown opener type still skipped")
+	})
+
+	t.Run("still skipped zero timestamp", func(t *testing.T) {
+		t.Parallel()
+
+		dir := t.TempDir()
+		good := listUUID(1)
+		writeListTranscript(t, dir, good, standardListLines(t, good, base, "good"))
+
+		// A KNOWN type with a zero timestamp; same conforming tail.
+		zero := listUUID(5)
+		writeListTranscript(t, dir, zero, []Line{
+			{Type: TypeUserMessage, Timestamp: time.Time{}},
+			listStartLine(zero, base),
+			listUserLine(t, zero, base, "unreachable"),
+		})
+
+		got, _ := mustList(t, dir, "", 0)
+		wantIDs(t, got, []string{good}, "zero-timestamp opener still skipped")
+	})
+}
+
 func TestSessionListBounds(t *testing.T) {
 	t.Parallel()
 
