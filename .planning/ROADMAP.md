@@ -189,7 +189,7 @@ Plans:
   3. `ass-guard --resume` works anywhere (CLI flag), not only from the editor.
   4. Closing a session stops its work cleanly; deleting tombstones the record (never rm) so audit history survives — deleted sessions disappear from the list but remain investigable on disk.
 
-**Plans**: 6/6 plans executed
+**Plans**: 7 plans (6 executed; 1 gap closure)
 
 Plans:
 **Wave 1**
@@ -206,6 +206,10 @@ Plans:
 **Wave 3** *(blocked on Wave 2 completion)*
 
 - [x] 18-06-PLAN.md — CLI trio (--resume/--continue) + numbered picker + serve injection (criterion 3, ACP-06)
+
+**Wave 4** *(gap closure — UAT G-18-1 blocker)*
+
+- [ ] 18-07-PLAN.md — GAP G-18-1: real sessions write the session_start opener (sessionFor size-gated wiring) + tolerant legacy listing (readHeaderOpener known-type fallback) — RED-proven pins; UAT Test 2 re-testable
 
 ### Phase 19: Compaction + cache_control
 
