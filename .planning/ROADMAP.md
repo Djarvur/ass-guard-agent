@@ -189,7 +189,7 @@ Plans:
   3. `ass-guard --resume` works anywhere (CLI flag), not only from the editor.
   4. Closing a session stops its work cleanly; deleting tombstones the record (never rm) so audit history survives — deleted sessions disappear from the list but remain investigable on disk.
 
-**Plans**: 7 plans (6 executed; 1 gap closure)
+**Plans**: 7/7 plans executed (6 executed; 1 gap closure)
 
 Plans:
 **Wave 1**
@@ -209,7 +209,7 @@ Plans:
 
 **Wave 4** *(gap closure — UAT G-18-1 blocker)*
 
-- [ ] 18-07-PLAN.md — GAP G-18-1: real sessions write the session_start opener (sessionFor size-gated wiring) + tolerant legacy listing (readHeaderOpener known-type fallback) — RED-proven pins; UAT Test 2 re-testable
+- [x] 18-07-PLAN.md — GAP G-18-1: real sessions write the session_start opener (sessionFor size-gated wiring) + tolerant legacy listing (readHeaderOpener known-type fallback) — RED-proven pins; UAT Test 2 re-testable
 
 ### Phase 19: Compaction + cache_control
 
@@ -486,7 +486,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 | 15. internal/runtime Carve | v1.2 | 7/7 | Complete    | 2026-08-27 |
 | 16. ACP Wire Foundation | v1.2 | 9/9 | Complete    | 2026-09-01 |
 | 17. Permissions + Elicitation | v1.2 | 6/6 | Complete    | 2026-09-03 |
-| 18. Session Family | v1.2 | 6/6 | In Progress|  |
+| 18. Session Family | v1.2 | 7/7 | In Progress|  |
 | 19. Compaction + cache_control | v1.2 | 0/5 | Not started | - |
 | 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 0/6 | Planned | - |
 | 21. Context & Policy Parity Closures | v1.2 | 6/6 | In Progress|  |

@@ -6,16 +6,16 @@ current_phase: 21
 current_phase_name: Context & Policy Parity Closures
 current_plan: 6
 status: verifying
-stopped_at: Completed 21-06-PLAN.md
-last_updated: "2026-09-03T22:56:56.082Z"
+stopped_at: "Completed 18-07-PLAN.md (G-18-1 gap closure: opener wired + tolerant listing)"
+last_updated: "2026-09-05T22:14:53.700Z"
 last_activity: 2026-09-03
 last_activity_desc: Phase 21 execution started
-state_head: 9762759a6da896c0d610bdd7185f1f199275df2b
+state_head: fcbcbdad086ecd6909628aa307fbdbfba4318a2d
 progress:
   total_phases: 11
   completed_phases: 3
-  total_plans: 70
-  completed_plans: 34
+  total_plans: 71
+  completed_plans: 35
   percent: 27
 ---
 
@@ -80,6 +80,7 @@ Progress: [██████░░░░░░░░░░░░░░░░] 2
 | Phase 21 P04 | 25 min | 2 tasks | 6 files |
 | 21-context-policy-parity-closures/05 | 109 min | 2 tasks | 38 files |
 | Phase 21 P21-06 | 20 min | 2 tasks | 13 files |
+| Phase 18 P07 | 21 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -154,6 +155,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 21]: 21-05 pixel-bomb law is two-tier: provider limits trigger D-09 downscale; a 100 Mpx decode-safety ceiling refuses at the config stage
 - [Phase 21]: The 21-06 hook-gate join maps the four-valued PreToolUse verdict TOTALLY at gateCall's head (ask suspends even ungated, D-04); the executor consultation leg is deleted, not stubbed — one gate, one consultation site, one result form per decision
 - [Phase 21]: Precedence hook verdict -> permission ask -> execute is documented AT the chokepoint (gateCall doc) and enforced by grep audits: zero executor consultation sites, the gate head the sole PreToolUseVerdict consumer
+- [Phase 18]: 18-07 (G-18-1): two-sided opener fix — sessionFor writes AppendSessionStart behind a size-0 gate (creation-only by append-only discipline; the same gate IS resume-safety and kill-9 self-heal), and listing accepts any knownOpenerType first line with a valid timestamp as the legacy fallback (bounded whitelist; unknown/zero-timestamp/corrupt still skip); legacy title consequence documented in code, not fixed
 
 ### Pending Todos
 
@@ -176,6 +178,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-03T22:56:36.771Z
-Stopped at: Completed 21-06-PLAN.md
+Last session: 2026-09-05T22:14:52.562Z
+Stopped at: Completed 18-07-PLAN.md (G-18-1 gap closure: opener wired + tolerant listing)
 Resume file: None
