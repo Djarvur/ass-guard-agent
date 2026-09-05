@@ -23,7 +23,8 @@ note: "Operator 2026-09-06: A1 list+resume+continue PASS, A2 stop-mid-turn PASS 
 
 ### 2. Interactive TTY/ssh picker check (18-06 D-11)
 expected: `ass-guard --resume` in a real terminal renders the numbered picker (pipe-safe: numbers + names, stderr), arrow/number selection lands in a fully replayed session; under a pipe (no TTY) it degrades safely (no garbled render).
-result: issue
+result: [pending]
+re-run: true
 reported: "`ass-guard --resume` in ~/tmp/perm-uat (two real transcripts on disk, no tombstones): Error: no sessions to resume. Root cause diagnosed from code+disk: Manager.AppendSessionStart (internal/session/manager.go:165) has ZERO production callers — real sessions never write the session_start opener line, so ListSessions' readHeaderOpener (internal/session/list.go:271-306, requires a conforming session_start first line) skips every real transcript as non-conforming. Fixtures hand-write the opener, so the whole list battery is green against a shape real sessions never produce (the G-17-1 class again: tests model a fiction)."
 severity: blocker
 
@@ -36,8 +37,8 @@ note: "Operator 2026-09-06: «устраивает»."
 
 total: 3
 passed: 2
-issues: 1
-pending: 0
+issues: 0
+pending: 1
 skipped: 0
 blocked: 0
 
@@ -45,7 +46,9 @@ blocked: 0
 
 - gap_id: G-18-1
   truth: "ass-guard --resume (and any ListSessions consumer) enumerates the cwd store's real sessions"
-  status: failed
+  status: resolved
+  resolved_by: 18-07-PLAN.md
+  resolved_at: 2026-09-06
   reason: "Real sessions never write the session_start opener (AppendSessionStart has zero production callers — manager.go:165), so readHeaderOpener (list.go:271+) skips every real transcript → 'no sessions to resume' with two live transcripts on disk. Verified: transcripts begin with user_message lines; fixtures (which hand-write session_start) made the battery green against a fictional shape."
   severity: blocker
   test: 2
@@ -54,4 +57,5 @@ blocked: 0
     - internal/session/list.go:244-306
     - ~/tmp/perm-uat/.ass-guard/transcript_15ceb322*.jsonl (first line = user_message)
   missing: []
+  resolution: "18-07 executed (61a18ea RED pins, 2a3cea7 GREEN size-gated opener wiring + two-tier tolerant conformingOpener, fcbcbda/ce971fc docs); kill-9 + full battery green. Picker re-run pending with the fresh binary."
   fix_direction: "(a) wire AppendSessionStart into real session creation (the transcript's first line, id in Text as the contract expects); (b) make readHeaderOpener tolerant for pre-fix transcripts — first line of ANY known type with a valid timestamp serves as the createdAt fallback (title scan unchanged) so legacy sessions stay enumerable; (c) RED pins: a real-shape transcript (user_message opener) must list, and a session created through the real serve path must produce a session_start first line."
