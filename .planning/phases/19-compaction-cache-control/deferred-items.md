@@ -83,3 +83,12 @@ full package passed on rerun. 19-04's changes are structurally inert on the
 disabled path (maybeCompact returns before any work when settings are unset),
 so this is the same load-sensitive family — the timing-deadline review noted at
 19-03 should cover it.
+
+## [2026-09-06, phase-19 close] flake family member: TestCronWiring_QueueBehindActiveTurn
+
+Failed once in the phase-close full-repo `go test -race ./...` gate (14.1s,
+deadline-style) while every other package was green; passed 2/2 in isolation
+immediately after. Same load-sensitive `internal/runtime` deadline family as
+TestIntegration_RealStreamingThroughACP / TestAskPark_PromptResponsePrecedesResolution
+/ TestCronWiring_AutomationTurnDeclinesGatedAsk — the family, not the individual
+test, is the unit that needs a timing-deadline review.
