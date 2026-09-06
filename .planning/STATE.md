@@ -6,16 +6,16 @@ current_phase: 19
 current_phase_name: compaction-cache-control
 current_plan: 5
 status: verifying
-stopped_at: Completed 19-04-PLAN.md (compaction engine)
-last_updated: "2026-09-06T22:22:19.529Z"
+stopped_at: Completed 19-05-PLAN.md (compaction config keys + menu wiring)
+last_updated: "2026-09-06T23:09:29.543Z"
 last_activity: 2026-09-06
 last_activity_desc: Phases 18 + 21 complete; Phase 19 execution next
 progress:
   total_phases: 11
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 71
-  completed_plans: 39
-  percent: 45
+  completed_plans: 40
+  percent: 55
 state_head: fcbcbdad086ecd6909628aa307fbdbfba4318a2d
 ---
 
@@ -35,7 +35,7 @@ Total Plans in Phase: 5
 Status: Phase complete — ready for verification
 Last activity: 2026-09-06 — Phase 19 execution started
 
-Progress: [██████████░░░░░░░░░░] 35/71 plans ([██████░░░░] 55%)
+Progress: [██████████░░░░░░░░░░] 35/71 plans ([██████░░░░] 56%)
 
 ## Performance Metrics
 
@@ -86,6 +86,7 @@ Progress: [██████████░░░░░░░░░░] 35/71 p
 | Phase 19 P03 | 47 min | 3 tasks | 6 files |
 | Phase 19 P04 | 37 min | 3 tasks | 3 files |
 | Phase 19 P04 | 37 min | 3 tasks | 3 files |
+| Phase 19 P05 | 36 min | 2 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -169,6 +170,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase ?]: 19-04: the overflow retry and CompactNow bypass both the threshold and the enabled gate (the manual-intent class, D-11); only the pre-request check honors enabled — the disabled path is structurally inert, proven by zero checks/notes/extra provider calls
 - [Phase ?]: 19-04: compacting note degraded to the warning-counter family (one stderr line + one counter per compaction start) — the landed session/update vocabulary has no status frame and agent_message_chunk is barred by PAR-01 bus isolation; gap in deferred-items.md — never invent a new wire frame; the plan pre-authorized this degrade
 - [Phase ?]: 19-04: E2E shaped to 19-03s pinned position rule — the marker serves turns that START after it; the producing-turn re-seed carve-out (same-turn TurnID-keyed marker) was analyzed and NOT taken (Rule 4 architectural); analysis in deferred-items.md — changing a test-pinned cross-plan reset-point semantic needs architect sign-off
+- [Phase ?]: 19-05: the compaction keys' absent-key 80/true defaults live in the EMBEDDED FLOOR yaml, not applyDefaults — a bool cannot distinguish absent from explicit-false, and an int backstop would eat the plan's own clamp case (a hand-edited 0 must reach the engine and compare as 1); out-of-range values pass through Load untouched (the set path rejects at the wire, the session-side comparison clamps 1..100)
+- [Phase ?]: 19-05: the surface's live-apply target is the POST-WRITE effective PAIR (the written id plus the other resolved through project > global > blob > default) riding SetCompactionHook to Runner.ApplyCompactionSettings (the ApplyTurnModel discipline); the context limit resolves INSIDE the relay from the capability table — no context-limit menu entry or config key exists
+- [Phase ?]: 19-05: compaction blob fills are advertisement-only D-10 in-memory defaults (no wire stamp, unlike tier/model's CR-02 blobHook) — a client default push never changes what the running session enforces; set_config_option is the operator's live lever, and the offered threshold set dropped 'off' (disabling is compaction-enabled's job)
 
 ### Pending Todos
 
@@ -192,6 +196,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-06T22:22:09.263Z
-Stopped at: Completed 19-04-PLAN.md (compaction engine)
+Last session: 2026-09-06T23:09:29.471Z
+Stopped at: Completed 19-05-PLAN.md (compaction config keys + menu wiring)
 Resume file: None

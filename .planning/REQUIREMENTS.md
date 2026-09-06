@@ -37,7 +37,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### CC Parity Closures
 
-- [ ] **PAR-01**: Compaction on context overflow risk: threshold-triggered (~80% default, configurable) light-tier summarizer appending an additive typed `compaction` transcript line; Projector treats it as a hard reset-point class (summary = durable seed, immune to mutating-boundary resets); tool_use/result pairs atomic; retry-once recovery on provider overflow error; thinking blocks never rewritten mid-chain
+- [x] **PAR-01**: Compaction on context overflow risk: threshold-triggered (~80% default, configurable) light-tier summarizer appending an additive typed `compaction` transcript line; Projector treats it as a hard reset-point class (summary = durable seed, immune to mutating-boundary resets); tool_use/result pairs atomic; retry-once recovery on provider overflow error; thinking blocks never rewritten mid-chain
 - [x] **PAR-02**: `cache_control {"type":"ephemeral"}` emitted on every system block via the Shaper (parity-faithful lever; zcode corpus has no auto-compact — verified in docs/compaction-decision.md)
 - [x] **PAR-03**: Hooks: settings.json parsing (project + user scopes), PreToolUse deny interceptor at the executor chokepoint — bounded sync execution, hard timeout, fail-open, structured verdicts, deny-only authority from project scope (no allow from repo-shipped files); joins the ONE gate pipeline locked in Phase 17 (hook verdict → permission ask → execute)
 - [x] **PAR-04**: AGENTS.md/CLAUDE.md auto-injected into system context every session via dynamic merge into the per-session profile copy (trailing System TextBlocks), mtime-cached
@@ -110,7 +110,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ACP-05 | Phase 18 | Complete |
 | ACP-06 | Phase 18 | Complete |
 | ACP-07 | Phase 18 | Complete |
-| PAR-01 | Phase 19 | Pending |
+| PAR-01 | Phase 19 | Complete |
 | PAR-02 | Phase 19 | Complete |
 | ACP-04 | Phase 20 | Pending |
 | CMDS-01 | Phase 20 | Pending |
