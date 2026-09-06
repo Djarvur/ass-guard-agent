@@ -226,11 +226,27 @@ func (p *AnthropicProvider) Stream(
 		_ = o
 	}
 
-	// bodyclose cannot track closes inside goroutines; the body is closed via
-	// defer in the drain goroutine below (must stay open for SSE streaming).
-	resp, err := httpClient.Do(req) //nolint:bodyclose // closed in drain goroutine
+	// bodyclose cannot track closes inside goroutines; the 2xx body is closed
+	// via defer in the drain goroutine below (must stay open for SSE streaming);
+	// the non-2xx body is closed synchronously at the status check below.
+	resp, err := httpClient.Do(req) //nolint:bodyclose // closed at the status check / in drain goroutine
 	if err != nil {
 		return nil, fmt.Errorf("anthropic provider stream send: %w", err)
+	}
+
+	// Non-2xx rejection (Pitfall 1, 19-RESEARCH): the error body is plain JSON,
+	// not SSE — draining it would skip every non-`data:` line and sendDone would
+	// fabricate an empty end_turn. Read a bounded slice, close the body
+	// synchronously, classify through ClassifyHTTP (the surfaced error carries a
+	// Kind), and emit an error chunk the turn loop already consumes (the
+	// chunkErrorType case). The drain goroutine never starts for a rejected
+	// request.
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		ech := make(chan StreamChunk, 1)
+		ech <- StreamChunk{Type: chunkError, Error: rejectStreamError(resp, prof)}
+		close(ech)
+
+		return ech, nil
 	}
 
 	ch := make(chan StreamChunk, mnd8)
@@ -251,6 +267,64 @@ func (p *AnthropicProvider) Stream(
 	}()
 
 	return ch, nil
+}
+
+// maxErrorBodyBytes bounds the error-envelope read at the non-2xx check site
+// (T-19-03): the body is externally-controlled input — a bounded read, never a
+// scan of the whole body.
+const maxErrorBodyBytes = 8 << 10
+
+// anthropicErrorEnvelope is the Anthropic error body shape:
+// {"type":"error","error":{"type":"invalid_request_error","message":"..."}}.
+type anthropicErrorEnvelope struct {
+	Error struct {
+		Type    string `json:"type"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+// rejectStreamError reads a bounded slice of a non-2xx response body, CLOSES it
+// at the status-check site, and classifies the failure through ClassifyHTTP
+// (400 lands in KindStructural via structuralStatuses — D-04: the surfaced
+// error carries a Kind). The provider's error type + message ride the Cause so
+// message-class predicates (IsOverflow) can match over them.
+//
+// A malformed, truncated, or empty body degrades to the generic classified
+// ProviderError carrying the status code — the parse never panics (T-19-03
+// mitigation; the endpoint is the already-trusted TLS provider channel).
+func rejectStreamError(resp *http.Response, prof *profile.Profile) *ProviderError {
+	raw, readErr := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
+	_ = resp.Body.Close()
+
+	var cause error
+
+	if envErr := errorEnvelopeCause(raw); envErr != nil {
+		cause = envErr
+	} else if readErr != nil {
+		cause = fmt.Errorf("error body unreadable: %w", readErr)
+	}
+
+	return ClassifyHTTP(providerAnthropic, prof.Model, resp.StatusCode, cause)
+}
+
+// errorEnvelopeCause extracts the provider's error type + message as a plain
+// error, or nil when the body is empty, malformed, or carries no message (the
+// caller degrades to the generic structural classification).
+func errorEnvelopeCause(raw []byte) error {
+	if len(raw) == 0 {
+		return nil
+	}
+
+	var env anthropicErrorEnvelope
+	if err := json.Unmarshal(raw, &env); err != nil || env.Error.Message == "" {
+		return nil
+	}
+
+	if env.Error.Type != "" {
+		return fmt.Errorf("%s: %s", env.Error.Type, env.Error.Message)
+	}
+
+	return errors.New(env.Error.Message)
 }
 
 // drainSSE reads SSE `data: <json>\n\n` frames from body, parses each into a
