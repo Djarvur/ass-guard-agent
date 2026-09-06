@@ -24,6 +24,10 @@ const roleTool = "tool"
 const typeThinking = "thinking"
 const typeRedactedThinking = "redacted_thinking"
 
+// maxCacheBreakpoints is the Anthropic API's per-request cache_control cap
+// (a 5th breakpoint returns 400 — see the systemBlocks loop in Shape).
+const maxCacheBreakpoints = 4
+
 // Message is one conversational turn shaped into the outgoing request. It is
 // defined here (not in the provider package) to keep the dependency edge
 // one-directional: provider imports the Shaper; the Shaper never imports the
@@ -147,11 +151,36 @@ func (s *Shaper) Shape(
 	// system blocks only; never tools or messages). Profile-gated: an
 	// unflagged block keeps the zero CacheControl value, so profiles without
 	// the declaration shape byte-identically to the pre-emission output.
+	//
+	// Over-cap degrade: the API caps cache_control at maxCacheBreakpoints (4)
+	// breakpoints per request — a 5th returns 400. The captured corpus sits
+	// at 3-4 blocks, but dynamic merges (skills/agents listings, hook
+	// context) can stack more, so emission degrades deliberately: the LAST
+	// four flagged blocks keep their breakpoints, preserving the deepest
+	// cache prefixes (the earliest prefix is the one dynamic merges are most
+	// likely to invalidate anyway). Pinned by TestShape_CacheControlCapDegrade;
+	// the parity probe compares placement CLASSES, so it stays green under
+	// either policy.
+	flagged := 0
+
+	for _, b := range p.System {
+		if b.CacheControl {
+			flagged++
+		}
+	}
+
 	systemBlocks := make([]anthropic.TextBlockParam, 0, len(p.System))
+
+	seenFlagged := 0
+
 	for _, b := range p.System {
 		tb := anthropic.TextBlockParam{Text: b.Text}
 		if b.CacheControl {
-			tb.CacheControl = anthropic.NewCacheControlEphemeralParam()
+			if flagged-seenFlagged <= maxCacheBreakpoints {
+				tb.CacheControl = anthropic.NewCacheControlEphemeralParam()
+			}
+
+			seenFlagged++
 		}
 
 		systemBlocks = append(systemBlocks, tb)

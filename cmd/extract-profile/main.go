@@ -171,6 +171,12 @@ func writeArtifact(out, name string, res *profile.ExtractResult, paritySession, 
 	if cwd := capturedWorkDir(res.System); cwd != "" {
 		profileMap["capture_work_dir"] = cwd
 	}
+	// PAR-02 (19-01): the system_cache_control declaration rides the scanned
+	// rollout — a re-capture of a cache_control-bearing target must not lose
+	// the emission at the profile.yaml boundary.
+	if res.SystemCacheControl {
+		profileMap["system_cache_control"] = true
+	}
 
 	profileYAML, err := yaml.Marshal(profileMap)
 	if err != nil {

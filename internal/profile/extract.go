@@ -85,6 +85,11 @@ type ExtractResult struct {
 	SessionRole string // "main" or "subagent" (inferred from the file name)
 	SourcePath  string
 	ToolCount   int // post-null-filter count
+	// SystemCacheControl (PAR-02, 19-01): the scanned rollout carried
+	// cache_control on system blocks (the corpus-scan detection reused) —
+	// the profile-level declaration a re-capture must preserve so emission
+	// is not lost at the next extraction.
+	SystemCacheControl bool
 }
 
 // SessionStat summarizes one rollout file for picking the richest source.
@@ -175,7 +180,45 @@ func ExtractFromRollout(path string) (ExtractResult, error) { //nolint:funlen //
 		return ExtractResult{}, fmt.Errorf("no full-request lines (system+tools) found in %s", firstFile)
 	}
 
-	return buildResult(firstFull, path), nil
+	res := buildResult(firstFull, path)
+
+	// PAR-02 (19-01): the profile-level system_cache_control declaration
+	// derives from the scanned rollout — the corpus-scan detection reused
+	// verbatim, so a re-capture of a cache_control-bearing target carries
+	// the declaration and the emission survives regeneration.
+	declared, err := systemCacheDeclared(path)
+	if err != nil {
+		return ExtractResult{}, fmt.Errorf("cache_control declaration scan: %w", err)
+	}
+
+	res.SystemCacheControl = declared
+
+	return res, nil
+}
+
+// systemCacheDeclared reports whether the rollout's requests carry
+// cache_control on system blocks — the "system:" placement class of 14-02's
+// corpus scan (the same detection that grounded docs/compaction-decision.md).
+func systemCacheDeclared(path string) (bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return false, fmt.Errorf("open rollout: %w", err)
+	}
+
+	defer func() { _ = f.Close() }()
+
+	rep, err := ScanContextBehavior(f)
+	if err != nil {
+		return false, fmt.Errorf("scan context behavior: %w", err)
+	}
+
+	for k := range rep.CacheControlPlacements {
+		if strings.HasPrefix(k, classSystemPrefix) {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 func isFullRequest(m *ModelIO) bool {

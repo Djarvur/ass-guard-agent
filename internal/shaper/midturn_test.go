@@ -29,13 +29,15 @@ const (
 )
 
 // midTurnProfile is the minimal profile the mid-turn shaping tests use — the
-// message-block rendering under test is profile-independent.
+// message-block rendering under test is profile-independent. Its system block
+// carries the captured cache_control flag (19-01 regeneration: the post-
+// emission corpus shape the golden pins).
 func midTurnProfile() *profile.Profile {
 	return &profile.Profile{
 		Name:      "midturn-test",
 		Model:     synthModel,
 		MaxTokens: 1024,
-		System:    []profile.TextBlock{{Type: "text", Text: "sys"}},
+		System:    []profile.TextBlock{{Type: "text", Text: "sys", CacheControl: true}},
 	}
 }
 
