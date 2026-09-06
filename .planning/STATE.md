@@ -175,6 +175,7 @@ None yet.
 |----------|------|--------|-------------|-----------|
 | peer | Telegram peer (TG-01..02) — full text+voice interface consuming the steering core | Deferred to v1.3 pool (lowest priority, operator) | 2026-08-26 | v1.3 |
 | provider | Per-provider HTTP(S) proxy support — proxy field in the provider config (http/https schemes, basic auth first; see todos/pending/provider-proxy-support.md) | Future work (operator request 2026-09-06) | 2026-09-06 | unscheduled |
+| provider | Per-provider capability substitution — auto-substitute equivalent skills/MCP/built-in tools when a provider lacks a capability (first rows: web_search, web_fetch; e.g. z.ai/Claude-Code have them, opencode-go does not; see todos/pending/provider-capability-substitution.md) | Future work (operator request 2026-09-06) | 2026-09-06 | unscheduled |
 | profile | dsh profile #2 (DSH-01..05) | Dropped entirely (operator — mimicry bar abandoned) | 2026-08-26 | none |
 
 ## Session Continuity
