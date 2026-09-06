@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
@@ -150,6 +151,39 @@ type Session struct {
 	// once the client answers -32601, every later gated ask declines without
 	// a new surface round-trip (never a silent allow, never a retry storm).
 	permDegradedFlag atomic.Bool
+
+	// --- Compaction (19-04, PAR-01) ---
+	//
+	// compaction holds the live-applied settings (SetCompactionSettings —
+	// the caller holds the turn serialization, the SetTurnModel discipline).
+	// The zero value is DISABLED: the pre-request check skips entirely and
+	// the behavior is byte-identical to pre-phase.
+	compaction compactionSettings
+
+	// lastInputTokens is the D-01 usage read model (Pitfall 3): the
+	// InputTokens of the most recent usage chunk, recorded in-memory at the
+	// stream loop's usage case the moment it arrives. The bus publish and the
+	// async transcript usage line stay the audit record; THIS field is what
+	// the threshold check reads — reading the transcript instead would race
+	// the async TranscriptWriter and see a stale value. Atomic: subagent
+	// goroutines share the Session (their streams do not record usage —
+	// streamAndEmitTaggedProf has no usage case — but the field stays race-
+	// free by construction regardless of future callers).
+	lastInputTokens atomic.Int64
+
+	// compactionTimeout bounds one summarizer call (0 → the 60s default).
+	// Tests shrink it to exercise the D-09 timeout degrade deterministically.
+	compactionTimeout time.Duration
+
+	// compactionChecks / compactionNotes / compactionDegrades are the
+	// engine's observable counters: checks counts enabled pre-request check
+	// invocations (the disabled path skips BEFORE it — zero by proof),
+	// notes counts compaction starts, degrades counts D-09 summarizer
+	// failures (one bump per loud warning — the counter IS the warning
+	// record the tests pin).
+	compactionChecks  atomic.Int64
+	compactionNotes   atomic.Int64
+	compactionDegrades atomic.Int64
 
 	closeOnce sync.Once
 
@@ -895,11 +929,20 @@ func (s *Session) streamAndEmit(
 				}
 			}
 		case "usage":
-			if chunk.Usage != nil && s.Bus != nil {
-				s.Bus.Publish(event.UsageUpdate{
-					TurnID:      turnID,
-					InputTokens: chunk.Usage.InputTokens, OutputTokens: chunk.Usage.OutputTokens,
-				})
+			if chunk.Usage != nil {
+				// 19-04 (PAR-01, D-01/Pitfall 3): the in-memory usage read
+				// model — recorded the moment the chunk arrives, independent
+				// of the bus. The compaction threshold check reads THIS (the
+				// async transcript usage line stays the audit record; reading
+				// it back would race the TranscriptWriter).
+				s.lastInputTokens.Store(chunk.Usage.InputTokens)
+
+				if s.Bus != nil {
+					s.Bus.Publish(event.UsageUpdate{
+						TurnID:      turnID,
+						InputTokens: chunk.Usage.InputTokens, OutputTokens: chunk.Usage.OutputTokens,
+					})
+				}
 			}
 		case stopDone:
 			resp.FinishReason = chunk.FinishReason
