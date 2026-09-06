@@ -4,12 +4,12 @@ milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 19
 current_phase_name: Compaction + cache_control
-current_plan: Not started
-status: planning
-stopped_at: "Completed 18-07-PLAN.md (G-18-1 gap closure: opener wired + tolerant listing)"
-last_updated: "2026-09-06T19:53:28.403Z"
+current_plan: 19-01
+status: ready
+stopped_at: Phases 18 + 21 complete (both canonicalized passed on operator UAT 2026-09-06); Phase 19 execution next (manager session)
+last_updated: "2026-09-06T20:06:00.000Z"
 last_activity: 2026-09-06
-last_activity_desc: Phase 18 complete, transitioned to Phase 19
+last_activity_desc: Phases 18 + 21 complete; Phase 19 execution next
 progress:
   total_phases: 11
   completed_phases: 5
@@ -25,7 +25,7 @@ state_head: fcbcbdad086ecd6909628aa307fbdbfba4318a2d
 
 See: .planning/PROJECT.md (updated 2026-09-06)
 **Core value:** A hands-off coding agent that feels native in the editor: full SDD workflows run end-to-end without manual continues, and the agent surfaces through the client's own UX — clickable permission prompts, native file diffs, session management. (Pivoted 2026-08-25 from the mimicry bar.)
-**Current focus:** Phase 19 execution + Phase 21 UAT closure (manager-driven)
+**Current focus:** Phase 19 — Compaction + cache_control (execution; 18+21 closed 2026-09-06)
 
 ## Current Position
 
@@ -33,7 +33,7 @@ Phase: 19 — Compaction + cache_control
 Current Plan: 19-01 (5 plans ready, 0 executed)
 Total Plans in Phase: 5
 Status: Ready to execute
-Last activity: 2026-09-06 — Phase 18 complete, transitioned to Phase 19
+Last activity: 2026-09-06 — Phases 18 + 21 complete; Phase 19 execution next
 
 Progress: [██████████░░░░░░░░░░] 35/71 plans (49%)
 
@@ -41,7 +41,7 @@ Progress: [██████████░░░░░░░░░░] 35/71 p
 
 **Velocity (v1.0 history, for calibration):** 36 plans / 8 phases in 6 days; `mise ci` gate green at every phase close. **v1.1:** 51 plans / 5 phases over ~7 active days.
 
-**By Phase (v1.2):** Phase 15: 7/7 ✓ closed 2026-08-27. Phase 16: 9/9 ✓ closed 2026-09-01 (UAT 4/4 passed — operator confirmed blob-tier override, cancel-keeps-session, per-turn hook concurrency; SECURITY verified threats_open: 0). Phase 17: 6/6 ✓ closed 2026-09-03 (UAT 4/4 after gap closure: permission round-trip + always-persistence both directions live-verified, native elicitation form + answer-landing; G-17-1 canonical-nested-outcome fix found by UAT and re-verified live; WINDOWS #15 operator-confirmed). Phase 18: 7/7 ✓ closed 2026-09-06 (UAT 3/3 after gap closure G-18-1: real sessions write the session_start opener + tolerant legacy listing; Zed picker/resume/stop-mid-turn/delete operator-confirmed; TTY picker four legs re-run green on the fresh binary; cwd-scoped --resume deviation operator-accepted).
+**By Phase (v1.2):** Phase 15: 7/7 ✓ closed 2026-08-27. Phase 16: 9/9 ✓ closed 2026-09-01 (UAT 4/4 passed — operator confirmed blob-tier override, cancel-keeps-session, per-turn hook concurrency; SECURITY verified threats_open: 0). Phase 17: 6/6 ✓ closed 2026-09-03 (UAT 4/4 after gap closure: permission round-trip + always-persistence both directions live-verified, native elicitation form + answer-landing; G-17-1 canonical-nested-outcome fix found by UAT and re-verified live; WINDOWS #15 operator-confirmed). Phase 18: 7/7 ✓ closed 2026-09-06 (UAT 3/3 after gap closure G-18-1: real sessions write the session_start opener + tolerant legacy listing; Zed picker/resume/stop-mid-turn/delete operator-confirmed; TTY picker four legs re-run green on the fresh binary; cwd-scoped --resume deviation operator-accepted). Phase 21: 6/6 ✓ closed 2026-09-06 (UAT 4/4: AGENTS.md auto-inject + mtime pickup, thinking rendering, @-mention/image round-trip with D-11 loud model-side outcome, hook-deny live demo on the corrected dialect after an inconclusive first attempt — fail-open on schema-invalid hook JSON is by design).
 **Per-Plan Metrics:**
 
 | Plan | Duration | Tasks | Files |
@@ -179,6 +179,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-06T19:55:00Z
-Stopped at: Phase 18 complete (canonical verification passed, UAT 3/3); next — Phase 21 UAT closure + Phase 19 execution (manager session)
+Last session: 2026-09-06T20:06:00Z
+Stopped at: Phases 18 + 21 complete (operator UAT closed both); Phase 19 execution starting (manager session)
 Resume file: None

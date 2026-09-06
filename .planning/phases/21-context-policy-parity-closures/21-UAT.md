@@ -1,18 +1,14 @@
 ---
-status: testing
+status: complete
 phase: 21-context-policy-parity-closures
 source: [21-VERIFICATION.md]
 started: 2026-09-03T15:55:00Z
-updated: 2026-09-03T15:55:00Z
+updated: 2026-09-06T20:05:00Z
 ---
 
 ## Current Test
 
-number: 4
-name: Live hook-deny demonstration
-expected: |
-  A deny hook configured in .claude/settings.json (project scope) blocks the matching tool call in a real session with the hook's reason; repo-shipped settings never grant allow; a hook-ask on an automation turn declines (never a dialog nobody answers).
-awaiting: user response (RETEST with the correct output dialect — see note)
+[testing complete]
 
 ## Tests
 
@@ -33,15 +29,15 @@ note: "Operator 2026-09-06: Б3 @-mention PASS (agent read @note.txt content unp
 
 ### 4. Live hook-deny demonstration
 expected: A deny hook configured in .claude/settings.json (project scope) blocks the matching tool call in a real session with the hook's reason; repo-shipped settings never grant allow; a hook-ask on an automation turn declines (never a dialog nobody answers).
-result: [pending]
-note: "First attempt 2026-09-06 (Б5): command RAN — but the orchestrator's instruction used the WRONG output dialect ({\"decision\":\"block\"}); the implemented channels per internal/ecosys/hookverdict.go D-02 are hookSpecificOutput JSON (permissionDecision deny/ask/allow) or legacy exit-2. Schema-invalid JSON yields VerdictNone = fail-open BY DESIGN, so the run is inconclusive, not an agent defect. RETEST with the corrected file before recording an issue."
+result: pass
+note: "First attempt 2026-09-06 (Б5): command RAN — but the orchestrator's instruction used the WRONG output dialect ({\"decision\":\"block\"}); the implemented channels per internal/ecosys/hookverdict.go D-02 are hookSpecificOutput JSON (permissionDecision deny/ask/allow) or legacy exit-2. Schema-invalid JSON yields VerdictNone = fail-open BY DESIGN, so the run was inconclusive, not an agent defect. RETEST 2026-09-06 PASS (operator): corrected fixture ~/tmp/hook-deny-uat (PreToolUse matcher Bash, script prints {\"hookSpecificOutput\":{\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"UAT-21-T4: deny hook fired (correct dialect)\"}}) — the Bash call was blocked with the hook's reason in a live session."
 
 ## Summary
 
 total: 4
-passed: 3
+passed: 4
 issues: 0
-pending: 1
+pending: 0
 skipped: 0
 blocked: 0
 

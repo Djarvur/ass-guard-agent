@@ -1,31 +1,19 @@
 ---
 phase: 21-context-policy-parity-closures
-verified: 2026-09-03T23:40:26Z
-status: human_needed
+verified: 2026-09-06T20:05:00Z
+status: passed
 score: 5/5 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
-human_verification:
-  - test: "Start a fresh session in a live Zed editor inside a repo containing AGENTS.md (and/or CLAUDE.md at multiple levels plus a user-global file)"
-    expected: "The memory files' content is visible in the session's system context automatically with no manual step; editing a memory file and starting another session picks up the change (mtime re-read)"
-    why_human: "Requires a live editor session and operator-visible system context — the wiring is proven by memory_wiring_test.go but the operator-visible half of criterion 3 needs eyes on a real editor"
-  - test: "Run a thinking-enabled provider turn in Zed and watch the agent panel during the turn"
-    expected: "Extended thinking renders live as thought chunks (agent_thought_chunk frames) interleaved with the message stream"
-    why_human: "Frame emission is proven by TestThoughtForward through the real emitter chain, but rendering inside the Zed UI is external-service behavior no automated test can observe"
-  - test: "Paste an image and type an @-file mention into the Zed prompt, then submit"
-    expected: "The turn's outgoing request carries the corresponding image content block and the expanded mention section; the transcript shows lean Ref lines and a mention_provenance line"
-    why_human: "End-to-end paste round-trip through the real ACP client and editor — the code path is proven by TestImageCapability_ImageReachesOutgoingRequest and the TestMentionExpand battery, but the editor clipboard/mention UX needs a human"
-  - test: "Add a deny hook (e.g. a script emitting a hookSpecificOutput deny JSON, or an exit-2 script) to the repo's .claude/settings.json PreToolUse matcher for a tool, then trigger that tool call in a live session"
-    expected: "The tool call is blocked with the hook's reason surfaced as the structured denial; a project-scope ALLOW hook never widens trust (ignored-allow warning)"
-    why_human: "Live hook-deny demonstration requires a real editor session executing real subprocess hooks — the gate path is proven by TestGateHookVerdict and TestHookJoin_ProjectDenyThroughComposition, but the operator-visible denial in Zed needs a human"
+human_verification: [] # all four items closed by operator UAT 2026-09-06 — see "Human Verification Closure"
 ---
 
 # Phase 21: Context & Policy Parity Closures Verification Report
 
 **Phase Goal:** The content-path parity closures land as one coherent wave sharing two vehicles already built: hooks PreToolUse deny joins Phase 17's single gate pipeline (deny-only authority from project scope), AGENTS.md/CLAUDE.md auto-inject via the profile-copy merge, thinking streams end-to-end byte-identical, and rich prompt content (images, @-mentions) enters with ingress validation.
-**Verified:** 2026-09-03T23:40:26Z
-**Status:** human_needed
-**Re-verification:** No — initial verification
+**Verified:** 2026-09-06T20:05:00Z (canonicalized — machine verification 2026-09-03, human items closed 2026-09-06)
+**Status:** passed
+**Re-verification:** Human legs closed 2026-09-06 via operator UAT (incl. the corrected-dialect hook-deny retest)
 
 ## Goal Achievement
 
@@ -130,7 +118,17 @@ Four live-editor legs (detailed in frontmatter `human_verification`):
 
 No gaps. All five roadmap success criteria are verified in the codebase with behavioral test evidence; every prohibition holds with code + test proof; the locked-contract greps (2 gateCall sites, 1 verdict consumption, no second gate, zero executor consultation) all pass; build contracts (CGO_ENABLED=0, x/image v0.45.0, tidy clean) hold. Known non-gaps honored per the execution brief: `mise ci` lint drift (golangci go1.26/go1.27, WINDOWS ledger) and corpus_absent thinking goldens (WINDOWS #17, loud synthetic provenance header, field-value identity fully test-proven). The status is `human_needed` solely for the four live-editor legs above — automated checks passed on every touched package.
 
+## Human Verification Closure (2026-09-06)
+
+All four human legs closed by operator UAT on 2026-09-06 (recorded in `21-UAT.md`, status: complete — 4/4 passed, 0 issues):
+
+1. **AGENTS.md/CLAUDE.md auto-injection, live editor** — PASS (UAT test 1, Б1): rule from AGENTS.md followed unprompted in a fresh session; edits picked up on the next session (mtime re-read).
+2. **Thinking stream rendering in Zed** — PASS (UAT test 2, Б2): thought blocks render live during turns.
+3. **Image paste + @-mention round-trip** — PASS (UAT test 3, Б3/Б4): @-mention expanded and read (provenance on disk); image block carried with the Anthropic adapter (SupportsImages=true) and the text-only glm-5.2 scratch config produced the designed D-11 loud model-side outcome — pipeline correct; vision understanding is an operator config choice, not a defect.
+4. **Live hook-deny demonstration** — PASS (UAT test 4, retest): the first attempt (Б5) was inconclusive — the test instruction itself used the wrong output dialect (`{"decision":"block"}` is schema-invalid → VerdictNone → fail-open BY DESIGN). Retest with the corrected fixture (~/tmp/hook-deny-uat: PreToolUse matcher Bash, hookSpecificOutput permissionDecision deny) blocked the Bash call with the hook's reason in a live session. The project-scope-allow-never-widens-trust half is machine-proven (TestHookJoin_ProjectDenyThroughComposition, TestGateHookVerdict).
+
 ---
 
-_Verified: 2026-09-03T23:40:26Z_
-_Verifier: ZCode (gsd-verifier)_
+_Verified: 2026-09-06T20:05:00Z (canonicalized)_
+_Machine verification: 2026-09-03T23:40:26Z — ZCode (gsd-verifier)_
+_Human legs closed: 2026-09-06 — operator UAT, see 21-UAT.md_

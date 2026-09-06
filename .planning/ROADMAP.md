@@ -51,7 +51,7 @@ Operator decisions at close (2026-08-23…25): D-09 REVERSED (session resume = m
 - [x] **Phase 18: Session Family** - list / load-resume / close-delete with full replay and live-state reconciliation (completed 2026-09-06)
 - [ ] **Phase 19: Compaction + cache_control** - Threshold-triggered compaction marker plus parity-faithful cache_control emission
 - [ ] **Phase 20: Built-in Commands + Skills + Per-Agent Model** - Resolver chain, class-B/class-A command families, slash-invocable skills, per-agent model dispatch
-- [ ] **Phase 21: Context & Policy Parity Closures** - Hooks PreToolUse deny joining the gate pipeline, AGENTS.md injection, thinking streaming, rich prompt content
+- [x] **Phase 21: Context & Policy Parity Closures** - Hooks PreToolUse deny joining the gate pipeline, AGENTS.md injection, thinking streaming, rich prompt content (completed 2026-09-06)
 - [ ] **Phase 22: Background Execution + Sandbox Reality** - Full subagents, background Bash, persistent shell on shared process lifecycle; real sandbox
 - [ ] **Phase 23: SEED Gaps Close-out** - Steering queue, checkpoint restore guard, /undo
 - [ ] **Phase 24: Documentation & Ops Tails** - LSP doc requirement, outcome store, nightly CI, ecosystem end-to-end
@@ -489,7 +489,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 | 18. Session Family | v1.2 | 7/7 | Complete    | 2026-09-06 |
 | 19. Compaction + cache_control | v1.2 | 0/5 | Not started | - |
 | 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 0/6 | Planned | - |
-| 21. Context & Policy Parity Closures | v1.2 | 6/6 | In Progress|  |
+| 21. Context & Policy Parity Closures | v1.2 | 6/6 | Complete    | 2026-09-06 |
 | 22. Background Execution + Sandbox Reality | v1.2 | 0/? | Not started | - |
 | 23. SEED Gaps Close-out | v1.2 | 0/? | Not started | - |
 | 24. Documentation & Ops Tails | v1.2 | 0/? | Not started | - |
