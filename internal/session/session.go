@@ -488,6 +488,14 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 	// tool calls — the real-/opsx E2E gate burned through 16 in ~2 minutes
 	// (08-06 T2 finding). Still a runaway bound, not a license.
 	const maxIterations = 64 // bound the tool loop (runaway guard)
+
+	// 19-04 (PAR-01, criterion 3): the per-turn overflow retry guard — set at
+	// the FIRST forced-compact-and-resend and NEVER reset within the turn,
+	// across tool-loop iterations included (Pitfall 8: a second overflow
+	// fails the turn through the appendError path below; there is no loop
+	// around the retry, the maxIterations for carries the one resend).
+	overflowRetried := false
+
 	for range maxIterations {
 		err = ctx.Err()
 		if err != nil {
@@ -495,6 +503,15 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 
 			return stopCancelled, nil
 		}
+		// 19-04 (PAR-01, D-02): the pre-request compaction check, at the top
+		// of EVERY iteration — parent turns, tool-loop iterations,
+		// ask-resumes, and engine chains via sess.Prompt all pass through
+		// this head. Disabled settings skip entirely (zero delta); enabled +
+		// over threshold runs the BLOCKING compact before projection, so no
+		// half-compacted state is observable and no Projector race exists
+		// (D-07). D-09: compaction degrades internally and never fails the
+		// turn.
+		s.maybeCompact(ctx, turnID)
 		// Step 1: project the lean window (D-01/D-02).
 		messages, err := s.Projector.Project(turnID)
 		if err != nil {
@@ -516,6 +533,23 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 				s.recordCanceled(turnID, "context cancelled during stream")
 
 				return stopCancelled, nil
+			}
+
+			// 19-04 (PAR-01, criterion 3): the overflow retry-once intercept —
+			// BEFORE the appendError return. An overflow-classified error (19-02
+			// provider.IsOverflow) force-compacts (threshold bypass, the
+			// manual-intent class: NOT gated on the enabled flag — the retry is
+			// the backstop for estimation drift), then the existing for range
+			// carries exactly ONE re-projection + resend. compact honors D-09
+			// internally (a failed summarizer degrades to the warning-counter
+			// family and the resend still happens); a SECOND overflow finds the
+			// guard set and falls through to the error path unchanged. No loop
+			// wraps this — Pitfall 8.
+			if provider.IsOverflow(streamErr) && !overflowRetried {
+				overflowRetried = true
+				_ = s.compact(ctx, turnID)
+
+				continue
 			}
 
 			s.appendError(turnID, "provider", streamErr, false)
