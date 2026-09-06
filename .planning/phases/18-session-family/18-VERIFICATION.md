@@ -1,28 +1,19 @@
 ---
 phase: 18-session-family
-verified: 2026-09-03T17:24:03Z
-status: human_needed
+verified: 2026-09-06T19:55:00Z
+status: passed
 score: 7/7 must-haves verified
 behavior_unverified: 0 # every behavior-dependent truth has a passing named test the verifier ran itself
 overrides_applied: 0
-human_verification:
-  - test: "Zed-side session family UAT (18-04 coverage D6): open the editor's session picker, pick a past session, close a session mid-turn, delete one"
-    expected: "Picker lists past sessions with titles/updatedAt; opening one replays the full conversation; close stops a mid-turn session cleanly; delete makes the session vanish from the list while transcript + audit remain on disk under .ass-guard/"
-    why_human: "Live-editor rendering and interaction — no automation asserts Zed's rendering of the v1 wire shapes; the engine, RPC, capability advertisement, and replay ordering are machine-verified"
-  - test: "Interactive TTY/ssh picker check (18-06): run `ass-guard --resume` from a real terminal over ssh with past sessions in the store"
-    expected: "Numbered rows render readably on a real terminal, number selection resolves the target, invalid entry re-prompts once, EOF/second invalid exits non-zero with a clear error"
-    why_human: "The pipe-driven smoke covers the D-11 I/O mechanics (stdin line read, stderr rows) but not interactive terminal behavior over ssh; no raw-mode dependency exists but real-TTY rendering is unasserted"
-  - test: "Operator acknowledgment of the 18-06 documented deviation: `--resume <id|name>` resolution is cwd-scoped (per-directory store), not a cross-project registry like Claude Code's"
-    expected: "Operator accepts cwd-scoped resolution (clear not-found error naming the directory searched) or rules cross-project resolution required (new registry store design, a scope decision beyond Phase 18)"
-    why_human: "Explicit OPERATOR SIGN-OFF PENDING in the 18-06 plan deviation note — a product scope decision, not machine-checkable; roadmap criterion 3's 'works anywhere' was glossed as CLI-flag availability, which is delivered"
+human_verification: [] # all three items closed by operator UAT 2026-09-06 — see "Human Verification Closure"
 ---
 
 # Phase 18: Session Family Verification Report
 
 **Phase Goal:** Sessions become first-class objects the editor can enumerate and restore: list with pagination, load/resume with full replay plus live-state reconciliation (the hard part — dangling expectations get synthetic closure), and close/delete with tombstoning preserving the D-20 audit invariant.
-**Verified:** 2026-09-03T17:24:03Z
-**Status:** human_needed
-**Re-verification:** No — initial verification
+**Verified:** 2026-09-06T19:55:00Z (canonicalized — machine verification 2026-09-03, human items closed 2026-09-06)
+**Status:** passed
+**Re-verification:** Human items re-verified 2026-09-06 via operator UAT (G-18-1 picker re-run included)
 
 ## Goal Achievement
 
@@ -141,7 +132,18 @@ INFO (inherited, out of phase scope): review findings IN-01 (CLI replay frames p
 
 No gaps. All 7 merged must-have truths verified with code evidence and named tests the verifier executed itself (including the kill -9 matrix E2E against a real serve process and all five review-fix RED-first pins). All artifacts exist, are substantive, and are wired. All three requirements satisfied; no orphans. No debt markers. The D-20 audit invariant holds by exhaustive `os.Remove` grep. Status is `human_needed` solely for the three operator legs above — machine verification is complete and green.
 
+## Human Verification Closure (2026-09-06)
+
+All three human legs closed by operator UAT on 2026-09-06 (recorded in `18-UAT.md`, status: complete — 3/3 passed, 0 issues), against the fresh binary rebuilt after G-18-1's fix (18-07, commit 2a3cea7):
+
+1. **Zed-side session family UAT (18-04 D6)** — PASS (UAT test 1). Operator 2026-09-06: A1 list+resume+continue, A2 stop-mid-turn (no hang), A3 delete-vanishes-while-transcript+audit-survive-on-disk.
+2. **Interactive TTY/ssh picker check (18-06)** — PASS (UAT test 2, re-run after G-18-1 closure). Four legs on a real TTY in ~/tmp/perm-uat: both legacy user_message-opener transcripts enumerate (tolerant-opener path), number entry lands fully replayed session, Ctrl+C exits; pipe mode renders clean stderr (no ANSI garbage), EOF self-exit 0; negative entry re-prompts once then typed error; fresh Zed-created session writes session_start opener and lists as a third row.
+3. **Operator acknowledgment of the 18-06 cwd-scoped `--resume` deviation** — ACCEPTED (UAT test 3). Operator 2026-09-06: «устраивает».
+
+Gap G-18-1 (the blocker found by this UAT — real sessions never wrote the session_start opener) was resolved by 18-07 and picker-verified with the rebuilt binary; see the `## Gaps` section of `18-UAT.md`. Staleness note: this report's canonicalization post-dates 18-07-SUMMARY.md; the human legs above were re-executed against the post-18-07 binary, so the evidence is current for all seven plans.
+
 ---
 
-_Verified: 2026-09-03T17:24:03Z_
-_Verifier: ZCode (gsd-verifier)_
+_Verified: 2026-09-06T19:55:00Z (canonicalized)_
+_Machine verification: 2026-09-03T17:24:03Z — ZCode (gsd-verifier)_
+_Human legs closed: 2026-09-06 — operator UAT, see 18-UAT.md_

@@ -2,46 +2,46 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Claude Code Parity
-current_phase: 21
-current_phase_name: Context & Policy Parity Closures
-current_plan: 6
-status: verifying
+current_phase: 19
+current_phase_name: Compaction + cache_control
+current_plan: Not started
+status: planning
 stopped_at: "Completed 18-07-PLAN.md (G-18-1 gap closure: opener wired + tolerant listing)"
-last_updated: "2026-09-05T22:14:53.700Z"
-last_activity: 2026-09-03
-last_activity_desc: Phase 21 execution started
-state_head: fcbcbdad086ecd6909628aa307fbdbfba4318a2d
+last_updated: "2026-09-06T19:53:28.403Z"
+last_activity: 2026-09-06
+last_activity_desc: Phase 18 complete, transitioned to Phase 19
 progress:
   total_phases: 11
-  completed_phases: 3
+  completed_phases: 5
   total_plans: 71
   completed_plans: 35
-  percent: 27
+  percent: 45
+state_head: fcbcbdad086ecd6909628aa307fbdbfba4318a2d
 ---
 
 # State: ass-guard-agent (working name)
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-03)
+See: .planning/PROJECT.md (updated 2026-09-06)
 **Core value:** A hands-off coding agent that feels native in the editor: full SDD workflows run end-to-end without manual continues, and the agent surfaces through the client's own UX — clickable permission prompts, native file diffs, session management. (Pivoted 2026-08-25 from the mimicry bar.)
-**Current focus:** Phase 21 — Context & Policy Parity Closures
+**Current focus:** Phase 19 execution + Phase 21 UAT closure (manager-driven)
 
 ## Current Position
 
-Phase: 21 (Context & Policy Parity Closures) — EXECUTING
-Current Plan: 6
-Total Plans in Phase: 6
-Status: Phase complete — ready for verification
-Last activity: 2026-09-03 — Phase 21 execution started
+Phase: 19 — Compaction + cache_control
+Current Plan: 19-01 (5 plans ready, 0 executed)
+Total Plans in Phase: 5
+Status: Ready to execute
+Last activity: 2026-09-06 — Phase 18 complete, transitioned to Phase 19
 
-Progress: [██████░░░░░░░░░░░░░░░░] 22/70 plans ([███░░░░░░░] 27%)
+Progress: [██████████░░░░░░░░░░] 35/71 plans (49%)
 
 ## Performance Metrics
 
 **Velocity (v1.0 history, for calibration):** 36 plans / 8 phases in 6 days; `mise ci` gate green at every phase close. **v1.1:** 51 plans / 5 phases over ~7 active days.
 
-**By Phase (v1.2):** Phase 15: 7/7 ✓ closed 2026-08-27. Phase 16: 9/9 ✓ closed 2026-09-01 (UAT 4/4 passed — operator confirmed blob-tier override, cancel-keeps-session, per-turn hook concurrency; SECURITY verified threats_open: 0). Phase 17: 6/6 ✓ closed 2026-09-03 (UAT 4/4 after gap closure: permission round-trip + always-persistence both directions live-verified, native elicitation form + answer-landing; G-17-1 canonical-nested-outcome fix found by UAT and re-verified live; WINDOWS #15 operator-confirmed).
+**By Phase (v1.2):** Phase 15: 7/7 ✓ closed 2026-08-27. Phase 16: 9/9 ✓ closed 2026-09-01 (UAT 4/4 passed — operator confirmed blob-tier override, cancel-keeps-session, per-turn hook concurrency; SECURITY verified threats_open: 0). Phase 17: 6/6 ✓ closed 2026-09-03 (UAT 4/4 after gap closure: permission round-trip + always-persistence both directions live-verified, native elicitation form + answer-landing; G-17-1 canonical-nested-outcome fix found by UAT and re-verified live; WINDOWS #15 operator-confirmed). Phase 18: 7/7 ✓ closed 2026-09-06 (UAT 3/3 after gap closure G-18-1: real sessions write the session_start opener + tolerant legacy listing; Zed picker/resume/stop-mid-turn/delete operator-confirmed; TTY picker four legs re-run green on the fresh binary; cwd-scoped --resume deviation operator-accepted).
 **Per-Plan Metrics:**
 
 | Plan | Duration | Tasks | Files |
@@ -164,10 +164,9 @@ None yet.
 ### Blockers/Concerns
 
 - [RESEARCH FLAGS / planning-time]: Phases 16/18/19/22/23 flagged for `--research-phase` (ACP schema LOW-confidence details; resume reconciliation inventory; compaction × projector pins; platform drift; pi/strands steering references unverified). Full list in ROADMAP.md Research Flags section.
-- [Phase 15 UAT, deferred 2026-08-27]: Zed history-resume shows "Failed to Launch" — by-design v1 scope (loadSession:false); fix owned by Phase 18 Session Family (18-01/18-04), already planned. Do not re-diagnose as a Phase 15/16 regression.
 - [Phase 17 review, deferred 2026-09-03, operator non-blocking]: CR-04 — SetTurnOriginAutomation set before TryLock stays true while an automation turn queues/runs; overlapping foreground turns get ask-class calls D-07-declined instead of dialogs (fail-safe direction). Proper fix: per-turn origin. Evidence in 17-UAT.md Deferred Follow-Ups.
 - [Phase 17 review, deferred 2026-09-03, operator non-blocking, security-adjacent]: hasSubstitution (a710b75 rewrite, internal/perm/rules.go) dropped double-quote tracking — `git "log 'x $(cmd) y'"` under-detects live substitution and an allow rule can match a substitution-bearing command (WR-02 violation). Verified in live shell. Deserves a fix ticket in the next phase touching internal/perm.
-- [25-01 Task 3 precondition, 2026-08-28]: Phases 17-24 NOT executed (internal/perm, internal/tasks, internal/sandbox, internal/modesmatrix absent; only 15-16 landed) — 'strictly last' ordering violated, move inventory would be wrong. Executor halted BEFORE the rank-0 move; no kit/ paths created. Resolve by executing phases 17-24 first (then re-capture the test-ledger baseline) or by explicit operator override of the ROADMAP ordering.
+- [25-01 Task 3 precondition, updated 2026-09-06]: 'strictly last' ordering still binds Phase 25 — phases 19-24 remain unexecuted (17-18 have since landed; only 15-18 complete). Executor halted BEFORE the rank-0 move in 25-01; no kit/ paths created. Resolve by executing phases 19-24 first (then re-capture the test-ledger baseline) or by explicit operator override of the ROADMAP ordering.
 
 ## Deferred Items
 
@@ -180,6 +179,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-05T22:14:52.562Z
-Stopped at: Completed 18-07-PLAN.md (G-18-1 gap closure: opener wired + tolerant listing)
+Last session: 2026-09-06T19:55:00Z
+Stopped at: Phase 18 complete (canonical verification passed, UAT 3/3); next — Phase 21 UAT closure + Phase 19 execution (manager session)
 Resume file: None

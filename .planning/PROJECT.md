@@ -51,15 +51,14 @@ Delivered the hands-off OpenSpec promise end-to-end (zero-continue product proof
 - Multi-provider config & credentials (Phase 7 — PCFG-01..04, completes PROV-01): provider+model declarations with base URL, protocol shape (anthropic/openai), per-model capability/pricing metadata; credential resolution flag > env > config with `${VAR}` expansion; two-shape ProviderFactory wired at all three construction sites; lazy uncredentialed failure (typed structural error); 0600-perm hygiene warning + uncredentialed-provider warnings on stderr. Proven live: zero-env editor-spawned turn authenticating from config file.
 - Ecosystem discovery + MCP hosting (Phase 5 — ECOS-01/02/03/05): MCP servers hosted as robust subprocesses (process-group spawn, group-signal shutdown, reaper, tools/list re-fetch per connection); skills/commands/plugins discovered from `.claude/` (project + user) merged with `.ass-guard/` additions under explicit precedence, strictly read-only on `.claude/`.
 - Audit logging (Phase 1/2 — LOG-01, tracer-wired): redacted request logging via the tracer path with redactor. *Caveat carried: `--audit-log` is not written on the `acp serve` path — the tracer is wired through main.go; closing the acp-serve audit path is next-milestone material.*
+- Editor asks (Phase 17 — ACP-04 legs): permission asks ride `session/request_permission` with allow/reject × once/always semantics persisted as bare tool×project rules; engine asks ride `elicitation/create` forms — both on the AskBroker suspension pattern so human-timescale waits never hold locks. Live-verified in Zed both directions (allow + deny persistence, form answer-landing) after G-17-1 gap closure.
+- Session family (Phase 18 — ACP-05/06/07): sessions are first-class editor objects — `session/list` (header-scan + composite-cursor pagination + tombstone filter), `session/load` full replay through the ordered TurnEmitter plus live-state reconciliation (kill -9 leaves no ghost state: dangling tool_calls closed failed, parked asks synthetically resolved, ids continued from transcript maxima), `session/close`/`session/delete` with tombstoning that never rms (D-20 grep-proven), and `--resume`/`--continue` as CLI flags with a pipe-safe numbered picker. Operator-verified live in Zed + real TTY 2026-09-06 after G-18-1 gap closure (real sessions now write the session_start opener; legacy transcripts enumerate via tolerant opener). *Deviation accepted: `--resume <id|name>` resolution is cwd-scoped (per-directory store), not a cross-project registry.*
 
 ### Active
 
 **v1.2 — ACP completeness (priority 1)**
 
-- [ ] session/request_permission: clickable permission asks in Zed (allow/deny/always) replacing plain-text tool-gate prompts
-- [ ] elicitation/create: structured form asks surfaced through the editor
 - [ ] available_commands_update: editor-side slash-command autocomplete for discovered commands and skills (line types locked in Phase 16; the method itself lands in Phase 20)
-- [ ] session list/resume/close/delete family incl. --resume anywhere (operator must-have, D-09 reversal)
 
 **v1.2 — Built-in chat commands (priority 2)**
 
@@ -73,7 +72,7 @@ Delivered the hands-off OpenSpec promise end-to-end (zero-continue product proof
 
 **v1.2 — CC parity audit (priority 4)**
 
-- [ ] Close the 10 known divergences deliberately: compaction on context overflow; session resume; permissions UX (rides ACP-completeness); full subagents (Task tool w/ background agents + completion notifications); slash-command autocomplete in editor (rides ACP-completeness); hooks full lifecycle incl. PreToolUse deny path; AGENTS.md/CLAUDE.md auto-injection into system context; structured thinking blocks streamed to client; rich prompt content (@-file mentions, images); persistent-shell Bash option + background-completion notifications
+- [ ] Close the remaining known divergences deliberately: compaction on context overflow (Phase 19); full subagents (Task tool w/ background agents + completion notifications, Phase 22); slash-command autocomplete in editor (rides ACP-completeness, Phase 20); hooks full lifecycle incl. PreToolUse deny path (Phase 21); AGENTS.md/CLAUDE.md auto-injection into system context (Phase 21); structured thinking blocks streamed to client (Phase 21); rich prompt content (@-file mentions, images, Phase 21); persistent-shell Bash option + background-completion notifications (Phase 22). *(Closed: session resume — Phase 18; permissions UX — Phase 17.)*
 
 **v1.2 — SEED-004 gap fixes (priority 5)**
 
@@ -165,6 +164,8 @@ Delivered the hands-off OpenSpec promise end-to-end (zero-continue product proof
 | `_meta` blob fills are in-memory only; layer files stay operator-owned (Phase 16 D-10, operator-confirmed) | A redundant Zed re-push must never become persisted operator config, and a blob fill must never mutate files the operator owns — ownership boundary drawn at the layer files. | ✓ Good — UAT 2026-09-01 (blob-tier override accepted as product intent) |
 | Wire shapes pin to the canonical schema, and the test client models the REAL client (Phase 17 G-17-1 lesson) | A flat-string decode of the request_permission outcome passed the whole E2E battery because the simulator answered the same wrong shape — tests were green against a nonconformant client while live Zed failed every dialog answer. Canonical truth comes from the spec (agentclientprotocol.com schema), and simulator answers must mirror the real client's bytes, never our own codec. | ✓ Good — fixed by 17-06 gap closure (nested outcome, simulator corrected, flat shape now hard-rejected); found by live UAT 2026-09-03 |
 | Permission-dialog persistence is bare tool×project (Phase 17 D-01, operator-confirmed) | One Always-click persists the whole tool for the project; richer patterns (paths, prefixes) are hand-edit-only — the dialog never writes them. Keeps the trust store predictable and the UX honest about scope. | ✓ Good — live-verified both directions (allow + deny) 2026-09-03 |
+| Fixtures must model the real wire shape, never a hand-written fiction (Phase 18 G-18-1, the G-17-1 class) | The entire session-list battery was green while real transcripts never matched the fixture shape (real sessions didn't write the session_start opener — AppendSessionStart had zero production callers). RED pins must encode the shape production actually produces, or tests certify a fiction. | ✓ Good — fixed by 18-07 (opener wired + tolerant listing + real-shape pins); found by live picker UAT 2026-09-06 |
+| `--resume` resolution is cwd-scoped (Phase 18, operator-accepted deviation) | The per-directory `.ass-guard/` store is the unit of trust; a cross-project registry (Claude Code-style) would be a new store design beyond Phase 18's scope. Not-found errors name the directory searched. | ✓ Accepted — operator sign-off 2026-09-06 |
 
 ## Evolution
 
@@ -184,4 +185,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-09-03 after Phase 17 (Permissions + Elicitation) closed — clickable permission dialogs (allow/reject × once/always, persisted) + native elicitation forms shipped; UAT 4/4 after gap closure G-17-1 (canonical nested outcome, found by live UAT); WINDOWS #15 operator-confirmed*
+*Last updated: 2026-09-06 after Phase 18 (Session Family) closed — sessions are first-class editor objects (list with pagination, load/resume with kill -9-safe reconciliation, close/delete with tombstoning, --resume picker anywhere); UAT 3/3 after gap closure G-18-1 (real sessions now write the session_start opener; the G-17-1 fixture-fiction class again); Phase 17's ask surfaces also moved to Validated (left unchecked by its own transition)*
