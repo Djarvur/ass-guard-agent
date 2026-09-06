@@ -189,6 +189,13 @@ type Line struct {
 	CacheTokens int64    `json:"cacheTokens,omitempty"` //nolint:tagliatelle // on-disk format
 	PreRef      string   `json:"preRef,omitempty"`      //nolint:tagliatelle // on-disk format
 	PostRef     string   `json:"postRef,omitempty"`     //nolint:tagliatelle // on-disk format
+
+	// Summary is the compaction marker's on-disk summary payload (Phase 19,
+	// PAR-01/D-06): the text every post-marker projection seeds from until the
+	// next compaction replaces it. Field-additive under D-20's tolerant-reader
+	// discipline — a marker WITHOUT the field (pre-Phase-19 shape) parses with
+	// an empty Summary.
+	Summary string `json:"summary,omitempty"`
 }
 
 // selfGitignoreContent is the .ass-guard/.gitignore body (D-07): ignore

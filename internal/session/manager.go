@@ -380,15 +380,17 @@ func (m *Manager) AppendLocalCommand(turnID, key, args, expansion string, source
 	})
 }
 
-// AppendCompaction records a compaction boundary marker (D-21): a fresh
-// boundary id + the token-usage snapshot at the boundary (input/output/cache
-// totals) + opaque pre/post transcript pointers (what survived / where the
-// projected window resets). Phase 19 reconstructs the reset from the marker
-// alone. Metadata goes through the REDACTED path (not provider bytes).
-func (m *Manager) AppendCompaction(turnID, preRef, postRef string, input, output, cache int64) error {
+// AppendCompaction records a compaction boundary marker (D-21 + the Phase-19
+// summary payload, PAR-01): a fresh boundary id + the token-usage snapshot at
+// the boundary (input/output/cache totals) + opaque pre/post transcript
+// pointers (what survived / where the projected window resets) + the summary
+// text post-marker projections seed from (D-06 durable seed). The summary is
+// MODEL OUTPUT over tool content — it rides the REDACTED path like every
+// non-thinking kind (D-23's exemption is raw_thinking-only; T-19-05/06).
+func (m *Manager) AppendCompaction(turnID, preRef, postRef, summary string, input, output, cache int64) error {
 	return m.appendLine(&Line{
 		Type: TypeCompaction, TurnID: turnID, Timestamp: now(),
-		BoundaryID: uuidV4(), PreRef: preRef, PostRef: postRef,
+		BoundaryID: uuidV4(), PreRef: preRef, PostRef: postRef, Summary: summary,
 		InputTokens: input, OutputTokens: output, CacheTokens: cache,
 	})
 }
