@@ -4,10 +4,10 @@ milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 19
 current_phase_name: compaction-cache-control
-current_plan: 2
+current_plan: 3
 status: executing
-stopped_at: Completed 19-01-PLAN.md (cache_control emission; WINDOWS 5 closed)
-last_updated: "2026-09-06T20:32:36.034Z"
+stopped_at: Completed 19-02-PLAN.md (overflow surfacing + IsOverflow)
+last_updated: "2026-09-06T20:39:05.917Z"
 last_activity: 2026-09-06
 last_activity_desc: Phases 18 + 21 complete; Phase 19 execution next
 progress:
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-09-06)
 ## Current Position
 
 Phase: 19 (compaction-cache-control) — EXECUTING
-Current Plan: 2
+Current Plan: 3
 Total Plans in Phase: 5
 Status: Ready to execute
 Last activity: 2026-09-06 — Phase 19 execution started
@@ -82,6 +82,7 @@ Progress: [██████████░░░░░░░░░░] 35/71 p
 | Phase 21 P21-06 | 20 min | 2 tasks | 13 files |
 | Phase 18 P07 | 21 min | 2 tasks | 4 files |
 | Phase 19 P01 | 21 min | 3 tasks | 14 files |
+| Phase 19 P02 | 3 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -160,6 +161,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 19]: 19-01: cache_control storage is a profile-level presence flag (system_cache_control in profile.yaml) applied to every block at Load — the corpus value is 910/910 uniform so a bool carries full fidelity; no per-block sidecar channel exists — profile TextBlock carries the captured flag; the loader fans it out; the shaper emits — flag-off output provably byte-identical
 - [Phase 19]: 19-01: over the Anthropic 4-breakpoint cap the shaper keeps the LAST four flagged system blocks (deepest cache prefixes) — degrade pinned 3/4/5/6; the parity probe compares placement classes so it stays green under either policy — a 5th breakpoint would 400 every request once dynamic merges stack system blocks; keep-last-4 is the corpus-faithful accommodation
 - [Phase 19]: 19-01: the extractor derives the declaration by reusing ScanContextBehavior's system: placement class and extract-profile writes the yaml key — re-captures cannot lose the emission; probe baseline stayed byte-stable (D-12) — one detection implementation grounds both the decision census and the extraction; WINDOWS #5 closed (probe flip green on the committed pin fixture)
+- [Phase ?]: 19-02: non-2xx stream rejections surface as error chunks — bounded 8 KiB envelope read + close at the status-check site, ClassifyHTTP(anthropic, prof.Model, status, cause); malformed/empty bodies degrade to the generic structural error; drainSSE never sees a rejected body (Pitfall 1 closed)
+- [Phase ?]: 19-02: IsOverflow is a message-class matcher over *ProviderError (case-insensitive prompt-is-too-long contains over Error()), never a new ErrorKind — 400 stays KindStructural and the D-04 typed-Kind discipline holds; wording is A1 community-sourced, live re-verification is 19-04's E2E
 
 ### Pending Todos
 
@@ -183,6 +186,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-06T20:32:26.567Z
-Stopped at: Completed 19-01-PLAN.md (cache_control emission; WINDOWS 5 closed)
+Last session: 2026-09-06T20:39:05.850Z
+Stopped at: Completed 19-02-PLAN.md (overflow surfacing + IsOverflow)
 Resume file: None
