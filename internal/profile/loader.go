@@ -49,6 +49,17 @@ func (l *Loader) Load(name string) (Profile, error) {
 		return Profile{}, fmt.Errorf("profile %q system blocks: %w", name, err)
 	}
 
+	// PAR-02 (D-12): the profile-level system_cache_control declaration
+	// applies to EVERY system block — the corpus value is 910/910 uniform
+	// (a presence flag carries full fidelity) and the block files carry no
+	// per-block metadata channel, so the yaml key is the storage form and the
+	// block flag the runtime carrier the Shaper reads.
+	if p.SystemCacheControl {
+		for i := range blocks {
+			blocks[i].CacheControl = true
+		}
+	}
+
 	p.System = blocks
 
 	err = loadJSON(filepath.Join(dir, "tools.json"), &p.Tools)

@@ -255,7 +255,11 @@ func buildResult(m *ModelIO, path string) ExtractResult {
 
 	res.Model = strings.Trim(res.Model, `"`)
 	for _, b := range m.Request.Body.System {
-		res.System = append(res.System, TextBlock(b))
+		// Explicit field copy (not a struct conversion): profile.TextBlock
+		// carries the PAR-02 CacheControl presence flag the rollout-side
+		// SystemBlock does not model — the extracted block text/type is
+		// byte-faithful either way (TIER-1).
+		res.System = append(res.System, TextBlock{Type: b.Type, Text: b.Text})
 	}
 
 	for _, t := range m.ParsedTools() {

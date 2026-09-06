@@ -2,3 +2,4 @@ capture_work_dir: /tmp/zcode-recapture-ws
 max_tokens: 128000
 model: GLM-5.3
 name: zcode
+system_cache_control: true

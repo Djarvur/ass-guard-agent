@@ -37,6 +37,13 @@ type Profile struct {
 	// current session cwd). Empty = the profile declares no cwd-bearing
 	// runtime-composed content (no substitution happens).
 	CaptureWorkDir string `json:"capture_work_dir" yaml:"capture_work_dir"`
+	// SystemCacheControl declares (profile.yaml-level) that the captured
+	// target carried cache_control on EVERY system block (PAR-02, D-12: the
+	// corpus value is 910/910 uniform {"type":"ephemeral"} — a presence flag
+	// carries full fidelity). Load applies it to every system TextBlock after
+	// reading the block files; the Shaper emits the breakpoint per flagged
+	// block. Absent/false = no emission (pre-phase output byte-identical).
+	SystemCacheControl bool `json:"system_cache_control" yaml:"system_cache_control"`
 }
 
 // TextBlock is one entry of the Anthropic-shape system[] array. The Text is
@@ -44,6 +51,11 @@ type Profile struct {
 type TextBlock struct {
 	Type string `json:"type" yaml:"type"`
 	Text string `json:"text" yaml:"text"`
+	// CacheControl is the captured per-block cache_control presence (PAR-02,
+	// D-12): the corpus form is uniform {"type":"ephemeral"} on every system
+	// block, so a bool carries the full captured value. The zero value means
+	// no emission — old profiles shape byte-identically.
+	CacheControl bool `json:"cache_control,omitempty" yaml:"cache_control,omitempty"`
 }
 
 // Decl is a model-facing tool declaration. InputSchema is the verbatim captured

@@ -142,9 +142,19 @@ func ComposeRuntimeWorkDir(p *profile.Profile, sessionWorkDir string) {
 func (s *Shaper) Shape(
 	p *profile.Profile, messages []Message,
 ) (anthropic.MessageNewParams, []option.RequestOption, error) {
+	// PAR-02 (D-12): every flagged system block carries cache_control
+	// {"type":"ephemeral"} — the corpus-proven form (910/910 placements,
+	// system blocks only; never tools or messages). Profile-gated: an
+	// unflagged block keeps the zero CacheControl value, so profiles without
+	// the declaration shape byte-identically to the pre-emission output.
 	systemBlocks := make([]anthropic.TextBlockParam, 0, len(p.System))
 	for _, b := range p.System {
-		systemBlocks = append(systemBlocks, anthropic.TextBlockParam{Text: b.Text})
+		tb := anthropic.TextBlockParam{Text: b.Text}
+		if b.CacheControl {
+			tb.CacheControl = anthropic.NewCacheControlEphemeralParam()
+		}
+
+		systemBlocks = append(systemBlocks, tb)
 	}
 
 	msgParams, err := toMessageParams(messages)
