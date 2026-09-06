@@ -50,10 +50,10 @@ var parityRun = parity.Run //nolint:gochecknoglobals // test-injectable seam
 // a discovery error degrades to the captured-only composition). MCP tools
 // (mcp__<server>__<tool>) need a live host and are UNAVAILABLE offline: the
 // probe labels them absent and checks the captured-only tools composition.
-// The cache_control flags state TODAY'S truth — the shaper emits none
-// anywhere (14-03 CC-1, divergence-routed post-adoption); when the routed
-// emission fix lands, this seam derives the flags from the profile's
-// captured values instead.
+// The cache_control flags derive from the profile's captured values (19-01,
+// PAR-02): the same TextBlock.CacheControl field the Shaper emits from is
+// mirrored here — one source of truth for emission and verification, so the
+// standing placement-vs-pin verdict (WINDOWS #5) tracks the wire truth.
 var composeCacheProbeInput = func( //nolint:gochecknoglobals // test-injectable seam
 	prof *profile.Profile,
 ) parity.CacheComposition {
@@ -63,7 +63,7 @@ var composeCacheProbeInput = func( //nolint:gochecknoglobals // test-injectable 
 	}
 
 	for i, b := range prof.System {
-		comp.System[i] = parity.ProbeSystemBlock{Block: b}
+		comp.System[i] = parity.ProbeSystemBlock{Block: b, CacheControl: b.CacheControl}
 	}
 
 	for i, d := range prof.Tools {

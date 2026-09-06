@@ -357,10 +357,12 @@ func TestParityRun_CacheProbeWired(t *testing.T) { //nolint:paralleltest // swap
 }
 
 // TestParityRun_CacheProbeDefaultGap (Task 3, Test 9's default leg): the
-// DEFAULT composition reports today's wiring-time verdict — the shaper emits
-// no cache_control while the corpus pin carries it on system blocks; the
-// routed emission gap (14-03 CC-1, divergence-routed post-adoption) IS the
-// probe line's fact, with the system delta named.
+// DEFAULT composition over an UNFLAGGED profile (this fixture declares no
+// system_cache_control) reports the emission gap — no cache_control composed
+// while the corpus pin carries it on system blocks; the system delta IS the
+// probe line's fact. Post-19-01 the shipped zcode profile IS flagged (see
+// TestCacheProbe_PlacementFlip for the green leg); the gap verdict here pins
+// that an unflagged profile never places.
 func TestParityRun_CacheProbeDefaultGap(t *testing.T) { //nolint:paralleltest // swaps process-global seams + os.Stderr
 	fakeParityRun(t)
 
