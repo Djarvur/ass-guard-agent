@@ -19,16 +19,17 @@ import (
 // emit usage chunks or mid-stream errors, both load-bearing here). ---
 
 // compScript is one scripted Stream call: the chunks the fake delivers, in
-// order (usage → tool_use OR text → done), or a failure (callErr fails the
+// order (usage → tool_use(s) OR text → done), or a failure (callErr fails the
 // synchronous Stream; errChunk aborts mid-stream; hang blocks until ctx dies —
 // the timeout leg).
 type compScript struct {
-	text     string
-	usage    *provider.Usage
-	finish   string
-	errChunk error
-	callErr  error
-	hang     bool
+	text      string
+	toolCalls []provider.ToolCall
+	usage     *provider.Usage
+	finish    string
+	errChunk  error
+	callErr   error
+	hang      bool
 }
 
 // compactionProvider pops one script entry per Stream call (degrading to a
@@ -93,6 +94,16 @@ func (p *compactionProvider) Stream(
 
 		if s.usage != nil {
 			ch <- provider.StreamChunk{Type: "usage", Usage: s.usage}
+		}
+
+		for _, tc := range s.toolCalls {
+			tcCopy := tc
+			id := tc.ID
+			if id == "" {
+				id = tc.Name
+			}
+
+			ch <- provider.StreamChunk{Type: blockToolUse, ToolCall: &tcCopy, ToolCallID: id}
 		}
 
 		if s.text != "" {
@@ -223,6 +234,226 @@ func markersOf(t *testing.T, m *Manager) []Line {
 	}
 
 	return out
+}
+
+// overflowErr builds a 19-02 overflow-classified stream error: the community
+// 400 "prompt is too long" envelope riding KindStructural — what
+// provider.IsOverflow matches.
+func overflowErr() error {
+	return provider.ClassifyHTTP("anthropic", "parent-model", 400,
+		errors.New(`prompt is too long: 200936 tokens > 199999 maximum`))
+}
+
+// --- Task 2 battery: loop-head wiring, overflow retry-once, CompactNow ---
+
+// TestCompaction_OverflowRetryOnce pins criterion 3: an overflow-classified
+// stream error force-compacts (threshold bypass) and re-sends EXACTLY ONCE —
+// the recovery resend completes the turn; a second overflow in the SAME turn
+// reaches the existing appendError return with no further retry (Pitfall 8).
+func TestCompaction_OverflowRetryOnce(t *testing.T) {
+	t.Parallel()
+
+	t.Run("recovery: fail overflow, compact, resend, turn completes", func(t *testing.T) {
+		t.Parallel()
+
+		// Settings DISABLED on purpose: the retry is the backstop and fires
+		// regardless of the threshold gate (manual-intent class, D-11).
+		s, m, cp, _ := newCompactionTestSession(t, []compScript{
+			{callErr: overflowErr()},                     // 1: the turn's send — overflow
+			{text: "RECOVERED-SUMMARY", finish: stopEndTurn}, // 2: the forced compact's summarizer
+			{text: "all good now", finish: stopEndTurn},  // 3: the retry send
+		})
+
+		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "go"}})
+		if err != nil {
+			t.Fatalf("Prompt: %v (the retry must complete the turn)", err)
+		}
+
+		if stop != stopEndTurn {
+			t.Errorf("stop = %q; want end_turn", stop)
+		}
+
+		if got := len(markersOf(t, m)); got != 1 {
+			t.Errorf("markers = %d; want 1 (the forced compaction)", got)
+		}
+
+		if calls := cp.callCount(); calls != 3 {
+			t.Errorf("stream calls = %d; want 3 (fail, summarize, resend-once)", calls)
+		}
+	})
+
+	t.Run("fail-twice: the second overflow fails the turn, exactly one retry", func(t *testing.T) {
+		t.Parallel()
+
+		s, m, cp, _ := newCompactionTestSession(t, []compScript{
+			{callErr: overflowErr()},                         // 1: overflow → forced compact + retry
+			{text: "SUMMARY-BEFORE-RETRY", finish: stopEndTurn}, // 2: the compact's summarizer
+			{callErr: overflowErr()},                         // 3: the retry — overflow AGAIN
+			{text: "MUST-NEVER-RUN", finish: stopEndTurn},    // 4: a second retry must not exist
+		})
+		s.SetCompactionSettings(true, 80, 1000)
+
+		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "go"}})
+		if err == nil {
+			t.Fatal("Prompt error = nil; want the turn to FAIL on the second overflow")
+		}
+
+		if stop != "" {
+			t.Errorf("stop = %q; want empty on the failed turn", stop)
+		}
+
+		// The existing error path: an investigate-and-fix-ready provider
+		// error line lands in the transcript.
+		lines, rerr := m.ReadAll()
+		if rerr != nil {
+			t.Fatalf("ReadAll: %v", rerr)
+		}
+
+		hasProviderErr := false
+		for i := range lines {
+			if lines[i].Type == TypeError && lines[i].Component == "provider" {
+				hasProviderErr = true
+			}
+		}
+
+		if !hasProviderErr {
+			t.Error("transcript missing the provider error line (the existing appendError path)")
+		}
+
+		// EXACTLY one retry: one marker (the first overflow's compaction) and
+		// NO fourth call — the second overflow never re-compacts, never
+		// re-sends (Pitfall 8's unbounded loop).
+		if got := len(markersOf(t, m)); got != 1 {
+			t.Errorf("markers = %d; want 1 (the retry's compaction alone)", got)
+		}
+
+		if calls := cp.callCount(); calls != 3 {
+			t.Errorf("stream calls = %d; want 3 (fail, summarize, fail — no second retry)", calls)
+		}
+	})
+}
+
+// TestCompaction_LoopHead pins D-02: the pre-request check runs at the top of
+// EVERY maxIterations iteration — an enabled multi-iteration turn (tool loop)
+// counts one check per iteration — while disabled settings skip the check
+// entirely (zero invocations, zero notes: zero behavior delta).
+func TestCompaction_LoopHead(t *testing.T) {
+	t.Parallel()
+
+	// A two-iteration turn: iteration 1 returns a tool call (the stub
+	// executor answers it, looping), iteration 2 ends the turn.
+	script := []compScript{
+		{
+			toolCalls: []provider.ToolCall{{ID: "call_lh", Name: toolRead,
+				Input: json.RawMessage(`{"file_path":"a.txt"}`)}},
+			finish: blockToolUse,
+		},
+		{text: "done", finish: stopEndTurn},
+	}
+
+	t.Run("enabled: one check per iteration", func(t *testing.T) {
+		t.Parallel()
+
+		s, _, _, _ := newCompactionTestSession(t, script)
+		s.SetCompactionSettings(true, 80, 1_000_000) // enabled, far from firing
+
+		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "go"}})
+		if err != nil {
+			t.Fatalf("Prompt: %v", err)
+		}
+
+		if stop != stopEndTurn {
+			t.Fatalf("stop = %q; want end_turn (fixture broken)", stop)
+		}
+
+		if got := s.compactionChecks.Load(); got != 2 {
+			t.Errorf("check invocations = %d; want 2 (one per loop iteration, D-02)", got)
+		}
+	})
+
+	t.Run("disabled: skipped entirely", func(t *testing.T) {
+		t.Parallel()
+
+		s, _, cp, _ := newCompactionTestSession(t, script)
+
+		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "go"}})
+		if err != nil {
+			t.Fatalf("Prompt: %v", err)
+		}
+
+		if stop != stopEndTurn {
+			t.Fatalf("stop = %q; want end_turn (fixture broken)", stop)
+		}
+
+		if got := s.compactionChecks.Load(); got != 0 {
+			t.Errorf("check invocations = %d; want 0 (disabled skips entirely)", got)
+		}
+
+		if got := s.compactionNotes.Load(); got != 0 {
+			t.Errorf("note emissions = %d; want 0 (disabled never compacts)", got)
+		}
+
+		if calls := cp.callCount(); calls != 2 {
+			t.Errorf("stream calls = %d; want 2 (only the turn's own sends — zero compaction)", calls)
+		}
+	})
+}
+
+// TestCompactNow pins D-11: the manual entry compacts immediately regardless
+// of the threshold or the enabled flag, appends the same marker shape, and
+// returns the outcome (nil on the D-09 degrade) — the single public entry
+// Phase 20's /compact handler calls.
+func TestCompactNow(t *testing.T) {
+	t.Parallel()
+
+	s, m, _, _ := newCompactionTestSession(t, []compScript{
+		{text: "turn one reply", finish: stopEndTurn}, // the Prompt turn's own send
+		{text: "MANUAL-SUMMARY", usage: &provider.Usage{InputTokens: 30, OutputTokens: 12},
+			finish: stopEndTurn}, // CompactNow's summarizer
+	})
+
+	// One turn first so the marker's turn attribution is observable, with
+	// compaction DISABLED and the usage far under any threshold.
+	stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "hi"}})
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+
+	if stop != stopEndTurn {
+		t.Fatalf("stop = %q; want end_turn (fixture broken)", stop)
+	}
+
+	s.lastInputTokens.Store(42) // the anchor the marker snapshots
+
+	if err := s.CompactNow(context.Background()); err != nil {
+		t.Fatalf("CompactNow: %v (nil on success AND on the D-09 degrade)", err)
+	}
+
+	mk := markersOf(t, m)
+	if len(mk) != 1 {
+		t.Fatalf("markers = %d; want 1 (manual intent overrides the gates)", len(mk))
+	}
+
+	marker := mk[0]
+	if marker.Summary != "MANUAL-SUMMARY" {
+		t.Errorf("marker summary = %q; want MANUAL-SUMMARY (the same machinery)", marker.Summary)
+	}
+
+	if marker.TurnID != "s-comp-turn-001" {
+		t.Errorf("marker turnID = %q; want the current turn (attribution)", marker.TurnID)
+	}
+
+	if marker.InputTokens != 42 {
+		t.Errorf("marker input snapshot = %d; want 42 (the trigger anchor)", marker.InputTokens)
+	}
+
+	if marker.PreRef == "" || marker.PostRef == "" {
+		t.Errorf("marker pointers = (%q, %q); want both set (the D-21 shape)", marker.PreRef, marker.PostRef)
+	}
+
+	if got := s.compactionNotes.Load(); got != 1 {
+		t.Errorf("note emissions = %d; want 1 (exactly one per compaction start)", got)
+	}
 }
 
 // --- Task 1 battery: threshold math, D-09 degrade, chaining, bus isolation ---
