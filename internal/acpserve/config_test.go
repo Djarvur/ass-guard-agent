@@ -37,6 +37,8 @@ const (
 	testPermGated        = "gated"
 	testCompactionBlob   = "65"
 	testCompactionDefval = "80"
+	testCompactionOn     = "on"
+	testCompactionOff    = "off"
 )
 
 // surfaceFixture is one ConfigSurface over temp layer paths with a recording
@@ -127,14 +129,14 @@ func optionByID(t *testing.T, opts []acp.ConfigOptionFrame, id string) acp.Confi
 	return acp.ConfigOptionFrame{}
 }
 
-// assertFullMenu pins the menu SIZE (ten entries since 18-04 added the
-// tombstone-grace pair); per-option shape/value pins live in the per-option
-// tests.
+// assertFullMenu pins the menu SIZE (twelve entries since 19-05 added the
+// compaction-enabled pair); per-option shape/value pins live in the
+// per-option tests.
 func assertFullMenu(t *testing.T, opts []acp.ConfigOptionFrame, where string) {
 	t.Helper()
 
-	if len(opts) != 10 {
-		t.Fatalf("%s: options = %d; want the ten-entry menu", where, len(opts))
+	if len(opts) != 12 {
+		t.Fatalf("%s: options = %d; want the twelve-entry menu", where, len(opts))
 	}
 }
 
@@ -187,12 +189,19 @@ func TestConfigSurface_MenuDefaults(t *testing.T) {
 
 	comp := optionByID(t, opts, optCompactionThresh)
 	if comp.Category != "_custom" || comp.CurrentValue != testCompactionDefval {
-		t.Errorf("compaction-threshold = %q/%q; want _custom/80 (the pending default)",
+		t.Errorf("compaction-threshold = %q/%q; want _custom/80 (the floor default)",
 			comp.Category, comp.CurrentValue)
 	}
 
+	compEn := optionByID(t, opts, optCompactionEnabled)
+	if compEn.Category != "_custom" || compEn.CurrentValue != testCompactionOn {
+		t.Errorf("compaction-enabled = %q/%q; want _custom/on (the floor default)",
+			compEn.Category, compEn.CurrentValue)
+	}
+
 	globalTwins := []string{
-		"_global/model", "_global/tier", "_global/permissions.mode", "_global/compaction-threshold",
+		"_global/model", "_global/tier", "_global/permissions.mode",
+		"_global/compaction-threshold", "_global/compaction-enabled",
 	}
 
 	for _, id := range globalTwins {
@@ -365,48 +374,280 @@ func TestConfigSurface_SetPersistsThroughLoader(t *testing.T) {
 	}
 }
 
-func TestConfigSurface_PendingNoOp_Compaction(t *testing.T) {
+// compactionApply is one recorded compaction live-apply firing (the wired
+// fixture's hook record).
+type compactionApply struct {
+	enabled bool
+	pct     int
+}
+
+// compactionWiredFixture extends the surface fixture with the 19-05 compaction
+// live-apply hook (the composition's SetCompactionHook wiring), recording the
+// layer content AT APPLY TIME — the persist-BEFORE-apply ordering observed as
+// "the file already carries the new value when the hook runs" (the
+// TestPermissionsModeFlip wired-fixture precedent).
+type compactionWiredFixture struct {
+	*surfaceFixture
+
+	mu           sync.Mutex
+	applied      []compactionApply
+	layerAtApply []string
+}
+
+func newCompactionWired(t *testing.T) *compactionWiredFixture {
+	t.Helper()
+
+	w := &compactionWiredFixture{surfaceFixture: newSurfaceFixture(t)}
+
+	w.surface.SetCompactionHook(func(enabled bool, pct int) error {
+		w.mu.Lock()
+		defer w.mu.Unlock()
+
+		raw, rerr := os.ReadFile(w.projectPath)
+		if rerr != nil {
+			w.layerAtApply = append(w.layerAtApply, "READ-FAIL:"+rerr.Error())
+		} else {
+			w.layerAtApply = append(w.layerAtApply, string(raw))
+		}
+
+		w.applied = append(w.applied, compactionApply{enabled: enabled, pct: pct})
+
+		return nil
+	})
+
+	return w
+}
+
+func (w *compactionWiredFixture) applies() []compactionApply {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	return append([]compactionApply(nil), w.applied...)
+}
+
+// TestCompactionOptions pins the REAL compaction handlers (19-05/D-03 —
+// Phase 16's rule: advertise all, effective values advertised,
+// validation-first, persist-then-apply, D-10 idempotent re-push, scope
+// routing, pending branch removed). The live composition proof (menu write →
+// running session's next pre-request comparison) is
+// TestCompactionLive_MenuThresholdRoundTrip below; the session-side
+// comparison half is TestCompaction_SettingsFromConfig (internal/session).
+//
+//nolint:funlen,gocognit,gocyclo,cyclop // one battery over the six behaviors
+func TestCompactionOptions(t *testing.T) {
 	t.Parallel()
 
-	f := newSurfaceFixture(t)
+	t.Run("advertisement: effective values through the layer chain", func(t *testing.T) {
+		t.Parallel()
 
-	before := f.notifyCount()
+		f := newSurfaceFixture(t)
+		writeLayer(t, f.projectPath, "compaction:\n  threshold_pct: 60\n")
+		writeLayer(t, f.globalPath, "compaction:\n  threshold_pct: 95\n")
 
-	opts, err := f.surface.Set("sess-1", optCompactionThresh, testCompactionBlob)
-	if err != nil {
-		t.Fatalf("Set(pending compaction-threshold): %v (D-05: accepted no-op, never an error)", err)
-	}
+		opts := f.surface.Options()
+		assertFullMenu(t, opts, "compaction advertisement")
 
-	assertFullMenu(t, opts, "pending response")
-
-	if got := optionByID(t, opts, optCompactionThresh).CurrentValue; got != testCompactionDefval {
-		t.Errorf("compaction-threshold currentValue = %q; want UNCHANGED %q", got, testCompactionDefval)
-	}
-
-	if f.notifyCount() != before {
-		t.Error("pending no-op emitted a config_option_update (nothing changed)")
-	}
-
-	if got := f.stderr.String(); !strings.Contains(got, "pending") {
-		t.Errorf("pending set not logged (stderr=%q)", got)
-	}
-
-	// No layer file was created by a pending id.
-	_, statErr := os.Stat(f.projectPath)
-	if !os.IsNotExist(statErr) {
-		t.Error("pending no-op wrote a layer file (pending ids never persist)")
-	}
-
-	// permissions.mode is NO LONGER a pending id (the real handler landed in
-	// 17-02): its pending-handler log line is gone from the surface behavior.
-	f2 := newSurfaceFixture(t)
-
-	_, setErr := f2.surface.Set("sess-1", optPermissionsMode, testPermGated)
-	if setErr == nil {
-		if got := f2.stderr.String(); strings.Contains(got, "pending handler") {
-			t.Error("permissions.mode still logs the pending-handler line (the real handler must own it)")
+		if got := optionByID(t, opts, optCompactionThresh).CurrentValue; got != "60" {
+			t.Errorf("threshold currentValue = %q; want 60 (explicit project wins)", got)
 		}
-	}
+
+		if got := optionByID(t, opts, optGlobalPrefix+optCompactionThresh).CurrentValue; got != "95" {
+			t.Errorf("_global/threshold currentValue = %q; want 95 (the global layer's own value)", got)
+		}
+
+		if got := optionByID(t, opts, optCompactionEnabled).CurrentValue; got != testCompactionOn {
+			t.Errorf("enabled currentValue = %q; want on (default with neither layer setting it)", got)
+		}
+	})
+
+	t.Run("valid threshold set: persist-then-apply with the effective pair", func(t *testing.T) {
+		t.Parallel()
+
+		w := newCompactionWired(t)
+		before := w.notifyCount()
+
+		opts, err := w.surface.Set("sess-1", optCompactionThresh, "60")
+		if err != nil {
+			t.Fatalf("Set(compaction-threshold=60): %v", err)
+		}
+
+		assertFullMenu(t, opts, "threshold set response")
+
+		if got := optionByID(t, opts, optCompactionThresh).CurrentValue; got != "60" {
+			t.Errorf("refreshed threshold currentValue = %q; want 60", got)
+		}
+
+		applies := w.applies()
+		if len(applies) != 1 || !applies[0].enabled || applies[0].pct != 60 {
+			t.Fatalf("applies = %+v; want exactly [(true, 60)]", applies)
+		}
+
+		if got := w.layerAtApply[0]; !strings.Contains(got, "threshold_pct: 60") {
+			t.Errorf("layer at apply time = %q; want it to already carry the persisted value (D-07)", got)
+		}
+
+		if w.notifyCount() != before+1 {
+			t.Error("applied write did not emit the out-of-band config_option_update")
+		}
+
+		if got := w.stderr.String(); strings.Contains(got, "pending") {
+			t.Errorf("a handled id logged the pending-handler line (stderr=%q)", got)
+		}
+	})
+
+	t.Run("valid enabled set: off persists and applies (false, 80)", func(t *testing.T) {
+		t.Parallel()
+
+		w := newCompactionWired(t)
+
+		opts, err := w.surface.Set("sess-1", optCompactionEnabled, testCompactionOff)
+		if err != nil {
+			t.Fatalf("Set(compaction-enabled=off): %v", err)
+		}
+
+		if got := optionByID(t, opts, optCompactionEnabled).CurrentValue; got != testCompactionOff {
+			t.Errorf("refreshed enabled currentValue = %q; want off", got)
+		}
+
+		applies := w.applies()
+		if len(applies) != 1 || applies[0].enabled || applies[0].pct != 80 {
+			t.Fatalf("applies = %+v; want exactly [(false, 80)] (the pair, not just the written id)", applies)
+		}
+
+		if got := w.layerAtApply[0]; !strings.Contains(got, "enabled: false") {
+			t.Errorf("layer at apply time = %q; want it to already carry enabled: false", got)
+		}
+	})
+
+	t.Run("out-of-range values typed-rejected BEFORE any write", func(t *testing.T) {
+		t.Parallel()
+
+		w := newCompactionWired(t)
+		before := w.notifyCount()
+
+		for _, bad := range []string{"0", "-5", "101", "abc"} {
+			_, err := w.surface.Set("sess-1", optCompactionThresh, bad)
+			if err == nil {
+				t.Fatalf("Set(threshold=%q) succeeded; want the typed 1..100 reject", bad)
+			}
+
+			var violation *acp.ConfigViolationError
+			if !errors.As(err, &violation) {
+				t.Fatalf("Set(threshold=%q) error = %T; want *ConfigViolationError", bad, err)
+			}
+
+			if violation.OptionID != optCompactionThresh {
+				t.Errorf("violation option = %q; want %q (the option key in the error data)", violation.OptionID, optCompactionThresh)
+			}
+		}
+
+		_, err := w.surface.Set("sess-1", optCompactionEnabled, "maybe")
+		if err == nil {
+			t.Fatal("Set(enabled=maybe) succeeded; want the offered-options reject")
+		}
+
+		if applies := w.applies(); len(applies) != 0 {
+			t.Errorf("a rejected value reached live apply (%+v)", applies)
+		}
+
+		_, statErr := os.Stat(w.projectPath)
+		if !os.IsNotExist(statErr) {
+			t.Error("a rejected value wrote a layer file (validation must precede the write)")
+		}
+
+		if w.notifyCount() != before {
+			t.Error("a rejected value emitted the out-of-band update")
+		}
+	})
+
+	t.Run("idempotent re-push of the effective value: no layer write", func(t *testing.T) {
+		t.Parallel()
+
+		f := newSurfaceFixture(t)
+		before := f.notifyCount()
+
+		opts, err := f.surface.Set("sess-1", optCompactionThresh, testCompactionDefval)
+		if err != nil {
+			t.Fatalf("Set(threshold=80 = the effective default): %v", err)
+		}
+
+		if got := optionByID(t, opts, optCompactionThresh).CurrentValue; got != testCompactionDefval {
+			t.Errorf("refreshed currentValue = %q; want 80", got)
+		}
+
+		if got := f.stderr.String(); !strings.Contains(got, "idempotent") {
+			t.Errorf("the idempotent no-op was not logged (stderr=%q)", got)
+		}
+
+		_, statErr := os.Stat(f.projectPath)
+		if !os.IsNotExist(statErr) {
+			t.Error("the idempotent re-push churned a layer file (D-10)")
+		}
+
+		if f.notifyCount() != before {
+			t.Error("the idempotent re-push emitted the out-of-band update")
+		}
+	})
+
+	t.Run("scope routing: the _global twins write the global layer", func(t *testing.T) {
+		t.Parallel()
+
+		w := newCompactionWired(t)
+
+		if _, err := w.surface.Set("sess-1", optGlobalPrefix+optCompactionThresh, "95"); err != nil {
+			t.Fatalf("Set(_global/threshold=95): %v", err)
+		}
+
+		if _, err := w.surface.Set("sess-1", optGlobalPrefix+optCompactionEnabled, testCompactionOff); err != nil {
+			t.Fatalf("Set(_global/enabled=off): %v", err)
+		}
+
+		raw, rerr := os.ReadFile(w.globalPath)
+		if rerr != nil {
+			t.Fatalf("read global layer: %v", rerr)
+		}
+
+		if !strings.Contains(string(raw), "threshold_pct: 95") || !strings.Contains(string(raw), "enabled: false") {
+			t.Errorf("global layer = %q; want both compaction writes", raw)
+		}
+
+		if _, statErr := os.Stat(w.projectPath); !os.IsNotExist(statErr) {
+			t.Error("a global-scoped write touched the project layer (16-05's routing rule)")
+		}
+
+		// The combined advertisement follows the writes (no project compaction
+		// keys — the global layer wins over the floor).
+		opts := w.surface.Options()
+
+		if got := optionByID(t, opts, optCompactionThresh).CurrentValue; got != "95" {
+			t.Errorf("bare threshold currentValue = %q; want 95 (global over floor)", got)
+		}
+
+		if got := optionByID(t, opts, optCompactionEnabled).CurrentValue; got != testCompactionOff {
+			t.Errorf("bare enabled currentValue = %q; want off (global over floor)", got)
+		}
+	})
+
+	t.Run("round-trip invariant: the menu-written threshold is the applied value", func(t *testing.T) {
+		t.Parallel()
+
+		w := newCompactionWired(t)
+
+		if _, err := w.surface.Set("sess-1", optCompactionThresh, "60"); err != nil {
+			t.Fatalf("Set(threshold=60): %v", err)
+		}
+
+		applies := w.applies()
+		if len(applies) != 1 || applies[0].pct != 60 {
+			t.Fatalf("applies = %+v; want the applied threshold 60 (the comparison value)", applies)
+		}
+
+		// The pair's OTHER leg resolves from the layers — enabled stays the
+		// floor's true (no layer or fill sets it).
+		if !applies[0].enabled {
+			t.Errorf("applies = %+v; want enabled=true resolved from the effective chain", applies)
+		}
+	})
 }
 
 // TestPermissionsModeFlip pins the REAL permissions.mode handler (17-02,
@@ -1070,10 +1311,13 @@ func readLayerBytes(t *testing.T, path string) string {
 
 // sseModelStub is a recording SSE stub: it parses each request body's model
 // and can hold the FIRST request open (the controllable in-flight request for
-// the mid-turn case).
+// the mid-turn case). inputTokens (when > 0) replaces the default 5-token
+// usage figure — the 19-05 compaction E2E pins raise it against the floor's
+// 200K context window.
 type sseModelStub struct {
 	mu           sync.Mutex
 	models       []string
+	inputTokens  int64
 	delayFirst   time.Duration
 	inFlight     chan struct{}
 	inFlightOnce sync.Once
@@ -1087,6 +1331,9 @@ func newSSEModelStub(t *testing.T, delayFirst time.Duration) *sseModelStub {
 
 	st.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, rerr := io.ReadAll(r.Body)
+
+		inTok := int64(5)
+
 		if rerr == nil {
 			var req struct {
 				Model string `json:"model"`
@@ -1096,6 +1343,11 @@ func newSSEModelStub(t *testing.T, delayFirst time.Duration) *sseModelStub {
 				st.mu.Lock()
 				first := len(st.models) == 0
 				st.models = append(st.models, req.Model)
+
+				if st.inputTokens > 0 {
+					inTok = st.inputTokens
+				}
+
 				st.mu.Unlock()
 
 				if first && st.delayFirst > 0 {
@@ -1110,7 +1362,7 @@ func newSSEModelStub(t *testing.T, delayFirst time.Duration) *sseModelStub {
 		flusher, _ := w.(http.Flusher)
 
 		for _, frame := range []string{
-			`{"type":"message_start","message":{"usage":{"input_tokens":5,"output_tokens":1}}}`,
+			`{"type":"message_start","message":{"usage":{"input_tokens":` + strconv.FormatInt(inTok, 10) + `,"output_tokens":1}}}`,
 			`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
 			`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"ok"}}`,
 			`{"type":"content_block_stop","index":0}`,
@@ -1468,4 +1720,158 @@ func TestTierSwitch_CrossProvider(t *testing.T) { //nolint:paralleltest // runLi
 	if got := stderr.String(); !strings.Contains(got, "live apply SKIPPED") {
 		t.Errorf("cross-provider tier switch not loudly logged (stderr=%q)", got)
 	}
+}
+
+// --- 19-05 Task 2: the compaction live-apply proofs over a real serve ---
+//
+// TestCompactionLive_BootDefaults and TestCompactionLive_MenuThresholdRoundTrip
+// drive acpserve.Run end-to-end against a usage-reporting SSE stub: the boot
+// test proves the session's settings initialized from the modelrouting-loaded
+// floor (enabled/80/200K) with no menu interaction at all; the round-trip test
+// is the assumption-delta companion — a threshold written through the menu is
+// provably the value the running session's next pre-request check compares
+// against, observed as the compaction marker on disk.
+
+// pollTurnResponse waits for the session/prompt response frame (stopReason)
+// and fails on an error response.
+func pollTurnResponse(t *testing.T, stdout *syncBuffer, id string) {
+	t.Helper()
+
+	deadline := time.Now().Add(15 * time.Second)
+
+	for time.Now().Before(deadline) {
+		for line := range strings.SplitSeq(stdout.String(), "\n") {
+			if !strings.Contains(line, `"id":`+id+`,`) {
+				continue
+			}
+
+			if strings.Contains(line, `"stopReason"`) {
+				return
+			}
+
+			t.Fatalf("prompt response (id=%s) was an error: %.400s", id, line)
+		}
+
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	t.Fatalf("prompt response (id=%s) never arrived; stdout tail: %.600s", id, stdout.String())
+}
+
+// compactionMarkersIn counts the transcript's compaction marker lines. The
+// marker lands SYNCHRONOUSLY (Manager.AppendCompaction inside compact), so a
+// count is decided the moment the check ran — no async-writer race.
+func compactionMarkersIn(t *testing.T, workDir, sessionID string) int {
+	t.Helper()
+
+	raw, err := os.ReadFile(filepath.Join(workDir, ".ass-guard", "transcript_"+sessionID+".jsonl"))
+	if err != nil {
+		return 0
+	}
+
+	count := 0
+
+	for line := range strings.SplitSeq(string(raw), "\n") {
+		if line == "" {
+			continue
+		}
+
+		var l session.Line
+
+		if json.Unmarshal([]byte(line), &l) == nil && l.Type == "compaction" {
+			count++
+		}
+	}
+
+	return count
+}
+
+// waitForCompactionMarkers polls until n compaction markers exist.
+func waitForCompactionMarkers(t *testing.T, workDir, sessionID string, n int) {
+	t.Helper()
+
+	deadline := time.Now().Add(15 * time.Second)
+
+	for time.Now().Before(deadline) {
+		if compactionMarkersIn(t, workDir, sessionID) >= n {
+			return
+		}
+
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	t.Fatalf("only saw fewer than %d compaction markers within 15s", n)
+}
+
+// liveCompactionPrompt sends one session/prompt and waits for its response.
+func liveCompactionPrompt(t *testing.T, inPipeW *io.PipeWriter, stdout *syncBuffer, id int, sid, text string) {
+	t.Helper()
+
+	writeServeLine(t, inPipeW, `{"jsonrpc":"2.0","id":`+strconv.Itoa(id)+
+		`,"method":"session/prompt","params":{"sessionId":"`+sid+
+		`","prompt":[{"type":"text","text":"`+text+`"}]}}`)
+
+	pollTurnResponse(t, stdout, strconv.Itoa(id))
+}
+
+// TestCompactionLive_BootDefaults: the stub reports 85% of the floor's 200K
+// context window per turn. Turn 2's pre-request check must fire at the BOOT
+// defaults (enabled/80%) — proving the session's settings initialized from the
+// modelrouting-loaded effective values at construction, with no menu
+// interaction anywhere.
+func TestCompactionLive_BootDefaults(t *testing.T) { //nolint:paralleltest // runLiveApplyServe uses t.Setenv
+	stub := newSSEModelStub(t, 0)
+	stub.inputTokens = 170_000 // 85% of 200K: under no threshold, over the 80% boot default
+
+	workDir := liveApplyConfig(t, stub.srv.URL, "")
+	inPipeW, stdout, _ := runLiveApplyServe(t, workDir)
+
+	sid := startLiveApplySession(t, inPipeW, stdout)
+
+	liveCompactionPrompt(t, inPipeW, stdout, 2, sid, "hi")       // usage recorded; lastInput 0 fires nothing
+	liveCompactionPrompt(t, inPipeW, stdout, 3, sid, "again")    // 170K >= 80% of 200K — fires
+
+	waitForCompactionMarkers(t, workDir, sid, 1)
+}
+
+// TestCompactionLive_MenuThresholdRoundTrip: the assumption-delta companion.
+// The stub reports 50% of the 200K window per turn: under the 80% boot
+// default and a menu-written 95, over a menu-written 40. The no-fire/fire pair
+// at constant usage proves the menu-written threshold is the running
+// session's comparison value — the effective-value round-trip invariant.
+func TestCompactionLive_MenuThresholdRoundTrip(t *testing.T) { //nolint:paralleltest // runLiveApplyServe uses t.Setenv
+	stub := newSSEModelStub(t, 0)
+	stub.inputTokens = 100_000 // 50% of 200K
+
+	workDir := liveApplyConfig(t, stub.srv.URL, "")
+	inPipeW, stdout, _ := runLiveApplyServe(t, workDir)
+
+	sid := startLiveApplySession(t, inPipeW, stdout)
+
+	liveCompactionPrompt(t, inPipeW, stdout, 2, sid, "hi")
+
+	// Threshold 95: the next check must NOT fire (100K < 190K). A menu write
+	// that failed to land would leave the boot 80 (still no fire — the pair's
+	// decisive leg is the 40 below).
+	writeServeLine(t, inPipeW, `{"jsonrpc":"2.0","id":3,"method":"session/set_config_option","params":{"sessionId":"`+
+		sid+`","configId":"`+optCompactionThresh+`","value":"95"}}`)
+
+	pollSetConfigResponse(t, stdout, "3")
+
+	liveCompactionPrompt(t, inPipeW, stdout, 4, sid, "again")
+
+	if got := compactionMarkersIn(t, workDir, sid); got != 0 {
+		t.Fatalf("compaction markers = %d at threshold 95; want 0 (100K < 190K)", got)
+	}
+
+	// Threshold 40: the SAME usage must now fire (100K >= 80K) — only a menu
+	// write that reached the running session's comparison makes this true.
+	writeServeLine(t, inPipeW, `{"jsonrpc":"2.0","id":5,"method":"session/set_config_option","params":{"sessionId":"`+
+		sid+`","configId":"`+optCompactionThresh+`","value":"40"}}`)
+
+	pollSetConfigResponse(t, stdout, "5")
+
+	liveCompactionPrompt(t, inPipeW, stdout, 6, sid, "third")
+
+	waitForCompactionMarkers(t, workDir, sid, 1)
 }

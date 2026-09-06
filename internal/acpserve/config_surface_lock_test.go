@@ -28,8 +28,8 @@ func blockedOptionsProbe(t *testing.T, f *surfaceFixture, why string) {
 
 	select {
 	case got := <-optionsDone:
-		if got != 10 {
-			t.Fatalf("Options() returned %d entries; want the ten-entry menu (%s)", got, why)
+		if got != 12 {
+			t.Fatalf("Options() returned %d entries; want the twelve-entry menu (%s)", got, why)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatalf("Options() blocked behind an in-flight config operation — s.mu spans a blocking send/hook (%s)", why)
