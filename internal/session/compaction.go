@@ -21,9 +21,13 @@ import (
 // triggers: the threshold check and manual intent (both funnel into compact).
 
 const (
-	// DefaultCompactionThresholdPct is D-03's default trigger percentage: the
-	// pre-request check compacts when last reported input tokens + the
-	// added-since estimate reach this share of the resolved context window.
+	// DefaultCompactionThresholdPct documents D-03's default trigger
+	// percentage (the pre-request check compacts when last reported input
+	// tokens + the added-since estimate reach this share of the resolved
+	// context window). Since 19-05 the OPERATIVE default lives in
+	// modelrouting's embedded floor (compaction.threshold_pct: 80) and flows
+	// through the runtime's construction seam — this constant documents the
+	// value the floor carries, keeping the session package modelrouting-free.
 	DefaultCompactionThresholdPct = 80
 
 	// CompactionSummaryMaxTokens is the planner-pinned hard cap on the
@@ -44,12 +48,16 @@ const (
 var errCompactionEmptySummary = errors.New("compaction: summarizer produced an empty summary")
 
 // compactionSettings is the live-applied settings holder (19-04; 19-05 wires
-// the config keys onto SetCompactionSettings): Enabled is the operator switch
-// (the pre-request check skips entirely when false — zero behavior delta
-// versus pre-phase), ThresholdPct the trigger percentage (<=0 → the 80
-// default), ContextLimit the modelrouting-resolved context window (the D-01
-// discretion item: the capability table's context_window for the session's
-// resolved model — no override key). Zero/negative limit never fires.
+// the config keys onto SetCompactionSettings — the runtime initializes it at
+// construction from the modelrouting-loaded effective values and re-stamps it
+// through the runner's live-apply relay): Enabled is the operator switch (the
+// pre-request check skips entirely when false — zero behavior delta versus
+// pre-phase), ThresholdPct the trigger percentage (stored as handed; the
+// COMPARISON clamps into 1..100 defensively — 19-05's hand-edited-config net,
+// since the set path rejects out-of-range values at the wire), ContextLimit
+// the modelrouting-resolved context window (the D-01 discretion item: the
+// capability table's context_window for the session's resolved model — no
+// override key). Zero/negative limit never fires.
 type compactionSettings struct {
 	Enabled      bool
 	ThresholdPct int
@@ -59,14 +67,14 @@ type compactionSettings struct {
 // SetCompactionSettings live-applies the compaction settings (19-04) and wires
 // the projector's compaction tail budget from the same context window (the
 // 19-03 SetCompactionTailBudget seam — the budget-fill tail targets 60% of
-// it). Serialization contract: the CALLER holds the session's turn
-// serialization (the runtime's per-session turn mutex — the SetTurnModel
-// discipline), so the swap lands strictly BETWEEN turns.
+// it). The values arrive from the modelrouting-loaded effective config
+// (construction) or the validated config surface (live apply); the threshold
+// is stored as handed — overThreshold's clamp is the defensive net for
+// values that arrived by other means. Serialization contract: the CALLER
+// holds the session's turn serialization (the runtime's per-session turn
+// mutex — the SetTurnModel discipline), so the swap lands strictly BETWEEN
+// turns.
 func (s *Session) SetCompactionSettings(enabled bool, thresholdPct int, contextLimit int64) {
-	if thresholdPct <= 0 {
-		thresholdPct = DefaultCompactionThresholdPct
-	}
-
 	s.compaction = compactionSettings{
 		Enabled:      enabled,
 		ThresholdPct: thresholdPct,
@@ -78,16 +86,34 @@ func (s *Session) SetCompactionSettings(enabled bool, thresholdPct int, contextL
 	}
 }
 
+// clampCompactionPct clamps a threshold percentage into the defensive 1..100
+// window (19-05): a hand-edited config value of 0 or 500 can neither disable
+// nor break the check — the set path typed-rejects such values at the wire,
+// and this clamp is the last-resort net for values that arrived by other
+// means (0 compares as 1, anything above 100 as 100).
+func clampCompactionPct(pct int) int {
+	if pct < 1 {
+		return 1
+	}
+
+	if pct > percentDenominator {
+		return percentDenominator
+	}
+
+	return pct
+}
+
 // overThreshold is D-01's trigger math: last reported input tokens plus the
 // added-since estimate against limit x pct/100, INCLUSIVE — the check fires
-// at exactly the boundary, one unit below it does not. A non-positive limit
-// (no context window resolved) never fires.
+// at exactly the boundary, one unit below it does not. The percentage clamps
+// into 1..100 defensively (19-05); a non-positive limit (no context window
+// resolved) never fires.
 func overThreshold(lastInput, estimate, limit int64, pct int) bool {
-	if limit <= 0 || pct <= 0 {
+	if limit <= 0 {
 		return false
 	}
 
-	return lastInput+estimate >= limit*int64(pct)/percentDenominator
+	return lastInput+estimate >= limit*int64(clampCompactionPct(pct))/percentDenominator
 }
 
 // estimateSinceLastRequest returns the D-01 added-since estimate over the

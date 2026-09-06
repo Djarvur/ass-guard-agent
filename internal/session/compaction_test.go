@@ -901,7 +901,7 @@ func TestCompaction_Threshold(t *testing.T) { //nolint:gocognit,cyclop,funlen //
 // session-side default, and SetCompactionSettings re-targets the very next
 // comparison. The clamp subtests pin the defensive 1..100 window: hand-edited
 // config values of 0 and 500 compare as 1 and 100.
-func TestCompaction_SettingsFromConfig(t *testing.T) {
+func TestCompaction_SettingsFromConfig(t *testing.T) { //nolint:funlen // battery
 	t.Parallel()
 
 	// loadCompactionConfig loads one project layer over the embedded floor —
@@ -910,7 +910,9 @@ func TestCompaction_SettingsFromConfig(t *testing.T) {
 		t.Helper()
 
 		path := filepath.Join(t.TempDir(), "config.yaml")
-		if werr := os.WriteFile(path, []byte(yaml), 0o600); werr != nil {
+
+		werr := os.WriteFile(path, []byte(yaml), 0o600)
+		if werr != nil {
 			t.Fatalf("write config: %v", werr)
 		}
 
@@ -960,6 +962,7 @@ func TestCompaction_SettingsFromConfig(t *testing.T) {
 		// 500 of 1000: below 60% (no fire at the constructed settings).
 		s.lastInputTokens.Store(500)
 		s.maybeCompact(context.Background(), "t-retarget")
+
 		if got := len(markersOf(t, m)); got != 0 {
 			t.Fatalf("markers = %d; want 0 (500 is below the 60%% boundary)", got)
 		}

@@ -131,9 +131,19 @@ type Runner struct {
 
 	// schedCfg is the loaded scheduling config from startup (14-05, EARLY-05):
 	// the light-tier subagent routing at sessionFor resolves tiers.light
-	// through the SAME resolver that picked the session provider. nil in test
-	// runners → no subagent model override (the documented default).
+	// through the SAME resolver that picked the session provider. nil in
+	// test runners → no subagent model override (the documented default).
 	schedCfg *modelrouting.Config
+
+	// compactionMu guards the runner-level effective compaction settings
+	// (19-05/D-03): lazily seeded from schedCfg on first use (NewRunner stays
+	// struct-fill-only), re-stamped by ApplyCompactionSettings (the config
+	// surface's live-apply relay). armed=false when no scheduling config
+	// loaded (test runners) — sessions then keep 19-04's disabled zero value.
+	compactionMu      sync.Mutex
+	compactionEnabled bool
+	compactionPct     int
+	compactionArmed   bool
 
 	// 16-05 (ACP-08 live apply): the effective model an editor-driven
 	// config change stamped. "" = no editor stamp — the tier-resolved config
@@ -1738,6 +1748,17 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	// ExitPlanMode answers "not in plan mode" (the live-session finding).
 	s.SetPlanMode(planMode)
 
+	// 19-05 (D-03): the session's compaction settings initialize from the
+	// modelrouting-loaded effective values at construction (the floor's
+	// 80/true unless a layer overrides) — the context limit resolved from
+	// the capability table for THIS session's model. Unarmed (no scheduling
+	// config — test runners) keeps 19-04's disabled zero value; the surface's
+	// live-apply relay (ApplyCompactionSettings) re-stamps the same seam
+	// between turns.
+	if cs := r.effectiveCompaction(); cs.armed {
+		s.SetCompactionSettings(cs.enabled, cs.pct, r.compactionContextLimit())
+	}
+
 	// 17-02 (ACP-01): the permission gate — THE one per-call chokepoint. The
 	// perm store opens on the project's .ass-guard floor (0600 atomic, 17-01);
 	// an open failure degrades LOUDLY to a rule-less session (deny rules
@@ -2379,6 +2400,49 @@ func (r *Runner) SetDefaultTurnModel(model string) error {
 	return nil
 }
 
+// ApplyCompactionSettings applies an editor-driven compaction change to LIVE
+// state (19-05/D-03 — the ApplyTurnModel discipline): the runner's effective
+// slot updates under its mutex, then every live session's settings swap UNDER
+// that session's turn mutex — a Set arriving mid-turn waits for the in-flight
+// turn, so the very next pre-request check reads the new values (no torn
+// read). Sessions created later pick the slot up at construction (sessionFor).
+// The context limit is deliberately NOT a parameter: it stays resolved from
+// the modelrouting capability table (the D-01 discretion item — a config
+// override would fork the measurement baseline).
+func (r *Runner) ApplyCompactionSettings(enabled bool, thresholdPct int) error {
+	r.compactionMu.Lock()
+	r.compactionEnabled = enabled
+	r.compactionPct = thresholdPct
+	r.compactionArmed = true
+	r.compactionMu.Unlock()
+
+	limit := r.compactionContextLimit()
+
+	r.sessMu.Lock()
+
+	ids := make([]string, 0, len(r.sessions))
+
+	sessions := make(map[string]*session.Session, len(r.sessions))
+
+	for id, s := range r.sessions {
+		ids = append(ids, id)
+		sessions[id] = s
+	}
+
+	r.sessMu.Unlock()
+
+	for _, id := range ids {
+		mu := r.sessionTurnMu(id)
+		mu.Lock()
+
+		sessions[id].SetCompactionSettings(enabled, thresholdPct, limit)
+
+		mu.Unlock()
+	}
+
+	return nil
+}
+
 // SetEmitter injects the server-driven-turn chunk emitter (WINDOWS #3:
 // strictly between server construction and scheduler start).
 func (r *Runner) SetEmitter(emit func(sessionID string) acp.ChunkEmitter) { r.emitFor = emit }
@@ -2572,6 +2636,57 @@ func (r *Runner) defaultTurnModel() string {
 	}
 
 	return ""
+}
+
+// compactionState is the runner-level effective compaction pair session
+// construction and the surface's apply target read (19-05/D-03). armed=false
+// means no scheduling config loaded — sessions then keep 19-04's disabled
+// zero value.
+type compactionState struct {
+	enabled bool
+	pct     int
+	armed   bool
+}
+
+// effectiveCompaction returns the runner's effective compaction state
+// (19-05/D-03), lazily seeded from schedCfg on first use (NewRunner stays
+// struct-fill-only).
+func (r *Runner) effectiveCompaction() compactionState {
+	r.compactionMu.Lock()
+	defer r.compactionMu.Unlock()
+
+	if !r.compactionArmed && r.schedCfg != nil {
+		r.compactionEnabled = r.schedCfg.Compaction.Enabled
+		r.compactionPct = r.schedCfg.Compaction.ThresholdPct
+		r.compactionArmed = true
+	}
+
+	return compactionState{
+		enabled: r.compactionEnabled, pct: r.compactionPct, armed: r.compactionArmed,
+	}
+}
+
+// compactionContextLimit resolves the D-01 discretion item: the context window
+// of the session's resolved model from the modelrouting capability table —
+// the one and only source (there is deliberately no override key). Uses the
+// same effective-model ladder sessionFor stamps profiles with. 0 when
+// unresolvable (the threshold check never fires on a non-positive limit).
+func (r *Runner) compactionContextLimit() int64 {
+	if r.schedCfg == nil {
+		return 0
+	}
+
+	m := r.effectiveModelFor()
+	if m == "" {
+		m = r.defaultTurnModel()
+	}
+
+	mc, ok := r.schedCfg.Models[m]
+	if !ok {
+		return 0
+	}
+
+	return int64(mc.Capabilities.ContextWindow)
 }
 
 // advisoryNote is one collected advisory decision's client-note projection.

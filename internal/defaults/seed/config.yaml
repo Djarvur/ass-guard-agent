@@ -35,6 +35,16 @@ tiers:
     model: GLM-5.3
     fallback: [glm-5.2]
 
+# Compaction (PAR-01, 19-05/D-03): the pre-request context-compaction policy.
+# threshold_pct is the share of the resolved context window (the session
+# model's capabilities.context_window) at which the check fires, inclusive;
+# enabled is the operator switch (false skips the pre-request check entirely).
+# The context limit itself is deliberately NOT configurable — it stays sourced
+# from the capability table, so the measurement baseline cannot fork.
+compaction:
+  threshold_pct: 80
+  enabled: true
+
 circuit_breaker:
   consecutive_failures: 5
   error_rate_window: 20

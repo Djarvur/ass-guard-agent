@@ -20,7 +20,18 @@ type Config struct {
 	// and round-trips it — tier consumption lands in 16-05's apply seam, so
 	// Validate does NOT cross-reference it (an unknown tier name is 16-05's
 	// typed-reject concern at the wire, per D-09).
-	SessionTier    string                     `yaml:"session_tier"`
+	SessionTier string `yaml:"session_tier"`
+
+	// Compaction is PAR-01's compaction policy (19-05/D-03): the same
+	// layered-config identity model session_tier occupies. Absent keys load
+	// the embedded floor's 80/true defaults; out-of-range thresholds are
+	// deliberately NOT remapped here — the set path typed-rejects them at the
+	// wire (1..100, D-09) and the session-side comparison clamps defensively
+	// (the hand-edited-file net). The context limit itself is NEVER
+	// configurable: it stays sourced from the capability table
+	// (Capabilities.ContextWindow) — an override key would fork the
+	// measurement baseline.
+	Compaction     CompactionConfig           `yaml:"compaction"`
 	Providers      map[string]ProviderConfig  `yaml:"providers"`
 	Models         map[string]ModelConfig     `yaml:"models"`
 	Tiers          map[string]TierBinding     `yaml:"tiers"`
@@ -28,6 +39,18 @@ type Config struct {
 	Projects       map[string]ProjectOverride `yaml:"projects"`
 	CircuitBreaker CircuitBreakerConfig       `yaml:"circuit_breaker"`
 	CostCeiling    CostCeilingConfig          `yaml:"cost_ceiling"`
+}
+
+// CompactionConfig is the compaction policy block (19-05/D-03): ThresholdPct
+// is the share of the resolved context window at which the pre-request check
+// fires (inclusive); Enabled is the operator switch (false makes the
+// pre-request check skip entirely — 19-04's disabled path). Parse/default/
+// round-trip only: Validate does NOT cross-reference these values (the
+// 16-04 session_tier discipline — value whitelisting lives at the wire where
+// the menu ids are).
+type CompactionConfig struct {
+	ThresholdPct int  `yaml:"threshold_pct"`
+	Enabled      bool `yaml:"enabled"`
 }
 
 // ProviderConfig declares one provider endpoint. Shape selects the Phase-1
