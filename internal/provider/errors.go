@@ -134,6 +134,36 @@ func isNetOrContextError(err error) bool {
 	return errors.As(err, &urlErr)
 }
 
+// overflowMessageClass is the message text every provider variant of the
+// context-overflow rejection shares (research assumption A1: the
+// community-documented form "prompt is too long: N tokens > M maximum" rides a
+// 400 invalid_request_error; the 400 class is officially documented, the exact
+// wording is not — so the matcher keys on this stable fragment,
+// case-insensitively, never the whole body).
+const overflowMessageClass = "prompt is too long"
+
+// IsOverflow reports whether err is a *ProviderError whose message contains the
+// case-insensitive "prompt is too long" class — PAR-01's retry-once trigger
+// (19-02: this predicate ships here; 19-04's runTurn consumes it).
+//
+// It is a message-class MATCHER in the isNetOrContextError family style, NOT a
+// new ErrorKind: ClassifyHTTP already lands the rejection in KindStructural via
+// structuralStatuses, and the typed-Kind discipline (D-04 — retry storms
+// engineered out) stays intact. The classification guarantees the error rode an
+// HTTP status; the matcher adds only the message class, so a generic 400 (or
+// any other Structural error) is never overflow.
+//
+// The exact wording is community-sourced (A1, MEDIUM confidence);
+// re-verification against the live Z.ai endpoint is 19-04's E2E concern.
+func IsOverflow(err error) bool {
+	var perr *ProviderError
+	if !errors.As(err, &perr) {
+		return false
+	}
+
+	return strings.Contains(strings.ToLower(perr.Error()), overflowMessageClass)
+}
+
 var transientStatuses = map[int]struct{}{ //nolint:gochecknoglobals // immutable table
 	408: {}, 425: {}, 429: {},
 	500: {}, 502: {}, 503: {}, 504: {},
