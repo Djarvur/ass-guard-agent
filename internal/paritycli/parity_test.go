@@ -380,3 +380,79 @@ func TestParityRun_CacheProbeDefaultGap(t *testing.T) { //nolint:paralleltest //
 		t.Errorf("default run must report the routed emission gap with the system delta named:\n%s", defaultOut)
 	}
 }
+
+// zcodeProfilesRoot resolves the repo-root profiles directory (the REAL zcode
+// artifact — post-19-01 it declares system_cache_control: true, so loading it
+// through the real loader yields flagged system blocks).
+func zcodeProfilesRoot() string {
+	abs, err := filepath.Abs(filepath.Join("..", "..", "profiles"))
+	if err != nil {
+		return filepath.Join("..", "..", "profiles")
+	}
+
+	return abs
+}
+
+// probeCheckByName returns the named check from a probe report (nil when
+// absent).
+func probeCheckByName(rep parity.CacheProbeReport, name string) *parity.ProbeCheck {
+	for i := range rep.Checks {
+		if rep.Checks[i].Name == name {
+			return &rep.Checks[i]
+		}
+	}
+
+	return nil
+}
+
+// TestCacheProbe_PlacementFlip (19-01, Task 2): with the emission landed, the
+// probe composition derives its system-block cache_control flags from the
+// profile field — the flagged zcode profile's placement verdict flips GREEN
+// against the committed pin fixture (closing the standing WINDOWS #5 FAIL),
+// while an unflagged profile's composition carries no placements and reports
+// the gap exactly as before. The composition side is the only thing that
+// changed: AssertPlacementAgainstPin/PinClasses stay byte-stable (D-12).
+func TestCacheProbe_PlacementFlip(t *testing.T) { //nolint:paralleltest // reads the real profile + ecosys layers
+	// Flagged: the shipped zcode profile (system_cache_control: true).
+	flagged, err := profile.NewLoader(zcodeProfilesRoot()).Load(profileZcode)
+	if err != nil {
+		t.Skipf("zcode profile not available: %v", err)
+	}
+
+	flaggedRep := assembleCacheProbe(&flagged, corpusPinFixturePath())
+
+	check := probeCheckByName(flaggedRep, parity.CheckPlacementVsPin)
+	if check == nil {
+		t.Fatalf("flagged report missing the %s check: %+v", parity.CheckPlacementVsPin, flaggedRep.Checks)
+	}
+
+	if !check.OK {
+		t.Errorf("flagged profile must place green against the pin (WINDOWS #5 flip): %s", check.Detail)
+	}
+
+	// Unflagged counter-case: the composition carries no placements and the
+	// placement assertion reports the gap exactly as today.
+	unflagged, err := profile.NewLoader(writeParityProfileFixture(t, pinVersion)).Load(profileZcode)
+	if err != nil {
+		t.Fatalf("load unflagged fixture profile: %v", err)
+	}
+
+	comp := composeCacheProbeInput(&unflagged)
+
+	for i, b := range comp.System {
+		if b.CacheControl {
+			t.Errorf("unflagged composition system block %d carries a placement (flags must derive from the profile)", i)
+		}
+	}
+
+	unflaggedRep := assembleCacheProbe(&unflagged, corpusPinFixturePath())
+
+	gapCheck := probeCheckByName(unflaggedRep, parity.CheckPlacementVsPin)
+	if gapCheck == nil {
+		t.Fatalf("unflagged report missing the %s check: %+v", parity.CheckPlacementVsPin, unflaggedRep.Checks)
+	}
+
+	if gapCheck.OK || !strings.Contains(gapCheck.Detail, "pin-has-composed-lacks [system]") {
+		t.Errorf("unflagged profile must report the system gap exactly as today: %+v", gapCheck)
+	}
+}
