@@ -4,17 +4,17 @@ milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 19
 current_phase_name: compaction-cache-control
-current_plan: 3
+current_plan: 4
 status: executing
-stopped_at: Completed 19-02-PLAN.md (overflow surfacing + IsOverflow)
-last_updated: "2026-09-06T20:39:05.917Z"
+stopped_at: Completed 19-03-PLAN.md (compaction reset-point + tail-cut)
+last_updated: "2026-09-06T21:32:10.999Z"
 last_activity: 2026-09-06
 last_activity_desc: Phases 18 + 21 complete; Phase 19 execution next
 progress:
   total_phases: 11
   completed_phases: 5
   total_plans: 71
-  completed_plans: 36
+  completed_plans: 38
   percent: 45
 state_head: fcbcbdad086ecd6909628aa307fbdbfba4318a2d
 ---
@@ -30,12 +30,12 @@ See: .planning/PROJECT.md (updated 2026-09-06)
 ## Current Position
 
 Phase: 19 (compaction-cache-control) — EXECUTING
-Current Plan: 3
+Current Plan: 4
 Total Plans in Phase: 5
 Status: Ready to execute
 Last activity: 2026-09-06 — Phase 19 execution started
 
-Progress: [██████████░░░░░░░░░░] 35/71 plans ([█████░░░░░] 51%)
+Progress: [██████████░░░░░░░░░░] 35/71 plans ([█████░░░░░] 54%)
 
 ## Performance Metrics
 
@@ -83,6 +83,7 @@ Progress: [██████████░░░░░░░░░░] 35/71 p
 | Phase 18 P07 | 21 min | 2 tasks | 4 files |
 | Phase 19 P01 | 21 min | 3 tasks | 14 files |
 | Phase 19 P02 | 3 min | 2 tasks | 4 files |
+| Phase 19 P03 | 47 min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -186,6 +187,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-06T20:39:05.850Z
-Stopped at: Completed 19-02-PLAN.md (overflow surfacing + IsOverflow)
+Last session: 2026-09-06T21:32:10.950Z
+Stopped at: Completed 19-03-PLAN.md (compaction reset-point + tail-cut)
 Resume file: None

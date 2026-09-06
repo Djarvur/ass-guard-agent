@@ -223,14 +223,14 @@ Plans:
   3. On a provider overflow error ("prompt too long"), recovery retries once post-compaction instead of failing the turn.
   4. Every outgoing request carries cache_control {"type":"ephemeral"} on each system block — visible in the request log — and the existing cache-discipline probe in `ass-guard parity` flips green on placement.
 
-**Plans**: 2/5 plans executed
+**Plans**: 3/5 plans executed
 
 Plans:
 **Wave 1**
 
 - [x] 19-01-PLAN.md — Tracer: cache_control chain end-to-end — profile flag → shaper emission → probe flip, WINDOWS #5 closed (PAR-02, D-12)
 - [x] 19-02-PLAN.md — Provider overflow truth: non-2xx error-chunk surfacing + IsOverflow predicate (PAR-01 foundation, Pitfall 1)
-- [ ] 19-03-PLAN.md — Marker summary payload + Projector durable reset-point class + budget-fill pair-safe tail cut (PAR-01 semantics)
+- [x] 19-03-PLAN.md — Marker summary payload + Projector durable reset-point class + budget-fill pair-safe tail cut (PAR-01 semantics)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -487,7 +487,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 | 16. ACP Wire Foundation | v1.2 | 9/9 | Complete    | 2026-09-01 |
 | 17. Permissions + Elicitation | v1.2 | 6/6 | Complete    | 2026-09-03 |
 | 18. Session Family | v1.2 | 7/7 | Complete    | 2026-09-06 |
-| 19. Compaction + cache_control | v1.2 | 2/5 | In Progress|  |
+| 19. Compaction + cache_control | v1.2 | 3/5 | In Progress|  |
 | 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 0/6 | Planned | - |
 | 21. Context & Policy Parity Closures | v1.2 | 6/6 | Complete    | 2026-09-06 |
 | 22. Background Execution + Sandbox Reality | v1.2 | 0/? | Not started | - |

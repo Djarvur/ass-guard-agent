@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 9
+open_count: 10
 waived_count: 0
 fixed_count: 10
-total_count: 19
-last_updated: 2026-09-06T20:24:05.615Z
+total_count: 20
+last_updated: 2026-09-06T21:32:25.796Z
 ---
 
 # Broken Windows Ledger
@@ -34,6 +34,7 @@ last_updated: 2026-09-06T20:24:05.615Z
 | 17 | 21 | deviation | internal/session/testdata/thinking-golden/sse-thinking.jsonl |  | D-14 golden fixture is corpus_absent synthetic (A4 fallback): no thinking-bearing SSE captures exist in the corpus; provenance header records the hunt; replace with captured wire pairs when a thinking-enabled capture run lands | open |  | 2026-09-03T19:54:40.279Z |  |
 | 18 | 21 | deviation | internal/runtime/imgscale_test.go |  | plan-literal 9000x6000 over-dims fixture env-gated (ASSGUARD_IMG_HEAVY=1); cheap default row proves the same path (suite-health tuning) | open |  | 2026-09-03T22:27:52.112Z |  |
 | 19 | 21 | lint-warning | .golangci.yml |  | golangci-lint v2.12.2 (built with go1.26) panics on a go1.27-requiring dependency — mise ci lint leg red before and after 21-06 (environmental; vet+build+test green) | open |  | 2026-09-03T22:57:28.131Z |  |
+| 20 | 19 | deviation | .golangci.yml |  | mise lint gate fails repo-wide: golangci-lint 2.13.2 exhaustruct_v5 rename defeats the 2.12.x-tuned wildcard exclusion (pre-existing env drift, details in 19 deferred-items.md) | open |  | 2026-09-06T21:32:25.796Z |  |
 
 ````json
 [
@@ -263,6 +264,18 @@ last_updated: 2026-09-06T20:24:05.615Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-03T22:57:28.131Z",
+    "resolved_at": null
+  },
+  {
+    "id": 20,
+    "kind": "deviation",
+    "phase": "19",
+    "file": ".golangci.yml",
+    "line": null,
+    "description": "mise lint gate fails repo-wide: golangci-lint 2.13.2 exhaustruct_v5 rename defeats the 2.12.x-tuned wildcard exclusion (pre-existing env drift, details in 19 deferred-items.md)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-06T21:32:25.796Z",
     "resolved_at": null
   }
 ]
