@@ -1309,6 +1309,270 @@ func TestProjector_ThinkingBoundaryAdjacent(t *testing.T) {
 	}
 }
 
+// --- PAR-01 durable reset-point battery (19-03 Task 2) ---
+
+// Compaction-marker fixture summaries (unique markers per case).
+const (
+	sumMarkerWins  = "SUMMARY-A: parser work complete, 3 tests green"
+	sumDurable     = "SUMMARY-B: db migrated and seeded"
+	sumMarkerLate  = "SUMMARY-C: newer marker"
+	sumMarkerEarly = "SUMMARY-D: older marker"
+	sumMidFlight   = "SUMMARY-MID: compaction fired mid-subagent"
+)
+
+// TestProjector_CompactionResetPoint pins PAR-01's projection semantics: the
+// compaction marker is the Projector's THIRD class — a durable reset point
+// whose summary seed survives later mutating boundaries (D-06) — while every
+// transcript WITHOUT a marker projects byte-identically to pre-phase behavior,
+// and a marker never disturbs a turn already in flight (Pitfall 5: it resets
+// turns that START after it, exactly like TypeBoundary).
+func TestProjector_CompactionResetPoint(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen // five-case battery
+	t.Parallel()
+
+	t.Run("marker wins the reset-point scan; seed is the marker's summary", func(t *testing.T) {
+		t.Parallel()
+
+		m := newTestManager(t, "s-crp1")
+		p := NewProjector(fakeProfile("sys"), m)
+
+		_ = m.AppendUserMessage("turn_0", []ContentBlock{{Type: blockText, Text: "fix the parser"}})
+		_ = m.AppendToolCall("turn_0", "tc_p1", toolRead, json.RawMessage(`{"file_path":"/w/parser.go"}`))
+		_ = m.AppendToolResult("turn_0", "tc_p1", json.RawMessage(`{"o":"src"}`), false)
+		_ = m.AppendAssistantMessage("turn_0", "parser fixed")
+		mustAppend(t, m.AppendCompaction("turn_0", "line:4", "line:5", sumMarkerWins, 1500, 300, 40), "AppendCompaction")
+		_ = m.AppendUserMessage("turn_1", []ContentBlock{{Type: blockText, Text: "now the docs"}})
+
+		msgs, err := p.Project("turn_1")
+		if err != nil {
+			t.Fatalf("Project: %v", err)
+		}
+
+		if len(msgs) == 0 {
+			t.Fatal("empty projection — fixture broken")
+		}
+
+		seed := msgs[0]
+		if seed.Role != roleUserMsg {
+			t.Fatalf("seed role = %q; want user (single-user-message lean-seed shape)", seed.Role)
+		}
+
+		if !strings.Contains(seed.Content, sumMarkerWins) {
+			t.Errorf("seed missing the marker's summary (marker must WIN the reset-point scan):\n%s", seed.Content)
+		}
+
+		if !strings.Contains(seed.Content, "now the docs") {
+			t.Errorf("seed missing the current intent:\n%s", seed.Content)
+		}
+
+		// Summary-ONLY seed: the mechanical extractSummary vocabulary (and the
+		// pre-marker content it would summarize) must NOT leak into the seed.
+		for _, leak := range []string{"last_user=", "last_assistant=", "files_touched=", "fix the parser", "parser fixed"} {
+			if strings.Contains(seed.Content, leak) {
+				t.Errorf("seed carries the no-marker mechanical summary %q (seed must be the marker summary alone):\n%s", leak, seed.Content)
+			}
+		}
+	})
+
+	t.Run("later boundary does not displace the summary (D-06 durable, summary-only)", func(t *testing.T) {
+		t.Parallel()
+
+		m := newTestManager(t, "s-crp2")
+		p := NewProjector(fakeProfile("sys"), m)
+
+		_ = m.AppendUserMessage("turn_0", []ContentBlock{{Type: blockText, Text: "setup db"}})
+		_ = m.AppendToolCall("turn_0", "tc_d1", toolBash, json.RawMessage(`{"command":"migrate"}`))
+		_ = m.AppendToolResult("turn_0", "tc_d1", json.RawMessage(`{"o":"ok"}`), false)
+		mustAppend(t, m.AppendCompaction("turn_0", "line:3", "line:4", sumDurable, 1600, 200, 60), "AppendCompaction")
+		// Post-marker turn whose mutating boundary lands BETWEEN the marker and
+		// the projected turn.
+		_ = m.AppendUserMessage("turn_1", []ContentBlock{{Type: blockText, Text: "seed the data"}})
+		_ = m.AppendToolCall("turn_1", "tc_d2", toolBash, json.RawMessage(`{"command":"seed"}`))
+		_ = m.AppendToolResult("turn_1", "tc_d2", json.RawMessage(`{"o":"rows"}`), false)
+		_ = m.AppendBoundary(mutatingCommandBash, "tc_d2", "turn_1")
+		_ = m.AppendUserMessage("turn_2", []ContentBlock{{Type: blockText, Text: "verify counts"}})
+
+		msgs, err := p.Project("turn_2")
+		if err != nil {
+			t.Fatalf("Project: %v", err)
+		}
+
+		seed := msgs[0]
+
+		if !strings.Contains(seed.Content, sumDurable) {
+			t.Errorf("the later mutating boundary DISPLACED the durable summary (D-06 violation):\n%s", seed.Content)
+		}
+
+		// Open Question 3's planner-pinned reading: summary-ONLY — the boundary
+		// does not re-derive a mechanical summary over the post-marker span.
+		for _, leak := range []string{"last_user=", "last_assistant=", "seed the data", "files_touched="} {
+			if strings.Contains(seed.Content, leak) {
+				t.Errorf("seed after a later boundary merges mechanical summary %q (must be the marker summary ALONE):\n%s",
+					leak, seed.Content)
+			}
+		}
+
+		if !strings.Contains(seed.Content, "verify counts") {
+			t.Errorf("seed missing the current intent:\n%s", seed.Content)
+		}
+
+		// The window stays lean: the boundary dropped the post-marker tail
+		// (tail follows existing boundary discipline; only the summary is
+		// durable), so turn_2 projects the seed alone.
+		for i, mm := range msgs {
+			if mm.Role == roleAssistant || mm.Role == roleToolMsg {
+				t.Errorf("msgs[%d] = %s; want the lean seed only (tail is boundary-droppable, summary is durable):\n%s",
+					i, msgSummary(&mm), msgSummaryList(msgs))
+			}
+		}
+	})
+
+	t.Run("no marker projects byte-identically (boundary-only pin)", func(t *testing.T) {
+		t.Parallel()
+
+		m := newTestManager(t, "s-crp3")
+		p := NewProjector(fakeProfile("sys"), m)
+
+		_ = m.AppendUserMessage("turn_0", []ContentBlock{{Type: blockText, Text: "edit the file"}})
+		_ = m.AppendToolCall("turn_0", "tc_e1", toolRead, json.RawMessage(`{"file_path":"/a/go.mod"}`))
+		_ = m.AppendToolResult("turn_0", "tc_e1", json.RawMessage(`{"out":"module x"}`), false)
+		_ = m.AppendAssistantMessage("turn_0", "done editing")
+		_ = m.AppendBoundary("mutating-command:Edit", "tc_e1", "turn_0")
+		_ = m.AppendUserMessage("turn_1", []ContentBlock{{Type: blockText, Text: "next step"}})
+		_ = m.AppendToolCall("turn_1", "tc_e2", toolBash, json.RawMessage(`{"command":"ls"}`))
+		_ = m.AppendToolResult("turn_1", "tc_e2", json.RawMessage(`"files"`), false)
+
+		msgs, err := p.Project("turn_1")
+		if err != nil {
+			t.Fatalf("Project: %v", err)
+		}
+
+		// The EXACT pre-phase window, hand-derived from the D-01/D-02 rules:
+		// mechanical summary over the pre-boundary lines + current intent +
+		// the turn's own mid-turn accumulation (boundMidTurn — 3 messages).
+		wantSeed := "Task summary (mechanical, post-boundary):\n" +
+			"last_user=edit the file\n" +
+			"last_assistant=done editing\n" +
+			"files_touched=/a/go.mod" +
+			"\n\n--- Current request ---\nnext step"
+
+		want := []provider.Message{
+			{Role: roleUserMsg, Content: wantSeed},
+			{Role: roleAssistant, ToolCalls: []provider.ToolCall{
+				{ID: "tc_e2", Name: toolBash, Input: json.RawMessage(`{"command":"ls"}`)},
+			}},
+			{Role: roleToolMsg, ToolCallID: "tc_e2", ToolName: toolBash, Content: "files"},
+		}
+
+		if !reflect.DeepEqual(msgs, want) {
+			t.Errorf("boundary-only transcript drifted from the pre-phase window:\n got: %s\nwant: %s",
+				msgSummaryList(msgs), msgSummaryList(want))
+		}
+	})
+
+	t.Run("subagent in-flight window unchanged; next parent turn seeded", func(t *testing.T) {
+		t.Parallel()
+
+		m := newTestManager(t, "s-crp4")
+		p := NewProjector(fakeProfile("sys"), m)
+
+		_ = m.AppendUserMessage("turnP1", []ContentBlock{{Type: blockText, Text: "spawn a helper"}})
+		// The subagent's turn STARTS (its user message lands) before the marker.
+		_ = m.AppendUserMessage("turnSA", []ContentBlock{{Type: blockText, Text: "subagent task"}})
+		_ = m.AppendToolCall("turnSA", "tc_s1", toolRead, json.RawMessage(`{"file_path":"a"}`))
+		_ = m.AppendToolResult("turnSA", "tc_s1", json.RawMessage(`{"o":"1"}`), false)
+		// The marker lands MID-subagent-turn (Pitfall 5).
+		mustAppend(t, m.AppendCompaction("turnP1", "line:4", "line:5", sumMidFlight, 1700, 100, 80), "AppendCompaction")
+		// The subagent keeps working past the marker.
+		_ = m.AppendToolCall("turnSA", "tc_s2", toolBash, json.RawMessage(`{"command":"ls"}`))
+		_ = m.AppendToolResult("turnSA", "tc_s2", json.RawMessage(`{"o":"2"}`), false)
+		// The next parent turn starts AFTER the marker.
+		_ = m.AppendUserMessage("turnP2", []ContentBlock{{Type: blockText, Text: "parent resumes"}})
+
+		saMsgs, err := p.Project("turnSA")
+		if err != nil {
+			t.Fatalf("Project(subagent): %v", err)
+		}
+
+		// The subagent's own window is UNCHANGED: its turn started before the
+		// marker, so the marker is not ITS reset point — the seed is the
+		// pre-phase mechanical pre-turn summary, never the marker summary.
+		if strings.Contains(saMsgs[0].Content, sumMidFlight) {
+			t.Errorf("marker summary leaked into the in-flight subagent's seed (Pitfall 5):\n%s", saMsgs[0].Content)
+		}
+
+		if !strings.Contains(saMsgs[0].Content, "spawn a helper") {
+			t.Errorf("subagent seed lost the pre-phase mechanical summary:\n%s", saMsgs[0].Content)
+		}
+
+		// Its mid-turn window keeps BOTH exchanges across the marker.
+		for _, id := range []string{"tc_s1", "tc_s2"} {
+			if !projectedHasCall(saMsgs, id) {
+				t.Errorf("subagent window lost in-flight exchange %s across the marker:\n%s", id, msgSummaryList(saMsgs))
+			}
+		}
+
+		p2Msgs, err := p.Project("turnP2")
+		if err != nil {
+			t.Fatalf("Project(parent): %v", err)
+		}
+
+		if !strings.Contains(p2Msgs[0].Content, sumMidFlight) {
+			t.Errorf("next parent turn after the marker missing the summary seed:\n%s", p2Msgs[0].Content)
+		}
+	})
+
+	t.Run("most recent marker before the user message wins", func(t *testing.T) {
+		t.Parallel()
+
+		m := newTestManager(t, "s-crp5")
+		p := NewProjector(fakeProfile("sys"), m)
+
+		_ = m.AppendUserMessage("turn_0", []ContentBlock{{Type: blockText, Text: "one"}})
+		_ = m.AppendAssistantMessage("turn_0", "a1")
+		mustAppend(t, m.AppendCompaction("turn_0", "line:2", "line:3", sumMarkerEarly, 100, 10, 1), "AppendCompaction")
+		_ = m.AppendUserMessage("turn_1", []ContentBlock{{Type: blockText, Text: "two"}})
+		_ = m.AppendAssistantMessage("turn_1", "a2")
+		mustAppend(t, m.AppendCompaction("turn_1", "line:5", "line:6", sumMarkerLate, 200, 20, 2), "AppendCompaction")
+		_ = m.AppendUserMessage("turn_2", []ContentBlock{{Type: blockText, Text: "three"}})
+
+		msgs, err := p.Project("turn_2")
+		if err != nil {
+			t.Fatalf("Project: %v", err)
+		}
+
+		seed := msgs[0]
+
+		if !strings.Contains(seed.Content, sumMarkerLate) {
+			t.Errorf("seed does not use the MOST RECENT marker's summary:\n%s", seed.Content)
+		}
+
+		if strings.Contains(seed.Content, sumMarkerEarly) {
+			t.Errorf("an EARLIER marker's summary survived a later marker (only a NEWER marker replaces the seed):\n%s", seed.Content)
+		}
+
+		// Position rule: a marker appended AFTER the projected turn's user
+		// message (mid-flight compaction of turn_2 itself) must NOT become
+		// turn_2's reset point.
+		mustAppend(t, m.AppendCompaction("turn_2", "line:7", "line:8", "SUMMARY-INFLIGHT", 300, 30, 3), "AppendCompaction")
+
+		again, err := p.Project("turn_2")
+		if err != nil {
+			t.Fatalf("Project(re-probe): %v", err)
+		}
+
+		if strings.Contains(again[0].Content, "SUMMARY-INFLIGHT") {
+			t.Errorf("a marker landing mid-turn reset the PRODUCING turn's own window (must reset only turns that START after it):\n%s",
+				again[0].Content)
+		}
+
+		if !strings.Contains(again[0].Content, sumMarkerLate) {
+			t.Errorf("re-probe lost the winning marker summary:\n%s", again[0].Content)
+		}
+	})
+}
+
+
+
 // --- D-14 golden battery (PAR-05, 21-03 Task 3) ---
 
 // goldenThinkingCase is one committed wire-pair record from
