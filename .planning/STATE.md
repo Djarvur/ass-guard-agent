@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 19
-current_phase_name: Compaction + cache_control
-current_plan: 19-01
-status: ready
-stopped_at: Phases 18 + 21 complete (both canonicalized passed on operator UAT 2026-09-06); Phase 19 execution next (manager session)
-last_updated: "2026-09-06T20:06:00.000Z"
+current_phase_name: compaction-cache-control
+current_plan: 2
+status: executing
+stopped_at: Completed 19-01-PLAN.md (cache_control emission; WINDOWS 5 closed)
+last_updated: "2026-09-06T20:32:36.034Z"
 last_activity: 2026-09-06
 last_activity_desc: Phases 18 + 21 complete; Phase 19 execution next
 progress:
   total_phases: 11
   completed_phases: 5
   total_plans: 71
-  completed_plans: 35
+  completed_plans: 36
   percent: 45
 state_head: fcbcbdad086ecd6909628aa307fbdbfba4318a2d
 ---
@@ -25,17 +25,17 @@ state_head: fcbcbdad086ecd6909628aa307fbdbfba4318a2d
 
 See: .planning/PROJECT.md (updated 2026-09-06)
 **Core value:** A hands-off coding agent that feels native in the editor: full SDD workflows run end-to-end without manual continues, and the agent surfaces through the client's own UX — clickable permission prompts, native file diffs, session management. (Pivoted 2026-08-25 from the mimicry bar.)
-**Current focus:** Phase 19 — Compaction + cache_control (execution; 18+21 closed 2026-09-06)
+**Current focus:** Phase 19 — compaction-cache-control
 
 ## Current Position
 
-Phase: 19 — Compaction + cache_control
-Current Plan: 19-01 (5 plans ready, 0 executed)
+Phase: 19 (compaction-cache-control) — EXECUTING
+Current Plan: 2
 Total Plans in Phase: 5
 Status: Ready to execute
-Last activity: 2026-09-06 — Phases 18 + 21 complete; Phase 19 execution next
+Last activity: 2026-09-06 — Phase 19 execution started
 
-Progress: [██████████░░░░░░░░░░] 35/71 plans (49%)
+Progress: [██████████░░░░░░░░░░] 35/71 plans ([█████░░░░░] 51%)
 
 ## Performance Metrics
 
@@ -81,6 +81,7 @@ Progress: [██████████░░░░░░░░░░] 35/71 p
 | 21-context-policy-parity-closures/05 | 109 min | 2 tasks | 38 files |
 | Phase 21 P21-06 | 20 min | 2 tasks | 13 files |
 | Phase 18 P07 | 21 min | 2 tasks | 4 files |
+| Phase 19 P01 | 21 min | 3 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -156,6 +157,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 21]: The 21-06 hook-gate join maps the four-valued PreToolUse verdict TOTALLY at gateCall's head (ask suspends even ungated, D-04); the executor consultation leg is deleted, not stubbed — one gate, one consultation site, one result form per decision
 - [Phase 21]: Precedence hook verdict -> permission ask -> execute is documented AT the chokepoint (gateCall doc) and enforced by grep audits: zero executor consultation sites, the gate head the sole PreToolUseVerdict consumer
 - [Phase 18]: 18-07 (G-18-1): two-sided opener fix — sessionFor writes AppendSessionStart behind a size-0 gate (creation-only by append-only discipline; the same gate IS resume-safety and kill-9 self-heal), and listing accepts any knownOpenerType first line with a valid timestamp as the legacy fallback (bounded whitelist; unknown/zero-timestamp/corrupt still skip); legacy title consequence documented in code, not fixed
+- [Phase 19]: 19-01: cache_control storage is a profile-level presence flag (system_cache_control in profile.yaml) applied to every block at Load — the corpus value is 910/910 uniform so a bool carries full fidelity; no per-block sidecar channel exists — profile TextBlock carries the captured flag; the loader fans it out; the shaper emits — flag-off output provably byte-identical
+- [Phase 19]: 19-01: over the Anthropic 4-breakpoint cap the shaper keeps the LAST four flagged system blocks (deepest cache prefixes) — degrade pinned 3/4/5/6; the parity probe compares placement classes so it stays green under either policy — a 5th breakpoint would 400 every request once dynamic merges stack system blocks; keep-last-4 is the corpus-faithful accommodation
+- [Phase 19]: 19-01: the extractor derives the declaration by reusing ScanContextBehavior's system: placement class and extract-profile writes the yaml key — re-captures cannot lose the emission; probe baseline stayed byte-stable (D-12) — one detection implementation grounds both the decision census and the extraction; WINDOWS #5 closed (probe flip green on the committed pin fixture)
 
 ### Pending Todos
 
@@ -179,6 +183,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-06T20:06:00Z
-Stopped at: Phases 18 + 21 complete (operator UAT closed both); Phase 19 execution starting (manager session)
+Last session: 2026-09-06T20:32:26.567Z
+Stopped at: Completed 19-01-PLAN.md (cache_control emission; WINDOWS 5 closed)
 Resume file: None
