@@ -227,6 +227,145 @@ func TestStream_RespectsCancel(t *testing.T) {
 	}
 }
 
+// errorEnvelopeHandler answers with the given status + body — the non-SSE shape
+// a rejected request gets (an Anthropic JSON error envelope, not a stream).
+func errorEnvelopeHandler(status int, body string) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("content-type", "application/json")
+		w.WriteHeader(status)
+		fmt.Fprint(w, body)
+	}
+}
+
+// streamAgainstHandler runs one Stream call against a scripted server and
+// drains the channel (the non-2xx battery's harness).
+func streamAgainstHandler(t *testing.T, h http.HandlerFunc) []provider.StreamChunk {
+	t.Helper()
+
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	prof := loadProfile(t, "minimal")
+	p := provider.NewAnthropicProvider(shaper.New(),
+		provider.WithAnthropicAPIKey("test-key"),
+		provider.WithAnthropicBaseURL(srv.URL),
+	)
+
+	ch, err := p.Stream(context.Background(), &prof, []shaper.Message{{Role: roleUser, Content: "hi"}})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+
+	return readAllChunks(t, ch)
+}
+
+// TestStream_Non2xxError pins Pitfall 1 (19-RESEARCH): a 400 rejection — the
+// Anthropic error envelope, plain JSON, no SSE frames — must surface as an
+// ERROR chunk the turn loop already consumes (session.go chunkErrorType case),
+// never as a done chunk with a defaulted end_turn finish (the drain path skips
+// every non-data: line and sendDone defaults the empty reason — the silent
+// swallow this test forbids). The body is read and closed at the status-check
+// site; the drain goroutine never starts, so the channel closes after exactly
+// the one error chunk.
+func TestStream_Non2xxError(t *testing.T) {
+	t.Parallel()
+
+	chunks := streamAgainstHandler(t, errorEnvelopeHandler(http.StatusBadRequest,
+		`{"type":"error","error":{"type":"invalid_request_error",`+
+			`"message":"prompt is too long: 200936 tokens > 199999 maximum"}}`))
+
+	var perr *provider.ProviderError
+
+	for _, c := range chunks {
+		if c.Type == "done" {
+			t.Errorf("done chunk %q observed on a rejected request; want none (Pitfall 1 swallow)",
+				c.FinishReason)
+		}
+
+		if c.Type != "error" {
+			t.Errorf("chunk Type = %q; want only \"error\" (chunk: %+v)", c.Type, c)
+
+			continue
+		}
+
+		if perr != nil {
+			t.Error("more than one error chunk observed; want exactly one")
+
+			continue
+		}
+
+		if c.Error == nil {
+			t.Fatal("error chunk carries nil Error")
+
+			continue
+		}
+
+		if !errors.As(c.Error, &perr) {
+			t.Fatalf("error chunk Error = %v; want a *ProviderError (classified via ClassifyHTTP)", c.Error)
+		}
+	}
+
+	if perr == nil {
+		t.Fatal("no error chunk observed; the 400 was swallowed (Pitfall 1)")
+	}
+
+	if perr.Kind != provider.KindStructural {
+		t.Errorf("Kind = %q; want %q (400 lands in KindStructural via structuralStatuses)",
+			perr.Kind, provider.KindStructural)
+	}
+
+	if perr.StatusCode != http.StatusBadRequest {
+		t.Errorf("StatusCode = %d; want 400", perr.StatusCode)
+	}
+
+	// The overflow message class must survive the surfacing (19-02 Task 2's
+	// IsOverflow matches over this text — research assumption A1's wording).
+	if !strings.Contains(perr.Error(), "prompt is too long") {
+		t.Errorf("ProviderError message = %q; want it to carry the provider's \"prompt is too long\" text",
+			perr.Error())
+	}
+}
+
+// TestStream_Non2xxError_MalformedBody pins the robustness prohibition: an
+// unparseable, truncated, or empty error body still yields the error chunk
+// carrying the status code — the envelope parser never panics and degrades to
+// the generic structural ProviderError (T-19-03).
+func TestStream_Non2xxError_MalformedBody(t *testing.T) {
+	t.Parallel()
+
+	for name, body := range map[string]string{
+		"truncated json": `{"type":"error","error":{"type":"invalid_re`,
+		"empty body":     ``,
+		"wrong shape":    `{"unexpected":[1,2,3]}`,
+	} {
+		chunks := streamAgainstHandler(t, errorEnvelopeHandler(http.StatusBadRequest, body))
+
+		var perr *provider.ProviderError
+
+		for _, c := range chunks {
+			if c.Type == "done" {
+				t.Errorf("%s: done chunk %q observed; want none", name, c.FinishReason)
+			}
+
+			if c.Type == "error" && c.Error != nil && perr == nil {
+				if !errors.As(c.Error, &perr) {
+					t.Errorf("%s: error chunk Error = %v; want a *ProviderError", name, c.Error)
+				}
+			}
+		}
+
+		if perr == nil {
+			t.Errorf("%s: no error chunk observed for body %q", name, body)
+
+			continue
+		}
+
+		if perr.Kind != provider.KindStructural || perr.StatusCode != http.StatusBadRequest {
+			t.Errorf("%s: classified %+v; want Structural/400", name, perr)
+		}
+	}
+}
+
 // TestStream_NoAPIKey verifies Stream surfaces a clear error when no key is set
 // (parity with Send).
 func TestStream_NoAPIKey(t *testing.T) {
