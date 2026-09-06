@@ -3,7 +3,9 @@ package provider //nolint:testpackage // internal package test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
+	"net/http"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -123,6 +125,65 @@ func TestClassifyReason(t *testing.T) {
 	require.Contains(t, ClassifyHTTP("p", "m", 429, nil).Reason, "rate")
 	require.Contains(t, ClassifyHTTP("p", "m", 401, nil).Reason, "unauth")
 	require.Contains(t, ClassifyHTTP("p", "m", 0, context.DeadlineExceeded).Reason, "deadline")
+}
+
+// TestIsOverflow pins the overflow message-class predicate (19-02, PAR-01's
+// retry-once substrate): TRUE only for a *ProviderError whose message contains
+// the case-insensitive "prompt is too long" class (research assumption A1 —
+// community-documented form "prompt is too long: N tokens > M maximum" riding
+// 400 invalid_request_error), FALSE for everything else. Constructed through
+// ClassifyHTTP exactly the way the streaming status-check site builds the real
+// error — the matcher must never fire on classification alone (a generic 400 is
+// NOT overflow) nor on any non-matching Kind.
+func TestIsOverflow(t *testing.T) {
+	t.Parallel()
+
+	overflowErr := ClassifyHTTP(providerAnthropic, modelGLM52, http.StatusBadRequest,
+		errors.New("invalid_request_error: prompt is too long: 200936 tokens > 199999 maximum"))
+
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "400 prompt-is-too-long (exact A1 wording)",
+			err:  overflowErr,
+			want: true,
+		},
+		{
+			name: "case-varied message",
+			err: ClassifyHTTP(providerAnthropic, modelGLM52, http.StatusBadRequest,
+				errors.New("Prompt Is Too Long: 12 tokens > 10 maximum")),
+			want: true,
+		},
+		{
+			name: "wrapped by the turn loop",
+			err:  fmt.Errorf("session turn stream: %w", overflowErr),
+			want: true,
+		},
+		{name: "nil", err: nil, want: false},
+		{name: "plain error (not a ProviderError)", err: errConnectionRefused, want: false},
+		{
+			name: "network-classified ProviderError",
+			err: ClassifyHTTP(providerAnthropic, modelGLM52, 0,
+				&net.OpError{Op: "read", Net: "tcp", Err: errResetByPeer}),
+			want: false,
+		},
+		{
+			name: "generic 400 (different message)",
+			err:  ClassifyHTTP(providerAnthropic, modelGLM52, http.StatusBadRequest, errors.New("invalid request: bad tool id")),
+			want: false,
+		},
+		{
+			name: "429 rate limited",
+			err:  ClassifyHTTP(providerAnthropic, modelGLM52, http.StatusTooManyRequests, nil),
+			want: false,
+		},
+	}
+	for _, tc := range cases {
+		require.Equal(t, tc.want, IsOverflow(tc.err), "%s: IsOverflow(%v)", tc.name, tc.err)
+	}
 }
 
 // TestRetryOnlyTransient_ClassificationTable (14-06 pin): the FULL
