@@ -1573,6 +1573,261 @@ func TestProjector_CompactionResetPoint(t *testing.T) { //nolint:gocognit,gocycl
 
 
 
+// --- PAR-01 budget-fill tail battery (19-03 Task 3) ---
+
+// sumTailFill is the marker summary for the tail-cut fixtures (short, so the
+// summary estimate leaves the fill target meaningful).
+const sumTailFill = "SUMMARY-TAIL: bulk work absorbed"
+
+// tailMsgCost is the D-05 budget unit as the behavior spec defines it: the
+// message's folded JSON size divided by 4, truncating. Mirrors the production
+// cost rule (chars/4-class estimate, D-01's no-tokenizer discipline).
+func tailMsgCost(m provider.Message) int64 {
+	raw, err := json.Marshal(m)
+	if err != nil {
+		return 0 // Message always marshals (plain fields + RawMessage inputs)
+	}
+
+	return int64(len(raw)) / 4
+}
+
+// appendTailGroups appends n uniform exchange groups (tool_call + fat tool
+// result) to the given turn. The fat payloads make each group's cost large
+// and predictable, so a fixed budget deterministically forces a cut.
+func appendTailGroups(t *testing.T, m *Manager, turnID string, n int) {
+	t.Helper()
+
+	for i := range n {
+		id := fmt.Sprintf("%s_g%02d", turnID, i)
+		mustAppend(t, m.AppendToolCall(turnID, id, toolBash, json.RawMessage(`{"command":"ls"}`)), "AppendToolCall")
+		mustAppend(t,
+			m.AppendToolResult(turnID, id, json.RawMessage(`"`+strings.Repeat("x", 2000)+`"`), false),
+			"AppendToolResult")
+	}
+}
+
+// assertTailPairSafe walks the tail (msgs[1:]) proving the cut is pair-atomic:
+// the tail starts at a group head (assistant batch), and every tool message's
+// id belongs to a preceding kept batch — no orphaned tool result anywhere.
+//
+//nolint:gocognit // the pairing walk is one linear scan
+func assertTailPairSafe(t *testing.T, msgs []provider.Message) {
+	t.Helper()
+
+	if len(msgs) < 2 {
+		t.Fatal("no tail after the seed — fixture broken (or an over-aggressive cut)")
+	}
+
+	if msgs[1].Role != roleAssistant || len(msgs[1].ToolCalls) == 0 {
+		t.Fatalf("tail head = %s; want an assistant batch head (never an orphaned tool result)", msgSummary(&msgs[1]))
+	}
+
+	batchIDs := map[string]bool{}
+
+	for _, mm := range msgs {
+		for _, tc := range mm.ToolCalls {
+			batchIDs[tc.ID] = true
+		}
+	}
+
+	for i := 1; i < len(msgs); i++ {
+		if msgs[i].Role == roleToolMsg && !batchIDs[msgs[i].ToolCallID] {
+			t.Fatalf("tail[%d] = %s — tool result separated from its batch (pair-atomicity violated)",
+				i, msgSummary(&msgs[i]))
+		}
+	}
+}
+
+// TestProjector_CompactionTailCut pins the D-04/D-05 post-marker tail: the
+// durable summary seed is followed by a budget-fill tail of the most recent
+// post-marker messages (across turns), cut only at group boundaries — never
+// starting with an orphaned tool result, never rewriting thinking (complete
+// groups drop alone) — with a zero/unset budget degrading to the
+// MidTurnWindowMessages count bound.
+func TestProjector_CompactionTailCut(t *testing.T) { //nolint:funlen // three dense fixtures
+	t.Run("budget-fill cut is pair-atomic, multi-turn, and respects the fill target", func(t *testing.T) {
+		t.Parallel()
+
+		m := newTestManager(t, "s-ctc1")
+		p := NewProjector(fakeProfile("sys"), m)
+
+		_ = m.AppendUserMessage("turn_0", []ContentBlock{{Type: blockText, Text: "bulk history"}})
+		mustAppend(t, m.AppendCompaction("turn_0", "line:1", "line:2", sumTailFill, 9000, 900, 900), "AppendCompaction")
+
+		// Post-marker span: a prior turn's 12 groups + the projected turn's
+		// own 4 — the tail must draw from BOTH (D-04's recent-tail grip).
+		_ = m.AppendUserMessage("turn_1", []ContentBlock{{Type: blockText, Text: "phase one"}})
+		appendTailGroups(t, m, "turn_1", 12)
+		_ = m.AppendUserMessage("turn_2", []ContentBlock{{Type: blockText, Text: "phase two"}})
+		appendTailGroups(t, m, "turn_2", 4)
+
+		const budget = 8000
+
+		p.SetCompactionTailBudget(budget)
+
+		msgs, err := p.Project("turn_2")
+		if err != nil {
+			t.Fatalf("Project: %v", err)
+		}
+
+		// Seed half: durable summary + current intent.
+		if !strings.Contains(msgs[0].Content, sumTailFill) || !strings.Contains(msgs[0].Content, "phase two") {
+			t.Errorf("seed = %q; want the marker summary + current intent", msgs[0].Content)
+		}
+
+		// The budget forced a cut: leading groups are dropped...
+		if projectedHasCall(msgs, "turn_1_g00") {
+			t.Errorf("the oldest post-marker group survived the budget cut (tail not budget-filled):\n%s", msgSummaryList(msgs))
+		}
+
+		// ...the tail spans turns (starts inside turn_1's groups) and keeps
+		// the projected turn's own most recent exchange.
+		if len(msgs[1].ToolCalls) == 0 || !strings.HasPrefix(msgs[1].ToolCalls[0].ID, "turn_1_g") {
+			t.Errorf("tail head = %s; want a turn_1 group (the tail must span prior-turn exchanges)", msgSummary(&msgs[1]))
+		}
+
+		if !projectedHasCall(msgs, "turn_2_g03") {
+			t.Errorf("the most recent exchange (turn_2_g03) missing from the tail:\n%s", msgSummaryList(msgs))
+		}
+
+		// Pair-atomicity at the cut.
+		assertTailPairSafe(t, msgs)
+
+		// D-05 fill target: summary estimate + tail cost <= 60% of the limit
+		// (headroom under the 80% trigger).
+		var total int64
+
+		for _, mm := range msgs[1:] {
+			total += tailMsgCost(mm)
+		}
+
+		summaryEst := int64(len(sumTailFill)) / 4
+		fillTarget := int64(budget) * compactionFillTargetPct / 100
+
+		if total+summaryEst > fillTarget {
+			t.Errorf("summary estimate + tail cost = %d; want <= %d (60%% of the %d limit)", total+summaryEst, fillTarget, budget)
+		}
+	})
+
+	t.Run("zero budget falls back to the 64-message bound", func(t *testing.T) {
+		t.Parallel()
+
+		m := newTestManager(t, "s-ctc2")
+		p := NewProjector(fakeProfile("sys"), m)
+
+		_ = m.AppendUserMessage("turn_0", []ContentBlock{{Type: blockText, Text: "count me"}})
+		mustAppend(t, m.AppendCompaction("turn_0", "line:1", "line:2", sumTailFill, 100, 10, 10), "AppendCompaction")
+
+		// 40 uniform groups = 80 post-marker messages — over the 64 bound.
+		_ = m.AppendUserMessage("turn_1", []ContentBlock{{Type: blockText, Text: "grow"}})
+		appendTailGroups(t, m, "turn_1", 40)
+		_ = m.AppendUserMessage("turn_2", []ContentBlock{{Type: blockText, Text: "read"}})
+
+		// CompactionTailBudget left at its zero value — the fallback.
+
+		msgs, err := p.Project("turn_2")
+		if err != nil {
+			t.Fatalf("Project: %v", err)
+		}
+
+		if want := 1 + MidTurnWindowMessages; len(msgs) != want {
+			t.Fatalf("len(msgs) = %d; want %d (seed + the 64-message fallback bound):\n%s",
+				len(msgs), want, msgSummaryList(msgs))
+		}
+
+		// The count cut keeps the MOST RECENT 64: uniform groups mean the cut
+		// lands exactly at group 8's batch head (80-64=16=2*8) and the final
+		// group's result survives.
+		if id := msgs[1].ToolCalls[0].ID; id != "turn_1_g08" {
+			t.Errorf("fallback tail head = %s; want turn_1_g08 (the group-head advance at cut 16)", id)
+		}
+
+		last := msgs[len(msgs)-1]
+		if last.Role != roleToolMsg || last.ToolCallID != "turn_1_g39" {
+			t.Errorf("tail end = %s; want turn_1_g39's result (most-recent kept)", msgSummary(&last))
+		}
+
+		assertTailPairSafe(t, msgs)
+	})
+
+	t.Run("thinking survives untouched inside kept groups", func(t *testing.T) {
+		t.Parallel()
+
+		m := newTestManager(t, "s-ctc3")
+		p := NewProjector(fakeProfile("sys"), m)
+
+		const sumThink = "SUMMARY-THINK: exact"
+
+		_ = m.AppendUserMessage("turn_0", []ContentBlock{{Type: blockText, Text: "think work"}})
+		mustAppend(t, m.AppendCompaction("turn_0", "line:1", "line:2", sumThink, 100, 10, 10), "AppendCompaction")
+
+		_ = m.AppendUserMessage("turn_1", []ContentBlock{{Type: blockText, Text: "go"}})
+
+		// Four thinking-bearing groups; the budget keeps only the last two —
+		// dropped groups take their thinking with them (complete groups drop
+		// alone; no chain is ever rewritten).
+		for i := range 4 {
+			id := fmt.Sprintf("t_g%02d", i)
+			thinking := json.RawMessage(
+				fmt.Sprintf(`{"type":"thinking","thinking":"think-%d","signature":"sig-%d"}`, i, i))
+			mustAppend(t, m.AppendRawThinking("turn_1", fixtureModelSlug, thinking), "AppendRawThinking")
+			mustAppend(t, m.AppendToolCall("turn_1", id, toolBash, json.RawMessage(`{"command":"ls"}`)), "AppendToolCall")
+			mustAppend(t,
+				m.AppendToolResult("turn_1", id, json.RawMessage(`"`+strings.Repeat("x", 3000)+`"`), false),
+				"AppendToolResult")
+		}
+
+		_ = m.AppendUserMessage("turn_2", []ContentBlock{{Type: blockText, Text: "report"}})
+
+		// Two groups (~2x840) fit the 60% target of 3000; three do not.
+		p.SetCompactionTailBudget(3000)
+
+		msgs, err := p.Project("turn_2")
+		if err != nil {
+			t.Fatalf("Project: %v", err)
+		}
+
+		for _, mm := range msgs {
+			for _, tb := range mm.ThinkingBlocks {
+				if tb.Text == "think-0" || tb.Text == "think-1" {
+					t.Errorf("dropped group's thinking (%q) survived outside its group — groups must drop COMPLETE", tb.Text)
+				}
+			}
+		}
+
+		// Kept groups carry their thinking untouched (field values exact —
+		// PAR-01's never-rewrite letter).
+		want := map[string]provider.ThinkingBlock{
+			"t_g02": {Type: chunkTypeThinking, Text: "think-2", Signature: "sig-2"},
+			"t_g03": {Type: chunkTypeThinking, Text: "think-3", Signature: "sig-3"},
+		}
+
+		got := map[string][]provider.ThinkingBlock{}
+
+		for _, mm := range msgs {
+			if len(mm.ToolCalls) == 1 {
+				got[mm.ToolCalls[0].ID] = mm.ThinkingBlocks
+			}
+		}
+
+		for id, wantBlocks := range want {
+			blocks, ok := got[id]
+			if !ok {
+				t.Errorf("kept group %s missing from the tail (budget math off):\n%s", id, msgSummaryList(msgs))
+
+				continue
+			}
+
+			if len(blocks) != 1 || blocks[0] != wantBlocks {
+				t.Errorf("group %s thinking = %+v; want exactly [%+v] (untouched within the kept group)",
+					id, blocks, wantBlocks)
+			}
+		}
+
+		assertTailPairSafe(t, msgs)
+	})
+}
+
 // --- D-14 golden battery (PAR-05, 21-03 Task 3) ---
 
 // goldenThinkingCase is one committed wire-pair record from
