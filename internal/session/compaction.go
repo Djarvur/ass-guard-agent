@@ -114,6 +114,7 @@ func (s *Session) estimateSinceLastRequest() int64 {
 // last request yields zero.
 func estimateLinesSinceLastRequest(lines []Line) int64 {
 	last := -1
+
 	for i := range lines {
 		if lines[i].Type == TypeRequestShaped {
 			last = i
@@ -184,7 +185,7 @@ func (s *Session) CompactNow(ctx context.Context) error {
 // marker, nil return. The turn proceeds un-compacted; the overflow retry
 // (criterion 3, session.go) remains the last line.
 //
-//nolint:cyclop,funlen,gocognit // one blocking seam over the full summarize→append flow
+//nolint:cyclop,funlen // one blocking seam over the full summarize→append flow
 func (s *Session) compact(ctx context.Context, turnID string) error {
 	// The user-visible compaction note. The landed ACP session/update
 	// vocabulary has no status frame (only agent_message_chunk et al., which
@@ -203,6 +204,7 @@ func (s *Session) compact(ctx context.Context, turnID string) error {
 	// D-08: the span is everything since the PREVIOUS marker (most recent
 	// wins), prefixed by that marker's summary; session start when none.
 	prevSummary, from := "", 0
+
 	for i := range lines {
 		if lines[i].Type == TypeCompaction {
 			prevSummary = lines[i].Summary
@@ -256,7 +258,8 @@ func (s *Session) compact(ctx context.Context, turnID string) error {
 		}
 	}
 
-	if serr := sctx.Err(); serr != nil {
+	serr := sctx.Err()
+	if serr != nil {
 		return s.degradeCompaction(turnID, fmt.Errorf("compaction: summarizer timed out: %w", serr))
 	}
 
@@ -267,7 +270,8 @@ func (s *Session) compact(ctx context.Context, turnID string) error {
 
 	// D-10: the summarizer's own usage line, attributed to the current turn —
 	// visible to /cost and audit like any turn's usage.
-	if uerr := s.Manager.AppendUsage(turnID, inTok, outTok); uerr != nil {
+	uerr := s.Manager.AppendUsage(turnID, inTok, outTok)
+	if uerr != nil {
 		return s.degradeCompaction(turnID, fmt.Errorf("compaction: append usage: %w", uerr))
 	}
 
@@ -279,8 +283,9 @@ func (s *Session) compact(ctx context.Context, turnID string) error {
 	preRef := fmt.Sprintf("line:%d", max(len(lines)-1, 0))
 	postRef := fmt.Sprintf("line:%d", len(lines)+1)
 
-	if merr := s.Manager.AppendCompaction(turnID, preRef, postRef, summary,
-		s.lastInputTokens.Load(), outTok, 0); merr != nil {
+	merr := s.Manager.AppendCompaction(turnID, preRef, postRef, summary,
+		s.lastInputTokens.Load(), outTok, 0)
+	if merr != nil {
 		return s.degradeCompaction(turnID, fmt.Errorf("compaction: append marker: %w", merr))
 	}
 

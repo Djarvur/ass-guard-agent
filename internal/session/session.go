@@ -181,8 +181,8 @@ type Session struct {
 	// notes counts compaction starts, degrades counts D-09 summarizer
 	// failures (one bump per loud warning — the counter IS the warning
 	// record the tests pin).
-	compactionChecks  atomic.Int64
-	compactionNotes   atomic.Int64
+	compactionChecks   atomic.Int64
+	compactionNotes    atomic.Int64
 	compactionDegrades atomic.Int64
 
 	closeOnce sync.Once
@@ -963,20 +963,22 @@ func (s *Session) streamAndEmit(
 				}
 			}
 		case "usage":
-			if chunk.Usage != nil {
-				// 19-04 (PAR-01, D-01/Pitfall 3): the in-memory usage read
-				// model — recorded the moment the chunk arrives, independent
-				// of the bus. The compaction threshold check reads THIS (the
-				// async transcript usage line stays the audit record; reading
-				// it back would race the TranscriptWriter).
-				s.lastInputTokens.Store(chunk.Usage.InputTokens)
+			if chunk.Usage == nil {
+				break // nothing to record, nothing to publish
+			}
 
-				if s.Bus != nil {
-					s.Bus.Publish(event.UsageUpdate{
-						TurnID:      turnID,
-						InputTokens: chunk.Usage.InputTokens, OutputTokens: chunk.Usage.OutputTokens,
-					})
-				}
+			// 19-04 (PAR-01, D-01/Pitfall 3): the in-memory usage read
+			// model — recorded the moment the chunk arrives, independent
+			// of the bus. The compaction threshold check reads THIS (the
+			// async transcript usage line stays the audit record; reading
+			// it back would race the TranscriptWriter).
+			s.lastInputTokens.Store(chunk.Usage.InputTokens)
+
+			if s.Bus != nil {
+				s.Bus.Publish(event.UsageUpdate{
+					TurnID:      turnID,
+					InputTokens: chunk.Usage.InputTokens, OutputTokens: chunk.Usage.OutputTokens,
+				})
 			}
 		case stopDone:
 			resp.FinishReason = chunk.FinishReason

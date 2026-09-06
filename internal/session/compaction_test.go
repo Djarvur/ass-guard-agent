@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -13,6 +14,17 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/event"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
+)
+
+// Shared fixture strings (the battery repeats them across subtests).
+const (
+	errCompProvider   = "provider"
+	compParentModel   = "parent-model"
+	compTextDone      = "done"
+	compCallE2E       = "call_e2e"
+	promptContinue    = "continue"
+	promptEditTheFile = "edit the file"
+	promptNextStep    = "next step"
 )
 
 // --- The 19-04 scripted provider (the battery's fake — fakeProvider cannot
@@ -44,9 +56,14 @@ type compactionProvider struct {
 	profiles []*profile.Profile
 	msgs     [][]provider.Message
 	calls    int
+
+	// turnIDOf mirrors the production capturer's attribution seam (09-01: the
+	// serve-path closure calls sess.CurrentTurnID() when RequestShaped fires).
+	// nil → "" (the pre-attribution fake behavior).
+	turnIDOf func() string
 }
 
-//nolint:cyclop // one scripted scenario dispatcher
+//nolint:funlen // one scripted scenario dispatcher
 func (p *compactionProvider) Stream(
 	ctx context.Context, prof *profile.Profile, msgs []provider.Message,
 ) (<-chan provider.StreamChunk, error) {
@@ -70,7 +87,13 @@ func (p *compactionProvider) Stream(
 	p.mu.Unlock()
 
 	if bus != nil {
+		turnID := ""
+		if p.turnIDOf != nil {
+			turnID = p.turnIDOf()
+		}
+
 		bus.Publish(event.RequestShaped{
+			TurnID:          turnID,
 			VerbatimRequest: json.RawMessage(`{"model":"scripted"}`),
 			Profile:         prof.Name,
 			Timestamp:       time.Now(),
@@ -98,6 +121,7 @@ func (p *compactionProvider) Stream(
 
 		for _, tc := range s.toolCalls {
 			tcCopy := tc
+
 			id := tc.ID
 			if id == "" {
 				id = tc.Name
@@ -112,6 +136,7 @@ func (p *compactionProvider) Stream(
 
 		if s.errChunk != nil {
 			ch <- provider.StreamChunk{Type: chunkErrorType, Error: s.errChunk}
+
 			return // no done follows an error chunk
 		}
 
@@ -182,7 +207,7 @@ func newCompactionTestSession(
 	cp := &compactionProvider{script: script, bus: bus}
 
 	prof := fakeProfile("compaction agent")
-	prof.Model = "parent-model"
+	prof.Model = compParentModel
 
 	s := &Session{
 		Manager:   m,
@@ -194,27 +219,45 @@ func newCompactionTestSession(
 		WorkDir:   t.TempDir(),
 		SessionID: "s-comp",
 	}
+	cp.turnIDOf = s.CurrentTurnID
 
 	return s, m, cp, bus
 }
 
-// countType returns how many transcript lines carry the given type.
-func countType(t *testing.T, m *Manager, typ string) int {
+// startCompactionWriter runs the async TranscriptWriter over the session's bus
+// (the D-10 attribution proof needs the request_shaped lines on disk) and
+// returns nothing — t.Cleanup owns the lifecycle.
+func startCompactionWriter(t *testing.T, m *Manager, bus *event.Bus) {
 	t.Helper()
 
-	lines, err := m.ReadAll()
-	if err != nil {
-		t.Fatalf("ReadAll: %v", err)
-	}
+	tw := NewTranscriptWriter(m, bus, nil)
 
-	n := 0
-	for i := range lines {
-		if lines[i].Type == typ {
-			n++
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	go tw.Run(ctx)
+}
+
+// waitForLines polls the transcript until pred over the lines holds (the async
+// writer's appends land out-of-band) or the deadline expires.
+func waitForLines(t *testing.T, m *Manager, what string, pred func([]Line) bool) {
+	t.Helper()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		lines, err := m.ReadAll()
+		if err != nil {
+			t.Fatalf("ReadAll: %v", err)
 		}
+
+		if pred(lines) {
+			return
+		}
+
+		time.Sleep(10 * time.Millisecond)
 	}
 
-	return n
+	t.Fatalf("timed out waiting for %s in the transcript", what)
 }
 
 // markersOf returns the compaction marker lines in append order.
@@ -227,6 +270,7 @@ func markersOf(t *testing.T, m *Manager) []Line {
 	}
 
 	var out []Line
+
 	for i := range lines {
 		if lines[i].Type == TypeCompaction {
 			out = append(out, lines[i])
@@ -240,9 +284,17 @@ func markersOf(t *testing.T, m *Manager) []Line {
 // 400 "prompt is too long" envelope riding KindStructural — what
 // provider.IsOverflow matches.
 func overflowErr() error {
-	return provider.ClassifyHTTP("anthropic", "parent-model", 400,
+	//nolint:err113 // the community 400 envelope is a dynamic fixture message
+	return provider.ClassifyHTTP("anthropic", compParentModel, 400,
 		errors.New(`prompt is too long: 200936 tokens > 199999 maximum`))
 }
+
+// The D-09 fixture failures (static package-level errors — the fixture's
+// stable identities, the err113-recommended shape).
+var (
+	errSummarizerExploded = errors.New("summarizer exploded mid-stream")
+	errSummarizerRejected = errors.New("summarizer rejected")
+)
 
 // --- Task 2 battery: loop-head wiring, overflow retry-once, CompactNow ---
 
@@ -250,7 +302,7 @@ func overflowErr() error {
 // stream error force-compacts (threshold bypass) and re-sends EXACTLY ONCE —
 // the recovery resend completes the turn; a second overflow in the SAME turn
 // reaches the existing appendError return with no further retry (Pitfall 8).
-func TestCompaction_OverflowRetryOnce(t *testing.T) {
+func TestCompaction_OverflowRetryOnce(t *testing.T) { //nolint:funlen // battery
 	t.Parallel()
 
 	t.Run("recovery: fail overflow, compact, resend, turn completes", func(t *testing.T) {
@@ -259,9 +311,9 @@ func TestCompaction_OverflowRetryOnce(t *testing.T) {
 		// Settings DISABLED on purpose: the retry is the backstop and fires
 		// regardless of the threshold gate (manual-intent class, D-11).
 		s, m, cp, _ := newCompactionTestSession(t, []compScript{
-			{callErr: overflowErr()},                     // 1: the turn's send — overflow
+			{callErr: overflowErr()},                         // 1: the turn's send — overflow
 			{text: "RECOVERED-SUMMARY", finish: stopEndTurn}, // 2: the forced compact's summarizer
-			{text: "all good now", finish: stopEndTurn},  // 3: the retry send
+			{text: "all good now", finish: stopEndTurn},      // 3: the retry send
 		})
 
 		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "go"}})
@@ -286,10 +338,10 @@ func TestCompaction_OverflowRetryOnce(t *testing.T) {
 		t.Parallel()
 
 		s, m, cp, _ := newCompactionTestSession(t, []compScript{
-			{callErr: overflowErr()},                         // 1: overflow → forced compact + retry
+			{callErr: overflowErr()},                            // 1: overflow → forced compact + retry
 			{text: "SUMMARY-BEFORE-RETRY", finish: stopEndTurn}, // 2: the compact's summarizer
-			{callErr: overflowErr()},                         // 3: the retry — overflow AGAIN
-			{text: "MUST-NEVER-RUN", finish: stopEndTurn},    // 4: a second retry must not exist
+			{callErr: overflowErr()},                            // 3: the retry — overflow AGAIN
+			{text: "MUST-NEVER-RUN", finish: stopEndTurn},       // 4: a second retry must not exist
 		})
 		s.SetCompactionSettings(true, 80, 1000)
 
@@ -310,8 +362,9 @@ func TestCompaction_OverflowRetryOnce(t *testing.T) {
 		}
 
 		hasProviderErr := false
+
 		for i := range lines {
-			if lines[i].Type == TypeError && lines[i].Component == "provider" {
+			if lines[i].Type == TypeError && lines[i].Component == errCompProvider {
 				hasProviderErr = true
 			}
 		}
@@ -348,7 +401,7 @@ func TestCompaction_LoopHead(t *testing.T) {
 				Input: json.RawMessage(`{"file_path":"a.txt"}`)}},
 			finish: blockToolUse,
 		},
-		{text: "done", finish: stopEndTurn},
+		{text: compTextDone, finish: stopEndTurn},
 	}
 
 	t.Run("enabled: one check per iteration", func(t *testing.T) {
@@ -425,7 +478,8 @@ func TestCompactNow(t *testing.T) {
 
 	s.lastInputTokens.Store(42) // the anchor the marker snapshots
 
-	if err := s.CompactNow(context.Background()); err != nil {
+	err = s.CompactNow(context.Background())
+	if err != nil {
 		t.Fatalf("CompactNow: %v (nil on success AND on the D-09 degrade)", err)
 	}
 
@@ -456,6 +510,244 @@ func TestCompactNow(t *testing.T) {
 	}
 }
 
+// --- Task 3: the offline end-to-end proof (ROADMAP criterion 1's machinery) ---
+
+// TestCompaction_EndToEnd drives a REAL over-threshold cycle through the full
+// engine: a conversation whose provider usage crosses the threshold compacts
+// on the next pre-request check, the next projected window carries the summary
+// seed with a pair-safe tail, the turn completes coherently, the post-
+// compaction usage buys headroom (no re-fire), and a pre-phase transcript
+// projects identically with the engine on versus off (the additive-only
+// guarantee at engine level).
+func TestCompaction_EndToEnd(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen,maintidx // battery
+	t.Parallel()
+
+	t.Run("over-threshold session compacts and continues coherently", func(t *testing.T) {
+		t.Parallel()
+
+		s, m, cp, bus := newCompactionTestSession(t, []compScript{
+			// Turn 1: the conversation grows until usage crosses the 80% line.
+			{text: "working on it", usage: &provider.Usage{InputTokens: 900, OutputTokens: 50},
+				finish: stopEndTurn},
+			// Turn 2's loop-head check fires → the summarizer (light tier,
+			// private stream, own usage line). The marker lands DURING turn 2
+			// — under 19-03's pinned position rule it resets turns that START
+			// after it, so the seed reaches turn 3's window.
+			{text: "E2E-SUMMARY", usage: &provider.Usage{InputTokens: 30, OutputTokens: 12},
+				finish: stopEndTurn},
+			// Turn 2's own sends (mechanical window; a tool call so turn 2
+			// exercises its loop and leaves a post-marker exchange behind).
+			{
+				usage: &provider.Usage{InputTokens: 300, OutputTokens: 20},
+				toolCalls: []provider.ToolCall{{ID: compCallE2E, Name: toolRead,
+					Input: json.RawMessage(`{"file_path":"a.txt"}`)}},
+				finish: blockToolUse,
+			},
+			{text: compTextDone, finish: stopEndTurn},
+			// Turn 3 — the first turn STARTING after the marker: its window
+			// carries the summary seed; a tool call so iteration 2 projects a
+			// real post-marker tail.
+			{
+				usage: &provider.Usage{InputTokens: 250, OutputTokens: 15},
+				toolCalls: []provider.ToolCall{{ID: "call_e3", Name: toolRead,
+					Input: json.RawMessage(`{"file_path":"b.txt"}`)}},
+				finish: blockToolUse,
+			},
+			{text: "done three", finish: stopEndTurn},
+			// Turn 4 — the second turn after compaction: still below the
+			// threshold, no re-fire.
+			{text: "fourth done", finish: stopEndTurn},
+		})
+		s.SetCompactionSettings(true, 80, 1000)
+		startCompactionWriter(t, m, bus)
+
+		// Turn 1 completes; its usage chunk crosses the threshold (900 >= 800).
+		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "start the work"}})
+		if err != nil || stop != stopEndTurn {
+			t.Fatalf("turn 1: stop=%q err=%v", stop, err)
+		}
+
+		if got := s.lastInputTokens.Load(); got != 900 {
+			t.Fatalf("usage read model = %d; want 900 (the D-01 anchor)", got)
+		}
+
+		// Turn 2: the loop-head check compacts BEFORE the first projection;
+		// the tool loop converges and the turn completes normally.
+		stop, err = s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: promptContinue}})
+		if err != nil {
+			t.Fatalf("turn 2: %v (the compacting turn must complete normally)", err)
+		}
+
+		if stop != stopEndTurn {
+			t.Errorf("turn 2 stop = %q; want end_turn", stop)
+		}
+
+		mk := markersOf(t, m)
+		if len(mk) != 1 {
+			t.Fatalf("markers = %d; want 1 (compacted exactly once)", len(mk))
+		}
+
+		if mk[0].Summary != "E2E-SUMMARY" {
+			t.Errorf("marker summary = %q; want E2E-SUMMARY", mk[0].Summary)
+		}
+
+		if mk[0].TurnID != "s-comp-turn-002" {
+			t.Errorf("marker turnID = %q; want the compacting turn", mk[0].TurnID)
+		}
+
+		// The compacting turn's OWN window keeps the pre-phase shape (the
+		// marker never reseeds its producing turn — 19-03's pinned rule), so
+		// turn 2's send carries the mechanical seed + its intent.
+		t2win := cp.messagesOf(2) // call 3: turn 2 iteration 1's send
+		if len(t2win) == 0 || strings.Contains(t2win[0].Content, "E2E-SUMMARY") {
+			t.Errorf("producing turn's window reseeded mid-turn (19-03 pin violation):\n%s",
+				msgSummaryList(t2win))
+		}
+
+		if !strings.Contains(t2win[0].Content, promptContinue) {
+			t.Errorf("turn 2 window missing the current intent:\n%s", t2win[0].Content)
+		}
+
+		// Turn 3: the first turn STARTING after the marker — below the
+		// threshold now (headroom), completes on the compacted window.
+		stop, err = s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "third"}})
+		if err != nil || stop != stopEndTurn {
+			t.Fatalf("turn 3: stop=%q err=%v", stop, err)
+		}
+
+		// THE seed assertion: turn 3's window carries the summary seed (the
+		// durable D-06 window the marker reset it to).
+		t3win := cp.messagesOf(4) // call 5: turn 3 iteration 1's send
+		if len(t3win) == 0 || !strings.Contains(t3win[0].Content, "E2E-SUMMARY") {
+			t.Fatalf("post-compaction window missing the summary seed:\n%s", msgSummaryList(t3win))
+		}
+
+		if !strings.Contains(t3win[0].Content, "third") {
+			t.Errorf("post-compaction seed missing the current intent:\n%s", t3win[0].Content)
+		}
+
+		// Turn 3 iteration 2: the seed plus the post-marker tail — turn 2's
+		// tool exchange and turn 3's own, pair-safe (the cut never starts
+		// with an orphaned tool result).
+		t3second := cp.messagesOf(5)
+		if len(t3second) == 0 || !strings.Contains(t3second[0].Content, "E2E-SUMMARY") {
+			t.Fatalf("turn 3 iteration-2 window lost the seed (D-06 durable):\n%s", msgSummaryList(t3second))
+		}
+
+		assertTailPairSafe(t, t3second)
+
+		var hasUse, hasResult bool
+
+		for _, mm := range t3second[1:] {
+			if mm.Role == roleAssistant && len(mm.ToolCalls) > 0 && mm.ToolCalls[0].ID == compCallE2E {
+				hasUse = true
+			}
+
+			if mm.Role == roleToolMsg && mm.ToolCallID == compCallE2E {
+				hasResult = true
+			}
+		}
+
+		if !hasUse || !hasResult {
+			t.Errorf("post-marker tail lost turn 2's tool exchange (use=%v result=%v):\n%s",
+				hasUse, hasResult, msgSummaryList(t3second))
+		}
+
+		// D-10 attribution, on disk: the summarizer's request landed as a
+		// request_shaped line for the CURRENT turn (3 attributed requests for
+		// turn 2 = the summarizer's + the two turn sends), and its own usage
+		// line (30/12) is in the transcript.
+		const turn2 = "s-comp-turn-002"
+
+		waitForLines(t, m, "3 request_shaped lines attributed to turn 2", func(lines []Line) bool {
+			n := 0
+
+			for i := range lines {
+				if lines[i].Type == TypeRequestShaped && lines[i].TurnID == turn2 {
+					n++
+				}
+			}
+
+			return n >= 3
+		})
+
+		lines, err := m.ReadAll()
+		if err != nil {
+			t.Fatalf("ReadAll: %v", err)
+		}
+
+		hasSummarizerUsage := false
+
+		for i := range lines {
+			if lines[i].Type == TypeUsage && lines[i].TurnID == turn2 &&
+				lines[i].InputTokens == 30 && lines[i].OutputTokens == 12 {
+				hasSummarizerUsage = true
+			}
+		}
+
+		if !hasSummarizerUsage {
+			t.Error("transcript missing the summarizer's own usage line for turn 2 (D-10)")
+		}
+
+		// Headroom: the second turn after compaction starts BELOW the
+		// threshold (250 << 800) — the compaction bought room; nothing
+		// re-fires.
+		stop, err = s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "fourth"}})
+		if err != nil || stop != stopEndTurn {
+			t.Fatalf("turn 4: stop=%q err=%v", stop, err)
+		}
+
+		if got := len(markersOf(t, m)); got != 1 {
+			t.Errorf("markers after turn 4 = %d; want 1 (headroom: no re-fire)", got)
+		}
+
+		if got := s.compactionNotes.Load(); got != 1 {
+			t.Errorf("note emissions after turn 4 = %d; want 1 (exactly one compaction)", got)
+		}
+	})
+
+	t.Run("pre-phase transcript projects identically with the engine on", func(t *testing.T) {
+		t.Parallel()
+
+		// A pre-phase transcript (no markers): prior turns, a boundary, a
+		// mid-turn exchange, and the projected turn's user message.
+		s, m, _, _ := newCompactionTestSession(t, nil)
+		mustAppend(t, m.AppendUserMessage("turn_040", []ContentBlock{{Type: blockText, Text: promptEditTheFile}}),
+			"AppendUserMessage")
+		mustAppend(t, m.AppendToolCall("turn_040", "tc_pre", toolRead, json.RawMessage(`{"file_path":"/a/go.mod"}`)),
+			"AppendToolCall")
+		mustAppend(t, m.AppendToolResult("turn_040", "tc_pre", json.RawMessage(`{"out":"module x"}`), false),
+			"AppendToolResult")
+		mustAppend(t, m.AppendAssistantMessage("turn_040", "done editing"), "AppendAssistantMessage")
+		mustAppend(t, m.AppendBoundary("mutating-command:Edit", "tc_pre", "turn_040"), "AppendBoundary")
+		mustAppend(t, m.AppendUserMessage("turn_041", []ContentBlock{{Type: blockText, Text: promptNextStep}}),
+			"AppendUserMessage")
+		mustAppend(t, m.AppendToolCall("turn_041", "tc_cur", toolBash, json.RawMessage(`{"command":"ls"}`)),
+			"AppendToolCall")
+		mustAppend(t, m.AppendToolResult("turn_041", "tc_cur", json.RawMessage(`"files"`), false),
+			"AppendToolResult")
+
+		off, err := s.Projector.Project("turn_041")
+		if err != nil {
+			t.Fatalf("Project(engine off): %v", err)
+		}
+
+		// Engine ON: same transcript, live-applied settings (the projector
+		// budget flips too) — the projection must be byte-identical.
+		s.SetCompactionSettings(true, 80, 1000)
+
+		on, err := s.Projector.Project("turn_041")
+		if err != nil {
+			t.Fatalf("Project(engine on): %v", err)
+		}
+
+		if !reflect.DeepEqual(off, on) {
+			t.Errorf("engine-on projection drifted from engine-off on a no-marker transcript:\n off: %s\n on:  %s",
+				msgSummaryList(off), msgSummaryList(on))
+		}
+	})
+}
+
 // --- Task 1 battery: threshold math, D-09 degrade, chaining, bus isolation ---
 
 // TestCompaction_Threshold pins D-01's trigger math: the threshold fires at
@@ -463,7 +755,7 @@ func TestCompactNow(t *testing.T) {
 // added-since estimate is transcript content appended after the last
 // request_shaped line divided by 4 truncating — never the request's own total
 // body size (Pitfall 7's double-count).
-func TestCompaction_Threshold(t *testing.T) {
+func TestCompaction_Threshold(t *testing.T) { //nolint:gocognit,cyclop,funlen // battery
 	t.Parallel()
 
 	t.Run("boundary fires; one below does not", func(t *testing.T) {
@@ -607,12 +899,15 @@ func TestCompaction_SummarizerFailure(t *testing.T) {
 	t.Parallel()
 
 	caseDegraded := func(t *testing.T, name string, script []compScript, timeout time.Duration) {
+		t.Helper()
+
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
 			s, m, _, _ := newCompactionTestSession(t, script)
 			s.SetCompactionSettings(true, 80, 1000)
 			s.lastInputTokens.Store(900) // over the threshold: the check WANTS to compact
+
 			if timeout > 0 {
 				s.compactionTimeout = timeout
 			}
@@ -637,11 +932,11 @@ func TestCompaction_SummarizerFailure(t *testing.T) {
 	}
 
 	caseDegraded(t, "mid-stream error", []compScript{
-		{errChunk: errors.New("summarizer exploded mid-stream")},
+		{errChunk: errSummarizerExploded},
 	}, 0)
 
 	caseDegraded(t, "synchronous stream error", []compScript{
-		{callErr: errors.New("summarizer rejected")},
+		{callErr: errSummarizerRejected},
 	}, 0)
 
 	caseDegraded(t, "timeout", []compScript{{hang: true}}, 40*time.Millisecond)
@@ -653,7 +948,7 @@ func TestCompaction_SummarizerFailure(t *testing.T) {
 // span since) and the D-10/Pitfall-4 discipline: the summarizer rides the
 // same pipeline (profile copy, own usage line) with ZERO client-visible bus
 // publishes.
-func TestCompaction_Chaining(t *testing.T) {
+func TestCompaction_Chaining(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen // battery
 	t.Parallel()
 
 	t.Run("second compact consumes the previous summary; nothing lost", func(t *testing.T) {
@@ -669,14 +964,16 @@ func TestCompaction_Chaining(t *testing.T) {
 		mustAppend(t, m.AppendUserMessage("t-comp", []ContentBlock{{Type: blockText, Text: "first task"}}),
 			"AppendUserMessage")
 
-		if err := s.compact(context.Background(), "t-comp"); err != nil {
+		err := s.compact(context.Background(), "t-comp")
+		if err != nil {
 			t.Fatalf("compact(1): %v", err)
 		}
 
 		// Second compact over an EMPTY span (idempotency edge): the previous
 		// summary is the input prefix; a new marker lands; the old marker and
 		// its summary survive (append-only).
-		if err := s.compact(context.Background(), "t-comp"); err != nil {
+		err = s.compact(context.Background(), "t-comp")
+		if err != nil {
 			t.Fatalf("compact(2): %v", err)
 		}
 
@@ -714,6 +1011,7 @@ func TestCompaction_Chaining(t *testing.T) {
 		}
 
 		usageForTurn := 0
+
 		for i := range lines {
 			if lines[i].Type == TypeUsage && lines[i].TurnID == "t-comp" {
 				usageForTurn++
@@ -735,7 +1033,8 @@ func TestCompaction_Chaining(t *testing.T) {
 		s.SubagentModel = "light-tier-model" // the tiers-table light slug
 		s.SetCompactionSettings(true, 80, 1000)
 
-		if err := s.compact(context.Background(), "t-comp"); err != nil {
+		err := s.compact(context.Background(), "t-comp")
+		if err != nil {
 			t.Fatalf("compact: %v", err)
 		}
 
@@ -753,12 +1052,13 @@ func TestCompaction_Chaining(t *testing.T) {
 				prof.MaxTokens, CompactionSummaryMaxTokens)
 		}
 
-		if s.Profile.Model != "parent-model" {
+		if s.Profile.Model != compParentModel {
 			t.Errorf("session profile model = %q; want parent-model (never written back)", s.Profile.Model)
 		}
 
 		if s.Profile.MaxTokens != 8192 {
-			t.Errorf("session profile max_tokens = %d; want 8192 (the copy's cap never writes back)", s.Profile.MaxTokens)
+			t.Errorf("session profile max_tokens = %d; want 8192 (the copy's cap never writes back)",
+				s.Profile.MaxTokens)
 		}
 	})
 
@@ -770,7 +1070,8 @@ func TestCompaction_Chaining(t *testing.T) {
 		})
 		s.SetCompactionSettings(true, 80, 1000)
 
-		if err := s.compact(context.Background(), "t-comp"); err != nil {
+		err := s.compact(context.Background(), "t-comp")
+		if err != nil {
 			t.Fatalf("compact: %v", err)
 		}
 
@@ -779,7 +1080,7 @@ func TestCompaction_Chaining(t *testing.T) {
 			t.Fatal("summarizer was never called")
 		}
 
-		if prof.Model != "parent-model" {
+		if prof.Model != compParentModel {
 			t.Errorf("summarizer model = %q; want parent-model (A4 documented default)", prof.Model)
 		}
 	})
@@ -805,7 +1106,8 @@ func TestCompaction_Chaining(t *testing.T) {
 		defer bus.Unsubscribe("ToolCall", tools)
 		defer bus.Unsubscribe("ToolCallUpdate", toolUpds)
 
-		if err := s.compact(context.Background(), "t-comp"); err != nil {
+		err := s.compact(context.Background(), "t-comp")
+		if err != nil {
 			t.Fatalf("compact: %v", err)
 		}
 
