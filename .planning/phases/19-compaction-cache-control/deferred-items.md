@@ -42,3 +42,44 @@ next time `internal/runtime` is touched.
 `toolResultsFor` without the `gateWaitFor` its sibling subtests use; 19-03's
 added parallel batteries widened the scheduling window to ~50% full-suite
 flake. Fixed in a5a46a1 (documented as a deviation in 19-03-SUMMARY.md).
+
+## [2026-09-06, 19-04] Compacting note has no session/update frame (degrade taken)
+
+Task 2's compacting note degraded to the warning-counter family (one structured
+stderr line + one counter per compaction start): the landed ACP session/update
+vocabulary (16-01) has exactly five kinds (agent_message_chunk, tool_call,
+tool_call_update, plan, agent_thought_chunk) — no status/info frame — and the
+only text-bearing frame (agent_message_chunk) is exactly what PAR-01's
+bus-isolation prohibition bars from the compaction path (Pitfall 4). The plan
+pre-authorized this degrade. A proper user-visible note needs a deliberate wire
+decision (a new v1 frame kind does not exist; candidates: a dedicated
+session/update kind if the spec grows one, or a client-side note surfaced by
+Phase 20's /compact handler at the command surface).
+
+## [2026-09-06, 19-04] Producing turn's own window is not re-seeded by its loop-head marker
+
+D-07's "summarize → write marker → build request → send" sequence lands with a
+one-turn delay under 19-03's pinned reset-point position rule (the marker
+resets turns that START after it — test-enforced by
+TestProjector_CompactionResetPoint). The compacting turn's own requests keep
+their pre-phase window; the NEXT turn projects the summary seed + budget-filled
+tail. Consequences: (a) criterion 3's overflow retry-once recovers the SESSION
+(future turns) rather than guaranteed-shrinking the producing turn's outgoing
+window — a fat mid-turn tail overflows again after the single retry and fails
+loudly through the existing error path; (b) the threshold check's blocking
+pause benefits the next turn, not the current one. Candidate fix (needs
+architect sign-off — 19-03's pin would need a carve-out): a same-turn marker
+(TurnID == projected turn, no pre-user-marker present) serving as that turn's
+reset point; subagent-safe by the TurnID key (a parent marker never matches a
+subagent turn), and inert in every 19-03 fixture except the never-compacted
+case the pins do not cover.
+
+## [2026-09-06, 19-04] internal/runtime flake family wider than the two documented
+
+`TestCronWiring_AutomationTurnDeclinesGatedAsk` also failed once under
+full-suite machine load (17.7s runtime) alongside the documented
+TestAskPark_PromptResponsePrecedesResolution; both passed in isolation and the
+full package passed on rerun. 19-04's changes are structurally inert on the
+disabled path (maybeCompact returns before any work when settings are unset),
+so this is the same load-sensitive family — the timing-deadline review noted at
+19-03 should cover it.
