@@ -436,17 +436,19 @@ func testReplayToleratesNewKinds(t *testing.T) {
 }
 
 // TestProjectorToleratesNewKinds pins D-20's additive-only guarantee
-// end-to-end: a transcript interleaved with the STILL-INERT Phase-16 kinds
-// (local_command, compaction, foreign-turn raw_thinking) PLUS an unknown
-// future kind projects a window IDENTICAL to the same transcript without
-// them.
+// end-to-end: a transcript interleaved with the STILL-INERT kinds
+// (local_command, foreign-turn raw_thinking) PLUS an unknown future kind
+// projects a window IDENTICAL to the same transcript without them.
 //
-// Activation status: compaction stays inert until Phase 19 (reset-point
-// class). raw_thinking within the PROJECTED turn is NO LONGER inert — Phase
-// 21 (21-03, PAR-05) activated the thinking fold (see TestProjector_Thinking*
-// + TestThinkingGolden); only foreign-turn thinking lines remain inert here
-// (a subagent's or prior turn's thinking never leaks into the current turn's
-// window). A future dispatch change that breaks the remaining inertness
+// Activation status: raw_thinking within the PROJECTED turn was activated in
+// Phase 21 (21-03, PAR-05 — the thinking fold, see TestProjector_Thinking* +
+// TestThinkingGolden); only foreign-turn thinking lines remain inert here (a
+// subagent's or prior turn's thinking never leaks into the current turn's
+// window). compaction was activated in Phase 19 (19-03, PAR-01 — the durable
+// reset-point class, see TestProjector_CompactionResetPoint): a marker line
+// legitimately CHANGES the projection now, so it no longer has a place in
+// this inertness fixture — the same removal 21-03 applied to in-turn
+// raw_thinking. A future dispatch change that breaks the remaining inertness
 // fails loudly here.
 func TestProjectorToleratesNewKinds(t *testing.T) {
 	t.Parallel()
@@ -478,11 +480,12 @@ func TestProjectorToleratesNewKinds(t *testing.T) {
 
 // appendToleratedTurn writes the same two-turn content into the transcript;
 // when interleave is true the still-inert kinds + one unknown kind thread
-// through the IDENTICAL content — including a compaction line sitting where
-// a boundary would reset (proving compaction is NOT a reset point today) and
-// a FOREIGN-TURN thinking line (21-03: raw_thinking inside the projected
-// turn is active PAR-05 fold territory — covered by the thinking battery —
-// so only the foreign-turn placement remains in this inertness pin).
+// through the IDENTICAL content — a FOREIGN-TURN thinking line (21-03:
+// raw_thinking inside the projected turn is active PAR-05 fold territory —
+// covered by the thinking battery — so only the foreign-turn placement
+// remains in this inertness pin) and NO compaction line (19-03: the marker
+// is an ACTIVE reset point — see TestProjector_CompactionResetPoint — so
+// interleaving it here would legitimately change the window).
 func appendToleratedTurn(t *testing.T, m *Manager, interleave bool) {
 	t.Helper()
 
@@ -499,11 +502,6 @@ func appendToleratedTurn(t *testing.T, m *Manager, interleave bool) {
 		"AppendUserMessage")
 
 	mustAppend(t, m.AppendAssistantMessage("turn_0", "prior answer"), "AppendAssistantMessage")
-
-	if interleave {
-		// Sits where a boundary WOULD reset the window; inert until Phase 19.
-		mustAppend(t, m.AppendCompaction("turn_0", "line:2", "line:3", "", 10, 20, 30), "AppendCompaction")
-	}
 
 	if interleave {
 		mustAppend(t,

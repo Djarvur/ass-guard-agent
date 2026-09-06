@@ -78,10 +78,20 @@ func NewProjector(prof *profile.Profile, m *Manager) *Projector {
 // assistant text lines render as plain assistant messages — mechanically
 // extracted from the transcript, bounded to the MidTurnWindowMessages tail,
 // pair-safe.
+//
+// Phase 19 (PAR-01) adds the compaction marker as a THIRD reset-point class
+// with different seed semantics: when a marker precedes the projected turn's
+// user message, the seed is the marker's Summary (D-06 DURABLE — later
+// TypeBoundary lines never displace it; only a newer marker replaces it) and
+// every transcript WITHOUT a marker takes the pre-phase path byte-identically.
 func (p *Projector) Project(turnID string) ([]provider.Message, error) {
 	lines, err := p.manager.ReadAll()
 	if err != nil {
 		return nil, err
+	}
+
+	if mIdx := compactionMarkerIdx(lines, turnID); mIdx >= 0 {
+		return p.projectCompacted(lines, mIdx, turnID), nil
 	}
 
 	beforeBoundary, afterBoundary := splitAtResetBoundary(lines, turnID)
@@ -107,6 +117,85 @@ func (p *Projector) Project(turnID string) ([]provider.Message, error) {
 	out = append(out, mid...)
 
 	return out, nil
+}
+
+// projectCompacted is the PAR-01 compaction path: the winning marker's Summary
+// IS the seed's summary half, in the SAME single-user-message lean-seed shape
+// the mechanical post-boundary seed uses (the wrapper is reused verbatim; the
+// text is sourced from the marker — the model-generated summary replaces the
+// mechanical extractSummary output). D-06 durability: the summary is immune to
+// later mutating boundaries — this path runs whenever a marker precedes the
+// projected turn's user message, regardless of any TypeBoundary lines after
+// it, and the seed is the summary ALONE (research Open Question 3's
+// planner-pinned summary-only reading — no mechanical re-derivation over the
+// post-marker span). The tail follows existing discipline: today the turn's
+// own mid-turn accumulation (19-03 Task 3 extends it to the budget-fill
+// post-marker tail).
+func (p *Projector) projectCompacted(lines []Line, mIdx int, turnID string) []provider.Message {
+	marker := lines[mIdx]
+	after, before := lines[mIdx+1:], lines[:mIdx]
+
+	currentIntent := findCurrentIntent(after, before, turnID)
+
+	var content string
+	if marker.Summary != "" {
+		content = "Task summary (mechanical, post-boundary):\n" + marker.Summary +
+			"\n\n--- Current request ---\n" + currentIntent
+	} else {
+		// Pre-field marker shape: no payload, the intent alone (same branch as
+		// the no-summary first-turn seed).
+		content = currentIntent
+	}
+
+	mid := boundMidTurn(accumulateMidTurn(lines, turnID))
+
+	out := make([]provider.Message, 0, 1+len(mid))
+	out = append(out, seedMessage(content, findIntentLine(after, before, turnID)))
+	out = append(out, mid...)
+
+	return out
+}
+
+// compactionMarkerIdx returns the index of the MOST RECENT TypeCompaction line
+// STRICTLY BEFORE the projected turn's user message — the marker resets turns
+// that START after it, exactly the TypeBoundary rule (Pitfall 5: a marker
+// landing mid-turn is never the producing turn's own reset point). -1 when no
+// marker precedes the turn (the pre-phase path).
+func compactionMarkerIdx(lines []Line, turnID string) int {
+	userIdx := projectedUserIdx(lines, turnID)
+
+	markerIdx := -1
+
+	for i := range lines {
+		if lines[i].Type == TypeCompaction && (userIdx < 0 || i < userIdx) {
+			markerIdx = i
+		}
+	}
+
+	return markerIdx
+}
+
+// projectedUserIdx returns the projected turn's user-message index: the LAST
+// user_message carrying TurnID == turnID, falling back to the LAST
+// user_message overall (splitAtResetBoundary's rule), or -1 when none exists.
+func projectedUserIdx(lines []Line, turnID string) int {
+	lastIdx, matchedIdx := -1, -1
+
+	for i := range lines {
+		if lines[i].Type == TypeUserMessage {
+			lastIdx = i
+
+			if lines[i].TurnID == turnID {
+				matchedIdx = i
+			}
+		}
+	}
+
+	if matchedIdx >= 0 {
+		return matchedIdx
+	}
+
+	return lastIdx
 }
 
 // seedMessage builds the lean-seed user Message. 21-05 (PAR-06): when the
@@ -170,22 +259,7 @@ func imageBlocksOf(l *Line) []provider.Block {
 //
 //nolint:nonamedreturns // gocritic unnamedResult prefers names
 func splitAtResetBoundary(lines []Line, turnID string) (before, after []Line) {
-	lastUserIdx, matchedUserIdx := -1, -1
-
-	for i := range lines {
-		if lines[i].Type == TypeUserMessage {
-			lastUserIdx = i
-
-			if lines[i].TurnID == turnID {
-				matchedUserIdx = i
-			}
-		}
-	}
-
-	turnUserIdx := matchedUserIdx
-	if turnUserIdx < 0 {
-		turnUserIdx = lastUserIdx
-	}
+	turnUserIdx := projectedUserIdx(lines, turnID)
 
 	boundaryIdx := -1
 
