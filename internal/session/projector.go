@@ -2,6 +2,7 @@ package session
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
@@ -31,6 +32,21 @@ var fileBearingTools = map[string]bool{ //nolint:gochecknoglobals // immutable t
 // bookkeeping, 08-07 capture).
 const MidTurnWindowMessages = 64
 
+// compactionFillTargetPct is the D-05 fill target (planner-pinned discretion):
+// the summary estimate plus the tail cost stay at or under this percentage of
+// the injected context limit, leaving headroom under the 80 percent trigger —
+// a tail filled to the trigger would re-fire compaction on the next request.
+const compactionFillTargetPct = 60
+
+const (
+	// percentDenominator is the percentage scale (mnd: named, not magic).
+	percentDenominator = 100
+	// estimateCharsPerToken is the chars/4 token-estimate divisor (D-01's
+	// no-tokenizer discipline: provider usage is the trigger's ground truth;
+	// the estimate only sizes the tail fill).
+	estimateCharsPerToken = 4
+)
+
 // Projector builds the lean model-visible window (D-01) by mechanical extraction
 // from the transcript (D-02 — NO model call). It is the sole producer of the
 // []provider.Message the Shaper consumes. The window resets BETWEEN turns
@@ -56,12 +72,26 @@ const MidTurnWindowMessages = 64
 type Projector struct {
 	prof    *profile.Profile
 	manager *Manager
+
+	// CompactionTailBudget is the injectable compaction context limit (D-05,
+	// PAR-01): the post-marker tail fill targets 60 percent of it (minus the
+	// summary estimate — an oversized summary shrinks the tail, never the
+	// window, T-19-07). 19-04's session wiring sets it from the
+	// modelrouting-resolved context window; zero/unset falls back to the
+	// MidTurnWindowMessages count.
+	CompactionTailBudget int64
 }
 
 // NewProjector returns a Projector over the given profile + transcript Manager.
 func NewProjector(prof *profile.Profile, m *Manager) *Projector {
 	return &Projector{prof: prof, manager: m}
 }
+
+// SetCompactionTailBudget injects the compaction context limit (D-05) — 19-04
+// wires the session's modelrouting-resolved context window here. The zero
+// value means "no budget injected" and degrades the tail to the
+// MidTurnWindowMessages count (never an empty window, never an unbounded one).
+func (p *Projector) SetCompactionTailBudget(limit int64) { p.CompactionTailBudget = limit }
 
 // Project builds the window the model sees for the given turn. The lean seed
 // is ONE user message (the task summary + the current intent); prior turns are
@@ -99,24 +129,30 @@ func (p *Projector) Project(turnID string) ([]provider.Message, error) {
 	summary := p.extractSummary(beforeBoundary)
 	currentIntent := findCurrentIntent(afterBoundary, beforeBoundary, turnID)
 
-	// The lean seed is ONE user message: the task summary + the current intent.
-	// (The Shaper adds the system prompt separately from p.prof.System.)
-	var content string
-	if summary != "" {
-		content = "Task summary (mechanical, post-boundary):\n" + summary +
-			"\n\n--- Current request ---\n" + currentIntent
-	} else {
-		// First turn: no summary, just the intent.
-		content = currentIntent
-	}
-
 	mid := boundMidTurn(accumulateMidTurn(lines, turnID))
 
+	intentLine := findIntentLine(afterBoundary, beforeBoundary, turnID)
+
 	out := make([]provider.Message, 0, 1+len(mid))
-	out = append(out, seedMessage(content, findIntentLine(afterBoundary, beforeBoundary, turnID)))
+	out = append(out, seedMessage(seedContent(summary, currentIntent), intentLine))
 	out = append(out, mid...)
 
 	return out, nil
+}
+
+// seedContent builds the lean seed's text: ONE user message carrying the task
+// summary plus the current intent (the Shaper adds the system prompt
+// separately from p.prof.System). The wrapper shape is shared by the
+// mechanical post-boundary seed and the compaction seed (19-03: reuse the
+// shape, source the text from the marker); an empty summary degrades to the
+// intent alone (the first-turn form).
+func seedContent(summary, currentIntent string) string {
+	if summary == "" {
+		return currentIntent
+	}
+
+	return "Task summary (mechanical, post-boundary):\n" + summary +
+		"\n\n--- Current request ---\n" + currentIntent
 }
 
 // projectCompacted is the PAR-01 compaction path: the winning marker's Summary
@@ -128,32 +164,140 @@ func (p *Projector) Project(turnID string) ([]provider.Message, error) {
 // projected turn's user message, regardless of any TypeBoundary lines after
 // it, and the seed is the summary ALONE (research Open Question 3's
 // planner-pinned summary-only reading — no mechanical re-derivation over the
-// post-marker span). The tail follows existing discipline: today the turn's
-// own mid-turn accumulation (19-03 Task 3 extends it to the budget-fill
-// post-marker tail).
+// post-marker span).
+//
+// The TAIL follows existing boundary discipline (D-06: only the summary is
+// durable): a TypeBoundary after the marker drops the post-marker tail — the
+// window is the seed plus the current turn's own accumulation, exactly the
+// pre-phase between-turn shape. With no intervening boundary the marker wins
+// the tail scope: the D-04/D-05 budget-fill tail of the most recent
+// post-marker messages.
 func (p *Projector) projectCompacted(lines []Line, mIdx int, turnID string) []provider.Message {
 	marker := lines[mIdx]
 	after, before := lines[mIdx+1:], lines[:mIdx]
 
-	currentIntent := findCurrentIntent(after, before, turnID)
+	var mid []provider.Message
 
-	var content string
-	if marker.Summary != "" {
-		content = "Task summary (mechanical, post-boundary):\n" + marker.Summary +
-			"\n\n--- Current request ---\n" + currentIntent
+	if boundaryAfterMarker(lines, mIdx, turnID) {
+		mid = boundMidTurn(accumulateMidTurn(lines, turnID))
 	} else {
-		// Pre-field marker shape: no payload, the intent alone (same branch as
-		// the no-summary first-turn seed).
-		content = currentIntent
+		mid = p.boundCompactionTail(foldExchanges(lines, mIdx+1, "", false), marker.Summary)
 	}
 
-	mid := boundMidTurn(accumulateMidTurn(lines, turnID))
+	currentIntent := findCurrentIntent(after, before, turnID)
 
 	out := make([]provider.Message, 0, 1+len(mid))
-	out = append(out, seedMessage(content, findIntentLine(after, before, turnID)))
+	out = append(out, seedMessage(seedContent(marker.Summary, currentIntent), findIntentLine(after, before, turnID)))
 	out = append(out, mid...)
 
 	return out
+}
+
+// boundaryAfterMarker reports whether a TypeBoundary reset point sits between
+// the marker and the projected turn's user message (strictly before the user
+// message — a mid-turn boundary of the CURRENT turn never wipes its own
+// accumulation, 08-09). Such a boundary drops the post-marker tail (D-06).
+func boundaryAfterMarker(lines []Line, mIdx int, turnID string) bool {
+	userIdx := projectedUserIdx(lines, turnID)
+
+	for i := mIdx + 1; i < len(lines); i++ {
+		if lines[i].Type == TypeBoundary && (userIdx < 0 || i < userIdx) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// boundCompactionTail bounds the post-marker tail by the injected budget
+// (D-05): summary estimate + tail cost target 60 percent of
+// CompactionTailBudget. A zero/unset budget degrades to the existing
+// MidTurnWindowMessages count applied to the post-marker tail — never an
+// empty window (beyond the group-advance floor), never an unbounded one.
+func (p *Projector) boundCompactionTail(tail []provider.Message, summary string) []provider.Message {
+	if p.CompactionTailBudget <= 0 {
+		return boundMidTurn(tail)
+	}
+
+	allowance := p.CompactionTailBudget*compactionFillTargetPct/percentDenominator -
+		int64(len(summary))/estimateCharsPerToken
+	// An oversized summary shrinks the tail to its floor, never the window (T-19-07).
+	allowance = max(allowance, 0)
+
+	return boundCompactionTailByBudget(tail, allowance)
+}
+
+// boundCompactionTailByBudget keeps the MOST RECENT tail within the token
+// allowance, dropping only COMPLETE exchange groups — the boundMidTurn
+// group-advance discipline generalized from a message count to a token budget
+// (D-05). Groups accumulate most-recent-first until the next (older) group
+// would exceed the allowance; the newest group is always kept (the floor — a
+// tail-sized-under-budget error must not produce an empty window).
+func boundCompactionTailByBudget(tail []provider.Message, allowance int64) []provider.Message {
+	if len(tail) == 0 {
+		return nil
+	}
+
+	cut := len(tail)
+
+	var total int64
+
+	for i := range slices.Backward(tail) {
+		if tail[i].Role == roleToolMsg {
+			continue // inside the group of the head before it
+		}
+
+		cost := groupCost(tail, i, cut)
+
+		if cut < len(tail) && total+cost > allowance {
+			break // the next (older) group would exceed the budget
+		}
+
+		total += cost
+		cut = i
+
+		if total > allowance {
+			break // floor: the newest group alone may exceed the allowance
+		}
+	}
+
+	// The boundMidTurn advance, kept verbatim as the invariant guard: the cut
+	// never leaves an orphaned tool result at the tail's head (a tool result's
+	// assistant batch would be missing — pair-safety).
+	for cut < len(tail) && tail[cut].Role == roleToolMsg {
+		cut++ // advance to the next group head (assistant message)
+	}
+
+	if cut >= len(tail) {
+		return nil
+	}
+
+	return tail[cut:]
+}
+
+// groupCost sums the D-05 budget units over tail[from:to].
+func groupCost(tail []provider.Message, from, to int) int64 {
+	var total int64
+
+	for i := from; i < to; i++ {
+		total += messageCost(&tail[i])
+	}
+
+	return total
+}
+
+// messageCost is the D-05 budget unit: the message's folded JSON size divided
+// by 4, truncating (the chars/4 token-estimate class — D-01's no-tokenizer
+// discipline; provider usage remains the trigger's ground truth, this only
+// sizes the tail fill). Pointer-receiver style: Message is 144 bytes
+// (gocritic hugeParam).
+func messageCost(m *provider.Message) int64 {
+	raw, err := json.Marshal(m)
+	if err != nil {
+		return int64(len(m.Content)) / estimateCharsPerToken // unreachable: Message always marshals
+	}
+
+	return int64(len(raw)) / estimateCharsPerToken
 }
 
 // compactionMarkerIdx returns the index of the MOST RECENT TypeCompaction line
@@ -302,8 +446,27 @@ func splitAtResetBoundary(lines []Line, turnID string) (before, after []Line) {
 // ONLY extraction site on the replay path (D-14) — and pass through untouched
 // to the shaper.
 func accumulateMidTurn(lines []Line, turnID string) []provider.Message {
-	anchor := turnAnchorOf(lines, turnID)
+	return foldExchanges(lines, turnAnchorOf(lines, turnID), turnID, true)
+}
 
+// foldExchanges is the shared line→message folding (the accumulateMidTurn
+// rules, 08-07/08-09 + PAR-05): consecutive TypeToolCall lines become ONE
+// assistant message with a ToolCalls batch (the capture's batch form), each
+// TypeToolResult becomes a tool-role message whose ToolName is resolved from
+// the paired tool_call line, TypeAssistantMessage becomes a plain assistant
+// text message, and raw_thinking folds INTO its assistant unit (never cut
+// separately, Pitfall 5). A tool_result whose call is not in the window (its
+// batch was never accumulated) is dropped — an orphaned tool_result would
+// break the provider's tool_use/tool_result pairing invariant.
+//
+// filterTurn=true folds only the given turn's lines from `from` (the mid-turn
+// window — subagent turns have their own); filterTurn=false folds EVERY line
+// from `from` regardless of turn (the post-marker compaction tail, D-04/D-05:
+// the tail is the most recent post-marker messages across turns, with the
+// projected turn's own exchanges as its most recent members).
+//
+//nolint:funlen // the fold is ONE mechanical state machine, carried verbatim from accumulateMidTurn
+func foldExchanges(lines []Line, from int, turnID string, filterTurn bool) []provider.Message {
 	// CR-01 pair-safety pre-scan: the call ids that DO have a tool_result in
 	// the window. A multi-call batch can be only PARTIALLY answered at resume
 	// time (17-02's multi-permission suspension: dialog k answered while
@@ -311,7 +474,7 @@ func accumulateMidTurn(lines []Line, turnID string) []provider.Message {
 	// hand the provider an unpaired tool_use block and the request would be
 	// rejected. Only ANSWERED calls are projected; a call's tool_use rejoins
 	// the batch at the projection after its own resume lands its result.
-	hasResult := resultIDsOf(lines, anchor, turnID)
+	hasResult := resultIDsOf(lines, from, turnID, filterTurn)
 
 	var (
 		out             []provider.Message
@@ -349,9 +512,9 @@ func accumulateMidTurn(lines []Line, turnID string) []provider.Message {
 		return emitted
 	}
 
-	for i := anchor; i < len(lines); i++ {
+	for i := from; i < len(lines); i++ {
 		l := &lines[i]
-		if l.TurnID != turnID {
+		if filterTurn && l.TurnID != turnID {
 			continue // only the CURRENT turn's lines fold (subagent turns have their own)
 		}
 
@@ -447,12 +610,14 @@ func turnAnchorOf(lines []Line, turnID string) int {
 }
 
 // resultIDsOf returns the set of call ids carrying a tool_result line in the
-// current turn's window from anchor (the CR-01 projection pair-safety set).
-func resultIDsOf(lines []Line, anchor int, turnID string) map[string]bool {
+// folded window from `from` (the CR-01 projection pair-safety set).
+// filterTurn=true restricts the set to the given turn's results (the mid-turn
+// window); false takes every result from `from` (the post-marker tail).
+func resultIDsOf(lines []Line, from int, turnID string, filterTurn bool) map[string]bool {
 	hasResult := make(map[string]bool)
 
-	for i := anchor; i < len(lines); i++ {
-		if lines[i].TurnID == turnID && lines[i].Type == TypeToolResult {
+	for i := from; i < len(lines); i++ {
+		if (!filterTurn || lines[i].TurnID == turnID) && lines[i].Type == TypeToolResult {
 			hasResult[lines[i].ToolCallID] = true
 		}
 	}

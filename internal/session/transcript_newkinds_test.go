@@ -290,6 +290,8 @@ func testCompactionBoundaryRecord(t *testing.T) {
 // the REDACTED append path (16-D-23 scoping — only raw_thinking is exempt),
 // round-trips exactly, and pre-field readers parse a marker WITHOUT the
 // summary field with an empty Summary and no error (D-20 additive-only).
+//
+//nolint:gocyclo,cyclop,funlen // one flat battery, four behaviors
 func testCompactionSummaryPayload(t *testing.T) {
 	t.Parallel()
 

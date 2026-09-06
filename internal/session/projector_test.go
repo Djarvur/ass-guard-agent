@@ -1326,7 +1326,7 @@ const (
 // transcript WITHOUT a marker projects byte-identically to pre-phase behavior,
 // and a marker never disturbs a turn already in flight (Pitfall 5: it resets
 // turns that START after it, exactly like TypeBoundary).
-func TestProjector_CompactionResetPoint(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen // five-case battery
+func TestProjector_CompactionResetPoint(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen,maintidx // five cases
 	t.Parallel()
 
 	t.Run("marker wins the reset-point scan; seed is the marker's summary", func(t *testing.T) {
@@ -1339,7 +1339,8 @@ func TestProjector_CompactionResetPoint(t *testing.T) { //nolint:gocognit,gocycl
 		_ = m.AppendToolCall("turn_0", "tc_p1", toolRead, json.RawMessage(`{"file_path":"/w/parser.go"}`))
 		_ = m.AppendToolResult("turn_0", "tc_p1", json.RawMessage(`{"o":"src"}`), false)
 		_ = m.AppendAssistantMessage("turn_0", "parser fixed")
-		mustAppend(t, m.AppendCompaction("turn_0", "line:4", "line:5", sumMarkerWins, 1500, 300, 40), "AppendCompaction")
+		mustAppend(t,
+			m.AppendCompaction("turn_0", "line:4", "line:5", sumMarkerWins, 1500, 300, 40), "AppendCompaction")
 		_ = m.AppendUserMessage("turn_1", []ContentBlock{{Type: blockText, Text: "now the docs"}})
 
 		msgs, err := p.Project("turn_1")
@@ -1366,9 +1367,12 @@ func TestProjector_CompactionResetPoint(t *testing.T) { //nolint:gocognit,gocycl
 
 		// Summary-ONLY seed: the mechanical extractSummary vocabulary (and the
 		// pre-marker content it would summarize) must NOT leak into the seed.
-		for _, leak := range []string{"last_user=", "last_assistant=", "files_touched=", "fix the parser", "parser fixed"} {
+		for _, leak := range []string{
+			"last_user=", "last_assistant=", "files_touched=", "fix the parser", "parser fixed",
+		} {
 			if strings.Contains(seed.Content, leak) {
-				t.Errorf("seed carries the no-marker mechanical summary %q (seed must be the marker summary alone):\n%s", leak, seed.Content)
+				t.Errorf("seed carries the mechanical no-marker summary %q (marker summary alone):\n%s",
+					leak, seed.Content)
 			}
 		}
 	})
@@ -1406,7 +1410,7 @@ func TestProjector_CompactionResetPoint(t *testing.T) { //nolint:gocognit,gocycl
 		// does not re-derive a mechanical summary over the post-marker span.
 		for _, leak := range []string{"last_user=", "last_assistant=", "seed the data", "files_touched="} {
 			if strings.Contains(seed.Content, leak) {
-				t.Errorf("seed after a later boundary merges mechanical summary %q (must be the marker summary ALONE):\n%s",
+				t.Errorf("seed after a later boundary merges mechanical summary %q (marker summary ALONE):\n%s",
 					leak, seed.Content)
 			}
 		}
@@ -1507,7 +1511,8 @@ func TestProjector_CompactionResetPoint(t *testing.T) { //nolint:gocognit,gocycl
 		// Its mid-turn window keeps BOTH exchanges across the marker.
 		for _, id := range []string{"tc_s1", "tc_s2"} {
 			if !projectedHasCall(saMsgs, id) {
-				t.Errorf("subagent window lost in-flight exchange %s across the marker:\n%s", id, msgSummaryList(saMsgs))
+				t.Errorf("subagent window lost in-flight exchange %s across the marker:\n%s",
+					id, msgSummaryList(saMsgs))
 			}
 		}
 
@@ -1547,13 +1552,15 @@ func TestProjector_CompactionResetPoint(t *testing.T) { //nolint:gocognit,gocycl
 		}
 
 		if strings.Contains(seed.Content, sumMarkerEarly) {
-			t.Errorf("an EARLIER marker's summary survived a later marker (only a NEWER marker replaces the seed):\n%s", seed.Content)
+			t.Errorf("an EARLIER marker's summary survived a later marker (only a NEWER marker replaces the seed):\n%s",
+				seed.Content)
 		}
 
 		// Position rule: a marker appended AFTER the projected turn's user
 		// message (mid-flight compaction of turn_2 itself) must NOT become
 		// turn_2's reset point.
-		mustAppend(t, m.AppendCompaction("turn_2", "line:7", "line:8", "SUMMARY-INFLIGHT", 300, 30, 3), "AppendCompaction")
+		mustAppend(t,
+			m.AppendCompaction("turn_2", "line:7", "line:8", "SUMMARY-INFLIGHT", 300, 30, 3), "AppendCompaction")
 
 		again, err := p.Project("turn_2")
 		if err != nil {
@@ -1561,7 +1568,7 @@ func TestProjector_CompactionResetPoint(t *testing.T) { //nolint:gocognit,gocycl
 		}
 
 		if strings.Contains(again[0].Content, "SUMMARY-INFLIGHT") {
-			t.Errorf("a marker landing mid-turn reset the PRODUCING turn's own window (must reset only turns that START after it):\n%s",
+			t.Errorf("a marker landing mid-turn reset the PRODUCING turn's window (only turns STARTING after it):\n%s",
 				again[0].Content)
 		}
 
@@ -1571,8 +1578,6 @@ func TestProjector_CompactionResetPoint(t *testing.T) { //nolint:gocognit,gocycl
 	})
 }
 
-
-
 // --- PAR-01 budget-fill tail battery (19-03 Task 3) ---
 
 // sumTailFill is the marker summary for the tail-cut fixtures (short, so the
@@ -1581,8 +1586,9 @@ const sumTailFill = "SUMMARY-TAIL: bulk work absorbed"
 
 // tailMsgCost is the D-05 budget unit as the behavior spec defines it: the
 // message's folded JSON size divided by 4, truncating. Mirrors the production
-// cost rule (chars/4-class estimate, D-01's no-tokenizer discipline).
-func tailMsgCost(m provider.Message) int64 {
+// cost rule (chars/4-class estimate, D-01's no-tokenizer discipline). Pointer
+// form matches messageCost (Message is 144 bytes).
+func tailMsgCost(m *provider.Message) int64 {
 	raw, err := json.Marshal(m)
 	if err != nil {
 		return 0 // Message always marshals (plain fields + RawMessage inputs)
@@ -1609,8 +1615,6 @@ func appendTailGroups(t *testing.T, m *Manager, turnID string, n int) {
 // assertTailPairSafe walks the tail (msgs[1:]) proving the cut is pair-atomic:
 // the tail starts at a group head (assistant batch), and every tool message's
 // id belongs to a preceding kept batch — no orphaned tool result anywhere.
-//
-//nolint:gocognit // the pairing walk is one linear scan
 func assertTailPairSafe(t *testing.T, msgs []provider.Message) {
 	t.Helper()
 
@@ -1624,8 +1628,8 @@ func assertTailPairSafe(t *testing.T, msgs []provider.Message) {
 
 	batchIDs := map[string]bool{}
 
-	for _, mm := range msgs {
-		for _, tc := range mm.ToolCalls {
+	for i := range msgs {
+		for _, tc := range msgs[i].ToolCalls {
 			batchIDs[tc.ID] = true
 		}
 	}
@@ -1644,7 +1648,9 @@ func assertTailPairSafe(t *testing.T, msgs []provider.Message) {
 // starting with an orphaned tool result, never rewriting thinking (complete
 // groups drop alone) — with a zero/unset budget degrading to the
 // MidTurnWindowMessages count bound.
-func TestProjector_CompactionTailCut(t *testing.T) { //nolint:funlen // three dense fixtures
+func TestProjector_CompactionTailCut(t *testing.T) { //nolint:funlen,gocognit,gocyclo,cyclop // three fixtures
+	t.Parallel()
+
 	t.Run("budget-fill cut is pair-atomic, multi-turn, and respects the fill target", func(t *testing.T) {
 		t.Parallel()
 
@@ -1677,13 +1683,15 @@ func TestProjector_CompactionTailCut(t *testing.T) { //nolint:funlen // three de
 
 		// The budget forced a cut: leading groups are dropped...
 		if projectedHasCall(msgs, "turn_1_g00") {
-			t.Errorf("the oldest post-marker group survived the budget cut (tail not budget-filled):\n%s", msgSummaryList(msgs))
+			t.Errorf("the oldest post-marker group survived the budget cut (tail not budget-filled):\n%s",
+				msgSummaryList(msgs))
 		}
 
 		// ...the tail spans turns (starts inside turn_1's groups) and keeps
 		// the projected turn's own most recent exchange.
 		if len(msgs[1].ToolCalls) == 0 || !strings.HasPrefix(msgs[1].ToolCalls[0].ID, "turn_1_g") {
-			t.Errorf("tail head = %s; want a turn_1 group (the tail must span prior-turn exchanges)", msgSummary(&msgs[1]))
+			t.Errorf("tail head = %s; want a turn_1 group (the tail must span prior-turn exchanges)",
+				msgSummary(&msgs[1]))
 		}
 
 		if !projectedHasCall(msgs, "turn_2_g03") {
@@ -1695,17 +1703,20 @@ func TestProjector_CompactionTailCut(t *testing.T) { //nolint:funlen // three de
 
 		// D-05 fill target: summary estimate + tail cost <= 60% of the limit
 		// (headroom under the 80% trigger).
+		tail := msgs[1:]
+
 		var total int64
 
-		for _, mm := range msgs[1:] {
-			total += tailMsgCost(mm)
+		for i := range tail {
+			total += tailMsgCost(&tail[i])
 		}
 
 		summaryEst := int64(len(sumTailFill)) / 4
 		fillTarget := int64(budget) * compactionFillTargetPct / 100
 
 		if total+summaryEst > fillTarget {
-			t.Errorf("summary estimate + tail cost = %d; want <= %d (60%% of the %d limit)", total+summaryEst, fillTarget, budget)
+			t.Errorf("summary estimate + tail cost = %d; want <= %d (60%% of the %d limit)",
+				total+summaryEst, fillTarget, budget)
 		}
 	})
 
@@ -1721,7 +1732,7 @@ func TestProjector_CompactionTailCut(t *testing.T) { //nolint:funlen // three de
 		// 40 uniform groups = 80 post-marker messages — over the 64 bound.
 		_ = m.AppendUserMessage("turn_1", []ContentBlock{{Type: blockText, Text: "grow"}})
 		appendTailGroups(t, m, "turn_1", 40)
-		_ = m.AppendUserMessage("turn_2", []ContentBlock{{Type: blockText, Text: "read"}})
+		_ = m.AppendUserMessage("turn_2", []ContentBlock{{Type: blockText, Text: "inspect"}})
 
 		// CompactionTailBudget left at its zero value — the fallback.
 
@@ -1771,7 +1782,8 @@ func TestProjector_CompactionTailCut(t *testing.T) { //nolint:funlen // three de
 			thinking := json.RawMessage(
 				fmt.Sprintf(`{"type":"thinking","thinking":"think-%d","signature":"sig-%d"}`, i, i))
 			mustAppend(t, m.AppendRawThinking("turn_1", fixtureModelSlug, thinking), "AppendRawThinking")
-			mustAppend(t, m.AppendToolCall("turn_1", id, toolBash, json.RawMessage(`{"command":"ls"}`)), "AppendToolCall")
+			mustAppend(t,
+				m.AppendToolCall("turn_1", id, toolBash, json.RawMessage(`{"command":"ls"}`)), "AppendToolCall")
 			mustAppend(t,
 				m.AppendToolResult("turn_1", id, json.RawMessage(`"`+strings.Repeat("x", 3000)+`"`), false),
 				"AppendToolResult")
@@ -1787,10 +1799,11 @@ func TestProjector_CompactionTailCut(t *testing.T) { //nolint:funlen // three de
 			t.Fatalf("Project: %v", err)
 		}
 
-		for _, mm := range msgs {
-			for _, tb := range mm.ThinkingBlocks {
+		for i := range msgs {
+			for _, tb := range msgs[i].ThinkingBlocks {
 				if tb.Text == "think-0" || tb.Text == "think-1" {
-					t.Errorf("dropped group's thinking (%q) survived outside its group — groups must drop COMPLETE", tb.Text)
+					t.Errorf("dropped group's thinking (%q) survived outside its group — groups drop COMPLETE",
+						tb.Text)
 				}
 			}
 		}
@@ -1804,9 +1817,9 @@ func TestProjector_CompactionTailCut(t *testing.T) { //nolint:funlen // three de
 
 		got := map[string][]provider.ThinkingBlock{}
 
-		for _, mm := range msgs {
-			if len(mm.ToolCalls) == 1 {
-				got[mm.ToolCalls[0].ID] = mm.ThinkingBlocks
+		for i := range msgs {
+			if len(msgs[i].ToolCalls) == 1 {
+				got[msgs[i].ToolCalls[0].ID] = msgs[i].ThinkingBlocks
 			}
 		}
 
