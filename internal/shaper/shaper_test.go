@@ -3,6 +3,7 @@ package shaper_test
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"image"
 	"image/color"
 	"image/png"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -454,5 +456,167 @@ func TestImageCapability_ZeroBlocksByteIdentical(t *testing.T) {
 	want1 := []anthropic.ContentBlockParamUnion{anthropic.NewTextBlock("plain answer")}
 	if !reflect.DeepEqual(params.Messages[1].Content, want1) {
 		t.Errorf("assistant message drifted: %+v; want %+v", params.Messages[1].Content, want1)
+	}
+}
+
+// --- PAR-02 cache_control emission battery (19-01, Task 1 RED) ---
+
+// Cache-emission fixture markers (goconst).
+const (
+	cacheProfileName = "cachetest"
+	cacheDeclFlagged = "system_cache_control: true\n"
+	cacheControlKey  = "cache_control"
+	cacheKeyType     = "type"
+	cacheEphemeral   = "ephemeral"
+)
+
+// writeCacheControlProfile builds a minimal LOADABLE profile bundle under a
+// temp root — the real loader path is the only way the profile-level
+// system_cache_control declaration can be proven to reach every system block
+// (the blocks load from .txt files with no per-block metadata channel; the
+// yaml declaration is the storage form, the block flag the runtime carrier).
+// cacheDecl is the extra profile.yaml line ("" = the key is absent).
+func writeCacheControlProfile(t *testing.T, cacheDecl string, blocks ...string) string {
+	t.Helper()
+
+	root := t.TempDir()
+	pdir := filepath.Join(root, cacheProfileName)
+
+	err := os.MkdirAll(filepath.Join(pdir, "system"), 0o755)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	files := map[string]string{
+		"profile.yaml":     "name: " + cacheProfileName + "\nmodel: " + synthModel + "\nmax_tokens: 128\n" + cacheDecl,
+		"tools.json":       "[]",
+		"identity.yaml":    "headers: []\n",
+		"thinking.json":    "{}",
+		"tool_choice.json": "{}",
+	}
+
+	for i, b := range blocks {
+		files[filepath.Join("system", "block-"+strconv.Itoa(i)+".txt")] = b
+	}
+
+	for name, body := range files {
+		err := os.WriteFile(filepath.Join(pdir, name), []byte(body), 0o600)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	return root
+}
+
+// shapedSystemRaw shapes one trivial turn and returns the RAW marshaled system
+// array bytes of the outgoing request body (byte-level comparison ready).
+func shapedSystemRaw(t *testing.T, prof *profile.Profile) json.RawMessage {
+	t.Helper()
+
+	params, _, err := shaper.New().Shape(prof, []shaper.Message{{Role: roleUser, Content: "x"}})
+	if err != nil {
+		t.Fatalf("shape: %v", err)
+	}
+
+	raw, err := json.Marshal(params)
+	if err != nil {
+		t.Fatalf("marshal shaped request: %v", err)
+	}
+
+	var body struct {
+		System json.RawMessage `json:"system"`
+	}
+
+	err = json.Unmarshal(raw, &body)
+	if err != nil {
+		t.Fatalf("decode shaped body: %v", err)
+	}
+
+	return body.System
+}
+
+// systemEntryViews decodes the marshaled system array into per-entry key→raw
+// maps so tests assert exactly which fields each block carries.
+func systemEntryViews(t *testing.T, sysRaw json.RawMessage) []map[string]json.RawMessage {
+	t.Helper()
+
+	var entries []map[string]json.RawMessage
+
+	err := json.Unmarshal(sysRaw, &entries)
+	if err != nil {
+		t.Fatalf("decode system array: %v", err)
+	}
+
+	return entries
+}
+
+// TestShape_CacheControlEmission (Task 1, PAR-02): a profile declaring
+// system_cache_control: true shapes to a request whose EVERY system block
+// carries cache_control marshaling to exactly {"type":"ephemeral"} — the
+// corpus form (910/910 placements, no ttl key ever observed); a profile
+// without the declaration marshals its system array byte-identically to the
+// pre-phase construction; a profile with zero system blocks shapes without
+// error and emits no breakpoints.
+func TestShape_CacheControlEmission(t *testing.T) {
+	t.Parallel()
+
+	blocks := []string{"sys-zero", "sys-one", "sys-two"}
+
+	// Flagged: every system array entry carries exactly {"type":"ephemeral"}.
+	flagged := loadProfileFromRoot(t, writeCacheControlProfile(t, cacheDeclFlagged, blocks...), cacheProfileName)
+
+	entries := systemEntryViews(t, shapedSystemRaw(t, &flagged))
+	if len(entries) != len(blocks) {
+		t.Fatalf("flagged system entries = %d, want %d", len(entries), len(blocks))
+	}
+
+	for i, e := range entries {
+		ccRaw, ok := e[cacheControlKey]
+		if !ok {
+			t.Errorf("flagged system block %d carries no cache_control", i)
+
+			continue
+		}
+
+		var cc map[string]any
+
+		err := json.Unmarshal(ccRaw, &cc)
+		if err != nil {
+			t.Errorf("flagged system block %d cache_control is not an object: %v", i, err)
+
+			continue
+		}
+
+		if len(cc) != 1 || cc[cacheKeyType] != cacheEphemeral {
+			t.Errorf("flagged system block %d cache_control = %v, want exactly {type: ephemeral} (no ttl key)", i, cc)
+		}
+	}
+
+	// Unflagged: the system array is byte-identical to the pre-phase
+	// construction (TextBlockParam{Text} — zero cache_control omitted).
+	unflagged := loadProfileFromRoot(t, writeCacheControlProfile(t, "", blocks...), cacheProfileName)
+
+	want, err := json.Marshal([]anthropic.TextBlockParam{
+		{Text: blocks[0]}, {Text: blocks[1]}, {Text: blocks[2]},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if got := shapedSystemRaw(t, &unflagged); !bytes.Equal(got, want) {
+		t.Errorf("unflagged system array drifted from the pre-phase bytes:\ngot:  %s\nwant: %s", got, want)
+	}
+
+	// Zero-block profile: shapes without error, emits zero breakpoints.
+	empty := profile.Profile{Name: cacheProfileName, Model: synthModel, MaxTokens: 16}
+
+	params, _, err := shaper.New().Shape(&empty, []shaper.Message{{Role: roleUser, Content: "x"}})
+	if err != nil {
+		t.Fatalf("zero-block profile must shape without error: %v", err)
+	}
+
+	if len(params.System) != 0 {
+		t.Errorf("zero-block profile emitted %d system entries, want 0", len(params.System))
 	}
 }
