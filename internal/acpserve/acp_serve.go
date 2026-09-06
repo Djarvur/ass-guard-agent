@@ -323,6 +323,13 @@ func Run( //nolint:funlen // :320-425
 	})
 	runner.SetPermMode(surface.EffectivePermMode())
 
+	// 19-05 (D-03): the compaction live-apply seam — the surface's hook relays
+	// the post-persist effective pair to the runner's serialized swap (the
+	// ApplyTurnModel discipline: mid-turn Sets land between turns, the next
+	// pre-request check reads the new values). The context limit stays
+	// resolved inside the relay, from the modelrouting capability table.
+	surface.SetCompactionHook(runner.ApplyCompactionSettings)
+
 	// 12-07 (ACP-04/D-02): the per-project schedule store + the scheduler
 	// goroutine on the serve-lifetime ctx (no daemon, no port — Close/ctx
 	// owns its lifecycle). A failed open degrades to a serve WITHOUT

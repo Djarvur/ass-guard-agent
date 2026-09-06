@@ -5,8 +5,9 @@ package acpserve
 // WithConfigSurface. It owns the menu semantics the wire handler only relays:
 //
 //   - Menu construction from the REAL modelrouting layers (the locked D-06
-//     enumeration: model, tier, permissions.mode, compaction-threshold plus
-//     the `_global/` twins — A7's id-namespace scope decision).
+//     enumeration — model, tier, permissions.mode, compaction-threshold,
+//     compaction-enabled (19-05/D-03) — plus the `_global/` twins; A7's
+//     id-namespace scope decision).
 //   - Effective currentValue resolution through the precedence chain (D-11):
 //     project > global > embedded floor, plus the in-memory _meta blob overlay
 //     with fills-unset semantics (D-10 — the blob is the default-of-last-
@@ -44,12 +45,13 @@ import (
 
 // Menu vocabulary (D-06 enumeration + A7 scope namespace + v1 categories).
 const (
-	optModel            = "model"
-	optTier             = "tier"
-	optPermissionsMode  = "permissions.mode"
-	optCompactionThresh = "compaction-threshold"
-	optTombstoneGrace   = "tombstoneGraceDays"
-	optGlobalPrefix     = "_global/"
+	optModel             = "model"
+	optTier              = "tier"
+	optPermissionsMode   = "permissions.mode"
+	optCompactionThresh  = "compaction-threshold"
+	optCompactionEnabled = "compaction-enabled"
+	optTombstoneGrace    = "tombstoneGraceDays"
+	optGlobalPrefix      = "_global/"
 
 	scopeGlobal  = "global"
 	scopeProject = "project"
@@ -57,11 +59,19 @@ const (
 	permModeUngated = "ungated"
 	permModeGated   = "gated"
 
-	compactionOff      = "off"
-	compactionDefault  = "80"
-	compactionMidHigh  = "95"
-	compactionMid      = "65"
-	compactionMidLower = "50"
+	compactionOn         = "on"
+	compactionOff        = "off"
+	compactionDefault    = "80"
+	compactionDefaultPct = 80
+	compactionMidHigh    = "95"
+	compactionMid        = "65"
+	compactionMidLower   = "50"
+	// compactionPctMin/Max are the D-09 threshold bounds (T-19-12): the set
+	// path typed-rejects anything outside the whole-percentage window BEFORE
+	// any write; the session-side comparison clamps the same window
+	// defensively for values that arrived by other means.
+	compactionPctMin = 1
+	compactionPctMax = 100
 
 	// tombstoneGraceDefault mirrors session.DefaultTombstoneGrace (30d) as
 	// the menu's string current-value; graceDaysMin is the D-09 validation
@@ -82,10 +92,12 @@ const (
 	keyPermissions = "permissions"
 	keyPermMode    = "mode"
 
+	keyCompaction  = "compaction"
+	keyThresholdPc = "threshold_pct"
+	keyEnabled     = "enabled"
+
 	keyTombstone = "tombstone"
 	keyGraceDays = "graceDays"
-
-	phasePendingCompaction = "Phase 19"
 
 	// Idempotence-basis descriptions (WR-05 scope-aware guard log lines).
 	basisWhereEffective = "the currently-effective value"
@@ -130,6 +142,15 @@ type ConfigSurface struct {
 	// successful persist (D-07 persist-then-apply; the runner's SetPermMode).
 	permModeRead func() string
 	permModeHook func(mode string) error
+
+	// compactionHook is the 19-05 (D-03) live-apply seam: fired ONLY after a
+	// successful persist of either compaction id, with the POST-WRITE
+	// effective (enabled, threshold) pair — the other id may resolve from the
+	// other layer. The Run composition binds runner.ApplyCompactionSettings
+	// (the serialized per-session-turn swap — the ApplyTurnModel discipline).
+	// The context limit is deliberately absent from the pair: it stays
+	// resolved from the modelrouting capability table inside the relay.
+	compactionHook func(enabled bool, thresholdPct int) error
 
 	// blobRaw holds EVERY initialize _meta key verbatim (D-10 round-trip
 	// survival: unknown keys are retained byte-identical, never executed).
@@ -197,6 +218,19 @@ func (s *ConfigSurface) SetPermModeHook(h func(mode string) error) {
 	s.permModeHook = h
 }
 
+// SetCompactionHook wires the compaction live-apply seam (19-05/D-03). Called
+// ONLY after a successful layer persist of either compaction id
+// (D-07 persist-then-apply); the Run composition binds
+// runner.ApplyCompactionSettings so the running session's very next
+// pre-request check reads the new values (the ApplyTurnModel discipline —
+// mid-turn Sets land between turns).
+func (s *ConfigSurface) SetCompactionHook(h func(enabled bool, thresholdPct int) error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.compactionHook = h
+}
+
 // EffectivePermMode resolves the BOOT permission mode from the layer files
 // (project > global > the ungated default) — the composition calls it once at
 // startup to seed the runner's live accessor, so a hand-edited
@@ -248,9 +282,10 @@ func (s *ConfigSurface) Options() []acp.ConfigOptionFrame {
 }
 
 // Set persists+applies one option (D-07 persist-then-apply) and returns the
-// refreshed FULL set on every non-error outcome: an applied write, a pending
-// no-op, or an idempotent re-push. See the package-level doc for the ordering
-// and the D-09/D-10 guards.
+// refreshed FULL set on every non-error outcome: an applied write or an
+// idempotent re-push (every advertised id is a real handler since 19-05 —
+// the pending no-op outcome is gone). See the package-level doc for the
+// ordering and the D-09/D-10 guards.
 //
 // 16-REVIEW WR-03: the surface mutex spans only validation, persist, and the
 // refreshed-frame computation. The live apply (blocks on every live session's
@@ -263,7 +298,7 @@ func (s *ConfigSurface) Set(sessionID, optionID string, value any) ([]acp.Config
 
 	outcome, serr := s.setLocked(optionID, value)
 
-	notify, hook, modeHook := s.notify, s.applyHook, s.permModeHook
+	notify, hook, modeHook, compHook := s.notify, s.applyHook, s.permModeHook, s.compactionHook
 
 	s.mu.Unlock()
 
@@ -281,6 +316,15 @@ func (s *ConfigSurface) Set(sessionID, optionID string, value any) ([]acp.Config
 						outcome.applyPermMode, merr)
 				}
 			}
+		case outcome.applyCompaction != nil:
+			if compHook != nil {
+				cerr := compHook(outcome.applyCompaction.enabled, outcome.applyCompaction.pct)
+				if cerr != nil {
+					s.logf("live apply of compaction settings (enabled=%t, threshold=%d) failed "+
+						"(config persisted, live state unchanged): %v",
+						outcome.applyCompaction.enabled, outcome.applyCompaction.pct, cerr)
+				}
+			}
 		case hook != nil:
 			herr := hook(outcome.applyModel)
 			if herr != nil {
@@ -290,9 +334,9 @@ func (s *ConfigSurface) Set(sessionID, optionID string, value any) ([]acp.Config
 		}
 	}
 
-	// Only an APPLIED write emits out-of-band (the pending no-op and the
-	// idempotent re-push answer the caller without a config_option_update —
-	// the pre-WR-03 emit discipline, unchanged).
+	// Only an APPLIED write emits out-of-band (the idempotent re-push answers
+	// the caller without a config_option_update — the pre-WR-03 emit
+	// discipline, unchanged).
 	if outcome.doNotify && notify != nil {
 		notify(sessionID, outcome.frames)
 	}
@@ -338,8 +382,9 @@ func (s *ConfigSurface) ApplyBlobDefaults(meta map[string]json.RawMessage) (bool
 	// the chip. Capture the blob-resolved effective model here (under the lock)
 	// and fire the composition's hook outside it — the hook stamps the runner's
 	// pre-editor-stamp default so defaultTurnModel can no longer diverge from
-	// the advertisement. Only a real tier/model delta fires: permMode/
-	// compaction movement is pending-option state with no wire side.
+	// the advertisement. Only a real tier/model delta fires: permMode and
+	// compaction fills stay in-memory advertisement defaults (D-10) — the
+	// operator's live lever for those is set_config_option.
 	blobModel := ""
 	if after.model != "" && after.model != before.model {
 		blobModel = after.model
@@ -370,7 +415,10 @@ func (s *ConfigSurface) ApplyBlobDefaults(meta map[string]json.RawMessage) (bool
 
 // applyFillsLocked retains every _meta key verbatim and fills the recognized
 // unset slots (callers hold s.mu) — ApplyBlobDefaults's loop body, extracted to
-// keep the change-detection flow readable.
+// keep the change-detection flow readable. Since 19-05 every advertised id is
+// a REAL option: a compaction fill is an in-memory D-10 default exactly like
+// a tier fill (advertised when no operator layer sets the slot, never
+// persisted) — the operator's live lever for compaction is set_config_option.
 func (s *ConfigSurface) applyFillsLocked(meta map[string]json.RawMessage) {
 	for k, raw := range meta {
 		s.blobRaw[k] = append(json.RawMessage(nil), raw...) // verbatim, byte-identical
@@ -388,11 +436,6 @@ func (s *ConfigSurface) applyFillsLocked(meta map[string]json.RawMessage) {
 		}
 
 		s.blobFills[bare] = str
-
-		if isPendingOption(bare) {
-			s.logf("option %q: blob default %q accepted as a pending-handler no-op (handler lands in %s, D-05)",
-				k, str, phasePendingCompaction)
-		}
 	}
 }
 
@@ -406,8 +449,20 @@ type setOutcome struct {
 	// applyPermMode carries the permissions.mode live-apply target (17-02):
 	// non-empty (with doApply) fires permModeHook instead of the model hook.
 	applyPermMode string
-	doApply       bool
-	doNotify      bool
+	// applyCompaction carries the compaction live-apply target (19-05):
+	// non-nil (with doApply) fires compactionHook instead of the model hook.
+	applyCompaction *compactionPair
+	doApply         bool
+	doNotify        bool
+}
+
+// compactionPair is the compaction live-apply target: the POST-WRITE effective
+// (enabled, threshold) pair — the surface persists one id but the session's
+// check consumes both, so the apply carries the resolved pair, never the
+// written id alone.
+type compactionPair struct {
+	enabled bool
+	pct     int
 }
 
 // setLocked is Set's lock-holding half (callers hold s.mu): validate →
@@ -437,10 +492,13 @@ func (s *ConfigSurface) setLocked(optionID string, value any) (setOutcome, error
 		return setOutcome{}, fmt.Errorf("resolve current config: %w", rerr)
 	}
 
-	if isPendingOption(bare) {
-		frames, perr := s.setPendingLocked(optionID, scope, bare, val)
+	if bare == optCompactionThresh || bare == optCompactionEnabled {
+		frames, pair, applied, cerr := s.setCompactionLocked(optionID, scope, bare, val)
 
-		return setOutcome{frames: frames}, perr
+		return setOutcome{
+			frames: frames, applyCompaction: pair,
+			doApply: applied, doNotify: applied,
+		}, cerr
 	}
 
 	if bare == optPermissionsMode {
@@ -516,7 +574,7 @@ func (s *ConfigSurface) snapshotLocked() (effectiveState, error) {
 		tier:       res.tier,
 		model:      res.model,
 		permMode:   s.effectivePermModeLocked(),
-		compaction: s.pendingCurrentLocked(optCompactionThresh),
+		compaction: s.effectiveCompactionThresholdLocked(),
 		graceDays:  s.effectiveTombstoneGraceLocked(),
 	}, nil
 }
@@ -630,40 +688,199 @@ func (s *ConfigSurface) resolveModelLocked(cfg *modelrouting.Config, tier string
 	return ""
 }
 
-// pendingCurrentLocked resolves a pending option's advertised value: the blob
-// fill when present (nothing else can set it), else the fixed default.
-func (s *ConfigSurface) pendingCurrentLocked(bare string) string {
+// blobOrDefaultLocked returns the initialize _meta blob fill for a bare id
+// when present, else the fixed default — the advertisement's last-resort slot
+// value (D-10 fills-unset: the blob fills slots no OPERATOR layer sets; the
+// embedded floor is not operator config). It replaces the pre-19-05
+// pendingCurrentLocked (the last pending id became a real handler).
+func (s *ConfigSurface) blobOrDefaultLocked(bare, def string) string {
 	if fill, ok := s.blobFills[bare]; ok {
 		return fill
 	}
 
-	if bare == optCompactionThresh {
-		return compactionDefault
+	return def
+}
+
+// compactionValueLocked resolves one compaction id's EFFECTIVE menu value
+// (callers hold s.mu): explicit project over explicit global over the blob
+// fill over the fixed default — the same precedence chain tier/model use.
+func (s *ConfigSurface) compactionValueLocked(bare string) string {
+	if bare == optCompactionEnabled {
+		return s.effectiveCompactionEnabledLocked()
 	}
 
-	return permModeUngated
+	return s.effectiveCompactionThresholdLocked()
+}
+
+// globalCompactionValueLocked resolves one compaction id's GLOBAL-layer-own
+// menu value (the _global twins describe a layer FILE — no blob overlay).
+func (s *ConfigSurface) globalCompactionValueLocked(bare string) string {
+	if bare == optCompactionEnabled {
+		return s.globalCompactionEnabledLocked()
+	}
+
+	return s.globalCompactionThresholdLocked()
+}
+
+// effectiveCompactionThresholdLocked: project layer > global layer > blob
+// fill > the 80 default.
+func (s *ConfigSurface) effectiveCompactionThresholdLocked() string {
+	if v := s.layerCompactionThreshold(s.projectPath); v != "" {
+		return v
+	}
+
+	if v := s.layerCompactionThreshold(s.globalPath); v != "" {
+		return v
+	}
+
+	return s.blobOrDefaultLocked(optCompactionThresh, compactionDefault)
+}
+
+// effectiveCompactionEnabledLocked: project layer > global layer > blob fill
+// > the on default.
+func (s *ConfigSurface) effectiveCompactionEnabledLocked() string {
+	if v := s.layerCompactionEnabled(s.projectPath); v != "" {
+		return v
+	}
+
+	if v := s.layerCompactionEnabled(s.globalPath); v != "" {
+		return v
+	}
+
+	return s.blobOrDefaultLocked(optCompactionEnabled, compactionOn)
+}
+
+// globalCompactionThresholdLocked: the global layer's own threshold, else the
+// fixed default.
+func (s *ConfigSurface) globalCompactionThresholdLocked() string {
+	if v := s.layerCompactionThreshold(s.globalPath); v != "" {
+		return v
+	}
+
+	return compactionDefault
+}
+
+// globalCompactionEnabledLocked: the global layer's own switch, else the
+// fixed default.
+func (s *ConfigSurface) globalCompactionEnabledLocked() string {
+	if v := s.layerCompactionEnabled(s.globalPath); v != "" {
+		return v
+	}
+
+	return compactionOn
+}
+
+// effectiveCompactionPairLocked resolves the live-apply target: the POST-WRITE
+// effective (enabled, threshold) pair — the session's check consumes both, so
+// the apply never carries the written id alone. An unparseable or out-of-range
+// effective threshold degrades to the floor default — unreachable through the
+// write path (validation-first), this covers only the hand-corrupted layer.
+func (s *ConfigSurface) effectiveCompactionPairLocked() *compactionPair {
+	pct, perr := strconv.Atoi(s.effectiveCompactionThresholdLocked())
+	if perr != nil || pct < compactionPctMin || pct > compactionPctMax {
+		pct = compactionDefaultPct
+	}
+
+	return &compactionPair{
+		enabled: s.effectiveCompactionEnabledLocked() == compactionOn,
+		pct:     pct,
+	}
 }
 
 // --- mutation helpers (callers hold s.mu) ---
 
-// setPendingLocked handles an advertised-but-unhandled id (compaction-
-// threshold only since 17-02 — permissions.mode is a real option): validate
-// the value (never accept garbage into a pending slot), log one structured
-// line, persist nothing, return the set unchanged (D-05).
-func (s *ConfigSurface) setPendingLocked(
+// setCompactionLocked is the REAL compaction handler pair (19-05/D-03 — the
+// 19-04-pending no-op is gone): validation FIRST (T-19-12: the threshold is a
+// 1..100 integer and the switch a two-value select, typed-rejected before ANY
+// write), then the scope-aware idempotence guard (D-10/WR-05), persistence
+// through WriteLayerOption on the routed layer (D-07's persist half — an int
+// or bool value, never a string, so the loader round-trips it), and the
+// POST-WRITE effective pair as the live-apply target (the written id plus the
+// other id resolved from the layers). The offered select values are a UI
+// affordance: any whole 1..100 percentage is a valid threshold write
+// (the tombstoneGrace precedent).
+func (s *ConfigSurface) setCompactionLocked( //nolint:cyclop // validate → guard → persist → target reads as one flow
 	optionID, scope, bare, val string,
-) ([]acp.ConfigOptionFrame, error) {
-	if !slices.Contains(selectValues(bare), val) {
-		return nil, &acp.ConfigViolationError{
-			OptionID:  optionID,
-			Violation: fmt.Sprintf("value %q is not one of the offered options", val),
+) ([]acp.ConfigOptionFrame, *compactionPair, bool, error) {
+	var (
+		writePct int
+		writeEn  bool
+	)
+
+	switch bare {
+	case optCompactionThresh:
+		p, perr := strconv.Atoi(val)
+		if perr != nil {
+			return nil, nil, false, &acp.ConfigViolationError{
+				OptionID: optionID,
+				Violation: fmt.Sprintf("value %q is not a whole percentage "+
+					"(the threshold is an integer 1..100)", val),
+			}
+		}
+
+		if p < compactionPctMin || p > compactionPctMax {
+			return nil, nil, false, &acp.ConfigViolationError{
+				OptionID:  optionID,
+				Violation: fmt.Sprintf("threshold must be within %d..%d (got %d)", compactionPctMin, compactionPctMax, p),
+			}
+		}
+
+		writePct = p
+	case optCompactionEnabled:
+		switch val {
+		case compactionOn:
+			writeEn = true
+		case compactionOff:
+			writeEn = false
+		default:
+			return nil, nil, false, &acp.ConfigViolationError{
+				OptionID:  optionID,
+				Violation: fmt.Sprintf("value %q is not one of the offered options", val),
+			}
 		}
 	}
 
-	s.logf("option %q (scope %s): pending handler (lands in %s) — value %q accepted as a logged no-op (D-05)",
-		optionID, scope, phasePendingCompaction, val)
+	// Idempotence basis (WR-05): the ADDRESSED scope's value — project
+	// compares the combined effective value; global compares the global
+	// layer's own value.
+	basis, where := s.compactionValueLocked(bare), basisWhereEffective
+	if scope == scopeGlobal {
+		basis = s.globalCompactionValueLocked(bare)
+		where = basisWhereGlobal
+	}
 
-	return s.optionsLocked(), nil
+	if val == basis {
+		s.logf("option %q: value %q equals %s — idempotent re-push, no layer write (D-10)",
+			optionID, val, where)
+
+		return s.optionsLocked(), nil, false, nil
+	}
+
+	layerPath, lerr := s.layerForScope(scope)
+	if lerr != nil {
+		return nil, nil, false, &acp.ConfigPersistError{OptionID: optionID, Err: lerr}
+	}
+
+	keyPath := []string{keyCompaction, keyThresholdPc}
+	value := any(writePct)
+
+	if bare == optCompactionEnabled {
+		keyPath = []string{keyCompaction, keyEnabled}
+		value = writeEn
+	}
+
+	werr := providerfactory.WriteLayerOption(layerPath, keyPath, value)
+	if werr != nil {
+		return nil, nil, false, &acp.ConfigPersistError{OptionID: optionID, Err: werr}
+	}
+
+	// An explicit editor write supersedes any blob fill for this option.
+	delete(s.blobFills, bare)
+
+	s.logf("option %q (scope %s): persisted %q — live apply follows (D-07 persist-then-apply)",
+		optionID, scope, val)
+
+	return s.optionsLocked(), s.effectiveCompactionPairLocked(), true, nil
 }
 
 // setPermModeLocked is the REAL permissions.mode handler (17-02, ACP-01): a
@@ -738,7 +955,7 @@ func (s *ConfigSurface) effectivePermModeLocked() string {
 		return m
 	}
 
-	return s.pendingCurrentLocked(optPermissionsMode)
+	return s.blobOrDefaultLocked(optPermissionsMode, permModeUngated)
 }
 
 // globalPermModeLocked resolves the GLOBAL layer's own permissions.mode (the
@@ -869,6 +1086,59 @@ func (s *ConfigSurface) layerPermMode(path string) string {
 	return layerValue(m, keyPermissions, keyPermMode)
 }
 
+// layerCompactionThreshold reads one layer file's compaction.threshold_pct
+// menu value ("" when the file is absent/unreadable/unset; the writer emits
+// an int, a hand-quoted string is tolerated).
+func (s *ConfigSurface) layerCompactionThreshold(path string) string {
+	if path == "" {
+		return ""
+	}
+
+	m, err := readLayerMap(path)
+	if err != nil {
+		return ""
+	}
+
+	switch v := layerScalar(m, keyCompaction, keyThresholdPc).(type) {
+	case int:
+		return strconv.Itoa(v)
+	case string:
+		return v
+	default:
+		return ""
+	}
+}
+
+// layerCompactionEnabled reads one layer file's compaction.enabled menu value
+// ("" when unset; "on"/"off" — the writer emits a bool, hand-quoted strings
+// are tolerated).
+func (s *ConfigSurface) layerCompactionEnabled(path string) string {
+	if path == "" {
+		return ""
+	}
+
+	m, err := readLayerMap(path)
+	if err != nil {
+		return ""
+	}
+
+	switch v := layerScalar(m, keyCompaction, keyEnabled).(type) {
+	case bool:
+		if v {
+			return compactionOn
+		}
+
+		return compactionOff
+	case string:
+		if v == compactionOn || v == compactionOff {
+			return v
+		}
+	default:
+	}
+
+	return ""
+}
+
 // validateSettableLocked applies the D-09 menu membership check for the
 // day-1-handled ids.
 func (s *ConfigSurface) validateSettableLocked(
@@ -976,7 +1246,7 @@ func (s *ConfigSurface) floorResolvedLocked() (*resolvedConfig, error) {
 	}, nil
 }
 
-// optionsLocked builds the ten-entry menu. A layer-load failure degrades to
+// optionsLocked builds the twelve-entry menu. A layer-load failure degrades to
 // the embedded floor (loudly); only a floor failure leaves the advertisement
 // empty.
 func (s *ConfigSurface) optionsLocked() []acp.ConfigOptionFrame {
@@ -1018,7 +1288,7 @@ func (s *ConfigSurface) optionsLocked() []acp.ConfigOptionFrame {
 	return s.menuEntriesLocked(res, gRes, models, tiers)
 }
 
-// menuEntriesLocked builds the ten advertisement rows from the resolved
+// menuEntriesLocked builds the twelve advertisement rows from the resolved
 // configs (callers hold s.mu) — optionsLocked's tail, split so the
 // resolution-degrade flow and the row construction read separately.
 func (s *ConfigSurface) menuEntriesLocked(
@@ -1043,8 +1313,11 @@ func (s *ConfigSurface) menuEntriesLocked(
 			"Tool permission gating (deny/allow rules always enforced; gated asks per tool call)",
 			categoryMode, s.effectivePermModeLocked(), selectValues(optPermissionsMode)),
 		build(optCompactionThresh, "Compaction threshold",
-			"Context compaction trigger (phase "+phasePendingCompaction+")",
-			categoryCustom, s.pendingCurrentLocked(optCompactionThresh), selectValues(optCompactionThresh)),
+			"Context compaction trigger (percent of the resolved context window)",
+			categoryCustom, s.effectiveCompactionThresholdLocked(), selectValues(optCompactionThresh)),
+		build(optCompactionEnabled, "Compaction enabled",
+			"Context compaction switch (the pre-request check skips entirely when off)",
+			categoryCustom, s.effectiveCompactionEnabledLocked(), selectValues(optCompactionEnabled)),
 		build(optGlobalPrefix+optModel, "Model (global default)", "Model default in the global config layer",
 			categoryModel, gRes.model, models),
 		build(optGlobalPrefix+optTier, "Session tier (global default)", "Tier default in the global config layer",
@@ -1052,8 +1325,12 @@ func (s *ConfigSurface) menuEntriesLocked(
 		build(optGlobalPrefix+optPermissionsMode, "Permission mode (global default)",
 			"Global permission gating default",
 			categoryMode, s.globalPermModeLocked(), selectValues(optPermissionsMode)),
-		build(optGlobalPrefix+optCompactionThresh, "Compaction threshold (global default)", "Global compaction default",
-			categoryCustom, s.pendingCurrentLocked(optCompactionThresh), selectValues(optCompactionThresh)),
+		build(optGlobalPrefix+optCompactionThresh, "Compaction threshold (global default)",
+			"Global compaction trigger default",
+			categoryCustom, s.globalCompactionThresholdLocked(), selectValues(optCompactionThresh)),
+		build(optGlobalPrefix+optCompactionEnabled, "Compaction enabled (global default)",
+			"Global compaction switch default",
+			categoryCustom, s.globalCompactionEnabledLocked(), selectValues(optCompactionEnabled)),
 		build(optTombstoneGrace, "Tombstone grace",
 			"Days a deleted session stays recoverable before the GC sweep purges it (audit history survives)",
 			categoryCustom, s.effectiveTombstoneGraceLocked(), graceDayChoices()),
@@ -1116,29 +1393,37 @@ func (s *ConfigSurface) layerForScope(scope string) (string, error) {
 // layerValue returns the string value at a nested key path of a generic map
 // ("" when any step is missing or not a string).
 func layerValue(m map[string]any, keyPath ...string) string {
+	s, _ := layerScalar(m, keyPath...).(string)
+
+	return s
+}
+
+// layerScalar returns the raw scalar at a nested key path of a generic map
+// (nil when any step is missing) — layerValue's tolerant base plus the
+// non-string leaves the compaction keys write (int threshold_pct, bool
+// enabled).
+func layerScalar(m map[string]any, keyPath ...string) any {
 	cur := m
 
 	for i, k := range keyPath {
 		v, ok := cur[k]
 		if !ok {
-			return ""
+			return nil
 		}
 
 		if i == len(keyPath)-1 {
-			s, _ := v.(string)
-
-			return s
+			return v
 		}
 
 		next, ok := v.(map[string]any)
 		if !ok {
-			return ""
+			return nil
 		}
 
 		cur = next
 	}
 
-	return ""
+	return nil
 }
 
 func (s *ConfigSurface) logf(format string, args ...any) {
@@ -1167,14 +1452,7 @@ func splitScope(optionID string) optionScope {
 
 func isMenuOption(bare string) bool {
 	return bare == optModel || bare == optTier || bare == optPermissionsMode ||
-		bare == optCompactionThresh || bare == optTombstoneGrace
-}
-
-// isPendingOption reports the advertised-but-unhandled ids (D-05): accepted
-// and logged, never persisted. Since 17-02 only compaction-threshold remains
-// pending (its handler lands in Phase 19); permissions.mode is a real option.
-func isPendingOption(bare string) bool {
-	return bare == optCompactionThresh
+		bare == optCompactionThresh || bare == optCompactionEnabled || bare == optTombstoneGrace
 }
 
 // graceDayChoices is the tombstone-grace offered set — a UI AFFORDANCE, not
@@ -1184,13 +1462,18 @@ func graceDayChoices() []string {
 	return []string{"1", "7", "14", "30", "60", "90", "180", "365"}
 }
 
-// selectValues is the fixed offered set of a select option.
+// selectValues is the fixed offered set of a select option. The offered
+// threshold percentages are a UI affordance (any whole 1..100 percentage is a
+// valid write); the enabled switch is strictly two-valued.
 func selectValues(bare string) []string {
-	if bare == optPermissionsMode {
+	switch bare {
+	case optPermissionsMode:
 		return []string{permModeUngated, permModeGated}
+	case optCompactionEnabled:
+		return []string{compactionOn, compactionOff}
+	default: // the compaction threshold's offered set
+		return []string{compactionMidLower, compactionMid, compactionDefault, compactionMidHigh}
 	}
-
-	return []string{compactionOff, compactionMidLower, compactionMid, compactionDefault, compactionMidHigh}
 }
 
 // readLayerMap parses one layer file as a generic map (the writer's read

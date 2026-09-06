@@ -1828,8 +1828,8 @@ func TestCompactionLive_BootDefaults(t *testing.T) { //nolint:paralleltest // ru
 
 	sid := startLiveApplySession(t, inPipeW, stdout)
 
-	liveCompactionPrompt(t, inPipeW, stdout, 2, sid, "hi")       // usage recorded; lastInput 0 fires nothing
-	liveCompactionPrompt(t, inPipeW, stdout, 3, sid, "again")    // 170K >= 80% of 200K — fires
+	liveCompactionPrompt(t, inPipeW, stdout, 2, sid, "hi")    // usage recorded; lastInput 0 fires nothing
+	liveCompactionPrompt(t, inPipeW, stdout, 3, sid, "again") // 170K >= 80% of 200K — fires
 
 	waitForCompactionMarkers(t, workDir, sid, 1)
 }
