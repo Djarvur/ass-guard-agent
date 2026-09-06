@@ -1,18 +1,14 @@
 ---
-status: testing
+status: complete
 phase: 18-session-family
 source: [18-VERIFICATION.md]
 started: 2026-09-03T13:05:00Z
-updated: 2026-09-03T13:05:00Z
+updated: 2026-09-06T19:41:37Z
 ---
 
 ## Current Test
 
-number: 2
-name: Interactive TTY/ssh picker check (18-06 D-11)
-expected: |
-  `ass-guard --resume` in a real terminal renders the numbered picker (pipe-safe: numbers + names, stderr), arrow/number selection lands in a fully replayed session; under a pipe (no TTY) it degrades safely (no garbled render).
-awaiting: user response
+[testing complete]
 
 ## Tests
 
@@ -23,8 +19,8 @@ note: "Operator 2026-09-06: A1 list+resume+continue PASS, A2 stop-mid-turn PASS 
 
 ### 2. Interactive TTY/ssh picker check (18-06 D-11)
 expected: `ass-guard --resume` in a real terminal renders the numbered picker (pipe-safe: numbers + names, stderr), arrow/number selection lands in a fully replayed session; under a pipe (no TTY) it degrades safely (no garbled render).
-result: [pending]
-re-run: true
+result: pass
+note: "RE-RUN 2026-09-06 PASS (fresh binary — ~/go/bin/ass-guard rebuilt after 2a3cea7; the installed copy predated the fix, hence the re-run). Four legs: (1) real TTY in ~/tmp/perm-uat — BOTH legacy user_message-opener transcripts enumerate in the numbered picker (tolerant-opener path; the pre-fix run died here with 'no sessions to resume'), number entry lands a fully replayed session (replay frames on stdout), Ctrl+C exits; (2) pipe mode — clean stderr render (no ANSI/garbled output), replay to stdout, clean self-exit on stdin EOF exit=0; (3) negative — one re-prompt after invalid entry, then the typed 'no session selected' error; (4) bonus — a fresh Zed-created session writes session_start as its transcript's first line and shows up as a third picker row. Number-only selection (no arrow keys) is the D-11 design — pipe-safe, no raw-mode anywhere in the path."
 reported: "`ass-guard --resume` in ~/tmp/perm-uat (two real transcripts on disk, no tombstones): Error: no sessions to resume. Root cause diagnosed from code+disk: Manager.AppendSessionStart (internal/session/manager.go:165) has ZERO production callers — real sessions never write the session_start opener line, so ListSessions' readHeaderOpener (internal/session/list.go:271-306, requires a conforming session_start first line) skips every real transcript as non-conforming. Fixtures hand-write the opener, so the whole list battery is green against a shape real sessions never produce (the G-17-1 class again: tests model a fiction)."
 severity: blocker
 
@@ -36,9 +32,9 @@ note: "Operator 2026-09-06: «устраивает»."
 ## Summary
 
 total: 3
-passed: 2
+passed: 3
 issues: 0
-pending: 1
+pending: 0
 skipped: 0
 blocked: 0
 
@@ -57,5 +53,5 @@ blocked: 0
     - internal/session/list.go:244-306
     - ~/tmp/perm-uat/.ass-guard/transcript_15ceb322*.jsonl (first line = user_message)
   missing: []
-  resolution: "18-07 executed (61a18ea RED pins, 2a3cea7 GREEN size-gated opener wiring + two-tier tolerant conformingOpener, fcbcbda/ce971fc docs); kill-9 + full battery green. Picker re-run pending with the fresh binary."
+  resolution: "18-07 executed (61a18ea RED pins, 2a3cea7 GREEN size-gated opener wiring + two-tier tolerant conformingOpener, fcbcbda/ce971fc docs); kill-9 + full battery green. Picker re-run PASSED 2026-09-06 with the fresh binary — all four legs (TTY enumerate/select/replay, pipe degradation, negative entry, fresh session_start opener); see test 2 note."
   fix_direction: "(a) wire AppendSessionStart into real session creation (the transcript's first line, id in Text as the contract expects); (b) make readHeaderOpener tolerant for pre-fix transcripts — first line of ANY known type with a valid timestamp serves as the createdAt fallback (title scan unchanged) so legacy sessions stay enumerable; (c) RED pins: a real-shape transcript (user_message opener) must list, and a session created through the real serve path must produce a session_start first line."
