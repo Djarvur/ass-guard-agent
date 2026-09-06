@@ -340,6 +340,51 @@ func TestMidTurnCapture_GoldenShape(t *testing.T) {
 	assertGoldenFirstBatch(t, params.Messages)
 	assertGoldenSecondBatch(t, params.Messages)
 	assertGoldenTail(t, params.Messages)
+
+	// 19-01 (PAR-02): the regenerated golden carries cache_control on every
+	// system block — the emission is part of the pinned shape now.
+	goldenSystemCarriesEphemeral(t, params)
+}
+
+// goldenSystemCarriesEphemeral asserts every system block of the marshaled
+// golden request carries cache_control exactly {"type":"ephemeral"} — the
+// corpus form pinned into the golden so the emission cannot silently regress.
+func goldenSystemCarriesEphemeral(t *testing.T, params anthropic.MessageNewParams) {
+	t.Helper()
+
+	raw, err := json.Marshal(params)
+	if err != nil {
+		t.Fatalf("marshal golden request: %v", err)
+	}
+
+	var body struct {
+		System []map[string]json.RawMessage `json:"system"`
+	}
+
+	err = json.Unmarshal(raw, &body)
+	if err != nil {
+		t.Fatalf("decode golden body: %v", err)
+	}
+
+	if len(body.System) == 0 {
+		t.Fatal("golden carries no system blocks")
+	}
+
+	for i, e := range body.System {
+		ccRaw, ok := e[cacheControlKey]
+		if !ok {
+			t.Errorf("golden system block %d carries no cache_control", i)
+
+			continue
+		}
+
+		var cc map[string]any
+
+		err = json.Unmarshal(ccRaw, &cc)
+		if err != nil || len(cc) != 1 || cc[cacheKeyType] != cacheEphemeral {
+			t.Errorf("golden system block %d cache_control = %s, want exactly {type: ephemeral}", i, ccRaw)
+		}
+	}
 }
 
 // assertGoldenRoles pins the role sequence of the rendered fixture window.

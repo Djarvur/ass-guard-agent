@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -618,5 +619,77 @@ func TestShape_CacheControlEmission(t *testing.T) {
 
 	if len(params.System) != 0 {
 		t.Errorf("zero-block profile emitted %d system entries, want 0", len(params.System))
+	}
+}
+
+// cacheBlockType is the system TextBlock type literal of the cap battery
+// (goconst: keeps the package's "text" literal count under the threshold).
+const cacheBlockType = "text"
+
+// flaggedBlocksProfile builds an in-memory profile whose n system blocks ALL
+// carry the CacheControl flag (the corpus form — every block flagged).
+func flaggedBlocksProfile(n int) *profile.Profile {
+	blocks := make([]profile.TextBlock, n)
+	for i := range blocks {
+		blocks[i] = profile.TextBlock{
+			Type: cacheBlockType, Text: "sys-" + strconv.Itoa(i), CacheControl: true,
+		}
+	}
+
+	return &profile.Profile{Name: cacheProfileName, Model: synthModel, MaxTokens: 128, System: blocks}
+}
+
+// TestShape_CacheControlCapDegrade (Task 3, PAR-02): the Anthropic API caps
+// cache_control at 4 breakpoints per request (a 5th returns 400). Emission
+// degrades keep-last-4 — 3 or fewer flagged blocks all carry the breakpoint,
+// exactly 4 -> all 4, 5 or more -> exactly the LAST 4 (the deepest cache
+// prefixes), original block order preserved.
+func TestShape_CacheControlCapDegrade(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		blocks     int
+		wantPlaced []int
+	}{
+		{blocks: 3, wantPlaced: []int{0, 1, 2}},
+		{blocks: 4, wantPlaced: []int{0, 1, 2, 3}},
+		{blocks: 5, wantPlaced: []int{1, 2, 3, 4}},
+		{blocks: 6, wantPlaced: []int{2, 3, 4, 5}},
+	}
+
+	for _, tc := range cases {
+		prof := flaggedBlocksProfile(tc.blocks)
+		entries := systemEntryViews(t, shapedSystemRaw(t, prof))
+
+		if len(entries) != tc.blocks {
+			t.Fatalf("%d flagged blocks: system entries = %d", tc.blocks, len(entries))
+		}
+
+		// Order preservation: block i's text stays at position i.
+		for i, e := range entries {
+			var text string
+
+			if err := json.Unmarshal(e["text"], &text); err != nil {
+				t.Fatalf("%d flagged blocks: entry %d text undecodable: %v", tc.blocks, i, err)
+			}
+
+			if text != "sys-"+strconv.Itoa(i) {
+				t.Errorf("%d flagged blocks: entry %d text = %q, want sys-%d (order not preserved)",
+					tc.blocks, i, text, i)
+			}
+		}
+
+		// Placement positions: exactly the wantPlaced indices carry the key.
+		var placed []int
+
+		for i, e := range entries {
+			if _, ok := e[cacheControlKey]; ok {
+				placed = append(placed, i)
+			}
+		}
+
+		if !slices.Equal(placed, tc.wantPlaced) {
+			t.Errorf("%d flagged blocks: placed at %v, want %v (keep-last-4 degrade)", tc.blocks, placed, tc.wantPlaced)
+		}
 	}
 }

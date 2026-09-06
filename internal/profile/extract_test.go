@@ -137,3 +137,30 @@ func TestExtractFromRollout_NoFullRequests(t *testing.T) {
 		t.Fatal("ExtractFromRollout returned nil for an empty/no-full fixture; want error")
 	}
 }
+
+// TestExtractFromRollout_CacheControlDeclaration (19-01, Task 3): the
+// extractor sets the profile-level system_cache_control declaration from the
+// scanned rollout (the corpus-scan detection reused) — a cache_control-bearing
+// corpus extracts with the declaration true, so future re-captures do not lose
+// the emission; a corpus without system-block placements leaves it unset.
+func TestExtractFromRollout_CacheControlDeclaration(t *testing.T) {
+	t.Parallel()
+
+	on, err := profile.ExtractFromRollout(filepath.Join(".", "testdata", "sample-sessions", "cache-control.jsonl"))
+	if err != nil {
+		t.Fatalf("ExtractFromRollout(cache-control.jsonl): %v", err)
+	}
+
+	if !on.SystemCacheControl {
+		t.Error("cache_control-bearing rollout must extract with SystemCacheControl true (re-captures must not lose emission)")
+	}
+
+	off, err := profile.ExtractFromRollout(filepath.Join(".", "testdata", "sample-sessions", "good.jsonl"))
+	if err != nil {
+		t.Fatalf("ExtractFromRollout(good.jsonl): %v", err)
+	}
+
+	if off.SystemCacheControl {
+		t.Error("rollout without system-block cache_control must leave the declaration unset")
+	}
+}
