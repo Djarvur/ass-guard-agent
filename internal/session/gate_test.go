@@ -1094,6 +1094,11 @@ func TestGateOutcomeMatrix(t *testing.T) {
 			t.Fatalf("allow_once order = %v; want execution with NO rule write", order)
 		}
 
+		// The result line trails the exec record under load (19-03's parallel
+		// batteries exposed the missing wait — the sibling subtests already
+		// waited; this read raced the transcript append).
+		gateWaitFor(t, func() bool { return len(toolResultsFor(t, s, gateCall1)) == 1 })
+
 		results := toolResultsFor(t, s, gateCall1)
 		if len(results) != 1 || results[0].IsError {
 			t.Errorf("allow_once result = %+v; want exactly one non-error result", results)
