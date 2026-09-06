@@ -177,6 +177,62 @@ func TestSessionTier(t *testing.T) {
 	})
 }
 
+// TestCompaction asserts the compaction policy keys (19-05/D-03, PAR-01):
+// absent keys load the embedded floor's 80/true defaults; explicit values
+// load through; both keys survive a marshal→Load round-trip. Out-of-range
+// values are deliberately NOT remapped here — the set path rejects them at
+// the wire (D-09) and the session-side comparison clamps defensively (the
+// hand-edited-file net), so a hand-written 0 reaches the engine as 0.
+func TestCompaction(t *testing.T) {
+	t.Parallel()
+
+	t.Run("absent keys default to 80/true (the embedded floor)", func(t *testing.T) {
+		t.Parallel()
+
+		cfg, err := Load("testdata/minimal.yaml")
+		require.NoError(t, err)
+		require.Equal(t, 80, cfg.Compaction.ThresholdPct)
+		require.True(t, cfg.Compaction.Enabled)
+	})
+
+	t.Run("explicit values load through", func(t *testing.T) {
+		t.Parallel()
+
+		path := filepath.Join(t.TempDir(), "compaction.yaml")
+		require.NoError(t, os.WriteFile(path,
+			[]byte("compaction:\n  threshold_pct: 60\n  enabled: false\n"), 0o600))
+
+		cfg, err := Load(path)
+		require.NoError(t, err)
+		require.Equal(t, 60, cfg.Compaction.ThresholdPct)
+		require.False(t, cfg.Compaction.Enabled)
+	})
+
+	t.Run("marshal round-trip preserves both keys", func(t *testing.T) {
+		t.Parallel()
+
+		path := filepath.Join(t.TempDir(), "compaction.yaml")
+		require.NoError(t, os.WriteFile(path,
+			[]byte("compaction:\n  threshold_pct: 60\n  enabled: false\n"), 0o600))
+
+		cfg, err := Load(path)
+		require.NoError(t, err)
+
+		out, err := yaml.Marshal(cfg)
+		require.NoError(t, err)
+
+		round := filepath.Join(t.TempDir(), "round.yaml")
+		require.NoError(t, os.WriteFile(round, out, 0o600))
+
+		reloaded, err := Load(round)
+		require.NoError(t, err)
+		require.Equal(t, 60, reloaded.Compaction.ThresholdPct,
+			"threshold_pct must survive marshal→Load in value")
+		require.False(t, reloaded.Compaction.Enabled,
+			"enabled must survive marshal→Load in value")
+	})
+}
+
 // TestValidateWarns_NoCredentialField asserts D-04's warn-not-reject: a
 // provider declared with neither api_key nor api_key_env yields a warning
 // naming the provider, and validation still succeeds (no *ConfigError).

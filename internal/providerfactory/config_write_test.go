@@ -201,6 +201,68 @@ func TestConfigWrite_SessionTierRoundTrip(t *testing.T) {
 	})
 }
 
+// The compaction key path (19-05/D-03): both leaves under the compaction map.
+const (
+	testKeyCompaction = "compaction"
+
+	testKeyCompactionThreshold = "threshold_pct"
+	testKeyCompactionEnabled   = "enabled"
+)
+
+// TestConfigWrite_CompactionRoundTrip: the FULL persist→read path for the
+// compaction policy keys (19-05) — the written value resolves through the
+// REAL loader, the other leaf keeps the floor default, and a project-layer
+// write never touches the global layer file (byte comparison, the session_tier
+// precedent's layer isolation).
+//
+//nolint:paralleltest // renameFunc seam is package-global — serial family
+func TestConfigWrite_CompactionRoundTrip(t *testing.T) {
+	t.Run("global threshold_pct write then Load resolves 60", func(t *testing.T) {
+		global := filepath.Join(t.TempDir(), "config.yaml")
+
+		require.NoError(t, WriteLayerOption(global,
+			[]string{testKeyCompaction, testKeyCompactionThreshold}, 60))
+
+		cfg, err := modelrouting.Load(global)
+		require.NoError(t, err)
+		require.Equal(t, 60, cfg.Compaction.ThresholdPct,
+			"the full persist→read path must resolve the written threshold")
+		require.True(t, cfg.Compaction.Enabled,
+			"the untouched leaf keeps the floor's enabled: true default")
+	})
+
+	t.Run("project enabled write then Load resolves false", func(t *testing.T) {
+		project := filepath.Join(t.TempDir(), "config.yaml")
+
+		require.NoError(t, WriteLayerOption(project,
+			[]string{testKeyCompaction, testKeyCompactionEnabled}, false))
+
+		cfg, err := modelrouting.Load(project)
+		require.NoError(t, err)
+		require.False(t, cfg.Compaction.Enabled,
+			"the full persist→read path must resolve the written enabled flag")
+		require.Equal(t, 80, cfg.Compaction.ThresholdPct,
+			"the untouched leaf keeps the floor's threshold_pct: 80 default")
+	})
+
+	t.Run("project write leaves the global layer byte-identical", func(t *testing.T) {
+		globalDir := t.TempDir()
+		globalPath := filepath.Join(globalDir, "config.yaml")
+
+		globalBytes := []byte("compaction:\n  threshold_pct: 95\n")
+		require.NoError(t, os.WriteFile(globalPath, globalBytes, 0o600))
+
+		projectPath := filepath.Join(t.TempDir(), "config.yaml")
+		require.NoError(t, WriteLayerOption(projectPath,
+			[]string{testKeyCompaction, testKeyCompactionThreshold}, 60))
+
+		got, err := os.ReadFile(globalPath)
+		require.NoError(t, err)
+		require.Equal(t, globalBytes, got,
+			"a project-layer compaction write must never modify the global layer file")
+	})
+}
+
 // TestConfigWrite_RenameFailureKeepsOriginal: injecting a rename failure (the
 // crash-between-marshal-and-rename window) must surface a typed write error,
 // leave the ORIGINAL layer file byte-identical (no half-written state), and

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/Djarvur/ass-guard-agent/internal/audit"
 	"github.com/Djarvur/ass-guard-agent/internal/event"
+	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 )
@@ -887,6 +890,112 @@ func TestCompaction_Threshold(t *testing.T) { //nolint:gocognit,cyclop,funlen //
 
 		if cp.callCount() != 0 {
 			t.Errorf("summarizer calls = %d; want 0", cp.callCount())
+		}
+	})
+}
+
+// TestCompaction_SettingsFromConfig pins 19-05 Task 1's settings source: a
+// session initialized from a modelrouting-loaded config (the runtime's
+// construction seam — Load resolves the effective values, SetCompactionSettings
+// lands them) compares against the CONFIG's threshold, not a shadow
+// session-side default, and SetCompactionSettings re-targets the very next
+// comparison. The clamp subtests pin the defensive 1..100 window: hand-edited
+// config values of 0 and 500 compare as 1 and 100.
+func TestCompaction_SettingsFromConfig(t *testing.T) {
+	t.Parallel()
+
+	// loadCompactionConfig loads one project layer over the embedded floor —
+	// the same Load the runtime's construction seam applies.
+	loadCompactionConfig := func(t *testing.T, yaml string) modelrouting.CompactionConfig {
+		t.Helper()
+
+		path := filepath.Join(t.TempDir(), "config.yaml")
+		if werr := os.WriteFile(path, []byte(yaml), 0o600); werr != nil {
+			t.Fatalf("write config: %v", werr)
+		}
+
+		cfg, err := modelrouting.Load(path)
+		if err != nil {
+			t.Fatalf("modelrouting.Load: %v", err)
+		}
+
+		return cfg.Compaction
+	}
+
+	t.Run("construction over a 60-percent config compares against 60", func(t *testing.T) {
+		t.Parallel()
+
+		comp := loadCompactionConfig(t, "compaction:\n  threshold_pct: 60\n")
+
+		s, m, cp, _ := newCompactionTestSession(t, []compScript{
+			{text: "SUMMARY-60", finish: stopEndTurn},
+		})
+		s.SetCompactionSettings(comp.Enabled, comp.ThresholdPct, 1000)
+
+		// 650 of 1000 is over the 60% boundary (600) but UNDER the previous
+		// hardcoded default's 80% (800) — a fire here proves the loaded
+		// config value is the comparison value.
+		s.lastInputTokens.Store(650)
+		s.maybeCompact(context.Background(), "t-cfg60")
+
+		if got := len(markersOf(t, m)); got != 1 {
+			t.Fatalf("markers = %d; want 1 (the config's 60%% threshold must govern)", got)
+		}
+
+		if cp.callCount() != 1 {
+			t.Errorf("summarizer calls = %d; want 1", cp.callCount())
+		}
+	})
+
+	t.Run("SetCompactionSettings re-targets the next comparison", func(t *testing.T) {
+		t.Parallel()
+
+		comp := loadCompactionConfig(t, "compaction:\n  threshold_pct: 60\n")
+
+		s, m, cp, _ := newCompactionTestSession(t, []compScript{
+			{text: "SUMMARY-40", finish: stopEndTurn},
+		})
+		s.SetCompactionSettings(comp.Enabled, comp.ThresholdPct, 1000)
+
+		// 500 of 1000: below 60% (no fire at the constructed settings).
+		s.lastInputTokens.Store(500)
+		s.maybeCompact(context.Background(), "t-retarget")
+		if got := len(markersOf(t, m)); got != 0 {
+			t.Fatalf("markers = %d; want 0 (500 is below the 60%% boundary)", got)
+		}
+
+		// Live-apply 40: the SAME usage now fires (500 >= 400).
+		s.SetCompactionSettings(true, 40, 1000)
+		s.maybeCompact(context.Background(), "t-retarget")
+
+		if got := len(markersOf(t, m)); got != 1 {
+			t.Fatalf("markers = %d; want 1 (the next check must use the applied 40%%)", got)
+		}
+
+		if cp.callCount() != 1 {
+			t.Errorf("summarizer calls = %d; want 1", cp.callCount())
+		}
+	})
+
+	t.Run("out-of-range values clamp into 1..100 at the comparison", func(t *testing.T) {
+		t.Parallel()
+
+		// pct 0 compares as 1: 1% of 100 = 1 unit — 1 fires, 0 does not.
+		if !overThreshold(1, 0, 100, 0) {
+			t.Error("pct 0 must compare as 1 (a hand-edited 0 cannot disable the check)")
+		}
+
+		if overThreshold(0, 0, 100, 0) {
+			t.Error("pct 0 clamped to 1 fired below the clamped boundary")
+		}
+
+		// pct 500 compares as 100: the full window — 100 fires (inclusive), 99 does not.
+		if !overThreshold(100, 0, 100, 500) {
+			t.Error("pct 500 must compare as 100 (the inclusive full-window boundary fires)")
+		}
+
+		if overThreshold(99, 0, 100, 500) {
+			t.Error("pct 500 clamped to 100 fired below the full window")
 		}
 	})
 }
