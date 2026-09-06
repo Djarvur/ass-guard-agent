@@ -82,6 +82,7 @@ func TestTranscriptNewKinds(t *testing.T) {
 	t.Run("raw_thinking never touches the redactor; redacted control does", testRawThinkingRedactorZeroCalls)
 	t.Run("local_command records key, verbatim args, source chain, outcome", testLocalCommandInvocationRecord)
 	t.Run("compaction records fresh boundary id, usage snapshot, pointers", testCompactionBoundaryRecord)
+	t.Run("compaction summary payload rides the redacted path and round-trips", testCompactionSummaryPayload)
 	t.Run("replay tolerates new kinds, unknown kinds, unknown fields", testReplayToleratesNewKinds)
 }
 
@@ -232,13 +233,13 @@ func testCompactionBoundaryRecord(t *testing.T) {
 		cacheTokens = 55
 	)
 
-	err := m.AppendCompaction("turn_3", "line:41", "line:42", inTokens, outTokens, cacheTokens)
+	err := m.AppendCompaction("turn_3", "line:41", "line:42", "", inTokens, outTokens, cacheTokens)
 	if err != nil {
 		t.Fatalf("AppendCompaction: %v", err)
 	}
 
 	// Freshness: a second boundary gets its OWN id.
-	err = m.AppendCompaction("turn_4", "line:42", "line:43", inTokens, outTokens, cacheTokens)
+	err = m.AppendCompaction("turn_4", "line:42", "line:43", "", inTokens, outTokens, cacheTokens)
 	if err != nil {
 		t.Fatalf("AppendCompaction(2): %v", err)
 	}
@@ -281,6 +282,105 @@ func testCompactionBoundaryRecord(t *testing.T) {
 	if first.TurnID != "turn_3" || first.PreRef != "line:41" || first.PostRef != "line:42" {
 		t.Errorf("first boundary = turn:%q %q→%q; want turn_3 line:41→line:42",
 			first.TurnID, first.PreRef, first.PostRef)
+	}
+}
+
+// testCompactionSummaryPayload proves the Phase-19 summary extension of the
+// D-21 marker (19-03 Task 1): the summary text rides the marker line through
+// the REDACTED append path (16-D-23 scoping — only raw_thinking is exempt),
+// round-trips exactly, and pre-field readers parse a marker WITHOUT the
+// summary field with an empty Summary and no error (D-20 additive-only).
+func testCompactionSummaryPayload(t *testing.T) {
+	t.Parallel()
+
+	// Round-trip + redacted-path case: one append on a counting manager, so
+	// the call count is exact (not "at least one").
+	m, red := newCountingManager(t)
+
+	// Deliberately awkward text: newlines, quotes, unicode, JSON-significant
+	// characters — the round-trip must preserve it EXACTLY.
+	summary := "Session summary:\n- fixed the \"login\" flow\n- touched café/*.go ✓"
+
+	if red.calls() != 0 {
+		t.Fatalf("pre-append redactor calls = %d; want 0 (fixture broken)", red.calls())
+	}
+
+	err := m.AppendCompaction("turn_s", "line:7", "line:8", summary, 900, 120, 42)
+	if err != nil {
+		t.Fatalf("AppendCompaction: %v", err)
+	}
+
+	if got := red.calls(); got != 1 {
+		t.Fatalf("redactor invoked %d time(s) on the compaction append; want exactly 1 "+
+			"(the marker rides the REDACTED path — D-23's exemption is raw_thinking-only)", got)
+	}
+
+	lines, err := m.ReadAll()
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+
+	var got *Line
+
+	for i := range lines {
+		if lines[i].Type == TypeCompaction {
+			got = &lines[i]
+		}
+	}
+
+	if got == nil {
+		t.Fatal("no compaction line on disk")
+	}
+
+	if got.Summary != summary {
+		t.Errorf("summary round-trip mutated:\n orig: %q\nround: %q", summary, got.Summary)
+	}
+
+	// The 16-02 field set rides along unchanged (additive extension).
+	if got.TurnID != "turn_s" || got.PreRef != "line:7" || got.PostRef != "line:8" ||
+		got.InputTokens != 900 || got.OutputTokens != 120 || got.CacheTokens != 42 {
+		t.Errorf("16-02 field set drifted: turn:%q %q→%q in:%d out:%d cache:%d",
+			got.TurnID, got.PreRef, got.PostRef, got.InputTokens, got.OutputTokens, got.CacheTokens)
+	}
+
+	if !uuidV4Shape.MatchString(got.BoundaryID) {
+		t.Errorf("BoundaryID = %q; want an RFC 4122 v4 UUID", got.BoundaryID)
+	}
+
+	// On-disk field name is `summary` (omitempty — absent when empty): read
+	// the raw file bytes, not the re-marshaled struct.
+	raw, err := os.ReadFile(m.Path())
+	if err != nil {
+		t.Fatalf("read transcript file: %v", err)
+	}
+
+	if !strings.Contains(string(raw), `"summary":`) {
+		t.Errorf("on-disk line carries no summary field; raw: %s", raw)
+	}
+
+	// Field-tolerant parse: a PRE-field marker fixture (16-02 shape, no
+	// summary key) parses with an empty Summary and no error.
+	path := filepath.Join(t.TempDir(), "prefixeld.jsonl")
+
+	fixture := `{"type":"compaction","turnID":"t9","timestamp":"2026-08-27T00:00:02Z",` +
+		`"boundaryID":"0b9e6c1d-7a42-4b8e-9c1d-2f3a4b5c6d7e","inputTokens":10,` +
+		`"outputTokens":20,"cacheTokens":30,"preRef":"line:9","postRef":"line:10"}` + "\n"
+
+	if werr := os.WriteFile(path, []byte(fixture), filePermOwner); werr != nil {
+		t.Fatalf("write pre-field fixture: %v", werr)
+	}
+
+	preLines, rerr := readTranscriptFile(path)
+	if rerr != nil {
+		t.Fatalf("readTranscriptFile on pre-field compaction marker: %v", rerr)
+	}
+
+	if len(preLines) != 1 || preLines[0].Type != TypeCompaction {
+		t.Fatalf("pre-field marker parse: %d line(s), type %q; want 1 compaction", len(preLines), preLines[0].Type)
+	}
+
+	if preLines[0].Summary != "" {
+		t.Errorf("pre-field marker Summary = %q; want empty (field-tolerant parse)", preLines[0].Summary)
 	}
 }
 
@@ -402,7 +502,7 @@ func appendToleratedTurn(t *testing.T, m *Manager, interleave bool) {
 
 	if interleave {
 		// Sits where a boundary WOULD reset the window; inert until Phase 19.
-		mustAppend(t, m.AppendCompaction("turn_0", "line:2", "line:3", 10, 20, 30), "AppendCompaction")
+		mustAppend(t, m.AppendCompaction("turn_0", "line:2", "line:3", "", 10, 20, 30), "AppendCompaction")
 	}
 
 	if interleave {
