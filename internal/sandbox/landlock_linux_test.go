@@ -11,7 +11,7 @@ import (
 )
 
 // The landlock battery (22-05 Task 2, SAND-01): the strict probe taxonomy
-// (never BestEffort — Pitfall 1), the ruleset's derivation from the ONE
+// (never best-effort — Pitfall 1), the ruleset's derivation from the ONE
 // policy's LandlockRules rows (D-06 symmetry on linux), and the re-exec
 // child entry. Runs on Linux hosts; compile-gated on the darwin dev host
 // (GOOS=linux go vet/build — RESEARCH Environment Availability).

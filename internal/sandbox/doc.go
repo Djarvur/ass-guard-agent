@@ -29,7 +29,8 @@
 //
 // # Probe-and-degrade (SAND-01)
 //
-// Enforcement availability is probed STRICTLY (never BestEffort — a
+// Enforcement availability is probed STRICTLY (never the go-landlock
+// best-effort mode — a
 // best-effort ruleset succeeds without error even with no Landlock at all,
 // which is a silent fail-open): ENOSYS (kernel lacks Landlock), EOPNOTSUPP
 // (disabled), ABI < 4 (network rules need v4), and missing sandbox-exec

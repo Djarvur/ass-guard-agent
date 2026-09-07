@@ -130,7 +130,7 @@ func resolveForSeatbelt(path string) string {
 
 // Availability is the probe taxonomy's result (SAND-01): each failure class
 // — ENOSYS (kernel lacks Landlock), EOPNOTSUPP (disabled), ABI < 4, missing
-// sandbox-exec — maps to a DISTINCT reason; BestEffort is never the
+// sandbox-exec — maps to a DISTINCT reason; best-effort mode is never the
 // enforcement path (Pitfall 1).
 type Availability struct {
 	Mode      string // "landlock" | "seatbelt" | ""
