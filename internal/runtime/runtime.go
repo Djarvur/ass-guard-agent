@@ -330,6 +330,22 @@ type Runner struct {
 	chainMu       sync.Mutex
 	activeChains  map[string]int
 
+	// 23-04 (SEEDG-02, Pitfall 9): the WORKSPACE-level checkpoint store,
+	// built once per Runner — /undo, the restore guard, and the session-start
+	// GC sweep consume it through checkpointStore(); sessions attach their
+	// snapshot adapter from the same instance. ckptOpenTried makes the
+	// loud open-failure log fire exactly once (nil store = sessions run
+	// WITHOUT undo snapshots; /undo reports unavailable, never silently).
+	ckptMu        sync.Mutex
+	ckptStore     *checkpoint.Store
+	ckptOpenTried bool
+
+	// checkpointGC is the D-08 bounds seam (23-04 Task 2 fills it from the
+	// persisted checkpoint: layer keys; the serve composition binds it —
+	// the askFire late-injection precedent). nil = the embedded defaults
+	// (7 days / DefaultKeep per session).
+	checkpointGC func() (days int, perSession int)
+
 	// 13-03 (D-05): the advisory-note dedupe — sessionID → set of seen
 	// advisory classes. The ENGINE stays stateless (observe.go's design
 	// invariant); this WRAPPER holds the per-session state (the reg/
@@ -1610,6 +1626,132 @@ func (r *Runner) registrySnapshot() ecosys.Registry {
 	return r.reg
 }
 
+// The checkpoint GC's embedded defaults (23-04, D-10/D-08): what the sweep
+// runs on when no persisted checkpoint: key exists — expiry 7 days, count 50
+// per session (A3, aligned with checkpoint.DefaultKeep).
+const (
+	defaultCheckpointExpiryDays = 7
+	defaultCheckpointPerSession = 50
+)
+
+// SetCheckpointGCBounds binds the D-08 bounds seam (23-04 Task 2: the serve
+// composition injects the config surface's effective read-back; nil resets
+// to the embedded defaults).
+func (r *Runner) SetCheckpointGCBounds(fn func() (days int, perSession int)) {
+	r.ckptMu.Lock()
+	defer r.ckptMu.Unlock()
+
+	r.checkpointGC = fn
+}
+
+// checkpointGCBounds resolves the sweep bounds: the bound seam when
+// injected, else the embedded 7d/50 defaults. A seam result of
+// non-positive values falls back per-axis (never a zero-day expiry, never an
+// unbounded count).
+func (r *Runner) checkpointGCBounds() (days int, perSession int) {
+	r.ckptMu.Lock()
+	fn := r.checkpointGC
+	r.ckptMu.Unlock()
+
+	days, perSession = defaultCheckpointExpiryDays, defaultCheckpointPerSession
+
+	if fn == nil {
+		return days, perSession
+	}
+
+	if d, p := fn(); d > 0 && p > 0 {
+		days, perSession = d, p
+	}
+
+	return days, perSession
+}
+
+// checkpointStore returns the WORKSPACE-level checkpoint store, opening it
+// lazily exactly once (23-04, Pitfall 9): the session snapshot adapter, the
+// restore guard's callers (/undo, 23-05), and the session-start sweep all
+// share this one instance. An open failure degrades LOUDLY (the AUD-03
+// discipline — one log line) and pins nil: sessions run WITHOUT undo
+// snapshots, /undo reports unavailable — never a silent trap.
+func (r *Runner) checkpointStore() *checkpoint.Store {
+	r.ckptMu.Lock()
+	defer r.ckptMu.Unlock()
+
+	if r.ckptOpenTried {
+		return r.ckptStore
+	}
+
+	r.ckptOpenTried = true
+
+	dir := r.workDir
+	if dir == "" {
+		dir, _ = os.Getwd()
+	}
+
+	st, err := checkpoint.Open(dir) //nolint:contextcheck // Store.Open carries no ctx
+	if err != nil {
+		log.Printf("ass-guard: checkpoint store disabled for %s (%v) — turns run WITHOUT undo snapshots (/undo will report unavailable)", dir, err)
+
+		return nil
+	}
+
+	r.ckptStore = st
+
+	// SEEDG-02: the user repo's .git/info/exclude carries the store root —
+	// append rides store open (idempotent; the typed skips for non-repo and
+	// worktree workdirs are structured notes, never failures).
+	if xerr := st.EnsureUserRepoExclude(); xerr != nil {
+		if errors.Is(xerr, checkpoint.ErrExcludeSkippedNotRepo) ||
+			errors.Is(xerr, checkpoint.ErrExcludeSkippedWorktree) {
+			log.Printf("ass-guard: user-repo exclude skipped: %v", xerr)
+		} else {
+			log.Printf("ass-guard: user-repo exclude append failed (%v) — git status may show .ass-guard/", xerr)
+		}
+	}
+
+	return r.ckptStore
+}
+
+// restoreBlockedError is the SEEDG-02 restore refusal (23-04): a typed error
+// NAMING the blocking state — the operator (and /undo's output, 23-05) can
+// tell an active turn from a parked chain at a glance.
+type restoreBlockedError struct {
+	turn  bool
+	chain bool
+}
+
+func (e *restoreBlockedError) Error() string {
+	switch {
+	case e.turn:
+		return "checkpoint: restore refused: a client turn is active for the session — cancel it or wait for it to end"
+	case e.chain:
+		return "checkpoint: restore refused: an engine chain is active (possibly parked) for the session — cancel it or wait for the chain to finish"
+	default:
+		return "checkpoint: restore refused: session busy"
+	}
+}
+
+// restoreBlockers is the SEEDG-02 guard EVERY in-process restore path calls
+// (23-05's /undo composes it): it refuses while a client turn is in flight
+// OR an engine chain is active — including PARKED chains (chainCount > 0
+// with no mutex held — the trap: a mutex-ownership check would pass and let
+// the restore race the chain's next injection). The check reads
+// turnActive/chainCount ONLY — it never touches the turn mutex, so it
+// returns promptly under a blocked turn (the behavioral pin). The v1.1 CLI
+// restore path is a separate process: in-process state is invisible there
+// by construction (Open Question 3's documented constraint — no
+// cross-process detection is built).
+func (r *Runner) restoreBlockers(sessionID string) error {
+	if r.clientTurnActive(sessionID) {
+		return &restoreBlockedError{turn: true}
+	}
+
+	if r.chainCount(sessionID) > 0 {
+		return &restoreBlockedError{chain: true}
+	}
+
+	return nil
+}
+
 // sessionFor returns the Session for sessionID, creating it on first use.
 func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,gocognit // turn pipeline grouping
 	ctx context.Context, sessionID string,
@@ -1644,15 +1786,22 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	// flag in v1 (the reversibility backstop only works if it is always
 	// there; a disable knob is a post-adoption config option if the operator
 	// asks). One store per WORKSPACE; every parent turn snapshots at entry.
-	// An open failure degrades LOUDLY to a session without checkpointing
-	// (the AUD-03 audit-write discipline — never a serve refusal).
-	var ckptStore *checkpoint.Store
+	// 23-04 (Pitfall 9): the store is RUNNER-owned (checkpointStore — built
+	// once per workspace, loudly degraded on open failure); the session
+	// attaches its snapshot adapter from the shared instance.
+	ckptStore := r.checkpointStore()
 
-	st, cerr := checkpoint.Open(dir) //nolint:contextcheck // plan-pinned signature: Store.Open carries no ctx
-	if cerr == nil {
-		ckptStore = st
-	} else {
-		log.Printf("ass-guard: checkpoint store disabled for %s (%v) — turns run WITHOUT undo snapshots", dir, cerr)
+	// 23-04 (SEEDG-02, D-08): the session-start GC sweep — the retention
+	// authority (age+count dual axis with object expiry). Bounds come from
+	// the checkpointGCBounds seam (Task 2's config read-back; the embedded
+	// 7d/50 defaults until then). A sweep failure degrades loudly and never
+	// fails the session (AUD-03).
+	if ckptStore != nil {
+		days, perSession := r.checkpointGCBounds()
+
+		if serr := ckptStore.Sweep(ctx, time.Duration(days)*24*time.Hour, perSession); serr != nil {
+			log.Printf("ass-guard: checkpoint GC sweep failed for %s (%v) — continuing without sweeping", sessionID, serr)
+		}
 	}
 
 	mgr, err := session.NewManager(dir, sessionID, redactorAdapter{})
