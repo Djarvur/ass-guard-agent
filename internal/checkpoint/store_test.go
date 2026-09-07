@@ -1152,3 +1152,309 @@ func TestRestoreCleanNeverDescendsIntoNestedRepos(t *testing.T) { //nolint:paral
 		}
 	}
 }
+
+// --- 23-03 Task 3: age+count GC sweep + user-repo exclude ---
+
+// snapDated stages and commits a snapshot whose COMMITTER DATE is controlled
+// (the CommittedAt metadata path listRefs reads) — the GC fixtures need refs
+// of controlled ages without sleeping. Same plumbing as the production
+// commit path (add -A, write-tree, commit-tree, update-ref) through the raw
+// gitRun seam with date-bearing env.
+func snapDated(t *testing.T, s *Store, id string, when time.Time) {
+	t.Helper()
+
+	env := append(s.gitEnv(),
+		"GIT_AUTHOR_DATE="+when.Format(time.RFC3339),
+		"GIT_COMMITTER_DATE="+when.Format(time.RFC3339),
+	)
+
+	run := func(args ...string) string {
+		t.Helper()
+
+		full := append([]string{
+			"--git-dir=" + s.gitDir, "--work-tree=" + s.workDir,
+			"-c", "core.hooksPath=" + hooksPathOff,
+		}, args...)
+
+		out, err := gitRun(context.Background(), s.workDir, env, gitBinary, full...)
+		if err != nil {
+			t.Fatalf("snapDated git %v: %v\n%s", args, err, out)
+		}
+
+		return strings.TrimSpace(string(out))
+	}
+
+	run("add", "-A", "--", ".")
+	tree := run("write-tree")
+	parent := run("rev-parse", lastRef)
+	sha := run("commit-tree", tree, "-p", parent, "-m", id)
+	run("update-ref", refPrefix+id, sha)
+}
+
+// refsOf lists the store's checkpoint ids (the GC tests' assertion surface).
+func refsOf(t *testing.T, s *Store) map[string]bool {
+	t.Helper()
+
+	entries, err := s.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+
+	out := map[string]bool{}
+
+	for _, e := range entries {
+		out[strings.TrimPrefix(e.Ref, refPrefix)] = true
+	}
+
+	return out
+}
+
+// TestCheckpointGCAgeAxis pins D-08 axis 1: refs committed older than maxAge
+// are deleted; younger refs survive; the EXACTLY-maxAge boundary survives
+// (strictly older evicts); pre-restore entries age out identically.
+func TestCheckpointGCAgeAxis(t *testing.T) {
+	t.Parallel()
+
+	work := t.TempDir()
+	writeTestFile(t, filepath.Join(work, "a.txt"), "a\n")
+
+	s := openStore(t, work)
+
+	now := time.Now().UTC()
+
+	snapDated(t, s, "sess-gc-turn-001", now.Add(-30*24*time.Hour))
+	snapDated(t, s, "sess-gc-pre-001", now.Add(-20*24*time.Hour))
+	snapDated(t, s, "sess-gc-turn-002", now.Add(-7*24*time.Hour)) // exactly maxAge
+	snapDated(t, s, "sess-gc-turn-003", now.Add(-1*24*time.Hour))
+
+	err := s.Sweep(context.Background(), 7*24*time.Hour, 50)
+	if err != nil {
+		t.Fatalf("Sweep: %v", err)
+	}
+
+	refs := refsOf(t, s)
+
+	if refs["sess-gc-turn-001"] {
+		t.Error("30d-old ref survived a 7d sweep")
+	}
+
+	if refs["sess-gc-pre-001"] {
+		t.Error("20d-old pre-restore ref survived a 7d sweep (pre entries must share the lifecycle)")
+	}
+
+	if !refs["sess-gc-turn-002"] {
+		t.Error("exactly-maxAge ref was evicted; the boundary must survive (strictly older evicts)")
+	}
+
+	if !refs["sess-gc-turn-003"] {
+		t.Error("1d-old ref evicted by the age axis")
+	}
+}
+
+// TestCheckpointGCCountAxis pins D-08 axis 2: per-session newest-N retention
+// with NO cross-session eviction (a quiet session's refs survive a chatty
+// session's overflow), pre-restore entries counted identically.
+func TestCheckpointGCCountAxis(t *testing.T) {
+	t.Parallel()
+
+	work := t.TempDir()
+	writeTestFile(t, filepath.Join(work, "a.txt"), "a\n")
+
+	s := openStore(t, work)
+
+	now := time.Now().UTC()
+
+	for i := range 5 {
+		snapDated(t, s, fmt.Sprintf("chatty-turn-%03d", i+1), now.Add(-time.Duration(10-i)*time.Hour))
+	}
+
+	if _, err := s.SnapshotPreRestore(context.Background(), "chatty"); err != nil { //nolint:dupl // fixture setup
+		t.Fatalf("SnapshotPreRestore: %v", err)
+	}
+
+	snapDated(t, s, "quiet-turn-001", now.Add(-100*time.Hour))
+
+	err := s.Sweep(context.Background(), 0, 3) // no age axis; perSession=3
+	if err != nil {
+		t.Fatalf("Sweep: %v", err)
+	}
+
+	refs := refsOf(t, s)
+
+	// chatty keeps exactly its 3 newest (turn-004, turn-005, pre-001 — the
+	// freshest three by commit date); older turn-002/003 evicted.
+	for _, want := range []string{"chatty-turn-004", "chatty-turn-005", "chatty-pre-001"} {
+		if !refs[want] {
+			t.Errorf("count axis evicted a newest-3 survivor %q; refs=%v", want, refs)
+		}
+	}
+
+	for _, gone := range []string{"chatty-turn-001", "chatty-turn-002", "chatty-turn-003"} {
+		if refs[gone] {
+			t.Errorf("count axis kept overflow ref %q; refs=%v", gone, refs)
+		}
+	}
+
+	// No cross-session eviction: the quiet session's single ref survives the
+	// chatty session's overflow.
+	if !refs["quiet-turn-001"] {
+		t.Error("quiet session's ref evicted by the chatty session's overflow (cross-session eviction)")
+	}
+}
+
+// TestCheckpointGCObjectExpiry pins the gc half: after Sweep, deleted
+// checkpoints' objects are actually reclaimed — the TOTAL object count
+// (loose + in-pack) drops. Refs-deleted-only would leave every object
+// (packed-but-retained); the sweep's reflog expire + gc --prune=now must
+// prune the victims' commits and blobs.
+func TestCheckpointGCObjectExpiry(t *testing.T) {
+	t.Parallel()
+
+	work := t.TempDir()
+
+	s := openStore(t, work)
+
+	// Distinct tree contents per snapshot so each snapshot owns unique blobs.
+	for i := range 4 {
+		writeTestFile(t, filepath.Join(work, fmt.Sprintf("f%d.txt", i)), fmt.Sprintf("content %d\n", i))
+		snap(t, s, "obj", fmt.Sprintf("obj-turn-%03d", i+1))
+	}
+
+	countObjects := func() int {
+		t.Helper()
+
+		out, err := gitRun(context.Background(), work, nil, gitBinary,
+			"--git-dir="+s.gitDir, "count-objects", "-v")
+		if err != nil {
+			t.Fatalf("count-objects: %v\n%s", err, out)
+		}
+
+		loose, packed := 0, 0
+
+		for line := range strings.SplitSeq(string(out), "\n") {
+			fields := strings.Fields(line)
+			if len(fields) != 2 {
+				continue
+			}
+
+			switch fields[0] {
+			case "count:":
+				loose = atoiT(t, fields[1])
+			case "in-pack:":
+				packed = atoiT(t, fields[1])
+			}
+		}
+
+		return loose + packed
+	}
+
+	before := countObjects()
+
+	err := s.Sweep(context.Background(), 0, 1) // keep only the newest
+	if err != nil {
+		t.Fatalf("Sweep: %v", err)
+	}
+
+	if refs := refsOf(t, s); len(refs) != 1 {
+		t.Fatalf("post-sweep refs = %v; want exactly the newest", refs)
+	}
+
+	after := countObjects()
+
+	if after >= before {
+		t.Errorf("object store did not shrink: before=%d after=%d (victims' objects must be pruned)", before, after)
+	}
+}
+
+// atoiT parses a non-negative int (count-objects output helper).
+func atoiT(t *testing.T, s string) int {
+	t.Helper()
+
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		t.Fatalf("atoi %q: %v", s, err)
+	}
+
+	return n
+}
+
+// TestUserRepoExclude pins SEEDG-02's exclude append: the USER repo's
+// .git/info/exclude carries .ass-guard/ — appended idempotently, existing
+// lines preserved byte-for-byte, check-ignore fires for store paths, and
+// non-repo / worktree (.git-file) workdirs return typed skips with no file
+// created.
+func TestUserRepoExclude(t *testing.T) {
+	t.Parallel()
+
+	work := t.TempDir()
+	seedWorkspace(t, work)
+	gitUser(t, work, "init", "--quiet")
+
+	infoDir := filepath.Join(work, ".git", "info")
+	writeTestFile(t, filepath.Join(infoDir, "exclude"), "# pre-existing marker line\nbuild/\n")
+
+	s := openStore(t, work)
+
+	if err := s.EnsureUserRepoExclude(); err != nil {
+		t.Fatalf("EnsureUserRepoExclude: %v", err)
+	}
+
+	afterFirst, err := os.ReadFile(filepath.Join(infoDir, "exclude"))
+	if err != nil {
+		t.Fatalf("read exclude: %v", err)
+	}
+
+	if !strings.Contains(string(afterFirst), "# pre-existing marker line\nbuild/\n") {
+		t.Errorf("existing exclude lines not preserved byte-for-byte: %q", afterFirst)
+	}
+
+	if !strings.Contains(string(afterFirst), ".ass-guard/") {
+		t.Errorf("exclude lacks the .ass-guard/ rule: %q", afterFirst)
+	}
+
+	// Idempotent: a second call changes nothing.
+	if err := s.EnsureUserRepoExclude(); err != nil {
+		t.Fatalf("EnsureUserRepoExclude (2nd): %v", err)
+	}
+
+	afterSecond, _ := os.ReadFile(filepath.Join(infoDir, "exclude"))
+	if string(afterFirst) != string(afterSecond) {
+		t.Errorf("second append changed the file:\nfirst:  %q\nsecond: %q", afterFirst, afterSecond)
+	}
+
+	// check-ignore fires for a store path (the experiment-verified probe).
+	if out := gitUser(t, work, "check-ignore", "-v", filepath.Join(work, ".ass-guard", "anything")); !strings.Contains(out, ".ass-guard") {
+		t.Errorf("check-ignore did not fire for a store path: %q", out)
+	}
+
+	// Non-repo workdir: typed skip, no file created.
+	plain := t.TempDir()
+	writeTestFile(t, filepath.Join(plain, "x.txt"), "x\n")
+
+	s2 := openStore(t, plain)
+
+	err = s2.EnsureUserRepoExclude()
+	if !errors.Is(err, ErrExcludeSkippedNotRepo) {
+		t.Errorf("non-repo workdir err = %v; want ErrExcludeSkippedNotRepo", err)
+	}
+
+	if _, serr := os.Stat(filepath.Join(plain, ".git", "info", "exclude")); serr == nil {
+		t.Error("non-repo workdir created an exclude file")
+	}
+
+	// .git-FILE (worktree) workdir: typed skip, no file created.
+	wt := t.TempDir()
+	writeTestFile(t, filepath.Join(wt, "x.txt"), "x\n")
+	writeTestFile(t, filepath.Join(wt, ".git"), "gitdir: /tmp/x/gitdir\n")
+
+	s3 := openStore(t, wt)
+
+	err = s3.EnsureUserRepoExclude()
+	if !errors.Is(err, ErrExcludeSkippedWorktree) {
+		t.Errorf("worktree workdir err = %v; want ErrExcludeSkippedWorktree", err)
+	}
+
+	if _, serr := os.Stat(filepath.Join(wt, ".git", "info", "exclude")); serr == nil {
+		t.Error("worktree workdir created an exclude file")
+	}
+}
