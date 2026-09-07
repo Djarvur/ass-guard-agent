@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -313,7 +314,7 @@ func watchSetSignature(roots []string) string {
 
 	slices.Sort(out)
 
-	return fmt.Sprintf("%x", hashString(joinedSignature(out)))
+	return strconv.FormatUint(hashString(joinedSignature(out)), 16)
 }
 
 // joinedSignature joins for hashing (kept tiny for the probe's cost bound).
