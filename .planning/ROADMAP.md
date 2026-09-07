@@ -276,7 +276,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 20-04-PLAN.md — Skills + agents as slash commands + /init class-A (SKLS-01, SKLS-02, CMDS-03, D-03)
+- [x] 20-04-PLAN.md — Skills + agents as slash commands + /init class-A (SKLS-01, SKLS-02, CMDS-03, D-03)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -496,7 +496,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 | 17. Permissions + Elicitation | v1.2 | 6/6 | Complete    | 2026-09-03 |
 | 18. Session Family | v1.2 | 7/7 | Complete    | 2026-09-06 |
 | 19. Compaction + cache_control | v1.2 | 7/7 | Complete    | 2026-09-07 |
-| 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 3/6 | In Progress|  |
+| 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 4/6 | In Progress|  |
 | 21. Context & Policy Parity Closures | v1.2 | 6/6 | Complete    | 2026-09-06 |
 | 22. Background Execution + Sandbox Reality | v1.2 | 0/? | Not started | - |
 | 23. SEED Gaps Close-out | v1.2 | 0/? | Not started | - |

@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Claude Code Parity
-current_plan: 4
+current_plan: 5
 status: executing
-stopped_at: Completed 20-03-PLAN.md (per-agent model routing)
-last_updated: "2026-09-07T20:04:41.758Z"
+stopped_at: Completed 20-04-PLAN.md (skills/agents/init slash surfaces)
+last_updated: "2026-09-07T20:16:38.193Z"
 last_activity: 2026-09-07
 progress:
   total_phases: 11
   completed_phases: 6
   total_plans: 73
-  completed_plans: 45
+  completed_plans: 46
   percent: 55
 ---
 
@@ -26,13 +26,13 @@ See: .planning/PROJECT.md (updated 2026-09-06)
 ## Current Position
 
 Phase: 20 (built-in-commands-skills-per-agent-model) — EXECUTING
-Plan: 4 of 6
-Current Plan: 4
+Plan: 5 of 6
+Current Plan: 5
 Total Plans in Phase: 6
 Status: Ready to execute
 Last activity: 2026-09-07
 
-Progress: [██████░░░░] 62%
+Progress: [██████░░░░] 63%
 
 ## Performance Metrics
 
@@ -89,6 +89,7 @@ Progress: [██████░░░░] 62%
 | Phase 20 P01 | 65 min | 3 tasks | 19 files |
 | Phase 20 P02 | 118 min | 3 tasks | 6 files |
 | Phase 20 P03 | 74 min | 3 tasks | 7 files |
+| Phase 20 P04 | 62 min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -203,6 +204,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-07T20:04:41.741Z
-Stopped at: Completed 20-03-PLAN.md (per-agent model routing)
+Last session: 2026-09-07T20:16:38.177Z
+Stopped at: Completed 20-04-PLAN.md (skills/agents/init slash surfaces)
 Resume file: None
