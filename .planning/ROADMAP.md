@@ -502,3 +502,14 @@ Phases execute in numeric order: 15 → 16 → … → 25
 | 23. SEED Gaps Close-out | v1.2 | 0/? | Not started | - |
 | 24. Documentation & Ops Tails | v1.2 | 0/? | Not started | - |
 | 25. SEED-001 Kit Extraction | v1.2 | 0/? | Not started | - |
+
+## Backlog
+
+### Phase 999.1: Study ai-agent-book, extract useful patterns (BACKLOG)
+
+**Goal:** [Captured for future planning] Study https://github.com/bojieli/ai-agent-book/ (Li Bojie, 《深入理解 AI Agent：设计原理与工程实践》, ~45k stars, Apache-2.0, 10 chapters + 109 companion experiments, English translation in book-en/) and extract patterns useful for ass-guard-agent. See NOTES.md in the phase directory for chapter-to-surface mapping.
+**Requirements:** TBD
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd:review-backlog when ready)
