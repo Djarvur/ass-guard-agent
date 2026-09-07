@@ -3,20 +3,20 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 19
-current_phase_name: compaction-cache-control
-current_plan: 5
-status: verifying
-stopped_at: Completed 19-05-PLAN.md (compaction config keys + menu wiring)
-last_updated: "2026-09-06T23:09:29.543Z"
-last_activity: 2026-09-06
+current_phase_name: Compaction + cache_control
+current_plan: 2
+status: executing
+stopped_at: Completed 19-06-PLAN.md (G-19-1 same-turn carve-out + WR-03 bounds)
+last_updated: "2026-09-07T16:50:19.694Z"
+last_activity: 2026-09-07
 last_activity_desc: Phases 18 + 21 complete; Phase 19 execution next
+state_head: 1c6896e4820efd74d1c3d61fa17ef7790b5e8814
 progress:
   total_phases: 11
-  completed_phases: 6
-  total_plans: 71
-  completed_plans: 40
-  percent: 55
-state_head: fcbcbdad086ecd6909628aa307fbdbfba4318a2d
+  completed_phases: 5
+  total_plans: 72
+  completed_plans: 41
+  percent: 45
 ---
 
 # State: ass-guard-agent (working name)
@@ -25,17 +25,17 @@ state_head: fcbcbdad086ecd6909628aa307fbdbfba4318a2d
 
 See: .planning/PROJECT.md (updated 2026-09-06)
 **Core value:** A hands-off coding agent that feels native in the editor: full SDD workflows run end-to-end without manual continues, and the agent surfaces through the client's own UX — clickable permission prompts, native file diffs, session management. (Pivoted 2026-08-25 from the mimicry bar.)
-**Current focus:** Phase 19 — compaction-cache-control
+**Current focus:** Phase 19 — Compaction + cache_control
 
 ## Current Position
 
-Phase: 19 (compaction-cache-control) — EXECUTING
-Current Plan: 5
-Total Plans in Phase: 5
-Status: Phase complete — ready for verification
-Last activity: 2026-09-06 — Phase 19 execution started
+Phase: 19 (Compaction + cache_control) — EXECUTING
+Current Plan: 2
+Total Plans in Phase: 6
+Status: Ready to execute
+Last activity: 2026-09-07 — Phase 19 execution started
 
-Progress: [██████████░░░░░░░░░░] 35/71 plans ([██████░░░░] 56%)
+Progress: [██████████░░░░░░░░░░] 35/71 plans ([█████░░░░░] 45%)
 
 ## Performance Metrics
 
@@ -87,6 +87,7 @@ Progress: [██████████░░░░░░░░░░] 35/71 p
 | Phase 19 P04 | 37 min | 3 tasks | 3 files |
 | Phase 19 P04 | 37 min | 3 tasks | 3 files |
 | Phase 19 P05 | 36 min | 2 tasks | 12 files |
+| Phase 19 P19-06 | 23 min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -173,6 +174,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase ?]: 19-05: the compaction keys' absent-key 80/true defaults live in the EMBEDDED FLOOR yaml, not applyDefaults — a bool cannot distinguish absent from explicit-false, and an int backstop would eat the plan's own clamp case (a hand-edited 0 must reach the engine and compare as 1); out-of-range values pass through Load untouched (the set path rejects at the wire, the session-side comparison clamps 1..100)
 - [Phase ?]: 19-05: the surface's live-apply target is the POST-WRITE effective PAIR (the written id plus the other resolved through project > global > blob > default) riding SetCompactionHook to Runner.ApplyCompactionSettings (the ApplyTurnModel discipline); the context limit resolves INSIDE the relay from the capability table — no context-limit menu entry or config key exists
 - [Phase ?]: 19-05: compaction blob fills are advertisement-only D-10 in-memory defaults (no wire stamp, unlike tier/model's CR-02 blobHook) — a client default push never changes what the running session enforces; set_config_option is the operator's live lever, and the offered threshold set dropped 'off' (disabling is compaction-enabled's job)
+- [Phase 19]: 19-06 (G-19-1): the same-turn compaction carve-out is ENGINE-GATED — SetRetryCompactedTurn arms the projector only on the overflow-retry path; transcript content alone never reshapes a live turn (tamper safety, kill-9 replay determinism); the override stays armed for the producing turn's remaining iterations and self-expires when a different turnID projects
+- [Phase 19]: 19-06 (WR-03a): the summarize span budget derives from the SAME resolved context window as the threshold (fill-target share minus prevSummary/instruction/slack; ~400K-char fallback cap when unset; 2K-char floor) — the summarize call can never itself be an overflowing request; a cut span carries the one-line truncation notice
+- [Phase 19]: 19-06 (WR-03b): at most ONE threshold-class compaction attempt per turn (compactionAttemptTurn keyed by turnID, stamped by maybeCompact AND the overflow-forced path); D-09's degraded-summarizer cadence amended — retry at the NEXT TURN's check, never one per loop head (operator-sanctioned via G-19-1's missing list)
+- [Phase 19]: 19-06: the G-19-1 regression fixture drives runTurn over a pre-built mid-turn transcript (the ask-resume re-entry seam) behind a content-sensitive size-rejecting provider — a fresh Prompt's first projection is lean by construction (D-01), and a byte-identical resend now fails again (the content-blind fixture's blind spot closed)
 
 ### Pending Todos
 
@@ -196,6 +201,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-06T23:09:29.471Z
-Stopped at: Completed 19-05-PLAN.md (compaction config keys + menu wiring)
+Last session: 2026-09-07T16:50:18.427Z
+Stopped at: Completed 19-06-PLAN.md (G-19-1 same-turn carve-out + WR-03 bounds)
 Resume file: None
