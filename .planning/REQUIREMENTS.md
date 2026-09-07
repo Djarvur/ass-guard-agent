@@ -16,7 +16,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 - [x] **ACP-01**: User sees clickable permission asks via `session/request_permission` (allow/reject × once/always options; cancelled handled as a normal response when turn dies mid-ask); new `permissions.mode: ungated|gated` config switchable via editor configOptions — available, not default (safety-model amendment)
 - [x] **ACP-02**: Learning-store and engine asks surface as structured forms via `elicitation/create` (form mode) with plain-text AskBroker fallback and -32601 probe-and-degrade on older clients; url mode deferred
 - [x] **ACP-03**: Zed renders live turn activity: `tool_call`/`tool_call_update` streaming (kind/status/diff/locations), `plan` updates mirroring TodoWrite, `agent_thought_chunk` — all through one ordered inline TurnEmitter with explicit backpressure policy
-- [ ] **ACP-04**: Editor autocompletes `/` commands: `available_commands_update` sent on session start and on discovery change
+- [x] **ACP-04**: Editor autocompletes `/` commands: `available_commands_update` sent on session start and on discovery change
 - [x] **ACP-05**: User can list sessions from the editor via `session/list` (header-scan, cursor pagination)
 - [x] **ACP-06**: User can resume any past session via `session/load` — full replay through TurnEmitter plus live-state reconciliation (synthetic interrupted-closures for dangling expectations, continued id sequences from transcript maxima, orphaned in-flight tool_calls closed as failed, commands re-advertised); `--resume` anywhere
 - [x] **ACP-07**: User can close or delete a session via `session/close` / `session/delete` with tombstoning (never rm — D-20 audit invariant); delete is spec-unstable → best-effort
@@ -24,16 +24,16 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Built-in Chat Commands
 
-- [ ] **CMDS-01**: Slash-invocation resolves via one chain: builtins → skills → agents → file-discovered commands (current behavior last)
-- [ ] **CMDS-02**: Class-B control-plane commands execute at the runner seam with NO model turn and write `local_command` transcript lines: /help /status /cost /mcp /memory /permissions /doctor /config /model /clear /resume /compact (/compact requires PAR-01)
-- [ ] **CMDS-03**: Class-A prompt-expanding commands (/init) ride the existing `expandUserBlocks` seam and are recorded as user turns with provenance
-- [ ] **CMDS-04**: Live rescan — newly created/installed commands, skills, agents (and removals) are discovered without restart: filesystem watch or invoke-time rescan re-runs discovery and available_commands_update re-fires so the editor autocomplete reflects changes immediately
+- [x] **CMDS-01**: Slash-invocation resolves via one chain: builtins → skills → agents → file-discovered commands (current behavior last)
+- [x] **CMDS-02**: Class-B control-plane commands execute at the runner seam with NO model turn and write `local_command` transcript lines: /help /status /cost /mcp /memory /permissions /doctor /config /model /clear /resume /compact (/compact requires PAR-01)
+- [x] **CMDS-03**: Class-A prompt-expanding commands (/init) ride the existing `expandUserBlocks` seam and are recorded as user turns with provenance
+- [x] **CMDS-04**: Live rescan — newly created/installed commands, skills, agents (and removals) are discovered without restart: filesystem watch or invoke-time rescan re-runs discovery and available_commands_update re-fires so the editor autocomplete reflects changes immediately
 
 ### Slash-invocable Skills
 
-- [ ] **SKLS-01**: Typing `/<skill-name>` resolves skill keys in invocationFor; SKILL.md body expands as the prompt with args appended
-- [ ] **SKLS-02**: Discovered AGENTS are addressable as slash commands (BMad-style installer layout: `.claude/agents/*.md`)
-- [ ] **SKLS-03**: Per-agent `model:` frontmatter wired into subagent dispatch — precedence frontmatter > dispatch > session default > tier — with resolvedModel reported back
+- [x] **SKLS-01**: Typing `/<skill-name>` resolves skill keys in invocationFor; SKILL.md body expands as the prompt with args appended
+- [x] **SKLS-02**: Discovered AGENTS are addressable as slash commands (BMad-style installer layout: `.claude/agents/*.md`)
+- [x] **SKLS-03**: Per-agent `model:` frontmatter wired into subagent dispatch — precedence frontmatter > dispatch > session default > tier — with resolvedModel reported back
 
 ### CC Parity Closures
 
@@ -112,14 +112,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ACP-07 | Phase 18 | Complete |
 | PAR-01 | Phase 19 | Complete |
 | PAR-02 | Phase 19 | Complete |
-| ACP-04 | Phase 20 | Pending |
-| CMDS-01 | Phase 20 | Pending |
-| CMDS-02 | Phase 20 | Pending |
-| CMDS-03 | Phase 20 | Pending |
-| CMDS-04 | Phase 20 | Pending |
-| SKLS-01 | Phase 20 | Pending |
-| SKLS-02 | Phase 20 | Pending |
-| SKLS-03 | Phase 20 | Pending |
+| ACP-04 | Phase 20 | Complete |
+| CMDS-01 | Phase 20 | Complete |
+| CMDS-02 | Phase 20 | Complete |
+| CMDS-03 | Phase 20 | Complete |
+| CMDS-04 | Phase 20 | Complete |
+| SKLS-01 | Phase 20 | Complete |
+| SKLS-02 | Phase 20 | Complete |
+| SKLS-03 | Phase 20 | Complete |
 | PAR-03 | Phase 21 | Complete |
 | PAR-04 | Phase 21 | Complete |
 | PAR-05 | Phase 21 | Complete |

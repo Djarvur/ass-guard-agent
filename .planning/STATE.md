@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Claude Code Parity
 current_plan: 6
-status: executing
-stopped_at: Completed 20-05-PLAN.md (live discovery rescan)
-last_updated: "2026-09-07T20:35:48.088Z"
+status: ready_to_plan
+stopped_at: Phase 20 complete (6/6) — ready to discuss Phase 21
+last_updated: 2026-09-07T20:53:30.684Z
 last_activity: 2026-09-07
 progress:
   total_phases: 11
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 73
-  completed_plans: 47
-  percent: 55
+  completed_plans: 48
+  percent: 64
 ---
 
 # State: ass-guard-agent (working name)
@@ -21,18 +21,18 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-09-06)
 **Core value:** A hands-off coding agent that feels native in the editor: full SDD workflows run end-to-end without manual continues, and the agent surfaces through the client's own UX — clickable permission prompts, native file diffs, session management. (Pivoted 2026-08-25 from the mimicry bar.)
-**Current focus:** Phase 20 — built-in-commands-skills-per-agent-model
+**Current focus:** Phase 21 — context policy parity closures
 
 ## Current Position
 
-Phase: 20 (built-in-commands-skills-per-agent-model) — EXECUTING
+Phase: 21
 Plan: 6 of 6
-Current Plan: 6
+Current Plan: Not started
 Total Plans in Phase: 6
-Status: Ready to execute
+Status: Ready to plan
 Last activity: 2026-09-07
 
-Progress: [██████░░░░] 64%
+Progress: [███████░░░] 66%
 
 ## Performance Metrics
 
@@ -91,6 +91,7 @@ Progress: [██████░░░░] 64%
 | Phase 20 P03 | 74 min | 3 tasks | 7 files |
 | Phase 20 P04 | 62 min | 3 tasks | 6 files |
 | Phase 20 P05 | 88 min | 3 tasks | 8 files |
+| Phase 20 P06 | 46 min | 3 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -205,6 +206,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-07T20:35:48.072Z
-Stopped at: Completed 20-05-PLAN.md (live discovery rescan)
+Last session: 2026-09-07T20:47:51.351Z
+Stopped at: Completed 20-06-PLAN.md (E2E battery; operator UAT pending)
 Resume file: None

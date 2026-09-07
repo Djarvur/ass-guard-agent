@@ -50,7 +50,7 @@ Operator decisions at close (2026-08-23…25): D-09 REVERSED (session resume = m
 - [x] **Phase 17: Permissions + Elicitation** - Clickable permission asks and structured form asks through the editor; ONE gate pipeline locked (completed 2026-09-03)
 - [x] **Phase 18: Session Family** - list / load-resume / close-delete with full replay and live-state reconciliation (completed 2026-09-06)
 - [x] **Phase 19: Compaction + cache_control** - Threshold-triggered compaction marker plus parity-faithful cache_control emission (completed 2026-09-07)
-- [ ] **Phase 20: Built-in Commands + Skills + Per-Agent Model** - Resolver chain, class-B/class-A command families, slash-invocable skills, per-agent model dispatch
+- [x] **Phase 20: Built-in Commands + Skills + Per-Agent Model** - Resolver chain, class-B/class-A command families, slash-invocable skills, per-agent model dispatch (completed 2026-09-07)
 - [x] **Phase 21: Context & Policy Parity Closures** - Hooks PreToolUse deny joining the gate pipeline, AGENTS.md injection, thinking streaming, rich prompt content (completed 2026-09-06)
 - [ ] **Phase 22: Background Execution + Sandbox Reality** - Full subagents, background Bash, persistent shell on shared process lifecycle; real sandbox
 - [ ] **Phase 23: SEED Gaps Close-out** - Steering queue, checkpoint restore guard, /undo
@@ -284,7 +284,7 @@ Plans:
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 20-06-PLAN.md — Simulator E2E + criteria-to-evidence matrix + live-Zed operator checkpoint (all criteria)
+- [x] 20-06-PLAN.md — Simulator E2E + criteria-to-evidence matrix + live-Zed operator checkpoint (all criteria)
 
 ### Phase 21: Context & Policy Parity Closures
 
@@ -496,7 +496,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 | 17. Permissions + Elicitation | v1.2 | 6/6 | Complete    | 2026-09-03 |
 | 18. Session Family | v1.2 | 7/7 | Complete    | 2026-09-06 |
 | 19. Compaction + cache_control | v1.2 | 7/7 | Complete    | 2026-09-07 |
-| 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 5/6 | In Progress|  |
+| 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 6/6 | Complete    | 2026-09-07 |
 | 21. Context & Policy Parity Closures | v1.2 | 6/6 | Complete    | 2026-09-06 |
 | 22. Background Execution + Sandbox Reality | v1.2 | 0/? | Not started | - |
 | 23. SEED Gaps Close-out | v1.2 | 0/? | Not started | - |
