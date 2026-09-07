@@ -185,6 +185,17 @@ type Session struct {
 	compactionNotes    atomic.Int64
 	compactionDegrades atomic.Int64
 
+	// compactionAttemptTurn is the WR-03b once-per-turn guard (19-06): the
+	// TurnID of the turn that already made its ONE threshold-class compaction
+	// attempt — a degraded summarizer re-fires at the NEXT turn's check, never
+	// at a later loop head of the same turn (up to 64 guaranteed-failing
+	// near-limit calls per turn before this guard). Plain field under the
+	// same turn-serialization discipline as compaction: maybeCompact and the
+	// overflow retry branch are the only writers, both on the serialized turn
+	// goroutine. The overflow-forced compact stamps it too (the forced path
+	// IS the turn's attempt as far as the threshold check is concerned).
+	compactionAttemptTurn string
+
 	closeOnce sync.Once
 
 	turnCounter atomic.Int64
@@ -547,6 +558,12 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 			// wraps this — Pitfall 8.
 			if provider.IsOverflow(streamErr) && !overflowRetried {
 				overflowRetried = true
+				// WR-03b (19-06): the forced compact IS this turn's compaction
+				// attempt — stamp the guard so an enabled over-threshold later
+				// loop head (stale usage anchor + the marker/usage estimate
+				// lines) cannot fire a second threshold compaction within the
+				// same turn.
+				s.compactionAttemptTurn = turnID
 				_ = s.compact(ctx, turnID)
 
 				continue

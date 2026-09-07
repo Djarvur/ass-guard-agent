@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -41,6 +42,32 @@ const (
 	// it through the session's compactionTimeout field.
 	compactionSummarizerTimeout = 60 * time.Second
 )
+
+// WR-03a span-budget constants (19-06): the summarizer input is bounded so an
+// overflowing context can never produce an overflowing summarize request.
+const (
+	// compactionSpanFallbackChars is the span cap when no context limit is
+	// resolved (settings unset — exactly the state the overflow backstop
+	// fires in, compaction disabled): ~400K chars ≈ 100K tokens of span, far
+	// under any real provider window while still absorbing a large session.
+	compactionSpanFallbackChars = 400_000
+
+	// compactionSpanMinChars is the budget FLOOR — never zero (a zero budget
+	// would summarize nothing, degrading every compaction to the empty-span
+	// edge). Only a pathological limit (a fraction of the prompt overhead)
+	// reaches it.
+	compactionSpanMinChars = 2_000
+
+	// compactionSpanBudgetSlack is the fixed envelope the budget reserves
+	// beyond the instruction and the carry-forward summary (seed/system
+	// overhead on the summarize request).
+	compactionSpanBudgetSlack = 512
+)
+
+// spanTruncationNotice is the one-line prefix a cut span carries so the
+// summarizer knows content was dropped (T-19-18's accept disposition: loud
+// about the truncation, never a silent gap).
+const spanTruncationNotice = "[earlier conversation truncated]\n"
 
 // errCompactionEmptySummary is the degrade cause when the summarizer stream
 // completed without any text: an empty summary would seed every future
@@ -168,6 +195,15 @@ func estimateLinesSinceLastRequest(lines []Line) int64 {
 // invocations, zero notes — zero behavior delta versus pre-phase); enabled +
 // over threshold runs the blocking compact BEFORE projection so no
 // half-compacted state is observable and no Projector race exists (D-07).
+//
+// WR-03b (19-06): at most ONE threshold-class ATTEMPT per turn — the check
+// still runs (and counts) at every loop head, but a turn that already
+// attempted (successfully or degraded) never re-fires within itself: a
+// degraded compaction costs ONE near-limit provider call per turn, not one
+// per loop head (up to 64 guaranteed-failing calls before this guard). A NEW
+// turnID over threshold attempts again. The overflow-forced compact
+// (session.go's retry branch) stamps the same guard — the forced path IS the
+// turn's attempt as far as the threshold check is concerned.
 func (s *Session) maybeCompact(ctx context.Context, turnID string) {
 	if !s.compaction.Enabled {
 		return // disabled: the check is skipped entirely (the D-03 switch)
@@ -179,6 +215,12 @@ func (s *Session) maybeCompact(ctx context.Context, turnID string) {
 		s.compaction.ContextLimit, s.compaction.ThresholdPct) {
 		return
 	}
+
+	if s.compactionAttemptTurn == turnID {
+		return // WR-03b: this turn already made its one threshold-class attempt
+	}
+
+	s.compactionAttemptTurn = turnID
 
 	_ = s.compact(ctx, turnID) // D-09: compact degrades internally, never fails the turn
 }
@@ -238,7 +280,21 @@ func (s *Session) compact(ctx context.Context, turnID string) error {
 		}
 	}
 
-	prompt := compactionPrompt(prevSummary, renderSpan(foldExchanges(lines, from, "", false)))
+	// WR-03a (19-06): bound the rendered span so the summarize call itself
+	// can never be an overflowing request — the budget derives from the SAME
+	// resolved context window that governs the threshold (fallback cap when
+	// unset, named floor when pathological). Dropped content is loud: the
+	// one-line truncation notice prefixes a cut span (T-19-18's accept
+	// disposition — bounded + announced beats guaranteed-400 unbounded).
+	fold := foldExchanges(lines, from, "", false)
+	bounded := boundSpanMessages(fold, spanBudgetChars(s.compaction.ContextLimit, prevSummary))
+
+	span := renderSpan(bounded)
+	if len(bounded) < len(fold) {
+		span = spanTruncationNotice + span
+	}
+
+	prompt := compactionPrompt(prevSummary, span)
 
 	// The light-tier profile COPY (the subagentProfile discipline): the model
 	// override and the 2048 max_tokens cap ride the copy — never written back
@@ -324,10 +380,11 @@ func (s *Session) compact(ctx context.Context, turnID string) error {
 // degradeCompaction is the D-09 loud degrade: exactly ONE warning log line +
 // ONE counter bump, and a nil return — the caller proceeds un-compacted and
 // the turn never fails over compaction (the overflow retry stays the last
-// line).
+// line). 19-06 (WR-03b) amended the retry cadence: the next attempt is the
+// NEXT TURN's pre-request check, not a later loop head of this turn.
 func (s *Session) degradeCompaction(turnID string, cause error) error {
 	s.compactionDegrades.Add(1)
-	slog.Warn("compaction: summarizer failed; proceeding un-compacted (will retry at the next check)",
+	slog.Warn("compaction: summarizer failed; proceeding un-compacted (will retry at the next turn's check)",
 		"turnID", turnID, "error", cause.Error())
 
 	return nil
@@ -403,35 +460,95 @@ func renderSpan(msgs []provider.Message) string {
 	var sb strings.Builder
 
 	for i := range msgs {
-		m := &msgs[i]
-
-		switch m.Role {
-		case roleUserMsg:
-			sb.WriteString("user: ")
-			sb.WriteString(m.Content)
-			sb.WriteByte('\n')
-		case roleAssistant:
-			if m.Content != "" {
-				sb.WriteString("assistant: ")
-				sb.WriteString(m.Content)
-				sb.WriteByte('\n')
-			}
-
-			for _, tc := range m.ToolCalls {
-				sb.WriteString("assistant tool_use ")
-				sb.WriteString(tc.Name)
-				sb.WriteString(": ")
-				sb.WriteString(string(tc.Input))
-				sb.WriteByte('\n')
-			}
-		case roleToolMsg:
-			sb.WriteString("tool ")
-			sb.WriteString(m.ToolName)
-			sb.WriteString(": ")
-			sb.WriteString(m.Content)
-			sb.WriteByte('\n')
-		}
+		sb.WriteString(renderSpanMessage(&msgs[i]))
 	}
 
 	return sb.String()
+}
+
+// renderSpanMessage renders ONE folded message in the span rendering — the
+// renderSpan per-message rules extracted (19-06, WR-03a) so the span bound
+// counts the SAME text the render emits (rendered chars are the budget unit;
+// a separate cost model would drift from what is actually sent). Pointer
+// form: Message is 144 bytes (gocritic hugeParam).
+func renderSpanMessage(m *provider.Message) string {
+	var sb strings.Builder
+
+	switch m.Role {
+	case roleUserMsg:
+		sb.WriteString("user: ")
+		sb.WriteString(m.Content)
+		sb.WriteByte('\n')
+	case roleAssistant:
+		if m.Content != "" {
+			sb.WriteString("assistant: ")
+			sb.WriteString(m.Content)
+			sb.WriteByte('\n')
+		}
+
+		for _, tc := range m.ToolCalls {
+			sb.WriteString("assistant tool_use ")
+			sb.WriteString(tc.Name)
+			sb.WriteString(": ")
+			sb.WriteString(string(tc.Input))
+			sb.WriteByte('\n')
+		}
+	case roleToolMsg:
+		sb.WriteString("tool ")
+		sb.WriteString(m.ToolName)
+		sb.WriteString(": ")
+		sb.WriteString(m.Content)
+		sb.WriteByte('\n')
+	}
+
+	return sb.String()
+}
+
+// spanBudgetChars derives the WR-03a summarize-span budget from the same
+// resolved context window that governs the threshold (one limit source —
+// trigger and input bound stay coupled): the fill-target share in chars
+// (limit × 4 × compactionFillTargetPct/100) minus the summarize prompt's own
+// fixed overheads (the carry-forward summary, the extractive instruction, an
+// envelope slack). A non-positive limit (compaction disabled, no window
+// resolved — the overflow backstop's state) falls back to the documented
+// default cap; the result is floored at the named minimum.
+func spanBudgetChars(limit int64, prevSummary string) int64 {
+	if limit <= 0 {
+		return compactionSpanFallbackChars
+	}
+
+	budget := limit * estimateCharsPerToken * compactionFillTargetPct / percentDenominator
+	budget -= int64(len(prevSummary)) + int64(len(compactionPromptInstruction)) + compactionSpanBudgetSlack
+
+	return max(budget, compactionSpanMinChars)
+}
+
+// boundSpanMessages keeps the MOST RECENT messages whose cumulative rendered
+// span fits maxChars (WR-03a) — MESSAGE granularity: the span is plain TEXT
+// inside ONE user prompt, so the tool_use/tool_result pair-safety constraint
+// that governs the projected window's tail does not apply here. Older
+// messages drop first; the newest message is always kept (the floor — a
+// bound of zero must not summarize nothing), mirroring the
+// boundCompactionTailByBudget allowance/floor discipline.
+func boundSpanMessages(msgs []provider.Message, maxChars int64) []provider.Message {
+	cut := len(msgs)
+
+	var total int64
+
+	for i := range slices.Backward(msgs) {
+		cost := int64(len(renderSpanMessage(&msgs[i])))
+
+		if cut < len(msgs) && total+cost > maxChars {
+			break // the next (older) message would exceed the budget
+		}
+
+		total += cost
+		cut = i
+
+		if total > maxChars {
+			break // floor: the newest message alone may exceed the budget
+		}
+	}
+
+	return msgs[cut:]
 }

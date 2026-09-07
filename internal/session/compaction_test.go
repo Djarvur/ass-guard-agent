@@ -1569,8 +1569,8 @@ func TestCompaction_BoundedSpanAndReFireGuard(t *testing.T) { //nolint:gocognit,
 			t.Errorf("markers = %d; want 1 (the forced compact alone; head 2 must not compact again)", got)
 		}
 
-		if got := s.compactionChecks.Load(); got != 2 {
-			t.Errorf("check counter = %d; want 2 (both heads counted)", got)
+		if got := s.compactionChecks.Load(); got != 3 {
+			t.Errorf("check counter = %d; want 3 (every head counted: original, retry, post-tool)", got)
 		}
 
 		if got := s.compactionDegrades.Load(); got != 0 {
