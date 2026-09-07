@@ -36,6 +36,13 @@ const rescanDebounce = 300 * time.Millisecond
 // they exist; created-under-a-watched-parent picks them up dynamically).
 var discoveryLeaves = []string{"skills", "commands", "agents"} //nolint:gochecknoglobals // immutable table
 
+// watch-tree directory names (loader-constant mirrors — internal/runtime
+// keeps no ecosys internals import beyond the public API).
+const (
+	claudeDirName   = ".claude"
+	assguardDirName = ".ass-guard"
+)
+
 // watchRoots builds the watch set for workDir (literal paths only — NO
 // EvalSymlinks resolution on the watch set, T-20-19): the stable PARENTS
 // (project .claude/, user .claude/, project .ass-guard/) plus every EXISTING
@@ -46,17 +53,23 @@ func watchRoots(workDir string) []string {
 		home = ""
 	}
 
-	parents := []string{
-		filepath.Join(workDir, ".claude"),
-		filepath.Join(workDir, ".ass-guard"),
-	}
+	// .claude trees are watched as PARENTS (their discovery leaves ride under
+	// them; a created leaf is armed dynamically). The project .ass-guard tree
+	// is watched LEAF-ONLY: its PARENT also holds transcripts and session
+	// state that change every turn — watching it wholesale would turn every
+	// transcript append into a rescan event (T-20-18's storm, found live in
+	// the simulator E2E). Leaf-less .ass-guard stays unwatched entirely.
+	out := make([]string, 0, 8)
+
+	parents := []string{filepath.Join(workDir, claudeDirName)}
 
 	if home != "" {
-		parents = append(parents, filepath.Join(home, ".claude"))
+		parents = append(parents, filepath.Join(home, claudeDirName))
 	}
 
-	out := make([]string, 0, len(parents)*len(discoveryLeaves))
-
+	// .claude trees: parent + every EXISTING leaf (fsnotify is
+	// non-recursive — the parent alone would miss writes inside skills/,
+	// commands/, agents/; created leaves arm dynamically from parent events).
 	for _, parent := range parents {
 		if dirExists(parent) {
 			out = append(out, parent)
@@ -64,6 +77,15 @@ func watchRoots(workDir string) []string {
 
 		for _, leaf := range discoveryLeaves {
 			dir := filepath.Join(parent, leaf)
+			if dirExists(dir) {
+				out = append(out, dir)
+			}
+		}
+	}
+
+	for _, root := range []string{filepath.Join(workDir, assguardDirName), filepath.Join(home, assguardDirName)} {
+		for _, leaf := range discoveryLeaves {
+			dir := filepath.Join(root, leaf)
 			if dirExists(dir) {
 				out = append(out, dir)
 			}

@@ -664,6 +664,10 @@ func simCollectTurnStory(t *testing.T, cli *simClient, id string) (wire []string
 			plans++
 		case simKindChunk:
 			wire = append(wire, "chunk")
+		case "available_commands_update":
+			// 20-01/20-05: session-start + rescan advertisements are PRE-TURN
+			// session setup, not turn emission — admitted anywhere in the
+			// stream (the turn story's order invariant covers turn frames).
 		default:
 			wire = append(wire, upd.Kind)
 		}
