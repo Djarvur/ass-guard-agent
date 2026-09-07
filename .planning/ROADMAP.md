@@ -223,9 +223,13 @@ Plans:
   3. On a provider overflow error ("prompt too long"), recovery retries once post-compaction instead of failing the turn.
   4. Every outgoing request carries cache_control {"type":"ephemeral"} on each system block — visible in the request log — and the existing cache-discipline probe in `ass-guard parity` flips green on placement.
 
-**Plans**: 5/5 plans executed
+**Plans**: 6 plans (5 executed; 1 gap closure planned)
 
 Plans:
+**Wave 4** *(gap closure — UAT G-19-1, operator ruling (b) 2026-09-07)*
+
+- [ ] 19-06-PLAN.md — GAP G-19-1: same-turn marker carve-out + engine-armed retry override + WR-03 rider (bounded summarize span, once-per-turn re-fire guard) + content-sensitive regression
+
 **Wave 1**
 
 - [x] 19-01-PLAN.md — Tracer: cache_control chain end-to-end — profile flag → shaper emission → probe flip, WINDOWS #5 closed (PAR-02, D-12)
