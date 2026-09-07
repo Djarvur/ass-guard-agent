@@ -3,6 +3,7 @@ package runtime //nolint:testpackage // internal package test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -269,4 +270,147 @@ func snapDatedAt(t *testing.T, workDir, id string, when time.Time) {
 	parent := run("rev-parse", "refs/checkpoints/last")
 	sha := run("commit-tree", tree, "-p", parent, "-m", id)
 	run("update-ref", "refs/checkpoints/"+id, sha)
+}
+
+// --- 23-04 Task 3: integration battery (matrix axis, ordering, config-to-GC) ---
+
+// TestRestoreGuardNilStoreAxis completes the refusal matrix's store axis: a
+// NIL store never changes the guard's refusal semantics — the guard is
+// state-based; the store nil-check is the CALLER's composition (the /undo
+// output composes both, 23-05).
+func TestRestoreGuardNilStoreAxis(t *testing.T) {
+	t.Parallel()
+
+	r, prov := newBlockingRunner(t, scriptedResp{text: "ok", finish: stopEndTurn})
+
+	// Poison the store: every open fails -> the Runner's store is nil.
+	poison := filepath.Join(r.workDir, ".ass-guard", "checkpoints")
+	if err := os.MkdirAll(filepath.Dir(poison), 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	if err := os.WriteFile(poison, []byte("not a dir"), 0o600); err != nil {
+		t.Fatalf("poison: %v", err)
+	}
+
+	const sid = "sess-nil-store"
+
+	if st := r.checkpointStore(); st != nil {
+		t.Fatal("checkpointStore must be nil over the poisoned path")
+	}
+
+	// Idle passes even with a nil store.
+	if err := r.restoreBlockers(sid); err != nil {
+		t.Errorf("nil-store idle guard refused: %v", err)
+	}
+
+	// The active states still refuse identically.
+	close(prov.release)
+
+	r.chainEnter(sid)
+
+	if err := r.restoreBlockers(sid); err == nil || !strings.Contains(err.Error(), "chain") {
+		t.Errorf("nil-store parked-chain refusal = %v; want the chain-naming refusal", err)
+	}
+
+	r.chainExit(sid)
+}
+
+// TestSessionStartOrdering pins the session-start sequence: the exclude
+// append rides the store open (BEFORE any session exists), then the sweep,
+// then the session is ready — and the exclude is check-ignore-live in the
+// user repo.
+func TestSessionStartOrdering(t *testing.T) {
+	t.Parallel()
+
+	r, prov := newBlockingRunner(t, scriptedResp{text: "ok", finish: stopEndTurn})
+	close(prov.release)
+
+	// A USER git repo workspace: the exclude lands at store open.
+	gitInitUserRepo(t, r.workDir)
+
+	const sid = "sess-order"
+
+	sess := r.sessionFor(context.Background(), sid)
+	if sess == nil {
+		t.Fatal("sessionFor returned nil")
+	}
+
+	// The exclude is live: check-ignore fires for a store path.
+	out := gitRunUser(t, r.workDir, "check-ignore", "-v", ".ass-guard/checkpoints/shadow.git")
+	if !strings.Contains(out, ".ass-guard") {
+		t.Errorf("check-ignore did not fire after session start: %q", out)
+	}
+}
+
+// TestConfiguredBoundsReachSweep pins the config-to-GC wiring end-to-end:
+// bounds injected through the SetCheckpointGCBounds seam (what the serve
+// composition binds to the surface's read-back) parameterize the
+// session-start sweep — perSession=10 evicts the 11th-oldest ref of a
+// session at the NEXT session creation.
+func TestConfiguredBoundsReachSweep(t *testing.T) {
+	t.Parallel()
+
+	r, prov := newBlockingRunner(t, scriptedResp{text: "ok", finish: stopEndTurn})
+	close(prov.release)
+
+	r.SetCheckpointGCBounds(func() (days int, perSession int) { return 7, 10 })
+
+	// Seed 11 same-session checkpoint refs directly through the store.
+	st, err := checkpoint.Open(r.workDir)
+	if err != nil {
+		t.Fatalf("checkpoint.Open: %v", err)
+	}
+
+	writeGuardFile(t, filepath.Join(r.workDir, "a.txt"), "seed\n")
+
+	for i := range 11 {
+		id := fmt.Sprintf("sess-cfg-turn-%03d", i+1) // 001..011
+		if werr := st.Snapshot(context.Background(), "sess-cfg", id); werr != nil {
+			t.Fatalf("Snapshot %s: %v", id, werr)
+		}
+	}
+
+	// The next session START sweeps with the configured bound.
+	_ = r.sessionFor(context.Background(), "sess-after")
+
+	entries, lerr := st.List()
+	if lerr != nil {
+		t.Fatalf("List: %v", lerr)
+	}
+
+	if len(entries) != 10 {
+		t.Fatalf("post-sweep refs = %d; want 10 (perSession bound from the seam)", len(entries))
+	}
+
+	for _, e := range entries {
+		if e.Ref == "refs/checkpoints/sess-cfg-turn-001" {
+			t.Error("the 11th-oldest ref survived the configured perSession=10 sweep")
+		}
+	}
+}
+
+// gitInitUserRepo initializes a user git repo in dir (one commit).
+func gitInitUserRepo(t *testing.T, dir string) {
+	t.Helper()
+
+	gitRunUser(t, dir, "init", "--quiet")
+	writeGuardFile(t, filepath.Join(dir, "seed.txt"), "seed\n")
+	gitRunUser(t, dir, "add", "-A")
+	gitRunUser(t, dir, "-c", "user.name=t", "-c", "user.email=t@e.c", "commit", "--quiet", "-m", "init")
+}
+
+// gitRunUser runs git in the user's repo, failing the test on error.
+func gitRunUser(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+
+	cmd := exec.CommandContext(context.Background(), "git", args...)
+	cmd.Dir = dir
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v in %s: %v\n%s", args, dir, err, out)
+	}
+
+	return string(out)
 }
