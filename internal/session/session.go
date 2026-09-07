@@ -91,6 +91,15 @@ type Session struct {
 	SubagentModelPlanner SubagentModelPlanner
 	AgentLookup          func(name string) (ecosys.Agent, bool)
 
+	// BackgroundDispatch is the 22-03 (PAR-07) background-subagent seam:
+	// a run_in_background Agent/Task dispatch hands the launch to the
+	// runtime-owned implementation (tracker registration, serve-lifetime
+	// detach, output file) and returns the discriminated async_launched
+	// payload data immediately. nil (bare test sessions) keeps the
+	// foreground-only behavior — run_in_background parses but dispatches
+	// synchronously.
+	BackgroundDispatch func(req BackgroundDispatchRequest) BackgroundDispatchResult
+
 	// SubagentModel is the scheduler light-tier model slug for SUBAGENT
 	// dispatches (14-05, EARLY-05 — the token-economics lever). Empty (the
 	// default) keeps the parent model exactly as before: the routing is
@@ -757,6 +766,30 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 					var agentDef *ecosys.Agent
 					if def, ok := s.agentDefFor(tc.Input); ok {
 						agentDef = &def
+					}
+
+					// 22-03 (PAR-07): the background branch — run_in_background
+					// returns the discriminated async_launched payload
+					// immediately; the loop detaches under the serve-lifetime
+					// ctx (the launcher seam owns its lifecycle). Unwired seam
+					// keeps the synchronous path.
+					if wantsBackgroundDispatch(tc.Input) && s.BackgroundDispatch != nil {
+						payload, bgerr := s.DispatchSubagentBackground(
+							turnID, callID, extractSubagentPrompt(tc.Input), agentDef)
+						if bgerr != nil {
+							errJSON, mErr := json.Marshal(map[string]string{mapKeyError: bgerr.Error()})
+							if mErr != nil {
+								errJSON = []byte(`{"error":"marshal error failed"}`)
+							}
+
+							s.appendToolResultLoud(turnID, callID, tc.Name, errJSON, true)
+						} else {
+							s.appendToolResultLoud(turnID, callID, tc.Name, payload, false)
+						}
+
+						_ = s.MaybeAppendBoundary(tc.Name, callID, turnID)
+
+						continue
 					}
 
 					result, derr := s.DispatchSubagent(ctx, turnID, tc.Name, extractSubagentPrompt(tc.Input), agentDef)

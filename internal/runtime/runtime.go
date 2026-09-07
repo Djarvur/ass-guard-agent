@@ -1993,6 +1993,35 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 		r.scheduleWakeDrain(sessionID)
 	})
 
+	// 22-03 (PAR-07): the background-subagent launcher seam — the session's
+	// run_in_background dispatches hand the launch to tasks.RunBackgroundSubagent
+	// over this session's tracker. The loop runs under the SERVE-lifetime ctx
+	// (the dispatching turn's ctx dies at return); progress streams from the
+	// bus (chunks + tool calls tagged with the subagent's turn id) into the
+	// task's output file. The 20-03 routing plan rides the request VERBATIM
+	// (Pattern 7: DispatchSubagentBackground resolved it through the SAME
+	// planSubagent call site the foreground path uses — never a second
+	// resolver).
+	backgroundLaunch := func(req session.BackgroundDispatchRequest) session.BackgroundDispatchResult {
+		r.sessMu.Lock()
+		sessLocal := r.sessions[sessionID]
+		r.sessMu.Unlock()
+
+		launch := tasks.RunBackgroundSubagent(tasks.SubagentDeps{
+			Run: func(bgCtx context.Context, progress func(string)) (string, error) {
+				return runSubagentWithProgress(bgCtx, sessLocal, req, r.bus, progress)
+			},
+			WorkDir:  dir,
+			Tracker:  tracker,
+			ServeCtx: r.serveCtxOrBackground,
+		})
+
+		return session.BackgroundDispatchResult{
+			TaskID: launch.TaskID, OutputFile: launch.OutputFile,
+			Queued: launch.Queued, Note: launch.Note, Err: launch.Err,
+		}
+	}
+
 	coreexec.RegisterCore(sCatalog, coreexec.Config{
 		WorkDir: dir, Todos: coreexec.NewTodoStore(), Hooks: hookRunner, Tasks: taskRegistry,
 	})
@@ -2090,6 +2119,10 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 		// file added after session construction stays dispatchable across a
 		// rescan swap; SubagentTypes stays as the bare-test fallback).
 		AgentLookup: r.liveAgentLookup,
+
+		// 22-03 (PAR-07): the background-subagent launcher (tracker +
+		// serve-ctx detach + the output-file progress tee).
+		BackgroundDispatch: backgroundLaunch,
 
 		// 12-02: discovered agent definitions register as spawnable subagent
 		// types (a subagent_type match applies the definition's Prompt + Tools
@@ -3701,4 +3734,79 @@ func (r *Runner) emitClassBEcho(emit acp.ChunkEmitter, turnID, text string) {
 			log.Printf("ass-guard: class-B echo enqueue failed (continuing): %v", eerr)
 		}
 	}
+}
+
+// runSubagentWithProgress is the 22-03 background launcher's Run dep: the
+// session's nested-loop runner under the background ctx, with a bus
+// subscription teeing the subagent's streamed chunks (AgentMessageChunk and
+// ToolCall events tagged with the subagent's turn id) into the task's
+// output file as produced (Pitfall 9: mid-run Read is truthful). The
+// subscription's lifetime is the run's.
+//
+//nolint:funlen // subscription setup + run + drain reads as one flow
+func runSubagentWithProgress(
+	bgCtx context.Context, sess *session.Session,
+	req session.BackgroundDispatchRequest, bus *event.Bus, progress func(string),
+) (string, error) {
+	if sess == nil {
+		return "", fmt.Errorf("background subagent: session unavailable")
+	}
+
+	if bus == nil || progress == nil {
+		// Headless (test) runners: run without the progress tee.
+		return req.Runner.Run(bgCtx, sess, req.SubagentTurnID, req.ParentTurnID,
+			req.Prompt, req.Restricted, req.AgentDef, req.Plan)
+	}
+
+	chunks := bus.Subscribe("AgentMessageChunk", event.BufAgentMessageChunk)
+	tools := bus.Subscribe("ToolCall", event.BufToolCall)
+
+	defer func() {
+		bus.Unsubscribe("AgentMessageChunk", chunks)
+		bus.Unsubscribe("ToolCall", tools)
+	}()
+
+	// The tee goroutine: forwards this subagent's events to the file until
+	// the run ends (the deferred unsubscribe closes the channels).
+	teeDone := make(chan struct{})
+
+	go func() {
+		defer close(teeDone)
+
+		for {
+			select {
+			case e, ok := <-chunks:
+				if !ok {
+					return
+				}
+
+				if c, isChunk := e.(event.AgentMessageChunk); isChunk && c.TurnID == req.SubagentTurnID && c.Content != "" {
+					progress(c.Content)
+				}
+			case e, ok := <-tools:
+				if !ok {
+					return
+				}
+
+				if c, isTool := e.(event.ToolCall); isTool && c.TurnID == req.SubagentTurnID {
+					progress(fmt.Sprintf("\n[tool: %s]\n", c.Name))
+				}
+			}
+		}
+	}()
+
+	result, err := req.Runner.Run(bgCtx, sess, req.SubagentTurnID, req.ParentTurnID,
+		req.Prompt, req.Restricted, req.AgentDef, req.Plan)
+
+	// Drain the tee's in-flight events before returning (the unsubscribe
+	// below closes the source channels; give the pump a beat to flush).
+	bus.Unsubscribe("AgentMessageChunk", chunks)
+	bus.Unsubscribe("ToolCall", tools)
+
+	select {
+	case <-teeDone:
+	case <-time.After(500 * time.Millisecond): // bounded — never pin the loop
+	}
+
+	return result, err
 }

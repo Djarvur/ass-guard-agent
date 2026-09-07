@@ -414,3 +414,114 @@ func extractSubagentPrompt(input json.RawMessage) string {
 
 	return subagentTaskPrompt
 }
+
+// --- 22-03 (PAR-07): the background dispatch leg --------------------------------
+
+// BackgroundDispatchRequest carries everything the runtime-owned background
+// launcher needs: the loop runner (the session's own, fake in tests), the
+// resolved routing plan (Pattern 7: the SAME resolution call site the
+// foreground dispatch uses — the runtime planner runs BEFORE this request
+// is built), and the dispatch bookkeeping ids.
+type BackgroundDispatchRequest struct {
+	Prompt         string
+	AgentDef       *ecosys.Agent
+	Plan           SubagentDispatchPlan
+	Restricted     []string
+	ParentTurnID   string
+	SubagentTurnID string
+	ToolCallID     string
+	Runner         subagentRunner
+}
+
+// BackgroundDispatchResult is the discriminated result's source data: the
+// minted task id + output pointer exist from t=0 (queued or running), the
+// queued form adds the D-10 note.
+type BackgroundDispatchResult struct {
+	TaskID     string
+	OutputFile string
+	Queued     bool
+	Note       string
+	Err        error
+}
+
+// wantsBackgroundDispatch parses run_in_background from an Agent/Task
+// tool-call input (best-effort, the anonymous-struct idiom — the field
+// exists in the captured schema, coretools.json:29-32).
+func wantsBackgroundDispatch(input json.RawMessage) bool {
+	if len(input) == 0 {
+		return false
+	}
+
+	var in struct {
+		RunInBackground bool `json:"run_in_background"`
+	}
+
+	return json.Unmarshal(input, &in) == nil && in.RunInBackground
+}
+
+// DispatchSubagentBackground is the background leg of the dispatch site
+// (22-03, PAR-07 Pattern 2): the SAME plan resolution (20-03's single call
+// site — the background leg inherits the resolver by construction, never a
+// second one), the SAME dispatch-line discipline, then the launcher seam
+// and the discriminated async_launched JSON payload — the synchronous wait
+// is skipped entirely; the nested loop's lifetime belongs to the launcher
+// (serve-ctx + tracker cancel).
+func (s *Session) DispatchSubagentBackground(
+	parentTurnID, toolCallID, prompt string, agentDef *ecosys.Agent,
+) (json.RawMessage, error) {
+	plan := s.planSubagent(agentDef)
+
+	if plan.Note != "" && s.Bus != nil {
+		s.Bus.Publish(event.AgentMessageChunk{
+			TurnID: parentTurnID, MessageID: parentTurnID, Content: plan.Note,
+		})
+	}
+
+	restricted := subagentRestrictedDefault
+	if agentDef != nil && len(agentDef.Tools) > 0 {
+		restricted = agentDef.Tools
+	}
+
+	subagentTurnID := s.nextTurnID()
+
+	resolvedModel := plan.Model
+	if resolvedModel == "" {
+		resolvedModel = s.Profile.Model
+	}
+
+	_ = s.Manager.AppendSubagentDispatch(parentTurnID, subagentTurnID, toolCallID, restricted, resolvedModel)
+
+	runner := s.subagentRunner
+	if runner == nil {
+		runner = defaultSubagentRunner{}
+	}
+
+	res := s.BackgroundDispatch(BackgroundDispatchRequest{
+		Prompt: prompt, AgentDef: agentDef, Plan: plan, Restricted: restricted,
+		ParentTurnID: parentTurnID, SubagentTurnID: subagentTurnID,
+		ToolCallID: toolCallID, Runner: runner,
+	})
+	if res.Err != nil {
+		return nil, res.Err
+	}
+
+	// The discriminated result (PAR-07's letter: the discrimination is the
+	// status field). The queued variant adds the visible note (D-10).
+	payload := map[string]any{
+		"status":      "async_launched",
+		"task_id":     res.TaskID,
+		"output_file": res.OutputFile,
+	}
+
+	if res.Queued {
+		payload["queued"] = true
+		payload["note"] = res.Note
+	}
+
+	out, merr := json.Marshal(payload)
+	if merr != nil {
+		return nil, fmt.Errorf("coreexec: marshal async_launched form: %w", merr)
+	}
+
+	return out, nil
+}
