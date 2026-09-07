@@ -839,3 +839,324 @@ func simAssertQuietAfterResponse(t *testing.T, cli *simClient) {
 		}
 	}
 }
+
+// simCommandUpdate decodes one available_commands_update payload's command set.
+type simCommandUpdate struct {
+	Kind string                      `json:"sessionUpdate"`     //nolint:tagliatelle // ACP wire field
+	Cmds []acp.AvailableCommandFrame `json:"availableCommands"` //nolint:tagliatelle // ACP wire field
+	Sid  string                      `json:"sessionId"`         //nolint:tagliatelle // ACP wire field
+}
+
+// TestSimulatorCommandSurface (20-06) proves the whole Phase 20 command
+// surface over the real Run composition: (1) session start advertises the
+// full winner set, (2) a class-B command round-trips with ZERO provider
+// calls, (3) a live-created command file re-fires the advertisement and the
+// new command fires, (4) /<agent> dispatches the subagent with resolvedModel
+// reported live + durably. Transcript assertions read the on-disk JSONL
+// (transcript-as-truth).
+//
+//nolint:funlen,gocognit,gocyclo,cyclop // four wire scenarios, one serve
+func TestSimulatorCommandSurface(t *testing.T) {
+	t.Setenv("ZAI_API_KEY", "")
+
+	stub := newSimStub([]simTurnScript{
+		{phases: []simPhase{{text: "expanded extra body turn"}}},                // scenario 3's /extra expansion
+		{phases: []simPhase{{text: "subagent report: located the entrypoint"}}}, // scenario 4's subagent
+	})
+	t.Cleanup(stub.srv.Close)
+
+	workDir := simulatorWorkDir(t, stub.srv.URL)
+
+	// The discovered fixtures the scenarios ride: one agent with a DECLARED
+	// frontmatter model (the floor's GLM-5.3 — routing applies).
+	agentsDir := filepath.Join(workDir, ".claude", "agents")
+	if err := os.MkdirAll(agentsDir, 0o750); err != nil {
+		t.Fatalf("mkdir agents: %v", err)
+	}
+
+	err := os.WriteFile(filepath.Join(agentsDir, "demo-agent.md"), []byte(
+		"---\nname: demo-agent\ndescription: simulator agent\nmodel: "+testModelPrimary+"\ntools: [Read]\n---\n"+
+			"Locate code precisely."), 0o600)
+	if err != nil {
+		t.Fatalf("write demo-agent: %v", err)
+	}
+
+	srvInR, srvInW := io.Pipe()
+	cliR, cliOutW := io.Pipe()
+	stderr := &syncBuffer{}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	serveDone := make(chan error, 1)
+
+	go func() {
+		serveDone <- Run(ctx, srvInR, cliOutW, stderr, &Options{
+			Profile: profileZcode, MaxConcurrent: 2,
+			ProfilesDir: repoProfilesDir(t), WorkDir: workDir,
+		})
+	}()
+
+	t.Cleanup(func() {
+		cancel()
+
+		_ = srvInW.Close()
+		_ = cliOutW.Close()
+		_ = srvInR.Close()
+		_ = cliR.Close()
+
+		select {
+		case <-serveDone:
+		case <-time.After(simGuardTimeout):
+			t.Errorf("serve did not exit")
+		}
+	})
+
+	cli := newSimClient(t, cliR, srvInW)
+
+	simStageInitialize(t, cli)
+
+	// Scenario 1 — ADVERTISEMENT: session/new precedes its response with the
+	// available_commands_update carrying the full winner set.
+	cli.sendf(`{"jsonrpc":"2.0","id":"cs-1","method":"session/new","params":{"cwd":` +
+		simJSONStr(workDir) + `,"mcpServers":[]}}`)
+
+	var startSet []acp.AvailableCommandFrame
+
+	for {
+		m := cli.next()
+		if isResponseID(m, `"cs-1"`) {
+			break
+		}
+
+		var params struct {
+			Sid    string           `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+			Update simCommandUpdate `json:"update"`
+		}
+
+		if json.Unmarshal(m.Params, &params) != nil {
+			continue
+		}
+
+		if params.Update.Kind == "available_commands_update" {
+			startSet = params.Update.Cmds
+		}
+	}
+
+	names := map[string]bool{}
+	for _, c := range startSet {
+		names[c.Name] = true
+	}
+
+	for _, want := range []string{"status", "init", "help", "cost", "demo-agent"} {
+		if !names[want] {
+			t.Errorf("session-start advertisement missing %q (got %d entries)", want, len(startSet))
+		}
+	}
+
+	// Scenario 2 — CLASS-B ROUND-TRIP: /status echoes, outputs, ends end_turn,
+	// and the stub sees ZERO provider requests.
+	cli.sendf(`{"jsonrpc":"2.0","id":"cs-2","method":"session/prompt","params":{"sessionId":` +
+		simJSONStr(sessionIDOf(t, cli, workDir)) + `,"prompt":[{"type":"text","text":"/status"}]}}`)
+
+	echo, output := false, false
+
+	var resp2 *acp.Message
+
+	for {
+		m := cli.next()
+		if isResponseID(m, `"cs-2"`) {
+			resp2 = m
+
+			break
+		}
+
+		upd := decodeSimUpdate(t, m)
+
+		switch upd.Kind {
+		case "user_message_chunk":
+			echo = true
+		case simKindChunk:
+			output = true
+		}
+	}
+
+	simAssertStopReason(t, resp2.Result, "cs-2", simStopEndTurn)
+
+	if !echo || !output {
+		t.Errorf("class-B shape: echo=%v output=%v; want both", echo, output)
+	}
+
+	if got := stub.calls.Load(); got != 0 {
+		t.Errorf("provider requests during /status = %d; want 0 (zero model turns)", got)
+	}
+
+	// Scenario 3 — LIVE RESCAN: create a command file under the watched
+	// project root; within debounce+epsilon the advertisement re-fires with
+	// it; the new command then FIRES (an expansion turn the stub answers).
+	//
+	// (sessionId re-requested: scenario 2 consumed the id reader inline.)
+	sid := sessionIDOf(t, cli, workDir)
+
+	if serr := os.MkdirAll(filepath.Join(workDir, ".claude", "commands"), 0o750); serr != nil {
+		t.Fatalf("mkdir commands: %v", serr)
+	}
+
+	if serr := os.WriteFile(filepath.Join(workDir, ".claude", "commands", "extra.md"), []byte(
+		"---\ndescription: extra command\n---\nExtra body: $ARGUMENTS\n"), 0o600); serr != nil {
+		t.Fatalf("write extra.md: %v", serr)
+	}
+
+	sawExtra := false
+
+	deadline := time.Now().Add(5 * time.Second)
+
+	for !sawExtra && time.Now().Before(deadline) {
+		m := cli.nextWithin(time.Second)
+		if m == nil || isResponseID(m, `"cs-2"`) {
+			continue
+		}
+
+		var params struct {
+			Update simCommandUpdate `json:"update"`
+		}
+
+		if json.Unmarshal(m.Params, &params) != nil {
+			continue
+		}
+
+		if params.Update.Kind != "available_commands_update" {
+			continue
+		}
+
+		for _, c := range params.Update.Cmds {
+			if c.Name == "extra" {
+				sawExtra = true
+			}
+		}
+	}
+
+	if !sawExtra {
+		t.Fatal("the live-created command never appeared in a re-fired advertisement")
+	}
+
+	cli.sendf(`{"jsonrpc":"2.0","id":"cs-3","method":"session/prompt","params":{"sessionId":` +
+		simJSONStr(sid) + `,"prompt":[{"type":"text","text":"/extra focus"}]}}`)
+
+	m3 := cli.nextResponse(`"cs-3"`)
+
+	simAssertStopReason(t, m3.Result, "cs-3", simStopEndTurn)
+
+	if got := stub.calls.Load(); got != 1 {
+		t.Errorf("provider requests after /extra = %d; want 1 (the expanded turn)", got)
+	}
+
+	// Scenario 4 — AGENT DISPATCH: /demo-agent streams the subagent's chunks,
+	// the resolvedModel note is client-visible, the dispatch line on disk
+	// carries ResolvedModel, and the subagent's request hit the stub with the
+	// frontmatter model.
+	cli.sendf(`{"jsonrpc":"2.0","id":"cs-4","method":"session/prompt","params":{"sessionId":` +
+		simJSONStr(sid) + `,"prompt":[{"type":"text","text":"/demo-agent find the entrypoint"}]}}`)
+
+	note, streamed := false, false
+
+	var resp4 *acp.Message
+
+	for {
+		m := cli.next()
+		if isResponseID(m, `"cs-4"`) {
+			resp4 = m
+
+			break
+		}
+
+		upd := decodeSimUpdate(t, m)
+
+		switch upd.Kind {
+		case simKindChunk:
+			streamed = true
+		}
+
+		if strings.Contains(string(m.Params), "routed to "+testModelPrimary) ||
+			strings.Contains(string(m.Params), testModelPrimary) {
+			note = true
+		}
+	}
+
+	simAssertStopReason(t, resp4.Result, "cs-4", simStopEndTurn)
+
+	if !streamed {
+		t.Error("the subagent's chunks did not stream into the turn")
+	}
+
+	if !note {
+		t.Error("the resolvedModel live note never reached the client")
+	}
+
+	models := stub.recordedModels()
+	if len(models) != 2 || models[1] != testModelPrimary {
+		t.Errorf("subagent request models = %v; want the second request on %s", models, testModelPrimary)
+	}
+
+	// Transcript-as-truth: the dispatch + local_command lines on disk.
+	raw, rerr := os.ReadFile(filepath.Join(workDir, ".ass-guard", "transcript_"+sid+".jsonl"))
+	if rerr != nil {
+		t.Fatalf("read transcript: %v", rerr)
+	}
+
+	dispatchModel, slashRecord := "", false
+
+	for _, line := range strings.Split(string(raw), "\n") {
+		if strings.Contains(line, `"subagent_dispatch"`) && strings.Contains(line, `"resolvedModel":"`+testModelPrimary+`"`) {
+			dispatchModel = testModelPrimary
+		}
+
+		if strings.Contains(line, `"local_command"`) && strings.Contains(line, `"name":"demo-agent"`) {
+			slashRecord = true
+		}
+	}
+
+	if dispatchModel != testModelPrimary {
+		t.Errorf("dispatch line ResolvedModel missing/wrong (want %s)", testModelPrimary)
+	}
+
+	if !slashRecord {
+		t.Error("no local_command line for the agent-slash invocation on disk")
+	}
+}
+
+// sessionIDOf opens a session and returns its id (the scenarios' helper).
+func sessionIDOf(t *testing.T, cli *simClient, workDir string) string {
+	t.Helper()
+
+	cli.sendf(`{"jsonrpc":"2.0","id":"cs-sid","method":"session/new","params":{"cwd":` +
+		simJSONStr(workDir) + `,"mcpServers":[]}}`)
+
+	m := cli.nextResponse(`"cs-sid"`)
+
+	var resp struct {
+		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+	}
+
+	if err := json.Unmarshal(m.Result, &resp); err != nil || resp.SessionID == "" {
+		t.Fatalf("session/new for id: %v (%s)", err, string(m.Result))
+	}
+
+	return resp.SessionID
+}
+
+// nextWithin reads one frame within d (nil on timeout — the poll loop's arm).
+func (c *simClient) nextWithin(d time.Duration) *acp.Message {
+	c.t.Helper()
+
+	select {
+	case m, ok := <-c.frames:
+		if !ok {
+			return nil
+		}
+
+		c.seen++
+
+		return m
+	case <-time.After(d):
+		return nil
+	}
+}
