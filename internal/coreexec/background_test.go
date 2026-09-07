@@ -651,3 +651,269 @@ func waitForFile(t *testing.T, path string, timeout time.Duration) bool {
 
 	return false
 }
+
+// The D-11 queue-on-cap battery (22-02 Task 2): over-cap starts QUEUE with
+// a visible note (FIFO, drained on completion) instead of failing; the
+// pathological bound still errors; ReapAll drops waiters (OQ5).
+
+// TestBackgroundCap_OverCapQueues (D-11): past the injected cap, Start
+// returns immediately with the id + queued=true; the command starts only
+// when a slot frees; the registry reports the queued state.
+func TestBackgroundCap_OverCapQueues(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	reg := NewTaskRegistry()
+	reg.Cap = 1
+	reg.termGrace = escalationGraceTest
+
+	id1, queued1, err := reg.Start(dir, "echo first; sleep 0.4")
+	if err != nil {
+		t.Fatalf("Start 1: %v", err)
+	}
+
+	if queued1 {
+		t.Error("first start queued=true; want false (under cap)")
+	}
+
+	id2, queued2, err := reg.Start(dir, "echo second")
+	if err != nil {
+		t.Fatalf("Start 2: %v", err)
+	}
+
+	if !queued2 {
+		t.Error("over-cap start queued=false; want true (D-11 queue contract)")
+	}
+
+	if state, ok := reg.Lookup(id2); !ok || state != bgQueued {
+		t.Errorf("queued task state = %v; want queued", state)
+	}
+
+	// Both ids are distinct exec_-shaped handles minted at dispatch.
+	if id1 == id2 || !strings.HasPrefix(id2, "exec_") {
+		t.Errorf("queued id = %q; want a distinct exec_ handle", id2)
+	}
+
+	// Non-blocking Output on the queued task reports the queued state.
+	out, state, running, oerr := reg.Output(id2, false, 0)
+	if oerr != nil || running || state != bgQueued {
+		t.Errorf("queued Output = (%q, %v, running=%v, err=%v); want the queued state, not-running", out, state, running, oerr)
+	}
+
+	// When slot 1 frees, the queued task starts and completes.
+	deadline := time.Now().Add(5 * time.Second)
+
+	for time.Now().Before(deadline) {
+		if state, ok := reg.Lookup(id2); ok && state == bgDone {
+			break
+		}
+
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	if state, _ := reg.Lookup(id2); state != bgDone {
+		t.Errorf("queued task state = %v; want done (FIFO drain on completion)", state)
+	}
+
+	got, _, _, _ := reg.Output(id2, false, 0)
+	if !strings.Contains(got, "second") {
+		t.Errorf("drained task output = %q; want the queued command's output", got)
+	}
+}
+
+// TestBackgroundCap_FIFOOrder (PAR-08 ordering probe): queued starts drain
+// in submission order — with cap 1 the single slot serializes, and the
+// completion-hook order must match the submission order exactly (ties by
+// sequence, never map order).
+func TestBackgroundCap_FIFOOrder(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	reg := NewTaskRegistry()
+	reg.Cap = 1
+
+	var (
+		hmu   sync.Mutex
+		order []string
+	)
+
+	reg.CompletionHook = func(taskID, _, _ string, _ time.Duration, tail, _ string) {
+		hmu.Lock()
+		defer hmu.Unlock()
+
+		order = append(order, tail)
+	}
+
+	// The tags embed submission order in the output; FIFO drain makes the
+	// completion order fifo-a, fifo-b, fifo-c.
+	for _, cmd := range []string{
+		"echo fifo-a; sleep 0.3", // the cap occupant
+		"echo fifo-b",
+		"echo fifo-c",
+	} {
+		if _, _, err := reg.Start(dir, cmd); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	deadline := time.Now().Add(10 * time.Second)
+
+	for time.Now().Before(deadline) {
+		hmu.Lock()
+		n := len(order)
+		hmu.Unlock()
+
+		if n == 3 {
+			break
+		}
+
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	hmu.Lock()
+	defer hmu.Unlock()
+
+	want := []string{"fifo-a", "fifo-b", "fifo-c"}
+	if len(order) != 3 {
+		t.Fatalf("completions = %v; want 3", order)
+	}
+
+	for i, w := range want {
+		if !strings.Contains(order[i], w) {
+			t.Errorf("drain order[%d] = %q; want %q (FIFO submission order)", i, order[i], w)
+		}
+	}
+}
+
+// TestBackgroundCap_QueuedStop (D-11): Stop on a queued task removes it
+// from the queue with a stopped outcome — its start func never fires.
+func TestBackgroundCap_QueuedStop(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	reg := NewTaskRegistry()
+	reg.Cap = 1
+
+	if _, _, err := reg.Start(dir, "echo hold; sleep 0.5"); err != nil {
+		t.Fatal(err)
+	}
+
+	id2, queued, err := reg.Start(dir, "echo never-starts")
+	if err != nil || !queued {
+		t.Fatalf("over-cap Start = (%v, %v)", queued, err)
+	}
+
+	if serr := reg.Stop(id2); serr != nil {
+		t.Fatalf("Stop(queued): %v", serr)
+	}
+
+	if state, ok := reg.Lookup(id2); !ok || state != bgStopped {
+		t.Errorf("stopped queued task state = %v; want stopped", state)
+	}
+
+	// When the slot frees, the stopped task must NOT start.
+	deadline := time.Now().Add(5 * time.Second)
+
+	for time.Now().Before(deadline) {
+		if state, ok := reg.Lookup(id2); ok && state != bgQueued {
+			break
+		}
+
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	out, state, _, _ := reg.Output(id2, false, 0)
+	if strings.Contains(out, "never-starts") {
+		t.Errorf("stopped queued task RAN (output %q) — must never start", out)
+	}
+
+	if state != bgStopped {
+		t.Errorf("state = %v; want stopped (never restarted)", state)
+	}
+}
+
+// TestBackgroundCap_QueueBound (D-10 bounded resources): past the
+// documented bound (64) the structured cap error survives — the queue
+// cannot grow unbounded.
+func TestBackgroundCap_QueueBound(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	reg := NewTaskRegistry()
+	reg.Cap = 1
+
+	if _, _, err := reg.Start(dir, "echo bound-hold; sleep 0.6"); err != nil {
+		t.Fatal(err)
+	}
+
+	for i := 0; i < bgQueueBound; i++ {
+		_, _, err := reg.Start(dir, "echo bound-waiter")
+		if err != nil {
+			t.Fatalf("waiter %d: %v", i, err)
+		}
+	}
+
+	_, _, err := reg.Start(dir, "echo bound-overflow")
+	if err == nil {
+		t.Fatal("bound-breach Start accepted; want the structured cap error")
+	}
+
+	if !errors.Is(err, errBgCap) {
+		t.Errorf("err = %v; want the errBgCap sentinel", err)
+	}
+
+	if !strings.Contains(err.Error(), "64") {
+		t.Errorf("err = %v; want the bound named", err)
+	}
+}
+
+// TestBackgroundCap_ReapAllDropsWaiters (OQ5, bash leg): ReapAll cancels
+// running tasks AND drops queued-but-unstarted ones without starting them.
+func TestBackgroundCap_ReapAllDropsWaiters(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	reg := NewTaskRegistry()
+	reg.Cap = 1
+	reg.termGrace = escalationGraceTest
+
+	ready := filepath.Join(dir, "cap-reap-ready")
+
+	id1, _, err := reg.Start(dir, "echo up > "+ready+"; sleep 300")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !waitForFile(t, ready, 5*time.Second) {
+		t.Fatal("running task never started")
+	}
+
+	id2, queued, err := reg.Start(dir, "echo queued-never")
+	if err != nil || !queued {
+		t.Fatalf("over-cap Start = (%v, %v)", queued, err)
+	}
+
+	dropped := reg.ReapAll()
+
+	if dropped != 1 {
+		t.Errorf("ReapAll dropped = %d; want 1 (the queued waiter)", dropped)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+
+	for time.Now().Before(deadline) {
+		if state, ok := reg.Lookup(id1); ok && state != bgRunning {
+			break
+		}
+
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	if state, _ := reg.Lookup(id1); state == bgRunning {
+		t.Error("running task survived ReapAll — must terminate via the ladder")
+	}
+
+	if out, _, _, _ := reg.Output(id2, false, 0); strings.Contains(out, "queued-never") {
+		t.Error("queued waiter started after ReapAll — must be dropped, never started")
+	}
+}
