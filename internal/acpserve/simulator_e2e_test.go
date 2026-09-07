@@ -1111,6 +1111,7 @@ func TestSimulatorCommandSurface(t *testing.T) {
 	for line := range strings.SplitSeq(string(raw), "\n") {
 		hasDispatch := strings.Contains(line, `"subagent_dispatch"`)
 		hasModel := strings.Contains(line, `"resolvedModel":"`+testModelPrimary+`"`)
+
 		if hasDispatch && hasModel {
 			dispatchModel = testModelPrimary
 		}
