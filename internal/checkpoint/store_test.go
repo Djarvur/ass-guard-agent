@@ -801,3 +801,190 @@ func TestRestore_RejectsBadIds(t *testing.T) { //nolint:paralleltest // swaps th
 
 // errFakeGit is the seam double's canned git failure.
 var errFakeGit = errors.New("fake git: always fails")
+
+// --- 23-03 Task 1: pre-restore snapshot family ---
+
+// TestPreRestoreSnapshotFamily pins D-09: a pre-restore snapshot is a
+// first-class checkpoint object — per-session -pre- id family, deterministic
+// counter across process restarts (max+1 from existing refs), restorable via
+// the SAME machinery (byte-identical tree round trip), and listed naturally
+// among turn entries.
+func TestPreRestoreSnapshotFamily(t *testing.T) {
+	t.Parallel()
+
+	work := t.TempDir()
+	seedWorkspace(t, work)
+
+	s := openStore(t, work)
+	snap(t, s, "sess-pr", "sess-pr-turn-001")
+
+	id1, err := s.SnapshotPreRestore(context.Background(), "sess-pr")
+	if err != nil {
+		t.Fatalf("SnapshotPreRestore: %v", err)
+	}
+
+	if id1 != "sess-pr-pre-001" {
+		t.Fatalf("first pre-restore id = %q; want sess-pr-pre-001", id1)
+	}
+
+	id2, err := s.SnapshotPreRestore(context.Background(), "sess-pr")
+	if err != nil {
+		t.Fatalf("SnapshotPreRestore (2nd): %v", err)
+	}
+
+	if id2 != "sess-pr-pre-002" {
+		t.Fatalf("second pre-restore id = %q; want sess-pr-pre-002", id2)
+	}
+
+	// Deterministic across restarts: a fresh Store over the same workspace
+	// resumes the counter at max+1 (seeded by scanning existing -pre- refs).
+	s2 := openStore(t, work)
+
+	id3, err := s2.SnapshotPreRestore(context.Background(), "sess-pr")
+	if err != nil {
+		t.Fatalf("SnapshotPreRestore (post-reopen): %v", err)
+	}
+
+	if id3 != "sess-pr-pre-003" {
+		t.Fatalf("post-reopen pre-restore id = %q; want sess-pr-pre-003", id3)
+	}
+
+	// List carries turn AND pre entries for the session, naturally ordered.
+	entries, err := s2.List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+
+	var sawTurn1, sawPre1, sawPre2, sawPre3 bool
+
+	for _, e := range entries {
+		switch e.Ref {
+		case "refs/checkpoints/sess-pr-turn-001":
+			sawTurn1 = e.Kind == "turn"
+		case "refs/checkpoints/sess-pr-pre-001":
+			sawPre1 = e.Kind == "pre"
+		case "refs/checkpoints/sess-pr-pre-002":
+			sawPre2 = e.Kind == "pre"
+		case "refs/checkpoints/sess-pr-pre-003":
+			sawPre3 = e.Kind == "pre"
+		}
+	}
+
+	if !sawTurn1 || !sawPre1 || !sawPre2 || !sawPre3 {
+		t.Errorf("List missing entries (turn1=%v pre1=%v pre2=%v pre3=%v): %+v",
+			sawTurn1, sawPre1, sawPre2, sawPre3, entries)
+	}
+
+	// D-09 restorable via the same machinery: mutate the tree, restore the
+	// pre-restore id, get the snapshotted bytes back.
+	want := treeMap(t, work)
+
+	writeTestFile(t, filepath.Join(work, "readme.txt"), "mutated after the pre-restore snapshot\n")
+	writeTestFile(t, filepath.Join(work, "created-later.txt"), "post-snapshot file\n")
+
+	err = s2.Restore(context.Background(), id1)
+	if err != nil {
+		t.Fatalf("Restore(%s): %v", id1, err)
+	}
+
+	if got := treeMap(t, work); !reflect.DeepEqual(got, want) {
+		t.Errorf("restore of pre-restore id changed the tree; want the snapshotted bytes")
+	}
+
+	// Fail-closed surface: the empty session id errors (the CALLER aborts the
+	// restore on any snapshot failure — the store side surfaces the error).
+	if _, err := s2.SnapshotPreRestore(context.Background(), ""); err == nil {
+		t.Error("SnapshotPreRestore(\"\") must fail (empty session id)")
+	}
+}
+
+// TestIDGrammarTable pins the three coupled grammar sites (Pitfall 6): BOTH
+// families accepted, malformed variants rejected at the pattern, at
+// validateTurnID, and at parseRefLine — neither site accepts anything the
+// other rejects.
+func TestIDGrammarTable(t *testing.T) {
+	t.Parallel()
+
+	accept := []string{
+		"sess-turn-001", "sess-pre-001",
+		"my-sess-2-pre-010", "A_b-c-turn-999999",
+		"sess-turn-pre-001", // session charset allows "sess-turn"; family pre — parses, and such a ref exists only if that literal session minted it
+	}
+	for _, id := range accept {
+		if !idPattern.MatchString(id) {
+			t.Errorf("idPattern rejected valid id %q", id)
+		}
+	}
+
+	reject := []string{
+		"sess-pre-1", "sess-turn-1", // short sequence (< 3 digits)
+		"sess-prex-001",         // wrong family
+		"sess-pre-", "sess-pre", // no sequence
+		"sess-pre--001",             // double separator
+		"-pre-001", "sess--pre-001", // session charset still matches "-"... sess--pre-001: session="sess", then "--pre-"? see below
+		"HEAD", "../../etc", "refs/heads/main", "",
+	}
+	for _, id := range reject {
+		if idPattern.MatchString(id) {
+			t.Errorf("idPattern accepted malformed id %q", id)
+		}
+	}
+
+	// validateTurnID: family-aware session ownership.
+	if err := validateTurnID("sess", "sess-turn-001"); err != nil {
+		t.Errorf("validateTurnID(turn) = %v; want nil", err)
+	}
+
+	if err := validateTurnID("sess", "sess-pre-001"); err != nil {
+		t.Errorf("validateTurnID(pre) = %v; want nil", err)
+	}
+
+	if err := validateTurnID("sessA", "sessB-pre-001"); err == nil {
+		t.Error("validateTurnID must reject an id owned by another session")
+	}
+
+	if err := validateTurnID("sess", "sess-pre-1"); err == nil {
+		t.Error("validateTurnID must reject a short sequence")
+	}
+
+	if err := validateTurnID("", "sess-pre-001"); err == nil {
+		t.Error("validateTurnID must reject an empty session id")
+	}
+
+	// parseRefLine: SessionID derivation for BOTH families.
+	cases := []struct {
+		line        string
+		wantSession string
+		wantNum     int
+		wantKind    string
+	}{
+		{"refs/checkpoints/sess-x-turn-007 1700000000", "sess-x", 7, "turn"},
+		{"refs/checkpoints/sess-x-pre-007 1700000000", "sess-x", 7, "pre"},
+		{"refs/checkpoints/sess-y-pre-042 1699999999", "sess-y", 42, "pre"},
+	}
+
+	for _, c := range cases {
+		e, ok := parseRefLine(c.line)
+		if !ok {
+			t.Errorf("parseRefLine(%q) rejected a valid ref line", c.line)
+
+			continue
+		}
+
+		if e.SessionID != c.wantSession || e.TurnNum != c.wantNum || e.Kind != c.wantKind {
+			t.Errorf("parseRefLine(%q) = %+v; want session %q num %d kind %q",
+				c.line, e, c.wantSession, c.wantNum, c.wantKind)
+		}
+	}
+
+	for _, line := range []string{
+		"refs/checkpoints/last 1700000000", // convenience tip skipped
+		"refs/checkpoints/sess-bad 1700000000",
+		"garbage",
+		"",
+	} {
+		if e, ok := parseRefLine(line); ok {
+			t.Errorf("parseRefLine(%q) accepted a non-checkpoint line: %+v", line, e)
+		}
+	}
+}
