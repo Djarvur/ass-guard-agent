@@ -84,6 +84,13 @@ type Session struct {
 	// re-record proved the target enforces it — see planmode.go).
 	planMode *PlanModeState
 
+	// SubagentModelPlanner is the 20-03 dispatch-time routing seam (D-13
+	// precedence + D-15 cross-provider routing); AgentLookup is the live
+	// chain-backed agent registry view. Both are wired at sessionFor by the
+	// runtime and optional (nil keeps the legacy shape).
+	SubagentModelPlanner SubagentModelPlanner
+	AgentLookup          func(name string) (ecosys.Agent, bool)
+
 	// SubagentModel is the scheduler light-tier model slug for SUBAGENT
 	// dispatches (14-05, EARLY-05 — the token-economics lever). Empty (the
 	// default) keeps the parent model exactly as before: the routing is

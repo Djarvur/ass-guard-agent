@@ -208,6 +208,14 @@ type Runner struct {
 	costTransport   http.RoundTripper
 	costFetchBudget time.Duration
 
+	// 20-03 (D-15): the cross-provider dispatch cache — one second provider
+	// per (provider, session), built through the factory's single seam;
+	// subagentDegrades counts the D-15 degrade occurrences (the counter IS
+	// the warning's audit trail).
+	subagentProvMu    sync.Mutex
+	subagentProviders map[string]provider.Provider
+	subagentDegrades  atomic.Uint64
+
 	// 21-04 (PAR-06/D-10): the Read-rule consult seam for @-mention
 	// expansion. Every @file consults it with tool "Read" BEFORE its content
 	// enters the prompt; an absolute @path additionally needs an explicit
@@ -1751,10 +1759,18 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 		Catalog:     sCatalog,
 		ConfigAdded: r.configAdded,
 
-		// 14-05 (EARLY-05): the light-tier subagent model — resolved through
-		// the EXISTING scheduler tiers table (config-conditional; empty keeps
-		// the parent model exactly as today).
-		SubagentModel: resolveSubagentModel(r.schedCfg, r.providerName, time.Now(), r.stderrOrDefault()),
+		// 20-03 (D-13/D-15): dispatch-time per-agent model routing — the
+		// runtime resolver hands each dispatch its (model, provider) plan
+		// (frontmatter > dispatch-time > session/parent > tier; inherit
+		// normalizes to unset; cross-provider ROUTES with one-warning
+		// degrade). 14-05's session-level SubagentModel stamp is REVERSED:
+		// the tier arm fires only when the session has NO model at all.
+		SubagentModelPlanner: r.planSubagentDispatch,
+
+		// 20-03: the LIVE agent registry view (the chain accessor — an agent
+		// file added after session construction stays dispatchable across a
+		// rescan swap; SubagentTypes stays as the bare-test fallback).
+		AgentLookup: r.liveAgentLookup,
 
 		// 12-02: discovered agent definitions register as spawnable subagent
 		// types (a subagent_type match applies the definition's Prompt + Tools
@@ -3001,4 +3017,210 @@ func toContentBlocks(in []acp.ContentBlock) []session.ContentBlock {
 // "what does the engine inject when this pattern matches" (08-06 chaining).
 type patternNextPrompter interface {
 	NextPromptFor(patternID string) string
+}
+
+// --- 20-03 (SKLS-03): dispatch-time per-agent model routing ---
+
+// subagentModelNoteClass is the D-16 live note's advisory class (the
+// advisoryNoteDue dedupe key — exactly one client-visible note per session).
+const subagentModelNoteClass = "subagent-model"
+
+// subagentModelDegradeClass is the D-15 degrade warnings' dedupe class.
+const subagentModelDegradeClass = "subagent-model-degrade"
+
+// planSubagentDispatch resolves ONE dispatch's routing (D-13 strict
+// precedence, D-14 inherit parity, D-15 cross-provider routing):
+//
+//  1. frontmatter model (inherit normalizes to unset BEFORE lookup);
+//  2. dispatch-time model (the call's parameter — effectively unused today);
+//  3. session/parent model as-is (14-05's unconditional light-tier default
+//     is REVERSED — unset agents run on the parent model);
+//  4. tiers.light ONLY when the session has no model at all (the degraded
+//     arm the 14-05 machinery still covers).
+//
+// A non-empty slug resolves through modelrouting: same-provider targets stamp
+// the slug; CROSS-provider targets route through a second factory-built
+// provider cached per (provider, session) on the Runner. EVERY failure mode
+// (unknown slug, uncredentialed provider) degrades to the parent model +
+// exactly ONE loud warning naming the intent — a turn NEVER fails over
+// routing (D-15). The plan carries the D-16 live note (deduped per class).
+func (r *Runner) planSubagentDispatch(
+	sess *session.Session, agentDef *ecosys.Agent, dispatchModel string,
+) session.SubagentDispatchPlan {
+	parent := ""
+	if sess != nil {
+		parent = sess.Profile.Model
+	}
+
+	slug := ""
+	if agentDef != nil && agentDef.Model != "" && agentDef.Model != modelInherit {
+		slug = agentDef.Model // D-13: frontmatter FIRST (D-14: inherit = unset)
+	}
+
+	if slug == "" {
+		slug = dispatchModel // D-13 arm 2 (unused today — CC parity slot)
+	}
+
+	// Arms 3+4: no slug → parent as-is; tiers.light only on a model-less
+	// session (the REVERSED 14-05 default).
+	if slug == "" {
+		if parent != "" {
+			return r.notePlan(session.SubagentDispatchPlan{}, sess,
+				fmt.Sprintf("subagent dispatches on the session model %s", parent))
+		}
+
+		if tier := resolveSubagentModel(r.schedCfg, r.providerName, time.Now(), r.stderrOrDefault()); tier != "" {
+			return r.notePlan(session.SubagentDispatchPlan{Model: tier}, sess,
+				fmt.Sprintf("no session model — subagent falls to tiers.light %s", tier))
+		}
+
+		return session.SubagentDispatchPlan{}
+	}
+
+	// A slug: resolve through the operator's declared models (buildTarget
+	// semantics — a slug absent from cfg.Models is the D-15 degrade, never a
+	// turn failure).
+	target, err := r.resolveDeclaredModel(slug)
+	if err != nil {
+		return r.degradePlan(sess, slug, "not declared in the scheduling config: "+err.Error())
+	}
+
+	if target.Provider == r.providerName {
+		return r.notePlan(session.SubagentDispatchPlan{Model: target.Model}, sess,
+			fmt.Sprintf("subagent routed to %s (frontmatter)", target.Model))
+	}
+
+	// D-15: cross-provider ROUTES. Credentials resolved BEFORE construction —
+	// the uncredentialed arm degrades to parent with one warning.
+	prov, perr := r.subagentProviderFor(target.Provider, sess)
+	if perr != nil {
+		return r.degradePlan(sess, slug, perr.Error())
+	}
+
+	return r.notePlan(session.SubagentDispatchPlan{Model: target.Model, Provider: prov}, sess,
+		fmt.Sprintf("subagent cross-routed to %s on provider %s", target.Model, target.Provider))
+}
+
+// modelInherit is the CC-parity keyword normalizing to unset (D-14);
+// errNoSchedCfg is the planner's static no-config degrade reason.
+const modelInherit = "inherit"
+
+var errNoSchedCfg = errors.New("no scheduling config loaded")
+
+// resolveDeclaredModel resolves a slug through the scheduling config's
+// models table (buildTarget semantics; error text names the missing piece).
+func (r *Runner) resolveDeclaredModel(slug string) (modelrouting.Target, error) {
+	if r.schedCfg == nil {
+		return modelrouting.Target{}, errNoSchedCfg // the degrade reason
+	}
+
+	mc, ok := r.schedCfg.Models[slug]
+	if !ok {
+		return modelrouting.Target{}, fmt.Errorf("model %q", slug) //nolint:err113 // degrade reason
+	}
+
+	prov, ok := r.schedCfg.Providers[mc.Provider]
+	if !ok {
+		return modelrouting.Target{},
+			fmt.Errorf("provider %q for model %q", mc.Provider, slug) //nolint:err113 // degrade reason
+	}
+
+	return modelrouting.Target{
+		Provider: mc.Provider, Model: slug, BaseURL: prov.BaseURL, Shape: prov.Shape,
+	}, nil
+}
+
+// subagentProviderFor builds (or reuses the cached) second provider for
+// cross-provider dispatch (D-15): construction goes through the factory's
+// SINGLE seam (BuildWithCapturer) so capture/tracer parity holds; the cache
+// key is (provider, session) — one construction per pair, lifecycle riding
+// the session (the surface Phase 22 builds on). An uncredentialed provider
+// errors here (the degrade trigger — checked BEFORE construction via the
+// exported credential resolver).
+//
+//nolint:ireturn // the factory seam's own interface (BuildWithCapturer)
+func (r *Runner) subagentProviderFor(providerName string, sess *session.Session) (provider.Provider, error) {
+	if r.schedCfg == nil {
+		return nil, errNoSchedCfg
+	}
+
+	pc, ok := r.schedCfg.Providers[providerName]
+	if !ok {
+		return nil, fmt.Errorf("provider %q not declared", providerName) //nolint:err113 // degrade reason
+	}
+
+	if cred := modelrouting.ResolveCredential(pc, providerName, ""); cred.Key == "" {
+		return nil, fmt.Errorf("provider %q has no credential", providerName) //nolint:err113 // degrade reason
+	}
+
+	cacheKey := providerName
+	if sess != nil {
+		cacheKey += "/" + sess.SessionID
+	}
+
+	r.subagentProvMu.Lock()
+	defer r.subagentProvMu.Unlock()
+
+	if r.subagentProviders == nil {
+		r.subagentProviders = make(map[string]provider.Provider)
+	}
+
+	if cached, ok := r.subagentProviders[cacheKey]; ok {
+		return cached, nil
+	}
+
+	factory := modelrouting.NewProviderFactory(r.schedCfg, "", nil)
+
+	built, err := factory.BuildWithCapturer(providerName, shaper.New(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("factory build: %w", err)
+	}
+
+	r.subagentProviders[cacheKey] = built
+
+	return built, nil
+}
+
+// degradePlan renders the D-15 degrade: parent model kept, exactly ONE loud
+// stderr warning naming the intended slug + reason, one counter bump, and a
+// deduped client-visible note — the dispatch itself SUCCEEDS on the parent.
+func (r *Runner) degradePlan(sess *session.Session, slug, reason string) session.SubagentDispatchPlan {
+	r.subagentDegrades.Add(1)
+
+	warn := fmt.Sprintf(
+		"ass-guard: agent model %q degraded to the parent model (%s) — the dispatch continues on it\n",
+		slug, reason)
+
+	_, _ = io.WriteString(r.stderrOrDefault(), warn)
+
+	note := ""
+	if r.advisoryNoteDue(sess.SessionID, subagentModelDegradeClass) {
+		note = fmt.Sprintf("agent model %q unavailable (%s) — dispatching on the session model", slug, reason)
+	}
+
+	return session.SubagentDispatchPlan{Note: note}
+}
+
+// notePlan attaches the D-16 live note (deduped per class per session) to a
+// resolved plan.
+func (r *Runner) notePlan(
+	plan session.SubagentDispatchPlan, sess *session.Session, text string,
+) session.SubagentDispatchPlan {
+	if sess != nil && r.advisoryNoteDue(sess.SessionID, subagentModelNoteClass) {
+		plan.Note = text
+	}
+
+	return plan
+}
+
+// liveAgentLookup resolves a subagent_type through the runner's LIVE chain
+// (20-03): the registry-swap-safe view — an agent file added after session
+// construction is dispatchable the moment the chain rebuilds.
+func (r *Runner) liveAgentLookup(name string) (ecosys.Agent, bool) {
+	entry, ok := r.commandChainRef().resolve(name)
+	if !ok || entry.kind != chainKindAgent || entry.agent == nil {
+		return ecosys.Agent{}, false
+	}
+
+	return *entry.agent, true
 }

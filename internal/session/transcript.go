@@ -188,10 +188,15 @@ type Line struct {
 	Args        string   `json:"args,omitempty"`
 	SourceChain []string `json:"sourceChain,omitempty"` //nolint:tagliatelle // on-disk format
 	Expansion   string   `json:"expansion,omitempty"`
-	BoundaryID  string   `json:"boundaryID,omitempty"`  //nolint:tagliatelle // on-disk format
-	CacheTokens int64    `json:"cacheTokens,omitempty"` //nolint:tagliatelle // on-disk format
-	PreRef      string   `json:"preRef,omitempty"`      //nolint:tagliatelle // on-disk format
-	PostRef     string   `json:"postRef,omitempty"`     //nolint:tagliatelle // on-disk format
+	// ResolvedModel is the model a subagent dispatch ACTUALLY ran on
+	// (20-03/D-16): the frontmatter slug when routed, the parent/session
+	// model when inherited or degraded, the tier model on the degraded-tier
+	// arm. Empty only on lines written before 20-03 (D-20 tolerance).
+	ResolvedModel string `json:"resolvedModel,omitempty"` //nolint:tagliatelle // on-disk format
+	BoundaryID    string `json:"boundaryID,omitempty"`    //nolint:tagliatelle // on-disk format
+	CacheTokens   int64  `json:"cacheTokens,omitempty"`   //nolint:tagliatelle // on-disk format
+	PreRef        string `json:"preRef,omitempty"`        //nolint:tagliatelle // on-disk format
+	PostRef       string `json:"postRef,omitempty"`       //nolint:tagliatelle // on-disk format
 
 	// Summary is the compaction marker's on-disk summary payload (Phase 19,
 	// PAR-01/D-06): the text every post-marker projection seeds from until the

@@ -234,6 +234,7 @@ type panickingSubagentRunner struct{}
 func (panickingSubagentRunner) Run(
 	ctx context.Context, s *Session,
 	subagentTurnID, parentTurnID, prompt string, restricted []string, agentDef *ecosys.Agent,
+	_ SubagentDispatchPlan,
 ) (string, error) {
 	panic("panickingSubagentRunner: injected panic")
 }
@@ -268,7 +269,12 @@ func TestSubagentModel_OverrideApplied(t *testing.T) {
 	s.Catalog = toolcat.NewCatalog()
 
 	s.Profile.Model = parentModelSlug
-	s.SubagentModel = lightModelSlug
+
+	// 20-03 (D-13): the override now rides the dispatch PLAN (the runtime
+	// resolver's decision), not the 14-05 session-level SubagentModel stamp.
+	s.SubagentModelPlanner = func(_ *Session, _ *ecosys.Agent, _ string) SubagentDispatchPlan {
+		return SubagentDispatchPlan{Model: lightModelSlug}
+	}
 
 	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: promptDispatchMg}})
 	if err != nil {
@@ -281,7 +287,7 @@ func TestSubagentModel_OverrideApplied(t *testing.T) {
 	}
 
 	if profiles[1].Model != lightModelSlug {
-		t.Errorf("subagent dispatch model = %q; want the light-tier override %q",
+		t.Errorf("subagent dispatch model = %q; want the plan's override %q",
 			profiles[1].Model, lightModelSlug)
 	}
 
@@ -328,4 +334,106 @@ func TestSubagentModel_EmptyKeepsParent(t *testing.T) {
 		t.Errorf("subagent dispatch model = %q; want the parent %q (empty SubagentModel keeps today's behavior)",
 			profiles[1].Model, parentModelSlug)
 	}
+}
+
+// TestSubagentDispatch_ResolvedModel (20-03/D-16) pins the durable half of
+// the two-way report: the dispatch line records the model that ACTUALLY ran
+// — the plan's slug when routed, the parent when the plan is empty (inherit
+// or degrade; the warning carries the intent, the line the reality).
+//
+//nolint:paralleltest // subtests share the fake provider queue
+func TestSubagentDispatch_ResolvedModel(t *testing.T) {
+	cases := []struct {
+		name        string
+		plan        SubagentDispatchPlan
+		parentModel string
+		wantLine    string
+	}{
+		{
+			name:        "routed slug recorded",
+			plan:        SubagentDispatchPlan{Model: "glm-4.7-air"},
+			parentModel: parentModelSlug,
+			wantLine:    "glm-4.7-air",
+		},
+		{
+			name:        "empty plan records the parent",
+			plan:        SubagentDispatchPlan{},
+			parentModel: parentModelSlug,
+			wantLine:    parentModelSlug,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _, _ := newTestSession(t, nil, []provider.Response{
+				{
+					FinishReason: blockToolUse,
+					ToolCalls:    []provider.ToolCall{{Name: toolTask, Input: json.RawMessage(`{"prompt":"x"}`)}},
+				},
+				{FinishReason: stopEndTurn},
+			})
+			s.Catalog = toolcat.NewCatalog()
+			s.Profile.Model = tc.parentModel
+			s.SubagentModelPlanner = func(_ *Session, _ *ecosys.Agent, _ string) SubagentDispatchPlan {
+				return tc.plan
+			}
+
+			_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: promptDispatchMg}})
+			if err != nil {
+				t.Fatalf("Prompt: %v", err)
+			}
+
+			for _, l := range linesOf(s) {
+				if l.Type != TypeSubagentDispatch {
+					continue
+				}
+
+				if l.ResolvedModel != tc.wantLine {
+					t.Errorf("dispatch line ResolvedModel = %q; want %q", l.ResolvedModel, tc.wantLine)
+				}
+
+				return
+			}
+
+			t.Fatal("no subagent_dispatch line")
+		})
+	}
+}
+
+// TestSubagentDispatch_ResolvedModelLegacyTolerance (D-20): a dispatch line
+// written before 20-03 (no resolvedModel key) loads cleanly with an EMPTY
+// field, and a new line round-trips the field verbatim.
+func TestSubagentDispatch_ResolvedModelLegacyTolerance(t *testing.T) {
+	t.Parallel()
+
+	legacy := `{"type":"subagent_dispatch","turnID":"s-x-turn-002","timestamp":"2026-01-01T00:00:00Z",` +
+		`"parentTurnID":"s-x-turn-001","subagentTurnID":"s-x-turn-002","toolCallID":"Task","restrictedTools":["Read"]}`
+	line := decodeLine(t, legacy)
+
+	if line.ResolvedModel != "" {
+		t.Errorf("legacy line ResolvedModel = %q; want empty (D-20 tolerance)", line.ResolvedModel)
+	}
+
+	fresh := `{"type":"subagent_dispatch","turnID":"s-x-turn-003","timestamp":"2026-01-01T00:00:00Z",` +
+		`"parentTurnID":"s-x-turn-001","subagentTurnID":"s-x-turn-003","toolCallID":"Task",` +
+		`"restrictedTools":["Read"],"resolvedModel":"gpt-air"}`
+	line2 := decodeLine(t, fresh)
+
+	if line2.ResolvedModel != "gpt-air" {
+		t.Errorf("fresh line ResolvedModel = %q; want gpt-air (round-trip)", line2.ResolvedModel)
+	}
+}
+
+// decodeLine unmarshals one transcript line fixture.
+func decodeLine(t *testing.T, raw string) Line {
+	t.Helper()
+
+	var l Line
+
+	err := json.Unmarshal([]byte(raw), &l)
+	if err != nil {
+		t.Fatalf("decode fixture line: %v", err)
+	}
+
+	return l
 }

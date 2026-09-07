@@ -285,11 +285,14 @@ func (m *Manager) AppendError(
 }
 
 // AppendSubagentDispatch records a Task/Agent subagent dispatch.
-func (m *Manager) AppendSubagentDispatch(parentTurnID, subagentTurnID, toolCallID string, restricted []string) error {
+func (m *Manager) AppendSubagentDispatch(
+	parentTurnID, subagentTurnID, toolCallID string, restricted []string, resolvedModel string,
+) error {
 	return m.appendLine(&Line{
 		Type: TypeSubagentDispatch, TurnID: subagentTurnID, Timestamp: now(),
 		ParentTurnID: parentTurnID, SubagentTurnID: subagentTurnID,
 		ToolCallID: toolCallID, RestrictedTools: restricted,
+		ResolvedModel: resolvedModel,
 	})
 }
 
