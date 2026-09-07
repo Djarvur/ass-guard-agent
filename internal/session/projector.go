@@ -102,8 +102,12 @@ func NewProjector(prof *profile.Profile, m *Manager) *Projector {
 
 // SetRetryCompactedTurn arms the same-turn compaction carve-out (G-19-1,
 // 19-06): after it, Project(turnID) accepts a marker whose TurnID EQUALS the
-// projected turn — with no pre-user marker present — as that turn's reset
-// point. The engine's overflow-retry branch is the ONLY caller (armed between
+// projected turn as that turn's reset point, and the armed
+// override takes precedence over ANY pre-user marker for the matching turnID
+// (19-07, CR-01) — the retry always projects post-marker, carrying the NEW
+// marker's summary. Fallback: armed with no same-turn marker (a degraded
+// compact), the projection keeps today's pre-user-scan behavior unchanged.
+// The engine's overflow-retry branch is the ONLY caller (armed between
 // the forced compact and the continue, so the retry's re-projection sees it);
 // it stays armed for the turn's remaining iterations (the compacted window
 // must survive follow-up tool-loop iterations) and self-expires when a
@@ -133,35 +137,44 @@ func (p *Projector) SetCompactionTailBudget(limit int64) { p.CompactionTailBudge
 // extracted from the transcript, bounded to the MidTurnWindowMessages tail,
 // pair-safe.
 //
-// Phase 19 (PAR-01) adds the compaction marker as a THIRD reset-point class
-// with different seed semantics: when a marker precedes the projected turn's
-// user message, the seed is the marker's Summary (D-06 DURABLE — later
-// TypeBoundary lines never displace it; only a newer marker replaces it) and
-// every transcript WITHOUT a marker takes the pre-phase path byte-identically.
-// 19-06 (G-19-1) adds the ENGINE-ARMED same-turn carve-out: when the engine
-// armed the per-turn override (SetRetryCompactedTurn) and the pre-user scan
-// found nothing, a marker whose TurnID equals the projected turn reshapes
-// THAT turn's projection — the overflow retry projects post-marker instead of
-// re-sending the rejected request. Without the in-memory override the same
-// transcript projects byte-identically to the marker-free one (tamper safety).
+	// Phase 19 (PAR-01) adds the compaction marker as a THIRD reset-point class
+	// with different seed semantics: when a marker precedes the projected turn's
+	// user message, the seed is the marker's Summary (D-06 DURABLE — later
+	// TypeBoundary lines never displace it; only a newer marker replaces it) and
+	// every transcript WITHOUT a marker takes the pre-phase path byte-identically.
+	// 19-06 (G-19-1) adds the ENGINE-ARMED same-turn carve-out; 19-07 (CR-01):
+	// the armed carve-out takes precedence over the pre-user scan, so when the
+	// engine armed the per-turn override (SetRetryCompactedTurn), a marker
+	// whose TurnID equals the projected turn reshapes THAT turn's projection
+	// EVEN WHEN an earlier marker precedes the turn's user message — the
+	// overflow retry always projects post-marker (the NEW marker's summary
+	// seed) instead of re-sending the rejected request. Armed with no
+	// same-turn marker, the pre-user scan governs unchanged (the degraded
+	// fail-through). Without the in-memory override the same transcript
+	// projects byte-identically to the marker-free one (tamper safety).
 func (p *Projector) Project(turnID string) ([]provider.Message, error) {
 	lines, err := p.manager.ReadAll()
 	if err != nil {
 		return nil, err
 	}
 
-	if mIdx := compactionMarkerIdx(lines, turnID); mIdx >= 0 {
-		return p.projectCompacted(lines, mIdx, turnID), nil
-	}
-
-	// The G-19-1 carve-out runs ONLY when the pinned pre-user scan found
-	// nothing AND the engine armed this exact turn — a non-empty, exact
-	// turnID match (the zero value means not-armed; transcript content alone
-	// never reaches this branch).
+	// The G-19-1 carve-out takes PRECEDENCE over the pre-user scan (19-07,
+	// CR-01): the engine-armed override — a non-empty, exact turnID match —
+	// projects post-marker even when an earlier marker precedes the turn's
+	// user message, so the overflow retry always carries the NEW marker's
+	// summary (retry-once recovery on EVERY overflow, not just a session's
+	// first). Fallback: armed with no same-turn marker, the pinned pre-user
+	// scan governs unchanged (the degraded-compact fail-through; the zero
+	// value means not-armed; transcript content alone never reaches this
+	// branch).
 	if p.retryCompactedTurn != "" && p.retryCompactedTurn == turnID {
 		if stIdx := sameTurnMarkerIdx(lines, turnID); stIdx >= 0 {
 			return p.projectSameTurnCompacted(lines, stIdx, turnID), nil
 		}
+	}
+
+	if mIdx := compactionMarkerIdx(lines, turnID); mIdx >= 0 {
+		return p.projectCompacted(lines, mIdx, turnID), nil
 	}
 
 	beforeBoundary, afterBoundary := splitAtResetBoundary(lines, turnID)

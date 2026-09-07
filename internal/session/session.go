@@ -569,7 +569,10 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 			// fail-through preserved exactly. The override stays armed for the
 			// turn's remaining iterations (the compacted window must survive
 			// follow-up tool-loop iterations) and self-expires when a different
-			// turnID projects.
+			// turnID projects. 19-07 (CR-01): the armed override now takes
+			// precedence over an earlier pre-user marker, so the retry ALWAYS
+			// projects post-marker — retry-once recovery on EVERY overflow,
+			// not just the session's first.
 			if provider.IsOverflow(streamErr) && !overflowRetried {
 				overflowRetried = true
 				// WR-03b (19-06): the forced compact IS this turn's compaction
