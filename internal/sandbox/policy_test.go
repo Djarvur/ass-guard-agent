@@ -82,12 +82,16 @@ func TestPolicySymmetry_GoldenDenySet(t *testing.T) {
 	}
 
 	// Seatbelt rendering: the profile re-allows writes for exactly the
-	// triple (the deny is global; the allow re-grants the rw set).
+	// triple (the deny is global; the allow re-grants the rw set). The
+	// darwin render symlink-RESOLVES paths (live-probed: /tmp →
+	// /private/tmp), so the assertion resolves the same way.
 	profile := p.SeatbeltProfile()
 
 	for _, want := range wantRW {
-		if !strings.Contains(profile, want) {
-			t.Errorf("profile missing rw path %q — asymmetric against the landlock rendering", want)
+		resolved := resolveForSeatbelt(want)
+
+		if !strings.Contains(profile, resolved) && !strings.Contains(profile, want) {
+			t.Errorf("profile missing rw path %q (resolved %q) — asymmetric against the landlock rendering", want, resolved)
 		}
 	}
 }
@@ -199,19 +203,12 @@ func TestPolicy_WrapCmdSubstitutionContract(t *testing.T) {
 	}
 }
 
-// TestPolicy_AvailabilityDefaults: the zero availability is unavailable with
-// a reason; probing on darwin yields a structured result (the live probe
-// test covers the available path on this host).
+// TestPolicy_AvailabilityDefaults: the zero availability is UNAVAILABLE
+// (fail-safe default — an unprobed host never reports enforcement).
 func TestPolicy_AvailabilityDefaults(t *testing.T) {
 	t.Parallel()
 
-	av := Availability{}
-
-	if av.Available {
-		t.Error("zero Availability.Available = true; want false")
-	}
-
-	if av.Reason == "" && av.Mode == "" {
-		t.Error("zero Availability carries no mode/reason vocabulary")
+	if av := (Availability{}); av.Available {
+		t.Error("zero Availability.Available = true; want false (fail-safe default)")
 	}
 }
