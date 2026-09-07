@@ -45,6 +45,7 @@ const (
 	simKindPlan          = "plan"
 	simKindChunk         = "agent_message_chunk"
 	simKindConfigOptions = "config_option_update"
+	simKindCommands      = "available_commands_update"
 
 	simStopEndTurn   = "end_turn"
 	simStopCancelled = "cancelled"
@@ -855,7 +856,7 @@ type simCommandUpdate struct {
 // reported live + durably. Transcript assertions read the on-disk JSONL
 // (transcript-as-truth).
 //
-//nolint:funlen,gocognit,gocyclo,cyclop // four wire scenarios, one serve
+//nolint:funlen,gocognit,gocyclo,cyclop,maintidx // four wire scenarios, one serve
 func TestSimulatorCommandSurface(t *testing.T) {
 	t.Setenv("ZAI_API_KEY", "")
 
@@ -870,13 +871,15 @@ func TestSimulatorCommandSurface(t *testing.T) {
 	// The discovered fixtures the scenarios ride: one agent with a DECLARED
 	// frontmatter model (the floor's GLM-5.3 — routing applies).
 	agentsDir := filepath.Join(workDir, ".claude", "agents")
-	if err := os.MkdirAll(agentsDir, 0o750); err != nil {
-		t.Fatalf("mkdir agents: %v", err)
+
+	merr := os.MkdirAll(agentsDir, 0o750)
+	if merr != nil {
+		t.Fatalf("mkdir agents: %v", merr)
 	}
 
 	err := os.WriteFile(filepath.Join(agentsDir, "demo-agent.md"), []byte(
-		"---\nname: demo-agent\ndescription: simulator agent\nmodel: "+testModelPrimary+"\ntools: [Read]\n---\n"+
-			"Locate code precisely."), 0o600)
+		"---\nname: demo-agent\ndescription: simulator agent\nmodel: "+testModelPrimary+
+			"\ntools: [Read]\n---\nLocate code precisely."), 0o600)
 	if err != nil {
 		t.Fatalf("write demo-agent: %v", err)
 	}
@@ -936,7 +939,7 @@ func TestSimulatorCommandSurface(t *testing.T) {
 			continue
 		}
 
-		if params.Update.Kind == "available_commands_update" {
+		if params.Update.Kind == simKindCommands {
 			startSet = params.Update.Cmds
 		}
 	}
@@ -996,13 +999,16 @@ func TestSimulatorCommandSurface(t *testing.T) {
 	// (sessionId re-requested: scenario 2 consumed the id reader inline.)
 	sid := sessionIDOf(t, cli, workDir)
 
-	if serr := os.MkdirAll(filepath.Join(workDir, ".claude", "commands"), 0o750); serr != nil {
+	serr := os.MkdirAll(filepath.Join(workDir, ".claude", "commands"), 0o750)
+	if serr != nil {
 		t.Fatalf("mkdir commands: %v", serr)
 	}
 
-	if serr := os.WriteFile(filepath.Join(workDir, ".claude", "commands", "extra.md"), []byte(
-		"---\ndescription: extra command\n---\nExtra body: $ARGUMENTS\n"), 0o600); serr != nil {
-		t.Fatalf("write extra.md: %v", serr)
+	extraBody := "---\ndescription: extra command\n---\nExtra body: $ARGUMENTS\n"
+
+	werr := os.WriteFile(filepath.Join(workDir, ".claude", "commands", "extra.md"), []byte(extraBody), 0o600)
+	if werr != nil {
+		t.Fatalf("write extra.md: %v", werr)
 	}
 
 	sawExtra := false
@@ -1023,7 +1029,7 @@ func TestSimulatorCommandSurface(t *testing.T) {
 			continue
 		}
 
-		if params.Update.Kind != "available_commands_update" {
+		if params.Update.Kind != simKindCommands {
 			continue
 		}
 
@@ -1069,9 +1075,7 @@ func TestSimulatorCommandSurface(t *testing.T) {
 		}
 
 		upd := decodeSimUpdate(t, m)
-
-		switch upd.Kind {
-		case simKindChunk:
+		if upd.Kind == simKindChunk {
 			streamed = true
 		}
 
@@ -1104,8 +1108,10 @@ func TestSimulatorCommandSurface(t *testing.T) {
 
 	dispatchModel, slashRecord := "", false
 
-	for _, line := range strings.Split(string(raw), "\n") {
-		if strings.Contains(line, `"subagent_dispatch"`) && strings.Contains(line, `"resolvedModel":"`+testModelPrimary+`"`) {
+	for line := range strings.SplitSeq(string(raw), "\n") {
+		hasDispatch := strings.Contains(line, `"subagent_dispatch"`)
+		hasModel := strings.Contains(line, `"resolvedModel":"`+testModelPrimary+`"`)
+		if hasDispatch && hasModel {
 			dispatchModel = testModelPrimary
 		}
 
@@ -1136,7 +1142,8 @@ func sessionIDOf(t *testing.T, cli *simClient, workDir string) string {
 		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
 	}
 
-	if err := json.Unmarshal(m.Result, &resp); err != nil || resp.SessionID == "" {
+	err := json.Unmarshal(m.Result, &resp)
+	if err != nil || resp.SessionID == "" {
 		t.Fatalf("session/new for id: %v (%s)", err, string(m.Result))
 	}
 
