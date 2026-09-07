@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"maps"
@@ -42,10 +43,12 @@ const (
 const statusUnsetLabel = "(unset)"
 
 // builtinHandler executes one class-B command against live session state and
-// returns the output text (CMDS-02): pure-local, control-plane fast, ZERO
-// provider calls. Handlers must never touch the network (the FAST-CONTROL
-// budget discipline for the network-bound family lands in 20-02).
-type builtinHandler func(r *Runner, sess *session.Session, turnID, args string) string
+// returns the output text plus an OUTCOME override for the local_command
+// record ("" = the default "ok"; the delegation family records its
+// "unavailable: ..." degrades here — CMDS-02). Pure-local, control-plane
+// fast, ZERO provider calls. Handlers must never touch the network (the
+// FAST-CONTROL budget discipline for the network-bound family lands in 20-02).
+type builtinHandler func(ctx context.Context, r *Runner, sess *session.Session, turnID, args string) (string, string)
 
 // chainEntry is one name's winner in the resolver chain.
 type chainEntry struct {
@@ -137,6 +140,28 @@ func builtinTable() []builtinClassB {
 			name:    "config",
 			desc:    "Show the resolved scheduling config (tiers, session tier, compaction)",
 			handler: builtinConfig,
+		},
+		{
+			name:    "model",
+			desc:    "Switch the session model (session-scope; nothing persisted)",
+			hint:    "<slug>",
+			handler: builtinModel,
+		},
+		{
+			name:    "clear",
+			desc:    "Reset the conversation context (same session, history retained)",
+			handler: builtinClear,
+		},
+		{
+			name:    "resume",
+			desc:    "List resumable sessions and the resume surfaces",
+			handler: builtinResume,
+		},
+		{
+			name:    "compact",
+			desc:    "Compact the conversation context now (Phase 19 machinery)",
+			hint:    "[focus instructions]",
+			handler: builtinCompact,
 		},
 	}
 }
@@ -296,7 +321,9 @@ const agentDispatchHint = "(prompt for the agent)"
 // from in-process state only — resolved model + tier, provider, session id,
 // turn count, context-usage estimate, degraded-capability flags. Every line
 // derives from live state, zero network, zero credential values (T-20-03).
-func builtinStatus(r *Runner, sess *session.Session, _, _ string) string {
+//
+//nolint:gocritic // (output, outcome) pair — the handler-table shape
+func builtinStatus(_ context.Context, r *Runner, sess *session.Session, _, _ string) (string, string) {
 	model := statusModel(r, sess)
 	provider := statusProvider(r)
 	tier := statusTier(r)
@@ -317,7 +344,7 @@ func builtinStatus(r *Runner, sess *session.Session, _, _ string) string {
 		out += "degraded: " + flags + "\n"
 	}
 
-	return out
+	return out, ""
 }
 
 // statusModel resolves the session's EFFECTIVE model through the same ladder
@@ -465,7 +492,9 @@ func (r *Runner) chainResolveCount() uint64 { return r.chainResolves.Load() }
 // builtinHelp renders its inventory FROM the live chain (D-08:
 // self-describing — never a hand-maintained list; a discovered skill or
 // command file changes the output at the next chain build).
-func builtinHelp(r *Runner, _ *session.Session, _, _ string) string {
+//
+//nolint:gocritic // (output, outcome) pair — the handler-table shape
+func builtinHelp(_ context.Context, r *Runner, _ *session.Session, _, _ string) (string, string) {
 	chain := r.commandChainRef()
 
 	names := slices.Sorted(maps.Keys(chain.entries))
@@ -489,13 +518,15 @@ func builtinHelp(r *Runner, _ *session.Session, _, _ string) string {
 		sb.WriteString(line + "\n")
 	}
 
-	return sb.String()
+	return sb.String(), ""
 }
 
 // builtinMemory lists the loaded memory sources read-only (D-09): the
 // agent-md discovery tree + the learning store's entries. No edit affordance
 // (ACP has no editor-open mechanism); zero file writes.
-func builtinMemory(r *Runner, _ *session.Session, _, _ string) string {
+//
+//nolint:gocritic // (output, outcome) pair — the handler-table shape
+func builtinMemory(_ context.Context, r *Runner, _ *session.Session, _, _ string) (string, string) {
 	var sb strings.Builder
 
 	sb.WriteString("memory sources (read-only):\n")
@@ -529,13 +560,15 @@ func builtinMemory(r *Runner, _ *session.Session, _, _ string) string {
 		sb.WriteString("  (learning store not loaded)\n")
 	}
 
-	return sb.String()
+	return sb.String(), ""
 }
 
 // builtinPermissions reports the current permission-gate mode (the
 // safety-model amendment: ungated is the default; the Phase 17 gate machinery
 // rides the runner's perm store either way).
-func builtinPermissions(r *Runner, _ *session.Session, _, _ string) string {
+//
+//nolint:gocritic // (output, outcome) pair — the handler-table shape
+func builtinPermissions(_ context.Context, r *Runner, _ *session.Session, _, _ string) (string, string) {
 	mode := r.PermMode()
 	if mode == "" {
 		mode = "ungated"
@@ -543,13 +576,15 @@ func builtinPermissions(r *Runner, _ *session.Session, _, _ string) string {
 
 	return fmt.Sprintf("permissions mode: %s\n"+
 		"(tool execution is ungated by default; gated mode asks before mutating tools — "+
-		"see the editor's permissions config option)\n", mode)
+		"see the editor's permissions config option)\n", mode), ""
 }
 
 // builtinMCP lists the discovered MCP server configs (D-11/CONTEXT
 // discretion): name + launch command. Connection state is not probed — a
 // control-plane command never launches servers (Pitfall 8).
-func builtinMcp(r *Runner, _ *session.Session, _, _ string) string {
+//
+//nolint:gocritic // (output, outcome) pair — the handler-table shape
+func builtinMcp(_ context.Context, r *Runner, _ *session.Session, _, _ string) (string, string) {
 	var sb strings.Builder
 
 	sb.WriteString("mcp servers (configured):\n")
@@ -557,7 +592,7 @@ func builtinMcp(r *Runner, _ *session.Session, _, _ string) string {
 	if len(r.mcpServers) == 0 {
 		sb.WriteString("  (none configured)\n")
 
-		return sb.String()
+		return sb.String(), ""
 	}
 
 	for _, cfg := range r.mcpServers {
@@ -565,13 +600,15 @@ func builtinMcp(r *Runner, _ *session.Session, _, _ string) string {
 			cfg.Name, cfg.Command, strings.Join(cfg.Args, " "))
 	}
 
-	return sb.String()
+	return sb.String(), ""
 }
 
 // builtinDoctor runs the fixed check list (CONTEXT discretion): workdir,
 // scheduling config, credential env var PRESENCE (names — never values,
 // T-20-05), transcript directory writability, registry load status.
-func builtinDoctor(r *Runner, _ *session.Session, _, _ string) string {
+//
+//nolint:gocritic // (output, outcome) pair — the handler-table shape
+func builtinDoctor(_ context.Context, r *Runner, _ *session.Session, _, _ string) (string, string) {
 	var sb strings.Builder
 
 	sb.WriteString("doctor:\n")
@@ -604,16 +641,18 @@ func builtinDoctor(r *Runner, _ *session.Session, _, _ string) string {
 	fmt.Fprintf(&sb, "  command registry: %d command(s), %d skill(s), %d agent(s)\n",
 		len(r.reg.Commands), len(r.reg.Skills), len(r.reg.Agents))
 
-	return sb.String()
+	return sb.String(), ""
 }
 
 // builtinConfig renders the current resolved scheduling view: session tier,
 // tier→model bindings, compaction keys (16-05/19-05 surfaces).
-func builtinConfig(r *Runner, _ *session.Session, _, _ string) string {
+//
+//nolint:gocritic // (output, outcome) pair — the handler-table shape
+func builtinConfig(_ context.Context, r *Runner, _ *session.Session, _, _ string) (string, string) {
 	var sb strings.Builder
 
 	if r.schedCfg == nil {
-		return "config: no scheduling config loaded (defaults in effect)\n"
+		return "config: no scheduling config loaded (defaults in effect)\n", ""
 	}
 
 	sb.WriteString("config:\n")
@@ -639,7 +678,7 @@ func builtinConfig(r *Runner, _ *session.Session, _, _ string) string {
 	fmt.Fprintf(&sb, "  compaction: enabled=%v threshold=%d%%\n",
 		r.schedCfg.Compaction.Enabled, r.schedCfg.Compaction.ThresholdPct)
 
-	return sb.String()
+	return sb.String(), ""
 }
 
 // doctorCredentialState reports the session provider's credential env var
@@ -692,4 +731,170 @@ func doctorTranscriptState(workDir string) string {
 	_ = os.Remove(probe)
 
 	return "writable"
+}
+
+// localClearCause is the /clear boundary's cause (D-06): the session-side
+// BoundaryCauseContextReset — the Projector's lean window starts empty on
+// the next turn; transcript and session id survive.
+const localClearCause = session.BoundaryCauseContextReset
+
+// builtinModel applies a session-scope model switch (16-D-12): a DECLARED
+// slug stamps this session's turn model through the 16-05 live-apply seam's
+// per-session leg (SetTurnModel) — never a config-layer write (the
+// second-write-path Anti-Pattern). No args prints the current model + tier;
+// an unknown slug degrades loudly with the model UNCHANGED.
+//
+//nolint:gocritic // (output, outcome) pair — the handler-table shape
+func builtinModel(_ context.Context, r *Runner, sess *session.Session, _, args string) (string, string) {
+	slug := strings.TrimSpace(args)
+	if slug == "" {
+		model := sess.Profile.Model
+		if model == "" {
+			model = statusModel(r, sess)
+		}
+
+		return fmt.Sprintf("session model: %s\ntier: %s\nusage: /model <slug> (session-scope; no config is written)\n",
+			model, statusTier(r)), ""
+	}
+
+	if r.schedCfg != nil {
+		if _, ok := r.schedCfg.Models[slug]; !ok {
+			return fmt.Sprintf(
+				"unknown model %q — not declared in the scheduling config; session model UNCHANGED (%s)\n",
+				slug, statusModel(r, sess)), "failed: unknown model"
+		}
+	}
+
+	sess.SetTurnModel(slug)
+
+	return fmt.Sprintf(
+		"session model -> %s (applies to the next request; session-scope, nothing persisted)\n", slug), ""
+}
+
+// builtinClear writes the full context-reset boundary (D-06): same session,
+// same transcript, the Projector's lean window starts empty for the next
+// turn. Resume replays the full history including the boundary.
+//
+//nolint:gocritic // (output, outcome) pair — the handler-table shape
+func builtinClear(_ context.Context, _ *Runner, sess *session.Session, turnID, _ string) (string, string) {
+	if sess.Manager == nil {
+		return "clear failed: no transcript manager\n", "failed: no manager"
+	}
+
+	err := sess.Manager.AppendBoundary(localClearCause, "builtin:clear", turnID)
+	if err != nil {
+		return fmt.Sprintf("clear failed: boundary write error: %v\n", err), "failed: boundary write"
+	}
+
+	return "context cleared (same session; history retained on disk; new window starts empty)\n", ""
+}
+
+// builtinResume surfaces the resumable-session pointer (18-D-10 delegation):
+// the CLIENT owns list UX (the agent-side TUI anti-pattern), so /resume lists
+// resumable sessions through the 18-03 listing engine and points at the
+// operator's resume surfaces. Degrades loudly when the listing seam is
+// unregistered.
+//
+//nolint:gocritic // (output, outcome) pair — the handler-table shape
+func builtinResume(_ context.Context, r *Runner, _ *session.Session, _, _ string) (string, string) {
+	if r.resumeListHook == nil {
+		out, outcome := unavailableMachinery("resume picker", "Phase 18 session listing")
+
+		return out, outcome
+	}
+
+	out, err := r.resumeListHook()
+	if err != nil {
+		return fmt.Sprintf("resume listing failed: %v (retry or use the editor's session picker)\n",
+			err), "failed: listing"
+	}
+
+	return out, ""
+}
+
+// builtinCompact delegates to the Phase 19 immediate-trigger machinery
+// (19-D-11: CompactNow — same machinery, manual intent bypasses the
+// threshold/enabled gates). Typed args are recorded verbatim in the
+// local_command line (16-D-22); CompactNow's signature admits no focus
+// instructions, so present args get a fixed-form note. Degrades loudly when
+// the seam is unregistered.
+//
+//nolint:gocritic // (output, outcome) pair — the handler-table shape
+func builtinCompact(ctx context.Context, r *Runner, sess *session.Session, _, args string) (string, string) {
+	if r.compactNowHook == nil {
+		out, outcome := unavailableMachinery("compaction", "Phase 19 CompactNow")
+
+		return out, outcome
+	}
+
+	out, err := r.compactNowHook(ctx, sess, args)
+	if err != nil {
+		return fmt.Sprintf("compaction failed: %v\n", err), "failed: compaction"
+	}
+
+	if strings.TrimSpace(args) != "" {
+		out += "note: focus instructions are recorded but not yet passed to the summarizer\n"
+	}
+
+	return out, ""
+}
+
+// unavailableMachinery renders the delegation seams' loud degrade: the named
+// machinery is absent from THIS build and the invocation was recorded as an
+// unavailable outcome — never silent, never a wedged turn.
+//
+//nolint:gocritic // the pair mirrors the handler shape
+func unavailableMachinery(what, phase string) (string, string) {
+	return fmt.Sprintf("/%s unavailable: %s not registered in this build (%s machinery absent) — "+
+			"the invocation is recorded; nothing was executed\n", what, what, phase),
+		fmt.Sprintf("unavailable: %s not registered in this build", what)
+}
+
+// resumeListLimit bounds /resume's one-page listing (pointer text, not a
+// session browser — the client owns list UX).
+const resumeListLimit = 20
+
+// realResumeListing is the production resume-listing entry (18-D-03/18-04):
+// one page through the session listing engine rendered as pointer text.
+func realResumeListing(workDir string) func() (string, error) {
+	return func() (string, error) {
+		headers, _, err := session.ListSessions(workDir, "", resumeListLimit)
+		if err != nil {
+			return "", err //nolint:wrapcheck // delegation seam — the handler wraps
+		}
+
+		var sb strings.Builder
+
+		sb.WriteString("resumable sessions (most recent first):\n")
+
+		if len(headers) == 0 {
+			sb.WriteString("  (none found)\n")
+		}
+
+		for _, h := range headers {
+			title := h.Title
+			if !h.TitlePresent || title == "" {
+				title = "(untitled)"
+			}
+
+			fmt.Fprintf(&sb, "  %s — %s\n", h.SessionID, title)
+		}
+
+		sb.WriteString("resume via the editor's session picker or `ass-guard --resume <session-id>`\n")
+
+		return sb.String(), nil
+	}
+}
+
+// realCompactNow is the production compaction entry (19-D-11): the SAME
+// machinery as the threshold path, invoked immediately. The caller (the
+// class-B intercept) already holds the session's turn mutex — exactly
+// CompactNow's serialization contract.
+func realCompactNow(ctx context.Context, sess *session.Session, _ string) (string, error) {
+	err := sess.CompactNow(ctx)
+	if err != nil {
+		return "", err //nolint:wrapcheck // delegation seam — the handler wraps
+	}
+
+	return "compaction complete — the next request projects from the fresh window\n", nil
 }

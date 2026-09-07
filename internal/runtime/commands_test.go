@@ -853,3 +853,242 @@ func dirSnapshot(t *testing.T, dir string) string {
 
 	return sb.String()
 }
+
+// TestClassBModel pins /model (16-D-12 session-scope live-apply): a declared
+// slug switches THIS session's model for the next request; no args prints the
+// current model; an unknown slug degrades loudly with the model UNCHANGED;
+// no config layer file is ever written.
+//
+//nolint:gocognit,funlen,paralleltest // one table, one shared lens (sequenced runner state)
+func TestClassBModel(t *testing.T) {
+	cases := []struct {
+		name      string
+		prompt    string
+		wantModel string
+		wantInOut []string
+	}{
+		{
+			name:      "declared slug applies session-scope",
+			prompt:    "/model " + fixtureModel,
+			wantModel: fixtureModel,
+		},
+		{
+			name:      "no args prints current model",
+			prompt:    "/model",
+			wantModel: "",
+			wantInOut: []string{"model", "tier"},
+		},
+		{
+			name:      "unknown slug degrades loudly, model unchanged",
+			prompt:    "/model not-a-declared-slug",
+			wantModel: "",
+			wantInOut: []string{"unknown"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r, prov, _ := newCommandRunner(t, nil)
+
+			// Seed the project config layer file to prove it is never written.
+			layerDir := filepath.Join(r.workDir, ".ass-guard")
+
+			err := os.MkdirAll(layerDir, 0o750)
+			if err != nil {
+				t.Fatalf("mkdir layer dir: %v", err)
+			}
+
+			layerFile := filepath.Join(layerDir, "config.yaml")
+
+			err = os.WriteFile(layerFile, []byte("# frozen fixture layer\n"), 0o600)
+			if err != nil {
+				t.Fatalf("write layer fixture: %v", err)
+			}
+
+			before := dirSnapshot(t, r.workDir)
+
+			cmdFrames, _ := classBRun(t, r, tc.prompt)
+
+			var out strings.Builder
+
+			for _, f := range cmdFrames {
+				if f.kind == frameKindAgentChunk {
+					out.WriteString(f.text)
+				}
+			}
+
+			for _, want := range tc.wantInOut {
+				if !strings.Contains(out.String(), want) {
+					t.Errorf("output missing %q:\n%s", want, out.String())
+				}
+			}
+
+			// A follow-up ordinary turn: the provider sees the model.
+			emit := &tracerEmitter{}
+
+			_, ferr := r.Run(context.Background(), "classb",
+				emit, []acp.ContentBlock{{Type: blockText, Text: "hello there"}})
+			if ferr != nil {
+				t.Fatalf("follow-up turn: %v", ferr)
+			}
+
+			if got := prov.callCount(); got != 1 {
+				t.Fatalf("follow-up Stream calls = %d; want 1 (the ordinary turn only)", got)
+			}
+
+			gotModel := prov.lastStreamModel()
+			if tc.wantModel != "" {
+				if gotModel != tc.wantModel {
+					t.Errorf("next request model = %q; want %q", gotModel, tc.wantModel)
+				}
+			} else if gotModel != fixtureModel {
+				// The session's stamped default (tier-resolved fixtureModel)
+				// must survive the no-arg/degrade posture untouched.
+				t.Errorf("next request model = %q; want the unchanged default %q", gotModel, fixtureModel)
+			}
+
+			// Layer discipline: the config layer file is byte-identical.
+			if after := dirSnapshot(t, r.workDir); after != before {
+				t.Error("workDir mutated beyond the transcript (config-write path violation)")
+			}
+		})
+	}
+}
+
+// TestClassBClear pins D-06: /clear writes a full context-reset boundary in
+// the SAME session — the next turn's projection is empty of prior content,
+// while the transcript retains every line and the session id is unchanged.
+//
+//nolint:paralleltest // sequenced runner state
+func TestClassBClear(t *testing.T) {
+	r, prov, _ := newCommandRunner(t, nil)
+	prov.queue(scriptedResp{text: "first answer"})
+
+	sessBefore := r.sessionFor(context.Background(), "classb")
+
+	emit := &tracerEmitter{}
+
+	_, err := r.Run(context.Background(), "classb",
+		emit, []acp.ContentBlock{{Type: blockText, Text: "remember the codeword pinecone"}})
+	if err != nil {
+		t.Fatalf("pre-clear turn: %v", err)
+	}
+
+	_, lines := classBRun(t, r, "/clear")
+
+	var boundary bool
+
+	for _, l := range lines {
+		if l.Type == session.TypeBoundary && l.Cause == session.BoundaryCauseContextReset {
+			boundary = true
+		}
+	}
+
+	if !boundary {
+		t.Fatal("no local-command:clear boundary line after /clear (D-06)")
+	}
+
+	if got := len(lines); got < 3 {
+		t.Fatalf("transcript lost lines after /clear: %d lines", got)
+	}
+
+	// The next turn projects WITHOUT the pre-clear content.
+	prov.queue(scriptedResp{text: "second answer"})
+
+	_, err = r.Run(context.Background(), "classb",
+		emit, []acp.ContentBlock{{Type: blockText, Text: "what was the codeword"}})
+	if err != nil {
+		t.Fatalf("post-clear turn: %v", err)
+	}
+
+	if prov.streamSawText(1, "pinecone") {
+		t.Error("post-clear projection still carries pre-clear content (lean window not reset)")
+	}
+
+	sessAfter := r.sessionFor(context.Background(), "classb")
+	if sessBefore.SessionID != sessAfter.SessionID {
+		t.Error("/clear changed the session id (D-06 locks same-session)")
+	}
+}
+
+// TestClassBDelegate pins the /resume + /compact delegation seams: unregistered
+// machinery degrades LOUDLY with the named outcome recorded durably; a
+// registered seam is invoked exactly once with the typed args.
+//
+//nolint:gocognit,funlen,paralleltest // two scenarios, one seam contract (sequenced state)
+func TestClassBDelegate(t *testing.T) {
+	t.Run("unregistered seams degrade loudly", func(t *testing.T) {
+		r, prov, _ := newCommandRunner(t, nil)
+
+		r.compactNowHook = nil
+		r.resumeListHook = nil
+
+		for _, prompt := range []string{"/resume", "/compact tidy up"} {
+			frames, lines := classBRun(t, r, prompt)
+
+			if got := prov.callCount(); got != 0 {
+				t.Errorf("%s: provider Stream calls = %d; want 0", prompt, got)
+			}
+
+			var out strings.Builder
+
+			for _, f := range frames {
+				if f.kind == frameKindAgentChunk {
+					out.WriteString(f.text)
+				}
+			}
+
+			if !strings.Contains(out.String(), "not registered") {
+				t.Errorf("%s output does not name the absent machinery:\n%s", prompt, out.String())
+			}
+
+			rec := localCommandLine(t, lines)
+			if !strings.HasPrefix(rec.Expansion, "unavailable:") {
+				t.Errorf("%s outcome = %q; want unavailable: ...", prompt, rec.Expansion)
+			}
+		}
+	})
+
+	t.Run("registered compact seam invoked with typed args", func(t *testing.T) {
+		r, _, _ := newCommandRunner(t, nil)
+
+		var gotArgs []string
+
+		var calls int
+
+		r.compactNowHook = func(_ context.Context, _ *session.Session, args string) (string, error) {
+			calls++
+
+			gotArgs = append(gotArgs, args)
+
+			return "compacted 42% -> fresh window", nil
+		}
+
+		frames, lines := classBRun(t, r, "/compact focus on the parser")
+
+		if calls != 1 {
+			t.Fatalf("compact seam calls = %d; want 1", calls)
+		}
+
+		if len(gotArgs) != 1 || gotArgs[0] != "focus on the parser" {
+			t.Errorf("seam args = %v; want the typed args verbatim", gotArgs)
+		}
+
+		var out strings.Builder
+
+		for _, f := range frames {
+			if f.kind == frameKindAgentChunk {
+				out.WriteString(f.text)
+			}
+		}
+
+		if !strings.Contains(out.String(), "compacted 42%") {
+			t.Errorf("output missing the seam's result:\n%s", out.String())
+		}
+
+		rec := localCommandLine(t, lines)
+		if rec.Args != "focus on the parser" {
+			t.Errorf("local_command Args = %q; want verbatim (16-D-22)", rec.Args)
+		}
+	})
+}

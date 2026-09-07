@@ -30,6 +30,12 @@ type scriptedACPProvider struct {
 	mu     sync.Mutex
 	script []scriptedResp
 	calls  int
+
+	// 20-02 battery capture: the model + projected messages of every Stream
+	// call (the /model and /clear lenses).
+	streamedModels    []string
+	streamedMsgCounts []int
+	streamedHasText   []func(string) bool
 }
 
 type scriptedResp struct {
@@ -52,7 +58,7 @@ func (p *scriptedACPProvider) Send(
 }
 
 func (p *scriptedACPProvider) Stream(
-	ctx context.Context, _ *profile.Profile, _ []provider.Message,
+	ctx context.Context, prof *profile.Profile, msgs []provider.Message,
 ) (<-chan provider.StreamChunk, error) {
 	p.mu.Lock()
 	p.calls++
@@ -62,6 +68,24 @@ func (p *scriptedACPProvider) Stream(
 	if idx < len(p.script) {
 		resp = p.script[idx]
 	}
+
+	p.streamedModels = append(p.streamedModels, prof.Model)
+	p.streamedMsgCounts = append(p.streamedMsgCounts, len(msgs))
+
+	texts := make([]string, 0, len(msgs))
+	for _, m := range msgs {
+		texts = append(texts, m.Content)
+	}
+
+	p.streamedHasText = append(p.streamedHasText, func(needle string) bool {
+		for _, t := range texts {
+			if strings.Contains(t, needle) {
+				return true
+			}
+		}
+
+		return false
+	})
 	p.mu.Unlock()
 
 	ch := make(chan provider.StreamChunk, 4)
@@ -113,6 +137,32 @@ func (p *scriptedACPProvider) callCount() int {
 	defer p.mu.Unlock()
 
 	return p.calls
+}
+
+// lastStreamModel returns the model of the most recent Stream call ("" when
+// none) — the /model battery lens.
+func (p *scriptedACPProvider) lastStreamModel() string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if len(p.streamedModels) == 0 {
+		return ""
+	}
+
+	return p.streamedModels[len(p.streamedModels)-1]
+}
+
+// streamSawText reports whether Stream call n's projected messages carried
+// the needle text — the /clear projection lens.
+func (p *scriptedACPProvider) streamSawText(n int, needle string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if n < 0 || n >= len(p.streamedHasText) {
+		return false
+	}
+
+	return p.streamedHasText[n](needle)
 }
 
 // noopEmitter collects chunks for assertion; never errors.

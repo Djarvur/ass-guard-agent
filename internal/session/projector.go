@@ -137,21 +137,21 @@ func (p *Projector) SetCompactionTailBudget(limit int64) { p.CompactionTailBudge
 // extracted from the transcript, bounded to the MidTurnWindowMessages tail,
 // pair-safe.
 //
-	// Phase 19 (PAR-01) adds the compaction marker as a THIRD reset-point class
-	// with different seed semantics: when a marker precedes the projected turn's
-	// user message, the seed is the marker's Summary (D-06 DURABLE — later
-	// TypeBoundary lines never displace it; only a newer marker replaces it) and
-	// every transcript WITHOUT a marker takes the pre-phase path byte-identically.
-	// 19-06 (G-19-1) adds the ENGINE-ARMED same-turn carve-out; 19-07 (CR-01):
-	// the armed carve-out takes precedence over the pre-user scan, so when the
-	// engine armed the per-turn override (SetRetryCompactedTurn), a marker
-	// whose TurnID equals the projected turn reshapes THAT turn's projection
-	// EVEN WHEN an earlier marker precedes the turn's user message — the
-	// overflow retry always projects post-marker (the NEW marker's summary
-	// seed) instead of re-sending the rejected request. Armed with no
-	// same-turn marker, the pre-user scan governs unchanged (the degraded
-	// fail-through). Without the in-memory override the same transcript
-	// projects byte-identically to the marker-free one (tamper safety).
+// Phase 19 (PAR-01) adds the compaction marker as a THIRD reset-point class
+// with different seed semantics: when a marker precedes the projected turn's
+// user message, the seed is the marker's Summary (D-06 DURABLE — later
+// TypeBoundary lines never displace it; only a newer marker replaces it) and
+// every transcript WITHOUT a marker takes the pre-phase path byte-identically.
+// 19-06 (G-19-1) adds the ENGINE-ARMED same-turn carve-out; 19-07 (CR-01):
+// the armed carve-out takes precedence over the pre-user scan, so when the
+// engine armed the per-turn override (SetRetryCompactedTurn), a marker
+// whose TurnID equals the projected turn reshapes THAT turn's projection
+// EVEN WHEN an earlier marker precedes the turn's user message — the
+// overflow retry always projects post-marker (the NEW marker's summary
+// seed) instead of re-sending the rejected request. Armed with no
+// same-turn marker, the pre-user scan governs unchanged (the degraded
+// fail-through). Without the in-memory override the same transcript
+// projects byte-identically to the marker-free one (tamper safety).
 func (p *Projector) Project(turnID string) ([]provider.Message, error) {
 	lines, err := p.manager.ReadAll()
 	if err != nil {
@@ -171,6 +171,13 @@ func (p *Projector) Project(turnID string) ([]provider.Message, error) {
 		if stIdx := sameTurnMarkerIdx(lines, turnID); stIdx >= 0 {
 			return p.projectSameTurnCompacted(lines, stIdx, turnID), nil
 		}
+	}
+
+	// 20-02 (D-06): a full-reset boundary (/clear) before the projected turn's
+	// user message beats EVERYTHING downstream — the compaction marker's
+	// durable summary included (a cleared context starts empty, period).
+	if resetIdx := fullResetBoundaryIdx(lines, turnID); resetIdx >= 0 {
+		return p.projectFullReset(lines, resetIdx, turnID), nil
 	}
 
 	if mIdx := compactionMarkerIdx(lines, turnID); mIdx >= 0 {
@@ -497,6 +504,49 @@ func imageBlocksOf(l *Line) []provider.Block {
 
 		out = append(out, provider.Block{Image: &provider.ImageBlock{Ref: ref, MediaType: media}})
 	}
+
+	return out
+}
+
+// BoundaryCauseContextReset is the /clear boundary's cause (20-02/D-06): the
+// projector treats it as a FULL reset — the next turn's seed carries the
+// current intent ALONE (no mechanical summary, no durable compaction seed);
+// transcript and session id survive untouched.
+const BoundaryCauseContextReset = "context-reset"
+
+// fullResetBoundaryIdx returns the index of the last context-reset boundary
+// before the projected turn's user message, or -1 (the splitAtResetBoundary
+// scan shape).
+func fullResetBoundaryIdx(lines []Line, turnID string) int {
+	turnUserIdx := projectedUserIdx(lines, turnID)
+
+	idx := -1
+
+	for i := range lines {
+		if lines[i].Type == TypeBoundary && lines[i].Cause == BoundaryCauseContextReset &&
+			(turnUserIdx < 0 || i < turnUserIdx) {
+			idx = i
+		}
+	}
+
+	return idx
+}
+
+// projectFullReset is the D-06 /clear projection: the seed is the current
+// intent ALONE (empty summary — the window starts empty by construction),
+// followed by the post-reset mid-turn accumulation.
+func (p *Projector) projectFullReset(lines []Line, resetIdx int, turnID string) []provider.Message {
+	afterBoundary := lines[resetIdx+1:]
+
+	currentIntent := findCurrentIntent(afterBoundary, nil, turnID)
+
+	mid := boundMidTurn(accumulateMidTurn(lines, turnID))
+
+	intentLine := findIntentLine(afterBoundary, nil, turnID)
+
+	out := make([]provider.Message, 0, 1+len(mid))
+	out = append(out, seedMessage(seedContent("", currentIntent), intentLine))
+	out = append(out, mid...)
 
 	return out
 }

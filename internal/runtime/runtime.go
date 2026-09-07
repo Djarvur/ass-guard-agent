@@ -188,10 +188,18 @@ type Runner struct {
 	// counts chain consultations (test observability for the single-parse
 	// discipline — one resolution per Run). commandsNotify is the re-fire
 	// seam the composition binds to available_commands_update fan-out.
-	chainPtr        atomic.Pointer[commandChain]
-	chainResolves   atomic.Uint64
+	chainPtr         atomic.Pointer[commandChain]
+	chainResolves    atomic.Uint64
 	commandsNotifyMu sync.RWMutex
-	commandsNotify  func()
+	commandsNotify   func()
+
+	// 20-02 delegation seams (CMDS-02): the Phase 19 immediate-compaction
+	// entry (19-D-11) and the Phase 18 resume listing (18-D-10) route through
+	// registered callbacks — the SetCommandsNotify pattern. NewRunner arms the
+	// REAL machinery (both exist in this build); tests nil or replace them to
+	// prove the loud-degrade posture.
+	compactNowHook func(ctx context.Context, sess *session.Session, args string) (string, error)
+	resumeListHook func() (string, error)
 
 	// 21-04 (PAR-06/D-10): the Read-rule consult seam for @-mention
 	// expansion. Every @file consults it with tool "Read" BEFORE its content
@@ -319,19 +327,26 @@ type RunnerConfig struct {
 // Callers invoke LoadCommandRegistry/SetupEngine/startScheduler explicitly,
 // in today's order.
 func NewRunner(cfg *RunnerConfig) *Runner {
+	// 20-02: the delegation seams arm the REAL machinery (Phase 19 CompactNow
+	// + the Phase 18 listing engine both exist in this build — a seam is
+	// never left unregistered while its machinery is present).
+	wd := cfg.WorkDir
+
 	return &Runner{
-		bus:          cfg.Bus,
-		bodyStore:    cfg.BodyStore,
-		profile:      cfg.Profile,
-		workDir:      cfg.WorkDir,
-		maxConc:      cfg.MaxConc,
-		configAdded:  cfg.ConfigAdded,
-		makeProvider: cfg.MakeProvider,
-		askTimeout:   cfg.AskTimeout,
-		serveCtx:     cfg.ServeCtx,
-		schedCfg:     cfg.SchedCfg,
-		providerName: cfg.ProviderName,
-		stderr:       cfg.Stderr,
+		bus:            cfg.Bus,
+		bodyStore:      cfg.BodyStore,
+		profile:        cfg.Profile,
+		workDir:        cfg.WorkDir,
+		maxConc:        cfg.MaxConc,
+		configAdded:    cfg.ConfigAdded,
+		makeProvider:   cfg.MakeProvider,
+		askTimeout:     cfg.AskTimeout,
+		serveCtx:       cfg.ServeCtx,
+		schedCfg:       cfg.SchedCfg,
+		providerName:   cfg.ProviderName,
+		stderr:         cfg.Stderr,
+		compactNowHook: realCompactNow,
+		resumeListHook: realResumeListing(wd),
 	}
 }
 
@@ -2869,7 +2884,7 @@ func (r *Runner) routeAskReply(
 // a failed local_command outcome with a loud stderr warning — a control-plane
 // command NEVER fails the session (T-20-02).
 func (r *Runner) tryLocalCommand(
-	_ context.Context, sess *session.Session, emit acp.ChunkEmitter, blocks []session.ContentBlock,
+	ctx context.Context, sess *session.Session, emit acp.ChunkEmitter, blocks []session.ContentBlock,
 ) (string, bool) {
 	idx := firstTextBlockIndex(blocks)
 	if idx < 0 || blocks[idx].Text == "" {
@@ -2903,7 +2918,10 @@ func (r *Runner) tryLocalCommand(
 	}
 
 	outcome := "ok"
-	output := r.runBuiltinHandler(entry, sess, args, &outcome)
+	output, outcomeOverride := r.runBuiltinHandler(ctx, entry, sess, turnID, args)
+	if outcomeOverride != "" {
+		outcome = outcomeOverride
+	}
 
 	// The output rides as agent_message_chunk(s) under the turn's normal
 	// message id — the emit handle, best-effort (the durable record below is
@@ -2929,11 +2947,11 @@ func (r *Runner) tryLocalCommand(
 // loud stderr warning, and the turn STILL ends end_turn — a control-plane
 // command never wedges or fails the session.
 func (r *Runner) runBuiltinHandler(
-	entry chainEntry, sess *session.Session, args string, outcome *string,
-) (output string) {
+	ctx context.Context, entry chainEntry, sess *session.Session, turnID, args string,
+) (output, outcome string) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			*outcome = fmt.Sprintf("failed: handler panic: %v", rec)
+			outcome = fmt.Sprintf("failed: handler panic: %v", rec)
 			output = "command failed (see stderr)"
 
 			_, _ = fmt.Fprintf(r.stderrOrDefault(),
@@ -2942,7 +2960,7 @@ func (r *Runner) runBuiltinHandler(
 		}
 	}()
 
-	return entry.handler(r, sess, args)
+	return entry.handler(ctx, r, sess, turnID, args)
 }
 
 // echoIDSuffix decorates the class-B echo's messageId so it can never collide
