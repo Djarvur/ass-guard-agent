@@ -2,6 +2,7 @@ package runtime //nolint:testpackage // internal package test
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"sync"
 	"testing"
@@ -456,4 +457,221 @@ func TestParkedAskCancelGrammar(t *testing.T) {
 			t.Error("prose containing 'cancel' did not route as an answer (exact-phrase only)")
 		}
 	})
+}
+
+// newBlockingEngineRunner builds an ENGINE-ON runner over the blocking
+// provider (the real executor path — AskUserQuestion suspends for real).
+func newBlockingEngineRunner(t *testing.T, script ...scriptedResp) (*Runner, *blockingProvider) {
+	t.Helper()
+
+	prov := &blockingProvider{entered: make(chan struct{}, 1), release: make(chan struct{})}
+	prov.queue(script...)
+
+	r := &Runner{
+		bus:          event.NewBus(),
+		profile:      fakeProfileACP(),
+		workDir:      t.TempDir(),
+		maxConc:      4,
+		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return prov },
+	}
+
+	if err := r.SetupEngine(); err != nil {
+		t.Fatalf("SetupEngine: %v", err)
+	}
+
+	r.LoadCommandRegistry()
+
+	return r, prov
+}
+
+// TestCombinedSteerScenario is the milestone-prescribed combined E2E
+// (Pitfall 11's warning sign is tests that NEVER combine the classes): one
+// scripted turn where the operator sends two steering texts (coalescing into
+// ONE delivery), an ask parks visibly behind the running turn, and a
+// parked-cancel grammar input resolves it cancelled-normal without killing
+// anything — every input classifies per the matrix, nothing is swallowed or
+// misrouted, and no cancelled content reaches any request.
+func TestCombinedSteerScenario(t *testing.T) { //nolint:funlen,maintidx // comprehensive combined scenario
+	t.Parallel()
+
+	r, prov := newBlockingEngineRunner(t,
+		scriptedResp{
+			finish: tracerToolUse,
+			toolCalls: []provider.ToolCall{{
+				ID: "c-read", Name: "Read", Input: json.RawMessage(`{"file_path":"a.txt"}`),
+			}},
+		},
+		scriptedResp{
+			finish: tracerToolUse,
+			toolCalls: []provider.ToolCall{{
+				ID: "c-ask", Name: wiringAskTool, Input: json.RawMessage(wiringAskInput),
+			}},
+		},
+		scriptedResp{text: "resumed after cancel", finish: stopEndTurn},
+	)
+
+	const sid = "sess-combined"
+
+	turnDone := make(chan string, 1)
+
+	go func() {
+		stop, err := r.Run(context.Background(), sid, &noopEmitter{},
+			[]acp.ContentBlock{{Type: blockText, Text: "main task"}})
+		if err != nil {
+			t.Errorf("turn Run err: %v", err)
+		}
+
+		turnDone <- stop
+	}()
+
+	<-prov.entered // request 1 in flight; the engine chain holds chainCount > 0
+
+	// Leg 1 + leg 4 (two steering texts, mid-turn): both classify as
+	// steering and return promptly.
+	for _, text := range []string{"steer alpha", "steer beta"} {
+		st, err := r.Run(context.Background(), sid, &noopEmitter{},
+			[]acp.ContentBlock{{Type: blockText, Text: text}})
+		if err != nil || st != stopEndTurn {
+			t.Fatalf("steering Run %q = (%q,%v); want (end_turn, nil)", text, st, err)
+		}
+	}
+
+	sess := r.sessions[sid]
+
+	if q := sess.SteerQueue(); q == nil || q.Pending() != 2 {
+		t.Fatalf("queue pending after two steers; want 2")
+	}
+
+	// Release: iteration 2 drains BOTH as one delivery, then the scripted
+	// AskUserQuestion parks.
+	close(prov.release)
+
+	select {
+	case <-turnDone: // the turn ended at the ask (stopAsk mapped end_turn)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the turn did not reach its parked ask")
+	}
+
+	// The two steered texts delivered as ONE coalesced block in request 2.
+	if !prov.streamSawText(1, "steer alpha") || !prov.streamSawText(1, "steer beta") {
+		t.Error("request 2 did not carry both steered texts (coalesced delivery)")
+	}
+
+	deliveries := transcriptLinesOfType(t, r, sid, session.TypeSteeringDelivery)
+	if len(deliveries) != 1 {
+		t.Fatalf("%d steering_delivery lines; want exactly 1 (coalesced)", len(deliveries))
+	}
+
+	if got := string(deliveries[0].Input); !strings.Contains(got, `"count":2`) {
+		t.Errorf("coalesced delivery Input = %s; want count 2", got)
+	}
+
+	// The ask parked visibly: parked_ask + ask_suspended records, broker pending.
+	if parked := transcriptLinesOfType(t, r, sid, session.TypeParkedAsk); len(parked) != 1 {
+		t.Errorf("%d parked_ask lines; want 1", len(parked))
+	}
+
+	if !sess.HasPendingAsk() {
+		t.Fatal("the scripted ask did not park (broker has nothing pending)")
+	}
+
+	// Leg 3: the parked-cancel grammar resolves it cancelled-normal — the
+	// suspended turn resumes on the non-answer form (script slot 3) and the
+	// turn completes. Nothing else is killed (nothing else runs).
+	emit := &noopEmitter{}
+
+	stop, err := r.Run(context.Background(), sid, emit, []acp.ContentBlock{{Type: blockText, Text: "cancel ask"}})
+	if err != nil || stop != stopEndTurn {
+		t.Fatalf("cancel Run = (%q,%v); want (end_turn, nil)", stop, err)
+	}
+
+	if sess.HasPendingAsk() {
+		t.Error("pending ask survived the combined-scenario cancel")
+	}
+
+	// No cancelled content ever reached a request: the cancel text appears
+	// in NO provider window (only steering + turn content ever do).
+	for i := range 3 {
+		if prov.streamSawText(i, "cancel ask") {
+			t.Errorf("request %d carried the cancel input as model content", i+1)
+		}
+	}
+
+	// The transcript's record sequence is complete and ordered: the parked
+	// marker sits with the suspension; the cancel resumed the SAME turn.
+	lines := transcriptLinesOfType(t, r, sid, session.TypeAskSuspended)
+	if len(lines) != 1 || lines[0].TurnID == "" {
+		t.Errorf("ask_suspended records = %+v; want exactly one attributed suspension", lines)
+	}
+}
+
+// TestEngineChainSteered pins Open Question 4's resolution (zero engine
+// changes): a steered ENGINE-CHAIN turn applies the steering at its next
+// boundary and the chain completes normally — Decide signals never observe
+// steering lines (LastTurnOutput's terminal scan has no steering case; the
+// completion here is the proof the chain was not confused).
+func TestEngineChainSteered(t *testing.T) {
+	t.Parallel()
+
+	r, prov := newBlockingEngineRunner(t,
+		scriptedResp{
+			finish: tracerToolUse,
+			toolCalls: []provider.ToolCall{{
+				ID: "c-read", Name: "Read", Input: json.RawMessage(`{"file_path":"a.txt"}`),
+			}},
+		},
+		scriptedResp{text: "chain turn done; no handoff signal", finish: stopEndTurn},
+	)
+
+	const sid = "sess-chain-steer"
+
+	turnDone := make(chan string, 1)
+
+	go func() {
+		stop, err := r.Run(context.Background(), sid, &noopEmitter{},
+			[]acp.ContentBlock{{Type: blockText, Text: "chain task"}})
+		if err != nil {
+			t.Errorf("chain Run err: %v", err)
+		}
+
+		turnDone <- stop
+	}()
+
+	<-prov.entered
+
+	// The chain is ACTIVE while its turn's request is in flight.
+	if cc := r.chainCount(sid); cc == 0 {
+		t.Fatal("chainCount == 0 while the chain turn is in flight (fixture broken)")
+	}
+
+	st, err := r.Run(context.Background(), sid, &noopEmitter{},
+		[]acp.ContentBlock{{Type: blockText, Text: "adjust mid-chain"}})
+	if err != nil || st != stopEndTurn {
+		t.Fatalf("chain-steered Run = (%q,%v); want (end_turn, nil)", st, err)
+	}
+
+	close(prov.release)
+
+	select {
+	case stop := <-turnDone:
+		if stop != stopEndTurn {
+			t.Errorf("chain turn stop = %q; want end_turn (chain completed normally)", stop)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the steered chain did not complete")
+	}
+
+	// The chain fully unwound (no zombie chain state) and the steering
+	// delivered at the chain turn's boundary.
+	if cc := r.chainCount(sid); cc != 0 {
+		t.Errorf("chainCount = %d after completion; want 0", cc)
+	}
+
+	if !prov.streamSawText(1, "adjust mid-chain") {
+		t.Error("the chain turn's request 2 did not carry the steered text")
+	}
+
+	if n := prov.callCount(); n != 2 {
+		t.Errorf("provider calls = %d; want 2 (the chain's scripted sequence untouched)", n)
+	}
 }
