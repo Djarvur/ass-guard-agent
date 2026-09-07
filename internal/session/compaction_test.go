@@ -1695,6 +1695,64 @@ func g191ProviderErrorLine(t *testing.T, m *Manager) bool {
 	return false
 }
 
+// newPriorMarkerSizeRejectSession builds the CR-01 prior-marker variant of the
+// G-19-1 regression session (19-07): a near-copy of newSizeRejectSession per
+// the repo's Pitfall-5 near-copy discipline that plants, BEFORE the producing
+// turn's user message, an earlier turn ("t-prior") with its user message, a
+// compaction marker (OLD-PRIOR-SUMMARY), and a boundary line — the transcript
+// shape a session that already compacted once leaves behind. The boundary is
+// LOAD-BEARING: with limit 1000 injected, a boundary-less prior marker routes
+// the first projection through projectCompacted's budget path
+// (boundCompactionTail ≈ 600 tokens ≈ 2.4K chars), which fits UNDER the
+// 4000-byte bound — no overflow, and the leg would pass vacuously pre- AND
+// post-fix. The boundary makes boundaryAfterMarker true (projector.go:274-284),
+// so the pre-fix projection's tail is boundMidTurn(accumulateMidTurn) —
+// count-capped at 64, NOT byte-budgeted — and the 40 × 600-char fat span is
+// deterministically over the bound. This is also the canonical CR-01 shape: a
+// real earlier turn compacted, later turns appended boundaries, then the
+// producing turn overflows.
+func newPriorMarkerSizeRejectSession(
+	t *testing.T, script []compScript, bound int,
+) (*Session, *Manager, *sizeRejectProvider) {
+	t.Helper()
+
+	bus := event.NewBus()
+	m := newTestManager(t, "s-g191-prior")
+	inner := &compactionProvider{script: script, bus: bus}
+
+	prof := fakeProfile("g191 agent")
+	prof.Model = compParentModel
+
+	p := &sizeRejectProvider{compactionProvider: inner, maxBytes: bound}
+
+	s := &Session{
+		Manager:   m,
+		Projector: NewProjector(prof, m),
+		Provider:  p,
+		Bus:       bus,
+		Semaphore: provider.NewSemaphore(4),
+		Profile:   *prof,
+		WorkDir:   t.TempDir(),
+		SessionID: "s-g191-prior",
+	}
+	p.turnIDOf = s.CurrentTurnID
+
+	// The planted prior compaction (CR-01): an earlier turn compacted once and
+	// a later boundary recorded — everything the pre-user marker scan needs to
+	// find a marker strictly before the producing turn's user message.
+	mustAppend(t, m.AppendUserMessage("t-prior",
+		[]ContentBlock{{Type: blockText, Text: "earlier turn work"}}), "AppendUserMessage")
+	mustAppend(t,
+		m.AppendCompaction("t-prior", "line:0", "line:1", "OLD-PRIOR-SUMMARY", 100, 10, 10), "AppendCompaction")
+	mustAppend(t, m.AppendBoundary("mutating-command:Edit", "", "t-prior"), "AppendBoundary")
+
+	mustAppend(t, m.AppendUserMessage(g191TurnID,
+		[]ContentBlock{{Type: blockText, Text: g191Intent}}), "AppendUserMessage")
+	compFatSpanGroups(t, m, g191TurnID, 40, 600)
+
+	return s, m, p
+}
+
 // TestCompaction_OverflowRetryCarriesSummary pins G-19-1 (operator ruling
 // (b)): with a content-sensitive provider that rejects by payload size, the
 // producing turn COMPLETES after the forced compaction + the single retry —
@@ -1848,6 +1906,70 @@ func TestCompaction_OverflowRetryCarriesSummary(t *testing.T) { //nolint:gocogni
 
 		if !g191ProviderErrorLine(t, m) {
 			t.Error("transcript missing the provider error line (the existing appendError fail-through)")
+		}
+	})
+
+	t.Run("prior marker: the overflow recovery still reaches the producing turn (CR-01)", func(t *testing.T) {
+		t.Parallel()
+
+		// The CR-01 residual shape: a prior marker + boundary precede the
+		// producing turn's user message. Pre-fix, the retry re-projects
+		// through the OLD marker (byte-identical to the rejected request),
+		// overflows again, and the turn fails through appendError — this leg
+		// is the regression detector the never-compacted battery could not
+		// provide.
+		s, m, p := newPriorMarkerSizeRejectSession(t, []compScript{
+			{text: "SHRUNK-PRIOR-SUMMARY", finish: stopEndTurn}, // the forced compact's summarizer
+			{text: "all good now", finish: stopEndTurn},         // the retry send
+		}, bound)
+		s.SetCompactionSettings(false, 80, 1000)
+
+		stop, err := s.runTurn(context.Background(), g191TurnID)
+		if err != nil || stop != stopEndTurn {
+			t.Fatalf("runTurn: stop=%q err=%v (the producing turn must complete after compaction + ONE retry even with a prior marker)",
+				stop, err)
+		}
+
+		if got := len(p.sizes); got != 3 {
+			t.Fatalf("stream calls = %d; want 3 (rejected send, summarize, retry — exactly one retry, Pitfall 8)", got)
+		}
+
+		if p.sizes[0] <= p.maxBytes {
+			t.Errorf("call 1 size = %d; want > %d (the fat mid-turn window must be rejected)", p.sizes[0], p.maxBytes)
+		}
+
+		if p.sizes[1] > p.maxBytes {
+			t.Errorf("summarize call size = %d; want <= %d (the bounded span must fit under the bound)",
+				p.sizes[1], p.maxBytes)
+		}
+
+		// Two markers: the planted prior M1 + the forced compact's new M2.
+		if got := len(markersOf(t, m)); got != 2 {
+			t.Fatalf("markers = %d; want exactly 2 (the planted prior marker + the forced compact's new one)", got)
+		}
+
+		// The retry is STRICTLY smaller and seeded with the NEW summary —
+		// never the prior marker's OLD-PRIOR-SUMMARY.
+		if p.sizes[2] >= p.sizes[0] {
+			t.Errorf("retry size = %d; want STRICTLY < the rejected %d (the recovery leg must shrink)",
+				p.sizes[2], p.sizes[0])
+		}
+
+		if !strings.Contains(p.firsts[2], "SHRUNK-PRIOR-SUMMARY") {
+			t.Errorf("retry seed missing the NEW summarizer's summary (the post-marker seed):\n%s", p.firsts[2])
+		}
+
+		if !strings.Contains(p.firsts[2], g191Intent) {
+			t.Errorf("retry seed missing T's own prompt as the current intent:\n%s", p.firsts[2])
+		}
+
+		if strings.Contains(p.firsts[2], "OLD-PRIOR-SUMMARY") {
+			t.Errorf("retry seed carries the PRIOR marker's summary (the armed override must defeat the pre-user scan, CR-01):\n%s",
+				p.firsts[2])
+		}
+
+		if g191ProviderErrorLine(t, m) {
+			t.Error("transcript carries a provider error line (the turn must complete, not fail-through)")
 		}
 	})
 }

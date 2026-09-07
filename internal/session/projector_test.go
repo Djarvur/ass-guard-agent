@@ -2276,7 +2276,7 @@ func TestProjector_SameTurnCarveOut(t *testing.T) { //nolint:gocognit,gocyclo,cy
 		}
 	})
 
-	t.Run("pre-user marker wins; the armed override cannot displace 19-03's scan", func(t *testing.T) {
+	t.Run("armed override wins over the pre-user marker scan (CR-01)", func(t *testing.T) {
 		t.Parallel()
 
 		m := newTestManager(t, "s-stc3")
@@ -2300,12 +2300,49 @@ func TestProjector_SameTurnCarveOut(t *testing.T) { //nolint:gocognit,gocyclo,cy
 		}
 
 		seed := msgs[0]
-		if !strings.Contains(seed.Content, sumPreUserStc) {
-			t.Errorf("pre-user marker's summary lost the seed (19-03's winning scan displaced):\n%s", seed.Content)
+		if !strings.Contains(seed.Content, sumSameTurnNew) {
+			t.Errorf("armed seed missing the SAME-TURN marker's summary (the armed override must defeat an earlier pre-user marker, CR-01):\n%s",
+				seed.Content)
 		}
 
-		if strings.Contains(seed.Content, sumSameTurnNew) {
-			t.Errorf("the same-turn marker DISPLACED the pre-user marker (carve-out must run only when compactionMarkerIdx found nothing):\n%s",
+		if strings.Contains(seed.Content, sumPreUserStc) {
+			t.Errorf("the pre-user marker's summary still governs the armed retry (the retry must carry the NEW marker's summary, CR-01 residual):\n%s",
+				seed.Content)
+		}
+
+		if !strings.Contains(seed.Content, intentStcParent) {
+			t.Errorf("seed missing the current intent:\n%s", seed.Content)
+		}
+	})
+
+	t.Run("armed with no same-turn marker: the pre-user scan governs unchanged", func(t *testing.T) {
+		t.Parallel()
+
+		// The CR-01 fallback pin: armed but the compact landed no same-turn
+		// marker (the degraded shape, here with a prior pre-user marker
+		// present) — the pinned pre-user scan stays the fallback, so today's
+		// degraded fail-through behavior is preserved verbatim.
+		m := newTestManager(t, "s-stc3b")
+		p := NewProjector(fakeProfile("sys"), m)
+
+		mustAppend(t, m.AppendUserMessage("turn_0", []ContentBlock{{Type: blockText, Text: "early work"}}),
+			"AppendUserMessage")
+		mustAppend(t,
+			m.AppendCompaction("turn_0", "line:1", "line:2", sumPreUserStc, 100, 10, 10), "AppendCompaction")
+		mustAppend(t, m.AppendUserMessage(turnT,
+			[]ContentBlock{{Type: blockText, Text: intentStcParent}}), "AppendUserMessage")
+		stcAppendExchanges(t, m, turnT, 1)
+
+		p.SetRetryCompactedTurn(turnT)
+
+		msgs, err := p.Project(turnT)
+		if err != nil {
+			t.Fatalf("Project: %v", err)
+		}
+
+		seed := msgs[0]
+		if !strings.Contains(seed.Content, sumPreUserStc) {
+			t.Errorf("armed-with-no-same-turn-marker seed lost the pre-user marker's summary (the pre-user scan must stay the fallback):\n%s",
 				seed.Content)
 		}
 
