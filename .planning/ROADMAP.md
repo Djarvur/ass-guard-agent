@@ -378,7 +378,7 @@ Plans:
 **Wave 1**
 
 - [x] 23-01-PLAN.md — SEEDG-01 steering core: transport-neutral SteerQueue, boundary drain at the runTurn iteration top, steering_delivery fold (anchor-safe, replay-parity)
-- [ ] 23-03-PLAN.md — SEEDG-02 store guards: pre-restore snapshot id family (three-site grammar), nested-repo refusal, age+count GC with object expiry, user-repo .git/info/exclude append
+- [x] 23-03-PLAN.md — SEEDG-02 store guards: pre-restore snapshot id family (three-site grammar), nested-repo refusal, age+count GC with object expiry, user-repo .git/info/exclude append
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -499,7 +499,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 | 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 6/6 | Complete    | 2026-09-07 |
 | 21. Context & Policy Parity Closures | v1.2 | 6/6 | Complete    | 2026-09-06 |
 | 22. Background Execution + Sandbox Reality | v1.2 | 0/? | Not started | - |
-| 23. SEED Gaps Close-out | v1.2 | 1/5 | In Progress|  |
+| 23. SEED Gaps Close-out | v1.2 | 2/5 | In Progress|  |
 | 24. Documentation & Ops Tails | v1.2 | 0/? | Not started | - |
 | 25. SEED-001 Kit Extraction | v1.2 | 0/? | Not started | - |
 
