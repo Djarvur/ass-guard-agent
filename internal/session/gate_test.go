@@ -848,6 +848,7 @@ type countingSubagentRunner struct {
 
 func (f *countingSubagentRunner) Run(
 	_ context.Context, _ *Session, _, _, _ string, _ []string, _ *ecosys.Agent,
+	_ SubagentDispatchPlan,
 ) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

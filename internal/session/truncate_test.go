@@ -143,6 +143,7 @@ type bigResultRunner struct{ result string }
 
 func (b bigResultRunner) Run(
 	_ context.Context, _ *Session, _, _, _ string, _ []string, _ *ecosys.Agent,
+	_ SubagentDispatchPlan,
 ) (string, error) {
 	return b.result, nil
 }
