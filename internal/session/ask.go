@@ -571,6 +571,27 @@ func (s *Session) resumeAskForm(
 	return stop
 }
 
+// CancelPendingAsk resolves the pending ask CANCELLED-NORMAL (23-02,
+// SEEDG-01/D-06 — the parked-cancel grammar's session side): the ask is
+// claimed and the suspended turn resumes with the NON-ANSWER form — exactly
+// the D-01 timer's path (17-D-13's drain semantics applied proactively), so
+// the settle signal closes and the exactly-once claim discipline is
+// untouched. The RUNNING turn (if any) is never touched — cancellation
+// resolves the ask, nothing more. Fails with errNoPendingAsk when the timer
+// or a reply already won the claim.
+func (s *Session) CancelPendingAsk(ctx context.Context) (string, error) {
+	if s.ask == nil {
+		return "", errNoPendingAsk
+	}
+
+	p, ok := s.ask.Claim()
+	if !ok {
+		return "", errNoPendingAsk
+	}
+
+	return s.resumeAskClaimed(ctx, p, nil), nil // nil reply = the cancelled-normal non-answer form
+}
+
 // ResolveAskStructured is the widened structured-reply seam (17-04, ACP-02):
 // a structured elicitation accept resolves the pending ask exactly like
 // ResolveAsk — the content map renders into the CAPTURED answered form

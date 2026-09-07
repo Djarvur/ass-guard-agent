@@ -620,3 +620,102 @@ func TestSteeringAntiZombie(t *testing.T) {
 		}
 	}
 }
+
+// TestParkedAskNoteAndRecord pins D-05/D-23-02: an ask surfaced by the turn
+// loop parks visibly — exactly one "ask waiting behind running turn: <summary>"
+// note on the live chunk family and exactly one parked_ask transcript line
+// (REDACTED path) carrying the turn id + summary.
+func TestParkedAskNoteAndRecord(t *testing.T) {
+	t.Parallel()
+
+	bus := event.NewBus()
+	notes := bus.Subscribe("AgentMessageChunk", event.BufAgentMessageChunk)
+
+	m := newTestManager(t, "s-parked")
+	s := &Session{
+		Manager: m, Projector: NewProjector(fakeProfile("test agent"), m),
+		Bus: bus, SessionID: "s-parked",
+	}
+	s.SetAskBroker(context.Background(), NewAskBroker(0, nil))
+
+	qJSON, _ := json.Marshal([]AskQuestion{{
+		Question: "which database?", Header: "db",
+		Options: []AskOption{{Label: "postgres"}},
+	}})
+
+	s.suspendForAsk("s-parked-turn-001", "call-1", qJSON, "AskUserQuestion")
+
+	// Exactly one parked_ask line with the summary.
+	lines, _ := m.ReadAll()
+
+	var parked []Line
+
+	for _, l := range lines {
+		if l.Type == TypeParkedAsk {
+			parked = append(parked, l)
+		}
+	}
+
+	if len(parked) != 1 {
+		t.Fatalf("%d parked_ask lines; want 1", len(parked))
+	}
+
+	if parked[0].TurnID != "s-parked-turn-001" || parked[0].Text != "which database?" {
+		t.Errorf("parked_ask line = turn %q text %q; want the turn id + question summary",
+			parked[0].TurnID, parked[0].Text)
+	}
+
+	// Exactly one D-05 note through the live chunk family.
+	var d05 bool
+
+	for {
+		select {
+		case ev := <-notes:
+			if chunk, ok := ev.(event.AgentMessageChunk); ok &&
+				strings.HasPrefix(chunk.Content, "ask waiting behind running turn: ") &&
+				strings.Contains(chunk.Content, "which database?") {
+				d05 = true
+			}
+		default:
+			goto drainedNotes //nolint:gocritic // label is the drain exit
+		}
+	}
+
+drainedNotes:
+	if !d05 {
+		t.Error("the D-05 parked note was not emitted on the live chunk family")
+	}
+}
+
+// TestParkedAskReplayTolerance pins 16-D-20 for the new kind: parked_ask
+// lines are audit markers the Projector never folds — a transcript carrying
+// them projects identically to one without.
+func TestParkedAskReplayTolerance(t *testing.T) {
+	t.Parallel()
+
+	m := newTestManager(t, "s-park-tol")
+	p := NewProjector(fakeProfile("test agent"), m)
+
+	const turn = "s-park-tol-turn-001"
+
+	_ = m.AppendUserMessage(turn, []ContentBlock{{Type: blockText, Text: "the task"}})
+	_ = m.AppendParkedAsk(turn, "which way?")
+	_ = m.AppendAssistantMessage(turn, "the answer")
+
+	msgs, err := p.Project(turn)
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+
+	// The parked marker is invisible: seed + one assistant message only —
+	// no extra user message, no marker content anywhere.
+	for i := range msgs {
+		if strings.Contains(msgs[i].Content, "which way?") || strings.Contains(msgs[i].Content, "ask waiting") {
+			t.Errorf("parked-ask content leaked into the projected window: %+v", msgs[i])
+		}
+	}
+
+	if len(msgs) != 2 { //nolint:mnd // seed + assistant
+		t.Errorf("window has %d messages; want 2 (the parked marker folds to nothing): %+v", len(msgs), msgs)
+	}
+}

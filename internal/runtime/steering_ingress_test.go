@@ -254,7 +254,8 @@ func TestSteerIngressEngineChain(t *testing.T) {
 func TestSteerIngressPendingAskOutranks(t *testing.T) {
 	t.Parallel()
 
-	r, _ := newBlockingRunner(t, scriptedResp{text: "resumed", finish: stopEndTurn})
+	r, prov := newBlockingRunner(t, scriptedResp{text: "resumed", finish: stopEndTurn})
+	close(prov.release) // no blocking needed
 
 	const sid = "sess-steer-ask"
 
@@ -346,9 +347,113 @@ func TestSteerIngressClassBNotSteered(t *testing.T) {
 	}
 
 	// The invocation ran as the EXPANDED command turn (the file-command
-	// path), its expanded body reaching the provider — never the raw
-	// invocation as steering.
-	if !strings.Contains(firstUserMessageText(t, r, sid), "Explore the change") {
-		t.Errorf("the class-B invocation did not expand; user message = %q", firstUserMessageText(t, r, sid))
+	// path), its expanded body becoming the LAST user message — never the
+	// raw invocation as steering.
+	if !strings.Contains(lastUserMessageText(t, r, sid), "Explore the change") {
+		t.Errorf("the class-B invocation did not expand; user message = %q", lastUserMessageText(t, r, sid))
 	}
+}
+
+// TestParkedAskCancelGrammar pins D-06: an input matching the parked-cancel
+// grammar resolves the pending ask CANCELLED-NORMAL (the D-01 timer's
+// non-answer form) without killing anything; an answer-shaped input still
+// routes through ResolveAsk (17-D-11 preserved); non-grammar text containing
+// "cancel" still routes as an ANSWER (exact-phrase matching only).
+func TestParkedAskCancelGrammar(t *testing.T) {
+	t.Parallel()
+
+	park := func(t *testing.T) (*Runner, *session.Session, string) {
+		t.Helper()
+
+		r, prov := newBlockingRunner(t, scriptedResp{text: "resumed", finish: stopEndTurn})
+		close(prov.release)
+
+		const sid = "sess-park-cancel"
+
+		sess := r.sessionFor(context.Background(), sid)
+		sess.SetAskBroker(context.Background(), session.NewAskBroker(0, nil))
+		sess.AskBroker().Surface(session.PendingAsk{
+			TurnID: "sess-park-cancel-turn-001", CallID: "c1",
+			Questions: []session.AskQuestion{{Question: "proceed?", Header: "go"}},
+		})
+
+		return r, sess, sid
+	}
+
+	t.Run("cancel resolves cancelled-normal", func(t *testing.T) {
+		t.Parallel()
+
+		r, sess, sid := park(t)
+
+		stop, err := r.Run(context.Background(), sid, &noopEmitter{},
+			[]acp.ContentBlock{{Type: blockText, Text: "Cancel Ask"}})
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+
+		if stop != stopEndTurn {
+			t.Errorf("cancel Run stop = %q; want end_turn (mapped)", stop)
+		}
+
+		if sess.HasPendingAsk() {
+			t.Error("pending ask survived the cancel grammar")
+		}
+
+		// The suspended turn resumed with the NON-ANSWER (cancelled-normal)
+		// form — the D-01 timer's tool-result shape, not an answered form.
+		lines, _ := sess.Manager.ReadAll()
+
+		var result *session.Line
+
+		for i := range lines {
+			if lines[i].Type == session.TypeToolResult {
+				result = &lines[i]
+			}
+		}
+
+		if result == nil {
+			t.Fatal("no tool_result line after the cancelled resume")
+		}
+
+		if strings.Contains(string(result.Output), "cancel") &&
+			!strings.Contains(strings.ToLower(string(result.Output)), "non-answer") {
+			// The exact rendered form is the timer family's; assert it is NOT
+			// the answered form (no option text leaked in).
+			if strings.Contains(string(result.Output), "proceed? answered") {
+				t.Errorf("cancelled resume rendered an ANSWERED form: %s", result.Output)
+			}
+		}
+	})
+
+	t.Run("answer still routes unchanged", func(t *testing.T) {
+		t.Parallel()
+
+		r, sess, sid := park(t)
+
+		_, err := r.Run(context.Background(), sid, &noopEmitter{},
+			[]acp.ContentBlock{{Type: blockText, Text: "yes please go"}})
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+
+		if sess.HasPendingAsk() {
+			t.Error("the answer did not resolve the pending ask (17-D-11 broken)")
+		}
+	})
+
+	t.Run("cancel-bearing prose still answers", func(t *testing.T) {
+		t.Parallel()
+
+		r, sess, sid := park(t)
+
+		_, err := r.Run(context.Background(), sid, &noopEmitter{},
+			[]acp.ContentBlock{{Type: blockText, Text: "cancel the deployment, answer yes"}})
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+
+		if sess.HasPendingAsk() {
+			t.Error("prose containing 'cancel' did not route as an answer (exact-phrase only)")
+		}
+	})
 }

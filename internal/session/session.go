@@ -446,6 +446,11 @@ func subagentResultPayload(result string) (json.RawMessage, bool) {
 // non-ACP frontend (Telegram, TG-02) enqueue through the same object.
 func (s *Session) SetSteerQueue(q *SteerQueue) { s.steer = q }
 
+// SteerQueue returns the wired steering queue (nil when steering is not
+// wired) — the runtime's pre-mutex ingress classifier enqueues through it
+// (23-02), and the transport-neutral consumer API (TG-02) does the same.
+func (s *Session) SteerQueue() *SteerQueue { return s.steer }
+
 // drainSteering performs one boundary drain (23-01, SEEDG-01): all inputs
 // queued since the last boundary coalesce into ONE marker-wrapped user-role
 // message (D-02), recorded as a steering_delivery transcript line the
@@ -971,8 +976,49 @@ func (s *Session) suspendForAsk(turnID, callID string, output json.RawMessage, t
 	}
 
 	_ = s.Manager.AppendAskSuspended(turnID, callID, qJSON)
+
+	// 23-02 (SEEDG-01, D-05): the parked ask is visible the moment it parks —
+	// one note on the live chunk family (the per-Run forwarder is still
+	// subscribed here: suspendForAsk runs inside runTurn) plus the durable
+	// parked_ask record. Parking never blocks anything (D-07): both are
+	// fire-and-forget writes; failures degrade loudly (AUD-03), never
+	// turn-fatal.
+	summary := askSummaryOf(qs)
+
+	if perr := s.Manager.AppendParkedAsk(turnID, summary); perr != nil {
+		slog.Warn("parked-ask record write failed", "turnID", turnID, "error", perr.Error())
+	}
+
+	if s.Bus != nil {
+		s.Bus.Publish(event.AgentMessageChunk{
+			TurnID: turnID, MessageID: turnID,
+			Content: "ask waiting behind running turn: " + summary,
+		})
+	}
+
 	s.ask.Surface(PendingAsk{TurnID: turnID, CallID: callID, Questions: qs, Kind: kind})
 }
+
+// askSummaryOf derives the parked note's summary from the surfaced questions
+// (23-02, D-05): the first question's text, bounded to a display-friendly
+// length. The question payload is model-authored untrusted content — the
+// summary is DISPLAY-ONLY.
+func askSummaryOf(qs []AskQuestion) string {
+	for _, q := range qs {
+		if q.Question != "" {
+			return truncate(q.Question, maxAskSummaryChars)
+		}
+	}
+
+	if len(qs) > 0 && qs[0].Header != "" {
+		return truncate(qs[0].Header, maxAskSummaryChars)
+	}
+
+	return "question"
+}
+
+// maxAskSummaryChars bounds the parked-note summary (23-02 display hygiene).
+const maxAskSummaryChars = 160
 
 // stubExecutor returns the Phase-2 canned stub for every tool (D-15 — execution
 // stays stubbed until SetToolExecutor wires the RealExecutor). It is used by

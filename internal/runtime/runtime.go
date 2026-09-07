@@ -294,6 +294,9 @@ type Runner struct {
 	trackers          sync.Map // sessionID -> *tasks.Tracker
 	wakeInFlight      sync.Map // sessionID -> *atomic.Bool
 	wakeRetryInterval time.Duration
+	// backgroundCaps resolves the D-12 caps at sessionFor time (nil = the
+	// 8/16 defaults; the serve composition binds the config surface).
+	backgroundCaps func() (subagents, bash int)
 
 	// 17-02 (ACP-01): the permission-gate composition. permAskFire is the
 	// permission-ask surface callback injected from the serve composition
@@ -815,6 +818,19 @@ func (r *Runner) Run( //nolint:funlen // the turn pipeline's composition root
 		return "", fmt.Errorf("session %s unavailable: transcript manager could not be created", sessionID)
 	}
 
+	// 23-02 (SEEDG-01): the pre-mutex ingress classifier. This is
+	// load-bearing placement — everything below the Lock holds the session
+	// turn mutex, so a classifier that waited there could never observe an
+	// active turn without self-deadlocking (Pitfall 4's shape): queue-behind
+	// masquerading as steering, the exact descope SEEDG-01 forbids. A
+	// plain-text prompt with a turn or chain ACTIVE enqueues on the
+	// session's SteerQueue and returns promptly (the running turn is
+	// untouched — D-04); everything else falls through to today's flow
+	// unchanged.
+	if stop, handled := r.routeSteering(sess, sessionID, emit, prompt); handled {
+		return stop, nil
+	}
+
 	// 12-07 (D-02 queue semantics): the per-session turn serialization — the
 	// whole turn (ask-reply resumes included) holds the session mutex, so an
 	// automation firing QUEUES behind it instead of interrupting, and client
@@ -938,6 +954,97 @@ func (r *Runner) Run( //nolint:funlen // the turn pipeline's composition root
 	}
 
 	return mapAskStop(stop), err
+}
+
+// routeSteering is the pre-mutex ingress classifier (23-02, SEEDG-01 /
+// Pattern 6): it runs at the very top of Run, BEFORE the session turn mutex,
+// using only the existing race-tested active-state primitives —
+// clientTurnActive (the turnActive map) and chainCount (parked chains hold
+// no mutex while chainCount > 0). No new flags.
+//
+// Classification order (the locked order — Pitfall 11's ambiguity matrix):
+//
+//  1. Nothing active (no client turn, no chain) → ordinary new turn
+//     (handled=false; today's flow under the mutex, byte-identical).
+//  2. Pending broker ask → handled=false: the input is the operator's
+//     ANSWER (or the 23-02 cancel grammar), routed by routeAskReply under
+//     the mutex exactly as today — the ask route OUTRANKS steering. (When a
+//     broker ask is pending, the suspending turn already released the
+//     mutex, so this fall-through never blocks on a turn.)
+//  3. Class-B resolve slot (the 20-01 locked contract: AFTER the ask
+//     route, BEFORE steering enqueue): a chain-resolved slash-command
+//     invocation NEVER becomes steering text — it falls through to the
+//     ordinary path. 23-05 fills the pre-mutex /undo handling here (D-12's
+//     auto-cancel could never run under the held mutex — Pitfall 4).
+//  4. Plain text with a turn/chain ACTIVE → steering: enqueue on the
+//     session's SteerQueue, emit the queued note through the in-hand emit
+//     (the live-emitter precedent — never a post-turn bus publish, which
+//     is LOST), and return end_turn immediately (Open Question 1's
+//     resolution: return-after-enqueue). The running turn continues via the
+//     session-lifetime forwarder (WINDOWS #3 split) and delivers the
+//     steering at its next model-request boundary (23-01's drain).
+//
+// The steered enqueue path returns the ticket to the transport layer's
+// disposal: the transport-neutral API hands it to the caller (TG-02's ack
+// contract); the ACP adapter drops it — the queued note and the boundary
+// drain's "steering applied: N inputs" are the operator-visible record.
+func (r *Runner) routeSteering(
+	sess *session.Session, sessionID string, emit acp.ChunkEmitter, prompt []acp.ContentBlock,
+) (string, bool) {
+	if !r.clientTurnActive(sessionID) && r.chainCount(sessionID) == 0 {
+		return "", false // nothing active — the ordinary new-turn path
+	}
+
+	// Step 2: a pending ask outranks steering (handled under the mutex).
+	if sess.HasPendingAsk() {
+		return "", false
+	}
+
+	blocks := toContentBlocks(prompt)
+
+	idx := firstTextBlockIndex(blocks)
+	if idx < 0 || blocks[idx].Text == "" {
+		// Non-text input mid-turn: steering is text-only in v1 — the
+		// ordinary path (queue-behind) applies.
+		return "", false
+	}
+
+	// Step 3: the class-B resolve slot — a chain-resolved invocation never
+	// steers (20-01's locked position; 23-05 fills /undo here).
+	if r.resolvesAsCommand(blocks[idx].Text) {
+		return "", false
+	}
+
+	q := sess.SteerQueue()
+	if q == nil {
+		return "", false // steering unwired (bare sessions) — ordinary path
+	}
+
+	_ = q.Enqueue(blocks[idx].Text) // ticket: transport-layer disposal (see doc)
+
+	note := fmt.Sprintf("steering queued — %d pending", q.Pending())
+
+	if err := emit.AgentMessageChunk(sess.CurrentTurnID(), note); err != nil {
+		log.Printf("ass-guard: steering queued-note emit failed (input stays queued): %v", err)
+	}
+
+	return stopEndTurn, true
+}
+
+// resolvesAsCommand reports whether text is a chain-resolved slash-command
+// invocation (the class-B predicate — 23-02): the SAME parse+resolve pair
+// tryLocalCommand runs, WITHOUT its side effects (no echo, no handler, no
+// resolve counter). Only a RESOLVED name counts — an unknown /word is plain
+// prose to the system and steers like any text.
+func (r *Runner) resolvesAsCommand(text string) bool {
+	key, _, ok := ecosys.ParseInvocation(text)
+	if !ok {
+		return false
+	}
+
+	_, found := r.commandChainRef().resolve(key)
+
+	return found
 }
 
 // mapAskStop maps the INTERNAL ask-suspension stop marker to the ACP-facing
@@ -1701,7 +1808,19 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	// one HookRunner per session (discovered plugin hooks; the runner is
 	// nil-safe when none are installed) wraps every core executor.
 	hookRunner := ecosys.NewHookRunner(r.reg.Hooks, sessionID, dir, mgr.Path())
+
+	// 22-02 (D-12): the caps resolve per session construction
+	// (apply-as-landed — running sessions keep theirs).
+	subsCap, bashCap := 8, 16 // D-10/D-11 defaults
+
+	if r.backgroundCaps != nil {
+		if s, b := r.backgroundCaps(); s > 0 && b > 0 {
+			subsCap, bashCap = s, b
+		}
+	}
+
 	taskRegistry := coreexec.NewTaskRegistry()
+	taskRegistry.Cap = bashCap
 
 	// 22-01 (D-01..D-03, PAR-07/PAR-08): the ONE task-notification tracker
 	// beside the registry. Registry completions land as kind-tagged
@@ -1709,7 +1828,7 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	// import; this adapter owns the mapping); every completion schedules the
 	// session's wake-drain chain; OnClose drops queued-but-unstarted
 	// subagent registrations with a counted note (OQ5).
-	tracker := tasks.NewTracker(tasks.TrackerOpts{})
+	tracker := tasks.NewTracker(tasks.TrackerOpts{SubagentCap: subsCap})
 	r.trackers.Store(sessionID, tracker)
 
 	taskRegistry.CompletionHook = func(taskID, kind, exitStatus string, duration time.Duration, tail, outputFile string) {
@@ -1845,6 +1964,12 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	// timer; resumes run under the serve-lifetime ctx).
 	//nolint:contextcheck // the serve-lifetime ctx is a stored field, not derived here
 	s.SetAskBroker(r.serveCtxOrBackground(), askBroker)
+	// 23-02 (SEEDG-01): the per-session steering queue — mid-turn inputs
+	// enqueue here through the pre-mutex classifier (routeSteering); the
+	// session's runTurn drains it at every model-request boundary (23-01).
+	// Transport-neutral: a non-ACP frontend (TG-02) enqueues through the
+	// same object.
+	s.SetSteerQueue(session.NewSteerQueue())
 	// 17-REVIEW CR-02: serialize every ASYNC resume driver (the ask queue's
 	// pump resolution — permission AND question families — and the D-01
 	// timer) on the SAME per-session turn mutex Run holds for its whole turn.
@@ -2592,6 +2717,16 @@ func (r *Runner) SetAskFire(f func(ctx context.Context, e *session.AskEntry) ses
 	r.askFire = f
 }
 
+// SetBackgroundCaps injects the D-12 cap resolver (22-02): the serve
+// composition binds the config surface's EffectiveBackgroundCaps (project >
+// global > the 8/16 defaults) after the surface exists; every sessionFor
+// construction reads the pair into the TaskRegistry (bash cap) and the
+// tasks.Tracker (subagent cap). nil = unwired — the documented defaults
+// (apply-as-landed: no mid-session cap mutation).
+func (r *Runner) SetBackgroundCaps(f func() (subagents, bash int)) {
+	r.backgroundCaps = f
+}
+
 // PublishAskChunk publishes one client-visible ask-surface chunk (17-04):
 // the plain-text fallback's delivery seam and the queue-note emitter's sink —
 // the same bus shape the AskBroker onSurface callback has always used.
@@ -2942,12 +3077,56 @@ func (r *Runner) routeAskReply(
 		return "", false
 	}
 
+	// 23-02 (SEEDG-01, D-06): the parked-cancel grammar — parsed BEFORE
+	// ordinary reply interpretation, so a cancel-shaped input never becomes
+	// an answer and an answer-shaped input never becomes a cancel (Pitfall
+	// 11). Resolution is cancelled-normal through the existing settle path
+	// (the D-01 timer's non-answer form — 17-D-13 drain semantics applied
+	// proactively); the RUNNING turn, if any, is untouched.
+	if isParkedCancel(blocks[idx].Text) {
+		stop, cerr := sess.CancelPendingAsk(ctx)
+		if cerr != nil {
+			return "", false // the timer/reply won the claim race — an ordinary turn
+		}
+
+		return mapAskStop(stop), true
+	}
+
 	stop, rerr := sess.ResolveAsk(ctx, blocks[idx].Text)
 	if rerr != nil {
 		return "", false // the D-01 timer won the race — an ordinary turn
 	}
 
 	return mapAskStop(stop), true
+}
+
+// parkedCancelPhrases is the parked-ask cancel grammar's accepted vocabulary
+// (23-02, D-06 — CONTEXT discretion, conservative and exact-phrase): the
+// single place the grammar is defined. Matching is exact after whitespace
+// trimming and case-folding — never substring (an answer containing the word
+// "cancel" must still route as an answer).
+var parkedCancelPhrases = []string{ //nolint:gochecknoglobals // immutable grammar table
+	"cancel ask",
+	"cancel the ask",
+	"cancel question",
+	"cancel the question",
+	"dismiss ask",
+	"dismiss the ask",
+	"never mind",
+	"nevermind",
+}
+
+// isParkedCancel reports whether an input matches the parked-cancel grammar.
+func isParkedCancel(text string) bool {
+	trimmed := strings.ToLower(strings.TrimSpace(text))
+
+	for _, p := range parkedCancelPhrases {
+		if trimmed == p {
+			return true
+		}
+	}
+
+	return false
 }
 
 // tryLocalCommand is the class-B intercept (20-01/CMDS-02, D-05): parses the

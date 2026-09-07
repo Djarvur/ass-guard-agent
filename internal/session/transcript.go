@@ -101,6 +101,16 @@ const (
 	// window identically to live (18-D-01). Cancelled inputs NEVER become
 	// steering_delivery lines.
 	TypeSteeringDelivery = "steering_delivery"
+
+	// TypeParkedAsk records an ask PARKED waiting for the operator (23-02,
+	// SEEDG-01/D-05): the suspension's question summary as Text plus the
+	// waiting turn's id — the durable half of the parked ask's visibility
+	// (the live half is the D-05 note on the chunk family). An AUDIT MARKER
+	// the Projector never folds (readers tolerate it, 16-D-20): parked asks
+	// affect delivery order only, never the model window. Appended by
+	// Manager.AppendParkedAsk through the REDACTED path at the suspendForAsk
+	// surface.
+	TypeParkedAsk = "parked_ask"
 )
 
 // ContentBlock is one entry of a user/assistant message's content (mirrors the

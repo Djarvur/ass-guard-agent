@@ -418,6 +418,17 @@ func (m *Manager) AppendSteeringDelivery(turnID, text string, count int) error {
 	})
 }
 
+// AppendParkedAsk records an ask parked waiting for the operator (23-02,
+// SEEDG-01/D-05): the durable visibility half — summary is the surfaced
+// question's summary text, turnID the waiting turn. REDACTED path (the
+// T-16-04 raw_thinking exemption never widens); audit marker only, never
+// folded by the Projector.
+func (m *Manager) AppendParkedAsk(turnID, summary string) error {
+	return m.appendLine(&Line{
+		Type: TypeParkedAsk, TurnID: turnID, Timestamp: now(), Text: summary,
+	})
+}
+
 // AppendSynthetic appends one reconciliation closure line (18-02, D-02): the
 // 18-05 load path calls it for every closure Reconcile returned, with the
 // line's Cause already set to InterruptedCause. It routes through the SAME
