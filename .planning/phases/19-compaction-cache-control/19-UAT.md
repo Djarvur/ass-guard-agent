@@ -33,6 +33,14 @@ pending: 0
 skipped: 0
 blocked: 0
 
+## Deferred Follow-Ups
+
+```yaml
+- test: 2
+  idea: "Compaction observability (from G-19-2 diagnosis, 2026-09-07): compaction is invisible in the editor — the compacting note degrades to stderr+counter because no session/update status frame exists in the landed v1 vocabulary and PAR-01 bus isolation bars agent_message_chunk. The operator could not distinguish 'did not fire' from 'fired silently' without reading transcripts on disk. Needs a vocabulary/UX decision — natural vehicle is Phase 20's built-in command/status work (/status could surface 'compacted N times, last at …')."
+  deferred_at: 2026-09-07
+```
+
 ## Gaps
 
 - gap_id: G-19-1
@@ -53,18 +61,9 @@ blocked: 0
     - WR-03 rider: bound the summarize input near-limit and stop the per-loop-head re-fire (up to 64 guaranteed-failing summarize calls per turn)
 - gap_id: G-19-2
   truth: "A live session at a forced-low threshold (e.g. 5%) observably compacts — or at minimum, the operator can determine from the editor whether compaction happened"
-  status: failed
-  reason: "Operator 2026-09-07: setting compaction-threshold to 5 produced no observable compaction in a real session. Indistinguishable from the user's seat whether (i) the live-applied threshold didn't govern the real session's comparison, (ii) the threshold check didn't fire (usage estimate / limit base — see 19-REVIEW WR-02 writer-lag double-count and WR-06 runner-level limit), or (iii) it fired invisibly (the compacting note degraded to stderr+counter by pre-authorized design — no session/update status frame exists in the landed vocabulary). The designed invisibility alone makes the feature unverifiable and undiscoverable from the editor."
-  severity: major
-  test: 2
-  artifacts:
-    - internal/session/compaction.go (maybeCompact loop-head check, usage estimate, D-09 degrade)
-    - internal/session/session.go (loop-head wiring)
-    - internal/acpserve/config_surface.go (set_config_option live-apply chain; WR-01 initialize-blob relay gap)
-    - .planning/phases/19-compaction-cache-control/19-REVIEW.md (WR-01, WR-02, WR-06)
-    - internal/session/compaction_test.go (TestCompactionLive_MenuThresholdRoundTrip — proves live-apply in the harness, not in a real Zed session)
-  missing:
-    - diagnosis: root cause among (i) live-apply not reaching the real session, (ii) threshold check not firing (estimate/limit base), (iii) fired-but-invisible
-    - observability: a user-visible compaction surface (session/update frame of an existing update class, or an explicit note) — needs a UX decision given the landed v1 vocabulary
+  status: diagnosed
+  diagnosed_at: 2026-09-07
+  root_cause: "STALE TEST BINARY — the installed ~/go/bin/ass-guard was v0.0.0-20260906073854-185ccc616878+dirty (built Sep 6 22:32, before ANY phase-19 commit; first 19-xx commit ~23:20 Sep 6). Verified absent from that binary: the entire 19-04 engine (zero occurrences of maybeCompact / SetCompactionSettings / 'compaction: ' log strings). The compaction-threshold menu entry the operator set DID exist — as 16-05's PENDING NO-OP (ConfigSurface advertised it since eab5136; 19-05 flipped it to a real handler) — so Zed displayed the field, accepted 5, and the binary silently ignored it. Consistent evidence: no compaction keys in ~/tmp/perm-uat/.ass-guard/config.yaml (no-op wrote nothing), zero compaction marker lines in all three test transcripts. The committed feature is test-pinned (TestCompactionLive_MenuThresholdRoundTrip). Secondary REAL finding routed to Deferred Follow-Ups: even on a fresh binary, compaction is unobservable from the editor (stderr+counter only; PAR-01 bars agent_message_chunk; no status frame in the landed vocabulary) — the operator could not distinguish 'did not fire' from 'fired silently'."
+  resolution: "Fresh binary installed 2026-09-07 (v0.0.0-20260907153836-a8f63f31b1b0, engine string verified present). RETEST required: set compaction-threshold low in a live session, confirm compaction fires (marker on disk; summary-coherent continuation), then set back to 80."
 
 
