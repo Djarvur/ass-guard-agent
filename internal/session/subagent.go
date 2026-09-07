@@ -3,6 +3,7 @@ package session
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"runtime/debug"
 	"strings"
@@ -292,11 +293,36 @@ func (s *Session) streamAndEmitTaggedProf(
 	return resp, sb.String(), nil
 }
 
+// backgroundSubagentCtxKey marks a ctx running inside a BACKGROUND
+// subagent loop (22-03, OQ3) — ask-class tools decline with the 17-D-07
+// note: no human is present for background work, and the decline IS the
+// permission decision (the plan's prohibition: background work can never
+// escalate into a silent ask).
+type backgroundSubagentCtxKey struct{}
+
+// ContextWithBackgroundSubagent arms the 22-03 ask-decline for the loop's
+// ctx (the runtime launcher wraps the serve-ctx before the nested run).
+func ContextWithBackgroundSubagent(ctx context.Context) context.Context {
+	return context.WithValue(ctx, backgroundSubagentCtxKey{}, true)
+}
+
+// errBackgroundAskDeclined is the decline the subagent sees as its tool
+// result (decline, not crash — the loop continues).
+var errBackgroundAskDeclined = errors.New(
+	"declined: background subagent work has no human present (automation-class decline)")
+
 // executeRestricted runs a tool via the restricted executor (D-10). If no
-// toolExec is wired, returns the canned stub.
+// toolExec is wired, returns the canned stub. 22-03 (OQ3): inside a
+// background subagent, ask-class tools DECLINE with the note before
+// execution — the ctx marker scopes the rule to the background loop alone
+// (no session-global state; a concurrent client turn is never affected).
 func (s *Session) executeRestricted(
 	ctx context.Context, tc provider.ToolCall, restricted []string,
 ) (json.RawMessage, error) {
+	if ctx.Value(backgroundSubagentCtxKey{}) != nil && s.gateAskClass(tc.Name) {
+		return nil, errBackgroundAskDeclined
+	}
+
 	if s.toolExec == nil {
 		return stubToolResult, nil
 	}
@@ -338,6 +364,12 @@ func subagentProfile(s *Session, agentDef *ecosys.Agent, plan SubagentDispatchPl
 // planSubagent resolves one dispatch's routing through the runtime planner
 // seam (20-03); a nil planner (bare test sessions) keeps the pre-20-03
 // shape: parent model, session provider, no note.
+//
+// Phase-20 delegation seam (22-03, Pattern 7 precondition mark): this is
+// the ONE resolution call site BOTH dispatch modes share — DispatchSubagent
+// (foreground) and DispatchSubagentBackground (background) each call it
+// exactly once. When 20-03's resolver contract evolves, both modes inherit
+// the change here by construction; a second resolver is never written.
 func (s *Session) planSubagent(agentDef *ecosys.Agent) SubagentDispatchPlan {
 	if s.SubagentModelPlanner == nil {
 		return SubagentDispatchPlan{}

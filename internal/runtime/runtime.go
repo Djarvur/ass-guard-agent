@@ -2009,7 +2009,12 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 
 		launch := tasks.RunBackgroundSubagent(tasks.SubagentDeps{
 			Run: func(bgCtx context.Context, progress func(string)) (string, error) {
-				return runSubagentWithProgress(bgCtx, sessLocal, req, r.bus, progress)
+				// 22-03 (OQ3): arm the ask-decline for the loop's ctx — a
+				// background subagent has no human; ask-class tools decline
+				// with the 17-D-07 note (scoped to this ctx, never the
+				// session — a concurrent client turn is unaffected).
+				return runSubagentWithProgress(
+					session.ContextWithBackgroundSubagent(bgCtx), sessLocal, req, r.bus, progress)
 			},
 			WorkDir:  dir,
 			Tracker:  tracker,

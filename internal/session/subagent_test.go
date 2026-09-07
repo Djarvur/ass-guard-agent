@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -446,20 +447,21 @@ func decodeLine(t *testing.T, raw string) Line {
 
 // gatedSubagentRunner is a fake whose Run blocks on a gate channel — the
 // async_launched assertion fires while the "subagent" is still running.
+// Concurrent-safe: foreground and background dispatches share one fake.
 type gatedSubagentRunner struct {
 	gate    chan struct{}
 	started chan struct{}
-	calls   int
+	calls   atomic.Int32
 }
 
 func (g *gatedSubagentRunner) Run(
 	_ context.Context, _ *Session, _, _, _ string, _ []string, _ *ecosys.Agent, _ SubagentDispatchPlan,
 ) (string, error) {
+	g.calls.Add(1)
+
 	if g.started != nil {
 		g.started <- struct{}{}
 	}
-
-	g.calls++
 
 	<-g.gate
 
@@ -487,7 +489,7 @@ func newBackgroundSession(t *testing.T) (*Session, *gatedSubagentRunner, *bgTest
 	s.Catalog = toolcat.NewCatalog()
 
 	env := newBgTestEnv(t)
-	runner := &gatedSubagentRunner{gate: make(chan struct{}), started: make(chan struct{}, 1)}
+	runner := &gatedSubagentRunner{gate: make(chan struct{}), started: make(chan struct{}, 4)}
 	s.subagentRunner = runner
 	wireTestBackgroundLaunch(s, env)
 
@@ -775,4 +777,97 @@ func TestDispatchBackground_QueuedOverCap(t *testing.T) {
 	<-runner.started
 
 	env.tracker.CancelQueued()
+}
+
+// TestDispatchBackgroundRouting (22-03 Task 3, Pattern 7 pin): foreground
+// and background dispatches with identical inputs resolve the SAME model —
+// the equality is the seam (one resolution call site — planSubagent — two
+// lifetimes; the assertion survives 20-03 resolver evolution because it
+// checks EQUALITY, not a value).
+func TestDispatchBackgroundRouting(t *testing.T) {
+	t.Parallel()
+
+	s, runner, _ := newBackgroundSession(t)
+
+	// Foreground dispatch (the gated runner holds it; we only need the
+	// dispatch LINE, so a second gate release ends it).
+	go func() {
+		_, _ = s.DispatchSubagent(context.Background(), "turn-fg", "call-fg", "same prompt", nil)
+	}()
+
+	<-runner.started
+
+	// Background dispatch through the wired seam.
+	go func() {
+		_, _ = s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "dispatch bg routing"}})
+	}()
+
+	<-runner.started
+
+	// Both subagent_dispatch lines exist; their resolved models are EQUAL.
+	deadline := time.Now().Add(5 * time.Second)
+
+	models := map[string]string{}
+
+	for time.Now().Before(deadline) && len(models) < 2 {
+		for _, l := range linesOf(s) {
+			if l.Type == TypeSubagentDispatch {
+				models[l.ParentTurnID] = l.ResolvedModel
+			}
+		}
+
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	if len(models) < 2 {
+		t.Fatalf("subagent_dispatch lines = %d; want 2 (fg + bg)", len(models))
+	}
+
+	var distinct []string
+
+	for _, m := range models {
+		if len(distinct) == 0 || distinct[0] != m {
+			distinct = append(distinct, m)
+		}
+	}
+
+	if len(distinct) != 1 {
+		t.Errorf("resolved models differ across modes: %v — the modes share ONE resolution site", distinct)
+	}
+
+	close(runner.gate)
+}
+
+// TestBackgroundAskDecline (22-03 Task 3, OQ3): an ask-class tool reached
+// inside a background subagent declines with the note — no ask surfaces,
+// the loop continues.
+func TestBackgroundAskDecline(t *testing.T) {
+	t.Parallel()
+
+	// The decline is a pure executeRestricted rule over the ctx marker:
+	// a background-marked ctx + an ask-class tool declines; a plain ctx
+	// does not.
+	s, _, _ := newSubagentSession(t, nil)
+
+	askTool := toolBash // mutating → ask-class per gateAskClass
+
+	bgCtx := ContextWithBackgroundSubagent(context.Background())
+
+	_, bgErr := s.executeRestricted(bgCtx, provider.ToolCall{Name: askTool, Input: json.RawMessage(`{}`)},
+		[]string{askTool})
+	if bgErr == nil {
+		t.Fatal("ask-class tool executed inside a background subagent — must decline")
+	}
+
+	if !strings.Contains(bgErr.Error(), "no human present") {
+		t.Errorf("decline = %v; want the 17-D-07 note naming the absent human", bgErr)
+	}
+
+	// The FOREGROUND ctx (no marker) keeps executing through the restricted
+	// path (the catalog stub in this bare session).
+	_, fgErr := s.executeRestricted(context.Background(),
+		provider.ToolCall{Name: askTool, Input: json.RawMessage(`{}`)}, []string{askTool})
+	if fgErr != nil && strings.Contains(fgErr.Error(), "no human present") {
+		t.Error("foreground dispatch hit the background decline — the rule must be ctx-scoped")
+	}
 }
