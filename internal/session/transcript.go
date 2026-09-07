@@ -70,9 +70,12 @@ const (
 	// v4) + the token-usage snapshot at the boundary (input/output/cache
 	// totals) + opaque pre/post transcript pointers (PreRef/PostRef — what
 	// survived / where the projected window resets). Phase 19 reconstructs
-	// the reset from the marker alone; until then the Projector treats the
-	// kind as inert (D-20 additive-only — it is NOT a TypeBoundary reset
-	// point today).
+	// the reset from the marker alone: the marker resets turns that START
+	// after it (19-03's pinned position rule), plus the ENGINE-ARMED
+	// same-turn carve-out (19-06, G-19-1) — a marker whose TurnID equals the
+	// projected turn reshapes that turn's projection only when the engine
+	// armed the in-memory per-turn override (SetRetryCompactedTurn).
+	// Transcript content alone never reshapes a turn (tamper safety).
 	TypeCompaction = "compaction"
 
 	// TypeMentionProvenance records WHICH filesystem object answered one

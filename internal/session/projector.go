@@ -80,12 +80,36 @@ type Projector struct {
 	// modelrouting-resolved context window; zero/unset falls back to the
 	// MidTurnWindowMessages count.
 	CompactionTailBudget int64
+
+	// retryCompactedTurn is the G-19-1 ENGINE GATE for the same-turn carve-out
+	// (19-06): armed by the session's overflow-retry path so the ONE retry
+	// projects post-marker instead of re-sending a byte-identical request.
+	// A plain field under the caller-holds-turn-serialization discipline — the
+	// SetCompactionTailBudget precedent: Project's only production caller is
+	// the serialized runTurn loop (session.go), and the subagent runner never
+	// calls Project. The zero value "" means NOT armed: the carve-out requires
+	// a non-empty, EXACT turnID match, so a crafted or replayed transcript
+	// alone never reshapes a live turn's window (tamper safety, kill-9 replay
+	// determinism). The override self-expires by construction — keyed by
+	// turnID, it stops matching the moment the next turn projects.
+	retryCompactedTurn string
 }
 
 // NewProjector returns a Projector over the given profile + transcript Manager.
 func NewProjector(prof *profile.Profile, m *Manager) *Projector {
 	return &Projector{prof: prof, manager: m}
 }
+
+// SetRetryCompactedTurn arms the same-turn compaction carve-out (G-19-1,
+// 19-06): after it, Project(turnID) accepts a marker whose TurnID EQUALS the
+// projected turn — with no pre-user marker present — as that turn's reset
+// point. The engine's overflow-retry branch is the ONLY caller (armed between
+// the forced compact and the continue, so the retry's re-projection sees it);
+// it stays armed for the turn's remaining iterations (the compacted window
+// must survive follow-up tool-loop iterations) and self-expires when a
+// different turnID projects. Transcript content alone NEVER arms it — the
+// carve-out is engine-gated by construction.
+func (p *Projector) SetRetryCompactedTurn(turnID string) { p.retryCompactedTurn = turnID }
 
 // SetCompactionTailBudget injects the compaction context limit (D-05) — 19-04
 // wires the session's modelrouting-resolved context window here. The zero
@@ -114,6 +138,12 @@ func (p *Projector) SetCompactionTailBudget(limit int64) { p.CompactionTailBudge
 // user message, the seed is the marker's Summary (D-06 DURABLE — later
 // TypeBoundary lines never displace it; only a newer marker replaces it) and
 // every transcript WITHOUT a marker takes the pre-phase path byte-identically.
+// 19-06 (G-19-1) adds the ENGINE-ARMED same-turn carve-out: when the engine
+// armed the per-turn override (SetRetryCompactedTurn) and the pre-user scan
+// found nothing, a marker whose TurnID equals the projected turn reshapes
+// THAT turn's projection — the overflow retry projects post-marker instead of
+// re-sending the rejected request. Without the in-memory override the same
+// transcript projects byte-identically to the marker-free one (tamper safety).
 func (p *Projector) Project(turnID string) ([]provider.Message, error) {
 	lines, err := p.manager.ReadAll()
 	if err != nil {
@@ -122,6 +152,16 @@ func (p *Projector) Project(turnID string) ([]provider.Message, error) {
 
 	if mIdx := compactionMarkerIdx(lines, turnID); mIdx >= 0 {
 		return p.projectCompacted(lines, mIdx, turnID), nil
+	}
+
+	// The G-19-1 carve-out runs ONLY when the pinned pre-user scan found
+	// nothing AND the engine armed this exact turn — a non-empty, exact
+	// turnID match (the zero value means not-armed; transcript content alone
+	// never reaches this branch).
+	if p.retryCompactedTurn != "" && p.retryCompactedTurn == turnID {
+		if stIdx := sameTurnMarkerIdx(lines, turnID); stIdx >= 0 {
+			return p.projectSameTurnCompacted(lines, stIdx, turnID), nil
+		}
 	}
 
 	beforeBoundary, afterBoundary := splitAtResetBoundary(lines, turnID)
@@ -188,6 +228,40 @@ func (p *Projector) projectCompacted(lines []Line, mIdx int, turnID string) []pr
 
 	out := make([]provider.Message, 0, 1+len(mid))
 	out = append(out, seedMessage(seedContent(marker.Summary, currentIntent), findIntentLine(after, before, turnID)))
+	out = append(out, mid...)
+
+	return out
+}
+
+// projectSameTurnCompacted is the G-19-1 engine-armed same-turn carve-out
+// (19-06): a marker whose TurnID EQUALS the projected turn reshapes that
+// turn's own projection, so the overflow retry's request carries the marker's
+// summary seed plus the turn's own current intent and a budget-fill
+// post-marker tail — measurably smaller than the rejected request. It reuses
+// the projectCompacted seed/tail rules verbatim (seedContent wrapper,
+// boundCompactionTail budget discipline, foldExchanges across turns) with ONE
+// resolution difference: the intent line comes from projectedUserIdx — the
+// turn's OWN user message — because the marker sits AFTER it, and a subagent
+// prompt landing between the two must not shadow it (the subagent-shadow
+// rule). A TypeBoundary branch does not apply here: the projected turn's user
+// message precedes the marker by construction, so no boundary can sit between
+// them and the budget-fill tail is the only tail shape.
+func (p *Projector) projectSameTurnCompacted(lines []Line, mIdx int, turnID string) []provider.Message {
+	marker := lines[mIdx]
+	after, before := lines[mIdx+1:], lines[:mIdx]
+
+	mid := p.boundCompactionTail(foldExchanges(lines, mIdx+1, "", false), marker.Summary)
+
+	// The subagent-shadow rule: the intent is the projected turn's own user
+	// message (projectedUserIdx prefers the TurnID match); findIntentLine is
+	// the fallback only when no user message exists at all.
+	intentLine := findIntentLine(after, before, turnID)
+	if idx := projectedUserIdx(lines, turnID); idx >= 0 {
+		intentLine = &lines[idx]
+	}
+
+	out := make([]provider.Message, 0, 1+len(mid))
+	out = append(out, seedMessage(seedContent(marker.Summary, extractText(intentLine)), intentLine))
 	out = append(out, mid...)
 
 	return out
@@ -303,8 +377,10 @@ func messageCost(m *provider.Message) int64 {
 // compactionMarkerIdx returns the index of the MOST RECENT TypeCompaction line
 // STRICTLY BEFORE the projected turn's user message — the marker resets turns
 // that START after it, exactly the TypeBoundary rule (Pitfall 5: a marker
-// landing mid-turn is never the producing turn's own reset point). -1 when no
-// marker precedes the turn (the pre-phase path).
+// landing mid-turn is never the producing turn's own reset point — EXCEPT
+// under the G-19-1 engine-armed same-turn carve-out, which this pinned scan
+// deliberately knows nothing about; see sameTurnMarkerIdx). -1 when no marker
+// precedes the turn (the pre-phase path).
 func compactionMarkerIdx(lines []Line, turnID string) int {
 	userIdx := projectedUserIdx(lines, turnID)
 
@@ -312,6 +388,27 @@ func compactionMarkerIdx(lines []Line, turnID string) int {
 
 	for i := range lines {
 		if lines[i].Type == TypeCompaction && (userIdx < 0 || i < userIdx) {
+			markerIdx = i
+		}
+	}
+
+	return markerIdx
+}
+
+// sameTurnMarkerIdx returns the index of the MOST RECENT TypeCompaction line
+// carrying TurnID == turnID — the G-19-1 same-turn marker (19-06). Unlike
+// compactionMarkerIdx it is position-blind (the marker sits after the turn's
+// user message by definition) and TurnID-keyed: a parent's mid-subagent
+// marker never matches a subagent turn (Pitfall 5), and a TurnID-less marker
+// never matches anything (the caller reaches here only with a non-empty
+// turnID). -1 when no same-turn marker exists — the armed override then
+// changes nothing (the degraded-compaction fail-through keeps today's
+// behavior).
+func sameTurnMarkerIdx(lines []Line, turnID string) int {
+	markerIdx := -1
+
+	for i := range lines {
+		if lines[i].Type == TypeCompaction && lines[i].TurnID == turnID {
 			markerIdx = i
 		}
 	}
@@ -752,6 +849,20 @@ func findIntentLine(after, before []Line, turnID string) *Line {
 		v := &after[i]
 		if v.Type == TypeUserMessage {
 			return v
+		}
+	}
+
+	// 19-06 (G-19-1): the before-scan gains the same TurnID preference — when
+	// the projected turn's user message sits BEFORE the split point (the
+	// same-turn carve-out's shape), a later subagent prompt in `before` must
+	// not shadow it. Inert for every pre-19-06 fixture: their projected user
+	// message sits in `after`, where the preference already exists.
+	if turnID != "" {
+		for i := len(before) - 1; i >= 0; i-- { //nolint:modernize // conflicts with gocritic rangeValCopy
+			v := &before[i]
+			if v.Type == TypeUserMessage && v.TurnID == turnID {
+				return v
+			}
 		}
 	}
 
