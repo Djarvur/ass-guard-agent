@@ -2,20 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Claude Code Parity
-current_phase: 19
-current_phase_name: Compaction + cache_control
-current_plan: 2
-status: executing
-stopped_at: Completed 19-06-PLAN.md (G-19-1 same-turn carve-out + WR-03 bounds)
-last_updated: "2026-09-07T16:50:19.694Z"
+current_phase: 20
+current_phase_name: built-in-commands-skills-per-agent-model
+current_plan: 1
+status: ready_to_plan
+stopped_at: Phase 19 complete (7/7) — ready to discuss Phase 20
+last_updated: 2026-09-07T18:23:03.758Z
 last_activity: 2026-09-07
-last_activity_desc: Phases 18 + 21 complete; Phase 19 execution next
-state_head: 1c6896e4820efd74d1c3d61fa17ef7790b5e8814
+last_activity_desc: Phase 20 execution started
 progress:
   total_phases: 11
   completed_phases: 5
-  total_plans: 72
-  completed_plans: 41
+  total_plans: 73
+  completed_plans: 42
   percent: 45
 ---
 
@@ -25,15 +24,16 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-09-06)
 **Core value:** A hands-off coding agent that feels native in the editor: full SDD workflows run end-to-end without manual continues, and the agent surfaces through the client's own UX — clickable permission prompts, native file diffs, session management. (Pivoted 2026-08-25 from the mimicry bar.)
-**Current focus:** Phase 19 — Compaction + cache_control
+**Current focus:** Phase 20 — built in commands skills per agent model
 
 ## Current Position
 
-Phase: 19 (Compaction + cache_control) — EXECUTING
-Current Plan: 2
+Phase: 20
+Plan: 1 of 6
+Current Plan: Not started
 Total Plans in Phase: 6
-Status: Ready to execute
-Last activity: 2026-09-07 — Phase 19 execution started
+Status: Ready to plan
+Last activity: 2026-09-07
 
 Progress: [██████████░░░░░░░░░░] 35/71 plans ([█████░░░░░] 45%)
 

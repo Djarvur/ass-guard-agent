@@ -49,7 +49,7 @@ Operator decisions at close (2026-08-23…25): D-09 REVERSED (session resume = m
 - [x] **Phase 16: ACP Wire Foundation** - Outbound id'd requests, one ordered TurnEmitter, transcript line-type extensions, initialize capability overhaul (completed 2026-09-01)
 - [x] **Phase 17: Permissions + Elicitation** - Clickable permission asks and structured form asks through the editor; ONE gate pipeline locked (completed 2026-09-03)
 - [x] **Phase 18: Session Family** - list / load-resume / close-delete with full replay and live-state reconciliation (completed 2026-09-06)
-- [ ] **Phase 19: Compaction + cache_control** - Threshold-triggered compaction marker plus parity-faithful cache_control emission
+- [x] **Phase 19: Compaction + cache_control** - Threshold-triggered compaction marker plus parity-faithful cache_control emission (completed 2026-09-07)
 - [ ] **Phase 20: Built-in Commands + Skills + Per-Agent Model** - Resolver chain, class-B/class-A command families, slash-invocable skills, per-agent model dispatch
 - [x] **Phase 21: Context & Policy Parity Closures** - Hooks PreToolUse deny joining the gate pipeline, AGENTS.md injection, thinking streaming, rich prompt content (completed 2026-09-06)
 - [ ] **Phase 22: Background Execution + Sandbox Reality** - Full subagents, background Bash, persistent shell on shared process lifecycle; real sandbox
@@ -495,7 +495,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 | 16. ACP Wire Foundation | v1.2 | 9/9 | Complete    | 2026-09-01 |
 | 17. Permissions + Elicitation | v1.2 | 6/6 | Complete    | 2026-09-03 |
 | 18. Session Family | v1.2 | 7/7 | Complete    | 2026-09-06 |
-| 19. Compaction + cache_control | v1.2 | 7/7 | In Progress|  |
+| 19. Compaction + cache_control | v1.2 | 7/7 | Complete    | 2026-09-07 |
 | 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 0/6 | Planned | - |
 | 21. Context & Policy Parity Closures | v1.2 | 6/6 | Complete    | 2026-09-06 |
 | 22. Background Execution + Sandbox Reality | v1.2 | 0/? | Not started | - |
