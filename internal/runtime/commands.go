@@ -2,16 +2,21 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
+	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
 )
 
@@ -104,6 +109,8 @@ var reservedNames = map[string]struct{}{ //nolint:gochecknoglobals // the D-01 p
 // they are reserved against discovery from this commit onward regardless).
 // 20-01 ships exactly two live builtins: /status (the tracer) and /init
 // (class-A reservation).
+//
+//nolint:funlen // the twelve-command table is the deliverable
 func builtinTable() []builtinClassB {
 	return []builtinClassB{
 		{
@@ -162,6 +169,11 @@ func builtinTable() []builtinClassB {
 			desc:    "Compact the conversation context now (Phase 19 machinery)",
 			hint:    "[focus instructions]",
 			handler: builtinCompact,
+		},
+		{
+			name:    "cost",
+			desc:    "Show session cost (provider usage endpoint when declared, transcript-derived otherwise)",
+			handler: builtinCost,
 		},
 	}
 }
@@ -897,4 +909,175 @@ func realCompactNow(ctx context.Context, sess *session.Session, _ string) (strin
 	}
 
 	return "compaction complete — the next request projects from the fresh window\n", nil
+}
+
+// costFetchBudgetDefault is the /cost live leg's FAST-CONTROL budget
+// (16-D-17's ~10s class): a slow or hung usage endpoint falls back to the
+// transcript derivation instead of wedging the turn mutex (Pitfall 8).
+const costFetchBudgetDefault = 10 * time.Second
+
+// builtinCost implements D-07 (operator directive): the provider's declared
+// usage endpoint FIRST, on-demand under the FAST-CONTROL budget; on
+// absence/timeout/error the transcript usage × modelrouting Pricing fallback
+// — ALWAYS with a source note naming which producer made the number
+// (P-20-02). Output carries amounts/currencies/model names only — never
+// credential material (T-20-05).
+//
+//nolint:gocritic // (output, outcome) pair — the handler-table shape
+func builtinCost(ctx context.Context, r *Runner, sess *session.Session, _, _ string) (string, string) {
+	model := statusModel(r, sess)
+
+	inTok, outTok := costTranscriptUsage(sess)
+
+	// Live leg: only when the provider declares a usage endpoint.
+	if provider, ok := r.costProviderConfig(model); ok && provider.UsageEndpoint != "" {
+		body, err := r.fetchUsageEndpoint(ctx, provider.UsageEndpoint, provider)
+		if err == nil {
+			return fmt.Sprintf("cost (source: provider usage endpoint %s — live):\n%s",
+				provider.UsageEndpoint, costRenderLive(body)), ""
+		}
+
+		_, _ = fmt.Fprintf(r.stderrOrDefault(), "ass-guard: /cost live endpoint failed (falling back): %v\n", err)
+	}
+
+	// Fallback: transcript usage × Pricing (the CostCeilingTracker.Account
+	// formula, cost.go:61–89 — reused, never re-implemented).
+	var perMIn, perMOut float64
+
+	if mc, ok := r.schedCfg.Models[model]; ok {
+		perMIn = mc.Pricing.InputPerMToken
+		perMOut = mc.Pricing.OutputPerMToken
+	}
+
+	amount := (float64(inTok)*perMIn + float64(outTok)*perMOut) / costTokenDivisor
+
+	return fmt.Sprintf(
+		"cost (source: transcript usage × modelrouting cost table — derived, not provider-live):\n"+
+			"  model: %s\n  usage: %d in + %d out tokens\n  estimated: $%.2f\n",
+		model, inTok, outTok, amount), ""
+}
+
+// costProviderConfig resolves the effective model's ProviderConfig when the
+// scheduling config declares both.
+func (r *Runner) costProviderConfig(model string) (*modelrouting.ProviderConfig, bool) {
+	if r.schedCfg == nil {
+		return nil, false
+	}
+
+	mc, ok := r.schedCfg.Models[model]
+	if !ok {
+		return nil, false
+	}
+
+	prov, ok := r.schedCfg.Providers[mc.Provider]
+
+	return &prov, ok
+}
+
+// fetchUsageEndpoint performs the ONE bounded live fetch (FAST-CONTROL): GET
+// the declared URL with the provider's credential in the Authorization
+// header (the credential NEVER enters output — T-20-05). transport/budget
+// seams are test-injectable (nil = the default client + 10s budget).
+func (r *Runner) fetchUsageEndpoint(
+	ctx context.Context, url string, provider *modelrouting.ProviderConfig,
+) ([]byte, error) {
+	budget := r.costFetchBudget
+	if budget <= 0 {
+		budget = costFetchBudgetDefault
+	}
+
+	fctx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(fctx, http.MethodGet, url, http.NoBody)
+	if err != nil {
+		return nil, fmt.Errorf("build request: %w", err)
+	}
+
+	if key := r.costCredential(provider); key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+
+	client := &http.Client{}
+	if r.costTransport != nil {
+		client.Transport = r.costTransport
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch: %w", err)
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%w: status %d", errCostEndpoint, resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, costBodyLimit))
+	if err != nil {
+		return nil, fmt.Errorf("read body: %w", err)
+	}
+
+	return body, nil
+}
+
+// costBodyLimit bounds the live endpoint's response read (the read-cap
+// discipline; a pathological endpoint cannot stream the turn wedged).
+const costBodyLimit = 64 * 1024
+
+// errCostEndpoint is the live leg's static wrap target (non-OK status).
+var errCostEndpoint = errors.New("usage endpoint")
+
+// costCredential resolves the provider's env-var credential for the live
+// fetch (value used ONLY in the Authorization header; never rendered).
+func (r *Runner) costCredential(provider *modelrouting.ProviderConfig) string {
+	envName := provider.APIKeyEnv
+	if envName == "" {
+		envName = strings.ToUpper(r.providerName) + "_API_KEY"
+	}
+
+	return os.Getenv(envName)
+}
+
+// costRenderLive renders the live endpoint's response: a provider-specific
+// JSON payload summarized best-effort (the raw pretty-printed object) — the
+// SOURCE NOTE in the surrounding output is the contract, not this shape.
+func costRenderLive(body []byte) string {
+	var pretty map[string]any
+
+	jerr := json.Unmarshal(body, &pretty)
+	if jerr == nil {
+		raw, merr := json.MarshalIndent(pretty, "  ", "  ")
+		if merr == nil {
+			return "  " + string(raw) + "\n"
+		}
+	}
+
+	return "  " + string(body) + "\n"
+}
+
+// costTokenDivisor is the Pricing per-1M-token normalization (cost.go's
+// Account formula divisor, reused verbatim).
+const costTokenDivisor = 1e6
+
+// costTranscriptUsage aggregates the transcript's usage lines
+// (transcript-as-truth, 18-D-01: the derivation survives resume — recomputed
+// from lines, never in-memory state).
+//
+//nolint:nonamedreturns // the pair reads best named at the signature
+func costTranscriptUsage(sess *session.Session) (inTok, outTok int64) {
+	lines, err := sess.Manager.ReadAll()
+	if err != nil {
+		return 0, 0
+	}
+
+	for i := range lines {
+		if lines[i].Type == session.TypeUsage {
+			inTok += lines[i].InputTokens
+			outTok += lines[i].OutputTokens
+		}
+	}
+
+	return inTok, outTok
 }

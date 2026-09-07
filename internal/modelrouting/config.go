@@ -63,6 +63,15 @@ type ProviderConfig struct {
 	Shape     string `yaml:"shape"`
 	APIKey    string `yaml:"api_key"`
 	APIKeyEnv string `yaml:"api_key_env"`
+
+	// UsageEndpoint is the per-provider usage/billing capability (20-02/D-07,
+	// RESEARCH Open Question 1's seam-over-surprise rule): a declared URL the
+	// /cost handler fetches live under the FAST-CONTROL budget. Empty (the
+	// default for every provider until declared) means "none" — /cost goes
+	// straight to the transcript×cost-table fallback without any network
+	// attempt. The response shape is provider-specific; the handler renders a
+	// best-effort summary and always names the source.
+	UsageEndpoint string `yaml:"usage_endpoint"`
 }
 
 // ModelConfig is the per-(provider, model) declaration: the capability profile

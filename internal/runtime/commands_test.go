@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -11,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
@@ -1089,6 +1092,196 @@ func TestClassBDelegate(t *testing.T) {
 		rec := localCommandLine(t, lines)
 		if rec.Args != "focus on the parser" {
 			t.Errorf("local_command Args = %q; want verbatim (16-D-22)", rec.Args)
+		}
+	})
+}
+
+// countingRoundTripper counts requests and answers from a scripted fn.
+type countingRoundTripper struct {
+	mu      sync.Mutex
+	calls   int
+	respond func(*http.Request) (*http.Response, error)
+}
+
+func (c *countingRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	c.mu.Lock()
+	c.calls++
+	fn := c.respond
+	c.mu.Unlock()
+
+	return fn(req)
+}
+
+func (c *countingRoundTripper) count() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.calls
+}
+
+// TestClassBCost pins D-07's three-case matrix + the fallback math + the
+// P-20-02 source-note prohibition: declared-capability live success (note
+// names the endpoint), capability none (fallback note, ZERO network), and
+// endpoint timeout (fallback note, bounded elapsed). The fallback's
+// transcript×Pricing math is hand-computed; no output ever carries the
+// credential value.
+//
+//nolint:gocognit,cyclop,funlen,paralleltest // three-case matrix, sequenced runner state
+func TestClassBCost(t *testing.T) {
+	t.Setenv("ZAI_API_KEY", "sk-cost-secret-fixture")
+
+	pricing := modelrouting.Pricing{InputPerMToken: 1.0, OutputPerMToken: 2.0}
+
+	// seedUsage appends known usage lines to the session's transcript:
+	// 2M input + 1M output total => (2M*1.0 + 1M*2.0)/1e6 = $4.00.
+	seedUsage := func(t *testing.T, r *Runner) {
+		t.Helper()
+
+		_, _ = classBRun(t, r, "/status") // creates the session
+
+		sess := r.sessions["classb"]
+
+		err := sess.Manager.AppendUsage("usage-seed-1", 1_500_000, 400_000)
+		if err != nil {
+			t.Fatalf("seed usage 1: %v", err)
+		}
+
+		err = sess.Manager.AppendUsage("usage-seed-2", 500_000, 600_000)
+		if err != nil {
+			t.Fatalf("seed usage 2: %v", err)
+		}
+	}
+
+	armPricing := func(r *Runner, usageEndpoint string) {
+		r.schedCfg.Models[fixtureModel] = modelrouting.ModelConfig{
+			Provider: fixtureProvider, Pricing: pricing,
+		}
+		r.schedCfg.Providers[fixtureProvider] = modelrouting.ProviderConfig{
+			APIKeyEnv: fixtureCredEnv, UsageEndpoint: usageEndpoint,
+		}
+	}
+
+	out := func(t *testing.T, frames []commandFrame) string {
+		t.Helper()
+
+		var sb strings.Builder
+
+		for _, f := range frames {
+			if f.kind == frameKindAgentChunk {
+				sb.WriteString(f.text)
+			}
+		}
+
+		return sb.String()
+	}
+
+	t.Run("capability none goes straight to fallback, zero network", func(t *testing.T) {
+		r, prov, _ := newCommandRunner(t, nil)
+
+		rt := &countingRoundTripper{respond: func(*http.Request) (*http.Response, error) {
+			return nil, errNotUsed
+		}}
+		r.costTransport = rt
+		r.costFetchBudget = 50 * time.Millisecond
+		armPricing(r, "")
+		seedUsage(t, r)
+
+		frames, lines := classBRun(t, r, "/cost")
+
+		if got := prov.callCount(); got != 0 {
+			t.Errorf("provider Stream calls = %d; want 0", got)
+		}
+
+		if rt.count() != 0 {
+			t.Errorf("network attempts = %d; want 0 (capability none)", rt.count())
+		}
+
+		text := out(t, frames)
+		if !strings.Contains(text, "transcript") || !strings.Contains(text, "cost table") {
+			t.Errorf("fallback source note missing:\n%s", text)
+		}
+
+		if !strings.Contains(text, "$4.00") {
+			t.Errorf("hand-computed fallback amount $4.00 missing:\n%s", text)
+		}
+
+		if strings.Contains(text, "sk-cost-secret-fixture") {
+			t.Error("credential value leaked into /cost output (T-20-05)")
+		}
+
+		rec := localCommandLine(t, lines)
+		if rec.Name != "cost" {
+			t.Errorf("local_command Name = %q; want cost", rec.Name)
+		}
+	})
+
+	t.Run("declared capability live success names the endpoint", func(t *testing.T) {
+		r, _, _ := newCommandRunner(t, nil)
+
+		rt := &countingRoundTripper{respond: func(*http.Request) (*http.Response, error) {
+			body := `{"total_spent_usd": 12.5, "window": "30d"}`
+			return &http.Response{
+				StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: http.Header{},
+			}, nil
+		}}
+		r.costTransport = rt
+		r.costFetchBudget = 50 * time.Millisecond
+		armPricing(r, "https://api.example.test/usage")
+		seedUsage(t, r)
+
+		frames, _ := classBRun(t, r, "/cost")
+
+		if rt.count() != 1 {
+			t.Fatalf("network attempts = %d; want 1", rt.count())
+		}
+
+		text := out(t, frames)
+		if !strings.Contains(text, "api.example.test/usage") {
+			t.Errorf("live source note does not name the endpoint:\n%s", text)
+		}
+
+		if !strings.Contains(text, "12.5") {
+			t.Errorf("live number missing from output:\n%s", text)
+		}
+
+		if strings.Contains(text, "sk-cost-secret-fixture") {
+			t.Error("credential value leaked into /cost output (T-20-05)")
+		}
+	})
+
+	t.Run("endpoint timeout falls back under the budget", func(t *testing.T) {
+		r, _, _ := newCommandRunner(t, nil)
+
+		rt := &countingRoundTripper{respond: func(req *http.Request) (*http.Response, error) {
+			// The fake honors cancellation the way a real transport does —
+			// a sleeping custom RoundTripper that ignores ctx would bypass
+			// Go's post-roundtrip ctx check entirely.
+			select {
+			case <-time.After(300 * time.Millisecond):
+				return &http.Response{
+					StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{}`)), Header: http.Header{},
+				}, nil
+			case <-req.Context().Done():
+				return nil, req.Context().Err()
+			}
+		}}
+		r.costTransport = rt
+		r.costFetchBudget = 50 * time.Millisecond
+		armPricing(r, "https://api.example.test/usage")
+		seedUsage(t, r)
+
+		start := time.Now()
+
+		frames, _ := classBRun(t, r, "/cost")
+
+		elapsed := time.Since(start)
+		if elapsed > 2*time.Second {
+			t.Errorf("handler elapsed %v; want bounded near the %v budget", elapsed, r.costFetchBudget)
+		}
+
+		text := out(t, frames)
+		if !strings.Contains(text, "transcript") {
+			t.Errorf("timeout fallback note missing:\n%s", text)
 		}
 	})
 }

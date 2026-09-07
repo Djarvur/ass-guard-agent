@@ -12,6 +12,7 @@ import (
 	"io"
 	"log"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -200,6 +201,12 @@ type Runner struct {
 	// prove the loud-degrade posture.
 	compactNowHook func(ctx context.Context, sess *session.Session, args string) (string, error)
 	resumeListHook func() (string, error)
+
+	// 20-02 (/cost, D-07): the live usage-endpoint leg's test seams — nil
+	// costTransport uses the default HTTP client; a zero costFetchBudget uses
+	// the ~10s FAST-CONTROL default.
+	costTransport   http.RoundTripper
+	costFetchBudget time.Duration
 
 	// 21-04 (PAR-06/D-10): the Read-rule consult seam for @-mention
 	// expansion. Every @file consults it with tool "Read" BEFORE its content
