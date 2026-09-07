@@ -98,6 +98,22 @@ func (h *pipeHarness) readFrame(t *testing.T) *Message {
 	return msg
 }
 
+// readResultFrame reads frames until the next REQUEST RESPONSE (a frame
+// carrying an id or an error) arrives — session/update notifications emitted
+// ahead of a response are skipped (20-01: session/new now precedes its
+// response with the available_commands_update advertisement — the load
+// path's updates-before-response contract generalized).
+func (h *pipeHarness) readResultFrame(t *testing.T) *Message {
+	t.Helper()
+
+	for {
+		msg := h.readFrame(t)
+		if msg.ID != nil || msg.Error != nil {
+			return msg
+		}
+	}
+}
+
 // stubTurn is the tracer's TurnRunner: it emits 1-2 agent_message_chunk events
 // then returns stopReason "end_turn". The real Session.Prompt runner replaces
 // it in Plan 02-05.
@@ -264,7 +280,7 @@ func TestSessionNewReturnsSessionID(t *testing.T) {
 	h.send(t, newRequest(0, methodInitialize, zedLikeInitializeParams()))
 	h.readFrame(t)
 	h.send(t, newRequest(1, "session/new", map[string]any{keyCwd: testCwdTmp, keyMcpServers: []any{}}))
-	msg := h.readFrame(t)
+	msg := h.readResultFrame(t)
 
 	var res struct {
 		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
@@ -292,7 +308,7 @@ func TestSessionPromptStreamsUpdate(t *testing.T) { //nolint:funlen // comprehen
 	h.send(t, newRequest(0, methodInitialize, zedLikeInitializeParams()))
 	h.readFrame(t)
 	h.send(t, newRequest(1, "session/new", map[string]any{keyCwd: testCwdTmp, keyMcpServers: []any{}}))
-	snew := h.readFrame(t)
+	snew := h.readResultFrame(t)
 
 	var sres struct {
 		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
@@ -375,7 +391,7 @@ func TestSessionCancelProducesNoResponse(t *testing.T) {
 	h.send(t, newRequest(0, methodInitialize, zedLikeInitializeParams()))
 	h.readFrame(t)
 	h.send(t, newRequest(1, "session/new", map[string]any{keyCwd: testCwdTmp, keyMcpServers: []any{}}))
-	snew := h.readFrame(t)
+	snew := h.readResultFrame(t)
 
 	var sres struct {
 		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
@@ -568,7 +584,7 @@ func TestErrorResponseShape(t *testing.T) {
 	h.send(t, newRequest(0, methodInitialize, zedLikeInitializeParams()))
 	h.readFrame(t)
 	h.send(t, newRequest(1, "session/new", map[string]any{keyCwd: testCwdTmp, keyMcpServers: []any{}}))
-	h.readFrame(t)
+	h.readResultFrame(t)
 	// session/load with a malformed id is the convenient typed-error example
 	// (18-01: the structural rejection is the load pipeline's first gate —
 	// the D-09 -32601 no-op ended with Phase 18).

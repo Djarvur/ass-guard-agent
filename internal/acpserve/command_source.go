@@ -11,26 +11,20 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/runtime"
 )
 
-// commandSourceAdapter adapts the runner's ecosys command registry
-// (Runner.CommandRegistry — LoadCommandRegistry's startup discovery) to the
-// acp.CommandSource seam behind available_commands_update (18-05/ACP-06
-// "commands re-advertised"; Phase 20's session-start advertisement reuses
-// the same source). AllCommands is already name-sorted, so the wire order is
-// deterministic.
+// commandSourceAdapter adapts the runner's resolver CHAIN (20-01/CMDS-01 —
+// builtins → skills → agents → file, winners-only) to the acp.CommandSource
+// seam behind available_commands_update (18-05/ACP-06 "commands
+// re-advertised"; 20-01's session-start advertisement + 20-05's rescan
+// re-fire read the same surface). The advertisement IS the chain's winner
+// projection — D-04's one-truth rule (what autocomplete shows is exactly
+// what runs), sorted deterministically by the chain builder.
 type commandSourceAdapter struct {
 	runner *runtime.Runner
 }
 
-// AvailableCommands projects the discovered commands onto the v1
-// AvailableCommand frames (name + description — the two consumer-facing
-// fields a discovered command carries).
+// AvailableCommands projects the chain winners onto the v1 AvailableCommand
+// frames (name + description + optional input hint — the three
+// consumer-facing fields a winner carries).
 func (a commandSourceAdapter) AvailableCommands() []acp.AvailableCommandFrame {
-	cmds := a.runner.CommandRegistry().AllCommands()
-
-	out := make([]acp.AvailableCommandFrame, 0, len(cmds))
-	for _, c := range cmds {
-		out = append(out, acp.AvailableCommandFrame{Name: c.Name, Description: c.Description})
-	}
-
-	return out
+	return a.runner.CommandAdvertisement()
 }

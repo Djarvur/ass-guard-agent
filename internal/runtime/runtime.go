@@ -181,6 +181,18 @@ type Runner struct {
 	reg           ecosys.Registry
 	cmdMutability map[string]string
 
+	// 20-01 (CMDS-01/ACP-04): the immutable resolver chain behind ONE atomic
+	// pointer (RESEARCH Pattern 1 — lock-free on the read-hot path, swapped
+	// wholesale by the 20-05 rescan; the atomic-pointer-over-RWMutex choice
+	// is documented here per the research alternatives note). chainResolves
+	// counts chain consultations (test observability for the single-parse
+	// discipline — one resolution per Run). commandsNotify is the re-fire
+	// seam the composition binds to available_commands_update fan-out.
+	chainPtr        atomic.Pointer[commandChain]
+	chainResolves   atomic.Uint64
+	commandsNotifyMu sync.RWMutex
+	commandsNotify  func()
+
 	// 21-04 (PAR-06/D-10): the Read-rule consult seam for @-mention
 	// expansion. Every @file consults it with tool "Read" BEFORE its content
 	// enters the prompt; an absolute @path additionally needs an explicit
@@ -424,12 +436,14 @@ func (r *Runner) LoadCommandRegistry() {
 		r.reg = ecosys.Registry{}
 		r.cmdMutability = nil
 		r.mcpServers = nil
+		r.rebuildCommandChain()
 
 		return
 	}
 
 	r.reg = reg
 	r.mcpServers = servers
+	r.rebuildCommandChain()
 
 	oscfg, cerr := openspec.DefaultConfig()
 	if cerr != nil {
@@ -815,6 +829,21 @@ func (r *Runner) Run( //nolint:funlen // the turn pipeline's composition root
 	// 12-01 reply routing (ACP-01): a prompt arriving while an ask is pending
 	// is the OPERATOR'S ANSWER, not a new turn (see routeAskReply).
 	if stop, handled := r.routeAskReply(ctx, sess, blocks); handled {
+		close(promptDone)
+		<-done
+
+		return stop, nil
+	}
+
+	// 20-01 (CMDS-02, D-05): the class-B intercept — AFTER routeAskReply (the
+	// ask answer outranks a command), BEFORE the engine branch below (an
+	// intercept after it would diverge engine-on/off — RESEARCH Anti-Pattern
+	// 3). A LIVE builtin winner answers the turn control-plane-fast: echo +
+	// output chunks through the in-hand emit handle, a durable local_command
+	// line, stopReason end_turn — ZERO provider calls, zero engine
+	// involvement. Class-A (/init), dormant reserved names, skills, agents,
+	// and file commands fall through to the existing flow unchanged.
+	if stop, handled := r.tryLocalCommand(ctx, sess, emit, blocks); handled {
 		close(promptDone)
 		<-done
 
@@ -2823,6 +2852,106 @@ func (r *Runner) routeAskReply(
 
 	return mapAskStop(stop), true
 }
+
+// tryLocalCommand is the class-B intercept (20-01/CMDS-02, D-05): parses the
+// invocation ONCE on the first text block (the invocationFor single-parse
+// discipline), resolves through the live chain, and — when the winner is a
+// builtin with a LIVE handler — answers the turn entirely on the control
+// plane: the typed command echoes as a user_message_chunk (its OWN
+// messageId, derived from the turn id + ":echo" — a change in messageId
+// starts a new client message), the handler's output streams as
+// agent_message_chunk(s) under the turn's normal message id, the durable
+// 16-D-22 local_command line lands through the REDACTED append path, and
+// the turn ends end_turn. Zero provider calls, zero engine involvement.
+// Every other outcome (no invocation, unknown name, dormant reserved name,
+// class-A, skill/agent/file winner) returns handled=false and the existing
+// turn flow proceeds unchanged. A handler panic is recovered and recorded as
+// a failed local_command outcome with a loud stderr warning — a control-plane
+// command NEVER fails the session (T-20-02).
+func (r *Runner) tryLocalCommand(
+	_ context.Context, sess *session.Session, emit acp.ChunkEmitter, blocks []session.ContentBlock,
+) (string, bool) {
+	idx := firstTextBlockIndex(blocks)
+	if idx < 0 || blocks[idx].Text == "" {
+		return "", false
+	}
+
+	key, args, ok := ecosys.ParseInvocation(blocks[idx].Text)
+	if !ok {
+		return "", false // ordinary prose — never an invocation error
+	}
+
+	r.chainResolves.Add(1)
+
+	entry, found := r.commandChainRef().resolve(key)
+	if !found || entry.kind != chainKindBuiltin || entry.handler == nil {
+		// Unknown name / dormant reserved name / class-A / non-builtin: the
+		// existing flow (expansion path, engine, plain text) owns it.
+		return "", false
+	}
+
+	turnID := sess.MintLocalCommandTurnID()
+
+	// D-05 echo: through the in-hand emitter handle (foreground lane — the
+	// same handle the turn's chunks ride; NOT a side channel). A plain
+	// ChunkEmitter (legacy fakes) silently skips the echo — the ActivityEmitter
+	// assertion precedent.
+	if ue, canEcho := emit.(acp.ActivityEmitter); canEcho {
+		if eerr := ue.UserMessageChunk(turnID+echoIDSuffix, blocks[idx].Text); eerr != nil {
+			log.Printf("ass-guard: class-B echo enqueue failed (continuing): %v", eerr)
+		}
+	}
+
+	outcome := "ok"
+	output := r.runBuiltinHandler(entry, sess, args, &outcome)
+
+	// The output rides as agent_message_chunk(s) under the turn's normal
+	// message id — the emit handle, best-effort (the durable record below is
+	// the source of truth).
+	if err := emit.AgentMessageChunk(turnID, output); err != nil {
+		log.Printf("ass-guard: class-B output enqueue failed (continuing): %v", err)
+	}
+
+	if sess.Manager != nil {
+		lerr := sess.Manager.AppendLocalCommand(
+			turnID, key, args, outcome, []string{sourceChainBuiltin})
+
+		if lerr != nil {
+			log.Printf("ass-guard: local_command record write failed (continuing): %v", lerr)
+		}
+	}
+
+	return stopEndTurn, true
+}
+
+// runBuiltinHandler executes one class-B handler inside the panic-recovery
+// envelope (T-20-02): a panicking handler records the failed outcome and a
+// loud stderr warning, and the turn STILL ends end_turn — a control-plane
+// command never wedges or fails the session.
+func (r *Runner) runBuiltinHandler(
+	entry chainEntry, sess *session.Session, args string, outcome *string,
+) (output string) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			*outcome = fmt.Sprintf("failed: handler panic: %v", rec)
+			output = "command failed (see stderr)"
+
+			_, _ = fmt.Fprintf(r.stderrOrDefault(),
+				"ass-guard: builtin /%s handler panic (recorded as a failed local_command; session continues): %v\n",
+				entry.name, rec)
+		}
+	}()
+
+	return entry.handler(r, sess, args)
+}
+
+// echoIDSuffix decorates the class-B echo's messageId so it can never collide
+// with the output chunks' turn id (two client messages, D-05).
+const echoIDSuffix = ":echo"
+
+// sourceChainBuiltin is the local_command source-chain vocabulary's builtin
+// element (16-D-22: resolution order builtin → skills → agents → file).
+const sourceChainBuiltin = "builtin"
 
 // toContentBlocks converts the ACP content blocks to session content blocks.
 // 21-05 (PAR-06): image blocks map through with their Data (the pre-ingress

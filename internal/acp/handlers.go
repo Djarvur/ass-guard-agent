@@ -350,6 +350,21 @@ func (s *Server) handleSessionNew(ctx context.Context, params json.RawMessage) (
 	s.sessions[id] = st
 	s.mu.Unlock()
 
+	// 20-01/ACP-04 "sent on session start": the available_commands_update
+	// advertisement fires right after the session exists — the client's
+	// autocomplete reflects the resolver chain's winners from the first
+	// keystroke. Reads the SAME CommandSource the resolver resolves through
+	// (D-04 one truth), FOREGROUND lane, best-effort (log-and-continue — a
+	// failed enqueue never fails session/new). The barrier keeps the
+	// updates-before-response order the load path established (16-01
+	// contract mirrored).
+	if cerr := s.NotifyAvailableCommands(id); cerr != nil {
+		s.log.Printf("session/new: available_commands_update enqueue failed for %s (continuing): %v",
+			id, cerr)
+	}
+
+	s.emitter.Barrier(ctx)
+
 	return sessionNewResult{SessionID: id, ConfigOptions: s.configOptionsFor()}, nil
 }
 

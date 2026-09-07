@@ -215,7 +215,9 @@ func TestTurnEmitterEndToEnd(t *testing.T) { //nolint:funlen // full end-to-end 
 		JSONRPC: protocolVersion20, ID: json.RawMessage("1"), Method: methodSessNew,
 		Params: rawJSON(map[string]any{cwdKey: testCwdTmpPath, keyMcpServers: []any{}}),
 	})
-	frames = readFrames(t, cliR, 1)
+	var advertised int
+
+	frames, advertised = readResultFramesCounting(t, cliR, 1)
 
 	var snew struct {
 		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
@@ -269,9 +271,9 @@ func TestTurnEmitterEndToEnd(t *testing.T) { //nolint:funlen // full end-to-end 
 		t.Fatalf("written count unstable: %d then %d", written, stable)
 	}
 
-	if written != len(updates) {
-		t.Fatalf("notification leak: emitter wrote %d but stdout carried %d update frames",
-			written, len(updates))
+	if written != len(updates)+advertised {
+		t.Fatalf("notification leak: emitter wrote %d but stdout carried %d update frames (+%d advertised)",
+			written, len(updates), advertised)
 	}
 }
 
@@ -347,7 +349,7 @@ func TestThoughtForward(t *testing.T) { //nolint:funlen // full end-to-end scena
 		JSONRPC: protocolVersion20, ID: json.RawMessage("1"), Method: methodSessNew,
 		Params: rawJSON(map[string]any{cwdKey: testCwdTmpPath, keyMcpServers: []any{}}),
 	})
-	frames = readFrames(t, cliR, 1)
+	frames = readResultFrames(t, cliR, 1)
 
 	var snew struct {
 		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field

@@ -128,7 +128,7 @@ func TestAdvisoryWiring_QuestionEndingNote(t *testing.T) { //nolint:cyclop,gocyc
 		Params: rawJSON(map[string]any{"cwd": "/tmp", keyMCPServers: []any{}}),
 	})
 
-	frames := readFrames(t, cliR, 2)
+	frames := readResultFrames(t, cliR, 2)
 
 	var snew struct {
 		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field

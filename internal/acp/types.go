@@ -231,11 +231,21 @@ const KindAvailableCommandsUpdate = "available_commands_update"
 
 // AvailableCommandFrame is one v1 AvailableCommand (schema/v1 def
 // AvailableCommand): the command name + optional human-readable description
-// + optional input spec. ass-guard's discovered commands carry exactly the
-// name/description pair; input stays absent (nullable per the schema).
+// + optional input spec. 20-01/ACP-04: the chain advertisement fills all
+// three from the resolver chain's winners (D-04 — what autocomplete shows is
+// exactly what runs); Input stays absent when the entry carries no hint.
 type AvailableCommandFrame struct {
-	Name        string `json:"name"`                  // required (e.g. "opsx:explore")
-	Description string `json:"description,omitempty"` // nullable per the schema
+	Name        string                      `json:"name"`                  // required (e.g. "opsx:explore")
+	Description string                      `json:"description,omitempty"` // nullable per the schema
+	Input       *AvailableCommandInputFrame `json:"input,omitempty"`       // v1 unstructured variant
+}
+
+// AvailableCommandInputFrame is the v1 AvailableCommandInput unstructured
+// variant — the ONLY input variant v1 defines (schema/v1, fetched): a hint
+// "displayed when the input hasn't been provided yet". Omitted entirely when
+// the chain entry carries no argument hint.
+type AvailableCommandInputFrame struct {
+	Hint string `json:"hint"`
 }
 
 // ConfigOptionTypeSelect is the v1 SessionConfigOption type discriminator for

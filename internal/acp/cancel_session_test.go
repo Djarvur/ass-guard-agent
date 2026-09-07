@@ -106,7 +106,7 @@ func handshakeRecordingSession(t *testing.T, h *pipeHarness) string {
 	h.readFrame(t)
 
 	h.send(t, newRequest(1, "session/new", map[string]any{keyCwd: testCwdTmp, keyMcpServers: []any{}}))
-	snew := h.readFrame(t)
+	snew := h.readResultFrame(t)
 
 	var sres struct {
 		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field

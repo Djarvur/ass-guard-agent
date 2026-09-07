@@ -84,6 +84,16 @@ func (r *recordingEmitter) ThoughtChunk(messageID string, content ContentBlock) 
 	return nil
 }
 
+func (r *recordingEmitter) UserMessageChunk(messageID, text string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.frames = append(r.frames,
+		recordedFrame{kind: updKindUserMessageChunk, messageID: messageID, text: text})
+
+	return nil
+}
+
 func (r *recordingEmitter) snapshot() []recordedFrame {
 	r.mu.Lock()
 	defer r.mu.Unlock()

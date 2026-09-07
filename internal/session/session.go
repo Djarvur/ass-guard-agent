@@ -217,6 +217,15 @@ func (s *Session) nextTurnID() string { //nolint:funcorder // ordering groups re
 	return fmt.Sprintf("%s-turn-%03d", s.SessionID, n)
 }
 
+// MintLocalCommandTurnID allocates the next turn id for a LOCAL (class-B)
+// command turn (20-01/CMDS-02): the control-plane interception never enters
+// Prompt, but its echo/output chunks and local_command transcript line still
+// need a turn id from the SAME monotonic sequence — resume continuity keeps
+// replayed and minted ids collision-free (the SeedResume invariant).
+func (s *Session) MintLocalCommandTurnID() string {
+	return s.nextTurnID()
+}
+
 // SeedResume seeds the turn counter from the transcript maxima AND applies
 // the reconciled plan-mode target (18-01/18-05, ACP-06 — "continued id
 // sequences from transcript maxima" + the row-6 state seed): the resume path

@@ -654,6 +654,17 @@ func TestTurnEmitterEmptyTurn(t *testing.T) {
 
 	sessID := readSessionIDBlind(t, srv)
 
+	// 20-01: session start now precedes its response with the
+	// available_commands_update advertisement (the empty set here — no
+	// CommandSource wired). The EMPTY-TURN contract under test is about the
+	// prompt that follows: baseline the stdout AFTER the session/new
+	// response settles, then assert the turn adds no notification.
+	waitFor(t, "session/new response", 5*time.Second, func() bool {
+		return strings.Contains(stdout.String(), `"id":1`)
+	})
+
+	baseline := stdout.String()
+
 	fmt.Fprintf(w, `{"jsonrpc":"2.0","id":2,"method":"session/prompt","params":{"sessionId":%q,"prompt":[]}}`+"\n",
 		sessID)
 	_ = w.Flush()
@@ -662,8 +673,8 @@ func TestTurnEmitterEmptyTurn(t *testing.T) {
 		return strings.Contains(stdout.String(), `"id":2`)
 	})
 
-	if strings.Contains(stdout.String(), methodSessionUpdate) {
-		t.Fatalf("empty turn emitted notifications:\n%s", stdout.String())
+	if after := stdout.String()[len(baseline):]; strings.Contains(after, methodSessionUpdate) {
+		t.Fatalf("empty turn emitted notifications:\n%s", after)
 	}
 }
 

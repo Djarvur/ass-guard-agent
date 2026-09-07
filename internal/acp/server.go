@@ -559,6 +559,35 @@ func (s *Server) NotifyAvailableCommands(sessionID string) error {
 		&Message{JSONRPC: protocolVersion20, Method: methodSessionUpdate, Params: raw})
 }
 
+// NotifyAllAvailableCommands re-fires available_commands_update for EVERY
+// live session (20-01/ACP-04 "on discovery change" leg; 20-05's rescan swap
+// is the invocation source). Each frame carries the COMPLETE current winner
+// set read from the SAME CommandSource the resolver resolves through — v1
+// full-replacement semantics, so every send is self-contained (calling it
+// twice must never assume client-side merge). Best-effort per session: a
+// failed enqueue is captured for the return, the remaining sessions still
+// fire (one session's teardown race never silences the others).
+func (s *Server) NotifyAllAvailableCommands() error {
+	s.mu.Lock()
+	ids := make([]string, 0, len(s.sessions))
+
+	for id := range s.sessions {
+		ids = append(ids, id)
+	}
+
+	s.mu.Unlock()
+
+	var firstErr error
+
+	for _, id := range ids {
+		if err := s.NotifyAvailableCommands(id); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+
+	return firstErr // best-effort fan-out; the caller logs-and-continues
+}
+
 // Serve runs the reader loop until ctx is cancelled or stdin reaches EOF. Each
 // frame is dispatched: requests (with id) go to a per-request goroutine;
 // notifications (no id) are handled inline. Parse errors surface a -32700

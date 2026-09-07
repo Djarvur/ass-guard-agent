@@ -18,7 +18,10 @@ const (
 	keySessionUpdate         = "sessionUpdate"
 	keyUpdate                = "update" // the session/update params' payload key
 	keyAvailableCommands     = "availableCommands"
+	keyMessageID             = "messageId"
+	keyContent               = "content"
 	updKindAgentMessageChunk = "agent_message_chunk"
+	updKindUserMessageChunk  = "user_message_chunk" // v1 ContentChunk kind (the D-05 class-B echo)
 	updKindToolCall          = "tool_call"
 	updKindToolCallUpdate    = "tool_call_update"
 	updKindPlan              = "plan" // v1 full-replacement kind
@@ -427,13 +430,16 @@ type EmitterHandle struct {
 }
 
 // ActivityEmitter extends ChunkEmitter with the ACP-03 live-turn vocabulary:
-// tool_call / tool_call_update / plan / agent_thought_chunk frames. Runtime
-// forwarders type-assert their emit to this interface; plain ChunkEmitters
-// (existing test fakes across the repo) keep compiling untouched (RESEARCH
-// Open Question 1 resolution — growth via embedding, never in-place widening).
+// tool_call / tool_call_update / plan / agent_thought_chunk frames, plus the
+// v1 user_message_chunk echo (20-01/D-05 — the class-B command turn's typed
+// echo rides the same in-hand handle). Runtime forwarders type-assert their
+// emit to this interface; plain ChunkEmitters (existing test fakes across the
+// repo) keep compiling untouched (RESEARCH Open Question 1 resolution —
+// growth via embedding, never in-place widening).
 type ActivityEmitter interface {
 	ChunkEmitter
 
+	UserMessageChunk(messageID, text string) error
 	ToolCall(frame *ToolCallFrame) error
 	ToolCallUpdate(frame *ToolCallUpdateFrame) error
 	PlanUpdate(entries []PlanEntry) error
@@ -444,8 +450,23 @@ type ActivityEmitter interface {
 func (h *EmitterHandle) AgentMessageChunk(messageID, text string) error {
 	return h.enqueueUpdate(map[string]any{
 		keySessionUpdate: updKindAgentMessageChunk,
-		"messageId":      messageID,
-		"content":        ContentBlock{Type: blockText, Text: text},
+		keyMessageID:     messageID,
+		keyContent:       ContentBlock{Type: blockText, Text: text},
+	})
+}
+
+// UserMessageChunk streams one USER-side text chunk as a session/update
+// notification (20-01/D-05): the class-B command turn echoes the typed
+// invocation as a user_message_chunk ContentChunk BEFORE the output's
+// agent_message_chunks. The messageId MUST differ from the output chunks'
+// (a change in messageId indicates a new message has started) so the client
+// renders the echo and the output as two messages. Mirror of
+// AgentMessageChunk line-for-line except the kind.
+func (h *EmitterHandle) UserMessageChunk(messageID, text string) error {
+	return h.enqueueUpdate(map[string]any{
+		keySessionUpdate: updKindUserMessageChunk,
+		keyMessageID:     messageID,
+		keyContent:       ContentBlock{Type: blockText, Text: text},
 	})
 }
 
@@ -536,8 +557,8 @@ func (h *EmitterHandle) PlanUpdate(entries []PlanEntry) error {
 func (h *EmitterHandle) ThoughtChunk(messageID string, content ContentBlock) error {
 	return h.enqueueUpdate(map[string]any{
 		keySessionUpdate: updKindThoughtChunk,
-		"messageId":      messageID,
-		"content":        content,
+		keyMessageID:     messageID,
+		keyContent:       content,
 	})
 }
 
@@ -590,7 +611,7 @@ func (h *EmitterHandle) applyOptionalCardFields(
 	}
 
 	if len(content) > 0 {
-		update["content"] = content
+		update[keyContent] = content
 	}
 
 	if len(locations) > 0 {

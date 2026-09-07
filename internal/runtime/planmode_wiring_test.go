@@ -189,7 +189,7 @@ func startPlanModeServer(
 		Params: rawJSON(map[string]any{cwdKey: cwdForFrames, keyMCPServers: []any{}}),
 	})
 
-	frames := readFrames(t, cliR, 2)
+	frames := readResultFrames(t, cliR, 2)
 
 	var snew struct {
 		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field

@@ -243,7 +243,7 @@ func TestConfigAdvertise(t *testing.T) {
 
 	// session/new: the SAME builder feeds the session advertisement.
 	h.send(t, newRequest(1, "session/new", map[string]any{keyCwd: testCwdTmp, keyMcpServers: []any{}}))
-	snew := h.readFrame(t)
+	snew := h.readResultFrame(t)
 
 	if snew.Error != nil {
 		t.Fatalf("session/new errored: %+v", snew.Error)
@@ -326,7 +326,7 @@ func driveConfigSession(t *testing.T, h *pipeHarness) string {
 
 	handshake(t, h)
 	h.send(t, newRequest(1, "session/new", map[string]any{keyCwd: testCwdTmp, keyMcpServers: []any{}}))
-	snew := h.readFrame(t)
+	snew := h.readResultFrame(t)
 
 	var sres struct {
 		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
@@ -567,7 +567,7 @@ func TestSetConfigOptionNoSurface(t *testing.T) {
 	handshake(t, h)
 
 	h.send(t, newRequest(1, "session/new", map[string]any{keyCwd: testCwdTmp, keyMcpServers: []any{}}))
-	snew := h.readFrame(t)
+	snew := h.readResultFrame(t)
 
 	if !strings.Contains(string(snew.Result), "sessionId") {
 		t.Fatalf("session/new malformed: %s", string(snew.Result))

@@ -208,7 +208,7 @@ func TestIntegration_RealStreamingThroughACP(t *testing.T) { //nolint:funlen // 
 		JSONRPC: protocolVersion20, ID: json.RawMessage("1"), Method: methodSessNew,
 		Params: rawJSON(map[string]any{cwdKey: cwdForFrames, "mcpServers": []any{}}),
 	})
-	frames = readFrames(t, cliR, 1)
+	frames = readResultFrames(t, cliR, 1)
 
 	var snew struct {
 		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
@@ -321,4 +321,101 @@ func rawJSON(m map[string]any) json.RawMessage {
 	}
 
 	return b
+}
+
+// readResultFrames reads frames until n REQUEST RESPONSES (frames carrying
+// an id) arrive — session/update notifications emitted ahead of responses
+// are skipped (20-01: session/new now precedes its response with the
+// available_commands_update advertisement).
+func readResultFrames(t *testing.T, cliR io.Reader, n int) []*acp.Message {
+	t.Helper()
+
+	br := bufio.NewReader(cliR)
+
+	var out []*acp.Message
+
+	deadline := time.After(3 * time.Second)
+
+	for len(out) < n {
+		select {
+		default:
+		case <-deadline:
+			return out
+		}
+
+		line, err := br.ReadBytes('\n')
+		if len(line) == 0 && err != nil {
+			return out
+		}
+
+		line = bytes.TrimRight(line, "\n")
+		if len(line) == 0 {
+			continue
+		}
+
+		var msg acp.Message
+		if jerr := json.Unmarshal(line, &msg); jerr != nil {
+			continue
+		}
+
+		if msg.ID == nil {
+			continue // a notification — not a response; keep reading
+		}
+
+		out = append(out, &msg)
+	}
+
+	return out
+}
+
+// readResultFramesCounting reads n request responses, returning them plus
+// the count of session/update notifications skipped ahead of them (20-01:
+// session start's available_commands_update advertisement is a REAL
+// emitter-written notification — WrittenNotifications accounting must
+// include it even when a test's own update collection starts later).
+func readResultFramesCounting(t *testing.T, cliR io.Reader, n int) ([]*acp.Message, int) {
+	t.Helper()
+
+	br := bufio.NewReader(cliR)
+
+	var out []*acp.Message
+
+	skipped := 0
+
+	deadline := time.After(3 * time.Second)
+
+	for len(out) < n {
+		select {
+		default:
+		case <-deadline:
+			return out, skipped
+		}
+
+		line, err := br.ReadBytes('\n')
+		if len(line) == 0 && err != nil {
+			return out, skipped
+		}
+
+		line = bytes.TrimRight(line, "\n")
+		if len(line) == 0 {
+			continue
+		}
+
+		var msg acp.Message
+		if jerr := json.Unmarshal(line, &msg); jerr != nil {
+			continue
+		}
+
+		if msg.ID == nil {
+			if msg.Method == sessionUpdate {
+				skipped++
+			}
+
+			continue
+		}
+
+		out = append(out, &msg)
+	}
+
+	return out, skipped
 }

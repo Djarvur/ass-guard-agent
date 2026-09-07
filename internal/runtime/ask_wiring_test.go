@@ -928,7 +928,7 @@ func TestAskWiring_ServerLevelSurface(t *testing.T) { //nolint:cyclop,funlen // 
 		Params: rawJSON(map[string]any{cwdKey: cwdForFrames, keyMCPServers: []any{}}),
 	})
 
-	frames := readFrames(t, cliR, 2)
+	frames := readResultFrames(t, cliR, 2)
 
 	var snew struct {
 		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
@@ -1085,7 +1085,7 @@ func TestAskPark_PromptResponsePrecedesResolution(t *testing.T) { //nolint:cyclo
 		Params: rawJSON(map[string]any{cwdKey: cwdForFrames, keyMCPServers: []any{}}),
 	})
 
-	frames := readFrames(t, cliR, 2)
+	frames := readResultFrames(t, cliR, 2)
 
 	var snew struct {
 		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field

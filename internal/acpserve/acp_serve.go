@@ -274,6 +274,19 @@ func Run( //nolint:funlen // :320-425
 	})
 	surface.SetApplyHook(runner.ApplyTurnModel)
 
+	// 20-01 (ACP-04): the commands re-fire seam — every chain build/swap
+	// (LoadCommandRegistry today; the 20-05 rescan watcher later) re-fires
+	// available_commands_update for EVERY live session from the chain's
+	// winner projection (the commandSourceAdapter surface above — one truth,
+	// D-04). The SetNotify closure-wiring posture mirrored exactly:
+	// log-and-continue, never a failed serve.
+	runner.SetCommandsNotify(func() {
+		nerr := srv.NotifyAllAvailableCommands()
+		if nerr != nil {
+			log.Printf("ass-guard: available_commands_update enqueue failed (continuing): %v", nerr)
+		}
+	})
+
 	// 16-REVIEW CR-02: the initialize _meta blob channel must reach the WIRE,
 	// not just the chip. The hook stamps the runner's pre-editor-stamp default
 	// whenever a blob fill moved tier/model, so defaultTurnModel can never
