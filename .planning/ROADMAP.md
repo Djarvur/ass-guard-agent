@@ -271,7 +271,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 20-02-PLAN.md — Class-B family: twelve commands, /clear boundary, /cost endpoint-first, /model live-apply, /resume + /compact delegation seams (CMDS-02, D-06..D-09)
+- [x] 20-02-PLAN.md — Class-B family: twelve commands, /clear boundary, /cost endpoint-first, /model live-apply, /resume + /compact delegation seams (CMDS-02, D-06..D-09)
 - [ ] 20-03-PLAN.md — Per-agent model routing: precedence, inherit, cross-provider factory routing, resolvedModel both ways (SKLS-03, D-13..D-16)
 
 **Wave 3** *(blocked on Wave 2 completion)*
@@ -496,7 +496,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 | 17. Permissions + Elicitation | v1.2 | 6/6 | Complete    | 2026-09-03 |
 | 18. Session Family | v1.2 | 7/7 | Complete    | 2026-09-06 |
 | 19. Compaction + cache_control | v1.2 | 7/7 | Complete    | 2026-09-07 |
-| 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 1/6 | In Progress|  |
+| 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 2/6 | In Progress|  |
 | 21. Context & Policy Parity Closures | v1.2 | 6/6 | Complete    | 2026-09-06 |
 | 22. Background Execution + Sandbox Reality | v1.2 | 0/? | Not started | - |
 | 23. SEED Gaps Close-out | v1.2 | 0/? | Not started | - |

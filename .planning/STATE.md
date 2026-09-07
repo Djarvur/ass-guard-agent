@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Claude Code Parity
-current_plan: 2
+current_plan: 3
 status: executing
-stopped_at: Completed 20-01-PLAN.md (chain skeleton + tracer + wire battery)
-last_updated: "2026-09-07T18:44:33.571Z"
+stopped_at: Completed 20-02-PLAN.md (class-B family complete)
+last_updated: "2026-09-07T19:33:47.357Z"
 last_activity: 2026-09-07
 progress:
   total_phases: 11
   completed_phases: 6
   total_plans: 73
-  completed_plans: 43
+  completed_plans: 44
   percent: 55
 ---
 
@@ -26,13 +26,13 @@ See: .planning/PROJECT.md (updated 2026-09-06)
 ## Current Position
 
 Phase: 20 (built-in-commands-skills-per-agent-model) — EXECUTING
-Plan: 2 of 6
-Current Plan: 2
+Plan: 3 of 6
+Current Plan: 3
 Total Plans in Phase: 6
 Status: Ready to execute
 Last activity: 2026-09-07
 
-Progress: [██████░░░░] 59%
+Progress: [██████░░░░] 60%
 
 ## Performance Metrics
 
@@ -87,6 +87,7 @@ Progress: [██████░░░░] 59%
 | Phase 19 P19-06 | 23 min | 3 tasks | 7 files |
 | Phase 19 P07 | 6 min | 3 tasks | 4 files |
 | Phase 20 P01 | 65 min | 3 tasks | 19 files |
+| Phase 20 P02 | 118 min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -201,6 +202,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-07T18:44:33.537Z
-Stopped at: Completed 20-01-PLAN.md (chain skeleton + tracer + wire battery)
+Last session: 2026-09-07T19:33:47.343Z
+Stopped at: Completed 20-02-PLAN.md (class-B family complete)
 Resume file: None
