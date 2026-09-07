@@ -395,11 +395,13 @@ func TestCommandChainReservedShadowing(t *testing.T) {
 		}
 	}
 
-	ad := c.advertisement()
-
-	for _, f := range ad {
-		if f.Name == nameModel || f.Name == nameCompact {
-			t.Errorf("advertisement lists shadowed name %q; winners-only (D-04)", f.Name)
+	// 20-02 note: model + compact are LIVE builtins now, so they ARE in the
+	// advertisement — as the BUILTIN winners. The D-04 assertion is that the
+	// DISCOVERED entries lost: the winner kind is builtin, never skill/file.
+	for _, name := range []string{nameModel, nameCompact, nameStatus} {
+		e, ok := c.resolve(name)
+		if !ok || e.kind != chainKindBuiltin {
+			t.Errorf("winner for %q = %+v; want the builtin (D-01)", name, e)
 		}
 	}
 
