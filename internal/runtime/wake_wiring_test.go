@@ -10,6 +10,7 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
+	"github.com/Djarvur/ass-guard-agent/internal/tasks"
 )
 
 // The wake-turn wiring battery (22-01, D-01/D-02/D-03): a background Bash
@@ -195,5 +196,118 @@ func TestWakeTurn_BackgroundBashCompletion(t *testing.T) { //nolint:funlen,cyclo
 	// never replaces).
 	if first := wakeUserTexts(t, sess)[0]; !strings.Contains(first, "run a background task") {
 		t.Errorf("first user message = %q; want the typed client prompt", first)
+	}
+}
+
+// TestWakeTurn_BusyClientTurnAccumulates (22-01 Task 2, D-01 fallback +
+// D-03 at the runner level): completions landing while the session's turn
+// slot is held leave the notifications pending (zero consumed, zero wake
+// turns while busy); after the mutex frees, ONE later batch carries every
+// accumulated notification in completion-time order. The client turn is
+// never interrupted.
+func TestWakeTurn_BusyClientTurnAccumulates(t *testing.T) { //nolint:funlen,cyclop // flat fallback battery
+	t.Parallel()
+
+	r, prov := newExpansionRunner(t, true,
+		scriptedResp{text: "wake batch acknowledged"},
+	)
+
+	_ = r.sessionFor(context.Background(), "sess-wake-busy")
+
+	sess := r.sessions["sess-wake-busy"]
+
+	tr := r.trackerFor("sess-wake-busy")
+	if tr == nil {
+		t.Fatal("no tracker wired for the session")
+	}
+
+	// Hold the session's turn slot (a client turn is active).
+	mu := r.sessionTurnMu("sess-wake-busy")
+	mu.Lock()
+
+	// Completions during the busy window — they must coalesce, not deliver.
+	tr.Complete(tasks.Notification{TaskID: "exec_busy_a", Kind: tasks.KindBash, ExitStatus: "0", Tail: "busy-a marker"})
+	tr.Complete(tasks.Notification{TaskID: "exec_busy_b", Kind: tasks.KindBash, ExitStatus: "0", Tail: "busy-b marker"})
+
+	time.Sleep(300 * time.Millisecond) // the retry chain runs and declines
+
+	if calls := prov.callCount(); calls != 0 {
+		t.Errorf("provider calls during busy window = %d; want 0 (never interrupt)", calls)
+	}
+
+	for _, txt := range wakeUserTexts(t, sess) {
+		if strings.Contains(txt, "task-notification") {
+			t.Fatal("wake turn fired while the turn slot was held — must stay pending")
+		}
+	}
+
+	if peek := tr.PendingPeek(); len(peek) != 2 {
+		t.Errorf("pending peek = %d; want 2 (coalesced while waiting)", len(peek))
+	}
+
+	// The busy window ends: the retry chain delivers ONE batch in order.
+	mu.Unlock()
+
+	batched := waitFor(5*time.Second, func() bool {
+		for _, txt := range wakeUserTexts(t, sess) {
+			if strings.Contains(txt, "busy-a marker") && strings.Contains(txt, "busy-b marker") {
+				return true
+			}
+		}
+
+		return false
+	})
+
+	if !batched {
+		t.Fatal("no single wake batch carrying both accumulated notifications")
+	}
+
+	wakeTurns := 0
+
+	lastWake := ""
+
+	for _, txt := range wakeUserTexts(t, sess) {
+		if strings.Contains(txt, "task-notification") {
+			wakeTurns++
+			lastWake = txt
+		}
+	}
+
+	if wakeTurns != 1 {
+		t.Errorf("wake turns = %d; want exactly 1 (one coalesced post-busy batch)", wakeTurns)
+	}
+
+	if a, b := strings.Index(lastWake, "busy-a marker"), strings.Index(lastWake, "busy-b marker"); a > b {
+		t.Error("wake batch not in completion-time order (a must precede b)")
+	}
+
+	if calls := prov.callCount(); calls != 1 {
+		t.Errorf("provider calls after busy window = %d; want exactly 1 (one batch)", calls)
+	}
+}
+
+// TestWakeTurn_EmptyPendingNoTurn (22-01 Task 2, PAR-07 empty probe at the
+// runner level): a drain attempt on an empty pending queue makes NO model
+// call and writes NO EngineDecision line.
+func TestWakeTurn_EmptyPendingNoTurn(t *testing.T) {
+	t.Parallel()
+
+	r, prov := newExpansionRunner(t, true)
+
+	_ = r.sessionFor(context.Background(), "sess-wake-empty")
+
+	// Direct drain attempt with nothing pending.
+	r.scheduleWakeDrain("sess-wake-empty")
+
+	time.Sleep(200 * time.Millisecond) // the chain runs, finds nothing, exits
+
+	if calls := prov.callCount(); calls != 0 {
+		t.Errorf("provider calls = %d; want 0 (empty pending → no wake)", calls)
+	}
+
+	sess := r.sessions["sess-wake-empty"]
+
+	if got := wakeEngineDecisions(t, sess, wakeProvenance); got != 0 {
+		t.Errorf("wake EngineDecision lines = %d; want 0 (nothing to deliver)", got)
 	}
 }
