@@ -909,6 +909,7 @@ func TestIDGrammarTable(t *testing.T) {
 		"sess-turn-001", "sess-pre-001",
 		"my-sess-2-pre-010", "A_b-c-turn-999999",
 		"sess-turn-pre-001", // session charset allows "sess-turn"; family pre — parses, and such a ref exists only if that literal session minted it
+		"sess--pre-001",     // session "sess-" is a legal charset id — valid, not malformed
 	}
 	for _, id := range accept {
 		if !idPattern.MatchString(id) {
@@ -921,7 +922,7 @@ func TestIDGrammarTable(t *testing.T) {
 		"sess-prex-001",         // wrong family
 		"sess-pre-", "sess-pre", // no sequence
 		"sess-pre--001",             // double separator
-		"-pre-001", "sess--pre-001", // session charset still matches "-"... sess--pre-001: session="sess", then "--pre-"? see below
+		"-pre-001", // no session prefix
 		"HEAD", "../../etc", "refs/heads/main", "",
 	}
 	for _, id := range reject {

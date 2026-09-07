@@ -108,10 +108,14 @@ const (
 
 var (
 	// idPattern is the strict checkpoint-id grammar (T-14-01): a checkpoint
-	// id is ALWAYS <sessionID>-turn-<zero-padded number> — the only shape
-	// ever validated into a ref name. No user string reaches git as a
-	// refspec unvalidated.
-	idPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+-turn-(\d{3,})$`)
+	// id is ALWAYS <sessionID>-<family>-<zero-padded number> where family is
+	// "turn" (turn-boundary snapshots) or "pre" (pre-restore snapshots,
+	// 23-03/D-09) — the only shapes ever validated into a ref name. No user
+	// string reaches git as a refspec unvalidated. All three enforcement
+	// sites (this pattern, validateTurnID, parseRefLine) move TOGETHER
+	// (Pitfall 6): a partial update mints snapshot ids that fail validation
+	// and a restore proceeds unsnapshotted — the exact worst case.
+	idPattern = regexp.MustCompile(`^[A-Za-z0-9_-]+-(turn|pre)-(\d{3,})$`)
 
 	// lockStaleAfter bounds how long a crashed holder's lock survives before
 	// the next operation steals it (with a warning — T-14-06).
@@ -153,6 +157,10 @@ type Entry struct {
 	TurnNum     int
 	Ref         string
 	CommittedAt time.Time
+	// Kind is the id family: "turn" (turn-boundary snapshot) or "pre"
+	// (pre-restore snapshot, 23-03/D-09). Field-additive — entries parsed by
+	// pre-23-03 readers carried the turn family implicitly.
+	Kind string
 }
 
 // Store is the per-workspace shadow-git checkpoint store. All Snapshot and
@@ -236,6 +244,64 @@ func (s *Store) Snapshot(ctx context.Context, sessionID, turnID string) error {
 	})
 }
 
+// SnapshotPreRestore mints a PRE-RESTORE snapshot (23-03, D-09): the
+// pre-restore safety net a restore composes BEFORE overwriting the workspace
+// (the caller aborts the restore when this fails — fail-closed). The minted
+// id is <sessionID>-pre-<NNN> in the SAME grammar, store, and GC lifecycle as
+// turn checkpoints (restorable via the same machinery — undo-of-undo). The
+// counter is deterministic across process restarts: seeded by scanning the
+// session's existing -pre- refs, next = max+1.
+func (s *Store) SnapshotPreRestore(ctx context.Context, sessionID string) (string, error) {
+	if sessionID == "" {
+		return "", errEmptySessionID
+	}
+
+	var minted string
+
+	err := s.withLock(ctx, func() error {
+		entries, err := s.listRefs(ctx)
+		if err != nil {
+			return err
+		}
+
+		maxPre := 0
+
+		for _, e := range entries {
+			if e.SessionID == sessionID && e.Kind == idFamilyPre && e.TurnNum > maxPre {
+				maxPre = e.TurnNum
+			}
+		}
+
+		id := fmt.Sprintf("%s-%s-%03d", sessionID, idFamilyPre, maxPre+1)
+
+		// The minted id is internally constructed, but the centralized
+		// validate-before-refspec gate (T-14-01) still runs — the grammar
+		// contract is enforced at ONE site, inherited by every family.
+		if err := validateTurnID(sessionID, id); err != nil {
+			return err
+		}
+
+		sha, err := s.commitSnapshot(ctx, id)
+		if err != nil {
+			return err
+		}
+
+		err = s.updateRef(ctx, id, sha)
+		if err != nil {
+			return err
+		}
+
+		minted = id
+
+		return s.prune(ctx)
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return minted, nil
+}
+
 // List returns the turn checkpoints ascending by (sessionID, turn number).
 // The convenience tip (refs/checkpoints/last) is not a turn checkpoint and
 // never appears.
@@ -286,7 +352,7 @@ func (s *Store) DeleteSession(ctx context.Context, sessionID string) error {
 func (s *Store) Restore(ctx context.Context, id string) error {
 	if !idPattern.MatchString(id) {
 		return fmt.Errorf( //nolint:err113 // dynamic validation error
-			"checkpoint: invalid checkpoint id %q: want <sessionID>-turn-<NNN>", id)
+			"checkpoint: invalid checkpoint id %q: want <sessionID>-turn-<NNN> or <sessionID>-pre-<NNN>", id)
 	}
 
 	return s.withLock(ctx, func() error {
@@ -392,20 +458,30 @@ func (s *Store) git(ctx context.Context, args ...string) ([]byte, error) {
 	return out, nil
 }
 
+// The id families (23-03): "turn" is the turn-boundary family; "pre" is the
+// pre-restore family (D-09). Both are first-class — neither grammar site may
+// accept anything the other rejects.
+const (
+	idFamilyTurn = "turn"
+	idFamilyPre  = "pre"
+)
+
 // validateTurnID enforces the strict id grammar and the session ownership
 // BEFORE any git subprocess: the checkpoint id is the only user input that
-// ever names a ref (T-14-01).
+// ever names a ref (T-14-01). Family-aware (23-03): both -turn- and -pre-
+// ids validate, each against its own session-prefix shape.
 func validateTurnID(sessionID, turnID string) error {
 	if sessionID == "" {
 		return errEmptySessionID
 	}
 
-	if !idPattern.MatchString(turnID) {
+	m := idPattern.FindStringSubmatch(turnID)
+	if m == nil {
 		return fmt.Errorf( //nolint:err113 // dynamic validation error
-			"checkpoint: invalid turn id %q: want <sessionID>-turn-<NNN>", turnID)
+			"checkpoint: invalid turn id %q: want <sessionID>-turn-<NNN> or <sessionID>-pre-<NNN>", turnID)
 	}
 
-	if !strings.HasPrefix(turnID, sessionID+"-turn-") {
+	if !strings.HasPrefix(turnID, sessionID+"-"+m[1]+"-") {
 		return fmt.Errorf( //nolint:err113 // dynamic validation error
 			"checkpoint: turn id %q does not belong to session %q", turnID, sessionID)
 	}
@@ -476,7 +552,14 @@ func (s *Store) listRefs(ctx context.Context) ([]Entry, error) {
 			return strings.Compare(a.SessionID, b.SessionID)
 		}
 
-		return a.TurnNum - b.TurnNum
+		if a.TurnNum != b.TurnNum {
+			return a.TurnNum - b.TurnNum
+		}
+
+		// Same sequence number across families: deterministic order (the
+		// pre-restore sibling of a turn sorts beside it — 23-05's stack walk
+		// consumes this ordering).
+		return strings.Compare(a.Kind, b.Kind)
 	})
 
 	return entries, nil
@@ -503,7 +586,9 @@ func parseRefLine(line string) (Entry, bool) {
 		return Entry{}, false
 	}
 
-	turnNum, err := strconv.Atoi(m[1])
+	family, seq := m[1], m[2]
+
+	turnNum, err := strconv.Atoi(seq)
 	if err != nil {
 		return Entry{}, false
 	}
@@ -514,10 +599,11 @@ func parseRefLine(line string) (Entry, bool) {
 	}
 
 	return Entry{
-		SessionID:   strings.TrimSuffix(id, "-turn-"+m[1]),
+		SessionID:   strings.TrimSuffix(id, "-"+family+"-"+seq),
 		TurnNum:     turnNum,
 		Ref:         refName,
 		CommittedAt: time.Unix(unixSec, 0).UTC(),
+		Kind:        family,
 	}, true
 }
 
