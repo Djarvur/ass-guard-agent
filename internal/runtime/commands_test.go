@@ -15,11 +15,22 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/internal/event"
+	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
 )
 
 // --- 20-01: command chain + class-B intercept (tracer battery) ---
+
+// Captured frame-kind literals + fixture vocabulary (goconst-extracted).
+const (
+	frameKindUserEcho   = "user_message_chunk"
+	frameKindAgentChunk = "agent_message_chunk"
+	fixtureProvider     = "zai"
+	fixtureCredEnv      = "ZAI_API_KEY"
+	fixtureModel        = "glm-5.2"
+	fixtureModelLite    = "glm-4.7-air"
+)
 
 // commandFrame is one captured session/update chunk (the tracer's frame sink).
 type commandFrame struct {
@@ -42,7 +53,7 @@ func (t *tracerEmitter) UserMessageChunk(messageID, text string) error {
 	defer t.mu.Unlock()
 
 	t.frames = append(t.frames,
-		commandFrame{kind: "user_message_chunk", messageID: messageID, text: text})
+		commandFrame{kind: frameKindUserEcho, messageID: messageID, text: text})
 
 	return nil
 }
@@ -52,7 +63,7 @@ func (t *tracerEmitter) AgentMessageChunk(messageID, text string) error {
 	defer t.mu.Unlock()
 
 	t.frames = append(t.frames,
-		commandFrame{kind: "agent_message_chunk", messageID: messageID, text: text})
+		commandFrame{kind: frameKindAgentChunk, messageID: messageID, text: text})
 
 	return nil
 }
@@ -114,6 +125,21 @@ func newCommandRunner(t *testing.T, fixtures func(dir string)) (*Runner, *script
 		workDir:      dir,
 		maxConc:      4,
 		stderr:       stderr,
+		providerName: fixtureProvider,
+		schedCfg: &modelrouting.Config{
+			SessionTier: "heavy",
+			Providers: map[string]modelrouting.ProviderConfig{
+				fixtureProvider: {APIKeyEnv: fixtureCredEnv},
+			},
+			Tiers: map[string]modelrouting.TierBinding{
+				tierHeavy: {Model: fixtureModel},
+				tierLight: {Model: fixtureModelLite},
+			},
+			Models: map[string]modelrouting.ModelConfig{
+				"glm-5.2":     {Provider: "zai"},
+				"glm-4.7-air": {Provider: "zai"},
+			},
+		},
 		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return prov },
 	}
 
@@ -155,9 +181,9 @@ func TestTracerStatusClassB(t *testing.T) {
 
 	for _, f := range frames {
 		switch f.kind {
-		case "user_message_chunk":
+		case frameKindUserEcho:
 			echoes = append(echoes, f)
-		case "agent_message_chunk":
+		case frameKindAgentChunk:
 			outputs = append(outputs, f)
 		}
 	}
@@ -455,7 +481,7 @@ func TestCommandChainEmptyRegistry(t *testing.T) {
 	stderr := &bytes.Buffer{}
 	c := buildChain(ecosys.Registry{}, stderr)
 
-	for _, name := range []string{nameStatus, "init"} {
+	for _, name := range []string{nameStatus, nameInit} {
 		if _, ok := c.resolve(name); !ok {
 			t.Errorf("empty-registry chain missing builtin %q", name)
 		}
@@ -465,7 +491,7 @@ func TestCommandChainEmptyRegistry(t *testing.T) {
 		t.Error("empty-registry chain status entry lacks its live handler")
 	}
 
-	if e, ok := c.resolve("init"); !ok || !e.hasClassA {
+	if e, ok := c.resolve(nameInit); !ok || !e.hasClassA {
 		t.Error("empty-registry chain init entry lacks the class-A reservation")
 	}
 
@@ -552,6 +578,278 @@ func registryDiff(a, b ecosys.Registry) string {
 			fmt.Fprintf(&sb, "Commands[%s] added\n", key)
 		}
 	}
+
+	return sb.String()
+}
+
+// --- 20-02: the class-B family battery (CMDS-02) ---
+
+// classBRun drives one class-B invocation through Run and returns the
+// captured frames + transcript lines (the battery's shared lens).
+func classBRun(t *testing.T, r *Runner, prompt string) ([]commandFrame, []session.Line) {
+	t.Helper()
+
+	emit := &tracerEmitter{}
+
+	stop, err := r.Run(context.Background(), "classb", emit, []acp.ContentBlock{{Type: blockText, Text: prompt}})
+	if err != nil {
+		t.Fatalf("Run(%q): %v", prompt, err)
+	}
+
+	if stop != stopEndTurn {
+		t.Fatalf("Run(%q) stop = %q; want end_turn", prompt, stop)
+	}
+
+	lines, rerr := r.sessions["classb"].Manager.ReadAll()
+	if rerr != nil {
+		t.Fatalf("ReadAll: %v", rerr)
+	}
+
+	return emit.snapshot(), lines
+}
+
+// localCommandLine returns the LAST local_command line (the durable record).
+func localCommandLine(t *testing.T, lines []session.Line) session.Line {
+	t.Helper()
+
+	var out *session.Line
+
+	for i := range lines {
+		if lines[i].Type == session.TypeLocalCommand {
+			out = &lines[i]
+		}
+	}
+
+	if out == nil {
+		t.Fatal("no local_command line in transcript")
+	}
+
+	return *out
+}
+
+// TestClassBPureLocal pins the six pure-local commands: zero provider calls,
+// the D-05 shape, a durable local_command record, and each command's
+// output contract (Pitfall 8: no network — asserted by the fake provider's
+// zero Stream count).
+//
+//nolint:gocognit,gocyclo,cyclop,funlen,paralleltest // one table, one shared lens (sequenced runner state)
+func TestClassBPureLocal(t *testing.T) {
+	t.Setenv("ZAI_API_KEY", "sk-doctor-secret-fixture")
+
+	cases := []struct {
+		name   string
+		prompt string
+		check  func(t *testing.T, out string)
+	}{
+		{"help", "/help", func(t *testing.T, out string) {
+			t.Helper()
+
+			for _, want := range []string{nameStatus, nameInit, "greet"} {
+				if !strings.Contains(out, want) {
+					t.Errorf("/help output missing %q:\n%s", want, out)
+				}
+			}
+		}},
+		{"memory", "/memory", func(t *testing.T, out string) {
+			t.Helper()
+
+			if !strings.Contains(out, "memory") {
+				t.Errorf("/memory output missing memory section:\n%s", out)
+			}
+		}},
+		{"permissions", "/permissions", func(t *testing.T, out string) {
+			t.Helper()
+
+			if !strings.Contains(out, "ungated") && !strings.Contains(out, "gated") {
+				t.Errorf("/permissions output names no mode:\n%s", out)
+			}
+		}},
+		{"mcp", "/mcp", func(t *testing.T, out string) {
+			t.Helper()
+
+			if !strings.Contains(out, "mcp") && !strings.Contains(out, "MCP") {
+				t.Errorf("/mcp output missing mcp section:\n%s", out)
+			}
+		}},
+		{"doctor", "/doctor", func(t *testing.T, out string) {
+			t.Helper()
+
+			if !strings.Contains(out, fixtureCredEnv) {
+				t.Errorf("/doctor output missing credential env var NAME:\n%s", out)
+			}
+
+			if strings.Contains(out, "sk-doctor-secret-fixture") {
+				t.Error("/doctor output LEAKED the credential value (T-20-05)")
+			}
+		}},
+		{"config", "/config", func(t *testing.T, out string) {
+			t.Helper()
+
+			if !strings.Contains(out, "tier") && !strings.Contains(out, "model") {
+				t.Errorf("/config output missing tier/model view:\n%s", out)
+			}
+		}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r, prov, _ := newCommandRunner(t, func(dir string) {
+				writeDiscoveredCommand(t, dir, "greet", "Say hi: $ARGUMENTS\n")
+			})
+
+			// Prime a session so handlers read live state.
+			_, _ = classBRun(t, r, "/status")
+
+			frames, lines := classBRun(t, r, tc.prompt)
+
+			if got := prov.callCount(); got != 0 {
+				t.Errorf("provider Stream calls = %d; want 0", got)
+			}
+
+			var echoed, outputted bool
+
+			var outText strings.Builder
+
+			for _, f := range frames {
+				switch f.kind {
+				case frameKindUserEcho:
+					echoed = echoed || f.text == tc.prompt
+				case frameKindAgentChunk:
+					outputted = true
+
+					outText.WriteString(f.text)
+				}
+			}
+
+			if !echoed {
+				t.Errorf("no echo frame carrying %q verbatim", tc.prompt)
+			}
+
+			if !outputted {
+				t.Error("no output agent_message_chunk frames")
+			}
+
+			rec := localCommandLine(t, lines)
+			if rec.Name != tc.name {
+				t.Errorf("local_command Name = %q; want %q", rec.Name, tc.name)
+			}
+
+			if rec.Expansion != "ok" {
+				t.Errorf("local_command outcome = %q; want ok", rec.Expansion)
+			}
+
+			tc.check(t, outText.String())
+		})
+	}
+}
+
+// TestClassBHelpSelfDescribing pins D-08: /help renders FROM the live chain —
+// adding a skill changes the output with no hand-maintained list.
+//
+//nolint:paralleltest // sequenced runner state
+func TestClassBHelpSelfDescribing(t *testing.T) {
+	r, _, _ := newCommandRunner(t, func(dir string) {
+		writeDiscoveredCommand(t, dir, "greet", "Say hi: $ARGUMENTS\n")
+	})
+
+	frames, _ := classBRun(t, r, "/help")
+
+	var before strings.Builder
+
+	for _, f := range frames {
+		if f.kind == "agent_message_chunk" {
+			before.WriteString(f.text)
+		}
+	}
+
+	// Add a skill to the registry + rebuild the chain (the rescan path 20-05
+	// automates; the battery drives the seam directly).
+	reg := r.reg
+	reg.Skills = map[string]ecosys.Skill{
+		"greeter": {Name: "greeter", Description: "greets warmly", Path: "greeter/SKILL.md"},
+	}
+
+	r.reg = reg
+	r.rebuildCommandChain()
+
+	frames2, _ := classBRun(t, r, "/help")
+
+	var after strings.Builder
+
+	for _, f := range frames2 {
+		if f.kind == "agent_message_chunk" {
+			after.WriteString(f.text)
+		}
+	}
+
+	if before.String() == after.String() {
+		t.Fatal("/help output identical after a skill was added (not self-describing, D-08)")
+	}
+
+	if !strings.Contains(after.String(), "greeter") {
+		t.Errorf("/help output after adding greeter does not name it:\n%s", after.String())
+	}
+}
+
+// TestClassBMemoryReadOnly pins D-09: /memory never writes — every file in
+// the workDir compares byte-identical before/after.
+//
+//nolint:paralleltest // sequenced runner state
+func TestClassBMemoryReadOnly(t *testing.T) {
+	r, _, _ := newCommandRunner(t, func(dir string) {
+		writeDiscoveredCommand(t, dir, "greet", "Say hi\n")
+
+		err := os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte("# guide\nproject memory\n"), 0o600)
+		if err != nil {
+			t.Fatalf("write AGENTS.md: %v", err)
+		}
+	})
+
+	before := dirSnapshot(t, r.workDir)
+
+	_, _ = classBRun(t, r, "/memory")
+
+	after := dirSnapshot(t, r.workDir)
+
+	if before != after {
+		t.Error("/memory mutated the workDir (read-only, D-09)")
+	}
+}
+
+// dirSnapshot renders every file's relative path + content under dir.
+func dirSnapshot(t *testing.T, dir string) string {
+	t.Helper()
+
+	var sb strings.Builder
+
+	var walk func(rel string)
+
+	walk = func(rel string) {
+		entries, err := os.ReadDir(filepath.Join(dir, rel))
+		if err != nil {
+			return
+		}
+
+		for _, e := range entries {
+			p := filepath.Join(rel, e.Name())
+			if e.IsDir() {
+				if e.Name() == ".ass-guard" {
+					continue // the transcript — every class-B turn's durable record, not memory state
+				}
+
+				walk(p)
+
+				continue
+			}
+
+			data, rerr := os.ReadFile(filepath.Join(dir, p))
+			if rerr == nil {
+				sb.WriteString(p + ":" + string(data) + "\n")
+			}
+		}
+	}
+
+	walk(".")
 
 	return sb.String()
 }

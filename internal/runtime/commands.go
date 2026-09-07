@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -35,14 +37,15 @@ const (
 	chainKindFile    = "file"
 )
 
-// statusUnsetLabel marks an unresolvable /status field (never an empty line).
+// statusUnsetLabel marks an unresolvable /status field (never an empty line);
+// tierHeavyDefault is the implicit session tier when config leaves it unset.
 const statusUnsetLabel = "(unset)"
 
 // builtinHandler executes one class-B command against live session state and
 // returns the output text (CMDS-02): pure-local, control-plane fast, ZERO
 // provider calls. Handlers must never touch the network (the FAST-CONTROL
 // budget discipline for the network-bound family lands in 20-02).
-type builtinHandler func(r *Runner, sess *session.Session, args string) string
+type builtinHandler func(r *Runner, sess *session.Session, turnID, args string) string
 
 // chainEntry is one name's winner in the resolver chain.
 type chainEntry struct {
@@ -104,6 +107,36 @@ func builtinTable() []builtinClassB {
 			name:    "status",
 			desc:    "Show the live session snapshot (model, provider, turns, context usage)",
 			handler: builtinStatus,
+		},
+		{
+			name:    "help",
+			desc:    "List every command this agent resolves (generated from the live chain)",
+			handler: builtinHelp,
+		},
+		{
+			name:    "memory",
+			desc:    "List loaded memory sources (read-only)",
+			handler: builtinMemory,
+		},
+		{
+			name:    "permissions",
+			desc:    "Show the permission-gate mode",
+			handler: builtinPermissions,
+		},
+		{
+			name:    "mcp",
+			desc:    "List configured MCP servers",
+			handler: builtinMcp,
+		},
+		{
+			name:    "doctor",
+			desc:    "Run the built-in health checks (workdir, config, credentials, transcript dir, registry)",
+			handler: builtinDoctor,
+		},
+		{
+			name:    "config",
+			desc:    "Show the resolved scheduling config (tiers, session tier, compaction)",
+			handler: builtinConfig,
 		},
 	}
 }
@@ -263,7 +296,7 @@ const agentDispatchHint = "(prompt for the agent)"
 // from in-process state only — resolved model + tier, provider, session id,
 // turn count, context-usage estimate, degraded-capability flags. Every line
 // derives from live state, zero network, zero credential values (T-20-03).
-func builtinStatus(r *Runner, sess *session.Session, _ string) string {
+func builtinStatus(r *Runner, sess *session.Session, _, _ string) string {
 	model := statusModel(r, sess)
 	provider := statusProvider(r)
 	tier := statusTier(r)
@@ -325,7 +358,7 @@ func statusTier(r *Runner) string {
 
 	tier := r.schedCfg.SessionTier
 	if tier == "" {
-		tier = "heavy"
+		tier = tierHeavy
 	}
 
 	return tier
@@ -426,3 +459,237 @@ func (r *Runner) CommandAdvertisement() []acp.AvailableCommandFrame {
 // chainResolveCount reports how many chain resolutions were consulted (test
 // observability for the single-parse discipline: one resolution per Run).
 func (r *Runner) chainResolveCount() uint64 { return r.chainResolves.Load() }
+
+// --- 20-02: the class-B family (CMDS-02) ---
+
+// builtinHelp renders its inventory FROM the live chain (D-08:
+// self-describing — never a hand-maintained list; a discovered skill or
+// command file changes the output at the next chain build).
+func builtinHelp(r *Runner, _ *session.Session, _, _ string) string {
+	chain := r.commandChainRef()
+
+	names := slices.Sorted(maps.Keys(chain.entries))
+
+	var sb strings.Builder
+
+	sb.WriteString("Commands (chain winners — what you see is what runs):\n")
+
+	for _, name := range names {
+		e := chain.entries[name]
+
+		line := fmt.Sprintf("  /%s [%s]", e.name, e.kind)
+		if e.desc != "" {
+			line += " — " + e.desc
+		}
+
+		if e.hint != "" {
+			line += " " + e.hint
+		}
+
+		sb.WriteString(line + "\n")
+	}
+
+	return sb.String()
+}
+
+// builtinMemory lists the loaded memory sources read-only (D-09): the
+// agent-md discovery tree + the learning store's entries. No edit affordance
+// (ACP has no editor-open mechanism); zero file writes.
+func builtinMemory(r *Runner, _ *session.Session, _, _ string) string {
+	var sb strings.Builder
+
+	sb.WriteString("memory sources (read-only):\n")
+
+	files := ecosys.DiscoverMemoryFiles(r.workDirOrDefault())
+	if len(files) == 0 {
+		sb.WriteString("  (no memory files discovered)\n")
+	}
+
+	for _, f := range files {
+		note := ""
+		if f.SkipNote != "" {
+			note = " (" + f.SkipNote + ")"
+		}
+
+		fmt.Fprintf(&sb, "  %s — %d bytes%s\n", f.Path, f.OrigBytes, note)
+	}
+
+	sb.WriteString("learning store:\n")
+
+	if r.learned != nil {
+		entries := r.learned.List()
+
+		suffix := "ies"
+		if len(entries) == 1 {
+			suffix = "y"
+		}
+
+		fmt.Fprintf(&sb, "  %d learned entr%s\n", len(entries), suffix)
+	} else {
+		sb.WriteString("  (learning store not loaded)\n")
+	}
+
+	return sb.String()
+}
+
+// builtinPermissions reports the current permission-gate mode (the
+// safety-model amendment: ungated is the default; the Phase 17 gate machinery
+// rides the runner's perm store either way).
+func builtinPermissions(r *Runner, _ *session.Session, _, _ string) string {
+	mode := r.PermMode()
+	if mode == "" {
+		mode = "ungated"
+	}
+
+	return fmt.Sprintf("permissions mode: %s\n"+
+		"(tool execution is ungated by default; gated mode asks before mutating tools — "+
+		"see the editor's permissions config option)\n", mode)
+}
+
+// builtinMCP lists the discovered MCP server configs (D-11/CONTEXT
+// discretion): name + launch command. Connection state is not probed — a
+// control-plane command never launches servers (Pitfall 8).
+func builtinMcp(r *Runner, _ *session.Session, _, _ string) string {
+	var sb strings.Builder
+
+	sb.WriteString("mcp servers (configured):\n")
+
+	if len(r.mcpServers) == 0 {
+		sb.WriteString("  (none configured)\n")
+
+		return sb.String()
+	}
+
+	for _, cfg := range r.mcpServers {
+		fmt.Fprintf(&sb, "  %s — %s %s (connection state unknown at command time)\n",
+			cfg.Name, cfg.Command, strings.Join(cfg.Args, " "))
+	}
+
+	return sb.String()
+}
+
+// builtinDoctor runs the fixed check list (CONTEXT discretion): workdir,
+// scheduling config, credential env var PRESENCE (names — never values,
+// T-20-05), transcript directory writability, registry load status.
+func builtinDoctor(r *Runner, _ *session.Session, _, _ string) string {
+	var sb strings.Builder
+
+	sb.WriteString("doctor:\n")
+
+	// 1. workdir.
+	if wd := r.workDirOrDefault(); wd != "" {
+		_, err := os.Stat(wd)
+		if err == nil {
+			sb.WriteString("  workdir: ok (" + wd + ")\n")
+		} else {
+			sb.WriteString("  workdir: UNRESOLVABLE (" + wd + ")\n")
+		}
+	}
+
+	// 2. scheduling config.
+	if r.schedCfg != nil {
+		sb.WriteString("  scheduling config: loaded\n")
+	} else {
+		sb.WriteString("  scheduling config: NOT LOADED (tier resolution off)\n")
+	}
+
+	// 3. credential presence for the session provider — env var NAMES only.
+	sb.WriteString("  credentials: " + doctorCredentialState(r) + "\n")
+
+	// 4. transcript directory writability.
+	sb.WriteString("  transcript dir: " + doctorTranscriptState(r.workDirOrDefault()) + "\n")
+
+	// 5. registry load status (D-11 skip count comes from the loader's own
+	// warnings; here we report the loaded surface sizes).
+	fmt.Fprintf(&sb, "  command registry: %d command(s), %d skill(s), %d agent(s)\n",
+		len(r.reg.Commands), len(r.reg.Skills), len(r.reg.Agents))
+
+	return sb.String()
+}
+
+// builtinConfig renders the current resolved scheduling view: session tier,
+// tier→model bindings, compaction keys (16-05/19-05 surfaces).
+func builtinConfig(r *Runner, _ *session.Session, _, _ string) string {
+	var sb strings.Builder
+
+	if r.schedCfg == nil {
+		return "config: no scheduling config loaded (defaults in effect)\n"
+	}
+
+	sb.WriteString("config:\n")
+
+	tier := r.schedCfg.SessionTier
+	if tier == "" {
+		tier = tierHeavy
+	}
+
+	sb.WriteString("  session tier: " + tier + "\n")
+
+	for _, name := range slices.Sorted(maps.Keys(r.schedCfg.Tiers)) {
+		b := r.schedCfg.Tiers[name]
+
+		line := fmt.Sprintf("  tier %s -> %s", name, b.Model)
+		if len(b.Fallback) > 0 {
+			line += " (fallback: " + strings.Join(b.Fallback, ", ") + ")"
+		}
+
+		sb.WriteString(line + "\n")
+	}
+
+	fmt.Fprintf(&sb, "  compaction: enabled=%v threshold=%d%%\n",
+		r.schedCfg.Compaction.Enabled, r.schedCfg.Compaction.ThresholdPct)
+
+	return sb.String()
+}
+
+// doctorCredentialState reports the session provider's credential env var
+// NAME and whether it is set — never the value (T-20-05).
+func doctorCredentialState(r *Runner) string {
+	if r.schedCfg == nil || r.providerName == "" {
+		return "no provider declared"
+	}
+
+	prov, ok := r.schedCfg.Providers[r.providerName]
+	if !ok {
+		return "provider " + r.providerName + " not declared in config"
+	}
+
+	envName := prov.APIKeyEnv
+	if envName == "" {
+		envName = strings.ToUpper(r.providerName) + "_API_KEY"
+	}
+
+	if os.Getenv(envName) != "" {
+		return envName + " is set"
+	}
+
+	return envName + " is NOT set"
+}
+
+// doctorTranscriptState probes the transcript directory's writability with a
+// create-write-remove round trip (fixed-form outcomes only). dirPerm750 and
+// filePerm600 mirror the session append-path convention.
+const (
+	dirPerm750  = 0o750
+	filePerm600 = 0o600
+)
+
+func doctorTranscriptState(workDir string) string {
+	tDir := filepath.Join(workDir, ".ass-guard")
+
+	werr := os.MkdirAll(tDir, dirPerm750)
+	if werr != nil {
+		return "NOT creatable"
+	}
+
+	probe := filepath.Join(tDir, ".doctor-probe")
+
+	perr := os.WriteFile(probe, []byte("x"), filePerm600)
+	if perr != nil {
+		return "NOT writable"
+	}
+
+	_ = os.Remove(probe)
+
+	return "writable"
+}
