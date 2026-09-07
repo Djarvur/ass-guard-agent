@@ -1,0 +1,28 @@
+---
+status: partial
+phase: 19-compaction-cache-control
+source: [19-VERIFICATION.md]
+started: 2026-09-07T21:30:00Z
+updated: 2026-09-07T21:30:00Z
+---
+
+## Current Test
+
+[awaiting human testing]
+
+## Tests
+
+### 1. Operator live-threshold retest (G-19-2 / SC-1c)
+expected: On the binary installed 2026-09-07 (v0.0.0-20260907153836-a8f63f31b1b0 — engine string verified present), set compaction-threshold low in a live editor session, keep working, then restore 80. Compaction observably fires (marker line on disk under `.ass-guard/`; continuation stays coherent; later turns stay under threshold). Expect NO visible indicator in the editor — the pre-authorized stderr+counter degrade; observability UX deferred to Phase 20's /status vehicle. With the CR-01 fix landed, the backstop must also survive a session's SECOND and later compactions (retry not silently once-per-session).
+result: [pending]
+
+## Summary
+
+total: 1
+passed: 0
+issues: 0
+pending: 1
+skipped: 0
+blocked: 0
+
+## Gaps
