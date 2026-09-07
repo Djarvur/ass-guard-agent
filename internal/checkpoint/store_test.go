@@ -921,8 +921,8 @@ func TestIDGrammarTable(t *testing.T) {
 		"sess-pre-1", "sess-turn-1", // short sequence (< 3 digits)
 		"sess-prex-001",         // wrong family
 		"sess-pre-", "sess-pre", // no sequence
-		"sess-pre--001",             // double separator
-		"-pre-001", // no session prefix
+		"sess-pre--001", // double separator
+		"-pre-001",      // no session prefix
 		"HEAD", "../../etc", "refs/heads/main", "",
 	}
 	for _, id := range reject {
@@ -986,6 +986,169 @@ func TestIDGrammarTable(t *testing.T) {
 	} {
 		if e, ok := parseRefLine(line); ok {
 			t.Errorf("parseRefLine(%q) accepted a non-checkpoint line: %+v", line, e)
+		}
+	}
+}
+
+// --- 23-03 Task 2: nested-repo detection + refusal ---
+
+// TestNestedRepoDetectedAndRefused pins SEEDG-02's verified failure shape
+// (gitlink 160000, clean -fd non-descent): a workspace containing a nested
+// git repository — real (git init) OR the .git-FILE worktree/submodule
+// variant — is detected and refused by RestoreGuard with the nested paths
+// named; a flat workspace passes.
+func TestNestedRepoDetectedAndRefused(t *testing.T) {
+	t.Parallel()
+
+	work := t.TempDir()
+	seedWorkspace(t, work)
+
+	s := openStore(t, work)
+
+	// Flat workspace: detection empty, guard passes.
+	if nested := findNestedRepos(work); len(nested) != 0 {
+		t.Fatalf("flat workspace flagged nested repos %v; want none", nested)
+	}
+
+	if err := s.RestoreGuard(work); err != nil {
+		t.Fatalf("RestoreGuard on flat workspace: %v", err)
+	}
+
+	// Nested variant A: a REAL nested repository (git init).
+	nestedDir := filepath.Join(work, "vendor", "liba")
+	writeTestFile(t, filepath.Join(nestedDir, "lib.txt"), "nested repo content\n")
+	gitUser(t, nestedDir, "init", "--quiet")
+
+	// Nested variant B: a bare .git FILE (the worktree/submodule shape).
+	wtDir := filepath.Join(work, "vendor", "wt")
+	writeTestFile(t, filepath.Join(wtDir, "file.txt"), "worktree content\n")
+	writeTestFile(t, filepath.Join(wtDir, ".git"), "gitdir: /tmp/elsewhere/gitdir\n")
+
+	nested := findNestedRepos(work)
+	if len(nested) != 2 {
+		t.Fatalf("findNestedRepos = %v; want the two nested roots [vendor/liba vendor/wt]", nested)
+	}
+
+	sawA, sawB := false, false
+
+	for _, p := range nested {
+		if p == filepath.Join("vendor", "liba") {
+			sawA = true
+		}
+
+		if p == filepath.Join("vendor", "wt") {
+			sawB = true
+		}
+	}
+
+	if !sawA || !sawB {
+		t.Errorf("nested roots incomplete (liba=%v wt=%v): %v", sawA, sawB, nested)
+	}
+
+	// The guard refuses with a TYPED error naming the paths and the reason.
+	err := s.RestoreGuard(work)
+
+	var nr *NestedRepoError
+
+	if !errors.As(err, &nr) {
+		t.Fatalf("RestoreGuard error = %v; want *NestedRepoError", err)
+	}
+
+	msg := err.Error()
+	for _, want := range []string{filepath.Join("vendor", "liba"), filepath.Join("vendor", "wt"), "nested"} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("refusal message lacks %q: %s", want, msg)
+		}
+	}
+
+	// The user's OWN top-level repo is never flagged (only NESTED ones).
+	topGit := t.TempDir()
+	seedWorkspace(t, topGit)
+	gitUser(t, topGit, "init", "--quiet")
+
+	if nested := findNestedRepos(topGit); len(nested) != 0 {
+		t.Errorf("top-level user repo flagged as nested: %v", nested)
+	}
+}
+
+// TestNestedRepoSymlinkBounded pins detection's cost bound: symlinks are not
+// followed — a symlinked directory (or a cycle) neither escapes the workspace
+// nor hangs the walk.
+func TestNestedRepoSymlinkBounded(t *testing.T) {
+	t.Parallel()
+
+	work := t.TempDir()
+	seedWorkspace(t, work)
+
+	nestedDir := filepath.Join(work, "inner")
+	writeTestFile(t, filepath.Join(nestedDir, "f.txt"), "x\n")
+	gitUser(t, nestedDir, "init", "--quiet")
+
+	// A symlink pointing at the workspace root (cycle) and one pointing out.
+	err := os.Symlink(work, filepath.Join(work, "loop"))
+	if err != nil {
+		t.Skipf("symlink: %v (filesystem without symlink support)", err)
+	}
+
+	err = os.Symlink(nestedDir, filepath.Join(work, "alias"))
+	if err != nil {
+		t.Skipf("symlink: %v", err)
+	}
+
+	nested := findNestedRepos(work)
+	if len(nested) != 1 || nested[0] != "inner" {
+		t.Errorf("findNestedRepos = %v; want exactly [inner] (symlinks not followed)", nested)
+	}
+}
+
+// TestRestoreCleanNeverDescendsIntoNestedRepos pins the store's clean
+// vocabulary (prohibition): the restore's clean invocation NEVER carries the
+// double-force flag that makes git clean descend into nested repositories —
+// asserted by capturing every git invocation through the seam.
+func TestRestoreCleanNeverDescendsIntoNestedRepos(t *testing.T) { //nolint:paralleltest // swaps the package gitRun seam
+	work := t.TempDir()
+	writeTestFile(t, filepath.Join(work, "a.txt"), "a\n")
+
+	s := openStore(t, work)
+
+	type invocation struct {
+		args []string
+		out  string
+	}
+
+	var invocations []invocation
+
+	orig := gitRun
+
+	gitRun = func(_ context.Context, _ string, _ []string, _ string, args ...string) ([]byte, error) {
+		invocations = append(invocations, invocation{args: args})
+
+		return orig(context.Background(), work, nil, "git", args...)
+	}
+
+	defer func() { gitRun = orig }()
+
+	_ = s.Restore(context.Background(), "sess-cd-turn-001")
+
+	for _, inv := range invocations {
+		if len(inv.args) > 0 && inv.args[0] == "clean" {
+			for _, a := range inv.args {
+				if a == "-ff" || a == "--force --force" {
+					t.Errorf("clean invocation carries the descend-into-nested flag %q: %v", a, inv.args)
+				}
+			}
+
+			found := false
+
+			for _, a := range inv.args {
+				if a == "-e" {
+					found = true
+				}
+			}
+
+			if !found {
+				t.Errorf("clean invocation lost the store-root exclusion: %v", inv.args)
+			}
 		}
 	}
 }
