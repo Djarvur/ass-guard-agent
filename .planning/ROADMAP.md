@@ -382,7 +382,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 23-02-PLAN.md — SEEDG-01 ingress: pre-mutex input classifier, steered-prompt response semantics (return-after-enqueue), parked-ask visibility + cancel grammar, combined-scenario + engine-chain E2E
+- [x] 23-02-PLAN.md — SEEDG-01 ingress: pre-mutex input classifier, steered-prompt response semantics (return-after-enqueue), parked-ask visibility + cancel grammar, combined-scenario + engine-chain E2E
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -499,7 +499,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 | 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 6/6 | Complete    | 2026-09-07 |
 | 21. Context & Policy Parity Closures | v1.2 | 6/6 | Complete    | 2026-09-06 |
 | 22. Background Execution + Sandbox Reality | v1.2 | 2/6 | In Progress|  |
-| 23. SEED Gaps Close-out | v1.2 | 2/5 | In Progress|  |
+| 23. SEED Gaps Close-out | v1.2 | 3/5 | In Progress|  |
 | 24. Documentation & Ops Tails | v1.2 | 0/? | Not started | - |
 | 25. SEED-001 Kit Extraction | v1.2 | 0/? | Not started | - |
 
