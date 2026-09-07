@@ -37,10 +37,12 @@ const rescanDebounce = 300 * time.Millisecond
 var discoveryLeaves = []string{"skills", "commands", "agents"} //nolint:gochecknoglobals // immutable table
 
 // watch-tree directory names (loader-constant mirrors — internal/runtime
-// keeps no ecosys internals import beyond the public API).
+// keeps no ecosys internals import beyond the public API) + the set's sane
+// initial capacity.
 const (
 	claudeDirName   = ".claude"
 	assguardDirName = ".ass-guard"
+	watchSetCap     = 8
 )
 
 // watchRoots builds the watch set for workDir (literal paths only — NO
@@ -59,7 +61,7 @@ func watchRoots(workDir string) []string {
 	// state that change every turn — watching it wholesale would turn every
 	// transcript append into a rescan event (T-20-18's storm, found live in
 	// the simulator E2E). Leaf-less .ass-guard stays unwatched entirely.
-	out := make([]string, 0, 8)
+	out := make([]string, 0, watchSetCap)
 
 	parents := []string{filepath.Join(workDir, claudeDirName)}
 
