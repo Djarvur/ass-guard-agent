@@ -123,6 +123,13 @@ type Session struct {
 	// error so the model is never silently dead-ended). Wired via SetAskBroker.
 	ask *AskBroker
 
+	// steer is the per-session steering input queue (23-01, SEEDG-01): inputs
+	// enqueued while a turn runs drain at the NEXT model-request boundary
+	// (runTurn's iteration top) as one coalesced marker-wrapped user-role
+	// message. Nil = steering not wired (every seam no-ops — the ask field
+	// discipline). Wired via SetSteerQueue.
+	steer *SteerQueue
+
 	// askResumeCtx is the context timer-driven ask resumes run under — the
 	// suspending turn's ctx dies with its prompt response, so the D-01 timer
 	// must resume under the serve-lifetime ctx.
@@ -433,6 +440,74 @@ func subagentResultPayload(result string) (json.RawMessage, bool) {
 	return errJSON, true
 }
 
+// SetSteerQueue wires the per-session steering input queue (23-01, SEEDG-01).
+// Nil-safe (the SetAskBroker shape): a nil queue leaves every steering seam a
+// no-op. The queue is transport-neutral — the runtime (ACP, 23-02) and any
+// non-ACP frontend (Telegram, TG-02) enqueue through the same object.
+func (s *Session) SetSteerQueue(q *SteerQueue) { s.steer = q }
+
+// drainSteering performs one boundary drain (23-01, SEEDG-01): all inputs
+// queued since the last boundary coalesce into ONE marker-wrapped user-role
+// message (D-02), recorded as a steering_delivery transcript line the
+// Projector folds (D-03), with the live note "steering applied: N inputs"
+// fired through the AgentMessageChunk bus path (the same live-note family
+// streamAndEmit uses — the subscriber is live because the turn is running;
+// never a deferred post-turn publish, which is LOST). An append failure is
+// loud (stderr + nothing delivered — the batch is already drained, so a
+// failed write means the model never sees it; the next boundary drains only
+// NEW inputs) but never turn-fatal (AUD-03).
+func (s *Session) drainSteering(turnID string) {
+	if s.steer == nil {
+		return
+	}
+
+	batch := s.steer.Drain()
+	if len(batch) == 0 {
+		return
+	}
+
+	marker := renderSteeringMarker(batch)
+
+	if aerr := s.Manager.AppendSteeringDelivery(turnID, marker, len(batch)); aerr != nil {
+		slog.Error("steering: delivery transcript append failed (input not delivered to the model)",
+			"turnID", turnID, "inputs", len(batch), "error", aerr.Error())
+
+		return
+	}
+
+	if s.Bus != nil {
+		s.Bus.Publish(event.AgentMessageChunk{
+			TurnID: turnID, MessageID: turnID,
+			Content: fmt.Sprintf("steering applied: %d inputs", len(batch)),
+		})
+	}
+}
+
+// renderSteeringMarker renders one drained batch as the marker-wrapped
+// user-role block the model receives (23-01, D-01 — the captured
+// system-reminder wire convention, corpus_scan.go): ONE block, ONE message,
+// input texts in arrival order (D-02). The marker is a rendering convention
+// on agent-appended lines only — AppendSteeringDelivery is the sole writer,
+// and nothing parses model/tool output into steering lines (anti-spoofing,
+// T-23-01): steering reaches the model strictly as user speech, carrying no
+// tool or permission authority.
+func renderSteeringMarker(batch []SteerItem) string {
+	var sb strings.Builder
+
+	sb.WriteString("<system-reminder>\nAdditional user input arrived while you were working. ")
+	sb.WriteString("Incorporate it as you continue; do not restart the task.\n")
+
+	for _, it := range batch {
+		sb.WriteString("\n<user-input>\n")
+		sb.WriteString(it.Text)
+		sb.WriteString("\n</user-input>\n")
+	}
+
+	sb.WriteString("</system-reminder>")
+
+	return sb.String()
+}
+
 // SetToolExecutor injects the real tool executor (Phase-4 TOOL-04/05 — a
 // catalog-backed toolexec.RealExecutor constructed at startup in Plan 04-05).
 // When not called, the session uses stubToolResult for every non-subagent tool
@@ -530,6 +605,16 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 
 			return stopCancelled, nil
 		}
+		// 23-01 (SEEDG-01, D-01..D-04): the steering boundary drain — the ONE
+		// point where the previous iteration's tool results are fully
+		// appended (pairs closed) and no new request has started. A non-empty
+		// batch appends one coalesced steering_delivery line (the Projector
+		// folds it as a user-role message in arrival position — never the
+		// anchor, never inside a tool batch) and emits the live note. Empty
+		// queue / unwired: a no-op. Steering never cancels or interrupts the
+		// running turn (D-04); a transcript-append failure is loud (the
+		// AUD-03 discipline) but never turn-fatal.
+		s.drainSteering(turnID)
 		// 19-04 (PAR-01, D-02): the pre-request compaction check, at the top
 		// of EVERY iteration — parent turns, tool-loop iterations,
 		// ask-resumes, and engine chains via sess.Prompt all pass through
@@ -1054,9 +1139,24 @@ func (s *Session) streamAndEmit(
 	return resp, sb.String(), nil
 }
 
-// recordCanceled appends a canceled line (D-16).
+// recordCanceled appends a canceled line (D-16) and resolves the steering
+// queue at turn death (23-01, SEEDG-01 — the cancelled-exit half of the
+// ticket/cutoff protocol): all three cancelled exits in runTurn funnel here,
+// so undelivered steering resolves cancelled-normal and can never
+// zombie-deliver into the NEXT turn's window (Pitfall 3). The acknowledgment
+// is the returned count + a stderr note, NEVER a steering_delivery line (a
+// cancelled input must not reach a later model window, live or on replay).
 func (s *Session) recordCanceled(turnID, reason string) {
 	_ = s.Manager.AppendCanceled(turnID, now(), reason)
+
+	if s.steer == nil {
+		return
+	}
+
+	if n := s.steer.CancelAll(); n > 0 {
+		slog.Warn("steering: turn cancelled with undelivered inputs (resolved cancelled)",
+			"turnID", turnID, "inputs", n)
+	}
 }
 
 // thinkingDisplayText extracts the thinking FIELD VALUE from an assembled

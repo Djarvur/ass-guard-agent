@@ -398,6 +398,26 @@ func (m *Manager) AppendCompaction(turnID, preRef, postRef, summary string, inpu
 	})
 }
 
+// AppendSteeringDelivery records one boundary drain of queued steering inputs
+// (23-01, SEEDG-01/D-03): text is the coalesced marker-wrapped user-role block
+// (the model-visible render, verbatim) and count the number of inputs
+// coalesced into it. Routed through the REDACTED path like every non-thinking
+// kind — steering is model-visible untrusted user content (T-16-04's
+// raw_thinking exemption never widens). The SOLE writer of steering_delivery
+// lines (anti-spoofing, T-23-01): nothing parses model or tool output into
+// this kind.
+func (m *Manager) AppendSteeringDelivery(turnID, text string, count int) error {
+	countJSON, err := json.Marshal(map[string]int{"count": count})
+	if err != nil {
+		return fmt.Errorf("marshal steering count: %w", err)
+	}
+
+	return m.appendLine(&Line{
+		Type: TypeSteeringDelivery, TurnID: turnID, Timestamp: now(),
+		Text: text, Input: countJSON,
+	})
+}
+
 // AppendSynthetic appends one reconciliation closure line (18-02, D-02): the
 // 18-05 load path calls it for every closure Reconcile returned, with the
 // line's Cause already set to InterruptedCause. It routes through the SAME

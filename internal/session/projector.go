@@ -616,12 +616,14 @@ func accumulateMidTurn(lines []Line, turnID string) []provider.Message {
 }
 
 // foldExchanges is the shared line→message folding (the accumulateMidTurn
-// rules, 08-07/08-09 + PAR-05): consecutive TypeToolCall lines become ONE
-// assistant message with a ToolCalls batch (the capture's batch form), each
-// TypeToolResult becomes a tool-role message whose ToolName is resolved from
-// the paired tool_call line, TypeAssistantMessage becomes a plain assistant
-// text message, and raw_thinking folds INTO its assistant unit (never cut
-// separately, Pitfall 5). A tool_result whose call is not in the window (its
+// rules, 08-07/08-09 + PAR-05 + 23-01): consecutive TypeToolCall lines become
+// ONE assistant message with a ToolCalls batch (the capture's batch form),
+// each TypeToolResult becomes a tool-role message whose ToolName is resolved
+// from the paired tool_call line, TypeAssistantMessage becomes a plain
+// assistant text message, raw_thinking folds INTO its assistant unit (never
+// cut separately, Pitfall 5), and steering_delivery folds as a user-role
+// message in arrival position (23-01/D-01 — after flushBatch, never inside a
+// tool batch). A tool_result whose call is not in the window (its
 // batch was never accumulated) is dropped — an orphaned tool_result would
 // break the provider's tool_use/tool_result pairing invariant.
 //
@@ -688,6 +690,18 @@ func foldExchanges(lines []Line, from int, turnID string, filterTurn bool) []pro
 		case TypeToolCall:
 			pending = append(pending, provider.ToolCall{ID: l.ToolCallID, Name: l.Name, Input: l.Input})
 			names[l.ToolCallID] = l.Name
+		case TypeSteeringDelivery:
+			// 23-01 (SEEDG-01/D-01): a delivered steering block folds as a
+			// user-role message in ARRIVAL position — the model saw the user
+			// speaking mid-turn, so every later request and every replay
+			// carries it identically. flushBatch first: steering is never
+			// part of a tool batch, and a user message must never land
+			// inside an assistant tool_use batch (pair-safety, Pitfall 2).
+			// The anchor (turnAnchorOf) matches TypeUserMessage ONLY —
+			// steering never moves it (Pitfall 1), which is exactly why it
+			// is its own kind.
+			flushBatch()
+			out = append(out, provider.Message{Role: roleUserMsg, Content: l.Text})
 		case TypeRawThinking:
 			if tb, ok := parseThinkingBlock(l.Content); ok {
 				pendingThinking = append(pendingThinking, tb)

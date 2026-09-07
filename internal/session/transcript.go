@@ -86,6 +86,21 @@ const (
 	// mentions (typed-vs-expanded disambiguated on replay). Written
 	// pre-turn (empty turnID); the Projector treats it as an audit marker.
 	TypeMentionProvenance = "mention_provenance"
+
+	// TypeSteeringDelivery records ONE boundary drain of queued steering
+	// inputs (23-01, SEEDG-01/D-03): Text carries the coalesced
+	// marker-wrapped user-role block (everything the model saw — render
+	// shape included), TurnID the turn that delivered it, and Input a small
+	// {"count":N} object (N = inputs coalesced into this delivery).
+	// Appended ONLY by Manager.AppendSteeringDelivery through the REDACTED
+	// path (steering is model-visible untrusted user content) — the line is
+	// agent-appended, never derived from model or tool output (anti-spoofing,
+	// T-23-01). The Projector folds it as a user-role message in arrival
+	// position via the mid-turn fold (never the anchor — the anchor matches
+	// TypeUserMessage only, Pitfall 1), so replay reconstructs the model
+	// window identically to live (18-D-01). Cancelled inputs NEVER become
+	// steering_delivery lines.
+	TypeSteeringDelivery = "steering_delivery"
 )
 
 // ContentBlock is one entry of a user/assistant message's content (mirrors the
