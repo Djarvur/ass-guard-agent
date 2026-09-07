@@ -1636,7 +1636,7 @@ func TestAgentSlash(t *testing.T) {
 // (one resolution path), is advertised, and shadows a discovered
 // commands/init.md with the D-01 warning.
 //
-//nolint:funlen,paralleltest // one battery, sequenced fixtures
+//nolint:funlen,cyclop,paralleltest // one battery, sequenced fixtures
 func TestInitExpansion(t *testing.T) {
 	assertExpansion := func(t *testing.T, r *Runner, prov *scriptedACPProvider, sessionID string) {
 		t.Helper()
