@@ -556,6 +556,20 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 			// family and the resend still happens); a SECOND overflow finds the
 			// guard set and falls through to the error path unchanged. No loop
 			// wraps this — Pitfall 8.
+			//
+			// 19-06 (G-19-1, operator ruling (b)): the retry must project
+			// POST-MARKER — arming the projector's same-turn carve-out between
+			// the forced compact and the continue makes the ONE retry carry the
+			// marker's summary seed + a budget-fill tail instead of re-sending
+			// the byte-identical rejected request (which deterministically
+			// overflows again — recovery reached the next turn only). Arming is
+			// unconditional and transcript-gated: when the compact DEGRADED (no
+			// marker landed), sameTurnMarkerIdx finds nothing and the retry
+			// projects identically to the rejected request — today's
+			// fail-through preserved exactly. The override stays armed for the
+			// turn's remaining iterations (the compacted window must survive
+			// follow-up tool-loop iterations) and self-expires when a different
+			// turnID projects.
 			if provider.IsOverflow(streamErr) && !overflowRetried {
 				overflowRetried = true
 				// WR-03b (19-06): the forced compact IS this turn's compaction
@@ -565,6 +579,7 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 				// same turn.
 				s.compactionAttemptTurn = turnID
 				_ = s.compact(ctx, turnID)
+				s.Projector.SetRetryCompactedTurn(turnID)
 
 				continue
 			}
