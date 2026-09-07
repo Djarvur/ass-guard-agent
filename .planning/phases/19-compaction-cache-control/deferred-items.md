@@ -92,3 +92,7 @@ immediately after. Same load-sensitive `internal/runtime` deadline family as
 TestIntegration_RealStreamingThroughACP / TestAskPark_PromptResponsePrecedesResolution
 / TestCronWiring_AutomationTurnDeclinesGatedAsk — the family, not the individual
 test, is the unit that needs a timing-deadline review.
+
+## 19-07 (2026-09-07): stale battery doc comment on TestProjector_SameTurnCarveOut
+
+The battery-level doc comment (internal/session/projector_test.go ~:2177, above `func TestProjector_SameTurnCarveOut`) still describes the OLD precedence: "reshapes that turn's projection ONLY when the engine armed the per-turn override (SetRetryCompactedTurn) AND no pre-user marker exists" and "the pre-user marker keeps 19-03's winning scan". After 19-07 the armed override takes precedence over the pre-user scan (with the no-same-turn-marker fallback). Editing it inside 19-07 would have introduced deletions outside the inverted subtest and violated the pinned zero-deletions audit vs 06d92d1, so it was left as-is. Fix opportunistically in the next plan that legitimately touches that file (a pure comment fix produces a deletions-bearing hunk vs 06d92d1, which is fine once 19-07's audit is no longer the active gate).

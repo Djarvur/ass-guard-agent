@@ -88,6 +88,7 @@ Progress: [██████████░░░░░░░░░░] 35/71 p
 | Phase 19 P04 | 37 min | 3 tasks | 3 files |
 | Phase 19 P05 | 36 min | 2 tasks | 12 files |
 | Phase 19 P19-06 | 23 min | 3 tasks | 7 files |
+| Phase 19 P07 | 6 min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -178,6 +179,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 19]: 19-06 (WR-03a): the summarize span budget derives from the SAME resolved context window as the threshold (fill-target share minus prevSummary/instruction/slack; ~400K-char fallback cap when unset; 2K-char floor) — the summarize call can never itself be an overflowing request; a cut span carries the one-line truncation notice
 - [Phase 19]: 19-06 (WR-03b): at most ONE threshold-class compaction attempt per turn (compactionAttemptTurn keyed by turnID, stamped by maybeCompact AND the overflow-forced path); D-09's degraded-summarizer cadence amended — retry at the NEXT TURN's check, never one per loop head (operator-sanctioned via G-19-1's missing list)
 - [Phase 19]: 19-06: the G-19-1 regression fixture drives runTurn over a pre-built mid-turn transcript (the ask-resume re-entry seam) behind a content-sensitive size-rejecting provider — a fresh Prompt's first projection is lean by construction (D-01), and a byte-identical resend now fails again (the content-blind fixture's blind spot closed)
+- [Phase Phase 19]: 19-07 (CR-01): the armed same-turn carve-out takes PRECEDENCE over the pre-user marker scan in Project() — the overflow retry always projects post-marker (retry-once recovery on EVERY overflow, not just a session's first); armed with no same-turn marker the pre-user scan stays the fallback (degraded fail-through preserved)
 
 ### Pending Todos
 
@@ -201,6 +203,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-07T16:50:18.427Z
-Stopped at: Completed 19-06-PLAN.md (G-19-1 same-turn carve-out + WR-03 bounds)
+Last session: 2026-09-07T18:06:01.126Z
+Stopped at: Completed 19-07-PLAN.md (CR-01 gap closure: armed carve-out precedence)
 Resume file: None

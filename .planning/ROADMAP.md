@@ -223,7 +223,7 @@ Plans:
   3. On a provider overflow error ("prompt too long"), recovery retries once post-compaction instead of failing the turn.
   4. Every outgoing request carries cache_control {"type":"ephemeral"} on each system block — visible in the request log — and the existing cache-discipline probe in `ass-guard parity` flips green on placement.
 
-**Plans**: 7 plans (6 executed; 1 gap closure planned)
+**Plans**: 7/7 plans executed (6 executed; 1 gap closure planned)
 
 Plans:
 **Wave 4** *(gap closure — UAT G-19-1, operator ruling (b) 2026-09-07)*
@@ -232,7 +232,7 @@ Plans:
 
 **Wave 5** *(gap closure — VERIFICATION 2026-09-07 CR-01 residual)*
 
-- [ ] 19-07-PLAN.md — GAP CR-01: armed carve-out precedence over the pre-user marker scan (retry-once recovery on every overflow, not just a session's first) + prior-marker regression leg (PAR-01)
+- [x] 19-07-PLAN.md — GAP CR-01: armed carve-out precedence over the pre-user marker scan (retry-once recovery on every overflow, not just a session's first) + prior-marker regression leg (PAR-01)
 
 **Wave 1**
 
@@ -495,7 +495,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 | 16. ACP Wire Foundation | v1.2 | 9/9 | Complete    | 2026-09-01 |
 | 17. Permissions + Elicitation | v1.2 | 6/6 | Complete    | 2026-09-03 |
 | 18. Session Family | v1.2 | 7/7 | Complete    | 2026-09-06 |
-| 19. Compaction + cache_control | v1.2 | 6/6 | In Progress|  |
+| 19. Compaction + cache_control | v1.2 | 7/7 | In Progress|  |
 | 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 0/6 | Planned | - |
 | 21. Context & Policy Parity Closures | v1.2 | 6/6 | Complete    | 2026-09-06 |
 | 22. Background Execution + Sandbox Reality | v1.2 | 0/? | Not started | - |
