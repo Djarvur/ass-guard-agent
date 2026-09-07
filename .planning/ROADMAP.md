@@ -267,7 +267,7 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 20-01-PLAN.md — Tracer: command chain + /status class-B end-to-end + available_commands_update advertisement (ACP-04, CMDS-01, CMDS-02 spine; D-01..D-05)
+- [x] 20-01-PLAN.md — Tracer: command chain + /status class-B end-to-end + available_commands_update advertisement (ACP-04, CMDS-01, CMDS-02 spine; D-01..D-05)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -496,7 +496,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 | 17. Permissions + Elicitation | v1.2 | 6/6 | Complete    | 2026-09-03 |
 | 18. Session Family | v1.2 | 7/7 | Complete    | 2026-09-06 |
 | 19. Compaction + cache_control | v1.2 | 7/7 | Complete    | 2026-09-07 |
-| 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 0/6 | Planned | - |
+| 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 1/6 | In Progress|  |
 | 21. Context & Policy Parity Closures | v1.2 | 6/6 | Complete    | 2026-09-06 |
 | 22. Background Execution + Sandbox Reality | v1.2 | 0/? | Not started | - |
 | 23. SEED Gaps Close-out | v1.2 | 0/? | Not started | - |

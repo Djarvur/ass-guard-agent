@@ -2,20 +2,17 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Claude Code Parity
-current_phase: 20
-current_phase_name: built-in-commands-skills-per-agent-model
-current_plan: 1
-status: ready_to_plan
-stopped_at: Phase 19 complete (7/7) — ready to discuss Phase 20
-last_updated: 2026-09-07T18:23:03.758Z
+current_plan: 2
+status: executing
+stopped_at: Completed 20-01-PLAN.md (chain skeleton + tracer + wire battery)
+last_updated: "2026-09-07T18:44:33.571Z"
 last_activity: 2026-09-07
-last_activity_desc: Phase 20 execution started
 progress:
   total_phases: 11
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 73
-  completed_plans: 42
-  percent: 45
+  completed_plans: 43
+  percent: 55
 ---
 
 # State: ass-guard-agent (working name)
@@ -24,18 +21,18 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-09-06)
 **Core value:** A hands-off coding agent that feels native in the editor: full SDD workflows run end-to-end without manual continues, and the agent surfaces through the client's own UX — clickable permission prompts, native file diffs, session management. (Pivoted 2026-08-25 from the mimicry bar.)
-**Current focus:** Phase 20 — built in commands skills per agent model
+**Current focus:** Phase 20 — built-in-commands-skills-per-agent-model
 
 ## Current Position
 
-Phase: 20
-Plan: 1 of 6
-Current Plan: Not started
+Phase: 20 (built-in-commands-skills-per-agent-model) — EXECUTING
+Plan: 2 of 6
+Current Plan: 2
 Total Plans in Phase: 6
-Status: Ready to plan
+Status: Ready to execute
 Last activity: 2026-09-07
 
-Progress: [██████████░░░░░░░░░░] 35/71 plans ([█████░░░░░] 45%)
+Progress: [██████░░░░] 59%
 
 ## Performance Metrics
 
@@ -89,6 +86,7 @@ Progress: [██████████░░░░░░░░░░] 35/71 p
 | Phase 19 P05 | 36 min | 2 tasks | 12 files |
 | Phase 19 P19-06 | 23 min | 3 tasks | 7 files |
 | Phase 19 P07 | 6 min | 3 tasks | 4 files |
+| Phase 20 P01 | 65 min | 3 tasks | 19 files |
 
 ## Accumulated Context
 
@@ -203,6 +201,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-07T18:06:01.126Z
-Stopped at: Completed 19-07-PLAN.md (CR-01 gap closure: armed carve-out precedence)
+Last session: 2026-09-07T18:44:33.537Z
+Stopped at: Completed 20-01-PLAN.md (chain skeleton + tracer + wire battery)
 Resume file: None
