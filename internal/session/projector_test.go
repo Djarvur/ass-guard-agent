@@ -2148,3 +2148,335 @@ func runGoldenThinkingCase(t *testing.T, c goldenThinkingCase) {
 			gotSig, wantSig, gotThink, wantThink, gotData, wantData)
 	}
 }
+
+// --- G-19-1 same-turn carve-out battery (19-06 Task 1) ---
+
+// Same-turn carve-out fixture summaries (unique markers per case, the 19-03
+// battery's discipline).
+const (
+	sumSameTurnNew  = "SUMMARY-STC-NEW: mid-turn overflow absorbed"
+	sumSameTurnOld  = "SUMMARY-STC-OLD: first mid-turn marker"
+	sumPreUserStc   = "SUMMARY-STC-PRE: marker before the turn"
+	intentStcParent = "please refactor everything"
+	intentStcSub    = "subagent task prompt"
+)
+
+// stcAppendExchanges appends n answered tool exchanges to the given turn.
+func stcAppendExchanges(t *testing.T, m *Manager, turnID string, n int) {
+	t.Helper()
+
+	for i := range n {
+		id := fmt.Sprintf("%s_ex%02d", turnID, i)
+		mustAppend(t, m.AppendToolCall(turnID, id, toolRead,
+			json.RawMessage(`{"file_path":"/w/a.go"}`)), "AppendToolCall")
+		mustAppend(t, m.AppendToolResult(turnID, id, json.RawMessage(`{"o":"src"}`), false),
+			"AppendToolResult")
+	}
+}
+
+// TestProjector_SameTurnCarveOut pins the G-19-1 engine-armed carve-out: a
+// marker whose TurnID equals the projected turn reshapes that turn's
+// projection ONLY when the engine armed the per-turn override
+// (SetRetryCompactedTurn) AND no pre-user marker exists. The same transcript
+// through a plain projector is byte-identical to the marker-free transcript
+// (kill-9 replay + tamper safety), the pre-user marker keeps 19-03's winning
+// scan, a subagent prompt never shadows the turn's own intent, the most
+// recent same-turn marker wins, a subagent turn is never reshaped by a parent
+// marker (Pitfall 5), and the projection stays a pure function of (lines,
+// turnID, override) — deterministic across re-projections.
+func TestProjector_SameTurnCarveOut(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen,maintidx // battery
+	t.Parallel()
+
+	const (
+		turnT  = "turnT"
+		turnSA = "turnSA"
+		turnP1 = "turnP1"
+	)
+
+	t.Run("armed + matching marker projects post-marker: summary seed + own intent, empty tail", func(t *testing.T) {
+		t.Parallel()
+
+		m := newTestManager(t, "s-stc1")
+		p := NewProjector(fakeProfile("sys"), m)
+
+		mustAppend(t, m.AppendUserMessage(turnT,
+			[]ContentBlock{{Type: blockText, Text: intentStcParent}}), "AppendUserMessage")
+		stcAppendExchanges(t, m, turnT, 2)
+		mustAppend(t,
+			m.AppendCompaction(turnT, "line:5", "line:6", sumSameTurnNew, 9000, 900, 900), "AppendCompaction")
+
+		p.SetRetryCompactedTurn(turnT)
+
+		msgs, err := p.Project(turnT)
+		if err != nil {
+			t.Fatalf("Project: %v", err)
+		}
+
+		// The marker is the LAST line: the post-marker tail is empty, so the
+		// armed projection is the seed ALONE.
+		if len(msgs) != 1 {
+			t.Fatalf("len(msgs) = %d; want 1 (seed only — the tail is empty immediately after the marker):\n%s",
+				len(msgs), msgSummaryList(msgs))
+		}
+
+		seed := msgs[0]
+		if seed.Role != roleUserMsg {
+			t.Fatalf("seed role = %q; want user (the single-user-message lean-seed shape)", seed.Role)
+		}
+
+		if !strings.Contains(seed.Content, sumSameTurnNew) {
+			t.Errorf("armed seed missing the same-turn marker's summary:\n%s", seed.Content)
+		}
+
+		if !strings.Contains(seed.Content, intentStcParent) {
+			t.Errorf("armed seed missing the turn's OWN current intent:\n%s", seed.Content)
+		}
+
+		// The seed is the marker summary + the intent alone — the mechanical
+		// vocabulary must not leak (the seedContent wrapper, summary-sourced).
+		for _, leak := range []string{"last_user=", "last_assistant=", "files_touched="} {
+			if strings.Contains(seed.Content, leak) {
+				t.Errorf("armed seed carries the mechanical summary vocabulary %q:\n%s", leak, seed.Content)
+			}
+		}
+	})
+
+	t.Run("not armed: marker-present projects byte-identically to marker-free", func(t *testing.T) {
+		t.Parallel()
+
+		// The marker-bearing transcript.
+		marked := newTestManager(t, "s-stc2a")
+		mustAppend(t, marked.AppendUserMessage(turnT,
+			[]ContentBlock{{Type: blockText, Text: intentStcParent}}), "AppendUserMessage")
+		stcAppendExchanges(t, marked, turnT, 2)
+		mustAppend(t,
+			marked.AppendCompaction(turnT, "line:5", "line:6", sumSameTurnNew, 9000, 900, 900), "AppendCompaction")
+
+		projMarked, err := NewProjector(fakeProfile("sys"), marked).Project(turnT)
+		if err != nil {
+			t.Fatalf("Project(marker-present): %v", err)
+		}
+
+		// The same lines MINUS the marker line.
+		free := newTestManager(t, "s-stc2b")
+		mustAppend(t, free.AppendUserMessage(turnT,
+			[]ContentBlock{{Type: blockText, Text: intentStcParent}}), "AppendUserMessage")
+		stcAppendExchanges(t, free, turnT, 2)
+
+		projFree, err := NewProjector(fakeProfile("sys"), free).Project(turnT)
+		if err != nil {
+			t.Fatalf("Project(marker-free): %v", err)
+		}
+
+		// The marker ALONE changes nothing without the in-memory override —
+		// kill-9 replay and crafted transcripts stay deterministic.
+		if !reflect.DeepEqual(projMarked, projFree) {
+			t.Errorf("un-armed projection over a same-turn marker drifted from the marker-free transcript:\n marked: %s\n   free: %s",
+				msgSummaryList(projMarked), msgSummaryList(projFree))
+		}
+	})
+
+	t.Run("pre-user marker wins; the armed override cannot displace 19-03's scan", func(t *testing.T) {
+		t.Parallel()
+
+		m := newTestManager(t, "s-stc3")
+		p := NewProjector(fakeProfile("sys"), m)
+
+		mustAppend(t, m.AppendUserMessage("turn_0", []ContentBlock{{Type: blockText, Text: "early work"}}),
+			"AppendUserMessage")
+		mustAppend(t,
+			m.AppendCompaction("turn_0", "line:1", "line:2", sumPreUserStc, 100, 10, 10), "AppendCompaction")
+		mustAppend(t, m.AppendUserMessage(turnT,
+			[]ContentBlock{{Type: blockText, Text: intentStcParent}}), "AppendUserMessage")
+		stcAppendExchanges(t, m, turnT, 1)
+		mustAppend(t,
+			m.AppendCompaction(turnT, "line:4", "line:5", sumSameTurnNew, 9000, 900, 900), "AppendCompaction")
+
+		p.SetRetryCompactedTurn(turnT)
+
+		msgs, err := p.Project(turnT)
+		if err != nil {
+			t.Fatalf("Project: %v", err)
+		}
+
+		seed := msgs[0]
+		if !strings.Contains(seed.Content, sumPreUserStc) {
+			t.Errorf("pre-user marker's summary lost the seed (19-03's winning scan displaced):\n%s", seed.Content)
+		}
+
+		if strings.Contains(seed.Content, sumSameTurnNew) {
+			t.Errorf("the same-turn marker DISPLACED the pre-user marker (carve-out must run only when compactionMarkerIdx found nothing):\n%s",
+				seed.Content)
+		}
+
+		if !strings.Contains(seed.Content, intentStcParent) {
+			t.Errorf("seed missing the current intent:\n%s", seed.Content)
+		}
+	})
+
+	t.Run("subagent shadow: the turn's own user message stays the intent", func(t *testing.T) {
+		t.Parallel()
+
+		m := newTestManager(t, "s-stc4")
+		p := NewProjector(fakeProfile("sys"), m)
+
+		mustAppend(t, m.AppendUserMessage(turnT,
+			[]ContentBlock{{Type: blockText, Text: intentStcParent}}), "AppendUserMessage")
+		// The subagent prompt lands BETWEEN T's user message and the marker —
+		// it must not hijack the seed's current intent.
+		mustAppend(t, m.AppendUserMessage(turnSA,
+			[]ContentBlock{{Type: blockText, Text: intentStcSub}}), "AppendUserMessage")
+		stcAppendExchanges(t, m, turnSA, 1)
+		mustAppend(t,
+			m.AppendCompaction(turnT, "line:4", "line:5", sumSameTurnNew, 9000, 900, 900), "AppendCompaction")
+
+		p.SetRetryCompactedTurn(turnT)
+
+		msgs, err := p.Project(turnT)
+		if err != nil {
+			t.Fatalf("Project: %v", err)
+		}
+
+		seed := msgs[0]
+		if !strings.Contains(seed.Content, sumSameTurnNew) {
+			t.Fatalf("armed seed missing the same-turn marker's summary:\n%s", seed.Content)
+		}
+
+		if !strings.Contains(seed.Content, intentStcParent) {
+			t.Errorf("seed intent is not the projected turn's OWN user message (subagent shadow):\n%s", seed.Content)
+		}
+
+		if strings.Contains(seed.Content, intentStcSub) {
+			t.Errorf("the subagent prompt hijacked the seed's current intent:\n%s", seed.Content)
+		}
+	})
+
+	t.Run("most recent same-turn marker wins on a twice-armed turn", func(t *testing.T) {
+		t.Parallel()
+
+		m := newTestManager(t, "s-stc5")
+		p := NewProjector(fakeProfile("sys"), m)
+
+		mustAppend(t, m.AppendUserMessage(turnT,
+			[]ContentBlock{{Type: blockText, Text: intentStcParent}}), "AppendUserMessage")
+		stcAppendExchanges(t, m, turnT, 1)
+		mustAppend(t,
+			m.AppendCompaction(turnT, "line:3", "line:4", sumSameTurnOld, 8000, 800, 800), "AppendCompaction")
+		stcAppendExchanges(t, m, turnT, 1)
+		mustAppend(t,
+			m.AppendCompaction(turnT, "line:6", "line:7", sumSameTurnNew, 9000, 900, 900), "AppendCompaction")
+
+		p.SetRetryCompactedTurn(turnT)
+
+		msgs, err := p.Project(turnT)
+		if err != nil {
+			t.Fatalf("Project: %v", err)
+		}
+
+		seed := msgs[0]
+		if !strings.Contains(seed.Content, sumSameTurnNew) {
+			t.Errorf("seed does not use the MOST RECENT same-turn marker:\n%s", seed.Content)
+		}
+
+		if strings.Contains(seed.Content, sumSameTurnOld) {
+			t.Errorf("an EARLIER same-turn marker survived a newer one:\n%s", seed.Content)
+		}
+	})
+
+	t.Run("subagent turn safe: a parent marker never reshapes it, armed or not", func(t *testing.T) {
+		t.Parallel()
+
+		m := newTestManager(t, "s-stc6")
+
+		mustAppend(t, m.AppendUserMessage(turnP1,
+			[]ContentBlock{{Type: blockText, Text: "parent directs"}}), "AppendUserMessage")
+		mustAppend(t, m.AppendUserMessage(turnSA,
+			[]ContentBlock{{Type: blockText, Text: intentStcSub}}), "AppendUserMessage")
+		stcAppendExchanges(t, m, turnSA, 1)
+		// Mid-subagent compaction attributed to the PARENT turn (Pitfall 5).
+		mustAppend(t,
+			m.AppendCompaction(turnP1, "line:4", "line:5", sumSameTurnNew, 9000, 900, 900), "AppendCompaction")
+
+		projPlain, err := NewProjector(fakeProfile("sys"), m).Project(turnSA)
+		if err != nil {
+			t.Fatalf("Project(plain): %v", err)
+		}
+
+		// Armed FOR the subagent turn: no marker carries TurnID == turnSA, so
+		// sameTurnMarkerIdx finds nothing and the projection is unchanged.
+		armedSA := NewProjector(fakeProfile("sys"), m)
+		armedSA.SetRetryCompactedTurn(turnSA)
+
+		projArmedSA, err := armedSA.Project(turnSA)
+		if err != nil {
+			t.Fatalf("Project(armed-for-subagent): %v", err)
+		}
+
+		if !reflect.DeepEqual(projPlain, projArmedSA) {
+			t.Errorf("armed-for-subagent projection drifted:\n plain: %s\n armed: %s",
+				msgSummaryList(projPlain), msgSummaryList(projArmedSA))
+		}
+
+		// Armed FOR THE PARENT while projecting the subagent: the override
+		// matches a different turn than the one projected — the TurnID key
+		// never reaches the carve-out.
+		armedParent := NewProjector(fakeProfile("sys"), m)
+		armedParent.SetRetryCompactedTurn(turnP1)
+
+		projArmedParent, err := armedParent.Project(turnSA)
+		if err != nil {
+			t.Fatalf("Project(armed-for-parent): %v", err)
+		}
+
+		if !reflect.DeepEqual(projPlain, projArmedParent) {
+			t.Errorf("parent-armed projection of the subagent turn drifted:\n plain: %s\n armed: %s",
+				msgSummaryList(projPlain), msgSummaryList(projArmedParent))
+		}
+	})
+
+	t.Run("deterministic across re-projections, with a post-marker tail", func(t *testing.T) {
+		t.Parallel()
+
+		m := newTestManager(t, "s-stc7")
+		p := NewProjector(fakeProfile("sys"), m)
+
+		mustAppend(t, m.AppendUserMessage(turnT,
+			[]ContentBlock{{Type: blockText, Text: intentStcParent}}), "AppendUserMessage")
+		stcAppendExchanges(t, m, turnT, 1)
+		mustAppend(t,
+			m.AppendCompaction(turnT, "line:3", "line:4", sumSameTurnNew, 9000, 900, 900), "AppendCompaction")
+		// A post-marker exchange: the budget-fill tail is non-empty (folded
+		// post-marker span; the zero budget degrades to the 64-message count).
+		stcAppendExchanges(t, m, turnT, 1)
+
+		p.SetRetryCompactedTurn(turnT)
+
+		first, err := p.Project(turnT)
+		if err != nil {
+			t.Fatalf("Project(1): %v", err)
+		}
+
+		second, err := p.Project(turnT)
+		if err != nil {
+			t.Fatalf("Project(2): %v", err)
+		}
+
+		if !reflect.DeepEqual(first, second) {
+			t.Errorf("armed projection is not deterministic:\n 1: %s\n 2: %s",
+				msgSummaryList(first), msgSummaryList(second))
+		}
+
+		if len(first) != 3 {
+			t.Fatalf("len(first) = %d; want 3 (seed + the post-marker exchange's batch + result):\n%s",
+				len(first), msgSummaryList(first))
+		}
+
+		if !strings.Contains(first[0].Content, sumSameTurnNew) || !strings.Contains(first[0].Content, intentStcParent) {
+			t.Errorf("seed lost the summary or the intent:\n%s", first[0].Content)
+		}
+
+		if !projectedHasCall(first, "turnT_ex00") {
+			t.Errorf("post-marker exchange missing from the budget-fill tail:\n%s", msgSummaryList(first))
+		}
+	})
+}
