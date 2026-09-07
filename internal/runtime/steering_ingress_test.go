@@ -675,3 +675,45 @@ func TestEngineChainSteered(t *testing.T) {
 		t.Errorf("provider calls = %d; want 2 (the chain's scripted sequence untouched)", n)
 	}
 }
+
+// TestParkedAskNoteEmitter pins the D-05 live half's placement (23-02): the
+// ask queue's note emitter publishes the pinned D-12 count note verbatim and
+// the D-05 parked wording one frame later — and ONLY on the parked branch
+// (the queue emits nothing for immediate fires, so the degraded-fallback
+// wire shape stays byte-identical; TestPermissionsE2E stage 3 pins that).
+func TestParkedAskNoteEmitter(t *testing.T) {
+	t.Parallel()
+
+	bus := event.NewBus()
+	notes := bus.Subscribe("AgentMessageChunk", event.BufAgentMessageChunk)
+
+	r, _ := newBlockingRunner(t, scriptedResp{text: "ok", finish: stopEndTurn})
+
+	r.publishAskQueueNote(&session.AskEntry{TurnID: "t1", Title: "deploy?"}, "ask queued — 1 pending")
+
+	var count, parked bool
+
+	for {
+		select {
+		case ev := <-notes:
+			chunk, ok := ev.(event.AgentMessageChunk)
+			if !ok {
+				continue
+			}
+
+			switch chunk.Content {
+			case "ask queued — 1 pending":
+				count = true
+			case "ask waiting behind running turn: deploy?":
+				parked = true
+			}
+		default:
+			goto drained //nolint:gocritic // label is the drain exit
+		}
+	}
+
+drained:
+	if !count || !parked {
+		t.Errorf("emitter notes incomplete (count=%v parked=%v)", count, parked)
+	}
+}

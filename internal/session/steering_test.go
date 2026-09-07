@@ -621,15 +621,16 @@ func TestSteeringAntiZombie(t *testing.T) {
 	}
 }
 
-// TestParkedAskNoteAndRecord pins D-05/D-23-02: an ask surfaced by the turn
-// loop parks visibly — exactly one "ask waiting behind running turn: <summary>"
-// note on the live chunk family and exactly one parked_ask transcript line
-// (REDACTED path) carrying the turn id + summary.
-func TestParkedAskNoteAndRecord(t *testing.T) {
+// TestParkedAskRecord pins D-05's durable half (23-02): an ask surfaced by
+// the turn loop parks with exactly one parked_ask transcript line (REDACTED
+// path) carrying the turn id + summary. The LIVE half (the D-05 note) rides
+// the ask queue's parked-enqueue path at the runtime wiring — the
+// publishAskQueueNote test there (the fallback wire-order pin lives in
+// TestPermissionsE2E stage 3).
+func TestParkedAskRecord(t *testing.T) {
 	t.Parallel()
 
 	bus := event.NewBus()
-	notes := bus.Subscribe("AgentMessageChunk", event.BufAgentMessageChunk)
 
 	m := newTestManager(t, "s-parked")
 	s := &Session{
@@ -665,25 +666,18 @@ func TestParkedAskNoteAndRecord(t *testing.T) {
 			parked[0].TurnID, parked[0].Text)
 	}
 
-	// Exactly one D-05 note through the live chunk family.
-	var d05 bool
-
+	// No wire drift from the suspension itself: the note is NOT published
+	// here (the queue's parked branch owns it — the fallback-order pin).
 	for {
 		select {
-		case ev := <-notes:
+		case ev := <-bus.Subscribe("AgentMessageChunk", event.BufAgentMessageChunk):
 			if chunk, ok := ev.(event.AgentMessageChunk); ok &&
-				strings.HasPrefix(chunk.Content, "ask waiting behind running turn: ") &&
-				strings.Contains(chunk.Content, "which database?") {
-				d05 = true
+				strings.HasPrefix(chunk.Content, "ask waiting") {
+				t.Errorf("suspendForAsk published the D-05 note itself: %q", chunk.Content)
 			}
 		default:
-			goto drainedNotes //nolint:gocritic // label is the drain exit
+			return
 		}
-	}
-
-drainedNotes:
-	if !d05 {
-		t.Error("the D-05 parked note was not emitted on the live chunk family")
 	}
 }
 

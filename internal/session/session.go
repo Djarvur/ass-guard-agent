@@ -1010,23 +1010,17 @@ func (s *Session) suspendForAsk(turnID, callID string, output json.RawMessage, t
 
 	_ = s.Manager.AppendAskSuspended(turnID, callID, qJSON)
 
-	// 23-02 (SEEDG-01, D-05): the parked ask is visible the moment it parks —
-	// one note on the live chunk family (the per-Run forwarder is still
-	// subscribed here: suspendForAsk runs inside runTurn) plus the durable
-	// parked_ask record. Parking never blocks anything (D-07): both are
-	// fire-and-forget writes; failures degrade loudly (AUD-03), never
-	// turn-fatal.
-	summary := askSummaryOf(qs)
-
-	if perr := s.Manager.AppendParkedAsk(turnID, summary); perr != nil {
+	// 23-02 (SEEDG-01, D-05): the parked ask's DURABLE half — the parked_ask
+	// record lands the moment the ask parks (transcript truth; replay
+	// reconstructs the sequence). The LIVE half (the D-05 note) rides the
+	// ask queue's parked-enqueue path at the RUNTIME wiring (one frame after
+	// the pinned D-12 count note) — emitting here proved to corrupt the
+	// pinned v1.1 degraded-plain-text fallback wire shape (the note landed
+	// ahead of the question text; TestPermissionsE2E stage 3 pins that
+	// order). Parking never blocks anything (D-07): a record failure
+	// degrades loudly (AUD-03), never turn-fatal.
+	if perr := s.Manager.AppendParkedAsk(turnID, askSummaryOf(qs)); perr != nil {
 		slog.Warn("parked-ask record write failed", "turnID", turnID, "error", perr.Error())
-	}
-
-	if s.Bus != nil {
-		s.Bus.Publish(event.AgentMessageChunk{
-			TurnID: turnID, MessageID: turnID,
-			Content: "ask waiting behind running turn: " + summary,
-		})
 	}
 
 	s.ask.Surface(PendingAsk{TurnID: turnID, CallID: callID, Questions: qs, Kind: kind})

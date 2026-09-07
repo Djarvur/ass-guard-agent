@@ -2203,10 +2203,12 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	// this session's whole life) or the live client turn's own forwarder
 	// delivers the AgentMessageChunk; a bare post-turn publish would be
 	// dropped when no subscriber exists (the 13-03 timing hazard).
+	// 23-02 (D-05): the emitter also publishes the parked-ask wording — the
+	// emitter fires ONLY on the parked branch (an enqueue that fires
+	// immediately emits nothing), so the D-05 note appears exactly when an
+	// ask actually waits, without touching the immediate-fire wire shapes.
 	askQueue := session.NewAskQueue()
-	askQueue.SetNoteEmitter(func(e *session.AskEntry, note string) {
-		r.PublishAskChunk(e.TurnID, note)
-	})
+	askQueue.SetNoteEmitter(r.publishAskQueueNote)
 
 	permDeps := session.GateDeps{
 		Mode:  r.PermMode,
@@ -2925,6 +2927,24 @@ func (r *Runner) PublishAskChunk(turnID, text string) {
 	r.bus.Publish(event.AgentMessageChunk{
 		TurnID: turnID, MessageID: turnID, Content: text,
 	})
+}
+
+// publishAskQueueNote is the ask queue's note emitter (17-03/D-12 + 23-02/
+// D-05): the pinned count note fires first, verbatim; the D-05 parked-ask
+// wording follows one frame later on the same subscriber-backed path. The
+// queue invokes the emitter ONLY when an enqueue PARKS (queues behind the
+// one outstanding dialog) — immediate fires emit nothing, so the degraded
+// plain-text fallback and every other immediate-fire wire shape stay
+// byte-identical (TestPermissionsE2E stage 3's pin).
+func (r *Runner) publishAskQueueNote(e *session.AskEntry, note string) {
+	r.PublishAskChunk(e.TurnID, note)
+
+	summary := e.Title
+	if summary == "" {
+		summary = "question"
+	}
+
+	r.PublishAskChunk(e.TurnID, "ask waiting behind running turn: "+summary)
 }
 
 // enqueueEngineAsk converts one engine ask-pending decision into a
