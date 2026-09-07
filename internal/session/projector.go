@@ -173,14 +173,20 @@ func (p *Projector) Project(turnID string) ([]provider.Message, error) {
 		}
 	}
 
-	// 20-02 (D-06): a full-reset boundary (/clear) before the projected turn's
-	// user message beats EVERYTHING downstream — the compaction marker's
-	// durable summary included (a cleared context starts empty, period).
-	if resetIdx := fullResetBoundaryIdx(lines, turnID); resetIdx >= 0 {
+	// 20-02 (D-06): a full-reset boundary (/clear) empties the window — but
+	// the LAST reset point governs (the between-turn discipline): a
+	// compaction marker NEWER than the reset re-seeds the window with its
+	// summary (clear-then-compact keeps the compaction's durable seed; a
+	// reset AFTER the marker clears it — "a cleared context starts empty,
+	// period").
+	resetIdx := fullResetBoundaryIdx(lines, turnID)
+	mIdx := compactionMarkerIdx(lines, turnID)
+
+	if resetIdx >= 0 && (mIdx < 0 || resetIdx > mIdx) {
 		return p.projectFullReset(lines, resetIdx, turnID), nil
 	}
 
-	if mIdx := compactionMarkerIdx(lines, turnID); mIdx >= 0 {
+	if mIdx >= 0 {
 		return p.projectCompacted(lines, mIdx, turnID), nil
 	}
 
