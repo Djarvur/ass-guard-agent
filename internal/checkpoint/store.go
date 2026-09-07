@@ -2,7 +2,9 @@
 // the no-confirmation-tier agent's reversibility backstop. Every PARENT turn
 // snapshots the workspace's file state into ONE shadow git repository under
 // <workDir>/.ass-guard/checkpoints/shadow.git, addressed by turn
-// (refs/checkpoints/<sessionID>-turn-<NNN>), and `ass-guard checkpoint
+// (refs/checkpoints/<sessionID>-turn-<NNN>) or by pre-restore snapshot
+// (refs/checkpoints/<sessionID>-pre-<NNN>, 23-03/D-09 — same grammar, same
+// store, same GC lifecycle), and `ass-guard checkpoint
 // list|restore` operates on it from the terminal. One store per workspace —
 // `checkpoint list` therefore shows the workspace's full recovery history.
 //
