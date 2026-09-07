@@ -56,8 +56,13 @@ func IsSecretKey(k string) bool {
 var bearerRe = regexp.MustCompile(`(?i)\bBearer\b\s+[A-Za-z0-9._\-=]+`)
 
 // skRe matches a bare "sk-<token>" (the Anthropic/OpenAI key prefix) so
-// leaked keys in non-JSON bodies and error strings are scrubbed.
-var skRe = regexp.MustCompile(`sk-[A-Za-z0-9_\-]{6,}`)
+// leaked keys in non-JSON bodies and error strings are scrubbed. The leading
+// \b keeps it from firing MID-WORD: without it, any hyphenated word
+// containing "sk-" (task-notification, disk-usage, flask-session — and the
+// 22-01 wake block's <task-notification> markup) was mangled into
+// "[REDACTED]" in transcripts (22-01 Rule-2 fix; a real key appears at a
+// word boundary after a quote/space/start, so the boundary is lossless).
+var skRe = regexp.MustCompile(`\bsk-[A-Za-z0-9_\-]{6,}`)
 
 // Redact decodes raw as JSON and returns a re-encoded copy with every
 // secret-carrier value replaced by "[REDACTED]", field names preserved. If

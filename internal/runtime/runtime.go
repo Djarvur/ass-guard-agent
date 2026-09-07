@@ -41,6 +41,7 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/sched"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
+	"github.com/Djarvur/ass-guard-agent/internal/tasks"
 	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 	"github.com/Djarvur/ass-guard-agent/internal/toolexec"
 
@@ -283,6 +284,16 @@ type Runner struct {
 	schedStop            func()
 	catchUpOnce          sync.Once
 	emitFor              func(sessionID string) acp.ChunkEmitter
+
+	// 22-01 (D-01..D-03) wake-turn state — see cron_wiring.go: trackers maps
+	// each session to its tasks.Tracker (the ONE task-notification
+	// subsystem); wakeInFlight deduplicates concurrent drain attempts per
+	// session (one active drain chain); wakeRetryInterval is the busy-turn
+	// retry cadence (D-01 fallback — the pending batch coalesces while a
+	// client turn holds the slot and the chain retries after it frees).
+	trackers          sync.Map // sessionID -> *tasks.Tracker
+	wakeInFlight      sync.Map // sessionID -> *atomic.Bool
+	wakeRetryInterval time.Duration
 
 	// 17-02 (ACP-01): the permission-gate composition. permAskFire is the
 	// permission-ask surface callback injected from the serve composition
@@ -1691,6 +1702,29 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	// nil-safe when none are installed) wraps every core executor.
 	hookRunner := ecosys.NewHookRunner(r.reg.Hooks, sessionID, dir, mgr.Path())
 	taskRegistry := coreexec.NewTaskRegistry()
+
+	// 22-01 (D-01..D-03, PAR-07/PAR-08): the ONE task-notification tracker
+	// beside the registry. Registry completions land as kind-tagged
+	// Notifications (primitive-arg CompletionHook — no coreexec→tasks
+	// import; this adapter owns the mapping); every completion schedules the
+	// session's wake-drain chain; OnClose drops queued-but-unstarted
+	// subagent registrations with a counted note (OQ5).
+	tracker := tasks.NewTracker(tasks.TrackerOpts{})
+	r.trackers.Store(sessionID, tracker)
+
+	taskRegistry.CompletionHook = func(taskID, kind, exitStatus string, duration time.Duration, tail, outputFile string) {
+		tracker.Complete(tasks.Notification{
+			TaskID: taskID, Kind: tasks.Kind(kind), ExitStatus: exitStatus,
+			Duration: duration, Tail: tail, OutputFile: outputFile,
+		})
+	}
+
+	tracker.SetDrain(func(pending []tasks.Notification) {
+		_ = pending // peek only — the chain re-reads authoritatively via Drain
+
+		r.scheduleWakeDrain(sessionID)
+	})
+
 	coreexec.RegisterCore(sCatalog, coreexec.Config{
 		WorkDir: dir, Todos: coreexec.NewTodoStore(), Hooks: hookRunner, Tasks: taskRegistry,
 	})
@@ -1954,6 +1988,14 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	s.OnClose = func() error {
 		cancelWriter()
 		taskRegistry.ReapAll() // 12-06: no background group outlives the session
+
+		// 22-01 (OQ5): queued-but-unstarted subagent registrations die here
+		// — silently dropped (nothing started, nothing to kill), the count
+		// noted on stderr only when non-zero.
+		if dropped := tracker.CancelQueued(); dropped > 0 {
+			_, _ = fmt.Fprintf(r.stderrOrDefault(),
+				"ass-guard: session %s close dropped %d queued background subagent task(s)\n", sessionID, dropped)
+		}
 
 		return mcpHost.Close()
 	}

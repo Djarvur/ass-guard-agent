@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -278,4 +279,136 @@ func TestBackground_OutputFilePersisted(t *testing.T) {
 	}
 
 	t.Fatalf("output file %q never carried the command output", saved)
+}
+
+// TestBackground_CompletionHook (22-01 Task 1): the CompletionHook fires
+// EXACTLY ONCE per task from the Wait goroutine's terminal transition, with
+// the exit status derived from waitErr ("0" for clean exits, a nonzero
+// decimal for failures, "killed" for Stop), the duration from the start
+// timestamp, the tail from the bounded snapshot, and the pointer from the
+// task's own log path — and ZERO times when the hook is nil.
+func TestBackground_CompletionHook(t *testing.T) { //nolint:funlen // flat hook battery
+	t.Parallel()
+
+	type hookCall struct {
+		id, kind, status, tail, logPath string
+		duration                        time.Duration
+	}
+
+	var (
+		mu    sync.Mutex
+		calls []hookCall
+	)
+
+	dir := t.TempDir()
+	reg := NewTaskRegistry()
+	reg.CompletionHook = func(taskID, kind, exitStatus string, duration time.Duration, tail, outputFile string) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		calls = append(calls, hookCall{taskID, kind, exitStatus, tail, outputFile, duration})
+	}
+
+	// Exit 0 leg.
+	id0, err := reg.Start(dir, "echo hook-zero-marker")
+	if err != nil {
+		t.Fatalf("Start (exit 0): %v", err)
+	}
+
+	// Nonzero exit leg.
+	id1, err := reg.Start(dir, "echo hook-fail-marker; exit 3")
+	if err != nil {
+		t.Fatalf("Start (exit 3): %v", err)
+	}
+
+	// Killed leg (Stop marks the state before the group kill).
+	id2, err := reg.Start(dir, "echo hook-kill-marker; sleep 30")
+	if err != nil {
+		t.Fatalf("Start (killed): %v", err)
+	}
+
+	if serr := reg.Stop(id2); serr != nil {
+		t.Fatalf("Stop: %v", serr)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		n := len(calls)
+		mu.Unlock()
+
+		if n >= 3 {
+			break
+		}
+
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(calls) != 3 {
+		t.Fatalf("hook calls = %d; want exactly 3 (one per task)", len(calls))
+	}
+
+	byID := map[string]hookCall{}
+	for _, c := range calls {
+		byID[c.id] = c
+	}
+
+	c0 := byID[id0]
+	if c0.status != "0" {
+		t.Errorf("exit-0 task status = %q; want \"0\"", c0.status)
+	}
+
+	if !strings.Contains(c0.tail, "hook-zero-marker") {
+		t.Errorf("exit-0 tail = %q; want the snapshot marker", c0.tail)
+	}
+
+	if c0.kind != "bash" {
+		t.Errorf("kind = %q; want bash (the registry's producer kind)", c0.kind)
+	}
+
+	if c0.duration <= 0 {
+		t.Errorf("duration = %v; want > 0 (start → terminal)", c0.duration)
+	}
+
+	if !strings.HasSuffix(c0.logPath, id0+".log") || !strings.Contains(c0.logPath, ".ass-guard/outputs/") {
+		t.Errorf("logPath = %q; want the task's outputs log path", c0.logPath)
+	}
+
+	if got := byID[id1].status; got != "3" {
+		t.Errorf("exit-3 task status = %q; want \"3\"", got)
+	}
+
+	if got := byID[id2].status; got != "killed" {
+		t.Errorf("stopped task status = %q; want \"killed\"", got)
+	}
+}
+
+// TestBackground_CompletionHookNilNoop: a nil CompletionHook (bare registry,
+// e.g. the pre-existing batteries) fires nothing and breaks nothing.
+func TestBackground_CompletionHookNilNoop(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	reg := NewTaskRegistry() // no hook wired
+
+	id, err := reg.Start(dir, "echo no-hook")
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+
+	for time.Now().Before(deadline) {
+		if state, ok := reg.Lookup(id); ok && state != bgRunning {
+			return // terminal transition completed with zero hook panics
+		}
+
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	t.Fatal("task never reached a terminal state")
 }

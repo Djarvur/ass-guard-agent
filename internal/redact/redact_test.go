@@ -153,6 +153,45 @@ func TestRedact_NonJSONSkTokenScrubbed(t *testing.T) {
 	}
 }
 
+// TestRedact_SkTokenWordBoundary (22-01 Rule-2 fix): the sk- scrubber must
+// NOT fire mid-word — hyphenated words containing "sk-" (task-notification,
+// disk-usage) survive intact; only boundary-anchored token shapes scrub.
+func TestRedact_SkTokenWordBoundary(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		in   string
+		want string // substring that must SURVIVE verbatim
+	}{
+		{`<task-notification>` + "\ntask_id: exec_1", "<task-notification>"},
+		{"check disk-usage now", "disk-usage"},
+		{"flask-session cookie", "flask-session"},
+	}
+
+	for _, tc := range cases {
+		got, err := Redact([]byte(tc.in))
+		if err != nil {
+			t.Fatalf("Redact(%q) error: %v", tc.in, err)
+		}
+
+		if !strings.Contains(string(got), tc.want) {
+			t.Errorf("Redact(%q) = %q; want %q intact (mid-word sk- false positive)", tc.in, got, tc.want)
+		}
+	}
+
+	// Boundary-anchored real tokens still scrub (start-of-string + after space).
+	for _, in := range []string{"sk-abcdef1234567890", "key sk-abcdef1234567890"} {
+		got, err := Redact([]byte(in))
+		if err != nil {
+			t.Fatalf("Redact(%q) error: %v", in, err)
+		}
+
+		if strings.Contains(string(got), "sk-abcdef1234567890") {
+			t.Errorf("Redact(%q) = %q; boundary sk- token must still scrub", in, got)
+		}
+	}
+}
+
 // TestIsSecretKey: the canonical allowlist (case-insensitive).
 func TestIsSecretKey(t *testing.T) {
 	t.Parallel()

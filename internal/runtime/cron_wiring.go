@@ -12,6 +12,7 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/event"
 	"github.com/Djarvur/ass-guard-agent/internal/sched"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
+	"github.com/Djarvur/ass-guard-agent/internal/tasks"
 )
 
 // The cron firing engine (12-07 Task 2, ACP-04/D-02): the Runner-owned
@@ -96,6 +97,10 @@ func (r *Runner) startScheduler(ctx context.Context) {
 				return
 			case <-t.C:
 				r.fireDueAutomations(ctx)
+				// 22-01: the tick doubles as the wake drain's later retry
+				// cadence (D-01 fallback) — pending notifications whose
+				// drain found the turn slot held deliver on a later tick.
+				r.scheduleWakeDrain(r.currentSessionID())
 			}
 		}
 	}()
@@ -332,4 +337,195 @@ func fanInEvents(chans ...<-chan event.Event) <-chan event.Event {
 	}()
 
 	return out
+}
+
+// --- 22-01: the wake-turn drain (D-01/D-03) -----------------------------------
+//
+// The wake provenance vocabulary (CONTEXT discretion): the wake turn's
+// EngineDecision provenance string is "wake:tasks" (mirroring "automation:
+// <id>"); the notification block markup is one <task-notification> element
+// per notification with the D-02 fields as labeled lines plus the output
+// tail in a fenced tail section.
+
+// wakeProvenance is the wake turn's provenance/audit vocabulary.
+const wakeProvenance = "wake:tasks"
+
+// trackerFor returns the session's task-notification tracker (nil when the
+// session was never constructed through sessionFor).
+func (r *Runner) trackerFor(sessionID string) *tasks.Tracker {
+	v, ok := r.trackers.Load(sessionID)
+	if !ok {
+		return nil
+	}
+
+	return v.(*tasks.Tracker) //nolint:forcetypeassert // LoadOrStore stores exactly *tasks.Tracker
+}
+
+// scheduleWakeDrain starts the session's wake-drain chain unless one is
+// already active (the in-flight CAS deduplicates concurrent completion
+// attempts — at most ONE drain chain per session at any time; the session
+// turn mutex plus the tracker's atomic snapshotAndClear make concurrent
+// chains impossible by construction even without it, Pitfall 8).
+func (r *Runner) scheduleWakeDrain(sessionID string) {
+	if sessionID == "" {
+		return
+	}
+
+	v, _ := r.wakeInFlight.LoadOrStore(sessionID, &atomic.Bool{})
+	flag := v.(*atomic.Bool) //nolint:forcetypeassert // stored as *atomic.Bool above
+
+	if !flag.CompareAndSwap(false, true) {
+		return // a chain is already draining this session's notifications
+	}
+
+	//nolint:contextcheck // serve-lifetime ctx (nil only in tests → Background)
+	go r.wakeDrainChain(r.serveCtxOrBackground(), sessionID, flag)
+}
+
+// wakeDrainChain is the per-session drain loop: while notifications are
+// pending, TryLock the session turn mutex and deliver ONE coalesced batch as
+// a wake turn (D-01 + D-03). A busy mutex (a client turn is active) is NEVER
+// queued behind — the chain sleeps one retry interval and retries, the
+// pending batch coalescing in the meantime (D-01 fallback). The chain exits
+// when the queue is empty (the in-flight flag clears; the next completion
+// starts a fresh chain) — completions landing mid-turn are picked up by the
+// post-drain re-check.
+func (r *Runner) wakeDrainChain(ctx context.Context, sessionID string, flag *atomic.Bool) {
+	defer func() {
+		flag.Store(false)
+
+		// A completion raced the exit: restart so the batch is not stranded
+		// (the CAS either adopts it here or a fresh chain owns it).
+		r.scheduleWakeDrain(sessionID)
+	}()
+
+	tr := r.trackerFor(sessionID)
+	if tr == nil {
+		return
+	}
+
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+
+		if len(tr.PendingPeek()) == 0 {
+			return // drained — idle until the next completion signals
+		}
+
+		if r.drainWakeNotifications(ctx, sessionID, tr) {
+			return // batch delivered (or unrecoverable) — chain complete
+		}
+
+		// Busy turn slot: sleep one retry interval and retry (never queue).
+		interval := r.wakeRetryInterval
+		if interval <= 0 {
+			interval = 500 * time.Millisecond
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(interval):
+		}
+	}
+}
+
+// drainWakeNotifications attempts ONE batch delivery: TryLock the session
+// turn mutex (busy → return false, notifications stay pending), consume the
+// tracker's pending batch (nil batch after a racing drain → true, done),
+// render the notification blocks, and run ONE wake turn through runOneTurn
+// with the wake provenance bracket (mirroring runAutomationTurn's skeleton —
+// the same rails, a new trigger). A session that cannot be resolved logs one
+// stderr line and leaves the batch pending (the next completion retries).
+func (r *Runner) drainWakeNotifications(ctx context.Context, sessionID string, tr *tasks.Tracker) bool {
+	sess := r.sessionFor(ctx, sessionID)
+	if sess == nil {
+		_, _ = fmt.Fprintf(r.stderrOrDefault(),
+			"ass-guard: wake drain for %s could not resolve the session — notifications stay pending\n", sessionID)
+
+		return false // stay in the chain; retry later
+	}
+
+	mu := r.sessionTurnMu(sessionID)
+	if !mu.TryLock() {
+		return false // D-01 fallback: client turn active — leave pending, retry
+	}
+
+	defer mu.Unlock()
+
+	batch := tr.Drain() // the ONLY destructive consumer, under the lock
+	if len(batch) == 0 {
+		return true // a racing chain delivered the batch — done
+	}
+
+	// 17-D-07 parity: the wake turn is an automation-class turn (no human) —
+	// ask-class calls decline fail-safe instead of opening a dialog nobody
+	// would answer (runAutomationTurn's bracket, verbatim discipline).
+	sess.SetTurnOriginAutomation(true)
+
+	defer sess.SetTurnOriginAutomation(false)
+
+	r.sessMu.Lock()
+	r.automationProvenance = wakeProvenance
+	r.sessMu.Unlock()
+
+	blocks := renderWakeBlocks(batch)
+
+	stop, err := r.runOneTurn(ctx, sess, blocks)
+
+	r.sessMu.Lock()
+	r.automationProvenance = ""
+	r.sessMu.Unlock()
+
+	reason := fmt.Sprintf("%d task notification(s) [%s] delivered as engine-driven wake turn; stop=%s",
+		len(batch), wakeTaskIDs(batch), stop)
+
+	if err != nil {
+		reason += "; error: " + err.Error()
+	}
+
+	if werr := sess.Manager.AppendEngineDecision(
+		wakeProvenance, "task wake", wakeProvenance, "", "tasks:pending", reason,
+	); werr != nil {
+		_, _ = fmt.Fprintf(r.stderrOrDefault(),
+			"ass-guard: wake engine-decision write failed: %v\n", werr)
+	}
+
+	return true
+}
+
+// renderWakeBlocks renders the coalesced batch as the wake turn's input: one
+// block per notification (the D-03 "all pending blocks inject together"
+// letter), ordered by completion time (the tracker's batch order).
+func renderWakeBlocks(batch []tasks.Notification) []session.ContentBlock {
+	blocks := make([]session.ContentBlock, 0, len(batch))
+
+	for i := range batch {
+		n := batch[i]
+
+		text := "<task-notification>\n" +
+			"task_id: " + n.TaskID + "\n" +
+			"kind: " + string(n.Kind) + "\n" +
+			"exit_status: " + n.ExitStatus + "\n" +
+			"duration: " + n.Duration.String() + "\n" +
+			"output_file: " + n.OutputFile + "\n" +
+			"<tail>\n" + n.Tail + "\n</tail>\n" +
+			"</task-notification>"
+
+		blocks = append(blocks, session.ContentBlock{Type: blockText, Text: text})
+	}
+
+	return blocks
+}
+
+// wakeTaskIDs joins the batch's task ids for the audit reason line.
+func wakeTaskIDs(batch []tasks.Notification) string {
+	parts := make([]string, 0, len(batch))
+
+	for i := range batch {
+		parts = append(parts, batch[i].TaskID)
+	}
+
+	return strings.Join(parts, ",")
 }

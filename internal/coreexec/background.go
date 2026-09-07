@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -61,6 +62,11 @@ type bgTask struct {
 	errBuf bytes.Buffer
 	state  bgState
 	exitCh chan struct{}
+	start  time.Time
+	logPath string
+	// hook is the completion callback captured at Start (the registry field
+	// is wired before any task launches; capturing keeps the read race-free).
+	hook CompletionHook
 }
 
 // accumulate appends to the stream's bounded buffer.
@@ -96,7 +102,23 @@ func (t *bgTask) snapshot() string {
 type TaskRegistry struct {
 	mu    sync.Mutex
 	tasks map[string]*bgTask
+	// CompletionHook (22-01, PAR-08) is fired exactly once per task from the
+	// Wait goroutine's terminal transition with PRIMITIVE args (task id,
+	// kind, exit status, duration, tail, output-file pointer) — no
+	// coreexec→tasks import; the runtime adapter builds the kind-tagged
+	// Notification. nil (unwired, e.g. bare registry tests) fires nothing.
+	// Set BEFORE the first Start (captured per task under the registry lock).
+	CompletionHook CompletionHook
 }
+
+// CompletionHook is the terminal-transition callback (22-01). kind is the
+// producer discriminator ("bash" for this registry); exitStatus is "0", a
+// nonzero decimal, "killed" (Stop), or "error" (a non-exit Wait failure).
+type CompletionHook func(taskID, kind, exitStatus string, duration time.Duration, tail, outputFile string)
+
+// bgKindBash is the registry's producer kind (tasks.KindBash's value — the
+// adapter maps it; coreexec owns no tasks import by design).
+const bgKindBash = "bash"
 
 // NewTaskRegistry returns an empty per-session registry.
 func NewTaskRegistry() *TaskRegistry {
@@ -149,7 +171,7 @@ func (r *TaskRegistry) Start(workDir, command string) (string, error) {
 	}
 
 	id := newTaskID()
-	task := &bgTask{id: id, state: bgRunning, exitCh: make(chan struct{})}
+	task := &bgTask{id: id, state: bgRunning, exitCh: make(chan struct{}), start: time.Now(), hook: r.CompletionHook}
 	r.tasks[id] = task
 
 	r.mu.Unlock()
@@ -160,6 +182,8 @@ func (r *TaskRegistry) Start(workDir, command string) (string, error) {
 
 		return "", err
 	}
+
+	task.logPath = f.Name()
 
 	//nolint:noctx // T-8-33: model-authored command is the product; the
 	// registry — not a call ctx — owns this lifecycle (Cancel unset; Stop/ReapAll kill)
@@ -200,6 +224,22 @@ func (r *TaskRegistry) Start(workDir, command string) (string, error) {
 		}
 
 		task.mu.Unlock()
+
+		// 22-01 (D-02/PAR-08): the terminal transition fires the completion
+		// hook exactly once — exit status from waitErr, duration from the
+		// start timestamp, tail from the bounded snapshot, pointer from the
+		// task's own log path. The callback runs OUTSIDE task.mu (it may
+		// schedule a wake drain; never block the Wait goroutine on it).
+		if task.hook != nil {
+			task.mu.Lock()
+			state := task.state
+			task.mu.Unlock()
+
+			task.hook(
+				task.id, bgKindBash, exitStatusFor(waitErr, state),
+				time.Since(task.start), task.snapshot(), task.logPath,
+			)
+		}
 	}()
 
 	return id, nil
@@ -322,6 +362,33 @@ var (
 	errUnknownTask = errors.New("coreexec: unknown task")
 	errNoRegistry  = errors.New("coreexec: background: no task registry configured")
 )
+
+// exitStatusFor derives the notification's exit-status string from the Wait
+// error and the terminal state: "killed" for registry-stopped tasks (the
+// D-02 vocabulary), "0" for clean exits, the decimal code (or 128+signal in
+// the shell convention for signal deaths) otherwise, "error" for non-exit
+// Wait failures.
+func exitStatusFor(waitErr error, state bgState) string {
+	if state == bgStopped {
+		return "killed"
+	}
+
+	if waitErr == nil {
+		return "0"
+	}
+
+	var ee *exec.ExitError
+
+	if errors.As(waitErr, &ee) {
+		if status, ok := ee.Sys().(syscall.WaitStatus); ok && status.Signaled() {
+			return strconv.Itoa(128 + int(status.Signal()))
+		}
+
+		return strconv.Itoa(ee.ExitCode())
+	}
+
+	return "error"
+}
 
 // --- executors -----------------------------------------------------------------
 
