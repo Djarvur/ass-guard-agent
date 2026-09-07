@@ -15,7 +15,7 @@ func TestProcopts_PdeathsigArmed(t *testing.T) {
 	dir := t.TempDir()
 	reg := NewTaskRegistry()
 
-	id, err := reg.Start(dir, "echo pdeathsig-probe")
+	id, _, err := reg.Start(dir, "echo pdeathsig-probe")
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
