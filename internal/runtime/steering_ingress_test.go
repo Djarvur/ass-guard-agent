@@ -684,10 +684,9 @@ func TestEngineChainSteered(t *testing.T) {
 func TestParkedAskNoteEmitter(t *testing.T) {
 	t.Parallel()
 
-	bus := event.NewBus()
-	notes := bus.Subscribe("AgentMessageChunk", event.BufAgentMessageChunk)
-
 	r, _ := newBlockingRunner(t, scriptedResp{text: "ok", finish: stopEndTurn})
+
+	notes := r.bus.Subscribe("AgentMessageChunk", event.BufAgentMessageChunk)
 
 	r.publishAskQueueNote(&session.AskEntry{TurnID: "t1", Title: "deploy?"}, "ask queued — 1 pending")
 
