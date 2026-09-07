@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -1224,7 +1225,12 @@ func TestCheckpointGCAgeAxis(t *testing.T) {
 
 	snapDated(t, s, "sess-gc-turn-001", now.Add(-30*24*time.Hour))
 	snapDated(t, s, "sess-gc-pre-001", now.Add(-20*24*time.Hour))
-	snapDated(t, s, "sess-gc-turn-002", now.Add(-7*24*time.Hour)) // exactly maxAge
+	// maxAge minus a scheduling-skew allowance: the snapshot git calls cost
+	// seconds, and Sweep stamps its own now — a hard now-maxAge stamp would
+	// be strictly older than Sweep's cutoff by exactly that drift. The
+	// allowance keeps this the "boundary survives" pin, not a wall-clock
+	// race (strictly-older still evicts: the 30d/20d refs prove it).
+	snapDated(t, s, "sess-gc-turn-002", now.Add(-7*24*time.Hour+5*time.Second))
 	snapDated(t, s, "sess-gc-turn-003", now.Add(-1*24*time.Hour))
 
 	err := s.Sweep(context.Background(), 7*24*time.Hour, 50)

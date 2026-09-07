@@ -66,9 +66,12 @@ const (
 	// refPrefix is the turn-addressed ref namespace — the ONLY namespace
 	// Restore will ever name (refs confined here, T-14-01).
 	refPrefix = "refs/checkpoints/"
-	// lastRef is the symbolic convenience tip: the shadow repo's HEAD points
-	// here so every snapshot commit chains off the previous one. It is not a
-	// turn checkpoint and is excluded from List/prune.
+	// lastRef is the store's ANCHOR commit: the shadow repo's HEAD points
+	// here and every snapshot commits as a DIRECT child of it (23-03's
+	// de-chain — see commitSnapshot). Nothing advances it past the init
+	// root, so a deleted checkpoint ref's objects become unreachable and
+	// gc reclaims them. It is not a turn checkpoint and is excluded from
+	// List/prune/Sweep.
 	lastRef = "refs/checkpoints/last"
 
 	// lockFileName is the whole-store lock file (create-with-O_EXCL under
@@ -344,6 +347,204 @@ func (s *Store) DeleteSession(ctx context.Context, sessionID string) error {
 	})
 }
 
+// Sweep is the D-08 retention authority (23-03; wired at session start by
+// 23-04): refs violating EITHER axis are deleted — committed-older-than
+// maxAge (axis 1; maxAge <= 0 disables the axis) or beyond the per-session
+// newest-count (axis 2; perSession <= 0 normalizes to DefaultKeep) — and the
+// SAME withLock critical section then runs reflog expire --expire=now --all
+// + gc --prune=now so the victims' objects are actually reclaimed (Pitfall
+// 5: splitting ref deletion from object expiry leaves the store growing
+// forever). Pre-restore entries participate identically (D-09: one store,
+// one lifecycle). Relationship to the per-snapshot keep-50 prune: the prune
+// stays (a same-second burst inside ONE session can exceed perSession
+// between sweeps without double-deleting — both delete only refs that exist,
+// idempotently); Sweep remains the cross-axis authority at session start.
+func (s *Store) Sweep(ctx context.Context, maxAge time.Duration, perSession int) error {
+	if perSession <= 0 {
+		perSession = DefaultKeep
+	}
+
+	return s.withLock(ctx, func() error {
+		entries, err := s.listRefs(ctx)
+		if err != nil {
+			return err
+		}
+
+		now := time.Now().UTC()
+
+		ageVictims := expireByAge(entries, now, maxAge)
+
+		ageSurvivors := make([]Entry, 0, len(entries))
+
+		victimRefs := make(map[string]bool, len(ageVictims))
+		for _, v := range ageVictims {
+			victimRefs[v.Ref] = true
+		}
+
+		for _, e := range entries {
+			if !victimRefs[e.Ref] {
+				ageSurvivors = append(ageSurvivors, e)
+			}
+		}
+
+		victims := append(ageVictims, expireByCount(ageSurvivors, perSession)...)
+
+		for _, v := range victims {
+			_, derr := s.git(ctx, "update-ref", "-d", v.Ref)
+			if derr != nil {
+				return fmt.Errorf("checkpoint: sweep %s: %w", v.Ref, derr)
+			}
+		}
+
+		// Object expiry in the SAME critical section as the deletions —
+		// the whole point of the sweep (D-08: the store stops growing).
+		_, err = s.git(ctx, "reflog", "expire", "--expire=now", "--all")
+		if err != nil {
+			return fmt.Errorf("checkpoint: sweep reflog expire: %w", err)
+		}
+
+		_, err = s.git(ctx, "gc", "--prune=now", "--quiet")
+		if err != nil {
+			return fmt.Errorf("checkpoint: sweep gc: %w", err)
+		}
+
+		return nil
+	})
+}
+
+// expireByAge is the pure D-08 axis-1 victim selection: entries committed
+// STRICTLY BEFORE now-maxAge (the exactly-maxAge boundary survives).
+// maxAge <= 0 selects nothing (axis disabled).
+func expireByAge(entries []Entry, now time.Time, maxAge time.Duration) []Entry {
+	if maxAge <= 0 {
+		return nil
+	}
+
+	cutoff := now.Add(-maxAge)
+
+	var victims []Entry
+
+	for _, e := range entries {
+		if e.CommittedAt.Before(cutoff) {
+			victims = append(victims, e)
+		}
+	}
+
+	return victims
+}
+
+// expireByCount is the pure D-08 axis-2 victim selection: per session, the
+// NEWEST perSession entries survive (recency = CommittedAt, ties broken by
+// TurnNum then Ref for determinism); the overflow is evicted. Accounting is
+// strictly per-session — a chatty session's overflow never evicts another
+// session's refs.
+func expireByCount(entries []Entry, perSession int) []Entry {
+	if perSession <= 0 {
+		return nil
+	}
+
+	kept := make(map[string]int, 4)
+
+	sorted := append([]Entry(nil), entries...)
+	slices.SortFunc(sorted, func(a, b Entry) int {
+		if !a.CommittedAt.Equal(b.CommittedAt) {
+			return b.CommittedAt.Compare(a.CommittedAt) // newest first
+		}
+
+		if a.TurnNum != b.TurnNum {
+			return b.TurnNum - a.TurnNum
+		}
+
+		return strings.Compare(b.Ref, a.Ref)
+	})
+
+	var victims []Entry
+
+	for _, e := range sorted {
+		kept[e.SessionID]++
+
+		if kept[e.SessionID] > perSession {
+			victims = append(victims, e)
+		}
+	}
+
+	return victims
+}
+
+// The user-repo exclude append's typed skips (23-03, SEEDG-02): neither is a
+// failure — the CALLER logs a structured stderr note (the AUD-03 loud,
+// never-fatal discipline).
+var (
+	// ErrExcludeSkippedNotRepo: the workdir is not a git repository — there
+	// is no .git/info/exclude to carry the store-root rule.
+	ErrExcludeSkippedNotRepo = errors.New(
+		"checkpoint: user-repo exclude skipped: workdir is not a git repository")
+
+	// ErrExcludeSkippedWorktree: .git is a FILE (a linked worktree /
+	// submodule checkout) — its info/exclude lives in the gitdir it points
+	// at, which is outside the sanctioned one-write surface (the user repo's
+	// own .git/info/exclude under the workdir).
+	ErrExcludeSkippedWorktree = errors.New(
+		"checkpoint: user-repo exclude skipped: .git is a file (worktree/submodule)")
+)
+
+// EnsureUserRepoExclude appends the store-root ignore rule (".ass-guard/")
+// to the USER repo's .git/info/exclude — the one sanctioned write surface
+// into the operator's repo config (SEEDG-02): git status in the user's
+// worktree never shows the store. Append-only and idempotent: existing lines
+// are preserved byte-for-byte, the rule lands exactly once, and the file is
+// never truncated (MkdirAll info at 0700, O_APPEND|O_CREATE at 0600). A
+// workdir whose .git is absent returns ErrExcludeSkippedNotRepo and one
+// whose .git is a FILE returns ErrExcludeSkippedWorktree — typed skips, not
+// failures.
+func (s *Store) EnsureUserRepoExclude() error {
+	gitPath := filepath.Join(s.workDir, ".git")
+
+	fi, err := os.Stat(gitPath)
+	switch {
+	case os.IsNotExist(err):
+		return ErrExcludeSkippedNotRepo
+	case err != nil:
+		return fmt.Errorf("checkpoint: stat user .git: %w", err)
+	case !fi.IsDir():
+		return ErrExcludeSkippedWorktree
+	}
+
+	infoDir := filepath.Join(gitPath, "info")
+
+	err = os.MkdirAll(infoDir, dirPermOwnerOnly)
+	if err != nil {
+		return fmt.Errorf("checkpoint: create user info dir: %w", err)
+	}
+
+	excludePath := filepath.Join(infoDir, "exclude")
+	rule := storeRootDir + "/"
+
+	existing, err := os.ReadFile(excludePath)
+	if err == nil {
+		for line := range strings.SplitSeq(string(existing), "\n") {
+			if line == rule {
+				return nil // already carried — idempotent
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("checkpoint: read user exclude: %w", err)
+	}
+
+	f, err := os.OpenFile(excludePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, filePermOwnerOnly)
+	if err != nil {
+		return fmt.Errorf("checkpoint: open user exclude: %w", err)
+	}
+
+	defer func() { _ = f.Close() }()
+
+	if _, err := f.WriteString(rule + "\n"); err != nil {
+		return fmt.Errorf("checkpoint: append user exclude rule: %w", err)
+	}
+
+	return nil
+}
+
 // Restore returns the workspace to the checkpoint's recorded pre-turn state:
 // a force checkout of the ref's tree over the whole workspace, then a clean
 // that removes files created after the snapshot (never .ass-guard/, the
@@ -569,30 +770,49 @@ func validateTurnID(sessionID, turnID string) error {
 	return nil
 }
 
-// commitSnapshot stages the whole workspace and commits it under the turn's
+// commitSnapshot stages the whole workspace and commits it under the id's
 // message, returning the commit sha. NO ref update happens here — the split
 // IS the partial-ref guarantee (T-14-06): a checkpoint ref appears only
 // after its commit object exists. Tests drive this step directly to pin
 // that ordering.
+//
+// 23-03 (D-08): the commit is plumbing — write-tree + commit-tree parented
+// DIRECTLY on the store's init anchor (lastRef, which nothing advances past
+// the root). The previous shape ran `git commit` on HEAD→lastRef, chaining
+// every snapshot on the previous one and anchoring ALL history at last —
+// deleting a checkpoint ref (prune/Sweep/DeleteSession) could never make
+// its objects unreachable, so gc reclaimed nothing and the store grew
+// forever (empirically verified: 315 loose objects became 315 packed, zero
+// pruned). Direct children of the anchor keep every snapshot independently
+// reachable only through its own ref, so Sweep's ref deletion + reflog
+// expire + gc --prune=now actually reclaims the victims. A zero-change
+// workspace still commits (commit-tree always creates the object); a
+// re-snapshot of the same id updates the same ref (idempotent).
 func (s *Store) commitSnapshot(ctx context.Context, turnID string) (string, error) {
 	_, err := s.git(ctx, "add", "-A", "--", ".")
 	if err != nil {
 		return "", fmt.Errorf("checkpoint: stage workspace: %w", err)
 	}
 
-	_, err = s.git(ctx, "commit", "--allow-empty", "-m", turnID)
+	out, err := s.git(ctx, "write-tree")
+	if err != nil {
+		return "", fmt.Errorf("checkpoint: write tree: %w", err)
+	}
+
+	parent, err := s.git(ctx, "rev-parse", lastRef)
+	if err != nil {
+		return "", fmt.Errorf("checkpoint: resolve anchor commit: %w", err)
+	}
+
+	out, err = s.git(ctx, "commit-tree",
+		strings.TrimSpace(string(out)), "-p", strings.TrimSpace(string(parent)), "-m", turnID)
 	if err != nil {
 		return "", fmt.Errorf("checkpoint: commit snapshot: %w", err)
 	}
 
-	out, err := s.git(ctx, "rev-parse", "HEAD")
-	if err != nil {
-		return "", fmt.Errorf("checkpoint: resolve snapshot sha: %w", err)
-	}
-
 	sha := strings.TrimSpace(string(out))
 	if sha == "" {
-		return "", errors.New("checkpoint: rev-parse HEAD returned no sha") //nolint:err113 // static guard error
+		return "", errors.New("checkpoint: commit-tree returned no sha") //nolint:err113 // static guard error
 	}
 
 	return sha, nil
@@ -687,8 +907,12 @@ func parseRefLine(line string) (Entry, bool) {
 	}, true
 }
 
-// prune enforces retention (T-14-03): after a snapshot, the oldest refs
-// beyond DefaultKeep are deleted. Ties on commit timestamp (same-second
+// prune enforces the per-snapshot GLOBAL retention backstop (T-14-03): after
+// a snapshot, the oldest refs beyond DefaultKeep are deleted. The session-
+// start Sweep (23-04 wires it) is the D-08 retention AUTHORITY — age+count
+// dual axis with object expiry; this prune stays as the between-sweeps
+// backstop (no double-delete risk: both remove only refs that exist, and
+// only the Sweep expires objects). Ties on commit timestamp (same-second
 // snapshots are the common case) break by (sessionID, turn number), which
 // tracks snapshot sequence deterministically.
 func (s *Store) prune(ctx context.Context) error {
