@@ -573,3 +573,149 @@ func TestServeMirror_Override(t *testing.T) {
 
 	t.Fatalf("override mirror did not land a request line within 10s (stderr: %s)", stderr.String())
 }
+
+// The stale-log sweep battery (22-02 Task 3, PAR-08, OQ4): orphaned task
+// logs tombstone-mark at serve start (.stale rename, counted note, never a
+// silent delete); already-stale logs past the retention window delete on a
+// LATER sweep; the directory itself never disappears.
+
+// seedSweepOutputs builds .ass-guard/outputs with the named entries and
+// returns its path.
+func seedSweepOutputs(t *testing.T, workDir string, names []string) string {
+	t.Helper()
+
+	dir := filepath.Join(workDir, ".ass-guard", "outputs")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, n := range names {
+		if err := os.WriteFile(filepath.Join(dir, n), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	return dir
+}
+
+// TestStaleSweep_TombstonesOrphans (PAR-08, OQ4): at serve start nothing is
+// live — every .log is stale by definition; each tombstones to .log.stale,
+// nothing deletes, the directory survives.
+func TestStaleSweep_TombstonesOrphans(t *testing.T) {
+	t.Parallel()
+
+	workDir := t.TempDir()
+	dir := seedSweepOutputs(t, workDir, []string{"exec_aaa.log", "exec_bbb.log"})
+
+	count, err := sweepStaleTaskLogs(workDir, time.Now())
+	if err != nil {
+		t.Fatalf("sweepStaleTaskLogs: %v", err)
+	}
+
+	if count.marked != 2 {
+		t.Errorf("marked = %d; want 2 (every orphan tombstones)", count.marked)
+	}
+
+	if count.deleted != 0 {
+		t.Errorf("deleted = %d; want 0 (fresh sweep never deletes — tombstone first)", count.deleted)
+	}
+
+	for _, name := range []string{"exec_aaa.log.stale", "exec_bbb.log.stale"} {
+		if _, serr := os.Stat(filepath.Join(dir, name)); serr != nil {
+			t.Errorf("tombstone %s missing: %v", name, serr)
+		}
+	}
+
+	if _, serr := os.Stat(dir); serr != nil {
+		t.Error("the outputs directory was removed — never (prohibition)")
+	}
+}
+
+// TestStaleSweep_DeletesOnlyPastRetention (OQ4): an already-.stale log
+// older than the window deletes on a LATER sweep; a fresh .stale stays.
+func TestStaleSweep_DeletesOnlyPastRetention(t *testing.T) {
+	t.Parallel()
+
+	workDir := t.TempDir()
+	dir := seedSweepOutputs(t, workDir, []string{"exec_old.log.stale", "exec_recent.log.stale", "exec_new.log"})
+
+	old := filepath.Join(dir, "exec_old.log.stale")
+	past := time.Now().Add(-8 * 24 * time.Hour) // past the 7-day window
+
+	if uerr := os.Chtimes(old, past, past); uerr != nil {
+		t.Fatal(uerr)
+	}
+
+	count, err := sweepStaleTaskLogs(workDir, time.Now())
+	if err != nil {
+		t.Fatalf("sweepStaleTaskLogs: %v", err)
+	}
+
+	if count.deleted != 1 {
+		t.Errorf("deleted = %d; want 1 (only the past-window tombstone)", count.deleted)
+	}
+
+	if _, serr := os.Stat(filepath.Join(dir, "exec_recent.log.stale")); serr != nil {
+		t.Error("a fresh .stale was deleted — only past-window tombstones delete")
+	}
+
+	if _, serr := os.Stat(filepath.Join(dir, "exec_new.log.stale")); serr != nil {
+		t.Errorf("the fresh orphan did not tombstone: %v", serr)
+	}
+
+	if _, serr := os.Stat(old); serr == nil {
+		t.Error("the past-window tombstone survived the GC")
+	}
+}
+
+// TestStaleSweep_ZeroAndMissingNoops (PAR-08 empty probe): zero stale logs
+// and a missing directory are counted no-ops, never errors.
+func TestStaleSweep_ZeroAndMissingNoops(t *testing.T) {
+	t.Parallel()
+
+	workDir := t.TempDir()
+	dir := seedSweepOutputs(t, workDir, nil) // empty outputs dir
+
+	count, err := sweepStaleTaskLogs(workDir, time.Now())
+	if err != nil {
+		t.Fatalf("empty sweep: %v", err)
+	}
+
+	if count.marked != 0 || count.deleted != 0 {
+		t.Errorf("empty sweep = %+v; want zero counts", count)
+	}
+
+	bare := t.TempDir() // no .ass-guard at all
+
+	if _, err := sweepStaleTaskLogs(bare, time.Now()); err != nil {
+		t.Errorf("missing-dir sweep errored: %v (first run must be a no-op)", err)
+	}
+}
+
+// TestStaleSweep_SkipsForeignEntries: subdirectories and non-log files are
+// never touched (T-22-07: only the <id>.log/.stale shapes it creates).
+func TestStaleSweep_SkipsForeignEntries(t *testing.T) {
+	t.Parallel()
+
+	workDir := t.TempDir()
+	dir := seedSweepOutputs(t, workDir, []string{"exec_one.log", "notes.txt"})
+
+	if merr := os.Mkdir(filepath.Join(dir, "subdir"), 0o750); merr != nil {
+		t.Fatal(merr)
+	}
+
+	count, err := sweepStaleTaskLogs(workDir, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if count.marked != 1 {
+		t.Errorf("marked = %d; want 1 (only the exec_*.log shape)", count.marked)
+	}
+
+	for _, kept := range []string{"notes.txt", "subdir"} {
+		if _, serr := os.Stat(filepath.Join(dir, kept)); serr != nil {
+			t.Errorf("foreign entry %s touched: %v", kept, serr)
+		}
+	}
+}
