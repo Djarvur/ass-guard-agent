@@ -102,6 +102,9 @@ func (t *bgTask) snapshot() string {
 type TaskRegistry struct {
 	mu    sync.Mutex
 	tasks map[string]*bgTask
+	// termGrace is the PAR-08 escalation ladder's TERM→KILL grace window
+	// (test-injectable; the production default is bgTermGrace = 5s).
+	termGrace time.Duration
 	// CompletionHook (22-01, PAR-08) is fired exactly once per task from the
 	// Wait goroutine's terminal transition with PRIMITIVE args (task id,
 	// kind, exit status, duration, tail, output-file pointer) — no
@@ -192,8 +195,10 @@ func (r *TaskRegistry) Start(workDir, command string) (string, error) {
 	cmd.Stdout = io.MultiWriter(f, taskWriter{task, false})
 	cmd.Stderr = io.MultiWriter(f, taskWriter{task, true})
 	// Own process group (no cmd.Cancel — the REGISTRY owns this lifecycle,
-	// not a call ctx; Stop/ReapAll do the group killing).
+	// not a call ctx; Stop/ReapAll do the group killing via terminateGroup).
+	// Linux: Pdeathsig SIGKILL so a dead ass-guard cannot orphan the child.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	setPdeathsig(cmd.SysProcAttr)
 
 	task.cmd = cmd
 
@@ -313,8 +318,43 @@ func (r *TaskRegistry) Output(id string, block bool, timeoutMS int) (string, bgS
 	return t.snapshot(), state, state == bgRunning, nil
 }
 
-// Stop kills the task's WHOLE process group + reaps stragglers (the 08-03
-// discipline) and marks it stopped. Unknown ids error (per-session scoping).
+// bgTermGrace is the PAR-08 escalation ladder's grace window: the group
+// gets SIGTERM, this long to die cleanly, then SIGKILL + reap (wrapper
+// shells' grandchildren get the chance to clean up — CONTEXT discretion 5s).
+const bgTermGrace = 5 * time.Second
+
+// terminateGroup is the ONE PAR-08 termination funnel — every kill path
+// (Stop, ReapAll, any future cancel) escalates through here so the ladder
+// cannot drift between call sites: SIGTERM the whole group, wait the grace
+// window on done (the task's exit signal), then SIGKILL the group + the
+// bounded reap. ESRCH at any step is success (the group is already gone —
+// the bash.go killGroupOnCtx idiom). A bounded reap runs on BOTH exits —
+// a clean TERM death can still leave fork-race stragglers holding the pgid.
+func terminateGroup(pid int, done <-chan struct{}, grace time.Duration) {
+	if grace <= 0 {
+		grace = bgTermGrace
+	}
+
+	err := syscall.Kill(-pid, syscall.SIGTERM)
+	if errors.Is(err, syscall.ESRCH) {
+		return // group already gone — not a failure
+	}
+
+	timer := time.NewTimer(grace)
+	defer timer.Stop()
+
+	select {
+	case <-done:
+		reapGroup(pid) // sweep TERM-surviving stragglers in the group
+	case <-timer.C:
+		_ = syscall.Kill(-pid, syscall.SIGKILL)
+		reapGroup(pid)
+	}
+}
+
+// Stop escalates the task's WHOLE process group through the PAR-08 ladder
+// (TERM → grace → KILL + bounded reap — terminateGroup) and marks it
+// stopped. Unknown ids error (per-session scoping).
 func (r *TaskRegistry) Stop(id string) error {
 	r.mu.Lock()
 
@@ -331,15 +371,15 @@ func (r *TaskRegistry) Stop(id string) error {
 	t.mu.Unlock()
 
 	if cmd != nil && cmd.Process != nil {
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-		reapGroup(cmd.Process.Pid)
+		terminateGroup(cmd.Process.Pid, t.exitCh, r.termGrace)
 	}
 
 	return nil
 }
 
-// ReapAll stops every live task (session close — no orphan groups outlive the
-// editor-owned process; T-12-06-02).
+// ReapAll stops every live task through the terminateGroup ladder (session
+// close — no orphan groups outlive the editor-owned process; T-12-06-02,
+// PAR-08's no-orphars letter via Stop → terminateGroup).
 func (r *TaskRegistry) ReapAll() {
 	r.mu.Lock()
 
@@ -370,6 +410,21 @@ var (
 // Wait failures.
 func exitStatusFor(waitErr error, state bgState) string {
 	if state == bgStopped {
+		// A TERM-trapped child CHOSE its exit code at the ladder's first
+		// rung (e.g. `trap "exit 7" TERM` → 7); only an unchosen death
+		// (signaled/nil) reports "killed".
+		var ee *exec.ExitError
+
+		if errors.As(waitErr, &ee) {
+			if status, ok := ee.Sys().(syscall.WaitStatus); ok && status.Signaled() {
+				return "killed"
+			}
+
+			if code := ee.ExitCode(); code >= 0 {
+				return strconv.Itoa(code)
+			}
+		}
+
 		return "killed"
 	}
 

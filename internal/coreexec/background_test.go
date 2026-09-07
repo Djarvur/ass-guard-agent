@@ -436,11 +436,21 @@ func TestEscalation_TermImmuneChildKilledAfterGrace(t *testing.T) { //nolint:fun
 	reg.termGrace = escalationGraceTest
 
 	marker := filepath.Join(dir, escTermMarker)
-	command := `sh -c 'trap "echo seen > ` + marker + `" TERM; while true; do sleep 0.05; done'`
+	ready := filepath.Join(dir, "immune-ready")
+	// Start wraps in `sh -c`, so THIS script is the group leader: it signals
+	// ready, traps TERM (records delivery), ignores the TERM death, and
+	// loops until the post-grace SIGKILL. The ready-gate matters: a Stop
+	// racing the exec leaves the TRAP uninstalled and the shell dies at the
+	// TERM's default action — no observation possible.
+	command := `echo up > ` + ready + `; trap "echo seen > ` + marker + `" TERM; while true; do sleep 0.05; done`
 
 	id, err := reg.Start(dir, command)
 	if err != nil {
 		t.Fatalf("Start: %v", err)
+	}
+
+	if !waitForFile(t, ready, 5*time.Second) {
+		t.Fatal("immune child never reached its trap installation")
 	}
 
 	if serr := reg.Stop(id); serr != nil {
@@ -505,9 +515,15 @@ func TestEscalation_TermRespectingChildDiesByTerm(t *testing.T) { //nolint:funle
 		status = exitStatus
 	}
 
-	id, err := reg.Start(dir, `sh -c 'trap "exit 7" TERM; sleep 300'`)
+	ready := filepath.Join(dir, "respect-ready")
+
+	id, err := reg.Start(dir, `echo up > `+ready+`; trap "exit 7" TERM; sleep 300`)
 	if err != nil {
 		t.Fatalf("Start: %v", err)
+	}
+
+	if !waitForFile(t, ready, 5*time.Second) {
+		t.Fatal("TERM-respecting child never reached its trap installation")
 	}
 
 	stopStart := time.Now()
@@ -585,9 +601,15 @@ func TestEscalation_ReapAllUsesLadder(t *testing.T) {
 
 	marker := filepath.Join(dir, "reap-term-marker")
 
-	id, err := reg.Start(dir, `sh -c 'trap "echo seen > `+marker+`" TERM; sleep 300'`)
+	ready := filepath.Join(dir, "reap-ready")
+
+	id, err := reg.Start(dir, `echo up > `+ready+`; trap "echo seen > `+marker+`" TERM; sleep 300`)
 	if err != nil {
 		t.Fatalf("Start: %v", err)
+	}
+
+	if !waitForFile(t, ready, 5*time.Second) {
+		t.Fatal("reap child never reached its trap installation")
 	}
 
 	reg.ReapAll()
@@ -609,4 +631,23 @@ func TestEscalation_ReapAllUsesLadder(t *testing.T) {
 	if b, rerr := os.ReadFile(marker); rerr != nil || strings.TrimSpace(string(b)) != "seen" {
 		t.Error("ReapAll's termination never delivered TERM (the ladder's first rung)")
 	}
+}
+
+
+// waitForFile polls for a file's existence (the escalation battery's
+// ready-gate: traps must be INSTALLED before the ladder fires).
+func waitForFile(t *testing.T, path string, timeout time.Duration) bool {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			return true
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	return false
 }
