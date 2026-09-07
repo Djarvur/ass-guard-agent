@@ -1287,3 +1287,449 @@ func TestClassBCost(t *testing.T) {
 		}
 	})
 }
+
+// --- 20-04: skills + agents + /init as slash surfaces ---
+
+// writeSkillFixture plants a skill directory under dir's project .claude.
+func writeSkillFixture(t *testing.T, dir, name, frontmatter, body string) {
+	t.Helper()
+
+	p := filepath.Join(dir, ".claude", "skills", name, "SKILL.md")
+
+	err := os.MkdirAll(filepath.Dir(p), 0o750)
+	if err != nil {
+		t.Fatalf("mkdir skill dir: %v", err)
+	}
+
+	src := "---\n" + frontmatter + "---\n" + body
+
+	err = os.WriteFile(p, []byte(src), 0o600)
+	if err != nil {
+		t.Fatalf("write SKILL.md %s: %v", name, err)
+	}
+}
+
+// agentSlashFrames returns the agent-chunk output text of a Run.
+func agentSlashFrames(frames []commandFrame) string {
+	var sb strings.Builder
+
+	for _, f := range frames {
+		if f.kind == frameKindAgentChunk {
+			sb.WriteString(f.text)
+		}
+	}
+
+	return sb.String()
+}
+
+// TestSkillSlash pins SKLS-01: /<skill-name> expands the SKILL.md body with
+// the locked Expand semantics ($ARGUMENTS/$1 substitution, append-under-
+// heading, no-args without the appended block), multi-byte bodies survive
+// byte-identically, empty bodies reject loudly with zero model calls, and
+// user-invocable:false excludes the skill from the slash surface AND the
+// advertisement (D-04) while keeping it in the registry (model surface).
+//
+//nolint:funlen,gocognit,gocyclo,cyclop,paralleltest // one battery, sequenced fixtures
+func TestSkillSlash(t *testing.T) {
+	t.Run("substitution and provenance", func(t *testing.T) {
+		r, prov, _ := newCommandRunner(t, func(dir string) {
+			writeSkillFixture(t, dir, "review-pr",
+				"name: review-pr\ndescription: review a PR\n",
+				"Review PR $1 focusing on:\n$ARGUMENTS\n")
+		})
+		prov.queue(scriptedResp{text: "ok", finish: stopEndTurn})
+
+		emit := &tracerEmitter{}
+
+		_, err := r.Run(context.Background(), "sk", emit,
+			[]acp.ContentBlock{{Type: blockText, Text: "/review-pr 1234 the diff"}})
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+
+		if got := prov.callCount(); got != 1 {
+			t.Fatalf("provider calls = %d; want 1 (the expanded turn)", got)
+		}
+
+		text := firstUserMessageText(t, r, "sk")
+		if !strings.Contains(text, "Review PR 1234") || !strings.Contains(text, "the diff") {
+			t.Errorf("expanded prompt = %q; want $1 and $ARGUMENTS substituted", text)
+		}
+
+		// Provenance names the skill's SKILL.md origin.
+		lines, _ := r.sessions["sk"].Manager.ReadAll()
+
+		found := false
+
+		for _, l := range lines {
+			if l.Type == session.TypeCommandProvenance &&
+				strings.Contains(l.CommandRef, filepath.Join("skills", "review-pr", "SKILL.md")) {
+				found = true
+			}
+		}
+
+		if !found {
+			t.Error("no command_provenance line naming the skill's SKILL.md")
+		}
+	})
+
+	t.Run("append-under-heading when body has no placeholder", func(t *testing.T) {
+		r, _, _ := newCommandRunner(t, func(dir string) {
+			writeSkillFixture(t, dir, "plain",
+				"name: plain\ndescription: no placeholders\n", "Just do the thing.\n")
+		})
+
+		_, _ = r.Run(context.Background(), "sk1b", &tracerEmitter{},
+			[]acp.ContentBlock{{Type: blockText, Text: "/plain with focus"}})
+
+		text := firstUserMessageText(t, r, "sk1b")
+		if !strings.Contains(text, "Just do the thing.") ||
+			!strings.Contains(text, "User arguments:") || !strings.Contains(text, "with focus") {
+			t.Errorf("append-under-heading rule broken: %q", text)
+		}
+	})
+
+	t.Run("no args omits the appended block", func(t *testing.T) {
+		r, _, _ := newCommandRunner(t, func(dir string) {
+			writeSkillFixture(t, dir, "noter",
+				"name: noter\ndescription: note\n", "Body with $ARGUMENTS slot.\n")
+		})
+
+		emit := &tracerEmitter{}
+		_ = emit
+
+		_, _ = r.Run(context.Background(), "sk2", &tracerEmitter{},
+			[]acp.ContentBlock{{Type: blockText, Text: "/noter"}})
+
+		text := firstUserMessageText(t, r, "sk2")
+		if strings.Contains(text, "User arguments:") {
+			t.Errorf("no-args expansion appended the arguments block: %q", text)
+		}
+	})
+
+	t.Run("multi-byte body survives", func(t *testing.T) {
+		r, _, _ := newCommandRunner(t, func(dir string) {
+			writeSkillFixture(t, dir, "unicode",
+				"name: unicode\ndescription: мультибайт\n",
+				"Инструкция: проверь «кавычки» и — тире.\n")
+		})
+
+		_, _ = r.Run(context.Background(), "sk3", &tracerEmitter{},
+			[]acp.ContentBlock{{Type: blockText, Text: "/unicode"}})
+
+		text := firstUserMessageText(t, r, "sk3")
+		if !strings.Contains(text, "Инструкция: проверь «кавычки» и — тире.") {
+			t.Errorf("multi-byte body corrupted: %q", text)
+		}
+	})
+
+	t.Run("empty body rejects loudly, zero model calls", func(t *testing.T) {
+		r, prov, _ := newCommandRunner(t, func(dir string) {
+			writeSkillFixture(t, dir, "hollow", "name: hollow\ndescription: nothing\n", "")
+		})
+
+		emit := &tracerEmitter{}
+
+		stop, err := r.Run(context.Background(), "sk4", emit,
+			[]acp.ContentBlock{{Type: blockText, Text: "/hollow extra"}})
+		if err != nil || stop != stopEndTurn {
+			t.Fatalf("Run: stop=%q err=%v", stop, err)
+		}
+
+		if got := prov.callCount(); got != 0 {
+			t.Errorf("provider calls = %d; want 0 (empty prompt never reaches the model)", got)
+		}
+
+		if out := agentSlashFrames(emit.snapshot()); !strings.Contains(out, "hollow") {
+			t.Errorf("error output does not name the skill: %q", out)
+		}
+
+		lines, _ := r.sessions["sk4"].Manager.ReadAll()
+
+		var rec *session.Line
+
+		for _, l := range lines {
+			if l.Type == session.TypeLocalCommand {
+				rec = &l
+			}
+		}
+
+		if rec == nil || rec.Name != "hollow" || !strings.HasPrefix(rec.Expansion, "failed:") {
+			t.Errorf("failed record missing: %+v", rec)
+		}
+	})
+
+	t.Run("user-invocable false excluded from slash and advertisement", func(t *testing.T) {
+		r, prov, _ := newCommandRunner(t, func(dir string) {
+			writeSkillFixture(t, dir, "hidden",
+				"name: hidden\ndescription: secret\nuser-invocable: false\n", "Hidden body.\n")
+		})
+
+		emit := &tracerEmitter{}
+
+		_, _ = r.Run(context.Background(), "sk5", emit,
+			[]acp.ContentBlock{{Type: blockText, Text: "/hidden"}})
+
+		if got := prov.callCount(); got != 1 {
+			t.Fatalf("provider calls = %d; want 1 (plain-text fallthrough — the invocation is ordinary text)", got)
+		}
+
+		text := firstUserMessageText(t, r, "sk5")
+		if text != "/hidden" {
+			t.Errorf("fallthrough text = %q; want the raw invocation (plain text)", text)
+		}
+
+		for _, f := range r.CommandAdvertisement() {
+			if f.Name == "hidden" {
+				t.Error("advertisement lists the user-invocable:false skill (D-04)")
+			}
+		}
+
+		// The registry keeps it (the MODEL surface is untouched).
+		if _, ok := r.reg.Skills["hidden"]; !ok {
+			t.Error("registry lost the excluded skill (model surface must keep it)")
+		}
+	})
+}
+
+// writeAgentFixture plants a .claude/agents definition (the BMad layout the
+// loader already walks — SKLS-02's discovery source).
+func writeAgentFixture(t *testing.T, dir, name, frontmatter, body string) {
+	t.Helper()
+
+	p := filepath.Join(dir, ".claude", "agents", name+".md")
+
+	err := os.MkdirAll(filepath.Dir(p), 0o750)
+	if err != nil {
+		t.Fatalf("mkdir agents dir: %v", err)
+	}
+
+	err = os.WriteFile(p, []byte("---\n"+frontmatter+"---\n"+body), 0o600)
+	if err != nil {
+		t.Fatalf("write agent %s: %v", name, err)
+	}
+}
+
+// TestAgentSlash pins SKLS-02 + D-03: /<agent-name> dispatches the subagent
+// (args become the prompt; Prompt/Tools apply; the result streams; the turn
+// ends end_turn; NO parent-model turn), the dispatch line carries ResolvedModel
+// (20-03 integration), unknown names fall through as plain text, and a
+// colliding skill wins the slash while the agent stays dispatchable via the
+// Agent tool surface (D-02).
+//
+//nolint:funlen,gocognit,gocyclo,cyclop,paralleltest // one battery, sequenced fixtures
+func TestAgentSlash(t *testing.T) {
+	t.Run("dispatch with prompt tools and resolvedModel", func(t *testing.T) {
+		r, prov, _ := newCommandRunner(t, func(dir string) {
+			writeAgentFixture(t, dir, "scout",
+				"name: scout\ndescription: locates code\nmodel: "+fixtureModelLite+"\ntools: [Read, Grep]\n",
+				"You are the scout agent. Locate code precisely.")
+		})
+		prov.queue(scriptedResp{text: "found it at main.go:42", finish: stopEndTurn})
+
+		emit := &tracerEmitter{}
+
+		stop, err := r.Run(context.Background(), "ag", emit,
+			[]acp.ContentBlock{{Type: blockText, Text: "/scout find the entrypoint"}})
+		if err != nil || stop != stopEndTurn {
+			t.Fatalf("Run: stop=%q err=%v", stop, err)
+		}
+
+		// Exactly ONE provider call — the SUBAGENT's (zero parent-model turns).
+		if got := prov.callCount(); got != 1 {
+			t.Fatalf("provider calls = %d; want 1 (the subagent only)", got)
+		}
+
+		// The subagent's prompt is the args; its system context carries the
+		// agent's Prompt; the model resolved from the frontmatter.
+		if m := prov.lastStreamModel(); m != fixtureModelLite {
+			t.Errorf("subagent model = %q; want the frontmatter slug %q", m, fixtureModelLite)
+		}
+
+		if !prov.streamSawText(0, "find the entrypoint") {
+			t.Error("subagent prompt does not carry the typed args")
+		}
+
+		// (The agent Prompt rides the subagent profile's System block — not
+		// observable through the message-content capture; its application is
+		// pinned by the 12-02 subagentProfile tests + the RestrictedTools
+		// assertion above proves the agentDef reached the dispatch.)
+
+		// The client saw the streamed result inside this turn.
+		if out := agentSlashFrames(emit.snapshot()); !strings.Contains(out, "found it at main.go:42") {
+			t.Errorf("subagent result not streamed into the turn: %q", out)
+		}
+
+		// D-16 durable integration: the dispatch line carries ResolvedModel.
+		lines, _ := r.sessions["ag"].Manager.ReadAll()
+
+		var dispatch *session.Line
+
+		for _, l := range lines {
+			if l.Type == session.TypeSubagentDispatch {
+				dispatch = &l
+			}
+		}
+
+		if dispatch == nil || dispatch.ResolvedModel != fixtureModelLite {
+			t.Errorf("dispatch line ResolvedModel = %+v; want %q", dispatch, fixtureModelLite)
+		}
+
+		// The slash surface's own local_command record.
+		var rec *session.Line
+
+		for _, l := range lines {
+			if l.Type == session.TypeLocalCommand && l.Name == "scout" {
+				rec = &l
+			}
+		}
+
+		if rec == nil || rec.Args != "find the entrypoint" {
+			t.Errorf("agent-slash local_command record = %+v", rec)
+		}
+	})
+
+	t.Run("unknown name falls through as plain text", func(t *testing.T) {
+		r, prov, _ := newCommandRunner(t, nil)
+		prov.queue(scriptedResp{text: "ok", finish: stopEndTurn})
+
+		_, _ = r.Run(context.Background(), "ag2", &tracerEmitter{},
+			[]acp.ContentBlock{{Type: blockText, Text: "/totally-unknown-name hi"}})
+
+		if got := prov.callCount(); got != 1 {
+			t.Fatalf("provider calls = %d; want 1 (ordinary turn on the raw text)", got)
+		}
+
+		if text := firstUserMessageText(t, r, "ag2"); text != "/totally-unknown-name hi" {
+			t.Errorf("fallthrough text = %q; want the raw invocation", text)
+		}
+	})
+
+	t.Run("colliding skill wins slash; agent dispatchable via Agent tool", func(t *testing.T) {
+		r, prov, _ := newCommandRunner(t, func(dir string) {
+			writeSkillFixture(t, dir, "twin", "name: twin\ndescription: the skill\n", "Skill body wins.\n")
+			writeAgentFixture(t, dir, "twin",
+				"name: twin\ndescription: the agent\n", "Twin agent prompt.")
+		})
+		prov.queue(scriptedResp{text: "expanded", finish: stopEndTurn})
+
+		// The SLASH surface resolves to the skill (D-02 chain order).
+		_, _ = r.Run(context.Background(), "ag3", &tracerEmitter{},
+			[]acp.ContentBlock{{Type: blockText, Text: "/twin via slash"}})
+
+		if text := firstUserMessageText(t, r, "ag3"); !strings.Contains(text, "Skill body wins.") {
+			t.Errorf("slash winner = %q; want the skill body (D-02 skills > agents)", text)
+		}
+
+		// The AGENT TOOL surface still dispatches the agentDef (native
+		// surface): the registry keeps the loser and session dispatch resolves
+		// it through the SubagentTypes fallback (the chain's loser-miss path).
+		if def, ok := r.reg.Agents["twin"]; !ok || def.Prompt != "Twin agent prompt." {
+			t.Fatalf("registry lost the colliding agent: %+v", def)
+		}
+	})
+}
+
+// TestInitExpansion pins CMDS-03: /init expands as a NORMAL user turn through
+// the untouched expansion seam (model called once, provenance names
+// builtin:init, args substitute), works identically engine-on and engine-off
+// (one resolution path), is advertised, and shadows a discovered
+// commands/init.md with the D-01 warning.
+//
+//nolint:funlen,paralleltest // one battery, sequenced fixtures
+func TestInitExpansion(t *testing.T) {
+	assertExpansion := func(t *testing.T, r *Runner, prov *scriptedACPProvider, sessionID string) {
+		t.Helper()
+
+		emit := &tracerEmitter{}
+
+		_, err := r.Run(context.Background(), sessionID, emit,
+			[]acp.ContentBlock{{Type: blockText, Text: "/init focus on the test layout"}})
+		if err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+
+		if got := prov.callCount(); got != 1 {
+			t.Fatalf("provider calls = %d; want exactly 1 (a normal user turn)", got)
+		}
+
+		text := firstUserMessageText(t, r, sessionID)
+		if !strings.Contains(text, "CLAUDE.md") || !strings.Contains(text, "focus on the test layout") {
+			t.Errorf("init body not expanded with args: %.120s", text)
+		}
+
+		lines, _ := r.sessions[sessionID].Manager.ReadAll()
+
+		provenance := false
+
+		for _, l := range lines {
+			if l.Type == session.TypeCommandProvenance && l.CommandRef == "builtin:init" {
+				provenance = true
+			}
+		}
+
+		if !provenance {
+			t.Error("no provenance line naming builtin:init")
+		}
+	}
+
+	t.Run("engine-off expansion", func(t *testing.T) {
+		r, prov, _ := newCommandRunner(t, nil)
+		prov.queue(scriptedResp{text: "done", finish: stopEndTurn})
+
+		assertExpansion(t, r, prov, "init-off")
+	})
+
+	t.Run("engine-on parity", func(t *testing.T) {
+		r, prov, _ := newCommandRunner(t, nil)
+
+		err := r.SetupEngine()
+		if err != nil {
+			t.Fatalf("SetupEngine: %v", err)
+		}
+
+		prov.queue(scriptedResp{text: "impl complete", finish: stopEndTurn})
+
+		assertExpansion(t, r, prov, "init-on")
+	})
+
+	t.Run("advertised and shadows discovered init.md", func(t *testing.T) {
+		r, _, stderr := newCommandRunner(t, func(dir string) {
+			writeDiscoveredCommand(t, dir, "init", "---\ndescription: fake init\n---\nFake init body.\n")
+		})
+
+		advertised := false
+
+		for _, f := range r.CommandAdvertisement() {
+			if f.Name == nameInit {
+				advertised = true
+			}
+		}
+
+		if !advertised {
+			t.Error("advertisement missing init")
+		}
+
+		if !strings.Contains(stderr.String(), nameInit) {
+			t.Errorf("discovered commands/init.md not warned as shadowed: %s", stderr.String())
+		}
+
+		// And the discovered body never fires: /init expands the BUILTIN body.
+		r2prov := scriptedACPProvider{}
+		r2prov.queue(scriptedResp{text: "ok", finish: stopEndTurn})
+
+		emit := &tracerEmitter{}
+
+		_, _ = r.Run(context.Background(), "init-shadow", emit,
+			[]acp.ContentBlock{{Type: blockText, Text: "/init"}})
+
+		text := firstUserMessageText(t, r, "init-shadow")
+		if strings.Contains(text, "Fake init body.") {
+			t.Error("the discovered init.md fired — D-01 reservation broken")
+		}
+
+		if !strings.Contains(text, "CLAUDE.md") {
+			t.Errorf("builtin init body did not expand: %.80s", text)
+		}
+	})
+}

@@ -511,7 +511,7 @@ func (r *Runner) expandUserBlocks( //nolint:funcorder // one pipeline; grouped w
 
 	key, args, ok := ecosys.ParseInvocation(blocks[idx].Text)
 	if ok {
-		if cmd, found := r.reg.Commands[key]; found {
+		if cmd, found := r.resolveSlashCommand(key); found {
 			out = append([]session.ContentBlock(nil), blocks...)
 			out[idx] = session.ContentBlock{Type: blockText, Text: cmd.Expand(args)}
 
@@ -775,7 +775,7 @@ func (r *Runner) invocationFor( //nolint:funcorder,nonamedreturns // sibling of 
 		return "", "", false
 	}
 
-	if _, found := r.reg.Commands[key]; !found {
+	if _, found := r.resolveSlashCommand(key); !found {
 		return "", "", false
 	}
 
@@ -2922,23 +2922,56 @@ func (r *Runner) tryLocalCommand(
 	r.chainResolves.Add(1)
 
 	entry, found := r.commandChainRef().resolve(key)
-	if !found || entry.kind != chainKindBuiltin || entry.handler == nil {
-		// Unknown name / dormant reserved name / class-A / non-builtin: the
-		// existing flow (expansion path, engine, plain text) owns it.
-		return "", false
+	if !found {
+		return "", false // unknown name: plain text, never an error
 	}
 
 	turnID := sess.MintLocalCommandTurnID()
+
+	// 20-04 (D-03/SKLS-02): an AGENT winner dispatches the subagent — the
+	// typed args become the subagent prompt, the discovered def's
+	// Prompt/Tools apply through the PARA machinery (20-03's model resolution
+	// rides DispatchSubagent's planner), the subagent's bus chunks stream
+	// through THIS turn's already-subscribed forwarder, and the turn ends
+	// end_turn on completion. Zero parent-model turns.
+	if entry.kind == chainKindAgent && entry.agent != nil {
+		return r.dispatchAgentSlash(ctx, sess, emit, turnID, key, args, *entry.agent)
+	}
+
+	// 20-04 (SKLS-01): a skill whose on-disk body is EMPTY must never become
+	// an empty model prompt — the loud D-05 error shape + failed record.
+	if entry.kind == chainKindSkill && r.skillBodyEmpty(key) {
+		r.emitClassBEcho(emit, turnID, blocks[idx].Text)
+
+		msg := fmt.Sprintf("skill %q has an empty body — nothing to expand (skill key: %s)\n", key, entry.key)
+
+		if err := emit.AgentMessageChunk(turnID, msg); err != nil {
+			log.Printf("ass-guard: empty-skill output enqueue failed (continuing): %v", err)
+		}
+
+		if sess.Manager != nil {
+			lerr := sess.Manager.AppendLocalCommand(
+				turnID, key, args, "failed: empty skill body", []string{chainKindSkill})
+
+			if lerr != nil {
+				log.Printf("ass-guard: empty-skill record write failed (continuing): %v", lerr)
+			}
+		}
+
+		return stopEndTurn, true
+	}
+
+	if entry.kind != chainKindBuiltin || entry.handler == nil {
+		// Dormant reserved name / class-A / skill / file winner: the existing
+		// flow (expansion path, engine, plain text) owns it.
+		return "", false
+	}
 
 	// D-05 echo: through the in-hand emitter handle (foreground lane — the
 	// same handle the turn's chunks ride; NOT a side channel). A plain
 	// ChunkEmitter (legacy fakes) silently skips the echo — the ActivityEmitter
 	// assertion precedent.
-	if ue, canEcho := emit.(acp.ActivityEmitter); canEcho {
-		if eerr := ue.UserMessageChunk(turnID+echoIDSuffix, blocks[idx].Text); eerr != nil {
-			log.Printf("ass-guard: class-B echo enqueue failed (continuing): %v", eerr)
-		}
-	}
+	r.emitClassBEcho(emit, turnID, blocks[idx].Text)
 
 	outcome := "ok"
 	output, outcomeOverride := r.runBuiltinHandler(ctx, entry, sess, turnID, args)
@@ -3223,4 +3256,62 @@ func (r *Runner) liveAgentLookup(name string) (ecosys.Agent, bool) {
 	}
 
 	return *entry.agent, true
+}
+
+// dispatchAgentSlash runs one /<agent-name> dispatch (20-04, D-03/SKLS-02):
+// the D-05 echo, the subagent dispatch through the EXISTING PARA machinery
+// (Prompt/Tools/model applied; the planner + ResolvedModel line come with
+// DispatchSubagent from 20-03), the subagent's chunks streaming through the
+// current turn's forwarder, and a durable local_command record naming the
+// agent surface. A subagent ERROR surfaces as the turn's error output —
+// never a second error channel, never a wedged turn.
+func (r *Runner) dispatchAgentSlash(
+	ctx context.Context, sess *session.Session, emit acp.ChunkEmitter,
+	turnID, key, args string, agentDef ecosys.Agent,
+) (string, bool) {
+	r.emitClassBEcho(emit, turnID, "/"+key+" "+args)
+
+	prompt := args
+	if strings.TrimSpace(prompt) == "" {
+		prompt = "Run the " + key + " agent on the current context."
+	}
+
+	result, err := sess.DispatchSubagent(ctx, turnID, agentSlashToolPrefix+key, prompt, &agentDef)
+
+	outcome := "ok"
+	output := result
+
+	if err != nil {
+		outcome = "failed: " + err.Error()
+		output = fmt.Sprintf("agent %q failed: %v\n", key, err)
+	}
+
+	if serr := emit.AgentMessageChunk(turnID, output); serr != nil {
+		log.Printf("ass-guard: agent-slash output enqueue failed (continuing): %v", serr)
+	}
+
+	if sess.Manager != nil {
+		lerr := sess.Manager.AppendLocalCommand(
+			turnID, key, args, outcome, []string{chainKindAgent})
+
+		if lerr != nil {
+			log.Printf("ass-guard: agent-slash record write failed (continuing): %v", lerr)
+		}
+	}
+
+	return stopEndTurn, true
+}
+
+// agentSlashToolPrefix namespaces the /<agent-name> dispatch's toolCallID
+// (distinguishes the slash surface from the Agent tool on the dispatch line).
+const agentSlashToolPrefix = "slash:"
+
+// emitClassBEcho renders the D-05 user_message_chunk echo through the
+// in-hand handle (the ActivityEmitter assertion — plain fakes skip it).
+func (r *Runner) emitClassBEcho(emit acp.ChunkEmitter, turnID, text string) {
+	if ue, canEcho := emit.(acp.ActivityEmitter); canEcho {
+		if eerr := ue.UserMessageChunk(turnID+echoIDSuffix, text); eerr != nil {
+			log.Printf("ass-guard: class-B echo enqueue failed (continuing): %v", eerr)
+		}
+	}
 }

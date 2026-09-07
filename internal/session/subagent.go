@@ -372,9 +372,13 @@ func (s *Session) agentDefFor(input json.RawMessage) (ecosys.Agent, bool) {
 	}
 
 	if s.AgentLookup != nil {
-		def, ok := s.AgentLookup(in.SubagentType)
+		if def, ok := s.AgentLookup(in.SubagentType); ok {
+			return def, ok
+		}
 
-		return def, ok
+		// The chain lists WINNERS only — a colliding loser (D-02: skill beat
+		// agent on the slash name) stays dispatchable through the Agent tool:
+		// fall through to the registry snapshot for the native surface.
 	}
 
 	if len(s.SubagentTypes) == 0 {

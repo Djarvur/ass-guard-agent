@@ -8,6 +8,13 @@ type Skill struct {
 	Description  string
 	AllowedTools []string
 	Path         string
+
+	// UserInvocable carries the CC-parity `user-invocable` frontmatter
+	// (20-04/D-04): nil (absent) or true keeps the skill slash-addressable;
+	// an explicit false EXCLUDES it from the slash chain and the
+	// advertisement (it cannot fire via /name) while the model-invocation
+	// path keeps it — only the slash surface excludes it.
+	UserInvocable *bool
 }
 
 // Command is one slash-command discovered from `commands/<name>.md` (flat) or

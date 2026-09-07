@@ -958,9 +958,10 @@ func parseSkill(content, path string) (Skill, error) {
 	frontmatter, _ := splitFrontmatter(content)
 
 	var fm struct {
-		Name         string    `yaml:"name"`
-		Description  string    `yaml:"description"`
-		AllowedTools toolsList `yaml:"allowed-tools"` //nolint:tagliatelle // kebab-case frontmatter
+		Name          string    `yaml:"name"`
+		Description   string    `yaml:"description"`
+		AllowedTools  toolsList `yaml:"allowed-tools"`  //nolint:tagliatelle // kebab-case frontmatter
+		UserInvocable *bool     `yaml:"user-invocable"` //nolint:tagliatelle // kebab-case frontmatter key
 	}
 
 	err := yaml.Unmarshal([]byte(frontmatter), &fm)
@@ -970,6 +971,7 @@ func parseSkill(content, path string) (Skill, error) {
 
 	return Skill{
 		Name: fm.Name, Description: fm.Description, AllowedTools: fm.AllowedTools, Path: path,
+		UserInvocable: fm.UserInvocable,
 	}, nil
 }
 

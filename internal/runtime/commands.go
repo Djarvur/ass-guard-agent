@@ -178,16 +178,35 @@ func builtinTable() []builtinClassB {
 	}
 }
 
+// initPromptBody is the /init class-A builtin's authored prompt (20-04
+// Task 3 — the one piece of authored content this phase adds): CC-parity in
+// intent, $ARGUMENTS-capable for focus hints.
+const initPromptBody = `Analyze this codebase and create (or update) a CLAUDE.md project guide
+that helps AI coding agents work effectively here.
+
+Inspect the repository, then write the guide with these sections:
+
+1. **Commands** — the exact build, test, and lint commands (check Makefile,
+   package scripts, CI config; prefer the shortest verified forms).
+2. **Architecture** — a short overview of the directory layout and how the
+   major pieces connect (entry points, core packages, data flow).
+3. **Conventions** — naming, error-handling, testing, and style rules you
+   can OBSERVE in the existing code (cite what you saw; do not invent).
+
+Rules: derive everything from the actual repository — never guess a command
+you did not verify exists. Keep it under 80 lines. If a CLAUDE.md already
+exists, update it in place and preserve anything still accurate.
+
+$ARGUMENTS`
+
 // initClassAReservation is the /init class-A entry (CMDS-03): a synthesized
-// ecosys.Command carrying only identity — its prompt BODY is plan 20-04's
-// deliverable. Until that plan injects the body into the registry view, a
-// typed /init parses, resolves to this reservation at the intercept, falls
-// through the class-A path, misses in r.reg.Commands, and stays plain text —
-// exactly today's behavior (the reservation only blocks discovery).
+// ecosys.Command carrying the authored prompt body — the expansion seam
+// expands it like any file command (provenance names builtin:init).
 func initClassAReservation() ecosys.Command {
 	return ecosys.Command{
 		Name:        "init",
-		Description: "Analyze the codebase and scaffold a CLAUDE.md project guide",
+		Description: "Analyze the codebase and create a CLAUDE.md guide",
+		Body:        initPromptBody,
 		Path:        "builtin:init",
 	}
 }
@@ -303,7 +322,14 @@ func warnReserved(warn io.Writer, warned map[string]struct{}, e *chainEntry, src
 // reserved names rejected). AllSkills/AllAgents/AllCommands are the loader's
 // name-sorted deterministic accessors.
 func (c *commandChain) overlayDiscovered(reg ecosys.Registry, claim func(e *chainEntry, srcPath string)) {
+	// 20-04 (D-04): an explicit user-invocable: false skill NEVER enters the
+	// chain (it cannot fire via slash); the registry map keeps it for the
+	// model-invocation path — only the slash surface excludes it.
 	for _, sk := range reg.AllSkills() {
+		if sk.UserInvocable != nil && !*sk.UserInvocable {
+			continue
+		}
+
 		claim(&chainEntry{
 			name: sk.Name, kind: chainKindSkill, key: sk.Name,
 			desc: sk.Description, skill: &sk,
@@ -1080,4 +1106,54 @@ func costTranscriptUsage(sess *session.Session) (inTok, outTok int64) {
 	}
 
 	return inTok, outTok
+}
+
+// resolveSlashCommand returns the Command value the EXPANSION seam expands
+// for a parsed invocation key (20-04 — the chain-aware generalization of the
+// old r.reg.Commands[key] lookup): file commands verbatim, skills as
+// synthesized Commands (the SKILL.md body re-read from disk — the rescan
+// path serves fresh bodies by design), class-A builtins as their authored
+// Command. ok=false for unknown names, class-B builtins, and agents (the
+// caller's own surfaces own those) — plain text, never an error.
+func (r *Runner) resolveSlashCommand(key string) (ecosys.Command, bool) {
+	e, found := r.commandChainRef().resolve(key)
+	if !found {
+		return ecosys.Command{}, false
+	}
+
+	switch e.kind {
+	case chainKindFile:
+		if e.file != nil {
+			return *e.file, true
+		}
+	case chainKindSkill:
+		if e.skill != nil {
+			if body, ok := ecosys.ResolveSkill(r.reg, key); ok {
+				return ecosys.Command{
+					Name: e.skill.Name, Description: e.skill.Description,
+					Body: body, Path: e.skill.Path,
+				}, true
+			}
+		}
+	case chainKindBuiltin:
+		if e.hasClassA {
+			return e.classA, true
+		}
+	}
+
+	return ecosys.Command{}, false
+}
+
+// skillBodyEmpty reports whether a skill winner's on-disk body is empty or
+// whitespace (the loud-reject case: an empty prompt must never reach the
+// model).
+func (r *Runner) skillBodyEmpty(key string) bool {
+	e, found := r.commandChainRef().resolve(key)
+	if !found || e.kind != chainKindSkill || e.skill == nil {
+		return false
+	}
+
+	body, ok := ecosys.ResolveSkill(r.reg, key)
+
+	return ok && strings.TrimSpace(body) == ""
 }
