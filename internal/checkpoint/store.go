@@ -34,6 +34,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"os/exec"
@@ -376,6 +377,85 @@ func (s *Store) Restore(ctx context.Context, id string) error {
 
 		return nil
 	})
+}
+
+// NestedRepoError is the typed restore refusal (23-03, SEEDG-02): the
+// workspace contains nested git repositories, whose contents a restore can
+// neither snapshot nor destroy correctly — `git add -A` records them as
+// gitlinks (mode 160000, contents NOT snapshotted) and `git clean -fd` never
+// descends into them (verified failure shape: restoring over a nested repo
+// silently leaves its contents unprotected while the restore reports
+// success). Refusal is outright; the composition layer (23-04/23-05) decides
+// nothing here — the store only reports and refuses.
+type NestedRepoError struct {
+	// Paths are the workspace-relative roots of the detected nested
+	// repositories (directories containing a .git entry — dir OR file).
+	Paths []string
+}
+
+func (e *NestedRepoError) Error() string {
+	return "checkpoint: refusing restore: nested git repositories present " +
+		"(gitlink contents are silently unprotected by restore): " + strings.Join(e.Paths, ", ")
+}
+
+// RestoreGuard runs nested-repo detection over workDir and refuses when any
+// is found (23-03, SEEDG-02/D-12: no auto path — never restore over, never
+// descend). A flat workspace passes with nil.
+func (s *Store) RestoreGuard(workDir string) error {
+	if nested := findNestedRepos(workDir); len(nested) > 0 {
+		return &NestedRepoError{Paths: nested}
+	}
+
+	return nil
+}
+
+// findNestedRepos walks the workspace for NESTED git repositories — .git
+// entries below the top level, as directories (plain nested clones) AND as
+// files (worktrees/submodules) — skipping the store root directory itself
+// and the user's own top-level repository. Symlinks are never followed
+// (filepath.WalkDir uses lstat semantics: no cycles, no escaping the
+// workspace, bounded cost). Unreadable entries are skipped — detection is
+// best-effort over the walkable surface, and the refusal stays conservative
+// (anything found refuses).
+func findNestedRepos(workDir string) []string {
+	storeRoot := filepath.Join(workDir, storeRootDir)
+
+	var found []string
+
+	_ = filepath.WalkDir(workDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil // skip unreadable entries; the walk continues
+		}
+
+		if d.IsDir() {
+			if path == storeRoot {
+				return filepath.SkipDir // the store never counts as nested
+			}
+
+			if d.Name() == ".git" {
+				if rel, rerr := filepath.Rel(workDir, filepath.Dir(path)); rerr == nil && rel != "." {
+					found = append(found, rel)
+				}
+
+				return filepath.SkipDir // never descend into the nested repo's metadata
+			}
+
+			return nil
+		}
+
+		// A non-directory .git entry is the worktree/submodule variant —
+		// gitlink contents are exactly as unprotected. The TOP-LEVEL .git
+		// (the user's own repo, or a worktree workspace) is not nested.
+		if d.Name() == ".git" {
+			if rel, rerr := filepath.Rel(workDir, filepath.Dir(path)); rerr == nil && rel != "." {
+				found = append(found, rel)
+			}
+		}
+
+		return nil
+	})
+
+	return found
 }
 
 // initStore creates the shadow repository: a bare-LAYOUT git dir at
