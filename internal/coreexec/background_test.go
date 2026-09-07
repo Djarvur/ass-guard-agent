@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -411,4 +412,201 @@ func TestBackground_CompletionHookNilNoop(t *testing.T) {
 	}
 
 	t.Fatal("task never reached a terminal state")
+}
+
+// The PAR-08 escalation battery (22-02 Task 1): TERM-before-KILL on the
+// process group from every termination path — a TERM-immune child survives
+// the TERM (observing it) and dies only at the post-grace SIGKILL; a
+// TERM-respecting child dies BY the TERM with its trapped status; ESRCH
+// (already-gone groups) is success, never an error.
+const (
+	escalationGraceTest = 300 * time.Millisecond
+	escTermMarker       = "term-delivered-marker"
+)
+
+// TestEscalation_TermImmuneChildKilledAfterGrace (PAR-08): the group
+// receives SIGTERM first (a TERM-sensitive observer in the group records
+// it), the immune child survives past the shortened grace, and the
+// post-grace SIGKILL + reap makes the task terminal.
+func TestEscalation_TermImmuneChildKilledAfterGrace(t *testing.T) { //nolint:funlen // flat ladder battery
+	t.Parallel()
+
+	dir := t.TempDir()
+	reg := NewTaskRegistry()
+	reg.termGrace = escalationGraceTest
+
+	marker := filepath.Join(dir, escTermMarker)
+	command := `sh -c 'trap "echo seen > ` + marker + `" TERM; while true; do sleep 0.05; done'`
+
+	id, err := reg.Start(dir, command)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	if serr := reg.Stop(id); serr != nil {
+		t.Fatalf("Stop: %v", serr)
+	}
+
+	// The task must be terminal well within grace*10 (TERM observed, KILL
+	// after grace, reap bounded).
+	deadline := time.Now().Add(escalationGraceTest * 10)
+
+	for time.Now().Before(deadline) {
+		if state, ok := reg.Lookup(id); ok && state != bgRunning {
+			break
+		}
+
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	if state, _ := reg.Lookup(id); state == bgRunning {
+		t.Fatal("TERM-immune child still running after grace + SIGKILL — the ladder's KILL rung failed")
+	}
+
+	// SIGTERM was DELIVERED first (the observer recorded it before any KILL
+	// could end the group).
+	termSeen := false
+
+	for time.Now().Before(deadline) {
+		if b, rerr := os.ReadFile(marker); rerr == nil && strings.TrimSpace(string(b)) == "seen" {
+			termSeen = true
+
+			break
+		}
+
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	if !termSeen {
+		t.Error("no TERM observation — the ladder must TERM the group before any KILL")
+	}
+}
+
+// TestEscalation_TermRespectingChildDiesByTerm (PAR-08): a child whose TERM
+// trap exits 7 ends at the SIGTERM rung — the recorded exit status is the
+// trapped 7 (a SIGKILL would read 137), and the task is terminal BEFORE the
+// grace window could have fired (2s grace; a TERM death lands in ms).
+func TestEscalation_TermRespectingChildDiesByTerm(t *testing.T) { //nolint:funlen // flat ladder battery
+	t.Parallel()
+
+	dir := t.TempDir()
+	reg := NewTaskRegistry()
+	reg.termGrace = 2 * time.Second // a KILL would take >= 2s; TERM lands in ms
+
+	var (
+		hmu    sync.Mutex
+		status string
+	)
+
+	reg.CompletionHook = func(taskID, kind, exitStatus string, _ time.Duration, _, _ string) {
+		hmu.Lock()
+		defer hmu.Unlock()
+
+		status = exitStatus
+	}
+
+	id, err := reg.Start(dir, `sh -c 'trap "exit 7" TERM; sleep 300'`)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	stopStart := time.Now()
+
+	if serr := reg.Stop(id); serr != nil {
+		t.Fatalf("Stop: %v", serr)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+
+	for time.Now().Before(deadline) {
+		if state, ok := reg.Lookup(id); ok && state != bgRunning {
+			break
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	elapsed := time.Since(stopStart)
+
+	if state, _ := reg.Lookup(id); state == bgRunning {
+		t.Fatal("TERM-respecting child still running — the TERM rung failed")
+	}
+
+	if elapsed >= 2*time.Second {
+		t.Errorf("Stop took %v — the child died at the grace/KILL rung, not the TERM rung", elapsed)
+	}
+
+	// The trapped status 7 (SIGKILL would surface as 137 via 128+SIGKILL).
+	hmu.Lock()
+	defer hmu.Unlock()
+
+	if status != "7" {
+		t.Errorf("completion exit status = %q; want \"7\" (the TERM trap's chosen exit)", status)
+	}
+}
+
+// TestEscalation_AlreadyGoneIsSuccess (ESRCH-clean): Stop on a task that
+// already exited cleanly is a nil error (group gone — never a failure).
+func TestEscalation_AlreadyGoneIsSuccess(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	reg := NewTaskRegistry()
+
+	id, err := reg.Start(dir, "echo done")
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+
+	for time.Now().Before(deadline) {
+		if state, ok := reg.Lookup(id); ok && state != bgRunning {
+			break
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if serr := reg.Stop(id); serr != nil {
+		t.Errorf("Stop on an already-exited task = %v; want nil (ESRCH-clean)", serr)
+	}
+}
+
+// TestEscalation_ReapAllUsesLadder: ReapAll terminates a live task through
+// the same ladder (TERM rung observable) and the registry ends empty of
+// running tasks.
+func TestEscalation_ReapAllUsesLadder(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	reg := NewTaskRegistry()
+	reg.termGrace = escalationGraceTest
+
+	marker := filepath.Join(dir, "reap-term-marker")
+
+	id, err := reg.Start(dir, `sh -c 'trap "echo seen > `+marker+`" TERM; sleep 300'`)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	reg.ReapAll()
+
+	deadline := time.Now().Add(5 * time.Second)
+
+	for time.Now().Before(deadline) {
+		if state, ok := reg.Lookup(id); ok && state != bgRunning {
+			break
+		}
+
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	if state, _ := reg.Lookup(id); state == bgRunning {
+		t.Fatal("ReapAll left a task running — the ladder must terminate it")
+	}
+
+	if b, rerr := os.ReadFile(marker); rerr != nil || strings.TrimSpace(string(b)) != "seen" {
+		t.Error("ReapAll's termination never delivered TERM (the ladder's first rung)")
+	}
 }
