@@ -674,7 +674,7 @@ func TestStaleSweep_ZeroAndMissingNoops(t *testing.T) {
 	t.Parallel()
 
 	workDir := t.TempDir()
-	dir := seedSweepOutputs(t, workDir, nil) // empty outputs dir
+	seedSweepOutputs(t, workDir, nil) // empty outputs dir
 
 	count, err := sweepStaleTaskLogs(workDir, time.Now())
 	if err != nil {

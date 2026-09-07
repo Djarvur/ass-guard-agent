@@ -7,11 +7,14 @@ package acpserve
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
@@ -369,6 +372,19 @@ func Run( //nolint:funlen // :320-425
 		runner.SetSchedule(scheduleStore)
 	}
 
+	// 22-02 (PAR-08, OQ4): the startup stale-log sweep — BEFORE the scheduler
+	// starts and before any session opens (Pitfall 10: a late sweep would
+	// race fresh task logs). Orphaned outputs tombstone (.stale rename) with
+	// a counted note; past-window tombstones GC. A sweep failure degrades
+	// loudly, never a serve refusal.
+	if sweepCounts, sweepErr := sweepStaleTaskLogs(opts.WorkDir, time.Now()); sweepErr != nil {
+		_, _ = fmt.Fprintf(stderr, "ass-guard: stale task-log sweep failed (continuing to serve): %v\n", sweepErr)
+	} else if sweepCounts.marked > 0 || sweepCounts.deleted > 0 {
+		_, _ = fmt.Fprintf(stderr,
+			"ass-guard: stale task-log sweep marked %d orphaned log(s) stale, deleted %d past-window tombstone(s)\n",
+			sweepCounts.marked, sweepCounts.deleted)
+	}
+
 	runner.SetEmitter(srv.Emitter) // WINDOWS #3: server-driven turns reach the client
 	runner.StartScheduler(ctx)
 
@@ -404,4 +420,74 @@ func Run( //nolint:funlen // :320-425
 	}()
 
 	return srv.Serve(ctx) //nolint:wrapcheck // direct delegation
+}
+
+// sweepCounts is the stale-log sweep's tallied outcome (the counted note's
+// payload — audit-visible, never silent).
+type sweepCounts struct {
+	marked  int // .log → .log.stale tombstones this sweep
+	deleted int // .stale entries past the retention window removed this sweep
+}
+
+// staleRetentionWindow is the OQ4 GC window: an already-marked .stale log
+// deletes only on a LATER sweep once its mtime is past this window (tombstone
+// first, GC later — the D-20 audit spirit; never a silent rm).
+const staleRetentionWindow = 7 * 24 * time.Hour
+
+// sweepStaleTaskLogs is the PAR-08 startup stale-log sweep (OQ4): at serve
+// start NOTHING is live, so every .ass-guard/outputs/*.log is an orphan by
+// definition (which is exactly what makes startup timing safe — the sweep
+// runs BEFORE the scheduler and any session can open fresh logs, Pitfall
+// 10). Each orphan tombstones via rename to <id>.log.stale; already-marked
+// .stale entries past staleRetentionWindow delete. Per-entry failures are
+// skipped (counted into the note) — degrade, never refuse (the seedACPGuard
+// idiom). The directory itself is NEVER removed, and only the <id>.log /
+// <id>.log.stale shapes this process family creates are touched (T-22-07).
+func sweepStaleTaskLogs(workDir string, now time.Time) (sweepCounts, error) {
+	dir := filepath.Join(workDir, ".ass-guard", "outputs")
+
+	entries, derr := os.ReadDir(dir)
+	if derr != nil {
+		if errors.Is(derr, fs.ErrNotExist) {
+			return sweepCounts{}, nil // first run — no outputs family yet
+		}
+
+		return sweepCounts{}, fmt.Errorf("read outputs dir: %w", derr)
+	}
+
+	var counts sweepCounts
+
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+
+		name := e.Name()
+
+		switch {
+		case strings.HasSuffix(name, ".log"):
+			stale := name + ".stale"
+
+			if rerr := os.Rename(filepath.Join(dir, name), filepath.Join(dir, stale)); rerr != nil {
+				continue // per-entry degrade — counted into the note by the caller
+			}
+
+			counts.marked++
+		case strings.HasSuffix(name, ".stale"):
+			info, ierr := e.Info()
+			if ierr != nil {
+				continue
+			}
+
+			if now.Sub(info.ModTime()) > staleRetentionWindow {
+				if rmerr := os.Remove(filepath.Join(dir, name)); rmerr != nil {
+					continue
+				}
+
+				counts.deleted++
+			}
+		}
+	}
+
+	return counts, nil
 }
