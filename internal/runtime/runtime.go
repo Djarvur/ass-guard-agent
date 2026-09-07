@@ -176,9 +176,12 @@ type Runner struct {
 	catalog       *toolcat.Catalog // shared catalog (OpenSpec tools registered once)
 
 	// Phase-8 slash-command expansion (08-04): the discovered command registry
-	// (loaded ONCE at startup — see LoadCommandRegistry) + the command
-	// mutability table (D-11 boundaries, T3). A failed load leaves both zero —
+	// (loaded at startup, REPLACED wholesale by the 20-05 rescan — see
+	// installRegistry) + the command mutability table (D-11 boundaries, T3).
+	// regMu guards the wholesale swap (Pitfall 1: never in-place mutation);
+	// readers take registrySnapshot(). A failed load leaves both zero —
 	// expansion no-ops and turns proceed on plain text (graceful degradation).
+	regMu         sync.RWMutex
 	reg           ecosys.Registry
 	cmdMutability map[string]string
 
@@ -201,6 +204,15 @@ type Runner struct {
 	// prove the loud-degrade posture.
 	compactNowHook func(ctx context.Context, sess *session.Session, args string) (string, error)
 	resumeListHook func() (string, error)
+
+	// 20-05 (CMDS-04): the discovery rescan coordinator (one per serve,
+	// armed by StartDiscoveryWatcher on the serve ctx) + the invoke-time
+	// freshness probe's chain signature (the stat-level fingerprint of the
+	// discovery root set the live chain was built under).
+	rescanMu       sync.Mutex
+	rescanCoord    *rescanCoordinator
+	chainSigMu     sync.Mutex
+	chainSignature string
 
 	// 20-02 (/cost, D-07): the live usage-endpoint leg's test seams — nil
 	// costTransport uses the default HTTP client; a zero costFetchBudget uses
@@ -463,17 +475,12 @@ func (r *Runner) LoadCommandRegistry() {
 		// OFF — turns proceed on plain text (T-8-16).
 		log.Printf("ass-guard: command registry load failed (continuing without slash expansion): %v", err)
 
-		r.reg = ecosys.Registry{}
-		r.cmdMutability = nil
-		r.mcpServers = nil
-		r.rebuildCommandChain()
+		r.installRegistry(ecosys.Registry{}, nil)
 
 		return
 	}
 
-	r.reg = reg
-	r.mcpServers = servers
-	r.rebuildCommandChain()
+	r.installRegistry(reg, servers)
 
 	oscfg, cerr := openspec.DefaultConfig()
 	if cerr != nil {
@@ -1473,7 +1480,17 @@ func (r *Runner) LoadedModes(sessionID string) any {
 // the acpserve composition's available_commands_update adapter (18-05/ACP-06
 // "commands re-advertised"; Phase 20's session/new advertisement reuses the
 // same source).
-func (r *Runner) CommandRegistry() ecosys.Registry { return r.reg }
+func (r *Runner) CommandRegistry() ecosys.Registry { return r.registrySnapshot() }
+
+// registrySnapshot returns the live registry value under the read lock (the
+// map headers copy; the maps themselves are immutable post-install — the
+// rescan builds fresh ones wholesale).
+func (r *Runner) registrySnapshot() ecosys.Registry {
+	r.regMu.RLock()
+	defer r.regMu.RUnlock()
+
+	return r.reg
+}
 
 // sessionFor returns the Session for sessionID, creating it on first use.
 func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,gocognit // turn pipeline grouping
@@ -1601,7 +1618,7 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	// system message AFTER the first user message; ass-guard's Shaper today
 	// supports only leading system blocks, so the listing rides as a trailing
 	// System TextBlock — a documented divergence for the Phase-9 re-capture.
-	if listing := ecosys.SkillListing(r.reg); listing != "" {
+	if listing := ecosys.SkillListing(r.registrySnapshot()); listing != "" {
 		prof.System = append(append([]profile.TextBlock(nil), prof.System...),
 			profile.TextBlock{Type: blockText, Text: listing})
 	}
@@ -1625,7 +1642,7 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	// dynamic merge as the skills listing, in the captured Agent-tool
 	// type-entry shape. Discovered definitions (plugin-bundled AND first-class
 	// `.claude/agents/`) surface here AND as spawnable types below.
-	if agentListing := ecosys.AgentListing(r.reg); agentListing != "" {
+	if agentListing := ecosys.AgentListing(r.registrySnapshot()); agentListing != "" {
 		prof.System = append(append([]profile.TextBlock(nil), prof.System...),
 			profile.TextBlock{Type: blockText, Text: agentListing})
 	}
@@ -1658,7 +1675,7 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	// session — override ONLY Execute (the captured Description/InputSchema
 	// stay byte-identical; resolution is by registry key via SkillExecute).
 	if core, ok := sCatalog.Get(skillToolName); ok {
-		core.Execute = ecosys.SkillExecute(r.reg)
+		core.Execute = ecosys.SkillExecute(r.registrySnapshot())
 		sCatalog.Register(core)
 	}
 

@@ -485,12 +485,26 @@ func (r *Runner) commandChainRef() *commandChain {
 	return buildChain(ecosys.Registry{}, nil)
 }
 
+// installRegistry installs a freshly discovered registry + MCP set
+// wholesale (the 20-05 swap discipline — reg maps are REPLACED, never
+// mutated in place), then rebuilds the chain over it and stamps the
+// invoke-time probe's root signature.
+func (r *Runner) installRegistry(reg ecosys.Registry, servers []ecosys.ServerConfig) {
+	r.regMu.Lock()
+	r.reg = reg
+	r.mcpServers = servers
+	r.regMu.Unlock()
+
+	r.rebuildCommandChain()
+	r.noteChainSignature()
+}
+
 // rebuildCommandChain derives a fresh chain from r.reg and swaps it in
 // atomically (the 20-05 rescan re-runs this after Discover). Fires the
 // commands-notify seam AFTER the swap so listeners re-advertise from the
 // chain that is already live.
 func (r *Runner) rebuildCommandChain() {
-	c := buildChain(r.reg, r.stderrOrDefault())
+	c := buildChain(r.registrySnapshot(), r.stderrOrDefault())
 	r.chainPtr.Store(c)
 
 	r.commandsNotifyMu.RLock()
@@ -1116,6 +1130,8 @@ func costTranscriptUsage(sess *session.Session) (inTok, outTok int64) {
 // Command. ok=false for unknown names, class-B builtins, and agents (the
 // caller's own surfaces own those) — plain text, never an error.
 func (r *Runner) resolveSlashCommand(key string) (ecosys.Command, bool) {
+	r.maybeFreshRescan() // D-10 backstop: never resolve against a stale chain
+
 	e, found := r.commandChainRef().resolve(key)
 	if !found {
 		return ecosys.Command{}, false
@@ -1128,7 +1144,7 @@ func (r *Runner) resolveSlashCommand(key string) (ecosys.Command, bool) {
 		}
 	case chainKindSkill:
 		if e.skill != nil {
-			if body, ok := ecosys.ResolveSkill(r.reg, key); ok {
+			if body, ok := ecosys.ResolveSkill(r.registrySnapshot(), key); ok {
 				return ecosys.Command{
 					Name: e.skill.Name, Description: e.skill.Description,
 					Body: body, Path: e.skill.Path,
@@ -1153,7 +1169,7 @@ func (r *Runner) skillBodyEmpty(key string) bool {
 		return false
 	}
 
-	body, ok := ecosys.ResolveSkill(r.reg, key)
+	body, ok := ecosys.ResolveSkill(r.registrySnapshot(), key)
 
 	return ok && strings.TrimSpace(body) == ""
 }

@@ -287,6 +287,13 @@ func Run( //nolint:funlen // :320-425
 		}
 	})
 
+	// 20-05 (CMDS-04/ACP-04 "on discovery change"): live discovery — the
+	// fsnotify watcher (debounced) re-runs Discover, swaps the chain, and the
+	// seam above re-fires the FULL winner set for every live session. Started
+	// AFTER SetCommandsNotify + the server exist (the emitter precedes any
+	// advertisement by construction); teardown rides the serve ctx.
+	runner.StartDiscoveryWatcher(ctx)
+
 	// 16-REVIEW CR-02: the initialize _meta blob channel must reach the WIRE,
 	// not just the chip. The hook stamps the runner's pre-editor-stamp default
 	// whenever a blob fill moved tier/model, so defaultTurnModel can never
