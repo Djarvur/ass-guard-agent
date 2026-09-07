@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Claude Code Parity
-current_plan: 6
-status: ready_to_plan
-stopped_at: Phase 20 complete (6/6) — ready to discuss Phase 21
-last_updated: 2026-09-07T20:53:30.684Z
+current_plan: Not started
+status: planning
+stopped_at: Completed 20-06-PLAN.md (E2E battery; operator UAT pending)
+last_updated: "2026-09-07T20:53:50.760Z"
 last_activity: 2026-09-07
 progress:
   total_phases: 11
@@ -194,6 +194,7 @@ None yet.
 - [Phase 17 review, deferred 2026-09-03, operator non-blocking]: CR-04 — SetTurnOriginAutomation set before TryLock stays true while an automation turn queues/runs; overlapping foreground turns get ask-class calls D-07-declined instead of dialogs (fail-safe direction). Proper fix: per-turn origin. Evidence in 17-UAT.md Deferred Follow-Ups.
 - [Phase 17 review, deferred 2026-09-03, operator non-blocking, security-adjacent]: hasSubstitution (a710b75 rewrite, internal/perm/rules.go) dropped double-quote tracking — `git "log 'x $(cmd) y'"` under-detects live substitution and an allow rule can match a substitution-bearing command (WR-02 violation). Verified in live shell. Deserves a fix ticket in the next phase touching internal/perm.
 - [25-01 Task 3 precondition, updated 2026-09-06]: 'strictly last' ordering still binds Phase 25 — phases 19-24 remain unexecuted (17-18 have since landed; only 15-18 complete). Executor halted BEFORE the rank-0 move in 25-01; no kit/ paths created. Resolve by executing phases 19-24 first (then re-capture the test-ledger baseline) or by explicit operator override of the ROADMAP ordering.
+- [LINT BASELINE / environmental, pre-existing before Phase 20]: mise-managed golangci-lint auto-updated to 2.13.2 which renamed linters (exhaustruct->exhaustruct_v5, wsl->wsl_v5); .golangci.yml exclusions reference pre-rename names so `mise run lint` reports ~1.6k pre-existing findings repo-wide. Verified at stash-baseline before any Phase 20 commit; every Phase 20 file passes the still-matching linters. Fix (one-line class, next touching commit): update .golangci.yml exclusion linter names to _v5 or pin golangci-lint = "2.12" in .mise.toml.
 
 ## Deferred Items
 
