@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -1236,6 +1237,344 @@ func TestCompaction_Chaining(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,fu
 				t.Errorf("client-visible %s published during compact (Pitfall 4): %+v", name, e)
 			default:
 			}
+		}
+	})
+}
+
+// --- WR-03 rider battery (19-06 Task 2): bounded summarizer span + the
+// once-per-turn re-fire guard ---
+
+// compFatSpanGroups appends n fat, individually-identifiable exchange groups
+// to the given turn: each tool result carries "PAYLOAD-<iii>" plus padding, so
+// a span cut is observable by which payloads survive (newest kept, oldest
+// dropped).
+func compFatSpanGroups(t *testing.T, m *Manager, turnID string, n, payloadChars int) {
+	t.Helper()
+
+	for i := range n {
+		id := fmt.Sprintf("%s_fs%03d", turnID, i)
+		mustAppend(t, m.AppendToolCall(turnID, id, toolBash, json.RawMessage(`{"command":"ls"}`)),
+			"AppendToolCall")
+		mustAppend(t, m.AppendToolResult(turnID, id,
+			json.RawMessage(`"PAYLOAD-`+fmt.Sprintf("%03d", i)+` `+strings.Repeat("x", payloadChars)+`"`),
+			false), "AppendToolResult")
+	}
+}
+
+// compUnboundedSpanPrompt recomputes the UNBOUNDED summarizer prompt over a
+// pre-compact transcript (the byte-identity reference and the size baseline —
+// renderSpan over every folded message, no cap).
+func compUnboundedSpanPrompt(lines []Line) string {
+	return compactionPrompt("", renderSpan(foldExchanges(lines, 0, "", false)))
+}
+
+// compSummarizerPrompt returns the recorded single-user-message content of the
+// nth summarizer/turn call.
+func compSummarizerPrompt(t *testing.T, cp *compactionProvider, n int) string {
+	t.Helper()
+
+	msgs := cp.messagesOf(n)
+	if len(msgs) != 1 || msgs[0].Role != roleUserMsg {
+		t.Fatalf("call %d carried %d messages; want the single summarizer user message", n, len(msgs))
+	}
+
+	return msgs[0].Content
+}
+
+// TestCompaction_BoundedSpanAndReFireGuard pins WR-03: (a) the summarize span
+// is char-bounded from the resolved context limit (fallback cap when unset,
+// named floor when pathological) so the summarize call itself can never be an
+// overflowing request — a cut span carries the one-line truncation notice and
+// keeps the NEWEST content; a span under the budget renders byte-identically
+// to the unbounded render; (b) at most ONE threshold-class compaction attempt
+// per turn — a degraded summarizer costs one call per TURN, not one per loop
+// head, while the compactionChecks counter still counts every head; a NEW
+// turn over threshold attempts again; the overflow-forced compact stamps the
+// turn too.
+func TestCompaction_BoundedSpanAndReFireGuard(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen,maintidx // battery
+	t.Parallel()
+
+	t.Run("fat span: bounded summarize input, oldest dropped, newest kept", func(t *testing.T) {
+		t.Parallel()
+
+		s, m, cp, _ := newCompactionTestSession(t, []compScript{
+			{text: "SUMMARY-BOUND", finish: stopEndTurn},
+		})
+		s.SetCompactionSettings(true, 80, 20_000)
+
+		mustAppend(t, m.AppendUserMessage("t-fat", []ContentBlock{{Type: blockText, Text: "grow the context"}}),
+			"AppendUserMessage")
+		compFatSpanGroups(t, m, "t-fat", 30, 2000)
+
+		linesBefore, err := m.ReadAll()
+		if err != nil {
+			t.Fatalf("ReadAll(before): %v", err)
+		}
+
+		unbounded := compUnboundedSpanPrompt(linesBefore)
+
+		err = s.compact(context.Background(), "t-fat")
+		if err != nil {
+			t.Fatalf("compact: %v (the fat span must still compact)", err)
+		}
+
+		if got := len(markersOf(t, m)); got != 1 {
+			t.Fatalf("markers = %d; want 1", got)
+		}
+
+		content := compSummarizerPrompt(t, cp, 0)
+
+		if !strings.Contains(content, "[earlier conversation truncated]") {
+			t.Errorf("bounded span missing the truncation notice:\n%.200s", content)
+		}
+
+		if !strings.Contains(content, "PAYLOAD-029") {
+			t.Errorf("bounded span dropped the NEWEST payload (newest must be kept):\n%.200s", content)
+		}
+
+		if strings.Contains(content, "PAYLOAD-000") {
+			t.Errorf("bounded span kept the OLDEST payload (oldest must drop first)")
+		}
+
+		if len(content) >= len(unbounded) {
+			t.Errorf("summarize input was not bounded: got %d chars; unbounded render is %d",
+				len(content), len(unbounded))
+		}
+	})
+
+	t.Run("span under the budget renders byte-identically to the unbounded render", func(t *testing.T) {
+		t.Parallel()
+
+		s, m, cp, _ := newCompactionTestSession(t, []compScript{
+			{text: "SUMMARY-SMALL", finish: stopEndTurn},
+		})
+		s.SetCompactionSettings(true, 80, 20_000)
+
+		mustAppend(t, m.AppendUserMessage("t-small", []ContentBlock{{Type: blockText, Text: "tiny span"}}),
+			"AppendUserMessage")
+		compFatSpanGroups(t, m, "t-small", 2, 40)
+
+		linesBefore, err := m.ReadAll()
+		if err != nil {
+			t.Fatalf("ReadAll(before): %v", err)
+		}
+
+		err = s.compact(context.Background(), "t-small")
+		if err != nil {
+			t.Fatalf("compact: %v", err)
+		}
+
+		content := compSummarizerPrompt(t, cp, 0)
+		want := compUnboundedSpanPrompt(linesBefore)
+
+		if content != want {
+			t.Errorf("under-budget span drifted from the unbounded render:\n got: %q\nwant: %q", content, want)
+		}
+	})
+
+	t.Run("pathological limit floors the budget: content survives, span still bounded", func(t *testing.T) {
+		t.Parallel()
+
+		s, m, cp, _ := newCompactionTestSession(t, []compScript{
+			{text: "SUMMARY-FLOOR", finish: stopEndTurn},
+		})
+		// A context limit so small the derived budget underflows — the named
+		// floor must keep the span non-empty (a zero budget would summarize
+		// nothing) while still bounding it.
+		s.SetCompactionSettings(true, 80, 50)
+
+		mustAppend(t, m.AppendUserMessage("t-floor", []ContentBlock{{Type: blockText, Text: "floor me"}}),
+			"AppendUserMessage")
+		compFatSpanGroups(t, m, "t-floor", 4, 2000)
+
+		linesBefore, err := m.ReadAll()
+		if err != nil {
+			t.Fatalf("ReadAll(before): %v", err)
+		}
+
+		unbounded := compUnboundedSpanPrompt(linesBefore)
+
+		err = s.compact(context.Background(), "t-floor")
+		if err != nil {
+			t.Fatalf("compact: %v", err)
+		}
+
+		content := compSummarizerPrompt(t, cp, 0)
+
+		if !strings.Contains(content, "[earlier conversation truncated]") {
+			t.Errorf("floor-bounded span missing the truncation notice:\n%.200s", content)
+		}
+
+		if !strings.Contains(content, "PAYLOAD-003") {
+			t.Errorf("floor-bounded span dropped the NEWEST payload (never summarize nothing):\n%.200s", content)
+		}
+
+		if strings.Contains(content, "PAYLOAD-000") {
+			t.Error("floor-bounded span kept the OLDEST payload (the floor is not a license for the whole span)")
+		}
+
+		if len(content) >= len(unbounded) {
+			t.Errorf("floor-bounded span was not bounded: got %d chars; unbounded is %d",
+				len(content), len(unbounded))
+		}
+	})
+
+	t.Run("zero-limit fallback caps an enormous span", func(t *testing.T) {
+		t.Parallel()
+
+		// Settings never applied: ContextLimit 0 — the state the overflow
+		// backstop fires in (compaction disabled). The fallback default cap
+		// (~100K tokens of chars) must still bound the span.
+		s, m, cp, _ := newCompactionTestSession(t, []compScript{
+			{text: "SUMMARY-FALLBACK", finish: stopEndTurn},
+		})
+
+		mustAppend(t, m.AppendUserMessage("t-fb", []ContentBlock{{Type: blockText, Text: "enormous"}}),
+			"AppendUserMessage")
+		compFatSpanGroups(t, m, "t-fb", 260, 2000)
+
+		linesBefore, err := m.ReadAll()
+		if err != nil {
+			t.Fatalf("ReadAll(before): %v", err)
+		}
+
+		unbounded := compUnboundedSpanPrompt(linesBefore)
+
+		err = s.compact(context.Background(), "t-fb")
+		if err != nil {
+			t.Fatalf("compact: %v", err)
+		}
+
+		content := compSummarizerPrompt(t, cp, 0)
+
+		if !strings.Contains(content, "[earlier conversation truncated]") {
+			t.Errorf("fallback-capped span missing the truncation notice")
+		}
+
+		if !strings.Contains(content, "PAYLOAD-259") {
+			t.Errorf("fallback-capped span dropped the NEWEST payload")
+		}
+
+		if strings.Contains(content, "PAYLOAD-000") {
+			t.Error("fallback-capped span kept the OLDEST payload")
+		}
+
+		if len(content) >= len(unbounded) {
+			t.Errorf("fallback cap did not bound the span: got %d chars; unbounded is %d",
+				len(content), len(unbounded))
+		}
+	})
+
+	t.Run("degraded compaction attempts once per turn; checks still count per loop head", func(t *testing.T) {
+		t.Parallel()
+
+		// A two-iteration turn whose summarizer DEGRADES at loop head 1: the
+		// attempt must not re-fire at loop head 2 (WR-03b) — one summarizer
+		// call, one degrade counter for the WHOLE turn — while the check
+		// counter still counts both heads.
+		s, m, cp, _ := newCompactionTestSession(t, []compScript{
+			{errChunk: errSummarizerExploded}, // 1: loop head 1's summarizer — degrades
+			{
+				toolCalls: []provider.ToolCall{{ID: "call_rf", Name: toolRead, Input: json.RawMessage(`{"file_path":"a.txt"}`)}},
+				finish:    blockToolUse,
+			}, // 2: iteration 1's send (tool loop → head 2)
+			{text: compTextDone, finish: stopEndTurn}, // 3: iteration 2's send
+		})
+		s.SetCompactionSettings(true, 80, 1000)
+		s.lastInputTokens.Store(900) // over the threshold at EVERY head
+
+		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "go"}})
+		if err != nil || stop != stopEndTurn {
+			t.Fatalf("turn 1: stop=%q err=%v (the turn must complete un-compacted)", stop, err)
+		}
+
+		if calls := cp.callCount(); calls != 3 {
+			t.Errorf("stream calls after turn 1 = %d; want 3 (ONE summarizer + two turn sends — no head-2 re-fire)", calls)
+		}
+
+		if got := s.compactionDegrades.Load(); got != 1 {
+			t.Errorf("degrade counter = %d; want 1 (one degrade per TURN, not per head)", got)
+		}
+
+		if got := s.compactionChecks.Load(); got != 2 {
+			t.Errorf("check counter = %d; want 2 (the guard skips the ATTEMPT, not the check)", got)
+		}
+
+		if got := len(markersOf(t, m)); got != 0 {
+			t.Errorf("markers = %d; want 0 (the degraded attempt appended none)", got)
+		}
+
+		// NEW TURN RESETS: turn 2 is over threshold (the anchor is still 900)
+		// and carries a DIFFERENT turnID — the guard is keyed by turn, so the
+		// attempt fires again (and this time succeeds).
+		cp.script = append(cp.script,
+			compScript{text: "SUMMARY-RETRY", finish: stopEndTurn}, // 4: turn 2 head 1's summarizer
+			compScript{text: "turn two done", finish: stopEndTurn}, // 5: turn 2's send
+		)
+
+		stop, err = s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "again"}})
+		if err != nil || stop != stopEndTurn {
+			t.Fatalf("turn 2: stop=%q err=%v (a new turn must attempt again)", stop, err)
+		}
+
+		if calls := cp.callCount(); calls != 5 {
+			t.Errorf("stream calls after turn 2 = %d; want 5 (turn 2 re-attempted once + its send)", calls)
+		}
+
+		if got := len(markersOf(t, m)); got != 1 {
+			t.Errorf("markers after turn 2 = %d; want 1 (the retry attempt succeeded)", got)
+		}
+
+		if got := s.compactionDegrades.Load(); got != 1 {
+			t.Errorf("degrade counter after turn 2 = %d; want 1 (turn 2's attempt did not degrade)", got)
+		}
+
+		if got := s.compactionChecks.Load(); got != 3 {
+			t.Errorf("check counter after turn 2 = %d; want 3 (turn 2's head counted)", got)
+		}
+	})
+
+	t.Run("forced overflow compact stamps the turn: no second threshold compaction", func(t *testing.T) {
+		t.Parallel()
+
+		// Enabled settings, anchor far under the threshold at head 1. The
+		// turn's first send overflows → the forced compact runs (threshold
+		// bypass) and STAMPS the turn; the retry's usage chunk pushes the
+		// anchor OVER the threshold, so head 2 WOULD re-fire the threshold
+		// path — the stamp must suppress it (the stale anchor + the marker/
+		// usage estimate lines must not re-trigger within the turn).
+		s, m, cp, _ := newCompactionTestSession(t, []compScript{
+			{callErr: overflowErr()},                      // 1: the turn's send — overflow
+			{text: "SUMMARY-FORCED", finish: stopEndTurn}, // 2: the forced compact's summarizer
+			{ // 3: the retry send — usage crosses the threshold
+				usage:     &provider.Usage{InputTokens: 950, OutputTokens: 5},
+				toolCalls: []provider.ToolCall{{ID: "call_fs", Name: toolRead, Input: json.RawMessage(`{"file_path":"a.txt"}`)}},
+				finish:    blockToolUse,
+			},
+			{text: "done forced", finish: stopEndTurn}, // 4: iteration 2's send
+		})
+		s.SetCompactionSettings(true, 80, 1000)
+
+		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "go"}})
+		if err != nil || stop != stopEndTurn {
+			t.Fatalf("turn: stop=%q err=%v (the retry must complete the turn)", stop, err)
+		}
+
+		if calls := cp.callCount(); calls != 4 {
+			t.Errorf("stream calls = %d; want 4 (overflow, forced summarize, retry, iteration-2 send — no head-2 threshold compaction)",
+				calls)
+		}
+
+		if got := len(markersOf(t, m)); got != 1 {
+			t.Errorf("markers = %d; want 1 (the forced compact alone; head 2 must not compact again)", got)
+		}
+
+		if got := s.compactionChecks.Load(); got != 2 {
+			t.Errorf("check counter = %d; want 2 (both heads counted)", got)
+		}
+
+		if got := s.compactionDegrades.Load(); got != 0 {
+			t.Errorf("degrade counter = %d; want 0", got)
 		}
 	})
 }
