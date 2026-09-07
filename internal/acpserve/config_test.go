@@ -135,8 +135,8 @@ func optionByID(t *testing.T, opts []acp.ConfigOptionFrame, id string) acp.Confi
 func assertFullMenu(t *testing.T, opts []acp.ConfigOptionFrame, where string) {
 	t.Helper()
 
-	if len(opts) != 16 {
-		t.Fatalf("%s: options = %d; want the sixteen-entry menu (22-02 added the background caps + twins)", where, len(opts))
+	if len(opts) != 20 {
+		t.Fatalf("%s: options = %d; want the twenty-entry menu (23-04 added the checkpoint GC knobs + twins)", where, len(opts))
 	}
 }
 

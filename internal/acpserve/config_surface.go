@@ -114,6 +114,22 @@ const (
 	// allow through the menu).
 	bgCapMin = 1
 
+	// 23-04 (D-10/D-08): the checkpoint GC knobs — enumerated selects over
+	// the checkpoint: layer key, consumed by the Runner's session-start
+	// sweep through EffectiveCheckpointGCBounds (persist-as-apply: the next
+	// session-start sweep reads the layer truth, exactly the tombstone
+	// grace discipline).
+	optCheckpointExpiryDays    = "checkpoint.expiry_days"
+	optCheckpointMaxPerSession = "checkpoint.max_per_session"
+
+	keyCheckpoint       = "checkpoint"
+	keyCkExpiryDays     = "expiry_days"
+	keyCkMaxPerSession  = "max_per_session"
+	ckExpiryDefault     = "7"
+	ckExpiryDefaultDays = 7
+	ckMaxDefault        = "50"
+	ckMaxDefaultPerSess = 50
+
 	// Idempotence-basis descriptions (WR-05 scope-aware guard log lines).
 	basisWhereEffective = "the currently-effective value"
 	basisWhereGlobal    = "the global layer's current value"
@@ -535,6 +551,12 @@ func (s *ConfigSurface) setLocked(optionID string, value any) (setOutcome, error
 		frames, applied, bgerr := s.setBackgroundCapLocked(optionID, scope, bare, val)
 
 		return setOutcome{frames: frames, doNotify: applied}, bgerr
+	}
+
+	if bare == optCheckpointExpiryDays || bare == optCheckpointMaxPerSession {
+		frames, applied, ckerr := s.setCheckpointBoundLocked(optionID, scope, bare, val)
+
+		return setOutcome{frames: frames, doNotify: applied}, ckerr
 	}
 
 	verr := s.validateSettableLocked(bare, optionID, val, res.cfg)
@@ -1361,6 +1383,12 @@ func (s *ConfigSurface) menuEntriesLocked(
 		build(optBackgroundBash, "Background commands",
 			"Maximum concurrent background Bash tasks; over-cap commands queue (D-11)",
 			categoryCustom, s.effectiveBackgroundCapLocked(optBackgroundBash), selectValues(optBackgroundBash)),
+		build(optCheckpointExpiryDays, "Checkpoint expiry",
+			"Days a checkpoint survives before the session-start GC sweep evicts it (age axis)",
+			categoryCustom, s.effectiveCheckpointBoundLocked(optCheckpointExpiryDays), selectValues(optCheckpointExpiryDays)),
+		build(optCheckpointMaxPerSession, "Checkpoint retention",
+			"Maximum checkpoints kept per session (newest first); older ones sweep at session start",
+			categoryCustom, s.effectiveCheckpointBoundLocked(optCheckpointMaxPerSession), selectValues(optCheckpointMaxPerSession)),
 		build(optGlobalPrefix+optTombstoneGrace, "Tombstone grace (global default)",
 			"Global tombstone-grace default", categoryCustom, s.globalTombstoneGraceLocked(), graceDayChoices()),
 		build(optGlobalPrefix+optBackgroundSubs, "Background subagents (global default)",
@@ -1369,6 +1397,12 @@ func (s *ConfigSurface) menuEntriesLocked(
 		build(optGlobalPrefix+optBackgroundBash, "Background commands (global default)",
 			"Global background-bash default", categoryCustom,
 			s.globalBackgroundCapLocked(optBackgroundBash), selectValues(optBackgroundBash)),
+		build(optGlobalPrefix+optCheckpointExpiryDays, "Checkpoint expiry (global default)",
+			"Global checkpoint-expiry default", categoryCustom,
+			s.globalCheckpointBoundLocked(optCheckpointExpiryDays), selectValues(optCheckpointExpiryDays)),
+		build(optGlobalPrefix+optCheckpointMaxPerSession, "Checkpoint retention (global default)",
+			"Global checkpoint-retention default", categoryCustom,
+			s.globalCheckpointBoundLocked(optCheckpointMaxPerSession), selectValues(optCheckpointMaxPerSession)),
 	}
 }
 
@@ -1486,7 +1520,8 @@ func splitScope(optionID string) optionScope {
 func isMenuOption(bare string) bool {
 	return bare == optModel || bare == optTier || bare == optPermissionsMode ||
 		bare == optCompactionThresh || bare == optCompactionEnabled || bare == optTombstoneGrace ||
-		bare == optBackgroundSubs || bare == optBackgroundBash
+		bare == optBackgroundSubs || bare == optBackgroundBash ||
+		bare == optCheckpointExpiryDays || bare == optCheckpointMaxPerSession
 }
 
 // graceDayChoices is the tombstone-grace offered set — a UI AFFORDANCE, not
@@ -1509,6 +1544,10 @@ func selectValues(bare string) []string {
 		return []string{"4", "8", "16", "32"}
 	case optBackgroundBash:
 		return []string{"8", "16", "32", "64"}
+	case optCheckpointExpiryDays:
+		return []string{"1", "3", ckExpiryDefault, "14", "30"}
+	case optCheckpointMaxPerSession:
+		return []string{"10", "25", ckMaxDefault, "100"}
 	default: // the compaction threshold's offered set
 		return []string{compactionMidLower, compactionMid, compactionDefault, compactionMidHigh}
 	}
@@ -1627,6 +1666,161 @@ func (s *ConfigSurface) setBackgroundCapLocked(
 		optionID, scope, capVal)
 
 	return s.optionsLocked(), true, nil
+}
+
+// setCheckpointBoundLocked is the checkpoint GC knob handler (23-04, D-10):
+// STRICT membership validation against the offered select set (T-23-13 —
+// these values parameterize a destructive eviction, so unlike the
+// tombstone/background affordances there is no free-form integer write),
+// then persist-as-apply under the checkpoint: layer key — the next
+// session-start sweep reads the layer truth (the tombstone grace
+// discipline; no live-apply hook).
+func (s *ConfigSurface) setCheckpointBoundLocked(
+	optionID, scope, bare, val string,
+) ([]acp.ConfigOptionFrame, bool, error) {
+	offered := selectValues(bare)
+
+	if !slices.Contains(offered, val) {
+		return nil, false, &acp.ConfigViolationError{
+			OptionID:  optionID,
+			Violation: fmt.Sprintf("value %q is not one of the offered options %v", val, offered),
+		}
+	}
+
+	n, perr := strconv.Atoi(val) // membership guarantees parseability
+	if perr != nil {
+		return nil, false, &acp.ConfigPersistError{OptionID: optionID, Err: perr}
+	}
+
+	basis, where := s.effectiveCheckpointBoundLocked(bare), basisWhereEffective
+	if scope == scopeGlobal {
+		basis = s.globalCheckpointBoundLocked(bare)
+		where = basisWhereGlobal
+	}
+
+	if val == basis {
+		s.logf("option %q: value %q equals %s — idempotent re-push, no layer write (D-10)", optionID, val, where)
+
+		return s.optionsLocked(), false, nil
+	}
+
+	layerPath, lerr := s.layerForScope(scope)
+	if lerr != nil {
+		return nil, false, &acp.ConfigPersistError{OptionID: optionID, Err: lerr}
+	}
+
+	key := keyCkExpiryDays
+	if bare == optCheckpointMaxPerSession {
+		key = keyCkMaxPerSession
+	}
+
+	werr := providerfactory.WriteLayerOption(layerPath, []string{keyCheckpoint, key}, n)
+	if werr != nil {
+		return nil, false, &acp.ConfigPersistError{OptionID: optionID, Err: werr}
+	}
+
+	s.logf("option %q (scope %s): persisted %d — the next session-start GC sweep reads it (D-08 persist-as-apply)",
+		optionID, scope, n)
+
+	return s.optionsLocked(), true, nil
+}
+
+// effectiveCheckpointBoundLocked resolves the effective knob string (project
+// > global > the fixed default).
+func (s *ConfigSurface) effectiveCheckpointBoundLocked(bare string) string {
+	if v := s.layerCheckpointBound(s.projectPath, bare); v != "" {
+		return v
+	}
+
+	if v := s.layerCheckpointBound(s.globalPath, bare); v != "" {
+		return v
+	}
+
+	if bare == optCheckpointMaxPerSession {
+		return ckMaxDefault
+	}
+
+	return ckExpiryDefault
+}
+
+// globalCheckpointBoundLocked resolves the GLOBAL layer's own knob value
+// (fixed default when unset).
+func (s *ConfigSurface) globalCheckpointBoundLocked(bare string) string {
+	if v := s.layerCheckpointBound(s.globalPath, bare); v != "" {
+		return v
+	}
+
+	if bare == optCheckpointMaxPerSession {
+		return ckMaxDefault
+	}
+
+	return ckExpiryDefault
+}
+
+// layerCheckpointBound reads one layer file's checkpoint knob ("" when the
+// file is absent/unreadable/unset; the layerBackgroundCap int/string
+// tolerance).
+func (s *ConfigSurface) layerCheckpointBound(path, bare string) string {
+	if path == "" {
+		return ""
+	}
+
+	m, err := readLayerMap(path)
+	if err != nil {
+		return ""
+	}
+
+	key := keyCkExpiryDays
+	if bare == optCheckpointMaxPerSession {
+		key = keyCkMaxPerSession
+	}
+
+	switch v := layerScalar(m, keyCheckpoint, key).(type) {
+	case string:
+		return v
+	case int:
+		return strconv.Itoa(v)
+	case float64:
+		return strconv.Itoa(int(v))
+	default:
+		return ""
+	}
+}
+
+// EffectiveCheckpointGCBounds is the RUNNER-facing read-back (23-04 D-08):
+// the effective (days, perSession) the session-start sweep runs on —
+// persisted layer truth (project > global), else the embedded 7d/50
+// defaults, with a LOUD per-key fallback to the default on an unparseable
+// persisted value (T-23-13: junk never reaches a destructive eviction as a
+// zero/huge bound). The serve composition binds this into the Runner via
+// SetCheckpointGCBounds.
+func (s *ConfigSurface) EffectiveCheckpointGCBounds() (days int, perSession int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.checkpointGCBoundsLocked()
+}
+
+// checkpointGCBoundsLocked is EffectiveCheckpointGCBounds's body (callers
+// hold s.mu): parse each knob with a loud default fallback.
+func (s *ConfigSurface) checkpointGCBoundsLocked() (days int, perSession int) {
+	days, perSession = ckExpiryDefaultDays, ckMaxDefaultPerSess
+
+	if v, perr := strconv.Atoi(s.effectiveCheckpointBoundLocked(optCheckpointExpiryDays)); perr == nil && v > 0 {
+		days = v
+	} else if perr != nil {
+		s.logf("checkpoint.expiry_days unparseable (%q) — falling back to the %dd default",
+			s.effectiveCheckpointBoundLocked(optCheckpointExpiryDays), ckExpiryDefaultDays)
+	}
+
+	if v, perr := strconv.Atoi(s.effectiveCheckpointBoundLocked(optCheckpointMaxPerSession)); perr == nil && v > 0 {
+		perSession = v
+	} else if perr != nil {
+		s.logf("checkpoint.max_per_session unparseable (%q) — falling back to the %d default",
+			s.effectiveCheckpointBoundLocked(optCheckpointMaxPerSession), ckMaxDefaultPerSess)
+	}
+
+	return days, perSession
 }
 
 // effectiveBackgroundCapLocked resolves the effective cap string for a bare

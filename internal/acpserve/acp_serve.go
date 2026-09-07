@@ -217,6 +217,12 @@ func Run( //nolint:funlen // :320-425
 	surface := NewConfigSurface(
 		globalPath, providerfactory.ProjectConfigPath(opts.WorkDir), providerName, stderr)
 
+	// 23-04 (D-08): the session-start checkpoint GC sweep's bounds — the
+	// surface's effective read-back (persisted checkpoint: layer truth, else
+	// the embedded 7d/50 defaults) bound into the Runner (the askFire
+	// late-injection precedent).
+	runner.SetCheckpointGCBounds(surface.EffectiveCheckpointGCBounds)
+
 	// 18-04 (D-09): the grace-expired tombstone GC — ONE sweep at startup,
 	// after WorkDir resolution and before Serve (the chosen trigger point
 	// within the 30d contract). Physically purges ONLY tombstoned
