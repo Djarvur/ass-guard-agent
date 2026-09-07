@@ -335,7 +335,7 @@ Plans:
   3. The persistent-shell Bash option holds state across calls in one PTY session (cd/export persist, ANSI stripped, EIO-as-EOF handled) without leaking the master fd.
   4. With sandbox enabled, tools run confined (landlock on Linux kernel ≥5.13, sandbox-exec generated profiles on macOS with targeted denies); unsupported kernels/environments degrade LOUDLY at startup, default stays OFF, and `--sandbox=off` always escapes.
 
-**Plans:** 3/6 plans executed
+**Plans:** 4/6 plans executed
 
 Plans:
 **Wave 1**
@@ -349,7 +349,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 22-03-PLAN.md — Background subagents (PAR-07): discriminated async_launched dispatch, output-file retrieval, cancellation, Phase-20 routing seam (precondition-marked), OQ3 ask-decline parity
+- [x] 22-03-PLAN.md — Background subagents (PAR-07): discriminated async_launched dispatch, output-file retrieval, cancellation, Phase-20 routing seam (precondition-marked), OQ3 ask-decline parity
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -498,7 +498,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 | 19. Compaction + cache_control | v1.2 | 7/7 | Complete    | 2026-09-07 |
 | 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 6/6 | Complete    | 2026-09-07 |
 | 21. Context & Policy Parity Closures | v1.2 | 6/6 | Complete    | 2026-09-06 |
-| 22. Background Execution + Sandbox Reality | v1.2 | 3/6 | In Progress|  |
+| 22. Background Execution + Sandbox Reality | v1.2 | 4/6 | In Progress|  |
 | 23. SEED Gaps Close-out | v1.2 | 3/5 | In Progress|  |
 | 24. Documentation & Ops Tails | v1.2 | 0/? | Not started | - |
 | 25. SEED-001 Kit Extraction | v1.2 | 0/? | Not started | - |
