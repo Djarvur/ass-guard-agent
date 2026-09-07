@@ -599,3 +599,65 @@ func TestAppendSynthetic(t *testing.T) {
 		t.Errorf("synthetic line lost its contract on disk: %+v", lines[0])
 	}
 }
+
+// TestReconcileSameTurnMarker (19-06, G-19-1) pins the replay/reconcile row:
+// a mid-turn same-turn marker is INERT bookkeeping — a transcript carrying one
+// (turn T: user_message, dangling tool_call, TypeCompaction TurnID==T, kill)
+// reconciles to the SAME closures as the marker-free equivalent. The marker
+// neither dangles nor absorbs the dangling tool_call: the row-1 failed
+// tool_result and the row-2 canceled terminal still land, and the seed is
+// unaffected.
+func TestReconcileSameTurnMarker(t *testing.T) {
+	t.Parallel()
+
+	ts := time.Date(2026, 9, 7, 12, 0, 0, 0, time.UTC)
+	t1 := reconcileTurnID(1)
+
+	base := []Line{
+		{Type: TypeSessionStart, Timestamp: ts, Text: reconcileFixtureSession},
+		reconcileUserLine(t1, "shrink me", ts),
+		{
+			Type: TypeToolCall, TurnID: t1, Timestamp: ts,
+			ToolCallID: reconcileCall1, Name: toolRead, Input: json.RawMessage(`{"file_path":"a"}`),
+		},
+	}
+
+	withMarker := make([]Line, len(base), len(base)+1)
+	copy(withMarker, base)
+	withMarker = append(withMarker, Line{
+		Type: TypeCompaction, TurnID: t1, Timestamp: ts,
+		Summary: "mid-turn summary", PreRef: "line:2", PostRef: "line:3",
+	})
+
+	want := []Line{
+		{Type: TypeCanceled, TurnID: t1, Cause: InterruptedCause},
+		{
+			Type: TypeToolResult, TurnID: t1, ToolCallID: reconcileCall1,
+			IsError: true, Cause: InterruptedCause,
+		},
+		{Type: TypeSessionEnd, Cause: InterruptedCause},
+	}
+
+	for name, lines := range map[string][]Line{
+		"with same-turn marker":  withMarker,
+		"marker-free equivalent": base,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			got, seed := Reconcile(reconcileFixtureSession, lines)
+
+			if len(got) != len(want) {
+				t.Fatalf("Reconcile returned %d closures; want %d: %+v", len(got), len(want), got)
+			}
+
+			for i := range want {
+				assertReconcileClosure(t, i, &got[i], &want[i])
+			}
+
+			if seed != (Seed{MaxTurns: 1}) {
+				t.Errorf("seed = %+v; want {MaxTurns:1} (the marker must not touch the seed)", seed)
+			}
+		})
+	}
+}

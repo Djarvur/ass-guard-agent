@@ -1578,3 +1578,276 @@ func TestCompaction_BoundedSpanAndReFireGuard(t *testing.T) { //nolint:gocognit,
 		}
 	})
 }
+
+// --- G-19-1 content-sensitive regression battery (19-06 Task 3) ---
+
+// firstContentOf returns the first message's content (the window/summarize
+// prompt recorder's per-call snapshot).
+func firstContentOf(msgs []provider.Message) string {
+	if len(msgs) == 0 {
+		return ""
+	}
+
+	return msgs[0].Content
+}
+
+// sizeRejectProvider wraps the scripted fixture with payload-size rejection
+// (G-19-1's content-sensitive provider): every Stream call's message batch is
+// marshaled and measured — a batch over maxBytes gets the 19-02 overflow
+// error as a synchronous Stream error and consumes NO script entry (a
+// rejected request never got a reply); an under-bound batch delegates to the
+// scripted provider. Content-sensitive by construction: a byte-identical
+// resend fails again — exactly the blind spot the content-blind scripted
+// fixture had. Every call (rejected included) records its marshaled size and
+// first-message content.
+type sizeRejectProvider struct {
+	*compactionProvider
+	maxBytes int
+
+	sizes  []int
+	firsts []string
+}
+
+//nolint:wrapcheck // fixture: the delegated scripted stream is the contract
+func (p *sizeRejectProvider) Stream(
+	ctx context.Context, prof *profile.Profile, msgs []provider.Message,
+) (<-chan provider.StreamChunk, error) {
+	raw, err := json.Marshal(msgs)
+	if err != nil {
+		return nil, fmt.Errorf("size-reject marshal: %w", err)
+	}
+
+	p.mu.Lock()
+	p.sizes = append(p.sizes, len(raw))
+	p.firsts = append(p.firsts, firstContentOf(msgs))
+	p.mu.Unlock()
+
+	if len(raw) > p.maxBytes {
+		return nil, overflowErr()
+	}
+
+	return p.compactionProvider.Stream(ctx, prof, msgs)
+}
+
+// g191TurnID is the pre-built producing turn's id (the regression drives
+// runTurn directly — the same re-entry seam the ask-resume path uses).
+const g191TurnID = "t-g191"
+
+// g191Intent is the producing turn's own prompt (the seed's current intent).
+const g191Intent = "please shrink me"
+
+// newSizeRejectSession builds the G-19-1 regression session over a pre-built
+// MID-TURN transcript — the producing turn's user message plus 40 fat
+// exchanges, the state an overflowing producing turn is actually in. A fresh
+// Prompt cannot build this shape: D-01's lean seed caps pre-turn carry at
+// ~800 summary chars, so the FIRST projection of a Prompt-minted turn is
+// always small; the fat window only exists for a turn with accumulated
+// exchanges, which is precisely the overflow scenario under test.
+func newSizeRejectSession(
+	t *testing.T, script []compScript, bound int,
+) (*Session, *Manager, *sizeRejectProvider) {
+	t.Helper()
+
+	bus := event.NewBus()
+	m := newTestManager(t, "s-g191")
+	inner := &compactionProvider{script: script, bus: bus}
+
+	prof := fakeProfile("g191 agent")
+	prof.Model = compParentModel
+
+	p := &sizeRejectProvider{compactionProvider: inner, maxBytes: bound}
+
+	s := &Session{
+		Manager:   m,
+		Projector: NewProjector(prof, m),
+		Provider:  p,
+		Bus:       bus,
+		Semaphore: provider.NewSemaphore(4),
+		Profile:   *prof,
+		WorkDir:   t.TempDir(),
+		SessionID: "s-g191",
+	}
+	p.turnIDOf = s.CurrentTurnID
+
+	mustAppend(t, m.AppendUserMessage(g191TurnID,
+		[]ContentBlock{{Type: blockText, Text: g191Intent}}), "AppendUserMessage")
+	compFatSpanGroups(t, m, g191TurnID, 40, 600)
+
+	return s, m, p
+}
+
+// g191ProviderErrorLine reports whether the transcript carries the existing
+// appendError provider line (the fail-through path's signature).
+func g191ProviderErrorLine(t *testing.T, m *Manager) bool {
+	t.Helper()
+
+	lines, err := m.ReadAll()
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+
+	for i := range lines {
+		if lines[i].Type == TypeError && lines[i].Component == errCompProvider {
+			return true
+		}
+	}
+
+	return false
+}
+
+// TestCompaction_OverflowRetryCarriesSummary pins G-19-1 (operator ruling
+// (b)): with a content-sensitive provider that rejects by payload size, the
+// producing turn COMPLETES after the forced compaction + the single retry —
+// the retry request is measurably SMALLER than the rejected one and carries
+// the summarizer's summary as its seed. The content-blind scripted fixture
+// could not tell a byte-identical resend from a recovery; this battery can.
+func TestCompaction_OverflowRetryCarriesSummary(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen,maintidx // battery
+	t.Parallel()
+
+	// The shared regression shape: the threshold check stays disabled (the
+	// backstop path — matching the existing recovery fixture) while a resolved
+	// 1000-token limit feeds BOTH the WR-03a span budget (the summarize call
+	// fits under the rejection bound) and the projector's tail budget.
+	const bound = 4000
+
+	t.Run("the regression: overflow → bounded summarize → marker → smaller summary-seeded retry", func(t *testing.T) {
+		t.Parallel()
+
+		s, m, p := newSizeRejectSession(t, []compScript{
+			{text: "SHRUNK-SUMMARY", finish: stopEndTurn}, // the forced compact's summarizer
+			{text: "all good now", finish: stopEndTurn},   // the retry send
+		}, bound)
+		s.SetCompactionSettings(false, 80, 1000)
+
+		stop, err := s.runTurn(context.Background(), g191TurnID)
+		if err != nil || stop != stopEndTurn {
+			t.Fatalf("runTurn: stop=%q err=%v (the producing turn must complete after compaction + ONE retry)",
+				stop, err)
+		}
+
+		if got := len(p.sizes); got != 3 {
+			t.Fatalf("stream calls = %d; want 3 (rejected send, summarize, retry — exactly one retry, Pitfall 8)", got)
+		}
+
+		// (a) call 1 was rejected: over the bound, and it was the turn's own
+		// window (the seed carries T's prompt).
+		if p.sizes[0] <= p.maxBytes {
+			t.Errorf("call 1 size = %d; want > %d (the fat mid-turn window must be rejected)", p.sizes[0], p.maxBytes)
+		}
+
+		if !strings.Contains(p.firsts[0], g191Intent) {
+			t.Errorf("call 1 was not the turn's own window (seed must carry T's prompt):\n%.200s", p.firsts[0])
+		}
+
+		// (b) the summarize call was UNDER the bound (WR-03a held) and exactly
+		// one marker landed.
+		if p.sizes[1] > p.maxBytes {
+			t.Errorf("summarize call size = %d; want <= %d (the bounded span must fit under the bound)",
+				p.sizes[1], p.maxBytes)
+		}
+
+		if got := len(markersOf(t, m)); got != 1 {
+			t.Fatalf("markers = %d; want exactly 1", got)
+		}
+
+		// (c) the retry succeeded: strictly smaller, and its first message is
+		// the post-marker seed (the summary + T's own prompt as the intent).
+		if p.sizes[2] >= p.sizes[0] {
+			t.Errorf("retry size = %d; want STRICTLY < the rejected %d (the recovery leg must shrink)",
+				p.sizes[2], p.sizes[0])
+		}
+
+		if !strings.Contains(p.firsts[2], "SHRUNK-SUMMARY") {
+			t.Errorf("retry seed missing the summarizer's summary (the post-marker seed):\n%s", p.firsts[2])
+		}
+
+		if !strings.Contains(p.firsts[2], g191Intent) {
+			t.Errorf("retry seed missing T's own prompt as the current intent:\n%s", p.firsts[2])
+		}
+
+		// (d) no provider error line — the overflow was absorbed by the retry.
+		if g191ProviderErrorLine(t, m) {
+			t.Error("transcript carries a provider error line (the turn must complete, not fail-through)")
+		}
+	})
+
+	t.Run("arming scope: post-retry iterations keep the compacted window", func(t *testing.T) {
+		t.Parallel()
+
+		s, m, p := newSizeRejectSession(t, []compScript{
+			{text: "ARMED-SUMMARY", finish: stopEndTurn}, // the forced compact's summarizer
+			{ // the retry send returns a tool call → one more iteration
+				toolCalls: []provider.ToolCall{{ID: "call_as", Name: toolRead,
+					Input: json.RawMessage(`{"file_path":"a.txt"}`)}},
+				finish: blockToolUse,
+			},
+			{text: "loop done", finish: stopEndTurn}, // iteration 2's send
+		}, bound)
+		s.SetCompactionSettings(false, 80, 1000)
+
+		stop, err := s.runTurn(context.Background(), g191TurnID)
+		if err != nil || stop != stopEndTurn {
+			t.Fatalf("runTurn: stop=%q err=%v (the tooled retry turn must complete)", stop, err)
+		}
+
+		if got := len(p.sizes); got != 4 {
+			t.Fatalf("stream calls = %d; want 4 (rejected, summarize, retry, iteration-2 send)", got)
+		}
+
+		// The override stays armed for the turn's remaining iterations: the
+		// iteration-2 window still carries the summary seed — the turn must
+		// not balloon back to the pre-marker window and re-overflow.
+		if !strings.Contains(p.firsts[3], "ARMED-SUMMARY") {
+			t.Errorf("iteration-2 window lost the summary seed (the arming must span the turn):\n%s", p.firsts[3])
+		}
+
+		if p.sizes[3] >= p.sizes[0] {
+			t.Errorf("iteration-2 size = %d; want < the rejected %d", p.sizes[3], p.sizes[0])
+		}
+
+		if got := len(markersOf(t, m)); got != 1 {
+			t.Errorf("markers = %d; want 1", got)
+		}
+	})
+
+	t.Run("degraded compact keeps the fail-through: identical resend, turn fails", func(t *testing.T) {
+		t.Parallel()
+
+		s, m, p := newSizeRejectSession(t, []compScript{
+			{errChunk: errSummarizerExploded}, // the summarize call degrades mid-stream
+		}, bound)
+		s.SetCompactionSettings(false, 80, 1000)
+
+		stop, err := s.runTurn(context.Background(), g191TurnID)
+		if err == nil {
+			t.Fatal("runTurn error = nil; want the turn to FAIL (no marker → identical resend → second overflow)")
+		}
+
+		if stop != "" {
+			t.Errorf("stop = %q; want empty on the failed turn", stop)
+		}
+
+		if got := len(markersOf(t, m)); got != 0 {
+			t.Errorf("markers = %d; want 0 (the degraded compact landed none)", got)
+		}
+
+		if got := s.compactionDegrades.Load(); got != 1 {
+			t.Errorf("degrade counter = %d; want 1", got)
+		}
+
+		if got := len(p.sizes); got != 3 {
+			t.Fatalf("stream calls = %d; want 3 (rejected, degraded summarize, identical-resend rejection)", got)
+		}
+
+		// The not-armed equivalence: with no marker on disk the armed override
+		// changes nothing — the retry is BYTE-IDENTICAL to the rejected
+		// request and fails again exactly as today.
+		if p.sizes[2] != p.sizes[0] {
+			t.Errorf("retry size = %d; want == %d (no marker → identical resend)", p.sizes[2], p.sizes[0])
+		}
+
+		if !g191ProviderErrorLine(t, m) {
+			t.Error("transcript missing the provider error line (the existing appendError fail-through)")
+		}
+	})
+}
