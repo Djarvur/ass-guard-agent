@@ -135,8 +135,8 @@ func optionByID(t *testing.T, opts []acp.ConfigOptionFrame, id string) acp.Confi
 func assertFullMenu(t *testing.T, opts []acp.ConfigOptionFrame, where string) {
 	t.Helper()
 
-	if len(opts) != 12 {
-		t.Fatalf("%s: options = %d; want the twelve-entry menu", where, len(opts))
+	if len(opts) != 16 {
+		t.Fatalf("%s: options = %d; want the sixteen-entry menu (22-02 added the background caps + twins)", where, len(opts))
 	}
 }
 
@@ -1874,4 +1874,73 @@ func TestCompactionLive_MenuThresholdRoundTrip(t *testing.T) { //nolint:parallel
 	liveCompactionPrompt(t, inPipeW, stdout, 6, sid, "third")
 
 	waitForCompactionMarkers(t, workDir, sid, 1)
+}
+
+// TestConfigSurface_BackgroundCapsMenu (22-02, D-12): both cap ids
+// advertise at the 8/16 defaults with the offered select sets, and a Set
+// round-trip persists + re-reads (apply-as-landed — the next construction
+// consumes EffectiveBackgroundCaps).
+func TestConfigSurface_BackgroundCapsMenu(t *testing.T) {
+	t.Parallel()
+
+	f := newSurfaceFixture(t)
+
+	opts := f.surface.Options()
+
+	subs := optionByID(t, opts, optBackgroundSubs)
+	if subs.CurrentValue != "8" {
+		t.Errorf("background.subagents currentValue = %q; want the D-10 default 8", subs.CurrentValue)
+	}
+
+	bash := optionByID(t, opts, optBackgroundBash)
+	if bash.CurrentValue != "16" {
+		t.Errorf("background.bash currentValue = %q; want the D-11 default 16", bash.CurrentValue)
+	}
+
+	if got := strings.Join(optionValues(bash), ","); got != "8,16,32,64" {
+		t.Errorf("background.bash offered set = %q; want 8,16,32,64", got)
+	}
+
+	if got := strings.Join(optionValues(subs), ","); got != "4,8,16,32" {
+		t.Errorf("background.subagents offered set = %q; want 4,8,16,32", got)
+	}
+
+	// The Set round-trip: persist 32, re-read through the effective pair.
+	if _, err := f.surface.Set("sess-1", optBackgroundBash, "32"); err != nil {
+		t.Fatalf("Set(background.bash, 32): %v", err)
+	}
+
+	if _, err := f.surface.Set("sess-1", optBackgroundSubs, "16"); err != nil {
+		t.Fatalf("Set(background.subagents, 16): %v", err)
+	}
+
+	subsCap, bashCap := f.surface.EffectiveBackgroundCaps()
+	if subsCap != 16 || bashCap != 32 {
+		t.Errorf("EffectiveBackgroundCaps = (%d, %d); want (16, 32) after the sets", subsCap, bashCap)
+	}
+
+	// Violations typed-reject before any write.
+	if _, err := f.surface.Set("sess-1", optBackgroundBash, "0"); err == nil {
+		t.Error("Set(background.bash, 0) accepted; want the >= 1 violation")
+	}
+
+	if _, err := f.surface.Set("sess-1", optBackgroundSubs, "not-a-number"); err == nil {
+		t.Error("Set(background.subagents, not-a-number) accepted; want the whole-number violation")
+	}
+
+	// Menu reflects the persisted values.
+	refreshed := f.surface.Options()
+	if got := optionByID(t, refreshed, optBackgroundBash).CurrentValue; got != "32" {
+		t.Errorf("background.bash after set = %q; want 32", got)
+	}
+}
+
+// optionValues extracts an option's offered value list.
+func optionValues(o acp.ConfigOptionFrame) []string {
+	out := make([]string, 0, len(o.Options))
+	for _, v := range o.Options {
+		out = append(out, v.Value)
+	}
+
+	return out
 }

@@ -51,6 +51,8 @@ const (
 	optCompactionThresh  = "compaction-threshold"
 	optCompactionEnabled = "compaction-enabled"
 	optTombstoneGrace    = "tombstoneGraceDays"
+	optBackgroundSubs    = "background.subagents"
+	optBackgroundBash    = "background.bash"
 	optGlobalPrefix      = "_global/"
 
 	scopeGlobal  = "global"
@@ -98,6 +100,19 @@ const (
 
 	keyTombstone = "tombstone"
 	keyGraceDays = "graceDays"
+
+	// 22-02 (D-12): the background caps' layer keys + defaults — one
+	// discipline, two numbers (D-10 subagents 8, D-11 bash 16).
+	keyBackground = "background"
+	keyBgSubs     = "subagents"
+	keyBgBash     = "bash"
+
+	bgSubsDefault = "8"
+	bgBashDefault = "16"
+	// bgCapMin is the validation floor (a cap of 0 would disable background
+	// work entirely — model-visible behavior, not an operator footgun we
+	// allow through the menu).
+	bgCapMin = 1
 
 	// Idempotence-basis descriptions (WR-05 scope-aware guard log lines).
 	basisWhereEffective = "the currently-effective value"
@@ -514,6 +529,12 @@ func (s *ConfigSurface) setLocked(optionID string, value any) (setOutcome, error
 		frames, applied, gerr := s.setTombstoneGraceLocked(optionID, scope, val)
 
 		return setOutcome{frames: frames, doNotify: applied}, gerr
+	}
+
+	if bare == optBackgroundSubs || bare == optBackgroundBash {
+		frames, applied, bgerr := s.setBackgroundCapLocked(optionID, scope, bare, val)
+
+		return setOutcome{frames: frames, doNotify: applied}, bgerr
 	}
 
 	verr := s.validateSettableLocked(bare, optionID, val, res.cfg)
@@ -1334,8 +1355,20 @@ func (s *ConfigSurface) menuEntriesLocked(
 		build(optTombstoneGrace, "Tombstone grace",
 			"Days a deleted session stays recoverable before the GC sweep purges it (audit history survives)",
 			categoryCustom, s.effectiveTombstoneGraceLocked(), graceDayChoices()),
+		build(optBackgroundSubs, "Background subagents",
+			"Maximum concurrent background subagent tasks; over-cap dispatches queue (D-10)",
+			categoryCustom, s.effectiveBackgroundCapLocked(optBackgroundSubs), selectValues(optBackgroundSubs)),
+		build(optBackgroundBash, "Background commands",
+			"Maximum concurrent background Bash tasks; over-cap commands queue (D-11)",
+			categoryCustom, s.effectiveBackgroundCapLocked(optBackgroundBash), selectValues(optBackgroundBash)),
 		build(optGlobalPrefix+optTombstoneGrace, "Tombstone grace (global default)",
 			"Global tombstone-grace default", categoryCustom, s.globalTombstoneGraceLocked(), graceDayChoices()),
+		build(optGlobalPrefix+optBackgroundSubs, "Background subagents (global default)",
+			"Global background-subagents default", categoryCustom,
+			s.globalBackgroundCapLocked(optBackgroundSubs), selectValues(optBackgroundSubs)),
+		build(optGlobalPrefix+optBackgroundBash, "Background commands (global default)",
+			"Global background-bash default", categoryCustom,
+			s.globalBackgroundCapLocked(optBackgroundBash), selectValues(optBackgroundBash)),
 	}
 }
 
@@ -1452,7 +1485,8 @@ func splitScope(optionID string) optionScope {
 
 func isMenuOption(bare string) bool {
 	return bare == optModel || bare == optTier || bare == optPermissionsMode ||
-		bare == optCompactionThresh || bare == optCompactionEnabled || bare == optTombstoneGrace
+		bare == optCompactionThresh || bare == optCompactionEnabled || bare == optTombstoneGrace ||
+		bare == optBackgroundSubs || bare == optBackgroundBash
 }
 
 // graceDayChoices is the tombstone-grace offered set — a UI AFFORDANCE, not
@@ -1471,6 +1505,10 @@ func selectValues(bare string) []string {
 		return []string{permModeUngated, permModeGated}
 	case optCompactionEnabled:
 		return []string{compactionOn, compactionOff}
+	case optBackgroundSubs:
+		return []string{"4", "8", "16", "32"}
+	case optBackgroundBash:
+		return []string{"8", "16", "32", "64"}
 	default: // the compaction threshold's offered set
 		return []string{compactionMidLower, compactionMid, compactionDefault, compactionMidHigh}
 	}
@@ -1530,4 +1568,150 @@ func sortedConfigKeys[V any](m map[string]V) []string {
 	slices.Sort(keys)
 
 	return keys
+}
+
+// --- 22-02 (D-12): background caps — advertised-always, applied-as-landed ---
+
+// setBackgroundCapLocked is the D-12 cap handler (the tombstone-grace
+// persist-only shape): validate a whole cap >= 1, the WR-05 scope-aware
+// idempotence guard, persist to the routed layer's background map, and
+// APPLY-AS-LANDED — no live-apply hook; the NEXT sessionFor construction
+// reads the value into the TaskRegistry (bash) / tasks.Tracker
+// (subagents). Phase 16's advertise-all rule.
+func (s *ConfigSurface) setBackgroundCapLocked(
+	optionID, scope, bare, val string,
+) ([]acp.ConfigOptionFrame, bool, error) {
+	capVal, perr := strconv.Atoi(val)
+	if perr != nil {
+		return nil, false, &acp.ConfigViolationError{
+			OptionID:  optionID,
+			Violation: fmt.Sprintf("value %q is not a whole number", val),
+		}
+	}
+
+	if capVal < bgCapMin {
+		return nil, false, &acp.ConfigViolationError{
+			OptionID:  optionID,
+			Violation: fmt.Sprintf("cap must be at least %d (got %d)", bgCapMin, capVal),
+		}
+	}
+
+	basis, where := s.effectiveBackgroundCapLocked(bare), basisWhereEffective
+	if scope == scopeGlobal {
+		basis = s.globalBackgroundCapLocked(bare)
+		where = basisWhereGlobal
+	}
+
+	if val == basis {
+		s.logf("option %q: value %q equals %s — idempotent re-push, no layer write (D-10)", optionID, val, where)
+
+		return s.optionsLocked(), false, nil
+	}
+
+	layerPath, lerr := s.layerForScope(scope)
+	if lerr != nil {
+		return nil, false, &acp.ConfigPersistError{OptionID: optionID, Err: lerr}
+	}
+
+	key := keyBgSubs
+	if bare == optBackgroundBash {
+		key = keyBgBash
+	}
+
+	werr := providerfactory.WriteLayerOption(layerPath, []string{keyBackground, key}, capVal)
+	if werr != nil {
+		return nil, false, &acp.ConfigPersistError{OptionID: optionID, Err: werr}
+	}
+
+	s.logf("option %q (scope %s): persisted %d — the next session construction applies it (D-12 apply-as-landed)",
+		optionID, scope, capVal)
+
+	return s.optionsLocked(), true, nil
+}
+
+// effectiveBackgroundCapLocked resolves the effective cap string for a bare
+// id (project > global > the fixed default).
+func (s *ConfigSurface) effectiveBackgroundCapLocked(bare string) string {
+	if v := s.layerBackgroundCap(s.projectPath, bare); v != "" {
+		return v
+	}
+
+	if v := s.layerBackgroundCap(s.globalPath, bare); v != "" {
+		return v
+	}
+
+	if bare == optBackgroundBash {
+		return bgBashDefault
+	}
+
+	return bgSubsDefault
+}
+
+// globalBackgroundCapLocked resolves the GLOBAL layer's own cap (the
+// _global twin describes a layer FILE — no overlay), fixed default.
+func (s *ConfigSurface) globalBackgroundCapLocked(bare string) string {
+	if v := s.layerBackgroundCap(s.globalPath, bare); v != "" {
+		return v
+	}
+
+	if bare == optBackgroundBash {
+		return bgBashDefault
+	}
+
+	return bgSubsDefault
+}
+
+// layerBackgroundCap reads one layer file's background.<key> value (""
+// when absent/unreadable/unset; the writer emits an int, a hand-quoted
+// string is tolerated — the compaction-reader discipline).
+func (s *ConfigSurface) layerBackgroundCap(path, bare string) string {
+	if path == "" {
+		return ""
+	}
+
+	m, err := readLayerMap(path)
+	if err != nil {
+		return ""
+	}
+
+	key := keyBgSubs
+	if bare == optBackgroundBash {
+		key = keyBgBash
+	}
+
+	switch v := layerScalar(m, keyBackground, key).(type) {
+	case string:
+		return v
+	case int:
+		return strconv.Itoa(v)
+	case float64: // YAML floats parse as float64 when hand-written "8.0"
+		return strconv.Itoa(int(v))
+	default:
+		return ""
+	}
+}
+
+// EffectiveBackgroundCaps resolves the runner-construction caps (D-12):
+// (subagents, bash) whole numbers with the 8/16 defaults. A stored value
+// that fails validation degrades loudly to the default — session
+// construction must always receive sane caps, never refuse.
+func (s *ConfigSurface) EffectiveBackgroundCaps() (int, int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	parse := func(bare, def string) int {
+		raw := s.effectiveBackgroundCapLocked(bare)
+
+		v, err := strconv.Atoi(raw)
+		if err != nil || v < bgCapMin {
+			s.logf("option %q: stored value %q is not a whole number >= %d — constructing with the %s default",
+				bare, raw, bgCapMin, def)
+
+			v, _ = strconv.Atoi(def)
+		}
+
+		return v
+	}
+
+	return parse(optBackgroundSubs, bgSubsDefault), parse(optBackgroundBash, bgBashDefault)
 }

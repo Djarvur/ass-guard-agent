@@ -274,6 +274,13 @@ func Run( //nolint:funlen // :320-425
 	})
 	surface.SetApplyHook(runner.ApplyTurnModel)
 
+	// 22-02 (D-12): the background caps seam — apply-as-landed: every
+	// sessionFor construction reads the effective pair through the surface
+	// (project > global > the 8/16 defaults) into the TaskRegistry and the
+	// tasks.Tracker. No live-apply: running sessions keep their caps; the
+	// next session picks the change up.
+	runner.SetBackgroundCaps(surface.EffectiveBackgroundCaps)
+
 	// 20-01 (ACP-04): the commands re-fire seam — every chain build/swap
 	// (LoadCommandRegistry today; the 20-05 rescan watcher later) re-fires
 	// available_commands_update for EVERY live session from the chain's

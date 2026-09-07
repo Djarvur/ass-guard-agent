@@ -29,10 +29,14 @@ import (
 // Per-session scoping (T-12-06-03): one registry per session; ids are
 // session-local handles — another session's registry answers unknown-id.
 const (
-	// bgConcurrentCap bounds live tasks per session (a documented corpus-absent
-	// default — the schema offers no guidance; the 12-05 fixture flags it) so
-	// a model loop cannot fork-bomb the host.
-	bgConcurrentCap = 16
+	// bgConcurrentDefault is the D-11 default cap for live tasks per session
+	// (background.bash, operator-tunable via configOptions — the registry's
+	// injected Cap field; 0 → this default).
+	bgConcurrentDefault = 16
+	// bgQueueBound bounds the over-cap FIFO queue's pathological growth
+	// (D-10/D-11 bounded-resources intent): past it, starts fail with the
+	// structured error naming the bound.
+	bgQueueBound = 64
 	// bgOutputCapBytes bounds each task's ACCUMULATED in-memory copy (the
 	// on-disk log is the full record; this is the retrieval buffer).
 	bgOutputCapBytes = 1024 * 1024
@@ -44,6 +48,7 @@ const (
 type bgState string
 
 const (
+	bgQueued  bgState = "queued"
 	bgRunning bgState = "running"
 	bgDone    bgState = "done"
 	bgStopped bgState = "stopped"
@@ -64,6 +69,10 @@ type bgTask struct {
 	exitCh chan struct{}
 	start  time.Time
 	logPath string
+	// queuedCommand/queuedWorkDir carry a D-11 waiter's launch inputs (set
+	// at queue time; consumed by startNextWaiter).
+	queuedCommand string
+	queuedWorkDir string
 	// hook is the completion callback captured at Start (the registry field
 	// is wired before any task launches; capturing keeps the read race-free).
 	hook CompletionHook
@@ -102,9 +111,16 @@ func (t *bgTask) snapshot() string {
 type TaskRegistry struct {
 	mu    sync.Mutex
 	tasks map[string]*bgTask
+	// Cap bounds live (running) tasks per session — the D-11 injected
+	// background.bash value (0 → the bgConcurrentDefault 16). Over-cap
+	// starts QUEUE FIFO (D-11) up to bgQueueBound.
+	Cap int
 	// termGrace is the PAR-08 escalation ladder's TERM→KILL grace window
 	// (test-injectable; the production default is bgTermGrace = 5s).
 	termGrace time.Duration
+	// waiters is the FIFO of queued-but-unstarted tasks (D-11) — submission
+	// order; drained head-first as slots free.
+	waiters []*bgTask
 	// CompletionHook (22-01, PAR-08) is fired exactly once per task from the
 	// Wait goroutine's terminal transition with PRIMITIVE args (task id,
 	// kind, exit status, duration, tail, output-file pointer) — no
@@ -163,27 +179,73 @@ func openTaskLog(workDir, id string) (*os.File, error) {
 // Start launches command via `sh -c` in its OWN process group under workDir,
 // teeing combined output into <workDir>/.ass-guard/outputs/<id>.log (the
 // progressive log the start form names), and returns the task id immediately.
-// Over-cap starts fail with the structured error naming the cap (T-12-06-01).
-func (r *TaskRegistry) Start(workDir, command string) (string, error) {
+//
+// D-11 queue contract (22-02): an over-cap start does NOT fail — the task
+// (id minted at dispatch, so Stop/Output work immediately) joins the FIFO
+// waiters and queued=true returns; it launches when a slot frees, in
+// submission order. Past the bounded queue (bgQueueBound) the structured
+// errBgCap error survives — the queue can grow only bounded.
+func (r *TaskRegistry) Start(workDir, command string) (string, bool, error) {
 	r.mu.Lock()
 
-	if len(r.tasks) >= bgConcurrentCap {
+	cap := r.Cap
+	if cap <= 0 {
+		cap = bgConcurrentDefault
+	}
+
+	live := 0
+
+	for _, t := range r.tasks {
+		t.mu.Lock()
+		if t.state == bgRunning {
+			live++
+		}
+		t.mu.Unlock()
+	}
+
+	if live >= cap {
+		if len(r.waiters) >= bgQueueBound {
+			r.mu.Unlock()
+
+			return "", true, fmt.Errorf(
+				"background: queue bound %d reached (%d running): %w", bgQueueBound, live, errBgCap)
+		}
+
+		id := newTaskID()
+		task := &bgTask{id: id, state: bgQueued, exitCh: make(chan struct{}), hook: r.CompletionHook,
+			queuedCommand: command, queuedWorkDir: workDir}
+		r.tasks[id] = task
+		r.waiters = append(r.waiters, task)
+
 		r.mu.Unlock()
 
-		return "", fmt.Errorf("background: concurrent task cap %d reached: %w", bgConcurrentCap, errBgCap)
+		return id, true, nil
 	}
 
 	id := newTaskID()
-	task := &bgTask{id: id, state: bgRunning, exitCh: make(chan struct{}), start: time.Now(), hook: r.CompletionHook}
+	task := &bgTask{id: id, state: bgRunning, exitCh: make(chan struct{}), start: time.Now(), hook: r.CompletionHook,
+		queuedCommand: command, queuedWorkDir: workDir}
 	r.tasks[id] = task
 
 	r.mu.Unlock()
 
-	f, err := openTaskLog(workDir, id)
+	if lerr := r.launch(task, workDir, command); lerr != nil {
+		return "", false, lerr
+	}
+
+	return id, false, nil
+}
+
+// launch runs one task's process (the Start body and the waiter-drain path
+// share it): log open, `sh -c` child in its own group, Pdeathsig (linux),
+// the Wait goroutine with the terminal transition + completion hook, then
+// the FIFO drain of the next waiter.
+func (r *TaskRegistry) launch(task *bgTask, workDir, command string) error {
+	f, err := openTaskLog(workDir, task.id)
 	if err != nil {
 		task.setState(bgFailed)
 
-		return "", err
+		return err
 	}
 
 	task.logPath = f.Name()
@@ -208,7 +270,7 @@ func (r *TaskRegistry) Start(workDir, command string) (string, error) {
 
 		task.setState(bgFailed)
 
-		return "", fmt.Errorf("background: start: %w", serr)
+		return fmt.Errorf("background: start: %w", serr)
 	}
 
 	go func() {
@@ -245,9 +307,86 @@ func (r *TaskRegistry) Start(workDir, command string) (string, error) {
 				time.Since(task.start), task.snapshot(), task.logPath,
 			)
 		}
+
+		// D-11: the freed slot starts exactly ONE queued task (FIFO head).
+		r.startNextWaiter()
 	}()
 
-	return id, nil
+	return nil
+}
+
+// startNextWaiter launches the FIFO head waiter when a slot is free and it
+// is still queued (a Stop'd waiter is skipped — never started).
+func (r *TaskRegistry) startNextWaiter() {
+	for {
+		r.mu.Lock()
+
+		cap := r.Cap
+		if cap <= 0 {
+			cap = bgConcurrentDefault
+		}
+
+		live := 0
+
+		for _, t := range r.tasks {
+			t.mu.Lock()
+			if t.state == bgRunning {
+				live++
+			}
+			t.mu.Unlock()
+		}
+
+		if live >= cap || len(r.waiters) == 0 {
+			r.mu.Unlock()
+
+			return
+		}
+
+		next := r.waiters[0]
+		r.waiters = r.waiters[1:]
+
+		next.mu.Lock()
+		stillQueued := next.state == bgQueued
+		next.state = bgRunning
+		next.start = time.Now()
+		next.mu.Unlock()
+
+		r.mu.Unlock()
+
+		if !stillQueued {
+			continue // stopped while queued — never start, try the next head
+		}
+
+		if lerr := r.launch(next, next.queuedWorkDir, next.queuedCommand); lerr != nil {
+			continue // launch failure freed the slot — drain the next waiter
+		}
+
+		return
+	}
+}
+
+// QueuedPosition reports a queued task's 1-based FIFO position (0 when not
+// queued) — the queued-note form's visibility input.
+func (r *TaskRegistry) QueuedPosition(id string) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for i, w := range r.waiters {
+		if w.id == id {
+			return i + 1
+		}
+	}
+
+	return 0
+}
+
+// CapValue resolves the effective cap (injected value or the 16 default).
+func (r *TaskRegistry) CapValue() int {
+	if r.Cap > 0 {
+		return r.Cap
+	}
+
+	return bgConcurrentDefault
 }
 
 // taskWriter adapts accumulate to io.Writer (stream-tagged).
@@ -315,7 +454,10 @@ func (r *TaskRegistry) Output(id string, block bool, timeoutMS int) (string, bgS
 	state := t.state
 	t.mu.Unlock()
 
-	return t.snapshot(), state, state == bgRunning, nil
+	// A QUEUED task has no process — "running" only in the launched sense.
+	running := state == bgRunning
+
+	return t.snapshot(), state, running, nil
 }
 
 // bgTermGrace is the PAR-08 escalation ladder's grace window: the group
@@ -354,7 +496,9 @@ func terminateGroup(pid int, done <-chan struct{}, grace time.Duration) {
 
 // Stop escalates the task's WHOLE process group through the PAR-08 ladder
 // (TERM → grace → KILL + bounded reap — terminateGroup) and marks it
-// stopped. Unknown ids error (per-session scoping).
+// stopped. A QUEUED task (D-11) simply leaves the FIFO — its state marks
+// stopped and startNextWaiter skips it (never started, never killed).
+// Unknown ids error (per-session scoping).
 func (r *TaskRegistry) Stop(id string) error {
 	r.mu.Lock()
 
@@ -367,21 +511,36 @@ func (r *TaskRegistry) Stop(id string) error {
 
 	t.mu.Lock()
 	cmd := t.cmd
+	prev := t.state
 	t.state = bgStopped
 	t.mu.Unlock()
 
-	if cmd != nil && cmd.Process != nil {
-		terminateGroup(cmd.Process.Pid, t.exitCh, r.termGrace)
+	if prev == bgQueued || cmd == nil || cmd.Process == nil {
+		return nil // nothing was ever launched — the waiter skip covers it
 	}
+
+	terminateGroup(cmd.Process.Pid, t.exitCh, r.termGrace)
 
 	return nil
 }
 
 // ReapAll stops every live task through the terminateGroup ladder (session
 // close — no orphan groups outlive the editor-owned process; T-12-06-02,
-// PAR-08's no-orphars letter via Stop → terminateGroup).
-func (r *TaskRegistry) ReapAll() {
+// PAR-08's no-orphans letter via Stop → terminateGroup) and DROPS every
+// queued-but-unstarted waiter (OQ5: nothing started, nothing to kill —
+// startNextWaiter skips stopped heads). Returns the dropped-waiter count.
+func (r *TaskRegistry) ReapAll() int {
 	r.mu.Lock()
+
+	dropped := len(r.waiters)
+
+	// Mark every waiter stopped IN PLACE — concurrent drain attempts skip
+	// them (the stillQueued guard in startNextWaiter), then clear the FIFO.
+	for _, w := range r.waiters {
+		w.setState(bgStopped)
+	}
+
+	r.waiters = nil
 
 	ids := make([]string, 0, len(r.tasks))
 	for id := range r.tasks {
@@ -395,6 +554,8 @@ func (r *TaskRegistry) ReapAll() {
 			_ = r.Stop(id)
 		}
 	}
+
+	return dropped
 }
 
 var (
@@ -481,11 +642,18 @@ func TaskOutputExecute(r *TaskRegistry) toolcat.Stub {
 			return marshalStructured(oerr.Error(), oerr)
 		}
 
-		if running {
+		if running || state == bgQueued {
+			// D-11: a queued task reports the QUEUED state in the captured
+			// not_ready envelope (not running — nothing launched yet).
+			status := "running"
+			if state == bgQueued {
+				status = "queued"
+			}
+
 			notReady := "<retrieval_status>not_ready</retrieval_status>\n\n" +
 				"<task_id>" + a.TaskID + "</task_id>\n\n" +
 				"<task_type>local_bash</task_type>\n\n" +
-				"<status>running</status>"
+				"<status>" + status + "</status>"
 
 			return json.Marshal(notReady)
 		}
@@ -559,6 +727,18 @@ func renderBackgroundStart(id, logPath string) string {
 		". Output is being written to: " + logPath +
 		". You will be notified when it completes. " +
 		"To check interim output, use Read on that file path."
+}
+
+// renderBackgroundQueued renders the D-11 queued form (the visible note —
+// the renderBackgroundStart prose family): the id exists, the position and
+// cap are named, and the output pointer is real (the log exists from queue
+// time only after launch; interim Read resolves once it starts).
+func renderBackgroundQueued(id, logPath string, position, cap int) string {
+	return "Command queued with ID: " + id +
+		" (position " + strconv.Itoa(position) + " behind " + strconv.Itoa(cap) +
+		" concurrent background commands; it starts when a slot frees)." +
+		" Output will be written to: " + logPath +
+		". You will be notified when it completes."
 }
 
 // taskLogPath is the progressive log's path (mirrors Start's layout).

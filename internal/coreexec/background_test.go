@@ -3,6 +3,7 @@ package coreexec //nolint:testpackage // internal package test (fixture helpers 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -122,7 +123,7 @@ func TestBackground_NonBlockingAndUnknown(t *testing.T) {
 	}
 
 	// Non-blocking on a live task: immediate return with the not_ready family.
-	id, serr := reg.Start(t.TempDir(), "sleep 2")
+	id, _, serr := reg.Start(t.TempDir(), "sleep 2")
 	if serr != nil {
 		t.Fatalf("Start: %v", serr)
 	}
@@ -155,7 +156,7 @@ func TestBackground_BlockTimeout(t *testing.T) {
 	reg := NewTaskRegistry()
 	to := TaskOutputExecute(reg)
 
-	id, serr := reg.Start(t.TempDir(), "sleep 2")
+	id, _, serr := reg.Start(t.TempDir(), "sleep 2")
 	if serr != nil {
 		t.Fatalf("Start: %v", serr)
 	}
@@ -188,7 +189,7 @@ func TestBackground_OutputFidelity(t *testing.T) {
 	reg := NewTaskRegistry()
 	to := TaskOutputExecute(reg)
 
-	id, serr := reg.Start(t.TempDir(), "echo out-line; echo err-line 1>&2")
+	id, _, serr := reg.Start(t.TempDir(), "echo out-line; echo err-line 1>&2")
 	if serr != nil {
 		t.Fatalf("Start: %v", serr)
 	}
@@ -311,19 +312,19 @@ func TestBackground_CompletionHook(t *testing.T) { //nolint:funlen // flat hook 
 	}
 
 	// Exit 0 leg.
-	id0, err := reg.Start(dir, "echo hook-zero-marker")
+	id0, _, err := reg.Start(dir, "echo hook-zero-marker")
 	if err != nil {
 		t.Fatalf("Start (exit 0): %v", err)
 	}
 
 	// Nonzero exit leg.
-	id1, err := reg.Start(dir, "echo hook-fail-marker; exit 3")
+	id1, _, err := reg.Start(dir, "echo hook-fail-marker; exit 3")
 	if err != nil {
 		t.Fatalf("Start (exit 3): %v", err)
 	}
 
 	// Killed leg (Stop marks the state before the group kill).
-	id2, err := reg.Start(dir, "echo hook-kill-marker; sleep 30")
+	id2, _, err := reg.Start(dir, "echo hook-kill-marker; sleep 30")
 	if err != nil {
 		t.Fatalf("Start (killed): %v", err)
 	}
@@ -396,7 +397,7 @@ func TestBackground_CompletionHookNilNoop(t *testing.T) {
 	dir := t.TempDir()
 	reg := NewTaskRegistry() // no hook wired
 
-	id, err := reg.Start(dir, "echo no-hook")
+	id, _, err := reg.Start(dir, "echo no-hook")
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -444,7 +445,7 @@ func TestEscalation_TermImmuneChildKilledAfterGrace(t *testing.T) { //nolint:fun
 	// TERM's default action — no observation possible.
 	command := `echo up > ` + ready + `; trap "echo seen > ` + marker + `" TERM; while true; do sleep 0.05; done`
 
-	id, err := reg.Start(dir, command)
+	id, _, err := reg.Start(dir, command)
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -517,7 +518,7 @@ func TestEscalation_TermRespectingChildDiesByTerm(t *testing.T) { //nolint:funle
 
 	ready := filepath.Join(dir, "respect-ready")
 
-	id, err := reg.Start(dir, `echo up > `+ready+`; trap "exit 7" TERM; sleep 300`)
+	id, _, err := reg.Start(dir, `echo up > `+ready+`; trap "exit 7" TERM; sleep 300`)
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -569,7 +570,7 @@ func TestEscalation_AlreadyGoneIsSuccess(t *testing.T) {
 	dir := t.TempDir()
 	reg := NewTaskRegistry()
 
-	id, err := reg.Start(dir, "echo done")
+	id, _, err := reg.Start(dir, "echo done")
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -603,7 +604,7 @@ func TestEscalation_ReapAllUsesLadder(t *testing.T) {
 
 	ready := filepath.Join(dir, "reap-ready")
 
-	id, err := reg.Start(dir, `echo up > `+ready+`; trap "echo seen > `+marker+`" TERM; sleep 300`)
+	id, _, err := reg.Start(dir, `echo up > `+ready+`; trap "echo seen > `+marker+`" TERM; sleep 300`)
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}

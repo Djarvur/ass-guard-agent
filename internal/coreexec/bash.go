@@ -322,18 +322,26 @@ func BashExecute(cfg Config) toolcat.Stub {
 }
 
 // bashBackgroundStart is BashExecute's run_in_background branch (12-06,
-// ACP-06): registry Start + the CAPTURED immediate-return form.
+// ACP-06; 22-02 D-11): registry Start + the CAPTURED immediate-return form,
+// or the QUEUED visible-note form when the D-11 cap defers the launch.
 func bashBackgroundStart(cfg Config, command string) (json.RawMessage, error) {
 	if cfg.Tasks == nil {
 		return marshalStructured("bash: run_in_background: no task registry configured", errNoRegistry)
 	}
 
-	id, serr := cfg.Tasks.Start(cfg.workDirForError(), command)
+	id, queued, serr := cfg.Tasks.Start(cfg.workDirForError(), command)
 	if serr != nil {
 		return marshalStructured(serr.Error(), serr)
 	}
 
-	out, mErr := json.Marshal(renderBackgroundStart(id, taskLogPath(cfg.workDirForError(), id)))
+	logPath := taskLogPath(cfg.workDirForError(), id)
+
+	form := renderBackgroundStart(id, logPath)
+	if queued {
+		form = renderBackgroundQueued(id, logPath, cfg.Tasks.QueuedPosition(id), cfg.Tasks.CapValue())
+	}
+
+	out, mErr := json.Marshal(form)
 	if mErr != nil {
 		return nil, fmt.Errorf("coreexec: marshal background start form: %w", mErr)
 	}
