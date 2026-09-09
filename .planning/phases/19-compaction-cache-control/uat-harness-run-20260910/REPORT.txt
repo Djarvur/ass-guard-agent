@@ -1,0 +1,25 @@
+AutoUAT Phase 19 compaction — PASS (20/20 checks)
+run: 2026-09-10T02:22:20+03:00
+binary: HEAD build of /home/nil/DiskD/W/Djarvur/ass-guard-agent
+scratch: /tmp/compaction-autouat
+
+[PASS] initialize handshake — v1 agreed
+[PASS] session/new — a6f6f634-675d-49cc-bd8d-55440c75181f
+[PASS] set compaction-threshold=50 (live) — current value=50
+[PASS] turn 1 completes (end_turn) — stopReason=end_turn
+[PASS] turn 2 completes (end_turn) — stopReason=end_turn
+[PASS] FIRST compaction fired (threshold 50) — summarizer calls=1 markers=1
+[PASS] turn 3 completes (end_turn) — stopReason=end_turn
+[PASS] SECOND compaction fired — summarizer calls=2 markers=2
+[PASS] restore compaction-threshold=80 — current value=80
+[PASS] threshold 80 persisted to project layer — config.yaml carries the key
+[PASS] overflow retry-once completes turn (end_turn) — stopReason=end_turn
+[PASS] turn-4 compaction: one threshold (drift) + one forced — summarizer calls=2→4 markers=2→4
+[PASS] retry window shrank (CR-01 post-marker projection) — rejected=515664B retry=95605B
+[PASS] turn 5 completes (end_turn) — stopReason=end_turn
+[PASS] no compaction at threshold 80 — summarizer calls=4 markers=4
+[PASS] wire order exact — turn,summarize,turn,summarize,turn,summarize,turn-overflow-rejected,summarize,turn,turn
+[PASS] summary seeding follows the pinned position rule — req3=[1] req4=[2] retry=[4]
+[PASS] transcript markers carry durable summaries — 4 marker lines with non-empty summary
+[PASS] stderr compaction notes (pre-authorized degrade) — starting=4 complete=4
+[PASS] agent_message_chunk streamed to editor — 109 chunks

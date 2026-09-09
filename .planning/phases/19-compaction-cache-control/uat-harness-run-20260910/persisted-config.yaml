@@ -1,0 +1,6 @@
+compaction:
+    threshold_pct: 80
+providers:
+    anthropic:
+        api_key: autouat-dummy
+        base_url: http://127.0.0.1:36125

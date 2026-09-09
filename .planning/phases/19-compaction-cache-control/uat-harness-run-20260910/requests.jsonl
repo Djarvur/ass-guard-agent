@@ -1,0 +1,10 @@
+{"seq":1,"kind":"turn","bodySize":95362,"summariesPresent":[],"turnNum":1}
+{"seq":2,"kind":"summarize","bodySize":515838,"summariesPresent":[],"turnNum":1}
+{"seq":3,"kind":"turn","bodySize":95829,"summariesPresent":[],"turnNum":2}
+{"seq":4,"kind":"summarize","bodySize":516050,"summariesPresent":[1],"turnNum":2}
+{"seq":5,"kind":"turn","bodySize":515658,"summariesPresent":[1],"turnNum":3}
+{"seq":6,"kind":"summarize","bodySize":516050,"summariesPresent":[2],"turnNum":3}
+{"seq":7,"kind":"turn-overflow-rejected","bodySize":515664,"summariesPresent":[2],"turnNum":4}
+{"seq":8,"kind":"summarize","bodySize":96037,"summariesPresent":[3],"turnNum":4}
+{"seq":9,"kind":"turn","bodySize":95605,"summariesPresent":[4],"turnNum":5}
+{"seq":10,"kind":"turn","bodySize":515647,"summariesPresent":[4],"turnNum":6}
