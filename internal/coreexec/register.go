@@ -33,6 +33,9 @@ type Config struct {
 	// background starts degrade to the structured no-registry error (the
 	// foreground path is unaffected).
 	Tasks *TaskRegistry
+	// PTY owns the session's persistent shell (22-04, PAR-09/D-07): nil =
+	// persistent calls degrade to the structured no-manager error.
+	PTY *PTYManager
 }
 
 // RegisterCore sets Execute on the six core catalog entries (08-08's /opsx

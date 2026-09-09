@@ -252,3 +252,61 @@ func TestCatalogRawCoretoolsAnnotations(t *testing.T) {
 		}
 	}
 }
+
+// bashSchemaShape decodes the input_schema fields the 22-04 assertion needs.
+type bashSchemaShape struct {
+	Properties           map[string]map[string]any `json:"properties"`
+	Required             []string                  `json:"required"`
+	AdditionalProperties bool                      `json:"additionalProperties"`
+}
+
+// TestCatalogBashPersistentProperty (22-04 Task 1, D-09/OQ1): the Bash
+// input_schema carries the ADDITIVE `persistent` property (boolean, OPTIONAL
+// — required stays exactly ["command"]) while additionalProperties stays
+// false — the documented waiver of the 08-05 byte-identical catalog
+// discipline, sanctioned by D-09's per-call opt-in decision.
+func TestCatalogBashPersistentProperty(t *testing.T) {
+	t.Parallel()
+
+	var entries []toolcat.Tool
+
+	if err := json.Unmarshal(toolcat.CoreToolsJSON(), &entries); err != nil {
+		t.Fatalf("unmarshal coretools.json: %v", err)
+	}
+
+	for _, e := range entries {
+		if e.Name != "Bash" {
+			continue
+		}
+
+		var schema bashSchemaShape
+		if err := json.Unmarshal(e.InputSchema, &schema); err != nil {
+			t.Fatalf("unmarshal Bash input_schema: %v", err)
+		}
+
+		prop, ok := schema.Properties["persistent"]
+		if !ok {
+			t.Fatal("Bash input_schema lacks the additive `persistent` property (D-09/OQ1)")
+		}
+
+		if prop["type"] != "boolean" {
+			t.Errorf("persistent property type = %v; want boolean", prop["type"])
+		}
+
+		if desc, _ := prop["description"].(string); desc == "" {
+			t.Error("persistent property carries no description (the CC-voice contract)")
+		}
+
+		if len(schema.Required) != 1 || schema.Required[0] != "command" {
+			t.Errorf("required = %v; want exactly [command] — persistent is OPTIONAL", schema.Required)
+		}
+
+		if schema.AdditionalProperties {
+			t.Error("additionalProperties = true; the schema stays closed")
+		}
+
+		return
+	}
+
+	t.Fatal("Bash entry not found in coretools.json")
+}
