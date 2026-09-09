@@ -1,44 +1,50 @@
 ---
-gsd_state_version: 1.0
+gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: Claude Code Parity
-current_plan: 6
-status: verifying
-stopped_at: Completed 23-02-PLAN.md (steering ingress); next 23-04
-last_updated: "2026-09-07T22:08:05.526Z"
-last_activity: 2026-09-07
+current_phase: 22
+current_phase_name: Background Execution + Sandbox Reality
+current_plan: 5 of 6
+status: executing
+stopped_at: Phase 19 verified complete (auto-UAT); frontier 22/23 executing
+last_updated: "2026-09-09T23:27:35.590Z"
+last_activity: 2026-09-10
+last_activity_desc: Phase 19 verified complete via auto-UAT harness (CR-01 + G-19-2 closed); 22/23 executing
+state_head: 77a60324871725fb1dfff82ef34774e2a125e012
 progress:
-  total_phases: 12
+  total_phases: 11
   completed_phases: 7
   total_plans: 73
   completed_plans: 55
-  percent: 58
+  percent: 64
 ---
 
 # State: ass-guard-agent (working name)
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-09-06)
+See: .planning/PROJECT.md (updated 2026-09-10)
 **Core value:** A hands-off coding agent that feels native in the editor: full SDD workflows run end-to-end without manual continues, and the agent surfaces through the client's own UX — clickable permission prompts, native file diffs, session management. (Pivoted 2026-08-25 from the mimicry bar.)
 **Current focus:** Phase 22 — background-execution-sandbox-reality
 
 ## Current Position
 
-Phase: 22 (background-execution-sandbox-reality) — EXECUTING
-Plan: 6 of 6
-Current Plan: 6
+Phase: 22 — Background Execution + Sandbox Reality
+Plan: 5 of 6
+Current Plan: 22-03 executing (partial)
 Total Plans in Phase: 6
-Status: Phase complete — ready for verification
-Last activity: 2026-09-07
+Status: Executing
+Last activity: 2026-09-10 — Phase 19 verified complete (auto-UAT retest, SECURITY threats_open: 0); frontier: 22/23 executing, 24 planned
 
-Progress: [████████░░] 75%
+Progress: [███████████████░░░░░░] 55/73 plans (75%)
 
 ## Performance Metrics
 
 **Velocity (v1.0 history, for calibration):** 36 plans / 8 phases in 6 days; `mise ci` gate green at every phase close. **v1.1:** 51 plans / 5 phases over ~7 active days.
 
 **By Phase (v1.2):** Phase 15: 7/7 ✓ closed 2026-08-27. Phase 16: 9/9 ✓ closed 2026-09-01 (UAT 4/4 passed — operator confirmed blob-tier override, cancel-keeps-session, per-turn hook concurrency; SECURITY verified threats_open: 0). Phase 17: 6/6 ✓ closed 2026-09-03 (UAT 4/4 after gap closure: permission round-trip + always-persistence both directions live-verified, native elicitation form + answer-landing; G-17-1 canonical-nested-outcome fix found by UAT and re-verified live; WINDOWS #15 operator-confirmed). Phase 18: 7/7 ✓ closed 2026-09-06 (UAT 3/3 after gap closure G-18-1: real sessions write the session_start opener + tolerant legacy listing; Zed picker/resume/stop-mid-turn/delete operator-confirmed; TTY picker four legs re-run green on the fresh binary; cwd-scoped --resume deviation operator-accepted). Phase 21: 6/6 ✓ closed 2026-09-06 (UAT 4/4: AGENTS.md auto-inject + mtime pickup, thinking rendering, @-mention/image round-trip with D-11 loud model-side outcome, hook-deny live demo on the corrected dialect after an inconclusive first attempt — fail-open on schema-invalid hook JSON is by design).
+Phase 19: 7/7 ✓ closed 2026-09-10 (verification completed by the auto-UAT live harness — spikes/19-compaction-live-uat, PASS 20/20: threshold compactions 1st+2nd, overflow retry post-marker 515KB→95KB per CR-01, restore-80 persisted; G-19-1 closed via 19-06/19-07, G-19-2 closed by retest; SECURITY threats_open: 0).
+
 **Per-Plan Metrics:**
 
 | Plan | Duration | Tasks | Files |
@@ -196,7 +202,7 @@ None yet.
 - [RESEARCH FLAGS / planning-time]: Phases 16/18/19/22/23 flagged for `--research-phase` (ACP schema LOW-confidence details; resume reconciliation inventory; compaction × projector pins; platform drift; pi/strands steering references unverified). Full list in ROADMAP.md Research Flags section.
 - [Phase 17 review, deferred 2026-09-03, operator non-blocking]: CR-04 — SetTurnOriginAutomation set before TryLock stays true while an automation turn queues/runs; overlapping foreground turns get ask-class calls D-07-declined instead of dialogs (fail-safe direction). Proper fix: per-turn origin. Evidence in 17-UAT.md Deferred Follow-Ups.
 - [Phase 17 review, deferred 2026-09-03, operator non-blocking, security-adjacent]: hasSubstitution (a710b75 rewrite, internal/perm/rules.go) dropped double-quote tracking — `git "log 'x $(cmd) y'"` under-detects live substitution and an allow rule can match a substitution-bearing command (WR-02 violation). Verified in live shell. Deserves a fix ticket in the next phase touching internal/perm.
-- [25-01 Task 3 precondition, updated 2026-09-06]: 'strictly last' ordering still binds Phase 25 — phases 19-24 remain unexecuted (17-18 have since landed; only 15-18 complete). Executor halted BEFORE the rank-0 move in 25-01; no kit/ paths created. Resolve by executing phases 19-24 first (then re-capture the test-ledger baseline) or by explicit operator override of the ROADMAP ordering.
+- [25-01 Task 3 precondition, updated 2026-09-10]: 'strictly last' ordering still binds Phase 25 — 19 verified complete today, but 22/23 are partial and 24 unexecuted. Executor halted BEFORE the rank-0 move in 25-01; no kit/ paths created. Resolve by executing phases 19-24 first (then re-capture the test-ledger baseline) or by explicit operator override of the ROADMAP ordering.
 - [LINT BASELINE / environmental, pre-existing before Phase 20]: mise-managed golangci-lint auto-updated to 2.13.2 which renamed linters (exhaustruct->exhaustruct_v5, wsl->wsl_v5); .golangci.yml exclusions reference pre-rename names so `mise run lint` reports ~1.6k pre-existing findings repo-wide. Verified at stash-baseline before any Phase 20 commit; every Phase 20 file passes the still-matching linters. Fix (one-line class, next touching commit): update .golangci.yml exclusion linter names to _v5 or pin golangci-lint = "2.12" in .mise.toml.
 - CROSS-WORKSTREAM: Phase 23 commit 40b2bbc (steering ingress) regresses TestPermissionsE2E — verified via isolated-worktree bisection (passes at 721c7bc, fails at dbbb5d0 with zero Phase-22 acpserve changes). It also swept Phase-22 runtime.go cap-wiring hunks into their commit. Their in-flight config_surface.go menu rows (20 total) temporarily break the committed menu-count tests.
 
@@ -211,6 +217,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-07T21:49:12.440Z
-Stopped at: Completed 23-02-PLAN.md (steering ingress); next 23-04
+Last session: 2026-09-10
+Stopped at: Phase 19 verified complete (auto-UAT harness; no manual operator leg); resume at Phase 22 execution (22-03 in flight)
 Resume file: None

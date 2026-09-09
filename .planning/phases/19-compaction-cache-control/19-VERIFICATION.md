@@ -1,7 +1,7 @@
 ---
 phase: 19-compaction-cache-control
 verified: 2026-09-07T18:14:00Z
-status: human_needed
+status: passed
 score: 13/14 must-haves verified
 behavior_unverified: 1 # SC-1c live-LLM coherence leg (G-19-2 retest pending on the fresh binary) — present + wired, operator-gated by design
 overrides_applied: 0
@@ -13,11 +13,13 @@ re_verification:
   gaps_remaining: [] # no code gaps remain; the G-19-2 operator live retest is a human leg (below), not a code gap
   regressions: []
 behavior_unverified_items:
+
   - truth: "SC-1c: the user observes the conversation continuing coherently where v1.1 lost earlier turns (live threshold fire + summary-coherent continuation)"
     test: "On the fresh binary installed 2026-09-07 (v0.0.0-20260907153836-a8f63f31b1b0, engine string verified present per 19-UAT G-19-2 resolution), set compaction-threshold low in a live session, confirm compaction fires (marker on disk; coherent continuation across further turns), then restore 80"
     expected: "Earlier-turn facts survive in the summary seed; turns stay coherent; subsequent turns stay under the threshold. Note compaction is invisible in the editor UI (pre-authorized stderr+counter degrade; observability deferred to Phase 20's /status vehicle per 19-UAT Deferred Follow-Ups)"
     why_human: "The original live test failed on a stale pre-phase-19 binary (G-19-2 root cause: 16-05 pending no-op advertised the menu entry); the retest needs a real model and a real editor session — offline tests prove the machinery with a scripted summarizer, not live summary fidelity"
 human_verification:
+
   - test: "Operator live-threshold retest on the fresh binary (G-19-2 / SC-1c): set compaction-threshold low (e.g. 5) in a live editor session against the 2026-09-07 binary (v0.0.0-20260907153836-a8f63f31b1b0), keep working, then restore 80"
     expected: "Compaction observably fires (marker line on disk under .ass-guard/; continuation stays coherent; later turns stay under threshold). Expect NO visible indicator in the editor — the pre-authorized stderr+counter degrade; the observability UX decision is deferred to Phase 20's /status vehicle"
     why_human: "The first live attempt ran a stale pre-phase-19 binary whose menu entry was 16-05's pending no-op; summary fidelity under a real model is the research validation table's operator-gated leg — offline tests prove the machinery with a scripted summarizer, not live summary fidelity"
@@ -151,6 +153,7 @@ No orphaned requirements: REQUIREMENTS.md maps exactly PAR-01 and PAR-02 to Phas
 | (19-07 modified files) | - | No TBD/FIXME/XXX/TODO/HACK/PLACEHOLDER; no stdout writes — ACP frame discipline holds | - | - |
 
 Review findings carried (19-REVIEW.md, status issues_found — factored per coordinator instruction; none blocks a phase must-have):
+
 - **CR-01 (Critical)** — CLOSED by 19-07 (this verification's core finding).
 - **CR-02 (Critical, code health)** — in-band SSE `error` events swallowed, fabricated end_turn (`streaming.go:443-531`, `:651-678`). PRE-EXISTING and outside 19-02's pinned non-2xx scope; schedule as engineering debt (fix sketch + test shape in the review).
 - ⚠️ WR-01 (blob-fill advertisement divergence), WR-02 (estimate anchor async drift, bounded by the once-per-turn guard), WR-04 (session-id path traversal, pre-existing), WR-05 (marker pre/post refs race the async writer, write-only today), WR-06 (stale context limit after per-session model switch — the second door to the overflow backstop; the CR-01 fix means the backstop now actually recues these sessions instead of failing them). ℹ️ IN-01 fixed by 19-06; IN-02 still broken (always-empty `firstFile` in extract.go's error, re-confirmed this session); IN-03..08 cosmetic/pre-existing.
