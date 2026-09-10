@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -76,6 +77,27 @@ func RunBackgroundSubagent(dep SubagentDeps) SubagentLaunch {
 
 		go func() {
 			defer cancelFn() // natural completion releases the ctx resources
+
+			// G-22-3 (CR-03): the D-13 invariant, background leg — a panic
+			// in the nested loop NEVER kills the process (mirroring the
+			// foreground recover, session/subagent.go). LIFO: this defer
+			// runs FIRST during unwind (the panic unwinds past the normal
+			// Complete below, so exactly ONE error notification fires from
+			// here); cancelFn still runs after on both paths.
+			defer func() {
+				if p := recover(); p != nil {
+					w.finish("error", fmt.Sprintf("subagent panic: %v\n%s", p, debug.Stack()))
+
+					dep.Tracker.Complete(Notification{
+						TaskID:     id,
+						Kind:       KindSubagent,
+						ExitStatus: "error",
+						Duration:   time.Since(started),
+						Tail:       w.tail(),
+						OutputFile: logPath,
+					})
+				}
+			}()
 
 			result, rerr := dep.Run(ctx, w.append)
 
