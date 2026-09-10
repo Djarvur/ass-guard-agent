@@ -1,0 +1,23 @@
+{
+  "plan": "24-04",
+  "task": 1,
+  "phase_gate": "RED",
+  "command": "go test -race -count=1 ./internal/profilecheckcmd/ -run TestNightlyCheck -v",
+  "targetTest": "TestNightlyCheckWritePin",
+  "exitCode": 1,
+  "output": "not ok 1 - TestNightlyCheckParityRoundTrip\nnot ok 2 - TestNightlyCheckContentDrift\nnot ok 3 - TestNightlyCheckMissingPin\nnot ok 4 - TestNightlyCheckVersionDrift\nnot ok 5 - TestNightlyCheckMissingBundleFile\nnot ok 6 - TestNightlyCheckProbeFailure\nnot ok 7 - TestNightlyCheckWritePin\n# tests 7\n# pass 0\n# fail 7\n",
+  "expected": "Per 24-04 Task 1 action: --write-pin writes structure-pin.json with sha256 digests for the seven pinned files and the zcode version sourced from the bundle's meta.yaml; check mode compares probe + digests vs the pin and returns ErrNightlyDrift on drift / operational error on missing pin or bundle file",
+  "actual": "RunNightlyCheck is the compiling-RED stub (returns nil, writes nothing): all seven TestNightlyCheck* tests fail on assertions (read pin structure-pin.json: no such file or directory; want ErrNightlyDrift got nil; want operational error got nil)",
+  "failing_tests": [
+    "TestNightlyCheckWritePin (assertion: pin file never written)",
+    "TestNightlyCheckParityRoundTrip (assertion: no pin to read after write-pin)",
+    "TestNightlyCheckVersionDrift (assertion: want ErrNightlyDrift, got nil)",
+    "TestNightlyCheckContentDrift (assertion: want ErrNightlyDrift, got nil)",
+    "TestNightlyCheckProbeFailure (assertion: want ErrNightlyDrift, got nil)",
+    "TestNightlyCheckMissingPin (assertion: want operational error, got nil)",
+    "TestNightlyCheckMissingBundleFile (assertion: want operational error, got nil)"
+  ],
+  "unexpected_green": [],
+  "note": "Go run projected faithfully into Node-TAP by /tmp/gotap.py (=== RUN/--- PASS/--- FAIL -> ok/not ok + summary); the check tdd-red-evidence parser reads the TAP dialect. Raw log: /tmp/gsd-24-04-red.log. Compiling-RED route pre-authorized by the 24-01 STATE decision (tdd_mode #3770 requires target_test_failed).",
+  "timestamp": "2026-09-10T15:09:00Z"
+}
