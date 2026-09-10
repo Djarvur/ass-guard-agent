@@ -12,9 +12,9 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/internal/perm"
-	"github.com/Djarvur/ass-guard-agent/internal/provider"
-	"github.com/Djarvur/ass-guard-agent/internal/toolexec"
+	"github.com/Djarvur/ass-guard-agent/kit/provider"
 	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
+	"github.com/Djarvur/ass-guard-agent/kit/toolexec"
 )
 
 // The 17-02 permission-gate battery (ACP-01, D-04/D-05/D-06/D-07): THE

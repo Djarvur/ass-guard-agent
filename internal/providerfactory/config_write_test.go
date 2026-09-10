@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
+	"github.com/Djarvur/ass-guard-agent/kit/modelrouting"
 )
 
 // The TestConfigWrite family proves the D-07 write primitive

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/provider"
+	"github.com/Djarvur/ass-guard-agent/kit/provider"
 )
 
 // Fixed clocks for the D-07 feedback tests. House rule: no time.Now inside

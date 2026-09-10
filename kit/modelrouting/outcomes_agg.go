@@ -5,8 +5,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
+	"github.com/Djarvur/ass-guard-agent/kit/provider"
 )
 
 // AggregateStats is the per-(provider, model) tally Aggregate produces.

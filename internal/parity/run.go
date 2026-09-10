@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/loop"
-	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/kit/profile"
+	"github.com/Djarvur/ass-guard-agent/kit/provider"
 )
 
 const filePermOwner = 0o600

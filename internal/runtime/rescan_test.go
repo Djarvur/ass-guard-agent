@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
-	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
+	"github.com/Djarvur/ass-guard-agent/kit/modelrouting"
+	"github.com/Djarvur/ass-guard-agent/kit/provider"
 )
 
 // rescanTestRunner arms a runner over a temp dir with the discovery watcher

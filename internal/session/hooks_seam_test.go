@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
-	"github.com/Djarvur/ass-guard-agent/internal/provider"
+	"github.com/Djarvur/ass-guard-agent/kit/provider"
 )
 
 // requireMarkers asserts each named marker file exists under work.

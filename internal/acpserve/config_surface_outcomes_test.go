@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
+	"github.com/Djarvur/ass-guard-agent/kit/modelrouting"
 )
 
 // outcomeDemotionFixture seeds a real outcome store (24-01's append-only

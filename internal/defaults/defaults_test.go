@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/internal/defaults"
-	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
+	"github.com/Djarvur/ass-guard-agent/kit/modelrouting"
 	"github.com/Djarvur/ass-guard-agent/kit/profile"
 )
 

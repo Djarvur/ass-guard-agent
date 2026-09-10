@@ -8,7 +8,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
+	"github.com/Djarvur/ass-guard-agent/kit/modelrouting"
 )
 
 // tempFilePattern names the sibling temp file the atomic replace stages into —

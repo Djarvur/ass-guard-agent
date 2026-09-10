@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/provider"
-	"github.com/Djarvur/ass-guard-agent/internal/toolexec"
+	"github.com/Djarvur/ass-guard-agent/kit/provider"
 	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
+	"github.com/Djarvur/ass-guard-agent/kit/toolexec"
 )
 
 // pmCallID2 is the ExitPlanMode call id (goconst).

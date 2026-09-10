@@ -6,8 +6,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/Djarvur/ass-guard-agent/internal/toolexec"
 	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
+	"github.com/Djarvur/ass-guard-agent/kit/toolexec"
 )
 
 var errBackendDown = errors.New("backend down")

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/provider"
+	"github.com/Djarvur/ass-guard-agent/kit/provider"
 )
 
 // The 17-03 ask-queue battery (D-11/D-12): ONE outstanding fired ask at a

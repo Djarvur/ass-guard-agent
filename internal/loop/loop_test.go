@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/internal/loop"
-	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/kit/profile"
+	"github.com/Djarvur/ass-guard-agent/kit/provider"
 )
 
 var errStreamNotUsed = errors.New("fakeProvider: Stream not used by the Phase-1 test-harness loop")

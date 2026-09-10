@@ -10,7 +10,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
+	"github.com/Djarvur/ass-guard-agent/kit/modelrouting"
 )
 
 // GlobalConfigPath resolves the GLOBAL operator config layer (260817-11v):

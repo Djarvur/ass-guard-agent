@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
+	"github.com/Djarvur/ass-guard-agent/kit/provider"
 )
 
 func TestSemaphoreSlotSurvivesTurnPanic(t *testing.T) {

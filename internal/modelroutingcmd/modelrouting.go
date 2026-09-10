@@ -7,7 +7,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
+	"github.com/Djarvur/ass-guard-agent/kit/modelrouting"
 )
 
 // EmitResolveHuman writes the human-readable resolution to the STDERR writer

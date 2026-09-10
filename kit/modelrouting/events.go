@@ -1,8 +1,8 @@
 package modelrouting
 
 import (
-	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
+	"github.com/Djarvur/ass-guard-agent/kit/provider"
 )
 
 // ProviderFallback is emitted when a transient failure causes the scheduler to

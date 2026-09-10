@@ -9,13 +9,13 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 
-	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
+	"github.com/Djarvur/ass-guard-agent/kit/modelrouting"
 )
 
 // testdata paths (tests run with cwd = cmd/ass-guard/).
 const (
-	validSchedulingCfg   = "../../internal/modelrouting/testdata/valid.yaml"
-	invalidSchedulingCfg = "../../internal/modelrouting/testdata/invalid_cap_mismatch.yaml"
+	validSchedulingCfg   = "../../kit/modelrouting/testdata/valid.yaml"
+	invalidSchedulingCfg = "../../kit/modelrouting/testdata/invalid_cap_mismatch.yaml"
 )
 
 // runSchedulingCmd executes the scheduling command tree with the given args,

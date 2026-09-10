@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Djarvur/ass-guard-agent/internal/toolexec"
+	"github.com/Djarvur/ass-guard-agent/kit/toolexec"
 )
 
 // TestHTTPBackend_ImplementsInterface is the compile-time assertion that the

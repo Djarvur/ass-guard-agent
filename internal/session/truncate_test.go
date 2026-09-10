@@ -9,7 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
-	"github.com/Djarvur/ass-guard-agent/internal/provider"
+	"github.com/Djarvur/ass-guard-agent/kit/provider"
 )
 
 // --- 14-05 (EARLY-05): tool-output truncation at the append chokepoint ---

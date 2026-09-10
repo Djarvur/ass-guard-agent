@@ -11,8 +11,8 @@ import (
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/modesmatrix"
-	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
+	"github.com/Djarvur/ass-guard-agent/kit/provider"
 )
 
 // The ECOS-04 (TAIL-03, 24-05) wake-mode cells — REAL drivers since 24-06

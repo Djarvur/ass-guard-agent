@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
 	"github.com/Djarvur/ass-guard-agent/internal/modelroutingcmd"
+	"github.com/Djarvur/ass-guard-agent/kit/modelrouting"
 )
 
 // newModelRoutingCmd builds the `ass-guard scheduling` command group: operator

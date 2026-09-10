@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
+	"github.com/Djarvur/ass-guard-agent/kit/modelrouting"
 )
 
 // TestConfigAdvertisement_ResolverTruth pins the advertisement to resolver

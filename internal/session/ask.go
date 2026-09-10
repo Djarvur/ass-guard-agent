@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
-	"github.com/Djarvur/ass-guard-agent/internal/provider"
-	"github.com/Djarvur/ass-guard-agent/internal/toolexec"
+	"github.com/Djarvur/ass-guard-agent/kit/provider"
+	"github.com/Djarvur/ass-guard-agent/kit/toolexec"
 )
 
 // Ask suspension (12-01, ACP-01 + D-01): a model-authored question mid-turn

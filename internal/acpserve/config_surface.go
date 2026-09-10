@@ -38,9 +38,9 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
-	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
 	"github.com/Djarvur/ass-guard-agent/internal/providerfactory"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
+	"github.com/Djarvur/ass-guard-agent/kit/modelrouting"
 )
 
 // Menu vocabulary (D-06 enumeration + A7 scope namespace + v1 categories).
@@ -773,6 +773,7 @@ func (s *ConfigSurface) resolveModelLocked(cfg *modelrouting.Config, tier string
 // keeps the advertisement byte-identically with zero notes. When every
 // same-provider candidate is denied the primary stays with one note naming
 // the provider constraint.
+//
 //nolint:funcorder // beside resolveModelLocked, its only caller (the file's established grouping)
 func (s *ConfigSurface) demoteIfDeniedLocked(
 	tier string, primary modelrouting.Target, fallbacks []modelrouting.Target,

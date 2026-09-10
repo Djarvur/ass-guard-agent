@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
-	"github.com/Djarvur/ass-guard-agent/internal/provider"
+	"github.com/Djarvur/ass-guard-agent/kit/provider"
 )
 
 // TestSubagentTypeUsesAgentDef (12-02 Task 3, Test 2) verifies the agent

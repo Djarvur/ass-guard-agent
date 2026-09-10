@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
-	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
 	"github.com/Djarvur/ass-guard-agent/internal/tasks"
+	"github.com/Djarvur/ass-guard-agent/kit/provider"
 )
 
 // The wake-turn wiring battery (22-01, D-01/D-02/D-03): a background Bash

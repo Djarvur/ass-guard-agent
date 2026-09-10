@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/modesmatrix"
-	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/sched"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
+	"github.com/Djarvur/ass-guard-agent/kit/provider"
 )
 
 // The ECOS-04 (TAIL-03, 24-05) automation/cron leg: a same-package Runner

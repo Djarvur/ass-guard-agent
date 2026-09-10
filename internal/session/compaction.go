@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/kit/profile"
+	"github.com/Djarvur/ass-guard-agent/kit/provider"
 )
 
 // PAR-01 compaction engine (19-04): the threshold check with real-usage
