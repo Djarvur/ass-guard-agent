@@ -343,6 +343,15 @@ type Runner struct {
 	chainMu       sync.Mutex
 	activeChains  map[string]int
 
+	// 23-05 (D-12, SEEDG-03): the runner-side active-turn cancel registry —
+	// the parkedCancels structural analog for CLIENT turns. Run registers
+	// its turn ctx's CancelFunc while a real client turn is in flight;
+	// /undo's active path fires it (the in-process half of the existing
+	// cancel contract — the ACP half, st.cancelTurn, stays untouched). See
+	// registerActiveTurn.
+	activeTurnMu      sync.Mutex
+	activeTurnCancels map[string]context.CancelFunc
+
 	// 23-04 (SEEDG-02, Pitfall 9): the WORKSPACE-level checkpoint store,
 	// built once per Runner — /undo, the restore guard, and the session-start
 	// GC sweep consume it through checkpointStore(); sessions attach their
@@ -869,6 +878,17 @@ func (r *Runner) Run( //nolint:funlen // the turn pipeline's composition root
 
 	defer turnMu.Unlock()
 
+	// 23-05 (D-12): the runner-side half of the cancel contract. The turn
+	// runs under a ctx derived from the request ctx so the registry's
+	// CancelFunc (fired by /undo's active path, or anything else in-process)
+	// reaches the provider stream, the engine chain watchdog, and every
+	// ctx-check between — exactly what session/cancel's ACP-side cancel does
+	// from the wire. Registered BEFORE markClientTurn so turnActive=true
+	// always implies a registered cancel (no classification window).
+	turnCtx, turnCancel := context.WithCancel(ctx)
+	r.registerActiveTurn(sessionID, turnCancel)
+	defer r.unregisterActiveTurn(sessionID, turnCancel)
+
 	// The session-lifetime forwarder mutes while this client turn is active
 	// (Run's own forwarder below owns these chunks — WINDOWS #3's split).
 	r.markClientTurn(sessionID, true)
@@ -921,7 +941,7 @@ func (r *Runner) Run( //nolint:funlen // the turn pipeline's composition root
 
 	// 12-01 reply routing (ACP-01): a prompt arriving while an ask is pending
 	// is the OPERATOR'S ANSWER, not a new turn (see routeAskReply).
-	if stop, handled := r.routeAskReply(ctx, sess, blocks); handled {
+	if stop, handled := r.routeAskReply(turnCtx, sess, blocks); handled {
 		close(promptDone)
 		<-done
 
@@ -936,7 +956,7 @@ func (r *Runner) Run( //nolint:funlen // the turn pipeline's composition root
 	// line, stopReason end_turn — ZERO provider calls, zero engine
 	// involvement. Class-A (/init), dormant reserved names, skills, agents,
 	// and file commands fall through to the existing flow unchanged.
-	if stop, handled := r.tryLocalCommand(ctx, sess, emit, blocks); handled {
+	if stop, handled := r.tryLocalCommand(turnCtx, sess, emit, blocks); handled {
 		close(promptDone)
 		<-done
 
@@ -967,7 +987,7 @@ func (r *Runner) Run( //nolint:funlen // the turn pipeline's composition root
 
 	go r.collectAdvisory(advCh, promptDone, advDone)
 
-	stop, err := r.runOneTurn(ctx, sess, blocks)
+	stop, err := r.runOneTurn(turnCtx, sess, blocks)
 
 	close(promptDone)
 	<-done
@@ -1002,9 +1022,12 @@ func (r *Runner) Run( //nolint:funlen // the turn pipeline's composition root
 //     mutex, so this fall-through never blocks on a turn.)
 //  3. Class-B resolve slot (the 20-01 locked contract: AFTER the ask
 //     route, BEFORE steering enqueue): a chain-resolved slash-command
-//     invocation NEVER becomes steering text — it falls through to the
-//     ordinary path. 23-05 fills the pre-mutex /undo handling here (D-12's
-//     auto-cancel could never run under the held mutex — Pitfall 4).
+//     invocation NEVER becomes steering text. 23-05 (D-12) fills the slot's
+//     /undo leg HERE: an /undo typed mid-turn COMPLETES through the
+//     auto-cancel-then-restore sequence (routeUndoActive) — classified
+//     before the mutex because D-12's cancel could never run under it
+//     (Pitfall 4). Every other class-B invocation falls through to the
+//     ordinary path (queue-behind, today's behavior).
 //  4. Plain text with a turn/chain ACTIVE → steering: enqueue on the
 //     session's SteerQueue, emit the queued note through the in-hand emit
 //     (the live-emitter precedent — never a post-turn bus publish, which
@@ -1039,7 +1062,13 @@ func (r *Runner) routeSteering(
 	}
 
 	// Step 3: the class-B resolve slot — a chain-resolved invocation never
-	// steers (20-01's locked position; 23-05 fills /undo here).
+	// steers (20-01's locked position). 23-05 (D-12): /undo is the one
+	// class-B command that COMPLETES mid-turn (auto-cancel-then-restore);
+	// everything else falls through to the ordinary path.
+	if stop, handled := r.routeUndoActive(sess, sessionID, emit, blocks[idx].Text); handled {
+		return stop, true
+	}
+
 	if r.resolvesAsCommand(blocks[idx].Text) {
 		return "", false
 	}
@@ -1074,6 +1103,119 @@ func (r *Runner) resolvesAsCommand(text string) bool {
 	_, found := r.commandChainRef().resolve(key)
 
 	return found
+}
+
+// routeUndoActive is the 23-05 (D-12) fill of the classifier's class-B
+// resolve slot: an /undo invocation typed while a turn or chain is ACTIVE
+// completes HERE — pre-mutex — through the locked sequence nested guard ->
+// blockers consultation -> SnapshotPreRestore (fail-closed) -> cancel ->
+// acquire turnMu -> Restore, with the D-05 echo/output frames and the durable
+// local_command record rendered through the in-hand emitter. An /undo
+// invocation therefore NEVER becomes steering text (Pitfall 11's warning
+// sign is exactly a mid-turn /undo reaching the model) and NEVER queue-behinds
+// on the held mutex (Pitfall 4). Every other input (including every other
+// class-B command) returns handled=false unchanged.
+func (r *Runner) routeUndoActive(
+	sess *session.Session, sessionID string, emit acp.ChunkEmitter, text string,
+) (string, bool) {
+	key, args, ok := ecosys.ParseInvocation(text)
+	if !ok || key != nameUndo {
+		return "", false
+	}
+
+	entry, found := r.commandChainRef().resolve(key)
+	if !found || entry.kind != chainKindBuiltin || entry.handler == nil {
+		return "", false // dormant reservation: the ordinary path owns it
+	}
+
+	turnID := sess.MintLocalCommandTurnID()
+
+	// D-05 echo through the in-hand emitter, then the D-12 sequence.
+	r.emitClassBEcho(emit, turnID, text)
+
+	plan, out, outcome := r.prepareUndo(sess, args)
+	if plan.targetID != "" {
+		out, outcome = r.restoreUndoActive(sess, sessionID, plan)
+	}
+
+	if outcome == "" {
+		outcome = localOutcomeOK // the durable record's default (16-D-22)
+	}
+
+	if err := emit.AgentMessageChunk(turnID, out); err != nil {
+		log.Printf("ass-guard: /undo output enqueue failed (continuing): %v", err)
+	}
+
+	if sess.Manager != nil {
+		lerr := sess.Manager.AppendLocalCommand(
+			turnID, key, args, outcome, []string{sourceChainBuiltin})
+
+		if lerr != nil {
+			log.Printf("ass-guard: local_command record write failed (continuing): %v", lerr)
+		}
+	}
+
+	return stopEndTurn, true
+}
+
+// restoreUndoActive performs the mutation half of the ACTIVE path — the
+// locked D-12 ordering, every step load-bearing (reorder any of them and
+// either a turn dies unsnapshotted or the handler self-deadlocks):
+//
+//  1. SnapshotPreRestore FIRST (fail-closed): the snapshot must precede the
+//     cancel's state changes where ordering permits (the CONTEXT
+//     reversibility note), and its failure aborts the undo WITHOUT
+//     cancelling anything.
+//  2. The 23-04 guard consulted as DETECTION (the refusal matrix's state
+//     naming — /undo is the one restore path with an auto-cancel): whatever
+//     is active dies through the existing cancel contract's in-process half
+//     — the registry cancel for the client turn (its engine chain drains
+//     transitively via the request-ctx watchdog) plus cancelParkedChains for
+//     chains that are parked (no client turn to cancel).
+//  3. turnMu acquired ONLY NOW (the clean drain): the dying turn finishes
+//     its recordCanceled/unwind under the mutex the undo then inherits —
+//     everything before this point ran lock-free, so the handler never
+//     waits while holding anything (Pitfall 4; -race cannot catch the
+//     deadlock this ordering prevents — the behavioral test does).
+//  4. Restore, then the D-05 output naming the restored id + the pre-restore
+//     snapshot id.
+func (r *Runner) restoreUndoActive(sess *session.Session, sessionID string, plan undoPlan) (string, string) {
+	st := r.checkpointStore()
+	ctx := r.serveCtxOrBackground()
+
+	preID, serr := undoSnapshotPreRestore(ctx, st, sess.SessionID)
+	if serr != nil {
+		return fmt.Sprintf(
+			"undo aborted: pre-restore snapshot failed: %v (nothing was cancelled, nothing was restored)\n",
+			serr), "failed: pre-restore snapshot"
+	}
+
+	blocked := r.restoreBlockers(sessionID)
+
+	cancelled := ""
+
+	if blocked != nil {
+		r.cancelActiveTurn(sessionID)
+		r.cancelParkedChains(sessionID)
+		cancelled = "active state cancelled, "
+
+		log.Printf("ass-guard: /undo auto-cancelled an active state for %s (%v)", sessionID, blocked)
+	}
+
+	turnMu := r.sessionTurnMu(sessionID)
+	turnMu.Lock()
+	defer turnMu.Unlock()
+
+	if rerr := st.Restore(ctx, plan.targetID); rerr != nil {
+		return fmt.Sprintf(
+			"undo failed: restore of %s failed: %v (pre-restore snapshot %s is available)\n",
+			plan.targetID, rerr, preID), "failed: restore"
+	}
+
+	return fmt.Sprintf(
+		"undo complete — %srestored checkpoint %s (pre-restore snapshot: %s); "+
+			"run /undo again to walk back further\n",
+		cancelled, plan.targetID, preID), ""
 }
 
 // mapAskStop maps the INTERNAL ask-suspension stop marker to the ACP-facing
@@ -1468,7 +1610,15 @@ func (r *Runner) unregisterParkedChain(sessionID string, pc *parkedChain) {
 }
 
 // cancelParkedChains cancels every parked chain of the session (the
-// session/cancel + logout + serve-end drain).
+// session/cancel + logout + serve-end drain, and 23-05's /undo active path).
+//
+// 23-05 (D-12): the parked teardown has no runTurn exit — the recordCanceled
+// funnel (23-01) never fires on this path — so THIS step resolves the
+// session's SteerQueue itself: steering enqueued while the chain sat parked
+// resolves cancelled-normal and can never zombie-deliver into the next
+// unrelated turn's first boundary (23-01's cancelled-exit truth extended to
+// this exit class). Idempotent with the turn-exit rider and with
+// recordCanceled's own CancelAll.
 func (r *Runner) cancelParkedChains(sessionID string) { //nolint:funcorder // park helper group
 	r.parkedMu.Lock()
 	chains := r.parkedCancels[sessionID]
@@ -1478,6 +1628,95 @@ func (r *Runner) cancelParkedChains(sessionID string) { //nolint:funcorder // pa
 	for pc := range chains {
 		pc.cancel()
 	}
+
+	if n := r.resolveSessionSteering(sessionID); n > 0 {
+		log.Printf("ass-guard: parked-chain cancel resolved %d queued steering input(s) (cancelled-normal)", n)
+	}
+}
+
+// registerActiveTurn records the in-flight client turn's cancel func (23-05,
+// D-12 — the parkedCancels structural analog): called under the session turn
+// mutex BEFORE markClientTurn, so clientTurnActive=true always implies a
+// registered cancel. One live client turn per session (turnMu serializes);
+// the registration is replaced only after the previous turn's unregister.
+func (r *Runner) registerActiveTurn(sessionID string, cancel context.CancelFunc) { //nolint:funcorder // turn-cancel group
+	r.activeTurnMu.Lock()
+	defer r.activeTurnMu.Unlock()
+
+	if r.activeTurnCancels == nil {
+		r.activeTurnCancels = make(map[string]context.CancelFunc)
+	}
+
+	r.activeTurnCancels[sessionID] = cancel
+}
+
+// unregisterActiveTurn removes the finished turn's registration, releases
+// the ctx, and resolves the session's steering queue as its rider: runTurn
+// recovers its own panics, so this exit path observes every exit class
+// (normal, cancelled, error, panic-recovered) as a plain return — the
+// panic-recover residual closes here (undelivered steering can never
+// zombie-deliver into a later turn's window). Idempotent with recordCanceled
+// (CancelAll returns 0 when the mid-turn cancel funnel already emptied it).
+//
+// The ctx release is GATED on chain liveness (13-00): a chain parked on an
+// ask OUTLIVES its Run's return, and the engine path's request-ctx watchdog
+// folds this ctx's death into the parked cancel — cancelling here would kill
+// the park the moment the suspending Run responded. With a chain still
+// counted (parked or running), the cancel is skipped and the parent request
+// ctx bounds the ctx's lifetime instead (the ACP half's own accommodation:
+// a response's return never cancels the request ctx).
+//
+// The unconditional delete is race-free by construction: registration and
+// unregistration both run UNDER the session turn mutex (the deferred Unlock
+// fires after this), so the entry being deleted is always this turn's own —
+// func values are not comparable in Go, and no newer turn can have
+// registered in between.
+func (r *Runner) unregisterActiveTurn(sessionID string, cancel context.CancelFunc) { //nolint:funcorder // turn-cancel group
+	r.activeTurnMu.Lock()
+	delete(r.activeTurnCancels, sessionID)
+	r.activeTurnMu.Unlock()
+
+	if r.chainCount(sessionID) == 0 {
+		cancel()
+	}
+
+	if n := r.resolveSessionSteering(sessionID); n > 0 {
+		log.Printf("ass-guard: turn exit resolved %d undelivered steering input(s) (cancelled-normal)", n)
+	}
+}
+
+// cancelActiveTurn fires the session's registered client-turn cancel func
+// (the in-process half of the existing cancel contract — /undo's D-12 path).
+// False when no client turn is in flight (nothing to cancel).
+func (r *Runner) cancelActiveTurn(sessionID string) bool { //nolint:funcorder // turn-cancel group
+	r.activeTurnMu.Lock()
+	c := r.activeTurnCancels[sessionID]
+	r.activeTurnMu.Unlock()
+
+	if c == nil {
+		return false
+	}
+
+	c()
+
+	return true
+}
+
+// resolveSessionSteering resolves the session's SteerQueue (cancelled-normal)
+// through the queue handle the 23-02 sessionFor wiring already gives the
+// Runner — Session's exported surface is not widened for this (the sessions
+// map lookup IS the per-session state route). Nil session / unwired queue
+// resolve zero.
+func (r *Runner) resolveSessionSteering(sessionID string) int { //nolint:funcorder // turn-cancel group
+	r.sessMu.Lock()
+	sess := r.sessions[sessionID]
+	r.sessMu.Unlock()
+
+	if sess == nil {
+		return 0
+	}
+
+	return sess.SteerQueue().CancelAll()
 }
 
 // chainEnter/chainExit/chainCount track the active engine chains per session
@@ -3632,6 +3871,10 @@ const echoIDSuffix = ":echo"
 // sourceChainBuiltin is the local_command source-chain vocabulary's builtin
 // element (16-D-22: resolution order builtin → skills → agents → file).
 const sourceChainBuiltin = "builtin"
+
+// localOutcomeOK is the local_command record's default success outcome
+// (16-D-22) — handlers return "" for it; the record writers normalize.
+const localOutcomeOK = "ok"
 
 // toContentBlocks converts the ACP content blocks to session content blocks.
 // 21-05 (PAR-06): image blocks map through with their Data (the pre-ingress

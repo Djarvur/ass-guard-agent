@@ -2168,8 +2168,12 @@ func TestUndoAutoCancel(t *testing.T) { //nolint:funlen,maintidx,cyclop // timed
 
 	const sid = "sess-undo-active"
 
-	seedUndoSnap(t, r.workDir, sid, sid+"-turn-001", "state-A\n")
-	writeGuardFile(t, filepath.Join(r.workDir, undoCanary), "state-D\n")
+	// The turn's own entry snapshot is the checkpoint /undo restores: the
+	// canary starts at the pre-turn state, the blocked turn "mutates" it
+	// mid-flight (the blocking provider abstracts the turn's writes), and
+	// the auto-cancel-then-restore returns the workspace to the pre-turn
+	// state — the product's undo-the-running-turn story.
+	writeGuardFile(t, filepath.Join(r.workDir, undoCanary), "state-pre\n")
 
 	turnDone := make(chan string, 1)
 
@@ -2184,6 +2188,9 @@ func TestUndoAutoCancel(t *testing.T) { //nolint:funlen,maintidx,cyclop // timed
 	}()
 
 	<-prov.entered // the turn holds turnMu + turnActive; the provider is blocked
+
+	// The turn's in-flight mutation (mid-stream write, provider still held).
+	writeGuardFile(t, filepath.Join(r.workDir, undoCanary), "state-mid\n")
 
 	// Steering enqueued while the turn runs: must resolve cancelled-normal
 	// when the /undo cancel kills the turn.
@@ -2231,9 +2238,10 @@ func TestUndoAutoCancel(t *testing.T) { //nolint:funlen,maintidx,cyclop // timed
 		t.Fatal("the running turn did not end after the /undo cancel")
 	}
 
-	// The workspace restored to the seeded checkpoint.
-	if got := undoCanaryContent(t, r.workDir); got != "state-A\n" {
-		t.Fatalf("canary after auto-cancel /undo = %q; want state-A", got)
+	// The workspace restored to the turn's pre-turn state (its entry
+	// snapshot — the newest checkpoint at /undo time).
+	if got := undoCanaryContent(t, r.workDir); got != "state-pre\n" {
+		t.Fatalf("canary after auto-cancel /undo = %q; want the pre-turn state-pre", got)
 	}
 
 	// Exactly ONE provider call total (the turn's own blocked call): the

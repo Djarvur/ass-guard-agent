@@ -1226,9 +1226,8 @@ type undoPlan struct {
 // undoSnapshotPreRestore is the SnapshotPreRestore seam (the gitRun
 // same-package-injection precedent): Task 2's fail-closed test injects a
 // failure here to pin that a pre-restore snapshot failure aborts the undo
-// without cancelling anything. nil is never observed — restoreUndo and the
-// active path both fall back to realSnapshotPreRestore.
-var undoSnapshotPreRestore func(ctx context.Context, st *checkpoint.Store, sessionID string) (string, error) //nolint:gochecknoglobals // injectable test seam
+// without cancelling anything. Defaults to the store's own mint.
+var undoSnapshotPreRestore = realSnapshotPreRestore //nolint:gochecknoglobals // injectable test seam
 
 // realSnapshotPreRestore is the seam's default: the store's own mint.
 func realSnapshotPreRestore(ctx context.Context, st *checkpoint.Store, sessionID string) (string, error) {
@@ -1285,7 +1284,7 @@ func (r *Runner) restoreUndo(sess *session.Session, plan undoPlan) (string, stri
 	st := r.checkpointStore()
 	ctx := r.serveCtxOrBackground()
 
-	preID, serr := st.SnapshotPreRestore(ctx, sess.SessionID)
+	preID, serr := undoSnapshotPreRestore(ctx, st, sess.SessionID)
 	if serr != nil {
 		return fmt.Sprintf(
 			"undo aborted: pre-restore snapshot failed: %v (nothing was cancelled, nothing was restored)\n",
