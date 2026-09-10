@@ -1277,12 +1277,23 @@ func (r *Runner) prepareUndo(sess *session.Session, args string) (plan undoPlan,
 
 // restoreUndo performs the mutation half of the IDLE path (Task 1): the
 // D-09 fail-closed sequence — the pre-restore snapshot ALWAYS precedes the
-// restore, and its failure aborts the undo with nothing mutated. Store ops
-// ride the serve ctx (the parked-chain precedent): a restore must not die
-// with the requesting request halfway through its git plumbing.
+// restore, and its failure aborts the undo with nothing mutated. 23-06
+// (G-23-1/CR-01): the SELF-EXCLUDING workspace consult precedes BOTH — every
+// hit is by construction ANOTHER session's live state (Run has already marked
+// the calling session's own turnActive by intercept time, which is exactly
+// why this consult must NOT be the full restoreBlockers guard: its own-turn
+// leg would refuse every idle /undo on the caller's own command-carrying
+// turn), and the pre-snapshot position avoids minting a torn mid-turn commit
+// of the shared tree. Store ops ride the serve ctx (the parked-chain
+// precedent): a restore must not die with the requesting request halfway
+// through its git plumbing.
 func (r *Runner) restoreUndo(sess *session.Session, plan undoPlan) (string, string) {
 	st := r.checkpointStore()
 	ctx := r.serveCtxOrBackground()
+
+	if other := r.workspaceBlockers(sess.SessionID); other != nil {
+		return fmt.Sprintf("undo refused: %v\n", other), "refused: workspace busy"
+	}
 
 	preID, serr := undoSnapshotPreRestore(ctx, st, sess.SessionID)
 	if serr != nil {

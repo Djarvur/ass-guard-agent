@@ -1162,16 +1162,30 @@ func (r *Runner) routeUndoActive(
 // locked D-12 ordering, every step load-bearing (reorder any of them and
 // either a turn dies unsnapshotted or the handler self-deadlocks):
 //
+//  0. The G-23-1 (CR-01) workspace consult FIRST: another session's live
+//     turn/chain over the SHARED worktree refuses the undo outright — before
+//     any snapshot, cancel, or restore. Like the nested refusal, a
+//     cross-session refusal NEVER cancels: it outranks the auto-cancel below
+//     because the restore would race the OTHER session regardless of what
+//     happens to the caller's own state. The early position is load-bearing:
+//     the pre-restore snapshot would mint a commit of the shared tree
+//     possibly mid-write under the other session's turn, and that snapshot
+//     becomes a D-11 walk target the caller could later restore INTO —
+//     minting it under a busy workspace is the torn-tree shape.
 //  1. SnapshotPreRestore FIRST (fail-closed): the snapshot must precede the
 //     cancel's state changes where ordering permits (the CONTEXT
 //     reversibility note), and its failure aborts the undo WITHOUT
-//     cancelling anything.
+//     cancelling anything. (The D-12 snapshot-before-CANCEL ordering is
+//     untouched by step 0 — a refusal cancels nothing.)
 //  2. The 23-04 guard consulted as DETECTION (the refusal matrix's state
 //     naming — /undo is the one restore path with an auto-cancel): whatever
 //     is active dies through the existing cancel contract's in-process half
 //     — the registry cancel for the client turn (its engine chain drains
 //     transitively via the request-ctx watchdog) plus cancelParkedChains for
-//     chains that are parked (no client turn to cancel).
+//     chains that are parked (no client turn to cancel). 23-06: a
+//     CROSS-SESSION hit here (activity that started between step 0 and this
+//     consult — the guard's documented check-then-act window) takes the
+//     step-0 refusal shape instead, never the auto-cancel.
 //  3. turnMu acquired ONLY NOW (the clean drain): the dying turn finishes
 //     its recordCanceled/unwind under the mutex the undo then inherits —
 //     everything before this point ran lock-free, so the handler never
@@ -1182,6 +1196,12 @@ func (r *Runner) routeUndoActive(
 func (r *Runner) restoreUndoActive(sess *session.Session, sessionID string, plan undoPlan) (string, string) {
 	st := r.checkpointStore()
 	ctx := r.serveCtxOrBackground()
+
+	// Step 0 (G-23-1/CR-01): refuse BEFORE minting anything — the
+	// cross-session refusal outranks the auto-cancel and cancels nothing.
+	if other := r.workspaceBlockers(sessionID); other != nil {
+		return fmt.Sprintf("undo refused: %v\n", other), "refused: workspace busy"
+	}
 
 	preID, serr := undoSnapshotPreRestore(ctx, st, sess.SessionID)
 	if serr != nil {
@@ -1195,6 +1215,13 @@ func (r *Runner) restoreUndoActive(sess *session.Session, sessionID string, plan
 	cancelled := ""
 
 	if blocked != nil {
+		if crossSessionBlocked(blocked) {
+			// Another session went live between step 0 and here (the
+			// guard's documented check-then-act window): the step-0
+			// refusal shape — never cancel, never restore.
+			return fmt.Sprintf("undo refused: %v\n", blocked), "refused: workspace busy"
+		}
+
 		r.cancelActiveTurn(sessionID)
 		r.cancelParkedChains(sessionID)
 		cancelled = "active state cancelled, "
@@ -2090,6 +2117,16 @@ func (r *Runner) restoreBlockers(sessionID string) error {
 	}
 
 	return nil
+}
+
+// crossSessionBlocked reports whether a restoreBlockers refusal is another
+// session's live state — the G-23-1 (CR-01) discriminator /undo's active
+// path branches on (23-06 Task 2): the widened guard names the busy session
+// (other != ""); an own-state refusal keeps its byte-stable auto-cancel path.
+func crossSessionBlocked(err error) bool {
+	var typed *restoreBlockedError
+
+	return errors.As(err, &typed) && typed.other != ""
 }
 
 // sessionFor returns the Session for sessionID, creating it on first use.

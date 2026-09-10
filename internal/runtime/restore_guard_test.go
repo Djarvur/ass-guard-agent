@@ -2,7 +2,6 @@ package runtime //nolint:testpackage // internal package test
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -297,9 +296,6 @@ func TestRunnerStoreHeldOnce(t *testing.T) {
 		t.Error("checkpointStore returned different instances for one workspace")
 	}
 }
-
-// errRestoreBlockedFor is the errors.As target assertion helper.
-var _ = errors.Is // keep errors imported for the matrix's future typed checks
 
 // writeGuardFile is the local file fixture helper.
 func writeGuardFile(t *testing.T, path, content string) {
