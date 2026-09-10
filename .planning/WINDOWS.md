@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 15
+open_count: 18
 waived_count: 0
 fixed_count: 10
-total_count: 25
-last_updated: 2026-09-10T14:23:58.009Z
+total_count: 28
+last_updated: 2026-09-10T15:33:58.332Z
 ---
 
 # Broken Windows Ledger
@@ -40,6 +40,9 @@ last_updated: 2026-09-10T14:23:58.009Z
 | 23 | 23 | unmet-truth | .planning/phases/23-seed-gaps-close-out/23-05-SUMMARY.md |  | PENDING-OPERATOR-CONFIRMATION: live-Zed operator UAT of the phase's two interactive surfaces (23-01/23-02 boundary steering mid-turn + 23-05 /undo incl. the auto-cancel-then-restore path against a running turn) not yet executed — plan 23-05 Task 3 checkpoint; offline batteries prove the core (steering boundary delivery, undo walk/cancel ordering), the Zed-client behavior leg (RESEARCH A2 note: Zed may queue mid-turn prompts client-side) awaits the operator and documents client behavior for TG-02 planning | open |  | 2026-09-10T11:43:49.324Z |  |
 | 24 | 23 | unmet-truth | .planning/phases/23-seed-gaps-close-out/23-06-SUMMARY.md |  | PENDING-OPERATOR-CONFIRMATION: two-live-Zed-session UAT of the cross-session restore guard (23-VERIFICATION.md Human Verification #2) — /undo from an idle session while another session's turn runs must refuse naming the busy session; the offline battery (TestUndoCrossSessionRefusal + TestUndoActivePathCrossSessionRefusal) is the gap G-23-1 witness; rides the phase ledger beside #23 per the 23-05 precedent | open |  | 2026-09-10T13:17:53.931Z |  |
 | 25 | 24 | unrun-verify | .planning/phases/24-documentation-ops-tails/24-01-SUMMARY.md |  | mise ci could not run literally (mise binary absent on host); legs run directly — vet/build green, modelrouting tests green, lint clean on 24-01 files, repo-wide lint/test carry documented pre-existing baseline (24-01-SUMMARY Deviations #4) | open |  | 2026-09-10T14:23:58.009Z |  |
+| 26 | 24 | unrun-verify | .github/workflows/nightly-parity.yml |  | Live workflow_dispatch smoke deferred to milestone merge — GitHub rejected both dispatch routes pre-merge (HTTP 404, file not on default branch); local stand-in evidence in 24-04-SUMMARY.md | open |  | 2026-09-10T15:33:45.625Z |  |
+| 27 | 24 | deviation | .github/workflows/nightly-parity.yml |  | Nightly test leg skips documented pre-existing failures (TestPermissionsE2E, TestRescanConcurrency, TestRunSuite_*) so the drift signal is not permanently red — remove entries as the failures are fixed | open |  | 2026-09-10T15:33:45.968Z |  |
+| 28 | 24 | unrun-verify | .github/workflows/nightly-parity.yml |  | Live workflow_dispatch smoke deferred to milestone merge — GitHub rejected both dispatch routes pre-merge (HTTP 404, file not on default branch); local stand-in evidence in 24-04-SUMMARY.md | open |  | 2026-09-10T15:33:58.332Z |  |
 
 ````json
 [
@@ -341,6 +344,42 @@ last_updated: 2026-09-10T14:23:58.009Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-10T14:23:58.009Z",
+    "resolved_at": null
+  },
+  {
+    "id": 26,
+    "kind": "unrun-verify",
+    "phase": "24",
+    "file": ".github/workflows/nightly-parity.yml",
+    "line": null,
+    "description": "Live workflow_dispatch smoke deferred to milestone merge — GitHub rejected both dispatch routes pre-merge (HTTP 404, file not on default branch); local stand-in evidence in 24-04-SUMMARY.md",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T15:33:45.625Z",
+    "resolved_at": null
+  },
+  {
+    "id": 27,
+    "kind": "deviation",
+    "phase": "24",
+    "file": ".github/workflows/nightly-parity.yml",
+    "line": null,
+    "description": "Nightly test leg skips documented pre-existing failures (TestPermissionsE2E, TestRescanConcurrency, TestRunSuite_*) so the drift signal is not permanently red — remove entries as the failures are fixed",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T15:33:45.968Z",
+    "resolved_at": null
+  },
+  {
+    "id": 28,
+    "kind": "unrun-verify",
+    "phase": "24",
+    "file": ".github/workflows/nightly-parity.yml",
+    "line": null,
+    "description": "Live workflow_dispatch smoke deferred to milestone merge — GitHub rejected both dispatch routes pre-merge (HTTP 404, file not on default branch); local stand-in evidence in 24-04-SUMMARY.md",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T15:33:58.332Z",
     "resolved_at": null
   }
 ]
