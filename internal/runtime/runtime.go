@@ -156,6 +156,16 @@ type Runner struct {
 	modelMu        sync.Mutex
 	effectiveModel string
 
+	// 24-02 (TAIL-01): the replayed outcome-store breakers, loaded lazily
+	// ONCE from the work dir's store (ReadOutcomes + ReplayBreakers with
+	// schedCfg's breaker thresholds — the effectiveCompaction lazy-seed
+	// precedent; NewRunner stays struct-fill-only, D-05). nil (no store,
+	// unreadable store, nil schedCfg) = no demotion. resolveSubagentModel's
+	// call site consumes the map.
+	outcomeBreakersMu     sync.Mutex
+	outcomeBreakers       map[modelrouting.ProviderModelKey]modelrouting.Breaker
+	outcomeBreakersLoaded bool
+
 	// providerName is the session provider the factory builds (the heavy-tier
 	// resolution's pick, 14-05): the same-provider check for the light binding
 	// compares against it. Kept beside schedCfg so both come from the one
@@ -3124,7 +3134,16 @@ func (r *Runner) imageDropNote(msg string) {
 //     subagent runner is ROUTED to the post-adoption queue (the override
 //     covers the tier's primary purpose — a cheaper model on the same wire
 //     shape); never a silent wrong-wire.
-func resolveSubagentModel(cfg *modelrouting.Config, sessionProvider string, now time.Time, stderr io.Writer) string {
+//
+// 24-02 (TAIL-01, D-06): breakers is the Runner's REPLAYED outcome-store
+// breaker map — a denied light-tier primary demotes to the first allowed
+// fallback (one loud note), riding the EXISTING Breaker seam over the chain
+// Resolve already returned. Empty map = the demotion never fires.
+func resolveSubagentModel(
+	cfg *modelrouting.Config, sessionProvider string,
+	breakers map[modelrouting.ProviderModelKey]modelrouting.Breaker,
+	now time.Time, stderr io.Writer,
+) string {
 	if cfg == nil {
 		return ""
 	}
@@ -3693,6 +3712,16 @@ func (r *Runner) effectiveCompaction() compactionState {
 	}
 }
 
+// outcomeBreakersFor returns the replayed outcome-store breakers (24-02,
+// TAIL-01), loading them once on first use from the work dir's store through
+// ReadOutcomes + ReplayBreakers with the already-loaded schedCfg's breaker
+// thresholds. A missing store file, an empty store, or a nil schedCfg yields a
+// nil map (no demotion — resolution stays byte-identical); a read failure
+// degrades to nil with ONE loud note (evidence-less, never a failure).
+func (r *Runner) outcomeBreakersFor() map[modelrouting.ProviderModelKey]modelrouting.Breaker {
+	return nil
+}
+
 // compactionContextLimit resolves the D-01 discretion item: the context window
 // of the session's resolved model from the modelrouting capability table —
 // the one and only source (there is deliberately no override key). Uses the
@@ -4110,7 +4139,7 @@ func (r *Runner) planSubagentDispatch(
 				fmt.Sprintf("subagent dispatches on the session model %s", parent))
 		}
 
-		if tier := resolveSubagentModel(r.schedCfg, r.providerName, time.Now(), r.stderrOrDefault()); tier != "" {
+		if tier := resolveSubagentModel(r.schedCfg, r.providerName, r.outcomeBreakersFor(), time.Now(), r.stderrOrDefault()); tier != "" {
 			return r.notePlan(session.SubagentDispatchPlan{Model: tier}, sess,
 				fmt.Sprintf("no session model — subagent falls to tiers.light %s", tier))
 		}

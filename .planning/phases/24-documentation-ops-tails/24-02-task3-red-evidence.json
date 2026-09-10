@@ -1,0 +1,18 @@
+{
+  "plan": "24-02",
+  "task": 3,
+  "phase_gate": "RED",
+  "command": "go test -race -count=1 ./internal/acpserve/ ./internal/runtime/ -run 'TestOutcome|TestResolveSubagentModel|TestConfigSurface' -v",
+  "targetTest": "TestOutcomeBreakersDemoteSessionModel",
+  "exitCode": 1,
+  "output": "ok 1 - TestConfigSurface_MenuDefaults\nok 2 - TestOutcomeBreakersEmptyMapKeepsPrimary\nok 3 - TestConfigSurface_ExplicitLayerEffectiveValues\nnot ok 4 - TestOutcomeBreakersDemoteSessionModel\nok 5 - TestConfigSurface_SetPersistsThroughLoader\nok 6 - TestConfigSurface_GlobalTwinsAdvertiseGlobalLayer\nok 7 - TestConfigSurface_BackgroundCapsMenu\nok 8 - TestConfigSurface_ConcurrentMutation\nnot ok 9 - TestResolveSubagentModelBreakerDemotion\n# tests 9\n# pass 7\n# fail 2\n",
+  "expected": "Per 24-02 Task 3 behavior: with a seeded store whose breaker for the resolved primary's (provider,model) is open, resolveModelLocked returns the first allowed fallback's model (advertisement reflects it) and resolveSubagentModel returns the first allowed fallback slug for an open light-tier primary; empty breaker map = resolution identical to pre-change behavior",
+  "actual": "Compiling-RED stubs (SetOutcomeBreakers stores the map but resolveModelLocked ignores it; resolveSubagentModel takes the breakers param but ignores it; Runner.outcomeBreakersFor returns nil): the demotion tests fail on assertions — post-seed model stays \"GLM-5.3\" wanting \"glm-5.2\"; resolveSubagentModel stays \"light-primary\" wanting \"light-fallback\". The empty-map guard test (TestOutcomeBreakersEmptyMapKeepsPrimary) and the empty/all-denied subtests pass — they pin TODAY's no-evidence behavior, which is their purpose; the 7 pre-existing TestConfigSurface_* tests stay green",
+  "failing_tests": [
+    "TestOutcomeBreakersDemoteSessionModel (assertion: post-seed model = GLM-5.3, want glm-5.2)",
+    "TestResolveSubagentModelBreakerDemotion (subtest assertion: resolveSubagentModel = light-primary, want light-fallback)"
+  ],
+  "unexpected_green": [],
+  "note": "Go run projected faithfully into Node-TAP by /tmp/gotap.py; raw log /tmp/gsd-24-02-task3-red.log. The passing guard tests pin the pre-change behavior the plan's Test 2 explicitly demands stay identical — expected greens, not unexpected ones. Compiling-RED route pre-authorized by the 24-01 STATE decision (tdd_mode #3770 requires target_test_failed).",
+  "timestamp": "2026-09-10T16:12:00Z"
+}

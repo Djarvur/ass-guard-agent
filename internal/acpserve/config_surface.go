@@ -190,6 +190,13 @@ type ConfigSurface struct {
 	// blobFills holds recognized option values (keyed by bare option id) that
 	// fill UNSET slots at resolution time — in-memory only, never persisted.
 	blobFills map[string]string
+
+	// outcomeBreakers is the replayed outcome-store breaker map (24-02,
+	// TAIL-01): when non-empty, a breaker-denied tier primary demotes to the
+	// first allowed fallback at resolution (D-06 — seeded evidence bends live
+	// routing through the EXISTING Breaker seam). nil/empty = zero behavior
+	// change. Wired once at composition via SetOutcomeBreakers.
+	outcomeBreakers map[modelrouting.ProviderModelKey]modelrouting.Breaker
 }
 
 // NewConfigSurface constructs the surface over explicit layer paths.
@@ -260,6 +267,19 @@ func (s *ConfigSurface) SetCompactionHook(h func(enabled bool, thresholdPct int)
 	defer s.mu.Unlock()
 
 	s.compactionHook = h
+}
+
+// SetOutcomeBreakers wires the replayed outcome-store breakers (24-02,
+// TAIL-01): a breaker-denied tier primary demotes to the first allowed
+// fallback at resolution, with ONE loud stderr note naming both. An empty or
+// nil map is zero behavior change — no evidence, no demotion. The Run
+// composition calls this once at startup after replaying the work dir's
+// outcome store through modelrouting.ReplayBreakers.
+func (s *ConfigSurface) SetOutcomeBreakers(b map[modelrouting.ProviderModelKey]modelrouting.Breaker) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.outcomeBreakers = b
 }
 
 // EffectivePermMode resolves the BOOT permission mode from the layer files

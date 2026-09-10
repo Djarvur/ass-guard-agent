@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -422,4 +423,125 @@ func TestApplyTurnModel_StampsFutureSessions(t *testing.T) {
 	if got := sess2.Profile.Model; got != testModelAfter {
 		t.Errorf("new session model = %q; want the effective %q stamped at construction", got, testModelAfter)
 	}
+}
+
+// --- 24-02 (TAIL-01, D-06 observable): replayed breakers bend the light tier ---
+
+// lightTierTestConfig loads a temp scheduling config whose LIGHT tier binds
+// light-primary with light-fallback (both declared on the embedded floor's
+// anthropic provider so loader validation passes) — the fixture for the
+// subagent demotion battery.
+func lightTierTestConfig(t *testing.T) *modelrouting.Config {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "light.yaml")
+	content := "models:\n  light-primary:\n    provider: anthropic\n  light-fallback:\n    provider: anthropic\n" +
+		"tiers:\n  light:\n    model: light-primary\n    fallback: [light-fallback]\n"
+
+	werr := os.WriteFile(path, []byte(content), 0o600)
+	if werr != nil {
+		t.Fatalf("write light-tier config: %v", werr)
+	}
+
+	cfg, err := modelrouting.Load(path)
+	if err != nil {
+		t.Fatalf("load light-tier config: %v", err)
+	}
+
+	return cfg
+}
+
+// seedLightTierBreakers seeds an outcome store with enough consecutive
+// transients to OPEN the named models' replayed breakers (the floor's
+// thresholds), then replays it — the same ReadOutcomes+ReplayBreakers the
+// Runner's lazy load performs.
+func seedLightTierBreakers(
+	t *testing.T, cfg *modelrouting.Config, models ...string,
+) map[modelrouting.ProviderModelKey]modelrouting.Breaker {
+	t.Helper()
+
+	store, err := modelrouting.NewOutcomeStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewOutcomeStore: %v", err)
+	}
+
+	base := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	n := cfg.CircuitBreaker.ConsecutiveFailures
+
+	for _, model := range models {
+		for i := range n {
+			aerr := store.Append(modelrouting.DispatchOutcome{
+				At:       base.Add(time.Duration(i) * time.Second),
+				Provider: "anthropic",
+				Model:    model,
+				Outcome:  modelrouting.OutcomeTransient,
+				Origin:   modelrouting.OutcomeOriginSubagent,
+			})
+			if aerr != nil {
+				t.Fatalf("Append seed record %s/%d: %v", model, i, aerr)
+			}
+		}
+	}
+
+	records, _, rerr := modelrouting.ReadOutcomes(store.Path())
+	if rerr != nil {
+		t.Fatalf("ReadOutcomes: %v", rerr)
+	}
+
+	return modelrouting.ReplayBreakers(records, cfg.CircuitBreaker, nil)
+}
+
+// TestResolveSubagentModelBreakerDemotion: with the light-tier primary's
+// replayed breaker OPEN, resolveSubagentModel returns the first allowed
+// FALLBACK slug; with empty breakers it returns the primary; with every
+// candidate denied it keeps the primary (a resolution never fails over
+// evidence) — each demotion fires exactly one loud stderr note.
+func TestResolveSubagentModelBreakerDemotion(t *testing.T) {
+	t.Parallel()
+
+	cfg := lightTierTestConfig(t)
+	now := time.Date(2026, 9, 10, 13, 0, 0, 0, time.UTC)
+
+	t.Run("open primary demotes to the first allowed fallback", func(t *testing.T) {
+		t.Parallel()
+
+		breakers := seedLightTierBreakers(t, cfg, "light-primary")
+		var stderr strings.Builder
+
+		got := resolveSubagentModel(cfg, "anthropic", breakers, now, &stderr)
+		if got != "light-fallback" {
+			t.Fatalf("resolveSubagentModel = %q; want the demoted light-fallback (primary breaker-open)", got)
+		}
+
+		if !strings.Contains(stderr.String(), "light-primary") || !strings.Contains(stderr.String(), "light-fallback") {
+			t.Errorf("stderr does not name the demoted primary + replacement: %q", stderr.String())
+		}
+	})
+
+	t.Run("empty breakers keep the primary (no evidence, no demotion)", func(t *testing.T) {
+		t.Parallel()
+
+		var stderr strings.Builder
+
+		got := resolveSubagentModel(cfg, "anthropic", nil, now, &stderr)
+		if got != "light-primary" {
+			t.Fatalf("resolveSubagentModel = %q; want the primary light-primary (empty breakers never demote)", got)
+		}
+
+		if strings.Contains(stderr.String(), "breaker") {
+			t.Errorf("demotion note fired with empty breakers: %q", stderr.String())
+		}
+	})
+
+	t.Run("all candidates denied keeps the primary", func(t *testing.T) {
+		t.Parallel()
+
+		breakers := seedLightTierBreakers(t, cfg, "light-primary", "light-fallback")
+		var stderr strings.Builder
+
+		got := resolveSubagentModel(cfg, "anthropic", breakers, now, &stderr)
+		if got != "light-primary" {
+			t.Fatalf("resolveSubagentModel = %q; want the primary kept when every candidate is denied", got)
+		}
+	})
 }
