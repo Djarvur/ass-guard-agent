@@ -1,178 +1,187 @@
 ---
 phase: 19-compaction-cache-control
-verified: 2026-09-07T18:14:00Z
+verified: 2026-09-10T10:47:05Z
 status: passed
-score: 13/14 must-haves verified
-behavior_unverified: 1 # SC-1c live-LLM coherence leg (G-19-2 retest pending on the fresh binary) — present + wired, operator-gated by design
+score: 14/14 must-haves verified
+covered_files:
+  - .planning/REQUIREMENTS.md
+  - internal/modelrouting/defaults/config.yaml
+  - internal/session/compaction.go
+  - internal/session/compaction_test.go
+  - internal/session/projector.go
+  - internal/session/projector_test.go
+  - internal/session/session.go
+  - internal/session/steering_test.go
+  - internal/session/steerqueue.go
+  - internal/session/transcript.go
+  - internal/shaper/shaper.go
+  - profiles/zcode/profile.yaml
+covered_digest: "v1:sha256:50bf6c55bf5db9793efad2948cc2551ca1aff34fa9948a178fc4525a31ddb336"
+behavior_unverified: 0
 overrides_applied: 0
 re_verification:
-  previous_status: gaps_found
-  previous_score: 12/14
+  previous_status: "passed (2026-09-07T18:14Z report: 13/14, frontmatter status: passed with 1 behavior-unverified item — the G-19-2 live leg; resolved 2026-09-10 by the auto-UAT harness before this run)"
+  previous_score: 13/14
+  stale_reason: "Post-verification commits touched phase-19 surface files in internal/session: 830d045 (20 review CR-01 — LAST-reset-point clear-vs-marker ordering in Project()), b397954/3061d84 (23-01 SteerQueue + projector fold + fold-hardening tests), 40b2bbc/348d30f (23-02 steering ingress + parked-ask fallback), 9372ee9 (22-03 discriminated background dispatch). This run re-establishes every phase-19 truth against the CURRENT tree (HEAD = d38f913)."
   gaps_closed:
-    - "CR-01 residual (gap 1 / truth 5): the armed carve-out now takes precedence over the pre-user compactionMarkerIdx scan in Project() (projector.go:170-174 before :176-178); the prior-marker regression legs exist at both the projector level (armed-override-wins inverted pin + fallback pin, projector_test.go:2279/:2318) and the session level (prior-marker overflow leg with planted AppendCompaction M1 + AppendBoundary, compaction_test.go:1912) — this verifier ran both legs GREEN on HEAD and independently reproduced the RED proof on commit b301267 (exactly the two new legs fail there, every other subtest passes)"
-  gaps_remaining: [] # no code gaps remain; the G-19-2 operator live retest is a human leg (below), not a code gap
-  regressions: []
-behavior_unverified_items:
-
-  - truth: "SC-1c: the user observes the conversation continuing coherently where v1.1 lost earlier turns (live threshold fire + summary-coherent continuation)"
-    test: "On the fresh binary installed 2026-09-07 (v0.0.0-20260907153836-a8f63f31b1b0, engine string verified present per 19-UAT G-19-2 resolution), set compaction-threshold low in a live session, confirm compaction fires (marker on disk; coherent continuation across further turns), then restore 80"
-    expected: "Earlier-turn facts survive in the summary seed; turns stay coherent; subsequent turns stay under the threshold. Note compaction is invisible in the editor UI (pre-authorized stderr+counter degrade; observability deferred to Phase 20's /status vehicle per 19-UAT Deferred Follow-Ups)"
-    why_human: "The original live test failed on a stale pre-phase-19 binary (G-19-2 root cause: 16-05 pending no-op advertised the menu entry); the retest needs a real model and a real editor session — offline tests prove the machinery with a scripted summarizer, not live summary fidelity"
-human_verification:
-
-  - test: "Operator live-threshold retest on the fresh binary (G-19-2 / SC-1c): set compaction-threshold low (e.g. 5) in a live editor session against the 2026-09-07 binary (v0.0.0-20260907153836-a8f63f31b1b0), keep working, then restore 80"
-    expected: "Compaction observably fires (marker line on disk under .ass-guard/; continuation stays coherent; later turns stay under threshold). Expect NO visible indicator in the editor — the pre-authorized stderr+counter degrade; the observability UX decision is deferred to Phase 20's /status vehicle"
-    why_human: "The first live attempt ran a stale pre-phase-19 binary whose menu entry was 16-05's pending no-op; summary fidelity under a real model is the research validation table's operator-gated leg — offline tests prove the machinery with a scripted summarizer, not live summary fidelity"
+    - "SC-1c live-coherence leg (the sole prior behavior-unverified item): closed by the operator-approved auto-UAT harness (uat-harness-run-20260910, PASS 20/20) — threshold compactions fire live, overflow retry projects post-marker (rejected 515664B → retry 95605B carrying the FORCED marker's summary), restore-80 persists. The harness binary was built 2026-09-10 02:22 +03:00, AFTER every steering commit, and internal/session + internal/shaper + internal/provider have zero commits since that timestamp — the live evidence is valid for the current tree"
+  gaps_remaining: []
+  regressions: [] # none — see Goal Achievement; every phase-19 pin passed unmodified on the current tree
+advisory:
+  - finding: "Clear-vs-marker reset ordering (830d045's resetIdx > mIdx rule) has no direct test pin — no test anywhere combines a context-reset boundary with a compaction marker (TestClassBClear in internal/runtime/commands_test.go covers markerless /clear only)"
+    category: other
+    reason: "Phase-20-scope observation, not a phase-19 must-have: /clear postdates phase 19. Code-read this session confirms the semantics (reset strictly NEWER than the marker wins; marker-newer → projectCompacted governs, so clear-then-compact keeps the compaction's durable seed); a marker+reset ordering regression test would close it"
+    evidence_status: "none provided"
 ---
 
 # Phase 19: Compaction + cache_control Verification Report
 
 **Phase Goal:** Long sessions stop silently losing earlier turns: threshold-triggered light-tier compaction appends an additive typed marker the Projector treats as a durable reset-point class, and cache_control ephemeral breakpoints ship on every system block — the corpus-proven parity-faithful lever (zcode has no auto-compact; docs/compaction-decision.md settles design).
-**Verified:** 2026-09-07T18:14:00Z
-**Status:** human_needed
-**Re-verification:** Yes — supersedes the 2026-09-07 gaps_found report (CR-01); this run reflects the complete seven-plan state including the 19-07 gap closure
+**Verified:** 2026-09-10T10:47:05Z
+**Status:** passed
+**Re-verification:** Yes — STALE re-run (third report). Supersedes the 2026-09-07T18:14Z report after phase-20/22/23 commits (steering: SteerQueue + projector fold; /clear full-reset ordering) touched internal/session files inside this phase's surface.
 
-## Verification Method Note (prior spot-check table vacuous — corrected here)
+## Re-Verification Audit Trail (why this run exists, what changed since 2026-09-07)
 
-The prior report's Behavioral Spot-Checks table quoted the battery command with `'\|'` separators. In Go's regexp, `\|` is a LITERAL pipe character, so that pattern matched ZERO test functions — the prior "ok 2.748s" line proved only that zero selected tests cannot fail. This report's evidence comes from commands this verifier executed itself with CORRECT alternation (single-quoted `-run 'A|B|C'`, plain `|`), and from `-v` output proving each named function actually ran. The conclusions of the prior report survive this correction because every claim it made has now been re-established with real runs (below) — but the prior table's evidence line was vacuous and is superseded.
+Commits touching the phase-19 surface after the prior verification, and their audited impact:
+
+| Commit | Change | Impact on phase-19 truths |
+|--------|--------|--------------------------|
+| 830d045 (20 review CR-01) | `Project()` gained a full-reset branch: `fullResetBoundaryIdx` + `projectFullReset`, LAST-reset-point-wins vs the marker | NONE on the marker path by construction: the branch fires only when `resetIdx >= 0 && (mIdx < 0 \|\| resetIdx > mIdx)` — a marker NEWER than the reset still routes to `projectCompacted` (clear-then-compact keeps the durable seed). Ordinary mutating boundaries (the phase-19 durability scope) never carry the `context-reset` cause, so the D-06 durability guarantee is untouched. Unmodified `TestProjector_CompactionResetPoint`/`TailCut` PASS on the current tree. See Advisory for the unpinned-ordering note |
+| b397954 (23-01 steering) | `foldExchanges` gained a `TypeSteeringDelivery` case; `steerqueue.go` (new); `manager.go`/`transcript.go`/`session.go` steering seams | Pair atomicity preserved: the steering case calls `flushBatch()` BEFORE appending the user-role message (a user message can never land inside a tool_use batch). Anchor safety preserved: `turnAnchorOf` matches `TypeUserMessage` ONLY — steering never moves the accumulation anchor. Anti-spoofing: `AppendSteeringDelivery` is the sole writer of `steering_delivery` lines (agent-appended only; nothing parses model/tool output into steering). Drain sits at runTurn's iteration top BEFORE `maybeCompact`/`Project` (session.go:631-642), so steering lands in arrival position relative to the marker and never displaces the summary seed. `TestSteeringProjectPairSafety`/`AnchorSafety`/`IntentSummaryUnchanged`/`ReplayParity` all PASS this session |
+| 3061d84 (23-01 tests) | +260 lines steering fold-hardening tests | Additive only; all PASS this session |
+| 40b2bbc / 348d30f (23-02) | Pre-mutex steering ingress; parked-note moved to the ask-queue parked branch (session.go -26/+26) | Runtime ingress layer; the overflow-retry arming branch (session.go:664-703) byte-identical in shape — arming still at :700 between the forced compact and the `continue` |
+| 9372ee9 (22-03) | Discriminated background dispatch (subagent.go) | Subagent surface; the `subagent_turn_safe` carve-out pin PASSes unmodified |
+
+**Frozen-surface proof (content, not just presence):**
+
+- `internal/session/compaction.go`: ZERO diff since 35d1740 (the 19-07 CR-01 fix commit) — the compaction engine is untouched by everything after phase 19.
+- `internal/session/projector_test.go` + `compaction_test.go`: ZERO content diff since 35d1740 (absent from `git diff --numstat 35d1740..HEAD -- internal/session/`) — **every phase-19 pinned fixture survives unmodified**, so the green battery below is a genuine regression result, not re-authored expectations.
+- `projectSameTurnCompacted` / `sameTurnMarkerIdx` / `SetRetryCompactedTurn`: zero diff since 35d1740.
+- `internal/shaper/`, `internal/profile/`, `internal/paritycli/`, `internal/provider/errors.go`, `internal/parity/cacheprobe.go`: ZERO diff since 41a5c63 (phase-19 completion) — the entire PAR-02 substrate is frozen.
+- Working-tree note: 471 files under `internal/` show as modified — ALL are permission-bit flips (0644→0755), `git diff --stat` = 0 insertions/0 deletions. Working-tree content equals HEAD (d38f913); all verdicts are against the committed state.
+- Live-evidence validity: the auto-UAT harness ran 2026-09-10T02:22:20+03:00 on a HEAD build; every steering commit predates it (2026-09-08), and `git log --since` shows ZERO commits to `internal/session`/`internal/shaper`/`internal/provider` after the harness timestamp — the harness's live PASS is evidence against the current tree's content.
 
 ## Goal Achievement
 
-Machine-verified against the committed codebase (HEAD) and named tests this verifier executed itself: full 13-function session battery under `-race -count=1` — ok 2.394s with all 13 functions individually `--- PASS`; the 12 subtests of the two CR-01 battery functions individually PASS (including both new legs); RED proof independently reproduced on commit b301267 (exactly the two new CR-01 legs FAIL pre-fix, all sibling subtests pass); six regression packages all ok; acpserve compaction surface 3/3 PASS (on the committed tree — see Concurrent-Execution Note); `go vet ./internal/session/` clean; `CGO_ENABLED=0 go build ./...` clean (committed tree); diff audits vs 06d92d1 (1103 insertions, 0 deletions) and vs 73440bd (cacheprobe.go untouched) re-run this session.
-
-### Concurrent-Execution Note (read before judging any build failure)
-
-Phase 20 is executing concurrently in this working tree. Untracked files `internal/runtime/commands.go` / `commands_test.go` (git status `??`, never committed) currently break `go build` of `internal/runtime` and its dependents (including `internal/acpserve`) IN THE WORKING TREE. This is not Phase 19 state: `internal/session/` is clean vs HEAD (zero diff), and on the committed tree (`git archive HEAD` extract) `CGO_ENABLED=0 go build ./...` is clean and the acpserve compaction surface passes 3/3. All Phase 19 verdicts below are given against the committed state.
+Machine-verified against the CURRENT tree (HEAD d38f913) by commands this verifier executed itself: the 13-function phase-19 session battery under `-race -count=1` — ok 3.632s with the CR-01/tamper/fallback/anchor subtests individually `--- PASS` in a `-v` re-run; the steering fold battery ok; `TestTranscriptNewKinds` ok; acpserve compaction surface 3/3 PASS; shaper/profile/paritycli/provider/modelrouting all ok; `go vet ./internal/session/` clean; the frozen-surface diffs above re-run this session.
 
 ### Observable Truths
 
-| # | Truth | Status | Evidence |
+| # | Truth | Status | Evidence (current tree, this session) |
 |---|-------|--------|----------|
-| 1 | SC-1a: over-threshold session compacts automatically (blocking compact at loop head, summary-bearing marker on disk, next turn seeded, headroom restored, disabled = zero delta) | ✓ VERIFIED | Re-run this session (correct alternation): `TestCompaction_Threshold`, `TestCompaction_Chaining`, `TestCompaction_SummarizerFailure`, `TestCompaction_LoopHead`, `TestCompactNow`, `TestCompaction_EndToEnd` all `--- PASS` under `-race`; engine code re-read (unchanged by 19-07 except the additive precedence guard) |
-| 2 | SC-1b: threshold ~80% default and configurable end-to-end (config keys, menu advertise + effective values, persist-then-apply, live apply, clamps, no context-limit key) | ✓ VERIFIED | Committed-tree run this session: `TestCompactionLive_BootDefaults`, `TestCompactionLive_MenuThresholdRoundTrip`, `TestCompactionOptions` all PASS; `internal/modelrouting/defaults/config.yaml` carries `threshold_pct: 80` / `enabled: true` |
-| 3 | SC-1c: the user observes the conversation continuing coherently where v1.1 lost earlier turns | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED | Machinery fully proven offline (truth 1 + the CR-01-hardened recovery of truth 5); the original live test failed on a stale pre-phase-19 binary (G-19-2 diagnosed). Fresh binary installed 2026-09-07, retest required — see behavior_unverified_items / Human Verification |
-| 4 | SC-2: tool_use/result pairs atomic, thinking never rewritten mid-chain, pinned Projector tests prove boundary-survival and pair-atomicity | ✓ VERIFIED | `TestProjector_CompactionResetPoint` + `TestProjector_CompactionTailCut` `--- PASS` under `-race` this session; bodies untouched by 19-07 (0 deletions vs 06d92d1) |
-| 5 | SC-3 / G-19-1 + CR-01 closure: on a provider overflow error the producing turn completes after compaction + the single retry — the retry projects post-marker (carries the NEW summary), is measurably smaller, on EVERY overflow including sessions with an earlier marker | ✓ VERIFIED | **Code:** `Project()` now evaluates the armed carve-out FIRST (projector.go:170-174: `retryCompactedTurn != "" && == turnID` + `sameTurnMarkerIdx >= 0` → `projectSameTurnCompacted`) BEFORE the pre-user scan (:176-178 `compactionMarkerIdx` → `projectCompacted`). **Tests (this session's runs):** `TestCompaction_OverflowRetryCarriesSummary` all 4 subtests PASS — the new `prior_marker:` leg (compaction_test.go:1912) drives a planted `t-prior` marker + boundary through `runTurn` behind the content-sensitive size-rejecting provider and asserts stop==stopEndTurn, exactly 3 stream calls, markersOf==2, retry strictly smaller, seed carries `SHRUNK-PRIOR-SUMMARY` + the turn's intent, excludes `OLD-PRIOR-SUMMARY`, no provider error line. **Projector level:** `TestProjector_SameTurnCarveOut/armed_override_wins_over_the_pre-user_marker_scan_(CR-01)` PASS (asserts same-turn summary present / pre-user summary absent / intent present). **RED proof reproduced by this verifier:** on commit b301267 (tests-without-fix) exactly these two legs FAIL and every sibling subtest passes — the regression detector genuinely detects the defect, and commit 35d1740 turned exactly them green |
-| 6 | 19-06 T2 + 19-07: the carve-out is ENGINE-GATED — transcript content alone never reshapes a projection (kill-9 replay + tamper safety) | ✓ VERIFIED | Carve-out still requires the non-empty, exact in-memory `retryCompactedTurn == turnID` (engine-set only at session.go's overflow-retry branch); pinned by the UNMODIFIED `not_armed:_marker-present_projects_byte-identically_to_marker-free` DeepEqual subtest — PASS this session; `subagent_turn_safe` pin PASS |
-| 7 | 19-03 position rule survives; every 19-03/19-04 fixture passes UNMODIFIED (the one edited pin is the 19-06-era precedence subtest, deliberately inverted by the sanctioned 19-07 plan — its old expectation encoded the CR-01 defect) | ✓ VERIFIED | `git diff 06d92d1` over projector_test.go + compaction_test.go = 1103 insertions, **0 deletions** (re-run this session); the 19-03 pins (ResetPoint/TailCut) pass untouched; the fallback pin (`armed_with_no_same-turn_marker:_the_pre-user_scan_governs_unchanged`) PASSes both pre- and post-fix, preserving the not-armed/degraded behavior verbatim |
-| 8 | WR-03a: summarizer input bounded — span capped by a budget derived from ContextLimit (fallback cap when unset) | ✓ VERIFIED | `TestCompaction_BoundedSpanAndReFireGuard` `--- PASS` under `-race` this session; `spanBudgetChars`/`boundSpanMessages` unchanged by 19-07 |
-| 9 | WR-03b: at most ONE threshold-class compaction attempt per turn; forced compact stamps the guard; a new turn re-attempts | ✓ VERIFIED | Same battery PASS this session; guard stamps unchanged by 19-07 |
-| 10 | 19-06 T6: Reconcile classifies a mid-turn same-turn marker as inert bookkeeping; Project is a pure function of (lines, turnID, override) | ✓ VERIFIED | `TestReconcileSameTurnMarker` `--- PASS` under `-race` this session; determinism subtest of the carve-out battery PASS |
-| 11 | SC-4a: every outgoing request carries cache_control {"type":"ephemeral"} on each system block (keep-last-4 at the API cap), visible in the marshaled body | ✓ VERIFIED | shaper + profile packages ok this session; `profiles/zcode/profile.yaml:5` `system_cache_control: true`; emission via `NewCacheControlEphemeralParam` confined to the systemBlocks loop (shaper.go:167-180) |
-| 12 | SC-4b: the parity cache-discipline probe flips green on placement against the committed pin fixture; baseline untouched | ✓ VERIFIED | paritycli package ok this session (`TestCacheProbe_PlacementFlip` at parity_test.go:417); `git diff --name-only 73440bd -- internal/parity/cacheprobe.go` EMPTY — re-checked this session |
-| 13 | PAR-01 substrate (19-02): non-2xx rejections surface as ClassifyHTTP-typed error chunks (never a defaulted end_turn done chunk); IsOverflow message-class matcher, no new ErrorKind; happy SSE path unchanged | ✓ VERIFIED | provider package ok this session; `IsOverflow` at errors.go:158. CR-02 (in-band SSE `error` events swallowed, streaming.go:443-531/:651-678) remains PRE-EXISTING review debt — outside this truth's non-2xx scope (carried below) |
-| 14 | 19-03: summary payload additive on the marker line (redacted path, round-trip, field-tolerant); no-marker transcripts project byte-identically | ✓ VERIFIED | `TestTranscriptNewKinds` `--- PASS` under `-race` this session; no-marker identity pins inside the battery PASS |
+| 1 | SC-1a: over-threshold session compacts automatically (blocking compact at loop head, summary-bearing marker on disk, next turn seeded, headroom restored, disabled = zero delta) | ✓ VERIFIED | Battery green (`TestCompaction_Threshold`, `TestCompaction_Chaining`, `TestCompaction_SummarizerFailure`, `TestCompaction_LoopHead`, `TestCompactNow`, `TestCompaction_EndToEnd` all inside the ok 3.632s run); `compaction.go` zero-diff since 35d1740; `maybeCompact` still at runTurn head (session.go:640) |
+| 2 | SC-1b: threshold ~80% default and configurable end-to-end (config keys, menu advertise + effective values, persist-then-apply, live apply, clamps, no context-limit key) | ✓ VERIFIED | `TestCompactionLive_BootDefaults`, `TestCompactionLive_MenuThresholdRoundTrip`, `TestCompactionOptions` 3/3 PASS this session; `config.yaml:45-46` carries `threshold_pct: 80` / `enabled: true`; harness persisted restore-80 to the project layer live |
+| 3 | SC-1c: the user observes the conversation continuing coherently where v1.1 lost earlier turns (live threshold fire + summary-coherent continuation) | ✓ VERIFIED (upgraded from PRESENT_BEHAVIOR_UNVERIFIED) | Auto-UAT harness 2026-09-10 (operator-approved automated stand-in for the live leg, G-19-2 resolution in 19-UAT.md): PASS 20/20 — threshold-50 live-set fires first + second compactions (markers on disk, stderr notes, summary-seeded continuations across turns 3-5), wire order exact, seeding follows the pinned position rule (req3=[1] req4=[2] retry=[4]), 4 marker lines with non-empty durable summaries. Directly observed behavior on a binary whose session/shaper/provider content equals the current tree |
+| 4 | SC-2: tool_use/result pairs atomic, thinking never rewritten mid-chain, pinned Projector tests prove boundary-survival and pair-atomicity | ✓ VERIFIED | `TestProjector_CompactionResetPoint` + `TestProjector_CompactionTailCut` PASS inside this session's battery — UNMODIFIED (zero test diff since 35d1740); steering fold preserves pair safety (`flushBatch()` before the steering user message; `TestSteeringProjectPairSafety` PASS) |
+| 5 | SC-3 / G-19-1 + CR-01 closure: on a provider overflow error the producing turn completes after compaction + the single retry — the retry projects post-marker (carries the NEW summary), is measurably smaller, on EVERY overflow including sessions with an earlier marker | ✓ VERIFIED | Code: the armed carve-out is STILL FIRST in `Project()` (projector.go:170-174, read this session) — ahead of both the phase-20 full-reset branch (:185-187) and the pre-user marker scan (:189-191). Tests: `-v` run this session shows `armed_override_wins_over_the_pre-user_marker_scan_(CR-01)` and `prior_marker:…_(CR-01)` `--- PASS` plus the tamper byte-identity and fallback pins. Live: harness leg "retry window shrank (CR-01 post-marker projection) — rejected=515664B retry=95605B", turn completes end_turn (requests.jsonl seq 5-7) |
+| 6 | 19-06 T2 + 19-07: the carve-out is ENGINE-GATED — transcript content alone never reshapes a projection (kill-9 replay + tamper safety) | ✓ VERIFIED | Arming is still the in-memory, engine-set-only `SetRetryCompactedTurn(turnID)` at session.go:700 inside the `provider.IsOverflow && !overflowRetried` branch; `not_armed:_marker-present_projects_byte-identically_to_marker-free` PASS this session; steering cannot spoof the anchor (`turnAnchorOf` matches TypeUserMessage only) or inject steering lines from model output (AppendSteeringDelivery sole writer) |
+| 7 | 19-03 position rule survives; every 19-03/19-04 fixture passes UNMODIFIED | ✓ VERIFIED | `git diff --numstat 35d1740..HEAD -- internal/session/` lists NEITHER projector_test.go NOR compaction_test.go — zero content change since the 19-07-verified state; the full battery (which includes every 19-03/19-04 pin) is green on the current tree |
+| 8 | WR-03a: summarizer input bounded — span capped by a budget derived from ContextLimit (fallback cap when unset) | ✓ VERIFIED | `TestCompaction_BoundedSpanAndReFireGuard` PASS in this session's battery; `compaction.go` (spanBudgetChars/boundSpanMessages) zero-diff |
+| 9 | WR-03b: at most ONE threshold-class compaction attempt per turn; forced compact stamps the guard; a new turn re-attempts | ✓ VERIFIED | Guard stamp intact (session.go:698 `s.compactionAttemptTurn = turnID`); battery green; harness live leg "turn-4 compaction: one threshold (drift) + one forced" consistent with the once-per-class rule |
+| 10 | 19-06 T6: Reconcile classifies a mid-turn same-turn marker as inert bookkeeping; Project is a pure function of (lines, turnID, override) | ✓ VERIFIED | `TestReconcileSameTurnMarker` PASS in this session's battery; `TestSteeringReplayParity` PASS (steering replays identically — the purity discipline extended to the new line kind) |
+| 11 | SC-4a: every outgoing request carries cache_control {"type":"ephemeral"} on each system block (keep-last-4 at the API cap), visible in the marshaled body | ✓ VERIFIED | shaper.go ZERO content diff since 41a5c63; emission still confined to the systemBlocks loop (shaper.go:167-180, `NewCacheControlEphemeralParam` only); `profiles/zcode/profile.yaml:5` `system_cache_control: true`; shaper package ok this session |
+| 12 | SC-4b: the parity cache-discipline probe flips green on placement against the committed pin fixture; baseline untouched | ✓ VERIFIED | paritycli package ok this session (TestCacheProbe_PlacementFlip at parity_test.go:417); `internal/parity/cacheprobe.go` zero diff since 41a5c63 |
+| 13 | PAR-01 substrate (19-02): non-2xx rejections surface as ClassifyHTTP-typed error chunks (never a defaulted end_turn done chunk); IsOverflow message-class matcher, no new ErrorKind; happy SSE path unchanged | ✓ VERIFIED | provider package ok this session; `internal/provider/errors.go` zero diff since 41a5c63. CR-02 (in-band SSE error events swallowed) remains PRE-EXISTING review debt outside this truth's non-2xx scope (carried below) |
+| 14 | 19-03: summary payload additive on the marker line (redacted path, round-trip, field-tolerant); no-marker transcripts project byte-identically | ✓ VERIFIED | `TestTranscriptNewKinds` PASS under `-race` this session; the 23-01 steering additions to transcript.go are a NEW additive line kind (`steering_delivery`, redacted path, sole-writer discipline) — they did not alter the marker payload or the no-marker identity pins (which PASS inside the battery) |
 
-**Score:** 13/14 truths verified (1 present-but-behavior-unverified — the G-19-2 live leg)
+**Score:** 14/14 truths verified (0 present-but-behavior-unverified)
 
-### 19-07 Gap-Closure Plan must_haves (all verified)
-
-| 19-07 Truth | Status | Evidence |
-|-------------|--------|----------|
-| Armed retry with a prior marker resolves through projectSameTurnCompacted; seed carries the SAME-TURN summary, never the earlier marker's | ✓ VERIFIED | projector.go:170-174 branch order (read this session); armed-override-wins pin PASS; RED on b301267 |
-| Prior-marker overflow leg completes end-to-end (rejected → bounded summarize → M2 → one strictly-smaller NEW-summary-seeded retry, stopEndTurn, no error line, exactly 3 calls) | ✓ VERIFIED | prior_marker subtest PASS with every assertion (compaction_test.go:1912-1974); RED on b301267 |
-| Tamper safety unchanged (not-armed byte-identity DeepEqual pin unmodified and passing; engine gate intact) | ✓ VERIFIED | Not-armed subtest PASS; 0 deletions vs 06d92d1 |
-| Degraded compact keeps the fail-through (armed + no same-turn marker → pre-user scan governs) | ✓ VERIFIED | Fallback pin PASS post-fix AND pre-fix (b301267 run); existing degraded fail-through subtest PASS |
-| Every other pinned fixture passes unmodified; only the inverted precedence subtest edited | ✓ VERIFIED | 1103 insertions / 0 deletions vs 06d92d1; full 13-fn battery green |
-
-### Prohibition Checks
+### Prohibition Checks (re-checked on the current tree)
 
 | Prohibition | Verdict | Evidence |
 |-------------|---------|----------|
-| Tamper safety: projector never accepts a same-turn marker from transcript content alone | VERIFIED | Engine gate (non-empty exact turnID, in-memory only); not-armed DeepEqual pin green this session |
-| Test integrity: existing pinned fixtures MUST NOT be edited | VERIFIED | 0 deletions vs 06d92d1 across both test files (the inverted subtest replaced lines that were themselves post-06d92d1 insertions) |
-| Retry budget: retry stays EXACTLY ONCE | VERIFIED | prior-marker leg asserts exactly 3 stream calls (rejected, summarize, retry); fail-twice canary green |
-| cache_control never on tools/message blocks | VERIFIED | shaper emission confined to systemBlocks loop; shaper package green |
-| Probe baseline never edited | VERIFIED | Empty diff vs 73440bd (this session) |
-| No field beyond type ephemeral | VERIFIED | `NewCacheControlEphemeralParam` only; golden pins green |
-| No new ErrorKind; no generic-400 overflow misclassification | VERIFIED | provider package green |
-| Error-envelope parsing never panics | VERIFIED | malformed-body subtest green |
-| Transcript never mutated by compaction | VERIFIED | append-only paths; replay-identity pins green |
-| Durable seed never displaced; tail never orphaned | VERIFIED | ResetPoint/TailCut pins green, unmodified |
-| Bus isolation; estimate never request bytes | VERIFIED | zero-bus-publishes + estimate subtests green |
-| No context-limit key; out-of-range never persisted | VERIFIED | `TestCompactionOptions` green |
+| Tamper safety: projector never accepts a same-turn marker from transcript content alone | VERIFIED | Engine gate intact (session.go:700 arming; non-empty exact turnID); not-armed byte-identity DeepEqual pin PASS this session |
+| Test integrity: phase-19 pinned fixtures not edited by the later phases | VERIFIED | Zero content diff on projector_test.go/compaction_test.go since 35d1740 (numstat re-run this session) |
+| Retry budget: retry stays EXACTLY ONCE | VERIFIED | Prior-marker leg (asserting exactly 3 stream calls) PASS this session; harness wire-order leg exact |
+| cache_control never on tools/message blocks | VERIFIED | shaper.go frozen since 41a5c63; emission confined to systemBlocks loop |
+| Probe baseline never edited | VERIFIED | `internal/parity/cacheprobe.go` zero diff since 41a5c63 |
+| No field beyond type ephemeral | VERIFIED | `NewCacheControlEphemeralParam` only; shaper golden pins green |
+| No new ErrorKind; no generic-400 overflow misclassification | VERIFIED | provider package green; errors.go frozen |
+| Error-envelope parsing never panics | VERIFIED | malformed-body subtest green (provider ok) |
+| Transcript never mutated by compaction | VERIFIED | compaction.go zero-diff; append-only paths; replay-identity pins green |
+| Durable seed never displaced; tail never orphaned | VERIFIED | ResetPoint/TailCut pins PASS unmodified; steering fold never displaces the seed (flushBatch + arrival position; `TestSteeringProjectIntentSummaryUnchanged` PASS) |
+| Bus isolation; estimate never request bytes | VERIFIED | Battery green (zero-bus-publishes + estimate subtests) |
+| No context-limit key; out-of-range never persisted | VERIFIED | `TestCompactionOptions` PASS this session |
+| Debt markers in phase surface files | VERIFIED (none) | TBD/FIXME/XXX/TODO/HACK/PLACEHOLDER grep over projector.go/compaction.go/session.go/steerqueue.go/shaper.go — zero hits |
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `internal/session/projector.go` | armed carve-out PRECEDENCE over pre-user scan + doc sites | ✓ VERIFIED | :170-174 carve-out first, :176-178 pre-user scan second (line-order check this session); docs at :103-115 (setter), :140-154 (Project), :161-169 (inline) all state precedence + fallback |
-| `internal/session/projector_test.go` | inverted precedence pin + fallback pin | ✓ VERIFIED | :2279 armed-override-wins, :2318 fallback pin — both substantive, both PASS |
-| `internal/session/compaction_test.go` | prior-marker regression leg + near-copy helper | ✓ VERIFIED | :1698-1754 `newPriorMarkerSizeRejectSession` (load-bearing AppendBoundary documented), :1912-1974 the leg — full assertion set, PASS |
-| `internal/session/session.go` | comment-only precedence note | ✓ VERIFIED | Commit 35d1740's session.go hunk is a 4-line comment extension, zero code change (diff inspected) |
-| 19-01..19-06 artifacts (profile/loader/shaper/paritycli/provider/modelrouting/config_surface/runtime/transcript) | per plans | ✓ VERIFIED | Regression packages green this session; symbols spot-checked (truths 1, 2, 11, 12, 13, 14) |
-
-All artifacts: exists + substantive + wired. The size-reject provider family is test-only by design.
+| `internal/session/projector.go` | armed carve-out precedence + compaction reset-point class + fold rules | ✓ VERIFIED | :170-174 carve-out first (read this session); `projectCompacted`/`projectSameTurnCompacted`/`sameTurnMarkerIdx` zero-diff since 35d1740; steering fold + full-reset branch are additive neighbors that route around the marker path (see Audit Trail) |
+| `internal/session/compaction.go` | threshold engine, bounded span, re-fire guard | ✓ VERIFIED | ZERO diff since 35d1740 |
+| `internal/session/session.go` | loop-head compact + overflow retry-once + arming | ✓ VERIFIED | :631 drain → :640 maybeCompact → :642 Project; :664-703 overflow branch with :700 arming — shape identical to the 19-07-verified state |
+| `internal/session/projector_test.go` / `compaction_test.go` | every phase-19 pin | ✓ VERIFIED | Unmodified since 35d1740; full battery green on current tree |
+| `internal/session/steerqueue.go` (new, phase 23) | must not regress the phase-19 surface | ✓ VERIFIED | Stdlib-only queue; nil-safe; delivery via the projector's pair-safe fold; steering battery green |
+| `internal/shaper/shaper.go` + `profiles/zcode/profile.yaml` | PAR-02 cache_control emission | ✓ VERIFIED | Both zero-diff since 41a5c63; shaper package ok |
+| `internal/modelrouting/defaults/config.yaml` | threshold_pct 80 / enabled | ✓ VERIFIED | :45-46 present |
 
 ### Key Link Verification
 
 | From | To | Via | Status |
 |------|----|----|--------|
-| session.go overflow-retry branch | projector.go SetRetryCompactedTurn | arming between forced compact and continue | ✓ WIRED (unchanged by 19-07; the retry now benefits from the precedence flip) |
-| Project() armed branch | projectSameTurnCompacted | `retryCompactedTurn == turnID` + `sameTurnMarkerIdx >= 0` → returns before the pre-user scan | ✓ WIRED — this is the CR-01 fix itself, RED→GREEN proven |
-| Armed-with-no-marker fallback | projectCompacted via compactionMarkerIdx | branch falls through to :176 | ✓ WIRED (fallback pin green both pre- and post-fix) |
-| compaction.go span budget | compactionSettings.ContextLimit | spanBudgetChars → boundSpanMessages | ✓ WIRED |
-| profiles/zcode/profile.yaml | shaper.go | system_cache_control → NewCacheControlEphemeralParam | ✓ WIRED |
-| provider/errors.go IsOverflow | session.go retry branch | intercept before appendError | ✓ WIRED |
+| session.go overflow-retry branch | projector.go SetRetryCompactedTurn | arming between forced compact and continue (:700) | ✓ WIRED (re-read this session; unchanged) |
+| Project() armed branch | projectSameTurnCompacted | `retryCompactedTurn == turnID` + `sameTurnMarkerIdx >= 0`, FIRST in Project() | ✓ WIRED — precedence holds ahead of both later-added branches |
+| Armed-with-no-marker fallback | projectCompacted via compactionMarkerIdx | falls through to the pre-user scan | ✓ WIRED (fallback pin PASS) |
+| runTurn iteration top | maybeCompact → Project | drain(23-01) → compact(19-04) → project ordering | ✓ WIRED — steering lands before Project, never displaces the marker/seed |
+| SteerQueue.Drain | AppendSteeringDelivery → projector fold | sole-writer transcript line, pair-safe fold | ✓ WIRED (steering battery green) |
+| compaction.go span budget | compactionSettings.ContextLimit | spanBudgetChars → boundSpanMessages | ✓ WIRED (zero-diff; battery green) |
+| profiles/zcode/profile.yaml | shaper.go | system_cache_control → NewCacheControlEphemeralParam | ✓ WIRED (frozen; package green) |
+| provider IsOverflow | session.go retry branch | intercept before appendError | ✓ WIRED (frozen; package green) |
 
 ### Behavioral Spot-Checks
 
-All commands executed by this verifier with CORRECT Go regexp alternation (plain `|` inside single quotes). The prior report's `'\|'` form matched zero tests and is superseded.
+All commands executed by this verifier on the current tree (working-tree content == HEAD; the 471 modified files are permission-bit-only). Notation guard (the 2026-09-07 report's lesson): the `\|` inside the -run patterns below is MARKDOWN TABLE escaping only — each command was executed with plain `|` alternation in single quotes (Go regexp), and the quoted ok/PASS lines are the actual output of those runs.
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| Full session battery (13 functions) | `go test -race ./internal/session/ -run 'TestProjector_SameTurnCarveOut|TestCompaction_OverflowRetryCarriesSummary|TestCompaction_BoundedSpanAndReFireGuard|TestReconcileSameTurnMarker|TestCompaction_OverflowRetryOnce|TestProjector_CompactionResetPoint|TestProjector_CompactionTailCut|TestCompaction_EndToEnd|TestCompactNow|TestCompaction_Threshold|TestCompaction_Chaining|TestCompaction_SummarizerFailure|TestCompaction_LoopHead' -count=1` | ok 2.394s; `-v` run lists all 13 functions `--- PASS` individually (13/13) | ✓ PASS |
-| Both CR-01 battery functions, subtest level | same two-name filter, `-v` | 12/12 subtests `--- PASS`, incl. `armed_override_wins…(CR-01)` and `prior_marker…(CR-01)` | ✓ PASS |
-| RED proof (pre-fix tree, commit b301267 via `git archive` extract — no working-tree mutation) | `go test ./internal/session/ -run 'TestProjector_SameTurnCarveOut|TestCompaction_OverflowRetryCarriesSummary' -count=1 -v` | exactly the two new CR-01 legs `--- FAIL`; all sibling subtests PASS | ✓ PASS (detector proven) |
-| Regression packages | `go test ./internal/shaper/ ./internal/profile/ ./internal/paritycli/ ./internal/provider/ ./internal/modelrouting/ ./internal/providerfactory/ -count=1` | all 6 ok (0.7s–3.7s) | ✓ PASS |
-| acpserve compaction surface (committed tree) | `git archive HEAD` extract → `go test ./internal/acpserve/ -run 'TestCompaction' -count=1 -v` | 3/3 PASS (BootDefaults, MenuThresholdRoundTrip, Options); working-tree run blocked by Phase 20's untracked `internal/runtime/commands.go` — not Phase 19 state | ✓ PASS |
-| Transcript additivity | `go test -race ./internal/session/ -run 'TestTranscriptNewKinds' -count=1` | `--- PASS` | ✓ PASS |
-| Probe baseline untouched | `git diff --name-only 73440bd -- internal/parity/cacheprobe.go` | empty | ✓ PASS |
-| Pinned fixtures unmodified | `git diff 06d92d1 --numstat -- internal/session/projector_test.go internal/session/compaction_test.go` | 734/0 + 369/0 (1103 insertions, 0 deletions) | ✓ PASS |
-| Vet + static build (committed tree) | `go vet ./internal/session/` / `CGO_ENABLED=0 go build ./...` on `git archive HEAD` extract | VET-OK / BUILD-OK | ✓ PASS |
-| Gap-closure commits exist | `git log -1 b301267 / 35d1740 / 41a5c63` | all three present; 35d1740 touches exactly projector.go + session.go (session.go comment-only) | ✓ PASS |
+| Phase-19 13-function battery | `go test -race ./internal/session/ -run 'TestProjector_SameTurnCarveOut\|TestCompaction_OverflowRetryCarriesSummary\|TestCompaction_BoundedSpanAndReFireGuard\|TestReconcileSameTurnMarker\|TestCompaction_OverflowRetryOnce\|TestProjector_CompactionResetPoint\|TestProjector_CompactionTailCut\|TestCompaction_EndToEnd\|TestCompactNow\|TestCompaction_Threshold\|TestCompaction_Chaining\|TestCompaction_SummarizerFailure\|TestCompaction_LoopHead' -count=1` | ok 3.632s | ✓ PASS |
+| CR-01 battery, subtest level | same two-name filter, `-v` | both functions `--- PASS`; subtests include `armed_override_wins…(CR-01)`, `prior_marker…(CR-01)`, `not_armed:…byte-identically`, `armed_with_no_same-turn_marker:…governs_unchanged` | ✓ PASS |
+| Steering fold battery (post-stale-change surface) | `go test -race ./internal/session/ -run 'TestSteeringDeliveryEndToEnd\|TestSteeringProjectAnchorSafety\|TestSteeringProjectPairSafety\|TestSteeringProjectIntentSummaryUnchanged\|TestSteeringReplayParity\|TestSteeringProjectLegacyTolerance\|TestSteeringAntiZombie' -count=1` | ok 1.131s | ✓ PASS |
+| Transcript additivity | `go test -race ./internal/session/ -run 'TestTranscriptNewKinds' -count=1` | ok 1.070s | ✓ PASS |
+| acpserve compaction surface | `go test ./internal/acpserve/ -run 'TestCompaction' -count=1 -v` | 3/3 PASS (BootDefaults, MenuThresholdRoundTrip, Options) | ✓ PASS |
+| PAR-02 regression packages | `go test ./internal/shaper/ ./internal/profile/ ./internal/paritycli/ ./internal/provider/ ./internal/modelrouting/ -count=1` | all 5 ok | ✓ PASS |
+| Vet | `go vet ./internal/session/` | clean | ✓ PASS |
+| Frozen-surface audits | `git diff --numstat 35d1740..HEAD -- internal/session/` (tests absent); `git diff 41a5c63..HEAD --numstat` over shaper/profile/paritycli/errors/cacheprobe (empty) | confirmed | ✓ PASS |
+| Live harness validity | `git log --since=2026-09-10T02:22:20+03:00 -- internal/session/ internal/shaper/ internal/provider/` | empty — harness binary's phase-19 surface == current tree | ✓ PASS |
 
 ### Probe Execution
 
-Step 7c: SKIPPED — no probe scripts declared by this phase (`scripts/*/tests/probe-*.sh` convention not used by this repo's phase plans; the parity A/B probe is operator-gated live-model work by design).
+Step 7c: SKIPPED — no probe scripts declared by this phase (unchanged from prior reports; the parity A/B probe is operator-gated live-model work by design).
 
 ### Requirements Coverage
 
 | Requirement | Source Plans | Description | Status | Evidence |
 |-------------|-------------|-------------|--------|----------|
-| PAR-01 | 19-02, 19-03, 19-04, 19-05, 19-06, 19-07 | Compaction on context overflow risk: threshold-triggered configurable light-tier summarizer, additive typed marker, durable reset-point class, pair atomicity, thinking never rewritten, retry-once recovery | ✓ SATISFIED | Truths 1, 2, 4-10, 13, 14. The CR-01 gap is closed: retry-once recovery now holds on every overflow (prior marker or not), RED→GREEN proven independently. The live-coherence leg (SC-1c) is the one remaining item — an operator retest on live infra (behavior-unverified), not an implementation gap |
-| PAR-02 | 19-01 | cache_control {"type":"ephemeral"} on every system block via the Shaper | ✓ SATISFIED | Truths 11, 12 — untouched by 19-07, re-confirmed green this session |
+| PAR-01 | 19-02..19-07 | Compaction on context overflow risk: threshold-triggered configurable light-tier summarizer, additive typed marker, durable reset-point class, pair atomicity, thinking never rewritten, retry-once recovery | ✓ SATISFIED | Truths 1-10, 13, 14. On the CURRENT tree: engine frozen, projector precedence intact ahead of the steering/full-reset additions, every pin green unmodified, and the live harness proves the end-to-end behavior (threshold fire, coherent continuation, post-marker retry) on this content |
+| PAR-02 | 19-01 | cache_control {"type":"ephemeral"} on every system block via the Shaper | ✓ SATISFIED | Truths 11, 12 — substrate frozen since 41a5c63, packages green this session |
 
-No orphaned requirements: REQUIREMENTS.md maps exactly PAR-01 and PAR-02 to Phase 19; all seven plans declare them (19-01: PAR-02; 19-02..07: PAR-01). REQUIREMENTS.md rows updated per this verdict: PAR-01 `[x]` Complete (set by 41a5c63, endorsed here); PAR-02 restored to `[x]` Complete — its "Gaps Found" was collateral from the a2752b8 blanket revert, and PAR-02 has been verified SATISFIED in both this and the prior report.
+No orphaned requirements: REQUIREMENTS.md maps exactly PAR-01 and PAR-02 to Phase 19 (rows `[x]` Complete; verified against the current tree by this report).
 
 ### Anti-Patterns Found
 
 | File | Line | Pattern | Severity | Impact |
 |------|------|---------|----------|--------|
-| internal/session/projector_test.go | ~2177 | Stale battery-level doc comment still describes the OLD precedence ("ONLY when … AND no pre-user marker exists") | ⚠️ Warning (doc-only) | Deliberately deferred (deferred-items.md 19-07 entry): fixing it inside 19-07 would have produced deletions outside the inverted subtest and violated the zero-deletions audit; fix opportunistically in the next plan touching the file |
-| (19-07 modified files) | - | No TBD/FIXME/XXX/TODO/HACK/PLACEHOLDER; no stdout writes — ACP frame discipline holds | - | - |
+| (none) | - | No TBD/FIXME/XXX/TODO/HACK/PLACEHOLDER in projector.go, compaction.go, session.go, steerqueue.go, shaper.go; no stdout writes (ACP frame discipline holds) | - | - |
 
-Review findings carried (19-REVIEW.md, status issues_found — factored per coordinator instruction; none blocks a phase must-have):
+Carried (unchanged from prior reports; none blocks a phase-19 must-have): CR-02 (in-band SSE error events swallowed — PRE-EXISTING, outside 19-02's non-2xx scope), WR-01/02/04/05/06, IN-02..08 (see 19-REVIEW.md), the stale battery-level doc comment in projector_test.go (~2177, deferred), and the compaction-observability UX deferral to the /status vehicle (19-UAT.md Deferred Follow-Ups).
 
-- **CR-01 (Critical)** — CLOSED by 19-07 (this verification's core finding).
-- **CR-02 (Critical, code health)** — in-band SSE `error` events swallowed, fabricated end_turn (`streaming.go:443-531`, `:651-678`). PRE-EXISTING and outside 19-02's pinned non-2xx scope; schedule as engineering debt (fix sketch + test shape in the review).
-- ⚠️ WR-01 (blob-fill advertisement divergence), WR-02 (estimate anchor async drift, bounded by the once-per-turn guard), WR-04 (session-id path traversal, pre-existing), WR-05 (marker pre/post refs race the async writer, write-only today), WR-06 (stale context limit after per-session model switch — the second door to the overflow backstop; the CR-01 fix means the backstop now actually recues these sessions instead of failing them). ℹ️ IN-01 fixed by 19-06; IN-02 still broken (always-empty `firstFile` in extract.go's error, re-confirmed this session); IN-03..08 cosmetic/pre-existing.
+### Advisory (New Scope, Unevidenced)
+
+| # | Finding | Category | Why Advisory |
+|---|---------|----------|--------------|
+| 1 | The clear-vs-marker ordering rule added by phase-20's 830d045 (`resetIdx > mIdx` — LAST reset point wins) has no direct regression pin: no test combines a `context-reset` boundary with a compaction marker; `TestClassBClear` covers markerless /clear only | other | Phase-20 scope (/clear postdates phase 19); code-read this session confirms the intended semantics and every phase-19 pin passes — no deterministic evidence of any defect, so reported, not blocking. A marker+reset ordering test in the next plan touching internal/session would close it |
 
 ### Human Verification Required
 
-### 1. Operator live-threshold retest on the fresh binary (G-19-2 / SC-1c)
-
-**Test:** On the binary installed 2026-09-07 (v0.0.0-20260907153836-a8f63f31b1b0 — engine string verified present per the UAT diagnosis), set compaction-threshold low (e.g. 5) in a live editor session, keep working, then restore 80.
-**Expected:** Compaction observably fires (marker line on disk under `.ass-guard/`; continuation stays coherent; later turns stay under threshold). Expect NO visible indicator in the editor — the pre-authorized stderr+counter degrade; the observability UX decision is deferred to Phase 20's /status vehicle.
-**Why human:** The first live attempt ran a stale pre-phase-19 binary whose menu entry was 16-05's pending no-op; summary fidelity under a real model is the research validation table's operator-gated leg — offline tests prove the machinery with a scripted summarizer, not live summary fidelity.
-
-(Human-item lineage: the 2026-09-06 report's Item 1 — the architect decision on producing-turn semantics — was closed by operator ruling (b), implemented by 19-06; its CR-01 residue was an engineering gap, now closed by 19-07 and verified above. This G-19-2 retest is the sole remaining human leg.)
+None. The sole prior human leg (G-19-2 / SC-1c operator live-threshold retest) was resolved 2026-09-10 by the operator-approved automated live harness (19-UAT.md: both tests pass, gaps resolved; evidence uat-harness-run-20260910/). No behavior-unverified truths remain.
 
 ### Gaps Summary
 
-No code gaps remain. The single blocking gap of the prior report (CR-01: recovery worked exactly once per session because the pre-user marker scan preceded the armed carve-out) is closed in code at projector.go:170-178, is pinned by regression legs at both the projector and session level, and this verifier independently reproduced the RED proof on the pre-fix commit (exactly the two new legs fail there) before confirming GREEN on HEAD. Tamper safety, the degraded fail-through, the retry budget, and every pre-existing pin survive (1103 insertions / 0 deletions vs 06d92d1; probe baseline untouched). The phase's status is human_needed solely because the G-19-2 operator live retest (SC-1c live coherence on the fresh binary) cannot be executed offline. Carried review debt (CR-02, WR-01..06, IN-02..08) and the stale battery doc comment remain documented above and in deferred-items.md; none blocks a phase must-have.
+No gaps. The stale-trigger commits (steering fold, full-reset ordering, parked-ask fallback, phase-22/23 dispatch work) are additive neighbors of the phase-19 machinery: the armed carve-out still takes precedence in `Project()`, the compaction engine and both projector compaction paths are byte-identical to the 19-07-verified state, every phase-19 pinned test passed UNMODIFIED on the current tree under `-race`, the PAR-02 substrate is frozen, and the 2026-09-10 live harness (whose binary's phase-19 surface is content-identical to this tree) proves the end-to-end goal behavior live — threshold compactions fire, continuation stays coherent and summary-seeded, the overflow retry projects post-marker and shrinks 515664B→95605B, restore-80 persists. Phase goal achieved and still holding.
 
 ---
 
-_Verified: 2026-09-07T18:14:00Z_
-_Verifier: ZCode (gsd-verifier)_
+_Verified: 2026-09-10T10:47:05Z_
+_Verifier: ZCode (gsd-verifier) — stale re-verification after phase-20/22/23 internal/session changes_
