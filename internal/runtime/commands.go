@@ -11,10 +11,12 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
+	"github.com/Djarvur/ass-guard-agent/internal/checkpoint"
 	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
@@ -91,17 +93,19 @@ type builtinClassB struct {
 	handler builtinHandler
 }
 
-// reservedNames is the D-01 published contract: the twelve class-B names
-// (CMDS-02) plus init (class-A, CMDS-03). A discovered file, skill, or agent
-// sharing one of these names NEVER fires via slash — dropped at chain build
-// with exactly one structured warning naming the file and the reserved name.
-// Growth of this list is costly by design (a later builtin silently shadows
-// an existing discovered command from the user's view) — the shadow-check
-// warning is the mitigation this set ships with.
+// reservedNames is the D-01 published contract: the thirteen class-B names
+// (CMDS-02 + undo, 23-05/SEEDG-03) plus init (class-A, CMDS-03). A
+// discovered file, skill, or agent sharing one of these names NEVER fires via
+// slash — dropped at chain build with exactly one structured warning naming
+// the file and the reserved name. Growth of this list is costly by design (a
+// later builtin silently shadows an existing discovered command from the
+// user's view) — the shadow-check warning is the mitigation this set ships
+// with.
 var reservedNames = map[string]struct{}{ //nolint:gochecknoglobals // the D-01 published contract table
 	"help": {}, "status": {}, "cost": {}, "mcp": {}, "memory": {},
 	"permissions": {}, "doctor": {}, "config": {}, "model": {},
 	"clear": {}, "resume": {}, "compact": {}, "init": {},
+	"undo": {},
 }
 
 // builtinTable is the LIVE builtin set (a subset of reservedNames — the
@@ -110,7 +114,7 @@ var reservedNames = map[string]struct{}{ //nolint:gochecknoglobals // the D-01 p
 // 20-01 ships exactly two live builtins: /status (the tracer) and /init
 // (class-A reservation).
 //
-//nolint:funlen // the twelve-command table is the deliverable
+//nolint:funlen // the thirteen-command table is the deliverable
 func builtinTable() []builtinClassB {
 	return []builtinClassB{
 		{
@@ -174,6 +178,12 @@ func builtinTable() []builtinClassB {
 			name:    "cost",
 			desc:    "Show session cost (provider usage endpoint when declared, transcript-derived otherwise)",
 			handler: builtinCost,
+		},
+		{
+			name:    "undo",
+			desc:    "Restore the last workspace checkpoint (auto-cancels an active turn first; repeat to walk back)",
+			hint:    "[N]",
+			handler: builtinUndo,
 		},
 	}
 }
@@ -1120,6 +1130,184 @@ func costTranscriptUsage(sess *session.Session) (inTok, outTok int64) {
 	}
 
 	return inTok, outTok
+}
+
+// --- 23-05 (SEEDG-03): /undo — the D-11 stack walk over the checkpoint store ---
+
+// nameUndo is the /undo builtin's reserved name (the fourteenth RESERVED
+// name, 23-05).
+const nameUndo = "undo"
+
+// undoRefPrefix mirrors the store's ref namespace (refs/checkpoints/ — the
+// id grammar's prefix, pinned by the store's own battery). The runtime trims
+// it off Entry.Ref to hand Store.Restore the bare checkpoint id.
+const undoRefPrefix = "refs/checkpoints/"
+
+// parseUndoDepth parses /undo's depth argument (CONTEXT discretion — the
+// documented edge table): empty -> 1; zero and negative normalize to 1;
+// non-numeric is a typed error the caller renders as the D-05 error text
+// (never a model turn, still a recorded invocation).
+func parseUndoDepth(args string) (int, error) {
+	trimmed := strings.TrimSpace(args)
+	if trimmed == "" {
+		return 1, nil
+	}
+
+	n, err := strconv.Atoi(trimmed)
+	if err != nil {
+		return 0, fmt.Errorf("invalid depth %q: expected /undo [N] with N a positive integer", trimmed)
+	}
+
+	if n < 1 {
+		return 1, nil
+	}
+
+	return n, nil
+}
+
+// undoWalkTarget selects the D-11 walk target from the store's entries:
+// THIS session's entries ordered newest-first, N steps from the newest;
+// beyond-depth clamps to the oldest available entry.
+//
+// The walk order is RECENCY (CommittedAt), not List()'s grammar order —
+// that is load-bearing: every restore mints its pre-restore snapshot FIRST
+// (D-09), that snapshot is the newest entry of the walk, and the NEXT /undo
+// therefore targets it — the walk itself is reversible (undo-of-undo). On
+// CommittedAt ties (same-second snapshots are the common case in tests and
+// fast operator sequences) the tie-breaks reproduce mint order: pre-family
+// above turn-family (a snapshot minted by an undo that restored a turn of
+// the same second is the later mint), then higher sequence numbers above
+// lower, then Ref — the GC count-axis ordering discipline applied to the
+// walk.
+func undoWalkTarget(entries []checkpoint.Entry, sessionID string, depth int) (checkpoint.Entry, bool) {
+	mine := make([]checkpoint.Entry, 0, len(entries))
+
+	for _, e := range entries {
+		if e.SessionID == sessionID {
+			mine = append(mine, e)
+		}
+	}
+
+	if len(mine) == 0 {
+		return checkpoint.Entry{}, false
+	}
+
+	slices.SortFunc(mine, func(a, b checkpoint.Entry) int {
+		if !a.CommittedAt.Equal(b.CommittedAt) {
+			return b.CommittedAt.Compare(a.CommittedAt) // newest first
+		}
+
+		if a.Kind != b.Kind {
+			return strings.Compare(a.Kind, b.Kind) // "pre" above "turn" on ties
+		}
+
+		if a.TurnNum != b.TurnNum {
+			return b.TurnNum - a.TurnNum
+		}
+
+		return strings.Compare(b.Ref, a.Ref)
+	})
+
+	idx := depth - 1
+	if idx >= len(mine) {
+		idx = len(mine) - 1 // beyond-depth clamps to the oldest
+	}
+
+	return mine[idx], true
+}
+
+// undoPlan is one fully-validated /undo invocation (the mutation steps still
+// ahead: pre-restore snapshot + restore).
+type undoPlan struct {
+	targetID string
+	depth    int
+}
+
+// prepareUndo runs every pre-mutation step of /undo — the head the idle path
+// (Task 1) and the active-turn path (Task 2, D-12) share: nil-store loud
+// degrade (Pitfall 9), depth parsing, the nested-repo refusal (23-03
+// RestoreGuard — outright, never an auto path), and the D-11 walk target
+// selection. A non-ready plan carries the D-05 output + outcome the caller
+// renders verbatim.
+func (r *Runner) prepareUndo(sess *session.Session, args string) (plan undoPlan, out, outcome string) {
+	st := r.checkpointStore()
+	if st == nil {
+		return undoPlan{},
+			"/undo unavailable: checkpoint store disabled for this workspace — " +
+				"turns ran without undo snapshots (see stderr; the invocation is recorded)\n",
+			"unavailable: checkpoint store disabled"
+	}
+
+	depth, perr := parseUndoDepth(args)
+	if perr != nil {
+		return undoPlan{}, fmt.Sprintf("/undo failed: %v\n", perr), "failed: invalid depth"
+	}
+
+	if gerr := st.RestoreGuard(r.workDirOrDefault()); gerr != nil {
+		return undoPlan{}, fmt.Sprintf("undo refused: %v\n", gerr), "refused: nested repositories"
+	}
+
+	entries, lerr := st.List()
+	if lerr != nil {
+		return undoPlan{},
+			fmt.Sprintf("/undo failed: checkpoint listing failed: %v\n", lerr),
+			"failed: checkpoint list"
+	}
+
+	target, ok := undoWalkTarget(entries, sess.SessionID, depth)
+	if !ok {
+		return undoPlan{},
+			"nothing to restore — this session has no checkpoints yet " +
+				"(snapshots land at every turn start)\n", ""
+	}
+
+	return undoPlan{targetID: strings.TrimPrefix(target.Ref, undoRefPrefix), depth: depth}, "", ""
+}
+
+// restoreUndo performs the mutation half of the IDLE path (Task 1): the
+// D-09 fail-closed sequence — the pre-restore snapshot ALWAYS precedes the
+// restore, and its failure aborts the undo with nothing mutated. Store ops
+// ride the serve ctx (the parked-chain precedent): a restore must not die
+// with the requesting request halfway through its git plumbing.
+func (r *Runner) restoreUndo(sess *session.Session, plan undoPlan) (string, string) {
+	st := r.checkpointStore()
+	ctx := r.serveCtxOrBackground()
+
+	preID, serr := st.SnapshotPreRestore(ctx, sess.SessionID)
+	if serr != nil {
+		return fmt.Sprintf(
+			"undo aborted: pre-restore snapshot failed: %v (nothing was cancelled, nothing was restored)\n",
+			serr), "failed: pre-restore snapshot"
+	}
+
+	if rerr := st.Restore(ctx, plan.targetID); rerr != nil {
+		return fmt.Sprintf(
+			"undo failed: restore of %s failed: %v (pre-restore snapshot %s is available)\n",
+			plan.targetID, rerr, preID), "failed: restore"
+	}
+
+	return fmt.Sprintf(
+		"undo complete — restored checkpoint %s (pre-restore snapshot: %s); "+
+			"run /undo again to walk back further\n",
+		plan.targetID, preID), ""
+}
+
+// builtinUndo is the /undo handler — the idle-path half (23-05 Task 1,
+// SEEDG-03). The tryLocalCommand intercept already holds the session turn
+// mutex (the session is idle by construction), so the sequence is prepare ->
+// snapshot -> restore, zero provider calls. The ACTIVE-turn half (D-12
+// auto-cancel-then-restore) composes the same prepare/restore steps from the
+// pre-mutex classifier slot (routeUndoActive, runtime.go) — it never runs
+// here, because a mid-turn /undo is classified BEFORE the mutex.
+//
+//nolint:gocritic // (output, outcome) pair — the handler-table shape
+func builtinUndo(_ context.Context, r *Runner, sess *session.Session, _, args string) (string, string) {
+	plan, out, outcome := r.prepareUndo(sess, args)
+	if plan.targetID == "" {
+		return out, outcome
+	}
+
+	return r.restoreUndo(sess, plan)
 }
 
 // resolveSlashCommand returns the Command value the EXPANSION seam expands

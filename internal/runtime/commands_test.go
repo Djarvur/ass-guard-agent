@@ -525,8 +525,8 @@ func TestReservedNamesFitInvocationGrammar(t *testing.T) {
 		}
 	}
 
-	if got := len(reservedNames); got != 13 {
-		t.Errorf("reserved name set has %d entries; want 13 (twelve class-B + init)", got)
+	if got := len(reservedNames); got != 14 {
+		t.Errorf("reserved name set has %d entries; want 14 (thirteen class-B + init)", got)
 	}
 }
 
