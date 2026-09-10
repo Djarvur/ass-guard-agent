@@ -3,6 +3,7 @@ package runtime //nolint:testpackage // internal package test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -2145,5 +2146,492 @@ func TestClassBUndoDegradedStore(t *testing.T) {
 
 	if got := undoCanaryContent(t, r.workDir); got != "state-D\n" {
 		t.Errorf("a degraded-store /undo mutated the workspace: %q", got)
+	}
+}
+
+// --- 23-05 Task 2: the D-12 auto-cancel-then-restore battery ---
+
+// stopCancelledLit mirrors session's cancelled stop marker (unexported there;
+// the runtime battery only needs the literal).
+const stopCancelledLit = "cancelled"
+
+// TestUndoAutoCancel pins D-12's active-turn leg end-to-end: /undo typed
+// while a client turn is blocked mid-stream COMPLETES without the provider
+// being released (the prompt-return-vs-turn-death assertion + the Pitfall-4
+// deadlock guard — -race cannot catch this class), the blocked turn ends
+// CANCELLED through the existing cancel contract, the workspace restores,
+// the mid-turn steering that sat queued resolves cancelled-normal (no
+// steering_delivery line, no later-window delivery), and the /undo text
+// itself never reaches any captured request (T-23-15).
+func TestUndoAutoCancel(t *testing.T) { //nolint:funlen,maintidx,cyclop // timed end-to-end scenario
+	r, prov := newBlockingRunner(t, scriptedResp{text: "done", finish: stopEndTurn})
+
+	const sid = "sess-undo-active"
+
+	seedUndoSnap(t, r.workDir, sid, sid+"-turn-001", "state-A\n")
+	writeGuardFile(t, filepath.Join(r.workDir, undoCanary), "state-D\n")
+
+	turnDone := make(chan string, 1)
+
+	go func() {
+		stop, err := r.Run(context.Background(), sid, &noopEmitter{},
+			[]acp.ContentBlock{{Type: blockText, Text: "long turn"}})
+		if err != nil {
+			t.Errorf("turn Run err: %v", err)
+		}
+
+		turnDone <- stop
+	}()
+
+	<-prov.entered // the turn holds turnMu + turnActive; the provider is blocked
+
+	// Steering enqueued while the turn runs: must resolve cancelled-normal
+	// when the /undo cancel kills the turn.
+	st, serr := r.Run(context.Background(), sid, &noopEmitter{},
+		[]acp.ContentBlock{{Type: blockText, Text: "steer-while-undo-pending"}})
+	if serr != nil || st != stopEndTurn {
+		t.Fatalf("steering Run = (%q,%v); want (end_turn, nil)", st, serr)
+	}
+
+	// /undo mid-turn: returns WITHOUT the test releasing the provider.
+	emit := &tracerEmitter{}
+
+	type undoResult struct {
+		stop string
+		err  error
+	}
+
+	undoDone := make(chan undoResult, 1)
+
+	go func() {
+		stop, err := r.Run(context.Background(), sid, emit, []acp.ContentBlock{{Type: blockText, Text: "/undo"}})
+		undoDone <- undoResult{stop, err}
+	}()
+
+	var res undoResult
+
+	select {
+	case res = <-undoDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("DEADLOCK (Pitfall 4): /undo did not return while the turn was blocked — " +
+			"classification/snapshot/cancel must ALL precede the turn-mutex acquisition")
+	}
+
+	if res.err != nil || res.stop != stopEndTurn {
+		t.Fatalf("/undo Run = (%q,%v); want (end_turn, nil)", res.stop, res.err)
+	}
+
+	// The blocked turn ended CANCELLED (the existing cancel contract's shape).
+	select {
+	case stop := <-turnDone:
+		if stop != stopCancelledLit {
+			t.Fatalf("cancelled turn stop = %q; want cancelled", stop)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the running turn did not end after the /undo cancel")
+	}
+
+	// The workspace restored to the seeded checkpoint.
+	if got := undoCanaryContent(t, r.workDir); got != "state-A\n" {
+		t.Fatalf("canary after auto-cancel /undo = %q; want state-A", got)
+	}
+
+	// Exactly ONE provider call total (the turn's own blocked call): the
+	// undo fired no model turn and neither the /undo text nor the cancelled
+	// steering reached any request.
+	if got := prov.callCount(); got != 1 {
+		t.Fatalf("provider Stream calls = %d; want 1 (the turn's own; zero from /undo)", got)
+	}
+
+	for i := range prov.callCount() {
+		if prov.streamSawText(i, "/undo") {
+			t.Errorf("request %d carried the /undo invocation (T-23-15)", i+1)
+		}
+
+		if prov.streamSawText(i, "steer-while-undo-pending") {
+			t.Errorf("request %d carried steering that resolved cancelled (zombie delivery)", i+1)
+		}
+	}
+
+	// The D-05 shape on the active path: echo + output naming both ids.
+	frames := emit.snapshot()
+
+	var echoed bool
+
+	for _, f := range frames {
+		if f.kind == frameKindUserEcho && f.text == "/undo" {
+			echoed = true
+		}
+	}
+
+	if !echoed {
+		t.Error("no verbatim /undo echo frame on the active path")
+	}
+
+	out := undoOutputText(frames)
+	if !strings.Contains(out, sid+"-turn-001") || !strings.Contains(out, sid+"-pre-001") {
+		t.Errorf("output missing restored/pre-restore ids:\n%s", out)
+	}
+
+	// The cancelled turn's queued steering resolved: queue empty, no
+	// steering_delivery line, durable /undo record present.
+	sess := r.sessions[sid]
+
+	if q := sess.SteerQueue(); q != nil && q.Pending() != 0 {
+		t.Errorf("queue pending = %d after the cancelled turn; want 0 (cancelled-normal resolution)", q.Pending())
+	}
+
+	lines, rerr := sess.Manager.ReadAll()
+	if rerr != nil {
+		t.Fatalf("ReadAll: %v", rerr)
+	}
+
+	for _, l := range lines {
+		if l.Type == session.TypeSteeringDelivery {
+			t.Error("a steering_delivery line landed for cancelled steering")
+		}
+	}
+
+	rec := localCommandLine(t, lines)
+	if rec.Name != "undo" || rec.Expansion != "ok" {
+		t.Errorf("local_command = {name:%q outcome:%q}; want {undo ok}", rec.Name, rec.Expansion)
+	}
+
+	// A fresh turn after the undo is clean (no zombie delivery) and runs.
+	fresh, ferr := r.Run(context.Background(), sid, &noopEmitter{},
+		[]acp.ContentBlock{{Type: blockText, Text: "fresh turn after undo"}})
+	if ferr != nil || fresh != stopEndTurn {
+		t.Fatalf("fresh Run = (%q,%v); want (end_turn, nil)", fresh, ferr)
+	}
+
+	if prov.streamSawText(1, "steer-while-undo-pending") || prov.streamSawText(1, "/undo") {
+		t.Error("the fresh turn's request carried cancelled content (zombie delivery)")
+	}
+}
+
+// TestUndoAutoCancelParkedChain pins D-12's parked-chain leg: /undo while an
+// engine chain is PARKED (chainCount > 0, no mutex, no client turn) cancels
+// the chain through the Runner's parked-chain cancel path and completes the
+// restore — the session never wedges on a chain that is neither running nor
+// idle.
+func TestUndoAutoCancelParkedChain(t *testing.T) { //nolint:paralleltest // park-state fixture
+	r, prov := newBlockingRunner(t, scriptedResp{text: "done", finish: stopEndTurn})
+	close(prov.release) // no client turn at all
+
+	const sid = "sess-undo-parked"
+
+	_ = r.sessionFor(context.Background(), sid) // create the session + wire its queue
+
+	parkCtx, parkCancel := context.WithCancel(context.Background())
+	defer parkCancel()
+
+	r.registerParkedChain(sid, &parkedChain{cancel: parkCancel})
+	r.chainEnter(sid)
+	defer r.chainExit(sid)
+
+	seedUndoSnap(t, r.workDir, sid, sid+"-turn-001", "state-A\n")
+	writeGuardFile(t, filepath.Join(r.workDir, undoCanary), "state-D\n")
+
+	emit := &tracerEmitter{}
+
+	stop, err := r.Run(context.Background(), sid, emit, []acp.ContentBlock{{Type: blockText, Text: "/undo"}})
+	if err != nil || stop != stopEndTurn {
+		t.Fatalf("/undo Run = (%q,%v); want (end_turn, nil)", stop, err)
+	}
+
+	if parkCtx.Err() == nil {
+		t.Error("the parked chain's ctx was not cancelled by the /undo")
+	}
+
+	if got := undoCanaryContent(t, r.workDir); got != "state-A\n" {
+		t.Fatalf("canary after parked-chain /undo = %q; want state-A", got)
+	}
+
+	if got := prov.callCount(); got != 0 {
+		t.Errorf("provider Stream calls = %d; want 0 (zero model turns)", got)
+	}
+
+	if out := undoOutputText(emit.snapshot()); !strings.Contains(out, sid+"-turn-001") {
+		t.Errorf("output missing the restored id:\n%s", out)
+	}
+}
+
+// TestUndoFailClosed pins D-12's fail-closed contract: an injected
+// SnapshotPreRestore failure aborts the undo AND leaves the running turn
+// untouched — nothing is cancelled (the snapshot precedes the cancel), the
+// turn completes normally once released, and the workspace is unmutated.
+func TestUndoFailClosed(t *testing.T) { //nolint:paralleltest // seam swap must not race parallel tests
+	r, prov := newBlockingRunner(t, scriptedResp{text: "done", finish: stopEndTurn})
+
+	const sid = "sess-undo-failclosed"
+
+	seedUndoSnap(t, r.workDir, sid, sid+"-turn-001", "state-A\n")
+	writeGuardFile(t, filepath.Join(r.workDir, undoCanary), "state-D\n")
+
+	injected := errors.New("injected pre-restore failure")
+
+	undoSnapshotPreRestore = func(context.Context, *checkpoint.Store, string) (string, error) {
+		return "", injected
+	}
+
+	t.Cleanup(func() { undoSnapshotPreRestore = realSnapshotPreRestore })
+
+	turnDone := make(chan string, 1)
+
+	go func() {
+		stop, err := r.Run(context.Background(), sid, &noopEmitter{},
+			[]acp.ContentBlock{{Type: blockText, Text: "long turn"}})
+		if err != nil {
+			t.Errorf("turn Run err: %v", err)
+		}
+
+		turnDone <- stop
+	}()
+
+	<-prov.entered
+
+	emit := &tracerEmitter{}
+
+	type undoResult struct {
+		stop string
+		err  error
+	}
+
+	undoDone := make(chan undoResult, 1)
+
+	go func() {
+		stop, err := r.Run(context.Background(), sid, emit, []acp.ContentBlock{{Type: blockText, Text: "/undo"}})
+		undoDone <- undoResult{stop, err}
+	}()
+
+	select {
+	case res := <-undoDone:
+		if res.err != nil || res.stop != stopEndTurn {
+			t.Fatalf("/undo Run = (%q,%v); want (end_turn, nil)", res.stop, res.err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("fail-closed /undo did not return promptly (the abort must precede any mutex wait)")
+	}
+
+	if out := undoOutputText(emit.snapshot()); !strings.Contains(out, "aborted") {
+		t.Errorf("output missing the fail-closed abort text:\n%s", out)
+	}
+
+	// The turn was NEVER cancelled: still running until released.
+	select {
+	case <-turnDone:
+		t.Fatal("the turn ended despite the fail-closed abort (nothing may be cancelled)")
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	close(prov.release)
+
+	select {
+	case stop := <-turnDone:
+		if stop != stopEndTurn {
+			t.Fatalf("released turn stop = %q; want end_turn (untouched)", stop)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the untouched turn did not complete after release")
+	}
+
+	if got := undoCanaryContent(t, r.workDir); got != "state-D\n" {
+		t.Errorf("a failed /undo mutated the workspace: %q", got)
+	}
+
+	lines, rerr := r.sessions[sid].Manager.ReadAll()
+	if rerr != nil {
+		t.Fatalf("ReadAll: %v", rerr)
+	}
+
+	rec := localCommandLine(t, lines)
+	if rec.Expansion != "failed: pre-restore snapshot" {
+		t.Errorf("local_command outcome = %q; want failed: pre-restore snapshot", rec.Expansion)
+	}
+}
+
+// TestUndoNestedRefusal pins D-12's refusal-outranks-auto rule: a nested git
+// repository in the workspace refuses /undo outright even with an ACTIVE
+// turn — nothing is cancelled, nothing is restored, the refusal names the
+// nested paths, and the turn completes normally once released.
+func TestUndoNestedRefusal(t *testing.T) { //nolint:paralleltest // timed mid-turn scenario
+	r, prov := newBlockingRunner(t, scriptedResp{text: "done", finish: stopEndTurn})
+
+	const sid = "sess-undo-nested"
+
+	// A nested git repository (dir-variant .git below the top level), with
+	// one commit so the workspace seed's git-add can record its gitlink.
+	nested := filepath.Join(r.workDir, "nested-repo")
+	if err := os.MkdirAll(nested, 0o750); err != nil {
+		t.Fatalf("mkdir nested: %v", err)
+	}
+
+	gitRunUser(t, nested, "init", "--quiet")
+	writeGuardFile(t, filepath.Join(nested, "seed.txt"), "seed\n")
+	gitRunUser(t, nested, "add", "-A")
+	gitRunUser(t, nested, "-c", "user.name=t", "-c", "user.email=t@e.c", "commit", "--quiet", "-m", "init")
+
+	seedUndoSnap(t, r.workDir, sid, sid+"-turn-001", "state-A\n")
+	writeGuardFile(t, filepath.Join(r.workDir, undoCanary), "state-D\n")
+
+	turnDone := make(chan string, 1)
+
+	go func() {
+		stop, err := r.Run(context.Background(), sid, &noopEmitter{},
+			[]acp.ContentBlock{{Type: blockText, Text: "long turn"}})
+		if err != nil {
+			t.Errorf("turn Run err: %v", err)
+		}
+
+		turnDone <- stop
+	}()
+
+	<-prov.entered
+
+	emit := &tracerEmitter{}
+
+	type undoResult struct {
+		stop string
+		err  error
+	}
+
+	undoDone := make(chan undoResult, 1)
+
+	go func() {
+		stop, err := r.Run(context.Background(), sid, emit, []acp.ContentBlock{{Type: blockText, Text: "/undo"}})
+		undoDone <- undoResult{stop, err}
+	}()
+
+	var res undoResult
+
+	select {
+	case res = <-undoDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("nested-refusal /undo did not return promptly (the refusal must precede any mutex wait)")
+	}
+
+	if res.err != nil || res.stop != stopEndTurn {
+		t.Fatalf("/undo Run = (%q,%v); want (end_turn, nil)", res.stop, res.err)
+	}
+
+	out := undoOutputText(emit.snapshot())
+	if !strings.Contains(out, "refused") || !strings.Contains(out, "nested-repo") {
+		t.Errorf("refusal output missing the nested-path naming:\n%s", out)
+	}
+
+	// The turn was never cancelled: still running until released.
+	select {
+	case <-turnDone:
+		t.Fatal("the turn ended despite the outright refusal (no auto path for the nested case)")
+	case <-time.After(300 * time.Millisecond):
+	}
+
+	close(prov.release)
+
+	select {
+	case stop := <-turnDone:
+		if stop != stopEndTurn {
+			t.Fatalf("released turn stop = %q; want end_turn (never cancelled)", stop)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the never-cancelled turn did not complete after release")
+	}
+
+	if got := undoCanaryContent(t, r.workDir); got != "state-D\n" {
+		t.Errorf("a refused /undo mutated the workspace: %q", got)
+	}
+
+	lines, rerr := r.sessions[sid].Manager.ReadAll()
+	if rerr != nil {
+		t.Fatalf("ReadAll: %v", rerr)
+	}
+
+	rec := localCommandLine(t, lines)
+	if rec.Expansion != "refused: nested repositories" {
+		t.Errorf("local_command outcome = %q; want refused: nested repositories", rec.Expansion)
+	}
+}
+
+// TestParkedChainCancelSteering pins the chain-cancel half's queue rider
+// (23-01's cancelled-exit truth extended to the parked-teardown exit class):
+// steering enqueued while a chain sits parked resolves CANCELLED-NORMAL when
+// the chain is cancelled — the fresh turn's captured request is clean of the
+// parked steering (no marker, no text) and the queue reports empty, so
+// nothing zombie-delivers into the next unrelated turn's first boundary.
+func TestParkedChainCancelSteering(t *testing.T) { //nolint:paralleltest // park + fresh-turn sequence
+	r, prov := newBlockingRunner(t, scriptedResp{text: "chain turn done", finish: stopEndTurn})
+	close(prov.release)
+
+	const sid = "sess-park-steer"
+
+	sess := r.sessionFor(context.Background(), sid)
+
+	parkCtx, parkCancel := context.WithCancel(context.Background())
+	defer parkCancel()
+
+	r.registerParkedChain(sid, &parkedChain{cancel: parkCancel})
+	r.chainEnter(sid)
+
+	// Steering enqueued while the chain sits parked (the 23-02 classifier
+	// enqueue path) — returns promptly, queue holds the input.
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+
+		st, err := r.Run(context.Background(), sid, &noopEmitter{},
+			[]acp.ContentBlock{{Type: blockText, Text: "adjust the parked plan"}})
+		if err != nil || st != stopEndTurn {
+			t.Errorf("parked steer Run = (%q,%v); want (end_turn, nil)", st, err)
+		}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("parked steer Run blocked (the parked chain holds no mutex)")
+	}
+
+	if q := sess.SteerQueue(); q == nil || q.Pending() != 1 {
+		t.Fatalf("queue pending; want the parked steering enqueued")
+	}
+
+	// Cancel the parked chain: the teardown step resolves the queue itself.
+	r.cancelParkedChains(sid)
+
+	if parkCtx.Err() == nil {
+		t.Error("the parked chain's ctx was not cancelled")
+	}
+
+	if q := sess.SteerQueue(); q.Pending() != 0 {
+		t.Fatalf("queue pending = %d after the chain cancel; want 0 (cancelled-normal resolution)", q.Pending())
+	}
+
+	r.chainExit(sid) // the chain goroutine's exit (manual fixture)
+
+	// The fresh, unrelated turn: its request carries ONLY its own text.
+	fresh, ferr := r.Run(context.Background(), sid, &noopEmitter{},
+		[]acp.ContentBlock{{Type: blockText, Text: "fresh unrelated turn"}})
+	if ferr != nil || fresh != stopEndTurn {
+		t.Fatalf("fresh Run = (%q,%v); want (end_turn, nil)", fresh, ferr)
+	}
+
+	if !prov.streamSawText(0, "fresh unrelated turn") {
+		t.Error("the fresh turn's text did not reach its request (fixture broken)")
+	}
+
+	if prov.streamSawText(0, "adjust the parked plan") {
+		t.Error("the parked steering zombie-delivered into the fresh turn's request")
+	}
+
+	lines, rerr := sess.Manager.ReadAll()
+	if rerr != nil {
+		t.Fatalf("ReadAll: %v", rerr)
+	}
+
+	for _, l := range lines {
+		if l.Type == session.TypeSteeringDelivery {
+			t.Error("a steering_delivery line landed for chain-cancelled steering")
+		}
 	}
 }

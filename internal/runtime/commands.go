@@ -1223,6 +1223,18 @@ type undoPlan struct {
 	depth    int
 }
 
+// undoSnapshotPreRestore is the SnapshotPreRestore seam (the gitRun
+// same-package-injection precedent): Task 2's fail-closed test injects a
+// failure here to pin that a pre-restore snapshot failure aborts the undo
+// without cancelling anything. nil is never observed — restoreUndo and the
+// active path both fall back to realSnapshotPreRestore.
+var undoSnapshotPreRestore func(ctx context.Context, st *checkpoint.Store, sessionID string) (string, error) //nolint:gochecknoglobals // injectable test seam
+
+// realSnapshotPreRestore is the seam's default: the store's own mint.
+func realSnapshotPreRestore(ctx context.Context, st *checkpoint.Store, sessionID string) (string, error) {
+	return st.SnapshotPreRestore(ctx, sessionID)
+}
+
 // prepareUndo runs every pre-mutation step of /undo — the head the idle path
 // (Task 1) and the active-turn path (Task 2, D-12) share: nil-store loud
 // degrade (Pitfall 9), depth parsing, the nested-repo refusal (23-03
