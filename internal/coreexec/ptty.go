@@ -26,7 +26,7 @@ import (
 // probe); capture is ANSI-stripped (the transport-discipline corollary: PTY
 // output never touches stdout — it flows only to the tool result and the
 // bounded capture buffer); EIO on the master reads as clean EOF (linux;
-// darwin returns EOF — both unblock the read loop, 22-RESEARCH Pitfall 4);
+// darwin returns EOF — both unblock the read side, 22-RESEARCH Pitfall 4);
 // a dead shell restarts LAZILY on the next call with a visible NoteFn (D-08
 // — never silent).
 //
@@ -40,6 +40,15 @@ import (
 // rung dead code and burn the full grace on every close — verified live on
 // linux: interactive dash stays in state S through the whole 5s window).
 //
+// Read shape: the master is read by ONE long-lived goroutine per generation
+// feeding a buffered chunk channel; Run selects over that channel, the call
+// ctx, and the generation's dead channel. A bare master Read cannot be
+// interrupted (os.File read deadlines are silently unsupported on pty
+// masters — verified live: SetReadDeadline returns nil and the Read still
+// blocks), and a killed shell's ORPHANED children keep the slave open well
+// past the shell's death, masking EIO — the reaper-closed dead channel is
+// what makes an interrupted window return PROMPTLY instead of wedging.
+//
 // Lifecycle ownership (the background.go contract): the MANAGER — not a call
 // ctx — owns the shell; Drain (the OnClose link) TERM→KILLs the session
 // group and closes the master fd (Pitfall 5's no-leak letter).
@@ -47,17 +56,18 @@ import (
 // ptyTermGrace is Drain's TERM→KILL grace (the 22-02 ladder values).
 const ptyTermGrace = 5 * time.Second
 
-// ptyReadTimeout bounds each master read slice so a wedged read cannot pin
-// the loop between ctx re-checks (EIO/EOF unblocks a dead shell immediately;
-// this covers only pathological mid-read hangs).
-const ptyReadTimeout = 2 * time.Second
-
 // PTYOpts configures the manager.
 type PTYOpts struct {
 	WorkDir string
 	// NoteFn emits the dead-shell restart note (D-08's visible
 	// state-loss acknowledgment); nil drops the note (bare tests).
 	NoteFn func(format string, args ...any)
+}
+
+// readChunk is one master-read slice (data XOR terminal error).
+type readChunk struct {
+	data []byte
+	err  error
 }
 
 // PTYManager owns the session's ONE persistent shell.
@@ -71,10 +81,13 @@ type PTYManager struct {
 	// started distinguishes "never launched" (no note on first start) from
 	// "launched, then died" (D-08's note fires on the lazy restart).
 	started bool
-	// shellDead is set by the reaper goroutine when THIS generation's shell
-	// exited (generation-guarded: a stale reaper cannot mark the successor).
-	shellDead bool
-	gen       uint64
+	// readCh carries the master's output (the generation's reader
+	// goroutine is the sole writer).
+	readCh chan readChunk
+	// deadCh closes when THIS generation's shell process exits (the reaper
+	// closes it after Wait returns). Closing is lock-free so Run — which
+	// holds m.mu for the whole call — can observe shell death mid-select.
+	deadCh chan struct{}
 }
 
 // NewPTYManager returns a lazy manager — no shell process exists until the
@@ -84,13 +97,37 @@ func NewPTYManager(opts PTYOpts) *PTYManager {
 }
 
 // Alive reports whether the shell process is currently running (the test and
-// drain-state lens; race-free — it consults the reaper's flag, never
+// drain-state lens; race-free — it consults the reaper's channel, never
 // cmd.ProcessState).
 func (m *PTYManager) Alive() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	return m.ptmx != nil && m.cmd != nil && !m.shellDead
+	if m.ptmx == nil || m.cmd == nil {
+		return false
+	}
+
+	select {
+	case <-m.deadCh:
+		return false
+	default:
+		return true
+	}
+}
+
+// deadClosedLocked reports whether the current generation's shell exited
+// (callers hold m.mu; nil channel = never started).
+func (m *PTYManager) deadClosedLocked() bool {
+	if m.deadCh == nil {
+		return false
+	}
+
+	select {
+	case <-m.deadCh:
+		return true
+	default:
+		return false
+	}
 }
 
 // ShellPID exposes the shell's pid (tests kill it externally; Drain uses the
@@ -113,7 +150,7 @@ func (m *PTYManager) ShellPID() int {
 // contract (empty PS1/PS2; ENV/BASH_ENV pointed at /dev/null — no rc
 // sourcing, no prompt, TERM default).
 func (m *PTYManager) ensureShell() error {
-	if m.ptmx != nil && !m.shellDead {
+	if m.ptmx != nil && !m.deadClosedLocked() {
 		return nil
 	}
 
@@ -156,27 +193,56 @@ func (m *PTYManager) ensureShell() error {
 	// (Pitfall 4) fires only once EVERY slave descriptor is closed.
 	_ = tty.Close()
 
+	dead := make(chan struct{})
+	readCh := make(chan readChunk, 16)
+
 	m.ptmx = ptmx
 	m.stdinW = stdinW
 	m.cmd = sh
+	m.readCh = readCh
+	m.deadCh = dead
 	m.started = true
-	m.shellDead = false
 
-	m.gen++
-	myGen := m.gen
-
-	// The reaper: Wait the shell so it is never a zombie; its exit flips
-	// this generation's dead flag (Run's entry check restarts lazily).
+	// The reaper: Wait the shell so it is never a zombie; its exit closes
+	// this generation's dead channel (Run's entry check restarts lazily;
+	// an in-flight Run's select unblocks on it).
 	go func() {
 		_ = sh.Wait()
-
-		m.mu.Lock()
-		defer m.mu.Unlock()
-
-		if m.gen == myGen {
-			m.shellDead = true
-		}
+		close(dead)
 	}()
+
+	// The reader: the sole consumer of the master for this generation's
+	// whole lifetime (a bare master Read cannot be interrupted — see the
+	// package notes); it exits when the master errors out (closed master,
+	// shell exit) or once the generation is dead with a full hand.
+	go func(ptmx io.Reader, ch chan readChunk, dead chan struct{}) {
+		buf := make([]byte, 4096)
+
+		for {
+			n, rerr := ptmx.Read(buf)
+
+			if n > 0 {
+				chunk := make([]byte, n)
+				copy(chunk, buf[:n])
+
+				select {
+				case ch <- readChunk{data: chunk}:
+				case <-dead:
+					return
+				}
+			}
+
+			if rerr != nil {
+				select {
+				case ch <- readChunk{err: rerr}:
+				case <-dead:
+				default: // buffer full, nobody draining a dead generation
+				}
+
+				return
+			}
+		}
+	}(ptmx, readCh, dead)
 
 	return nil
 }
@@ -202,8 +268,17 @@ outer:
 }
 
 // markDeadLocked clears the live-shell state (callers hold m.mu) — the next
-// Run restarts lazily with the note.
+// Run restarts lazily with the note. The shell's WHOLE process group is
+// SIGKILLed + reaped: a dead shell's orphaned children (the interrupted
+// command's own forks) inherit the pty slave and would otherwise hold it
+// open past this generation (the no-orphans letter).
 func (m *PTYManager) markDeadLocked() {
+	if m.cmd != nil && m.cmd.Process != nil {
+		pid := m.cmd.Process.Pid
+		_ = syscall.Kill(-pid, syscall.SIGKILL)
+		reapGroup(pid)
+	}
+
 	if m.ptmx != nil {
 		_ = m.ptmx.Close()
 	}
@@ -215,6 +290,20 @@ func (m *PTYManager) markDeadLocked() {
 	m.ptmx = nil
 	m.stdinW = nil
 	m.cmd = nil
+	m.readCh = nil
+}
+
+// drainStaleLocked discards the previous window's in-flight tail (bytes the
+// long-lived reader delivered after that window's sentinel — their call is
+// already complete; callers hold m.mu; a nil channel never selects).
+func (m *PTYManager) drainStaleLocked() {
+	for {
+		select {
+		case <-m.readCh:
+		default:
+			return
+		}
+	}
 }
 
 // sentinelEchoLine builds the per-call completion probe written to the
@@ -229,11 +318,11 @@ func sentinelEchoLine(nonce string) string {
 // PAR-09): serialized on the manager mutex (D-07 arrival order); empty and
 // whitespace-only commands are structured errors that touch nothing (the
 // empty probe — no sentinel written, cwd/env unmoved); the write is
-// `<command>\n<sentinel echo>\n`; the read loop captures the master until
-// the FULL nonce result line (exit parsed from its $?), ANSI-stripping the
-// capture. A dead shell (detected on entry via the reaper flag, or mid-read
-// via EIO/EOF without the nonce) restarts LAZILY with the NoteFn — the
-// restart call itself then proceeds on the fresh shell.
+// `<command>\n<sentinel echo>\n`; the read window captures until the FULL
+// nonce result line (exit parsed from its $?), ANSI-stripping the capture.
+// A dead shell (detected on entry via the reaper channel, or mid-window via
+// the channel or EIO/EOF without the nonce) restarts LAZILY with the
+// NoteFn — the restart call itself then proceeds on the fresh shell.
 func (m *PTYManager) Run(ctx context.Context, command string) (string, int, error) { //nolint:funlen,cyclop,gocognit,maintidx // one flow
 	if strings.TrimSpace(command) == "" {
 		return "", 0, errBadTaskInput // the empty probe: structured error, no shell interaction
@@ -242,10 +331,10 @@ func (m *PTYManager) Run(ctx context.Context, command string) (string, int, erro
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Dead-shell lazy restart (D-08): the previous shell died (reaper flag
-	// or an earlier markDead) — restart, visibly (the note fires exactly
-	// once per restart; a first-ever start is not a restart).
-	if m.started && (m.ptmx == nil || m.shellDead) {
+	// Dead-shell lazy restart (D-08): the previous shell died (reaper
+	// channel closed, or an earlier markDead) — restart, visibly (the note
+	// fires exactly once per restart; a first-ever start is not a restart).
+	if m.started && (m.ptmx == nil || m.deadClosedLocked()) {
 		m.markDeadLocked()
 
 		if m.opts.NoteFn != nil {
@@ -256,6 +345,9 @@ func (m *PTYManager) Run(ctx context.Context, command string) (string, int, erro
 	if err := m.ensureShell(); err != nil {
 		return "", 0, err
 	}
+
+	// The previous window's tail is not this window's output.
+	m.drainStaleLocked()
 
 	nonce := newPTYNonce()
 
@@ -273,12 +365,12 @@ func (m *PTYManager) Run(ctx context.Context, command string) (string, int, erro
 
 	var capture bytes.Buffer
 
-	exitCode, rerr := m.readUntilSentinel(ctx, marker, &capture)
+	exitCode, rerr := m.readWindow(ctx, marker, &capture)
 	if rerr != nil {
-		// The shell died (or the call was cancelled) mid-window (Pitfall 4
-		// made the read END, not hang): report the interrupted state; the
-		// NEXT call restarts lazily with the note. The capture is still
-		// ANSI-stripped — escape sequences never reach the tool result.
+		// The shell died (or the call was cancelled) mid-window: report the
+		// interrupted state; the NEXT call restarts lazily with the note.
+		// The capture is still ANSI-stripped — escapes never reach the
+		// tool result.
 		m.markDeadLocked()
 
 		return StripANSI(capture.String()), exitCode, rerr
@@ -331,74 +423,40 @@ func lastSentinelResult(s, nonce string) int {
 	return idx
 }
 
-// readUntilSentinel reads the master until the full nonce result line
-// appears (parsing the exit code from its trailing digits) or the read ends
-// (EIO-as-EOF — linux; EOF — darwin). The captured bytes append RAW;
-// artifact trimming happens at the caller (one pass, table-tested).
-//
-//nolint:funlen // the read loop reads best as one flow
-func (m *PTYManager) readUntilSentinel(ctx context.Context, marker []byte, capture *bytes.Buffer) (int, error) {
-	buf := make([]byte, 4096)
-
+// readWindow consumes the reader channel until the full nonce result line
+// appears (parsing the exit code from its trailing digits), the call ctx
+// ends, or the shell dies (the reaper channel — the prompt unblock when
+// orphaned children mask the master's EIO). EIO on the master reads as
+// clean EOF (linux; darwin returns EOF — Pitfall 4). The captured bytes
+// append RAW; artifact trimming happens at the caller.
+func (m *PTYManager) readWindow(ctx context.Context, marker []byte, capture *bytes.Buffer) (int, error) {
 	for {
-		if ctx.Err() != nil {
+		select {
+		case <-ctx.Done():
 			return 0, fmt.Errorf("ptty: cancelled: %w", ctx.Err())
-		}
 
-		if ds, ok := m.ptmx.(deadlineSetter); ok {
-			_ = ds.SetReadDeadline(time.Now().Add(ptyReadTimeout))
-		}
+		case <-m.deadCh:
+			// The shell process is gone. The sentinel can never arrive —
+			// surface the interrupted outcome NOW (never a spin, never a
+			// healthy-session failure mark).
+			return 0, errors.New("ptty: shell exited before the command completed")
 
-		n, rerr := m.ptmx.Read(buf)
+		case c := <-m.readCh:
+			if c.err != nil {
+				if errors.Is(c.err, syscall.EIO) || errors.Is(c.err, io.EOF) {
+					// EIO-as-EOF (linux) / EOF (darwin): the shell is gone.
+					return 0, errors.New("ptty: shell exited before the command completed")
+				}
 
-		if n > 0 {
-			capture.Write(buf[:n])
+				return 0, fmt.Errorf("ptty: read: %w", c.err)
+			}
+
+			capture.Write(c.data)
 
 			if code, ok := parseSentinel(capture.Bytes(), marker); ok {
-				m.clearReadDeadline()
-
 				return code, nil
 			}
 		}
-
-		if rerr == nil {
-			continue
-		}
-
-		m.clearReadDeadline()
-
-		var nerr netErr
-		if errors.As(rerr, &nerr) && nerr.Timeout() {
-			continue // bounded poll tick — the ctx re-check above is the exit
-		}
-
-		if errors.Is(rerr, syscall.EIO) || errors.Is(rerr, io.EOF) {
-			// EIO-as-EOF (linux) / EOF (darwin): the shell is gone. The
-			// sentinel never arrives — the interrupted outcome surfaces
-			// (never a spin, never a healthy-session failure mark).
-			return 0, errors.New("ptty: shell exited before the command completed")
-		}
-
-		return 0, fmt.Errorf("ptty: read: %w", rerr)
-	}
-}
-
-// netErr is the read-deadline timeout interface subset (io goes through
-// os.File's poll errors on both darwin and linux).
-type netErr interface {
-	Timeout() bool
-}
-
-// deadlineSetter is the master's deadline interface (creack/pty returns
-// *os.File; the narrow interface keeps the field type io-level).
-type deadlineSetter interface {
-	SetReadDeadline(t time.Time) error
-}
-
-// clearReadDeadline resets the master's read deadline (best-effort).
-func (m *PTYManager) clearReadDeadline() {
-	if ds, ok := m.ptmx.(deadlineSetter); ok {
-		_ = ds.SetReadDeadline(time.Time{})
 	}
 }
 
@@ -484,6 +542,7 @@ func (m *PTYManager) Drain() {
 	m.ptmx = nil
 	m.stdinW = nil
 	m.cmd = nil
+	m.readCh = nil
 }
 
 // newPTYNonce mints the per-call sentinel nonce (crypto/rand hex — the
