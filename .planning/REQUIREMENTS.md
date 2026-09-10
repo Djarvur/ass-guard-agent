@@ -55,7 +55,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 - [x] **SEEDG-01**: Steering queue during a running turn: drained at model-request boundaries only (never mid-in-flight-request, never splitting tool_use/result pairs), ticket/cutoff cancel protocol, parked-ask disambiguation, transport-neutral API (Telegram prerequisite — do not descope to queue-behind silently)
 - [x] **SEEDG-02**: Checkpoint restore guard: refuse restore with active turn/engine chains; pre-restore snapshot before overwriting; nested-repo refusal (gitlink contents silently unprotected otherwise); checkpoint object-expiry GC; `.ass-guard/` in `.git/info/exclude`
-- [ ] **SEEDG-03**: `/undo` command (class-B) restoring last checkpoint
+- [x] **SEEDG-03**: `/undo` command (class-B) restoring last checkpoint
 
 ### Kit Extraction (strictly last)
 
@@ -130,7 +130,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SAND-01 | Phase 22 | Complete |
 | SEEDG-01 | Phase 23 | Complete |
 | SEEDG-02 | Phase 23 | Complete |
-| SEEDG-03 | Phase 23 | Pending |
+| SEEDG-03 | Phase 23 | Complete |
 | DOC-01 | Phase 24 | Pending |
 | TAIL-01 | Phase 24 | Pending |
 | TAIL-02 | Phase 24 | Pending |
