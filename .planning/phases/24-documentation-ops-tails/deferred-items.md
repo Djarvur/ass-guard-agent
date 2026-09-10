@@ -11,3 +11,7 @@
 - Repo-wide golangci-lint 2.13.2 still reports ~572 findings on pre-Phase-24 files after the 24-01 baseline repair
   status: open
   **What:** residual new-linter-version findings (runtime.go, config_surface.go, coreexec tests, ...) — the 24-01 repair only restored the config's INTENDED exclusion/disable set; per-file cleanup is ongoing baseline work owned by whichever plan next touches each file.
+- `mcp.Start` silently skips a server that fails to spawn — the doc comment says "logged via slog; non-fatal" but no logging exists
+  status: open
+  **What:** observability gap found empirically during the 24-03 dry-run (a PATH-unresolvable `mcp-language-server` vanished with zero stderr evidence); `internal/mcp/host.go` `Start`'s skip branch (`connectOne` error → `continue`) logs nothing. The session degrades as designed (T-5-04) but an operator cannot tell why a configured server contributed no tools. Candidate fix: one slog warning in the skip branch. Out of scope for 24-03 (documentation-only plan, operator decision 2026-08-25).
+

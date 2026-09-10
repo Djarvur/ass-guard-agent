@@ -65,7 +65,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Documentation & Tails
 
-- [ ] **DOC-01**: LSP support documented as an IDE-side MCP configuration requirement (operator decision 2026-08-25 — no agent-side implementation)
+- [x] **DOC-01**: LSP support documented as an IDE-side MCP configuration requirement (operator decision 2026-08-25 — no agent-side implementation)
 - [ ] **TAIL-01**: Scheduler outcome store + feedback loop (deterministic, zero LLM calls)
 - [ ] **TAIL-02**: Nightly upstream-parity gate CI automation (12-08 tail)
 - [ ] **TAIL-03**: ECOS-04 — plugins/skills not just loaded but working unchanged in every interaction mode
@@ -131,7 +131,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SEEDG-01 | Phase 23 | Complete |
 | SEEDG-02 | Phase 23 | Complete |
 | SEEDG-03 | Phase 23 | Complete |
-| DOC-01 | Phase 24 | Pending |
+| DOC-01 | Phase 24 | Complete |
 | TAIL-01 | Phase 24 | Pending |
 | TAIL-02 | Phase 24 | Pending |
 | TAIL-03 | Phase 24 | Pending |

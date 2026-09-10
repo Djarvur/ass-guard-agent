@@ -4,18 +4,18 @@ milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 24
 current_phase_name: Documentation & Ops Tails
-current_plan: 2
+current_plan: 3
 status: executing
-stopped_at: "Completed 24-01-PLAN.md (TAIL-01 core: outcome store + seam replay)"
-last_updated: "2026-09-10T14:23:31.630Z"
+stopped_at: "Completed 24-03-PLAN.md (DOC-01: LSP guide + executed dry-run)"
+last_updated: "2026-09-10T14:54:47.876Z"
 last_activity: 2026-09-10
 last_activity_desc: Phase 24 execution started
-state_head: ce424eae184783d4e5efaa29d7e8c59ad02d9b3e
+state_head: 1388c28cc5605eade0c768407325ba3f08e281cb
 progress:
   total_phases: 11
   completed_phases: 7
   total_plans: 77
-  completed_plans: 64
+  completed_plans: 65
   percent: 64
 ---
 
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-09-10)
 ## Current Position
 
 Phase: 24 (Documentation & Ops Tails) — EXECUTING
-Plan: 2 of 5
-Current Plan: 2
+Plan: 3 of 5
+Current Plan: 3
 Total Plans in Phase: 5
 Status: Ready to execute
 Last activity: 2026-09-10 — Phase 24 execution started
@@ -109,6 +109,7 @@ Phase 19: 7/7 ✓ closed 2026-09-10 (verification completed by the auto-UAT live
 | Phase 23 P05 | 34 min | 3 tasks | 3 files |
 | Phase 23 P06 | 18 min | 2 tasks | 3 files |
 | Phase 24 P01 | 37 min | 3 tasks | 10 files |
+| Phase 24 P03 | 26 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -218,6 +219,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 23]: 23-06: the workspace consult precedes SnapshotPreRestore on BOTH /undo halves — a pre-restore snapshot minted under a busy workspace is a torn D-11 walk target (shared tree committed mid-write under the other session's turn)
 - [Phase 24]: Compiling-RED (stubs + failing suite) over fail-to-compile RED for 24-01 — tdd_mode #3770 requires target_test_failed — The gate must authorize GREEN on an intentional assertion failure; the plan pre-authorized the stub route
 - [Phase 24]: golangci 2.13 baseline repaired per STATE prescription (exhaustruct_v5 exclusion + wsl_v5/gomodguard_v2/noinlineerr/modernize disables) — 24-01 files lint-clean under the only Go-1.27-runnable linter — 2.12.x panics under Go 1.27.1; without the repair the lint gate is unrunnable (STATE LINT BASELINE blocker)
+- [Phase 24]: 24-03: worked-example LSP server auto-selected (auto_advance, gate=blocking) — isaacphi/mcp-language-server + gopls; legitimacy verified (1,590 stars, BSD-3, active); go install path, outside the npm/pip/cargo gate
+- [Phase 24]: 24-03: doc cites the ACP mcpServers parse-but-ignore site by function name (handleSessionNew) — research line numbers had drifted; function-name citations survive drift
+- [Phase 24]: 24-03: mcp.Start's failed-server skip is SILENT (comment claims slog logging that does not exist) — doc corrected to reality, observability gap logged to phase deferred-items.md (agent-side fix out of scope)
 
 ### Pending Todos
 
@@ -243,6 +247,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-10T14:23:15.632Z
-Stopped at: Completed 24-01-PLAN.md (TAIL-01 core: outcome store + seam replay)
+Last session: 2026-09-10T14:54:46.333Z
+Stopped at: Completed 24-03-PLAN.md (DOC-01: LSP guide + executed dry-run)
 Resume file: None
