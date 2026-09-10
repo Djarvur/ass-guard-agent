@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
+	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
@@ -108,6 +109,37 @@ type Session struct {
 	// subagentProfile — the shared session profile (and the main turn loop's
 	// request shape) is never touched.
 	SubagentModel string
+
+	// Outcomes is the routing outcome store (24-02, TAIL-01): when non-nil,
+	// every COMPLETED provider attempt on the live paths (the parent turn's
+	// streamAndEmit and the subagent dispatch's tagged stream) appends exactly
+	// one mechanical DispatchOutcome record — the D-04 evidence stream the
+	// replay side (24-01) consumes. Nil = recording disabled (every bare
+	// Session construction site keeps byte-identical behavior). Recording is
+	// fire-and-forget by contract: a store Append failure is exactly ONE loud
+	// stderr note and NEVER a turn failure (T-24-02-01).
+	Outcomes *modelrouting.OutcomeStore
+
+	// ProviderName / SessionTier stamp every outcome record with the
+	// composition's facts (24-02): the provider slug the factory built and the
+	// tier the session was resolved at. Empty on bare test sessions — the
+	// mechanical fields simply record empty.
+	ProviderName string
+	SessionTier  string
+
+	// outcomeNow is the injectable clock for outcome records (24-02): both the
+	// record's At timestamp and the attempt's latency measurement route through
+	// it, so tests pin determinism without sleeping. Nil = time.Now (UTC).
+	outcomeNow func() time.Time
+
+	// attemptInTokens / attemptOutTokens accumulate the CURRENT provider
+	// attempt's streamed usage (24-02): reset at the runTurn attempt head,
+	// summed at every usage chunk alongside the UsageUpdate publish, read the
+	// moment the attempt completes for its outcome record. Atomic: the Session
+	// is shared with subagent goroutines (the tagged subagent stream records
+	// no usage today, but the fields stay race-free by construction).
+	attemptInTokens  atomic.Int64
+	attemptOutTokens atomic.Int64
 
 	// sessionStartFired pins the lazy SessionStart seam to exactly once.
 	sessionStartFired bool
@@ -651,9 +683,22 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 		// Plan 02-05 replaced Send with Stream: chunks are read from the stream
 		// channel, emitted to the bus as AgentMessageChunk/ToolCall, and assembled
 		// into the final Response (ACP-04 — NO full-turn buffering).
+		//
+		// 24-02 (TAIL-01): the attempt is bracketed for its outcome record —
+		// counters reset at the head, latency measured through the injectable
+		// clock, ONE record appended the moment the attempt completes (success,
+		// stream error, ctx cancel alike — every completed attempt is evidence).
+		s.attemptInTokens.Store(0)
+		s.attemptOutTokens.Store(0)
+
+		attemptStarted := s.outcomeClock()
+
 		resp, textBuf, streamErr := s.withSemaphore(ctx, func() (provider.Response, string, error) {
 			return s.streamAndEmit(ctx, turnID, messages)
 		})
+
+		s.recordDispatchOutcome(attemptStarted, streamErr, s.Profile.Model,
+			modelrouting.OutcomeOriginTurn, s.attemptInTokens.Load(), s.attemptOutTokens.Load())
 		if streamErr != nil {
 			if ctx.Err() != nil {
 				s.recordCanceled(turnID, "context cancelled during stream")
@@ -1181,7 +1226,14 @@ func (s *Session) streamAndEmit(
 			// of the bus. The compaction threshold check reads THIS (the
 			// async transcript usage line stays the audit record; reading
 			// it back would race the TranscriptWriter).
+			//
+			// 24-02 (TAIL-01): the same chunk feeds the per-attempt outcome
+			// counters (summed, not last-wins — a provider splitting usage
+			// across chunks still totals) read by the attempt's outcome
+			// record.
 			s.lastInputTokens.Store(chunk.Usage.InputTokens)
+			s.attemptInTokens.Add(chunk.Usage.InputTokens)
+			s.attemptOutTokens.Add(chunk.Usage.OutputTokens)
 
 			if s.Bus != nil {
 				s.Bus.Publish(event.UsageUpdate{
@@ -1210,6 +1262,78 @@ func (s *Session) streamAndEmit(
 	}
 
 	return resp, sb.String(), nil
+}
+
+// outcomeClock returns the reading for one outcome record's timestamp and
+// latency bracket (24-02): the injectable s.outcomeNow seam when wired,
+// time.Now (UTC) otherwise — the one clock the recording path consults, so
+// tests pin determinism without sleeping.
+func (s *Session) outcomeClock() time.Time {
+	if s.outcomeNow != nil {
+		return s.outcomeNow()
+	}
+
+	return time.Now().UTC()
+}
+
+// recordDispatchOutcome appends exactly ONE mechanical outcome record for a
+// completed provider attempt (24-02, TAIL-01 — the D-04 evidence stream).
+// Fire-and-forget by contract: a nil store (every bare Session construction)
+// is a no-op, and a store Append failure is ONE loud stderr note — never a
+// turn failure (T-24-02-01). model is the EFFECTIVE profile model the attempt
+// was shaped from (the subagent path passes its overridden copy); origin
+// distinguishes the parent turn from the subagent dispatch; in/out are the
+// attempt's summed streamed usage (0/0 = unknown-on-path, never free).
+// fallback_used stays false on both live paths — neither walks a fallback
+// today; the field states that fact rather than defaulting silently.
+func (s *Session) recordDispatchOutcome(start time.Time, streamErr error, model, origin string, inTokens, outTokens int64) {
+	if s.Outcomes == nil {
+		return
+	}
+
+	at := s.outcomeClock()
+
+	rec := modelrouting.DispatchOutcome{
+		At:        at,
+		Provider:  s.ProviderName,
+		Model:     model,
+		Tier:      s.SessionTier,
+		Outcome:   classifyStreamOutcome(streamErr),
+		LatencyMS: at.Sub(start).Milliseconds(),
+		InTokens:  inTokens,
+		OutTokens: outTokens,
+		Origin:    origin,
+	}
+
+	if aerr := s.Outcomes.Append(rec); aerr != nil {
+		slog.Warn("outcome store append failed (turn continues; outcome recording degraded)",
+			"provider", rec.Provider, "model", rec.Model, "origin", origin, "error", aerr.Error())
+	}
+}
+
+// classifyStreamOutcome maps one attempt's stream error to the mechanical
+// outcome class (24-02, D-04): nil → ok; a typed *provider.ProviderError →
+// its Kind's class; any other error → transient — the conservative class, so
+// an unclassified failure (a cancelled ctx, a transport hiccup wrapped by the
+// adapter) always feeds the breaker-side evidence, never silently drops.
+func classifyStreamOutcome(streamErr error) string {
+	if streamErr == nil {
+		return modelrouting.OutcomeOK
+	}
+
+	var perr *provider.ProviderError
+	if errors.As(streamErr, &perr) {
+		switch perr.Kind {
+		case provider.KindStructural:
+			return modelrouting.OutcomeStructural
+		case provider.KindExhausted:
+			return modelrouting.OutcomeExhausted
+		default:
+			return modelrouting.OutcomeTransient
+		}
+	}
+
+	return modelrouting.OutcomeTransient
 }
 
 // recordCanceled appends a canceled line (D-16) and resolves the steering

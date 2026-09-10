@@ -10,6 +10,7 @@ import (
 
 	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/internal/event"
+	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
@@ -198,11 +199,20 @@ func (defaultSubagentRunner) Run(
 			}
 		}
 
+		attemptStarted := s.outcomeClock()
+
 		resp, textBuf, streamErr := s.streamAndEmitTaggedProf(
 			ctx, subagentTurnID, parentTurnID, &prof, messages, plan.Provider)
 		if s.Semaphore != nil {
 			s.Semaphore.Release()
 		}
+
+		// 24-02 (TAIL-01): one outcome record per completed subagent provider
+		// attempt, carrying the EFFECTIVE (possibly overridden) subagent model
+		// from the per-dispatch profile copy. Usage stays 0/0 — unknown on this
+		// path (the tagged subagent stream records no usage), never free.
+		s.recordDispatchOutcome(attemptStarted, streamErr, prof.Model,
+			modelrouting.OutcomeOriginSubagent, 0, 0)
 
 		if streamErr != nil {
 			return textBuf, streamErr

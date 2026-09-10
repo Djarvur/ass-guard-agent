@@ -2636,6 +2636,22 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 		s.Checkpointer = checkpointerAdapter{store: ckptStore}
 	}
 
+	// 24-02 (TAIL-01): the live outcome-recording wiring — the store under the
+	// work dir's .ass-guard/routing (plan 24-01's convention), plus the
+	// provider slug and session tier every record stamps. A construction
+	// failure degrades loudly with Outcomes left nil: recording disabled, the
+	// session serves normally (T-24-02-01 — no session ever fails over the
+	// store). Test runners (nil schedCfg / unset provider) stamp empty fields.
+	if store, oerr := modelrouting.NewOutcomeStore(dir); oerr == nil {
+		s.Outcomes = store
+	} else {
+		_, _ = fmt.Fprintf(r.stderrOrDefault(),
+			"ass-guard: outcome store unavailable (outcome recording disabled): %v\n", oerr)
+	}
+
+	s.ProviderName = r.providerName
+	s.SessionTier = r.sessionTierOrHeavy()
+
 	// 12-01: wire the ask broker (suspension + reply routing + the D-01
 	// timer; resumes run under the serve-lifetime ctx).
 	//nolint:contextcheck // the serve-lifetime ctx is a stored field, not derived here
@@ -3629,6 +3645,24 @@ func (r *Runner) defaultTurnModel() string {
 	}
 
 	return ""
+}
+
+// sessionTierOrHeavy returns the session tier outcome records stamp (24-02,
+// TAIL-01): the loaded config's SessionTier with the "heavy" literal fallback
+// — defaultTurnModel's ladder (loader-produced configs never carry an empty
+// tier; the literal covers hand-built test configs). Nil schedCfg (test
+// runners) keeps "" — no scheduling config was ever resolved, and the record
+// says so rather than inventing a tier.
+func (r *Runner) sessionTierOrHeavy() string {
+	if r.schedCfg == nil {
+		return ""
+	}
+
+	if tier := r.schedCfg.SessionTier; tier != "" {
+		return tier
+	}
+
+	return "heavy"
 }
 
 // compactionState is the runner-level effective compaction pair session
