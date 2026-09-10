@@ -111,7 +111,12 @@ func (t *Tracker) SetDrain(fn func(pending []Notification)) {
 // configured budget at a UTF-8 rune boundary, the entry is deduped by task id
 // (first terminal wins — a cancel racing a completion yields exactly one
 // notification), and ONE non-blocking drain attempt is scheduled when a
-// consumer is wired.
+// consumer is wired. A finishing subagent RELEASES its D-10 slot BEFORE any
+// waiter is admitted: the release retires the completed id's cancel
+// registration (finished stops looking running) and decrements the running
+// count floored at zero; startNextWaiter then admits exactly one queued task
+// into the freed slot — release-then-admit, in that order, per completion
+// (G-22-1).
 func (t *Tracker) Complete(n Notification) {
 	t.mu.Lock()
 
@@ -120,16 +125,35 @@ func (t *Tracker) Complete(n Notification) {
 	drain := t.drain
 	peek := t.pend.peek()
 
+	if n.Kind == KindSubagent {
+		t.releaseSubagentSlot(n.TaskID)
+	}
+
 	t.mu.Unlock()
 
 	if drain != nil {
 		go drain(peek) //nolint:contextcheck // the callback owns its ctx (runner-side serve ctx)
 	}
 
-	// D-10: a finished subagent frees a slot — start exactly one queued task.
+	// D-10: the released slot is reoccupied by exactly one queued task
+	// (startNextWaiter re-increments the count when it admits a waiter).
 	if n.Kind == KindSubagent {
 		t.startNextWaiter()
 	}
+}
+
+// releaseSubagentSlot frees a finishing subagent's D-10 slot: decrement the
+// running count floored at zero (a defensive Complete for an id that never
+// admitted must never drive the counter negative) and retire the id's cancel
+// registration — finished subagents stop looking running, so CancelTask on a
+// completed id reports false (the truthful not-running signal the 22-09
+// TaskStop/TaskOutput seam consumes). Callers hold t.mu (G-22-1).
+func (t *Tracker) releaseSubagentSlot(id string) {
+	if t.runningSubagents > 0 {
+		t.runningSubagents--
+	}
+
+	delete(t.subagentCancels, id)
 }
 
 // Drain snapshot-and-clears the pending queue and returns the batch in
