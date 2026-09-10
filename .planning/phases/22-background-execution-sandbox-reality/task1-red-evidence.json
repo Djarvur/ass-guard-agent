@@ -1,45 +1,24 @@
 {
-  "plan": "22-04",
+  "plan": "22-06",
   "task": 1,
   "phase_gate": "RED",
-  "command": "go test -race -count=1 ./internal/coreexec/ -run 'TestAnsiStrip|TestPersistentShell' ; go test -race -count=1 ./internal/toolcat/ -run TestCatalogBashPersistentProperty",
-  "exit_code": 1,
-  "target_tests": [
-    "TestAnsiStrip_Table",
-    "TestAnsiStrip_NoEscapeBytesSurvive",
-    "TestPersistentShell_CdPersists",
-    "TestPersistentShell_ExportedEnvPersists",
-    "TestPersistentShell_SentinelLookalikeOutputDoesNotTerminateEarly",
-    "TestPersistentShell_CapturedOutputIsAnsiStripped",
-    "TestPersistentShell_ExitCodeParsesFromSentinel",
-    "TestPersistentShell_SilentCommandReturnsCleanOutput",
-    "TestPersistentShell_BashToolCdPersistsAcrossCalls",
-    "TestPersistentShell_BashToolEmptyCommandIsStructuredError",
-    "TestPersistentShell_BashToolNilManagerIsStructuredError",
-    "TestPersistentShell_BashToolNonzeroExitRendersCode",
-    "TestCatalogBashPersistentProperty"
-  ],
+  "command": "go test -race -count=1 -v ./internal/acpserve/ -run 'TestSandboxFlag'",
+  "targetTest": "TestSandboxFlag_UnavailableDegradesLoudlyOnce",
+  "exitCode": 1,
+  "output": "not ok 1 - TestSandboxFlag_DefaultOffZeroProbing\nnot ok 2 - TestSandboxFlag_OnProbesOnce\nnot ok 3 - TestSandboxFlag_UnavailableDegradesLoudlyOnce\nnot ok 4 - TestSandboxFlag_ProbeBeforeScheduler\nnot ok 5 - TestSandboxFlag_MainHookFirstCall\nnot ok 6 - TestSandboxFlag_Validation\nok 7 - TestSandboxFlag_PolicyTriple\n# tests 7\n# pass 1\n# fail 6\n",
+  "expected": "Per 22-06 Task 1 <behavior>: off/on accepted, other values rejected at the cobra layer at startup; default-off performs zero probing and yields Availability{Mode:off,Available:false}; --sandbox=on probes exactly once before the scheduler starts; enabled-but-unavailable emits exactly ONE stderr warning naming the reason with serve continuing; main() calls the sandbox child hook before root dispatch.",
+  "actual": "ValidateSandboxMode and resolveSandboxAvailability are inert RED scaffolds (accept-everything / zero Availability); Run's pipeline has no probe step and no Handle store; main.go has no child-hook call.",
   "failing_tests": [
-    "TestAnsiStrip_Table (10 subtests, assertion: StripANSI passthrough leaves escapes)",
-    "TestAnsiStrip_NoEscapeBytesSurvive (assertion: ESC bytes survive)",
-    "TestPersistentShell_CdPersists (assertion: Run error via RED scaffold)",
-    "TestPersistentShell_ExportedEnvPersists (assertion: Run error via RED scaffold)",
-    "TestPersistentShell_SentinelLookalikeOutputDoesNotTerminateEarly (assertion: Run error via RED scaffold)",
-    "TestPersistentShell_CapturedOutputIsAnsiStripped (assertion: Run error via RED scaffold)",
-    "TestPersistentShell_ExitCodeParsesFromSentinel (assertion: Run error via RED scaffold)",
-    "TestPersistentShell_SilentCommandReturnsCleanOutput (assertion: Run error via RED scaffold)",
-    "TestPersistentShell_BashToolCdPersistsAcrossCalls (assertion: pwd prints workdir not target — persistent flag ignored by the committed stub)",
-    "TestPersistentShell_BashToolEmptyCommandIsStructuredError (assertion: whitespace command returned no error — flag ignored)",
-    "TestPersistentShell_BashToolNilManagerIsStructuredError (assertion: nil manager returned no error — flag ignored)",
-    "TestPersistentShell_BashToolNonzeroExitRendersCode (assertion: stateless path surfaced a Go error; plan letter wants the code form without one)",
-    "TestCatalogBashPersistentProperty (assertion: schema lacks the persistent property)"
+    "TestSandboxFlag_Validation (assertion: stub accepts strict/yes/ON/Off/true/empty)",
+    "TestSandboxFlag_DefaultOffZeroProbing (assertion: Availability.Mode = '' not 'off' on the off path)",
+    "TestSandboxFlag_OnProbesOnce (assertion: probe ran 0 times)",
+    "TestSandboxFlag_UnavailableDegradesLoudlyOnce (assertion: 0 startup warnings \u2014 the fail-open the plan prohibits)",
+    "TestSandboxFlag_ProbeBeforeScheduler (assertion: Run never calls resolveSandboxAvailability / SetSandboxHandle)",
+    "TestSandboxFlag_MainHookFirstCall (assertion: main() never calls the sandbox child hook)"
   ],
-  "expected_result": "Per 22-04 Task 1 <behavior>: StripANSI removes CSI/SGR/OSC escapes; persistent calls share one shell (cd/export persist); nonce sentinel governs completion; ANSI-stripped capture; exit code parses from $?; empty command is a structured error; nil manager is a structured error; catalog exposes the additive persistent boolean.",
-  "actual_result": "StripANSI is a passthrough scaffold; PTYManager.Run returns errPTYScaffold; the committed Bash stub ignores the persistent flag (stateless sh -c path); coretools.json carries no persistent property.",
   "unexpected_green": [
-    "TestPersistentShell_NonPersistentCallsStayStateless (guard row: pins the D-09 default which the committed code already satisfies)"
+    "TestSandboxFlag_PolicyTriple (guard row: sandboxPolicyFor is a pure function the compile scaffold already implements)"
   ],
-  "verdict": "RED_EVIDENCE_OK_target_tests_failed_on_assertions",
-  "note": "gsd-tools runtime installed in this repo predates the `check tdd-red-evidence` verb (verified: Unknown check subcommand) — record kept on disk at /tmp/gsd-22-04-wip/evidence/task1-red.json and copied into the phase directory as task1-red-evidence.json at commit time.",
-  "timestamp": "2026-09-09T23:46:58Z"
+  "note": "Go run projected faithfully into Node-TAP by /tmp/gotap.py (=== RUN/--- PASS/--- FAIL -> ok/not ok + summary); the checker parses TAP.",
+  "timestamp": "2026-09-10T00:34:33Z"
 }

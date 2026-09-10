@@ -26,6 +26,7 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/providerfactory"
 	"github.com/Djarvur/ass-guard-agent/internal/runtime"
+	"github.com/Djarvur/ass-guard-agent/internal/sandbox"
 	"github.com/Djarvur/ass-guard-agent/internal/sched"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
@@ -118,6 +119,47 @@ func ResolveProfilesDir(profilesDir string, changed bool, workDir string) string
 // see seedACPGuard (kept unexported next to its only internal caller for
 // source fidelity; the shell re-exports the call).
 func SeedACPGuard(workDir string) { seedACPGuard(workDir) }
+
+// sandboxProbe is the startup probe seam (22-06, SAND-01): Run's
+// resolveSandboxAvailability step calls this once. A package var so the flag
+// batteries can fake probe failure/availability and count calls without
+// touching the sandbox package's process-wide probe cache.
+//
+//nolint:gochecknoglobals // the testable-seam var pattern (pickResumeSession precedent)
+var sandboxProbe = sandbox.Probe
+
+// errInvalidSandboxMode backs the --sandbox vocabulary check (err113
+// discipline: static sentinel, wrapped with the typed value at the raise).
+var errInvalidSandboxMode = errors.New("acpserve: invalid --sandbox value")
+
+// ValidateSandboxMode enforces the --sandbox vocabulary at STARTUP — {off, on}
+// only, case-sensitive — so an invalid value fails the cobra layer before any
+// serve begins, never mid-serve (SAND-01). The empty string is INVALID here
+// (an explicit --sandbox="" is a typo, not the default); the zero-value
+// Options path treats "" as off at the RESOLUTION layer instead.
+func ValidateSandboxMode(mode string) error {
+	_ = mode // RED scaffold — accepts everything; the GREEN body lands with Task 1
+
+	return nil
+}
+
+// resolveSandboxAvailability is the 22-06 startup probe step (SAND-01): with
+// the sandbox OFF (the default — mode "" or "off") it performs ZERO probing
+// and short-circuits to Availability{Mode:"off"}; with --sandbox=on it probes
+// the host's enforcement availability ONCE. An enabled-but-unavailable host
+// degrades LOUDLY — exactly ONE stderr warning naming the reason — and serve
+// continues (the seedACPGuard degrade contract; every unconfined RUN is then
+// individually noted at the exec sites, Tasks 2-3 — never a silent fail-open).
+func resolveSandboxAvailability(opts *Options, stderr io.Writer) sandbox.Availability {
+	return sandbox.Availability{} // RED scaffold — the GREEN body lands with Task 1
+}
+
+// sandboxPolicyFor builds the D-04 policy triple from the serve workdir: rw on
+// workDir + the system tmp + <workDir>/.ass-guard (the guard/artifact family),
+// ro on the documented system set, network denied.
+func sandboxPolicyFor(workDir string) sandbox.Policy {
+	return sandbox.DefaultPolicy(workDir, os.TempDir(), filepath.Join(workDir, ".ass-guard"))
+}
 
 // Run constructs the ACP server and runs it until ctx is cancelled or
 // stdin reaches EOF. It wires the real Session Core as the TurnRunner (Plan

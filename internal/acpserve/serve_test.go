@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/audit"
+	"github.com/Djarvur/ass-guard-agent/internal/sandbox"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
 )
 
@@ -717,5 +718,234 @@ func TestStaleSweep_SkipsForeignEntries(t *testing.T) {
 		if _, serr := os.Stat(filepath.Join(dir, kept)); serr != nil {
 			t.Errorf("foreign entry %s touched: %v", kept, serr)
 		}
+	}
+}
+
+// --- 22-06 (SAND-01): the --sandbox flag plumbing batteries ---
+
+// swapSandboxProbe swaps the startup probe seam and returns the restore func.
+func swapSandboxProbe(fake func() sandbox.Availability) func() {
+	old := sandboxProbe
+	sandboxProbe = fake
+
+	return func() { sandboxProbe = old }
+}
+
+// TestSandboxFlag_Validation: the vocabulary is {off, on}, case-sensitive, and
+// the empty string is INVALID at the flag layer — an invalid value fails
+// cobra-layer validation at STARTUP, never mid-serve (SAND-01). (The zero
+// value behaves as off at the resolution layer; this battery pins the CLI
+// surface, where "" means the operator explicitly typed a bad value.)
+func TestSandboxFlag_Validation(t *testing.T) {
+	t.Parallel()
+
+	for _, mode := range []string{"off", "on"} {
+		if err := ValidateSandboxMode(mode); err != nil {
+			t.Errorf("ValidateSandboxMode(%q) = %v; want accepted", mode, err)
+		}
+	}
+
+	for _, mode := range []string{"", "strict", "yes", "ON", "Off", "true"} {
+		if err := ValidateSandboxMode(mode); err == nil {
+			t.Errorf("ValidateSandboxMode(%q) = nil; want rejected at startup (never mid-serve)", mode)
+		}
+	}
+}
+
+// TestSandboxFlag_DefaultOffZeroProbing: with no --sandbox (mode "" — the
+// zero value — and the explicit "off"), resolution performs ZERO probing —
+// the operator never asked, so no sandbox-exec/landlock child ever runs — and
+// short-circuits to Availability{Mode:"off", Available:false} with no warning.
+func TestSandboxFlag_DefaultOffZeroProbing(t *testing.T) {
+	// NOT t.Parallel: swaps the package probe seam.
+	probes := 0
+
+	restore := swapSandboxProbe(func() sandbox.Availability {
+		probes++
+
+		return sandbox.Availability{Mode: "faked", Available: true}
+	})
+	defer restore()
+
+	for _, mode := range []string{"", "off"} {
+		var stderr bytes.Buffer
+
+		av := resolveSandboxAvailability(&Options{SandboxMode: mode, WorkDir: t.TempDir()}, &stderr)
+
+		if probes != 0 {
+			t.Fatalf("mode %q: the probe ran %d time(s); want ZERO probing on the off path", mode, probes)
+		}
+
+		if av.Mode != "off" || av.Available {
+			t.Errorf("mode %q: Availability = %+v; want {Mode:off Available:false}", mode, av)
+		}
+
+		if stderr.Len() > 0 {
+			t.Errorf("mode %q: the off path wrote a warning: %q", mode, stderr.String())
+		}
+	}
+}
+
+// TestSandboxFlag_OnProbesOnce: --sandbox=on probes EXACTLY ONCE at startup
+// and carries the probe's outcome; an AVAILABLE probe produces no warning.
+func TestSandboxFlag_OnProbesOnce(t *testing.T) {
+	// NOT t.Parallel: swaps the package probe seam.
+	probes := 0
+
+	restore := swapSandboxProbe(func() sandbox.Availability {
+		probes++
+
+		return sandbox.Availability{Mode: "landlock", Available: true}
+	})
+	defer restore()
+
+	var stderr bytes.Buffer
+
+	av := resolveSandboxAvailability(&Options{SandboxMode: "on", WorkDir: t.TempDir()}, &stderr)
+
+	if probes != 1 {
+		t.Errorf("probe ran %d time(s); want exactly ONE at startup", probes)
+	}
+
+	if av.Mode != "landlock" || !av.Available {
+		t.Errorf("Availability = %+v; want the probe's {Mode:landlock Available:true}", av)
+	}
+
+	if stderr.Len() > 0 {
+		t.Errorf("an available probe warned: %q", stderr.String())
+	}
+}
+
+// TestSandboxFlag_UnavailableDegradesLoudlyOnce: enabled-but-unavailable emits
+// exactly ONE stderr warning naming the probe's reason, marks availability
+// false, and does NOT error — serve continues (the seedACPGuard degrade
+// contract; the per-run unconfined notes are the exec sites' job, Tasks 2-3).
+func TestSandboxFlag_UnavailableDegradesLoudlyOnce(t *testing.T) {
+	// NOT t.Parallel: swaps the package probe seam.
+	restore := swapSandboxProbe(func() sandbox.Availability {
+		return sandbox.Availability{Mode: "landlock", Reason: "faked probe failure X"}
+	})
+	defer restore()
+
+	var stderr bytes.Buffer
+
+	av := resolveSandboxAvailability(&Options{SandboxMode: "on", WorkDir: t.TempDir()}, &stderr)
+
+	if av.Available {
+		t.Error("Available = true; want false (the probe failed)")
+	}
+
+	n := strings.Count(stderr.String(), "ass-guard: sandbox")
+	if n != 1 {
+		t.Errorf("startup warnings = %d; want exactly ONE (stderr %q)", n, stderr.String())
+	}
+
+	if !strings.Contains(stderr.String(), "faked probe failure X") {
+		t.Errorf("the warning does not name the probe's reason: %q", stderr.String())
+	}
+}
+
+// TestSandboxFlag_PolicyTriple: the on-path Handle's policy is the D-04 triple
+// over the serve workdir — rw on workdir + system tmp + <workdir>/.ass-guard —
+// with network denied (the operator/session sourced set; the model never
+// supplies it). Asserted through sandboxPolicyFor.
+func TestSandboxFlag_PolicyTriple(t *testing.T) {
+	t.Parallel()
+
+	workDir := t.TempDir()
+	pol := sandboxPolicyFor(workDir)
+
+	want := []string{workDir, os.TempDir(), filepath.Join(workDir, ".ass-guard")}
+	if len(pol.RWPaths) != len(want) {
+		t.Fatalf("RWPaths = %v; want the triple %v", pol.RWPaths, want)
+	}
+
+	for i, path := range want {
+		if pol.RWPaths[i] != path {
+			t.Errorf("RWPaths[%d] = %q; want %q", i, pol.RWPaths[i], path)
+		}
+	}
+
+	if !pol.DenyNetwork {
+		t.Error("DenyNetwork = false; want true (D-04)")
+	}
+}
+
+// TestSandboxFlag_ProbeBeforeScheduler: the startup probe step sits in Run's
+// pipeline BEFORE the scheduler start (the Pitfall-10 ordering discipline —
+// nothing may race the probe; the resolved Handle must be stored before any
+// session can construct). Pinned as a source-order assertion over Run's body
+// (the 18-06 source-assertion precedent).
+func TestSandboxFlag_ProbeBeforeScheduler(t *testing.T) {
+	t.Parallel()
+
+	src, err := os.ReadFile("acp_serve.go")
+	if err != nil {
+		t.Fatalf("read acp_serve.go: %v", err)
+	}
+
+	s := string(src)
+
+	runIdx := strings.Index(s, "func Run(")
+	if runIdx < 0 {
+		t.Fatal("Run not found in acp_serve.go")
+	}
+
+	body := s[runIdx:]
+
+	probeIdx := strings.Index(body, "resolveSandboxAvailability(opts, stderr)")
+	setterIdx := strings.Index(body, "runner.SetSandboxHandle(")
+	schedIdx := strings.Index(body, "runner.StartScheduler(")
+
+	if probeIdx < 0 {
+		t.Fatal("Run never calls resolveSandboxAvailability(opts, stderr) — the startup probe step is missing from the pipeline")
+	}
+
+	if setterIdx < 0 {
+		t.Fatal("Run never stores the resolved Handle on the runner (runner.SetSandboxHandle) — the composition would drop it")
+	}
+
+	if schedIdx < 0 {
+		t.Fatal("Run never starts the scheduler (runner.StartScheduler)")
+	}
+
+	if setterIdx > schedIdx {
+		t.Errorf("the probe step's store (offset %d) runs AFTER StartScheduler (offset %d); want BEFORE", setterIdx, schedIdx)
+	}
+}
+
+// TestSandboxFlag_MainHookFirstCall: main() invokes the sandbox re-exec child
+// hook BEFORE root-command dispatch — on the sentinel env the child applies
+// its ruleset and execs the target without ever reaching cobra (D-05: the
+// sentinel child never serves ACP). Source assertion; the hook's own
+// apply-and-exec battery lives in internal/sandbox (22-05).
+func TestSandboxFlag_MainHookFirstCall(t *testing.T) {
+	t.Parallel()
+
+	src, err := os.ReadFile(filepath.Join("..", "..", "cmd", "ass-guard", "main.go"))
+	if err != nil {
+		t.Fatalf("read cmd/ass-guard/main.go: %v", err)
+	}
+
+	mainIdx := strings.Index(string(src), "func main() {")
+	if mainIdx < 0 {
+		t.Fatal("func main not found in cmd/ass-guard/main.go")
+	}
+
+	body := string(src)[mainIdx:]
+
+	hookIdx := strings.Index(body, "sandbox.ApplySandboxChildHook()")
+	rootIdx := strings.Index(body, "newRootCmd()")
+
+	if hookIdx < 0 {
+		t.Fatal("main() never calls the sandbox child hook — the re-exec sentinel child would run cobra")
+	}
+
+	if rootIdx < 0 {
+		t.Fatal("main() never builds the root command (newRootCmd)")
+	}
+
+	if hookIdx > rootIdx {
+		t.Errorf("the hook (offset %d) runs AFTER newRootCmd (offset %d); want the FIRST statement of main", hookIdx, rootIdx)
 	}
 }

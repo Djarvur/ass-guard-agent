@@ -27,7 +27,15 @@ type Options struct {
 	// forms under `acp serve`) resolve BEFORE Run and land the id here; Run
 	// loads it through the SAME Server.LoadSession core session/load uses
 	// (one engine, two entrypoints) — a load failure is a loud fatal, never a
-	// silent fresh serve. Empty (the default) performs no initial load.
+	// silently fresh serve. Empty (the default) performs no initial load.
+	//
+	// SandboxMode is the 22-06 --sandbox flag's value (SAND-01): "off" (the
+	// DEFAULT — the operator's locked choice) leaves every exec path
+	// untouched; "on" resolves the startup sandbox probe (see
+	// resolveSandboxAvailability). The CLI layer validates the {off,on}
+	// vocabulary at startup (ValidateSandboxMode); the zero value "" behaves
+	// as off here so bare Options constructions never confine anything.
 	AuditLogPath string
 	ResumeTarget string
+	SandboxMode  string
 }
