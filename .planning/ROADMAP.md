@@ -377,7 +377,7 @@ Plans:
   4. `/undo` restores the last checkpoint instantly with no model turn (class-B), and the restored workspace is byte-identical to the pre-turn snapshot.
   5. The steering queue API is transport-neutral (consumable by a non-ACP frontend) — Telegram could adopt it without rework.
 
-**Plans**: 5 plans
+**Plans**: 4/5 plans executed
 
 Plans:
 **Wave 1**
@@ -391,7 +391,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 23-04-PLAN.md — SEEDG-02 composition: Runner-level store handle, restore guard over turnActive/chainCount, session-start GC sweep, checkpoint.expiry_days/max_per_session configOptions + persistence + read-back
+- [x] 23-04-PLAN.md — SEEDG-02 composition: Runner-level store handle, restore guard over turnActive/chainCount, session-start GC sweep, checkpoint.expiry_days/max_per_session configOptions + persistence + read-back
 
 **Wave 4** *(blocked on Wave 3 completion + Phase 20 class-B contract)*
 
@@ -504,7 +504,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 | 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 6/6 | Complete    | 2026-09-07 |
 | 21. Context & Policy Parity Closures | v1.2 | 6/6 | Complete    | 2026-09-06 |
 | 22. Background Execution + Sandbox Reality | v1.2 | 9/9 | In Progress|  |
-| 23. SEED Gaps Close-out | v1.2 | 3/5 | In Progress|  |
+| 23. SEED Gaps Close-out | v1.2 | 4/5 | In Progress|  |
 | 24. Documentation & Ops Tails | v1.2 | 0/? | Not started | - |
 | 25. SEED-001 Kit Extraction | v1.2 | 0/? | Not started | - |
 
