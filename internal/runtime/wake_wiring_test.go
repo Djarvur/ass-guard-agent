@@ -3,7 +3,9 @@ package runtime //nolint:testpackage // internal package test
 import (
 	"context"
 	"encoding/json"
+	goruntime "runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -309,5 +311,344 @@ func TestWakeTurn_EmptyPendingNoTurn(t *testing.T) {
 
 	if got := wakeEngineDecisions(t, sess, wakeProvenance); got != 0 {
 		t.Errorf("wake EngineDecision lines = %d; want 0 (nothing to deliver)", got)
+	}
+}
+
+// --- 22-08 (G-22-2, CR-02): the wake-chain lifecycle battery -----------------
+//
+// NONE of the TestWakeChain_* rows calls t.Parallel(): each asserts goroutine
+// DELTA BANDS against a per-test baseline, and the package's parallel
+// batteries (TestWakeTurn_* at :110/:209/:293) resuming mid-window would break
+// the band. Go runs parallel tests only alongside other parallel tests, so
+// these serial rows never overlap them — the mixed set is proven stable by
+// running -run 'TestWakeChain|TestWakeTurn' with -count=3.
+
+// wakeFlag returns the session's wakeInFlight flag (creating the entry if the
+// session never saw a drain attempt — LoadOrStore is scheduleWakeDrain's own
+// idempotent seam).
+func wakeFlag(r *Runner, sessionID string) *atomic.Bool {
+	v, _ := r.wakeInFlight.LoadOrStore(sessionID, &atomic.Bool{})
+
+	return v.(*atomic.Bool) //nolint:forcetypeassert // LoadOrStore stores exactly *atomic.Bool
+}
+
+// sampleFlagFalse samples the flag every 20ms across the window and reports
+// whether EVERY sample read false (plus the sample count, for the >=25-samples
+// contract over a 500ms window).
+func sampleFlagFalse(flag *atomic.Bool, window time.Duration) (bool, int) {
+	samples := 0
+
+	deadline := time.Now().Add(window)
+
+	for time.Now().Before(deadline) {
+		samples++
+
+		if flag.Load() {
+			return false, samples
+		}
+
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	return !flag.Load(), samples + 1
+}
+
+// assertGoroutineBand asserts every sample lies within [baseline, baseline+2]
+// — a DELTA BAND, never exact process-wide equality: stray background
+// goroutines from earlier tests make exact counts flaky under the full-package
+// -race run, while a permanent per-session chain goroutine (the CR-02 spin)
+// still breaches a +2 band only when it starts DURING the window; the flag
+// sampling is the spin's deterministic witness, the band guards "no NEW
+// persistent goroutine per quiesced session".
+func assertGoroutineBand(t *testing.T, baseline int, window time.Duration) {
+	t.Helper()
+
+	deadline := time.Now().Add(window)
+
+	for time.Now().Before(deadline) {
+		if n := goruntime.NumGoroutine(); n < baseline || n > baseline+2 {
+			t.Errorf("goroutine count = %d; want within the [%d, %d] delta band", n, baseline, baseline+2)
+
+			return
+		}
+
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// TestWakeChain_IdlesWhenEmpty (22-08 Task 1, G-22-2/CR-02): after ONE
+// delivered batch the chain exits AND no successor spawns — idle means idle
+// (zero chain goroutines per quiesced session). The buggy unconditional exit
+// defer re-spawns a successor within microseconds of every exit, so the
+// in-flight flag reads true through nearly the whole spin cycle and the
+// >=500ms sampled window catches it deterministically.
+func TestWakeChain_IdlesWhenEmpty(t *testing.T) { //nolint:paralleltest // goroutine-band + flag-window battery (see the file comment)
+	r, prov := newExpansionRunner(t, true,
+		scriptedResp{text: "wake acknowledged"},
+	)
+
+	const sid = "sess-wake-idle"
+
+	_ = r.sessionFor(context.Background(), sid)
+
+	sess := r.sessions[sid]
+
+	tr := r.trackerFor(sid)
+	if tr == nil {
+		t.Fatal("no tracker wired for the session")
+	}
+
+	flag := wakeFlag(r, sid)
+
+	// Construction transients (the catch-up no-op goroutine) settle first, so
+	// the baseline only counts goroutines that live through the window.
+	time.Sleep(150 * time.Millisecond)
+
+	// Baseline sampled immediately BEFORE triggering the chain (delta band).
+	baseline := goruntime.NumGoroutine()
+
+	// One delivered batch: the chain wakes, delivers, exits.
+	tr.Complete(tasks.Notification{
+		TaskID: "exec_idle", Kind: tasks.KindBash, ExitStatus: "0", Tail: "idle marker",
+	})
+
+	if !waitFor(5*time.Second, func() bool { return prov.callCount() >= 1 }) {
+		t.Fatal("the wake batch never delivered (no provider call)")
+	}
+
+	// Settle: any successor spun by a broken exit defer is in full churn by
+	// now (each successor spawns within microseconds of its parent's exit).
+	time.Sleep(200 * time.Millisecond)
+
+	// (1) The flag stays FALSE across the whole sampled window.
+	idle, samples := sampleFlagFalse(flag, 500*time.Millisecond)
+	if !idle {
+		t.Error("wakeInFlight flag read true while idle — a successor chain keeps spawning (CR-02 spin)")
+	}
+
+	if samples < 25 {
+		t.Errorf("flag samples = %d; want >= 25 over the 500ms window", samples)
+	}
+
+	// (2) No persistent chain goroutine: the count stays in the delta band.
+	assertGoroutineBand(t, baseline, 500*time.Millisecond)
+
+	// (3) Exactly the one legitimate wake turn — no re-drain storm.
+	if calls := prov.callCount(); calls != 1 {
+		t.Errorf("provider calls = %d; want exactly 1 (one batch, no storm)", calls)
+	}
+
+	if got := wakeEngineDecisions(t, sess, wakeProvenance); got != 1 {
+		t.Errorf("wake EngineDecision lines = %d; want 1", got)
+	}
+}
+
+// TestWakeChain_NoSpawnPastServeShutdown (22-08 Task 1, G-22-2/CR-02): with a
+// CANCELLED serve ctx, scheduleWakeDrain leaves the in-flight flag false (the
+// LoadOrStore'd entry never flips) and spawns nothing — the chains' lifetime
+// is owned by the ctx the editor controls.
+func TestWakeChain_NoSpawnPastServeShutdown(t *testing.T) { //nolint:paralleltest // goroutine-band battery
+	r, prov := newExpansionRunner(t, true)
+
+	const sid = "sess-wake-nospawn"
+
+	_ = r.sessionFor(context.Background(), sid)
+
+	// Serve shutdown: the serve ctx is DONE from here on.
+	serveCtx, cancel := context.WithCancel(context.Background())
+	r.serveCtx = serveCtx
+	cancel()
+
+	if r.serveCtxOrBackground().Err() == nil {
+		t.Fatal("test setup: serve ctx not cancelled")
+	}
+
+	flag := wakeFlag(r, sid)
+
+	// Construction transients settle before the band baseline.
+	time.Sleep(150 * time.Millisecond)
+
+	baseline := goruntime.NumGoroutine()
+
+	r.scheduleWakeDrain(sid)
+
+	// The entry must NEVER flip: sampled across the window, not read once —
+	// the RED spin holds the flag true only ~86% of the time under -race, so
+	// a single read can miss it; >=25 samples cannot.
+	idle, samples := sampleFlagFalse(flag, 500*time.Millisecond)
+	if !idle {
+		t.Error("wakeInFlight flag read true with a dead serve ctx — scheduleWakeDrain spawned a chain past shutdown")
+	}
+
+	if samples < 25 {
+		t.Errorf("flag samples = %d; want >= 25 over the 500ms window", samples)
+	}
+
+	assertGoroutineBand(t, baseline, 500*time.Millisecond)
+
+	if calls := prov.callCount(); calls != 0 {
+		t.Errorf("provider calls = %d; want 0 (nothing may run past shutdown)", calls)
+	}
+}
+
+// TestWakeChain_CtxCancelStopsChain (22-08 Task 1, G-22-2/CR-02): a chain
+// mid-retry (busy turn slot) STOPS when the serve ctx cancels, and its exit
+// defer does not restart it — flag false, stays false.
+func TestWakeChain_CtxCancelStopsChain(t *testing.T) { //nolint:paralleltest // flag-window battery
+	r, prov := newExpansionRunner(t, true,
+		scriptedResp{text: "wake acknowledged"},
+	)
+
+	const sid = "sess-wake-ctxcancel"
+
+	_ = r.sessionFor(context.Background(), sid)
+
+	tr := r.trackerFor(sid)
+	if tr == nil {
+		t.Fatal("no tracker wired for the session")
+	}
+
+	serveCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	r.serveCtx = serveCtx
+	r.wakeRetryInterval = 10 * time.Second // the in-flight chain sits in the retry select once busy
+
+	flag := wakeFlag(r, sid)
+
+	// Hold the turn slot: the spawned chain TryLock-fails and enters its
+	// first retry sleep — an in-flight chain mid-retry.
+	mu := r.sessionTurnMu(sid)
+	mu.Lock()
+	defer mu.Unlock()
+
+	tr.Complete(tasks.Notification{
+		TaskID: "exec_ctx", Kind: tasks.KindBash, ExitStatus: "0", Tail: "ctx marker",
+	})
+
+	time.Sleep(150 * time.Millisecond) // the chain is inside the retry select by now
+
+	if !flag.Load() {
+		t.Fatal("test setup: the chain never went in flight (flag false before cancel)")
+	}
+
+	if calls := prov.callCount(); calls != 0 {
+		t.Fatalf("test setup: provider calls = %d during the busy window; want 0", calls)
+	}
+
+	// Serve shutdown mid-retry: the chain must stop, never restart.
+	cancel()
+
+	time.Sleep(200 * time.Millisecond) // the chain observes Done and exits
+
+	idle, samples := sampleFlagFalse(flag, 500*time.Millisecond)
+	if !idle {
+		t.Error("wakeInFlight flag read true after ctx cancel — the exit defer restarted the chain past shutdown (CR-02 churn)")
+	}
+
+	if samples < 25 {
+		t.Errorf("flag samples = %d; want >= 25 over the 500ms window", samples)
+	}
+
+	if calls := prov.callCount(); calls != 0 {
+		t.Errorf("provider calls = %d; want 0 (the cancelled chain delivered nothing)", calls)
+	}
+}
+
+// TestWakeChain_RacingCompletionStillWakes (22-08 Task 1, G-22-2 behavior row
+// "genuine race still recovered"): a completion landing after the chain's
+// delivery decision but before its exit (the flag-held window — planted by
+// firing completion B immediately after completion A, while chain 1 is still
+// delivering batch A) still gets delivered: B's own drain callback CASes
+// against the still-true flag and loses, so only chain 1's exit defer (the
+// gated restart) can carry it. The gating must not strand a racing batch.
+// Whether B coalesces into A's batch or rides the restart is a legitimate
+// race — the OUTCOME is pinned: both markers delivered exactly once, wake
+// turns == provider calls, then idle.
+func TestWakeChain_RacingCompletionStillWakes(t *testing.T) { //nolint:paralleltest // flag-window battery
+	r, prov := newExpansionRunner(t, true,
+		scriptedResp{text: "wake acknowledged 1"},
+		scriptedResp{text: "wake acknowledged 2"},
+	)
+
+	const sid = "sess-wake-race"
+
+	_ = r.sessionFor(context.Background(), sid)
+
+	sess := r.sessions[sid]
+
+	tr := r.trackerFor(sid)
+	if tr == nil {
+		t.Fatal("no tracker wired for the session")
+	}
+
+	flag := wakeFlag(r, sid)
+
+	// Batch A starts its delivery (chain 1 in flight)...
+	tr.Complete(tasks.Notification{
+		TaskID: "exec_race_a", Kind: tasks.KindBash, ExitStatus: "0", Tail: "race-a marker",
+	})
+
+	// ...and B lands inside the flag-held window: B's scheduleWakeDrain CAS
+	// fails (a chain looks active), so the gated restart is B's only ride.
+	tr.Complete(tasks.Notification{
+		TaskID: "exec_race_b", Kind: tasks.KindBash, ExitStatus: "0", Tail: "race-b marker",
+	})
+
+	both := waitFor(5*time.Second, func() bool {
+		a, b := false, false
+
+		for _, txt := range wakeUserTexts(t, sess) {
+			if strings.Contains(txt, "race-a marker") {
+				a = true
+			}
+
+			if strings.Contains(txt, "race-b marker") {
+				b = true
+			}
+		}
+
+		return a && b
+	})
+	if !both {
+		t.Fatal("a racing completion was stranded — the gated restart must carry the flag-held batch (B never delivered)")
+	}
+
+	// Exactly once each: notifications are consumed exactly once by Drain.
+	time.Sleep(200 * time.Millisecond) // settle — any restart chain finished
+
+	wakeTurns, aSeen, bSeen := 0, 0, 0
+
+	for _, txt := range wakeUserTexts(t, sess) {
+		if !strings.Contains(txt, "task-notification") {
+			continue
+		}
+
+		wakeTurns++
+
+		if strings.Contains(txt, "race-a marker") {
+			aSeen++
+		}
+
+		if strings.Contains(txt, "race-b marker") {
+			bSeen++
+		}
+	}
+
+	if aSeen != 1 || bSeen != 1 {
+		t.Errorf("marker deliveries: a=%d b=%d; want 1 and 1 (exactly once each)", aSeen, bSeen)
+	}
+
+	if wakeTurns < 1 || wakeTurns > 2 {
+		t.Errorf("wake turns = %d; want 1 (coalesced) or 2 (restart-carried)", wakeTurns)
+	}
+
+	if calls := prov.callCount(); calls != wakeTurns {
+		t.Errorf("provider calls = %d; want %d (one call per delivered batch)", calls, wakeTurns)
+	}
+
+	idle, _ := sampleFlagFalse(flag, 500*time.Millisecond)
+	if !idle {
+		t.Error("flag read true after both batches settled — successor spin")
 	}
 }

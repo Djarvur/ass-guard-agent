@@ -1,0 +1,20 @@
+{
+  "plan": "22-08",
+  "task": 1,
+  "phase_gate": "RED",
+  "command": "go test -race -count=1 ./internal/runtime/ -run 'TestWakeChain' -v",
+  "targetTest": "TestWakeChain_IdlesWhenEmpty",
+  "exitCode": 1,
+  "output": "not ok 1 - TestWakeChain_IdlesWhenEmpty\nnot ok 2 - TestWakeChain_NoSpawnPastServeShutdown\nnot ok 3 - TestWakeChain_CtxCancelStopsChain\nnot ok 4 - TestWakeChain_RacingCompletionStillWakes\n# tests 4\n# pass 0\n# fail 4\n",
+  "expected": "Per 22-08 Task 1 <behavior>: after one delivered batch the chain exits with NO successor (wakeInFlight flag false across a >=500ms sampled window, >=25 samples; goroutines within the [b, b+2] delta band); scheduleWakeDrain with a cancelled serve ctx never flips the flag and spawns nothing; a chain mid-retry stops on ctx cancel and its exit defer does not restart it; a racing completion landing in the flag-held window still delivers (gating must not strand a batch).",
+  "actual": "The exit defer restarts unconditionally on every exit path: the empty-queue exit spins a successor chain within microseconds (flag reads true in the idle window — sample 1 of the window), scheduleWakeDrain spawns past the dead serve ctx (flag flips true), and the cancelled in-flight chain's exit defer keeps churning successors (flag true after cancel). The racing-completion row delivers both batches but never idles afterwards (spin holds the flag true).",
+  "failing_tests": [
+    "TestWakeChain_IdlesWhenEmpty (assertion: wakeInFlight flag read true while idle — a successor chain keeps spawning; samples = 1 of >= 25)",
+    "TestWakeChain_NoSpawnPastServeShutdown (assertion: wakeInFlight flag read true with a dead serve ctx — scheduleWakeDrain spawned a chain past shutdown; samples = 1)",
+    "TestWakeChain_CtxCancelStopsChain (assertion: wakeInFlight flag read true after ctx cancel — the exit defer restarted the chain past shutdown; samples = 1)",
+    "TestWakeChain_RacingCompletionStillWakes (assertion: flag read true after both batches settled — successor spin)"
+  ],
+  "unexpected_green": [],
+  "note": "Go --- FAIL lines translated faithfully into Node-TAP by hand (4/4 target rows failed on assertions; no compile/fixture errors). Duty-cycle probe (throwaway diagnostic, deleted): the CR-02 spin holds the flag true ~86% of reads under -race tight-loop sampling, so the >=25-sample windows catch it with certainty while a single read could miss it — NoSpawn's witness is the sampled window, not a one-shot read.",
+  "timestamp": "2026-09-10T03:20:00Z"
+}
