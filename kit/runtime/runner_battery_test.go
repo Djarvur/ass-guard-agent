@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
+	"github.com/Djarvur/ass-guard-agent/internal/coreexec"
 	"github.com/Djarvur/ass-guard-agent/internal/openspec"
 	"github.com/Djarvur/ass-guard-agent/kit/engine"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
@@ -76,6 +77,9 @@ func newExpansionRunner(
 		workDir:      dir,
 		maxConc:      4,
 		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return prov },
+		// 25-07: the ask-surface renderer is the RunnerConfig func-field —
+		// the ask batteries assert the rendered chunk, so wire the real one.
+		askSurfaceRenderer: coreexec.RenderAskSurface,
 	}
 
 	if engineOn {

@@ -255,6 +255,9 @@ type Runner struct {
 	// reads (readRuleEval) race cleanly. A failed open leaves it nil (the
 	// session degrades rule-less with the loud log) and the NEXT sessionFor
 	// retries — residual errors are environmental and can be transient.
+	// 25-07 Task 2 retypes this to the kit PermAuthority view (the app-side
+	// move); Task 1 keeps the concrete store while the interim fallback arm
+	// still constructs coreexec directly.
 	permStore atomic.Pointer[perm.Store]
 
 	// 21-05 (PAR-06/D-09): the image-ingress limit set. Zero →
@@ -264,6 +267,23 @@ type Runner struct {
 	imageLimits ImageLimits
 
 	sessions map[string]*session.Session
+
+	// 25-07 (SessionToolkit, OQ1 coarse): the injected core-executor toolkit
+	// — the app registers per-session core tools through Attach and hands
+	// back the Reaper OnClose composes. nil (bare test runners, the 25-09
+	// hostproof shape) is the documented degraded state: no core tool
+	// registers and every session takes the stub-executor path. The three
+	// func seams below ride the same injection family (RunnerConfig fields,
+	// the MakeProvider precedent): askSurfaceRenderer renders the
+	// plain-text ask surface (nil = no surface chunk — asks still
+	// function); launchBackground runs one background subagent through the
+	// app-side tracker (nil = structured-error dispatch); openPermStore
+	// opens the runner-scoped permission store (nil = rule-less sessions,
+	// the failed-open degrade).
+	toolkit            SessionToolkit
+	askSurfaceRenderer func([]session.AskQuestion) string
+	launchBackground   BackgroundLauncher
+	openPermStore      func(path string) (PermAuthority, error)
 
 	// 12-07 (ACP-04/D-02) cron wiring state — see cron_wiring.go:
 	// turnMus is the per-session turn serialization (queue-behind-active-turn);
@@ -400,6 +420,25 @@ type RunnerConfig struct {
 	SchedCfg     *modelrouting.Config
 	ProviderName string
 	Stderr       io.Writer
+
+	// Toolkit is the core-executor injection seam (25-07, OQ1 coarse): the
+	// app adapter that registers per-session core tools and returns the
+	// Reaper. nil = the documented degraded state (no core tools; the
+	// stub-executor path — the 25-09 hostproof arm).
+	Toolkit SessionToolkit
+	// AskSurfaceRenderer renders the plain-text ask surface for the broker's
+	// non-elicititation degrade (25-07, OQ1 resolution: a RunnerConfig
+	// func-field, mirroring MakeProvider). nil = no surface chunk — asks
+	// still suspend and function; only the plain-text mirror is unwired.
+	AskSurfaceRenderer func([]session.AskQuestion) string
+	// LaunchBackground runs one background subagent (25-07: the 22-03 seam
+	// app-side). nil = structured-error dispatch results.
+	LaunchBackground BackgroundLauncher
+	// OpenPermStore opens the runner-scoped permission store at the
+	// .ass-guard floor path the kit composes (25-07: the app open-repair
+	// + the kit-verdict adapter). nil = rule-less sessions (implicit allow,
+	// the documented degrade).
+	OpenPermStore func(path string) (PermAuthority, error)
 }
 
 // NewRunner fills a Runner from cfg — struct-fill ONLY (D-05 thin ctor).
@@ -412,20 +451,24 @@ func NewRunner(cfg *RunnerConfig) *Runner {
 	wd := cfg.WorkDir
 
 	return &Runner{
-		bus:            cfg.Bus,
-		bodyStore:      cfg.BodyStore,
-		profile:        cfg.Profile,
-		workDir:        cfg.WorkDir,
-		maxConc:        cfg.MaxConc,
-		configAdded:    cfg.ConfigAdded,
-		makeProvider:   cfg.MakeProvider,
-		askTimeout:     cfg.AskTimeout,
-		serveCtx:       cfg.ServeCtx,
-		schedCfg:       cfg.SchedCfg,
-		providerName:   cfg.ProviderName,
-		stderr:         cfg.Stderr,
-		compactNowHook: realCompactNow,
-		resumeListHook: realResumeListing(wd),
+		bus:                cfg.Bus,
+		bodyStore:          cfg.BodyStore,
+		profile:            cfg.Profile,
+		workDir:            cfg.WorkDir,
+		maxConc:            cfg.MaxConc,
+		configAdded:        cfg.ConfigAdded,
+		makeProvider:       cfg.MakeProvider,
+		askTimeout:         cfg.AskTimeout,
+		serveCtx:           cfg.ServeCtx,
+		schedCfg:           cfg.SchedCfg,
+		providerName:       cfg.ProviderName,
+		stderr:             cfg.Stderr,
+		toolkit:            cfg.Toolkit,
+		askSurfaceRenderer: cfg.AskSurfaceRenderer,
+		launchBackground:   cfg.LaunchBackground,
+		openPermStore:      cfg.OpenPermStore,
+		compactNowHook:     realCompactNow,
+		resumeListHook:     realResumeListing(wd),
 	}
 }
 
@@ -2307,106 +2350,14 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 		}
 	}
 
-	taskRegistry := coreexec.NewTaskRegistry()
-	taskRegistry.Cap = bashCap
-
-	// 22-06 (SAND-01): the startup probe's resolved Handle + the note sink
-	// reach the registry (the background site) — one composition, all three
-	// exec sites. nil / Mode off (the default) leaves every launch untouched.
-	sandboxNote := func(format string, args ...any) {
-		_, _ = fmt.Fprintf(r.stderrOrDefault(), format+"\n", args...)
-	}
-
-	taskRegistry.Sandbox = r.sandboxHandle
-	taskRegistry.SandboxNote = sandboxNote
-
-	// 22-04 (PAR-09/D-07/D-08): the session's ONE persistent-shell PTY
-	// manager — lazily started (no shell exists until the first persistent
-	// Bash call), shared by every persistent call of the session, and
-	// drained on close (the OnClose link, Task 3). The dead-shell restart
-	// note rides the loud stderr family (one line per restart — D-08's
-	// visible state-loss acknowledgment, never silent). 22-06 (SAND-01):
-	// the SAME Handle confines the persistent shell at spawn (the third
-	// exec site; D-09 orthogonality — persistence and confinement compose).
-	ptyMgr := coreexec.NewPTYManager(coreexec.PTYOpts{
-		WorkDir: dir,
-		NoteFn: func(format string, args ...any) {
-			_, _ = fmt.Fprintf(r.stderrOrDefault(), "ass-guard: session %s "+format+"\n",
-				append([]any{sessionID}, args...)...)
-		},
-		Sandbox: r.sandboxHandle,
-	})
-	r.ptyManagers.Store(sessionID, ptyMgr)
-
-	// 22-01 (D-01..D-03, PAR-07/PAR-08): the ONE task-notification tracker
-	// beside the registry. Registry completions land as kind-tagged
-	// Notifications (primitive-arg CompletionHook — no coreexec→tasks
-	// import; this adapter owns the mapping); every completion schedules the
-	// session's wake-drain chain; OnClose drops queued-but-unstarted
-	// subagent registrations with a counted note (OQ5).
-	tracker := tasks.NewTracker(tasks.TrackerOpts{SubagentCap: subsCap})
-	r.trackers.Store(sessionID, tracker)
-
-	taskRegistry.CompletionHook = func(taskID, kind, exitStatus string, duration time.Duration, tail, outputFile string) {
-		tracker.Complete(tasks.Notification{
-			TaskID: taskID, Kind: tasks.Kind(kind), ExitStatus: exitStatus,
-			Duration: duration, Tail: tail, OutputFile: outputFile,
-		})
-	}
-
-	tracker.SetDrain(func(pending []tasks.Notification) {
-		_ = pending // peek only — the chain re-reads authoritatively via Drain
-
-		r.scheduleWakeDrain(sessionID)
-	})
-
-	// 22-03 (PAR-07): the background-subagent launcher seam — the session's
-	// run_in_background dispatches hand the launch to tasks.RunBackgroundSubagent
-	// over this session's tracker. The loop runs under the SERVE-lifetime ctx
-	// (the dispatching turn's ctx dies at return); progress streams from the
-	// bus (chunks + tool calls tagged with the subagent's turn id) into the
-	// task's output file. The 20-03 routing plan rides the request VERBATIM
-	// (Pattern 7: DispatchSubagentBackground resolved it through the SAME
-	// planSubagent call site the foreground path uses — never a second
-	// resolver).
-	backgroundLaunch := func(req session.BackgroundDispatchRequest) session.BackgroundDispatchResult {
-		r.sessMu.Lock()
-		sessLocal := r.sessions[sessionID]
-		r.sessMu.Unlock()
-
-		launch := tasks.RunBackgroundSubagent(tasks.SubagentDeps{
-			Run: func(bgCtx context.Context, progress func(string)) (string, error) {
-				// 22-03 (OQ3): arm the ask-decline for the loop's ctx — a
-				// background subagent has no human; ask-class tools decline
-				// with the 17-D-07 note (scoped to this ctx, never the
-				// session — a concurrent client turn is unaffected).
-				return runSubagentWithProgress(
-					session.ContextWithBackgroundSubagent(bgCtx), sessLocal, req, r.bus, progress)
-			},
-			WorkDir:  dir,
-			Tracker:  tracker,
-			ServeCtx: r.serveCtxOrBackground,
-		})
-
-		return session.BackgroundDispatchResult{
-			TaskID: launch.TaskID, OutputFile: launch.OutputFile,
-			Queued: launch.Queued, Note: launch.Note, Err: launch.Err,
-		}
-	}
-
-	coreexec.RegisterCore(sCatalog, coreexec.Config{
-		WorkDir: dir, Todos: coreexec.NewTodoStore(), Hooks: hooks, Tasks: taskRegistry,
-		PTY: ptyMgr, // 22-04 (PAR-09): the session's persistent shell
-		// 22-06 (SAND-01): the foreground site's Handle + note sink — the
-		// same resolved pair the registry and the PTY manager carry (one
-		// composition, all three exec sites; nil/off = untouched default).
-		Sandbox: r.sandboxHandle, SandboxNote: sandboxNote,
-	})
-
 	// The session variable is declared BEFORE the broker literal so the
 	// onSurface closure can hand the pending ask to the queue at FIRE time
 	// (mid-turn — sess is fully constructed by then; the 09-01 capturer
 	// precedent: closures read late-bound variables, never stale copies).
+	// 25-07: hoisted above the construction arms — the broker and the
+	// plan-mode state are kit domain (suspension + the mutating-gate state)
+	// and ride the ToolkitEnv; the app-side registration binds the SAME
+	// broker the session resumes through.
 	var sess *session.Session
 
 	// 12-01 (ACP-01/D-01): the per-session AskUserQuestion surface. The
@@ -2419,41 +2370,234 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	// direct publish. Timer-driven resumes run under the serve-lifetime ctx
 	// (the suspending turn's ctx dies with its response). The executor
 	// registration is the SAME Execute-only override discipline as
-	// RegisterCore (the captured schema is never rewritten).
+	// RegisterCore (the captured schema is never rewritten). 25-07 (OQ1):
+	// the ask-surface RENDERER is a RunnerConfig func-field (the
+	// MakeProvider precedent) — nil degrades to no surface chunk (asks
+	// still suspend and function; only the plain-text mirror is unwired).
 	askBroker := session.NewAskBroker(r.askTimeout, func(p session.PendingAsk) {
 		if p.Kind != session.PendingAskKindQuestion || r.askFire == nil || sess == nil {
-			r.PublishAskChunk(p.TurnID, coreexec.RenderAskSurface(p.Questions))
+			if r.askSurfaceRenderer != nil {
+				r.PublishAskChunk(p.TurnID, r.askSurfaceRenderer(p.Questions))
+			}
 
 			return
 		}
 
 		sess.EnqueueElicitationAsk(p, r.askFire)
 	})
-	coreexec.RegisterAsk(sCatalog, askBroker)
 
-	// 12-04 (ACP-02): the per-session plan-mode state + the interactive-tool
-	// family. The state carries the CAPTURED runtime-level mutating-tool gate
-	// (the 12-05 re-record proved the target enforces it); the plan pair
-	// registers through RegisterInteractive — the SAME Execute-only override
-	// discipline as RegisterCore, wired at the same site.
+	// 12-04 (ACP-02): the per-session plan-mode state. The state carries the
+	// CAPTURED runtime-level mutating-tool gate (the 12-05 re-record proved
+	// the target enforces it); the plan pair registers through
+	// RegisterInteractive — the SAME Execute-only override discipline as
+	// RegisterCore, wired at the same site. 25-07: kit-constructed — the
+	// toolkit binds the SAME instance through the env.
 	planMode := session.NewPlanModeState()
-	mailbox := coreexec.NewAgentMailbox()
-	sessionReader := coreexec.NewSessionReader(dir)
-	coreexec.RegisterInteractive(sCatalog, coreexec.InteractiveConfig{
-		Ask: askBroker, PlanMode: planMode,
-		Mailbox: mailbox, Sessions: sessionReader, Tasks: taskRegistry,
-		// 22-09 (G-22-5): ids the registry does not know (background-
-		// subagent exec_ ids) reach THIS session's tracker. TaskStop cancels
-		// through CancelTask — a finished id declines (its cancel entry
-		// retired at Complete, 22-07), so no fake ack for a dead id.
-		TaskStopFallback: tracker.CancelTask,
-		// TaskOutput classifies through SubagentState and reads the output
-		// file (bounded tail; stat-miss = not-handled). Primitive args only
-		// for both seams (the CompletionHook precedent — coreexec stays
-		// tasks-free).
-		TaskOutputFallback: subagentOutputFallback(dir, tracker),
-		Schedule:           cronStoreOrNil(r.schedule), // 12-07: the PER-PROJECT cron store (nil in test runners → structured no-store errors)
-	})
+
+	// reapSession is OnClose's app-side leg, filled by whichever
+	// construction arm ran — the toolkit's Reaper, or the interim direct
+	// fallback's composition. nil when no arm spawned anything (the
+	// nil-toolkit degrade after Task 2).
+	var reapSession func()
+
+	// backgroundLaunch is the session's run_in_background dispatch seam
+	// (22-03, PAR-07), filled per arm below.
+	var backgroundLaunch func(req session.BackgroundDispatchRequest) session.BackgroundDispatchResult
+
+	// wake (22-01): the completion→wake-chain signal BOTH construction arms
+	// bind (the toolkit env's ScheduleWakeDrain; the interim fallback's
+	// tracker drain callback) — one shared closure, the baseline's single
+	// contextcheck instance.
+	wake := func() { r.scheduleWakeDrain(sessionID) }
+
+	// 25-07 (SessionToolkit, OQ1 coarse): the app toolkit registers the
+	// per-session core executors — task registry, RegisterCore, RegisterAsk
+	// (binding the broker above), mailbox, session reader,
+	// RegisterInteractive — and returns the Reaper OnClose composes. The
+	// env carries exactly the inputs the direct construction below passes
+	// today, kit-typed (no app type crosses; Pitfall 3). An attach error
+	// degrades loudly to the no-core-tools state (the stub-executor arm) —
+	// never a refused session.
+	if r.toolkit != nil {
+		env := ToolkitEnv{
+			Dir:               dir,
+			SessionID:         sessionID,
+			TranscriptPath:    mgr.Path(),
+			SubagentCap:       subsCap,
+			BashCap:           bashCap,
+			Stderr:            r.stderrOrDefault(),
+			Hooks:             hooks,
+			PlanMode:          planMode,
+			Broker:            askBroker,
+			Schedule:          r.schedule,
+			ScheduleWakeDrain: wake,
+			BindTracker:       func(t TaskTracker) { r.trackers.Store(sessionID, t) },
+		}
+
+		reapSession, backgroundLaunch = r.attachToolkit(sCatalog, &env)
+	} else {
+		// 25-07 Task 1 INTERIM: the nil-toolkit fallback keeps today's
+		// DIRECT coreexec construction verbatim-in-role — Task 2 deletes it
+		// in the same commit that injects the app toolkit and switches the
+		// nil arm to the documented stub-executor degrade. At this commit no
+		// toolkit is injected anywhere, so every session runs this arm and
+		// the relocated coreexec wiring batteries pass unchanged.
+		taskRegistry := coreexec.NewTaskRegistry()
+		taskRegistry.Cap = bashCap
+
+		// 22-06 (SAND-01): the startup probe's resolved Handle + the note sink
+		// reach the registry (the background site) — one composition, all three
+		// exec sites. nil / Mode off (the default) leaves every launch untouched.
+		sandboxNote := func(format string, args ...any) {
+			_, _ = fmt.Fprintf(r.stderrOrDefault(), format+"\n", args...)
+		}
+
+		taskRegistry.Sandbox = r.sandboxHandle
+		taskRegistry.SandboxNote = sandboxNote
+
+		// 22-04 (PAR-09/D-07/D-08): the session's ONE persistent-shell PTY
+		// manager — lazily started (no shell exists until the first persistent
+		// Bash call), shared by every persistent call of the session, and
+		// drained on close (the OnClose link, Task 3). The dead-shell restart
+		// note rides the loud stderr family (one line per restart — D-08's
+		// visible state-loss acknowledgment, never silent). 22-06 (SAND-01):
+		// the SAME Handle confines the persistent shell at spawn (the third
+		// exec site; D-09 orthogonality — persistence and confinement compose).
+		ptyMgr := coreexec.NewPTYManager(coreexec.PTYOpts{
+			WorkDir: dir,
+			NoteFn: func(format string, args ...any) {
+				_, _ = fmt.Fprintf(r.stderrOrDefault(), "ass-guard: session %s "+format+"\n",
+					append([]any{sessionID}, args...)...)
+			},
+			Sandbox: r.sandboxHandle,
+		})
+		r.ptyManagers.Store(sessionID, ptyMgr)
+
+		// 22-01 (D-01..D-03, PAR-07/PAR-08): the ONE task-notification tracker
+		// beside the registry. Registry completions land as kind-tagged
+		// Notifications (primitive-arg CompletionHook — no coreexec→tasks
+		// import; this adapter owns the mapping); every completion schedules the
+		// session's wake-drain chain; OnClose drops queued-but-unstarted
+		// subagent registrations with a counted note (OQ5).
+		tracker := tasks.NewTracker(tasks.TrackerOpts{SubagentCap: subsCap})
+		r.trackers.Store(sessionID, tracker)
+
+		taskRegistry.CompletionHook =
+			func(taskID, kind, exitStatus string, duration time.Duration, tail, outputFile string) {
+				tracker.Complete(tasks.Notification{
+					TaskID: taskID, Kind: tasks.Kind(kind), ExitStatus: exitStatus,
+					Duration: duration, Tail: tail, OutputFile: outputFile,
+				})
+			}
+
+		tracker.SetDrain(func(pending []tasks.Notification) {
+			_ = pending // peek only — the chain re-reads authoritatively via Drain
+
+			wake()
+		})
+
+		// 22-03 (PAR-07): the background-subagent launcher seam — the session's
+		// run_in_background dispatchs hand the launch to tasks.RunBackgroundSubagent
+		// over this session's tracker. The loop runs under the SERVE-lifetime ctx
+		// (the dispatching turn's ctx dies at return); progress streams from the
+		// bus (chunks + tool calls tagged with the subagent's turn id) into the
+		// task's output file. The 20-03 routing plan rides the request VERBATIM
+		// (Pattern 7: DispatchSubagentBackground resolved it through the SAME
+		// planSubagent call site the foreground path uses — never a second
+		// resolver).
+		backgroundLaunch = func(req session.BackgroundDispatchRequest) session.BackgroundDispatchResult {
+			r.sessMu.Lock()
+			sessLocal := r.sessions[sessionID]
+			r.sessMu.Unlock()
+
+			launch := tasks.RunBackgroundSubagent(tasks.SubagentDeps{
+				Run: func(bgCtx context.Context, progress func(string)) (string, error) {
+					// 22-03 (OQ3): arm the ask-decline for the loop's ctx — a
+					// background subagent has no human; ask-class tools decline
+					// with the 17-D-07 note (scoped to this ctx, never the
+					// session — a concurrent client turn is unaffected).
+					return runSubagentWithProgress(
+						session.ContextWithBackgroundSubagent(bgCtx), sessLocal, req, r.bus, progress)
+				},
+				WorkDir:  dir,
+				Tracker:  tracker,
+				ServeCtx: r.serveCtxOrBackground,
+			})
+
+			return session.BackgroundDispatchResult{
+				TaskID: launch.TaskID, OutputFile: launch.OutputFile,
+				Queued: launch.Queued, Note: launch.Note, Err: launch.Err,
+			}
+		}
+
+		// Phase 8 (08-08): REAL execution for the core /opsx working set —
+		// Bash, Read, Write, Edit, TodoWrite, TodoRead (capture-grounded result
+		// forms, internal/coreexec). The SAME per-session registration site as
+		// the Skill override above: the per-session clone carries the WorkDir +
+		// a fresh per-session TodoStore (D-16 isolation); the shared engine
+		// catalog is never mutated.
+		//
+		// 12-02 Task 4: the SAME site is the PreToolUse/PostToolUse chokepoint —
+		// one HookRunner per session (discovered plugin hooks; the runner is
+		// nil-safe when none are installed) wraps every core executor.
+		coreexec.RegisterCore(sCatalog, coreexec.Config{
+			WorkDir: dir, Todos: coreexec.NewTodoStore(), Hooks: hooks, Tasks: taskRegistry,
+			PTY: ptyMgr, // 22-04 (PAR-09): the session's persistent shell
+			// 22-06 (SAND-01): the foreground site's Handle + note sink — the
+			// same resolved pair the registry and the PTY manager carry (one
+			// composition, all three exec sites; nil/off = untouched default).
+			Sandbox: r.sandboxHandle, SandboxNote: sandboxNote,
+		})
+
+		coreexec.RegisterAsk(sCatalog, askBroker)
+
+		mailbox := coreexec.NewAgentMailbox()
+		sessionReader := coreexec.NewSessionReader(dir)
+		coreexec.RegisterInteractive(sCatalog, coreexec.InteractiveConfig{
+			Ask: askBroker, PlanMode: planMode,
+			Mailbox: mailbox, Sessions: sessionReader, Tasks: taskRegistry,
+			// 22-09 (G-22-5): ids the registry does not know (background-
+			// subagent exec_ ids) reach THIS session's tracker. TaskStop cancels
+			// through CancelTask — a finished id declines (its cancel entry
+			// retired at Complete, 22-07), so no fake ack for a dead id.
+			TaskStopFallback: tracker.CancelTask,
+			// TaskOutput classifies through SubagentState and reads the output
+			// file (bounded tail; stat-miss = not-handled). Primitive args only
+			// for both seams (the CompletionHook precedent — coreexec stays
+			// tasks-free).
+			TaskOutputFallback: subagentOutputFallback(dir, tracker),
+			// 12-07: the PER-PROJECT cron store (nil in test runners →
+			// structured no-store errors)
+			Schedule: cronStoreOrNil(r.schedule),
+		})
+
+		// OnClose's app-side leg, in today's exact order (12-06 → 22-04 →
+		// 22-01 OQ5 → 22-08): the interim arm composes it inline; the
+		// toolkit arm's Reaper performs the same sequence app-side.
+		reapSession = func() {
+			taskRegistry.ReapAll() // 12-06: no background group outlives the session
+			ptyMgr.Drain()         // 22-04 (D-08/Pitfall 5): the persistent shell's group dies here too
+
+			// 22-01 (OQ5): queued-but-unstarted subagent registrations die here
+			// — silently dropped (nothing started, nothing to kill), the count
+			// noted on stderr only when non-zero.
+			if dropped := tracker.CancelQueued(); dropped > 0 {
+				_, _ = fmt.Fprintf(r.stderrOrDefault(),
+					"ass-guard: session %s close dropped %d queued background subagent task(s)\n", sessionID, dropped)
+			}
+
+			// 22-08 (G-22-4, CR-04): RUNNING background subagents die with the
+			// session too — their cancel funcs fire here (queued ones above; the
+			// two legs are idempotent together), the count noted on stderr only
+			// when non-zero. Without this a running subagent outlived its session
+			// and its late completion fired into closed machinery.
+			if cancelled := tracker.CancelRunning(); cancelled > 0 {
+				_, _ = fmt.Fprintf(r.stderrOrDefault(),
+					"ass-guard: session %s close cancelled %d running background subagent task(s)\n",
+					sessionID, cancelled)
+			}
+		}
+	}
 
 	// 09-01 T2 (AUD-02): the late-bound capturer closure. sess is declared
 	// BEFORE the Session literal (moved above the ask-broker literal, 17-04)
@@ -2709,28 +2853,16 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	go tw.Run(writerCtx)
 
 	// Phase 5: reap MCP subprocesses on session end (logout/cancel/ctx-done) —
-	// composed with the writer's cancel (Close runs the chain exactly once).
+	// composed with the writer's cancel + the app-side reap leg (Close runs
+	// the chain exactly once). 25-07: the app-side leg is whichever arm's
+	// reapSession — the toolkit's Reaper (writer cancel → reap → MCP close,
+	// the 12-06 invariant holding through the handle) or the interim direct
+	// composition.
 	s.OnClose = func() error {
 		cancelWriter()
-		taskRegistry.ReapAll() // 12-06: no background group outlives the session
-		ptyMgr.Drain()         // 22-04 (D-08/Pitfall 5): the persistent shell's group dies here too
 
-		// 22-01 (OQ5): queued-but-unstarted subagent registrations die here
-		// — silently dropped (nothing started, nothing to kill), the count
-		// noted on stderr only when non-zero.
-		if dropped := tracker.CancelQueued(); dropped > 0 {
-			_, _ = fmt.Fprintf(r.stderrOrDefault(),
-				"ass-guard: session %s close dropped %d queued background subagent task(s)\n", sessionID, dropped)
-		}
-
-		// 22-08 (G-22-4, CR-04): RUNNING background subagents die with the
-		// session too — their cancel funcs fire here (queued ones above; the
-		// two legs are idempotent together), the count noted on stderr only
-		// when non-zero. Without this a running subagent outlived its session
-		// and its late completion fired into closed machinery.
-		if cancelled := tracker.CancelRunning(); cancelled > 0 {
-			_, _ = fmt.Fprintf(r.stderrOrDefault(),
-				"ass-guard: session %s close cancelled %d running background subagent task(s)\n", sessionID, cancelled)
+		if reapSession != nil {
+			reapSession()
 		}
 
 		return mcpHost.Close()
@@ -2760,6 +2892,60 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	}
 
 	return s
+}
+
+// attachToolkit performs sessionFor's toolkit arm (25-07): one coarse
+// Attach over the per-session catalog + env, returning OnClose's reap leg
+// (nil on attach failure — the loud degrade to the no-core-tools state,
+// never a refused session) and the run_in_background dispatch closure (the
+// RunnerConfig launch seam — 22-03 PAR-07 with the app-side tracker).
+func (r *Runner) attachToolkit( //nolint:funcorder,gocritic // helper group; unnamedResult/nonamedreturns conflict
+	sCatalog *toolcat.Catalog, env *ToolkitEnv,
+) (
+	func(), func(session.BackgroundDispatchRequest) session.BackgroundDispatchResult,
+) {
+	reaper, aerr := r.toolkit.Attach(sCatalog, *env)
+	if aerr != nil {
+		_, _ = fmt.Fprintf(r.stderrOrDefault(),
+			"ass-guard: session toolkit attach failed for %s (continuing without core tools): %v\n",
+			env.SessionID, aerr)
+	}
+
+	if reaper != nil {
+		return reaper.Reap, r.toolkitBackgroundLaunch(env.Dir, env.SessionID)
+	}
+
+	return nil, r.toolkitBackgroundLaunch(env.Dir, env.SessionID)
+}
+
+// toolkitBackgroundLaunch builds the toolkit arm's run_in_background
+// dispatch closure: the kit resolves the session + wraps the subagent loop
+// (runSubagentWithProgress — kit domain); the RunnerConfig launch seam runs
+// the app-side launch (id mint, output file, cap enforcement through the
+// tracker the toolkit holds for the session). nil seam = the structured
+// error degrade (never a panic, never a foreground fallback).
+func (r *Runner) toolkitBackgroundLaunch( //nolint:funcorder // sessionFor helper group
+	dir, sessionID string,
+) func(req session.BackgroundDispatchRequest) session.BackgroundDispatchResult {
+	return func(req session.BackgroundDispatchRequest) session.BackgroundDispatchResult {
+		r.sessMu.Lock()
+		sessLocal := r.sessions[sessionID]
+		r.sessMu.Unlock()
+
+		if r.launchBackground == nil {
+			return session.BackgroundDispatchResult{Err: errNoBackgroundLauncher}
+		}
+
+		return r.launchBackground(sessionID, dir, r.serveCtxOrBackground,
+			func(bgCtx context.Context, progress func(string)) (string, error) {
+				// 22-03 (OQ3): arm the ask-decline for the loop's ctx — a
+				// background subagent has no human; ask-class tools decline
+				// with the 17-D-07 note (scoped to this ctx, never the
+				// session — a concurrent client turn is unaffected).
+				return runSubagentWithProgress(
+					session.ContextWithBackgroundSubagent(bgCtx), sessLocal, req, r.bus, progress)
+			})
+	}
 }
 
 // serveCtxOrBackground returns the serve-lifetime context, falling back to

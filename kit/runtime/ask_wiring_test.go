@@ -879,6 +879,9 @@ func TestAskWiring_ServerLevelSurface(t *testing.T) { //nolint:cyclop,funlen // 
 		workDir:      dir,
 		maxConc:      2,
 		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return mp },
+		// 25-07: the ask-surface renderer is the RunnerConfig func-field —
+		// the batteries assert the rendered chunk, so wire the real one.
+		askSurfaceRenderer: coreexec.RenderAskSurface,
 	}
 
 	err := runner.SetupEngine(testEngineSetup(t))
@@ -1036,6 +1039,9 @@ func TestAskPark_PromptResponsePrecedesResolution(t *testing.T) { //nolint:cyclo
 		maxConc:      2,
 		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return mp },
 		askTimeout:   time.Hour, // the timer never fires in test time — the response must NOT wait for it
+		// 25-07: the ask-surface renderer is the RunnerConfig func-field —
+		// the batteries assert the rendered chunk, so wire the real one.
+		askSurfaceRenderer: coreexec.RenderAskSurface,
 	}
 
 	err := runner.SetupEngine(testEngineSetup(t))

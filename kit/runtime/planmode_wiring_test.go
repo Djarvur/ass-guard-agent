@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
+	"github.com/Djarvur/ass-guard-agent/internal/coreexec"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
 	"github.com/Djarvur/ass-guard-agent/kit/profile"
 	"github.com/Djarvur/ass-guard-agent/kit/provider"
@@ -127,6 +128,9 @@ func newPlanModeWiringRunner(t *testing.T) (*Runner, *planModeScriptProvider) {
 		workDir:    dir,
 		maxConc:    2,
 		askTimeout: time.Hour,
+		// 25-07: the ask-surface renderer is the RunnerConfig func-field —
+		// the batteries assert the rendered chunk, so wire the real one.
+		askSurfaceRenderer: coreexec.RenderAskSurface,
 		makeProvider: func(_ provider.RequestCapturer) provider.Provider {
 			return prov
 		},
