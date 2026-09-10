@@ -4,18 +4,18 @@ milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 25
 current_phase_name: SEED-001 Kit Extraction (strictly last)
-current_plan: 6
+current_plan: 7
 status: executing
-stopped_at: Completed 25-05-PLAN.md
-last_updated: "2026-09-10T22:20:46.315Z"
+stopped_at: Completed 25-06-PLAN.md
+last_updated: "2026-09-10T23:32:31.936Z"
 last_activity: 2026-09-10
 last_activity_desc: Phase 25 execution resumed (wave continue)
-state_head: 1aba451727c576ae7965a83f2fc022ec56c6c0da
+state_head: 9ac3aab3a9825b14d5b8992efaa947fdeb70d8be
 progress:
   total_phases: 11
   completed_phases: 6
   total_plans: 78
-  completed_plans: 74
+  completed_plans: 75
   percent: 55
 ---
 
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-09-10)
 ## Current Position
 
 Phase: 25 (SEED-001 Kit Extraction (strictly last)) — EXECUTING
-Plan: 6 of 9
-Current Plan: 6
+Plan: 7 of 9
+Current Plan: 7
 Total Plans in Phase: 9
 Status: Ready to execute
 Last activity: 2026-09-10 — Phase 25 execution resumed (wave continue)
@@ -120,6 +120,7 @@ Phase 19: 7/7 ✓ closed 2026-09-10 (verification completed by the auto-UAT live
 | Phase 25 P04 | 58 min | 3 tasks | 36 files |
 | Phase 25 P05 | 28 min | 3 tasks | 27 files |
 | Phase 25 P05 | 28 min | 3 tasks | 27 files |
+| Phase 25 P06 | 72 min | 2 tasks | 43 files |
 
 ## Accumulated Context
 
@@ -250,6 +251,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 25]: 25-05: OQ4 resolved — SetupEngine(setup EngineSetup) takes kit-neutral inputs (Catalog/PatternTable/Learned); openspec+learning hosting app-side in acpserve loadEngineSetup; hookdag.DefaultHooks stays kit self-config (the modelrouting embedded-defaults precedent)
 - [Phase 25]: 25-05: runtime.Learned is a three-method port (Lookup/RecordCandidate/EntryCount) — execution-time inventory found the 17-04 A9 write and the /memory count beyond the planned Lookup; learning.Entry never crosses
 - [Phase 25]: 25-05: residuals recorded — openspec stays in kit/runtime exactly as LoadCommandRegistry's mutability read (→25-06 CommandCatalog.Mutability); sched stays transitively via coreexec's cron quartet (→25-07 SessionToolkit, which also absorbs coreexec.CronStore/cronStoreOrNil)
+- [Phase 25]: 25-06: ParseInvocation/ParseMentions/Expand promoted kit-side as pure functions (not catalog methods) — the nil-catalog degradation invariant forces builtins, /undo routing, and class-B detection to parse identically without discovery
+- [Phase 25]: 25-06: CommandCatalog method set is 14 (consumption-derived), not the plan's 9 — commands.go's chain, rescan, mentions, memory, and doctor counts are equally runtime→ecosys edges; the zero-ecosys verify clause is absolute
+- [Phase 25]: 25-06: session→perm severed inside Task 1 (the 25-03-assigned residual) — kit RuleSet/RuleVerdict + the mcp__ canonicalization mirror; kit/session's internal dep set is now EMPTY
 
 ### Pending Todos
 
@@ -275,6 +279,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-10T22:20:45.083Z
-Stopped at: Completed 25-05-PLAN.md
+Last session: 2026-09-10T23:32:17.804Z
+Stopped at: Completed 25-06-PLAN.md
 Resume file: None
