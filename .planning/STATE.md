@@ -4,18 +4,18 @@ milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 25
 current_phase_name: SEED-001 Kit Extraction (strictly last)
-current_plan: 4
+current_plan: 5
 status: executing
-stopped_at: Completed 25-03-PLAN.md
-last_updated: "2026-09-10T21:01:07.460Z"
+stopped_at: Completed 25-04-PLAN.md
+last_updated: "2026-09-10T21:40:45.715Z"
 last_activity: 2026-09-10
 last_activity_desc: Phase 25 execution resumed (wave continue)
-state_head: 543afc8e83653fdc6f1a92c70088d45ad9782363
+state_head: fbb6699ef9067ccad688578868b68e5f29ff4fe9
 progress:
   total_phases: 11
   completed_phases: 6
   total_plans: 78
-  completed_plans: 72
+  completed_plans: 73
   percent: 55
 ---
 
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-09-10)
 ## Current Position
 
 Phase: 25 (SEED-001 Kit Extraction (strictly last)) — EXECUTING
-Plan: 4 of 9
-Current Plan: 4
+Plan: 5 of 9
+Current Plan: 5
 Total Plans in Phase: 9
 Status: Ready to execute
 Last activity: 2026-09-10 — Phase 25 execution resumed (wave continue)
@@ -117,6 +117,7 @@ Phase 19: 7/7 ✓ closed 2026-09-10 (verification completed by the auto-UAT live
 | Phase 25 P01 | 9 min (continuation session; plan spans 2 interrupted sessions since 2026-08-28) | 3 tasks | 160 files |
 | Phase 25 P02 | 18 min | 2 tasks | 266 files |
 | Phase 25 P03 | 21 min | 3 tasks | 148 files |
+| Phase 25 P04 | 58 min | 3 tasks | 36 files |
 
 ## Accumulated Context
 
@@ -240,6 +241,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 25]: 25-02: pre-move red baseline at 1002acc is 599 lint findings + 15 race failures (9 ModesMatrix fixture-missing legs, TestPermissionsE2E, 4 TestRunSuite_*, TestRescanConcurrency) — grown from 25-01's recorded 6/596; every later 25-xx move re-captures its own baseline
 - [Phase 25]: 25-03: pass 1 complete — kit/ holds all 15 promotion packages + kit/internal/enginebridge (D-04 seed; sole production importer = runtime, re-verified); execution-time production edge count is 12 not 8 (session+perm, runtime+{perm,sandbox,tasks} drift, all RESEARCH-predicted); pass-2 plans must sever 12
 - [Phase 25]: 25-03: latent-lint surfacing discovered — golangci reports some findings only in touched files; touch-probe on pristine baseline proves the +2 canonicalheader findings pre-exist; differential lint over moved trees needs per-finding attribution vs the mover's own diff (successor to 25-02's cache-clean rule)
+- [Phase 25]: 25-04: OQ2+OQ3 executed — all acp↔kit translation lives in internal/acpserve/kit_adapter.go (composition root; internal/acp stays wire-only); the kit returns its RAW stop marker, only the adapter maps it, cron audit lines keep the raw value (verified against the landed cron wiring)
+- [Phase 25]: 25-04: KIT-02 minimal pair landed — one-method Emitter (D-14, neutral event vocabulary incl. the additive UserMessageChunk echo kind) + ctx-blocking Requester (D-15) in kit/runtime/seams.go; no-double-timeout record: registry HUMAN-ASK = wire window (adapter), AskBroker D-01 = suspension policy (kit), the bridge arms neither
+- [Phase 25]: 25-04: runtime→acp edge severed (dep set proof); assertion-preserving test retarget pattern — in-package adapter twin keeps relocated batteries byte-identical while the production adapter is pinned by the composition-root suites; lint differential ended net -3 (595 vs 598 baseline, zero new findings)
 
 ### Pending Todos
 
@@ -265,6 +269,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-10T21:01:06.947Z
-Stopped at: Completed 25-03-PLAN.md
+Last session: 2026-09-10T21:40:35.499Z
+Stopped at: Completed 25-04-PLAN.md
 Resume file: None
