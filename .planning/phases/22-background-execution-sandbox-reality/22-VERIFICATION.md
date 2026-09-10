@@ -1,6 +1,6 @@
 ---
 phase: 22-background-execution-sandbox-reality
-verified: 2026-09-10T04:06:06Z
+verified: 2026-09-10T13:41:06Z
 status: human_needed
 score: 38/39 must-haves verified
 covered_files:
@@ -42,6 +42,7 @@ covered_files:
   - internal/coreexec/register.go
   - internal/runtime/cron_wiring.go
   - internal/runtime/runtime.go
+  - internal/runtime/commands.go
   - internal/runtime/wake_wiring_test.go
   - internal/sandbox/child_linux.go
   - internal/sandbox/doc.go
@@ -56,25 +57,20 @@ covered_files:
   - internal/tasks/tracker.go
   - internal/tasks/tracker_test.go
   - internal/toolcat/coretools.json
-covered_digest: "v1:sha256:d3733336c13d4ae7ba9c77d19ba544fd629f270d739814e90e80ed1ef03224ce"
+covered_digest: "v1:sha256:0890d9df4a24b278303d49cd0e3a6c376b32ae95b72625655e29a54b73cb53b4"
 behavior_unverified: 1 # 22-05 T5 darwin live seatbelt battery — not reproducible on this Linux host
 overrides_applied: 0
 re_verification:
-  previous_status: gaps_found
-  previous_score: 34/39
-  gaps_closed:
-    - "G-22-1 (CR-01): tracker slot release — Complete decrements runningSubagents (floored) and retires the cancel entry for Kind==KindSubagent before startNextWaiter (internal/tasks/tracker.go:120-157); pinned green by TestTrackerCap_SlotsFreeAfterCompletion, TestTrackerCap_SequentialReuseNeverQueues, TestTrackerComplete_RetiresCancelEntry (run by this verifier)"
-    - "G-22-2 (CR-02): wake-drain chain idles on empty and dies with the serve ctx — scheduleWakeDrain refuses to spawn past shutdown (cron_wiring.go:377-379) and the chain's exit defer restarts only when ctx live AND tracker present AND pending non-empty (:404-419); pinned green by TestWakeChain_IdlesWhenEmpty/NoSpawnPastServeShutdown/CtxCancelStopsChain/RacingCompletionStillWakes (run by this verifier)"
-    - "G-22-3 (CR-03): panic recovery at the background-subagent goroutine boundary — recover defer writes the terminal error marker (panic text + debug.Stack) and fires exactly ONE error Complete (internal/tasks/subagent.go:87-100); pinned green by TestBackgroundSubagent_PanicRecovered (run by this verifier)"
-    - "G-22-4 (CR-04): close-then-complete is terminal — OnClose cancels RUNNING subagents (runtime.go:2445), CloseSession prunes trackers/wakeInFlight/ptyManagers after s.Close() (:2908-2910), and drainWakeNotifications resolves the session NON-constructingly, dropping a closed session's batch loudly (cron_wiring.go:465-478); pinned green by TestWakeChain_ClosedSessionDropsBatch (both subtests) + TestCloseSession_PrunesWakeState (run by this verifier)"
-    - "G-22-5 (WR-01, folded into PAR-07's prior NEEDS-GAP-CLOSURE evidence): TaskStop/TaskOutput fall through to tracker-backed seams on registry-unknown ids — InteractiveConfig.TaskStopFallback/TaskOutputFallback (planmode.go:122-123), errUnknownTask fallthrough (background.go:731, :825), sessionFor binds tracker.CancelTask + subagentOutputFallback (runtime.go:2192, :2197), Tracker.SubagentState classifier (tracker.go:329-342); pinned green by the 9 coreexec seam rows + TestTrackerSubagentState + TestTaskStopFallbackWiring + TestTaskOutputFallbackWiring (run by this verifier)"
+  previous_status: human_needed
+  previous_score: 38/39
+  gaps_closed: [] # stale re-verification, not a gap-closure round — prior pass (2026-09-10T04:06:06Z) left zero open gaps
   gaps_remaining: []
-  regressions: []
+  regressions: [] # phase-23 (3c64e82..0c17c02) touched only runtime.go + commands.go in this phase's surface; all seams intact, all batteries re-run green
 behavior_unverified_items:
   - truth: "macOS confinement rides an embedded .sb template rendered IN MEMORY with targeted denies, never deny-default — the live darwin battery proves curl-connect deny and outside-write deny (22-05 T5)"
     test: "Run the darwin seatbelt battery on a macOS host (go test ./internal/sandbox/ with GOOS=darwin on darwin hardware)"
     expected: "sandbox-exec -p confinement denies curl connect and outside writes; profile is allow-default with targeted denies"
-    why_human: "This verifier runs on Linux; seatbelt_darwin_test.go is build-gated darwin-only and cannot execute here. The linux-runnable evidence (TestPolicySymmetry_SeatbeltShapeNeverDenyDefault, TestPolicySymmetry_GoldenDenySet — both re-run green by this verifier) pins the RENDERED shape, not live enforcement; the Linux landlock leg IS live-proven here (included green in the full ./internal/coreexec/ package gate)."
+    why_human: "This verifier runs on Linux; seatbelt_darwin_test.go is build-gated darwin-only and cannot execute here. The linux-runnable evidence (TestPolicySymmetry_SeatbeltShapeNeverDenyDefault, TestPolicySymmetry_GoldenDenySet — both re-run green by this verifier in THIS pass) pins the RENDERED shape, not live enforcement; the Linux landlock leg IS live-proven here (included green in the full ./internal/coreexec/ package gate)."
 human_verification:
   - test: "On a macOS host (amd64 or arm64), run GOOS=darwin go test ./internal/sandbox/ -run 'TestSeatbelt|TestPolicySymmetry_SeatbeltShape' -v"
     expected: "Live seatbelt battery passes: sandbox-exec -p confinement denies curl connect and outside writes; the rendered profile is allow-default with targeted denies (never deny-default)"
@@ -87,35 +83,47 @@ human_verification:
 # Phase 22: Background Execution + Sandbox Reality Verification Report
 
 **Phase Goal:** All long-lived process work converges on ONE lifecycle infrastructure: full subagents (background dispatch, structured task-notifications by kind, output retrieval, cancellation), background Bash completion callbacks on the same task-notification subsystem, persistent-shell Bash via PTY, and the sandbox flag made real with landlock/sandbox-exec split — probe-and-degrade loudly, default OFF.
-**Verified:** 2026-09-10T04:06:06Z
+**Verified:** 2026-09-10T13:41:06Z
 **Status:** human_needed
-**Re-verification:** Yes — after gap closure (22-07 / 22-08 / 22-09, commits 6bed452..dc3ab12)
+**Re-verification:** Yes — STALE re-verification (post-phase-23 code movement). Prior chain: initial 2026-09-10T01:44:45Z (gaps_found, 34/39) → gap closure 22-07/08/09 (commits 6bed452..dc3ab12) → re-verify 2026-09-10T04:06:06Z (human_needed, 38/39, zero gaps) → THIS pass re-ran the goal-backward analysis after phase-23 commits touched `internal/runtime`.
 
 ## Goal Achievement
 
-Re-verification of the 2026-09-10T01:44:45Z report (status gaps_found, 34/39). All four Critical-finding gaps were re-verified against the CURRENT codebase by direct code reading AND by running each gap's named regression battery in this verifier's own process — every one is genuinely closed, not narratively closed. The bonus closure round also fixed the prior PAR-07 blocker WR-01 (model-facing TaskStop/TaskOutput for subagent ids — `Tracker.CancelTask` had zero production callers; it now has its first ones). No regressions: the full three-package gate (coreexec + tasks + runtime, `-skip TestRescanConcurrency` — the documented pre-existing deferred race) is green, as are the session dispatch/panic/ask-decline rows, the sandbox symmetry goldens, and the cmd wiring battery.
+### Stale re-verification scope (this pass)
 
-The single remaining non-verified item is environmental, not code: the live darwin seatbelt battery cannot execute on this Linux host. It routes to human verification (status human_needed per the decision tree — rule 2), together with the 8 judgment-tier prohibition flags carried from the initial verification (ADR-550 autonomous mode).
+The prior pass went stale because phase-23 commits (3c64e82..0c17c02: 23-05 `/undo` class-B command, 23-06 workspace-scoped restore guard) modified files phase 22's surface covers. Bounding the delta precisely:
+
+- **Committed changes since 2026-09-10T04:06:06Z in this phase's surface:** exactly `internal/runtime/runtime.go` (+404/-26 across 12 hunks) and `internal/runtime/commands.go` (+226), plus two NEW phase-23 test files (`commands_test.go`, `restore_guard_test.go` — phase-23 scope, not phase-22 must-haves). Every other phase-22 covered impl file (tasks/tracker.go, tasks/subagent.go, tasks/notify.go, coreexec/background.go, coreexec/planmode.go, coreexec/ptty.go, coreexec/bash.go, runtime/cron_wiring.go, sandbox/*, session/*, acpserve/*, cmd/*) has **zero commits** since the prior green pass.
+- **Working tree:** the many ` M` entries are file-mode changes only (0644→0755, 0 content lines — `git diff --stat` confirms 0 insertions/deletions on every phase-22 covered file); runtime.go/commands.go/background.go have no worktree diff at all.
+- **Hunk-level review of the two changed files:** all runtime.go hunks sit in the /undo/checkpoint/restore-guard/parked-chain areas (Runner struct fields, Run-pipeline command resolution at :878-1075, resolvesAsCommand, unregisterParkedChain/cancelParkedChains, checkpointStore/restoreBlockedError/restoreBlockers). None touch the phase-22 seams. commands.go's /undo additions reference no tracker/task machinery (only a CostCeilingTracker comment).
+
+**Phase-22 seams re-confirmed present and wired in the CURRENT tree:**
+
+| Seam | Current location | Status |
+|------|-----------------|--------|
+| 22-09 G-22-5: `TaskStopFallback: tracker.CancelTask` / `TaskOutputFallback: subagentOutputFallback(dir, tracker)` bound in `sessionFor`'s `RegisterInteractive` | runtime.go:2549-2563 (fields at :2556/:2561) | ✓ intact, unwired-by-nothing — `tracker.CancelTask` remains a live production binding |
+| 22-09: `subagentOutputFallback` (SubagentState classify → bounded 64 KiB `readTail` of `.ass-guard/outputs/<id>.log`; stat-miss = not-handled) | runtime.go:2139-2167 | ✓ intact, byte-identical region (shifted line numbers only) |
+| 22-08 G-22-4: OnClose cancels RUNNING subagents (beside CancelQueued) | runtime.go:2791-2815 (`CancelQueued` :2799, `CancelRunning` :2809, `ptyMgr.Drain()` :2794) | ✓ intact |
+| 22-08 G-22-4: CloseSession prunes trackers/wakeInFlight/ptyManagers AFTER `s.Close()` | runtime.go:3236-3277 (pruning :3272-3274) | ✓ intact — phase-23's `cancelParkedChains` call (:3240) sits ahead of it without disturbing the ordering |
+| 22-07 G-22-2: wake chain (shutdown guard, gated exit defer, non-constructing drain) | cron_wiring.go:372-390/:404-419/:465-478 — git-unchanged | ✓ intact |
+| 22-07 G-22-1/G-22-3: slot release + panic recover | tracker.go:117-145+, subagent.go:88-89 — git-unchanged | ✓ intact |
+| Sandbox default OFF (`Mode "off"` = default and explicit refusal) + wrap seam at bash/pty/background | bash.go:74-80, ptty.go:67, background.go:136 — git-unchanged | ✓ intact |
+
+**Every battery re-run green by this verifier in its own process** (see Behavioral Spot-Checks) — including the full three-package gate, which compiles and exercises the post-phase-23 runtime.go. **No regressions.** The phase goal still holds on the current tree; the status remains `human_needed` solely for the two carried human legs (darwin live seatbelt + ADR-550 prohibitions).
 
 ### Observable Truths (roadmap contract level)
 
 | # | Truth (Success Criterion) | Status | Evidence |
 |---|---------------------------|--------|----------|
-| 1 | SC-1: Full subagents — background dispatch returns immediately, kind-detected task-notifications, output retrieval, clean cancellation | ✓ VERIFIED | Dispatch/notifications/retrieval unchanged-green; cancellation now whole: G-22-1 slot release (tracker.go:120-157), G-22-3 panic recovery (subagent.go:87-100), G-22-5 TaskStop/TaskOutput reach exec_ ids (planmode.go:122-123/:141/:146, background.go:731/:825, runtime.go:2192/:2197) — 13 named tests run green by this verifier |
-| 2 | SC-2: Background Bash — same notification subsystem, TERM-before-KILL, Pdeathsig, stale-log sweep, no orphans at shutdown | ✓ VERIFIED | Unchanged from initial verification; full ./internal/coreexec/ package gate (includes escalation + wake-completion rows) re-run green |
-| 3 | SC-3: Persistent-shell PTY — state persists, ANSI stripped, EIO-as-EOF, no fd leak | ✓ VERIFIED | Unchanged; persistent-shell + TestPTYDrain rows green inside the full package gate |
-| 4 | SC-4: Sandbox real — landlock/sandbox-exec split, loud degrade, default OFF, --sandbox=off escape | ✓ VERIFIED | Linux leg unchanged-green (live landlock batteries inside the coreexec gate; symmetry goldens re-run green); darwin LIVE leg ⚠ behavior-unverified (host is Linux — see behavior_unverified_items / Human Verification) |
-| 5 | Goal-level: the ONE wake/lifecycle infrastructure is itself lifecycle-sound (chain idles when empty, respects shutdown; session close ends the machinery) | ✓ VERIFIED | G-22-2: scheduleWakeDrain shutdown guard (cron_wiring.go:377-379) + gated exit defer (:404-419, restart only on ctx-live AND tracker AND pending-non-empty); G-22-4: OnClose CancelRunning (runtime.go:2445), CloseSession prunes trackers/wakeInFlight/ptyManagers (:2908-2910), non-constructing drain lookup with loud terminal drop (cron_wiring.go:465-478) — 6 named tests run green by this verifier |
+| 1 | SC-1: Full subagents — background dispatch returns immediately, kind-detected task-notifications, output retrieval, clean cancellation | ✓ VERIFIED | Dispatch/notifications/retrieval/retrieval seams intact (git-unchanged core + intact runtime bindings); cancellation whole: slot release (tracker.go:117-145), panic recovery (subagent.go:88-89), TaskStop/TaskOutput reach exec_ ids (runtime.go:2556/:2561 + :2139-2167) — batteries re-run green this pass |
+| 2 | SC-2: Background Bash — same notification subsystem, TERM-before-KILL, Pdeathsig, stale-log sweep, no orphans at shutdown | ✓ VERIFIED | coreexec git-unchanged; full ./internal/coreexec/ package gate re-run green this pass (escalation + wake-completion rows inside) |
+| 3 | SC-3: Persistent-shell PTY — state persists, ANSI stripped, EIO-as-EOF, no fd leak | ✓ VERIFIED | git-unchanged; persistent-shell + PTY rows green inside the full package gate re-run this pass; `ptyMgr.Drain()` at OnClose confirmed at runtime.go:2794 |
+| 4 | SC-4: Sandbox real — landlock/sandbox-exec split, loud degrade, default OFF, --sandbox=off escape | ✓ VERIFIED | Linux leg unchanged-green (live landlock batteries inside the coreexec gate re-run this pass; symmetry goldens re-run green); default-OFF refusal logic confirmed at bash.go:74-80; darwin LIVE leg ⚠ behavior-unverified (host is Linux — see behavior_unverified_items / Human Verification) |
+| 5 | Goal-level: the ONE wake/lifecycle infrastructure is itself lifecycle-sound (chain idles when empty, respects shutdown; session close ends the machinery) | ✓ VERIFIED | Wake chain git-unchanged (cron_wiring.go); OnClose/CloseSession lifecycle intact after phase-23 edits (runtime.go:2791-2815, :3263-3274); 8-test runtime battery re-run green under `-race` this pass |
 
-### Re-Verified Gap Truths (full 3-level verification — the previously failed items)
+### Gap Truths (from the 2026-09-10T04:06:06Z gap-closure round — still closed)
 
-| Gap | Truth | Code (exists + substantive + wired) | Behavioral test (this verifier ran it) | Status |
-|-----|-------|--------------------------------------|----------------------------------------|--------|
-| G-22-1 (CR-01) | D-10 slots free on completion; queue drains as slots free; sequential reuse never queues | `Complete` calls `releaseSubagentSlot(id)` under `t.mu` for Kind==KindSubagent — floored decrement of `runningSubagents` + `delete(t.subagentCancels, id)` — BEFORE `startNextWaiter()` outside the lock (tracker.go:120-157, :218-238). The former monotonic counter has a real release path; release-then-admit keeps count ≤ cap during handoff | TestTrackerCap_SlotsFreeAfterCompletion, TestTrackerCap_SequentialReuseNeverQueues, TestTrackerComplete_RetiresCancelEntry — all PASS (verbose-confirmed) | ✓ VERIFIED |
-| G-22-2 (CR-02) | Chain idles on empty queue, refuses to spawn past serve shutdown, no successor spin | `scheduleWakeDrain` returns early once `serveCtxOrBackground().Err() != nil` (cron_wiring.go:377-379); the chain's exit defer stores the flag false FIRST, then restarts only when `ctx.Err() == nil && tr != nil && len(tr.PendingPeek()) > 0` (:404-419) — exactly the review's prescribed gate; the peek→store race window is carried by the completion's own CAS (pinned by the racing row) | TestWakeChain_IdlesWhenEmpty, TestWakeChain_NoSpawnPastServeShutdown (sampled-window witness), TestWakeChain_CtxCancelStopsChain, TestWakeChain_RacingCompletionStillWakes — all PASS | ✓ VERIFIED |
-| G-22-3 (CR-03) | A panicking background subagent never kills the process; one error notification; slot released | Launcher goroutine has a recover defer directly after `defer cancelFn()` (LIFO: recover runs first during unwind, replacing the normal Complete with exactly ONE error notification; cancelFn still runs on both paths): `w.finish("error", panic text + debug.Stack())` then `Tracker.Complete(ExitStatus "error")` (subagent.go:78-100) — the error Complete carries Kind=KindSubagent, so G-22-1's slot release fires on the panic path too | TestBackgroundSubagent_PanicRecovered (subprocess-guard shape: escaping panic → clean outer assertion) — PASS | ✓ VERIFIED |
-| G-22-4 (CR-04) | Session close fully ends the background machinery; late completions never resurrect a closed session | OnClose cancels RUNNING subagents with counted stderr note (runtime.go:2445-2448, beside CancelQueued :2435); CloseSession deletes trackers/wakeInFlight/ptyManagers AFTER `s.Close()` so OnClose's cancels and PTY Drain run while state is discoverable (runtime.go:2899-2910); `drainWakeNotifications` resolves the session via a NON-constructing sessMu-held `r.sessions` read — missing session = one stderr line naming session + dropped count, `tr.Drain()` consumed, chain exits (cron_wiring.go:465-478). No constructing sessionFor remains in the drain (its only cron_wiring call site is runAutomationTurn); IN-05's unbounded retry is retired with it | TestWakeChain_ClosedSessionDropsBatch (missing_session_is_terminal + late_completion_never_resurrects subtests), TestCloseSession_PrunesWakeState — all PASS; TestSessionClosePTY and TestInProcessReloadAfterCloseRebuildsSession green inside the full runtime gate (close-then-restore preserved) | ✓ VERIFIED |
-| G-22-5 (WR-01 — prior PAR-07 blocker) | TaskStop/TaskOutput address background-subagent exec_ ids; CancelTask gains production callers; finished classifies finished | `InteractiveConfig.TaskStopFallback func(id) bool` / `TaskOutputFallback func(id) (out, state string, running, handled bool)` bound at the stubs map (planmode.go:122-123, :141, :146); both executors fall through ONLY on `errors.Is(oerr, errUnknownTask)` and render through the ONE shared `renderTaskOutput` (background.go:731-743, :825+); `sessionFor` binds `TaskStopFallback: tracker.CancelTask` (first production callers) and `TaskOutputFallback: subagentOutputFallback(dir, tracker)` — SubagentState classify, else bounded 64 KiB `readTail`, stat-miss = not-handled (runtime.go:1775-1808, :2192, :2197); `SubagentState` reads waiters + subagentCancels under one lock (tracker.go:329-342), truthful because G-22-1's release deletes completed cancel entries | 9 coreexec seam rows (FallbackAck/Declined/Nil/RegistryOwned × both tools + NotReadyStates queued+running + FinishedOutput) + TestTrackerSubagentState + TestTaskStopFallbackWiring (live cancel fires, finished id = truthful error, zero provider calls) + TestTaskOutputFallbackWiring — all PASS | ✓ VERIFIED |
+All five closures (G-22-1..G-22-5, commits 6bed452..dc3ab12) remain in history with their batteries; their batteries were ALL re-executed green by this verifier against the post-phase-23 tree (see Behavioral Spot-Checks — the tasks battery, the runtime wake/close battery under `-race`, and the 9 coreexec seam rows). The seams themselves were re-read in the current code (table above).
 
 **Score:** 38/39 truths verified (1 present, behavior-unverified — darwin live seatbelt, environmental)
 
@@ -125,79 +133,80 @@ Re-verification ran; per the evidence gate (#3304) this section is reported even
 
 | # | Finding | Category | Why Advisory |
 |---|---------|----------|--------------|
-| — | None — no unevidenced new-scope findings in the closure round's diffs | — | Debt-marker scan clean on all 11 gap-closure-modified files; the `gofmt -l` quirks in internal/tasks are pre-existing regions documented in 22-07..09 (verified predating the closure hunks per the summaries' `gofmt -d` checks) |
+| — | None — no unevidenced new-scope findings in the phase-23 delta | — | The two modified files (runtime.go, commands.go) are the only in-surface regressions per the evidence gate; both were hunk-reviewed (all hunks in /undo/checkpoint/parked-chain areas) and every phase-22 battery re-ran green on them. Debt-marker scan clean on all 14 impl files re-scanned. |
 
 ### Required Artifacts
 
-All previously verified artifacts remain present and substantive; the closure round modified six of them without regressions (full-package gates green). Closure-round artifact status:
+All previously verified artifacts remain present and substantive. The stale-delta round modified two of them (`runtime.go`, `commands.go`) without phase-22 regressions; all other covered impl files are git-unchanged since the prior green pass.
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `internal/tasks/tracker.go` | slot release, cancel-entry retirement, CancelRunning, SubagentState | ✓ VERIFIED | :120-157 release-then-admit; :300-315 CancelRunning (close-time running-cancel leg, idempotent with release); :329-342 classifier |
-| `internal/tasks/subagent.go` | recover at the goroutine boundary | ✓ VERIFIED | :87-100 recover defer (panic text + debug.Stack → one error Complete); runtime/debug import :10 |
-| `internal/runtime/cron_wiring.go` | shutdown-guarded spawn, gated exit defer, non-constructing drain | ✓ VERIFIED | :372-390, :404-419, :465-478 |
-| `internal/runtime/runtime.go` | CancelRunning link, close pruning, seam binding | ✓ VERIFIED | :2445-2448, :2899-2910, :2192/:2197 + :1775-1808 |
-| `internal/coreexec/background.go` + `planmode.go` | fallback seams + fallthrough | ✓ VERIFIED | planmode fields :122-123 bound :141/:146; background.go fallthrough :731-743, :825+; renderTaskOutput one-form renderer |
-| Test artifacts (tracker_test, subagent_test, wake_wiring_test, background_test, background_wiring_test) | named regression batteries | ✓ VERIFIED | all exist; 22 named closure tests executed green by this verifier (verbose-confirmed they RAN) |
+| `internal/runtime/runtime.go` | 22-08/22-09 seams survive phase-23 /undo+restore-guard work | ✓ VERIFIED | Seams re-read this pass: fallback bindings :2549-2563, subagentOutputFallback :2139-2167, OnClose cancel legs :2791-2815, CloseSession pruning :3272-3274; phase-23 hunks confined to /undo/checkpoint/parked-chain areas |
+| `internal/runtime/commands.go` | no interference with task seams | ✓ VERIFIED | /undo additions use checkpoint/cancel-registry machinery only; zero tracker/task-seam references (grep) |
+| `internal/runtime/cron_wiring.go` | wake chain lifecycle | ✓ VERIFIED | git-unchanged since prior pass; 5 wake-chain tests green under `-race` this pass |
+| `internal/tasks/tracker.go` + `subagent.go` | slot release, cancel retirement, CancelRunning, SubagentState, panic recover | ✓ VERIFIED | git-unchanged; 5-test battery green this pass |
+| `internal/coreexec/background.go` + `planmode.go` | fallback seams + errUnknownTask fallthrough + renderTaskOutput | ✓ VERIFIED | git-unchanged; 9 seam rows green this pass |
+| `internal/coreexec/bash.go`/`ptty.go` + `internal/sandbox/*` | sandbox wrap seam, default OFF, landlock/seatbelt split | ✓ VERIFIED | git-unchanged; default-OFF refusal at bash.go:74-80; full coreexec gate (live landlock) + symmetry goldens green this pass |
+| Test artifacts (tracker_test, subagent_test, wake_wiring_test, background_test, background_wiring_test) | named regression batteries | ✓ VERIFIED | all exist and re-ran green this pass (verbose-confirmed they RAN) |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 |------|----|----|--------|---------|
-| Tracker.Complete (KindSubagent) | releaseSubagentSlot → startNextWaiter | release-then-admit under/outside t.mu | ✓ WIRED | G-22-1; count/cancel assertions green in the battery |
-| background goroutine panic | w.finish + one error Complete | recover defer, LIFO after cancelFn | ✓ WIRED | G-22-3; TestBackgroundSubagent_PanicRecovered green |
-| completion → scheduleWakeDrain → wakeDrainChain | gated exit defer + shutdown guard | flag.Store(false) then conditional restart | ✓ WIRED | G-22-2; 4 lifecycle rows green incl. the racing-completion carry arm |
-| CloseSession → OnClose (CancelQueued+CancelRunning) → map pruning | s.Close() then trackers/wakeInFlight/ptyManagers.Delete | single unconditional site | ✓ WIRED | G-22-4; grep: exactly one Delete per map in runtime.go (:2908-2910) |
-| late completion → drainWakeNotifications | non-constructing r.sessions lookup → terminal drop | sessMu-held read, miss = loud drop + Drain | ✓ WIRED | G-22-4; ClosedSessionDropsBatch both subtests green |
-| TaskStop/TaskOutput executors → tracker seams | errUnknownTask fallthrough → CancelTask / SubagentState+readTail | planmode stubs binding + sessionFor binding | ✓ WIRED | G-22-5; 9 seam rows + both wiring rows green; coreexec stays free of any tasks-package import (primitive-arg seam) |
+| TaskStop/TaskOutput executors → tracker seams | errUnknownTask fallthrough → CancelTask / SubagentState+readTail | planmode stubs binding + sessionFor binding | ✓ WIRED | Re-read at runtime.go:2549-2563 post-phase-23; TestTaskStopFallbackWiring + TestTaskOutputFallbackWiring green under `-race` this pass; coreexec stays tasks-free |
+| Tracker.Complete (KindSubagent) | releaseSubagentSlot → startNextWaiter | release-then-admit under/outside t.mu | ✓ WIRED | git-unchanged; slot/cancel battery green this pass |
+| background goroutine panic | w.finish + one error Complete | recover defer, LIFO after cancelFn | ✓ WIRED | git-unchanged; TestBackgroundSubagent_PanicRecovered green this pass |
+| completion → scheduleWakeDrain → wakeDrainChain | gated exit defer + shutdown guard | flag.Store(false) then conditional restart | ✓ WIRED | git-unchanged; 4 lifecycle rows green under `-race` this pass |
+| CloseSession → OnClose (CancelQueued+CancelRunning+PTY Drain) → map pruning | s.Close() then trackers/wakeInFlight/ptyManagers.Delete | single unconditional site | ✓ WIRED | Re-read at runtime.go:3263-3274 post-phase-23; TestCloseSession_PrunesWakeState + TestWakeChain_ClosedSessionDropsBatch (both subtests) green under `-race` this pass |
+| late completion → drainWakeNotifications | non-constructing r.sessions lookup → terminal drop | sessMu-held read, miss = loud drop + Drain | ✓ WIRED | git-unchanged (cron_wiring.go); covered by the same close battery |
 
 All key links from the initial verification remain wired (re-checked via the full package gates: bash completion hook, PTY drain, sandbox wrap at 3 sites, flag → probe chain).
 
 ### Data-Flow Trace (Level 4)
 
-Unchanged from the initial verification — all five flows still FLOWING (notification payload ← waitErr+timestamps+tail+path; wake turn input ← tracker Drain under turn mutex; subagent output file ← dep.Run progress; PTY capture ← master read loop; availability ← ProbeABI). The closure round adds one flow, verified: TaskOutput fallback envelope ← SubagentState classification, else bounded 64 KiB readTail of `.ass-guard/outputs/<id>.log` (runtime.go:1786-1808) — a real file read, not a static return; stat-miss reports not-handled (truthful error).
+Unchanged from the prior pass — all five flows still FLOWING (notification payload ← waitErr+timestamps+tail+path; wake turn input ← tracker Drain under turn mutex; subagent output file ← dep.Run progress; PTY capture ← master read loop; availability ← ProbeABI), plus the G-22-5 flow: TaskOutput fallback envelope ← SubagentState classification, else bounded 64 KiB readTail of `.ass-guard/outputs/<id>.log` (runtime.go:2160) — re-read this pass, still a real file read; stat-miss reports not-handled.
 
-### Behavioral Spot-Checks (single named tests, run by this verifier)
+### Behavioral Spot-Checks (single named tests, run by this verifier THIS pass, post-phase-23 tree)
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| G-22-1 slot release + sequential reuse + cancel retirement | `go test ./internal/tasks/ -run '^(TestTrackerCap_SlotsFreeAfterCompletion\|TestTrackerCap_SequentialReuseNeverQueues\|TestTrackerComplete_RetiresCancelEntry)$'` | all PASS (verbose-confirmed) | ✓ PASS |
-| G-22-3 panic containment (process survives, one error notification) | `go test ./internal/tasks/ -run '^TestBackgroundSubagent_PanicRecovered$'` | PASS | ✓ PASS |
-| G-22-2 chain lifecycle (idle / no-spawn-past-shutdown / ctx-cancel / racing carry) | `go test -race ./internal/runtime/ -run '^(TestWakeChain_IdlesWhenEmpty\|TestWakeChain_NoSpawnPastServeShutdown\|TestWakeChain_CtxCancelStopsChain\|TestWakeChain_RacingCompletionStillWakes)$'` | all PASS (verbose-confirmed) | ✓ PASS |
-| G-22-4 close terminal (drop batch, no resurrection, state pruned) | `go test -race ./internal/runtime/ -run '^(TestWakeChain_ClosedSessionDropsBatch\|TestCloseSession_PrunesWakeState)$'` | PASS incl. both subtests | ✓ PASS |
-| G-22-5 classifier | `go test ./internal/tasks/ -run '^TestTrackerSubagentState$'` | PASS | ✓ PASS |
-| G-22-5 session wiring (stop live id / read finished id; zero provider calls) | `go test -race ./internal/runtime/ -run '^(TestTaskStopFallbackWiring\|TestTaskOutputFallbackWiring)$'` | both PASS | ✓ PASS |
-| G-22-5 coreexec seam (9 rows) | `go test ./internal/coreexec/ -run '^TestTask(Stop\|Output)_'` | all 9 PASS (verbose-confirmed) | ✓ PASS |
-| Closure regression gate (3 packages, incl. live landlock + PTY + escalation + wake-turn + close-then-restore rows) | `go test -count=1 -skip 'TestRescanConcurrency' ./internal/coreexec/ ./internal/tasks/ ./internal/runtime/` | ok ×3 | ✓ PASS |
-| Session dispatch regression | `go test ./internal/session/ -run '^(TestDispatchBackground\|TestSubagentPanicRecovery\|TestBackgroundAskDecline)'` | ok | ✓ PASS |
-| Sandbox symmetry regression | `go test ./internal/sandbox/ -run '^(TestPolicySymmetry_GoldenDenySet\|TestPolicySymmetry_SeatbeltShapeNeverDenyDefault)$'` | ok | ✓ PASS |
-| cmd wiring regression (4 nil-fallback sites) | `go test ./cmd/ass-guard/ -run 'TestBackgroundWiring'` | ok | ✓ PASS |
+| Wake/close/fallback battery (8 tests: chain idle / no-spawn-past-shutdown / ctx-cancel / racing carry / closed-session-drops-batch ×2 subtests / CloseSession prunes / TaskStop+TaskOutput wiring) | `go test -race -count=1 -v -run '^(TestWakeChain_IdlesWhenEmpty\|TestWakeChain_NoSpawnPastServeShutdown\|TestWakeChain_CtxCancelStopsChain\|TestWakeChain_RacingCompletionStillWakes\|TestWakeChain_ClosedSessionDropsBatch\|TestCloseSession_PrunesWakeState\|TestTaskStopFallbackWiring\|TestTaskOutputFallbackWiring)$' ./internal/runtime/` | all PASS (verbose-confirmed, incl. both subtests) | ✓ PASS |
+| Tasks battery (slot release / sequential reuse / cancel retirement / panic recovered / SubagentState) | `go test -count=1 -v -run '^(TestTrackerCap_SlotsFreeAfterCompletion\|TestTrackerCap_SequentialReuseNeverQueues\|TestTrackerComplete_RetiresCancelEntry\|TestBackgroundSubagent_PanicRecovered\|TestTrackerSubagentState)$' ./internal/tasks/` | all 5 PASS (verbose-confirmed) | ✓ PASS |
+| Coreexec seam (9 rows: FallbackAck/Declined/Nil/RegistryOwned × both tools + NotReadyStates + FinishedOutput) | `go test -count=1 -v -run '^TestTask(Stop\|Output)_' ./internal/coreexec/` | all 9 PASS (verbose-confirmed) | ✓ PASS |
+| Closure regression gate (3 packages, incl. live landlock + PTY + escalation + wake-turn rows, post-phase-23 runtime) | `go test -count=1 -skip 'TestRescanConcurrency' ./internal/coreexec/ ./internal/tasks/ ./internal/runtime/` | ok ×3 (11.2s / 5.1s / 29.6s) | ✓ PASS |
+| Session dispatch regression (DispatchBackground family ×5 + SubagentPanicRecovery + BackgroundAskDecline) | `go test -count=1 ./internal/session/ -run 'TestDispatchBackground' -v` + `-run '^(TestSubagentPanicRecovery\|TestBackgroundAskDecline)$' -v` | all PASS (verbose-confirmed; the family prefix is required — `TestDispatchBackground` is a 5-test family, not one test) | ✓ PASS |
+| Sandbox symmetry regression | `go test -count=1 ./internal/sandbox/ -run '^(TestPolicySymmetry_GoldenDenySet\|TestPolicySymmetry_SeatbeltShapeNeverDenyDefault)$' -v` | both PASS (verbose-confirmed) | ✓ PASS |
+| cmd wiring regression (6 rows incl. CrossSessionIsolation, StopKillsGroup, ReapAll) | `go test -count=1 ./cmd/ass-guard/ -run 'TestBackgroundWiring' -v` | all 6 PASS (verbose-confirmed) | ✓ PASS |
 | darwin live seatbelt | (cannot run — Linux host) | — | ? SKIP → human verification |
 
-Note: every named test was verbose-confirmed to RUN (a silent `-run` mismatch would also print "ok"). The pre-existing exclusions held: TestRescanConcurrency skipped per deferred-items.md (open, pre-existing, fix owner outside phase 22); TestPermissionsE2E not in any gate package here (Phase 23 commit 40b2bbc, operator-bisected); internal/evalsuite openspec env gating untouched.
+Note: every named test was verbose-confirmed to RUN (a silent `-run` mismatch would also print "ok" — this pass caught and corrected one such anchor mistake on the DispatchBackground family). Pre-existing exclusions held: TestRescanConcurrency skipped per deferred-items.md (open, pre-existing, fix owner outside phase 22); the environmental `t.Skipf` at background_test.go:937 (sandbox-enforcement-unavailable host gate — the documented probe-and-degrade design) did not mask the live landlock rows on this host, which ran green inside the coreexec package gate.
 
 ### Probe Execution
 
-No probe scripts declared or discovered (unchanged from initial verification — the plans' "probe" language refers to in-code sandbox probe taxonomy, not shell probes). Step 7c: none to run.
+No probe scripts declared or discovered (unchanged — the plans' "probe" language refers to in-code sandbox probe taxonomy, not shell probes). Step 7c: none to run.
 
 ### Requirements Coverage
 
 | Requirement | Source Plan | Description | Status | Evidence |
 |-------------|------------|-------------|--------|----------|
-| PAR-07 | 22-01, 22-03, 22-07, 22-08, 22-09 | Full subagents: dispatch, kind-detected notifications, output retrieval, cancellation | ✓ SATISFIED | Dispatch/notifications/retrieval green (unchanged); cancellation now whole: CR-01 slot release, CR-03 panic containment, WR-01 TaskStop/TaskOutput reach exec_ ids (CancelTask has production callers) — all behaviorally pinned by tests this verifier ran |
-| PAR-08 | 22-01, 22-02, 22-08 | Background Bash: same subsystem, process-group lifecycle, Pdeathsig, stale sweep | ✓ SATISFIED | Unchanged-green; 22-08 adds close-time running-cancel + state pruning (G-22-4) on the same subsystem; WR-04 caveat remains documented review debt |
-| PAR-09 | 22-04 | Persistent-shell Bash via PTY | ✓ SATISFIED | Unchanged-green (full coreexec gate); WR-03/WR-08 edge warnings remain documented review debt |
-| SAND-01 | 22-05, 22-06 | Sandbox real: landlock/seatbelt split, loud degrade, default OFF | ✓ SATISFIED (linux-live) | Default OFF + validation + live linux confinement green (inside the coreexec gate); darwin LIVE leg routed to human verification (Linux host) — rendered-shape symmetry machine-verified; WR-05/WR-06 warnings remain documented review debt |
+| PAR-07 | 22-01, 22-03, 22-07, 22-08, 22-09 | Full subagents: dispatch, kind-detected notifications, output retrieval, cancellation | ✓ SATISFIED | All legs re-confirmed on the post-phase-23 tree; 22-09 seam intact (runtime.go:2549-2563) and its wiring tests green under `-race` this pass; REQUIREMENTS.md marks Complete |
+| PAR-08 | 22-01, 22-02, 22-08 | Background Bash: same subsystem, process-group lifecycle, Pdeathsig, stale sweep | ✓ SATISFIED | git-unchanged; full coreexec gate green this pass; close-time running-cancel + pruning re-read intact (runtime.go:2791-2815/:3272-3274); WR-04 caveat remains documented review debt |
+| PAR-09 | 22-04 | Persistent-shell Bash via PTY | ✓ SATISFIED | git-unchanged; PTY rows green inside the full package gate; WR-03/WR-08 edge warnings remain documented review debt |
+| SAND-01 | 22-05, 22-06 | Sandbox real: landlock/seatbelt split, loud degrade, default OFF | ✓ SATISFIED (linux-live) | Default OFF refusal confirmed (bash.go:74-80); live linux confinement green inside the coreexec gate; darwin LIVE leg still routed to human verification (Linux host); WR-05/WR-06 warnings remain documented review debt |
 
-Orphaned requirements: none — all four IDs mapped to Phase 22 in REQUIREMENTS.md are claimed by plans (now 9 plans: 22-01..22-09), and REQUIREMENTS.md marks all four Complete.
+Orphaned requirements: none — all four IDs mapped to Phase 22 in REQUIREMENTS.md are claimed by plans (22-01..22-09) and marked Complete.
+
+### Decision Coverage
+
+Gate run this pass (`check.decision-coverage-verify`): 12/12 trackable CONTEXT.md decisions honored by shipped artifacts, 0 not honored (non-blocking gate, informational).
 
 ### Anti-Patterns Found
 
-Debt-marker gate on the 11 gap-closure-modified files (tracker.go, tracker_test.go, subagent.go, subagent_test.go, cron_wiring.go, runtime.go, wake_wiring_test.go, background.go, background_test.go, planmode.go, background_wiring_test.go): CLEAN — no TBD/FIXME/XXX.
+Debt-marker gate re-run this pass on the 14 phase-22 impl files (including the two phase-23-modified ones): CLEAN — no TBD/FIXME/XXX. Disabled-test scan on the phase-22 battery files: one environmental `t.Skipf` (background_test.go:937 — sandbox-enforcement host gate, by design; live landlock rows ran on this host).
 
 | File | Line | Pattern | Severity | Impact |
 |------|------|---------|----------|--------|
-| internal/coreexec/background.go | 585-597 | WR-02 Stop on already-reaped task signals possibly recycled pgid | ⚠️ Warning | unchanged review debt (out of closure scope by 22-07's objective) |
+| internal/coreexec/background.go | 585-597 | WR-02 Stop on already-reaped task signals possibly recycled pgid | ⚠️ Warning | unchanged review debt |
 | internal/coreexec/ptty.go | 407-417 | WR-03 sentinel swallowed by stdin-readers | ⚠️ Warning | unchanged review debt |
 | internal/acpserve/acp_serve.go | 524-571 | WR-04 sweep tombstones oversize bash-*.log | ⚠️ Warning | unchanged review debt |
 | internal/acpserve/acp_serve.go / sandbox/policy.go | 176-178 / 45-54 | WR-05 RW grant on entire shared tmp | ⚠️ Warning | unchanged review debt |
@@ -206,21 +215,21 @@ Debt-marker gate on the 11 gap-closure-modified files (tracker.go, tracker_test.
 | internal/coreexec/ansistrip.go | 63-67 | WR-08 OSC bare-backslash leak | ⚠️ Warning | unchanged review debt |
 | internal/acpserve/config_surface.go | 306, 1292 | IN-01 stale menu-size comments | ℹ️ Info | unchanged |
 | internal/tasks/subagent_test.go | 216-220 | IN-02 dead no-op conditional | ℹ️ Info | unchanged |
-| internal/runtime/runtime.go | 295-301 | IN-03 turnMus/turnActive growth (half remains) | ℹ️ Info | trackers/wakeInFlight/ptyManagers half FIXED by G-22-4; turn mutexes intentionally kept (in-flight holders) |
+| internal/runtime/runtime.go | 295-301 (prior numbering) | IN-03 turnMus/turnActive growth (half remains) | ℹ️ Info | trackers/wakeInFlight/ptyManagers half fixed (G-22-4); turn mutexes intentionally kept; re-confirmed present this pass (pruning at :3272-3274) |
 | internal/tasks/subagent.go | 205-214 | IN-04 output-file write errors ignored | ℹ️ Info | unchanged |
 
-Retired by the closure round: WR-01 (G-22-5) and IN-05 (unbounded stay-pending retry — its only trigger, drain-side sessionFor construction failure, no longer exists).
+Retired earlier: WR-01 (G-22-5) and IN-05 (unbounded stay-pending retry). No new debt markers, stubs, or unwired seams introduced by the phase-23 delta.
 
 ### Prohibition Disposition (ADR-550 D4 — autonomous verify: NON-AUTHORITATIVE verdicts)
 
-**unverified-prohibition — human review recommended** for all 8 judgment-tier prohibitions (carried from initial verification; verdicts re-judged against the post-closure code, P2/P4 against the changed wake-chain paths specifically):
+**unverified-prohibition — human review recommended** for all 8 judgment-tier prohibitions (re-judged this pass against the post-phase-23 code; the phase-23 delta touches none of these surfaces except P2/P4's shared file, where the wake-chain paths are git-unchanged and the new /undo paths add no turn-preemption — they route through the same command-resolution gate before any turn starts):
 
 | Prohibition | Verdict | Basis |
 |-------------|---------|-------|
-| 22-01/P1 ids/paths never model-controlled (PAR-07) | HELD | crypto/rand minting unchanged (subagent.go:143-151); TaskOutput fallback adds no id-guessing surface (stat-miss = not-handled) |
-| 22-01/P2 client turn never preempted (PAR-08) | HELD | TryLock discipline preserved in the reworked drain (cron_wiring.go:481); the gated restart spawns chains, never preempts a turn |
+| 22-01/P1 ids/paths never model-controlled (PAR-07) | HELD | crypto/rand minting unchanged (subagent.go git-unchanged); TaskOutput fallback adds no id-guessing surface (stat-miss = not-handled) |
+| 22-01/P2 client turn never preempted (PAR-08) | HELD | TryLock discipline preserved (cron_wiring.go:174/:481 re-confirmed); phase-23's /undo resolves as a command BEFORE turn dispatch — no preemption added |
 | 22-02/P3 sweep never silently deletes | HELD (letter) | sweep unchanged; WR-04 caveat unchanged |
-| 22-03/P4 ask-class decline never bypassed | HELD | SetTurnOriginAutomation bracket unchanged in the drain (:495-497); stop/read wiring rows assert zero provider calls |
+| 22-03/P4 ask-class decline never bypassed | HELD | SetTurnOriginAutomation bracket unchanged (cron_wiring.go:168-170); stop/read wiring rows assert zero provider calls (re-run green) |
 | 22-04/P5 PTY output never to stdout | HELD | unchanged |
 | 22-05/P6 never fail open silently | HELD | unchanged |
 | 22-05/P7 never confine ass-guard itself | HELD | unchanged |
@@ -232,7 +241,7 @@ Retired by the closure round: WR-01 (G-22-5) and IN-05 (unbounded stay-pending r
 
 **Test:** On a macOS host, run `GOOS=darwin go test ./internal/sandbox/ -run 'TestSeatbelt|TestPolicySymmetry_SeatbeltShape' -v`
 **Expected:** Live sandbox-exec confinement denies curl connect and outside writes; the rendered profile is allow-default with targeted denies (never deny-default). While there, consider WR-06 (quote in a workdir can widen the darwin profile).
-**Why human:** This verifier runs on Linux; the darwin battery is build-gated and cannot execute here. The Linux landlock leg IS live-proven on this host; only the darwin live leg is unexercised.
+**Why human:** This verifier runs on Linux; the darwin battery is build-gated and cannot execute here. The Linux landlock leg IS live-proven on this host (re-run green this pass); only the darwin live leg is unexercised.
 
 ### 2. Judgment-tier prohibitions (ADR-550 autonomous mode)
 
@@ -242,12 +251,12 @@ Retired by the closure round: WR-01 (G-22-5) and IN-05 (unbounded stay-pending r
 
 ### Gaps Summary
 
-No gaps remain. All four Critical findings from 22-REVIEW.md (CR-01 slot jam, CR-02 wake-chain spin, CR-03 panic kill, CR-04 session resurrection) are closed in code and pinned by named regression batteries this verifier executed and verbose-confirmed in its own process; the prior PAR-07 blocker WR-01 (unreachable cancellation) is closed by the same round (G-22-5). The full three-package gate plus the session/sandbox/cmd regression legs are green with only the documented pre-existing exclusions (TestRescanConcurrency per deferred-items.md). The phase goal — ONE lifecycle infrastructure, lifecycle-sound end to end — is achieved and behaviorally evidenced on every leg executable from this host.
+No gaps. This stale re-verification confirms the phase-22 goal still holds on the current tree after phase-23's `/undo` + restore-guard work: the delta was confined to runtime.go and commands.go, every phase-22 seam in those files was re-read intact (22-09 fallback bindings, OnClose cancel legs, CloseSession pruning), every other covered file is git-unchanged, and the full regression surface — 8-test runtime battery under `-race`, 5-test tasks battery, 9 coreexec seam rows, the full three-package gate, session dispatch family, sandbox symmetry goldens, and the 6-row cmd wiring battery — re-ran green in this verifier's own process, verbose-confirmed.
 
-The status is human_needed (not passed) solely because of the two human-review items above: the darwin live seatbelt battery (environmental — needs macOS hardware) and the 8 judgment-tier prohibition flags (ADR-550 autonomous-verify contract). Neither is a code gap; both block a `passed` verdict by the decision tree's rule 2.
+The status is human_needed (not passed) solely because of the two carried human-review items: the darwin live seatbelt battery (environmental — needs macOS hardware) and the 8 judgment-tier prohibition flags (ADR-550 autonomous-verify contract). Neither is a code gap; both block a `passed` verdict by the decision tree's rule 2.
 
 ---
 
-_Verified: 2026-09-10T04:06:06Z_
+_Verified: 2026-09-10T13:41:06Z_
 _Verifier: Claude (gsd-verifier)_
-_Re-verification of: 2026-09-10T01:44:45Z report (gaps_found, 34/39)_
+_Stale re-verification of: 2026-09-10T04:06:06Z report (human_needed, 38/39) — triggered by phase-23 commits 3c64e82..0c17c02 touching internal/runtime_
