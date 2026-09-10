@@ -763,6 +763,16 @@ func (s *ConfigSurface) resolveModelLocked(cfg *modelrouting.Config, tier string
 // the replacement. When EVERY candidate is denied the primary keeps its
 // resolved model (a resolution never fails over evidence) — also with one
 // note, so the open chain head is never silent.
+//
+// 24-06 (G-24-2, WR-01): the walked chain is provider-FILTERED — the
+// advertised value must always be one applyTargetLocked's provider guard
+// could actually apply, so only fallbacks on s.providerName may absorb the
+// demotion. A CROSS-PROVIDER PRIMARY is immune: its breaker was never
+// consulted (the live-apply guard refuses cross-provider targets regardless
+// of breaker state), so the walk never claims a breaker for it — the primary
+// keeps the advertisement byte-identically with zero notes. When every
+// same-provider candidate is denied the primary stays with one note naming
+// the provider constraint.
 //nolint:funcorder // beside resolveModelLocked, its only caller (the file's established grouping)
 func (s *ConfigSurface) demoteIfDeniedLocked(
 	tier string, primary modelrouting.Target, fallbacks []modelrouting.Target,
@@ -771,7 +781,20 @@ func (s *ConfigSurface) demoteIfDeniedLocked(
 		return primary.Model // no evidence — byte-identical resolution
 	}
 
-	chain := append([]modelrouting.Target{primary}, fallbacks...)
+	// The cross-provider-PRIMARY guard (the surface twin of the runtime
+	// resolver's own guard): never walk — and never claim a breaker for — a
+	// primary bound to a provider the serve does not ride.
+	if primary.Provider != s.providerName {
+		return primary.Model // byte-identical to the pre-24-06 corner: no note, no walk
+	}
+
+	chain := []modelrouting.Target{primary}
+
+	for _, fb := range fallbacks {
+		if fb.Provider == s.providerName {
+			chain = append(chain, fb)
+		}
+	}
 
 	pick, demoted := modelrouting.FirstAllowed(chain, s.outcomeBreakers, time.Now())
 	if demoted && pick.Model != "" {
@@ -784,8 +807,9 @@ func (s *ConfigSurface) demoteIfDeniedLocked(
 
 	if pick.Model == "" {
 		_, _ = fmt.Fprintf(s.stderr,
-			"ass-guard: tier %q primary %s/%s is breaker-open with no allowed fallback (replayed outcomes) — keeping the primary\n",
-			tier, primary.Provider, primary.Model)
+			"ass-guard: tier %q primary %s/%s is breaker-open with no allowed fallback on the "+
+				"session provider %q (replayed outcomes) — keeping the primary\n",
+			tier, primary.Provider, primary.Model, s.providerName)
 	}
 
 	return primary.Model

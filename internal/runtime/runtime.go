@@ -3139,6 +3139,11 @@ func (r *Runner) imageDropNote(msg string) {
 // breaker map — a denied light-tier primary demotes to the first allowed
 // fallback (one loud note), riding the EXISTING Breaker seam over the chain
 // Resolve already returned. Empty map = the demotion never fires.
+// 24-06 (G-24-2, CR-01): the demotion is PROVIDER-FILTERED — only fallbacks
+// on the session's provider may absorb it; an allowed cross-provider fallback
+// is skipped, and a fully-denied same-provider chain keeps the primary with
+// one note naming the provider constraint (the no-silent-wrong-wire contract
+// enforced on the demotion arm too).
 func resolveSubagentModel(
 	cfg *modelrouting.Config, sessionProvider string,
 	breakers map[modelrouting.ProviderModelKey]modelrouting.Breaker,
@@ -3167,8 +3172,24 @@ func resolveSubagentModel(
 	// over the chain Resolve already returned (no new tier-preference layer).
 	// Empty map: the demotion never fires. Every candidate denied: the primary
 	// stays (a resolution never fails over evidence), with one loud note.
+	//
+	// 24-06 (G-24-2, CR-01): the walked chain is provider-FILTERED — the
+	// returned slug is stamped onto a profile riding the SESSION provider's
+	// wire, so only fallbacks the session provider hosts may absorb the
+	// demotion (the primary is already same-provider per the guard above).
+	// An ALLOWED cross-provider fallback is skipped (checkBinding checks
+	// capability compatibility, never provider equality — cross-provider
+	// chains are a supported configuration class); when every same-provider
+	// candidate is denied the primary stays with one note naming the provider
+	// constraint. Never a silent wrong-wire.
 	if len(breakers) > 0 {
-		chain := append([]modelrouting.Target{primary}, fallbacks...)
+		chain := []modelrouting.Target{primary}
+
+		for _, fb := range fallbacks {
+			if fb.Provider == sessionProvider {
+				chain = append(chain, fb)
+			}
+		}
 
 		pick, demoted := modelrouting.FirstAllowed(chain, breakers, now)
 		if demoted && pick.Model != "" {
@@ -3181,9 +3202,9 @@ func resolveSubagentModel(
 
 		if pick.Model == "" {
 			_, _ = fmt.Fprintf(stderr,
-				"ass-guard: tiers.light primary %s/%s is breaker-open with no allowed fallback "+
-					"(replayed outcomes) — keeping the primary\n",
-				primary.Provider, primary.Model)
+				"ass-guard: tiers.light primary %s/%s is breaker-open with no allowed fallback on the "+
+					"session provider %q (replayed outcomes) — keeping the primary\n",
+				primary.Provider, primary.Model, sessionProvider)
 		}
 	}
 
