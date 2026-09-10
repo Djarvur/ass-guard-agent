@@ -13,19 +13,19 @@ import (
 // binding isolates outages (one bad provider does not kill the others, D-07).
 // The map is keyed by (provider, model); Dispatch looks up the breaker for each
 // candidate and falls back to a no-op when a key is absent.
-func NewBreakersMap(cfg *Config, log *slog.Logger) map[providerModelKey]*CircuitBreaker {
+func NewBreakersMap(cfg *Config, log *slog.Logger) map[ProviderModelKey]*CircuitBreaker {
 	if log == nil {
 		log = slog.New(slog.NewTextHandler(os.Stderr, nil))
 	}
 
-	out := map[providerModelKey]*CircuitBreaker{}
+	out := map[ProviderModelKey]*CircuitBreaker{}
 	add := func(modelSlug string) {
 		m, ok := cfg.Models[modelSlug]
 		if !ok {
 			return
 		}
 
-		key := providerModelKey{Provider: m.Provider, Model: modelSlug}
+		key := ProviderModelKey{Provider: m.Provider, Model: modelSlug}
 		if _, exists := out[key]; !exists {
 			out[key] = NewCircuitBreaker(key, cfg.CircuitBreaker, log)
 		}
@@ -74,7 +74,7 @@ func NewCostTrackerFromConfig(cfg *Config, bus *event.Bus, log *slog.Logger) *Co
 func (s *Scheduler) InstallSafety(cfg *Config, bus *event.Bus) {
 	concrete := NewBreakersMap(cfg, s.log)
 
-	iface := make(map[providerModelKey]Breaker, len(concrete))
+	iface := make(map[ProviderModelKey]Breaker, len(concrete))
 
 	for k, v := range concrete {
 		iface[k] = v
@@ -87,7 +87,7 @@ func (s *Scheduler) InstallSafety(cfg *Config, bus *event.Bus) {
 // Breaker returns the concrete CircuitBreaker for a (provider, model) key, or
 // nil if none is registered (test/diagnostic accessor).
 func (s *Scheduler) Breaker(providerSlug, model string) *CircuitBreaker {
-	b, ok := s.breakers[providerModelKey{providerSlug, model}]
+	b, ok := s.breakers[ProviderModelKey{providerSlug, model}]
 	if !ok {
 		return nil
 	}

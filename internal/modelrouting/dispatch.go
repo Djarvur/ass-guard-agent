@@ -53,8 +53,11 @@ const (
 	CostHardStop
 )
 
-// providerModelKey identifies one (provider, model) breaker (D-07 per-binding).
-type providerModelKey struct {
+// ProviderModelKey identifies one (provider, model) breaker (D-07 per-binding).
+// Exported (24-01) so the seam-replay aggregation's output map — the durable
+// outcome store re-entering routing through SetBreakers — is consumable across
+// packages; the key type is the map's contract, not an implementation detail.
+type ProviderModelKey struct {
 	Provider string
 	Model    string
 }
@@ -68,7 +71,7 @@ type Scheduler struct {
 	bus       *event.Bus
 	sem       Sem
 	providers map[string]provider.Provider
-	breakers  map[providerModelKey]Breaker
+	breakers  map[ProviderModelKey]Breaker
 	cost      CostTracker
 	now       func() time.Time
 	log       *slog.Logger
@@ -90,7 +93,7 @@ func NewScheduler(
 		resolver:  NewResolver(cfg),
 		bus:       bus,
 		providers: providers,
-		breakers:  map[providerModelKey]Breaker{},
+		breakers:  map[ProviderModelKey]Breaker{},
 		cost:      noopCostTracker{},
 		now:       time.Now,
 		log:       log,
@@ -107,9 +110,9 @@ func NewScheduler(
 // SetBreakers injects a real breakers map (Plan 03-03). The map is keyed by
 // (provider, model); candidates whose key is absent fall back to a no-op
 // breaker (allowed).
-func (s *Scheduler) SetBreakers(b map[providerModelKey]Breaker) {
+func (s *Scheduler) SetBreakers(b map[ProviderModelKey]Breaker) {
 	if b == nil {
-		s.breakers = map[providerModelKey]Breaker{}
+		s.breakers = map[ProviderModelKey]Breaker{}
 
 		return
 	}
@@ -137,7 +140,7 @@ func (s *Scheduler) SetNow(now func() time.Time) {
 
 // registered for that (provider, model) key.
 func (s *Scheduler) breakerFor(cand *Target) Breaker { //nolint:funcorder,ireturn // abstraction; related logic
-	if b, ok := s.breakers[providerModelKey{cand.Provider, cand.Model}]; ok {
+	if b, ok := s.breakers[ProviderModelKey{cand.Provider, cand.Model}]; ok {
 		return b
 	}
 

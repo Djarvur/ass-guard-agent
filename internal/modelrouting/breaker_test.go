@@ -15,7 +15,7 @@ import (
 
 // newTestBreaker builds a Closed breaker with the documented D-07 defaults and a
 // captured stderr log buffer.
-func newTestBreaker(t *testing.T, key providerModelKey, cfg CircuitBreakerConfig) (*CircuitBreaker, *bytes.Buffer) {
+func newTestBreaker(t *testing.T, key ProviderModelKey, cfg CircuitBreakerConfig) (*CircuitBreaker, *bytes.Buffer) {
 	t.Helper()
 
 	var buf bytes.Buffer
@@ -37,7 +37,7 @@ func newCapturingLogger(buf *bytes.Buffer) *slog.Logger {
 // → Open; Allow returns false; a Warn line is emitted.
 func TestBreakerTripViaConsecutive(t *testing.T) {
 	t.Parallel()
-	b, buf := newTestBreaker(t, providerModelKey{providerAnthropic, modelGLM52}, defaultBreaker)
+	b, buf := newTestBreaker(t, ProviderModelKey{providerAnthropic, modelGLM52}, defaultBreaker)
 
 	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
 
@@ -65,7 +65,7 @@ func TestBreakerTripViaErrorRate(t *testing.T) {
 		ConsecutiveFailures: 5, ErrorRateWindow: 20,
 		ErrorRateThreshold: 0.50, Cooldown: 60 * time.Second, HalfOpenProbes: 1,
 	}
-	b, _ := newTestBreaker(t, providerModelKey{"p", "m"}, cfg)
+	b, _ := newTestBreaker(t, ProviderModelKey{"p", "m"}, cfg)
 	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
 
 	// 9 (Transient, Success) pairs = 18 calls. Window not full (18 < 20); rate
@@ -89,7 +89,7 @@ func TestBreakerTripViaErrorRate(t *testing.T) {
 // RecordSuccess resets consecutive; breaker stays Closed.
 func TestBreakerSuccessResetsConsecutive(t *testing.T) {
 	t.Parallel()
-	b, _ := newTestBreaker(t, providerModelKey{"p", "m"}, defaultBreaker)
+	b, _ := newTestBreaker(t, ProviderModelKey{"p", "m"}, defaultBreaker)
 
 	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
 
@@ -111,7 +111,7 @@ func TestBreakerSuccessResetsConsecutive(t *testing.T) {
 // (cooldown 60s not elapsed); Allow(t0+61s) → HalfOpen and returns true.
 func TestBreakerOpenToHalfOpenAfterCooldown(t *testing.T) {
 	t.Parallel()
-	b, _ := newTestBreaker(t, providerModelKey{"p", "m"}, defaultBreaker)
+	b, _ := newTestBreaker(t, ProviderModelKey{"p", "m"}, defaultBreaker)
 
 	t0 := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
 
@@ -131,7 +131,7 @@ func TestBreakerOpenToHalfOpenAfterCooldown(t *testing.T) {
 // TestBreakerHalfOpenToClosedOnSuccess: after HalfOpen, RecordSuccess → Closed.
 func TestBreakerHalfOpenToClosedOnSuccess(t *testing.T) {
 	t.Parallel()
-	b, buf := newTestBreaker(t, providerModelKey{"p", "m"}, defaultBreaker)
+	b, buf := newTestBreaker(t, ProviderModelKey{"p", "m"}, defaultBreaker)
 
 	t0 := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
 
@@ -152,7 +152,7 @@ func TestBreakerHalfOpenToClosedOnSuccess(t *testing.T) {
 // with openedAt reset (cooldown restarts).
 func TestBreakerHalfOpenToOpenOnFailure(t *testing.T) {
 	t.Parallel()
-	b, buf := newTestBreaker(t, providerModelKey{"p", "m"}, defaultBreaker)
+	b, buf := newTestBreaker(t, ProviderModelKey{"p", "m"}, defaultBreaker)
 
 	t0 := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
 
@@ -177,7 +177,7 @@ func TestBreakerHalfOpenToOpenOnFailure(t *testing.T) {
 // sees RecordTransient stays Closed forever.
 func TestBreakerNoRecordStructural(t *testing.T) {
 	t.Parallel()
-	b, _ := newTestBreaker(t, providerModelKey{"p", "m"}, defaultBreaker)
+	b, _ := newTestBreaker(t, ProviderModelKey{"p", "m"}, defaultBreaker)
 	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
 	// Simulate 100 structural failures — Dispatch never calls Record* for them,
 	// so the breaker sees nothing and stays Closed.
@@ -194,7 +194,7 @@ func TestBreakerNoRecordStructural(t *testing.T) {
 // M). This is the load-bearing concurrency guarantee (pitfall 6).
 func TestBreakerConcurrency(t *testing.T) {
 	t.Parallel()
-	b, _ := newTestBreaker(t, providerModelKey{"p", "m"}, defaultBreaker)
+	b, _ := newTestBreaker(t, ProviderModelKey{"p", "m"}, defaultBreaker)
 	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
 
 	var wg sync.WaitGroup
@@ -228,8 +228,8 @@ func TestBreakerConcurrency(t *testing.T) {
 // Allow (per-(provider,model) isolation, D-07).
 func TestBreakerPerKeyIsolation(t *testing.T) {
 	t.Parallel()
-	a, _ := newTestBreaker(t, providerModelKey{providerAnthropic, modelGLM52}, defaultBreaker)
-	b, _ := newTestBreaker(t, providerModelKey{providerOpenAI, modelMinimaxM3}, defaultBreaker)
+	a, _ := newTestBreaker(t, ProviderModelKey{providerAnthropic, modelGLM52}, defaultBreaker)
+	b, _ := newTestBreaker(t, ProviderModelKey{providerOpenAI, modelMinimaxM3}, defaultBreaker)
 
 	now := time.Date(2026, time.August, 16, 12, 0, 0, 0, time.UTC)
 	for range 5 {

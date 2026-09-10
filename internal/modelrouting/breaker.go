@@ -46,7 +46,7 @@ func (s breakerState) String() string {
 // R/W) — NEVER across the provider call (pitfall 6); parent + subagents hit the
 // same breaker concurrently.
 type CircuitBreaker struct {
-	key         providerModelKey
+	key         ProviderModelKey
 	mu          sync.Mutex
 	state       breakerState
 	consecutive int
@@ -58,7 +58,7 @@ type CircuitBreaker struct {
 
 // NewCircuitBreaker constructs a Closed breaker for one (provider, model). The
 // cfg carries the D-07 thresholds (applied defaults are already filled by Load).
-func NewCircuitBreaker(key providerModelKey, cfg CircuitBreakerConfig, log *slog.Logger) *CircuitBreaker {
+func NewCircuitBreaker(key ProviderModelKey, cfg CircuitBreakerConfig, log *slog.Logger) *CircuitBreaker {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}

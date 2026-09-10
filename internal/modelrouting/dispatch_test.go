@@ -232,7 +232,7 @@ func TestDispatchPrimarySuccess(t *testing.T) {
 	rb := &recordingBreaker{}
 	rc := &recordingCost{}
 
-	s.SetBreakers(map[providerModelKey]Breaker{{providerAnthropic, modelGLM52}: rb})
+	s.SetBreakers(map[ProviderModelKey]Breaker{{providerAnthropic, modelGLM52}: rb})
 	s.SetCostTracker(rc)
 
 	resp, events, err := dispatchAndCollect(context.Background(), t, s, bus, tierHeavy, "myproj", CapabilityReq{})
@@ -430,7 +430,7 @@ func TestDispatchBreakerCostOrder(t *testing.T) {
 	rb := &recordingBreaker{}
 	rc := &recordingCost{}
 
-	s.SetBreakers(map[providerModelKey]Breaker{{providerAnthropic, modelGLM52}: rb})
+	s.SetBreakers(map[ProviderModelKey]Breaker{{providerAnthropic, modelGLM52}: rb})
 	s.SetCostTracker(rc)
 
 	_, _, err := dispatchAndCollect(context.Background(), t, s, bus, tierHeavy, "myproj", CapabilityReq{})

@@ -192,9 +192,9 @@ func TestSafetyNewBreakersMapConstructsPerKey(t *testing.T) {
 	cfg := loadValid(t)
 	bm := NewBreakersMap(cfg, nil)
 	// Global heavy: glm-5.2 [anthropic], fallbacks minimax-m3 [openai], glm-4.6 [anthropic].
-	require.Contains(t, bm, providerModelKey{providerAnthropic, modelGLM52})
-	require.Contains(t, bm, providerModelKey{providerOpenAI, modelMinimaxM3})
-	require.Contains(t, bm, providerModelKey{providerAnthropic, modelGLM46})
+	require.Contains(t, bm, ProviderModelKey{providerAnthropic, modelGLM52})
+	require.Contains(t, bm, ProviderModelKey{providerOpenAI, modelMinimaxM3})
+	require.Contains(t, bm, ProviderModelKey{providerAnthropic, modelGLM46})
 	// Each key has exactly one breaker (distinct *CircuitBreaker pointers).
 	seen := map[*CircuitBreaker]struct{}{}
 	for _, cb := range bm {

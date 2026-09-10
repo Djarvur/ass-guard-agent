@@ -304,7 +304,7 @@ func TestOutcomeFeedbackBreakerOpens(t *testing.T) {
 
 	m := ReplayBreakers(records, cfg, nil)
 
-	key := providerModelKey{Provider: "providerA", Model: "modelA"}
+	key := ProviderModelKey{Provider: "providerA", Model: "modelA"}
 	b, ok := m[key]
 	if !ok {
 		t.Fatalf("replayed map must carry a breaker for the seeded key %+v", key)
@@ -314,7 +314,7 @@ func TestOutcomeFeedbackBreakerOpens(t *testing.T) {
 		t.Errorf("breaker for %+v must be Open after %d consecutive transients", key, cfg.ConsecutiveFailures)
 	}
 
-	if _, seen := m[providerModelKey{Provider: "never", Model: "seen"}]; seen {
+	if _, seen := m[ProviderModelKey{Provider: "never", Model: "seen"}]; seen {
 		t.Error("a key never seen in the store must be ABSENT from the replayed map (absent = allowed)")
 	}
 }
@@ -357,7 +357,7 @@ func TestOutcomeFeedbackBreakerRecoversAndSkipsStructural(t *testing.T) {
 
 	m := ReplayBreakers(records, cfg, nil)
 
-	keyR := providerModelKey{Provider: "provR", Model: "modelR"}
+	keyR := ProviderModelKey{Provider: "provR", Model: "modelR"}
 	b, ok := m[keyR]
 	if !ok {
 		t.Fatalf("replayed map must carry a breaker for %+v", keyR)
@@ -366,7 +366,7 @@ func TestOutcomeFeedbackBreakerRecoversAndSkipsStructural(t *testing.T) {
 		t.Errorf("breaker for %+v must have recovered (an ok resets consecutive transients)", keyR)
 	}
 
-	if _, seen := m[providerModelKey{Provider: "provS", Model: "modelS"}]; seen {
+	if _, seen := m[ProviderModelKey{Provider: "provS", Model: "modelS"}]; seen {
 		t.Error("structural/exhausted records must never create or feed a breaker on replay")
 	}
 }
@@ -421,7 +421,7 @@ func TestFirstAllowedDemotes(t *testing.T) {
 			ConsecutiveFailures: 2, ErrorRateWindow: 10, ErrorRateThreshold: 0.9,
 			Cooldown: 10 * time.Minute, HalfOpenProbes: 1,
 		}
-		b := NewCircuitBreaker(providerModelKey{Provider: provPrimary, Model: modelPrimary}, cfg, nil)
+		b := NewCircuitBreaker(ProviderModelKey{Provider: provPrimary, Model: modelPrimary}, cfg, nil)
 		tripAt := outcomeFixedNow.Add(-time.Minute)
 		perr := &provider.ProviderError{
 			Kind: provider.KindTransient, Provider: provPrimary, Model: modelPrimary,
@@ -435,14 +435,14 @@ func TestFirstAllowedDemotes(t *testing.T) {
 	cases := []struct {
 		name        string
 		candidates  []Target
-		breakers    map[providerModelKey]Breaker
+		breakers    map[ProviderModelKey]Breaker
 		wantTarget  Target
 		wantDemoted bool
 	}{
 		{
 			name:       "primary open — demotes to the fallback",
 			candidates: []Target{primary, fallback},
-			breakers: map[providerModelKey]Breaker{
+			breakers: map[ProviderModelKey]Breaker{
 				{Provider: provPrimary, Model: modelPrimary}: newOpenBreaker(),
 			},
 			wantTarget:  fallback,
@@ -451,7 +451,7 @@ func TestFirstAllowedDemotes(t *testing.T) {
 		{
 			name:       "all allowing — primary wins with no demotion",
 			candidates: []Target{primary, fallback},
-			breakers:   map[providerModelKey]Breaker{}, // absent key = allowed
+			breakers:   map[ProviderModelKey]Breaker{}, // absent key = allowed
 			wantTarget:  primary,
 			wantDemoted: false,
 		},
