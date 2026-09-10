@@ -1,22 +1,22 @@
 ---
-gsd_state_version: 1.0
+gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: Claude Code Parity
-current_phase: 24
-current_phase_name: Documentation & Ops Tails
-current_plan: 5
-status: verifying
-stopped_at: "Completed 24-06-PLAN.md (gap closure: G-24-1 wake row real + premise corrected; G-24-2 provider-filtered demotion at both resolve sites)"
-last_updated: "2026-09-10T19:07:40.468Z"
+current_phase: 25
+current_phase_name: SEED-001 Kit Extraction (strictly last)
+current_plan: 2
+status: executing
+stopped_at: Completed 25-01-PLAN.md
+last_updated: "2026-09-10T20:03:42.084Z"
 last_activity: 2026-09-10
-last_activity_desc: Phase 24 execution started
-state_head: f9267474d90b76710e75d03f0e8b2c28205aacb2
+last_activity_desc: Phase 25 execution resumed (wave continue)
+state_head: 6dc7b62d8b01835f35fd258685ca6329b87e74da
 progress:
   total_phases: 11
-  completed_phases: 7
+  completed_phases: 6
   total_plans: 78
   completed_plans: 69
-  percent: 64
+  percent: 55
 ---
 
 # State: ass-guard-agent (working name)
@@ -25,18 +25,18 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-09-10)
 **Core value:** A hands-off coding agent that feels native in the editor: full SDD workflows run end-to-end without manual continues, and the agent surfaces through the client's own UX — clickable permission prompts, native file diffs, session management. (Pivoted 2026-08-25 from the mimicry bar.)
-**Current focus:** Phase 24 — Documentation & Ops Tails
+**Current focus:** Phase 25 — SEED-001 Kit Extraction (strictly last)
 
 ## Current Position
 
-Phase: 24 (Documentation & Ops Tails) — EXECUTING
-Plan: 5 of 5
-Current Plan: 5
-Total Plans in Phase: 5
-Status: Phase complete — ready for verification
-Last activity: 2026-09-10 — Phase 24 execution started
+Phase: 25 (SEED-001 Kit Extraction (strictly last)) — EXECUTING
+Plan: 2 of 9
+Current Plan: 2
+Total Plans in Phase: 9
+Status: Ready to execute
+Last activity: 2026-09-10 — Phase 25 execution resumed (wave continue)
 
-Progress: [███████████████░░░░░░] 55/73 plans ([██████░░░░] 64%)
+Progress: [███████████████░░░░░░] 55/73 plans ([██████░░░░] 55%)
 
 ## Performance Metrics
 
@@ -114,6 +114,7 @@ Phase 19: 7/7 ✓ closed 2026-09-10 (verification completed by the auto-UAT live
 | Phase 24 P02 | 51 min | 3 tasks | 13 files |
 | Phase 24 P05 | 47 min | 3 tasks | 12 files |
 | Phase 24 P06 | 19 min | 2 tasks | 9 files |
+| Phase 25 P01 | 9 min (continuation session; plan spans 2 interrupted sessions since 2026-08-28) | 3 tasks | 160 files |
 
 ## Accumulated Context
 
@@ -258,6 +259,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-10T19:07:39.862Z
-Stopped at: Completed 24-06-PLAN.md (gap closure: G-24-1 wake row real + premise corrected; G-24-2 provider-filtered demotion at both resolve sites)
+Last session: 2026-09-10T20:03:41.583Z
+Stopped at: Completed 25-01-PLAN.md
 Resume file: None

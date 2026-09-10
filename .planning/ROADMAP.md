@@ -444,12 +444,12 @@ Plans:
   3. ass-guard builds and behaves identically as the kit's reference app (retains ecosys/openspec/coreexec/learning/firstrun/evalsuite/parity + ACP frontend) — `mise ci` green, live Zed session unchanged, all behavioral eval suites still pass against the extracted layout.
   4. SEED-002 fantasy + SEED-003 landscape materials are present as reading material/design prior art with zero runtime dependencies.
 
-**Plans**: 9 plans (waves 1-9, strictly sequential — each plan touches kit/ packages the previous one settled)
+**Plans**: 1/9 plans executed (waves 1-9, strictly sequential — each plan touches kit/ packages the previous one settled)
 
 Plans:
 **Wave 1**
 
-- [ ] 25-01-PLAN.md — One-way boundary checkpoint + Wave-0 instruments (ledger baseline, eval class extension) + TRACER: rank-0 verbatim moves (KIT-01, D-01/D-02/D-03/D-07/D-20)
+- [x] 25-01-PLAN.md — One-way boundary checkpoint + Wave-0 instruments (ledger baseline, eval class extension) + TRACER: rank-0 verbatim moves (KIT-01, D-01/D-02/D-03/D-07/D-20)
 
 **Wave 2** *(blocked on Wave 1)*
 
@@ -512,7 +512,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 | 22. Background Execution + Sandbox Reality | v1.2 | 9/9 | In Progress|  |
 | 23. SEED Gaps Close-out | v1.2 | 6/6 | In Progress|  |
 | 24. Documentation & Ops Tails | v1.2 | 6/6 | In Progress|  |
-| 25. SEED-001 Kit Extraction | v1.2 | 0/? | Not started | - |
+| 25. SEED-001 Kit Extraction | v1.2 | 1/9 | In Progress|  |
 
 ## Backlog
 
