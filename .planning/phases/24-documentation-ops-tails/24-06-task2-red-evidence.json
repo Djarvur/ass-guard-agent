@@ -1,0 +1,20 @@
+{
+  "plan": "24-06",
+  "task": 2,
+  "phase_gate": "RED",
+  "command": "go test -race -count=1 ./internal/runtime/ -run TestResolveSubagentModel -v && go test -race -count=1 ./internal/acpserve/ -run TestOutcomeBreakers -v",
+  "targetTest": "TestResolveSubagentModelCrossProviderDemotion",
+  "exitCode": 1,
+  "output": "not ok 1 - TestResolveSubagentModelCrossProviderDemotion/open_primary_skips_the_allowed_cross-provider_candidate\nnot ok 2 - TestResolveSubagentModelCrossProviderDemotion/same-provider_chain_fully_denied_keeps_the_primary_with_the_provider-constraint_note\nnot ok 3 - TestOutcomeBreakersCrossProviderDemotion/open_primary_skips_the_allowed_cross-provider_candidate\nnot ok 4 - TestOutcomeBreakersCrossProviderDemotion/same-provider_chain_fully_denied_keeps_the_primary_with_the_provider-constraint_note\nok 5 - TestResolveSubagentModelBreakerDemotion (all three pre-existing subtests)\nok 6 - TestOutcomeBreakersDemoteSessionModel\nok 7 - TestOutcomeBreakersEmptyMapKeepsPrimary\nok 8 - TestOutcomeBreakersExcludedPrimaryCorner\n# tests 8\n# pass 4\n# fail 4\n",
+  "expected": "Per 24-06 Task 2 behavior (G-24-2, CR-01+WR-01): with an open session-provider primary and a fallback chain containing an ALLOWED cross-provider candidate followed by a same-provider candidate, BOTH resolveSubagentModel and demoteIfDeniedLocked return the SAME-PROVIDER candidate's model; when only cross-provider candidates are breaker-admitted both sites keep the primary's model with exactly ONE truthful stderr note naming the provider constraint",
+  "actual": "At HEAD the unfiltered walks return/advertise the CROSS-PROVIDER slug in every RED row — runtime rows: resolveSubagentModel = \"minimax-m3\" (want glm-4.6; then want light-xtra kept); surface rows: advertised model = \"minimax-m3\" (want glm-5.2; then want GLM-5.3 kept) — the wrong-wire demonstrated: the slug is stamped onto a profile riding the anthropic session wire / advertised where applyTargetLocked's provider guard would refuse to apply it",
+  "failing_tests": [
+    "TestResolveSubagentModelCrossProviderDemotion/open_primary_skips_the_allowed_cross-provider_candidate (assertion: resolveSubagentModel = \"minimax-m3\"; want glm-4.6 — the same-provider fallback)",
+    "TestResolveSubagentModelCrossProviderDemotion/same-provider_chain_fully_denied_keeps_the_primary_with_the_provider-constraint_note (assertion: resolveSubagentModel = \"minimax-m3\"; want the primary light-xtra kept)",
+    "TestOutcomeBreakersCrossProviderDemotion/open_primary_skips_the_allowed_cross-provider_candidate (assertion: model = \"minimax-m3\"; want the same-provider fallback glm-5.2)",
+    "TestOutcomeBreakersCrossProviderDemotion/same-provider_chain_fully_denied_keeps_the_primary_with_the_provider-constraint_note (assertion: model = \"minimax-m3\"; want the primary GLM-5.3 kept)"
+  ],
+  "unexpected_green": [],
+  "note": "TestOutcomeBreakersExcludedPrimaryCorner PASSES at HEAD BY DESIGN — it is the excluded-primary regression pin (cross-provider primary + non-empty breaker map seeding only the fallback's breaker: HEAD keeps the primary with zero notes because FirstAllowed admits the primary at index 0), not part of the RED; it pins the corner the cross-provider-PRIMARY guard added at GREEN must preserve byte-identically. The three pre-existing resolveSubagentModel subtests and both pre-existing surface tests pass unmodified at RED. Raw logs: /tmp/246rs-red.log, /tmp/246br-red.log.",
+  "timestamp": "2026-09-10T19:05:00Z"
+}

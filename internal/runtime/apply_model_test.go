@@ -550,3 +550,87 @@ func TestResolveSubagentModelBreakerDemotion(t *testing.T) {
 		}
 	})
 }
+
+// --- 24-06 (G-24-2, CR-01): cross-provider demotion never wires the wrong slug ---
+
+// crossProviderLightConfig loads a temp scheduling config whose LIGHT tier
+// rides a CROSS-PROVIDER chain (the valid.yaml vocabulary): primary
+// light-xtra on the session provider (anthropic), fallbacks [minimax-m3 on
+// openai, glm-4.6 on anthropic] — the wrong-wire fixture: an unfiltered
+// demotion walk admits minimax-m3 and returns a slug the session provider
+// does not host (checkBinding checks capability compatibility, never
+// provider equality — the configuration class is supported).
+func crossProviderLightConfig(t *testing.T) *modelrouting.Config {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "light-xprovider.yaml")
+	content := "providers:\n" +
+		"  anthropic:\n    base_url: \"https://api.z.ai/api/anthropic\"\n    shape: anthropic\n" +
+		"  openai:\n    base_url: \"https://api.openai.com/v1\"\n    shape: openai\n" +
+		"models:\n" +
+		"  light-xtra:\n    provider: anthropic\n" +
+		"    capabilities: { context_window: 128000, max_output_tokens: 16000, tool_calling: true, streaming: true, extended_thinking: true }\n" +
+		"  minimax-m3:\n    provider: openai\n" +
+		"    capabilities: { context_window: 200000, max_output_tokens: 32000, tool_calling: true, streaming: true, extended_thinking: true }\n" +
+		"  glm-4.6:\n    provider: anthropic\n" +
+		"    capabilities: { context_window: 128000, max_output_tokens: 16000, tool_calling: true, streaming: true, extended_thinking: true }\n" +
+		"tiers:\n  light:\n    model: light-xtra\n    fallback: [minimax-m3, glm-4.6]\n"
+
+	werr := os.WriteFile(path, []byte(content), 0o600)
+	if werr != nil {
+		t.Fatalf("write cross-provider light config: %v", werr)
+	}
+
+	cfg, err := modelrouting.Load(path)
+	if err != nil {
+		t.Fatalf("load cross-provider light config: %v", err)
+	}
+
+	return cfg
+}
+
+// TestResolveSubagentModelCrossProviderDemotion (24-06, G-24-2/CR-01): the
+// demotion walk is provider-FILTERED — a breaker-open light primary demotes
+// ONLY onto a fallback the session provider hosts, and a fully-denied
+// same-provider chain keeps the primary with exactly ONE truthful note
+// naming the provider constraint (the returned slug is stamped onto a
+// profile riding the session provider's wire — the no-silent-wrong-wire
+// contract, runtime.go's own doc).
+func TestResolveSubagentModelCrossProviderDemotion(t *testing.T) {
+	t.Parallel()
+
+	cfg := crossProviderLightConfig(t)
+	now := time.Date(2026, 9, 10, 19, 0, 0, 0, time.UTC)
+
+	t.Run("open primary skips the allowed cross-provider candidate", func(t *testing.T) {
+		t.Parallel()
+
+		breakers := seedLightTierBreakers(t, cfg, now, "light-xtra")
+		var stderr strings.Builder
+
+		got := resolveSubagentModel(cfg, lightTierProvider, breakers, now, &stderr)
+		if got != "glm-4.6" {
+			t.Fatalf("resolveSubagentModel = %q; want glm-4.6 (the same-provider fallback — never the cross-provider minimax-m3)", got)
+		}
+
+		if !strings.Contains(stderr.String(), "light-xtra") || !strings.Contains(stderr.String(), "glm-4.6") {
+			t.Errorf("stderr does not name the demoted primary + replacement: %q", stderr.String())
+		}
+	})
+
+	t.Run("same-provider chain fully denied keeps the primary with the provider-constraint note", func(t *testing.T) {
+		t.Parallel()
+
+		breakers := seedLightTierBreakers(t, cfg, now, "light-xtra", "glm-4.6")
+		var stderr strings.Builder
+
+		got := resolveSubagentModel(cfg, lightTierProvider, breakers, now, &stderr)
+		if got != "light-xtra" {
+			t.Fatalf("resolveSubagentModel = %q; want the primary light-xtra kept (the only admitted fallback is cross-provider)", got)
+		}
+
+		if !strings.Contains(stderr.String(), lightTierProvider) {
+			t.Errorf("the keep-primary note must name the session provider constraint %q: %q", lightTierProvider, stderr.String())
+		}
+	})
+}
