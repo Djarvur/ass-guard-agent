@@ -40,6 +40,10 @@ func newProfileCmd() *cobra.Command {
 		Short: "profile operations (drift detection, inspection)",
 	}
 	cmd.AddCommand(newProfileCheckCmd())
+	// 24-04 (TAIL-02): the nightly drift gate joins the profile group — the
+	// drift-detection family (registered per the plan's profile_check.go:42
+	// AddCommand site; also lives under `parity nightly-check`).
+	cmd.AddCommand(newParityNightlyCheckCmd())
 
 	return cmd
 }

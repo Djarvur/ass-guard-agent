@@ -1,0 +1,13 @@
+{
+  "generated_at": "2026-09-10T15:11:03Z",
+  "zcode_version": "0.16.3",
+  "files": {
+    "coverage.yaml": "663418b2fa7a79978542603a61fe39dca4073f614d1d1b4f7678aabab3dee3b1",
+    "identity.yaml": "d083ba306f973b013bc87f6657b6851b66255e46dff6f93b90737b17555a1bbd",
+    "meta.yaml": "a88e4843743dbf715e0c0adca8b470b2c7ad20e87634bf4c639e312e0e9030be",
+    "profile.yaml": "6e00ed4bbc782ecbe168a5cc0f98534b4fb70b892b288fb572e3df860079d205",
+    "thinking.json": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "tool_choice.json": "d7522ccd58caaccd080ff42fc701046086ea73d690df7b1b597b620e0aa33284",
+    "tools.json": "3171b290ba068e9effe5861f7c83f5ae924076ffaf5596e1714135280c853195"
+  }
+}

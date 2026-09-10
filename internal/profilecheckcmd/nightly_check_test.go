@@ -15,6 +15,7 @@ import (
 
 const (
 	testZcodeVersion = "0.16.3"
+	driftedFileName  = "tools.json"
 	pinFileName      = "structure-pin.json"
 	reportFileName   = "nightly-report.json"
 )
@@ -60,14 +61,26 @@ func writeNightlyBundle(t *testing.T) string {
 	return dir
 }
 
-// nightlyTestPaths returns (bundleDir, pinPath, reportPath) with the bundle
-// written into its own temp dir and pin/report paths in a fresh output dir.
-func nightlyTestPaths(t *testing.T) (string, string, string) {
+// nightlyPaths bundles one test's fixture locations (a struct sidesteps the
+// unnamedResult/nonamedreturns linter squeeze on a 3-tuple helper).
+type nightlyPaths struct {
+	bundleDir  string
+	pinPath    string
+	reportPath string
+}
+
+// nightlyTestPaths builds the bundle in its own temp dir plus pin/report
+// paths in a fresh output dir.
+func nightlyTestPaths(t *testing.T) nightlyPaths {
 	t.Helper()
 
 	out := t.TempDir()
 
-	return writeNightlyBundle(t), filepath.Join(out, pinFileName), filepath.Join(out, reportFileName)
+	return nightlyPaths{
+		bundleDir:  writeNightlyBundle(t),
+		pinPath:    filepath.Join(out, pinFileName),
+		reportPath: filepath.Join(out, reportFileName),
+	}
 }
 
 // fixedProbe returns a VersionFunc reporting the given installed version.
@@ -111,7 +124,7 @@ func readPin(t *testing.T, path string) structurePin {
 
 // requireParityFiles asserts every report row matches (the bundle-content
 // side of parity).
-func requireParityFiles(t *testing.T, rep NightlyReport) {
+func requireParityFiles(t *testing.T, rep *NightlyReport) {
 	t.Helper()
 
 	if len(rep.Files) != len(nightlyBundleFileNames) {
@@ -131,7 +144,8 @@ func requireParityFiles(t *testing.T, rep NightlyReport) {
 func TestNightlyCheckWritePin(t *testing.T) {
 	t.Parallel()
 
-	dir, pin, _ := nightlyTestPaths(t)
+	p := nightlyTestPaths(t)
+	dir, pin := p.bundleDir, p.pinPath
 
 	err := RunNightlyCheck(NightlyCheckOptions{
 		ProfilesDir: dir,
@@ -169,7 +183,8 @@ func TestNightlyCheckWritePin(t *testing.T) {
 func TestNightlyCheckParityRoundTrip(t *testing.T) {
 	t.Parallel()
 
-	dir, pin, report := nightlyTestPaths(t)
+	p := nightlyTestPaths(t)
+	dir, pin, report := p.bundleDir, p.pinPath, p.reportPath
 
 	err := RunNightlyCheck(NightlyCheckOptions{
 		ProfilesDir: dir, PinPath: pin, WritePin: true, VersionFunc: fixedProbe(testZcodeVersion),
@@ -199,7 +214,7 @@ func TestNightlyCheckParityRoundTrip(t *testing.T) {
 			rep.ZcodeVersion.Expected, rep.ZcodeVersion.Found, testZcodeVersion)
 	}
 
-	requireParityFiles(t, rep)
+	requireParityFiles(t, &rep)
 
 	if rep.GeneratedAt == "" {
 		t.Error("report generated_at is empty")
@@ -212,7 +227,8 @@ func TestNightlyCheckParityRoundTrip(t *testing.T) {
 func TestNightlyCheckVersionDrift(t *testing.T) {
 	t.Parallel()
 
-	dir, pin, report := nightlyTestPaths(t)
+	p := nightlyTestPaths(t)
+	dir, pin, report := p.bundleDir, p.pinPath, p.reportPath
 
 	err := RunNightlyCheck(NightlyCheckOptions{
 		ProfilesDir: dir, PinPath: pin, WritePin: true, VersionFunc: fixedProbe(testZcodeVersion),
@@ -244,7 +260,7 @@ func TestNightlyCheckVersionDrift(t *testing.T) {
 			rep.ZcodeVersion.Expected, rep.ZcodeVersion.Found, testZcodeVersion, movedVersion)
 	}
 
-	requireParityFiles(t, rep)
+	requireParityFiles(t, &rep)
 }
 
 // TestNightlyCheckContentDrift: one bundle file's bytes change after pinning
@@ -253,7 +269,8 @@ func TestNightlyCheckVersionDrift(t *testing.T) {
 func TestNightlyCheckContentDrift(t *testing.T) {
 	t.Parallel()
 
-	dir, pin, report := nightlyTestPaths(t)
+	p := nightlyTestPaths(t)
+	dir, pin, report := p.bundleDir, p.pinPath, p.reportPath
 
 	err := RunNightlyCheck(NightlyCheckOptions{
 		ProfilesDir: dir, PinPath: pin, WritePin: true, VersionFunc: fixedProbe(testZcodeVersion),
@@ -264,7 +281,7 @@ func TestNightlyCheckContentDrift(t *testing.T) {
 
 	const drifted = `{"tools": [{"name": "WebFetch"}]}`
 
-	err = os.WriteFile(filepath.Join(dir, "tools.json"), []byte(drifted), 0o600)
+	err = os.WriteFile(filepath.Join(dir, driftedFileName), []byte(drifted), 0o600)
 	if err != nil {
 		t.Fatalf("mutate tools.json: %v", err)
 	}
@@ -288,7 +305,7 @@ func TestNightlyCheckContentDrift(t *testing.T) {
 	toolsMismatched := false
 
 	for _, f := range rep.Files {
-		wantMismatch := f.Name == "tools.json"
+		wantMismatch := f.Name == driftedFileName
 		if f.Match == wantMismatch {
 			t.Errorf("file %s match=%v, want match=%v", f.Name, f.Match, !wantMismatch)
 		}
@@ -312,7 +329,8 @@ func TestNightlyCheckContentDrift(t *testing.T) {
 func TestNightlyCheckProbeFailure(t *testing.T) {
 	t.Parallel()
 
-	dir, pin, report := nightlyTestPaths(t)
+	p := nightlyTestPaths(t)
+	dir, pin, report := p.bundleDir, p.pinPath, p.reportPath
 
 	err := RunNightlyCheck(NightlyCheckOptions{
 		ProfilesDir: dir, PinPath: pin, WritePin: true, VersionFunc: fixedProbe(testZcodeVersion),
@@ -325,7 +343,9 @@ func TestNightlyCheckProbeFailure(t *testing.T) {
 		ProfilesDir: dir,
 		PinPath:     pin,
 		ReportPath:  report,
-		VersionFunc: func() (string, error) { return "", errors.New("exec zcode --version: not found") },
+		VersionFunc: func() (string, error) {
+			return "", errors.New("exec zcode --version: not found") //nolint:err113 // test fixture error
+		},
 	})
 	if !errors.Is(err, ErrNightlyDrift) {
 		t.Fatalf("probe failure must read as drift, got %v", err)
@@ -344,7 +364,7 @@ func TestNightlyCheckProbeFailure(t *testing.T) {
 		t.Error("version row matches despite the failed probe")
 	}
 
-	requireParityFiles(t, rep)
+	requireParityFiles(t, &rep)
 }
 
 // TestNightlyCheckMissingPin: a check with no pin file on disk is an
@@ -352,7 +372,8 @@ func TestNightlyCheckProbeFailure(t *testing.T) {
 func TestNightlyCheckMissingPin(t *testing.T) {
 	t.Parallel()
 
-	dir, _, report := nightlyTestPaths(t)
+	p := nightlyTestPaths(t)
+	dir, report := p.bundleDir, p.reportPath
 	pin := filepath.Join(t.TempDir(), "absent-pin.json")
 
 	err := RunNightlyCheck(NightlyCheckOptions{
@@ -373,7 +394,8 @@ func TestNightlyCheckMissingPin(t *testing.T) {
 func TestNightlyCheckMissingBundleFile(t *testing.T) {
 	t.Parallel()
 
-	dir, pin, report := nightlyTestPaths(t)
+	p := nightlyTestPaths(t)
+	dir, pin, report := p.bundleDir, p.pinPath, p.reportPath
 
 	err := RunNightlyCheck(NightlyCheckOptions{
 		ProfilesDir: dir, PinPath: pin, WritePin: true, VersionFunc: fixedProbe(testZcodeVersion),

@@ -683,21 +683,28 @@ const goldenModelRoutingResolve = "resolve a tier to a concrete (provider, model
 
 const goldenParity = "run the behavioral mimicry A/B parity gate (MIMC-03, the north-star gate)" +
 	"\n" +
-	"" +
 	"\n" +
 	"Usage:" +
 	"\n" +
 	"  ass-guard parity [flags]" +
 	"\n" +
-	"" +
+	"  ass-guard parity [command]" +
+	"\n" +
+	"\n" +
+	"Available Commands:" +
+	"\n" +
+	"  nightly-check nightly upstream-parity drift gate: zcode probe + bundle hash vs the pinned capture " +
+	"(TAIL-02)" +
+	"\n" +
 	"\n" +
 	"Flags:" +
 	"\n" +
-	"      --cache-pin string        corpus cache_control placement pin fixture (14-02 JSONL; empty = skip the" +
-	" placement check) (default \"<TMP>/internal/profile/testdata/context-behavior/cache-control.jsonl\")" +
+	"      --cache-pin string        corpus cache_control placement pin fixture (14-02 JSONL; empty = " +
+	"skip the placement check) (default " +
+	"\"<TMP>/internal/profile/testdata/context-behavior/cache-control.jsonl\")" +
 	"\n" +
-	"      --from-rollout string     generate the suite from a zcode rollout JSONL (same-session = matching" +
-	" system prompt + tools)" +
+	"      --from-rollout string     generate the suite from a zcode rollout JSONL (same-session = " +
+	"matching system prompt + tools)" +
 	"\n" +
 	"  -h, --help                    help for parity" +
 	"\n" +
@@ -707,52 +714,53 @@ const goldenParity = "run the behavioral mimicry A/B parity gate (MIMC-03, the n
 	"\n" +
 	"      --results string          results JSON output path (default \"parity-results.json\")" +
 	"\n" +
-	"      --suite string            curated divergence suite JSON (ignored if --from-rollout is set) (default" +
-	" \"<TMP>/internal/parity/suite/curated_suite.json\")" +
+	"      --suite string            curated divergence suite JSON (ignored if --from-rollout is set) " +
+	"(default \"<TMP>/internal/parity/suite/curated_suite.json\")" +
 	"\n" +
 	"      --surprise-check string   optional second suite JSON to run after the curated suite passes" +
 	"\n" +
-	"" +
 	"\n" +
 	"Global Flags:" +
 	"\n" +
-	"      --audit-log string            write the redacted verbatim shaped request to this file (LOG-01);" +
-	" empty = stderr" +
+	"      --audit-log string            write the redacted verbatim shaped request to this file " +
+	"(LOG-01); empty = stderr" +
 	"\n" +
 	"  -c, --continue                    resume the most recent session in the current directory (D-10)" +
 	"\n" +
 	"      --prompt string               prompt to send through the loop (required for the tracer)" +
 	"\n" +
-	"      --resume string[=\"@picker\"]   resume a past session by id or title prefix; bare opens the picker" +
-	" (D-10)" +
+	"      --resume string[=\"@picker\"]   resume a past session by id or title prefix; bare opens the " +
+	"picker (D-10)" +
+	"\n" +
+	"\n" +
+	"Use \"ass-guard parity [command] --help\" for more information about a command." +
 	"\n"
 
 const goldenProfile = "profile operations (drift detection, inspection)" +
 	"\n" +
-	"" +
 	"\n" +
 	"Usage:" +
 	"\n" +
 	"  ass-guard profile [command]" +
 	"\n" +
-	"" +
 	"\n" +
 	"Available Commands:" +
 	"\n" +
-	"  check       diff a fresh capture against the profile's tiered manifest (PROF-04 drift detector)" +
+	"  check         diff a fresh capture against the profile's tiered manifest (PROF-04 drift detector)" +
 	"\n" +
-	"" +
+	"  nightly-check nightly upstream-parity drift gate: zcode probe + bundle hash vs the pinned capture " +
+	"(TAIL-02)" +
+	"\n" +
 	"\n" +
 	"Flags:" +
 	"\n" +
 	"  -h, --help   help for profile" +
 	"\n" +
-	"" +
 	"\n" +
 	"Global Flags:" +
 	"\n" +
-	"      --audit-log string            write the redacted verbatim shaped request to this file (LOG-01);" +
-	" empty = stderr" +
+	"      --audit-log string            write the redacted verbatim shaped request to this file " +
+	"(LOG-01); empty = stderr" +
 	"\n" +
 	"  -c, --continue                    resume the most recent session in the current directory (D-10)" +
 	"\n" +
@@ -762,10 +770,9 @@ const goldenProfile = "profile operations (drift detection, inspection)" +
 	"\n" +
 	"      --prompt string               prompt to send through the loop (required for the tracer)" +
 	"\n" +
-	"      --resume string[=\"@picker\"]   resume a past session by id or title prefix; bare opens the picker" +
-	" (D-10)" +
+	"      --resume string[=\"@picker\"]   resume a past session by id or title prefix; bare opens the " +
+	"picker (D-10)" +
 	"\n" +
-	"" +
 	"\n" +
 	"Use \"ass-guard profile [command] --help\" for more information about a command." +
 	"\n"

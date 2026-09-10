@@ -15,3 +15,6 @@
   status: open
   **What:** observability gap found empirically during the 24-03 dry-run (a PATH-unresolvable `mcp-language-server` vanished with zero stderr evidence); `internal/mcp/host.go` `Start`'s skip branch (`connectOne` error → `continue`) logs nothing. The session degrades as designed (T-5-04) but an operator cannot tell why a configured server contributed no tools. Candidate fix: one slog warning in the skip branch. Out of scope for 24-03 (documentation-only plan, operator decision 2026-08-25).
 
+- golangci-lint 2.13.2 findings in packages 24-04 touched but files it did not modify: internal/paritycli/parity_test.go:446 (lll, 121 chars) and cmd/ass-guard/acp_serve.go:358 (wrapcheck)
+  status: open
+  **What:** pre-existing findings surfaced when 24-04 linted its touched packages — both files predate this plan (last touched 19-01 / earlier) and the findings are unrelated to the nightly-check additions; every file 24-04 created or modified lints clean under 2.13.2. Fix belongs to the next plan touching each file.

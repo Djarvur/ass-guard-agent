@@ -40,6 +40,9 @@ func newParityCmd() *cobra.Command {
 		"optional second suite JSON to run after the curated suite passes")
 	cmd.Flags().StringVar(&cachePin, "cache-pin", defaultCachePinPath(),
 		"corpus cache_control placement pin fixture (14-02 JSONL; empty = skip the placement check)")
+	// 24-04 (TAIL-02): the nightly drift gate's canonical home — the workflow
+	// and mise task invoke `parity nightly-check` (also under `profile`).
+	cmd.AddCommand(newParityNightlyCheckCmd())
 
 	return cmd
 }

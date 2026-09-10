@@ -38,6 +38,14 @@ var zcodeInstalledVersion = func() (string, error) { //nolint:gochecknoglobals /
 	return strings.TrimSpace(string(out)), nil
 }
 
+// ZcodeInstalledVersion invokes the installed-zcode version seam — the ONE
+// bounded `zcode --version` exec (24-04 TAIL-02: the nightly parity check
+// defaults its probe to this same seam; sibling packages must never fork the
+// exec). Tests keep injecting through the unexported seam var.
+func ZcodeInstalledVersion() (string, error) {
+	return zcodeInstalledVersion()
+}
+
 // parityRun is the package-level seam over parity.Run (offline tests fake the
 // A/B arms — no live provider needed); the default drives the real harness.
 var parityRun = parity.Run //nolint:gochecknoglobals // test-injectable seam
