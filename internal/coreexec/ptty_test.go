@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/Djarvur/ass-guard-agent/internal/sandbox"
 )
 
 // The persistent-shell battery (22-04 Task 1, PAR-09; D-07/D-09): ONE lazy
@@ -708,4 +711,252 @@ func TestPTYDrain(t *testing.T) { //nolint:paralleltest // real pty shells, fd b
 			t.Error("never-started manager reports Alive after Drain")
 		}
 	})
+}
+
+// --- 22-06 (SAND-01): the persistent-site sandbox batteries ---
+
+// ptySandboxNote returns the PTY opts with a capturing NoteFn (the restart
+// note and the unconfined-run note share the loud stderr family).
+func ptySandboxNote() (PTYOpts, *[]string) {
+	lines := &[]string{}
+
+	return PTYOpts{NoteFn: func(format string, args ...any) {
+		*lines = append(*lines, fmt.Sprintf(format, args...))
+	}}, lines
+}
+
+// runPersistent runs one persistent-mode Bash call through the executor (the
+// full branch: args parse → PTY.Run → sentinel parse → result render).
+func runPersistent(t *testing.T, cfg Config, command string) (string, error) {
+	t.Helper()
+
+	out, err := BashExecute(cfg)(context.Background(),
+		json.RawMessage(`{"command":`+strconv.Quote(command)+`,"persistent":true}`))
+	if err != nil {
+		return "", err
+	}
+
+	return decodeJSONString(t, out), nil
+}
+
+// TestPTYSandbox_LiveShellConfined: with the sandbox ON and available, the
+// persistent shell itself is CONFINED at spawn — a persistent touch OUTSIDE
+// the rw set fails (nonzero exit in the result) while a touch INSIDE the
+// system tmp succeeds, and the sentinel cycle completes normally both times
+// (confinement does not affect the sentinel echo — plain text on the master).
+func TestPTYSandbox_LiveShellConfined(t *testing.T) { //nolint:paralleltest // live pty shell + host probe
+	workDir := t.TempDir()
+	handle := liveSandboxHandle(t, workDir)
+
+	opts, _ := ptySandboxNote()
+	opts.WorkDir = workDir
+	opts.Sandbox = &handle
+
+	cfg := Config{WorkDir: workDir, PTY: NewPTYManager(opts),
+		SandboxNote: func(string, ...any) {}}
+
+	// Inside-tmp write succeeds through the persistent shell.
+	out, err := runPersistent(t, cfg, "touch "+os.TempDir()+"/pty-inside-"+fmt.Sprint(os.Getpid()))
+	if err != nil {
+		t.Fatalf("inside-tmp persistent write errored: %v", err)
+	}
+
+	if strings.Contains(out, "Exit code") {
+		t.Errorf("inside-tmp persistent write failed in the confined shell: %q", out)
+	}
+
+	// Outside write fails (the shell's confinement applies to its commands).
+	outside := dirOutsidePolicy(t)
+
+	out, err = runPersistent(t, cfg, "touch "+outside+"/nope")
+	if err != nil {
+		t.Fatalf("the outside-write persistent call ERRORED (it must complete and render the exit code): %v", err)
+	}
+
+	if !strings.Contains(out, "Exit code 1") {
+		t.Errorf("outside write SUCCEEDED in the persistent shell — the shell is unconfined: %q", out)
+	}
+
+	// The sentinel cycle still completes: a follow-up plain call runs clean.
+	out, err = runPersistent(t, cfg, "echo still-alive")
+	if err != nil || !strings.Contains(out, "still-alive") {
+		t.Errorf("the sentinel cycle broke under confinement: %q (%v)", out, err)
+	}
+}
+
+// TestPTYSandbox_RestartRewrapsWithNoteOnce: a dead shell's lazy restart
+// under --sandbox=on re-wraps the replacement (still confined) and the D-08
+// state-loss note fires exactly once — confinement survives restarts.
+func TestPTYSandbox_RestartRewrapsWithNoteOnce(t *testing.T) { //nolint:paralleltest // real pty shells, kill timing
+	workDir := t.TempDir()
+	handle := liveSandboxHandle(t, workDir)
+
+	opts, notes := ptySandboxNote()
+	opts.WorkDir = workDir
+	opts.Sandbox = &handle
+
+	mgr := NewPTYManager(opts)
+	cfg := Config{WorkDir: workDir, PTY: mgr, SandboxNote: func(string, ...any) {}}
+
+	if _, err := runPersistent(t, cfg, "echo first"); err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+
+	// Kill the shell externally; the next call restarts it lazily.
+	if pid := mgr.ShellPID(); pid != 0 {
+		_ = syscall.Kill(pid, syscall.SIGKILL)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && mgr.Alive() {
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	outside := dirOutsidePolicy(t)
+
+	// The restart's own probe: the replacement shell is still confined.
+	out, err := runPersistent(t, cfg, "touch "+outside+"/after-restart")
+	if err != nil {
+		t.Fatalf("post-restart call errored: %v", err)
+	}
+
+	if !strings.Contains(out, "Exit code 1") {
+		t.Errorf("the RESTARTED shell is unconfined: %q", out)
+	}
+
+	restartNotes := 0
+	for _, n := range *notes {
+		if strings.Contains(n, "restarted") {
+			restartNotes++
+		}
+	}
+
+	if restartNotes != 1 {
+		t.Errorf("restart notes = %d; want exactly ONE (D-08): %v", restartNotes, *notes)
+	}
+}
+
+// TestPTYSandbox_UnavailableNotedPerRun: enabled-but-unavailable (faked)
+// runs each persistent call UNCONFINED (the outside write succeeds) with one
+// note PER RUN carrying the counter — never a silent fail-open.
+func TestPTYSandbox_UnavailableNotedPerRun(t *testing.T) { //nolint:paralleltest // shared process counter
+	workDir := t.TempDir()
+
+	//nolint:exhaustruct // faked availability (the on marker, probe failed)
+	fake := &sandbox.Handle{
+		Policy:       sandbox.DefaultPolicy(workDir, os.TempDir(), filepath.Join(workDir, ".ass-guard")),
+		Availability: sandbox.Availability{Mode: "landlock", Reason: "faked-unavailable-pty"},
+	}
+
+	opts, notes := ptySandboxNote()
+	opts.WorkDir = workDir
+	opts.Sandbox = fake
+
+	cfg := Config{WorkDir: workDir, PTY: NewPTYManager(opts), Sandbox: &sandbox.Handle{
+		Policy: fake.Policy, Availability: sandbox.Availability{Mode: "off"},
+	}, SandboxNote: func(string, ...any) {}}
+
+	outside := dirOutsidePolicy(t)
+
+	for i := 0; i < 2; i++ {
+		out, err := runPersistent(t, cfg, "touch "+outside+"/u"+fmt.Sprint(i))
+		if err != nil {
+			t.Fatalf("run %d errored (unavailable degrades to unconfined, not fail): %v", i, err)
+		}
+
+		if strings.Contains(out, "Exit code") {
+			t.Errorf("run %d did NOT run unconfined: %q", i, out)
+		}
+	}
+
+	sandboxNotes := 0
+	for _, n := range *notes {
+		if strings.Contains(n, "UNCONFINED") {
+			sandboxNotes++
+		}
+	}
+
+	if sandboxNotes != 2 {
+		t.Errorf("unconfined notes = %d; want one PER RUN: %v", sandboxNotes, *notes)
+	}
+}
+
+// TestPTYSandbox_DefaultOffByteIdentical: with the sandbox off, the shell
+// spawn is byte-identical (the wrap seam never fires, zero notes) and a
+// would-be-denied write SUCCEEDS — 22-04's batteries pin the rest.
+func TestPTYSandbox_DefaultOffByteIdentical(t *testing.T) {
+	// NOT t.Parallel: swaps the package wrap seam.
+	restore, called := wrapRecorder()
+	defer restore()
+
+	opts, notes := ptySandboxNote()
+	opts.WorkDir = t.TempDir()
+
+	cfg := Config{WorkDir: opts.WorkDir, PTY: NewPTYManager(opts),
+		SandboxNote: func(string, ...any) {}}
+
+	outside := dirOutsidePolicy(t)
+
+	out, err := runPersistent(t, cfg, "touch "+outside+"/off-ok")
+	if err != nil {
+		t.Fatalf("off-path persistent call errored: %v", err)
+	}
+
+	if strings.Contains(out, "Exit code") {
+		t.Errorf("the off-path write failed (must be unconfined): %q", out)
+	}
+
+	if *called {
+		t.Error("the wrap seam fired on the off path — ensureShell must stay byte-identical")
+	}
+
+	if len(*notes) != 0 {
+		t.Errorf("the off path emitted notes: %v", *notes)
+	}
+}
+
+// TestPTYSandbox_DisableEscapeRunsUnconfinedShellStaysConfined: the OQ2
+// persistent arm — a persistent call with dangerouslyDisableSandbox under
+// --sandbox=on runs UNCONFINED with the loud note, while the SHARED shell
+// stays confined (the next persistent call without the escape still cannot
+// write outside — one call's escape never weakens another's confinement).
+func TestPTYSandbox_DisableEscapeRunsUnconfinedShellStaysConfined(t *testing.T) { //nolint:funlen,paralleltest // live probe + shared shell
+	workDir := t.TempDir()
+	handle := liveSandboxHandle(t, workDir)
+
+	opts, _ := ptySandboxNote()
+	opts.WorkDir = workDir
+	opts.Sandbox = &handle
+
+	notes, lines := captureNotes()
+
+	cfg := Config{WorkDir: workDir, PTY: NewPTYManager(opts), Sandbox: &handle, SandboxNote: notes}
+
+	outside := dirOutsidePolicy(t)
+
+	// The escape call: unconfined (the outside write succeeds) + one note.
+	out, err := BashExecute(cfg)(context.Background(), json.RawMessage(
+		`{"command":"touch `+outside+`/escaped","persistent":true,"dangerouslyDisableSandbox":true}`))
+	if err != nil {
+		t.Fatalf("the escape call errored: %v", err)
+	}
+
+	if got := decodeJSONString(t, out); strings.Contains(got, "Exit code") {
+		t.Errorf("the escape call did not run unconfined: %q", got)
+	}
+
+	if len(*lines) != 1 || !strings.Contains((*lines)[0], "UNCONFINED") {
+		t.Errorf("escape notes = %v; want exactly ONE loud note", *lines)
+	}
+
+	// The shared shell stays confined: a follow-up persistent call without
+	// the escape still cannot write outside.
+	followUp, ferr := runPersistent(t, cfg, "touch "+outside+"/still-confined")
+	if ferr != nil {
+		t.Fatalf("the follow-up call errored: %v", ferr)
+	}
+
+	if !strings.Contains(followUp, "Exit code 1") {
+		t.Errorf("the SHARED shell was weakened by the escape call: %q", followUp)
+	}
 }

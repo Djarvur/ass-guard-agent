@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Djarvur/ass-guard-agent/internal/sandbox"
 	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 )
 
@@ -60,19 +61,23 @@ const (
 // stdout-before-stderr — the captured combined discipline (the foreground
 // form's order, applied to the accumulated read).
 type bgTask struct {
-	id     string
-	cmd    *exec.Cmd
-	mu     sync.Mutex
-	out    bytes.Buffer
-	errBuf bytes.Buffer
-	state  bgState
-	exitCh chan struct{}
-	start  time.Time
+	id      string
+	cmd     *exec.Cmd
+	mu      sync.Mutex
+	out     bytes.Buffer
+	errBuf  bytes.Buffer
+	state   bgState
+	exitCh  chan struct{}
+	start   time.Time
 	logPath string
 	// queuedCommand/queuedWorkDir carry a D-11 waiter's launch inputs (set
 	// at queue time; consumed by startNextWaiter).
 	queuedCommand string
 	queuedWorkDir string
+	// disableSandbox is the 22-06 OQ2 per-call escape captured at dispatch
+	// (both the immediate and the queued launch read it — a queued task that
+	// starts later honors the escape exactly as an immediate one).
+	disableSandbox bool
 	// hook is the completion callback captured at Start (the registry field
 	// is wired before any task launches; capturing keeps the read race-free).
 	hook CompletionHook
@@ -128,6 +133,26 @@ type TaskRegistry struct {
 	// Notification. nil (unwired, e.g. bare registry tests) fires nothing.
 	// Set BEFORE the first Start (captured per task under the registry lock).
 	CompletionHook CompletionHook
+	// Sandbox (22-06, SAND-01): the resolved Handle; nil / Mode "off" / the
+	// zero Mode (the default) leave every launch untouched — Start's exec
+	// construction byte-identical. Mode "on" + Available wraps EVERY launch
+	// through the SAME one WrapCmd entry as the foreground site (this is the
+	// second of the three Bash-class exec sites); enabled-but-unavailable and
+	// the per-call dangerouslyDisableSandbox escape run UNCONFINED with the
+	// loud per-run note + counter (OQ2 parity).
+	Sandbox *sandbox.Handle
+	// SandboxNote is the unconfined-run note sink (22-06); nil falls back to
+	// os.Stderr — a green background result must never imply confinement
+	// that did not happen.
+	SandboxNote func(format string, args ...any)
+}
+
+// StartOpts carries the per-call sandbox escape to BOTH start paths (22-06,
+// OQ2): the model's dangerouslyDisableSandbox rides the bgTask so an
+// immediate start AND a FIFO-queued start (which launches later, through the
+// same launch funnel) honor it identically.
+type StartOpts struct {
+	DisableSandbox bool
 }
 
 // CompletionHook is the terminal-transition callback (22-01). kind is the
@@ -186,6 +211,13 @@ func openTaskLog(workDir, id string) (*os.File, error) {
 // submission order. Past the bounded queue (bgQueueBound) the structured
 // errBgCap error survives — the queue can grow only bounded.
 func (r *TaskRegistry) Start(workDir, command string) (string, bool, error) {
+	return r.StartWithOpts(workDir, command, StartOpts{})
+}
+
+// StartWithOpts is Start carrying the 22-06 per-call sandbox escape: the
+// opts ride the task so BOTH launch paths (immediate and FIFO-queued) honor
+// the escape and the wrap identically through the one launch funnel.
+func (r *TaskRegistry) StartWithOpts(workDir, command string, opts StartOpts) (string, bool, error) {
 	r.mu.Lock()
 
 	cap := r.Cap
@@ -213,7 +245,7 @@ func (r *TaskRegistry) Start(workDir, command string) (string, bool, error) {
 
 		id := newTaskID()
 		task := &bgTask{id: id, state: bgQueued, exitCh: make(chan struct{}), hook: r.CompletionHook,
-			queuedCommand: command, queuedWorkDir: workDir}
+			queuedCommand: command, queuedWorkDir: workDir, disableSandbox: opts.DisableSandbox}
 		r.tasks[id] = task
 		r.waiters = append(r.waiters, task)
 
@@ -224,7 +256,7 @@ func (r *TaskRegistry) Start(workDir, command string) (string, bool, error) {
 
 	id := newTaskID()
 	task := &bgTask{id: id, state: bgRunning, exitCh: make(chan struct{}), start: time.Now(), hook: r.CompletionHook,
-		queuedCommand: command, queuedWorkDir: workDir}
+		queuedCommand: command, queuedWorkDir: workDir, disableSandbox: opts.DisableSandbox}
 	r.tasks[id] = task
 
 	r.mu.Unlock()

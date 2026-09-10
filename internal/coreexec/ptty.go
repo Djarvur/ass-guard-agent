@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+
+	"github.com/Djarvur/ass-guard-agent/internal/sandbox"
 )
 
 // The per-session persistent-shell PTY manager (22-04, PAR-09, D-07/D-08/
@@ -62,6 +64,17 @@ type PTYOpts struct {
 	// NoteFn emits the dead-shell restart note (D-08's visible
 	// state-loss acknowledgment); nil drops the note (bare tests).
 	NoteFn func(format string, args ...any)
+	// Sandbox (22-06, SAND-01): the resolved Handle; nil / Mode "off" / the
+	// zero Mode (the default) spawns the shell UNCONFINED with zero notes —
+	// byte-identical to the pre-sandbox behavior. Mode "on" + Available
+	// confines the PERSISTENT SHELL itself at ensureShell through the SAME
+	// one WrapCmd entry as the foreground and background sites (the third
+	// Bash-class exec site) for its whole lifetime, and every lazy-restart
+	// re-wraps the replacement (D-09 orthogonality: persistence and
+	// confinement COMPOSE — never an exemption, never a refusal).
+	// Enabled-but-unavailable runs each call unconfined with the loud
+	// per-run note + counter (never a silent fail-open).
+	Sandbox *sandbox.Handle
 }
 
 // readChunk is one master-read slice (data XOR terminal error).

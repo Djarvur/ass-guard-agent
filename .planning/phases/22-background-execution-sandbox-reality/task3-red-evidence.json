@@ -1,25 +1,27 @@
 {
-  "plan": "22-04",
+  "plan": "22-06",
   "task": 3,
   "phase_gate": "RED",
-  "command": "go test -race -count=1 ./internal/coreexec/ -run 'TestPTYDrain' ; go test -race -count=1 ./internal/runtime/ -run 'TestSessionClosePTY'",
-  "exit_code": 1,
-  "target_tests": [
-    "TestPTYDrain/TermSensitiveShellDiesOnTerm",
-    "TestPTYDrain/TermImmuneShellDiesViaEscalation",
-    "TestPTYDrain/FDCountStableAcrossCycles",
-    "TestPTYDrain/IdempotentOnNeverStarted",
-    "TestSessionClosePTY"
-  ],
+  "command": "go test -race -count=1 -v ./internal/coreexec/ -run 'TestBackgroundSandbox|TestPTYSandbox'",
+  "targetTest": "TestBackgroundSandbox_LiveDeniesNetwork",
+  "exitCode": 1,
+  "output": "not ok 1 - TestBackgroundSandbox_LiveDeniesNetwork\nnot ok 2 - TestBackgroundSandbox_QueuedStartWrapsIdentically\nok 3 - TestBackgroundSandbox_DefaultOffArgvIdentity\nok 4 - TestBackgroundSandbox_StopOnConfinedTaskCompletes\nnot ok 5 - TestBackgroundSandbox_DisableAndUnavailableNotes\nnot ok 6 - TestPTYSandbox_LiveShellConfined\nnot ok 7 - TestPTYSandbox_RestartRewrapsWithNoteOnce\nnot ok 8 - TestPTYSandbox_UnavailableNotedPerRun\nok 9 - TestPTYSandbox_DefaultOffByteIdentical\nnot ok 10 - TestPTYSandbox_DisableEscapeRunsUnconfinedShellStaysConfined\n# tests 10\n# pass 3\n# fail 7\n",
+  "expected": "Per 22-06 Task 3 <behavior>: a backgrounded curl-style command via TaskRegistry.Start fails its connect under --sandbox=on (confinement through Start's OWN exec construction) with the lifecycle unchanged; the FIFO queued-start wraps identically; default-OFF leaves Start byte-identical; Stop's ladder completes on a confined task; the persistent shell is confined at spawn (outside touch fails, inside tmp succeeds, sentinel cycle completes); dead-shell restart re-wraps with the D-08 note exactly once; unavailable notes per run with counter; the persistent disable escape runs unconfined with one note while the shared shell stays confined.",
+  "actual": "launch() and ensureShell() have no sandbox code: the backgrounded and queued curls CONNECT (CURL_EXIT_0), the persistent shell's outside writes SUCCEED (live and post-restart), zero notes on the disable/unavailable arms at both sites, and the persistent disable escape is missing (no fall-through). Guard rows green: default-off argv identity at both sites, and Stop's ladder (unwrapped at RED \u2014 the wrapped-child proof lands at GREEN).",
   "failing_tests": [
-    "TestSessionClosePTY (assertions: 'persistent shell survived session close — Drain missing from the OnClose chain (D-08)'; 'ShellPID() != 0 after close') — the OnClose chain does not invoke Drain"
+    "TestBackgroundSandbox_LiveDeniesNetwork (assertion: CURL_EXIT_0 \u2014 Start's construction unconfined)",
+    "TestBackgroundSandbox_QueuedStartWrapsIdentically (assertion: the queued curl CONNECTED)",
+    "TestBackgroundSandbox_DisableAndUnavailableNotes (assertion: 0 notes on both arms)",
+    "TestPTYSandbox_LiveShellConfined (assertion: outside write SUCCEEDED in the persistent shell)",
+    "TestPTYSandbox_RestartRewrapsWithNoteOnce (assertion: the RESTARTED shell is unconfined)",
+    "TestPTYSandbox_UnavailableNotedPerRun (assertion: 0 unconfined notes)",
+    "TestPTYSandbox_DisableEscapeRunsUnconfinedShellStaysConfined (assertion: no escape note; the shared-shell follow-up write succeeded)"
   ],
-  "expected_result": "Per 22-04 Task 3 <behavior>: runtime.go's OnClose chain invokes Drain beside taskRegistry.ReapAll — session close ends the persistent shell and clears the manager.",
-  "actual_result": "sessionFor stores the manager and Config.PTY is wired (Task 1), but OnClose never calls Drain: the shell stays alive past session close with its pid retained.",
   "unexpected_green": [
-    "TestPTYDrain all four rows (Drain's TERM ladder, escalation for a TERM-immune shell, fd stability across 5 cycles, idempotent no-op on a never-started manager — landed with the Task 1/2 manager commits)"
+    "TestBackgroundSandbox_DefaultOffArgvIdentity (guard row: off semantics trivially hold pre-wrap)",
+    "TestBackgroundSandbox_StopOnConfinedTaskCompletes (guard row at RED: the ladder kills the unwrapped child; at GREEN it proves the same ladder on the WRAPPED child)",
+    "TestPTYSandbox_DefaultOffByteIdentical (guard row: same)"
   ],
-  "verdict": "RED_EVIDENCE_OK_target_test_failed_on_assertions",
-  "note": "gsd-tools runtime predates the `check tdd-red-evidence` verb — record kept at /tmp/gsd-22-04-wip/evidence/task3-red.json and copied to the phase directory.",
-  "timestamp": "2026-09-10T02:46:58Z"
+  "note": "Go run projected faithfully into Node-TAP by /tmp/gotap.py. Battery-engineering fixes during RED: registry literals -> NewTaskRegistry() (nil-map panics aborted runs and orphaned sleeps polluted later batches); empty-slice note indexing guarded.",
+  "timestamp": "2026-09-10T00:34:33Z"
 }

@@ -4,12 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net"
+	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Djarvur/ass-guard-agent/internal/sandbox"
 )
 
 // The 12-06 battery: background Bash + TaskOutput + TaskStop over the
@@ -916,5 +922,302 @@ func TestBackgroundCap_ReapAllDropsWaiters(t *testing.T) {
 
 	if out, _, _, _ := reg.Output(id2, false, 0); strings.Contains(out, "queued-never") {
 		t.Error("queued waiter started after ReapAll — must be dropped, never started")
+	}
+}
+
+// --- 22-06 (SAND-01): the background-site sandbox batteries ---
+
+// bgSandboxHandle builds the live Handle exactly as the flag path does (see
+// liveSandboxHandle in bash_test.go); skips where the host cannot enforce.
+func bgSandboxHandle(t *testing.T, workDir string) sandbox.Handle {
+	t.Helper()
+
+	h := sandbox.Resolve(sandbox.DefaultPolicy(workDir, os.TempDir(),
+		filepath.Join(workDir, ".ass-guard")))
+	if !h.Availability.Available {
+		t.Skipf("sandbox enforcement unavailable on this host: %s", h.Availability.Reason)
+	}
+
+	return h
+}
+
+// waitForTerminal polls the registry until the task leaves running/queued.
+func waitForTerminal(t *testing.T, reg *TaskRegistry, id string) bgState {
+	t.Helper()
+
+	deadline := time.Now().Add(15 * time.Second)
+
+	for time.Now().Before(deadline) {
+		state, ok := reg.Lookup(id)
+		if !ok {
+			t.Fatalf("task %s vanished", id)
+		}
+
+		if state != bgRunning && state != bgQueued {
+			return state
+		}
+
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	t.Fatalf("task %s never reached a terminal state", id)
+
+	return ""
+}
+
+// bgStartCurl starts a backgrounded curl-style connect against the local
+// listener through StartWithOpts and returns the task id + port.
+func bgStartCurl(t *testing.T, reg *TaskRegistry, workDir string, opts StartOpts) (string, int) {
+	t.Helper()
+
+	ln, lerr := net.Listen("tcp", "127.0.0.1:0")
+	if lerr != nil {
+		t.Fatalf("listen: %v", lerr)
+	}
+
+	srv := &http.Server{}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close(); _ = ln.Close() })
+
+	port := ln.Addr().(*net.TCPAddr).Port
+
+	id, _, serr := reg.StartWithOpts(workDir,
+		fmt.Sprintf("curl -s --max-time 3 -o /dev/null http://127.0.0.1:%d/ ; echo CURL_EXIT_$?", port), opts)
+	if serr != nil {
+		t.Fatalf("StartWithOpts: %v", serr)
+	}
+
+	return id, port
+}
+
+// TestBackgroundSandbox_LiveDeniesNetwork: a backgrounded curl-style command
+// started via TaskRegistry.Start fails its network connect while the task
+// lifecycle completes normally (running → terminal) — confinement proven
+// through START'S OWN exec construction, not the foreground site (the
+// checker-identified silent gap this closes). The control arm (sandbox off)
+// connects.
+func TestBackgroundSandbox_LiveDeniesNetwork(t *testing.T) { //nolint:paralleltest // live pty/listener + shared host probe
+	workDir := t.TempDir()
+	handle := bgSandboxHandle(t, workDir)
+
+	// Confined arm: the connect must fail.
+	reg := NewTaskRegistry()
+	reg.Sandbox = &handle
+	reg.SandboxNote = func(string, ...any) {}
+	reg.Cap = 4
+
+	id, _ := bgStartCurl(t, reg, workDir, StartOpts{})
+
+	state := waitForTerminal(t, reg, id)
+
+	out, _, _, oerr := reg.Output(id, false, 0)
+	if oerr != nil {
+		t.Fatalf("Output: %v", oerr)
+	}
+
+	if strings.Contains(out, "CURL_EXIT_0") {
+		t.Errorf("the backgrounded curl CONNECTED under --sandbox=on — Start's construction is unconfined: %q", out)
+	}
+
+	if state == bgRunning {
+		t.Error("the confined task never left the running state")
+	}
+
+	// Control arm: the SAME shape with the sandbox off connects.
+	plain := NewTaskRegistry()
+	plain.Cap = 4
+
+	pid, _ := bgStartCurl(t, plain, workDir, StartOpts{})
+
+	waitForTerminal(t, plain, pid)
+
+	pout, _, _, perr := plain.Output(pid, false, 0)
+	if perr != nil {
+		t.Fatalf("control Output: %v", perr)
+	}
+
+	if !strings.Contains(pout, "CURL_EXIT_0") {
+		t.Errorf("the CONTROL background curl failed with the sandbox OFF (a broken battery): %q", pout)
+	}
+}
+
+// TestBackgroundSandbox_QueuedStartWrapsIdentically: the FIFO queued-start
+// path (22-02's D-11) wraps identically — a registry at cap 1 with one
+// running filler queues the curl task; when the slot frees it launches and is
+// confined exactly as an immediately-started one.
+func TestBackgroundSandbox_QueuedStartWrapsIdentically(t *testing.T) { //nolint:paralleltest // queued timing + live probe
+	workDir := t.TempDir()
+	handle := bgSandboxHandle(t, workDir)
+
+	reg := NewTaskRegistry()
+	reg.Sandbox = &handle
+	reg.SandboxNote = func(string, ...any) {}
+	reg.Cap = 1
+
+	fillerID, _, ferr := reg.StartWithOpts(workDir, "sleep 1", StartOpts{})
+	if ferr != nil {
+		t.Fatalf("filler start: %v", ferr)
+	}
+
+	id, _ := bgStartCurl(t, reg, workDir, StartOpts{})
+
+	if pos := reg.QueuedPosition(id); pos == 0 {
+		t.Fatalf("the curl task did not queue behind the filler (position 0)")
+	}
+
+	waitForTerminal(t, reg, fillerID)
+	waitForTerminal(t, reg, id)
+
+	out, _, _, oerr := reg.Output(id, false, 0)
+	if oerr != nil {
+		t.Fatalf("Output: %v", oerr)
+	}
+
+	if strings.Contains(out, "CURL_EXIT_0") {
+		t.Errorf("the QUEUED background curl CONNECTED under --sandbox=on — the FIFO launch path is unconfined: %q", out)
+	}
+}
+
+// TestBackgroundSandbox_DefaultOffArgvIdentity: with the sandbox code present
+// but off, Start's exec construction is byte-identical — the wrap seam never
+// fires, zero notes, and the task runs to completion (the six TestBackground_*
+// batteries plus 22-02's queue ladder already pin the behavior; this row pins
+// the SEAM).
+func TestBackgroundSandbox_DefaultOffArgvIdentity(t *testing.T) {
+	// NOT t.Parallel: swaps the package wrap seam.
+	restore, called := wrapRecorder()
+	defer restore()
+
+	notes, lines := captureNotes()
+
+	reg := NewTaskRegistry()
+	reg.SandboxNote = notes
+	reg.Cap = 4
+
+	id, _, serr := reg.StartWithOpts(t.TempDir(), "echo off-ok", StartOpts{})
+	if serr != nil {
+		t.Fatalf("start: %v", serr)
+	}
+
+	waitForTerminal(t, reg, id)
+
+	if *called {
+		t.Error("the wrap seam fired on the off path — Start's construction must stay byte-identical")
+	}
+
+	if len(*lines) != 0 {
+		t.Errorf("off path emitted notes: %v", *lines)
+	}
+
+	out, _, _, oerr := reg.Output(id, false, 0)
+	if oerr != nil || !strings.Contains(out, "off-ok") {
+		t.Errorf("off-path output = %q err = %v; want the plain run", out, oerr)
+	}
+}
+
+// TestBackgroundSandbox_StopOnConfinedTaskCompletes: Stop's ladder
+// (terminateGroup TERM → grace → KILL + reap) completes on a WRAPPED child —
+// confinement never breaks cleanup (D-05: signals are neither FS nor network
+// operations).
+func TestBackgroundSandbox_StopOnConfinedTaskCompletes(t *testing.T) { //nolint:paralleltest // kill timing + live probe
+	workDir := t.TempDir()
+	handle := bgSandboxHandle(t, workDir)
+
+	reg := NewTaskRegistry()
+	reg.Sandbox = &handle
+	reg.SandboxNote = func(string, ...any) {}
+	reg.Cap = 4
+
+	id, _, serr := reg.StartWithOpts(workDir, "sleep 2995 & sleep 2996", StartOpts{})
+	if serr != nil {
+		t.Fatalf("start: %v", serr)
+	}
+
+	time.Sleep(300 * time.Millisecond) // let the group form
+
+	if serr := reg.Stop(id); serr != nil {
+		t.Fatalf("Stop on a confined task: %v", serr)
+	}
+
+	if _, perr := exec.LookPath("pgrep"); perr == nil {
+		deadline := time.Now().Add(3 * time.Second)
+
+		for time.Now().Before(deadline) {
+			pout, _ := exec.CommandContext(context.Background(), "pgrep", "-f", "sleep 299").Output()
+			if strings.TrimSpace(string(pout)) == "" {
+				return // the confined group is provably gone
+			}
+
+			time.Sleep(100 * time.Millisecond)
+		}
+
+		pout, _ := exec.CommandContext(context.Background(), "pgrep", "-f", "sleep 299").Output()
+		t.Errorf("orphaned confined child after Stop's ladder: %s", pout)
+	}
+}
+
+// TestBackgroundSandbox_DisableAndUnavailableNotes: OQ2 parity at the
+// background site — the disable escape runs UNCONFINED (the confined-deny
+// curl now CONNECTS) with exactly ONE note; a faked-unavailable Handle runs
+// unconfined with a per-run note + counter (never a silent fail-open).
+func TestBackgroundSandbox_DisableAndUnavailableNotes(t *testing.T) { //nolint:funlen,paralleltest // live probe + shared counter
+	workDir := t.TempDir()
+	handle := bgSandboxHandle(t, workDir)
+
+	notes, lines := captureNotes()
+
+	// Disable arm: on + available + dangerouslyDisableSandbox → connect
+	// SUCCEEDS + exactly one note.
+	reg := NewTaskRegistry()
+	reg.Sandbox = &handle
+	reg.SandboxNote = notes
+	reg.Cap = 4
+
+	id, _ := bgStartCurl(t, reg, workDir, StartOpts{DisableSandbox: true})
+	waitForTerminal(t, reg, id)
+
+	out, _, _, oerr := reg.Output(id, false, 0)
+	if oerr != nil {
+		t.Fatalf("disable-arm Output: %v", oerr)
+	}
+
+	if !strings.Contains(out, "CURL_EXIT_0") {
+		t.Errorf("the disable-arm background curl FAILED — the escape must run unconfined: %q", out)
+	}
+
+	if len(*lines) != 1 || !strings.Contains((*lines)[0], "UNCONFINED") {
+		t.Errorf("disable-arm notes = %v; want exactly ONE loud note", *lines)
+	}
+
+	// Unavailable arm: faked availability → unconfined + one note PER RUN.
+	//nolint:exhaustruct // faked availability (the on marker, probe failed)
+	fake := &sandbox.Handle{
+		Policy:       sandbox.DefaultPolicy(workDir, os.TempDir(), filepath.Join(workDir, ".ass-guard")),
+		Availability: sandbox.Availability{Mode: "landlock", Reason: "faked-unavailable-bg"},
+	}
+
+	notes2, lines2 := captureNotes()
+
+	reg2 := NewTaskRegistry()
+	reg2.Sandbox = fake
+	reg2.SandboxNote = notes2
+	reg2.Cap = 4
+
+	for i := 0; i < 2; i++ {
+		bid, _ := bgStartCurl(t, reg2, workDir, StartOpts{})
+		waitForTerminal(t, reg2, bid)
+
+		bout, _, _, berr := reg2.Output(bid, false, 0)
+		if berr != nil || !strings.Contains(bout, "CURL_EXIT_0") {
+			t.Errorf("unavailable-arm run %d did not run unconfined: %q (%v)", i, bout, berr)
+		}
+	}
+
+	if len(*lines2) != 2 {
+		t.Errorf("unavailable-arm notes = %d; want one PER RUN: %v", len(*lines2), *lines2)
+	}
+
+	if len(*lines2) > 0 && !strings.Contains((*lines2)[0], "faked-unavailable-bg") {
+		t.Errorf("the note does not name the reason: %q", (*lines2)[0])
 	}
 }
