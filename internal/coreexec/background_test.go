@@ -640,7 +640,6 @@ func TestEscalation_ReapAllUsesLadder(t *testing.T) {
 	}
 }
 
-
 // waitForFile polls for a file's existence (the escalation battery's
 // ready-gate: traps must be INSTALLED before the ladder fires).
 func waitForFile(t *testing.T, path string, timeout time.Duration) bool {

@@ -2348,7 +2348,7 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	s.OnClose = func() error {
 		cancelWriter()
 		taskRegistry.ReapAll() // 12-06: no background group outlives the session
-		ptyMgr.Drain()          // 22-04 (D-08/Pitfall 5): the persistent shell's group dies here too
+		ptyMgr.Drain()         // 22-04 (D-08/Pitfall 5): the persistent shell's group dies here too
 
 		// 22-01 (OQ5): queued-but-unstarted subagent registrations die here
 		// — silently dropped (nothing started, nothing to kill), the count

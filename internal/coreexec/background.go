@@ -390,7 +390,8 @@ func (r *TaskRegistry) confineLaunch(cmd *exec.Cmd, disable bool) error {
 
 // startNextWaiter launches the FIFO head waiter when a slot is free and it
 // is still queued (a Stop'd waiter is skipped — never started).
-func (r *TaskRegistry) startNextWaiter() {	for {
+func (r *TaskRegistry) startNextWaiter() {
+	for {
 		r.mu.Lock()
 
 		cap := r.Cap
