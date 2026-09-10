@@ -365,10 +365,17 @@ func (r *Runner) trackerFor(sessionID string) *tasks.Tracker {
 // already active (the in-flight CAS deduplicates concurrent completion
 // attempts — at most ONE drain chain per session at any time; the session
 // turn mutex plus the tracker's atomic snapshotAndClear make concurrent
-// chains impossible by construction even without it, Pitfall 8).
+// chains impossible by construction even without it, Pitfall 8). Past serve
+// shutdown nothing spawns (22-08, G-22-2/CR-02: the ctx the editor owns is
+// the chains' lifetime; test runners ride the Background fallback whose
+// Err() is always nil, so they are unaffected).
 func (r *Runner) scheduleWakeDrain(sessionID string) {
 	if sessionID == "" {
 		return
+	}
+
+	if r.serveCtxOrBackground().Err() != nil {
+		return // serve shutdown: no chain may start (or churn) past it
 	}
 
 	v, _ := r.wakeInFlight.LoadOrStore(sessionID, &atomic.Bool{})
@@ -389,14 +396,26 @@ func (r *Runner) scheduleWakeDrain(sessionID string) {
 // pending batch coalescing in the meantime (D-01 fallback). The chain exits
 // when the queue is empty (the in-flight flag clears; the next completion
 // starts a fresh chain) — completions landing mid-turn are picked up by the
-// post-drain re-check.
+// post-drain re-check. 22-08 (G-22-2/CR-02): idle means idle — the exit defer
+// restarts ONLY when a completion genuinely raced the exit (pending
+// non-empty) AND the serve ctx is live; the old unconditional restart spun a
+// successor on every exit, a per-session spin that outlived serve shutdown.
 func (r *Runner) wakeDrainChain(ctx context.Context, sessionID string, flag *atomic.Bool) {
 	defer func() {
 		flag.Store(false)
 
-		// A completion raced the exit: restart so the batch is not stranded
-		// (the CAS either adopts it here or a fresh chain owns it).
-		r.scheduleWakeDrain(sessionID)
+		// Ordering (22-08): a completion landing after the body's empty-queue
+		// peek fires its own Complete→drain callback→scheduleWakeDrain, whose
+		// CAS on this just-cleared flag wins and starts a fresh chain. The
+		// gated restart below covers ONLY the completion that landed BETWEEN
+		// that peek and this store (its CAS saw the flag still true, so
+		// nothing else carries the batch). Re-derive tr: the body's tr may be
+		// nil on the early tracker-missing return.
+		tr := r.trackerFor(sessionID)
+
+		if ctx.Err() == nil && tr != nil && len(tr.PendingPeek()) > 0 {
+			r.scheduleWakeDrain(sessionID)
+		}
 	}()
 
 	tr := r.trackerFor(sessionID)
