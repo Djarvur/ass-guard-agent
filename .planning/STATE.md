@@ -4,18 +4,18 @@ milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 25
 current_phase_name: SEED-001 Kit Extraction (strictly last)
-current_plan: 3
+current_plan: 4
 status: executing
-stopped_at: Completed 25-01-PLAN.md
-last_updated: "2026-09-10T20:26:12.043Z"
+stopped_at: Completed 25-03-PLAN.md
+last_updated: "2026-09-10T21:01:07.460Z"
 last_activity: 2026-09-10
 last_activity_desc: Phase 25 execution resumed (wave continue)
-state_head: 581d20c56183441764a60602f776d9f6c5ab83a7
+state_head: 543afc8e83653fdc6f1a92c70088d45ad9782363
 progress:
   total_phases: 11
   completed_phases: 6
   total_plans: 78
-  completed_plans: 71
+  completed_plans: 72
   percent: 55
 ---
 
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-09-10)
 ## Current Position
 
 Phase: 25 (SEED-001 Kit Extraction (strictly last)) — EXECUTING
-Plan: 3 of 9
-Current Plan: 3
+Plan: 4 of 9
+Current Plan: 4
 Total Plans in Phase: 9
 Status: Ready to execute
 Last activity: 2026-09-10 — Phase 25 execution resumed (wave continue)
@@ -116,6 +116,7 @@ Phase 19: 7/7 ✓ closed 2026-09-10 (verification completed by the auto-UAT live
 | Phase 24 P06 | 19 min | 2 tasks | 9 files |
 | Phase 25 P01 | 9 min (continuation session; plan spans 2 interrupted sessions since 2026-08-28) | 3 tasks | 160 files |
 | Phase 25 P02 | 18 min | 2 tasks | 266 files |
+| Phase 25 P03 | 21 min | 3 tasks | 148 files |
 
 ## Accumulated Context
 
@@ -237,6 +238,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 24]: 24-06 (G-24-2): caller-side provider filtering before FirstAllowed at both demotion sites — the provider constraint is a CALLER property (which wire the result rides); demoteIfDeniedLocked gains the cross-provider-PRIMARY guard (never claim a breaker for a primary never consulted — byte-identical corner, pinned by surface row 3)
 - [Phase 25]: 25-02: lint differential comparisons for kit moves MUST run on a cache-clean golangci-lint — the shared cache silently under-reported 2 findings in a full-repo run; per-package reruns contradicted it and cache-clean restored the true identical multiset
 - [Phase 25]: 25-02: pre-move red baseline at 1002acc is 599 lint findings + 15 race failures (9 ModesMatrix fixture-missing legs, TestPermissionsE2E, 4 TestRunSuite_*, TestRescanConcurrency) — grown from 25-01's recorded 6/596; every later 25-xx move re-captures its own baseline
+- [Phase 25]: 25-03: pass 1 complete — kit/ holds all 15 promotion packages + kit/internal/enginebridge (D-04 seed; sole production importer = runtime, re-verified); execution-time production edge count is 12 not 8 (session+perm, runtime+{perm,sandbox,tasks} drift, all RESEARCH-predicted); pass-2 plans must sever 12
+- [Phase 25]: 25-03: latent-lint surfacing discovered — golangci reports some findings only in touched files; touch-probe on pristine baseline proves the +2 canonicalheader findings pre-exist; differential lint over moved trees needs per-finding attribution vs the mover's own diff (successor to 25-02's cache-clean rule)
 
 ### Pending Todos
 
@@ -262,6 +265,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-10T20:03:41.583Z
-Stopped at: Completed 25-01-PLAN.md
+Last session: 2026-09-10T21:01:06.947Z
+Stopped at: Completed 25-03-PLAN.md
 Resume file: None
