@@ -1965,13 +1965,39 @@ func (r *Runner) checkpointStore() *checkpoint.Store {
 
 // restoreBlockedError is the SEEDG-02 restore refusal (23-04): a typed error
 // NAMING the blocking state — the operator (and /undo's output, 23-05) can
-// tell an active turn from a parked chain at a glance.
+// tell an active turn from a parked chain at a glance. 23-06 (G-23-1, CR-01)
+// adds the cross-session discriminator: other names the BUSY session when the
+// refusal is another session's live state over the shared workspace.
 type restoreBlockedError struct {
 	turn  bool
 	chain bool
+	other string
 }
 
 func (e *restoreBlockedError) Error() string {
+	if e.other != "" {
+		// Cross-session refusal (G-23-1): name the busy session and the
+		// reason the refusal spans sessions — workDir, the checkpoint store,
+		// and the worktree are shared by every session of this process.
+		if e.turn {
+			return fmt.Sprintf(
+				"checkpoint: restore refused: a client turn is active for session %s — "+
+					"the worktree and checkpoint store are shared by every session of this process; "+
+					"cancel that session's turn or wait for it to end", e.other)
+		}
+
+		if e.chain {
+			return fmt.Sprintf(
+				"checkpoint: restore refused: an engine chain is active (possibly parked) for session %s — "+
+					"the worktree and checkpoint store are shared by every session of this process; "+
+					"cancel that session's chain or wait for the chain to finish", e.other)
+		}
+
+		return fmt.Sprintf(
+			"checkpoint: restore refused: session %s is busy — "+
+				"the worktree and checkpoint store are shared by every session of this process", e.other)
+	}
+
 	switch {
 	case e.turn:
 		return "checkpoint: restore refused: a client turn is active for the session — cancel it or wait for it to end"
@@ -1982,17 +2008,79 @@ func (e *restoreBlockedError) Error() string {
 	}
 }
 
+// workspaceBlockers is the G-23-1 (CR-01) SELF-EXCLUDING workspace activity
+// walk: it reports the first OTHER session of the Runner whose client turn or
+// engine chain is live, skipping sessionID itself. The exclusion is
+// PRESENTATIONAL, not a predicate gap: the calling session's own activity
+// refuses through restoreBlockers' own legs with the byte-stable same-session
+// wording, so the net contract stays "any session of the Runner" — the
+// exclusion exists so a self-hit cannot displace that wording (and so the
+// idle /undo half can consult this walk directly: Run marks the calling
+// session's own turnActive BEFORE the class-B intercept hands it the command,
+// so the full guard there would refuse every idle /undo). The walk reads
+// state ONLY — a turnActive Range plus one chainMu-held activeChains
+// snapshot, the leaf-lock discipline chainCount already follows — and never
+// takes, holds, or waits on any per-session turn mutex, so it returns
+// promptly under a blocked turn.
+func (r *Runner) workspaceBlockers(sessionID string) error {
+	var hit *restoreBlockedError
+
+	r.turnActive.Range(func(key, value any) bool {
+		sid, _ := key.(string)
+		if sid == sessionID {
+			return true // self-exclusion (see the doc comment)
+		}
+
+		flag := value.(*atomic.Bool) //nolint:forcetypeassert // stored as *atomic.Bool (markClientTurn)
+		if flag.Load() {
+			hit = &restoreBlockedError{turn: true, other: sid}
+			return false
+		}
+
+		return true
+	})
+
+	if hit != nil {
+		return hit
+	}
+
+	r.chainMu.Lock()
+	defer r.chainMu.Unlock()
+
+	for sid, count := range r.activeChains {
+		if sid != sessionID && count > 0 {
+			return &restoreBlockedError{chain: true, other: sid}
+		}
+	}
+
+	return nil
+}
+
 // restoreBlockers is the SEEDG-02 guard EVERY in-process restore path calls
-// (23-05's /undo composes it): it refuses while a client turn is in flight
-// OR an engine chain is active — including PARKED chains (chainCount > 0
-// with no mutex held — the trap: a mutex-ownership check would pass and let
-// the restore race the chain's next injection). The check reads
-// turnActive/chainCount ONLY — it never touches the turn mutex, so it
-// returns promptly under a blocked turn (the behavioral pin). The v1.1 CLI
-// restore path is a separate process: in-process state is invisible there
-// by construction (Open Question 3's documented constraint — no
-// cross-process detection is built).
+// (23-05's /undo composes it): it refuses while a client turn is in flight OR
+// an engine chain is active — including PARKED chains (chainCount > 0 with no
+// mutex held — the trap: a mutex-ownership check would pass and let the
+// restore race the chain's next injection). 23-06 (G-23-1, CR-01) widens the
+// guard to WORKSPACE scope: workDir, the checkpoint store, and the worktree
+// are shared by EVERY session of this process, so the guard first walks every
+// OTHER session's activity (workspaceBlockers — the refusal NAMES the busy
+// session) and only then runs the calling session's own legs, unchanged.
+// Cross-session-before-own is deliberate: when both are live the safe
+// direction is refusal (the restore would race the other session regardless
+// of what happens to the caller's own state), and /undo's active path
+// branches on the discriminator rather than auto-cancelling. The check reads
+// turnActive/chainCount ONLY — it never touches a turn mutex, so it returns
+// promptly under a blocked turn (the behavioral pin); it is a best-effort
+// snapshot in time (state read without turn mutexes — activity STARTING
+// after the consult is the residual check-then-act window, the same class as
+// the same-session guard). The v1.1 CLI restore path is a separate process:
+// in-process state is invisible there by construction (Open Question 3's
+// documented constraint — no cross-process detection is built).
 func (r *Runner) restoreBlockers(sessionID string) error {
+	if err := r.workspaceBlockers(sessionID); err != nil {
+		return err
+	}
+
 	if r.clientTurnActive(sessionID) {
 		return &restoreBlockedError{turn: true}
 	}
