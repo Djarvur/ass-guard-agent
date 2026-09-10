@@ -38,35 +38,48 @@ import (
 
 // TestModesMatrixWake registers the three wake cells as precondition-unmet
 // against 22-CONTEXT D-01 and skips each subtest loudly.
-func TestModesMatrixWake(t *testing.T) { //nolint:paralleltest // shares the package registry
+func TestModesMatrixWake(t *testing.T) {
+	t.Parallel() // resumes after the serial cron cells record — the shared registry prints both rows
+
 	t.Run("commands", func(t *testing.T) {
+		t.Parallel()
+
 		// Phase 22 executes → replace with the wake x commands assertion
 		// stated in the file comment above (expanded MATRIX-ECHO-EXPANSION
 		// body in the wake turn's user message).
 		modesmatrix.SkipPrecondition(t, cronRegistry,
 			modesmatrix.ModeWake, modesmatrix.SurfaceCommands,
 			"22", "background wake-turn D-01",
-			"once the wake turn is live: the woken turn's /matrix-echo invocation must expand (assert the wake-turn user message carries the MATRIX-ECHO-EXPANSION body)")
+			"once the wake turn is live: the woken turn's /matrix-echo invocation must expand "+
+				"(assert the wake-turn user message carries the MATRIX-ECHO-EXPANSION body)")
 	})
 
 	t.Run("skills", func(t *testing.T) {
+		t.Parallel()
+
 		// Phase 22 executes → replace with the wake x skills assertion
 		// (MATRIX-SKILL-BODY expansion in the wake turn's user message).
 		modesmatrix.SkipPrecondition(t, cronRegistry,
 			modesmatrix.ModeWake, modesmatrix.SurfaceSkills,
 			"22", "background wake-turn D-01",
-			"once the wake turn is live: the woken turn's /matrix-skill invocation must expand (assert the wake-turn user message carries the MATRIX-SKILL-BODY)")
+			"once the wake turn is live: the woken turn's /matrix-skill invocation must expand "+
+				"(assert the wake-turn user message carries the MATRIX-SKILL-BODY)")
 	})
 
 	t.Run("hooks", func(t *testing.T) {
+		t.Parallel()
+
 		// Phase 22 executes → replace with the wake x hooks assertion
 		// (PreToolUse marker inside the wake turn + SubagentStop at the
 		// completing background dispatch).
 		modesmatrix.SkipPrecondition(t, cronRegistry,
 			modesmatrix.ModeWake, modesmatrix.SurfaceHooks,
 			"22", "background wake-turn D-01",
-			"once the wake turn is live: the woken turn's tool call must fire the fixture PreToolUse hook (marker file) and the completing background dispatch must fire SubagentStop")
+			"once the wake turn is live: the woken turn's tool call must fire the fixture "+
+				"PreToolUse hook (marker file) and the completing dispatch must fire SubagentStop")
 	})
 
-	cronRegistry.ReportT(t)
+	// Cleanup (not the body tail): the subtests are parallel — the report
+	// prints once they have all recorded.
+	t.Cleanup(func() { cronRegistry.ReportT(t) })
 }

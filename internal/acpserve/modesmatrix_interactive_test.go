@@ -37,7 +37,7 @@ var matrixRegistry = modesmatrix.NewRegistry() //nolint:gochecknoglobals // per-
 // placeholder base URL — repointed BEFORE Run loads it at startup), stages
 // the initialize handshake + session/new, and returns the stub, the client,
 // the session id, and a stop func.
-func modesMatrixServe( //nolint:funlen // the simulator bootstrap reads best as one flow
+func modesMatrixServe( //nolint:gocritic // unnamed triple reads as the simulator triple
 	t *testing.T, workDir, placeholder string, script []simTurnScript,
 ) (*simStub, *simClient, string, func()) {
 	t.Helper()
@@ -95,9 +95,9 @@ func modesMatrixServe( //nolint:funlen // the simulator bootstrap reads best as 
 func matrixPromptTurn(t *testing.T, cli *simClient, sessionID, text, respID string) {
 	t.Helper()
 
-	cli.sendf(`{"jsonrpc":"2.0","id":`+strconv.Quote(respID)+
-		`,"method":"session/prompt","params":{"sessionId":`+simJSONStr(sessionID)+
-		`,"prompt":[{"type":"text","text":`+simJSONStr(text)+`}]}}`)
+	cli.sendf(`{"jsonrpc":"2.0","id":` + strconv.Quote(respID) +
+		`,"method":"session/prompt","params":{"sessionId":` + simJSONStr(sessionID) +
+		`,"prompt":[{"type":"text","text":` + simJSONStr(text) + `}]}}`)
 
 	for {
 		m := cli.next()
@@ -144,7 +144,7 @@ func matrixMarkerHooks(t *testing.T, workDir, event string) []map[string]any {
 // file inside the temp project. This is the harness skeleton every other
 // cell rides; the remaining eleven print as not-exercised (no cell
 // fabricated).
-func TestModesMatrixInteractive(t *testing.T) { //nolint:paralleltest // HOME-pinned serve leg
+func TestModesMatrixInteractive(t *testing.T) { // HOME-pinned serve leg
 	t.Setenv("HOME", t.TempDir()) // hermetic user-scope discovery (no operator hooks can fire)
 
 	workDir := simulatorWorkDir(t, "PENDING_STUB_URL")
@@ -166,7 +166,8 @@ func TestModesMatrixInteractive(t *testing.T) { //nolint:paralleltest // HOME-pi
 	// hook's stdin JSON, not merely discovery listing the plugin.
 	pre := matrixMarkerHooks(t, workDir, "PreToolUse")
 	if len(pre) == 0 {
-		t.Fatal("no PreToolUse payload in the marker file — the fixture hook never fired (discovery-only is not D-13 evidence)")
+		t.Fatal("no PreToolUse payload in the marker — the fixture hook never fired " +
+			"(discovery-only is not D-13 evidence)")
 	}
 
 	payload := pre[0]
@@ -188,7 +189,7 @@ func TestModesMatrixInteractive(t *testing.T) { //nolint:paralleltest // HOME-pi
 		"PreToolUse fired via the gate head on a scripted Read; marker file carries the hook's stdin JSON",
 	)
 
-	defer matrixRegistry.ReportT(t)
+	matrixRegistry.ReportT(t)
 }
 
 // matrixPromptContains reports whether any captured provider request
@@ -213,7 +214,7 @@ func matrixPromptContains(stub *simStub, needle string) bool {
 // WINS (the loader's D-06 precedence — project over the installed-plugin
 // tiers — the same winner the ecosys precedence tests lock; cells never
 // silently merge).
-func TestModesMatrixInteractiveSurfaces(t *testing.T) { //nolint:funlen,paralleltest // HOME-pinned legs; one story
+func TestModesMatrixInteractiveSurfaces(t *testing.T) { //nolint:funlen // HOME-pinned legs; one story
 	t.Setenv("HOME", t.TempDir())
 
 	// Serve A — the fixture alone: commands + skills cells.
@@ -231,8 +232,8 @@ func TestModesMatrixInteractiveSurfaces(t *testing.T) { //nolint:funlen,parallel
 
 	const cmdMarker = "MATRIX-ECHO-EXPANSION invoked: interactive-args"
 	if !matrixPromptContains(stub, cmdMarker) {
-		t.Errorf("no provider request carried %q — the fixture command did not expand (received: %v)",
-			cmdMarker, stub.recordedPrompts())
+		t.Errorf("no provider request carried %q — the fixture command did not expand",
+			cmdMarker)
 	}
 
 	matrixRegistry.Record(
@@ -242,8 +243,8 @@ func TestModesMatrixInteractiveSurfaces(t *testing.T) { //nolint:funlen,parallel
 
 	const skillMarker = "MATRIX-SKILL-BODY invoked: interactive-skill-args"
 	if !matrixPromptContains(stub, skillMarker) {
-		t.Errorf("no provider request carried %q — the fixture skill did not expand (received: %v)",
-			skillMarker, stub.recordedPrompts())
+		t.Errorf("no provider request carried %q — the fixture skill did not expand",
+			skillMarker)
 	}
 
 	matrixRegistry.Record(
@@ -263,9 +264,10 @@ func TestModesMatrixInteractiveSurfaces(t *testing.T) { //nolint:funlen,parallel
 		t.Fatalf("mkdir project commands: %v", err)
 	}
 
-	if err := os.WriteFile(projCmd, []byte(
-		"---\ndescription: project-scope collision winner\n---\nMATRIX-ECHO-PROJECT-WINS invoked: $ARGUMENTS\n"),
-		0o600); err != nil {
+	projBody := "---\ndescription: project-scope collision winner\n---\n" +
+		"MATRIX-ECHO-PROJECT-WINS invoked: $ARGUMENTS\n"
+
+	if err := os.WriteFile(projCmd, []byte(projBody), 0o600); err != nil {
 		t.Fatalf("write project collision command: %v", err)
 	}
 
@@ -275,8 +277,10 @@ func TestModesMatrixInteractiveSurfaces(t *testing.T) { //nolint:funlen,parallel
 
 	matrixPromptTurn(t, cliB, sessB, "/matrix-echo collide-args", "mx-col-1")
 
-	if !matrixPromptContains(stubB, "MATRIX-ECHO-PROJECT-WINS invoked: collide-args") {
-		t.Error("the project-tree collision entry did not win — resolution order not the locked project-over-plugin precedence")
+	const projectWins = "MATRIX-ECHO-PROJECT-WINS invoked: collide-args"
+
+	if !matrixPromptContains(stubB, projectWins) {
+		t.Error("the project-tree collision entry did not win — not the locked project-over-plugin precedence")
 	}
 
 	if matrixPromptContains(stubB, "MATRIX-ECHO-EXPANSION") {
@@ -287,7 +291,8 @@ func TestModesMatrixInteractiveSurfaces(t *testing.T) { //nolint:funlen,parallel
 	// file-command > plugin bundle, per the loader's locked precedence.
 	matrixRegistry.Record(
 		modesmatrix.ModeInteractive, modesmatrix.SurfaceCommands, modesmatrix.StatusPass,
-		"expanded via fixture plugin; collision probe: project .claude/commands entry wins over the plugin bundle (locked precedence, one winner — no merge)",
+		"expanded via fixture plugin; collision probe: the project .claude/commands entry wins "+
+			"over the plugin bundle (locked precedence, one winner — no merge)",
 	)
 
 	matrixRegistry.ReportT(t)
@@ -297,7 +302,7 @@ func TestModesMatrixInteractiveSurfaces(t *testing.T) { //nolint:funlen,parallel
 // with NO fixture mounted, the typed invocation falls through UNEXPANDED —
 // the provider receives the typed text verbatim and the marker file stays
 // ABSENT. Absence is the pass condition, never an error.
-func TestModesMatrixInteractiveEmpty(t *testing.T) { //nolint:paralleltest // HOME-pinned leg
+func TestModesMatrixInteractiveEmpty(t *testing.T) { // HOME-pinned leg
 	t.Setenv("HOME", t.TempDir())
 
 	workDir := simulatorWorkDir(t, "PENDING_STUB_URL") // deliberately NO fixture
@@ -311,7 +316,7 @@ func TestModesMatrixInteractiveEmpty(t *testing.T) { //nolint:paralleltest // HO
 	matrixPromptTurn(t, cli, sessionID, typed, "mx-emp-1")
 
 	if !matrixPromptContains(stub, typed) {
-		t.Errorf("no provider request carried the typed invocation verbatim (fallthrough broken): %v", stub.recordedPrompts())
+		t.Error("no provider request carried the typed invocation verbatim (fallthrough broken)")
 	}
 
 	if _, err := os.Stat(modesmatrix.MarkerPath(workDir)); !os.IsNotExist(err) {
@@ -339,10 +344,10 @@ const spotCheckPluginEnv = "ASSGUARD_MATRIX_REAL_PLUGIN"
 // Surfaces the plugin does not carry are recorded ABSENT (honest absence,
 // never invented); evidence lands in 24-05-SUMMARY.md (plugin NAME and
 // functional observations only — never its file contents, T-24-05-04).
-func TestModesMatrixRealPluginSpotCheck(t *testing.T) { //nolint:funlen,paralleltest // HOME-pinned operator-env leg
+func TestModesMatrixRealPluginSpotCheck(t *testing.T) { // HOME-pinned operator-env leg
 	pluginRoot := os.Getenv(spotCheckPluginEnv)
 	if pluginRoot == "" {
-		t.Skipf("SPOT-CHECK-SKIPPED (operator env): set %s=<real installed plugin root> to run the D-14 real-plugin leg",
+		t.Skipf("SPOT-CHECK-SKIPPED (operator env): set %s=<real plugin root> to run the D-14 leg",
 			spotCheckPluginEnv)
 	}
 
@@ -364,7 +369,7 @@ func TestModesMatrixRealPluginSpotCheck(t *testing.T) { //nolint:funlen,parallel
 
 	skillExpanded := matrixPromptContains(stub, "Brainstorming")
 	if !skillExpanded {
-		t.Errorf("no provider request carried the real plugin's brainstorming skill body (received: %v)", stub.recordedPrompts())
+		t.Error("no provider request carried the real plugin's brainstorming skill body")
 	}
 
 	// The hooks surface, functionally observed: SessionStart fired through
@@ -402,6 +407,7 @@ func TestModesMatrixRealPluginSpotCheck(t *testing.T) { //nolint:funlen,parallel
 		t.Logf("SPOT-CHECK hook observation: first request system carries the SessionStart hook's output (%d chars)",
 			len(hookContext))
 	} else {
-		t.Log("SPOT-CHECK hook observation: no SessionStart stdout reached the system blocks — recorded as observed (the hook's firing itself is turn-safe: the turn completed)")
+		t.Log("SPOT-CHECK hook observation: no SessionStart stdout reached the system blocks — " +
+			"recorded as observed (the hook's firing itself is turn-safe: the turn completed)")
 	}
 }

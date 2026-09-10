@@ -56,8 +56,8 @@ func matrixUserTexts(t *testing.T, s *Session) []string {
 		}
 
 		var sb strings.Builder
-		for _, b := range blocks {
-			sb.WriteString(b.Text)
+		for j := range blocks {
+			sb.WriteString(blocks[j].Text)
 		}
 
 		out = append(out, sb.String())
@@ -95,7 +95,7 @@ func matrixSubagentMarkerHooks(t *testing.T, project, event string) []map[string
 // TestModesMatrixSubagent (24-05 Task 2) drives TWO real subagent dispatches
 // (one per invocation surface) plus the SubagentStop hook observation, all
 // through the live nested-turn rails with the fixture mounted.
-func TestModesMatrixSubagent(t *testing.T) { //nolint:funlen,paralleltest // HOME-pinned leg; three cells, one story
+func TestModesMatrixSubagent(t *testing.T) { //nolint:funlen,cyclop // HOME-pinned leg; three cells, one story
 	t.Setenv("HOME", t.TempDir()) // hermetic user-scope discovery
 
 	project := t.TempDir()
@@ -158,37 +158,41 @@ func TestModesMatrixSubagent(t *testing.T) { //nolint:funlen,paralleltest // HOM
 	// the invocation VERBATIM (parent-side expansion; pinned, not guessed).
 	cmdVerbatim := false
 
-	for _, txt := range texts {
-		if txt == "/matrix-echo sub-args" {
+	for i := range texts {
+		if texts[i] == "/matrix-echo sub-args" {
 			cmdVerbatim = true
 		}
 	}
 
 	if !cmdVerbatim {
-		t.Error("the subagent's user message does not carry '/matrix-echo sub-args' verbatim (nested-path carry broken)")
+		t.Error("the subagent's user message does not carry '/matrix-echo sub-args' verbatim " +
+			"(nested-path carry broken)")
 	}
 
 	subagentRegistry.Record(
 		modesmatrix.ModeSubagent, modesmatrix.SurfaceCommands, modesmatrix.StatusPass,
-		"dispatch through real DispatchSubagent; nested turn carries /matrix-echo verbatim (expansion parent-side — pinned live behavior); fixture command discovered from the plugin",
+		"dispatch through real DispatchSubagent; nested turn carries /matrix-echo verbatim "+
+			"(expansion parent-side — pinned live behavior); fixture command discovered from the plugin",
 	)
 
 	// Skills cell — same probe, the skill surface.
 	skillVerbatim := false
 
-	for _, txt := range texts {
-		if txt == "/matrix-skill sub-skill-args" {
+	for i := range texts {
+		if texts[i] == "/matrix-skill sub-skill-args" {
 			skillVerbatim = true
 		}
 	}
 
 	if !skillVerbatim {
-		t.Error("the subagent's user message does not carry '/matrix-skill sub-skill-args' verbatim (nested-path carry broken)")
+		t.Error("the subagent's user message does not carry '/matrix-skill sub-skill-args' verbatim " +
+			"(nested-path carry broken)")
 	}
 
 	subagentRegistry.Record(
 		modesmatrix.ModeSubagent, modesmatrix.SurfaceSkills, modesmatrix.StatusPass,
-		"second dispatch carries /matrix-skill verbatim (same pinned nested-path behavior); fixture skill discovered from the plugin",
+		"second dispatch carries /matrix-skill verbatim (same pinned nested-path behavior); "+
+			"fixture skill discovered from the plugin",
 	)
 
 	// Hooks cell — D-13's functional bar: SubagentStop FIRED on dispatch
@@ -213,7 +217,8 @@ func TestModesMatrixSubagent(t *testing.T) { //nolint:funlen,paralleltest // HOM
 
 	subagentRegistry.Record(
 		modesmatrix.ModeSubagent, modesmatrix.SurfaceHooks, modesmatrix.StatusPass,
-		"SubagentStop fired per dispatch completion through the real rails; marker file carries the hook's stdin JSON",
+		"SubagentStop fired per dispatch completion through the real rails; "+
+			"marker file carries the hook's stdin JSON",
 	)
 
 	subagentRegistry.ReportT(t)

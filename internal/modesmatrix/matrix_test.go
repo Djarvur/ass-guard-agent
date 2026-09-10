@@ -1,9 +1,11 @@
-package modesmatrix
+package modesmatrix_test
 
 import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/Djarvur/ass-guard-agent/internal/modesmatrix"
 )
 
 // The totality gate (24-05 Task 3): the 12-cell grid is TOTAL — a registry
@@ -17,23 +19,23 @@ import (
 func TestMatrixTotality(t *testing.T) {
 	t.Parallel()
 
-	empty := NewRegistry()
+	empty := modesmatrix.NewRegistry()
 	if err := empty.Validate(); err == nil {
 		t.Fatal("empty registry validated as complete — the grid is total, holes must fail")
 	}
 
-	if missing := empty.Missing(); len(missing) != len(AllCells) {
-		t.Errorf("Missing() = %d cells; want all %d", len(missing), len(AllCells))
+	if missing := empty.Missing(); len(missing) != len(modesmatrix.AllCells) {
+		t.Errorf("Missing() = %d cells; want all %d", len(missing), len(modesmatrix.AllCells))
 	}
 
 	// Eleven of twelve: the hole is named.
-	almost := NewRegistry()
-	for _, c := range AllCells {
-		if c == (Cell{Mode: ModeWake, Surface: SurfaceHooks}) {
+	almost := modesmatrix.NewRegistry()
+	for _, c := range modesmatrix.AllCells {
+		if c == (modesmatrix.Cell{Mode: modesmatrix.ModeWake, Surface: modesmatrix.SurfaceHooks}) {
 			continue // leave exactly wake x hooks unresolved
 		}
 
-		almost.Record(c.Mode, c.Surface, StatusPass, "cell")
+		almost.Record(c.Mode, c.Surface, modesmatrix.StatusPass, "cell")
 	}
 
 	err := almost.Validate()
@@ -41,14 +43,18 @@ func TestMatrixTotality(t *testing.T) {
 		t.Fatal("an 11/12 registry validated as complete — the unresolved cell must fail the claim")
 	}
 
-	if !strings.Contains(err.Error(), (Cell{Mode: ModeWake, Surface: SurfaceHooks}).String()) {
-		t.Errorf("Validate's error does not name the missing cell: %v", err)
+	missingCell := (modesmatrix.Cell{
+		Mode: modesmatrix.ModeWake, Surface: modesmatrix.SurfaceHooks,
+	}).String()
+
+	if !strings.Contains(err.Error(), missingCell) {
+		t.Errorf("Validate's error does not name the missing cell %q: %v", missingCell, err)
 	}
 
 	// Twelve of twelve: clean.
-	complete := NewRegistry()
-	for _, c := range AllCells {
-		complete.Record(c.Mode, c.Surface, StatusPass, "cell")
+	complete := modesmatrix.NewRegistry()
+	for _, c := range modesmatrix.AllCells {
+		complete.Record(c.Mode, c.Surface, modesmatrix.StatusPass, "cell")
 	}
 
 	if err := complete.Validate(); err != nil {
@@ -62,8 +68,8 @@ func TestMatrixTotality(t *testing.T) {
 func TestMatrixReportRendersAllCells(t *testing.T) {
 	t.Parallel()
 
-	r := NewRegistry()
-	r.Record(ModeInteractive, SurfaceHooks, StatusPass, "reason")
+	r := modesmatrix.NewRegistry()
+	r.Record(modesmatrix.ModeInteractive, modesmatrix.SurfaceHooks, modesmatrix.StatusPass, "reason")
 
 	var buf bytes.Buffer
 
@@ -76,7 +82,7 @@ func TestMatrixReportRendersAllCells(t *testing.T) {
 	// The grid pads columns; collapse runs of spaces before matching.
 	collapsed := strings.Join(strings.Fields(out), " ")
 
-	for _, c := range AllCells {
+	for _, c := range modesmatrix.AllCells {
 		if !strings.Contains(collapsed, string(c.Mode)+" x "+string(c.Surface)) {
 			t.Errorf("report omits cell %s", c)
 		}
@@ -87,7 +93,7 @@ func TestMatrixReportRendersAllCells(t *testing.T) {
 	}
 
 	if !strings.Contains(out, "totals: 1/12 cells recorded") {
-		t.Errorf("totals line missing or wrong: %q", strings.SplitN(out, "\n", 0))
+		t.Error("totals line missing or wrong")
 	}
 }
 
@@ -95,30 +101,35 @@ func TestMatrixReportRendersAllCells(t *testing.T) {
 // message BEGINS with PRECONDITION-UNMET(<phase>, <contract-ref>) — the
 // grep-able vocabulary the wake cells' count assertion depends on — and the
 // helper both records the cell and skips the test.
+//
+//nolint:paralleltest // the skip-helper subtest must run synchronously (channel-synced skip observation)
 func TestSkipPreconditionMessagePrefix(t *testing.T) {
-	t.Parallel()
+	msg := modesmatrix.PreconditionMessage(
+		"22", "background wake-turn D-01", modesmatrix.ModeWake, modesmatrix.SurfaceCommands, "detail here")
 
-	msg := PreconditionMessage("22", "background wake-turn D-01", ModeWake, SurfaceCommands, "detail here")
 	if !strings.HasPrefix(msg, "PRECONDITION-UNMET(22, background wake-turn D-01) wake x commands:") {
 		t.Errorf("PreconditionMessage prefix wrong: %q", msg)
 	}
 
-	r := NewRegistry()
+	r := modesmatrix.NewRegistry()
 
 	skipped := make(chan struct{})
 
 	t.Run("helper", func(t *testing.T) {
 		defer close(skipped)
 
-		SkipPrecondition(t, r, ModeWake, SurfaceCommands, "22", "background wake-turn D-01",
-			"once Phase 22 executes: dispatch a background subagent, let the wake drain run, assert the fixture surfaces")
+		modesmatrix.SkipPrecondition(t, r, modesmatrix.ModeWake, modesmatrix.SurfaceCommands,
+			"22", "background wake-turn D-01",
+			"once Phase 22 executes: dispatch a background subagent, let the wake drain run, "+
+				"assert the fixture surfaces")
+
 		t.Error("SkipPrecondition returned without skipping — the loud skip is the contract")
 	})
 
 	<-skipped
 
-	res := r.Snapshot()[Cell{Mode: ModeWake, Surface: SurfaceCommands}]
-	if res.Status != StatusPreconditionUnmet {
+	res := r.Snapshot()[modesmatrix.Cell{Mode: modesmatrix.ModeWake, Surface: modesmatrix.SurfaceCommands}]
+	if res.Status != modesmatrix.StatusPreconditionUnmet {
 		t.Errorf("cell status = %q; want precondition-unmet", res.Status)
 	}
 

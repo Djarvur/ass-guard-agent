@@ -18,6 +18,7 @@ package modesmatrix
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
@@ -67,6 +68,16 @@ const (
 	StatusNotExercised      Status = "not-exercised"
 )
 
+// reportReasonMax is the report's reason-column truncation width.
+const reportReasonMax = 72
+
+// matrixDirPerm/matrixFilePerm are the mount's permission constants (the
+// .ass-guard/.claude house convention).
+const (
+	matrixDirPerm  = 0o750
+	matrixFilePerm = 0o600
+)
+
 // Modes and Surfaces are the fixed axis vocabularies (report iteration order).
 //
 //nolint:gochecknoglobals // immutable axis tables
@@ -113,6 +124,12 @@ type Registry struct {
 	mu      sync.Mutex
 	results map[Cell]Result
 }
+
+// errGridIncomplete is Validate's static sentinel (err113 discipline).
+var errGridIncomplete = errors.New("modesmatrix: unresolved cells")
+
+// errFixtureSource is the fixture-source location failure's static sentinel.
+var errFixtureSource = errors.New("modesmatrix: cannot locate fixture source path")
 
 // NewRegistry returns an empty registry.
 func NewRegistry() *Registry { return &Registry{results: map[Cell]Result{}} }
@@ -169,7 +186,7 @@ func (r *Registry) Validate() error {
 			names = append(names, c.String())
 		}
 
-		return fmt.Errorf("modesmatrix: %d cell(s) unresolved: %v", len(missing), names)
+		return fmt.Errorf("%w: %d cell(s) unresolved: %v", errGridIncomplete, len(missing), names)
 	}
 
 	return nil
@@ -192,11 +209,11 @@ func (r *Registry) Report(w io.Writer) error {
 			}
 
 			reason := res.Reason
-			if len(reason) > 72 {
-				reason = reason[:72] + "…"
+			if len(reason) > reportReasonMax {
+				reason = reason[:reportReasonMax] + "…"
 			}
 
-			fmt.Fprintf(w, "MODES-MATRIX %-13s x %-8s %-20s %s\n",
+			_, _ = fmt.Fprintf(w, "MODES-MATRIX %-13s x %-8s %-20s %s\n",
 				string(c.Mode), string(c.Surface), string(res.Status), reason)
 		}
 	}
@@ -206,7 +223,8 @@ func (r *Registry) Report(w io.Writer) error {
 		tally[res.Status]++
 	}
 
-	fmt.Fprintf(w, "MODES-MATRIX totals: %d/%d cells recorded (pass=%d fail=%d precondition-unmet=%d skipped-empty=%d)\n",
+	_, _ = fmt.Fprintf(w,
+		"MODES-MATRIX totals: %d/%d cells recorded (pass=%d fail=%d precondition-unmet=%d skipped-empty=%d)\n",
 		len(results), len(AllCells),
 		tally[StatusPass], tally[StatusFail],
 		tally[StatusPreconditionUnmet], tally[StatusSkippedEmpty])
@@ -257,13 +275,13 @@ func PreconditionMessage(phase, contractRef string, mode Mode, surface Surface, 
 // once the phase executes — no fabricated exercise bodies against unbuilt
 // APIs (Pitfall 9).
 func SkipPrecondition(
-	t testing.TB, r *Registry, mode Mode, surface Surface, phase, contractRef, detail string,
+	tb testing.TB, r *Registry, mode Mode, surface Surface, phase, contractRef, detail string,
 ) {
-	t.Helper()
+	tb.Helper()
 
 	r.Record(mode, surface, StatusPreconditionUnmet, phase+" "+contractRef+": "+detail)
 
-	t.Skipf("%s", PreconditionMessage(phase, contractRef, mode, surface, detail))
+	tb.Skipf("%s", PreconditionMessage(phase, contractRef, mode, surface, detail))
 }
 
 // --- fixture mount (D-14 synthetic half) --------------------------------------
@@ -279,7 +297,7 @@ func SkipPrecondition(
 func FixtureDir() (string, error) {
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {
-		return "", fmt.Errorf("modesmatrix: cannot locate fixture source path")
+		return "", errFixtureSource
 	}
 
 	dir := filepath.Join(filepath.Dir(thisFile), "..", "ecosys", "testdata", "modes-matrix")
@@ -310,12 +328,12 @@ const (
 // and commands/, skills/, hooks/ ride beside it. The fixture is hermetic by
 // construction — no network, no absolute paths, writes land only inside
 // projectDir (always a t.TempDir in the harnesses).
-func MountFixture(t testing.TB, projectDir string) {
-	t.Helper()
+func MountFixture(tb testing.TB, projectDir string) {
+	tb.Helper()
 
 	src, err := FixtureDir()
 	if err != nil {
-		t.Fatalf("modesmatrix: %v", err)
+		tb.Fatalf("modesmatrix: %v", err)
 	}
 
 	install := filepath.Join(projectDir, fixtureInstallRoot, fixtureInstallRel)
@@ -325,16 +343,16 @@ func MountFixture(t testing.TB, projectDir string) {
 	manifestSrc := filepath.Join(src, "plugin.json")
 	manifestDst := filepath.Join(install, ".claude-plugin", "plugin.json")
 
-	copyFile(t, manifestSrc, manifestDst)
+	copyFile(tb, manifestSrc, manifestDst)
 
 	for _, sub := range []string{"commands", "skills", "hooks"} {
-		copyTree(t, filepath.Join(src, sub), filepath.Join(install, sub))
+		copyTree(tb, filepath.Join(src, sub), filepath.Join(install, sub))
 	}
 
 	registry := fmt.Sprintf(`[{"name":%q,"installPath":%q,"scope":%q,"version":%q}]`,
 		fixturePluginKey, fixtureInstallRel, fixtureScopeProject, fixtureVersion)
 
-	writeFile(t, filepath.Join(projectDir, fixtureInstallRoot, "installed_plugins.json"), registry)
+	writeFile(tb, filepath.Join(projectDir, fixtureInstallRoot, "installed_plugins.json"), registry)
 }
 
 // MountFixtureMarkerName is the fixture hooks' marker file (appended by the
@@ -365,7 +383,7 @@ func splitMarkerLines(raw string) []string {
 
 	start := -1
 
-	for i := 0; i < len(raw); i++ {
+	for i := range len(raw) {
 		switch raw[i] {
 		case '\n':
 			if start >= 0 && i > start {
@@ -389,20 +407,20 @@ func splitMarkerLines(raw string) []string {
 
 // copyFile copies one regular file (creating parent dirs, 0600 — fixture
 // content is static text).
-func copyFile(t testing.TB, src, dst string) {
-	t.Helper()
+func copyFile(tb testing.TB, src, dst string) {
+	tb.Helper()
 
 	data, err := os.ReadFile(src)
 	if err != nil {
-		t.Fatalf("modesmatrix: read fixture file %s: %v", src, err)
+		tb.Fatalf("modesmatrix: read fixture file %s: %v", src, err)
 	}
 
-	writeFile(t, dst, string(data))
+	writeFile(tb, dst, string(data))
 }
 
 // copyTree recursively copies a fixture subdirectory.
-func copyTree(t testing.TB, src, dst string) {
-	t.Helper()
+func copyTree(tb testing.TB, src, dst string) {
+	tb.Helper()
 
 	entries, err := os.ReadDir(src)
 	if err != nil {
@@ -410,11 +428,11 @@ func copyTree(t testing.TB, src, dst string) {
 			return // fixture subdirectory not authored yet — nothing to mount
 		}
 
-		t.Fatalf("modesmatrix: read fixture dir %s: %v", src, err)
+		tb.Fatalf("modesmatrix: read fixture dir %s: %v", src, err)
 	}
 
-	if err := os.MkdirAll(dst, 0o750); err != nil {
-		t.Fatalf("modesmatrix: mkdir %s: %v", dst, err)
+	if err := os.MkdirAll(dst, matrixDirPerm); err != nil {
+		tb.Fatalf("modesmatrix: mkdir %s: %v", dst, err)
 	}
 
 	for _, e := range entries {
@@ -422,25 +440,25 @@ func copyTree(t testing.TB, src, dst string) {
 
 		switch {
 		case e.IsDir():
-			copyTree(t, s, d)
+			copyTree(tb, s, d)
 		default:
-			copyFile(t, s, d)
+			copyFile(tb, s, d)
 		}
 	}
 }
 
 // copyTreePreservingMode copies src to dst keeping every file's permission
 // bits (the real-plugin mount's +x-fidelity route).
-func copyTreePreservingMode(t testing.TB, src, dst string) {
-	t.Helper()
+func copyTreePreservingMode(tb testing.TB, src, dst string) {
+	tb.Helper()
 
 	entries, err := os.ReadDir(src)
 	if err != nil {
-		t.Fatalf("modesmatrix: read real plugin dir %s: %v", src, err)
+		tb.Fatalf("modesmatrix: read real plugin dir %s: %v", src, err)
 	}
 
-	if err := os.MkdirAll(dst, 0o750); err != nil {
-		t.Fatalf("modesmatrix: mkdir %s: %v", dst, err)
+	if err := os.MkdirAll(dst, matrixDirPerm); err != nil {
+		tb.Fatalf("modesmatrix: mkdir %s: %v", dst, err)
 	}
 
 	for _, e := range entries {
@@ -448,25 +466,25 @@ func copyTreePreservingMode(t testing.TB, src, dst string) {
 
 		switch {
 		case e.IsDir():
-			copyTreePreservingMode(t, s, d)
+			copyTreePreservingMode(tb, s, d)
 		default:
 			info, serr := e.Info()
 			if serr != nil {
-				t.Fatalf("modesmatrix: stat %s: %v", s, serr)
+				tb.Fatalf("modesmatrix: stat %s: %v", s, serr)
 			}
 
 			data, rerr := os.ReadFile(s)
 			if rerr != nil {
-				t.Fatalf("modesmatrix: read %s: %v", s, rerr)
+				tb.Fatalf("modesmatrix: read %s: %v", s, rerr)
 			}
 
-			if werr := os.MkdirAll(filepath.Dir(d), 0o750); werr != nil {
-				t.Fatalf("modesmatrix: mkdir %s: %v", filepath.Dir(d), werr)
+			if werr := os.MkdirAll(filepath.Dir(d), matrixDirPerm); werr != nil {
+				tb.Fatalf("modesmatrix: mkdir %s: %v", filepath.Dir(d), werr)
 			}
 
 			//nolint:gosec // mode comes from the operator's own installed plugin tree
 			if werr := os.WriteFile(d, data, info.Mode().Perm()); werr != nil {
-				t.Fatalf("modesmatrix: write %s: %v", d, werr)
+				tb.Fatalf("modesmatrix: write %s: %v", d, werr)
 			}
 		}
 	}
@@ -474,15 +492,16 @@ func copyTreePreservingMode(t testing.TB, src, dst string) {
 
 // writeFile writes path's parent dirs into existence then the content at
 // 0600 (owner-only — the .ass-guard/.claude house convention).
-func writeFile(t testing.TB, path, content string) {
-	t.Helper()
+func writeFile(tb testing.TB, path, content string) {
+	tb.Helper()
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		t.Fatalf("modesmatrix: mkdir %s: %v", filepath.Dir(path), err)
+	if err := os.MkdirAll(filepath.Dir(path), matrixDirPerm); err != nil {
+		tb.Fatalf("modesmatrix: mkdir %s: %v", filepath.Dir(path), err)
 	}
 
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("modesmatrix: write %s: %v", path, err)
+	//nolint:gosec // test-owned temp paths (the mount discipline: t.TempDir projects only)
+	if err := os.WriteFile(path, []byte(content), matrixFilePerm); err != nil {
+		tb.Fatalf("modesmatrix: write %s: %v", path, err)
 	}
 }
 
@@ -530,14 +549,14 @@ func MountRealPlugin(t *testing.T, projectDir, pluginSrcDir string) string {
 	// mounted fixture (append-preserving: read-modify-write the v1 array).
 	regPath := filepath.Join(projectDir, fixtureInstallRoot, "installed_plugins.json")
 
-	entries := []map[string]string{}
+	entries := make([]map[string]string, 0, 1)
 
 	if raw, rerr := os.ReadFile(regPath); rerr == nil {
 		_ = json.Unmarshal(raw, &entries) // tolerate and replace on failure
 	}
 
 	entries = append(entries, map[string]string{
-		"name": manifest.Name + "@" + fixtureMarketplace,
+		"name":        manifest.Name + "@" + fixtureMarketplace,
 		"installPath": installRel,
 		"scope":       fixtureScopeProject,
 		"version":     version,

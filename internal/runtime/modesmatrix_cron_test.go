@@ -82,7 +82,7 @@ func fireMatrixAutomation(t *testing.T, r *Runner, project, sessID, prompt strin
 	store.SetNow(func() time.Time { return time.Now().Add(-2 * time.Hour) })
 
 	if _, err := store.Create(&sched.Automation{
-		Title: "modes-matrix " + prompt, Prompt: prompt, Cron: "0 * * * *", Recurring: true,
+		Title: "modes-matrix " + prompt, Prompt: prompt, Cron: cronExprHourly, Recurring: true,
 	}); err != nil {
 		t.Fatalf("store.Create: %v", err)
 	}
@@ -111,8 +111,8 @@ func matrixCronUserText(t *testing.T, r *Runner, sessID, needle string) string {
 				var blocks []session.ContentBlock
 				if json.Unmarshal(lines[i].Content, &blocks) == nil {
 					var sb strings.Builder
-					for _, b := range blocks {
-						sb.WriteString(b.Text)
+					for j := range blocks {
+						sb.WriteString(blocks[j].Text)
 					}
 
 					return sb.String()
@@ -146,7 +146,7 @@ func provSawText(p *scriptedACPProvider, needle string) bool {
 // adapter's seam and BOTH lenses (transcript user message + captured
 // provider request) carry the fixture command's body with the args
 // substituted — the D-13 functional outcome.
-func TestModesMatrixCronCommands(t *testing.T) { //nolint:paralleltest // HOME-pinned leg
+func TestModesMatrixCronCommands(t *testing.T) { // HOME-pinned leg
 	t.Setenv("HOME", t.TempDir())
 
 	project := t.TempDir()
@@ -160,7 +160,7 @@ func TestModesMatrixCronCommands(t *testing.T) { //nolint:paralleltest // HOME-p
 	const marker = "MATRIX-ECHO-EXPANSION invoked: cron-args"
 
 	if got := matrixCronUserText(t, r, "sess-matrix-cron-c", marker); got == "" {
-		t.Fatal("the fired automation turn's user message never carried the expanded command body")
+		t.Fatal("the fired turn's user message never carried the expanded command body")
 	}
 
 	if !provSawText(prov, marker) {
@@ -169,7 +169,8 @@ func TestModesMatrixCronCommands(t *testing.T) { //nolint:paralleltest // HOME-p
 
 	cronRegistry.Record(
 		modesmatrix.ModeAutomation, modesmatrix.SurfaceCommands, modesmatrix.StatusPass,
-		"runAutomationTurn over a sched.Create'd automation; /matrix-echo expanded (transcript + provider lenses agree)",
+		"runAutomationTurn over a sched.Create'd automation; /matrix-echo expanded "+
+			"(transcript + provider lenses agree)",
 	)
 
 	cronRegistry.ReportT(t)
@@ -177,7 +178,7 @@ func TestModesMatrixCronCommands(t *testing.T) { //nolint:paralleltest // HOME-p
 
 // TestModesMatrixCronSkills (automation x skills): the same firing path
 // over /matrix-skill — the SKILL.md body expands with the args substituted.
-func TestModesMatrixCronSkills(t *testing.T) { //nolint:paralleltest // HOME-pinned leg
+func TestModesMatrixCronSkills(t *testing.T) { // HOME-pinned leg
 	t.Setenv("HOME", t.TempDir())
 
 	project := t.TempDir()
@@ -191,7 +192,7 @@ func TestModesMatrixCronSkills(t *testing.T) { //nolint:paralleltest // HOME-pin
 	const marker = "MATRIX-SKILL-BODY invoked: cron-skill-args"
 
 	if got := matrixCronUserText(t, r, "sess-matrix-cron-s", marker); got == "" {
-		t.Fatal("the fired automation turn's user message never carried the expanded skill body")
+		t.Fatal("the fired turn's user message never carried the expanded skill body")
 	}
 
 	if !provSawText(prov, marker) {
@@ -211,7 +212,7 @@ func TestModesMatrixCronSkills(t *testing.T) { //nolint:paralleltest // HOME-pin
 // fixture's PreToolUse hook — the marker file inside the temp project
 // receives the hook's stdin JSON (tool_name Read, the automation session's
 // id).
-func TestModesMatrixCronHooks(t *testing.T) { //nolint:paralleltest // HOME-pinned leg
+func TestModesMatrixCronHooks(t *testing.T) { // HOME-pinned leg
 	t.Setenv("HOME", t.TempDir())
 
 	project := t.TempDir()
@@ -230,8 +231,8 @@ func TestModesMatrixCronHooks(t *testing.T) { //nolint:paralleltest // HOME-pinn
 
 	r, _ := newMatrixRunner(t, project,
 		scriptedResp{
-			toolCalls: []provider.ToolCall{{Name: "Read", Input: readInput}},
-			finish:    "tool_use",
+			toolCalls: []provider.ToolCall{{Name: toolNameRead, Input: readInput}},
+			finish:    chunkToolUse,
 		},
 		scriptedResp{text: "automation hooks turn done"},
 	)
@@ -249,13 +250,14 @@ func TestModesMatrixCronHooks(t *testing.T) { //nolint:paralleltest // HOME-pinn
 		t.Fatal("no PreToolUse payload in the marker file — the fixture hook never fired inside the automation turn")
 	}
 
-	if got := pre[0]["tool_name"]; got != "Read" {
-		t.Errorf("PreToolUse tool_name = %v; want Read", got)
+	if got := pre[0]["tool_name"]; got != toolNameRead {
+		t.Errorf("PreToolUse tool_name = %v; want %s", got, toolNameRead)
 	}
 
 	cronRegistry.Record(
 		modesmatrix.ModeAutomation, modesmatrix.SurfaceHooks, modesmatrix.StatusPass,
-		"automation turn's Read consulted the gate head; fixture PreToolUse executed and the marker file carries the stdin JSON",
+		"automation turn's Read consulted the gate head; fixture PreToolUse executed "+
+			"and the marker file carries the stdin JSON",
 	)
 
 	cronRegistry.ReportT(t)
@@ -265,7 +267,7 @@ func TestModesMatrixCronHooks(t *testing.T) { //nolint:paralleltest // HOME-pinn
 // fixture mounted, the same automation prompt falls through UNEXPANDED (the
 // typed invocation is the user message verbatim) and the marker file stays
 // ABSENT — absence is the pass condition, never an error.
-func TestModesMatrixCronEmpty(t *testing.T) { //nolint:paralleltest // HOME-pinned leg
+func TestModesMatrixCronEmpty(t *testing.T) { // HOME-pinned leg
 	t.Setenv("HOME", t.TempDir())
 
 	project := t.TempDir() // deliberately NO fixture
@@ -274,12 +276,14 @@ func TestModesMatrixCronEmpty(t *testing.T) { //nolint:paralleltest // HOME-pinn
 
 	fireMatrixAutomation(t, r, project, "sess-matrix-cron-e", "/matrix-echo cron-args")
 
-	if got := matrixCronUserText(t, r, "sess-matrix-cron-e", "/matrix-echo cron-args"); got != "/matrix-echo cron-args" {
+	const emptyRowInvocation = "/matrix-echo cron-args"
+
+	if got := matrixCronUserText(t, r, "sess-matrix-cron-e", emptyRowInvocation); got != emptyRowInvocation {
 		t.Fatalf("empty row: user message = %q; want the typed invocation verbatim (fallthrough)", got)
 	}
 
 	if _, err := os.Stat(modesmatrix.MarkerPath(project)); !os.IsNotExist(err) {
-		t.Errorf("empty row: marker file exists at %s; want ABSENT (no fixture hooks anywhere)", modesmatrix.MarkerPath(project))
+		t.Error("empty row: marker file exists; want ABSENT (no fixture hooks anywhere)")
 	}
 
 	t.Log("MODES-MATRIX empty-row automation: invocation fell through verbatim; marker file ABSENT")
