@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 18
+open_count: 19
 waived_count: 0
 fixed_count: 10
-total_count: 28
-last_updated: 2026-09-10T15:33:58.332Z
+total_count: 29
+last_updated: 2026-09-10T17:32:06.580Z
 ---
 
 # Broken Windows Ledger
@@ -43,6 +43,7 @@ last_updated: 2026-09-10T15:33:58.332Z
 | 26 | 24 | unrun-verify | .github/workflows/nightly-parity.yml |  | Live workflow_dispatch smoke deferred to milestone merge — GitHub rejected both dispatch routes pre-merge (HTTP 404, file not on default branch); local stand-in evidence in 24-04-SUMMARY.md | open |  | 2026-09-10T15:33:45.625Z |  |
 | 27 | 24 | deviation | .github/workflows/nightly-parity.yml |  | Nightly test leg skips documented pre-existing failures (TestPermissionsE2E, TestRescanConcurrency, TestRunSuite_*) so the drift signal is not permanently red — remove entries as the failures are fixed | open |  | 2026-09-10T15:33:45.968Z |  |
 | 28 | 24 | unrun-verify | .github/workflows/nightly-parity.yml |  | Live workflow_dispatch smoke deferred to milestone merge — GitHub rejected both dispatch routes pre-merge (HTTP 404, file not on default branch); local stand-in evidence in 24-04-SUMMARY.md | open |  | 2026-09-10T15:33:58.332Z |  |
+| 29 | 24 | deviation | internal/runtime/modesmatrix_wake_test.go | 42 | ECOS-04 wake row: three cells PRECONDITION-UNMET(22, background wake-turn D-01) by design — Phase 22 planned-but-unexecuted; replacement assertions stated in-file | open |  | 2026-09-10T17:32:06.580Z |  |
 
 ````json
 [
@@ -380,6 +381,18 @@ last_updated: 2026-09-10T15:33:58.332Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-10T15:33:58.332Z",
+    "resolved_at": null
+  },
+  {
+    "id": 29,
+    "kind": "deviation",
+    "phase": "24",
+    "file": "internal/runtime/modesmatrix_wake_test.go",
+    "line": 42,
+    "description": "ECOS-04 wake row: three cells PRECONDITION-UNMET(22, background wake-turn D-01) by design — Phase 22 planned-but-unexecuted; replacement assertions stated in-file",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T17:32:06.580Z",
     "resolved_at": null
   }
 ]

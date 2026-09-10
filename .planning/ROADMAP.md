@@ -412,7 +412,7 @@ Plans:
   3. Nightly CI runs the upstream-parity gate unattended on a schedule and reports drift (zcode version or structure changes) without human triggering.
   4. Plugins/skills installed for Claude Code work unchanged in EVERY interaction mode — not just loaded at discovery but functional end-to-end wherever they apply.
 
-**Plans**: 4/5 plans executed
+**Plans**: 5/5 plans executed
 
 Plans:
 **Wave 1**
@@ -427,7 +427,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 24-05-PLAN.md — TAIL-03: ECOS-04 4x3 mode/surface harness with loud precondition marks (checkpoint: real-plugin spot-check)
+- [x] 24-05-PLAN.md — TAIL-03: ECOS-04 4x3 mode/surface harness with loud precondition marks (checkpoint: real-plugin spot-check)
 
 ### Phase 25: SEED-001 Kit Extraction (strictly last)
 
@@ -508,7 +508,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 | 21. Context & Policy Parity Closures | v1.2 | 6/6 | Complete    | 2026-09-06 |
 | 22. Background Execution + Sandbox Reality | v1.2 | 9/9 | In Progress|  |
 | 23. SEED Gaps Close-out | v1.2 | 6/6 | In Progress|  |
-| 24. Documentation & Ops Tails | v1.2 | 4/5 | In Progress|  |
+| 24. Documentation & Ops Tails | v1.2 | 5/5 | In Progress|  |
 | 25. SEED-001 Kit Extraction | v1.2 | 0/? | Not started | - |
 
 ## Backlog

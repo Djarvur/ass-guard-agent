@@ -5,17 +5,17 @@ milestone_name: Claude Code Parity
 current_phase: 24
 current_phase_name: Documentation & Ops Tails
 current_plan: 5
-status: executing
-stopped_at: "Completed 24-02-PLAN.md (TAIL-01 live wiring: outcome store on the live turn path + stats CLI + replayed-breaker demotion)"
-last_updated: "2026-09-10T16:31:38.029Z"
+status: verifying
+stopped_at: "Completed 24-05-PLAN.md (TAIL-03: ECOS-04 modes-matrix — 9/12 cells functional, 3 wake cells PRECONDITION-UNMET(22), empty row pinned, superpowers 6.1.1 spot-check)"
+last_updated: "2026-09-10T17:34:31.688Z"
 last_activity: 2026-09-10
 last_activity_desc: Phase 24 execution started
-state_head: 005ef9b9d1917be0b0b38320592a2eb2e51f6941
+state_head: 5027d8db81761576ee38ad498179d0a9ebc3b3f2
 progress:
   total_phases: 11
   completed_phases: 6
   total_plans: 77
-  completed_plans: 67
+  completed_plans: 68
   percent: 55
 ---
 
@@ -33,7 +33,7 @@ Phase: 24 (Documentation & Ops Tails) — EXECUTING
 Plan: 5 of 5
 Current Plan: 5
 Total Plans in Phase: 5
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-09-10 — Phase 24 execution started
 
 Progress: [███████████████░░░░░░] 55/73 plans ([██████░░░░] 55%)
@@ -112,6 +112,7 @@ Phase 19: 7/7 ✓ closed 2026-09-10 (verification completed by the auto-UAT live
 | Phase 24 P03 | 26 min | 2 tasks | 2 files |
 | Phase 24 P04 | 33 min | 3 tasks | 12 files |
 | Phase 24 P02 | 51 min | 3 tasks | 13 files |
+| Phase 24 P05 | 47 min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -226,6 +227,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 24]: 24-03: mcp.Start's failed-server skip is SILENT (comment claims slog logging that does not exist) — doc corrected to reality, observability gap logged to phase deferred-items.md (agent-side fix out of scope)
 - [Phase 24]: 24-02: outcome recording sits at the REAL dispatch sites (turn loop + subagent runner brackets) — OQ2 resolution; Scheduler.Dispatch stays unwired (Pitfall 1) — D-06's letter dies if evidence lands in a Scheduler nothing constructs; the brackets are where provider calls actually happen
 - [Phase 24]: 24-02: demotion observability window — a replayed breaker denies only while its cooldown runs; test seeds stamp inside the cooldown of the resolution clock (older stamps admit the half-open probe) — First demotion run was red for fixture reasons, not production reasons; pinned so future breaker tests do not repeat it
+- [Phase 24]: 24-05: modes-matrix marker is a RELATIVE matrix-hook.log in the temp host project — the planned ASSGUARD_MATRIX_HOOK_LOG env indirection is impossible under 21-01's sanitized hook env (PATH/HOME/CLAUDE_PLUGIN_ROOT only); strictly more hermetic
+- [Phase 24]: 24-05: subagent commands/skills cells pin the OBSERVED live behavior — the nested turn carries invocations VERBATIM (expansion parent-side by design); SubagentStop is the subagent mode's hook seam (the nested loop bypasses the parent gate)
+- [Phase 24]: 24-05: real-plugin mounts preserve source file modes — the superpowers SessionStart polyglot is directly executed and needs +x (a 0600 copy failed exit 126); the hook-output discriminator is CC's hookSpecificOutput envelope, not the plugin name
 
 ### Pending Todos
 
@@ -251,6 +255,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-10T16:31:36.608Z
-Stopped at: Completed 24-02-PLAN.md (TAIL-01 live wiring: outcome store on the live turn path + stats CLI + replayed-breaker demotion)
+Last session: 2026-09-10T17:34:31.228Z
+Stopped at: Completed 24-05-PLAN.md (TAIL-03: ECOS-04 modes-matrix — 9/12 cells functional, 3 wake cells PRECONDITION-UNMET(22), empty row pinned, superpowers 6.1.1 spot-check)
 Resume file: None
