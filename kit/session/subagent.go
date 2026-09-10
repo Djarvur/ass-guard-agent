@@ -8,7 +8,6 @@ import (
 	"runtime/debug"
 	"strings"
 
-	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
 	"github.com/Djarvur/ass-guard-agent/kit/modelrouting"
 	"github.com/Djarvur/ass-guard-agent/kit/profile"
@@ -40,7 +39,7 @@ type SubagentDispatchPlan struct {
 // normalization; D-15 cross-provider routing with one-warning degrade).
 // nil planner keeps the pre-20-03 shape: parent model, session provider.
 type SubagentModelPlanner func(
-	sess *Session, agentDef *ecosys.Agent, dispatchModel string,
+	sess *Session, agentDef *AgentDef, dispatchModel string,
 ) SubagentDispatchPlan
 
 // subagentRunner is the seam that runs the nested turn loop. Production uses the
@@ -49,7 +48,7 @@ type SubagentModelPlanner func(
 // (12-02), or nil for the default subagent.
 type subagentRunner interface {
 	Run(ctx context.Context, s *Session, subagentTurnID, parentTurnID, prompt string,
-		restricted []string, agentDef *ecosys.Agent, plan SubagentDispatchPlan) (string, error)
+		restricted []string, agentDef *AgentDef, plan SubagentDispatchPlan) (string, error)
 }
 
 // DispatchSubagent spawns an isolated goroutine running a nested turn loop with
@@ -63,7 +62,7 @@ type subagentRunner interface {
 //
 //nolint:funlen // domain complexity is inherent
 func (s *Session) DispatchSubagent(
-	ctx context.Context, parentTurnID, toolCallID, prompt string, agentDef *ecosys.Agent,
+	ctx context.Context, parentTurnID, toolCallID, prompt string, agentDef *AgentDef,
 ) (string, error) {
 	// 20-03 (D-13/D-15/D-16): the runtime resolver decides the routing BEFORE
 	// the dispatch line is written — the durable record carries the model
@@ -171,7 +170,7 @@ type defaultSubagentRunner struct{}
 //nolint:funlen // domain complexity is inherent (the outcome bracket widened the loop past 60)
 func (defaultSubagentRunner) Run(
 	ctx context.Context, s *Session,
-	subagentTurnID, parentTurnID, prompt string, restricted []string, agentDef *ecosys.Agent,
+	subagentTurnID, parentTurnID, prompt string, restricted []string, agentDef *AgentDef,
 	plan SubagentDispatchPlan,
 ) (string, error) {
 	// Append the subagent's user message (subagent-tagged).
@@ -352,7 +351,7 @@ func (s *Session) executeRestricted(
 // override rides the SAME value-copy semantics: prof is a struct copy, so
 // assigning prof.Model never writes back to s.Profile. An empty SubagentModel
 // keeps the parent model exactly as today.
-func subagentProfile(s *Session, agentDef *ecosys.Agent, plan SubagentDispatchPlan) profile.Profile {
+func subagentProfile(s *Session, agentDef *AgentDef, plan SubagentDispatchPlan) profile.Profile {
 	prof := s.Profile
 
 	// 20-03 (D-13): the dispatch plan's model ("" keeps the PARENT model —
@@ -381,7 +380,7 @@ func subagentProfile(s *Session, agentDef *ecosys.Agent, plan SubagentDispatchPl
 // (foreground) and DispatchSubagentBackground (background) each call it
 // exactly once. When 20-03's resolver contract evolves, both modes inherit
 // the change here by construction; a second resolver is never written.
-func (s *Session) planSubagent(agentDef *ecosys.Agent) SubagentDispatchPlan {
+func (s *Session) planSubagent(agentDef *AgentDef) SubagentDispatchPlan {
 	if s.SubagentModelPlanner == nil {
 		return SubagentDispatchPlan{}
 	}
@@ -401,9 +400,9 @@ func isSubagentTool(name string) bool {
 // for sessions wired without the live lookup (bare test sessions). ok=false
 // for an absent input, an unknown type, or no definitions wired — the caller
 // falls back to the default restricted subagent (the listing is advisory).
-func (s *Session) agentDefFor(input json.RawMessage) (ecosys.Agent, bool) {
+func (s *Session) agentDefFor(input json.RawMessage) (AgentDef, bool) {
 	if len(input) == 0 {
-		return ecosys.Agent{}, false
+		return AgentDef{}, false
 	}
 
 	var in struct {
@@ -411,7 +410,7 @@ func (s *Session) agentDefFor(input json.RawMessage) (ecosys.Agent, bool) {
 	}
 
 	if json.Unmarshal(input, &in) != nil || in.SubagentType == "" {
-		return ecosys.Agent{}, false
+		return AgentDef{}, false
 	}
 
 	if s.AgentLookup != nil {
@@ -425,7 +424,7 @@ func (s *Session) agentDefFor(input json.RawMessage) (ecosys.Agent, bool) {
 	}
 
 	if len(s.SubagentTypes) == 0 {
-		return ecosys.Agent{}, false
+		return AgentDef{}, false
 	}
 
 	def, ok := s.SubagentTypes[in.SubagentType]
@@ -467,7 +466,7 @@ func extractSubagentPrompt(input json.RawMessage) string {
 // is built), and the dispatch bookkeeping ids.
 type BackgroundDispatchRequest struct {
 	Prompt         string
-	AgentDef       *ecosys.Agent
+	AgentDef       *AgentDef
 	Plan           SubagentDispatchPlan
 	Restricted     []string
 	ParentTurnID   string
@@ -510,7 +509,7 @@ func wantsBackgroundDispatch(input json.RawMessage) bool {
 // is skipped entirely; the nested loop's lifetime belongs to the launcher
 // (serve-ctx + tracker cancel).
 func (s *Session) DispatchSubagentBackground(
-	parentTurnID, toolCallID, prompt string, agentDef *ecosys.Agent,
+	parentTurnID, toolCallID, prompt string, agentDef *AgentDef,
 ) (json.RawMessage, error) {
 	plan := s.planSubagent(agentDef)
 

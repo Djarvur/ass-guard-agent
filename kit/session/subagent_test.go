@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/internal/tasks"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
 	"github.com/Djarvur/ass-guard-agent/kit/provider"
@@ -235,7 +234,7 @@ type panickingSubagentRunner struct{}
 
 func (panickingSubagentRunner) Run(
 	ctx context.Context, s *Session,
-	subagentTurnID, parentTurnID, prompt string, restricted []string, agentDef *ecosys.Agent,
+	subagentTurnID, parentTurnID, prompt string, restricted []string, agentDef *AgentDef,
 	_ SubagentDispatchPlan,
 ) (string, error) {
 	panic("panickingSubagentRunner: injected panic")
@@ -274,7 +273,7 @@ func TestSubagentModel_OverrideApplied(t *testing.T) {
 
 	// 20-03 (D-13): the override now rides the dispatch PLAN (the runtime
 	// resolver's decision), not the 14-05 session-level SubagentModel stamp.
-	s.SubagentModelPlanner = func(_ *Session, _ *ecosys.Agent, _ string) SubagentDispatchPlan {
+	s.SubagentModelPlanner = func(_ *Session, _ *AgentDef, _ string) SubagentDispatchPlan {
 		return SubagentDispatchPlan{Model: lightModelSlug}
 	}
 
@@ -376,7 +375,7 @@ func TestSubagentDispatch_ResolvedModel(t *testing.T) {
 			})
 			s.Catalog = toolcat.NewCatalog()
 			s.Profile.Model = tc.parentModel
-			s.SubagentModelPlanner = func(_ *Session, _ *ecosys.Agent, _ string) SubagentDispatchPlan {
+			s.SubagentModelPlanner = func(_ *Session, _ *AgentDef, _ string) SubagentDispatchPlan {
 				return tc.plan
 			}
 
@@ -455,7 +454,7 @@ type gatedSubagentRunner struct {
 }
 
 func (g *gatedSubagentRunner) Run(
-	_ context.Context, _ *Session, _, _, _ string, _ []string, _ *ecosys.Agent, _ SubagentDispatchPlan,
+	_ context.Context, _ *Session, _, _, _ string, _ []string, _ *AgentDef, _ SubagentDispatchPlan,
 ) (string, error) {
 	g.calls.Add(1)
 

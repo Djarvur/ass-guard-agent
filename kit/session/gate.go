@@ -6,9 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-
-	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
-	"github.com/Djarvur/ass-guard-agent/internal/perm"
 )
 
 // The permission-gate chokepoint (17-02, ACP-01, D-04/D-05/D-06/D-07): THE
@@ -120,8 +117,9 @@ type pendingPermission struct {
 // fire callback is injected from the acpserve surface via the runner).
 type GateDeps struct {
 	// PreToolUseVerdict resolves the combined PreToolUse hook verdict for
-	// one call (21-01's ecosys seam — the deny-wins resolver over the D-03
-	// scope order). It is the HEAD of this pipeline (D-04: hooks are checked
+	// one call (21-01's hook seam — the deny-wins resolver over the D-03
+	// scope order, adapted to the kit HookVerdict enum at composition).
+	// It is the HEAD of this pipeline (D-04: hooks are checked
 	// BEFORE permission rules): deny → gateDeny with the first denying
 	// hook's reason; ask → the ask path (Steps 3/5 fail-safes first, then a
 	// suspend EVEN UNGATED — the operator's escalation lever, riding the
@@ -129,10 +127,12 @@ type GateDeps struct {
 	// gateExecute (USER scope only — the resolver demoted every non-user
 	// allow, D-01); no-decision → fall through to the rules. nil = no hook
 	// surface (the pre-join implicit allow).
-	PreToolUseVerdict func(ctx context.Context, tool string, input json.RawMessage) (ecosys.Verdict, string)
+	PreToolUseVerdict func(ctx context.Context, tool string, input json.RawMessage) (HookVerdict, string)
 	// Rules provides the live rule-set snapshot consulted per call (17-01's
-	// perm.Store.Rules). nil = an empty rule set (nothing matches).
-	Rules func() perm.RuleSet
+	// rule store, adapted to the kit RuleSet view at composition — the
+	// 25-06 session→perm severance). nil = an empty rule set (nothing
+	// matches).
+	Rules func() RuleSet
 	// Mode is the LIVE permission-mode accessor read PER CALL (Pitfall 8: a
 	// permissions.mode flip must reach the running session without
 	// recreation). nil = ungated (the boot default).
@@ -212,23 +212,22 @@ func (s *Session) gateCall(ctx context.Context, turnID, callID, tool string, inp
 	// so its ask IS the decision — the rules cannot overrule the escalation
 	// lever in either direction.
 	if !askFromHook {
-		var rules perm.RuleSet
-		if deps.Rules != nil {
-			rules = deps.Rules()
+		verdict := RuleUnmatched
+
+		if rules := rulesOrNil(deps); rules != nil {
+			verdict = rules.Evaluate(s.ruleSubject(tool), primaryArgOf(tool, input))
 		}
 
-		verdict := rules.Evaluate(s.ruleSubject(tool), primaryArgOf(tool, input))
-
 		switch verdict {
-		case perm.VerdictDeny:
+		case RuleDeny:
 			// A deny anywhere beats any allow, in both modes.
 			return gateVerdict{action: gateDeny, result: permissionDenyForm(tool)}
-		case perm.VerdictAllow:
+		case RuleAllow:
 			return gateVerdict{action: gateExecute}
-		case perm.VerdictAsk:
+		case RuleAsk:
 			// An explicit ask rule routes to the dialog set REGARDLESS of tool
 			// class (D-06: the file tunes ask subjects per pattern).
-		case perm.Unmatched:
+		case RuleUnmatched:
 			if !s.gateAskClass(tool) {
 				// Read-only concurrent class → allow without a dialog (D-06's
 				// "everything else").
@@ -283,6 +282,18 @@ func (s *Session) gateCall(ctx context.Context, turnID, callID, tool string, inp
 	return gateVerdict{action: gateSuspend}
 }
 
+// rulesOrNil resolves the live rule-set snapshot from the injected Rules
+// accessor (17-01's store seam, adapted to the kit RuleSet view at
+// composition): nil accessor or nil snapshot = the empty rule set (nothing
+// matches — the pre-wiring implicit-allow default).
+func rulesOrNil(deps *GateDeps) RuleSet { //nolint:ireturn // the kit RuleSet view is the gate seam's shape
+	if deps.Rules == nil {
+		return nil
+	}
+
+	return deps.Rules()
+}
+
 // gateHookVerdict is the HEAD of gateCall (21-06, D-04): ONE delegation to
 // the injected PreToolUseVerdict and ONE mapping onto the gateVerdict enum —
 // the head consults NOTHING else. decided=false means no decision (or no
@@ -309,14 +320,16 @@ func (s *Session) gateHookVerdict(
 	}
 
 	switch v, reason := s.gate.PreToolUseVerdict(ctx, tool, input); v {
-	case ecosys.VerdictDeny:
+	case HookVerdictDeny:
 		return gateVerdict{action: gateDeny, result: permissionHookDenyForm(tool, reason)}, true
-	case ecosys.VerdictAsk:
+	case HookVerdictAsk:
 		return gateVerdict{action: gateAskHook}, true
-	case ecosys.VerdictAllow:
+	case HookVerdictAllow:
 		return gateVerdict{action: gateExecute}, true
+	case HookVerdictNone:
+		return gateVerdict{}, false // NO-DECISION — silence never approves
 	default:
-		return gateVerdict{}, false // VerdictNone — NO-DECISION
+		return gateVerdict{}, false // an unknown verdict stays NO-DECISION (fail-through to rules)
 	}
 }
 
@@ -351,19 +364,15 @@ func (s *Session) gateAskClass(tool string) bool {
 
 // ruleSubject resolves the rule-matching subject for one call through the
 // injected namespace resolver; the default canonicalizes MCP names through
-// perm.MCPName/perm.SplitMCPName (identity for non-MCP tools — the catalog
-// already registers MCP tools under their full mcp__<server>__<tool>
+// the kit-side canonicalToolName mirror (identity for non-MCP tools — the
+// catalog already registers MCP tools under their full mcp__<server>__<tool>
 // namespace, Pitfall 7).
 func (s *Session) ruleSubject(tool string) string {
 	if s.gate != nil && s.gate.Subject != nil {
 		return s.gate.Subject(tool)
 	}
 
-	if server, tl, ok := perm.SplitMCPName(tool); ok {
-		return perm.MCPName(server, tl)
-	}
-
-	return tool
+	return canonicalToolName(tool)
 }
 
 // markPermDegraded records the sticky -32601 degradation for the session

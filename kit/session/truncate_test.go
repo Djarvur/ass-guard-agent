@@ -8,7 +8,6 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/kit/provider"
 )
 
@@ -142,7 +141,7 @@ func TestTruncateToolResult_Edges(t *testing.T) {
 type bigResultRunner struct{ result string }
 
 func (b bigResultRunner) Run(
-	_ context.Context, _ *Session, _, _, _ string, _ []string, _ *ecosys.Agent,
+	_ context.Context, _ *Session, _, _, _ string, _ []string, _ *AgentDef,
 	_ SubagentDispatchPlan,
 ) (string, error) {
 	return b.result, nil

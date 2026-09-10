@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/kit/provider"
 	"github.com/Djarvur/ass-guard-agent/kit/toolexec"
 )
@@ -1002,7 +1001,7 @@ func (s *Session) resolvePermissionOutcome(
 // already happened ABOVE the wrap — Pitfall 1).
 func (s *Session) executeGatedCall(ctx context.Context, p *PendingAsk) (json.RawMessage, bool) {
 	if isSubagentTool(p.Tool) {
-		var agentDef *ecosys.Agent
+		var agentDef *AgentDef
 		if def, ok := s.agentDefFor(p.Input); ok {
 			agentDef = &def
 		}

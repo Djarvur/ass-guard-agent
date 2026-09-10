@@ -46,12 +46,12 @@ func TestHookSeamsFireAtLifecycle(t *testing.T) {
 
 	s, m, _ := newTestSession(t, nil, []provider.Response{{FinishReason: stopEndTurn}})
 	s.WorkDir = work
-	s.Hooks = ecosys.NewHookRunner([]ecosys.HookConfig{
+	s.Hooks = testHooks{runner: ecosys.NewHookRunner([]ecosys.HookConfig{
 		{Event: "SessionStart", Command: marker(work, "ss.marker")},
 		{Event: "UserPromptSubmit", Command: "echo up-context-hook"},
 		{Event: "Stop", Command: marker(work, "stop.marker")},
 		{Event: "SessionEnd", Command: marker(work, "se.marker")},
-	}, "s-hooks", work, filepath.Join(work, "audit.jsonl"))
+	}, "s-hooks", work, filepath.Join(work, "audit.jsonl"))}
 
 	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "hook-turn"}})
 	if err != nil {
@@ -130,9 +130,9 @@ func TestHookSeamSubagentStop(t *testing.T) {
 	})
 	s.Catalog = nil
 	s.WorkDir = work
-	s.Hooks = ecosys.NewHookRunner([]ecosys.HookConfig{
+	s.Hooks = testHooks{runner: ecosys.NewHookRunner([]ecosys.HookConfig{
 		{Event: "SubagentStop", Command: marker(work, "sub.marker")},
-	}, "s-sub", work, "")
+	}, "s-sub", work, "")}
 
 	_, err := runTurn(s)
 	if err != nil {
@@ -151,10 +151,10 @@ func TestHookFailureNeverFatal(t *testing.T) {
 	t.Parallel()
 
 	s, _, _ := newTestSession(t, nil, []provider.Response{{FinishReason: stopEndTurn}})
-	s.Hooks = ecosys.NewHookRunner([]ecosys.HookConfig{
+	s.Hooks = testHooks{runner: ecosys.NewHookRunner([]ecosys.HookConfig{
 		{Event: "UserPromptSubmit", Command: "exit 1"},
 		{Event: "Stop", Command: "exit 1"},
-	}, "s-fail", t.TempDir(), "")
+	}, "s-fail", t.TempDir(), "")}
 
 	stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "hi"}})
 	if err != nil {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/internal/providerfactory"
+	"github.com/Djarvur/ass-guard-agent/kit/session"
 )
 
 // --- 14-05 (EARLY-05): sessionFor light-tier resolution (Tests 3-4) ---
@@ -254,8 +255,8 @@ tiers:
 func TestDispatchModel_Precedence(t *testing.T) {
 	pinEmptyHome(t)
 
-	frontAgent := func(model string) *ecosys.Agent {
-		return &ecosys.Agent{Name: "af", Model: model, Prompt: "be brief"}
+	frontAgent := func(model string) *session.AgentDef {
+		return &session.AgentDef{Name: "af", Model: model, Prompt: "be brief"}
 	}
 
 	t.Run("frontmatter same-provider stamps, no second provider", func(t *testing.T) {

@@ -42,13 +42,13 @@ type fakePermStore struct {
 	order []string
 }
 
-func (f *fakePermStore) Rules() perm.RuleSet {
+func (f *fakePermStore) Rules() RuleSet { //nolint:ireturn // the kit RuleSet view is the seam's shape
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	rs, _ := perm.NewRuleSet(f.deny, nil, f.allow)
 
-	return rs
+	return testRuleSet{rs: rs}
 }
 
 func (f *fakePermStore) Allow(tool string) error {
@@ -180,7 +180,7 @@ func newGateSession(
 func newHookGateSession(
 	t *testing.T, responses []provider.Response, mode string,
 	store *fakePermStore, surf *fakeGateSurface,
-	verdict func(ctx context.Context, tool string, input json.RawMessage) (ecosys.Verdict, string),
+	verdict func(ctx context.Context, tool string, input json.RawMessage) (HookVerdict, string),
 ) *Session {
 	t.Helper()
 
@@ -847,7 +847,7 @@ type countingSubagentRunner struct {
 }
 
 func (f *countingSubagentRunner) Run(
-	_ context.Context, _ *Session, _, _, _ string, _ []string, _ *ecosys.Agent,
+	_ context.Context, _ *Session, _, _, _ string, _ []string, _ *AgentDef,
 	_ SubagentDispatchPlan,
 ) (string, error) {
 	f.mu.Lock()
@@ -1752,7 +1752,7 @@ func TestGateHookVerdict(t *testing.T) { //nolint:funlen,cyclop,gocyclo,gocognit
 			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
 				{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
 			{FinishReason: stopEndTurn},
-		}, PermModeUngated, store, surf, runner.PreToolUseVerdict)
+		}, PermModeUngated, store, surf, testHooks{runner: runner}.PreToolUseVerdict)
 
 		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
 		if err != nil {
@@ -1796,7 +1796,7 @@ func TestGateHookVerdict(t *testing.T) { //nolint:funlen,cyclop,gocyclo,gocognit
 			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
 				{ID: gateCall1, Name: gateToolTask, Input: json.RawMessage(`{"prompt":"explore"}`)}}},
 			{FinishReason: stopEndTurn},
-		}, PermModeUngated, store, surf, runner.PreToolUseVerdict)
+		}, PermModeUngated, store, surf, testHooks{runner: runner}.PreToolUseVerdict)
 
 		s.Catalog.Register(toolcat.Tool{
 			Name:        gateToolTask,
@@ -1846,7 +1846,7 @@ func TestGateHookVerdict(t *testing.T) { //nolint:funlen,cyclop,gocyclo,gocognit
 			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
 				{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
 			{FinishReason: stopEndTurn},
-		}, PermModeUngated, store, surf, runner.PreToolUseVerdict)
+		}, PermModeUngated, store, surf, testHooks{runner: runner}.PreToolUseVerdict)
 
 		_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
 		if err != nil {
@@ -1878,8 +1878,8 @@ func TestGateHookVerdict(t *testing.T) { //nolint:funlen,cyclop,gocyclo,gocognit
 			block:   block,
 		}
 
-		askVerdict := func(context.Context, string, json.RawMessage) (ecosys.Verdict, string) {
-			return ecosys.VerdictAsk, "operator review required"
+		askVerdict := func(context.Context, string, json.RawMessage) (HookVerdict, string) {
+			return HookVerdictAsk, "operator review required"
 		}
 
 		s := newHookGateSession(t, []provider.Response{
@@ -1933,8 +1933,8 @@ func TestGateHookVerdict(t *testing.T) { //nolint:funlen,cyclop,gocyclo,gocognit
 			block:   block,
 		}
 
-		askVerdict := func(context.Context, string, json.RawMessage) (ecosys.Verdict, string) {
-			return ecosys.VerdictAsk, "operator review required"
+		askVerdict := func(context.Context, string, json.RawMessage) (HookVerdict, string) {
+			return HookVerdictAsk, "operator review required"
 		}
 
 		s := newHookGateSession(t, []provider.Response{
@@ -2017,7 +2017,7 @@ func TestGateHookVerdict(t *testing.T) { //nolint:funlen,cyclop,gocyclo,gocognit
 			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
 				{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
 			{FinishReason: stopEndTurn},
-		}, PermModeGated, store, surf, runner.PreToolUseVerdict)
+		}, PermModeGated, store, surf, testHooks{runner: runner}.PreToolUseVerdict)
 
 		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
 		if err != nil {
@@ -2075,7 +2075,7 @@ func TestGateHookVerdict(t *testing.T) { //nolint:funlen,cyclop,gocyclo,gocognit
 			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
 				{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
 			{FinishReason: stopEndTurn},
-		}, PermModeUngated, store, surf, runner.PreToolUseVerdict)
+		}, PermModeUngated, store, surf, testHooks{runner: runner}.PreToolUseVerdict)
 
 		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
 		if err != nil {
@@ -2109,7 +2109,7 @@ func TestGateHookVerdict(t *testing.T) { //nolint:funlen,cyclop,gocyclo,gocognit
 			{FinishReason: blockToolUse, ToolCalls: []provider.ToolCall{
 				{ID: gateCall1, Name: gateToolWrite, Input: json.RawMessage(gatePathInput)}}},
 			{FinishReason: stopEndTurn},
-		}, PermModeUngated, store, surf, runner.PreToolUseVerdict)
+		}, PermModeUngated, store, surf, testHooks{runner: runner}.PreToolUseVerdict)
 
 		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: gatePrompt}})
 		if err != nil {
@@ -2140,8 +2140,8 @@ func TestGateHookVerdict(t *testing.T) { //nolint:funlen,cyclop,gocyclo,gocognit
 func TestGateHookAskFailSafes(t *testing.T) {
 	t.Parallel()
 
-	askVerdict := func(context.Context, string, json.RawMessage) (ecosys.Verdict, string) {
-		return ecosys.VerdictAsk, "operator review required"
+	askVerdict := func(context.Context, string, json.RawMessage) (HookVerdict, string) {
+		return HookVerdictAsk, "operator review required"
 	}
 
 	t.Run("automation turn declines fail-safe (D-07), even ungated", func(t *testing.T) {

@@ -16,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
 	"github.com/Djarvur/ass-guard-agent/kit/modelrouting"
 	"github.com/Djarvur/ass-guard-agent/kit/profile"
@@ -305,7 +304,7 @@ func outcomeSubagentSubtest(t *testing.T, clock func() time.Time) {
 
 	// The 20-03 planner seam: this dispatch's resolved (overridden) model is
 	// what the record must carry.
-	s.SubagentModelPlanner = func(*Session, *ecosys.Agent, string) SubagentDispatchPlan {
+	s.SubagentModelPlanner = func(*Session, *AgentDef, string) SubagentDispatchPlan {
 		return SubagentDispatchPlan{Model: outcomeTestSubModel}
 	}
 

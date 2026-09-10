@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/kit/provider"
 )
 
@@ -32,7 +31,7 @@ func TestSubagentTypeUsesAgentDef(t *testing.T) {
 		{FinishReason: stopEndTurn},
 	})
 
-	s.SubagentTypes = map[string]ecosys.Agent{
+	s.SubagentTypes = map[string]AgentDef{
 		"fixture-agent": {
 			Name:        "fixture-agent",
 			Description: "fixture wiring agent",
@@ -98,7 +97,7 @@ func TestSubagentTypeUnknownFallsBack(t *testing.T) {
 		{FinishReason: stopEndTurn},
 	})
 
-	s.SubagentTypes = map[string]ecosys.Agent{}
+	s.SubagentTypes = map[string]AgentDef{}
 
 	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "typed-dispatch"}})
 	if err != nil {

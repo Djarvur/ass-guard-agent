@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -2322,6 +2323,12 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	// nil-safe when none are installed) wraps every core executor.
 	hookRunner := ecosys.NewHookRunner(r.reg.Hooks, sessionID, dir, mgr.Path())
 
+	// 25-06 Task 1 (temporary until the catalog lands in Task 2): the app
+	// hook runner adapts to the kit session.Hooks interface here; Task 2's
+	// catalog Hooks() accessor supplies the adapted value directly and this
+	// wrapper dies.
+	hooks := kitHookRunner{runner: hookRunner}
+
 	// 22-02 (D-12): the caps resolve per session construction
 	// (apply-as-landed — running sessions keep theirs).
 	subsCap, bashCap := 8, 16 // D-10/D-11 defaults
@@ -2420,7 +2427,7 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	}
 
 	coreexec.RegisterCore(sCatalog, coreexec.Config{
-		WorkDir: dir, Todos: coreexec.NewTodoStore(), Hooks: hookRunner, Tasks: taskRegistry,
+		WorkDir: dir, Todos: coreexec.NewTodoStore(), Hooks: hooks, Tasks: taskRegistry,
 		PTY: ptyMgr, // 22-04 (PAR-09): the session's persistent shell
 		// 22-06 (SAND-01): the foreground site's Handle + note sink — the
 		// same resolved pair the registry and the PTY manager carry (one
@@ -2539,11 +2546,13 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 		// 12-02: discovered agent definitions register as spawnable subagent
 		// types (a subagent_type match applies the definition's Prompt + Tools
 		// on the existing PARA machinery — advisory listing, no new tier).
-		SubagentTypes: r.reg.Agents,
+		// 25-06: mapped to the kit AgentDef mirror (temporary site — Task 2's
+		// catalog Agents() accessor supplies kit-typed values directly).
+		SubagentTypes: kitAgentDefs(r.reg.Agents),
 
 		// 12-02 Task 4: the lifecycle hook seams (UserPromptSubmit at Prompt
 		// entry, Stop at turn end, SubagentStop, SessionStart/SessionEnd).
-		Hooks: hookRunner,
+		Hooks: hooks,
 	}
 	sess = s
 
@@ -2643,7 +2652,7 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 		// ONE consumption site (nil-runner verdicts are a safe no-decision).
 		// Deny blocks before rules; ask suspends even ungated; a USER-scope
 		// allow executes; no-decision falls through to the rule evaluation.
-		PreToolUseVerdict: hookRunner.PreToolUseVerdict,
+		PreToolUseVerdict: hooks.PreToolUseVerdict,
 		// The MCP namespace resolver (Pitfall 7): canonicalize through
 		// 17-01's helpers — the catalog registers MCP tools under their full
 		// mcp__<server>__<tool> names, so the mapping is a rebuild + identity.
@@ -2692,7 +2701,9 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	}
 
 	if permStore != nil {
-		permDeps.Rules = permStore.Rules
+		permDeps.Rules = func() session.RuleSet { // 25-06: the kit RuleSet view (temp adapter — dies with the catalog)
+			return kitRuleSet{rs: permStore.Rules()}
+		}
 		permDeps.Allow = permStore.AllowTool
 		permDeps.Forbid = permStore.ForbidTool
 	}
@@ -3962,7 +3973,7 @@ func (r *Runner) tryLocalCommand(
 	// through THIS turn's already-subscribed forwarder, and the turn ends
 	// end_turn on completion. Zero parent-model turns.
 	if entry.kind == chainKindAgent && entry.agent != nil {
-		return r.dispatchAgentSlash(ctx, sess, emit, turnID, key, args, *entry.agent)
+		return r.dispatchAgentSlash(ctx, sess, emit, turnID, key, args, kitAgentDef(entry.agent))
 	}
 
 	// 20-04 (SKLS-01): a skill whose on-disk body is EMPTY must never become
@@ -4093,7 +4104,7 @@ const subagentModelDegradeClass = "subagent-model-degrade"
 // exactly ONE loud warning naming the intent — a turn NEVER fails over
 // routing (D-15). The plan carries the D-16 live note (deduped per class).
 func (r *Runner) planSubagentDispatch(
-	sess *session.Session, agentDef *ecosys.Agent, dispatchModel string,
+	sess *session.Session, agentDef *session.AgentDef, dispatchModel string,
 ) session.SubagentDispatchPlan {
 	parent := ""
 	if sess != nil {
@@ -4262,16 +4273,108 @@ func (r *Runner) notePlan(
 	return plan
 }
 
-// liveAgentLookup resolves a subagent_type through the runner's LIVE chain
-// (20-03): the registry-swap-safe view — an agent file added after session
-// construction is dispatchable the moment the chain rebuilds.
-func (r *Runner) liveAgentLookup(name string) (ecosys.Agent, bool) {
-	entry, ok := r.commandChainRef().resolve(name)
-	if !ok || entry.kind != chainKindAgent || entry.agent == nil {
-		return ecosys.Agent{}, false
+// --- 25-06 Task 1: temporary app→kit value mappings (deleted in Task 2) ---
+
+// kitAgentDef maps one discovered agent record to the kit AgentDef mirror
+// (the session vocabulary — the fields dispatch and the 20-03 planner read).
+// Temporary until Task 2's catalog supplies kit-typed values at the wiring
+// sites; the permanent mapping lives app-side in the catalog adapter.
+func kitAgentDef(a *ecosys.Agent) session.AgentDef {
+	return session.AgentDef{
+		Name: a.Name, Description: a.Description,
+		Tools: a.Tools, Model: a.Model, Prompt: a.Prompt,
+	}
+}
+
+// kitAgentDefs maps the discovered agent table (the construction-time
+// SubagentTypes snapshot). An empty table maps to nil (the zero-value
+// degrade the session's len-check already treats identically).
+func kitAgentDefs(m map[string]ecosys.Agent) map[string]session.AgentDef {
+	if len(m) == 0 {
+		return nil
 	}
 
-	return *entry.agent, true
+	out := make(map[string]session.AgentDef, len(m))
+
+	for k, a := range m {
+		out[k] = kitAgentDef(&a)
+	}
+
+	return out
+}
+
+// kitHookRunner adapts the ecosystem hook runner to the kit session.Hooks
+// interface (Fire / PreToolUseVerdict / PostToolUse with kit-typed outcomes
+// — the ONE place app verdict/outcome values become kit values on this
+// seam). The underlying runner is nil-safe, so the adapter is too.
+type kitHookRunner struct{ runner *ecosys.HookRunner }
+
+// Fire runs the lifecycle event and mirrors its outcome.
+func (h kitHookRunner) Fire(ctx context.Context, evt string, fields map[string]any) session.HookOutcome {
+	out := h.runner.Fire(ctx, evt, fields)
+
+	return session.HookOutcome{Proceed: out.Proceed, Message: out.Message}
+}
+
+// PreToolUseVerdict resolves the combined verdict onto the kit enum.
+func (h kitHookRunner) PreToolUseVerdict(
+	ctx context.Context, toolName string, input json.RawMessage,
+) (verdict session.HookVerdict, reason string) { //nolint:nonamedreturns // mirrors the seam's named pair
+	v, r := h.runner.PreToolUseVerdict(ctx, toolName, input)
+
+	switch v {
+	case ecosys.VerdictNone:
+		return session.HookVerdictNone, ""
+	case ecosys.VerdictDeny:
+		return session.HookVerdictDeny, r
+	case ecosys.VerdictAsk:
+		return session.HookVerdictAsk, r
+	case ecosys.VerdictAllow:
+		return session.HookVerdictAllow, r
+	default:
+		return session.HookVerdictNone, "" // an unknown app verdict stays no-decision
+	}
+}
+
+// PostToolUse observes the completed result (the coreexec.ToolHooks seam).
+func (h kitHookRunner) PostToolUse(ctx context.Context, toolName string, input, output json.RawMessage) {
+	h.runner.PostToolUse(ctx, toolName, input, output)
+}
+
+// kitRuleSet adapts the app permission rule set to the kit session.RuleSet
+// view (the 25-03-assigned session→perm severance's composition-side half;
+// the permanent adapter moves app-side with the catalog).
+type kitRuleSet struct{ rs perm.RuleSet }
+
+// Evaluate maps the app verdict onto the kit enum (explicit switch — the
+// enum orders are deliberately not assumed to coincide).
+func (k kitRuleSet) Evaluate(toolName, primaryArg string) session.RuleVerdict {
+	switch k.rs.Evaluate(toolName, primaryArg) {
+	case perm.Unmatched:
+		return session.RuleUnmatched
+	case perm.VerdictAllow:
+		return session.RuleAllow
+	case perm.VerdictAsk:
+		return session.RuleAsk
+	case perm.VerdictDeny:
+		return session.RuleDeny
+	default:
+		return session.RuleUnmatched // an unknown app verdict stays unmatched
+	}
+}
+
+// liveAgentLookup resolves a subagent_type through the runner's LIVE chain
+// (20-03): the registry-swap-safe view — an agent file added after session
+// construction is dispatchable the moment the chain rebuilds. 25-06: returns
+// the kit AgentDef mirror (mapped here until Task 2's catalog supplies
+// kit-typed chain entries).
+func (r *Runner) liveAgentLookup(name string) (session.AgentDef, bool) {
+	entry, ok := r.commandChainRef().resolve(name)
+	if !ok || entry.kind != chainKindAgent || entry.agent == nil {
+		return session.AgentDef{}, false
+	}
+
+	return kitAgentDef(entry.agent), true
 }
 
 // dispatchAgentSlash runs one /<agent-name> dispatch (20-04, D-03/SKLS-02):
@@ -4283,7 +4386,7 @@ func (r *Runner) liveAgentLookup(name string) (ecosys.Agent, bool) {
 // never a second error channel, never a wedged turn.
 func (r *Runner) dispatchAgentSlash(
 	ctx context.Context, sess *session.Session, emit Emitter,
-	turnID, key, args string, agentDef ecosys.Agent,
+	turnID, key, args string, agentDef session.AgentDef,
 ) (string, bool) {
 	r.emitClassBEcho(ctx, emit, turnID, "/"+key+" "+args)
 

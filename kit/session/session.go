@@ -12,7 +12,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/kit/modelrouting"
 	"github.com/Djarvur/ass-guard-agent/kit/profile"
 	"github.com/Djarvur/ass-guard-agent/kit/provider"
@@ -57,19 +56,22 @@ type Session struct {
 	ConfigAdded []string
 
 	// SubagentTypes maps discovered agent definitions (plugin-bundled AND
-	// first-class `.claude/agents/` project+user — 12-02) by type name. An
-	// Agent/Task tool call carrying subagent_type=<name> dispatches with the
-	// definition's Prompt (per-dispatch system block) and Tools (the restricted
-	// set); an unknown/absent type falls back to the default restricted set
+	// first-class `.claude/agents/` project+user — 12-02) by type name as
+	// kit AgentDef mirrors (25-06: the app adapter maps the discovered
+	// records ONCE at composition). An Agent/Task tool call carrying
+	// subagent_type=<name> dispatches with the definition's Prompt
+	// (per-dispatch system block) and Tools (the restricted set); an
+	// unknown/absent type falls back to the default restricted set
 	// (the listing is advisory — graceful degradation).
-	SubagentTypes map[string]ecosys.Agent
+	SubagentTypes map[string]AgentDef
 
-	// Hooks is the Claude-Code lifecycle hook runner (12-02 Task 4): nil =
-	// no hooks wired (every seam no-ops). UserPromptSubmit fires at Prompt
+	// Hooks is the Claude-Code lifecycle hook surface (12-02 Task 4; 25-06:
+	// the kit-defined interface the app hook runner adapts to): nil = no
+	// hooks wired (every seam no-ops). UserPromptSubmit fires at Prompt
 	// entry (post-expansion — cmd expands BEFORE calling Prompt), SessionStart
 	// lazily on the first Prompt (the session-create seam), Stop at parent
 	// turn end, SubagentStop at subagent completion, SessionEnd in Close.
-	Hooks *ecosys.HookRunner
+	Hooks Hooks
 
 	// Checkpointer snapshots the workspace at PARENT turn start (14-01,
 	// EARLY-01): the snapshot taken BEFORE any turn work is what makes
@@ -90,7 +92,7 @@ type Session struct {
 	// chain-backed agent registry view. Both are wired at sessionFor by the
 	// runtime and optional (nil keeps the legacy shape).
 	SubagentModelPlanner SubagentModelPlanner
-	AgentLookup          func(name string) (ecosys.Agent, bool)
+	AgentLookup          func(name string) (AgentDef, bool)
 
 	// BackgroundDispatch is the 22-03 (PAR-07) background-subagent seam:
 	// a run_in_background Agent/Task dispatch hands the launch to the
@@ -602,7 +604,7 @@ func (s *Session) Close() error {
 // SESSION profile's System blocks (12-02 Task 4 — the documented context
 // role). Copy-on-append: the session's own System slice grows; a shared
 // backing array is never mutated.
-func (s *Session) injectHookContext(out ecosys.HookOutcome) {
+func (s *Session) injectHookContext(out HookOutcome) {
 	if out.Message == "" {
 		return
 	}
@@ -808,7 +810,7 @@ func (s *Session) runTurn(ctx context.Context, turnID string) (stop string, err 
 					// per-dispatch system block) and Tools (the restricted
 					// set); an unknown type keeps the defaults (advisory
 					// listing — graceful degradation, no confirmation tier).
-					var agentDef *ecosys.Agent
+					var agentDef *AgentDef
 					if def, ok := s.agentDefFor(tc.Input); ok {
 						agentDef = &def
 					}

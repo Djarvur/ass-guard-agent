@@ -142,7 +142,7 @@ func TestModesMatrixSubagent(t *testing.T) { //nolint:funlen,cyclop // HOME-pinn
 	})
 
 	s.WorkDir = project
-	s.Hooks = ecosys.NewHookRunner(reg.Hooks, s.SessionID, project, s.Manager.Path())
+	s.Hooks = testHooks{runner: ecosys.NewHookRunner(reg.Hooks, s.SessionID, project, s.Manager.Path())}
 
 	_ = bus // chunks flow via the bus (PARA-02); the cells' lenses are transcript + marker
 
