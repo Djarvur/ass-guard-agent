@@ -636,7 +636,7 @@ func newTwoBlockRunner(t *testing.T, script ...scriptedResp) (*Runner, *twoBlock
 		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return prov },
 	}
 
-	r.LoadCommandRegistry()
+	r.SetCatalog(newTestCatalog(r.workDirOrDefault()))
 
 	return r, prov
 }

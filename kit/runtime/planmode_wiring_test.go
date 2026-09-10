@@ -137,7 +137,7 @@ func newPlanModeWiringRunner(t *testing.T) (*Runner, *planModeScriptProvider) {
 		t.Fatalf("SetupEngine: %v", err)
 	}
 
-	r.LoadCommandRegistry()
+	r.SetCatalog(newTestCatalog(r.workDirOrDefault()))
 
 	return r, prov
 }

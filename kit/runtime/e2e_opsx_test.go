@@ -175,7 +175,7 @@ func newOpsxRunnerAt(t *testing.T, scratch string) *Runner {
 		t.Fatalf("SetupEngine: %v", err)
 	}
 
-	r.LoadCommandRegistry()
+	r.SetCatalog(newTestCatalog(r.workDirOrDefault()))
 
 	return r
 }

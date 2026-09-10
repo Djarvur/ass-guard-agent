@@ -238,7 +238,7 @@ func TestCheckpointLiveRollback_Gated(t *testing.T) { //nolint:paralleltest,funl
 		t.Fatalf("SetupEngine: %v", serr)
 	}
 
-	r.LoadCommandRegistry()
+	r.SetCatalog(newTestCatalog(r.workDirOrDefault()))
 
 	const sessionID = "sess-ckpt-live"
 

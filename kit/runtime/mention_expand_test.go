@@ -142,7 +142,7 @@ func TestMentionExpand_FileSectionAndProvenance(t *testing.T) {
 		t.Errorf("provenance CommandRef = %q; want %q", prov[0].CommandRef, want)
 	}
 
-	if prov[0].Text != "file" {
+	if prov[0].Text != mentionFormFile {
 		t.Errorf("provenance form = %q; want file", prov[0].Text)
 	}
 }
@@ -160,7 +160,7 @@ func TestMentionExpand_SpacedQuotedPath(t *testing.T) {
 		t.Errorf("text missing the spaced-path file section:\n%q", got[0].Text)
 	}
 
-	if prov := mentionProvenance(t, sess); len(prov) != 1 || prov[0].Text != "file" {
+	if prov := mentionProvenance(t, sess); len(prov) != 1 || prov[0].Text != mentionFormFile {
 		t.Errorf("provenance = %+v; want one file-form line", prov)
 	}
 }
@@ -349,7 +349,7 @@ func TestMentionExpand_AbsolutePathAdmittedByEvaluator(t *testing.T) {
 	}
 
 	prov := mentionProvenance(t, sess)
-	if len(prov) != 1 || prov[0].Text != "file" || prov[0].CommandRef != abs {
+	if len(prov) != 1 || prov[0].Text != mentionFormFile || prov[0].CommandRef != abs {
 		t.Errorf("provenance = %+v; want one file-form line with the abs path", prov)
 	}
 }
@@ -375,7 +375,7 @@ func TestMentionExpand_MultipleMentionsInOrder(t *testing.T) {
 		t.Fatalf("provenance lines = %d; want 2 (%+v)", len(prov), prov)
 	}
 
-	if prov[0].Name != "@notes.md" || prov[0].Text != "file" {
+	if prov[0].Name != "@notes.md" || prov[0].Text != mentionFormFile {
 		t.Errorf("provenance[0] = %+v; want the @notes.md file form first", prov[0])
 	}
 

@@ -96,7 +96,7 @@ func newHookJoinRunner(
 		t.Fatalf("SetupEngine: %v", err)
 	}
 
-	r.LoadCommandRegistry()
+	r.SetCatalog(newTestCatalog(r.workDirOrDefault()))
 
 	return r, prov
 }

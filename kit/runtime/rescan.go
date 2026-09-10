@@ -12,8 +12,6 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
-
-	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 )
 
 // 20-05 (CMDS-04/ACP-04, D-10/D-11/D-12): live discovery. fsnotify directory
@@ -303,20 +301,19 @@ func (r *Runner) StopDiscoveryWatcher() {
 }
 
 // rescanAndSwap is the ONE rescan body (startup + watch-triggered + the
-// invoke-time backstop share it): Discover off the turn goroutines → install
-// the fresh registry + chain wholesale (never in-place mutation, Pitfall 1)
-// → fire the rescan-complete seam AFTER the swap (the re-advertised set is
-// the chain that is already live).
+// invoke-time backstop share it): Rediscover off the turn goroutines (the
+// adapter swaps its registry wholesale — never in-place mutation, Pitfall 1)
+// → rebuild + install the fresh chain → fire the rescan-complete seam AFTER
+// the swap (the re-advertised set is the chain that is already live).
 func (r *Runner) rescanAndSwap() {
-	reg, servers, err := ecosys.Discover(r.workDirOrDefault())
-	if err != nil {
+	if err := r.liveCatalog().Rediscover(); err != nil {
 		_, _ = fmt.Fprintf(r.stderrOrDefault(),
 			"ass-guard: discovery rescan failed (keeping the current chain): %v\n", err)
 
 		return
 	}
 
-	r.installRegistry(reg, servers)
+	r.installCatalog()
 }
 
 // watchSetSignature is the invoke-time probe's fingerprint: the discovery

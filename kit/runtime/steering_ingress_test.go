@@ -58,7 +58,7 @@ func newBlockingRunner(t *testing.T, script ...scriptedResp) (*Runner, *blocking
 		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return prov },
 	}
 
-	r.LoadCommandRegistry()
+	r.SetCatalog(newTestCatalog(r.workDirOrDefault()))
 
 	return r, prov
 }
@@ -306,7 +306,7 @@ func TestSteerIngressClassBNotSteered(t *testing.T) {
 	)
 
 	writeOpsxCommandFixtures(t, r.workDir)
-	r.LoadCommandRegistry()
+	r.SetCatalog(newTestCatalog(r.workDirOrDefault()))
 
 	const sid = "sess-steer-cmd"
 
@@ -481,7 +481,7 @@ func newBlockingEngineRunner(t *testing.T, script ...scriptedResp) (*Runner, *bl
 		t.Fatalf("SetupEngine: %v", err)
 	}
 
-	r.LoadCommandRegistry()
+	r.SetCatalog(newTestCatalog(r.workDirOrDefault()))
 
 	return r, prov
 }

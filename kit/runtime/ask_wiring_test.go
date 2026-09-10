@@ -886,7 +886,7 @@ func TestAskWiring_ServerLevelSurface(t *testing.T) { //nolint:cyclop,funlen // 
 		t.Fatalf("SetupEngine: %v", err)
 	}
 
-	runner.LoadCommandRegistry()
+	runner.SetCatalog(newTestCatalog(runner.workDirOrDefault()))
 
 	srvInR, cliW := io.Pipe()
 
@@ -1043,7 +1043,7 @@ func TestAskPark_PromptResponsePrecedesResolution(t *testing.T) { //nolint:cyclo
 		t.Fatalf("SetupEngine: %v", err)
 	}
 
-	runner.LoadCommandRegistry()
+	runner.SetCatalog(newTestCatalog(runner.workDirOrDefault()))
 
 	srvInR, cliW := io.Pipe()
 

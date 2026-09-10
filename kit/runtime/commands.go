@@ -15,14 +15,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/kit/checkpoint"
 	"github.com/Djarvur/ass-guard-agent/kit/modelrouting"
 	"github.com/Djarvur/ass-guard-agent/kit/session"
 )
 
 // 20-01 (CMDS-01): the slash-command resolver chain. One immutable view over
-// the discovered registry: builtins → skills → agents → file commands,
+// the discovered catalog entries: builtins → skills → agents → file commands,
 // winners-only per name (D-02), with the thirteen builtin names RESERVED and
 // unoverridable (D-01) and the advertisement generated FROM the same map the
 // resolver resolves through (D-04 — autocomplete cannot lie).
@@ -31,7 +30,7 @@ import (
 // built; the Runner holds it behind an atomic pointer. Turn goroutines and
 // the advertisement builder LOAD the pointer; a rescan builds a fresh chain
 // off-thread and swaps (20-05). The chain is a VIEW — it never mutates the
-// underlying ecosys.Registry, and a shadowed entry stays reachable through
+// catalog's state, and a shadowed entry stays reachable through
 // its native surface (agent dispatch via the Agent tool, skills via the
 // Skill tool); only the slash name is exclusive.
 
@@ -69,19 +68,19 @@ type chainEntry struct {
 	// the handler) — the NAME is still reserved against discovery (D-01).
 	handler builtinHandler
 
-	// builtin class-A (/init, CMDS-03): a synthesized ecosys.Command the
+	// builtin class-A (/init, CMDS-03): a synthesized kit Command the
 	// EXISTING expandUserBlocks seam expands. Registered in the chain as a
 	// reservation; its prompt body is plan 20-04's deliverable — until then
-	// the expansion path misses in r.reg.Commands and the text stays plain.
-	classA    ecosys.Command
+	// the expansion path misses in the catalog and the text stays plain.
+	classA    Command
 	hasClassA bool
 
-	// Discovered winners (kind-scoped): the registry value the entry shadows
-	// for slash purposes. The loser's native surface keeps the registry maps
-	// untouched (the chain is a view).
-	skill *ecosys.Skill
-	agent *ecosys.Agent
-	file  *ecosys.Command
+	// agentDef is the dispatch definition an EntryKindAgent winner carries
+	// (the kit AgentDef the catalog supplied). Skill/file winners carry no
+	// body here — resolveSlashCommand fetches fresh bodies through the
+	// catalog (the loser's native surface stays the catalog's concern; the
+	// chain is a view).
+	agentDef *session.AgentDef
 }
 
 // builtinClassB describes one reserved class-B name's live surface.
@@ -209,10 +208,10 @@ exists, update it in place and preserve anything still accurate.
 $ARGUMENTS`
 
 // initClassAReservation is the /init class-A entry (CMDS-03): a synthesized
-// ecosys.Command carrying the authored prompt body — the expansion seam
+// kit Command carrying the authored prompt body — the expansion seam
 // expands it like any file command (provenance names builtin:init).
-func initClassAReservation() ecosys.Command {
-	return ecosys.Command{
+func initClassAReservation() Command {
+	return Command{
 		Name:        "init",
 		Description: "Analyze the codebase and create a CLAUDE.md guide",
 		Body:        initPromptBody,
@@ -265,17 +264,19 @@ func (c *commandChain) advertisement() []CommandAd {
 	return out
 }
 
-// buildChain derives the resolver chain from reg (CMDS-01): live builtins
-// pre-seated FIRST (D-01), then skills, agents, and file commands overlaid in
-// chain order with first-writer-wins per name (D-02) — silent and
-// deterministic among discovered kinds. A discovered entry colliding with a
-// RESERVED name is dropped with exactly one structured warning per shadowed
-// FILE per build (deduped by path — the logPluginSkipf pattern), naming the
-// file and the reserved name. reg is never mutated (the chain is a view; the
-// registry maps keep every discovered entry reachable on its native
+// buildChain derives the resolver chain from the catalog's discovered
+// entries (CMDS-01; 25-06: the injected catalog replaces the registry): live
+// builtins pre-seated FIRST (D-01), then the discovered rows overlaid in
+// their delivered order (skills, agents, file commands — D-02 chain order)
+// with first-writer-wins per name — silent and deterministic among
+// discovered kinds. A discovered entry colliding with a RESERVED name is
+// dropped with exactly one structured warning per shadowed FILE per build
+// (deduped by path — the logPluginSkipf pattern), naming the file and the
+// reserved name. The entries slice is never mutated (the chain is a view;
+// the catalog keeps every discovered entry reachable on its native
 // surface). warn may be nil (warnings skipped — tests that only exercise
 // ordering).
-func buildChain(reg ecosys.Registry, warn io.Writer) *commandChain {
+func buildChain(rows []CatalogEntry, warn io.Writer) *commandChain {
 	c := &commandChain{entries: make(map[string]chainEntry)}
 
 	// D-01: builtins pre-seated first.
@@ -308,7 +309,25 @@ func buildChain(reg ecosys.Registry, warn io.Writer) *commandChain {
 		c.entries[e.name] = *e
 	}
 
-	c.overlayDiscovered(reg, claim)
+	// The discovered overlay (25-06: rows arrive precedence-ordered and
+	// slash-eligible from the catalog — the user-invocable filter and every
+	// validation rule were applied app-side).
+	for i := range rows {
+		row := rows[i]
+
+		e := chainEntry{
+			name: row.Name, kind: string(row.Kind), key: row.Name,
+			desc: row.Description, agentDef: row.Agent,
+		}
+
+		if row.Kind == EntryKindAgent {
+			e.hint = agentDispatchHint // SKLS-02: the /<agent-name> wire hint (kit convention)
+		} else {
+			e.hint = row.InputHint
+		}
+
+		claim(&e, row.Path)
+	}
 
 	return c
 }
@@ -331,40 +350,6 @@ func warnReserved(warn io.Writer, warned map[string]struct{}, e *chainEntry, src
 		"ass-guard: discovered %s %q shadows reserved builtin name %q — "+
 			"the builtin wins /%s (reachable only on its native surface)\n",
 		e.kind, srcPath, e.name, e.name)
-}
-
-// overlayDiscovered walks the registry in D-02 chain order (skills → agents
-// → file commands), claiming each name through claim (first-writer-wins;
-// reserved names rejected). AllSkills/AllAgents/AllCommands are the loader's
-// name-sorted deterministic accessors.
-func (c *commandChain) overlayDiscovered(reg ecosys.Registry, claim func(e *chainEntry, srcPath string)) {
-	// 20-04 (D-04): an explicit user-invocable: false skill NEVER enters the
-	// chain (it cannot fire via slash); the registry map keeps it for the
-	// model-invocation path — only the slash surface excludes it.
-	for _, sk := range reg.AllSkills() {
-		if sk.UserInvocable != nil && !*sk.UserInvocable {
-			continue
-		}
-
-		claim(&chainEntry{
-			name: sk.Name, kind: chainKindSkill, key: sk.Name,
-			desc: sk.Description, skill: &sk,
-		}, sk.Path)
-	}
-
-	for _, ag := range reg.AllAgents() {
-		claim(&chainEntry{
-			name: ag.Name, kind: chainKindAgent, key: ag.Name,
-			desc: ag.Description, hint: agentDispatchHint, agent: &ag,
-		}, ag.Path)
-	}
-
-	for _, cmd := range reg.AllCommands() {
-		claim(&chainEntry{
-			name: cmd.Name, kind: chainKindFile, key: cmd.Name,
-			desc: cmd.Description, hint: cmd.ArgumentHint, file: &cmd,
-		}, cmd.Path)
-	}
 }
 
 // agentDispatchHint is the /<agent-name> wire hint (SKLS-02 dispatch: the
@@ -498,19 +483,15 @@ func (r *Runner) commandChainRef() *commandChain {
 		return c
 	}
 
-	return buildChain(ecosys.Registry{}, nil)
+	return buildChain(nil, nil)
 }
 
-// installRegistry installs a freshly discovered registry + MCP set
-// wholesale (the 20-05 swap discipline — reg maps are REPLACED, never
-// mutated in place), then rebuilds the chain over it and stamps the
-// invoke-time probe's root signature.
-func (r *Runner) installRegistry(reg ecosys.Registry, servers []ecosys.ServerConfig) {
-	r.regMu.Lock()
-	r.reg = reg
-	r.mcpServers = servers
-	r.regMu.Unlock()
-
+// installCatalog rebuilds the resolver chain over the catalog's CURRENT
+// state and stamps the invoke-time probe's root signature (25-06: the
+// 20-05 wholesale-swap discipline moved INTO the adapter — Rediscover
+// replaces its registry, never mutating in place; the kit's half is the
+// fresh chain + signature).
+func (r *Runner) installCatalog() {
 	r.rebuildCommandChain()
 	r.noteChainSignature()
 }
@@ -520,7 +501,7 @@ func (r *Runner) installRegistry(reg ecosys.Registry, servers []ecosys.ServerCon
 // commands-notify seam AFTER the swap so listeners re-advertise from the
 // chain that is already live.
 func (r *Runner) rebuildCommandChain() {
-	c := buildChain(r.registrySnapshot(), r.stderrOrDefault())
+	c := buildChain(r.liveCatalog().Entries(), r.stderrOrDefault())
 	r.chainPtr.Store(c)
 
 	r.commandsNotifyMu.RLock()
@@ -600,7 +581,7 @@ func builtinMemory(_ context.Context, r *Runner, _ *session.Session, _, _ string
 
 	sb.WriteString("memory sources (read-only):\n")
 
-	files := ecosys.DiscoverMemoryFiles(r.workDirOrDefault())
+	files := r.liveCatalog().MemoryFiles(r.workDirOrDefault())
 	if len(files) == 0 {
 		sb.WriteString("  (no memory files discovered)\n")
 	}
@@ -658,13 +639,15 @@ func builtinMcp(_ context.Context, r *Runner, _ *session.Session, _, _ string) (
 
 	sb.WriteString("mcp servers (configured):\n")
 
-	if len(r.mcpServers) == 0 {
+	mcpLayers := r.liveCatalog().MCPLayers()
+
+	if len(mcpLayers) == 0 {
 		sb.WriteString("  (none configured)\n")
 
 		return sb.String(), ""
 	}
 
-	for _, cfg := range r.mcpServers {
+	for _, cfg := range mcpLayers {
 		fmt.Fprintf(&sb, "  %s — %s %s (connection state unknown at command time)\n",
 			cfg.Name, cfg.Command, strings.Join(cfg.Args, " "))
 	}
@@ -707,8 +690,10 @@ func builtinDoctor(_ context.Context, r *Runner, _ *session.Session, _, _ string
 
 	// 5. registry load status (D-11 skip count comes from the loader's own
 	// warnings; here we report the loaded surface sizes).
+	counts := r.liveCatalog().Counts()
+
 	fmt.Fprintf(&sb, "  command registry: %d command(s), %d skill(s), %d agent(s)\n",
-		len(r.reg.Commands), len(r.reg.Skills), len(r.reg.Agents))
+		counts.Commands, counts.Skills, counts.Agents)
 
 	return sb.String(), ""
 }
@@ -1341,40 +1326,30 @@ func builtinUndo(_ context.Context, r *Runner, sess *session.Session, _, args st
 
 // resolveSlashCommand returns the Command value the EXPANSION seam expands
 // for a parsed invocation key (20-04 — the chain-aware generalization of the
-// old r.reg.Commands[key] lookup): file commands verbatim, skills as
-// synthesized Commands (the SKILL.md body re-read from disk — the rescan
-// path serves fresh bodies by design), class-A builtins as their authored
-// Command. ok=false for unknown names, class-B builtins, and agents (the
-// caller's own surfaces own those) — plain text, never an error.
-func (r *Runner) resolveSlashCommand(key string) (ecosys.Command, bool) {
+// old registry lookup; 25-06: the catalog is the body source): the chain
+// decides WHO won, the catalog fetches the body — file commands verbatim,
+// skills as fresh-body Commands (the SKILL.md body re-read from disk — the
+// rescan path serves fresh bodies by design), class-A builtins as their
+// authored Command. ok=false for unknown names, class-B builtins, and
+// agents (the caller's own surfaces own those) — plain text, never an error.
+func (r *Runner) resolveSlashCommand(key string) (Command, bool) {
 	r.maybeFreshRescan() // D-10 backstop: never resolve against a stale chain
 
 	e, found := r.commandChainRef().resolve(key)
 	if !found {
-		return ecosys.Command{}, false
+		return Command{}, false
 	}
 
 	switch e.kind {
-	case chainKindFile:
-		if e.file != nil {
-			return *e.file, true
-		}
-	case chainKindSkill:
-		if e.skill != nil {
-			if body, ok := ecosys.ResolveSkill(r.registrySnapshot(), key); ok {
-				return ecosys.Command{
-					Name: e.skill.Name, Description: e.skill.Description,
-					Body: body, Path: e.skill.Path,
-				}, true
-			}
-		}
+	case chainKindFile, chainKindSkill:
+		return r.liveCatalog().LookupCommand(e.kind, key)
 	case chainKindBuiltin:
 		if e.hasClassA {
 			return e.classA, true
 		}
 	}
 
-	return ecosys.Command{}, false
+	return Command{}, false
 }
 
 // skillBodyEmpty reports whether a skill winner's on-disk body is empty or
@@ -1382,11 +1357,11 @@ func (r *Runner) resolveSlashCommand(key string) (ecosys.Command, bool) {
 // model).
 func (r *Runner) skillBodyEmpty(key string) bool {
 	e, found := r.commandChainRef().resolve(key)
-	if !found || e.kind != chainKindSkill || e.skill == nil {
+	if !found || e.kind != chainKindSkill {
 		return false
 	}
 
-	body, ok := ecosys.ResolveSkill(r.registrySnapshot(), key)
+	body, ok := r.liveCatalog().SkillBody(key)
 
 	return ok && strings.TrimSpace(body) == ""
 }

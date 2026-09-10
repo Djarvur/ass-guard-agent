@@ -85,7 +85,7 @@ func newExpansionRunner(
 		}
 	}
 
-	r.LoadCommandRegistry()
+	r.SetCatalog(newTestCatalog(r.workDirOrDefault()))
 
 	return r, prov
 }
@@ -299,7 +299,7 @@ func TestExpansion_RegistryLoadFailureDegrades(t *testing.T) {
 		t.Fatalf("plant breaking file: %v", err)
 	}
 
-	r.LoadCommandRegistry() // reload fails — logged, non-fatal
+	r.SetCatalog(newTestCatalog(r.workDirOrDefault())) // reload fails — logged, non-fatal
 
 	_, err = acpRun(context.Background(), r, "sess-x-deg", &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: exploreInvocation}})
@@ -484,7 +484,7 @@ func TestAssistantRoleOnly_InjectionGuard(t *testing.T) {
 		t.Fatalf("SetupEngine: %v", err)
 	}
 
-	r.LoadCommandRegistry()
+	r.SetCatalog(newTestCatalog(r.workDirOrDefault()))
 
 	_, err = acpRun(context.Background(), r, "sess-inj-guard", &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "/booby"}})
@@ -606,7 +606,7 @@ func newSkillRunner(t *testing.T, withSkills bool, script ...scriptedResp) (*Run
 		t.Fatalf("SetupEngine: %v", err)
 	}
 
-	r.LoadCommandRegistry()
+	r.SetCatalog(newTestCatalog(r.workDirOrDefault()))
 
 	return r, prov
 }

@@ -370,11 +370,11 @@ func TestDispatchModel_LiveAgentLookup(t *testing.T) {
 		t.Fatal("late-agent already resolvable before planting")
 	}
 
-	reg := r.reg
-	reg.Agents["late-agent"] = ecosys.Agent{
+	// 25-06: the late arrival plants through the twin catalog (the old r.reg
+	// poke) and the chain rebuild makes it live.
+	testCatalogOf(t, r).plantAgent(&ecosys.Agent{
 		Name: "late-agent", Description: "arrived late", Prompt: "do the late thing",
-	}
-	r.reg = reg
+	})
 	r.rebuildCommandChain()
 
 	def, ok := sess.AgentLookup("late-agent")

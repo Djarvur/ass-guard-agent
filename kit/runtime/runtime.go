@@ -23,8 +23,6 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/coreexec"
-	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
-	"github.com/Djarvur/ass-guard-agent/internal/openspec"
 	"github.com/Djarvur/ass-guard-agent/internal/perm"
 	"github.com/Djarvur/ass-guard-agent/internal/sandbox"
 	"github.com/Djarvur/ass-guard-agent/internal/tasks"
@@ -184,15 +182,14 @@ type Runner struct {
 	learned       Learned
 	catalog       *toolcat.Catalog // shared catalog (OpenSpec tools registered once)
 
-	// Phase-8 slash-command expansion (08-04): the discovered command registry
-	// (loaded at startup, REPLACED wholesale by the 20-05 rescan — see
-	// installRegistry) + the command mutability table (D-11 boundaries, T3).
-	// regMu guards the wholesale swap (Pitfall 1: never in-place mutation);
-	// readers take registrySnapshot(). A failed load leaves both zero —
-	// expansion no-ops and turns proceed on plain text (graceful degradation).
-	regMu         sync.RWMutex
-	reg           ecosys.Registry
-	cmdMutability map[string]string
+	// Phase-8 slash-command expansion (08-04) — 25-06 (D-17): the injected
+	// command/skill catalog replaces the discovered registry + mutability
+	// table the kit once held. The app composition installs it at the step
+	// where LoadCommandRegistry once ran; the 20-05 rescan swaps the
+	// ADAPTER's internal state wholesale (Pitfall 1) via Rediscover. A nil
+	// catalog (never installed) degrades to emptyCatalog — expansion no-ops
+	// and turns proceed on plain text (graceful degradation, never a panic).
+	commandCatalog CommandCatalog
 
 	// 20-01 (CMDS-01/ACP-04): the immutable resolver chain behind ONE atomic
 	// pointer (RESEARCH Pattern 1 — lock-free on the read-hot path, swapped
@@ -265,12 +262,6 @@ type Runner struct {
 	// CONTEXT discretion). Tests may pin a cheaper set; production keeps the
 	// default.
 	imageLimits ImageLimits
-
-	// mcpServers is the NON-project MCP set from ecosys.Discover (12-02:
-	// user-scope ~/.claude.json OVER plugin-bundled .mcp.json — the two lowest
-	// MCP layers). spawnMCP merges it BELOW the project .mcp.json (project
-	// wins on name collision — the chain direction).
-	mcpServers []ecosys.ServerConfig
 
 	sessions map[string]*session.Session
 
@@ -526,35 +517,19 @@ func (r *Runner) workDirOrDefault() string { //nolint:funcorder // ordering grou
 	return wd
 }
 
-// LoadCommandRegistry loads the ecosys command registry (08-04) + the command
-// mutability table (D-11) ONCE at startup. Any failure is logged to stderr and
-// leaves the fields zero — expansion no-ops and every turn proceeds on plain
-// text (T-8-16: an expansion problem NEVER becomes a turn failure or an ACP
-// error). Tests call it explicitly after planting fixtures; production calls
-// it from the serve composition.
-func (r *Runner) LoadCommandRegistry() {
-	reg, servers, err := ecosys.Discover(r.workDirOrDefault())
-	if err != nil {
-		// Drop to zero (do NOT serve a stale registry): the registry mirrors
-		// the on-disk command tree, and an unreadable tree means expansion is
-		// OFF — turns proceed on plain text (T-8-16).
-		log.Printf("ass-guard: command registry load failed (continuing without slash expansion): %v", err)
-
-		r.installRegistry(ecosys.Registry{}, nil)
-
-		return
-	}
-
-	r.installRegistry(reg, servers)
-
-	oscfg, cerr := openspec.DefaultConfig()
-	if cerr != nil {
-		log.Printf("ass-guard: openspec config load failed (continuing without command boundaries): %v", cerr)
-
-		return
-	}
-
-	r.cmdMutability = oscfg.CommandMutability
+// SetCatalog installs the command/skill catalog (25-06, D-17 — the
+// injection step): the app composition runs its discovery startup step
+// (.claude/ discovery + precedence + the mutability table, internal/
+// acpserve/discover.go) WHERE LoadCommandRegistry once ran and hands the
+// resulting adapter here. The kit never discovers: nil degrades to
+// emptyCatalog (expansion off, plain text — T-8-16/T-25-28), and the
+// adapter's own degradation arms preserve the no-stale-registry contract
+// (a failed discovery installs an EMPTY adapter, never a stale one).
+// SetCatalog also builds the first resolver chain over the installed
+// catalog (the old installRegistry half).
+func (r *Runner) SetCatalog(c CommandCatalog) {
+	r.commandCatalog = c
+	r.installCatalog()
 }
 
 // expandUserBlocks applies slash-command expansion to the FIRST text block of
@@ -581,7 +556,7 @@ func (r *Runner) expandUserBlocks( //nolint:funcorder // one pipeline; grouped w
 
 	out := blocks // borrowed until a change forces the copy (copy-on-write)
 
-	key, args, ok := ecosys.ParseInvocation(blocks[idx].Text)
+	key, args, ok := ParseInvocation(blocks[idx].Text)
 	if ok {
 		if cmd, found := r.resolveSlashCommand(key); found {
 			out = append([]session.ContentBlock(nil), blocks...)
@@ -591,7 +566,7 @@ func (r *Runner) expandUserBlocks( //nolint:funcorder // one pipeline; grouped w
 				// Mutating commands ALWAYS open the boundary first (D-11): the
 				// projector's ReadLastBoundary reset fires for the expanded
 				// stage exactly as for a tool-call boundary.
-				if r.cmdMutability[key] == openspec.MutabilityMutating {
+				if r.liveCatalog().Mutating(key) {
 					err := sess.Manager.AppendBoundary(mutatingCommandCause+key, cmd.Path, "")
 					if err != nil {
 						log.Printf("ass-guard: command boundary write failed (continuing): %v", err)
@@ -641,7 +616,7 @@ const (
 func (r *Runner) expandMentions( //nolint:funcorder // one pipeline; grouped with the turn seam
 	sess *session.Session, blocks []session.ContentBlock, idx int,
 ) []session.ContentBlock {
-	mentions := ecosys.ParseMentions(blocks[idx].Text)
+	mentions := ParseMentions(blocks[idx].Text)
 	if len(mentions) == 0 {
 		return blocks
 	}
@@ -678,7 +653,7 @@ func (r *Runner) expandMentions( //nolint:funcorder // one pipeline; grouped wit
 // outside the workspace, so ingress never becomes a whole-FS existence
 // oracle. Notes are fixed-form: token + outcome class, nothing else.
 func (r *Runner) resolveMention( //nolint:funcorder,cyclop // one resolution ladder; grouped with the turn seam
-	m ecosys.Mention,
+	m Mention,
 ) (section, resolved, form string) {
 	root := r.workDirOrDefault()
 
@@ -842,7 +817,7 @@ func (r *Runner) invocationFor( //nolint:funcorder,nonamedreturns // sibling of 
 		return "", "", false
 	}
 
-	key, args, parsed := ecosys.ParseInvocation(blocks[idx].Text)
+	key, args, parsed := ParseInvocation(blocks[idx].Text)
 	if !parsed {
 		return "", "", false
 	}
@@ -1121,7 +1096,7 @@ func (r *Runner) routeSteering(
 // resolve counter). Only a RESOLVED name counts — an unknown /word is plain
 // prose to the system and steers like any text.
 func (r *Runner) resolvesAsCommand(text string) bool {
-	key, _, ok := ecosys.ParseInvocation(text)
+	key, _, ok := ParseInvocation(text)
 	if !ok {
 		return false
 	}
@@ -1144,7 +1119,7 @@ func (r *Runner) resolvesAsCommand(text string) bool {
 func (r *Runner) routeUndoActive(
 	ctx context.Context, sess *session.Session, sessionID string, emit Emitter, text string,
 ) (string, bool) {
-	key, args, ok := ecosys.ParseInvocation(text)
+	key, args, ok := ParseInvocation(text)
 	if !ok || key != nameUndo {
 		return "", false
 	}
@@ -1808,21 +1783,10 @@ func (r *Runner) LoadedModes(sessionID string) any {
 	return sess.ModesState()
 }
 
-// CommandRegistry exposes the discovered slash-command registry (08-04) for
-// the acpserve composition's available_commands_update adapter (18-05/ACP-06
-// "commands re-advertised"; Phase 20's session/new advertisement reuses the
-// same source).
-func (r *Runner) CommandRegistry() ecosys.Registry { return r.registrySnapshot() }
-
-// registrySnapshot returns the live registry value under the read lock (the
-// map headers copy; the maps themselves are immutable post-install — the
-// rescan builds fresh ones wholesale).
-func (r *Runner) registrySnapshot() ecosys.Registry {
-	r.regMu.RLock()
-	defer r.regMu.RUnlock()
-
-	return r.reg
-}
+// 25-06: CommandRegistry/registrySnapshot REMOVED — the injected catalog
+// owns the live discovery state (the adapter's Rediscover swap discipline);
+// the kit's chain view (CommandAdvertisement) is the re-advertisement source
+// the acpserve available_commands_update adapter consumes.
 
 // The checkpoint GC's embedded defaults (23-04, D-10/D-08): what the sweep
 // runs on when no persisted checkpoint: key exists — expiry 7 days, count 50
@@ -2250,7 +2214,9 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	// system message AFTER the first user message; ass-guard's Shaper today
 	// supports only leading system blocks, so the listing rides as a trailing
 	// System TextBlock — a documented divergence for the Phase-9 re-capture.
-	if listing := ecosys.SkillListing(r.registrySnapshot()); listing != "" {
+	catalog := r.liveCatalog()
+
+	if listing := catalog.SkillListing(); listing != "" {
 		prof.System = append(append([]profile.TextBlock(nil), prof.System...),
 			profile.TextBlock{Type: blockText, Text: listing})
 	}
@@ -2274,7 +2240,7 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	// dynamic merge as the skills listing, in the captured Agent-tool
 	// type-entry shape. Discovered definitions (plugin-bundled AND first-class
 	// `.claude/agents/`) surface here AND as spawnable types below.
-	if agentListing := ecosys.AgentListing(r.registrySnapshot()); agentListing != "" {
+	if agentListing := catalog.AgentListing(); agentListing != "" {
 		prof.System = append(append([]profile.TextBlock(nil), prof.System...),
 			profile.TextBlock{Type: blockText, Text: agentListing})
 	}
@@ -2287,7 +2253,7 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	// (the body renderer's render-then-skip contract); the double-append keeps
 	// the shared r.profile unmutated. The renderer cannot fail — every
 	// degradation is a note inside the body.
-	if memBody := ecosys.MemoryInjection(dir); memBody != "" {
+	if memBody := catalog.MemoryInjection(dir); memBody != "" {
 		prof.System = append(append([]profile.TextBlock(nil), prof.System...),
 			profile.TextBlock{Type: blockText, Text: memBody})
 	}
@@ -2307,8 +2273,12 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	// session — override ONLY Execute (the captured Description/InputSchema
 	// stay byte-identical; resolution is by registry key via SkillExecute).
 	if core, ok := sCatalog.Get(skillToolName); ok {
-		core.Execute = ecosys.SkillExecute(r.registrySnapshot())
-		sCatalog.Register(core)
+		// 25-06: the Skill executor comes from the injected catalog; nil
+		// (the empty degradation) keeps the captured stub behavior.
+		if exec := catalog.SkillExecute(); exec != nil {
+			core.Execute = exec
+			sCatalog.Register(core)
+		}
 	}
 
 	// Phase 8 (08-08): REAL execution for the core /opsx working set —
@@ -2321,13 +2291,11 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	// 12-02 Task 4: the SAME site is the PreToolUse/PostToolUse chokepoint —
 	// one HookRunner per session (discovered plugin hooks; the runner is
 	// nil-safe when none are installed) wraps every core executor.
-	hookRunner := ecosys.NewHookRunner(r.reg.Hooks, sessionID, dir, mgr.Path())
-
-	// 25-06 Task 1 (temporary until the catalog lands in Task 2): the app
-	// hook runner adapts to the kit session.Hooks interface here; Task 2's
-	// catalog Hooks() accessor supplies the adapted value directly and this
-	// wrapper dies.
-	hooks := kitHookRunner{runner: hookRunner}
+	// 25-06 (D-17): the per-session hook surface comes from the catalog (the
+	// app adapter wraps the ecosystem runner in the kit session.Hooks
+	// interface — the ONE place hook verdict/outcome values map kit-ward).
+	// nil = no hooks wired (every seam no-ops).
+	hooks := catalog.Hooks(sessionID, dir, mgr.Path())
 
 	// 22-02 (D-12): the caps resolve per session construction
 	// (apply-as-landed — running sessions keep theirs).
@@ -2546,9 +2514,9 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 		// 12-02: discovered agent definitions register as spawnable subagent
 		// types (a subagent_type match applies the definition's Prompt + Tools
 		// on the existing PARA machinery — advisory listing, no new tier).
-		// 25-06: mapped to the kit AgentDef mirror (temporary site — Task 2's
-		// catalog Agents() accessor supplies kit-typed values directly).
-		SubagentTypes: kitAgentDefs(r.reg.Agents),
+		// 25-06: the catalog supplies the kit AgentDef mirrors (the ONE app→
+		// kit mapping site lives in the adapter).
+		SubagentTypes: catalog.Agents(),
 
 		// 12-02 Task 4: the lifecycle hook seams (UserPromptSubmit at Prompt
 		// entry, Stop at turn end, SubagentStop, SessionStart/SessionEnd).
@@ -2642,6 +2610,15 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	askQueue := session.NewAskQueue()
 	askQueue.SetNoteEmitter(r.publishAskQueueNote)
 
+	// 25-06: the hook-verdict HEAD wires only when the catalog supplied a
+	// hook surface; nil keeps the pre-wiring implicit-allow head (the same
+	// no-decision the nil-safe runner always produced).
+	var preToolUseVerdict func(ctx context.Context, tool string, input json.RawMessage) (session.HookVerdict, string)
+
+	if hooks != nil {
+		preToolUseVerdict = hooks.PreToolUseVerdict
+	}
+
 	permDeps := session.GateDeps{
 		Mode:  r.PermMode,
 		Queue: askQueue,
@@ -2652,7 +2629,7 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 		// ONE consumption site (nil-runner verdicts are a safe no-decision).
 		// Deny blocks before rules; ask suspends even ungated; a USER-scope
 		// allow executes; no-decision falls through to the rule evaluation.
-		PreToolUseVerdict: hooks.PreToolUseVerdict,
+		PreToolUseVerdict: preToolUseVerdict,
 		// The MCP namespace resolver (Pitfall 7): canonicalize through
 		// 17-01's helpers — the catalog registers MCP tools under their full
 		// mcp__<server>__<tool> names, so the mapping is a rebuild + identity.
@@ -3141,7 +3118,7 @@ func (r *Runner) spawnMCP( //nolint:funcorder // shutdown helper grouped with se
 ) (*mcp.Host, []toolcat.Decl) {
 	cfg, err := mcp.LoadConfig(dir)
 	if err == nil {
-		cfg = mergeMCPServers(cfg, r.mcpServers)
+		cfg = mergeMCPServers(cfg, r.liveCatalog().MCPLayers())
 	}
 
 	if err != nil || len(cfg.Servers) == 0 {
@@ -3166,7 +3143,7 @@ func (r *Runner) spawnMCP( //nolint:funcorder // shutdown helper grouped with se
 // lower-layer servers join the spawn set. The result feeds the EXISTING host
 // unchanged — same spawn discipline, same mcp__<server>__<tool> naming,
 // per-connection tools/list (ECOS-02/03).
-func mergeMCPServers(project mcp.Config, lower []ecosys.ServerConfig) mcp.Config {
+func mergeMCPServers(project mcp.Config, lower []mcp.ServerConfig) mcp.Config {
 	taken := make(map[string]bool, len(project.Servers))
 	for _, s := range project.Servers {
 		taken[s.Name] = true
@@ -3177,9 +3154,7 @@ func mergeMCPServers(project mcp.Config, lower []ecosys.ServerConfig) mcp.Config
 			continue // project wins on collision — the chain direction
 		}
 
-		project.Servers = append(project.Servers, mcp.ServerConfig{
-			Name: sc.Name, Command: sc.Command, Args: sc.Args, Env: sc.Env, Cwd: sc.Cwd,
-		})
+		project.Servers = append(project.Servers, sc)
 	}
 
 	return project
@@ -3952,7 +3927,7 @@ func (r *Runner) tryLocalCommand(
 		return "", false
 	}
 
-	key, args, ok := ecosys.ParseInvocation(blocks[idx].Text)
+	key, args, ok := ParseInvocation(blocks[idx].Text)
 	if !ok {
 		return "", false // ordinary prose — never an invocation error
 	}
@@ -3972,8 +3947,8 @@ func (r *Runner) tryLocalCommand(
 	// rides DispatchSubagent's planner), the subagent's bus chunks stream
 	// through THIS turn's already-subscribed forwarder, and the turn ends
 	// end_turn on completion. Zero parent-model turns.
-	if entry.kind == chainKindAgent && entry.agent != nil {
-		return r.dispatchAgentSlash(ctx, sess, emit, turnID, key, args, kitAgentDef(entry.agent))
+	if entry.kind == chainKindAgent && entry.agentDef != nil {
+		return r.dispatchAgentSlash(ctx, sess, emit, turnID, key, args, *entry.agentDef)
 	}
 
 	// 20-04 (SKLS-01): a skill whose on-disk body is EMPTY must never become
@@ -4013,7 +3988,7 @@ func (r *Runner) tryLocalCommand(
 	r.emitClassBEcho(ctx, emit, turnID, blocks[idx].Text)
 
 	outcome := "ok"
-	output, outcomeOverride := r.runBuiltinHandler(ctx, entry, sess, turnID, args)
+	output, outcomeOverride := r.runBuiltinHandler(ctx, &entry, sess, turnID, args)
 	if outcomeOverride != "" {
 		outcome = outcomeOverride
 	}
@@ -4044,7 +4019,7 @@ func (r *Runner) tryLocalCommand(
 // loud stderr warning, and the turn STILL ends end_turn — a control-plane
 // command never wedges or fails the session.
 func (r *Runner) runBuiltinHandler(
-	ctx context.Context, entry chainEntry, sess *session.Session, turnID, args string,
+	ctx context.Context, entry *chainEntry, sess *session.Session, turnID, args string,
 ) (output, outcome string) {
 	defer func() {
 		if rec := recover(); rec != nil {
@@ -4273,73 +4248,9 @@ func (r *Runner) notePlan(
 	return plan
 }
 
-// --- 25-06 Task 1: temporary app→kit value mappings (deleted in Task 2) ---
-
-// kitAgentDef maps one discovered agent record to the kit AgentDef mirror
-// (the session vocabulary — the fields dispatch and the 20-03 planner read).
-// Temporary until Task 2's catalog supplies kit-typed values at the wiring
-// sites; the permanent mapping lives app-side in the catalog adapter.
-func kitAgentDef(a *ecosys.Agent) session.AgentDef {
-	return session.AgentDef{
-		Name: a.Name, Description: a.Description,
-		Tools: a.Tools, Model: a.Model, Prompt: a.Prompt,
-	}
-}
-
-// kitAgentDefs maps the discovered agent table (the construction-time
-// SubagentTypes snapshot). An empty table maps to nil (the zero-value
-// degrade the session's len-check already treats identically).
-func kitAgentDefs(m map[string]ecosys.Agent) map[string]session.AgentDef {
-	if len(m) == 0 {
-		return nil
-	}
-
-	out := make(map[string]session.AgentDef, len(m))
-
-	for k, a := range m {
-		out[k] = kitAgentDef(&a)
-	}
-
-	return out
-}
-
-// kitHookRunner adapts the ecosystem hook runner to the kit session.Hooks
-// interface (Fire / PreToolUseVerdict / PostToolUse with kit-typed outcomes
-// — the ONE place app verdict/outcome values become kit values on this
-// seam). The underlying runner is nil-safe, so the adapter is too.
-type kitHookRunner struct{ runner *ecosys.HookRunner }
-
-// Fire runs the lifecycle event and mirrors its outcome.
-func (h kitHookRunner) Fire(ctx context.Context, evt string, fields map[string]any) session.HookOutcome {
-	out := h.runner.Fire(ctx, evt, fields)
-
-	return session.HookOutcome{Proceed: out.Proceed, Message: out.Message}
-}
-
-// PreToolUseVerdict resolves the combined verdict onto the kit enum.
-func (h kitHookRunner) PreToolUseVerdict(
-	ctx context.Context, toolName string, input json.RawMessage,
-) (verdict session.HookVerdict, reason string) { //nolint:nonamedreturns // mirrors the seam's named pair
-	v, r := h.runner.PreToolUseVerdict(ctx, toolName, input)
-
-	switch v {
-	case ecosys.VerdictNone:
-		return session.HookVerdictNone, ""
-	case ecosys.VerdictDeny:
-		return session.HookVerdictDeny, r
-	case ecosys.VerdictAsk:
-		return session.HookVerdictAsk, r
-	case ecosys.VerdictAllow:
-		return session.HookVerdictAllow, r
-	default:
-		return session.HookVerdictNone, "" // an unknown app verdict stays no-decision
-	}
-}
-
-// PostToolUse observes the completed result (the coreexec.ToolHooks seam).
-func (h kitHookRunner) PostToolUse(ctx context.Context, toolName string, input, output json.RawMessage) {
-	h.runner.PostToolUse(ctx, toolName, input, output)
-}
+// --- 25-06 Task 1 residue: the perm rule-set adapter (stays — the runtime
+// keeps its perm edge until a later plan severs it; the catalog owns only
+// the ecosystem seam) ---
 
 // kitRuleSet adapts the app permission rule set to the kit session.RuleSet
 // view (the 25-03-assigned session→perm severance's composition-side half;
@@ -4370,11 +4281,11 @@ func (k kitRuleSet) Evaluate(toolName, primaryArg string) session.RuleVerdict {
 // kit-typed chain entries).
 func (r *Runner) liveAgentLookup(name string) (session.AgentDef, bool) {
 	entry, ok := r.commandChainRef().resolve(name)
-	if !ok || entry.kind != chainKindAgent || entry.agent == nil {
+	if !ok || entry.kind != chainKindAgent || entry.agentDef == nil {
 		return session.AgentDef{}, false
 	}
 
-	return kitAgentDef(entry.agent), true
+	return *entry.agentDef, true
 }
 
 // dispatchAgentSlash runs one /<agent-name> dispatch (20-04, D-03/SKLS-02):

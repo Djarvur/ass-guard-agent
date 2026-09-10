@@ -58,7 +58,7 @@ func memRunner(t *testing.T, plant func(dir string)) (r *Runner, dir string) {
 		t.Fatalf("SetupEngine: %v", err)
 	}
 
-	r.LoadCommandRegistry() // the real Loader over the temp tree
+	r.SetCatalog(newTestCatalog(r.workDirOrDefault())) // the real Loader over the temp tree
 
 	return r, dir
 }

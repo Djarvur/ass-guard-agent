@@ -61,7 +61,7 @@ func newMatrixRunner(t *testing.T, project string, script ...scriptedResp) (*Run
 		t.Fatalf("SetupEngine: %v", err)
 	}
 
-	r.LoadCommandRegistry()
+	r.SetCatalog(newTestCatalog(r.workDirOrDefault()))
 
 	return r, prov
 }

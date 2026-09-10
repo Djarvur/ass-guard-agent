@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -149,7 +149,7 @@ func newCommandRunner(t *testing.T, fixtures func(dir string)) (*Runner, *script
 		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return prov },
 	}
 
-	r.LoadCommandRegistry()
+	r.SetCatalog(newTestCatalog(r.workDirOrDefault()))
 
 	return r, prov, stderr
 }
@@ -309,29 +309,34 @@ const (
 	namePlain   = "plain"
 )
 
-// chainFixture builds an ecosys.Registry value in code (no temp dirs) with
-// colliding names across the discovered kinds.
-func chainFixture() ecosys.Registry {
-	return ecosys.Registry{
-		Skills: map[string]ecosys.Skill{
-			nameDupe:  {Name: nameDupe, Description: "the skill", Path: "skill-dupe.md"},
-			"helper":  {Name: "helper", Description: "helper skill", Path: "skill-helper.md"},
-			nameModel: {Name: nameModel, Description: "skill stealing a reserved name", Path: "skill-model.md"},
-		},
-		Agents: map[string]ecosys.Agent{
-			nameDupe: {Name: nameDupe, Description: "the agent", Path: "agent-dupe.md"},
-			"probe":  {Name: nameProbe, Description: "probe agent", Path: "agent-probe.md"},
-			"tandem": {Name: nameTandem, Description: "agent over file", Path: "agent-tandem.md"},
-		},
-		Commands: map[string]ecosys.Command{
-			nameDupe:    {Name: nameDupe, Description: "the file", Path: "file-dupe.md"},
-			nameCompact: {Name: nameCompact, Description: "a file named compact", Path: "file-compact.md", ArgumentHint: "[focus]"},
-			"plain":     {Name: namePlain, Description: "plain file command", Path: "file-plain.md"},
-			"hinted":    {Name: "hinted", Description: "hinted file command", Path: "file-hinted.md", ArgumentHint: "<target>"},
-			"doctor2":   {Name: "doctor2", Description: "not reserved", Path: "file-doctor2.md"},
-			"tandem":    {Name: nameTandem, Description: "file under agent", Path: "file-tandem.md"},
-			nameStatus:  {Name: nameStatus, Description: "a file named status", Path: "file-status.md"},
-		},
+// chainFixture builds the catalog's discovered rows in code (no temp dirs)
+// with colliding names across the kinds, in the D-02 delivery order the
+// adapter guarantees (skills, then agents, then file commands). 25-06: the
+// fixture is the kit CatalogEntry projection — what Entries() hands
+// buildChain — not the registry it came from.
+func chainFixture() []CatalogEntry {
+	return []CatalogEntry{
+		// skills
+		{Kind: EntryKindSkill, Name: nameDupe, Description: "the skill", Path: "skill-dupe.md"},
+		{Kind: EntryKindSkill, Name: "helper", Description: "helper skill", Path: "skill-helper.md"},
+		{Kind: EntryKindSkill, Name: nameModel, Description: "skill stealing a reserved name", Path: "skill-model.md"},
+		// agents
+		{Kind: EntryKindAgent, Name: nameDupe, Description: "the agent", Path: "agent-dupe.md",
+			Agent: &session.AgentDef{Name: nameDupe, Description: "the agent"}},
+		{Kind: EntryKindAgent, Name: nameProbe, Description: "probe agent", Path: "agent-probe.md",
+			Agent: &session.AgentDef{Name: nameProbe, Description: "probe agent"}},
+		{Kind: EntryKindAgent, Name: nameTandem, Description: "agent over file", Path: "agent-tandem.md",
+			Agent: &session.AgentDef{Name: nameTandem, Description: "agent over file"}},
+		// file commands
+		{Kind: EntryKindFile, Name: nameDupe, Description: "the file", Path: "file-dupe.md"},
+		{Kind: EntryKindFile, Name: nameCompact, Description: "a file named compact",
+			Path: "file-compact.md", InputHint: "[focus]"},
+		{Kind: EntryKindFile, Name: namePlain, Description: "plain file command", Path: "file-plain.md"},
+		{Kind: EntryKindFile, Name: "hinted", Description: "hinted file command",
+			Path: "file-hinted.md", InputHint: "<target>"},
+		{Kind: EntryKindFile, Name: "doctor2", Description: "not reserved", Path: "file-doctor2.md"},
+		{Kind: EntryKindFile, Name: nameTandem, Description: "file under agent", Path: "file-tandem.md"},
+		{Kind: EntryKindFile, Name: nameStatus, Description: "a file named status", Path: "file-status.md"},
 	}
 }
 
@@ -341,10 +346,10 @@ func chainFixture() ecosys.Registry {
 func TestCommandChainSemantics(t *testing.T) {
 	t.Parallel()
 
-	reg := chainFixture()
-	before := reg // the chain is a VIEW — reg maps must be unchanged after build
+	rows := chainFixture()
+	before := slices.Clone(rows) // the chain is a VIEW — the input rows must be unchanged after build
 
-	c := buildChain(reg, nil)
+	c := buildChain(rows, nil)
 
 	cases := []struct {
 		name       string
@@ -372,10 +377,13 @@ func TestCommandChainSemantics(t *testing.T) {
 		}
 	}
 
-	// The losers stay reachable on their native surfaces: the registry maps
-	// are untouched (the chain is a view, Pitfall 1).
-	if diff := registryDiff(before, reg); diff != "" {
-		t.Errorf("buildChain mutated the registry (it is a view):\n%s", diff)
+	// The losers stay reachable on their native surfaces: the input rows
+	// are untouched (the chain is a view, Pitfall 1 — the catalog owns the
+	// registry; buildChain never sees it).
+	if !slices.EqualFunc(before, rows, func(a, b CatalogEntry) bool {
+		return a.Kind == b.Kind && a.Name == b.Name && a.Path == b.Path
+	}) {
+		t.Error("buildChain mutated its input rows (it is a view)")
 	}
 }
 
@@ -386,10 +394,10 @@ func TestCommandChainSemantics(t *testing.T) {
 func TestCommandChainReservedShadowing(t *testing.T) {
 	t.Parallel()
 
-	reg := chainFixture()
+	rows := chainFixture()
 	stderr := &bytes.Buffer{}
 
-	c := buildChain(reg, stderr)
+	c := buildChain(rows, stderr)
 
 	for _, name := range []string{nameModel, "compact", "status"} {
 		if e, ok := c.resolve(name); ok && e.kind != chainKindBuiltin {
@@ -425,7 +433,7 @@ func TestCommandChainReservedShadowing(t *testing.T) {
 	// Exactly once per FILE per build: build again from the SAME registry and
 	// count occurrences.
 	stderr.Reset()
-	buildChain(reg, stderr)
+	buildChain(rows, stderr)
 
 	if got := strings.Count(stderr.String(), "shadows reserved builtin name"); got != 3 {
 		t.Errorf("second build emitted %d shadow warnings; want 3 (one per file, deduped by path)", got)
@@ -438,8 +446,7 @@ func TestCommandChainReservedShadowing(t *testing.T) {
 func TestCommandChainAdvertisementShape(t *testing.T) {
 	t.Parallel()
 
-	reg := chainFixture()
-	c := buildChain(reg, nil)
+	c := buildChain(chainFixture(), nil)
 
 	ad := c.advertisement()
 
@@ -481,13 +488,13 @@ func TestCommandChainAdvertisementShape(t *testing.T) {
 	}
 }
 
-// TestCommandChainEmptyRegistry pins the degenerate build: an empty registry
-// yields the builtin-only chain (status + init), resolvable, no warnings.
+// TestCommandChainEmptyRegistry pins the degenerate build: zero discovered
+// rows yield the builtin-only chain (status + init), resolvable, no warnings.
 func TestCommandChainEmptyRegistry(t *testing.T) {
 	t.Parallel()
 
 	stderr := &bytes.Buffer{}
-	c := buildChain(ecosys.Registry{}, stderr)
+	c := buildChain(nil, stderr)
 
 	for _, name := range []string{nameStatus, nameInit} {
 		if _, ok := c.resolve(name); !ok {
@@ -529,65 +536,6 @@ func TestReservedNamesFitInvocationGrammar(t *testing.T) {
 	if got := len(reservedNames); got != 14 {
 		t.Errorf("reserved name set has %d entries; want 14 (thirteen class-B + init)", got)
 	}
-}
-
-// registryDiff reports a human-readable difference between two registries'
-// discovered maps (the view-immutability assertion's lens; lengths + paths
-// suffice — a mutated value or map would shift one of the two).
-//
-//nolint:cyclop // flat per-map diff lens
-func registryDiff(a, b ecosys.Registry) string {
-	var sb strings.Builder
-
-	if len(a.Skills) != len(b.Skills) {
-		fmt.Fprintf(&sb, "Skills len %d -> %d\n", len(a.Skills), len(b.Skills))
-	}
-
-	if len(a.Agents) != len(b.Agents) {
-		fmt.Fprintf(&sb, "Agents len %d -> %d\n", len(a.Agents), len(b.Agents))
-	}
-
-	if len(a.Commands) != len(b.Commands) {
-		fmt.Fprintf(&sb, "Commands len %d -> %d\n", len(a.Commands), len(b.Commands))
-	}
-
-	for key, av := range a.Skills {
-		if bv, ok := b.Skills[key]; !ok || av.Path != bv.Path {
-			fmt.Fprintf(&sb, "Skills[%s] changed\n", key)
-		}
-	}
-
-	for key := range b.Skills {
-		if _, ok := a.Skills[key]; !ok {
-			fmt.Fprintf(&sb, "Skills[%s] added\n", key)
-		}
-	}
-
-	for key, av := range a.Agents {
-		if bv, ok := b.Agents[key]; !ok || av.Path != bv.Path {
-			fmt.Fprintf(&sb, "Agents[%s] changed\n", key)
-		}
-	}
-
-	for key := range b.Agents {
-		if _, ok := a.Agents[key]; !ok {
-			fmt.Fprintf(&sb, "Agents[%s] added\n", key)
-		}
-	}
-
-	for key, av := range a.Commands {
-		if bv, ok := b.Commands[key]; !ok || av.Path != bv.Path {
-			fmt.Fprintf(&sb, "Commands[%s] changed\n", key)
-		}
-	}
-
-	for key := range b.Commands {
-		if _, ok := a.Commands[key]; !ok {
-			fmt.Fprintf(&sb, "Commands[%s] added\n", key)
-		}
-	}
-
-	return sb.String()
 }
 
 // --- 20-02: the class-B family battery (CMDS-02) ---
@@ -770,14 +718,13 @@ func TestClassBHelpSelfDescribing(t *testing.T) {
 		}
 	}
 
-	// Add a skill to the registry + rebuild the chain (the rescan path 20-05
-	// automates; the battery drives the seam directly).
-	reg := r.reg
-	reg.Skills = map[string]ecosys.Skill{
+	// Add a skill to the catalog's registry + rebuild the chain (the rescan
+	// path 20-05 automates; the battery drives the seam directly — 25-06:
+	// the twin's plant helper is the old r.reg poke).
+	testCatalogOf(t, r).plantSkills(map[string]ecosys.Skill{
 		"greeter": {Name: "greeter", Description: "greets warmly", Path: "greeter/SKILL.md"},
-	}
+	})
 
-	r.reg = reg
 	r.rebuildCommandChain()
 
 	frames2, _ := classBRun(t, r, "/help")
@@ -1489,7 +1436,7 @@ func TestSkillSlash(t *testing.T) {
 		}
 
 		// The registry keeps it (the MODEL surface is untouched).
-		if _, ok := r.reg.Skills["hidden"]; !ok {
+		if _, ok := testCatalogOf(t, r).skill("hidden"); !ok {
 			t.Error("registry lost the excluded skill (model surface must keep it)")
 		}
 	})
@@ -1627,7 +1574,7 @@ func TestAgentSlash(t *testing.T) {
 		// The AGENT TOOL surface still dispatches the agentDef (native
 		// surface): the registry keeps the loser and session dispatch resolves
 		// it through the SubagentTypes fallback (the chain's loser-miss path).
-		if def, ok := r.reg.Agents["twin"]; !ok || def.Prompt != "Twin agent prompt." {
+		if def, ok := testCatalogOf(t, r).agent("twin"); !ok || def.Prompt != "Twin agent prompt." {
 			t.Fatalf("registry lost the colliding agent: %+v", def)
 		}
 	})

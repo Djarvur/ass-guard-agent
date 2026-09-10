@@ -86,7 +86,7 @@ func TestAdvisoryWiring_QuestionEndingNote(t *testing.T) { //nolint:cyclop,gocyc
 		t.Fatalf("SetupEngine: %v", err)
 	}
 
-	runner.LoadCommandRegistry()
+	runner.SetCatalog(newTestCatalog(runner.workDirOrDefault()))
 
 	srvInR, cliW := io.Pipe()
 

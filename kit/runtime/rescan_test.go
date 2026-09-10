@@ -64,7 +64,7 @@ func rescanTestRunner(t *testing.T) (*Runner, *atomic.Int64, context.CancelFunc)
 		t.Fatalf("mkdir agents tree: %v", err)
 	}
 
-	r.LoadCommandRegistry()
+	r.SetCatalog(newTestCatalog(r.workDirOrDefault()))
 
 	var fires atomic.Int64
 

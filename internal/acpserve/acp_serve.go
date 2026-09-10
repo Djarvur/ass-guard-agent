@@ -278,9 +278,12 @@ func Run( //nolint:funlen // :320-425
 		},
 	})
 	// Slash-command registry (08-04): load ONCE at startup, engine-independent
-	// (the engine-off path expands too). A failed load degrades — turns run on
-	// plain text (see LoadCommandRegistry).
-	runner.LoadCommandRegistry()
+	// (the engine-off path expands too). 25-06 (D-17): discovery is the app's
+	// — loadCommandCatalog runs .claude/ discovery + precedence + the
+	// mutability table HERE (the same position LoadCommandRegistry held) and
+	// the adapter is injected; a failed load degrades — turns run on plain
+	// text (see loadCommandCatalog).
+	runner.SetCatalog(loadCommandCatalog(opts.WorkDir))
 
 	if opts.EngineEnabled {
 		// 25-05 (OQ4/D-17): the app-hosted loads (openspec config + tool
