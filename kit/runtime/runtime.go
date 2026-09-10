@@ -46,7 +46,7 @@ import (
 	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
 	"github.com/Djarvur/ass-guard-agent/kit/toolexec"
 
-	"github.com/Djarvur/ass-guard-agent/internal/runtime/enginebridge"
+	"github.com/Djarvur/ass-guard-agent/kit/internal/enginebridge"
 )
 
 const (

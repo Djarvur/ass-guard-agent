@@ -18,7 +18,7 @@ import (
 	"github.com/Djarvur/ass-guard-agent/kit/session"
 	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
 
-	"github.com/Djarvur/ass-guard-agent/internal/runtime/enginebridge"
+	"github.com/Djarvur/ass-guard-agent/kit/internal/enginebridge"
 )
 
 // --- Phase 8 / 08-04: slash-command expansion wiring (Tests 9-14) ---

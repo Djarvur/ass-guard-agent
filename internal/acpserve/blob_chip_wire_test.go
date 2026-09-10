@@ -20,11 +20,11 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
-	"github.com/Djarvur/ass-guard-agent/internal/runtime"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
 	"github.com/Djarvur/ass-guard-agent/kit/modelrouting"
 	"github.com/Djarvur/ass-guard-agent/kit/profile"
 	"github.com/Djarvur/ass-guard-agent/kit/provider"
+	"github.com/Djarvur/ass-guard-agent/kit/runtime"
 )
 
 // Wire/chunk literals local to this fixture (goconst hygiene).

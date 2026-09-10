@@ -8,7 +8,7 @@ package acpserve
 
 import (
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
-	"github.com/Djarvur/ass-guard-agent/internal/runtime"
+	"github.com/Djarvur/ass-guard-agent/kit/runtime"
 )
 
 // commandSourceAdapter adapts the runner's resolver CHAIN (20-01/CMDS-01 —
