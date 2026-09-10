@@ -300,6 +300,9 @@ const goldenACPServe = "Speaks ACP v1 (newline-delimited JSON-RPC) over stdio. s
 	"\n" +
 	"      --profiles-dir string    directory containing profile bundles (default \"<TMP>/profiles\")" +
 	"\n" +
+	"      --sandbox string         confine spawned tool processes (Bash-class children) to the workdir rw" +
+	" triple with network denied (SAND-01); off|on (default off) (default \"off\")" +
+	"\n" +
 	"      --work-dir string        working directory for .ass-guard/ transcripts (default: cwd)" +
 	"\n" +
 	"" +
