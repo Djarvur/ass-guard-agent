@@ -1,0 +1,21 @@
+{
+  "plan": "24-06",
+  "task": 1,
+  "phase_gate": "RED",
+  "command": "go test -race -count=1 ./internal/runtime/ -run TestModesMatrixWake -v",
+  "targetTest": "TestModesMatrixWake",
+  "exitCode": 0,
+  "output": "--- SKIP: TestModesMatrixWake/commands (0.00s)\n--- SKIP: TestModesMatrixWake/skills (0.00s)\n--- SKIP: TestModesMatrixWake/hooks (0.00s)\nPASS\nok github.com/Djarvur/ass-guard-agent/internal/runtime 1.018s\n",
+  "precondition_skip_lines": [
+    "modesmatrix_wake_test.go:50: PRECONDITION-UNMET(22, background wake-turn D-01) wake x commands: once the wake turn is live: the woken turn's /matrix-echo invocation must expand (assert the wake-turn user message carries the MATRIX-ECHO-EXPANSION body)",
+    "modesmatrix_wake_test.go:62: PRECONDITION-UNMET(22, background wake-turn D-01) wake x skills: once the wake turn is live: the woken turn's /matrix-skill invocation must expand (assert the wake-turn user message carries the MATRIX-SKILL-BODY)",
+    "modesmatrix_wake_test.go:75: PRECONDITION-UNMET(22, background wake-turn D-01) wake x hooks: once the wake turn is live: the woken turn's tool call must fire the fixture PreToolUse hook (marker file) and the completing dispatch must fire SubagentStop"
+  ],
+  "precondition_skip_count": 3,
+  "expected": "Per 24-06 Task 1 (G-24-1): the three wake cells (wake x commands/skills/hooks) RUN through the REAL phase-22 wake machinery — a completing background subagent drives scheduleWakeDrain -> wakeDrainChain -> drainWakeNotifications -> runOneTurn — and the runtime test binary's registry records all three wake cells as pass with zero PRECONDITION-UNMET lines in the run output",
+  "actual": "RED is the committed three-skip state (24-05 f678e8b): all three subtests SkipPrecondition on the FALSE premise 'Phase 22 is PLANNED-BUT-UNEXECUTED' — Phase 22 executed 2026-09-08..09-10 (43a8378, 5ad02a0, a59baf9 all ancestors of phase-24 base 5552942) and TestWakeTurn_BackgroundBashCompletion is green at HEAD (precondition re-verified before this run). The skip premise IS the defect this task deletes; the committed stubs are the RED baseline",
+  "failing_tests": [],
+  "unexpected_green": [],
+  "note": "This task's RED shape is deliberately NOT target_test_failed: the plan (24-06 Task 1 action) designates the committed three-loud-skip state as the RED — the evidence is the captured skip lines plus the count of 3 (the loudness vocabulary the task deletes). The old count gate (exactly 3 PRECONDITION-UNMET lines proved honesty) inverts to a zero gate at GREEN. Raw log: /tmp/246-task1-red.log.",
+  "timestamp": "2026-09-10T18:55:00Z"
+}

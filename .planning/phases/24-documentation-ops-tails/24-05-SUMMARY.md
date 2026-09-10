@@ -184,7 +184,7 @@ plan_head_before: 6afcf95fb36db4fb48e13960535675f699844f75
 
 - **The harness skeleton proven on one fully-real cell (Task 1 tracer):** fixture → installed-plugin discovery at serve startup → the session gate's PreToolUse verdict consult executing the fixture hook → the OBSERVED EFFECT — the hook's stdin JSON (event, tool name, live session id) appended to the marker file inside the temp project. The real Run composition over io.Pipes, verbatim 16-06 discipline.
 - **Nine of twelve cells functional (Task 2):** interactive commands/skills expand before the provider call (received-prompt lens, proven again on the automation row via transcript+provider lenses); the subagent row pins the verbatim nested-path carry plus registry discovery; hooks fire in all three exercised modes (PreToolUse via the gate head in interactive + automation; SubagentStop through the real dispatch rails in subagent mode). The collision probe resolves a project-tree command over the plugin bundle — one winner, no merge, the locked loader precedence.
-- **Honest ECOS-04 state (Task 3):** exactly three PRECONDITION-UNMET(22, background wake-turn D-01) wake cells (count-asserted), each carrying in-file prose naming the functional assertion that replaces the skip once Phase 22 executes; the totality gate makes a silently-incomplete grid structurally impossible.
+- **Honest ECOS-04 state (Task 3, corrected 2026-09-10 by 24-06):** the three wake cells shipped here as count-asserted PRECONDITION-UNMET(22) loud skips — a premise that was FALSE (phase 22 had already executed; see the correction note below). 24-06 replaced the skips with real drivers through the live phase-22 wake chain, so the wake file's run output now carries ZERO precondition marks while the totality gate still makes a silently-incomplete grid structurally impossible.
 - **D-14 real-plugin anchor:** superpowers 6.1.1 mounted read-only and driven through the interactive leg (evidence below).
 
 ## The 4x3 ECOS-04 evidence table (the phase's TAIL-03 matrix)
@@ -193,7 +193,7 @@ plan_head_before: 6afcf95fb36db4fb48e13960535675f699844f75
 |---|---|---|---|
 | **interactive** | pass — /matrix-echo expands (received-prompt lens); collision probe: project entry wins | pass — /matrix-skill SKILL.md body expands with args | pass — PreToolUse via the gate head; marker carries stdin JSON |
 | **subagent** | pass — dispatch through real DispatchSubagent; nested turn carries the invocation VERBATIM (expansion parent-side — pinned live behavior); fixture command discovered | pass — same pinned nested-path carry for /matrix-skill; fixture skill discovered | pass — SubagentStop fires per dispatch completion; marker carries stdin JSON |
-| **wake** | PRECONDITION-UNMET(22, background wake-turn D-01) | PRECONDITION-UNMET(22, background wake-turn D-01) | PRECONDITION-UNMET(22, background wake-turn D-01) |
+| **wake** | pass — 24-06: a completing background subagent (Task run_in_background) wakes exactly ONE real turn; the invocation rides the dispatch verbatim; the woken model saw the notification | pass — 24-06: the same real-chain composition over /matrix-skill | pass — 24-06: PreToolUse fired INSIDE the wake turn (marker stdin JSON, tool_name Read); the notification names the dispatch (kind subagent + minted task id) |
 | **automation** | pass — runAutomationTurn over a sched.Create'd automation; expansion in transcript + provider lenses | pass — same firing path over the SKILL.md body | pass — the fired turn's Read consults the gate head; marker carries stdin JSON |
 
 **Empty-input row (probe empty):** interactive + automation legs — with NO fixture, the typed invocation falls through verbatim and the marker file stays ABSENT (absence as a pass condition, `TestModesMatrixInteractiveEmpty` / `TestModesMatrixCronEmpty`).
@@ -224,7 +224,7 @@ plan_head_before: 6afcf95fb36db4fb48e13960535675f699844f75
 - `internal/acpserve/modesmatrix_interactive_test.go` — interactive row + empty row + the D-14 spot-check leg
 - `internal/session/modesmatrix_subagent_test.go` — subagent row through real DispatchSubagent
 - `internal/runtime/modesmatrix_cron_test.go` — automation row + empty row through runAutomationTurn + sched
-- `internal/runtime/modesmatrix_wake_test.go` — the three loud wake cells with replacement assertions
+- `internal/runtime/modesmatrix_wake_test.go` — the three wake cells (24-06 correction: the loud-skip stubs rested on a FALSE premise — phase 22 had already executed — and were replaced by real drivers over the live wake machinery; see the correction note below)
 - `internal/acpserve/simulator_e2e_test.go` — additive stub lenses: captured request prompts + system blocks
 
 ## Decisions Made
@@ -290,8 +290,8 @@ The D-14 spot-check's user_setup surface resolved WITHOUT operator input: the op
 
 ## Next Phase Readiness
 
-- Phase 24's four tails are complete (all five plans have summaries); TAIL-03's ECOS-04 state is total, honest, and repeatable — nine cells proven functional, three wake cells loudly pending Phase 22 with in-file replacement assertions, the empty row specified, one real plugin anchoring the unchanged claim.
-- WINDOWS ledger carries one open deviation entry (the designed wake-row precondition marks) — visible at ship time; it resolves when Phase 22 executes and the wake cells gain their functional assertions.
+- Phase 24's four tails are complete (all five plans have summaries); TAIL-03's ECOS-04 state is total, honest, and repeatable — 24-06 corrected the wake row: all TWELVE cells proven functional through the real phase-22 machinery (the "three wake cells loudly pending Phase 22" claim below this line's original wording rested on a false premise), the empty row specified, one real plugin anchoring the unchanged claim.
+- WINDOWS ledger carried one open deviation entry (the designed wake-row precondition marks) — RESOLVED 2026-09-10 by 24-06 (entry #29 fixed): the premise was false (phase 22 executed 2026-09-08..09-10; commits 43a8378, 5ad02a0, a59baf9 are ancestors of the phase-24 base 5552942) and the wake cells now carry real functional assertions.
 - Residual baseline (pre-existing, out of scope): repo-wide lint under 2.13.2 still reports the documented pre-Phase-24 findings; TestPermissionsE2E, TestRescanConcurrency, evalsuite env-gating, coreexec load-flake.
 
 ## Self-Check: PASSED
@@ -300,6 +300,15 @@ The D-14 spot-check's user_setup surface resolved WITHOUT operator input: the op
 - All five commits verified in git log (cf7b04e, a69291d, cd7e67b, f678e8b, 5027d8d).
 - Plan-level verification re-run: vet green, CGO build green, race battery green (12 TestModesMatrix* + 3 TestMatrix* tests), WAKE-CELLS-LOUD count exactly 3, fixture hermetic, spot-check evidence recorded above.
 - go.mod content unchanged — zero new dependencies.
+
+## Correction (2026-09-10, plan 24-06 — G-24-1)
+
+The wake-row claims above originally rested on a FALSE premise: this summary stated the three wake cells were skipped because "Phase 22 is PLANNED-BUT-UNEXECUTED on the roadmap this harness ships against". Phase 22 EXECUTED before Phase 24 — the wake-turn machinery shipped in 43a8378 on 2026-09-08 and was gap-closed by 5ad02a0/a59baf9 on 2026-09-10, all ancestors of Phase 24's first commit 5552942 (see 24-VERIFICATION.md gap 1). Plan 24-06 replaced the three loud-skip stubs with real drivers through the live chain (completing background subagent → scheduleWakeDrain → wakeDrainChain → drainWakeNotifications → runOneTurn), so ECOS-04 is now 12/12 cells exercised with zero precondition marks, and WINDOWS entry #29 is resolved.
+
+The 24-06 drivers implement TWO sanctioned assertion-shape substitutions a later re-verification must read as the sanctioned shape, not weakened coverage:
+
+1. **commands/skills:** the wake turn's input is MACHINE-composed (renderWakeBlocks emits notification-only blocks) and slash expansion is first-text-block start-anchored (expandUserBlocks over the invocation regex), so a typed invocation is structurally unexpandable inside a wake turn. Those cells therefore prove the strongest TRUE functional outcome over the wake composition: the invocation rides the wake-triggering dispatch (the nested subagent turn carries it verbatim — the pinned subagent-mode carry), exactly one real wake turn fires naming the completing dispatch, and the woken model's captured request carries the notification.
+2. **hooks:** SubagentStop is foreground-only at HEAD — it fires only inside the foreground DispatchSubagent wrapper (internal/session/subagent.go:150); the background leg calls the nested Runner.Run directly and never enters that wrapper. The cell therefore proves the PreToolUse firing INSIDE the wake turn (marker file carries the stdin JSON with tool_name Read) plus the notification's kind/task-id linkage to the completing dispatch's minted id. Making SubagentStop fire on the background leg would be a production change (a NEW gap), deliberately descoped.
 
 ---
 *Phase: 24-documentation-ops-tails*
