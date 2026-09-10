@@ -4,18 +4,18 @@ milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 23
 current_phase_name: SEED Gaps Close-out
-current_plan: 3
+current_plan: 4
 status: executing
-stopped_at: Completed 23-05-PLAN.md (/undo class-B — final plan of Phase 23)
-last_updated: "2026-09-10T11:48:16.313Z"
+stopped_at: Completed 23-06-PLAN.md (G-23-1 gap closure — workspace-scoped restore guard)
+last_updated: "2026-09-10T13:19:43.443Z"
 last_activity: 2026-09-10
 last_activity_desc: Phase 23 execution started
-state_head: 0a57399943a45b4c24a03cc08a094717be765e79
+state_head: 0c17c02c064212528ddf2fd5df1d3cd1cc65241b
 progress:
   total_phases: 11
   completed_phases: 6
-  total_plans: 76
-  completed_plans: 62
+  total_plans: 77
+  completed_plans: 63
   percent: 55
 ---
 
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-09-10)
 ## Current Position
 
 Phase: 23 (SEED Gaps Close-out) — EXECUTING
-Plan: 3 of 5
-Current Plan: 3
+Plan: 4 of 5
+Current Plan: 4
 Total Plans in Phase: 5
 Status: Ready to execute
 Last activity: 2026-09-10 — Phase 23 execution started
@@ -107,6 +107,7 @@ Phase 19: 7/7 ✓ closed 2026-09-10 (verification completed by the auto-UAT live
 | Phase 22 P08 | 25 min | 2 tasks | 4 files |
 | Phase 22 P09 | 22 min | 2 tasks | 8 files |
 | Phase 23 P05 | 34 min | 3 tasks | 3 files |
+| Phase 23 P06 | 18 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -211,6 +212,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 22]: [Phase 22]: 22-08 (G-22-4): drainWakeNotifications resolves sessions NON-constructingly (sessMu-held lookup; miss = loud terminal drop) even though CloseSession now prunes the tracker — tracker-registered-but-session-absent stays reachable (sessionFor stores tracker before session; completions racing close); CloseSession deletes trackers/wakeInFlight/ptyManagers AFTER s.Close() and cancels RUNNING subagents (tracker.CancelRunning beside CancelQueued); IN-05's unbounded retry retired incidentally
 - [Phase 22]: 22-09 (G-22-5): TaskStop/TaskOutput reach background-subagent ids through two primitive-arg fallback seams (InteractiveConfig.TaskStopFallback/TaskOutputFallback — the CompletionHook precedent, coreexec stays tasks-free); the fallthrough arms ONLY on the registry's own unknown-task error, declined/nil keep the structured error byte-stable, and renderTaskOutput is the ONE envelope renderer for both id families (byte-identity by construction)
 - [Phase 22]: 22-09: Tracker.SubagentState's finished row is truthful BECAUSE 22-07's releaseSubagentSlot deleted completed cancel entries — classifier-over-map-absence; the runtime binding (TaskStopFallback=tracker.CancelTask, TaskOutputFallback=SubagentState classify + bounded 64 KiB output-file tail; stat-miss=not-handled) gives CancelTask its first production callers, and block/timeout are documented as ignored for fallback ids
+- [Phase 23]: 23-06 (G-23-1/CR-01): the idle /undo half consults the SELF-EXCLUDING workspaceBlockers walk, never the full restoreBlockers guard — Run marks the calling session's own turnActive before the class-B intercept, so the full guard would refuse every idle /undo (checker-verified design)
+- [Phase 23]: 23-06: cross-session-before-own ordering + the refusal OUTRANKS the D-12 auto-cancel for both own-state variants (parked chain, own client turn) — nothing cancelled, nothing minted; the discriminator (restoreBlockedError.other) keeps the own-state path byte-stable
+- [Phase 23]: 23-06: the workspace consult precedes SnapshotPreRestore on BOTH /undo halves — a pre-restore snapshot minted under a busy workspace is a torn D-11 walk target (shared tree committed mid-write under the other session's turn)
 
 ### Pending Todos
 
@@ -236,6 +240,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-10T11:48:14.987Z
-Stopped at: Completed 23-05-PLAN.md (/undo class-B — final plan of Phase 23)
+Last session: 2026-09-10T13:19:42.068Z
+Stopped at: Completed 23-06-PLAN.md (G-23-1 gap closure — workspace-scoped restore guard)
 Resume file: None
