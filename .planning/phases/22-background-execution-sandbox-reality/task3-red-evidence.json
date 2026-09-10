@@ -1,0 +1,25 @@
+{
+  "plan": "22-04",
+  "task": 3,
+  "phase_gate": "RED",
+  "command": "go test -race -count=1 ./internal/coreexec/ -run 'TestPTYDrain' ; go test -race -count=1 ./internal/runtime/ -run 'TestSessionClosePTY'",
+  "exit_code": 1,
+  "target_tests": [
+    "TestPTYDrain/TermSensitiveShellDiesOnTerm",
+    "TestPTYDrain/TermImmuneShellDiesViaEscalation",
+    "TestPTYDrain/FDCountStableAcrossCycles",
+    "TestPTYDrain/IdempotentOnNeverStarted",
+    "TestSessionClosePTY"
+  ],
+  "failing_tests": [
+    "TestSessionClosePTY (assertions: 'persistent shell survived session close — Drain missing from the OnClose chain (D-08)'; 'ShellPID() != 0 after close') — the OnClose chain does not invoke Drain"
+  ],
+  "expected_result": "Per 22-04 Task 3 <behavior>: runtime.go's OnClose chain invokes Drain beside taskRegistry.ReapAll — session close ends the persistent shell and clears the manager.",
+  "actual_result": "sessionFor stores the manager and Config.PTY is wired (Task 1), but OnClose never calls Drain: the shell stays alive past session close with its pid retained.",
+  "unexpected_green": [
+    "TestPTYDrain all four rows (Drain's TERM ladder, escalation for a TERM-immune shell, fd stability across 5 cycles, idempotent no-op on a never-started manager — landed with the Task 1/2 manager commits)"
+  ],
+  "verdict": "RED_EVIDENCE_OK_target_test_failed_on_assertions",
+  "note": "gsd-tools runtime predates the `check tdd-red-evidence` verb — record kept at /tmp/gsd-22-04-wip/evidence/task3-red.json and copied to the phase directory.",
+  "timestamp": "2026-09-10T02:46:58Z"
+}

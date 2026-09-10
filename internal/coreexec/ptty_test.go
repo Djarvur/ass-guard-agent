@@ -606,3 +606,106 @@ func TestPTYEmpty(t *testing.T) { //nolint:paralleltest // real pty shells
 		}
 	})
 }
+
+// --- 22-04 Task 3 (D-08, Pitfall 5): session-close drain — TERM→KILL the
+// shell's session group, close the master fd, never leak.
+
+// fdCount reports the process's open-descriptor count (linux /proc; ok=false
+// on platforms without the probe — the row skips there).
+func fdCount() (int, bool) {
+	entries, err := os.ReadDir("/proc/self/fd")
+	if err != nil {
+		return 0, false
+	}
+
+	return len(entries), true
+}
+
+// TestPTYDrain: a TERM-sensitive shell dies on TERM (fast — no KILL
+// escalation needed); a TERM-immune shell still dies via the escalation
+// within the grace window; N start/drain cycles leave the fd count at
+// baseline (no master-fd leak, Pitfall 5); Drain on a never-started manager
+// is an idempotent no-op.
+func TestPTYDrain(t *testing.T) { //nolint:paralleltest // real pty shells, fd baseline
+	t.Run("TermSensitiveShellDiesOnTerm", func(t *testing.T) { //nolint:paralleltest // real shell
+		m := NewPTYManager(PTYOpts{WorkDir: t.TempDir()})
+		ptyRunOK(t, m, "echo warm")
+
+		if !m.Alive() {
+			t.Fatal("shell not alive before Drain")
+		}
+
+		start := time.Now()
+		m.Drain()
+
+		if elapsed := time.Since(start); elapsed > 2*time.Second {
+			t.Errorf("Drain on a TERM-sensitive shell took %v; want the fast TERM path (no full-grace burn)", elapsed)
+		}
+
+		if m.Alive() {
+			t.Error("Alive() = true after Drain; want false")
+		}
+
+		if m.ShellPID() != 0 {
+			t.Errorf("ShellPID() = %d after Drain; want 0 (state cleared)", m.ShellPID())
+		}
+	})
+
+	t.Run("TermImmuneShellDiesViaEscalation", func(t *testing.T) { //nolint:paralleltest // real shell, grace window
+		m := NewPTYManager(PTYOpts{WorkDir: t.TempDir()})
+		ptyRunOK(t, m, "trap '' TERM")
+
+		start := time.Now()
+		m.Drain()
+		elapsed := time.Since(start)
+
+		if !m.Alive() {
+			// dead is required; HOW it died is the assertion below
+		} else {
+			t.Fatal("TERM-immune shell survived Drain — the KILL escalation is broken")
+		}
+
+		if elapsed < 3*time.Second {
+			t.Errorf("Drain on a TERM-immune shell took %v; want the full-grace escalation path (>= 3s)", elapsed)
+		}
+
+		if elapsed > 8*time.Second {
+			t.Errorf("Drain took %v; the escalation must stay bounded past the grace", elapsed)
+		}
+	})
+
+	t.Run("FDCountStableAcrossCycles", func(t *testing.T) { //nolint:paralleltest // fd baseline isolation
+		before, ok := fdCount()
+		if !ok {
+			t.Skip("no /proc/self/fd on this platform — fd leak pinned on linux")
+		}
+
+		for i := 0; i < 5; i++ {
+			m := NewPTYManager(PTYOpts{WorkDir: t.TempDir()})
+			ptyRunOK(t, m, "echo cycle")
+			m.Drain()
+		}
+
+		after, ok := fdCount()
+		if !ok {
+			t.Skip("fd probe vanished mid-test")
+		}
+
+		if after > before+2 {
+			t.Errorf("fd count after 5 start/drain cycles = %d; baseline %d — the master fd leaks (Pitfall 5)", after, before)
+		}
+	})
+
+	t.Run("IdempotentOnNeverStarted", func(t *testing.T) {
+		t.Parallel()
+
+		m := NewPTYManager(PTYOpts{WorkDir: t.TempDir()})
+
+		m.Drain() // never started — a no-op, not a panic
+		m.Drain() // idempotent
+
+		if m.Alive() {
+			t.Error("never-started manager reports Alive after Drain")
+		}
+	})
+}
