@@ -572,6 +572,8 @@ const goldenModelRouting = "Inspect and validate the model scheduling config" +
 	"\n" +
 	"  resolve     resolve a tier to a concrete (provider, model) at a given time" +
 	"\n" +
+	"  stats       dump aggregated routing-outcome stats from the outcome store" +
+	"\n" +
 	"  validate    load + validate the model-routing config (D-10 load-time guarantee)" +
 	"\n" +
 	"" +

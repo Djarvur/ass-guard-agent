@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
@@ -121,25 +122,103 @@ type StatsRow struct {
 func LoadAndAggregate(
 	storePath string,
 ) (map[modelrouting.ProviderModelKey]modelrouting.AggregateStats, int, error) {
-	return nil, 0, nil
+	records, skipped, err := modelrouting.ReadOutcomes(storePath)
+	if err != nil {
+		return nil, 0, fmt.Errorf("read outcome store: %w", err)
+	}
+
+	return modelrouting.Aggregate(records, modelrouting.OutcomeWindowAll), skipped, nil
 }
 
 // BuildStatsRows flattens the aggregate into deterministic rows (sorted
-// provider, then model), enriching each with cfg's tier bindings.
+// provider, then model), enriching each with cfg's tier bindings: every tier
+// whose PRIMARY model is the row's model, sorted and comma-joined ("" when no
+// tier binds it). Operator context only — the enrichment never filters rows.
 func BuildStatsRows(
 	agg map[modelrouting.ProviderModelKey]modelrouting.AggregateStats, cfg *modelrouting.Config,
 ) []StatsRow {
-	return nil
+	rows := make([]StatsRow, 0, len(agg))
+	for key, stats := range agg {
+		rows = append(rows, StatsRow{
+			Provider: key.Provider, Model: key.Model,
+			OK: stats.OK, Transient: stats.Transient,
+			Structural: stats.Structural, Exhausted: stats.Exhausted,
+			InTokens: stats.InTokens, OutTokens: stats.OutTokens, CostUSD: stats.CostUSD,
+			Tier: tierBindingFor(cfg, key.Model),
+		})
+	}
+
+	slices.SortFunc(rows, func(a, b StatsRow) int {
+		if c := strings.Compare(a.Provider, b.Provider); c != 0 {
+			return c
+		}
+
+		return strings.Compare(a.Model, b.Model)
+	})
+
+	return rows
+}
+
+// tierBindingFor returns the sorted, comma-joined tier names whose primary
+// binding is model ("" when none or cfg is nil).
+func tierBindingFor(cfg *modelrouting.Config, model string) string {
+	if cfg == nil {
+		return ""
+	}
+
+	var tiers []string
+	for tier, binding := range cfg.Tiers {
+		if binding.Model == model {
+			tiers = append(tiers, tier)
+		}
+	}
+
+	slices.Sort(tiers)
+
+	return strings.Join(tiers, ",")
 }
 
 // EmitStatsHuman writes the human dump to w (the STDERR discipline — write
-// errors are ignored, exactly like EmitResolveHuman).
+// errors are ignored, exactly like EmitResolveHuman). One line per
+// (provider, model) with the outcome-class counts and token/cost totals; an
+// empty aggregate prints the no-store-yet note (a normal state, not an error).
 func EmitStatsHuman(w io.Writer, rows []StatsRow, storePath string, skipped int) {
+	if len(rows) == 0 {
+		_, _ = fmt.Fprintf(w, "no outcomes recorded yet (store: %s)\n", storePath)
+
+		return
+	}
+
+	_, _ = fmt.Fprintf(w, "outcomes store: %s (skipped %d lines)\n", storePath, skipped)
+
+	for i := range rows {
+		row := &rows[i]
+
+		tier := ""
+		if row.Tier != "" {
+			tier = fmt.Sprintf(" (tier: %s)", row.Tier)
+		}
+
+		_, _ = fmt.Fprintf(w, "%s/%s%s: ok=%d transient=%d structural=%d exhausted=%d in=%d out=%d cost=$%.4f\n",
+			row.Provider, row.Model, tier,
+			row.OK, row.Transient, row.Structural, row.Exhausted,
+			row.InTokens, row.OutTokens, row.CostUSD)
+	}
 }
 
 // EmitStatsJSON writes the machine dump to w — the ONLY stdout path in the
 // scheduling CLI, only when --json is explicitly requested — and returns the
-// encode error (the EmitResolveJSON discipline).
+// encode error (the EmitResolveJSON discipline). Rows are already sorted by
+// BuildStatsRows, so the output is byte-deterministic.
 func EmitStatsJSON(w io.Writer, rows []StatsRow, storePath string, skipped int) error {
-	return nil
+	out := struct {
+		Store   string     `json:"store"`
+		Skipped int        `json:"skipped"`
+		Targets []StatsRow `json:"targets"`
+	}{Store: storePath, Skipped: skipped, Targets: rows}
+
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+
+	return enc.Encode(out) //nolint:wrapcheck // json encoder
 }
