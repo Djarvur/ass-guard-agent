@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -22,7 +21,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/coreexec"
 	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/internal/learning"
@@ -283,8 +281,10 @@ type Runner struct {
 	// sessMu guards lastSessionID + automationProvenance; schedule is the
 	// PER-PROJECT store (workDir-scoped, shared across the project's sessions);
 	// schedTick/schedStop/catchUpOnce drive the serve-lifetime scheduler
-	// goroutine + the one-per-serve catch-up; emitFor builds the session
-	// chunk emitter for SERVER-DRIVEN turns (WINDOWS #3 — nil in tests).
+	// goroutine + the one-per-serve catch-up; emitFor builds the session's
+	// kit Emitter for SERVER-DRIVEN turns (WINDOWS #3 — nil in tests). The
+	// 25-04 seam retype: the factory hands back a kit Emitter (D-14); the
+	// frontend adapter owns every frame translation from there.
 	turnMus              sync.Map // sessionID -> *sync.Mutex
 	turnActive           sync.Map // sessionID -> *atomic.Bool
 	sessMu               sync.Mutex
@@ -294,7 +294,7 @@ type Runner struct {
 	schedTick            time.Duration
 	schedStop            func()
 	catchUpOnce          sync.Once
-	emitFor              func(sessionID string) acp.ChunkEmitter
+	emitFor              func(sessionID string) Emitter
 
 	// 22-01 (D-01..D-03) wake-turn state — see cron_wiring.go: trackers maps
 	// each session to its tasks.Tracker (the ONE task-notification
@@ -851,10 +851,16 @@ func (r *Runner) invocationFor( //nolint:funcorder,nonamedreturns // sibling of 
 	return key, args, true
 }
 
-// Run drives one session/prompt through the real Session Core.
+// Run drives one session/prompt through the real Session Core. The 25-04
+// seam retype made the signature kit-neutral (D-14/OQ3): prompt is the
+// session package's own block shape (session is kit), emit is the KIT-02
+// Emitter seam, and the returned stop marker is the kit-RAW value — an
+// ask-suspended turn returns stopAskACP ("ask") and the FRONTEND ADAPTER
+// maps it to its wire's stop reason (the acpserve adapter maps it to
+// end_turn; cron audit lines keep recording this raw marker, OQ3).
 func (r *Runner) Run( //nolint:funlen // the turn pipeline's composition root
 	ctx context.Context, sessionID string,
-	emit acp.ChunkEmitter, prompt []acp.ContentBlock,
+	emit Emitter, prompt []session.ContentBlock,
 ) (string, error) {
 	sess := r.sessionFor(ctx, sessionID)
 	if sess == nil {
@@ -875,7 +881,7 @@ func (r *Runner) Run( //nolint:funlen // the turn pipeline's composition root
 	// session's SteerQueue and returns promptly (the running turn is
 	// untouched — D-04); everything else falls through to today's flow
 	// unchanged.
-	if stop, handled := r.routeSteering(sess, sessionID, emit, prompt); handled {
+	if stop, handled := r.routeSteering(ctx, sess, sessionID, emit, prompt); handled {
 		return stop, nil
 	}
 
@@ -930,7 +936,7 @@ func (r *Runner) Run( //nolint:funlen // the turn pipeline's composition root
 
 	startChunkForwarder(ctx, ch, thoughtCh, toolCh, toolUpdCh, emit, promptDone, done)
 
-	blocks := toContentBlocks(prompt)
+	blocks := append([]session.ContentBlock(nil), prompt...)
 
 	// 21-05 (PAR-06/D-11): provider-capability validation FIRST — a provider
 	// whose protocol cannot carry image content blocks gets them dropped
@@ -1008,11 +1014,16 @@ func (r *Runner) Run( //nolint:funlen // the turn pipeline's composition root
 			// plain advisory note stays its degraded landing.
 			r.enqueueEngineAsk(sess, adv.turnID, adv.askSignal)
 		} else if r.advisoryNoteDue(sessionID, adv.class) {
-			_ = emit.AgentMessageChunk(adv.turnID, adv.text)
+			_ = emit.Emit(ctx, event.AgentMessageChunk{
+				TurnID: adv.turnID, MessageID: adv.turnID, Content: adv.text,
+			})
 		}
 	}
 
-	return mapAskStop(stop), err
+	// OQ3: the kit-raw stop marker returns — the frontend adapter maps the
+	// ask-suspension marker to its wire value ("end_turn" on ACP); the cron
+	// audit lines record this raw value.
+	return stop, err
 }
 
 // routeSteering is the pre-mutex ingress classifier (23-02, SEEDG-01 /
@@ -1051,7 +1062,7 @@ func (r *Runner) Run( //nolint:funlen // the turn pipeline's composition root
 // contract); the ACP adapter drops it — the queued note and the boundary
 // drain's "steering applied: N inputs" are the operator-visible record.
 func (r *Runner) routeSteering(
-	sess *session.Session, sessionID string, emit acp.ChunkEmitter, prompt []acp.ContentBlock,
+	ctx context.Context, sess *session.Session, sessionID string, emit Emitter, prompt []session.ContentBlock,
 ) (string, bool) {
 	if !r.clientTurnActive(sessionID) && r.chainCount(sessionID) == 0 {
 		return "", false // nothing active — the ordinary new-turn path
@@ -1062,7 +1073,7 @@ func (r *Runner) routeSteering(
 		return "", false
 	}
 
-	blocks := toContentBlocks(prompt)
+	blocks := prompt
 
 	idx := firstTextBlockIndex(blocks)
 	if idx < 0 || blocks[idx].Text == "" {
@@ -1075,7 +1086,7 @@ func (r *Runner) routeSteering(
 	// steers (20-01's locked position). 23-05 (D-12): /undo is the one
 	// class-B command that COMPLETES mid-turn (auto-cancel-then-restore);
 	// everything else falls through to the ordinary path.
-	if stop, handled := r.routeUndoActive(sess, sessionID, emit, blocks[idx].Text); handled {
+	if stop, handled := r.routeUndoActive(ctx, sess, sessionID, emit, blocks[idx].Text); handled {
 		return stop, true
 	}
 
@@ -1092,7 +1103,9 @@ func (r *Runner) routeSteering(
 
 	note := fmt.Sprintf("steering queued — %d pending", q.Pending())
 
-	if err := emit.AgentMessageChunk(sess.CurrentTurnID(), note); err != nil {
+	if err := emit.Emit(ctx, event.AgentMessageChunk{
+		TurnID: sess.CurrentTurnID(), MessageID: sess.CurrentTurnID(), Content: note,
+	}); err != nil {
 		log.Printf("ass-guard: steering queued-note emit failed (input stays queued): %v", err)
 	}
 
@@ -1126,7 +1139,7 @@ func (r *Runner) resolvesAsCommand(text string) bool {
 // on the held mutex (Pitfall 4). Every other input (including every other
 // class-B command) returns handled=false unchanged.
 func (r *Runner) routeUndoActive(
-	sess *session.Session, sessionID string, emit acp.ChunkEmitter, text string,
+	ctx context.Context, sess *session.Session, sessionID string, emit Emitter, text string,
 ) (string, bool) {
 	key, args, ok := ecosys.ParseInvocation(text)
 	if !ok || key != nameUndo {
@@ -1141,7 +1154,7 @@ func (r *Runner) routeUndoActive(
 	turnID := sess.MintLocalCommandTurnID()
 
 	// D-05 echo through the in-hand emitter, then the D-12 sequence.
-	r.emitClassBEcho(emit, turnID, text)
+	r.emitClassBEcho(ctx, emit, turnID, text)
 
 	plan, out, outcome := r.prepareUndo(sess, args)
 	if plan.targetID != "" {
@@ -1152,7 +1165,9 @@ func (r *Runner) routeUndoActive(
 		outcome = localOutcomeOK // the durable record's default (16-D-22)
 	}
 
-	if err := emit.AgentMessageChunk(turnID, out); err != nil {
+	if err := emit.Emit(ctx, event.AgentMessageChunk{
+		TurnID: turnID, MessageID: turnID, Content: out,
+	}); err != nil {
 		log.Printf("ass-guard: /undo output enqueue failed (continuing): %v", err)
 	}
 
@@ -1255,42 +1270,25 @@ func (r *Runner) restoreUndoActive(sess *session.Session, sessionID string, plan
 		cancelled, plan.targetID, preID), ""
 }
 
-// mapAskStop maps the INTERNAL ask-suspension stop marker to the ACP-facing
-// stopReason of a completed turn (12-01, ACP-01): the client received its
-// prompt response — the question arrived just before as a client-visible
-// update, and the pending ask lives in the session broker. Every other stop
-// reason passes through unchanged.
-func mapAskStop(stop string) string {
-	if stop == stopAskACP {
-		return stopEndTurn
-	}
-
-	return stop
-}
-
-// stopAskACP mirrors session's ask stop marker (kept local: internal/session
-// owns the vocabulary; the turn layer only needs the one mapping).
+// stopAskACP mirrors session's ask stop marker (kept local: the session
+// package owns the vocabulary; the runner returns it RAW — 25-04 OQ3: only
+// the frontend adapter maps it to its wire's stop reason; cron audit lines
+// record this raw value).
 const stopAskACP = "ask"
 
-// startChunkForwarder spawns the per-Run chunk forwarder: streamed
-// AgentMessageChunk events become session/update notifications, and (16-01)
-// ToolCall / ToolCallUpdate events become the ACP-03 tool-card frames via the
-// ActivityEmitter seam, until the turn completes; then any buffered events
-// drain before the goroutine exits (the caller signals promptDone + waits on
-// done). A plain ChunkEmitter (legacy fakes) silently skips the tool frames.
-// 21-03 (PAR-05/D-13): AgentThoughtChunk events join the same forwarder as
-// agent_thought_chunk frames through the ActivityEmitter assertion.
+// startChunkForwarder spawns the per-Run chunk forwarder: every subscribed
+// bus event is handed RAW to the kit Emitter seam (25-04, D-14) — the
+// frontend adapter owns every frame translation (text chunks, thought
+// chunks, tool cards). The forwarder runs until the turn completes; then any
+// buffered events drain before the goroutine exits (the caller signals
+// promptDone + waits on done).
 func startChunkForwarder(
 	ctx context.Context,
 	ch, thoughtCh, toolCh, toolUpdCh <-chan event.Event,
-	emit acp.ChunkEmitter,
+	emit Emitter,
 	promptDone, done chan struct{},
 ) {
-	// 16-01: the ActivityEmitter assertion happens once; a nil toolEmit simply
-	// disables tool-card forwarding for plain ChunkEmitter fakes.
-	toolEmit, _ := emit.(acp.ActivityEmitter)
-
-	route := func(e event.Event) { routeBusEvent(e, emit, toolEmit) }
+	route := func(e event.Event) { _ = emit.Emit(ctx, e) }
 
 	go func() {
 		defer func() { done <- struct{}{} }()
@@ -1344,81 +1342,11 @@ func startChunkForwarder(
 	}()
 }
 
-// routeBusEvent forwards one bus event of the forwarder-supported kinds to the
-// right emitter method (AgentMessageChunk → text chunk; ToolCall /
-// ToolCallUpdate → the ACP-03 tool-card frames; AgentThoughtChunk → the
-// agent_thought_chunk frame via the ActivityEmitter seam — 21-03, PAR-05).
-// Shared by the per-Run and the session-lifetime forwarders.
-func routeBusEvent(e event.Event, emit acp.ChunkEmitter, toolEmit acp.ActivityEmitter) {
-	switch c := e.(type) {
-	case event.AgentMessageChunk:
-		_ = emit.AgentMessageChunk(c.MessageID, c.Content)
-	case event.AgentThoughtChunk:
-		forwardThoughtChunk(toolEmit, c)
-	case event.ToolCall:
-		forwardToolCall(toolEmit, e)
-	case event.ToolCallUpdate:
-		forwardToolCallUpdate(toolEmit, e)
-	}
-}
-
-// forwardThoughtChunk mirrors one bus AgentThoughtChunk event as a v1
-// agent_thought_chunk frame (PAR-05, 21-03). A nil emitter (plain
-// ChunkEmitter fake) is a no-op — the same 16-01 type-assert skip the tool
-// cards use; the frame vocabulary itself is additive (16-D-20).
-func forwardThoughtChunk(toolEmit acp.ActivityEmitter, c event.AgentThoughtChunk) {
-	if toolEmit == nil {
-		return
-	}
-
-	_ = toolEmit.ThoughtChunk(c.MessageID, acp.ContentBlock{Type: blockText, Text: c.Content})
-}
-
-// forwardToolCall mirrors one bus ToolCall event as a v1 tool_call frame: the
-// card's title IS the tool name and the frame carries the event's raw input so
-// the acp layer can derive presentation variants (its own concern, never the
-// runtime's). A nil emitter (plain ChunkEmitter fake) is a no-op.
-func forwardToolCall(toolEmit acp.ActivityEmitter, e event.Event) {
-	if toolEmit == nil {
-		return
-	}
-
-	c, ok := e.(event.ToolCall)
-	if !ok {
-		return
-	}
-
-	_ = toolEmit.ToolCall(&acp.ToolCallFrame{
-		ToolCallID: c.ToolCallID,
-		Title:      c.Name,
-		Kind:       toolKindFor(c.Name),
-		Input:      append(json.RawMessage(nil), c.Input...),
-	})
-}
-
-// forwardToolCallUpdate mirrors one bus ToolCallUpdate event: the event's
-// partial-update JSON is decoded (tolerantly — unknown keys dropped, the
-// decoder never fabricates) and pinned to the event's real toolCallId.
-func forwardToolCallUpdate(toolEmit acp.ActivityEmitter, e event.Event) {
-	if toolEmit == nil {
-		return
-	}
-
-	c, ok := e.(event.ToolCallUpdate)
-	if !ok || len(c.Update) == 0 {
-		return
-	}
-
-	var uf acp.ToolCallUpdateFrame
-
-	_ = json.Unmarshal(c.Update, &uf)
-	uf.ToolCallID = c.ToolCallID
-
-	_ = toolEmit.ToolCallUpdate(&uf)
-}
-
-// Captured core tool names referenced by toolKindFor (named so the mapping
-// table reads as a table, not a string pile).
+// Captured core tool names (the kit catalog's own tool identity vocabulary —
+// named so call sites read as a table, not a string pile). The presentation
+// kind table that used to sit beside them (toolKindFor — name → ACP
+// ToolKind) moved to the frontend adapter with the 25-04 seam extraction:
+// presentation vocabulary is the adapter's, never the kit's (Phase-15 D-20).
 const (
 	toolNameBash         = "Bash"
 	toolNameEdit         = "Edit"
@@ -1430,28 +1358,6 @@ const (
 	toolNameWebSearch    = "WebSearch"
 	toolNameExitPlanMode = "ExitPlanMode"
 )
-
-// toolKindFor maps the captured core tool names to v1 ToolKind values.
-// Unknown tools map to "" (kind omitted — the schema treats it as optional;
-// never guessed). Presentation vocabulary, not behavior.
-func toolKindFor(name string) string {
-	switch name {
-	case toolNameBash:
-		return acp.ToolKindExecute
-	case toolNameEdit, toolNameWrite:
-		return acp.ToolKindEdit
-	case toolNameRead:
-		return acp.ToolKindRead
-	case toolNameGrep, toolNameGlob:
-		return acp.ToolKindSearch
-	case toolNameWebFetch, toolNameWebSearch:
-		return acp.ToolKindFetch
-	case toolNameExitPlanMode:
-		return acp.ToolKindSwitchMode
-	default:
-		return ""
-	}
-}
 
 // runOneTurn drives ONE ACP session/prompt through the Session Core, wrapping it
 // with the Phase-4 engine when enabled (Plan 04-05 D-01). The engine runs AFTER
@@ -2847,6 +2753,7 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 
 	// ...the session-lifetime chunk forwarder mirrors SERVER-DRIVEN turns
 	// (timer resumes, automation firings) to the client (WINDOWS #3)...
+	//nolint:contextcheck // the forwarder emits under the serve-lifetime ctx by design (cron_wiring.go)
 	stopForwarder, _ := r.startSessionForwarder(sessionID)
 
 	// ...and the FIRST active session of a serve lifetime runs the fire-once
@@ -3304,8 +3211,10 @@ func (r *Runner) closeAllSessions() { //nolint:funcorder // shutdown helper grou
 
 // CloseSession closes one session's MCP host AND evicts it from the session
 // cache (the logout/close/delete reap path — Plan 05-01 T4, widened by review
-// WR-03). It satisfies acp.SessionCloser; the ACP server calls it via type
-// assertion when handling logout and the session/close/delete sequences. The
+// WR-03). The frontend adapter forwards this as its wire's session-closer
+// capability (25-04: the acpserve adapter satisfies acp.SessionCloser by
+// delegation); the ACP server calls it via type assertion when handling
+// logout and the session/close/delete sequences. The
 // closed Session's resources (MCP host, TranscriptWriter ctx, session
 // forwarder, SessionEnd hook) are unrecoverable — the reap chain runs exactly
 // once — so a later sessionFor of the same id must RECONSTRUCT a full session
@@ -3479,9 +3388,11 @@ func (r *Runner) ApplyCompactionSettings(enabled bool, thresholdPct int) error {
 	return nil
 }
 
-// SetEmitter injects the server-driven-turn chunk emitter (WINDOWS #3:
-// strictly between server construction and scheduler start).
-func (r *Runner) SetEmitter(emit func(sessionID string) acp.ChunkEmitter) { r.emitFor = emit }
+// SetEmitter injects the server-driven-turn kit Emitter factory (WINDOWS #3:
+// strictly between server construction and scheduler start). The 25-04 seam
+// retype: the factory hands back a kit Emitter (D-14); the frontend adapter
+// wraps its own transport handle — the kit never sees a frame type.
+func (r *Runner) SetEmitter(emit func(sessionID string) Emitter) { r.emitFor = emit }
 
 // SetPermissionAskFire injects the permission-ask surface callback (17-02,
 // ACP-01): the serve composition binds the acpserve surface's Fire
@@ -3607,7 +3518,8 @@ func (r *Runner) PermMode() string {
 func (r *Runner) StartScheduler(ctx context.Context) { r.startScheduler(ctx) }
 
 // DrainAsks drains one session's ask queue — the session/cancel teardown
-// (17-03, D-13/T-17-09; the acp.AskDrainer capability): the OPEN permission
+// (17-03, D-13/T-17-09; the ask-drain capability the acpserve adapter
+// forwards as acp.AskDrainer): the OPEN permission
 // dialog resolves cancelled through the queue-owned fire-ctx cancellation (the
 // registry cascades $/cancel_request) and queued-but-unfired asks drain
 // cancelled-normal immediately. THE one shared drain, reached from all three
@@ -3957,7 +3869,9 @@ func (r *Runner) routeAskReply(
 			return "", false // the timer/reply won the claim race — an ordinary turn
 		}
 
-		return mapAskStop(stop), true
+		// OQ3: the RAW stop returns — the frontend adapter maps the ask
+		// marker to its wire value.
+		return stop, true
 	}
 
 	stop, rerr := sess.ResolveAsk(ctx, blocks[idx].Text)
@@ -3965,7 +3879,7 @@ func (r *Runner) routeAskReply(
 		return "", false // the D-01 timer won the race — an ordinary turn
 	}
 
-	return mapAskStop(stop), true
+	return stop, true
 }
 
 // parkedCancelPhrases is the parked-ask cancel grammar's accepted vocabulary
@@ -4013,7 +3927,7 @@ func isParkedCancel(text string) bool {
 // a failed local_command outcome with a loud stderr warning — a control-plane
 // command NEVER fails the session (T-20-02).
 func (r *Runner) tryLocalCommand(
-	ctx context.Context, sess *session.Session, emit acp.ChunkEmitter, blocks []session.ContentBlock,
+	ctx context.Context, sess *session.Session, emit Emitter, blocks []session.ContentBlock,
 ) (string, bool) {
 	idx := firstTextBlockIndex(blocks)
 	if idx < 0 || blocks[idx].Text == "" {
@@ -4047,11 +3961,13 @@ func (r *Runner) tryLocalCommand(
 	// 20-04 (SKLS-01): a skill whose on-disk body is EMPTY must never become
 	// an empty model prompt — the loud D-05 error shape + failed record.
 	if entry.kind == chainKindSkill && r.skillBodyEmpty(key) {
-		r.emitClassBEcho(emit, turnID, blocks[idx].Text)
+		r.emitClassBEcho(ctx, emit, turnID, blocks[idx].Text)
 
 		msg := fmt.Sprintf("skill %q has an empty body — nothing to expand (skill key: %s)\n", key, entry.key)
 
-		if err := emit.AgentMessageChunk(turnID, msg); err != nil {
+		if err := emit.Emit(ctx, event.AgentMessageChunk{
+			TurnID: turnID, MessageID: turnID, Content: msg,
+		}); err != nil {
 			log.Printf("ass-guard: empty-skill output enqueue failed (continuing): %v", err)
 		}
 
@@ -4073,11 +3989,10 @@ func (r *Runner) tryLocalCommand(
 		return "", false
 	}
 
-	// D-05 echo: through the in-hand emitter handle (foreground lane — the
-	// same handle the turn's chunks ride; NOT a side channel). A plain
-	// ChunkEmitter (legacy fakes) silently skips the echo — the ActivityEmitter
-	// assertion precedent.
-	r.emitClassBEcho(emit, turnID, blocks[idx].Text)
+	// D-05 echo: through the in-hand Emitter seam (foreground lane — the
+	// same emitter the turn's chunks ride; NOT a side channel). The adapter
+	// renders it as its user-message echo frame.
+	r.emitClassBEcho(ctx, emit, turnID, blocks[idx].Text)
 
 	outcome := "ok"
 	output, outcomeOverride := r.runBuiltinHandler(ctx, entry, sess, turnID, args)
@@ -4086,9 +4001,11 @@ func (r *Runner) tryLocalCommand(
 	}
 
 	// The output rides as agent_message_chunk(s) under the turn's normal
-	// message id — the emit handle, best-effort (the durable record below is
+	// message id — the emitter seam, best-effort (the durable record below is
 	// the source of truth).
-	if err := emit.AgentMessageChunk(turnID, output); err != nil {
+	if err := emit.Emit(ctx, event.AgentMessageChunk{
+		TurnID: turnID, MessageID: turnID, Content: output,
+	}); err != nil {
 		log.Printf("ass-guard: class-B output enqueue failed (continuing): %v", err)
 	}
 
@@ -4136,25 +4053,6 @@ const sourceChainBuiltin = "builtin"
 // localOutcomeOK is the local_command record's default success outcome
 // (16-D-22) — handlers return "" for it; the record writers normalize.
 const localOutcomeOK = "ok"
-
-// toContentBlocks converts the ACP content blocks to session content blocks.
-// 21-05 (PAR-06): image blocks map through with their Data (the pre-ingress
-// base64 carrier — json:"-", never serialized) and declared MimeType; the
-// ingress (ingressImages) validates + swaps them for Ref form BEFORE the
-// transcript append.
-func toContentBlocks(in []acp.ContentBlock) []session.ContentBlock {
-	out := make([]session.ContentBlock, len(in))
-	for i, b := range in {
-		out[i] = session.ContentBlock{
-			Type:      b.Type,
-			Text:      b.Text,
-			Data:      b.Data,
-			MediaType: b.MimeType,
-		}
-	}
-
-	return out
-}
 
 // patternNextPrompter is the optional pattern-table capability answering
 // "what does the engine inject when this pattern matches" (08-06 chaining).
@@ -4377,10 +4275,10 @@ func (r *Runner) liveAgentLookup(name string) (ecosys.Agent, bool) {
 // agent surface. A subagent ERROR surfaces as the turn's error output —
 // never a second error channel, never a wedged turn.
 func (r *Runner) dispatchAgentSlash(
-	ctx context.Context, sess *session.Session, emit acp.ChunkEmitter,
+	ctx context.Context, sess *session.Session, emit Emitter,
 	turnID, key, args string, agentDef ecosys.Agent,
 ) (string, bool) {
-	r.emitClassBEcho(emit, turnID, "/"+key+" "+args)
+	r.emitClassBEcho(ctx, emit, turnID, "/"+key+" "+args)
 
 	prompt := args
 	if strings.TrimSpace(prompt) == "" {
@@ -4397,7 +4295,9 @@ func (r *Runner) dispatchAgentSlash(
 		output = fmt.Sprintf("agent %q failed: %v\n", key, err)
 	}
 
-	if serr := emit.AgentMessageChunk(turnID, output); serr != nil {
+	if serr := emit.Emit(ctx, event.AgentMessageChunk{
+		TurnID: turnID, MessageID: turnID, Content: output,
+	}); serr != nil {
 		log.Printf("ass-guard: agent-slash output enqueue failed (continuing): %v", serr)
 	}
 
@@ -4417,13 +4317,16 @@ func (r *Runner) dispatchAgentSlash(
 // (distinguishes the slash surface from the Agent tool on the dispatch line).
 const agentSlashToolPrefix = "slash:"
 
-// emitClassBEcho renders the D-05 user_message_chunk echo through the
-// in-hand handle (the ActivityEmitter assertion — plain fakes skip it).
-func (r *Runner) emitClassBEcho(emit acp.ChunkEmitter, turnID, text string) {
-	if ue, canEcho := emit.(acp.ActivityEmitter); canEcho {
-		if eerr := ue.UserMessageChunk(turnID+echoIDSuffix, text); eerr != nil {
-			log.Printf("ass-guard: class-B echo enqueue failed (continuing): %v", eerr)
-		}
+// emitClassBEcho renders the D-05 user-message echo through the Emitter seam
+// (25-04: the kit emits the neutral UserMessageChunk event; the frontend
+// adapter renders its transport's user-message frame — a non-chat frontend
+// renders its own echo shape).
+func (r *Runner) emitClassBEcho(ctx context.Context, emit Emitter, turnID, text string) {
+	eerr := emit.Emit(ctx, event.UserMessageChunk{
+		TurnID: turnID, MessageID: turnID + echoIDSuffix, Content: text,
+	})
+	if eerr != nil {
+		log.Printf("ass-guard: class-B echo enqueue failed (continuing): %v", eerr)
 	}
 }
 

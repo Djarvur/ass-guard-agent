@@ -8,7 +8,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/sched"
 	"github.com/Djarvur/ass-guard-agent/internal/tasks"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
@@ -242,9 +241,10 @@ func (r *Runner) runCatchUpOnce(ctx context.Context, sessionID string) {
 // startSessionForwarder subscribes the session-lifetime chunk forwarder
 // (WINDOWS #3's fix): AgentMessageChunk events belonging to this session —
 // INCLUDING server-driven turns (D-01 timer resumes, automation firings)
-// where no Run subscription exists — reach the connected client, and (16-01)
-// so do its ToolCall / ToolCallUpdate events as the ACP-03 tool-card frames.
-// While a client-driven Run is active its OWN forwarder owns these kinds (the
+// where no Run subscription exists — reach the connected client, and so do
+// its thought/tool events, all handed RAW to the kit Emitter seam (25-04,
+// D-14): the frontend adapter owns every frame translation. While a
+// client-driven Run is active its OWN forwarder owns these kinds (the
 // client-turn flag mutes this one — no duplicates). stop unsubscribes (the
 // session close chain).
 func (r *Runner) startSessionForwarder(sessionID string) (func(), bool) {
@@ -269,27 +269,33 @@ func (r *Runner) startSessionForwarder(sessionID string) (func(), bool) {
 	merged := fanInEvents(ch, thoughtCh, toolCh, toolUpdCh)
 
 	prefix := sessionID + "-turn-"
-	toolEmit, _ := emit.(acp.ActivityEmitter)
 
+	// The session filter stays KIT-side (it is this session's forwarder); the
+	// kind-to-frame translation is the adapter's (the serve-lifetime ctx
+	// bounds the emissions — this forwarder outlives any single turn).
 	forward := func(e event.Event) {
 		switch c := e.(type) {
 		case event.AgentMessageChunk:
-			if strings.HasPrefix(c.TurnID, prefix) {
-				_ = emit.AgentMessageChunk(c.MessageID, c.Content)
+			if !strings.HasPrefix(c.TurnID, prefix) {
+				return
 			}
 		case event.AgentThoughtChunk:
-			if strings.HasPrefix(c.TurnID, prefix) {
-				forwardThoughtChunk(toolEmit, c)
+			if !strings.HasPrefix(c.TurnID, prefix) {
+				return
 			}
 		case event.ToolCall:
-			if strings.HasPrefix(c.TurnID, prefix) {
-				forwardToolCall(toolEmit, e)
+			if !strings.HasPrefix(c.TurnID, prefix) {
+				return
 			}
 		case event.ToolCallUpdate:
-			if strings.HasPrefix(c.TurnID, prefix) {
-				forwardToolCallUpdate(toolEmit, e)
+			if !strings.HasPrefix(c.TurnID, prefix) {
+				return
 			}
+		default:
+			return
 		}
+
+		_ = emit.Emit(r.serveCtxOrBackground(), e)
 	}
 
 	go func() {

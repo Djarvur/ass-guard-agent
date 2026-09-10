@@ -92,7 +92,7 @@ func TestAdvisoryWiring_QuestionEndingNote(t *testing.T) { //nolint:cyclop,gocyc
 
 	cliR, srvOutW := io.Pipe()
 
-	srv := acp.NewServer(srvInR, srvOutW, &bytes.Buffer{}, acp.WithTurnRunner(runner))
+	srv := acp.NewServer(srvInR, srvOutW, &bytes.Buffer{}, acp.WithTurnRunner(acpTurnRunner{r: runner}))
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -317,12 +317,12 @@ func TestAdvisoryWiring_DedupeSemantics(t *testing.T) { //nolint:gocognit,cyclop
 
 		const sid = "sess-adv-dedupe"
 
-		_, err := r.Run(context.Background(), sid, em, []acp.ContentBlock{{Type: blockText, Text: "go"}})
+		_, err := acpRun(context.Background(), r, sid, em, []acp.ContentBlock{{Type: blockText, Text: "go"}})
 		if err != nil {
 			t.Fatalf("Run 1: %v", err)
 		}
 
-		_, err = r.Run(context.Background(), sid, em, []acp.ContentBlock{{Type: blockText, Text: "again"}})
+		_, err = acpRun(context.Background(), r, sid, em, []acp.ContentBlock{{Type: blockText, Text: "again"}})
 		if err != nil {
 			t.Fatalf("Run 2: %v", err)
 		}
@@ -357,13 +357,13 @@ func TestAdvisoryWiring_DedupeSemantics(t *testing.T) { //nolint:gocognit,cyclop
 
 		const sid = "sess-adv-classes"
 
-		_, err := r.Run(context.Background(), sid, em, []acp.ContentBlock{{Type: blockText, Text: "go"}})
+		_, err := acpRun(context.Background(), r, sid, em, []acp.ContentBlock{{Type: blockText, Text: "go"}})
 		if err != nil {
 			t.Fatalf("Run 1: %v", err)
 		}
 
 		// Turn 2 closes with the OPEN-QUESTION class phrase.
-		_, err = r.Run(context.Background(), sid, em, []acp.ContentBlock{{Type: blockText, Text: "next"}})
+		_, err = acpRun(context.Background(), r, sid, em, []acp.ContentBlock{{Type: blockText, Text: "next"}})
 		if err != nil {
 			t.Fatalf("Run 2: %v", err)
 		}
@@ -387,7 +387,7 @@ func TestAdvisoryWiring_DedupeSemantics(t *testing.T) { //nolint:gocognit,cyclop
 		r, em := newRunner()
 
 		for _, sid := range []string{"sess-adv-a", "sess-adv-b"} {
-			_, err := r.Run(context.Background(), sid, em, []acp.ContentBlock{{Type: blockText, Text: "go"}})
+			_, err := acpRun(context.Background(), r, sid, em, []acp.ContentBlock{{Type: blockText, Text: "go"}})
 			if err != nil {
 				t.Fatalf("Run (%s): %v", sid, err)
 			}

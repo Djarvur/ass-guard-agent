@@ -92,7 +92,7 @@ func TestAskWiring_ReplyRouting(t *testing.T) { //nolint:gocyclo,cyclop,funlen /
 
 	em := &noopEmitter{}
 
-	stop1, err := r.Run(context.Background(), "sess-ask-w1", em,
+	stop1, err := acpRun(context.Background(), r, "sess-ask-w1", em,
 		[]acp.ContentBlock{{Type: blockText, Text: "I need to add a cache — ask me which library first"}})
 	if err != nil {
 		t.Fatalf("Run 1: %v", err)
@@ -137,7 +137,7 @@ func TestAskWiring_ReplyRouting(t *testing.T) { //nolint:gocyclo,cyclop,funlen /
 	}
 
 	// The operator's reply: an ordinary session/prompt carrying the answer text.
-	stop2, err := r.Run(context.Background(), "sess-ask-w1", &noopEmitter{},
+	stop2, err := acpRun(context.Background(), r, "sess-ask-w1", &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "ristretto, please"}})
 	if err != nil {
 		t.Fatalf("Run 2 (reply): %v", err)
@@ -198,7 +198,7 @@ func TestAskWiring_ClientSurface(t *testing.T) {
 
 	em := &noopEmitter{}
 
-	_, err := r.Run(context.Background(), "sess-ask-w2", em,
+	_, err := acpRun(context.Background(), r, "sess-ask-w2", em,
 		[]acp.ContentBlock{{Type: blockText, Text: wiringAskCache}})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -233,7 +233,7 @@ func TestAskWiring_SurfaceMatchesRenderer(t *testing.T) {
 
 	em := &noopEmitter{}
 
-	_, err := r.Run(context.Background(), "sess-ask-w3", em,
+	_, err := acpRun(context.Background(), r, "sess-ask-w3", em,
 		[]acp.ContentBlock{{Type: blockText, Text: wiringAskMe}})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -284,7 +284,7 @@ func TestAskWiring_ConfigKnob(t *testing.T) {
 
 			r, _ := newAskWiringRunner(t, tc.val)
 
-			_, err := r.Run(context.Background(), "sess-ask-knob-"+tc.name, &noopEmitter{},
+			_, err := acpRun(context.Background(), r, "sess-ask-knob-"+tc.name, &noopEmitter{},
 				[]acp.ContentBlock{{Type: blockText, Text: wiringAskMe}})
 			if err != nil {
 				t.Fatalf("Run: %v", err)
@@ -314,7 +314,7 @@ func TestAskWiring_SchemaDisciplineAtWiring(t *testing.T) {
 
 	r, _ := newAskWiringRunner(t, time.Hour)
 
-	_, err := r.Run(context.Background(), "sess-ask-w4", &noopEmitter{},
+	_, err := acpRun(context.Background(), r, "sess-ask-w4", &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: wiringAskMe}})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -407,7 +407,7 @@ func TestAskWiring_ChainSurvivesAskTimerResume(t *testing.T) { //nolint:cyclop,f
 
 	const sid = "sess-ask-chain"
 
-	stop, err := r.Run(context.Background(), sid, &noopEmitter{},
+	stop, err := acpRun(context.Background(), r, sid, &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "/opsx:explore ask-chain"}})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -619,7 +619,7 @@ func TestAskWiring_ResumeHoldsTurnMutex(t *testing.T) { //nolint:funlen // the f
 
 	const sid = "sess-cr02-mu"
 
-	stop, err := r.Run(context.Background(), sid, &noopEmitter{},
+	stop, err := acpRun(context.Background(), r, sid, &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "gated work"}})
 	if err != nil {
 		t.Fatalf("Run 1: %v", err)
@@ -681,7 +681,7 @@ func TestAskWiring_TimerResumeHoldsTurnMutex(t *testing.T) {
 
 	const sid = "sess-cr02-timer"
 
-	_, err := r.Run(context.Background(), sid, &noopEmitter{},
+	_, err := acpRun(context.Background(), r, sid, &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "I need to add a cache — ask me which library first"}})
 	if err != nil {
 		t.Fatalf("Run 1: %v", err)
@@ -777,7 +777,7 @@ func TestAskWiring_ChainSurvivesPermissionDialogResume(t *testing.T) { //nolint:
 
 	const sid = "sess-cr05-chain"
 
-	stop, err := r.Run(context.Background(), sid, &noopEmitter{},
+	stop, err := acpRun(context.Background(), r, sid, &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "/opsx:explore ask-chain"}})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -892,7 +892,7 @@ func TestAskWiring_ServerLevelSurface(t *testing.T) { //nolint:cyclop,funlen // 
 
 	cliR, srvOutW := io.Pipe()
 
-	srv := acp.NewServer(srvInR, srvOutW, &bytes.Buffer{}, acp.WithTurnRunner(runner))
+	srv := acp.NewServer(srvInR, srvOutW, &bytes.Buffer{}, acp.WithTurnRunner(acpTurnRunner{r: runner}))
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -1049,7 +1049,7 @@ func TestAskPark_PromptResponsePrecedesResolution(t *testing.T) { //nolint:cyclo
 
 	cliR, srvOutW := io.Pipe()
 
-	srv := acp.NewServer(srvInR, srvOutW, &bytes.Buffer{}, acp.WithTurnRunner(runner))
+	srv := acp.NewServer(srvInR, srvOutW, &bytes.Buffer{}, acp.WithTurnRunner(acpTurnRunner{r: runner}))
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -1211,7 +1211,7 @@ func TestAskPark_CancelAndCloseDrainParkedChains(t *testing.T) { //nolint:funlen
 
 		const sid = "sess-park-cancel"
 
-		_, err := r.Run(context.Background(), sid, &noopEmitter{},
+		_, err := acpRun(context.Background(), r, sid, &noopEmitter{},
 			[]acp.ContentBlock{{Type: blockText, Text: wiringAskMe}})
 		if err != nil {
 			t.Fatalf("Run: %v", err)
@@ -1260,7 +1260,7 @@ func TestAskPark_CancelAndCloseDrainParkedChains(t *testing.T) { //nolint:funlen
 
 		const sid = "sess-park-closeall"
 
-		_, err := r.Run(context.Background(), sid, &noopEmitter{},
+		_, err := acpRun(context.Background(), r, sid, &noopEmitter{},
 			[]acp.ContentBlock{{Type: blockText, Text: wiringAskMe}})
 		if err != nil {
 			t.Fatalf("Run: %v", err)
@@ -1349,7 +1349,7 @@ func TestAskPark_ReplyDuringParkResumesAndQueuesInjection(t *testing.T) { //noli
 
 	const sid = "sess-park-reply"
 
-	stop1, err := r.Run(context.Background(), sid, &noopEmitter{},
+	stop1, err := acpRun(context.Background(), r, sid, &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "/opsx:explore park-subj"}})
 	if err != nil {
 		t.Fatalf("Run 1: %v", err)
@@ -1371,7 +1371,7 @@ func TestAskPark_ReplyDuringParkResumesAndQueuesInjection(t *testing.T) { //noli
 	}
 
 	// The operator's reply — an ordinary session/prompt.
-	stop2, err := r.Run(context.Background(), sid, &noopEmitter{},
+	stop2, err := acpRun(context.Background(), r, sid, &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "ristretto, please"}})
 	if err != nil {
 		t.Fatalf("Run 2 (reply): %v", err)
@@ -1496,7 +1496,7 @@ func TestAskWiring_ElicitationQueueRoundTrip(t *testing.T) { //nolint:funlen,cyc
 
 	em := &noopEmitter{}
 
-	stop1, err := r.Run(context.Background(), "sess-ask-elicit", em,
+	stop1, err := acpRun(context.Background(), r, "sess-ask-elicit", em,
 		[]acp.ContentBlock{{Type: blockText, Text: wiringAskMe}})
 	if err != nil {
 		t.Fatalf("Run 1: %v", err)

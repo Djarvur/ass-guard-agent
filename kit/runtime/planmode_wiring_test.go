@@ -154,7 +154,7 @@ func startPlanModeServer(
 	srvInR, cliW := io.Pipe()
 	cliR, srvOutW := io.Pipe()
 
-	srv := acp.NewServer(srvInR, srvOutW, &bytes.Buffer{}, acp.WithTurnRunner(r))
+	srv := acp.NewServer(srvInR, srvOutW, &bytes.Buffer{}, acp.WithTurnRunner(acpTurnRunner{r: r}))
 
 	ctx, cancel := context.WithCancel(context.Background())
 

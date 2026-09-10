@@ -179,7 +179,7 @@ func runMatrixStage(t *testing.T, r *Runner, sessionID, text string) {
 	ctx, cancel := context.WithTimeout(context.Background(), e2eOverallWait)
 	defer cancel()
 
-	_, err := r.Run(ctx, sessionID, &noopEmitter{},
+	_, err := acpRun(ctx, r, sessionID, &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: text}})
 	if err != nil {
 		t.Fatalf("matrix prompt %q: %v", text, err)

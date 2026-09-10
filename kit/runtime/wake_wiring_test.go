@@ -126,7 +126,7 @@ func TestWakeTurn_BackgroundBashCompletion(t *testing.T) { //nolint:funlen,cyclo
 	)
 
 	// The CLIENT turn: starts the background task and returns immediately.
-	_, err := r.Run(context.Background(), "sess-wake-1", &noopEmitter{},
+	_, err := acpRun(context.Background(), r, "sess-wake-1", &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "run a background task"}})
 	if err != nil {
 		t.Fatalf("Run err: %v", err)

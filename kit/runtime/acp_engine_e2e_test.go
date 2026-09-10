@@ -222,7 +222,7 @@ func TestEndToEnd_ZeroContinue(t *testing.T) {
 		scriptedResp{text: "the work is finished, no further handoff signal", finish: stopEndTurn},
 	)
 
-	stop, err := r.Run(context.Background(), "sess-e2e-1", &noopEmitter{},
+	stop, err := acpRun(context.Background(), r, "sess-e2e-1", &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "implement the spec"}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
@@ -264,7 +264,7 @@ func TestEndToEnd_StructuralSafety(t *testing.T) {
 		scriptedResp{text: "the agent did something with no handoff signal at all", finish: stopEndTurn},
 	)
 
-	stop, err := r.Run(context.Background(), "sess-e2e-2", &noopEmitter{},
+	stop, err := acpRun(context.Background(), r, "sess-e2e-2", &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "hi"}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
@@ -298,7 +298,7 @@ func TestEndToEnd_ToolSignalContinue(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	stop, err := r.Run(ctx, "sess-e2e-3", &noopEmitter{}, []acp.ContentBlock{{Type: blockText, Text: "go"}})
+	stop, err := acpRun(ctx, r, "sess-e2e-3", &noopEmitter{}, []acp.ContentBlock{{Type: blockText, Text: "go"}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
 	}
@@ -331,7 +331,7 @@ func TestEndToEnd_EngineDisabledBackwardCompat(t *testing.T) {
 		// engineEnabled stays false — no SetupEngine call.
 	}
 
-	stop, err := r.Run(context.Background(), "sess-noeng", &noopEmitter{},
+	stop, err := acpRun(context.Background(), r, "sess-noeng", &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "hi"}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
@@ -398,7 +398,7 @@ func TestCancelDrainsInjections(t *testing.T) { //nolint:paralleltest // timing-
 	ctx, cancel := context.WithCancel(context.Background())
 	emitter := &cancelAfterChunkEmitter{cancelAfter: 1, cancel: cancel}
 
-	stop, err := r.Run(ctx, "sess-cancel", emitter, []acp.ContentBlock{{Type: blockText, Text: "go"}})
+	stop, err := acpRun(ctx, r, "sess-cancel", emitter, []acp.ContentBlock{{Type: blockText, Text: "go"}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
 	}
@@ -443,7 +443,7 @@ func TestE2E_Criterion1_ZeroContinueAndSafety(t *testing.T) {
 			scriptedResp{text: "final, no signal", finish: stopEndTurn},
 		)
 
-		stop, err := r.Run(context.Background(), "c1a", &noopEmitter{},
+		stop, err := acpRun(context.Background(), r, "c1a", &noopEmitter{},
 			[]acp.ContentBlock{{Type: blockText, Text: "go"}})
 		if err != nil || stop != stopEndTurn {
 			t.Fatalf("Run = (%q,%v)", stop, err)
@@ -459,7 +459,7 @@ func TestE2E_Criterion1_ZeroContinueAndSafety(t *testing.T) {
 			scriptedResp{text: "unmatched output", finish: stopEndTurn},
 		)
 
-		_, err := r.Run(context.Background(), "c1b", &noopEmitter{}, []acp.ContentBlock{{Type: blockText, Text: "hi"}})
+		_, err := acpRun(context.Background(), r, "c1b", &noopEmitter{}, []acp.ContentBlock{{Type: blockText, Text: "hi"}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -511,7 +511,7 @@ func TestE2E_Criterion4_LearningAskOnce(t *testing.T) {
 		t.Errorf("after 3 confirms Lookup = %+v ok=%v; want active", e, ok)
 	}
 	// Sanity: the scenario still completes structurally safely (no ask loop).
-	stop, err := r.Run(context.Background(), "c4", &noopEmitter{}, []acp.ContentBlock{{Type: blockText, Text: "go"}})
+	stop, err := acpRun(context.Background(), r, "c4", &noopEmitter{}, []acp.ContentBlock{{Type: blockText, Text: "go"}})
 	if err != nil || stop != stopEndTurn {
 		t.Fatalf("Run = (%q,%v)", stop, err)
 	}

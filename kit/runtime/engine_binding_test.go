@@ -46,7 +46,7 @@ func TestEngineWiringStaysSessionFree(t *testing.T) {
 
 	// Session B turns through the engine path — under the old code THIS is the
 	// rebind that stole session A's parked wiring.
-	_, _ = runner.Run(ctx, "s-bind-b", nopEmitter{},
+	_, _ = acpRun(ctx, runner, "s-bind-b", nopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "plain text, no invocation"}})
 
 	// Structural pin: the SHARED wiring never carries session state.

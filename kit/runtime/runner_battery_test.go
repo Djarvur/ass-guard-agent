@@ -189,7 +189,7 @@ func TestExpansion_EngineOffPathExpanded(t *testing.T) {
 	r, _ := newExpansionRunner(t, false,
 		scriptedResp{text: "explored; no handoff signal", finish: stopEndTurn})
 
-	stop, err := r.Run(context.Background(), "sess-x-off", &noopEmitter{},
+	stop, err := acpRun(context.Background(), r, "sess-x-off", &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: exploreInvocation}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
@@ -218,7 +218,7 @@ func TestExpansion_EngineOnPathExpanded(t *testing.T) {
 	r, _ := newExpansionRunner(t, true,
 		scriptedResp{text: "explored; no handoff signal", finish: stopEndTurn})
 
-	_, err := r.Run(context.Background(), "sess-x-on", &noopEmitter{},
+	_, err := acpRun(context.Background(), r, "sess-x-on", &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: exploreInvocation}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
@@ -268,7 +268,7 @@ func TestExpansion_UnknownCommandFallsThrough(t *testing.T) {
 	r, _ := newExpansionRunner(t, false,
 		scriptedResp{text: "ok", finish: stopEndTurn})
 
-	_, err := r.Run(context.Background(), "sess-x-unknown", &noopEmitter{},
+	_, err := acpRun(context.Background(), r, "sess-x-unknown", &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "/notaregistrykey hello"}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
@@ -301,7 +301,7 @@ func TestExpansion_RegistryLoadFailureDegrades(t *testing.T) {
 
 	r.LoadCommandRegistry() // reload fails — logged, non-fatal
 
-	_, err = r.Run(context.Background(), "sess-x-deg", &noopEmitter{},
+	_, err = acpRun(context.Background(), r, "sess-x-deg", &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: exploreInvocation}})
 	if err != nil {
 		t.Fatalf("Run err = %v; want the turn to proceed (degradation)", err)
@@ -323,7 +323,7 @@ func TestExpansion_NoEditorEcho(t *testing.T) {
 
 	emit := &noopEmitter{}
 
-	_, err := r.Run(context.Background(), "sess-x-echo", emit,
+	_, err := acpRun(context.Background(), r, "sess-x-echo", emit,
 		[]acp.ContentBlock{{Type: blockText, Text: exploreInvocation}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
@@ -345,7 +345,7 @@ func TestProvenance_RecordedOnExpansion(t *testing.T) {
 	r, _ := newExpansionRunner(t, false,
 		scriptedResp{text: "ok", finish: stopEndTurn})
 
-	_, err := r.Run(context.Background(), "sess-prov", &noopEmitter{},
+	_, err := acpRun(context.Background(), r, "sess-prov", &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: exploreInvocation}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
@@ -388,7 +388,7 @@ func TestCommandBoundary_MutatingVsReadOnly(t *testing.T) {
 		r, _ := newExpansionRunner(t, false,
 			scriptedResp{text: "applied", finish: stopEndTurn})
 
-		_, err := r.Run(context.Background(), "sess-bnd", &noopEmitter{},
+		_, err := acpRun(context.Background(), r, "sess-bnd", &noopEmitter{},
 			[]acp.ContentBlock{{Type: blockText, Text: "/opsx:apply change-x"}})
 		if err != nil {
 			t.Fatalf("Run err = %v", err)
@@ -427,7 +427,7 @@ func TestCommandBoundary_MutatingVsReadOnly(t *testing.T) {
 		r, _ := newExpansionRunner(t, false,
 			scriptedResp{text: "explored", finish: stopEndTurn})
 
-		_, err := r.Run(context.Background(), "sess-bnd-ro", &noopEmitter{},
+		_, err := acpRun(context.Background(), r, "sess-bnd-ro", &noopEmitter{},
 			[]acp.ContentBlock{{Type: blockText, Text: exploreInvocation}})
 		if err != nil {
 			t.Fatalf("Run err = %v", err)
@@ -486,7 +486,7 @@ func TestAssistantRoleOnly_InjectionGuard(t *testing.T) {
 
 	r.LoadCommandRegistry()
 
-	_, err = r.Run(context.Background(), "sess-inj-guard", &noopEmitter{},
+	_, err = acpRun(context.Background(), r, "sess-inj-guard", &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "/booby"}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
@@ -685,7 +685,7 @@ func TestSkill_EndToEndRoundTrip(t *testing.T) { //nolint:paralleltest // HOME p
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err := r.Run(ctx, "sess-sk2", &noopEmitter{},
+	_, err := acpRun(ctx, r, "sess-sk2", &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "explore the login change"}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
@@ -765,7 +765,7 @@ func TestSkill_OpsxTriggerSeesListing(t *testing.T) { //nolint:paralleltest // H
 	r, _ := newSkillRunner(t, true,
 		scriptedResp{text: "explored", finish: stopEndTurn})
 
-	_, err := r.Run(context.Background(), "sess-sk4", &noopEmitter{},
+	_, err := acpRun(context.Background(), r, "sess-sk4", &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: exploreInvocation}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
@@ -830,7 +830,7 @@ func TestSkill_ZeroSkillDegradation(t *testing.T) { //nolint:paralleltest // HOM
 		t.Errorf("error = %q; want the unknown-skill structure", res.Error)
 	}
 
-	_, err = r.Run(context.Background(), "sess-sk5", &noopEmitter{},
+	_, err = acpRun(context.Background(), r, "sess-sk5", &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "just a normal prompt"}})
 	if err != nil {
 		t.Fatalf("Run err = %v; want the session to keep working", err)
@@ -859,7 +859,7 @@ func TestNextPrompt_InjectionExpandsWithProvenance(t *testing.T) { //nolint:para
 
 	r.patternTable = pt
 
-	_, err = r.Run(context.Background(), "sess-chain", &noopEmitter{},
+	_, err = acpRun(context.Background(), r, "sess-chain", &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "/opsx:propose add-login"}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
@@ -989,7 +989,7 @@ func TestProvenanceChain_ExploreChainsWithoutTextAnchor(t *testing.T) { //nolint
 		scriptedResp{text: "final stage, nothing more", finish: stopEndTurn},
 	)
 
-	_, err := r.Run(context.Background(), "sess-prov-chain", &noopEmitter{},
+	_, err := acpRun(context.Background(), r, "sess-prov-chain", &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "/opsx:explore fix-it"}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
@@ -1177,7 +1177,7 @@ func TestServeCapturer_PublishesWithTurnID(t *testing.T) {
 
 	events := bus.Subscribe("RequestShaped", event.BufRequestShaped)
 
-	_, err = r.Run(context.Background(), "sess-cap", &noopEmitter{},
+	_, err = acpRun(context.Background(), r, "sess-cap", &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "go"}})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -1247,7 +1247,7 @@ func TestServeTranscriptWriter_OnePerSession(t *testing.T) {
 	waitForWriterSubscribed(t, bus, r, sid)
 
 	// One turn through the (single) writer: exactly ONE request_shaped line.
-	_, err = r.Run(context.Background(), sid, &noopEmitter{},
+	_, err = acpRun(context.Background(), r, sid, &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "once"}})
 	if err != nil {
 		t.Fatalf("Run: %v", err)

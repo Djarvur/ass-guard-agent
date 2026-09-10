@@ -258,7 +258,7 @@ func TestCheckpointLiveRollback_Gated(t *testing.T) { //nolint:paralleltest,funl
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	_, rerr := r.Run(ctx, sessionID, &noopEmitter{},
+	_, rerr := acpRun(ctx, r, sessionID, &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: prompt}})
 	if rerr != nil {
 		t.Fatalf("live turn: %v", rerr)

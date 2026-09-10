@@ -167,7 +167,7 @@ func TestTracerStatusClassB(t *testing.T) {
 
 	emit := &tracerEmitter{}
 
-	stop, err := r.Run(context.Background(), "tracer-status",
+	stop, err := acpRun(context.Background(), r, "tracer-status",
 		emit, []acp.ContentBlock{{Type: blockText, Text: "/status deep-check"}})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -454,7 +454,7 @@ func TestCommandChainAdvertisementShape(t *testing.T) {
 		t.Errorf("advertisement not sorted by name")
 	}
 
-	byName := make(map[string]acp.AvailableCommandFrame, len(ad))
+	byName := make(map[string]CommandAd, len(ad))
 	for _, f := range ad {
 		if _, dup := byName[f.Name]; dup {
 			t.Errorf("advertisement lists %q twice (winners-only, D-04)", f.Name)
@@ -468,16 +468,16 @@ func TestCommandChainAdvertisementShape(t *testing.T) {
 		t.Error("advertisement missing agent winner probe")
 	}
 
-	if e := byName[namePlain]; e.Input != nil {
-		t.Errorf("plain (no hint) carried Input %v; want omitted", e.Input)
+	if e := byName[namePlain]; e.InputHint != "" {
+		t.Errorf("plain (no hint) carried InputHint %q; want omitted", e.InputHint)
 	}
 
-	if e := byName["hinted"]; e.Input == nil || e.Input.Hint != "<target>" {
-		t.Errorf("hinted Input = %+v; want hint <target> from argument-hint", e.Input)
+	if e := byName["hinted"]; e.InputHint != "<target>" {
+		t.Errorf("hinted InputHint = %q; want hint <target> from argument-hint", e.InputHint)
 	}
 
-	if e := byName[nameProbe]; e.Input == nil || e.Input.Hint != agentDispatchHint {
-		t.Errorf("agent winner Input = %+v; want the dispatch hint", e.Input)
+	if e := byName[nameProbe]; e.InputHint != agentDispatchHint {
+		t.Errorf("agent winner InputHint = %q; want the dispatch hint", e.InputHint)
 	}
 }
 
@@ -599,7 +599,7 @@ func classBRun(t *testing.T, r *Runner, prompt string) ([]commandFrame, []sessio
 
 	emit := &tracerEmitter{}
 
-	stop, err := r.Run(context.Background(), "classb", emit, []acp.ContentBlock{{Type: blockText, Text: prompt}})
+	stop, err := acpRun(context.Background(), r, "classb", emit, []acp.ContentBlock{{Type: blockText, Text: prompt}})
 	if err != nil {
 		t.Fatalf("Run(%q): %v", prompt, err)
 	}
@@ -934,7 +934,7 @@ func TestClassBModel(t *testing.T) {
 			// A follow-up ordinary turn: the provider sees the model.
 			emit := &tracerEmitter{}
 
-			_, ferr := r.Run(context.Background(), "classb",
+			_, ferr := acpRun(context.Background(), r, "classb",
 				emit, []acp.ContentBlock{{Type: blockText, Text: "hello there"}})
 			if ferr != nil {
 				t.Fatalf("follow-up turn: %v", ferr)
@@ -976,7 +976,7 @@ func TestClassBClear(t *testing.T) {
 
 	emit := &tracerEmitter{}
 
-	_, err := r.Run(context.Background(), "classb",
+	_, err := acpRun(context.Background(), r, "classb",
 		emit, []acp.ContentBlock{{Type: blockText, Text: "remember the codeword pinecone"}})
 	if err != nil {
 		t.Fatalf("pre-clear turn: %v", err)
@@ -1003,7 +1003,7 @@ func TestClassBClear(t *testing.T) {
 	// The next turn projects WITHOUT the pre-clear content.
 	prov.queue(scriptedResp{text: "second answer"})
 
-	_, err = r.Run(context.Background(), "classb",
+	_, err = acpRun(context.Background(), r, "classb",
 		emit, []acp.ContentBlock{{Type: blockText, Text: "what was the codeword"}})
 	if err != nil {
 		t.Fatalf("post-clear turn: %v", err)
@@ -1344,7 +1344,7 @@ func TestSkillSlash(t *testing.T) {
 
 		emit := &tracerEmitter{}
 
-		_, err := r.Run(context.Background(), "sk", emit,
+		_, err := acpRun(context.Background(), r, "sk", emit,
 			[]acp.ContentBlock{{Type: blockText, Text: "/review-pr 1234 the diff"}})
 		if err != nil {
 			t.Fatalf("Run: %v", err)
@@ -1382,7 +1382,7 @@ func TestSkillSlash(t *testing.T) {
 				"name: plain\ndescription: no placeholders\n", "Just do the thing.\n")
 		})
 
-		_, _ = r.Run(context.Background(), "sk1b", &tracerEmitter{},
+		_, _ = acpRun(context.Background(), r, "sk1b", &tracerEmitter{},
 			[]acp.ContentBlock{{Type: blockText, Text: "/plain with focus"}})
 
 		text := firstUserMessageText(t, r, "sk1b")
@@ -1401,7 +1401,7 @@ func TestSkillSlash(t *testing.T) {
 		emit := &tracerEmitter{}
 		_ = emit
 
-		_, _ = r.Run(context.Background(), "sk2", &tracerEmitter{},
+		_, _ = acpRun(context.Background(), r, "sk2", &tracerEmitter{},
 			[]acp.ContentBlock{{Type: blockText, Text: "/noter"}})
 
 		text := firstUserMessageText(t, r, "sk2")
@@ -1417,7 +1417,7 @@ func TestSkillSlash(t *testing.T) {
 				"Инструкция: проверь «кавычки» и — тире.\n")
 		})
 
-		_, _ = r.Run(context.Background(), "sk3", &tracerEmitter{},
+		_, _ = acpRun(context.Background(), r, "sk3", &tracerEmitter{},
 			[]acp.ContentBlock{{Type: blockText, Text: "/unicode"}})
 
 		text := firstUserMessageText(t, r, "sk3")
@@ -1433,7 +1433,7 @@ func TestSkillSlash(t *testing.T) {
 
 		emit := &tracerEmitter{}
 
-		stop, err := r.Run(context.Background(), "sk4", emit,
+		stop, err := acpRun(context.Background(), r, "sk4", emit,
 			[]acp.ContentBlock{{Type: blockText, Text: "/hollow extra"}})
 		if err != nil || stop != stopEndTurn {
 			t.Fatalf("Run: stop=%q err=%v", stop, err)
@@ -1470,7 +1470,7 @@ func TestSkillSlash(t *testing.T) {
 
 		emit := &tracerEmitter{}
 
-		_, _ = r.Run(context.Background(), "sk5", emit,
+		_, _ = acpRun(context.Background(), r, "sk5", emit,
 			[]acp.ContentBlock{{Type: blockText, Text: "/hidden"}})
 
 		if got := prov.callCount(); got != 1 {
@@ -1532,7 +1532,7 @@ func TestAgentSlash(t *testing.T) {
 
 		emit := &tracerEmitter{}
 
-		stop, err := r.Run(context.Background(), "ag", emit,
+		stop, err := acpRun(context.Background(), r, "ag", emit,
 			[]acp.ContentBlock{{Type: blockText, Text: "/scout find the entrypoint"}})
 		if err != nil || stop != stopEndTurn {
 			t.Fatalf("Run: stop=%q err=%v", stop, err)
@@ -1596,7 +1596,7 @@ func TestAgentSlash(t *testing.T) {
 		r, prov, _ := newCommandRunner(t, nil)
 		prov.queue(scriptedResp{text: "ok", finish: stopEndTurn})
 
-		_, _ = r.Run(context.Background(), "ag2", &tracerEmitter{},
+		_, _ = acpRun(context.Background(), r, "ag2", &tracerEmitter{},
 			[]acp.ContentBlock{{Type: blockText, Text: "/totally-unknown-name hi"}})
 
 		if got := prov.callCount(); got != 1 {
@@ -1617,7 +1617,7 @@ func TestAgentSlash(t *testing.T) {
 		prov.queue(scriptedResp{text: "expanded", finish: stopEndTurn})
 
 		// The SLASH surface resolves to the skill (D-02 chain order).
-		_, _ = r.Run(context.Background(), "ag3", &tracerEmitter{},
+		_, _ = acpRun(context.Background(), r, "ag3", &tracerEmitter{},
 			[]acp.ContentBlock{{Type: blockText, Text: "/twin via slash"}})
 
 		if text := firstUserMessageText(t, r, "ag3"); !strings.Contains(text, "Skill body wins.") {
@@ -1646,7 +1646,7 @@ func TestInitExpansion(t *testing.T) {
 
 		emit := &tracerEmitter{}
 
-		_, err := r.Run(context.Background(), sessionID, emit,
+		_, err := acpRun(context.Background(), r, sessionID, emit,
 			[]acp.ContentBlock{{Type: blockText, Text: "/init focus on the test layout"}})
 		if err != nil {
 			t.Fatalf("Run: %v", err)
@@ -1723,7 +1723,7 @@ func TestInitExpansion(t *testing.T) {
 
 		emit := &tracerEmitter{}
 
-		_, _ = r.Run(context.Background(), "init-shadow", emit,
+		_, _ = acpRun(context.Background(), r, "init-shadow", emit,
 			[]acp.ContentBlock{{Type: blockText, Text: "/init"}})
 
 		text := firstUserMessageText(t, r, "init-shadow")
@@ -1769,7 +1769,7 @@ func undoRun(t *testing.T, r *Runner, sessionID, prompt string) ([]commandFrame,
 
 	emit := &tracerEmitter{}
 
-	stop, err := r.Run(context.Background(), sessionID, emit, []acp.ContentBlock{{Type: blockText, Text: prompt}})
+	stop, err := acpRun(context.Background(), r, sessionID, emit, []acp.ContentBlock{{Type: blockText, Text: prompt}})
 	if err != nil {
 		t.Fatalf("Run(%q): %v", prompt, err)
 	}
@@ -2178,7 +2178,7 @@ func TestUndoAutoCancel(t *testing.T) { //nolint:funlen,maintidx,cyclop // timed
 	turnDone := make(chan string, 1)
 
 	go func() {
-		stop, err := r.Run(context.Background(), sid, &noopEmitter{},
+		stop, err := acpRun(context.Background(), r, sid, &noopEmitter{},
 			[]acp.ContentBlock{{Type: blockText, Text: "long turn"}})
 		if err != nil {
 			t.Errorf("turn Run err: %v", err)
@@ -2194,7 +2194,7 @@ func TestUndoAutoCancel(t *testing.T) { //nolint:funlen,maintidx,cyclop // timed
 
 	// Steering enqueued while the turn runs: must resolve cancelled-normal
 	// when the /undo cancel kills the turn.
-	st, serr := r.Run(context.Background(), sid, &noopEmitter{},
+	st, serr := acpRun(context.Background(), r, sid, &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "steer-while-undo-pending"}})
 	if serr != nil || st != stopEndTurn {
 		t.Fatalf("steering Run = (%q,%v); want (end_turn, nil)", st, serr)
@@ -2211,7 +2211,7 @@ func TestUndoAutoCancel(t *testing.T) { //nolint:funlen,maintidx,cyclop // timed
 	undoDone := make(chan undoResult, 1)
 
 	go func() {
-		stop, err := r.Run(context.Background(), sid, emit, []acp.ContentBlock{{Type: blockText, Text: "/undo"}})
+		stop, err := acpRun(context.Background(), r, sid, emit, []acp.ContentBlock{{Type: blockText, Text: "/undo"}})
 		undoDone <- undoResult{stop, err}
 	}()
 
@@ -2306,7 +2306,7 @@ func TestUndoAutoCancel(t *testing.T) { //nolint:funlen,maintidx,cyclop // timed
 	}
 
 	// A fresh turn after the undo is clean (no zombie delivery) and runs.
-	fresh, ferr := r.Run(context.Background(), sid, &noopEmitter{},
+	fresh, ferr := acpRun(context.Background(), r, sid, &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "fresh turn after undo"}})
 	if ferr != nil || fresh != stopEndTurn {
 		t.Fatalf("fresh Run = (%q,%v); want (end_turn, nil)", fresh, ferr)
@@ -2342,7 +2342,7 @@ func TestUndoAutoCancelParkedChain(t *testing.T) { //nolint:paralleltest // park
 
 	emit := &tracerEmitter{}
 
-	stop, err := r.Run(context.Background(), sid, emit, []acp.ContentBlock{{Type: blockText, Text: "/undo"}})
+	stop, err := acpRun(context.Background(), r, sid, emit, []acp.ContentBlock{{Type: blockText, Text: "/undo"}})
 	if err != nil || stop != stopEndTurn {
 		t.Fatalf("/undo Run = (%q,%v); want (end_turn, nil)", stop, err)
 	}
@@ -2387,7 +2387,7 @@ func TestUndoFailClosed(t *testing.T) { //nolint:paralleltest // seam swap must 
 	turnDone := make(chan string, 1)
 
 	go func() {
-		stop, err := r.Run(context.Background(), sid, &noopEmitter{},
+		stop, err := acpRun(context.Background(), r, sid, &noopEmitter{},
 			[]acp.ContentBlock{{Type: blockText, Text: "long turn"}})
 		if err != nil {
 			t.Errorf("turn Run err: %v", err)
@@ -2408,7 +2408,7 @@ func TestUndoFailClosed(t *testing.T) { //nolint:paralleltest // seam swap must 
 	undoDone := make(chan undoResult, 1)
 
 	go func() {
-		stop, err := r.Run(context.Background(), sid, emit, []acp.ContentBlock{{Type: blockText, Text: "/undo"}})
+		stop, err := acpRun(context.Background(), r, sid, emit, []acp.ContentBlock{{Type: blockText, Text: "/undo"}})
 		undoDone <- undoResult{stop, err}
 	}()
 
@@ -2485,7 +2485,7 @@ func TestUndoNestedRefusal(t *testing.T) { //nolint:paralleltest // timed mid-tu
 	turnDone := make(chan string, 1)
 
 	go func() {
-		stop, err := r.Run(context.Background(), sid, &noopEmitter{},
+		stop, err := acpRun(context.Background(), r, sid, &noopEmitter{},
 			[]acp.ContentBlock{{Type: blockText, Text: "long turn"}})
 		if err != nil {
 			t.Errorf("turn Run err: %v", err)
@@ -2506,7 +2506,7 @@ func TestUndoNestedRefusal(t *testing.T) { //nolint:paralleltest // timed mid-tu
 	undoDone := make(chan undoResult, 1)
 
 	go func() {
-		stop, err := r.Run(context.Background(), sid, emit, []acp.ContentBlock{{Type: blockText, Text: "/undo"}})
+		stop, err := acpRun(context.Background(), r, sid, emit, []acp.ContentBlock{{Type: blockText, Text: "/undo"}})
 		undoDone <- undoResult{stop, err}
 	}()
 
@@ -2587,7 +2587,7 @@ func TestParkedChainCancelSteering(t *testing.T) { //nolint:paralleltest // park
 	go func() {
 		defer close(done)
 
-		st, err := r.Run(context.Background(), sid, &noopEmitter{},
+		st, err := acpRun(context.Background(), r, sid, &noopEmitter{},
 			[]acp.ContentBlock{{Type: blockText, Text: "adjust the parked plan"}})
 		if err != nil || st != stopEndTurn {
 			t.Errorf("parked steer Run = (%q,%v); want (end_turn, nil)", st, err)
@@ -2618,7 +2618,7 @@ func TestParkedChainCancelSteering(t *testing.T) { //nolint:paralleltest // park
 	r.chainExit(sid) // the chain goroutine's exit (manual fixture)
 
 	// The fresh, unrelated turn: its request carries ONLY its own text.
-	fresh, ferr := r.Run(context.Background(), sid, &noopEmitter{},
+	fresh, ferr := acpRun(context.Background(), r, sid, &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "fresh unrelated turn"}})
 	if ferr != nil || fresh != stopEndTurn {
 		t.Fatalf("fresh Run = (%q,%v); want (end_turn, nil)", fresh, ferr)

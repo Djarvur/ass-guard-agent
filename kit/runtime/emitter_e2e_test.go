@@ -172,9 +172,9 @@ func TestTurnEmitterEndToEnd(t *testing.T) { //nolint:funlen // full end-to-end 
 	// WithTurnEmitter arms the composition-root TurnEmitter; srv.Emitter hands
 	// out foreground-class handles so every notification routes through the
 	// single ordered drain.
-	srv := acp.NewServer(srvInR, srvOutW, stderr, acp.WithTurnRunner(runner),
+	srv := acp.NewServer(srvInR, srvOutW, stderr, acp.WithTurnRunner(acpTurnRunner{r: runner}),
 		acp.WithTurnEmitter(acp.TurnEmitterConfig{}))
-	runner.SetEmitter(srv.Emitter) // WINDOWS #3 wiring — same junction as acpserve.Run
+	runner.SetEmitter(acpKitEmitterFactory(srv.Emitter)) // WINDOWS #3 wiring — same junction as acpserve.Run
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -308,9 +308,9 @@ func TestThoughtForward(t *testing.T) { //nolint:funlen // full end-to-end scena
 
 	stderr := &bytes.Buffer{}
 
-	srv := acp.NewServer(srvInR, srvOutW, stderr, acp.WithTurnRunner(runner),
+	srv := acp.NewServer(srvInR, srvOutW, stderr, acp.WithTurnRunner(acpTurnRunner{r: runner}),
 		acp.WithTurnEmitter(acp.TurnEmitterConfig{}))
-	runner.SetEmitter(srv.Emitter)
+	runner.SetEmitter(acpKitEmitterFactory(srv.Emitter))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})

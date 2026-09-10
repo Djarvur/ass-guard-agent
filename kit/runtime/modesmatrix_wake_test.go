@@ -121,7 +121,7 @@ func wakeMatrixDrive(
 	r, prov := newMatrixRunner(t, project, script...)
 
 	blocks := []acp.ContentBlock{{Type: blockText, Text: typedPrompt}}
-	if _, err := r.Run(context.Background(), sessID, &noopEmitter{}, blocks); err != nil {
+	if _, err := acpRun(context.Background(), r, sessID, &noopEmitter{}, blocks); err != nil {
 		t.Fatalf("Run err: %v", err)
 	}
 

@@ -244,7 +244,7 @@ func TestCronWiring_FireOnceCatchUp(t *testing.T) { //nolint:cyclop,funlen // fl
 	r1, _, _ := newCronRunner(t, dir, scriptedResp{text: "caught up"})
 	r1.schedule.SetNow(time.Now)
 
-	_, rerr := r1.Run(context.Background(), "sess-cron-c1", &noopEmitter{},
+	_, rerr := acpRun(context.Background(), r1, "sess-cron-c1", &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "hello"}})
 	if rerr != nil {
 		t.Fatal(rerr)
@@ -282,7 +282,7 @@ func TestCronWiring_FireOnceCatchUp(t *testing.T) { //nolint:cyclop,funlen // fl
 	r2, _, _ := newCronRunner(t, dir, scriptedResp{text: "plain"})
 	r2.schedule.SetNow(time.Now)
 
-	_, rerr2 := r2.Run(context.Background(), "sess-cron-c2", &noopEmitter{},
+	_, rerr2 := acpRun(context.Background(), r2, "sess-cron-c2", &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "hello again"}})
 	if rerr2 != nil {
 		t.Fatal(rerr2)
@@ -470,7 +470,7 @@ func TestCronWiring_ServerDrivenMirror(t *testing.T) {
 	r, _, store := newCronRunner(t, dir, scriptedResp{text: "scheduled work done"})
 
 	em := &recordingEmitter{}
-	r.emitFor = func(string) acp.ChunkEmitter { return em }
+	r.emitFor = acpKitEmitterFactory(func(string) acp.ChunkEmitter { return em })
 
 	store.SetNow(func() time.Time { return time.Now().Add(-2 * time.Hour) })
 

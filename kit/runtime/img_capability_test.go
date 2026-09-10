@@ -166,7 +166,7 @@ func TestImageCapability_D11DropAndNote(t *testing.T) { //nolint:paralleltest //
 
 	r := newCapabilityRunner(t, func(_ provider.RequestCapturer) provider.Provider { return prov })
 
-	stop, err := r.Run(context.Background(), imgSessionID, &noopEmitter{}, pngPromptBlocks(t))
+	stop, err := acpRun(context.Background(), r, imgSessionID, &noopEmitter{}, pngPromptBlocks(t))
 	if err != nil {
 		t.Fatalf("Run err = %v (the turn must complete normally after the drop)", err)
 	}
@@ -275,7 +275,7 @@ func TestImageCapability_ImageReachesOutgoingRequest(t *testing.T) { //nolint:pa
 		)
 	})
 
-	stop, err := r.Run(context.Background(), imgSessionID, &noopEmitter{}, pngPromptBlocks(t))
+	stop, err := acpRun(context.Background(), r, imgSessionID, &noopEmitter{}, pngPromptBlocks(t))
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
 	}
@@ -464,7 +464,7 @@ func TestImageCapability_ImageOnlyDropKeepsNonEmptyBody(t *testing.T) { //nolint
 		MimeType: imgPNGMedia,
 	}}
 
-	stop, err := r.Run(context.Background(), imgSessionID, &noopEmitter{}, prompt)
+	stop, err := acpRun(context.Background(), r, imgSessionID, &noopEmitter{}, prompt)
 	if err != nil {
 		t.Fatalf("Run err = %v (an image-only drop must complete normally)", err)
 	}
@@ -497,7 +497,7 @@ func TestImageIngress_ImageOnlyDropKeepsTextBearingBlock(t *testing.T) {
 
 	r, sess, _ := newImageRunner(t)
 
-	out := r.ingressImages(sess, toContentBlocks([]acp.ContentBlock{
+	out := r.ingressImages(sess, acpToSessionBlocks([]acp.ContentBlock{
 		{Type: imgTypeImage, Data: "!!!not-base64!!!", MimeType: imgPNGMedia},
 	}))
 

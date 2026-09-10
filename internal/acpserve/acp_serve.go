@@ -350,7 +350,11 @@ func Run( //nolint:funlen // :320-425
 	}
 
 	srv := acp.NewServer(in, out, stderr,
-		acp.WithTurnRunner(runner),
+		// 25-04 (KIT-02/OQ2): the kitTurnAdapter owns every wire↔kit
+		// translation (blocks, stop reasons, event frames); the runner itself
+		// speaks the kit seam only. The adapter forwards the optional
+		// capabilities the server asserts on its TurnRunner.
+		acp.WithTurnRunner(kitTurnAdapter{runner: runner}),
 		acp.WithTurnEmitter(acp.TurnEmitterConfig{}),
 		acp.WithConfigSurface(surface),
 		// 18-01 (ACP-06/T-18-02): the load handler stats tombstones and reads
@@ -501,7 +505,10 @@ func Run( //nolint:funlen // :320-425
 	}
 	runner.SetSandboxHandle(&sandboxHandle)
 
-	runner.SetEmitter(srv.Emitter) // WINDOWS #3: server-driven turns reach the client
+	// 25-04: srv.Emitter (the wire handle factory) wraps as the kit Emitter
+	// factory — the injection statement stays at its exact WINDOWS #3
+	// position (strictly between server construction and scheduler start).
+	runner.SetEmitter(kitEmitterFactory(srv.Emitter)) // WINDOWS #3: server-driven turns reach the client
 	runner.StartScheduler(ctx)
 
 	// 18-06 (D-10, one load engine — two entrypoints): the CLI resume trio's

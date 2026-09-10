@@ -24,7 +24,21 @@ type commandSourceAdapter struct {
 
 // AvailableCommands projects the chain winners onto the v1 AvailableCommand
 // frames (name + description + optional input hint — the three
-// consumer-facing fields a winner carries).
+// consumer-facing fields a winner carries; 25-04: the runner hands back the
+// kit-neutral runtime.CommandAd rows, this adapter builds the wire frames).
 func (a commandSourceAdapter) AvailableCommands() []acp.AvailableCommandFrame {
-	return a.runner.CommandAdvertisement()
+	rows := a.runner.CommandAdvertisement()
+
+	out := make([]acp.AvailableCommandFrame, 0, len(rows))
+
+	for _, row := range rows {
+		frame := acp.AvailableCommandFrame{Name: row.Name, Description: row.Description}
+		if row.InputHint != "" {
+			frame.Input = &acp.AvailableCommandInputFrame{Hint: row.InputHint}
+		}
+
+		out = append(out, frame)
+	}
+
+	return out
 }

@@ -130,7 +130,10 @@ func newBlobWireRunner(t *testing.T, rec *wireModelRecorder, schedCfg *modelrout
 func wireModelOf(t *testing.T, runner *runtime.Runner, rec *wireModelRecorder, sessionID string) string {
 	t.Helper()
 
-	_, err := runner.Run(context.Background(), sessionID, nopChunkEmitter{},
+	// 25-04: the runner speaks the kit seam now — this suite drives it through
+	// the production wire adapter (the assertion-preserving retarget; the
+	// model-on-the-wire invariant is unchanged).
+	_, err := kitTurnAdapter{runner: runner}.Run(context.Background(), sessionID, nopChunkEmitter{},
 		[]acp.ContentBlock{{Type: testChunkText, Text: testBlobWireText}})
 	if err != nil {
 		t.Fatalf("Run: %v", err)

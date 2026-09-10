@@ -414,7 +414,7 @@ func TestResumeNoProviderCalls(t *testing.T) {
 	cliR, srvOutW := io.Pipe()
 
 	srv := acp.NewServer(srvInR, srvOutW, &bytes.Buffer{},
-		acp.WithWorkDir(dir), acp.WithTurnRunner(r))
+		acp.WithWorkDir(dir), acp.WithTurnRunner(acpTurnRunner{r: r}))
 
 	ctx, cancel := context.WithCancel(context.Background())
 

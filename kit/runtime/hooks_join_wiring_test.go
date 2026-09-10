@@ -127,7 +127,7 @@ func TestHookJoin_ProjectDenyThroughComposition(t *testing.T) { //nolint:paralle
 	prompt := []acp.ContentBlock{{Type: blockText, Text: "run the command"}}
 
 	//nolint:contextcheck // test-scoped background ctx
-	if _, err := r.Run(context.Background(), sessID, &noopEmitter{}, prompt); err != nil {
+	if _, err := acpRun(context.Background(), r, sessID, &noopEmitter{}, prompt); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 

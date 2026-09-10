@@ -45,7 +45,7 @@ func TestCoreExec_BashThroughSession(t *testing.T) { //nolint:gocognit,gocyclo,c
 
 	blocksRun := []acp.ContentBlock{{Type: blockText, Text: "run echo"}}
 
-	_, err := r.Run(context.Background(), "sess-coreexec-1", &noopEmitter{}, blocksRun)
+	_, err := acpRun(context.Background(), r, "sess-coreexec-1", &noopEmitter{}, blocksRun)
 	if err != nil {
 		t.Fatalf("Run err: %v", err)
 	}
@@ -206,7 +206,7 @@ func TestCoreExec_BashBatchSerializes(t *testing.T) {
 
 	blocksBoth := []acp.ContentBlock{{Type: blockText, Text: "run both"}}
 
-	_, err := r.Run(context.Background(), "sess-coreexec-2", &noopEmitter{}, blocksBoth)
+	_, err := acpRun(context.Background(), r, "sess-coreexec-2", &noopEmitter{}, blocksBoth)
 	if err != nil {
 		t.Fatalf("Run err: %v", err)
 	}
@@ -270,7 +270,7 @@ func TestCoreExec_FileTodoMixedBatch(t *testing.T) { //nolint:gocognit,gocyclo,c
 
 	blocksMix := []acp.ContentBlock{{Type: blockText, Text: "mix them"}}
 
-	_, err = r.Run(context.Background(), "sess-coreexec-3", &noopEmitter{}, blocksMix)
+	_, err = acpRun(context.Background(), r, "sess-coreexec-3", &noopEmitter{}, blocksMix)
 	if err != nil {
 		t.Fatalf("Run err: %v", err)
 	}
@@ -393,7 +393,7 @@ func TestCoreExec_ReadOnlyProjection(t *testing.T) { //nolint:cyclop,funlen // f
 
 	blocksProj := []acp.ContentBlock{{Type: blockText, Text: "read then list"}}
 
-	_, err = r.Run(context.Background(), "sess-coreexec-4", &noopEmitter{}, blocksProj)
+	_, err = acpRun(context.Background(), r, "sess-coreexec-4", &noopEmitter{}, blocksProj)
 	if err != nil {
 		t.Fatalf("Run err: %v", err)
 	}
@@ -478,7 +478,7 @@ func TestSessionFor_ComposesRuntimeWorkDir(t *testing.T) {
 		Text: "Environment\n- Primary working directory: " + capturedCwd + "\n",
 	}}
 
-	_, err := r.Run(context.Background(), "sess-cwd-1", &noopEmitter{},
+	_, err := acpRun(context.Background(), r, "sess-cwd-1", &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "hi"}})
 	if err != nil {
 		t.Fatalf("Run err: %v", err)
@@ -521,7 +521,7 @@ func TestSessionFor_ComposesRuntimeWorkDir(t *testing.T) {
 func TestRun_DoesNotLeakChunkForwarder(t *testing.T) { //nolint:paralleltest // bus is runner-global
 	r, _ := newExpansionRunner(t, true, scriptedResp{text: "ok"})
 
-	_, err := r.Run(context.Background(), "sess-leak", &noopEmitter{},
+	_, err := acpRun(context.Background(), r, "sess-leak", &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "hi"}})
 	if err != nil {
 		t.Fatalf("Run err: %v", err)

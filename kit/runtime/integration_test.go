@@ -80,7 +80,7 @@ func driveACP(t *testing.T, mp provider.Provider) ( //nolint:nonamedreturns // n
 	}
 	srvInR, cliW := io.Pipe()
 	cliR, srvOutW := io.Pipe()
-	srv := acp.NewServer(srvInR, srvOutW, &bytes.Buffer{}, acp.WithTurnRunner(runner))
+	srv := acp.NewServer(srvInR, srvOutW, &bytes.Buffer{}, acp.WithTurnRunner(acpTurnRunner{r: runner}))
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 

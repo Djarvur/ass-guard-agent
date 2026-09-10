@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/kit/checkpoint"
 	"github.com/Djarvur/ass-guard-agent/kit/modelrouting"
@@ -235,25 +234,32 @@ func (c *commandChain) resolve(name string) (chainEntry, bool) {
 	return e, ok
 }
 
-// advertisement projects the winners onto the v1 AvailableCommand frames
+// CommandAd is the kit-neutral command advertisement row (25-04, D-14's
+// transport-blindness rule applied to the 20-01 winner projection): the
+// three consumer-facing fields a winner carries. The frontend adapter
+// projects it onto its transport's advertisement frames (the acpserve
+// adapter builds acp.AvailableCommandFrame from it — command_source.go).
+type CommandAd struct {
+	Name        string
+	Description string
+	// InputHint is the optional input placeholder hint ("" = none; the wire's
+	// Input object is omitted entirely).
+	InputHint string
+}
+
+// advertisement projects the winners onto the kit-neutral CommandAd rows
 // (D-04): sorted by name, each winning name exactly once, shadowed entries
-// absent (not annotated), the Input object omitted entirely when the entry
-// carries no hint. A FRESH slice every call — the caller may swap the chain
-// between calls and the frames must never alias chain internals.
-func (c *commandChain) advertisement() []acp.AvailableCommandFrame {
+// absent (not annotated). A FRESH slice every call — the caller may swap the
+// chain between calls and the rows must never alias chain internals.
+func (c *commandChain) advertisement() []CommandAd {
 	names := slices.Sorted(maps.Keys(c.entries))
 
-	out := make([]acp.AvailableCommandFrame, 0, len(names))
+	out := make([]CommandAd, 0, len(names))
 
 	for _, name := range names {
 		e := c.entries[name]
 
-		frame := acp.AvailableCommandFrame{Name: e.name, Description: e.desc}
-		if e.hint != "" {
-			frame.Input = &acp.AvailableCommandInputFrame{Hint: e.hint}
-		}
-
-		out = append(out, frame)
+		out = append(out, CommandAd{Name: e.name, Description: e.desc, InputHint: e.hint})
 	}
 
 	return out
@@ -538,10 +544,11 @@ func (r *Runner) SetCommandsNotify(cb func()) {
 	r.commandsNotify = cb
 }
 
-// CommandAdvertisement returns the current winner set as v1 wire frames —
-// the SAME chain the resolver resolves through (D-04 one truth; the
-// commandSourceAdapter consumes this).
-func (r *Runner) CommandAdvertisement() []acp.AvailableCommandFrame {
+// CommandAdvertisement returns the current winner set as kit-neutral
+// CommandAd rows — the SAME chain the resolver resolves through (D-04 one
+// truth; the acpserve commandSourceAdapter projects these onto the wire
+// frames).
+func (r *Runner) CommandAdvertisement() []CommandAd {
 	return r.commandChainRef().advertisement()
 }
 

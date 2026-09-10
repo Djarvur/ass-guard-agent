@@ -20,8 +20,11 @@
 // Non-goals:
 //
 //   - acpserve is NOT kit surface (it is the ACP transport composition, not
-//     the agent core) — nothing here imports it;
-//   - no ACP-specific words in API naming (Run/Runner/RunnerConfig speak in
-//     turns and sessions, not frames — the acp.TurnRunner interface
-//     satisfaction is structural, not nominal).
+//     the agent core) — nothing here imports it, nor any other app package
+//     (25-04: the runtime→acp edge is severed; the frontend adapter in
+//     internal/acpserve owns every wire translation);
+//   - no ACP-specific words in API naming or payload (25-04, KIT-02:
+//     Run/Runner/RunnerConfig speak in turns and sessions, the Emitter seam
+//     carries kit/event kinds, and stop reasons return kit-raw — the
+//     acpserve adapter is what satisfies acp.TurnRunner).
 package runtime

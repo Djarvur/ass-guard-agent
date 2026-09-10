@@ -598,10 +598,10 @@ func TestImageIngress_MapsAndRewritesToRefForm(t *testing.T) { //nolint:cyclop,f
 	b64 := base64.StdEncoding.EncodeToString(pngData)
 
 	acpBlocks := imagePromptBlocks(b64)
-	blocks := toContentBlocks(acpBlocks)
+	blocks := acpToSessionBlocks(acpBlocks)
 
 	if blocks[1].Type != imgTypeImage || blocks[1].Data != b64 || blocks[1].MediaType != imgPNGMedia {
-		t.Fatalf("toContentBlocks dropped the image fields: %+v", blocks[1])
+		t.Fatalf("acpToSessionBlocks dropped the image fields: %+v", blocks[1])
 	}
 
 	out := r.ingressImages(sess, blocks)
@@ -674,7 +674,7 @@ func TestImageIngress_PersistsOriginalAndScaled(t *testing.T) { //nolint:cyclop,
 	pngData := encodePNG(t, fixtureBigW, fixtureBigH)
 	b64 := base64.StdEncoding.EncodeToString(pngData)
 
-	out := r.ingressImages(sess, toContentBlocks(imagePromptBlocks(b64)))
+	out := r.ingressImages(sess, acpToSessionBlocks(imagePromptBlocks(b64)))
 	if len(out) != 2 {
 		t.Fatalf("ingress returned %d blocks; want 2", len(out))
 	}
@@ -758,7 +758,7 @@ func TestImageIngress_TranscriptLeanNoBase64(t *testing.T) {
 	pngData := encodePNG(t, 320, 200)
 	b64 := base64.StdEncoding.EncodeToString(pngData)
 
-	out := r.ingressImages(sess, toContentBlocks(imagePromptBlocks(b64)))
+	out := r.ingressImages(sess, acpToSessionBlocks(imagePromptBlocks(b64)))
 
 	err := sess.Manager.AppendUserMessage("turn_1", out)
 	if err != nil {
@@ -813,7 +813,7 @@ func TestImageIngress_IdempotentReIngress(t *testing.T) {
 	pngData := encodePNG(t, 320, 200)
 	b64 := base64.StdEncoding.EncodeToString(pngData)
 
-	first := r.ingressImages(sess, toContentBlocks(imagePromptBlocks(b64)))
+	first := r.ingressImages(sess, acpToSessionBlocks(imagePromptBlocks(b64)))
 
 	// Fresh session state over the SAME workspace (a second session in the
 	// same dir re-derives the same sha-keyed Refs).
@@ -826,7 +826,7 @@ func TestImageIngress_IdempotentReIngress(t *testing.T) {
 
 	sess2 := &session.Session{Manager: mgr2}
 
-	second := r.ingressImages(sess2, toContentBlocks(imagePromptBlocks(b64)))
+	second := r.ingressImages(sess2, acpToSessionBlocks(imagePromptBlocks(b64)))
 
 	if first[1].DataRef != second[1].DataRef {
 		t.Errorf("Refs diverged across ingresses: %q vs %q; want identical (sha-keyed convergence)",
@@ -856,7 +856,7 @@ func TestImageIngress_FailureDropsBlockWithLoudNote(t *testing.T) {
 
 	junk := []byte("not an image at all")
 
-	blocks := toContentBlocks(imagePromptBlocks(base64.StdEncoding.EncodeToString(junk)))
+	blocks := acpToSessionBlocks(imagePromptBlocks(base64.StdEncoding.EncodeToString(junk)))
 
 	out := r.ingressImages(sess, blocks)
 	if len(out) != 1 {

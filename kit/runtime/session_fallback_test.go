@@ -55,7 +55,7 @@ func TestSessionUnavailableWhenTranscriptLocationsFail(t *testing.T) {
 	}
 
 	// Run surfaces a typed error instead of the nil-deref panic.
-	_, rerr := runner.Run(context.Background(), "s-broken", nopEmitter{},
+	_, rerr := acpRun(context.Background(), runner, "s-broken", nopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "hi"}})
 	if rerr == nil {
 		t.Fatal("Run returned no error for an unconstructable session — the turn cannot run without a transcript")

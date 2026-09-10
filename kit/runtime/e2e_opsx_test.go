@@ -259,7 +259,7 @@ func runStageTyped(t *testing.T, r *Runner, sessionID, text string) {
 	ctx, cancel := context.WithTimeout(context.Background(), e2eOverallWait)
 	defer cancel()
 
-	_, err := r.Run(ctx, sessionID, &noopEmitter{},
+	_, err := acpRun(ctx, r, sessionID, &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: text}})
 	if err != nil {
 		t.Fatalf("stage prompt %q: %v", text, err)
@@ -281,7 +281,7 @@ type opsxRunnerSeam struct {
 }
 
 func (o opsxRunnerSeam) RunPrompt(ctx context.Context, sessionID, text string) error {
-	_, err := o.r.Run(ctx, sessionID, &noopEmitter{},
+	_, err := acpRun(ctx, o.r, sessionID, &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: text}})
 	if err != nil {
 		return err

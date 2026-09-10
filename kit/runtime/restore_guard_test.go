@@ -52,7 +52,7 @@ func TestRestoreGuardRefusalMatrix(t *testing.T) { //nolint:funlen // matrix sce
 	go func() {
 		defer close(turnDone)
 
-		_, _ = r.Run(context.Background(), sid, &noopEmitter{},
+		_, _ = acpRun(context.Background(), r, sid, &noopEmitter{},
 			[]acp.ContentBlock{{Type: blockText, Text: "long turn"}})
 	}()
 
@@ -123,7 +123,7 @@ func TestRestoreGuardCrossSessionMatrix(t *testing.T) { //nolint:funlen // matri
 	go func() {
 		defer close(turnDone)
 
-		_, _ = r.Run(context.Background(), sidA, &noopEmitter{},
+		_, _ = acpRun(context.Background(), r, sidA, &noopEmitter{},
 			[]acp.ContentBlock{{Type: blockText, Text: "session A long turn"}})
 	}()
 
@@ -262,7 +262,7 @@ func TestRunnerStorePromotionDegradation(t *testing.T) {
 	const sid = "sess-degraded"
 
 	// The session runs a FULL ordinary turn.
-	stop, err := r.Run(context.Background(), sid, &noopEmitter{},
+	stop, err := acpRun(context.Background(), r, sid, &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "still works"}})
 	if err != nil || stop != stopEndTurn {
 		t.Fatalf("degraded Run = (%q,%v); want (end_turn, nil)", stop, err)
@@ -534,7 +534,7 @@ func runUndoPrompt(t *testing.T, r *Runner, sessionID string) []commandFrame {
 	undoDone := make(chan undoResult, 1)
 
 	go func() {
-		stop, err := r.Run(context.Background(), sessionID, emit,
+		stop, err := acpRun(context.Background(), r, sessionID, emit,
 			[]acp.ContentBlock{{Type: blockText, Text: "/undo"}})
 		undoDone <- undoResult{stop, err}
 	}()
@@ -570,7 +570,7 @@ func startBlockedTurn(t *testing.T, r *Runner, sessionID, text string, entered <
 	turnDone := make(chan blockedTurnResult, 1)
 
 	go func() {
-		stop, err := r.Run(context.Background(), sessionID, &noopEmitter{},
+		stop, err := acpRun(context.Background(), r, sessionID, &noopEmitter{},
 			[]acp.ContentBlock{{Type: blockText, Text: text}})
 		if err != nil {
 			t.Errorf("%s turn Run err: %v", sessionID, err)

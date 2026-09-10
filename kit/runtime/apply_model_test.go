@@ -146,7 +146,7 @@ func TestApplyTurnModel(t *testing.T) { //nolint:paralleltest // drives a backgr
 	}
 
 	// The very next request on the SAME session carries the new model.
-	_, _ = runner.Run(ctx, "s1", nopEmitter{}, []acp.ContentBlock{{Type: blockText, Text: "again"}})
+	_, _ = acpRun(ctx, runner, "s1", nopEmitter{}, []acp.ContentBlock{{Type: blockText, Text: "again"}})
 
 	awaitSeenModel(t, gated, testModelAfter)
 }
@@ -177,7 +177,7 @@ func startTestTurn(t *testing.T, runner *Runner, sessionID string, ctx context.C
 	go func() {
 		defer close(turnDone)
 
-		_, _ = runner.Run(ctx, sessionID, nopEmitter{},
+		_, _ = acpRun(ctx, runner, sessionID, nopEmitter{},
 			[]acp.ContentBlock{{Type: blockText, Text: "hi"}})
 	}()
 

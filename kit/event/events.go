@@ -67,6 +67,23 @@ type AgentThoughtChunk struct {
 // Kind returns the event discriminator.
 func (AgentThoughtChunk) Kind() string { return "AgentThoughtChunk" }
 
+// UserMessageChunk is one echoed fragment of the operator's own input (the
+// class-B local-command echo and the /undo echo, 20-01 D-05 / 23-05). It is
+// NOT bus-published — turn-side code hands it to the frontend Emitter
+// directly (the live-emitter precedent: an echo must never ride a post-turn
+// publish, which no subscriber would deliver). The ACP adapter renders it as
+// a user_message_chunk frame; a chat frontend renders its own echo shape.
+// Added additively at the 25-04 seam extraction (D-14: a new frontend need
+// adds an event kind, never a second emit method).
+type UserMessageChunk struct {
+	TurnID    string
+	MessageID string
+	Content   string
+}
+
+// Kind returns the event discriminator.
+func (UserMessageChunk) Kind() string { return "UserMessageChunk" }
+
 // ToolCall is a model-selected tool invocation, published when the provider
 // response carries tool_use blocks.
 type ToolCall struct {
