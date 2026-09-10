@@ -3,13 +3,19 @@ package coreexec //nolint:testpackage // internal package test (decodeJSONString
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Djarvur/ass-guard-agent/internal/sandbox"
 )
 
 // recapturedFixturePath is the committed 12-05 re-record fixture (the fresh
@@ -499,5 +505,332 @@ func TestIsErrorCorpusForm_BashExitCode(t *testing.T) {
 
 	if !strings.HasPrefix(text, "Exit code 3") {
 		t.Errorf("corpus form prefix = %q; want `Exit code 3` — the captured anchor shape", text)
+	}
+}
+
+// --- 22-06 (SAND-01): the foreground sandbox wrap batteries ---
+
+// liveSandboxHandle builds the exec-site Handle exactly as the serve flag
+// path does (acp_serve.go's Run step): the D-04 policy triple over the
+// session workdir + the real host probe (22-05's Resolve). The live arms skip
+// (never fail) on hosts without enforcement.
+func liveSandboxHandle(t *testing.T, workDir string) sandbox.Handle {
+	t.Helper()
+
+	h := sandbox.Resolve(sandbox.DefaultPolicy(workDir, os.TempDir(),
+		filepath.Join(workDir, ".ass-guard")))
+	if !h.Availability.Available {
+		t.Skipf("sandbox enforcement unavailable on this host: %s", h.Availability.Reason)
+	}
+
+	return h
+}
+
+// captureNotes returns a Config note sink capturing every line (the OQ2 loud
+// note's observation seam).
+func captureNotes() (func(string, ...any), *[]string) {
+	lines := &[]string{}
+
+	return func(format string, args ...any) {
+		*lines = append(*lines, fmt.Sprintf(format, args...))
+	}, lines
+}
+
+// wrapRecorder swaps the wrap seam for a passthrough that records the call
+// (the LIVE entry still wraps — only the observation is added) and returns
+// the restore.
+func wrapRecorder() (restore func(), called *bool) {
+	called = new(bool)
+	old := wrapSandboxCmd
+	wrapSandboxCmd = func(cmd *exec.Cmd, p sandbox.Policy) error {
+		*called = true
+
+		return sandbox.WrapCmd(cmd, p)
+	}
+
+	return func() { wrapSandboxCmd = old }, called
+}
+
+// TestBashSandbox_DefaultOffArgvIdentity: with the sandbox code present but
+// the operator never asking (nil Handle, or the off Handle), a plain Bash
+// call builds the child argv BYTE-IDENTICALLY — the wrap seam is never
+// invoked, zero notes fire (the default-OFF contract; the plan's argv
+// identity battery via the seam).
+func TestBashSandbox_DefaultOffArgvIdentity(t *testing.T) {
+	// NOT t.Parallel: swaps the package wrap seam (sequential tests run
+	// exclusively; the parallel batch must never observe the swap).
+	for name, handle := range map[string]*sandbox.Handle{
+		"nil handle":  nil,
+		"mode-off":    {Policy: sandbox.Policy{}, Availability: sandbox.Availability{Mode: "off"}},
+		"zero-assert": {Policy: sandbox.Policy{}, Availability: sandbox.Availability{}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			restore, called := wrapRecorder()
+			defer restore()
+
+			notes, lines := captureNotes()
+
+			bashExec := BashExecute(Config{WorkDir: t.TempDir(), Sandbox: handle, SandboxNote: notes})
+
+			out, err := bashExec(context.Background(), json.RawMessage(`{"command":"echo identity-ok"}`))
+			if err != nil {
+				t.Fatalf("err = %v; want nil", err)
+			}
+
+			if got := decodeJSONString(t, out); got != "identity-ok" {
+				t.Errorf("output = %q; want identity-ok", got)
+			}
+
+			if *called {
+				t.Error("the wrap seam was invoked with the sandbox OFF — the off path must leave argv byte-identical")
+			}
+
+			if len(*lines) != 0 {
+				t.Errorf("off path emitted %d note(s): %v", len(*lines), *lines)
+			}
+		})
+	}
+}
+
+// TestBashSandbox_OffAlwaysEscapes: --sandbox=off ALWAYS escapes — even an
+// adversarial Handle carrying Mode "off" WITH Available:true never wraps (the
+// escape-hatch letter: Mode "off" is the operator's explicit refusal).
+func TestBashSandbox_OffAlwaysEscapes(t *testing.T) {
+	// NOT t.Parallel: swaps the package wrap seam.
+	restore, called := wrapRecorder()
+	defer restore()
+
+	notes, lines := captureNotes()
+
+	//nolint:exhaustruct // adversarial: off marker + available (never produced by resolve; pins the gate)
+	handle := &sandbox.Handle{Availability: sandbox.Availability{Mode: "off", Available: true}}
+
+	bashExec := BashExecute(Config{WorkDir: t.TempDir(), Sandbox: handle, SandboxNote: notes})
+
+	out, err := bashExec(context.Background(), json.RawMessage(`{"command":"echo escape-ok"}`))
+	if err != nil {
+		t.Fatalf("err = %v; want nil", err)
+	}
+
+	if got := decodeJSONString(t, out); got != "escape-ok" {
+		t.Errorf("output = %q; want escape-ok", got)
+	}
+
+	if *called {
+		t.Error("the wrap seam was invoked despite Mode off — off ALWAYS escapes")
+	}
+
+	if len(*lines) != 0 {
+		t.Errorf("off path emitted %d note(s): %v", len(*lines), *lines)
+	}
+}
+
+// TestBashSandbox_LiveConfinementDeniesNetworkWriteOutside: with the sandbox
+// ON and the host available, a Bash call executes CONFINED through the FULL
+// wrap path (wrapSandboxCmd → the re-exec loader → the landlock ruleset): a
+// curl-style connect FAILS, a write outside the rw triple fails EPERM, and a
+// write INSIDE the session tmp succeeds (22-05's live shape, driven through
+// the executor — not raw package calls).
+func TestBashSandbox_LiveConfinementDeniesNetworkWriteOutside(t *testing.T) { //nolint:funlen // the live triple battery
+	t.Parallel()
+
+	workDir := t.TempDir()
+	handle := liveSandboxHandle(t, workDir)
+
+	bashExec := BashExecute(Config{WorkDir: workDir, Sandbox: &handle,
+		SandboxNote: func(string, ...any) {}})
+
+	// 1. Inside-tmp write succeeds (the rw triple grants the system tmp).
+	out, err := bashExec(context.Background(),
+		json.RawMessage(`{"command":"touch `+os.TempDir()+"/"+fmt.Sprintf("sbx-inside-%d", os.Getpid())+`"}`))
+	if err != nil {
+		t.Errorf("inside-tmp write failed under confinement: %v (%s)", err, decodeJSONString(t, out))
+	}
+
+	// 2. Outside write fails EPERM (a dir outside the rw triple).
+	outside := t.TempDir()
+	out, err = bashExec(context.Background(),
+		json.RawMessage(`{"command":"touch `+outside+`/nope"}`))
+	if err == nil {
+		t.Errorf("outside write SUCCEEDED — the child is unconfined: %s", decodeJSONString(t, out))
+	}
+
+	if !strings.Contains(decodeJSONString(t, out), "ermission denied") {
+		t.Errorf("outside write failed without the EPERM form: %q", decodeJSONString(t, out))
+	}
+
+	// 3. Network connect fails (the D-04 deny; local listener).
+	ln, lerr := net.Listen("tcp", "127.0.0.1:0")
+	if lerr != nil {
+		t.Fatalf("listen: %v", lerr)
+	}
+	defer func() { _ = ln.Close() }()
+
+	srv := &http.Server{}
+	go func() { _ = srv.Serve(ln) }()
+	defer func() { _ = srv.Close() }()
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	out, err = bashExec(context.Background(),
+		json.RawMessage(`{"command":"curl -s --max-time 3 -o /dev/null http://127.0.0.1:`+
+			strconv.Itoa(port)+`/ ; echo CURL_EXIT_$?"}`))
+	if err != nil {
+		t.Fatalf("the curl-style call itself errored: %v (%s)", err, decodeJSONString(t, out))
+	}
+
+	if got := decodeJSONString(t, out); got == "CURL_EXIT_0" {
+		t.Errorf("curl connect SUCCEEDED under --sandbox=on — the child is unconfined: %q", got)
+	}
+}
+
+// TestBashSandbox_DisableFlagOnRunsUnconfinedWithNote: OQ2 — with the sandbox
+// ON and available, dangerouslyDisableSandbox=true runs the command UNCONFINED
+// with exactly ONE loud note carrying the counter: the denied-by-confinement
+// touch-outside now SUCCEEDS (the escape is real, not cosmetic).
+func TestBashSandbox_DisableFlagOnRunsUnconfinedWithNote(t *testing.T) {
+	t.Parallel()
+
+	workDir := t.TempDir()
+	handle := liveSandboxHandle(t, workDir)
+
+	notes, lines := captureNotes()
+	bashExec := BashExecute(Config{WorkDir: workDir, Sandbox: &handle, SandboxNote: notes})
+
+	outside := t.TempDir()
+	out, err := bashExec(context.Background(),
+		json.RawMessage(`{"command":"touch `+outside+`/escaped","dangerouslyDisableSandbox":true}`))
+	if err != nil {
+		t.Fatalf("the disabled-flag call failed (it must run unconfined and succeed): %v (%s)",
+			err, decodeJSONString(t, out))
+	}
+
+	if len(*lines) != 1 {
+		t.Fatalf("notes = %d; want exactly ONE loud note (got %v)", len(*lines), *lines)
+	}
+
+	if !strings.Contains((*lines)[0], "UNCONFINED") || !strings.Contains((*lines)[0], "dangerouslyDisableSandbox") {
+		t.Errorf("the note does not name the escape: %q", (*lines)[0])
+	}
+
+	if !strings.Contains((*lines)[0], "#") {
+		t.Errorf("the note carries no counter: %q", (*lines)[0])
+	}
+}
+
+// TestBashSandbox_DisableFlagOffIsNoop: with the sandbox OFF (the default),
+// dangerouslyDisableSandbox stays today's documented no-op — the command runs
+// foreground, no note fires (22-06 retires the no-op COMMENT only for the
+// on-arm; the off-arm IS the no-op, both arms pinned).
+func TestBashSandbox_DisableFlagOffIsNoop(t *testing.T) {
+	// NOT t.Parallel: swaps the package wrap seam.
+	restore, called := wrapRecorder()
+	defer restore()
+
+	notes, lines := captureNotes()
+
+	bashExec := BashExecute(Config{WorkDir: t.TempDir(), SandboxNote: notes})
+
+	out, err := bashExec(context.Background(),
+		json.RawMessage(`{"command":"echo disable-off-ok","dangerouslyDisableSandbox":true}`))
+	if err != nil {
+		t.Fatalf("err = %v; want nil (the off-arm no-op)", err)
+	}
+
+	if got := decodeJSONString(t, out); got != "disable-off-ok" {
+		t.Errorf("output = %q; want disable-off-ok", got)
+	}
+
+	if *called {
+		t.Error("the wrap seam fired on the off path")
+	}
+
+	if len(*lines) != 0 {
+		t.Errorf("the off-arm no-op emitted notes: %v", *lines)
+	}
+}
+
+// TestBashSandbox_UnavailableNotedPerRun: enabled-but-unavailable (faked
+// availability) runs UNCONFINED with a per-run note + counter — NEVER a
+// silent fail-open (the plan prohibition). Two runs → two individually
+// numbered notes.
+func TestBashSandbox_UnavailableNotedPerRun(t *testing.T) {
+	t.Parallel()
+
+	workDir := t.TempDir()
+
+	//nolint:exhaustruct // faked availability: the on marker with the probe failed
+	handle := &sandbox.Handle{
+		Policy:       sandbox.DefaultPolicy(workDir, os.TempDir(), filepath.Join(workDir, ".ass-guard")),
+		Availability: sandbox.Availability{Mode: "landlock", Reason: "faked-unavailable"},
+	}
+
+	notes, lines := captureNotes()
+	bashExec := BashExecute(Config{WorkDir: workDir, Sandbox: handle, SandboxNote: notes})
+
+	outside := t.TempDir()
+	for i := 0; i < 2; i++ {
+		out, err := bashExec(context.Background(),
+			json.RawMessage(`{"command":"touch `+outside+`/u`+strconv.Itoa(i)+`"}`))
+		if err != nil {
+			t.Fatalf("run %d failed (unavailable must degrade to unconfined, not fail): %v (%s)",
+				i, err, decodeJSONString(t, out))
+		}
+	}
+
+	if len(*lines) != 2 {
+		t.Fatalf("notes = %d; want one PER RUN (got %v)", len(*lines), *lines)
+	}
+
+	if !strings.Contains((*lines)[0], "faked-unavailable") {
+		t.Errorf("note 0 does not name the reason: %q", (*lines)[0])
+	}
+
+	if !strings.Contains((*lines)[1], "#2") {
+		t.Errorf("note 1 carries no incrementing counter: %q", (*lines)[1])
+	}
+}
+
+// TestBashSandbox_GroupKillReachesWrappedChild: the wrap substitutes argv
+// BEFORE the group discipline — a WRAPPED long-running child (with its own
+// grandchild) still dies via the existing timeout path (killGroupOnCtx +
+// reapGroup; D-05: signals are neither FS nor network operations, so the
+// group-kill reaches confined children).
+func TestBashSandbox_GroupKillReachesWrappedChild(t *testing.T) {
+	// NOT t.Parallel: swaps the package wrap seam (and pins kill timing).
+	workDir := t.TempDir()
+	handle := liveSandboxHandle(t, workDir)
+
+	restore, called := wrapRecorder()
+	defer restore()
+
+	bashExec := BashExecute(Config{WorkDir: workDir, Sandbox: &handle,
+		SandboxNote: func(string, ...any) {}})
+
+	_, err := bashExec(context.Background(), json.RawMessage(
+		`{"command":"sleep 2997 & sleep 2998","timeout":700}`))
+	if err == nil {
+		t.Fatal("the timed-out wrapped call returned nil err; want the timeout form")
+	}
+
+	if !*called {
+		t.Fatal("the wrap seam never fired — the child was not wrapped for the group-kill row")
+	}
+
+	// The wrapped group must be GONE (the TestBash_ProcessGroupKill shape:
+	// no orphaned straggler survives the SIGKILL + reap).
+	if _, perr := exec.LookPath("pgrep"); perr == nil {
+		deadline := time.Now().Add(3 * time.Second)
+
+		for time.Now().Before(deadline) {
+			pout, _ := exec.CommandContext(context.Background(), "pgrep", "-f", "sleep 299").Output()
+			if strings.TrimSpace(string(pout)) == "" {
+				return // group provably empty — the lifecycle survived the wrap
+			}
+
+			time.Sleep(100 * time.Millisecond)
+		}
+
+		pout, _ := exec.CommandContext(context.Background(), "pgrep", "-f", "sleep 299").Output()
+		t.Errorf("orphaned wrapped child after group kill: %s", pout)
 	}
 }

@@ -23,6 +23,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Djarvur/ass-guard-agent/internal/sandbox"
 	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 )
 
@@ -48,6 +49,16 @@ const (
 	bashTimeoutDefaultMS = 120000
 	bashTimeoutMaxMS     = 600000
 )
+
+// wrapSandboxCmd is the sandbox wrap seam (22-06, SAND-01): every Bash-class
+// exec site calls THIS var — the foreground site below, TaskRegistry's
+// launch, and the PTY shell spawn — through sandbox's ONE WrapCmd entry (no
+// call site branches on GOOS or re-renders profiles, D-06). Var so the
+// batteries can observe/intercept the wrap decision; the live confinement
+// batteries run the real entry.
+//
+//nolint:gochecknoglobals // the testable-seam var pattern (pickResumeSession precedent)
+var wrapSandboxCmd = sandbox.WrapCmd
 
 // bashArgs is the observed input shape: {command, description} always;
 // timeout (ms) sometimes (subagent corpus). run_in_background EXECUTES via

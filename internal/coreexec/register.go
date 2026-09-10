@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/Djarvur/ass-guard-agent/internal/sandbox"
 	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 )
 
@@ -36,6 +37,19 @@ type Config struct {
 	// PTY owns the session's persistent shell (22-04, PAR-09/D-07): nil =
 	// persistent calls degrade to the structured no-manager error.
 	PTY *PTYManager
+	// Sandbox (22-06, SAND-01): the startup probe's resolved Handle from the
+	// serve composition. nil, or Availability.Mode "off", leaves every exec
+	// path untouched — the DEFAULT OFF contract (argv byte-identical, zero
+	// notes). Mode "on" + Available wraps the Bash-class children through
+	// sandbox.WrapCmd (the ONE entry — foreground site in bash.go, the
+	// registry's launch, and the PTY shell); enabled-but-unavailable, and the
+	// per-call dangerouslyDisableSandbox escape, run UNCONFINED with the loud
+	// per-run note + counter (OQ2; never a silent fail-open).
+	Sandbox *sandbox.Handle
+	// SandboxNote is the unconfined-run note sink (22-06, SAND-01). nil falls
+	// back to os.Stderr — a green tool result must never imply confinement
+	// that did not happen, so the note is never droppable.
+	SandboxNote func(format string, args ...any)
 }
 
 // RegisterCore sets Execute on the six core catalog entries (08-08's /opsx

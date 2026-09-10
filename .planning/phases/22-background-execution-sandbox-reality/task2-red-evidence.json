@@ -1,28 +1,24 @@
 {
-  "plan": "22-04",
+  "plan": "22-06",
   "task": 2,
   "phase_gate": "RED",
-  "command": "go test -race -count=1 ./internal/coreexec/ -run 'TestPTYDeadRestart|TestPTYSerialize|TestPTYEmpty'",
-  "exit_code": 1,
-  "target_tests": [
-    "TestPTYDeadRestart/RestartSucceedsWithNoteOnce",
-    "TestPTYDeadRestart/BlockedReadReturnsPromptly",
-    "TestPTYSerialize/ArrivalOrderAndAttribution",
-    "TestPTYSerialize/LazyUntilFirstPersistentCall",
-    "TestPTYEmpty/EmptyCommandsAreStructuredErrors",
-    "TestPTYEmpty/StateUnchangedAfterEmpty"
-  ],
+  "command": "go test -race -count=1 -v ./internal/coreexec/ -run 'TestBashSandbox'",
+  "targetTest": "TestBashSandbox_LiveConfinementDeniesNetworkWriteOutside",
+  "exitCode": 1,
+  "output": "ok 1 - TestBashSandbox_DefaultOffArgvIdentity\nok 2 - TestBashSandbox_OffAlwaysEscapes\nok 3 - TestBashSandbox_DisableFlagOffIsNoop\nnot ok 4 - TestBashSandbox_GroupKillReachesWrappedChild\nnot ok 5 - TestBashSandbox_DisableFlagOnRunsUnconfinedWithNote\nnot ok 6 - TestBashSandbox_UnavailableNotedPerRun\nnot ok 7 - TestBashSandbox_LiveConfinementDeniesNetworkWriteOutside\n# tests 7\n# pass 3\n# fail 4\n",
+  "expected": "Per 22-06 Task 2 <behavior>: default OFF leaves argv byte-identical (seam never fires); live confinement through the executor denies curl connect + outside write and allows the inside-tmp write; the escape hatch (Mode off + Available) never wraps; dangerouslyDisableSandbox on -> unconfined with exactly ONE loud note + counter; off -> today's documented no-op; availability-false -> per-run notes with incrementing counter; a wrapped child still dies via killGroupOnCtx/reapGroup.",
+  "actual": "The foreground exec site has no sandbox code: outside write SUCCEEDS, curl connect SUCCEEDS (CURL_EXIT_0), zero notes on the disable/unavailable arms, and the wrap seam never fires for the group-kill row. The three off-arm tests pass as guard rows (the unwrapped code trivially satisfies off semantics).",
   "failing_tests": [
-    "TestPTYDeadRestart/BlockedReadReturnsPromptly (assertion: the call never returned within 15s of shell death — WEDGED; the SIGKILLed sh leaves the orphaned `sleep 30` child holding the pty slave open, so the master read never returns EIO and the read loop spins on deadline ticks)"
+    "TestBashSandbox_LiveConfinementDeniesNetworkWriteOutside (assertion: outside write SUCCEEDED; curl CURL_EXIT_0 \u2014 unconfined)",
+    "TestBashSandbox_DisableFlagOnRunsUnconfinedWithNote (assertion: notes = 0; want exactly ONE)",
+    "TestBashSandbox_UnavailableNotedPerRun (assertion: notes = 0; want one per run with counter)",
+    "TestBashSandbox_GroupKillReachesWrappedChild (assertion: the wrap seam never fired)"
   ],
-  "expected_result": "Per 22-04 Task 2 <behavior>: a call already blocked in the read loop when the shell dies returns promptly with the dead-shell outcome (not a hang).",
-  "actual_result": "The interrupted call never returned; the test timed out after 15s waiting on the done channel (30.01s test wall time).",
   "unexpected_green": [
-    "TestPTYDeadRestart/RestartSucceedsWithNoteOnce (restart machinery landed in Task 1's feat commit — front-loaded by the interrupted prior run's WIP manager)",
-    "TestPTYSerialize both rows (mutex serialization + lazy start landed in Task 1's feat)",
-    "TestPTYEmpty both rows (TrimSpace guard landed in Task 1's feat)"
+    "TestBashSandbox_DefaultOffArgvIdentity (guard row: off semantics trivially hold against unwrapped code)",
+    "TestBashSandbox_OffAlwaysEscapes (guard row: same)",
+    "TestBashSandbox_DisableFlagOffIsNoop (guard row: the off-arm no-op is today's behavior; GREEN keeps it)"
   ],
-  "verdict": "RED_EVIDENCE_OK_target_test_failed_on_assertions",
-  "note": "gsd-tools runtime predates the `check tdd-red-evidence` verb — record kept at /tmp/gsd-22-04-wip/evidence/task2-red.json and copied to the phase directory.",
-  "timestamp": "2026-09-10T02:46:58Z"
+  "note": "Go run projected faithfully into Node-TAP by /tmp/gotap.py. TestMain (linux) doubles the test binary as the landlock loader \u2014 the live arms run the REAL WrapCmd re-exec path.",
+  "timestamp": "2026-09-10T00:34:33Z"
 }
