@@ -2358,6 +2358,16 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 				"ass-guard: session %s close dropped %d queued background subagent task(s)\n", sessionID, dropped)
 		}
 
+		// 22-08 (G-22-4, CR-04): RUNNING background subagents die with the
+		// session too — their cancel funcs fire here (queued ones above; the
+		// two legs are idempotent together), the count noted on stderr only
+		// when non-zero. Without this a running subagent outlived its session
+		// and its late completion fired into closed machinery.
+		if cancelled := tracker.CancelRunning(); cancelled > 0 {
+			_, _ = fmt.Fprintf(r.stderrOrDefault(),
+				"ass-guard: session %s close cancelled %d running background subagent task(s)\n", sessionID, cancelled)
+		}
+
 		return mcpHost.Close()
 	}
 
@@ -2801,11 +2811,26 @@ func (r *Runner) CloseSession(sessionID string) error {
 	}
 	r.sessMu.Unlock()
 
+	var err error
+
 	if ok {
-		return s.Close() //nolint:wrapcheck // session delegation
+		err = s.Close() //nolint:wrapcheck // session delegation
 	}
 
-	return nil
+	// 22-08 (G-22-4, CR-04): close is FINAL for the session's background
+	// machinery — AFTER s.Close() (so OnClose's CancelQueued/CancelRunning
+	// cancels and the PTY Drain ran while the tracker and manager were still
+	// discoverable), prune the per-session wake state. A late completion then
+	// finds no tracker (the chain exits) and even a tracker-holding path
+	// meets the drain's NON-constructing session lookup, which drops the
+	// batch terminally instead of resurrecting the closed id. Unconditional:
+	// also on the session-missing path (close twice, or close a never-built
+	// id) the maps must not keep stale state.
+	r.trackers.Delete(sessionID)
+	r.wakeInFlight.Delete(sessionID)
+	r.ptyManagers.Delete(sessionID)
+
+	return err
 }
 
 // --- serve-composition seam (D-19 export-by-necessity) ---

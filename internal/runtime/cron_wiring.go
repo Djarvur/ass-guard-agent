@@ -450,20 +450,31 @@ func (r *Runner) wakeDrainChain(ctx context.Context, sessionID string, flag *ato
 	}
 }
 
-// drainWakeNotifications attempts ONE batch delivery: TryLock the session
-// turn mutex (busy → return false, notifications stay pending), consume the
+// drainWakeNotifications attempts ONE batch delivery: resolve the session
+// through a NON-constructing lookup (a MISSING session is TERMINAL — one
+// stderr line naming the dropped batch, consumed, chain exits; 22-08,
+// G-22-4/CR-04: the constructing sessionFor here resurrected closed sessions
+// with a fresh MCP host, writer and PTY plus a real ghost wake turn billed to
+// nobody; this also retires the IN-05 unbounded stay-pending retry, whose
+// only trigger was construction failure), then TryLock the session turn
+// mutex (busy → return false, notifications stay pending), consume the
 // tracker's pending batch (nil batch after a racing drain → true, done),
 // render the notification blocks, and run ONE wake turn through runOneTurn
 // with the wake provenance bracket (mirroring runAutomationTurn's skeleton —
-// the same rails, a new trigger). A session that cannot be resolved logs one
-// stderr line and leaves the batch pending (the next completion retries).
+// the same rails, a new trigger).
 func (r *Runner) drainWakeNotifications(ctx context.Context, sessionID string, tr *tasks.Tracker) bool {
-	sess := r.sessionFor(ctx, sessionID)
-	if sess == nil {
-		_, _ = fmt.Fprintf(r.stderrOrDefault(),
-			"ass-guard: wake drain for %s could not resolve the session — notifications stay pending\n", sessionID)
+	r.sessMu.Lock()
+	sess, ok := r.sessions[sessionID]
+	r.sessMu.Unlock()
 
-		return false // stay in the chain; retry later
+	if !ok {
+		_, _ = fmt.Fprintf(r.stderrOrDefault(),
+			"ass-guard: wake drain for %s: session closed — dropping %d pending notification(s)\n",
+			sessionID, len(tr.PendingPeek()))
+
+		tr.Drain() // closed is terminal — consume; nothing may retry or reconstruct
+
+		return true
 	}
 
 	mu := r.sessionTurnMu(sessionID)

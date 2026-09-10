@@ -279,14 +279,37 @@ func (t *Tracker) QueuedNote(id string) string {
 
 // CancelQueued drops every queued-but-unstarted subagent registration
 // (OQ5: session close — nothing started, nothing to kill) and returns the
-// dropped count. RUNNING tasks are never touched (the OnClose chain's other
-// links own their cancellation).
+// dropped count. RUNNING tasks are CancelRunning's job.
 func (t *Tracker) CancelQueued() int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
 	n := len(t.waiters)
 	t.waiters = nil
+
+	return n
+}
+
+// CancelRunning invokes every stored RUNNING-subagent cancel func and clears
+// the registrations, returning the cancelled count (22-08, G-22-4/CR-04: the
+// close-time running-cancel leg — a background subagent must not outlive its
+// session, or its late completion fires into closed machinery). CancelTask's
+// per-id leg is unchanged; queued-but-unstarted waiters stay CancelQueued's
+// job. Idempotent together with Complete's releaseSubagentSlot: whichever
+// runs first clears the map entry, the other finds nothing.
+func (t *Tracker) CancelRunning() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	n := len(t.subagentCancels)
+
+	for _, cancel := range t.subagentCancels {
+		if cancel != nil {
+			cancel()
+		}
+	}
+
+	t.subagentCancels = map[string]func(){}
 
 	return n
 }
