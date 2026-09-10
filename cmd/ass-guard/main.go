@@ -23,6 +23,7 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/loop"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/providerfactory"
+	"github.com/Djarvur/ass-guard-agent/internal/sandbox"
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 	"github.com/Djarvur/ass-guard-agent/internal/version"
 )
@@ -35,6 +36,16 @@ var errIsRequired = errors.New("--prompt is required")
 var errUnknownCommand = errors.New("unknown command")
 
 func main() {
+	// 22-06 (SAND-01, D-05): the sandbox re-exec child hook — MUST run before
+	// any root-command dispatch. On linux a WrapCmd-confined child is THIS
+	// binary re-invoked with the sentinel env: the hook applies the landlock
+	// ruleset and execs the real target, never returning — the sentinel child
+	// can never reach cobra, never serves ACP. On every normal start (no
+	// sentinel; every darwin start) the hook returns false immediately with
+	// zero side effects. Children only, D-05: this never confines ass-guard
+	// itself.
+	sandbox.ApplySandboxChildHook()
+
 	err := newRootCmd().Execute()
 	if err != nil {
 		// cobra already prints the error; exit non-zero. Diagnostics go to stderr.

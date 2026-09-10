@@ -138,7 +138,9 @@ var errInvalidSandboxMode = errors.New("acpserve: invalid --sandbox value")
 // (an explicit --sandbox="" is a typo, not the default); the zero-value
 // Options path treats "" as off at the RESOLUTION layer instead.
 func ValidateSandboxMode(mode string) error {
-	_ = mode // RED scaffold — accepts everything; the GREEN body lands with Task 1
+	if mode != "off" && mode != "on" {
+		return fmt.Errorf("%w %q: want off|on", errInvalidSandboxMode, mode)
+	}
 
 	return nil
 }
@@ -151,7 +153,21 @@ func ValidateSandboxMode(mode string) error {
 // continues (the seedACPGuard degrade contract; every unconfined RUN is then
 // individually noted at the exec sites, Tasks 2-3 — never a silent fail-open).
 func resolveSandboxAvailability(opts *Options, stderr io.Writer) sandbox.Availability {
-	return sandbox.Availability{} // RED scaffold — the GREEN body lands with Task 1
+	if opts.SandboxMode != "on" {
+		// The operator never asked: nothing is probed, nothing confined —
+		// Availability{Mode:"off"} is the exec sites' always-untouched marker.
+		return sandbox.Availability{Mode: "off"}
+	}
+
+	av := sandboxProbe()
+
+	if !av.Available {
+		_, _ = fmt.Fprintf(stderr,
+			"ass-guard: sandbox enabled but UNAVAILABLE on this host: %s — "+
+				"tool processes run UNCONFINED (noted per run)\n", av.Reason)
+	}
+
+	return av
 }
 
 // sandboxPolicyFor builds the D-04 policy triple from the serve workdir: rw on
@@ -432,6 +448,20 @@ func Run( //nolint:funlen // :320-425
 			"ass-guard: stale task-log sweep marked %d orphaned log(s) stale, deleted %d past-window tombstone(s)\n",
 			sweepCounts.marked, sweepCounts.deleted)
 	}
+
+	// 22-06 (SAND-01): the sandbox startup probe — beside the 22-02 sweep and
+	// BEFORE the scheduler can race it (Pitfall 10's ordering discipline) and
+	// before any session could construct. Resolves the availability ONCE for
+	// the process (off short-circuits with zero probing; enabled-but-
+	// unavailable warns exactly once above) and stores the Handle — the D-04
+	// policy triple + the probe outcome — on the runner for the three exec
+	// sites' Config/PTYOpts (Tasks 2-3). Default OFF: the stored Handle's
+	// Mode:"off" leaves every exec path untouched.
+	sandboxHandle := sandbox.Handle{
+		Policy:       sandboxPolicyFor(opts.WorkDir),
+		Availability: resolveSandboxAvailability(opts, stderr),
+	}
+	runner.SetSandboxHandle(&sandboxHandle)
 
 	runner.SetEmitter(srv.Emitter) // WINDOWS #3: server-driven turns reach the client
 	runner.StartScheduler(ctx)

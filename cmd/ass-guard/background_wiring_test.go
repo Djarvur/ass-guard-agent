@@ -85,7 +85,7 @@ func TestBackgroundWiring_DeprecatedShellID(t *testing.T) {
 
 	reg := coreexec.NewTaskRegistry()
 
-	id, err := reg.Start(t.TempDir(), "sleep 5")
+	id, _, err := reg.Start(t.TempDir(), "sleep 5")
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -103,12 +103,12 @@ func TestBackgroundWiring_ReapAll(t *testing.T) {
 
 	reg := coreexec.NewTaskRegistry()
 
-	id1, err1 := reg.Start(t.TempDir(), "sleep 30")
+	id1, _, err1 := reg.Start(t.TempDir(), "sleep 30")
 	if err1 != nil {
 		t.Fatal(err1)
 	}
 
-	id2, err2 := reg.Start(t.TempDir(), "sleep 30")
+	id2, _, err2 := reg.Start(t.TempDir(), "sleep 30")
 	if err2 != nil {
 		t.Fatal(err2)
 	}
@@ -130,7 +130,7 @@ func TestBackgroundWiring_CrossSessionIsolation(t *testing.T) {
 	regA := coreexec.NewTaskRegistry()
 	regB := coreexec.NewTaskRegistry()
 
-	id, err := regA.Start(t.TempDir(), "sleep 5")
+	id, _, err := regA.Start(t.TempDir(), "sleep 5")
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}

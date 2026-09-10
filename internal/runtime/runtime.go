@@ -38,6 +38,7 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/redact"
+	"github.com/Djarvur/ass-guard-agent/internal/sandbox"
 	"github.com/Djarvur/ass-guard-agent/internal/sched"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
@@ -301,6 +302,14 @@ type Runner struct {
 	// backgroundCaps resolves the D-12 caps at sessionFor time (nil = the
 	// 8/16 defaults; the serve composition binds the config surface).
 	backgroundCaps func() (subagents, bash int)
+	// sandboxHandle (22-06, SAND-01): the startup probe's resolved Handle —
+	// the D-04 policy triple + the host availability — stored ONCE per
+	// process before the scheduler starts. nil (test runners) or
+	// Availability.Mode "off" (the DEFAULT — the operator never asked) means
+	// every exec path stays untouched; Mode "on" + Available routes the three
+	// Bash-class exec sites through sandbox.WrapCmd (Tasks 2-3 read it at
+	// sessionFor into coreexec.Config and PTYOpts).
+	sandboxHandle *sandbox.Handle
 
 	// 17-02 (ACP-01): the permission-gate composition. permAskFire is the
 	// permission-ask surface callback injected from the serve composition
@@ -2935,6 +2944,16 @@ func (r *Runner) SetAskFire(f func(ctx context.Context, e *session.AskEntry) ses
 // (apply-as-landed: no mid-session cap mutation).
 func (r *Runner) SetBackgroundCaps(f func() (subagents, bash int)) {
 	r.backgroundCaps = f
+}
+
+// SetSandboxHandle stores the 22-06 startup probe's resolved Handle (SAND-01):
+// the serve composition resolves the availability ONCE (off short-circuits
+// with zero probing; enabled-but-unavailable warns exactly once) before the
+// scheduler starts; every sessionFor construction reads the Handle into
+// coreexec.Config and PTYOpts (the askFire late-injection precedent — nil or
+// Mode "off" leaves every exec path untouched, the locked default).
+func (r *Runner) SetSandboxHandle(h *sandbox.Handle) {
+	r.sandboxHandle = h
 }
 
 // PublishAskChunk publishes one client-visible ask-surface chunk (17-04):

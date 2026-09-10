@@ -270,12 +270,14 @@ type resumeServeDelegate struct {
 
 // runServeWithResumeTarget is the root RunE's delegation seam into the `acp
 // serve` composition (the runACPServeCmd extraction precedent). Var so tests
-// intercept the delegation without spawning a real serve.
+// intercept the delegation without spawning a real serve. The serve-local
+// knobs keep their defaults here (22-06: --sandbox stays off — the flag is a
+// serve-local surface, not root-persistent).
 //
 //nolint:gochecknoglobals // the testable-seam var pattern (the runACPServeCmd extraction precedent)
 var runServeWithResumeTarget = func(ctx context.Context, d resumeServeDelegate) error {
 	return runACPServeCmd(ctx, d.auditPath, d.profilesDir, "", d.profilesDirChanged,
-		d.profileName, mnd6, true, session.DefaultAskTimeout, d.target)
+		d.profileName, mnd6, true, session.DefaultAskTimeout, d.target, "off")
 }
 
 // runRootResume is the root RunE's D-10 branch: guard the --prompt
@@ -332,6 +334,7 @@ func newACPServeCmd() *cobra.Command {
 		workDir       string
 		noEngine      bool
 		askTimeout    time.Duration
+		sandboxMode   string
 	)
 
 	c := &cobra.Command{
@@ -349,6 +352,12 @@ func newACPServeCmd() *cobra.Command {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 
+			// 22-06 (SAND-01): the --sandbox vocabulary fails HERE — at
+			// startup, before any serve begins — never mid-serve.
+			if verr := acpserve.ValidateSandboxMode(sandboxMode); verr != nil {
+				return verr
+			}
+
 			// 09-06: the persistent --audit-log flag reaches the serve path
 			// (it was declared but never read — the dead-flag finding).
 			// De-cobra'd in plan 15-05: flag reads stay in the shell.
@@ -364,7 +373,7 @@ func newACPServeCmd() *cobra.Command {
 			}
 
 			return runACPServeCmd(ctx, auditPath, profilesDir, workDir, changedProfilesDir,
-				profileName, maxConcurrent, !noEngine, askTimeout, resumeTarget)
+				profileName, maxConcurrent, !noEngine, askTimeout, resumeTarget, sandboxMode)
 		},
 	}
 	c.Flags().StringVar(&profileName, "profile", profileZcode, "profile name to load (PROF-01)")
@@ -377,6 +386,12 @@ func newACPServeCmd() *cobra.Command {
 	c.Flags().DurationVar(&askTimeout, "ask-timeout", session.DefaultAskTimeout,
 		"how long an unanswered AskUserQuestion waits before the turn resumes with the "+
 			"non-answer form (D-01); 0 = block forever (interactive mode)")
+	// 22-06 (SAND-01): the sandbox switch, DEFAULT OFF — the operator's
+	// locked choice; no tool process is ever confined unless asked. "on"
+	// probes the host at startup (degrades loudly, never refuses).
+	c.Flags().StringVar(&sandboxMode, "sandbox", "off",
+		"confine spawned tool processes (Bash-class children) to the workdir rw triple "+
+			"with network denied (SAND-01); off|on (default off)")
 
 	return c
 }
@@ -390,11 +405,12 @@ func newACPServeCmd() *cobra.Command {
 // flag read and the profiles-dir Changed() probe live in the cobra shell and
 // arrive here as plain values. 18-06 added the trailing resumeTarget: the
 // ALREADY-RESOLVED CLI resume target (both the root delegation and the serve
-// RunE resolve before this point); "" performs no initial load.
+// RunE resolve before this point); "" performs no initial load. 22-06 added
+// the trailing sandboxMode (off|on, already validated; default off).
 func runACPServeCmd(
 	ctx context.Context, auditPath, profilesDir, workDir string, profilesDirChanged bool,
 	profileName string, maxConcurrent int, engineEnabled bool,
-	askTimeout time.Duration, resumeTarget string,
+	askTimeout time.Duration, resumeTarget, sandboxMode string,
 ) error {
 	log.SetOutput(os.Stderr)
 
@@ -421,5 +437,6 @@ func runACPServeCmd(
 			AskTimeout:    askTimeout,
 			AuditLogPath:  auditPath,
 			ResumeTarget:  resumeTarget,
+			SandboxMode:   sandboxMode,
 		})
 }
