@@ -4,18 +4,18 @@ milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 25
 current_phase_name: SEED-001 Kit Extraction (strictly last)
-current_plan: 2
+current_plan: 3
 status: executing
 stopped_at: Completed 25-01-PLAN.md
-last_updated: "2026-09-10T20:03:42.084Z"
+last_updated: "2026-09-10T20:26:12.043Z"
 last_activity: 2026-09-10
 last_activity_desc: Phase 25 execution resumed (wave continue)
-state_head: 6dc7b62d8b01835f35fd258685ca6329b87e74da
+state_head: 581d20c56183441764a60602f776d9f6c5ab83a7
 progress:
   total_phases: 11
   completed_phases: 6
   total_plans: 78
-  completed_plans: 69
+  completed_plans: 71
   percent: 55
 ---
 
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-09-10)
 ## Current Position
 
 Phase: 25 (SEED-001 Kit Extraction (strictly last)) — EXECUTING
-Plan: 2 of 9
-Current Plan: 2
+Plan: 3 of 9
+Current Plan: 3
 Total Plans in Phase: 9
 Status: Ready to execute
 Last activity: 2026-09-10 — Phase 25 execution resumed (wave continue)
@@ -115,6 +115,7 @@ Phase 19: 7/7 ✓ closed 2026-09-10 (verification completed by the auto-UAT live
 | Phase 24 P05 | 47 min | 3 tasks | 12 files |
 | Phase 24 P06 | 19 min | 2 tasks | 9 files |
 | Phase 25 P01 | 9 min (continuation session; plan spans 2 interrupted sessions since 2026-08-28) | 3 tasks | 160 files |
+| Phase 25 P02 | 18 min | 2 tasks | 266 files |
 
 ## Accumulated Context
 
@@ -234,6 +235,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 24]: 24-05: real-plugin mounts preserve source file modes — the superpowers SessionStart polyglot is directly executed and needs +x (a 0600 copy failed exit 126); the hook-output discriminator is CC's hookSpecificOutput envelope, not the plugin name
 - [Phase 24]: 24-06 (G-24-1): wake-cell assertion shapes follow the live substrate — commands/skills prove the invocation rides the wake-triggering dispatch verbatim (renderWakeBlocks' machine-composed input + start-anchored expansion makes in-wake expansion structurally impossible); hooks proves PreToolUse inside the wake turn + the notification's kind/task-id linkage; SubagentStop-on-background descoped (foreground wrapper only — firing it would be a production change)
 - [Phase 24]: 24-06 (G-24-2): caller-side provider filtering before FirstAllowed at both demotion sites — the provider constraint is a CALLER property (which wire the result rides); demoteIfDeniedLocked gains the cross-provider-PRIMARY guard (never claim a breaker for a primary never consulted — byte-identical corner, pinned by surface row 3)
+- [Phase 25]: 25-02: lint differential comparisons for kit moves MUST run on a cache-clean golangci-lint — the shared cache silently under-reported 2 findings in a full-repo run; per-package reruns contradicted it and cache-clean restored the true identical multiset
+- [Phase 25]: 25-02: pre-move red baseline at 1002acc is 599 lint findings + 15 race failures (9 ModesMatrix fixture-missing legs, TestPermissionsE2E, 4 TestRunSuite_*, TestRescanConcurrency) — grown from 25-01's recorded 6/596; every later 25-xx move re-captures its own baseline
 
 ### Pending Todos
 
