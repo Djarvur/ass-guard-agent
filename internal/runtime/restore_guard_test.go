@@ -8,11 +8,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/checkpoint"
+	"github.com/Djarvur/ass-guard-agent/internal/event"
+	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 )
 
@@ -499,4 +502,378 @@ func gitRunUser(t *testing.T, dir string, args ...string) string {
 	}
 
 	return string(out)
+}
+
+// --- 23-06 (G-23-1/CR-01): the cross-session /undo refusal battery ---
+
+// undoSentinel is the post-snapshot sentinel file: created AFTER the seeded
+// checkpoint (and after any turn-start entry snapshot), a successful restore's
+// checkout --no-overlay + clean -fd DELETES it — so its survival is the direct
+// "no restore ran" witness on the shared worktree.
+const undoSentinel = "undo-sentinel.txt"
+
+// undoSentinelExists reports the sentinel's survival.
+func undoSentinelExists(t *testing.T, workDir string) bool {
+	t.Helper()
+
+	_, err := os.Stat(filepath.Join(workDir, undoSentinel))
+
+	return err == nil
+}
+
+// runUndoPrompt drives ONE /undo invocation through r.Run (the real classifier
+// + intercept path) in a goroutine with the battery's 2s behavioral timeout —
+// a regression that makes the undo WAIT on any turn mutex fails the timeout
+// instead of hanging the suite — and returns the captured frames.
+func runUndoPrompt(t *testing.T, r *Runner, sessionID string) []commandFrame {
+	t.Helper()
+
+	emit := &tracerEmitter{}
+
+	type undoResult struct {
+		stop string
+		err  error
+	}
+
+	undoDone := make(chan undoResult, 1)
+
+	go func() {
+		stop, err := r.Run(context.Background(), sessionID, emit,
+			[]acp.ContentBlock{{Type: blockText, Text: "/undo"}})
+		undoDone <- undoResult{stop, err}
+	}()
+
+	var res undoResult
+
+	select {
+	case res = <-undoDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the /undo Run did not return within 2s " +
+			"(must refuse without waiting on any turn mutex)")
+	}
+
+	if res.err != nil || res.stop != stopEndTurn {
+		t.Fatalf("/undo Run = (%q,%v); want (end_turn, nil)", res.stop, res.err)
+	}
+
+	return emit.snapshot()
+}
+
+// blockedTurnResult carries a driven blocked turn's outcome.
+type blockedTurnResult struct {
+	stop string
+	err  error
+}
+
+// startBlockedTurn launches a client turn for sessionID whose provider call
+// blocks until the entered channel fires (the caller waits on it) — the
+// turnDone channel carries the turn's eventual stop reason.
+func startBlockedTurn(t *testing.T, r *Runner, sessionID, text string, entered <-chan struct{}) <-chan blockedTurnResult {
+	t.Helper()
+
+	turnDone := make(chan blockedTurnResult, 1)
+
+	go func() {
+		stop, err := r.Run(context.Background(), sessionID, &noopEmitter{},
+			[]acp.ContentBlock{{Type: blockText, Text: text}})
+		if err != nil {
+			t.Errorf("%s turn Run err: %v", sessionID, err)
+		}
+
+		turnDone <- blockedTurnResult{stop, err}
+	}()
+
+	<-entered
+
+	return turnDone
+}
+
+// twoBlockProvider blocks its first TWO Stream calls, each on its own
+// entered/release pair — the two-concurrent-blocked-turns fixture the
+// own-turn outranking row needs (blockingProvider's once covers only one).
+type twoBlockProvider struct {
+	scriptedACPProvider
+	entered []chan struct{}
+	release []chan struct{}
+	mu      sync.Mutex
+	next    int
+}
+
+func (p *twoBlockProvider) Stream(
+	ctx context.Context, prof *profile.Profile, msgs []provider.Message,
+) (<-chan provider.StreamChunk, error) {
+	p.mu.Lock()
+	i := p.next
+	p.next++
+	p.mu.Unlock()
+
+	if i < len(p.entered) {
+		if p.entered[i] != nil {
+			p.entered[i] <- struct{}{}
+		}
+
+		select {
+		case <-p.release[i]:
+		case <-ctx.Done():
+		}
+	}
+
+	return p.scriptedACPProvider.Stream(ctx, prof, msgs)
+}
+
+// newTwoBlockRunner builds an engine-OFF runner over twoBlockProvider (the
+// newBlockingRunner construction, two blocking slots).
+func newTwoBlockRunner(t *testing.T, script ...scriptedResp) (*Runner, *twoBlockProvider) {
+	t.Helper()
+
+	prov := &twoBlockProvider{
+		entered: []chan struct{}{make(chan struct{}, 1), make(chan struct{}, 1)},
+		release: []chan struct{}{make(chan struct{}), make(chan struct{})},
+	}
+	prov.queue(script...)
+
+	r := &Runner{
+		bus:          event.NewBus(),
+		profile:      fakeProfileACP(),
+		workDir:      t.TempDir(),
+		maxConc:      4,
+		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return prov },
+	}
+
+	r.LoadCommandRegistry()
+
+	return r, prov
+}
+
+// TestUndoCrossSessionRefusal pins the G-23-1 idle full path: an idle session
+// B's /undo while session A's client turn is live over the SHARED worktree
+// REFUSES — the D-05 output naming A, a durable local_command record with
+// outcome "refused: workspace busy", zero provider calls, nothing snapshotted
+// or restored (the sentinel survives, A's turn stays alive) — and the refusal
+// is TRANSIENT: once A's turn ends, the same /undo restores normally.
+func TestUndoCrossSessionRefusal(t *testing.T) { //nolint:funlen // end-to-end refusal + transience scenario
+	r, prov := newBlockingRunner(t, scriptedResp{text: "done", finish: stopEndTurn})
+
+	const (
+		sidA = "sess-a-live"
+		sidB = "sess-b-idle"
+	)
+
+	// A's turn goes live over the shared worktree and blocks in the provider.
+	turnDoneA := startBlockedTurn(t, r, sidA, "session A long turn", prov.entered)
+
+	// B's checkpoint, then the post-snapshot sentinel.
+	seedUndoSnap(t, r.workDir, sidB, sidB+"-turn-001", "state-A\n")
+	writeGuardFile(t, filepath.Join(r.workDir, undoSentinel), "post-snapshot\n")
+
+	// Idle B's /undo through the REAL path (r.Run -> classifier -> class-B
+	// intercept): must return promptly with the refusal naming A.
+	frames := runUndoPrompt(t, r, sidB)
+
+	out := undoOutputText(frames)
+	if !strings.Contains(out, "undo refused") || !strings.Contains(out, sidA) {
+		t.Fatalf("output missing the cross-session refusal naming %s:\n%s", sidA, out)
+	}
+
+	// No checkout/clean ran under A's live turn: the sentinel survived.
+	if !undoSentinelExists(t, r.workDir) {
+		t.Fatal("the sentinel was deleted under A's live turn (a restore ran)")
+	}
+
+	// A's turn is still alive — nothing was cancelled anywhere.
+	select {
+	case <-turnDoneA:
+		t.Fatal("A's turn ended on B's refused /undo")
+	default:
+	}
+
+	// The durable record: local_command with the refusal outcome.
+	lines, rerr := r.sessions[sidB].Manager.ReadAll()
+	if rerr != nil {
+		t.Fatalf("ReadAll: %v", rerr)
+	}
+
+	rec := localCommandLine(t, lines)
+	if rec.Name != "undo" || rec.Expansion != "refused: workspace busy" {
+		t.Fatalf("local_command = {name:%q outcome:%q}; want {undo refused: workspace busy}",
+			rec.Name, rec.Expansion)
+	}
+
+	// Transience: after A's turn finishes, the SAME /undo restores normally.
+	close(prov.release)
+
+	select {
+	case <-turnDoneA:
+	case <-time.After(5 * time.Second):
+		t.Fatal("A's turn did not finish after release")
+	}
+
+	frames2, lines2 := undoRun(t, r, sidB, "/undo")
+
+	if out2 := undoOutputText(frames2); !strings.Contains(out2, "undo complete") {
+		t.Fatalf("the retry after A ended did not restore:\n%s", out2)
+	}
+
+	if undoSentinelExists(t, r.workDir) {
+		t.Fatal("the sentinel survived a completed restore (the clean never ran)")
+	}
+
+	rec2 := localCommandLine(t, lines2)
+	if rec2.Name != "undo" || rec2.Expansion != "ok" {
+		t.Fatalf("retry local_command = {name:%q outcome:%q}; want {undo ok}", rec2.Name, rec2.Expansion)
+	}
+
+	// Zero provider calls from either /undo — A's turn is the only one.
+	if got := prov.callCount(); got != 1 {
+		t.Fatalf("provider Stream calls = %d; want 1 (A's turn only)", got)
+	}
+}
+
+// TestUndoActivePathCrossSessionRefusal pins the G-23-1 ACTIVE-path branch:
+// with session A live, session B's mid-turn /undo REFUSES instead of running
+// the D-12 auto-cancel-then-restore — for BOTH of B's own-state variants
+// (truth 2's outranking claim): B's parked engine chain, and B's OWN live
+// client turn. Nothing of B's is cancelled, nothing is restored, A stays
+// blocked, and the refusal is the named, durable, D-05 shape.
+func TestUndoActivePathCrossSessionRefusal(t *testing.T) { //nolint:funlen // two-variant scenario
+	const (
+		sidA = "sess-a-live"
+		sidB = "sess-b-idle"
+	)
+
+	// Variant 1: B's own PARKED CHAIN is outranked — the refusal fires
+	// instead of the auto-cancel; B's chain is NOT cancelled.
+	t.Run("own parked chain outranked by live session A", func(t *testing.T) {
+		r, prov := newBlockingRunner(t, scriptedResp{text: "done", finish: stopEndTurn})
+
+		turnDoneA := startBlockedTurn(t, r, sidA, "session A long turn", prov.entered)
+
+		seedUndoSnap(t, r.workDir, sidB, sidB+"-turn-001", "state-A\n")
+		writeGuardFile(t, filepath.Join(r.workDir, undoSentinel), "post-snapshot\n")
+
+		// B's own engine chain parked (chainCount > 0, no mutex held).
+		r.chainEnter(sidB)
+		defer r.chainExit(sidB)
+
+		// B's mid-turn /undo through r.Run — the classifier sees the chain
+		// and routes it to the active path.
+		frames := runUndoPrompt(t, r, sidB)
+
+		out := undoOutputText(frames)
+		if !strings.Contains(out, "undo refused") || !strings.Contains(out, sidA) {
+			t.Fatalf("output missing the cross-session refusal naming %s:\n%s", sidA, out)
+		}
+
+		// The refusal outranks the auto-cancel: B's chain was NOT cancelled.
+		if got := r.chainCount(sidB); got != 1 {
+			t.Fatalf("B's parked chain count = %d after the refusal; want 1 (nothing cancelled)", got)
+		}
+
+		if !undoSentinelExists(t, r.workDir) {
+			t.Fatal("the sentinel was deleted under A's live turn (a restore ran)")
+		}
+
+		select {
+		case <-turnDoneA:
+			t.Fatal("A's turn ended on B's refused /undo")
+		default:
+		}
+
+		lines, rerr := r.sessions[sidB].Manager.ReadAll()
+		if rerr != nil {
+			t.Fatalf("ReadAll: %v", rerr)
+		}
+
+		rec := localCommandLine(t, lines)
+		if rec.Name != "undo" || rec.Expansion != "refused: workspace busy" {
+			t.Fatalf("local_command = {name:%q outcome:%q}; want {undo refused: workspace busy}",
+				rec.Name, rec.Expansion)
+		}
+
+		// Cleanup: release A's turn.
+		close(prov.release)
+
+		select {
+		case <-turnDoneA:
+		case <-time.After(5 * time.Second):
+			t.Fatal("A's turn did not finish after release")
+		}
+	})
+
+	// Variant 2: B's OWN CLIENT TURN is outranked too — the refusal fires
+	// instead of auto-cancelling B's turn, exactly as it outranks its parked
+	// chain. B's turn stays alive (still blocked in its provider call).
+	t.Run("own client turn outranked by live session A", func(t *testing.T) {
+		r, prov := newTwoBlockRunner(t,
+			scriptedResp{text: "a done", finish: stopEndTurn},
+			scriptedResp{text: "b done", finish: stopEndTurn},
+		)
+
+		turnDoneA := startBlockedTurn(t, r, sidA, "session A long turn", prov.entered[0])
+
+		seedUndoSnap(t, r.workDir, sidB, sidB+"-turn-001", "state-B\n")
+
+		// B's OWN client turn goes live (blocks in its own provider call).
+		turnDoneB := startBlockedTurn(t, r, sidB, "session B own turn", prov.entered[1])
+
+		// The sentinel lands AFTER both turn-start entry snapshots: no
+		// candidate checkpoint contains it, so its survival cleanly
+		// witnesses "no restore ran".
+		writeGuardFile(t, filepath.Join(r.workDir, undoSentinel), "post-snapshot\n")
+
+		// B's mid-turn /undo — a SECOND r.Run on B; the classifier's
+		// own-turn leg (not timing) routes it to the active path.
+		frames := runUndoPrompt(t, r, sidB)
+
+		out := undoOutputText(frames)
+		if !strings.Contains(out, "undo refused") || !strings.Contains(out, sidA) {
+			t.Fatalf("output missing the cross-session refusal naming %s:\n%s", sidA, out)
+		}
+
+		// The refusal outranks auto-cancelling B's own turn: it is STILL
+		// alive (blocked in its provider call).
+		select {
+		case <-turnDoneB:
+			t.Fatal("B's own turn was cancelled by the refusal path (the refusal must outrank the auto-cancel)")
+		default:
+		}
+
+		if !undoSentinelExists(t, r.workDir) {
+			t.Fatal("the sentinel was deleted under A's live turn (a restore ran)")
+		}
+
+		select {
+		case <-turnDoneA:
+			t.Fatal("A's turn ended on B's refused /undo")
+		default:
+		}
+
+		lines, rerr := r.sessions[sidB].Manager.ReadAll()
+		if rerr != nil {
+			t.Fatalf("ReadAll: %v", rerr)
+		}
+
+		rec := localCommandLine(t, lines)
+		if rec.Name != "undo" || rec.Expansion != "refused: workspace busy" {
+			t.Fatalf("local_command = {name:%q outcome:%q}; want {undo refused: workspace busy}",
+				rec.Name, rec.Expansion)
+		}
+
+		// Cleanup: release B's turn, then A's; both end normally.
+		close(prov.release[1])
+
+		select {
+		case <-turnDoneB:
+		case <-time.After(5 * time.Second):
+			t.Fatal("B's turn did not finish after release")
+		}
+
+		close(prov.release[0])
+
+		select {
+		case <-turnDoneA:
+		case <-time.After(5 * time.Second):
+			t.Fatal("A's turn did not finish after release")
+		}
+	})
 }
