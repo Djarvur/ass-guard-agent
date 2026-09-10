@@ -1,13 +1,16 @@
 # Pre-move test-function ledger — Phase 25 SEED-001 kit extraction baseline (D-20 instrument)
-# Captured: 2026-08-28 at HEAD 5fdf598 (5fdf59894506274676af71fe3d2740d46053495e)
+# Captured: 2026-09-10 at HEAD a6f5a61 (a6f5a6191d6061eeb5116e0fc69fb741e58ff661)
+# Re-capture of the 2026-08-28 baseline (890 @ 5fdf598): phases 22-24 landed after it and
+# before the first move (the strictly-last ordering blocker's resolution required this
+# re-capture — the baseline must describe the tree the moves actually start from).
 # Scope: every *_test.go under kit/ (empty at capture — no kit/ tree yet), internal/, and cmd/.
 # Post-extraction rule: the sum of '^func Test' declarations across kit/... plus all remaining
 # internal/... and cmd/... scopes MUST equal the WHOLE-REPO TOTAL below after every plan of
 # this phase (mirrors the Phase-15 ledger; the executor of each later 25-xx plan asserts sum
 # equality before its move commit).
-# Files counted: 163 | Scope totals computed per file below.
+# Files counted: 217 | Scope totals computed per file below.
 #
-# >>> WHOLE-REPO TEST-FUNCTION TOTAL: 890 <<<
+# >>> WHOLE-REPO TEST-FUNCTION TOTAL: 1397 <<<
 #
 ## cmd/ass-guard/acp_serve_test.go (2)
 func TestACPServeCommandRegistered(t *testing.T) {
@@ -30,24 +33,51 @@ func TestCLIBinaryContractProfile(t *testing.T) {
 func TestInteractiveWiring_FamilyExecutes(t *testing.T) {
 func TestInteractiveWiring_SendMessageEndToEnd(t *testing.T) {
 
-## cmd/ass-guard/modelrouting_test.go (5)
+## cmd/ass-guard/modelrouting_test.go (9)
 func TestModelRoutingValidateValid(t *testing.T) {
 func TestModelRoutingValidateInvalid(t *testing.T) {
 func TestModelRoutingResolveJSON(t *testing.T) {
 func TestModelRoutingResolveHumanGoesToStderr(t *testing.T) {
 func TestModelRoutingResolvePeakWindow(t *testing.T) {
+func TestSchedulingStatsHuman(t *testing.T) {
+func TestSchedulingStatsJSON(t *testing.T) {
+func TestSchedulingStatsEmptyStore(t *testing.T) {
+func TestSchedulingStatsStoreFlagRoutes(t *testing.T) {
+
+## cmd/ass-guard/resume_flags_test.go (10)
+func TestResumeFlagParsing(t *testing.T) { //nolint:funlen // table battery + the conflict case, one subtest each
+func TestContinueResolvesMostRecentCwd(t *testing.T) {
+func TestResumeWinsOverContinue(t *testing.T) {
+func TestResumeTargetResolution(t *testing.T) { //nolint:funlen // the seven-case resolution battery, one subtest each
+func TestRootResumeDelegation(t *testing.T) {
+func TestPickerSelectsByNumber(t *testing.T) {
+func TestPickerRetriesOnceThenFails(t *testing.T) {
+func TestPickerRelativeTime(t *testing.T) {
+func TestPickerPipeSafe(t *testing.T) {
+func TestPickerTruncatesTitles(t *testing.T) {
 
 ## cmd/ass-guard/zeroconfig_test.go (1)
 func TestZeroConfigFirstRun(t *testing.T) {
 
+## internal/acp/available_commands_test.go (4)
+func TestAvailableCommandsUpdateGolden(t *testing.T) {
+func TestAvailableCommandsEmptySet(t *testing.T) {
+func TestAvailableCommandsFullReplacement(t *testing.T) {
+func TestUserMessageChunkEcho(t *testing.T) {
+
+## internal/acp/cancel_session_test.go (2)
+func TestSessionCancelDoesNotReapTheSession(t *testing.T) {
+func TestPromptRegistrationAbortsAfterCloseReaped(t *testing.T) {
+
 ## internal/acp/emitter_soak_test.go (1)
 func TestTurnEmitterSoak(t *testing.T) {
 
-## internal/acp/emitter_test.go (8)
+## internal/acp/emitter_test.go (9)
 func TestTurnEmitterPriority(t *testing.T) { //nolint:funlen // full stress scenario
 func TestTurnEmitterStall(t *testing.T) { //nolint:funlen // full D-03 episode scenario
 func TestTurnEmitterProducerCtxAbort(t *testing.T) {
 func TestTurnEmitterBarrier(t *testing.T) { //nolint:funlen // full server-level scenario
+func TestTurnEmitterBarrierConcurrentWaiters(t *testing.T) { //nolint:funlen // two scenarios, one regression
 func TestTurnEmitterEmptyTurn(t *testing.T) {
 func TestPlanFrameFromTodoWrite(t *testing.T) { //nolint:funlen,cyclop // three scenarios, one rule
 func TestThoughtChunkFrame(t *testing.T) {
@@ -62,7 +92,7 @@ func TestReadFrameMalformedJSON(t *testing.T) {
 func TestWriterConcurrentSafety(t *testing.T) {
 func TestMessageIDNilIsNotification(t *testing.T) {
 
-## internal/acp/handlers_test.go (8)
+## internal/acp/handlers_test.go (10)
 func TestConfigAdvertise(t *testing.T) {
 func TestSetConfigOptionValid(t *testing.T) {
 func TestSetConfigOptionUnknownID(t *testing.T) {
@@ -71,6 +101,15 @@ func TestSetConfigOptionWriteFailure(t *testing.T) {
 func TestSetConfigOptionPendingNoOp(t *testing.T) {
 func TestSetConfigOptionPendingInvalid(t *testing.T) {
 func TestSetConfigOptionNoSurface(t *testing.T) {
+func TestSessionCancelDrainOnCancel(t *testing.T) {
+func TestSessionCancelDrainOnLogout(t *testing.T) {
+
+## internal/acp/replay_test.go (5)
+func TestReplayTranscriptMapping(t *testing.T) {
+func TestReplayTranscriptRejectsBadSource(t *testing.T) {
+func TestLoadFullOrdering(t *testing.T) {
+func TestLoadModesNullWithoutPlanMode(t *testing.T) {
+func TestLoadDoubleRegistration(t *testing.T) {
 
 ## internal/acp/request_registry_test.go (7)
 func TestRegistryConcurrentResolve(t *testing.T) {
@@ -80,6 +119,83 @@ func TestRegistrySyntheticCancel(t *testing.T) {
 func TestRegistryCallerCtxCancel(t *testing.T) {
 func TestRegistryShutdown(t *testing.T) {
 func TestHumanAskTimeoutMirrorsSessionDefault(t *testing.T) {
+
+## internal/acpserve/ask_drain_test.go (2)
+func TestPermissionAskDrainCascade(t *testing.T) {
+func TestAskQueueShutdownDrain(t *testing.T) { //nolint:funlen,paralleltest // full chain; not parallel (goroutines)
+
+## internal/acpserve/ask_surface_test.go (6)
+func TestPermissionAskFrame(t *testing.T) {
+func TestPermissionAskDispatch(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen // wire outcome table
+func TestElicitationMapping(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen,lll,maintidx // one golden table over the D-08 rows
+func TestAskSurfaceDispatchElicitation(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen,lll // one battery over the dispatch vocabulary
+func TestValidateElicitationContent(t *testing.T) { //nolint:gocognit,cyclop,funlen,lll // one table over the validation vocabulary
+func TestFamilyConversionEngineAsk(t *testing.T) { //nolint:cyclop,funlen,gocognit // one flat round-trip battery
+
+## internal/acpserve/blob_chip_wire_test.go (2)
+func TestBlobFillReachesTheWire(t *testing.T) {
+func TestBlobFillYieldsToExplicitLayer(t *testing.T) {
+
+## internal/acpserve/checkpoint_options_test.go (1)
+func TestCheckpointOptions(t *testing.T) { //nolint:funlen // comprehensive option family battery
+
+## internal/acpserve/chip_truth_test.go (1)
+func TestConfigAdvertisement_ResolverTruth(t *testing.T) {
+
+## internal/acpserve/commands_seam_test.go (1)
+func TestCommandsNotifySeam(t *testing.T) {
+
+## internal/acpserve/config_surface_lock_test.go (2)
+func TestSetApplyHookDoesNotHoldSurfaceMutex(t *testing.T) {
+func TestApplyBlobDefaultsNotifyDoesNotHoldSurfaceMutex(t *testing.T) {
+
+## internal/acpserve/config_surface_outcomes_test.go (4)
+func TestOutcomeBreakersDemoteSessionModel(t *testing.T) {
+func TestOutcomeBreakersEmptyMapKeepsPrimary(t *testing.T) {
+func TestOutcomeBreakersCrossProviderDemotion(t *testing.T) {
+func TestOutcomeBreakersExcludedPrimaryCorner(t *testing.T) {
+
+## internal/acpserve/config_test.go (22)
+func TestConfigSurface_MenuDefaults(t *testing.T) {
+func TestConfigSurface_ExplicitLayerEffectiveValues(t *testing.T) {
+func TestConfigSurface_GlobalTwinsAdvertiseGlobalLayer(t *testing.T) {
+func TestConfigSurface_SetPersistsThroughLoader(t *testing.T) {
+func TestCompactionOptions(t *testing.T) {
+func TestPermissionsModeFlip(t *testing.T) {
+func TestConfigSurface_ConcurrentMutation(t *testing.T) {
+func TestMetaBlob_ExplicitFileWins(t *testing.T) {
+func TestMetaBlob_FillsUnsetInMemory(t *testing.T) {
+func TestMetaBlob_UnknownKeysRetainedVerbatim(t *testing.T) {
+func TestScopeRouting_GlobalPrefixWritesGlobalLayer(t *testing.T) {
+func TestScopeRouting_DefaultWritesProjectLayer(t *testing.T) {
+func TestScopeRouting_GlobalWritePersistsWhenCombinedMatches(t *testing.T) {
+func TestSetIdempotent_BlobDerivedEffective(t *testing.T) {
+func TestSetIdempotent_ExplicitFileEffective(t *testing.T) {
+func TestLiveModelApply(t *testing.T) { //nolint:paralleltest // runLiveApplyServe uses t.Setenv
+func TestLiveModelApply_MidTurn(t *testing.T) { //nolint:paralleltest // runLiveApplyServe uses t.Setenv
+func TestTierSwitch(t *testing.T) { //nolint:paralleltest // runLiveApplyServe uses t.Setenv
+func TestTierSwitch_CrossProvider(t *testing.T) { //nolint:paralleltest // runLiveApplyServe uses t.Setenv
+func TestCompactionLive_BootDefaults(t *testing.T) { //nolint:paralleltest // runLiveApplyServe uses t.Setenv
+func TestCompactionLive_MenuThresholdRoundTrip(t *testing.T) { //nolint:paralleltest // runLiveApplyServe uses t.Setenv
+func TestConfigSurface_BackgroundCapsMenu(t *testing.T) {
+
+## internal/acpserve/kill9_test.go (2)
+func TestMain(m *testing.M) {
+func TestKill9Resume(t *testing.T) {
+
+## internal/acpserve/modesmatrix_interactive_test.go (4)
+func TestModesMatrixInteractive(t *testing.T) { // HOME-pinned serve leg
+func TestModesMatrixInteractiveSurfaces(t *testing.T) { //nolint:funlen // HOME-pinned legs; one story
+func TestModesMatrixInteractiveEmpty(t *testing.T) { // HOME-pinned leg
+func TestModesMatrixRealPluginSpotCheck(t *testing.T) { // HOME-pinned operator-env leg
+
+## internal/acpserve/permissions_e2e_test.go (1)
+func TestPermissionsE2E(t *testing.T) {
+
+## internal/acpserve/resume_test.go (3)
+func TestResumeTargetLoadsBeforeServe(t *testing.T) {
+func TestResumeTargetAbsentIsNoop(t *testing.T) {
+func TestResumeTargetFailureIsLoud(t *testing.T) {
 
 ## internal/acp/server_test.go (15)
 func TestInitializeReturnsAgentCapabilities(t *testing.T) {
@@ -98,32 +214,43 @@ func TestProbeTimeoutFallback(t *testing.T) {
 func TestMetricsRegistryCancelCounter(t *testing.T) {
 func TestMetricsWriterStallFamily(t *testing.T) {
 
-## internal/acpserve/config_test.go (16)
-func TestConfigSurface_MenuDefaults(t *testing.T) {
-func TestConfigSurface_ExplicitLayerEffectiveValues(t *testing.T) {
-func TestConfigSurface_SetPersistsThroughLoader(t *testing.T) {
-func TestConfigSurface_PendingNoOp(t *testing.T) {
-func TestConfigSurface_ConcurrentMutation(t *testing.T) {
-func TestMetaBlob_ExplicitFileWins(t *testing.T) {
-func TestMetaBlob_FillsUnsetInMemory(t *testing.T) {
-func TestMetaBlob_UnknownKeysRetainedVerbatim(t *testing.T) {
-func TestScopeRouting_GlobalPrefixWritesGlobalLayer(t *testing.T) {
-func TestScopeRouting_DefaultWritesProjectLayer(t *testing.T) {
-func TestSetIdempotent_BlobDerivedEffective(t *testing.T) {
-func TestSetIdempotent_ExplicitFileEffective(t *testing.T) {
-func TestLiveModelApply(t *testing.T) { //nolint:paralleltest // runLiveApplyServe uses t.Setenv
-func TestLiveModelApply_MidTurn(t *testing.T) { //nolint:paralleltest // runLiveApplyServe uses t.Setenv
-func TestTierSwitch(t *testing.T) { //nolint:paralleltest // runLiveApplyServe uses t.Setenv
-func TestTierSwitch_CrossProvider(t *testing.T) { //nolint:paralleltest // runLiveApplyServe uses t.Setenv
-
-## internal/acpserve/serve_test.go (4)
+## internal/acpserve/serve_test.go (15)
 func TestACPServeWiresStdoutClean(t *testing.T) {
 func TestACPServeNoStdoutPollutionFromLogs(t *testing.T) {
 func TestServeAudit_RequestShapedThroughRealSeam(t *testing.T) { //nolint:funlen // end-to-end audit proof
 func TestServeMirror_Override(t *testing.T) {
+func TestStaleSweep_TombstonesOrphans(t *testing.T) {
+func TestStaleSweep_DeletesOnlyPastRetention(t *testing.T) {
+func TestStaleSweep_ZeroAndMissingNoops(t *testing.T) {
+func TestStaleSweep_SkipsForeignEntries(t *testing.T) {
+func TestSandboxFlag_Validation(t *testing.T) {
+func TestSandboxFlag_DefaultOffZeroProbing(t *testing.T) {
+func TestSandboxFlag_OnProbesOnce(t *testing.T) {
+func TestSandboxFlag_UnavailableDegradesLoudlyOnce(t *testing.T) {
+func TestSandboxFlag_PolicyTriple(t *testing.T) {
+func TestSandboxFlag_ProbeBeforeScheduler(t *testing.T) {
+func TestSandboxFlag_MainHookFirstCall(t *testing.T) {
 
-## internal/acpserve/simulator_e2e_test.go (1)
+## internal/acpserve/simulator_e2e_test.go (2)
 func TestZedSimulatorE2E(t *testing.T) {
+func TestSimulatorCommandSurface(t *testing.T) {
+
+## internal/acpserve/tombstone_grace_test.go (1)
+func TestTombstoneGraceConfig(t *testing.T) {
+
+## internal/acp/session_family_test.go (12)
+func TestHandleSessionListRoundTrip(t *testing.T) {
+func TestHandleSessionListEmptyStore(t *testing.T) {
+func TestInitializeAdvertisesSessionCapabilities(t *testing.T) {
+func TestSessionCloseCancelsAndDrains(t *testing.T) {
+func TestSessionCloseAlreadyClosed(t *testing.T) {
+func TestSessionDeleteTombstones(t *testing.T) {
+func TestSessionLoadReplaysCleanSession(t *testing.T) {
+func TestSessionLoadTombstonedRejected(t *testing.T) {
+func TestSessionLoadUnknownIDRejected(t *testing.T) {
+func TestSessionLoadTraversalIDRejected(t *testing.T) {
+func TestLoadGateRejectsPromptDuringReplay(t *testing.T) {
+func TestSessionDeleteDuringLoadNeverResurrects(t *testing.T) {
 
 ## internal/audit/audit_test.go (2)
 func TestAuditLogger_RedactsSecrets(t *testing.T) {
@@ -148,7 +275,13 @@ func TestMirror_StdoutRejection(t *testing.T) {
 func TestMirror_DropWithCounter(t *testing.T) {
 func TestMirror_SingleFileMode(t *testing.T) {
 
-## internal/checkpoint/store_test.go (12)
+## internal/checkpointcmd/checkpoint_test.go (4)
+func TestCheckpointListEmptyStore(t *testing.T) {
+func TestCheckpointListShowsSnapshots(t *testing.T) {
+func TestCheckpointRestoreRoundtripCLI(t *testing.T) {
+func TestCheckpointRestoreRejectsBadID(t *testing.T) {
+
+## internal/checkpoint/store_test.go (21)
 func TestSnapshotRestore_ByteIdentical(t *testing.T) {
 func TestRestoreNonLatest_RemovesLaterTurnFiles(t *testing.T) {
 func TestSnapshot_UserGitUntouched(t *testing.T) {
@@ -161,12 +294,19 @@ func TestConcurrentSnapshotRestoreSerialize(t *testing.T) {
 func TestRetentionPrune(t *testing.T) {
 func TestStorePerms(t *testing.T) {
 func TestRestore_RejectsBadIds(t *testing.T) { //nolint:paralleltest // swaps the package gitRun seam
+func TestPreRestoreSnapshotFamily(t *testing.T) {
+func TestIDGrammarTable(t *testing.T) {
+func TestNestedRepoDetectedAndRefused(t *testing.T) {
+func TestNestedRepoSymlinkBounded(t *testing.T) {
+func TestRestoreCleanNeverDescendsIntoNestedRepos(t *testing.T) { //nolint:paralleltest // swaps the package gitRun seam
+func TestCheckpointGCAgeAxis(t *testing.T) {
+func TestCheckpointGCCountAxis(t *testing.T) {
+func TestCheckpointGCObjectExpiry(t *testing.T) {
+func TestUserRepoExclude(t *testing.T) {
 
-## internal/checkpointcmd/checkpoint_test.go (4)
-func TestCheckpointListEmptyStore(t *testing.T) {
-func TestCheckpointListShowsSnapshots(t *testing.T) {
-func TestCheckpointRestoreRoundtripCLI(t *testing.T) {
-func TestCheckpointRestoreRejectsBadID(t *testing.T) {
+## internal/coreexec/ansistrip_test.go (2)
+func TestAnsiStrip_Table(t *testing.T) {
+func TestAnsiStrip_NoEscapeBytesSurvive(t *testing.T) {
 
 ## internal/coreexec/ask_test.go (7)
 func TestAskForms_ConformToFixture(t *testing.T) { //nolint:cyclop,funlen // flat battery
@@ -177,15 +317,40 @@ func TestRegisterAsk_SchemaNeverRewritten(t *testing.T) {
 func TestRegisterAsk_MissingEntrySkipped(t *testing.T) {
 func TestRenderAskSurface(t *testing.T) {
 
-## internal/coreexec/background_test.go (6)
+## internal/coreexec/background_test.go (31)
 func TestBackground_StartRetrieveRoundTrip(t *testing.T) { //nolint:funlen // flat battery
 func TestBackground_NonBlockingAndUnknown(t *testing.T) {
 func TestBackground_BlockTimeout(t *testing.T) {
 func TestBackground_OutputFidelity(t *testing.T) {
 func TestBackground_FixtureConformance(t *testing.T) {
 func TestBackground_OutputFilePersisted(t *testing.T) {
+func TestBackground_CompletionHook(t *testing.T) { //nolint:funlen // flat hook battery
+func TestBackground_CompletionHookNilNoop(t *testing.T) {
+func TestEscalation_TermImmuneChildKilledAfterGrace(t *testing.T) { //nolint:funlen // flat ladder battery
+func TestEscalation_TermRespectingChildDiesByTerm(t *testing.T) { //nolint:funlen // flat ladder battery
+func TestEscalation_AlreadyGoneIsSuccess(t *testing.T) {
+func TestEscalation_ReapAllUsesLadder(t *testing.T) {
+func TestBackgroundCap_OverCapQueues(t *testing.T) {
+func TestBackgroundCap_FIFOOrder(t *testing.T) {
+func TestBackgroundCap_QueuedStop(t *testing.T) {
+func TestBackgroundCap_QueueBound(t *testing.T) {
+func TestBackgroundCap_ReapAllDropsWaiters(t *testing.T) {
+func TestBackgroundSandbox_LiveDeniesNetwork(t *testing.T) { //nolint:paralleltest // live pty/listener + shared host probe
+func TestBackgroundSandbox_QueuedStartWrapsIdentically(t *testing.T) { //nolint:paralleltest // queued timing + live probe
+func TestBackgroundSandbox_DefaultOffArgvIdentity(t *testing.T) {
+func TestBackgroundSandbox_StopOnConfinedTaskCompletes(t *testing.T) { //nolint:paralleltest // kill timing + live probe
+func TestBackgroundSandbox_DisableAndUnavailableNotes(t *testing.T) { //nolint:funlen,paralleltest // live probe + shared counter
+func TestTaskStop_FallbackAck(t *testing.T) {
+func TestTaskStop_FallbackDeclined(t *testing.T) {
+func TestTaskStop_NilFallback(t *testing.T) {
+func TestTaskStop_RegistryOwnedSkipsFallback(t *testing.T) {
+func TestTaskOutput_FallbackNotReadyStates(t *testing.T) {
+func TestTaskOutput_FallbackFinishedOutput(t *testing.T) {
+func TestTaskOutput_FallbackDeclined(t *testing.T) {
+func TestTaskOutput_NilFallback(t *testing.T) {
+func TestTaskOutput_RegistryOwnedSkipsFallback(t *testing.T) {
 
-## internal/coreexec/bash_test.go (13)
+## internal/coreexec/bash_test.go (20)
 func TestBash_SuccessForm(t *testing.T) {
 func TestBash_EmptyOutputSentinel(t *testing.T) {
 func TestBash_ErrorForm(t *testing.T) {
@@ -199,6 +364,13 @@ func TestBash_ProcessGroupKill(t *testing.T) { //nolint:paralleltest // PATH-sco
 func TestBash_SandboxFlagNoopByDesign(t *testing.T) {
 func TestBash_FixtureConformance(t *testing.T) {
 func TestIsErrorCorpusForm_BashExitCode(t *testing.T) {
+func TestBashSandbox_DefaultOffArgvIdentity(t *testing.T) {
+func TestBashSandbox_OffAlwaysEscapes(t *testing.T) {
+func TestBashSandbox_LiveConfinementDeniesNetworkWriteOutside(t *testing.T) { //nolint:funlen // the live triple battery
+func TestBashSandbox_DisableFlagOnRunsUnconfinedWithNote(t *testing.T) {
+func TestBashSandbox_DisableFlagOffIsNoop(t *testing.T) {
+func TestBashSandbox_UnavailableNotedPerRun(t *testing.T) {
+func TestBashSandbox_GroupKillReachesWrappedChild(t *testing.T) {
 
 ## internal/coreexec/cron_test.go (5)
 func TestCronQuartet_EndToEnd(t *testing.T) {
@@ -220,10 +392,11 @@ func TestIsErrorCorpusForm_ReadMissingFile(t *testing.T) {
 ## internal/coreexec/fixtures_test.go (1)
 func TestCoreResultsFixturePinned(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen // flat battery
 
-## internal/coreexec/hooks_wiring_test.go (3)
-func TestRegisterCoreHookRefusal(t *testing.T) {
+## internal/coreexec/hooks_wiring_test.go (4)
+func TestRegisterCorePreToolUseDisposal(t *testing.T) {
 func TestRegisterCoreHookPassthrough(t *testing.T) {
 func TestRegisterCoreNoHooksUnchanged(t *testing.T) {
+func TestHooksOnceOnly(t *testing.T) {
 
 ## internal/coreexec/messaging_test.go (9)
 func TestSendMessage_DeliversAndAcks(t *testing.T) {
@@ -240,6 +413,34 @@ func TestReadSessionContext_RejectsTraversalIds(t *testing.T) {
 func TestPlanMode_EnteredFormCaptured(t *testing.T) {
 func TestPlanMode_ExitSuspendsWithApprovalPayload(t *testing.T) {
 func TestRegisterInteractive_SchemaNeverRewritten(t *testing.T) {
+
+## internal/coreexec/procopts_linux_test.go (1)
+func TestProcopts_PdeathsigArmed(t *testing.T) {
+
+## internal/coreexec/ptty_test.go (20)
+func TestPersistentShell_CdPersists(t *testing.T) { //nolint:paralleltest // a real pty shell serializes on the manager
+func TestPersistentShell_ExportedEnvPersists(t *testing.T) { //nolint:paralleltest // a real pty shell serializes on the manager
+func TestPersistentShell_SentinelLookalikeOutputDoesNotTerminateEarly(t *testing.T) { //nolint:paralleltest // a real pty shell serializes on the manager
+func TestPersistentShell_CapturedOutputIsAnsiStripped(t *testing.T) { //nolint:paralleltest // a real pty shell serializes on the manager
+func TestPersistentShell_ExitCodeParsesFromSentinel(t *testing.T) { //nolint:paralleltest // a real pty shell serializes on the manager
+func TestPersistentShell_SilentCommandReturnsCleanOutput(t *testing.T) { //nolint:paralleltest // a real pty shell serializes on the manager
+func TestPersistentShell_BashToolCdPersistsAcrossCalls(t *testing.T) { //nolint:paralleltest // a real pty shell serializes on the manager
+func TestPersistentShell_BashToolEmptyCommandIsStructuredError(t *testing.T) { //nolint:paralleltest // a real pty shell serializes on the manager
+func TestPersistentShell_BashToolNilManagerIsStructuredError(t *testing.T) {
+func TestPersistentShell_BashToolNonzeroExitRendersCode(t *testing.T) { //nolint:paralleltest // a real pty shell serializes on the manager
+func TestPersistentShell_NonPersistentCallsStayStateless(t *testing.T) {
+func TestPTYDeadRestart(t *testing.T) { //nolint:paralleltest // real pty shells, kill timing
+func TestPTYSerialize(t *testing.T) { //nolint:paralleltest // real pty shells, ordering
+func TestPTYEmpty(t *testing.T) { //nolint:paralleltest // real pty shells
+func TestPTYDrain(t *testing.T) { //nolint:paralleltest // real pty shells, fd baseline
+func TestPTYSandbox_LiveShellConfined(t *testing.T) { //nolint:paralleltest // live pty shell + host probe
+func TestPTYSandbox_RestartRewrapsWithNoteOnce(t *testing.T) { //nolint:paralleltest // real pty shells, kill timing
+func TestPTYSandbox_UnavailableNotedPerRun(t *testing.T) { //nolint:paralleltest // shared process counter
+func TestPTYSandbox_DefaultOffByteIdentical(t *testing.T) {
+func TestPTYSandbox_DisableEscapeRunsUnconfinedShellStaysConfined(t *testing.T) { //nolint:funlen,paralleltest // live probe + shared shell
+
+## internal/coreexec/sandboxchild_test.go (1)
+func TestMain(m *testing.M) {
 
 ## internal/coreexec/todo_test.go (3)
 func TestTodoWrite_Echo(t *testing.T) { //nolint:cyclop,funlen // flat battery
@@ -267,7 +468,7 @@ func TestExpand_NeverExecutes(t *testing.T) {
 func TestParseInvocation(t *testing.T) {
 func TestExpand_RealOpsxBodyShape(t *testing.T) {
 
-## internal/ecosys/hooks_test.go (7)
+## internal/ecosys/hooks_test.go (16)
 func TestHooksParseFromFixture(t *testing.T) {
 func TestHookMatcher(t *testing.T) {
 func TestPreToolUseStdinAndExitRouting(t *testing.T) {
@@ -275,6 +476,19 @@ func TestPostToolUsePayload(t *testing.T) {
 func TestHookBoundaries(t *testing.T) {
 func TestUnmappedEventObserveOnly(t *testing.T) { //nolint:paralleltest // mutates the package logger seam
 func TestFireNeverPanics(t *testing.T) { //nolint:paralleltest // mutates the package logger seam
+func TestSettingsHooksProjectScope(t *testing.T) {
+func TestSettingsHooksUserScope(t *testing.T) {
+func TestSettingsHooksMalformed(t *testing.T) { //nolint:paralleltest // mutates the package logger seam
+func TestSettingsHooksOversized(t *testing.T) { //nolint:paralleltest // mutates the package logger seam
+func TestSettingsHooksMissing(t *testing.T) { //nolint:paralleltest // mutates the package logger seam
+func TestSettingsHooksLocalProjectScope(t *testing.T) {
+func TestHookScopeOrder(t *testing.T) {
+func TestPreToolUseVerdict(t *testing.T) { //nolint:paralleltest // mutates the package logger seam
+func TestHookMatcherDialect(t *testing.T) {
+
+## internal/ecosys/hookverdict_test.go (2)
+func TestHookVerdictParse(t *testing.T) {
+func TestHookVerdictResolve(t *testing.T) { //nolint:paralleltest // mutates the package logger seam
 
 ## internal/ecosys/loader_test.go (27)
 func TestDiscoverSkill(t *testing.T) {
@@ -304,6 +518,23 @@ func TestInstalledPluginAgentsDiscovered(t *testing.T) {
 func TestUserAgentsDirFirstClass(t *testing.T) {
 func TestPluginMCPJSONMergesLowest(t *testing.T) {
 func TestAgentAndMCPTolerance(t *testing.T) {
+
+## internal/ecosys/memory_test.go (12)
+func TestMemoryDiscovery_Collision(t *testing.T) { //nolint:paralleltest // HOME pin
+func TestMemoryDiscovery_RepoRootStop(t *testing.T) { //nolint:paralleltest // HOME pin
+func TestMemoryDiscovery_GitFileBoundary(t *testing.T) { //nolint:paralleltest // HOME pin
+func TestMemoryDiscovery_NoGitFallback(t *testing.T) { //nolint:paralleltest // HOME pin
+func TestMemoryDiscovery_UserGlobalPrecedence(t *testing.T) { //nolint:paralleltest,funlen // HOME pin
+func TestMemoryDiscovery_Ordering(t *testing.T) { //nolint:paralleltest // HOME pin
+func TestMemoryDiscovery_AccumulateNoDedup(t *testing.T) { //nolint:paralleltest // HOME pin
+func TestMemoryDiscovery_PerFileCap(t *testing.T) { //nolint:paralleltest // HOME pin
+func TestMemoryDiscovery_TotalBudget(t *testing.T) { //nolint:paralleltest // HOME pin
+func TestMemoryDiscovery_EmptyTree(t *testing.T) { //nolint:paralleltest // HOME pin
+func TestMemoryDiscovery_UnreadableEntries(t *testing.T) { //nolint:paralleltest // HOME pin
+func TestMemoryDiscovery_Cache(t *testing.T) { //nolint:paralleltest // HOME pin
+
+## internal/ecosys/mentions_test.go (1)
+func TestParseMentions(t *testing.T) {
 
 ## internal/ecosys/precedence_test.go (12)
 func TestPrecedenceClaudeWins(t *testing.T) {
@@ -429,11 +660,12 @@ func TestConcurrent(t *testing.T) {
 func TestEventCatalog(t *testing.T) {
 func TestRequestShapedAdditiveTurnID(t *testing.T) {
 
-## internal/event/events_test.go (4)
+## internal/event/events_test.go (5)
 func TestEngineDecisionKind(t *testing.T) {
 func TestHookProgressKind(t *testing.T) {
 func TestPhase4EventsImplementInterface(t *testing.T) {
 func TestPhase4BufferConstsPositive(t *testing.T) {
+func TestAgentThoughtChunkKind(t *testing.T) {
 
 ## internal/firstrun/firstrun_test.go (4)
 func TestEnsure_SeedsFreshDir(t *testing.T) {
@@ -464,6 +696,12 @@ func TestReentrant_AllowReentrant(t *testing.T) {
 func TestReentrant_InFlightClearedAfterCompletion(t *testing.T) {
 func TestRunCommand_ExitCodeContract(t *testing.T) {
 
+## internal/learningcmd/learning_cmd_test.go (4)
+func TestLearningList_Empty(t *testing.T) {
+func TestLearningList_Populated(t *testing.T) {
+func TestLearningRevert_Existing(t *testing.T) {
+func TestLearningRevert_Missing(t *testing.T) {
+
 ## internal/learning/propose_test.go (4)
 func TestProposeHooks_RepeatedSequence(t *testing.T) {
 func TestProposeHooks_BelowThreshold(t *testing.T) {
@@ -484,12 +722,6 @@ func TestStore_RevertRemovesEntry(t *testing.T) {
 func TestStore_ListDeterministicOrder(t *testing.T) {
 func TestStore_RevertAtomicReadOnlyDir(t *testing.T) {
 func TestSlug_Deterministic(t *testing.T) {
-
-## internal/learningcmd/learning_cmd_test.go (4)
-func TestLearningList_Empty(t *testing.T) {
-func TestLearningList_Populated(t *testing.T) {
-func TestLearningRevert_Existing(t *testing.T) {
-func TestLearningRevert_Missing(t *testing.T) {
 
 ## internal/loop/loop_test.go (2)
 func TestRun_ReturnsProviderToolCalls(t *testing.T) {
@@ -583,7 +815,7 @@ func TestBuildWithCapturer_Delegation(t *testing.T) {
 ## internal/modelrouting/integration_test.go (1)
 func TestSchedulerEndToEnd(t *testing.T) {
 
-## internal/modelrouting/load_test.go (11)
+## internal/modelrouting/load_test.go (12)
 func TestLoadValid(t *testing.T) {
 func TestLoadInvalidCapMismatch(t *testing.T) {
 func TestLoadInvalidDanglingSlug(t *testing.T) {
@@ -592,9 +824,21 @@ func TestLoadDefaults(t *testing.T) {
 func TestLoadLayering(t *testing.T) {
 func TestLoadEmbeddedDefault(t *testing.T) {
 func TestSessionTier(t *testing.T) {
+func TestCompaction(t *testing.T) {
 func TestValidateWarns_NoCredentialField(t *testing.T) {
 func TestValidate_NoWarnWhenAPIKeyEnvDeclared(t *testing.T) {
 func TestValidate_StillRejectsBadShape(t *testing.T) {
+
+## internal/modelrouting/outcomes_test.go (9)
+func TestOutcomeStoreAppendReadRoundtrip(t *testing.T) {
+func TestOutcomeStoreTolerantRead(t *testing.T) {
+func TestOutcomeStoreInterruptedTail(t *testing.T) {
+func TestOutcomeStorePermsAndGitignore(t *testing.T) {
+func TestOutcomeStoreConcurrentAppend(t *testing.T) {
+func TestOutcomeFeedbackBreakerOpens(t *testing.T) {
+func TestOutcomeFeedbackBreakerRecoversAndSkipsStructural(t *testing.T) {
+func TestOutcomeFeedbackCostDegrade(t *testing.T) {
+func TestFirstAllowedDemotes(t *testing.T) {
 
 ## internal/modelrouting/resolver_test.go (12)
 func TestTzdataBundled(t *testing.T) {
@@ -616,6 +860,11 @@ func TestSafetyCostHardStop(t *testing.T) {
 func TestSafetyCostDegradeReResolves(t *testing.T) {
 func TestSafetyStatePersistsAcrossDispatch(t *testing.T) {
 func TestSafetyNewBreakersMapConstructsPerKey(t *testing.T) {
+
+## internal/modesmatrix/matrix_test.go (3)
+func TestMatrixTotality(t *testing.T) {
+func TestMatrixReportRendersAllCells(t *testing.T) {
+func TestSkipPreconditionMessagePrefix(t *testing.T) {
 
 ## internal/openspec/adapter_test.go (11)
 func TestAdapter_Exit0StdoutSurfaced(t *testing.T) { //nolint:paralleltest // putStubOnPATH mutates PATH via t.Setenv
@@ -675,6 +924,14 @@ func TestCacheProbe_GreenCase(t *testing.T) {
 func TestCacheProbe_EmptyMerges(t *testing.T) {
 func TestCacheProbe_PlacementAgainstPin(t *testing.T) {
 
+## internal/paritycli/parity_test.go (6)
+func TestParityDriftWarning_Mismatch(t *testing.T) { //nolint:paralleltest // swaps process-global seams + os.Stderr
+func TestParityDriftWarning_Match(t *testing.T) { //nolint:paralleltest // swaps process-global seams + os.Stderr
+func TestParityDriftWarning_Unresolvable(t *testing.T) { //nolint:paralleltest // swaps process-global seams + os.Stderr
+func TestParityRun_CacheProbeWired(t *testing.T) { //nolint:paralleltest // swaps process-global seams + os.Stderr
+func TestParityRun_CacheProbeDefaultGap(t *testing.T) { //nolint:paralleltest // swaps process-global seams + os.Stderr
+func TestCacheProbe_PlacementFlip(t *testing.T) { //nolint:paralleltest // reads the real profile + ecosys layers
+
 ## internal/parity/harness_test.go (2)
 func TestHarness_AllMatch(t *testing.T) {
 func TestHarness_Mismatch(t *testing.T) {
@@ -700,12 +957,47 @@ func TestRunSuite_LegacyPathUnchanged(t *testing.T) {
 ## internal/parity/suite_test.go (1)
 func TestSuite_CuratedLoads(t *testing.T) {
 
-## internal/paritycli/parity_test.go (5)
-func TestParityDriftWarning_Mismatch(t *testing.T) { //nolint:paralleltest // swaps process-global seams + os.Stderr
-func TestParityDriftWarning_Match(t *testing.T) { //nolint:paralleltest // swaps process-global seams + os.Stderr
-func TestParityDriftWarning_Unresolvable(t *testing.T) { //nolint:paralleltest // swaps process-global seams + os.Stderr
-func TestParityRun_CacheProbeWired(t *testing.T) { //nolint:paralleltest // swaps process-global seams + os.Stderr
-func TestParityRun_CacheProbeDefaultGap(t *testing.T) { //nolint:paralleltest // swaps process-global seams + os.Stderr
+## internal/perm/rules_test.go (5)
+func TestRules(t *testing.T) { //nolint:funlen,maintidx // one row per CC-parity fact — the table IS the spec
+func TestRulesParse(t *testing.T) {
+func TestRulesWarnings(t *testing.T) { //nolint:cyclop,funlen // flat warning battery, one block per family
+func TestRulesMCPHelpers(t *testing.T) {
+func TestSplitCompoundQuotes(t *testing.T) {
+
+## internal/perm/store_test.go (18)
+func TestStoreOpenCreatesEmptyFloor(t *testing.T) {
+func TestStoreOpenLoadsExisting(t *testing.T) {
+func TestStoreAllowToolPersistsAndSurvivesRestart(t *testing.T) {
+func TestStoreForbidToolPersists(t *testing.T) {
+func TestStoreIdempotentNoop(t *testing.T) {
+func TestStoreRejectsNonSimpleEntries(t *testing.T) {
+func TestStoreRenameFailureLeavesFileIntact(t *testing.T) { //nolint:paralleltest // renameFunc seam is global — serial
+func TestStoreStaleTmpIgnored(t *testing.T) {
+func TestStoreMalformedLineTolerated(t *testing.T) {
+func TestStoreRicherRulesSurviveDialogWrites(t *testing.T) {
+func TestStoreCopyOnRead(t *testing.T) {
+func TestStoreConcurrentWritesSerialize(t *testing.T) {
+func TestStoreFilePermHardAfterSave(t *testing.T) {
+func TestOpenCorruptDocumentTypedError(t *testing.T) {
+func TestOpenRepairedQuarantinesCorruptFile(t *testing.T) {
+func TestOpenRepairedHealthyFileUnchanged(t *testing.T) {
+func TestOpenTightensLoosePerms(t *testing.T) {
+func TestOpenKeepsTightPermsQuietShape(t *testing.T) {
+
+## internal/profilecheckcmd/nightly_check_test.go (7)
+func TestNightlyCheckWritePin(t *testing.T) {
+func TestNightlyCheckParityRoundTrip(t *testing.T) {
+func TestNightlyCheckVersionDrift(t *testing.T) {
+func TestNightlyCheckContentDrift(t *testing.T) {
+func TestNightlyCheckProbeFailure(t *testing.T) {
+func TestNightlyCheckMissingPin(t *testing.T) {
+func TestNightlyCheckMissingBundleFile(t *testing.T) {
+
+## internal/profilecheckcmd/profile_check_test.go (4)
+func TestProfileCheck_NoDrift(t *testing.T) {
+func TestProfileCheck_DriftDetected(t *testing.T) { //nolint:paralleltest // swaps process-global os.Stderr
+func TestProfileCheck_ReportContainsStructuredFooter(t *testing.T) { //nolint:paralleltest // swaps global os.Stderr
+func TestProfileCheck_CaptureProvenanceFooter(t *testing.T) { //nolint:paralleltest // swaps global os.Stderr
 
 ## internal/profile/corpus_scan_test.go (4)
 func TestScanContextBehavior_CacheControlFixture(t *testing.T) {
@@ -721,13 +1013,14 @@ func TestTier_DriftFlagged(t *testing.T) {
 func TestCoverageManifest_Validate(t *testing.T) {
 func TestCoverageZcodeVersionRoundTrip(t *testing.T) {
 
-## internal/profile/extract_test.go (6)
+## internal/profile/extract_test.go (7)
 func TestExtractFromRollout_GoodSession(t *testing.T) {
 func TestExtractFromRollout_AuxQuerySourceSkipped(t *testing.T) {
 func TestExtractFromRollout_MCPCatalogTransitionTolerated(t *testing.T) {
 func TestExtractFromRollout_NonMCPToolDriftStillFails(t *testing.T) {
 func TestExtractFromRollout_DriftFails(t *testing.T) {
 func TestExtractFromRollout_NoFullRequests(t *testing.T) {
+func TestExtractFromRollout_CacheControlDeclaration(t *testing.T) {
 
 ## internal/profile/loader_test.go (3)
 func TestLoader_MinimalFixture(t *testing.T) { //nolint:cyclop,funlen // comprehensive test scenario
@@ -740,24 +1033,19 @@ func TestStability_CrossSessionHeaderNames(t *testing.T) {
 func TestStability_CanaryDetectsDivergence(t *testing.T) {
 func TestStability_HomogeneousPasses(t *testing.T) {
 
-## internal/profilecheckcmd/profile_check_test.go (4)
-func TestProfileCheck_NoDrift(t *testing.T) {
-func TestProfileCheck_DriftDetected(t *testing.T) { //nolint:paralleltest // swaps process-global os.Stderr
-func TestProfileCheck_ReportContainsStructuredFooter(t *testing.T) { //nolint:paralleltest // swaps global os.Stderr
-func TestProfileCheck_CaptureProvenanceFooter(t *testing.T) { //nolint:paralleltest // swaps global os.Stderr
-
 ## internal/provider/anthropic_test.go (3)
 func TestAnthropicProvider_SendParsesToolUse(t *testing.T) { //nolint:funlen // comprehensive test scenario
 func TestToolCallID_AnthropicStreamCarriesID(t *testing.T) {
 func TestAnthropicProvider_NoAPIKeyErrors(t *testing.T) {
 
-## internal/provider/conformance_test.go (4)
+## internal/provider/conformance_test.go (5)
 func TestConformance_BothAdapters(t *testing.T) { //nolint:funlen,tparallel // shared httptest servers
 func TestConformance_ToolResultMessageMatchesShaper(t *testing.T) {
 func TestConformance_ToolCallAlias(t *testing.T) {
 func TestConformance_InterfaceSatisfied(t *testing.T) {
+func TestConformance_ImageCapability(t *testing.T) {
 
-## internal/provider/errors_test.go (9)
+## internal/provider/errors_test.go (10)
 func TestClassifyTransientStatuses(t *testing.T) {
 func TestClassifyStructuralStatuses(t *testing.T) {
 func TestClassifyNetErrorsTransient(t *testing.T) {
@@ -766,7 +1054,27 @@ func TestProviderErrorMessage(t *testing.T) {
 func TestProviderErrorUnwrap(t *testing.T) {
 func TestProviderErrorRedactsCause(t *testing.T) {
 func TestClassifyReason(t *testing.T) {
+func TestIsOverflow(t *testing.T) {
 func TestRetryOnlyTransient_ClassificationTable(t *testing.T) {
+
+## internal/providerfactory/config_write_test.go (7)
+func TestConfigWrite_CreatesLayerAndRoundTripsThroughLoad(t *testing.T) {
+func TestConfigWrite_PreservesUnrelatedKeys(t *testing.T) {
+func TestConfigWrite_UnwritableDirectory(t *testing.T) {
+func TestConfigWrite_CorruptLayerNeverClobbered(t *testing.T) {
+func TestConfigWrite_SessionTierRoundTrip(t *testing.T) {
+func TestConfigWrite_CompactionRoundTrip(t *testing.T) {
+func TestConfigWrite_RenameFailureKeepsOriginal(t *testing.T) {
+
+## internal/providerfactory/provider_factory_test.go (8)
+func TestLoadModelRoutingFactory_WarnsUncredentialed(t *testing.T) {
+func TestLoadModelRoutingFactory_ZeroConfigEnv(t *testing.T) {
+func TestLoadModelRoutingFactory_GlobalLayerMerged(t *testing.T) { //nolint:paralleltest // HOME pinned — serial
+func TestLoadModelRoutingFactory_ProjectOverridesGlobal(t *testing.T) { //nolint:paralleltest // HOME pinned — serial
+func TestLoadModelRoutingFactory_LegacyNameNeverRead(t *testing.T) { //nolint:paralleltest // HOME pinned — serial
+func TestStartupWarn_ConfigPermLoose(t *testing.T) { //nolint:paralleltest // HOME pinned — serial
+func TestBackwardCompat_ZAIEnvOnly(t *testing.T) {
+func TestEditorZeroEnv_LiteralInConfig(t *testing.T) {
 
 ## internal/provider/openai_test.go (5)
 func TestOpenAIProvider_SendParsesToolCalls(t *testing.T) {
@@ -780,40 +1088,31 @@ func TestSemaphore_AllowsMaxConcurrent(t *testing.T) {
 func TestSemaphore_Cancel(t *testing.T) {
 func TestSemaphore_DefaultMax(t *testing.T) {
 
-## internal/provider/streaming_test.go (9)
+## internal/provider/streaming_test.go (17)
 func TestStream_EmitsTextChunks(t *testing.T) {
 func TestStream_ToolUse(t *testing.T) {
 func TestStream_RespectsCancel(t *testing.T) {
+func TestStream_Non2xxError(t *testing.T) {
+func TestStream_Non2xxError_MalformedBody(t *testing.T) {
 func TestStream_NoAPIKey(t *testing.T) {
 func TestStream_IdleWatchdogAbortsStalledStream(t *testing.T) {
 func TestStream_SendSurfacesIdleTimeoutAsError(t *testing.T) {
 func TestStream_CancelUnblocksStalledBodyRead(t *testing.T) {
 func TestStream_ToolUseReplayedBlockEmitsOnce(t *testing.T) {
 func TestSend_ToolUseReplayedBlockSingleCall(t *testing.T) {
+func TestStreamThinking_SignedBlockAccumulatesDeltas(t *testing.T) {
+func TestStreamThinking_RedactedEmitsImmediately(t *testing.T) {
+func TestStreamThinking_InterleavedWithTextAndToolUse(t *testing.T) {
+func TestStreamThinking_FlushOnTerminationWithoutStop(t *testing.T) {
+func TestStreamThinking_MultipleBlocksEmitInOrder(t *testing.T) {
+func TestStreamThinking_SingleFlushOnCleanEnd(t *testing.T) {
 
-## internal/providerfactory/config_write_test.go (6)
-func TestConfigWrite_CreatesLayerAndRoundTripsThroughLoad(t *testing.T) {
-func TestConfigWrite_PreservesUnrelatedKeys(t *testing.T) {
-func TestConfigWrite_UnwritableDirectory(t *testing.T) {
-func TestConfigWrite_CorruptLayerNeverClobbered(t *testing.T) {
-func TestConfigWrite_SessionTierRoundTrip(t *testing.T) {
-func TestConfigWrite_RenameFailureKeepsOriginal(t *testing.T) {
-
-## internal/providerfactory/provider_factory_test.go (8)
-func TestLoadModelRoutingFactory_WarnsUncredentialed(t *testing.T) {
-func TestLoadModelRoutingFactory_ZeroConfigEnv(t *testing.T) {
-func TestLoadModelRoutingFactory_GlobalLayerMerged(t *testing.T) { //nolint:paralleltest // HOME pinned — serial
-func TestLoadModelRoutingFactory_ProjectOverridesGlobal(t *testing.T) { //nolint:paralleltest // HOME pinned — serial
-func TestLoadModelRoutingFactory_LegacyNameNeverRead(t *testing.T) { //nolint:paralleltest // HOME pinned — serial
-func TestStartupWarn_ConfigPermLoose(t *testing.T) { //nolint:paralleltest // HOME pinned — serial
-func TestBackwardCompat_ZAIEnvOnly(t *testing.T) {
-func TestEditorZeroEnv_LiteralInConfig(t *testing.T) {
-
-## internal/redact/redact_test.go (8)
+## internal/redact/redact_test.go (9)
 func TestRedact(t *testing.T) {
 func TestRedact_PreservesIdentityHeaderNames(t *testing.T) {
 func TestRedact_NonJSONBearerRegexScrubbed(t *testing.T) {
 func TestRedact_NonJSONSkTokenScrubbed(t *testing.T) {
+func TestRedact_SkTokenWordBoundary(t *testing.T) {
 func TestIsSecretKey(t *testing.T) {
 func TestScrubError(t *testing.T) {
 func TestScrubError_NilReturnsEmpty(t *testing.T) {
@@ -834,25 +1133,61 @@ func TestAdvisoryWiring_QuestionEndingNote(t *testing.T) { //nolint:cyclop,gocyc
 func TestAdvisoryWiring_DedupeSemantics(t *testing.T) { //nolint:gocognit,cyclop,funlen // D-05 battery
 func TestAdvisoryWiring_NoteWordingElements(t *testing.T) {
 
-## internal/runtime/apply_model_test.go (2)
+## internal/runtime/apply_model_test.go (5)
 func TestApplyTurnModel(t *testing.T) { //nolint:paralleltest // drives a background turn with real timing
+func TestDefaultTurnModel_FollowsTierResolution(t *testing.T) {
 func TestApplyTurnModel_StampsFutureSessions(t *testing.T) {
+func TestResolveSubagentModelBreakerDemotion(t *testing.T) {
+func TestResolveSubagentModelCrossProviderDemotion(t *testing.T) {
 
-## internal/runtime/ask_wiring_test.go (10)
+## internal/runtime/ask_wiring_test.go (15)
 func TestAskWiring_ReplyRouting(t *testing.T) { //nolint:gocyclo,cyclop,funlen // flat battery
 func TestAskWiring_ClientSurface(t *testing.T) {
 func TestAskWiring_SurfaceMatchesRenderer(t *testing.T) {
 func TestAskWiring_ConfigKnob(t *testing.T) {
 func TestAskWiring_SchemaDisciplineAtWiring(t *testing.T) {
 func TestAskWiring_ChainSurvivesAskTimerResume(t *testing.T) { //nolint:cyclop,funlen // settle poll
+func TestAskWiring_ResumeHoldsTurnMutex(t *testing.T) { //nolint:funlen // the full suspend/race/resume chain
+func TestAskWiring_TimerResumeHoldsTurnMutex(t *testing.T) {
+func TestAskWiring_ChainSurvivesPermissionDialogResume(t *testing.T) { //nolint:funlen,cyclop // park/resume chain
 func TestAskWiring_ServerLevelSurface(t *testing.T) { //nolint:cyclop,funlen // comprehensive server scenario
 func TestAskPark_PromptResponsePrecedesResolution(t *testing.T) { //nolint:cyclop,gocyclo,funlen // server scenario
 func TestAskPark_CancelAndCloseDrainParkedChains(t *testing.T) { //nolint:funlen // two-route drain battery
 func TestAskPark_ReplyDuringParkResumesAndQueuesInjection(t *testing.T) { //nolint:gocyclo,cyclop,funlen // ordering
+func TestAskWiring_ElicitationQueueRoundTrip(t *testing.T) { //nolint:funlen,cyclop,gocyclo,gocognit,lll // flat end-to-end battery
+func TestAskWiring_EngineAskConversion(t *testing.T) { //nolint:funlen // one battery over the conversion glue
 
 ## internal/runtime/checkpoint_session_test.go (2)
 func TestSessionFor_WiresCheckpointer(t *testing.T) {
 func TestCheckpointLiveRollback_Gated(t *testing.T) { //nolint:paralleltest,funlen,cyclop // live model leg
+
+## internal/runtime/commands_test.go (26)
+func TestTracerStatusClassB(t *testing.T) {
+func TestCommandChainSemantics(t *testing.T) {
+func TestCommandChainReservedShadowing(t *testing.T) {
+func TestCommandChainAdvertisementShape(t *testing.T) {
+func TestCommandChainEmptyRegistry(t *testing.T) {
+func TestReservedNamesFitInvocationGrammar(t *testing.T) {
+func TestClassBPureLocal(t *testing.T) {
+func TestClassBHelpSelfDescribing(t *testing.T) {
+func TestClassBMemoryReadOnly(t *testing.T) {
+func TestClassBModel(t *testing.T) {
+func TestClassBClear(t *testing.T) {
+func TestClassBDelegate(t *testing.T) {
+func TestClassBCost(t *testing.T) {
+func TestSkillSlash(t *testing.T) {
+func TestAgentSlash(t *testing.T) {
+func TestInitExpansion(t *testing.T) {
+func TestClassBUndoIdle(t *testing.T) { //nolint:funlen // two-invocation walk scenario
+func TestUndoWalk(t *testing.T) { //nolint:funlen // three-scenario walk battery
+func TestClassBUndoEdges(t *testing.T) {
+func TestClassBUndoCrossSession(t *testing.T) {
+func TestClassBUndoDegradedStore(t *testing.T) {
+func TestUndoAutoCancel(t *testing.T) { //nolint:funlen,maintidx,cyclop // timed end-to-end scenario
+func TestUndoAutoCancelParkedChain(t *testing.T) { //nolint:paralleltest // park-state fixture
+func TestUndoFailClosed(t *testing.T) { //nolint:paralleltest // seam swap must not race parallel tests
+func TestUndoNestedRefusal(t *testing.T) { //nolint:paralleltest // timed mid-turn scenario
+func TestParkedChainCancelSteering(t *testing.T) { //nolint:paralleltest // park + fresh-turn sequence
 
 ## internal/runtime/coreexec_wiring_test.go (6)
 func TestCoreExec_BashThroughSession(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen // flat battery
@@ -862,10 +1197,11 @@ func TestCoreExec_ReadOnlyProjection(t *testing.T) { //nolint:cyclop,funlen // f
 func TestSessionFor_ComposesRuntimeWorkDir(t *testing.T) {
 func TestRun_DoesNotLeakChunkForwarder(t *testing.T) { //nolint:paralleltest // bus is runner-global
 
-## internal/runtime/cron_wiring_test.go (5)
+## internal/runtime/cron_wiring_test.go (6)
 func TestCronWiring_QueueBehindActiveTurn(t *testing.T) { //nolint:funlen,cyclop // flat queue-semantics battery
 func TestCronWiring_AuditProvenance(t *testing.T) {
 func TestCronWiring_FireOnceCatchUp(t *testing.T) { //nolint:cyclop,funlen // flat restart-scenario battery
+func TestCronWiring_AutomationTurnDeclinesGatedAsk(t *testing.T) { //nolint:funlen // the full gated-firing chain
 func TestCronWiring_SchedulerGoroutineLifecycle(t *testing.T) {
 func TestCronWiring_ServerDrivenMirror(t *testing.T) {
 
@@ -889,8 +1225,12 @@ func TestOpsxMatrixNewChain_Gated(t *testing.T) { //nolint:paralleltest // chain
 func TestOpsxEndToEnd_Gated(t *testing.T) { //nolint:paralleltest // real scratch + live model
 func TestOpsxFixableRecovery_Gated(t *testing.T) { //nolint:paralleltest,funlen // real scratch + live model
 
-## internal/runtime/emitter_e2e_test.go (1)
+## internal/runtime/emitter_e2e_test.go (2)
 func TestTurnEmitterEndToEnd(t *testing.T) { //nolint:funlen // full end-to-end scenario
+func TestThoughtForward(t *testing.T) { //nolint:funlen // full end-to-end scenario
+
+## internal/runtime/engine_binding_test.go (1)
+func TestEngineWiringStaysSessionFree(t *testing.T) {
 
 ## internal/runtime/enginebridge/trigger_from_signal_test.go (1)
 func TestStageVocab_TriggerFromSignal(t *testing.T) {
@@ -900,9 +1240,38 @@ func TestEvalSuite_Flagship_Gated(t *testing.T) { //nolint:paralleltest // gated
 func TestEvalSuite_Flagship_Deep(t *testing.T) { //nolint:paralleltest // gated deep leg
 func TestEvalSuite_Matrix_Gated(t *testing.T) { //nolint:paralleltest // gated: real scratches + live model
 
+## internal/runtime/firing_target_test.go (1)
+func TestCurrentSessionIDFollowsActivity(t *testing.T) {
+
+## internal/runtime/hooks_join_wiring_test.go (4)
+func TestHookJoin_ProjectDenyThroughComposition(t *testing.T) { //nolint:paralleltest // HOME pin
+func TestHookJoin_ReadRuleEvaluatorBackedByPerm(t *testing.T) { //nolint:paralleltest // HOME pin
+func TestHookJoin_OneLiveRuleAuthority(t *testing.T) { //nolint:paralleltest // HOME pin
+func TestHookJoin_MentionSeamRaceFree(t *testing.T) { //nolint:paralleltest // HOME pin
+
+## internal/runtime/img_capability_test.go (5)
+func TestImageCapability_D11DropAndNote(t *testing.T) { //nolint:paralleltest // full-turn e2e
+func TestImageCapability_ImageReachesOutgoingRequest(t *testing.T) { //nolint:paralleltest // full-turn e2e
+func TestImageCapability_OpenAIShapeBodyHasNoImage(t *testing.T) {
+func TestImageCapability_ImageOnlyDropKeepsNonEmptyBody(t *testing.T) { //nolint:paralleltest // full-turn e2e
+func TestImageIngress_ImageOnlyDropKeepsTextBearingBlock(t *testing.T) {
+
+## internal/runtime/imgscale_test.go (11)
+func TestValidateAndScale_WithinLimitsPassthrough(t *testing.T) {
+func TestValidateAndScale_OverDimsDownscalesToTargetLongEdge(t *testing.T) {
+func TestValidateAndScale_OverBytesDownscalesWithinCap(t *testing.T) {
+func TestValidateAndScale_PixelBombRefusedBeforeDecode(t *testing.T) { //nolint:paralleltest // swaps package var
+func TestValidateAndScale_UndecodableBytesTypedError(t *testing.T) {
+func TestValidateAndScale_GIFAndWebPAccepted(t *testing.T) {
+func TestImageIngress_MapsAndRewritesToRefForm(t *testing.T) { //nolint:cyclop,funlen // assertion-dense ingress proof
+func TestImageIngress_PersistsOriginalAndScaled(t *testing.T) { //nolint:cyclop,funlen // assertion-dense ingress proof
+func TestImageIngress_TranscriptLeanNoBase64(t *testing.T) {
+func TestImageIngress_IdempotentReIngress(t *testing.T) {
+func TestImageIngress_FailureDropsBlockWithLoudNote(t *testing.T) {
+
 ## internal/runtime/integration_test.go (2)
 func TestIntegration_RealStreamingThroughACP(t *testing.T) { //nolint:funlen // comprehensive test scenario
-func TestIntegration_SessionLoadNoOp(t *testing.T) {
+func TestIntegration_SessionLoadMalformedRejected(t *testing.T) {
 
 ## internal/runtime/mcp_tracer_test.go (5)
 func TestMain(m *testing.M) {
@@ -911,9 +1280,72 @@ func TestSessionForMCPCatalogRegistration(t *testing.T) { //nolint:paralleltest 
 func TestTracerMCPEndToEnd(t *testing.T) { //nolint:cyclop,funlen,paralleltest // subprocess e2e tracer
 func TestSessionShutdownWired(t *testing.T) { //nolint:paralleltest // spawns a subprocess
 
+## internal/runtime/memory_wiring_test.go (4)
+func TestMemoryInjection_MemoryBlockIsLast(t *testing.T) { //nolint:paralleltest // HOME pin
+func TestMemoryInjection_EmptyTreeAddsNothing(t *testing.T) { //nolint:paralleltest // HOME pin
+func TestMemoryInjection_SharedProfileUntouched(t *testing.T) { //nolint:paralleltest // HOME pin
+func TestMemoryInjection_TruncationFlowsThrough(t *testing.T) { //nolint:paralleltest // HOME pin
+
+## internal/runtime/mention_expand_test.go (13)
+func TestMentionExpand_FileSectionAndProvenance(t *testing.T) {
+func TestMentionExpand_SpacedQuotedPath(t *testing.T) {
+func TestMentionExpand_DirListingOneLevel(t *testing.T) {
+func TestMentionExpand_ReadRuleDenial(t *testing.T) {
+func TestMentionExpand_DefaultEvaluatorImplicitAllow(t *testing.T) {
+func TestMentionExpand_UnresolvableNote(t *testing.T) {
+func TestMentionExpand_OutsideAdmittedRoots(t *testing.T) {
+func TestMentionExpand_AbsolutePathAdmittedByEvaluator(t *testing.T) {
+func TestMentionExpand_MultipleMentionsInOrder(t *testing.T) {
+func TestMentionExpand_ZeroMentionsByteIdentical(t *testing.T) {
+func TestMentionExpand_ProvenanceFailureContinues(t *testing.T) { //nolint:paralleltest // global logger pin
+func TestMentionExpand_CommandAndMentionCompose(t *testing.T) {
+func TestMentionExpand_JSONRoundTripSanity(t *testing.T) {
+
+## internal/runtime/modesmatrix_cron_test.go (4)
+func TestModesMatrixCronCommands(t *testing.T) { // HOME-pinned leg
+func TestModesMatrixCronSkills(t *testing.T) { // HOME-pinned leg
+func TestModesMatrixCronHooks(t *testing.T) { // HOME-pinned leg
+func TestModesMatrixCronEmpty(t *testing.T) { // HOME-pinned leg
+
+## internal/runtime/modesmatrix_wake_test.go (3)
+func TestModesMatrixWakeCommands(t *testing.T) { // HOME-pinned leg
+func TestModesMatrixWakeSkills(t *testing.T) { // HOME-pinned leg
+func TestModesMatrixWakeHooks(t *testing.T) { //nolint:funlen // driver + both observable sets // HOME-pinned leg
+
 ## internal/runtime/planmode_wiring_test.go (2)
 func TestPlanModeWiring_EnterFlipsStateAndGateRefuses(t *testing.T) {
 func TestPlanModeWiring_ExitApprovalResumesSameTurn(t *testing.T) {
+
+## internal/runtime/pty_wiring_test.go (1)
+func TestSessionClosePTY(t *testing.T) { //nolint:paralleltest // real pty shell + session close
+
+## internal/runtime/rescan_test.go (7)
+func TestRescanWatcher(t *testing.T) { //nolint:paralleltest // sequenced fs state
+func TestRescanDebounce(t *testing.T) { //nolint:paralleltest // sequenced fs state
+func TestRescanDegrade(t *testing.T) { //nolint:paralleltest // HOME-sensitive
+func TestFreshnessBackstop(t *testing.T) { //nolint:paralleltest // sequenced fs state
+func TestRescanConcurrency(t *testing.T) {
+func TestRescanShutdown(t *testing.T) { //nolint:paralleltest // lifecycle sequencing
+func TestRescanRefire(t *testing.T) { //nolint:paralleltest // sequenced fs state
+
+## internal/runtime/restore_guard_test.go (10)
+func TestRestoreGuardRefusalMatrix(t *testing.T) { //nolint:funlen // matrix scenario
+func TestRestoreGuardCrossSessionMatrix(t *testing.T) { //nolint:funlen // matrix scenario
+func TestSessionStartSweep(t *testing.T) {
+func TestRunnerStorePromotionDegradation(t *testing.T) {
+func TestRunnerStoreHeldOnce(t *testing.T) {
+func TestRestoreGuardNilStoreAxis(t *testing.T) {
+func TestSessionStartOrdering(t *testing.T) {
+func TestConfiguredBoundsReachSweep(t *testing.T) {
+func TestUndoCrossSessionRefusal(t *testing.T) { //nolint:funlen // end-to-end refusal + transience scenario
+func TestUndoActivePathCrossSessionRefusal(t *testing.T) { //nolint:funlen // two-variant scenario
+
+## internal/runtime/resume_session_test.go (5)
+func TestResumeSessionReconcilesAndSeeds(t *testing.T) {
+func TestResumeSessionSeedsPlanMode(t *testing.T) {
+func TestResumeSessionSerializesWithTurnMutex(t *testing.T) {
+func TestInProcessReloadAfterCloseRebuildsSession(t *testing.T) {
+func TestResumeNoProviderCalls(t *testing.T) {
 
 ## internal/runtime/runner_battery_test.go (20)
 func TestExpansion_EngineOffPathExpanded(t *testing.T) {
@@ -937,9 +1369,57 @@ func TestEngine_CommandProvenanceNotInjectable(t *testing.T) {
 func TestServeCapturer_PublishesWithTurnID(t *testing.T) {
 func TestServeTranscriptWriter_OnePerSession(t *testing.T) {
 
-## internal/runtime/subagent_tier_wiring_test.go (2)
-func TestSessionFor_ResolvesLightTier(t *testing.T) { //nolint:paralleltest // HOME pinned via pinEmptyHome — serial
-func TestSessionFor_LightTierCrossProviderWarns(t *testing.T) {
+## internal/runtime/session_fallback_test.go (1)
+func TestSessionUnavailableWhenTranscriptLocationsFail(t *testing.T) {
+
+## internal/runtime/session_opener_test.go (1)
+func TestSessionForWritesOpener(t *testing.T) { //nolint:cyclop,gocognit,funlen // three assertion pins, one per shape
+
+## internal/runtime/steering_ingress_test.go (9)
+func TestSteerIngressMidTurnPreMutex(t *testing.T) { //nolint:funlen // comprehensive ingress scenario
+func TestSteerIngressNoActiveTurnOrdinary(t *testing.T) {
+func TestSteerIngressEngineChain(t *testing.T) {
+func TestSteerIngressPendingAskOutranks(t *testing.T) {
+func TestSteerIngressClassBNotSteered(t *testing.T) {
+func TestParkedAskCancelGrammar(t *testing.T) {
+func TestCombinedSteerScenario(t *testing.T) { //nolint:funlen,maintidx // comprehensive combined scenario
+func TestEngineChainSteered(t *testing.T) {
+func TestParkedAskNoteEmitter(t *testing.T) {
+
+## internal/runtime/subagent_tier_wiring_test.go (4)
+func TestSessionFor_NoLightTierStamp(t *testing.T) { //nolint:paralleltest // HOME pinned via pinEmptyHome — serial
+func TestDispatchModel_TierArms(t *testing.T) {
+func TestDispatchModel_Precedence(t *testing.T) {
+func TestDispatchModel_LiveAgentLookup(t *testing.T) {
+
+## internal/runtime/wake_wiring_test.go (11)
+func TestWakeTurn_BackgroundBashCompletion(t *testing.T) { //nolint:funlen,cyclop // flat tracer battery
+func TestWakeTurn_BusyClientTurnAccumulates(t *testing.T) { //nolint:funlen,cyclop // flat fallback battery
+func TestWakeTurn_EmptyPendingNoTurn(t *testing.T) {
+func TestWakeChain_IdlesWhenEmpty(t *testing.T) { //nolint:paralleltest // goroutine-band + flag-window battery (see the file comment)
+func TestWakeChain_NoSpawnPastServeShutdown(t *testing.T) { //nolint:paralleltest // goroutine-band battery
+func TestWakeChain_CtxCancelStopsChain(t *testing.T) { //nolint:paralleltest // flag-window battery
+func TestWakeChain_RacingCompletionStillWakes(t *testing.T) { //nolint:paralleltest // flag-window battery
+func TestWakeChain_ClosedSessionDropsBatch(t *testing.T) { //nolint:funlen // two-row close battery
+func TestCloseSession_PrunesWakeState(t *testing.T) { //nolint:funlen // prune + running-cancel battery
+func TestTaskStopFallbackWiring(t *testing.T) { //nolint:funlen // two-row wiring battery
+func TestTaskOutputFallbackWiring(t *testing.T) {
+
+## internal/sandbox/landlock_linux_test.go (3)
+func TestLandlock_ProbeTaxonomy(t *testing.T) {
+func TestLandlock_RulesetFromPolicyRows(t *testing.T) {
+func TestLandlock_ChildEntryContract(t *testing.T) {
+
+## internal/sandbox/policy_test.go (4)
+func TestPolicySymmetry_GoldenDenySet(t *testing.T) {
+func TestPolicySymmetry_SeatbeltShapeNeverDenyDefault(t *testing.T) {
+func TestPolicy_WrapCmdSubstitutionContract(t *testing.T) {
+func TestPolicy_AvailabilityDefaults(t *testing.T) {
+
+## internal/sandbox/seatbelt_darwin_test.go (3)
+func TestSeatbelt_LiveDenySet(t *testing.T) { //nolint:funlen,cyclop // flat live battery
+func TestSeatbelt_RenderNoArtifacts(t *testing.T) {
+func TestSeatbelt_FirstUseProbeDegradesLoudly(t *testing.T) {
 
 ## internal/sched/sched_test.go (8)
 func TestParser_NextDue(t *testing.T) {
@@ -950,6 +1430,17 @@ func TestStore_CorruptFileQuarantined(t *testing.T) {
 func TestStore_DueAndCatchUp(t *testing.T) {
 func TestCatchUp_FireOnceWithNote(t *testing.T) {
 func TestStoreJSON_Shape(t *testing.T) {
+
+## internal/session/askqueue_test.go (9)
+func TestAskQueueSerialization(t *testing.T) { //nolint:funlen // flat serialization battery
+func TestAskQueuePriority(t *testing.T) { //nolint:cyclop,funlen // three ordering subtests in one family
+func TestAskQueueNotes(t *testing.T) {
+func TestAskQueueNoteNoSubscriber(t *testing.T) {
+func TestAskQueueConcurrency(t *testing.T) { //nolint:funlen // the interleaved producer battery
+func TestAskQueueDrainTurn(t *testing.T) { //nolint:funlen,cyclop // the full scoped-drain chain
+func TestAskQueueDrainAll(t *testing.T) { //nolint:funlen,paralleltest // full drain chain; not parallel (goroutines)
+func TestAskQueueDrainResolvesAsync(t *testing.T) { //nolint:funlen,paralleltest // drain chain; baseline idiom
+func TestGateTurnDeath(t *testing.T) { //nolint:funlen // the full death chain
 
 ## internal/session/ask_test.go (11)
 func TestAsk_SuspendsAndTimesOutEndToEnd(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen // flat battery
@@ -970,6 +1461,9 @@ func TestMaybeAppendBoundary_ReadOnlyNoBoundary(t *testing.T) {
 func TestMaybeAppendBoundary_ConfigAddsBoundary(t *testing.T) {
 func TestStreamWired(t *testing.T) {
 
+## internal/session/cancel_midstream_test.go (1)
+func TestCancelledMidStreamReportsCancelled(t *testing.T) {
+
 ## internal/session/checkpoint_seam_test.go (2)
 func TestPrompt_SnapshotsAtTurnEntry(t *testing.T) {
 func TestPrompt_CheckpointFailureNonFatal(t *testing.T) {
@@ -980,13 +1474,61 @@ func TestSessionCloseNilOnClose(t *testing.T) {
 func TestPromptPanicKeepsSession(t *testing.T) { //nolint:paralleltest // mutates shared scriptedProvider state
 func TestSessionCloseConcurrentSafe(t *testing.T) {
 
+## internal/session/compaction_test.go (10)
+func TestCompaction_OverflowRetryOnce(t *testing.T) { //nolint:funlen // battery
+func TestCompaction_LoopHead(t *testing.T) {
+func TestCompactNow(t *testing.T) {
+func TestCompaction_EndToEnd(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen,maintidx // battery
+func TestCompaction_Threshold(t *testing.T) { //nolint:gocognit,cyclop,funlen // battery
+func TestCompaction_SettingsFromConfig(t *testing.T) { //nolint:funlen // battery
+func TestCompaction_SummarizerFailure(t *testing.T) {
+func TestCompaction_Chaining(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen // battery
+func TestCompaction_BoundedSpanAndReFireGuard(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen,maintidx // battery
+func TestCompaction_OverflowRetryCarriesSummary(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen,maintidx // battery
+
+## internal/session/elicitation_reply_test.go (4)
+func TestStructuredReplyRender(t *testing.T) { //nolint:funlen // pinned-serialization goldens
+func TestElicitationParity(t *testing.T) {
+func TestElicitationRevalidation(t *testing.T) { //nolint:funlen,cyclop,gocognit // D-10 battery
+func TestResolveAskStructured(t *testing.T) {
+
 ## internal/session/end_to_end_test.go (1)
 func TestEndToEndSession(t *testing.T) { //nolint:funlen // comprehensive test scenario
+
+## internal/session/gate_test.go (17)
+func TestGatePermissionSuspend(t *testing.T) { //nolint:cyclop,funlen // flat end-to-end battery
+func TestGatePermissionSuspend_MultiCallBatch(t *testing.T) { //nolint:funlen,cyclop,gocyclo // two-dialog chain
+func TestGateResumeRunsUnderResumeSerial(t *testing.T) { //nolint:funlen // the serializer tracking battery
+func TestGatePermissionSuspensionArmsSettle(t *testing.T) {
+func TestGateChokepoint_UngatedDefaultNoDialog(t *testing.T) {
+func TestGateChokepoint_UngatedDenyStillDenies(t *testing.T) {
+func TestGateChokepoint_CancelledNormalResume(t *testing.T) {
+func TestGateChokepoint_SubagentBranchGated(t *testing.T) {
+func TestGateChokepoint_SecondPromptWhileDialogOpen(t *testing.T) {
+func TestGateAskKindsParity(t *testing.T) {
+func TestGateOutcomeMatrix(t *testing.T) {
+func TestGateAutomationDecline(t *testing.T) { //nolint:funlen,gocognit,cyclop,gocyclo // the four-row matrix
+func TestGateDegradedClient(t *testing.T) { //nolint:funlen // two full-loop subtests
+func TestGateMCPNamespace(t *testing.T) { //nolint:funlen,cyclop // the mapping table reads as one flow
+func TestGatePermissionModeFlip(t *testing.T) { //nolint:funlen // one flow across three prompts
+func TestGateHookVerdict(t *testing.T) { //nolint:funlen,cyclop,gocyclo,gocognit,maintidx // the joined-head matrix
+func TestGateHookAskFailSafes(t *testing.T) {
 
 ## internal/session/hooks_seam_test.go (3)
 func TestHookSeamsFireAtLifecycle(t *testing.T) {
 func TestHookSeamSubagentStop(t *testing.T) {
 func TestHookFailureNeverFatal(t *testing.T) {
+
+## internal/session/list_test.go (9)
+func TestSessionListOrderingAndTiebreak(t *testing.T) {
+func TestSessionListCursorPagination(t *testing.T) {
+func TestSessionListTombstoneFilter(t *testing.T) {
+func TestSessionListEmptyAndSingle(t *testing.T) {
+func TestSessionListHeaderShape(t *testing.T) {
+func TestSessionListMalformedCursor(t *testing.T) {
+func TestSessionListCorruptFirstLine(t *testing.T) {
+func TestSessionListLegacyShapeOpener(t *testing.T) { //nolint:funlen // four shape pins in the battery's subtest idiom
+func TestSessionListBounds(t *testing.T) {
 
 ## internal/session/manager_test.go (12)
 func TestAppendUserMessageWritesJSONLine(t *testing.T) {
@@ -1002,12 +1544,15 @@ func TestSelfGitignore(t *testing.T) {
 func TestAppendEngineDecisionProvenance(t *testing.T) {
 func TestAppendRequestShapedMetadataOnly(t *testing.T) {
 
+## internal/session/modesmatrix_subagent_test.go (1)
+func TestModesMatrixSubagent(t *testing.T) { //nolint:funlen,cyclop // HOME-pinned leg; three cells, one story
+
 ## internal/session/planmode_test.go (3)
 func TestPlanMode_EnterGateApprovalExit(t *testing.T) { //nolint:gocyclo,cyclop,funlen // flat battery
 func TestPlanMode_TimeoutStaysOn(t *testing.T) {
 func TestPlanMode_BlockedSet(t *testing.T) {
 
-## internal/session/projector_test.go (21)
+## internal/session/projector_test.go (30)
 func TestProjector_LeanSeedAfterBoundary(t *testing.T) {
 func TestProjector_SummaryExtraction(t *testing.T) {
 func TestProjector_FirstTurn(t *testing.T) {
@@ -1029,9 +1574,32 @@ func TestPlainContent_ObjectsVerbatim(t *testing.T) {
 func TestPlainContent_IsErrorPreserved(t *testing.T) {
 func TestPlainContent_RedactionCarryOnStringOutputs(t *testing.T) {
 func TestPlainContent_InvalidJSONFallback(t *testing.T) {
+func TestProjector_ThinkingFoldsIntoAssistantBatch(t *testing.T) {
+func TestProjector_ThinkingAttachesToAssistantText(t *testing.T) {
+func TestProjector_ThinkingOrphanDroppedWithTurn(t *testing.T) {
+func TestProjector_ThinkingNeverDuplicatedAcrossBatchAndText(t *testing.T) {
+func TestProjector_ThinkingBoundaryAdjacent(t *testing.T) {
+func TestProjector_CompactionResetPoint(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen,maintidx // five cases
+func TestProjector_CompactionTailCut(t *testing.T) { //nolint:funlen,gocognit,gocyclo,cyclop // three fixtures
+func TestThinkingGolden(t *testing.T) {
+func TestProjector_SameTurnCarveOut(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen,maintidx // battery
+
+## internal/session/reconcile_test.go (6)
+func TestReconcile(t *testing.T) {
+func TestReconcileIdempotent(t *testing.T) {
+func TestReconcileClean(t *testing.T) {
+func TestReconcileSkipsGarbageTail(t *testing.T) {
+func TestAppendSynthetic(t *testing.T) {
+func TestReconcileSameTurnMarker(t *testing.T) {
 
 ## internal/session/reconstruction_test.go (1)
 func TestTranscriptReconstructsSession(t *testing.T) { //nolint:cyclop,funlen // comprehensive test scenario
+
+## internal/session/semaphore_test.go (1)
+func TestSemaphoreSlotSurvivesTurnPanic(t *testing.T) {
+
+## internal/session/session_outcomes_test.go (1)
+func TestSessionOutcomeRecording(t *testing.T) {
 
 ## internal/session/session_test.go (14)
 func TestPromptRunsTurnLoop(t *testing.T) {
@@ -1049,7 +1617,28 @@ func TestToolCallExactlyOnceWithWriter(t *testing.T) { //nolint:paralleltest // 
 func TestSession_ToolResultAppendFailureSurfaces(t *testing.T) { //nolint:paralleltest // swaps the default slog logger
 func TestSession_TextPlainFetchLandsInTranscript(t *testing.T) { //nolint:paralleltest // single sequential scenario
 
-## internal/session/subagent_test.go (7)
+## internal/session/steering_test.go (9)
+func TestSteeringDeliveryEndToEnd(t *testing.T) { //nolint:funlen // comprehensive end-to-end scenario
+func TestSteeringProjectAnchorSafety(t *testing.T) {
+func TestSteeringProjectPairSafety(t *testing.T) {
+func TestSteeringProjectIntentSummaryUnchanged(t *testing.T) {
+func TestSteeringReplayParity(t *testing.T) {
+func TestSteeringProjectLegacyTolerance(t *testing.T) {
+func TestSteeringAntiZombie(t *testing.T) {
+func TestParkedAskRecord(t *testing.T) {
+func TestParkedAskReplayTolerance(t *testing.T) {
+
+## internal/session/steerqueue_test.go (8)
+func TestSteerQueueTicketsMonotonic(t *testing.T) {
+func TestSteerQueueDrainArrivalOrderAndWatermark(t *testing.T) {
+func TestSteerQueueDrainEmptyNoop(t *testing.T) {
+func TestSteerQueueCancelThrough(t *testing.T) {
+func TestSteerQueueCancelAll(t *testing.T) {
+func TestSteerQueuePending(t *testing.T) {
+func TestSteerQueueHammerConservation(t *testing.T) {
+func TestSteerQueueNoACP(t *testing.T) {
+
+## internal/session/subagent_test.go (15)
 func TestDispatchSubagent_AppendsDispatchLine(t *testing.T) {
 func TestSubagent_StreamsProgressWithParentTurnID(t *testing.T) {
 func TestSubagent_FinalResultToParent(t *testing.T) {
@@ -1057,14 +1646,34 @@ func TestSubagent_RestrictedExecutor(t *testing.T) {
 func TestSubagentPanicRecovery(t *testing.T) {
 func TestSubagentModel_OverrideApplied(t *testing.T) {
 func TestSubagentModel_EmptyKeepsParent(t *testing.T) {
+func TestSubagentDispatch_ResolvedModel(t *testing.T) {
+func TestSubagentDispatch_ResolvedModelLegacyTolerance(t *testing.T) {
+func TestDispatchBackground_AsyncLaunchedImmediately(t *testing.T) { //nolint:funlen // flat battery
+func TestDispatchBackground_TurnCtxDeathDoesNotKillLoop(t *testing.T) {
+func TestDispatchBackground_ForegroundParity(t *testing.T) {
+func TestDispatchBackground_QueuedOverCap(t *testing.T) {
+func TestDispatchBackgroundRouting(t *testing.T) {
+func TestBackgroundAskDecline(t *testing.T) {
 
 ## internal/session/subagent_types_test.go (2)
 func TestSubagentTypeUsesAgentDef(t *testing.T) {
 func TestSubagentTypeUnknownFallsBack(t *testing.T) {
 
-## internal/session/transcript_newkinds_test.go (2)
+## internal/session/thinking_test.go (3)
+func TestStreamAndEmit_ThinkingAppendsRawAndPublishesThought(t *testing.T) {
+func TestStreamAndEmit_ThinkingRedactedAppendsWithoutPublish(t *testing.T) {
+func TestStreamAndEmit_ThinkingRedactorZeroCalls(t *testing.T) {
+
+## internal/session/tombstone_test.go (4)
+func TestTombstoneWrite(t *testing.T) {
+func TestSweepRespectsGrace(t *testing.T) {
+func TestSweepNeverTouches(t *testing.T) {
+func TestSweepIdempotent(t *testing.T) {
+
+## internal/session/transcript_newkinds_test.go (3)
 func TestTranscriptNewKinds(t *testing.T) {
 func TestProjectorToleratesNewKinds(t *testing.T) {
+func TestContentBlockRoundTrip(t *testing.T) {
 
 ## internal/session/truncate_test.go (9)
 func TestTruncateToolResult_Cap(t *testing.T) {
@@ -1098,16 +1707,52 @@ func TestMidTurn_AnthropicToolResultLone(t *testing.T) {
 func TestMidTurnCapture_GoldenShape(t *testing.T) {
 func TestPairingInvariant_CaptureFixture(t *testing.T) {
 
-## internal/shaper/shaper_test.go (3)
+## internal/shaper/shaper_test.go (11)
 func TestShape_SyntheticFixture(t *testing.T) {
 func TestShape_RenderedHeadersNonEmpty(t *testing.T) {
 func TestShape_ZcodeProfile(t *testing.T) {
+func TestShaperThinking_MapsBothBlockTypesInOrder(t *testing.T) {
+func TestShaperThinking_ZeroThinkingByteIdentical(t *testing.T) {
+func TestImageCapability_MapsRefToBase64Param(t *testing.T) {
+func TestImageCapability_OrderPreserved(t *testing.T) {
+func TestImageCapability_MissingRefDegrades(t *testing.T) { //nolint:paralleltest // swaps the global log writer
+func TestImageCapability_ZeroBlocksByteIdentical(t *testing.T) {
+func TestShape_CacheControlEmission(t *testing.T) {
+func TestShape_CacheControlCapDegrade(t *testing.T) {
+
+## internal/tasks/notify_test.go (7)
+func TestNotify_CoalesceThreeIntoOneBatch(t *testing.T) {
+func TestNotify_CompletionTimeOrderingNotArrival(t *testing.T) {
+func TestNotify_DedupeByTaskID(t *testing.T) {
+func TestNotify_EmptyDrainNoop(t *testing.T) {
+func TestNotify_TruncateTailRuneBoundary(t *testing.T) {
+func TestNotify_TrackerTruncatesOnComplete(t *testing.T) {
+func TestNotify_BusyDrainLeavesPending(t *testing.T) {
+
+## internal/tasks/subagent_test.go (5)
+func TestBackgroundOutput_MidRunRetrieval(t *testing.T) {
+func TestBackgroundCancel_KilledMarkerAndNotification(t *testing.T) {
+func TestBackgroundOutput_ZeroOutput(t *testing.T) {
+func TestBackgroundOutput_SplitRuneBuffered(t *testing.T) {
+func TestBackgroundSubagent_PanicRecovered(t *testing.T) {
+
+## internal/tasks/tracker_test.go (10)
+func TestTrackerCap_UnderCapStartsImmediately(t *testing.T) {
+func TestTrackerQueue_FIFODrainOrder(t *testing.T) {
+func TestTrackerClose_DropsQueuedNotRunning(t *testing.T) {
+func TestTrackerQueue_BoundRejects(t *testing.T) {
+func TestTrackerDefaultCap(t *testing.T) {
+func TestTrackerCancelTask(t *testing.T) {
+func TestTrackerCap_SlotsFreeAfterCompletion(t *testing.T) {
+func TestTrackerCap_SequentialReuseNeverQueues(t *testing.T) {
+func TestTrackerComplete_RetiresCancelEntry(t *testing.T) {
+func TestTrackerSubagentState(t *testing.T) {
 
 ## internal/toolcat/adapter_test.go (2)
 func TestAdapter_ProfileAuthoritative(t *testing.T) {
 func TestAdapter_ResolveCallParsesInput(t *testing.T) {
 
-## internal/toolcat/catalog_test.go (8)
+## internal/toolcat/catalog_test.go (9)
 func TestCatalog_GetCoreTools(t *testing.T) {
 func TestCatalog_Mutability(t *testing.T) {
 func TestCatalog_Nonexistent(t *testing.T) {
@@ -1116,6 +1761,7 @@ func TestCatalog_Names(t *testing.T) {
 func TestCatalogParsesContractAnnotations(t *testing.T) {
 func TestCatalogDestructiveOnlyBash(t *testing.T) {
 func TestCatalogRawCoretoolsAnnotations(t *testing.T) {
+func TestCatalogBashPersistentProperty(t *testing.T) {
 
 ## internal/toolcat/consistency_test.go (3)
 func TestCheckConsistency_OnlyBuiltinsSatisfied(t *testing.T) {
@@ -1197,4 +1843,4 @@ func TestRealExecutor_NilExecutor(t *testing.T) {
 func TestString_EqualsVersionVar(t *testing.T) {
 func TestVersion_DefaultDevWhenNotInjected(t *testing.T) {
 
-func Test grand total: 890
+func Test grand total: 1397
