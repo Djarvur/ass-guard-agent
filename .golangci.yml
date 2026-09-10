@@ -10,7 +10,17 @@ linters:
   default: all
   disable:
     - wsl            # Deprecated (v2.2.0); replaced by wsl_v5
+    - wsl_v5         # 24-01 baseline repair: the rename (golangci 2.13) silently
+                    # re-enabled the successor under default:all — same verdict
+                    # as the original wsl disable (STATE.md LINT BASELINE note)
     - gomodguard     # Deprecated (v2.12.0); replaced by gomodguard_v2
+    - gomodguard_v2  # 24-01 baseline repair: same rename re-enable as wsl_v5
+    - noinlineerr    # 24-01 baseline repair: new in golangci 2.13; contradicts
+                    # the house inline-err style (see internal/session/transcript.go)
+                    # and was never part of a green gate's linter set
+    - modernize      # 24-01 baseline repair: new gopls checks (errorsastype,
+                    # stringsseq, waitgroupgo) fire on the pre-Phase-24 baseline
+                    # (e.g. dispatch.go errors.As); never vetted by this config
 
   settings:
     depguard:
@@ -106,8 +116,10 @@ linters:
       # Relax gosec in test code
       - linters: [gosec]
         path: ".*_test\\.go"
-      # Relax exhaustruct everywhere (too noisy for structs with optional fields)
-      - linters: [exhaustruct]
+      # Relax exhaustruct everywhere (too noisy for structs with optional fields).
+      # 24-01 baseline repair: golangci 2.13 renamed exhaustruct -> exhaustruct_v5,
+      # so the old exclusion silently stopped matching (STATE.md LINT BASELINE note).
+      - linters: [exhaustruct, exhaustruct_v5]
         text: ".*"
       # Allow unchecked errors in main() init paths
       - linters: [errcheck]
