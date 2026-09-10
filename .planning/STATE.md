@@ -4,19 +4,19 @@ milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 22
 current_phase_name: Background Execution + Sandbox Reality
-current_plan: 3
+current_plan: 4
 status: executing
-stopped_at: Completed 22-06-PLAN.md (sandbox flag real, SAND-01)
-last_updated: "2026-09-10T01:09:15.965Z"
+stopped_at: "Completed 22-07-PLAN.md (gap closure: internal/tasks G-22-1 + G-22-3)"
+last_updated: "2026-09-10T03:01:45.257Z"
 last_activity: 2026-09-10
 last_activity_desc: Phase 22 execution started
-state_head: 5637a05b19df1f7a482221748378e048eb2285ad
+state_head: 6477366d0495f49c3c05ba3d5fb3b5adc47d43b1
 progress:
   total_phases: 11
-  completed_phases: 7
-  total_plans: 73
-  completed_plans: 57
-  percent: 64
+  completed_phases: 6
+  total_plans: 76
+  completed_plans: 58
+  percent: 55
 ---
 
 # State: ass-guard-agent (working name)
@@ -30,13 +30,13 @@ See: .planning/PROJECT.md (updated 2026-09-10)
 ## Current Position
 
 Phase: 22 (Background Execution + Sandbox Reality) — EXECUTING
-Plan: 3 of 6
-Current Plan: 3
+Plan: 4 of 6
+Current Plan: 4
 Total Plans in Phase: 6
 Status: Ready to execute
 Last activity: 2026-09-10 — Phase 22 execution started
 
-Progress: [███████████████░░░░░░] 55/73 plans ([██████░░░░] 64%)
+Progress: [███████████████░░░░░░] 55/73 plans ([██████░░░░] 55%)
 
 ## Performance Metrics
 
@@ -103,6 +103,7 @@ Phase 19: 7/7 ✓ closed 2026-09-10 (verification completed by the auto-UAT live
 | Phase 23 P02 | 55 min | 3 tasks | 7 files |
 | Phase 22 P04 | 35 min | 3 tasks | 15 files |
 | Phase 22 P06 | 32 min | 3 tasks | 18 files |
+| Phase 22 P07 | 17 min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -201,6 +202,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 22]: 22-06: the persistent OQ2 arm falls through to the foreground machinery — a per-call dangerouslyDisableSandbox can never unconfine the SHARED shell; off-arm stays the documented no-op; unconfined runs are individually noted with a process-wide counter at every site
 - [Phase 22]: 22-06: zero-value Availability Mode reads as OFF at every exec-site gate — confined only when the operator asked (asking resolves landlock|seatbelt); default OFF leaves argv byte-identical with zero notes
 - [Phase 22]: 22-06 (deviation): 22-05's linux leg was silently broken — ruleset rows for missing paths (/System on linux) failed the WHOLE ruleset and the re-exec child exec'd a bare argv[0] (no PATH lookup); fixed + live-proven on this host (landlock ABI 10), darwin arms compile-gated
+- [Phase 22]: 22-07 (G-22-1): releaseSubagentSlot is a callers-hold-t.mu helper invoked inside Complete's critical section (floored decrement + cancel-entry delete) BEFORE startNextWaiter — release-then-admit; the plan's refinement of CR-01's self-locking sketch — Complete already holds the lock; startNextWaiter must run outside it. The release-then-admit ordering keeps the count at the cap during handoff and retires the finished id's cancel entry in the same critical section
+- [Phase 22]: 22-07 (G-22-3): the panic-recovery RED used the plan-authorized subprocess guard — a background-goroutine panic produces no FAIL line (process dies), so the outer leg re-execs the test binary and converts the crash into a clean assertion (also the only valid TDD RED evidence shape) — Validated empirically: raw background-goroutine panic yields nonzero exit with no test-failure line (INVALID_RED); the guard yields target_test_failed
 
 ### Pending Todos
 
@@ -226,6 +229,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-10T01:09:14.860Z
-Stopped at: Completed 22-06-PLAN.md (sandbox flag real, SAND-01)
+Last session: 2026-09-10T03:01:44.150Z
+Stopped at: Completed 22-07-PLAN.md (gap closure: internal/tasks G-22-1 + G-22-3)
 Resume file: None

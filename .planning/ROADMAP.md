@@ -335,9 +335,14 @@ Plans:
   3. The persistent-shell Bash option holds state across calls in one PTY session (cd/export persist, ANSI stripped, EIO-as-EOF handled) without leaking the master fd.
   4. With sandbox enabled, tools run confined (landlock on Linux kernel ≥5.13, sandbox-exec generated profiles on macOS with targeted denies); unsupported kernels/environments degrade LOUDLY at startup, default stays OFF, and `--sandbox=off` always escapes.
 
-**Plans:** 6/6 plans executed
+**Plans:** 7/9 plans executed
 
 Plans:
+
+- [x] 22-07-PLAN.md
+- [ ] 22-08-PLAN.md
+- [ ] 22-09-PLAN.md
+
 **Wave 1**
 
 - [x] 22-01-PLAN.md — Tracer: the ONE task-notification subsystem (tracker kinds, D-02 payloads, D-03 coalescing, D-01 wake-turn drain) with background Bash as first producer; D-10 subagent cap/queue; OQ5 close-cancel
@@ -498,7 +503,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 | 19. Compaction + cache_control | v1.2 | 7/7 | Complete    | 2026-09-07 |
 | 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 6/6 | Complete    | 2026-09-07 |
 | 21. Context & Policy Parity Closures | v1.2 | 6/6 | Complete    | 2026-09-06 |
-| 22. Background Execution + Sandbox Reality | v1.2 | 6/6 | In Progress|  |
+| 22. Background Execution + Sandbox Reality | v1.2 | 7/9 | In Progress|  |
 | 23. SEED Gaps Close-out | v1.2 | 3/5 | In Progress|  |
 | 24. Documentation & Ops Tails | v1.2 | 0/? | Not started | - |
 | 25. SEED-001 Kit Extraction | v1.2 | 0/? | Not started | - |
