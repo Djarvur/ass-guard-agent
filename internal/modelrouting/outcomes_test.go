@@ -14,16 +14,21 @@ import (
 
 // Fixed clocks for the D-07 feedback tests. House rule: no time.Now inside
 // logic under test — replay consumes record.At chronologically, and Allow/Check
-// take now explicitly, so both are pinned here.
-var (
-	outcomeSeedBase = time.Date(2026, time.September, 10, 12, 0, 0, 0, time.UTC)
-	outcomeFixedNow = outcomeSeedBase.Add(30 * time.Second)
-)
+// take now explicitly, so both are pinned here as funcs (no package-level
+// mutable state).
+func outcomeSeedBase() time.Time {
+	return time.Date(2026, time.September, 10, 12, 0, 0, 0, time.UTC)
+}
+
+// outcomeFixedNow is 30s after the seed base — inside the cooldowns used below.
+func outcomeFixedNow() time.Time {
+	return outcomeSeedBase().Add(30 * time.Second)
+}
 
 // outcomeEqual pins the exact D-04 field set: every field DispatchOutcome
 // carries is compared here, so a content-bearing field added to the schema must
 // surface in this comparison (T-24-01-01 — mechanical signals only).
-func outcomeEqual(a, b DispatchOutcome) bool {
+func outcomeEqual(a, b *DispatchOutcome) bool {
 	return a.At.Equal(b.At) &&
 		a.Provider == b.Provider &&
 		a.Model == b.Model &&
@@ -52,17 +57,17 @@ func TestOutcomeStoreAppendReadRoundtrip(t *testing.T) {
 
 	want := []DispatchOutcome{
 		{
-			At: outcomeSeedBase, Provider: "prov-a", Model: "model-a", Tier: tierHeavy,
+			At: outcomeSeedBase(), Provider: "prov-a", Model: "model-a", Tier: tierHeavy,
 			Outcome: OutcomeOK, LatencyMS: 120, InTokens: 1000, OutTokens: 2000,
 			CostUSD: 0.012, Origin: OutcomeOriginTurn,
 		},
 		{
-			At: outcomeSeedBase.Add(time.Second), Provider: "prov-a", Model: "model-b", Tier: tierLight,
+			At: outcomeSeedBase().Add(time.Second), Provider: "prov-a", Model: "model-b", Tier: tierLight,
 			Outcome: OutcomeTransient, FallbackUsed: true, LatencyMS: 5000, InTokens: 3000,
 			Origin: OutcomeOriginSubagent,
 		},
 		{
-			At: outcomeSeedBase.Add(2 * time.Second), Provider: "prov-b", Model: "model-a", Tier: tierHeavy,
+			At: outcomeSeedBase().Add(2 * time.Second), Provider: "prov-b", Model: "model-a", Tier: tierHeavy,
 			Outcome: OutcomeStructural, LatencyMS: 40, Origin: OutcomeOriginTurn,
 		},
 	}
@@ -84,7 +89,7 @@ func TestOutcomeStoreAppendReadRoundtrip(t *testing.T) {
 		t.Fatalf("read back %d records, want %d", len(got), len(want))
 	}
 	for i := range want {
-		if !outcomeEqual(got[i], want[i]) {
+		if !outcomeEqual(&got[i], &want[i]) {
 			t.Errorf("record %d round-trip mismatch:\n got  %+v\n want %+v", i, got[i], want[i])
 		}
 	}
@@ -114,7 +119,7 @@ func TestOutcomeStoreTolerantRead(t *testing.T) {
 	}
 
 	first := DispatchOutcome{
-		At: outcomeSeedBase, Provider: "prov-t", Model: "model-t", Tier: tierHeavy,
+		At: outcomeSeedBase(), Provider: "prov-t", Model: "model-t", Tier: tierHeavy,
 		Outcome: OutcomeOK, LatencyMS: 10, Origin: OutcomeOriginTurn,
 	}
 	line, err := json.Marshal(first)
@@ -157,7 +162,7 @@ func TestOutcomeStoreInterruptedTail(t *testing.T) {
 	}
 
 	rec := DispatchOutcome{
-		At: outcomeSeedBase, Provider: "prov-i", Model: "model-i", Tier: tierHeavy,
+		At: outcomeSeedBase(), Provider: "prov-i", Model: "model-i", Tier: tierHeavy,
 		Outcome: OutcomeOK, Origin: OutcomeOriginTurn,
 	}
 	line, err := json.Marshal(rec)
@@ -180,7 +185,7 @@ func TestOutcomeStoreInterruptedTail(t *testing.T) {
 	if skipped != 1 {
 		t.Errorf("skipped = %d, want 1 (the truncated trailing line)", skipped)
 	}
-	if !outcomeEqual(got[0], rec) {
+	if !outcomeEqual(&got[0], &rec) {
 		t.Errorf("surviving record mismatch:\n got  %+v\n want %+v", got[0], rec)
 	}
 }
@@ -198,7 +203,7 @@ func TestOutcomeStorePermsAndGitignore(t *testing.T) {
 		t.Fatalf("NewOutcomeStore: %v", err)
 	}
 	if err := store.Append(DispatchOutcome{
-		At: outcomeSeedBase, Provider: "prov-p", Model: "model-p", Tier: tierHeavy,
+		At: outcomeSeedBase(), Provider: "prov-p", Model: "model-p", Tier: tierHeavy,
 		Outcome: OutcomeOK, Origin: OutcomeOriginTurn,
 	}); err != nil {
 		t.Fatalf("Append: %v", err)
@@ -256,7 +261,7 @@ func TestOutcomeStoreConcurrentAppend(t *testing.T) {
 			defer wg.Done()
 			for i := range perG {
 				rec := DispatchOutcome{
-					At: outcomeSeedBase.Add(time.Duration(g*perG+i) * time.Second),
+					At:       outcomeSeedBase().Add(time.Duration(g*perG+i) * time.Second),
 					Provider: "prov-c", Model: fmt.Sprintf("model-%d-%d", g, i), Tier: tierLight,
 					Outcome: OutcomeOK, LatencyMS: int64(i), Origin: OutcomeOriginSubagent,
 				}
@@ -296,7 +301,7 @@ func TestOutcomeFeedbackBreakerOpens(t *testing.T) {
 	records := make([]DispatchOutcome, 0, cfg.ConsecutiveFailures)
 	for i := range cfg.ConsecutiveFailures {
 		records = append(records, DispatchOutcome{
-			At: outcomeSeedBase.Add(time.Duration(i) * time.Second),
+			At:       outcomeSeedBase().Add(time.Duration(i) * time.Second),
 			Provider: "providerA", Model: "modelA", Tier: tierHeavy,
 			Outcome: OutcomeTransient, LatencyMS: 900, Origin: OutcomeOriginTurn,
 		})
@@ -310,7 +315,7 @@ func TestOutcomeFeedbackBreakerOpens(t *testing.T) {
 		t.Fatalf("replayed map must carry a breaker for the seeded key %+v", key)
 	}
 	// fixedNow is 28s after the trip: still inside the 1m cooldown -> Open.
-	if b.Allow(outcomeFixedNow) {
+	if b.Allow(outcomeFixedNow()) {
 		t.Errorf("breaker for %+v must be Open after %d consecutive transients", key, cfg.ConsecutiveFailures)
 	}
 
@@ -332,41 +337,50 @@ func TestOutcomeFeedbackBreakerRecoversAndSkipsStructural(t *testing.T) {
 		Cooldown: time.Minute, HalfOpenProbes: 1,
 	}
 
+	const (
+		provRecovers    = "provR"
+		modelRecovers   = "modelR"
+		provStructural  = "provS"
+		modelStructural = "modelS"
+	)
+
 	records := []DispatchOutcome{
 		{
-			At: outcomeSeedBase, Provider: "provR", Model: "modelR", Tier: tierHeavy,
+			At: outcomeSeedBase(), Provider: provRecovers, Model: modelRecovers, Tier: tierHeavy,
 			Outcome: OutcomeTransient, Origin: OutcomeOriginTurn,
 		},
 		{
-			At: outcomeSeedBase.Add(time.Second), Provider: "provR", Model: "modelR", Tier: tierHeavy,
+			At: outcomeSeedBase().Add(time.Second), Provider: provRecovers, Model: modelRecovers, Tier: tierHeavy,
 			Outcome: OutcomeTransient, Origin: OutcomeOriginTurn,
 		},
 		{
-			At: outcomeSeedBase.Add(2 * time.Second), Provider: "provR", Model: "modelR", Tier: tierHeavy,
+			At: outcomeSeedBase().Add(2 * time.Second), Provider: provRecovers, Model: modelRecovers, Tier: tierHeavy,
 			Outcome: OutcomeOK, Origin: OutcomeOriginTurn,
 		},
 		{
-			At: outcomeSeedBase.Add(3 * time.Second), Provider: "provS", Model: "modelS", Tier: tierHeavy,
+			At:       outcomeSeedBase().Add(3 * time.Second),
+			Provider: provStructural, Model: modelStructural, Tier: tierHeavy,
 			Outcome: OutcomeStructural, Origin: OutcomeOriginTurn,
 		},
 		{
-			At: outcomeSeedBase.Add(4 * time.Second), Provider: "provS", Model: "modelS", Tier: tierHeavy,
+			At:       outcomeSeedBase().Add(4 * time.Second),
+			Provider: provStructural, Model: modelStructural, Tier: tierHeavy,
 			Outcome: OutcomeExhausted, Origin: OutcomeOriginTurn,
 		},
 	}
 
 	m := ReplayBreakers(records, cfg, nil)
 
-	keyR := ProviderModelKey{Provider: "provR", Model: "modelR"}
+	keyR := ProviderModelKey{Provider: provRecovers, Model: modelRecovers}
 	b, ok := m[keyR]
 	if !ok {
 		t.Fatalf("replayed map must carry a breaker for %+v", keyR)
 	}
-	if !b.Allow(outcomeFixedNow) {
+	if !b.Allow(outcomeFixedNow()) {
 		t.Errorf("breaker for %+v must have recovered (an ok resets consecutive transients)", keyR)
 	}
 
-	if _, seen := m[ProviderModelKey{Provider: "provS", Model: "modelS"}]; seen {
+	if _, seen := m[ProviderModelKey{Provider: provStructural, Model: modelStructural}]; seen {
 		t.Error("structural/exhausted records must never create or feed a breaker on replay")
 	}
 }
@@ -386,7 +400,7 @@ func TestOutcomeFeedbackCostDegrade(t *testing.T) {
 	// 10k in + 10k out at $1/$2 per MToken = $0.03 — crosses the $0.01 ceiling.
 	records := []DispatchOutcome{
 		{
-			At: outcomeSeedBase, Provider: "prov-c", Model: "model-c", Tier: tierHeavy,
+			At: outcomeSeedBase(), Provider: "prov-c", Model: "model-c", Tier: tierHeavy,
 			Outcome: OutcomeOK, InTokens: 10000, OutTokens: 10000,
 			CostUSD: 0.03, Origin: OutcomeOriginTurn,
 		},
@@ -396,7 +410,7 @@ func TestOutcomeFeedbackCostDegrade(t *testing.T) {
 	if tr == nil {
 		t.Fatal("ReplayCostTracker returned a nil CostTracker")
 	}
-	if act := tr.Check(outcomeFixedNow); act != CostDegrade {
+	if act := tr.Check(outcomeFixedNow()); act != CostDegrade {
 		t.Errorf("Check = %d, want CostDegrade (%d) — replayed spend must cross the ceiling", act, CostDegrade)
 	}
 }
@@ -415,14 +429,14 @@ func TestFirstAllowedDemotes(t *testing.T) {
 	fallback := Target{Provider: "prov-2", Model: "model-2"}
 
 	// newOpenBreaker builds a breaker tripped 1 minute before outcomeFixedNow
-	// (inside its 10m cooldown), so Allow(outcomeFixedNow) is false.
+	// (inside its 10m cooldown), so Allow(outcomeFixedNow()) is false.
 	newOpenBreaker := func() *CircuitBreaker {
 		cfg := CircuitBreakerConfig{
 			ConsecutiveFailures: 2, ErrorRateWindow: 10, ErrorRateThreshold: 0.9,
 			Cooldown: 10 * time.Minute, HalfOpenProbes: 1,
 		}
 		b := NewCircuitBreaker(ProviderModelKey{Provider: provPrimary, Model: modelPrimary}, cfg, nil)
-		tripAt := outcomeFixedNow.Add(-time.Minute)
+		tripAt := outcomeFixedNow().Add(-time.Minute)
 		perr := &provider.ProviderError{
 			Kind: provider.KindTransient, Provider: provPrimary, Model: modelPrimary,
 		}
@@ -449,16 +463,16 @@ func TestFirstAllowedDemotes(t *testing.T) {
 			wantDemoted: true,
 		},
 		{
-			name:       "all allowing — primary wins with no demotion",
-			candidates: []Target{primary, fallback},
-			breakers:   map[ProviderModelKey]Breaker{}, // absent key = allowed
+			name:        "all allowing — primary wins with no demotion",
+			candidates:  []Target{primary, fallback},
+			breakers:    map[ProviderModelKey]Breaker{}, // absent key = allowed
 			wantTarget:  primary,
 			wantDemoted: false,
 		},
 	}
 
 	for _, tc := range cases {
-		got, demoted := FirstAllowed(tc.candidates, tc.breakers, outcomeFixedNow)
+		got, demoted := FirstAllowed(tc.candidates, tc.breakers, outcomeFixedNow())
 		if got.Provider != tc.wantTarget.Provider || got.Model != tc.wantTarget.Model {
 			t.Errorf("%s: FirstAllowed = (%s, %s), want (%s, %s)",
 				tc.name, got.Provider, got.Model, tc.wantTarget.Provider, tc.wantTarget.Model)

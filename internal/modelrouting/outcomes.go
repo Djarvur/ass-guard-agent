@@ -103,7 +103,7 @@ func NewOutcomeStore(root string) (*OutcomeStore, error) {
 //
 // Store I/O failures are returned, never panicked; callers treat them as
 // loud-non-fatal (a broken store must never fail the turn — T-24-01-02).
-func (s *OutcomeStore) Append(rec DispatchOutcome) error {
+func (s *OutcomeStore) Append(rec DispatchOutcome) error { //nolint:gocritic // hugeParam: 144B record per dispatch
 	line, err := json.Marshal(rec)
 	if err != nil {
 		return fmt.Errorf("outcome store: marshal record: %w", err)
@@ -118,7 +118,8 @@ func (s *OutcomeStore) Append(rec DispatchOutcome) error {
 	}
 
 	if _, err := f.Write(append(line, '\n')); err != nil {
-		f.Close() //nolint:errcheck // best-effort close; the error of interest is Write's
+		_ = f.Close() // best-effort close; the error of interest is Write's
+
 		return fmt.Errorf("outcome store: append: %w", err)
 	}
 

@@ -34,8 +34,11 @@ const OutcomeWindowAll OutcomeWindow = 0
 // stable — store order breaks ties). Zero token/cost fields mean
 // unknown-on-that-path and contribute nothing to the totals.
 func Aggregate(records []DispatchOutcome, window OutcomeWindow) map[ProviderModelKey]AggregateStats {
+	ordered := chronological(records)
+
 	byKey := make(map[ProviderModelKey][]DispatchOutcome)
-	for _, rec := range chronological(records) {
+	for i := range ordered {
+		rec := ordered[i]
 		key := ProviderModelKey{Provider: rec.Provider, Model: rec.Model}
 		if window > 0 && len(byKey[key]) >= int(window) {
 			byKey[key] = byKey[key][1:] // slide: the oldest record leaves the window
@@ -62,10 +65,14 @@ func Aggregate(records []DispatchOutcome, window OutcomeWindow) map[ProviderMode
 // skipped entirely — they never feed breakers live, so they never do on
 // replay either. Keys absent from the returned map are allowed by the
 // Scheduler's no-op-breaker convention.
-func ReplayBreakers(records []DispatchOutcome, breakerCfg CircuitBreakerConfig, log *slog.Logger) map[ProviderModelKey]Breaker {
+func ReplayBreakers(
+	records []DispatchOutcome, breakerCfg CircuitBreakerConfig, log *slog.Logger,
+) map[ProviderModelKey]Breaker {
 	out := make(map[ProviderModelKey]Breaker)
 
-	for _, rec := range chronological(records) {
+	ordered := chronological(records)
+	for i := range ordered {
+		rec := &ordered[i]
 		if rec.Outcome != OutcomeOK && rec.Outcome != OutcomeTransient {
 			continue // structural/exhausted: terminal outcomes never feed the breaker
 		}
@@ -109,7 +116,9 @@ func ReplayCostTracker(
 ) CostTracker {
 	tr := NewCostCeilingTracker(costCfg, pricing, bus, log)
 
-	for _, rec := range chronological(records) {
+	ordered := chronological(records)
+	for i := range ordered {
+		rec := &ordered[i]
 		if rec.InTokens == 0 && rec.OutTokens == 0 {
 			continue
 		}
@@ -128,13 +137,14 @@ func ReplayCostTracker(
 // denied, the zero Target and false are returned — callers treat a zero Model
 // as "no candidate admitted".
 func FirstAllowed(candidates []Target, breakers map[ProviderModelKey]Breaker, now time.Time) (Target, bool) {
-	for i, cand := range candidates {
+	for i := range candidates {
+		cand := &candidates[i]
 		b, ok := breakers[ProviderModelKey{Provider: cand.Provider, Model: cand.Model}]
 		if ok && !b.Allow(now) {
 			continue
 		}
 
-		return cand, i > 0
+		return *cand, i > 0
 	}
 
 	return Target{}, false
@@ -155,7 +165,8 @@ func chronological(records []DispatchOutcome) []DispatchOutcome {
 // tally reduces one key's (already windowed) records to AggregateStats.
 func tally(records []DispatchOutcome) AggregateStats {
 	var stats AggregateStats
-	for _, rec := range records {
+	for i := range records {
+		rec := &records[i]
 		switch rec.Outcome {
 		case OutcomeOK:
 			stats.OK++
