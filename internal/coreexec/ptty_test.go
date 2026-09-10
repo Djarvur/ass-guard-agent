@@ -162,9 +162,12 @@ func TestPersistentShell_BashToolCdPersistsAcrossCalls(t *testing.T) { //nolint:
 	workDir := t.TempDir()
 	target := t.TempDir()
 
-	stub := BashExecute(Config{WorkDir: workDir, PTY: NewPTYManager(PTYOpts{WorkDir: workDir})})
+	mgr := NewPTYManager(PTYOpts{WorkDir: workDir})
+	defer mgr.Drain()
 
-	out1, err := stub(context.Background(), json.RawMessage(`{"command":"cd "`+jsonString(target)+`","persistent":true}`))
+	stub := BashExecute(Config{WorkDir: workDir, PTY: mgr})
+
+	out1, err := stub(context.Background(), bashInput(t, "cd \""+target+"\"", true))
 	if err != nil {
 		t.Fatalf("persistent cd error: %v", err)
 	}
@@ -173,7 +176,7 @@ func TestPersistentShell_BashToolCdPersistsAcrossCalls(t *testing.T) { //nolint:
 		t.Errorf("silent persistent call = %q; want the captured sentinel %q", got, bashSentinel)
 	}
 
-	out2, err := stub(context.Background(), json.RawMessage(`{"command":"pwd","persistent":true}`))
+	out2, err := stub(context.Background(), bashInput(t, "pwd", true))
 	if err != nil {
 		t.Fatalf("persistent pwd error: %v", err)
 	}
@@ -191,13 +194,16 @@ func TestPersistentShell_BashToolEmptyCommandIsStructuredError(t *testing.T) { /
 	workDir := t.TempDir()
 	target := t.TempDir()
 
-	stub := BashExecute(Config{WorkDir: workDir, PTY: NewPTYManager(PTYOpts{WorkDir: workDir})})
+	mgr := NewPTYManager(PTYOpts{WorkDir: workDir})
+	defer mgr.Drain()
 
-	if _, err := stub(context.Background(), json.RawMessage(`{"command":"cd "`+jsonString(target)+`","persistent":true}`)); err != nil {
+	stub := BashExecute(Config{WorkDir: workDir, PTY: mgr})
+
+	if _, err := stub(context.Background(), bashInput(t, "cd \""+target+"\"", true)); err != nil {
 		t.Fatalf("persistent cd error: %v", err)
 	}
 
-	out, err := stub(context.Background(), json.RawMessage(`{"command":"   ","persistent":true}`))
+	out, err := stub(context.Background(), bashInput(t, "   ", true))
 	if err == nil {
 		t.Fatal("whitespace-only persistent command must surface a non-nil error")
 	}
@@ -207,7 +213,7 @@ func TestPersistentShell_BashToolEmptyCommandIsStructuredError(t *testing.T) { /
 	}
 
 	// State unmoved: the empty call wrote nothing to the shell.
-	outAfter, err := stub(context.Background(), json.RawMessage(`{"command":"pwd","persistent":true}`))
+	outAfter, err := stub(context.Background(), bashInput(t, "pwd", true))
 	if err != nil {
 		t.Fatalf("pwd after empty command error: %v", err)
 	}
@@ -238,9 +244,13 @@ func TestPersistentShell_BashToolNilManagerIsStructuredError(t *testing.T) {
 // command renders the captured `Exit code <N>` form (the command RAN; it
 // failed — not a Go error).
 func TestPersistentShell_BashToolNonzeroExitRendersCode(t *testing.T) { //nolint:paralleltest // a real pty shell serializes on the manager
-	stub := BashExecute(Config{WorkDir: t.TempDir(), PTY: NewPTYManager(PTYOpts{WorkDir: t.TempDir()})})
+	workDir := t.TempDir()
+	mgr := NewPTYManager(PTYOpts{WorkDir: workDir})
+	defer mgr.Drain()
 
-	out, err := stub(context.Background(), json.RawMessage(`{"command":"(exit 7)","persistent":true}`))
+	stub := BashExecute(Config{WorkDir: workDir, PTY: mgr})
+
+	out, err := stub(context.Background(), bashInput(t, "(exit 7)", true))
 	if err != nil {
 		t.Fatalf("(exit 7) error = %v; the command ran and failed — not a Go error", err)
 	}
@@ -258,13 +268,16 @@ func TestPersistentShell_NonPersistentCallsStayStateless(t *testing.T) {
 	workDir := t.TempDir()
 	target := t.TempDir()
 
-	stub := BashExecute(Config{WorkDir: workDir, PTY: NewPTYManager(PTYOpts{WorkDir: workDir})})
+	mgr := NewPTYManager(PTYOpts{WorkDir: workDir})
+	defer mgr.Drain() // no-op by construction: no persistent call ever starts the shell
 
-	if _, err := stub(context.Background(), json.RawMessage(`{"command":"cd "`+jsonString(target)+`"}`)); err != nil {
+	stub := BashExecute(Config{WorkDir: workDir, PTY: mgr})
+
+	if _, err := stub(context.Background(), bashInput(t, "cd \""+target+"\"", false)); err != nil {
 		t.Fatalf("plain cd error: %v", err)
 	}
 
-	out, err := stub(context.Background(), json.RawMessage(`{"command":"pwd"}`))
+	out, err := stub(context.Background(), bashInput(t, "pwd", false))
 	if err != nil {
 		t.Fatalf("plain pwd error: %v", err)
 	}
@@ -279,4 +292,16 @@ func jsonString(s string) string {
 	b, _ := json.Marshal(s)
 
 	return string(b)
+}
+
+// bashInput marshals a Bash tool input for the battery.
+func bashInput(t *testing.T, command string, persistent bool) json.RawMessage {
+	t.Helper()
+
+	b, err := json.Marshal(map[string]any{"command": command, "persistent": persistent})
+	if err != nil {
+		t.Fatalf("marshal bash input: %v", err)
+	}
+
+	return b
 }

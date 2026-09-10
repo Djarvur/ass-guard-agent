@@ -294,6 +294,10 @@ type Runner struct {
 	trackers          sync.Map // sessionID -> *tasks.Tracker
 	wakeInFlight      sync.Map // sessionID -> *atomic.Bool
 	wakeRetryInterval time.Duration
+	// 22-04 (PAR-09/D-07): each session's persistent-shell PTY manager (ONE
+	// lazily-started shell per session; the close battery's observation
+	// handle — OnClose captures the same manager for the Drain link).
+	ptyManagers sync.Map // sessionID -> *coreexec.PTYManager
 	// backgroundCaps resolves the D-12 caps at sessionFor time (nil = the
 	// 8/16 defaults; the serve composition binds the config surface).
 	backgroundCaps func() (subagents, bash int)
@@ -1971,6 +1975,21 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	taskRegistry := coreexec.NewTaskRegistry()
 	taskRegistry.Cap = bashCap
 
+	// 22-04 (PAR-09/D-07/D-08): the session's ONE persistent-shell PTY
+	// manager — lazily started (no shell exists until the first persistent
+	// Bash call), shared by every persistent call of the session, and
+	// drained on close (the OnClose link, Task 3). The dead-shell restart
+	// note rides the loud stderr family (one line per restart — D-08's
+	// visible state-loss acknowledgment, never silent).
+	ptyMgr := coreexec.NewPTYManager(coreexec.PTYOpts{
+		WorkDir: dir,
+		NoteFn: func(format string, args ...any) {
+			_, _ = fmt.Fprintf(r.stderrOrDefault(), "ass-guard: session %s "+format+"\n",
+				append([]any{sessionID}, args...)...)
+		},
+	})
+	r.ptyManagers.Store(sessionID, ptyMgr)
+
 	// 22-01 (D-01..D-03, PAR-07/PAR-08): the ONE task-notification tracker
 	// beside the registry. Registry completions land as kind-tagged
 	// Notifications (primitive-arg CompletionHook — no coreexec→tasks
@@ -2029,6 +2048,7 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 
 	coreexec.RegisterCore(sCatalog, coreexec.Config{
 		WorkDir: dir, Todos: coreexec.NewTodoStore(), Hooks: hookRunner, Tasks: taskRegistry,
+		PTY: ptyMgr, // 22-04 (PAR-09): the session's persistent shell
 	})
 
 	// The session variable is declared BEFORE the broker literal so the

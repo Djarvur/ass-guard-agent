@@ -184,6 +184,10 @@
      "type": "boolean",
      "description": "Set to true to run this command in the background."
     },
+    "persistent": {
+     "type": "boolean",
+     "description": "Set to true to run in the session's persistent shell; working directory and exported environment persist across persistent calls."
+    },
     "dangerouslyDisableSandbox": {
      "type": "boolean",
      "description": "Set this to true to dangerously override sandbox mode and run commands without sandboxing."

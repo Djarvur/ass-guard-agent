@@ -63,6 +63,10 @@ type bashArgs struct {
 	Timeout                   float64 `json:"timeout"`
 	RunInBackground           bool    `json:"run_in_background"`
 	DangerouslyDisableSandbox bool    `json:"dangerouslyDisableSandbox"` //nolint:tagliatelle // captured input key
+	// Persistent (22-04, D-09): per-call opt-in to the session's persistent
+	// PTY shell — the ADDITIVE schema property (the OQ1 waiver of the
+	// byte-identical catalog discipline, operator-sanctioned by D-09).
+	Persistent bool `json:"persistent"`
 }
 
 // resolveBashTimeout maps the model-supplied timeout (ms) to the effective
@@ -263,8 +267,19 @@ func BashExecute(cfg Config) toolcat.Stub {
 
 		// 12-06 (ACP-06): the background branch — Start instead of Wait (the
 		// registry owns the process from here); the CAPTURED immediate form.
+		// 22-04 (D-09): run_in_background WINS over persistent when both are
+		// set — a background task is inherently fire-and-forget; stateful
+		// foreground work is the persistent contract.
 		if a.RunInBackground {
 			return bashBackgroundStart(cfg, a.Command)
+		}
+
+		// 22-04 (PAR-09, D-09): the per-call persistent branch — the session's
+		// ONE lazily-started PTY shell (cwd/env persist across persistent
+		// calls; D-07). Empty command → the structured error BEFORE any shell
+		// interaction (the empty probe).
+		if a.Persistent {
+			return bashPersistentRun(ctx, cfg, a.Command, timeoutMS)
 		}
 
 		tctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMS)*time.Millisecond)
@@ -344,6 +359,58 @@ func bashBackgroundStart(cfg Config, command string) (json.RawMessage, error) {
 	out, mErr := json.Marshal(form)
 	if mErr != nil {
 		return nil, fmt.Errorf("coreexec: marshal background start form: %w", mErr)
+	}
+
+	return out, nil
+}
+
+// errNoPTYManager is the persistent branch's bare-config degrade (no manager
+// constructed — the foreground path is unaffected).
+var errNoPTYManager = errors.New("coreexec: persistent: no PTY manager configured")
+
+// bashPersistentRun is BashExecute's persistent branch (22-04, PAR-09):
+// the session's ONE PTY shell via Config.PTY. An empty/whitespace command
+// returns the structured error BEFORE any shell interaction (the empty
+// probe — no sentinel written, cwd/env unmoved); a nil manager (bare
+// configs) degrades to the structured no-manager error. The command's exit
+// code parses from the sentinel's $? — a nonzero command RAN and failed
+// (the code renders in the result, not a Go error). The schema-declared
+// timeout bounds the call window like every other Bash invocation; an
+// interrupted window marks the shell dead — the NEXT persistent call
+// restarts it lazily with the visible state-loss note (D-08).
+func bashPersistentRun(ctx context.Context, cfg Config, command string, timeoutMS int) (json.RawMessage, error) {
+	if strings.TrimSpace(command) == "" {
+		return marshalStructured("bash: persistent: empty command", errBadTaskInput)
+	}
+
+	if cfg.PTY == nil {
+		return marshalStructured("bash: persistent: no PTY manager configured", errNoPTYManager)
+	}
+
+	tctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutMS)*time.Millisecond)
+	defer cancel()
+
+	output, exitCode, rerr := cfg.PTY.Run(tctx, command)
+	if rerr != nil {
+		return marshalStructured("bash: persistent: "+rerr.Error(), rerr)
+	}
+
+	if exitCode != 0 {
+		out, mErr := json.Marshal(bashExitPrefix + strconv.Itoa(exitCode) + "\n" + output)
+		if mErr != nil {
+			return nil, fmt.Errorf("coreexec: marshal persistent failure form: %w", mErr)
+		}
+
+		return out, nil
+	}
+
+	if output == "" {
+		return json.Marshal(bashSentinel) // the captured silent-success form
+	}
+
+	out, mErr := json.Marshal(output)
+	if mErr != nil {
+		return nil, fmt.Errorf("coreexec: marshal persistent result: %w", mErr)
 	}
 
 	return out, nil
