@@ -187,6 +187,25 @@ func (m *PTYManager) ensureShell() error {
 	sh.Stderr = tty
 	sh.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 
+	// 22-06 (SAND-01): the PERSISTENT sandbox site — the THIRD of the three
+	// Bash-class exec sites through sandbox's ONE WrapCmd entry (with the
+	// foreground site in bash.go and the registry's launch in background.go).
+	// D-09 orthogonality: persistence and confinement COMPOSE — the shell is
+	// confined for its whole lifetime, never exempt (persistent work is
+	// background-equivalent), never refused. The wrap rides the SAME
+	// ensureShell both entries reach (first start and lazy restart), so a
+	// replacement shell re-wraps identically. Substitution-only: Setsid and
+	// the Drain ladder own the lifecycle unchanged (D-05); the sentinel echo
+	// is plain text on the master — confinement does not affect it.
+	if sandboxHandleEnabled(m.opts.Sandbox) && m.opts.Sandbox.Availability.Available {
+		if werr := wrapSandboxCmd(sh, m.opts.Sandbox.Policy); werr != nil {
+			_ = ptmx.Close()
+			_ = tty.Close()
+
+			return fmt.Errorf("ptty: sandbox wrap: %w", werr)
+		}
+	}
+
 	stdinW, err := sh.StdinPipe()
 	if err != nil {
 		_ = ptmx.Close()
@@ -280,6 +299,20 @@ outer:
 	return out
 }
 
+// noteUnconfinedRun emits the persistent site's unconfined-run note through
+// the manager's NoteFn (the loud stderr family — the D-08 restart note's
+// channel), falling back to os.Stderr when unwired: the note is never
+// droppable (SAND-01).
+func (m *PTYManager) noteUnconfinedRun(site, reason string) {
+	if m.opts.NoteFn != nil {
+		noteUnconfinedRun(m.opts.NoteFn, site, reason)
+
+		return
+	}
+
+	noteUnconfinedRun(nil, site, reason) // nil sink → the stderr fallback
+}
+
 // markDeadLocked clears the live-shell state (callers hold m.mu) — the next
 // Run restarts lazily with the note. The shell's WHOLE process group is
 // SIGKILLed + reaped: a dead shell's orphaned children (the interrupted
@@ -357,6 +390,15 @@ func (m *PTYManager) Run(ctx context.Context, command string) (string, int, erro
 
 	if err := m.ensureShell(); err != nil {
 		return "", 0, err
+	}
+
+	// 22-06 (SAND-01): enabled-but-unavailable — the shell spawns unconfined;
+	// every RUN through it is individually noted with the counter (never a
+	// silent fail-open; the startup already warned once — these are the
+	// per-run notes the plan's prohibition demands).
+	if sandboxHandleEnabled(m.opts.Sandbox) && !m.opts.Sandbox.Availability.Available {
+		m.noteUnconfinedRun("persistent shell",
+			"sandbox unavailable: "+m.opts.Sandbox.Availability.Reason)
 	}
 
 	// The previous window's tail is not this window's output.

@@ -69,32 +69,42 @@ var wrapSandboxCmd = sandbox.WrapCmd
 //nolint:gochecknoglobals // the process-wide audit counter
 var unconfinedRuns atomic.Int64
 
-// sandboxEnabled reports whether the operator asked for confinement: a nil
-// Handle (bare configs), Availability.Mode "off" (the default and the
-// explicit refusal), and the zero-value Mode "" (never resolved through the
-// flag path) are the untouched paths — argv byte-identical, zero notes
-// (SAND-01's default-OFF contract: confined only when the operator asked,
-// and asking always resolves a backend mode: landlock | seatbelt).
-func (cfg Config) sandboxEnabled() bool {
-	return cfg.Sandbox != nil &&
-		cfg.Sandbox.Availability.Mode != "off" && cfg.Sandbox.Availability.Mode != ""
+// sandboxHandleEnabled reports whether the operator asked for confinement
+// (the shared gate for all three exec sites): a nil Handle (bare configs),
+// Availability.Mode "off" (the default and the explicit refusal), and the
+// zero-value Mode "" (never resolved through the flag path) are the
+// untouched paths — argv byte-identical, zero notes (SAND-01's default-OFF
+// contract: confined only when the operator asked, and asking always
+// resolves a backend mode: landlock | seatbelt).
+func sandboxHandleEnabled(h *sandbox.Handle) bool {
+	return h != nil && h.Availability.Mode != "off" && h.Availability.Mode != ""
 }
 
-// noteUnconfined emits ONE loud per-run note with the running counter — the
-// never-silent-fail-open contract (a green tool result must never imply
-// confinement that did not happen). A nil SandboxNote falls back to stderr:
-// the note is never droppable.
-func (cfg Config) noteUnconfined(site, reason string) {
+// sandboxEnabled is Config's gate (see sandboxHandleEnabled).
+func (cfg Config) sandboxEnabled() bool {
+	return sandboxHandleEnabled(cfg.Sandbox)
+}
+
+// noteUnconfinedRun emits ONE loud per-run note with the running counter —
+// the never-silent-fail-open contract (a green tool result must never imply
+// confinement that did not happen). A nil sink falls back to stderr: the
+// note is never droppable.
+func noteUnconfinedRun(sink func(format string, args ...any), site, reason string) {
 	line := fmt.Sprintf("ass-guard: %s: sandbox ON but run UNCONFINED #%d (%s)",
 		site, unconfinedRuns.Add(1), reason)
 
-	if cfg.SandboxNote != nil {
-		cfg.SandboxNote("%s", line)
+	if sink != nil {
+		sink("%s", line)
 
 		return
 	}
 
 	fmt.Fprintln(os.Stderr, line) // never silent (SAND-01)
+}
+
+// noteUnconfined is Config's note (see noteUnconfinedRun).
+func (cfg Config) noteUnconfined(site, reason string) {
+	noteUnconfinedRun(cfg.SandboxNote, site, reason)
 }
 
 // confineForeground applies the 22-06 foreground-site sandbox policy to cmd:
@@ -343,16 +353,25 @@ func BashExecute(cfg Config) toolcat.Stub {
 		// registry owns the process from here); the CAPTURED immediate form.
 		// 22-04 (D-09): run_in_background WINS over persistent when both are
 		// set — a background task is inherently fire-and-forget; stateful
-		// foreground work is the persistent contract.
+		// foreground work is the persistent contract. 22-06 (OQ2): the
+		// per-call escape rides the task into BOTH launch paths.
 		if a.RunInBackground {
-			return bashBackgroundStart(cfg, a.Command)
+			return bashBackgroundStart(cfg, a.Command, a.DangerouslyDisableSandbox)
 		}
 
 		// 22-04 (PAR-09, D-09): the per-call persistent branch — the session's
 		// ONE lazily-started PTY shell (cwd/env persist across persistent
 		// calls; D-07). Empty command → the structured error BEFORE any shell
 		// interaction (the empty probe).
-		if a.Persistent {
+		//
+		// 22-06 (OQ2, the persistent arm): a per-call escape CANNOT unconfine
+		// the SHARED shell — other calls' confinement is not this call's to
+		// weaken (D-09: persistence is never bought with another call's
+		// boundary). With the sandbox ON, the escape falls through to the
+		// foreground machinery below: the command runs one-shot UNCONFINED
+		// with the loud note (confineForeground), and the persistent shell
+		// keeps its own confinement untouched.
+		if a.Persistent && !(cfg.sandboxEnabled() && a.DangerouslyDisableSandbox) {
 			return bashPersistentRun(ctx, cfg, a.Command, timeoutMS)
 		}
 
@@ -425,13 +444,16 @@ func BashExecute(cfg Config) toolcat.Stub {
 
 // bashBackgroundStart is BashExecute's run_in_background branch (12-06,
 // ACP-06; 22-02 D-11): registry Start + the CAPTURED immediate-return form,
-// or the QUEUED visible-note form when the D-11 cap defers the launch.
-func bashBackgroundStart(cfg Config, command string) (json.RawMessage, error) {
+// or the QUEUED visible-note form when the D-11 cap defers the launch. The
+// 22-06 OQ2 escape rides the task (StartWithOpts) so BOTH launch paths honor
+// it identically.
+func bashBackgroundStart(cfg Config, command string, disableSandbox bool) (json.RawMessage, error) {
 	if cfg.Tasks == nil {
 		return marshalStructured("bash: run_in_background: no task registry configured", errNoRegistry)
 	}
 
-	id, queued, serr := cfg.Tasks.Start(cfg.workDirForError(), command)
+	id, queued, serr := cfg.Tasks.StartWithOpts(cfg.workDirForError(), command,
+		StartOpts{DisableSandbox: disableSandbox})
 	if serr != nil {
 		return marshalStructured(serr.Error(), serr)
 	}

@@ -294,6 +294,22 @@ func (r *TaskRegistry) launch(task *bgTask, workDir, command string) error {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	setPdeathsig(cmd.SysProcAttr)
 
+	// 22-06 (SAND-01): the BACKGROUND sandbox site — the SECOND of the three
+	// Bash-class exec sites through sandbox's ONE WrapCmd entry (with the
+	// foreground site in bash.go and the PTY shell in ptty.go). BOTH launch
+	// routes — the immediate Start and the FIFO queued-start pop — funnel
+	// through HERE, so a background task is confined no matter which path
+	// launched it. The wrap substitutes argv AFTER the group setup and
+	// BEFORE Start: terminateGroup/Stop own the WRAPPED child's group
+	// exactly as the bare sh's (D-05 — signals are neither FS nor network
+	// operations; the Pdeathsig survives exec).
+	if cerr := r.confineLaunch(cmd, task.disableSandbox); cerr != nil {
+		_ = f.Close()
+		task.setState(bgFailed)
+
+		return fmt.Errorf("background: sandbox wrap: %w", cerr)
+	}
+
 	task.cmd = cmd
 
 	serr := cmd.Start()
@@ -347,10 +363,34 @@ func (r *TaskRegistry) launch(task *bgTask, workDir, command string) error {
 	return nil
 }
 
+// confineLaunch applies the 22-06 background-site sandbox policy to the
+// launch's cmd: enabled+available+not-disabled → the SAME one WrapCmd entry
+// as the foreground site (OQ2 parity — identical arms); the disable escape
+// and the unavailable degrade run UNCONFINED with the loud per-run note +
+// counter (a green background result must never imply confinement that did
+// not happen). Default OFF: untouched.
+func (r *TaskRegistry) confineLaunch(cmd *exec.Cmd, disable bool) error {
+	if !sandboxHandleEnabled(r.Sandbox) {
+		return nil
+	}
+
+	switch {
+	case disable:
+		noteUnconfinedRun(r.SandboxNote, "background task",
+			"dangerouslyDisableSandbox requested by the model")
+	case !r.Sandbox.Availability.Available:
+		noteUnconfinedRun(r.SandboxNote, "background task",
+			"sandbox unavailable: "+r.Sandbox.Availability.Reason)
+	default:
+		return wrapSandboxCmd(cmd, r.Sandbox.Policy)
+	}
+
+	return nil
+}
+
 // startNextWaiter launches the FIFO head waiter when a slot is free and it
 // is still queued (a Stop'd waiter is skipped — never started).
-func (r *TaskRegistry) startNextWaiter() {
-	for {
+func (r *TaskRegistry) startNextWaiter() {	for {
 		r.mu.Lock()
 
 		cap := r.Cap

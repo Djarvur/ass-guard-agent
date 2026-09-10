@@ -1984,18 +1984,31 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	taskRegistry := coreexec.NewTaskRegistry()
 	taskRegistry.Cap = bashCap
 
+	// 22-06 (SAND-01): the startup probe's resolved Handle + the note sink
+	// reach the registry (the background site) — one composition, all three
+	// exec sites. nil / Mode off (the default) leaves every launch untouched.
+	sandboxNote := func(format string, args ...any) {
+		_, _ = fmt.Fprintf(r.stderrOrDefault(), format+"\n", args...)
+	}
+
+	taskRegistry.Sandbox = r.sandboxHandle
+	taskRegistry.SandboxNote = sandboxNote
+
 	// 22-04 (PAR-09/D-07/D-08): the session's ONE persistent-shell PTY
 	// manager — lazily started (no shell exists until the first persistent
 	// Bash call), shared by every persistent call of the session, and
 	// drained on close (the OnClose link, Task 3). The dead-shell restart
 	// note rides the loud stderr family (one line per restart — D-08's
-	// visible state-loss acknowledgment, never silent).
+	// visible state-loss acknowledgment, never silent). 22-06 (SAND-01):
+	// the SAME Handle confines the persistent shell at spawn (the third
+	// exec site; D-09 orthogonality — persistence and confinement compose).
 	ptyMgr := coreexec.NewPTYManager(coreexec.PTYOpts{
 		WorkDir: dir,
 		NoteFn: func(format string, args ...any) {
 			_, _ = fmt.Fprintf(r.stderrOrDefault(), "ass-guard: session %s "+format+"\n",
 				append([]any{sessionID}, args...)...)
 		},
+		Sandbox: r.sandboxHandle,
 	})
 	r.ptyManagers.Store(sessionID, ptyMgr)
 
@@ -2058,6 +2071,10 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	coreexec.RegisterCore(sCatalog, coreexec.Config{
 		WorkDir: dir, Todos: coreexec.NewTodoStore(), Hooks: hookRunner, Tasks: taskRegistry,
 		PTY: ptyMgr, // 22-04 (PAR-09): the session's persistent shell
+		// 22-06 (SAND-01): the foreground site's Handle + note sink — the
+		// same resolved pair the registry and the PTY manager carry (one
+		// composition, all three exec sites; nil/off = untouched default).
+		Sandbox: r.sandboxHandle, SandboxNote: sandboxNote,
 	})
 
 	// The session variable is declared BEFORE the broker literal so the
