@@ -22,6 +22,7 @@ func newModelRoutingCmd() *cobra.Command {
 	}
 	cmd.AddCommand(newModelRoutingValidateCmd())
 	cmd.AddCommand(newModelRoutingResolveCmd())
+	cmd.AddCommand(newModelRoutingStatsCmd())
 
 	return cmd
 }
@@ -122,6 +123,59 @@ func newModelRoutingResolveCmd() *cobra.Command {
 	cmd.Flags().StringVar(&atStr, "at", "", "RFC3339 time to resolve at (default: now)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "emit machine-readable JSON to stdout (default: human form to stderr)")
 	_ = cmd.MarkFlagRequired("tier")
+
+	return cmd
+}
+
+// newModelRoutingStatsCmd builds `ass-guard model-routing stats [--store]
+// [--json] [--config]` (24-02, TAIL-01 D-07): the aggregated outcome-store
+// dump — per-(provider, model) outcome-class counts plus token/cost totals.
+// A missing store is a normal state (empty aggregate, exit 0). Transport
+// discipline (C1): the human form goes to STDERR; --json is the ONLY stdout
+// path, and only when explicitly requested.
+func newModelRoutingStatsCmd() *cobra.Command {
+	var (
+		storePath  string
+		configPath string
+		asJSON     bool
+	)
+
+	cmd := &cobra.Command{
+		Use:          "stats",
+		Short:        "dump aggregated routing-outcome stats from the outcome store",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			agg, skipped, err := modelroutingcmd.LoadAndAggregate(storePath)
+			if err != nil {
+				return fmt.Errorf("read outcome store: %w", err)
+			}
+
+			paths := []string{}
+			if configPath != "" {
+				paths = append(paths, configPath)
+			}
+
+			cfg, err := modelrouting.Load(paths...)
+			if err != nil {
+				return fmt.Errorf("scheduling config invalid: %w", err)
+			}
+
+			rows := modelroutingcmd.BuildStatsRows(agg, cfg)
+
+			if asJSON {
+				return modelroutingcmd.EmitStatsJSON(cmd.OutOrStdout(), rows, storePath, skipped)
+			}
+
+			modelroutingcmd.EmitStatsHuman(cmd.ErrOrStderr(), rows, storePath, skipped)
+
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&storePath, "store", ".ass-guard/routing/outcomes.jsonl",
+		"path to the outcome store (default: .ass-guard/routing/outcomes.jsonl under the cwd)")
+	cmd.Flags().StringVar(&configPath, "config", "",
+		"path to config.yaml for tier-binding context (default: embedded zero-config floor)")
+	cmd.Flags().BoolVar(&asJSON, "json", false, "emit machine-readable JSON to stdout (default: human form to stderr)")
 
 	return cmd
 }

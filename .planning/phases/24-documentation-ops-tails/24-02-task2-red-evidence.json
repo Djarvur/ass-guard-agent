@@ -1,0 +1,20 @@
+{
+  "plan": "24-02",
+  "task": 2,
+  "phase_gate": "RED",
+  "command": "go test -count=1 ./cmd/ass-guard/ -run TestSchedulingStats -v",
+  "targetTest": "TestSchedulingStatsHuman",
+  "exitCode": 1,
+  "output": "not ok 1 - TestSchedulingStatsEmptyStore\nnot ok 2 - TestSchedulingStatsHuman\nnot ok 3 - TestSchedulingStatsStoreFlagRoutes\nnot ok 4 - TestSchedulingStatsJSON\n# tests 4\n# pass 0\n# fail 4\n",
+  "expected": "Per 24-02 Task 2 behavior: stats over a seeded store prints one line per (provider,model) with ok/transient/structural/exhausted counts and token/cost totals to STDERR with stdout byte-empty; --json prints the aggregate JSON to STDOUT (round-trips seeded counts exactly) with stderr byte-empty; a nonexistent store path exits 0 with an empty-aggregate human note; --store routes the dump at the flagged location",
+  "actual": "Compiling-RED stubs (LoadAndAggregate returns nil,nil,nil; BuildStatsRows returns nil; EmitStatsHuman/EmitStatsJSON no-ops): the stats subcommand runs and every TestSchedulingStats* test fails on assertions (stderr missing the per-key lines/counts; --json stdout empty so json.Unmarshal fails 'unexpected end of JSON input'; the missing-store note absent)",
+  "failing_tests": [
+    "TestSchedulingStatsHuman (assertion: stderr lacks 'anthropic/GLM-5.3', 'ok=2', '$0.1800' — stub emits nothing)",
+    "TestSchedulingStatsJSON (assertion: stdout empty, JSON unmarshal 'unexpected end of JSON input')",
+    "TestSchedulingStatsEmptyStore (assertion: stderr lacks the 'no outcomes' empty-aggregate note)",
+    "TestSchedulingStatsStoreFlagRoutes (assertion: stdout empty, JSON unmarshal 'unexpected end of JSON input')"
+  ],
+  "unexpected_green": [],
+  "note": "Go run projected faithfully into Node-TAP by /tmp/gotap.py (=== RUN/--- PASS/--- FAIL -> ok/not ok + summary); the check tdd-red-evidence parser reads the TAP dialect. Raw log: /tmp/gsd-24-02-task2-red.log. Compiling-RED route pre-authorized by the 24-01 STATE decision (tdd_mode #3770 requires target_test_failed). Note: plan Task 1 (tracer, not tdd-marked) legitimately committed feat(24-02) before this RED — it implements the record path, not this task's stats CLI behavior.",
+  "timestamp": "2026-09-10T15:59:00Z"
+}

@@ -96,3 +96,50 @@ func DescribeCapabilities(c modelrouting.CapabilityProfile) string {
 
 	return strings.Join(parts, " ")
 }
+
+// StatsRow is one aggregated (provider, model) row of the stats dump (24-02,
+// D-07 CLI half), enriched with the tier binding(s) whose primary model is the
+// row's model (operator context; "" when no tier binds it).
+type StatsRow struct {
+	Provider   string  `json:"provider"`
+	Model      string  `json:"model"`
+	Tier       string  `json:"tier"`
+	OK         int     `json:"ok"`
+	Transient  int     `json:"transient"`
+	Structural int     `json:"structural"`
+	Exhausted  int     `json:"exhausted"`
+	InTokens   int64   `json:"in_tokens"`
+	OutTokens  int64   `json:"out_tokens"`
+	CostUSD    float64 `json:"cost_usd"`
+}
+
+// LoadAndAggregate reads the outcome store at storePath tolerantly and
+// aggregates it over every recorded outcome (OutcomeWindowAll). A missing
+// store file is the EMPTY aggregate — no store yet is a normal state, not an
+// error. The second return is the count of skipped (malformed/unknown-shape)
+// lines, surfaced in the dump so a torn tail is visible to the operator.
+func LoadAndAggregate(
+	storePath string,
+) (map[modelrouting.ProviderModelKey]modelrouting.AggregateStats, int, error) {
+	return nil, 0, nil
+}
+
+// BuildStatsRows flattens the aggregate into deterministic rows (sorted
+// provider, then model), enriching each with cfg's tier bindings.
+func BuildStatsRows(
+	agg map[modelrouting.ProviderModelKey]modelrouting.AggregateStats, cfg *modelrouting.Config,
+) []StatsRow {
+	return nil
+}
+
+// EmitStatsHuman writes the human dump to w (the STDERR discipline — write
+// errors are ignored, exactly like EmitResolveHuman).
+func EmitStatsHuman(w io.Writer, rows []StatsRow, storePath string, skipped int) {
+}
+
+// EmitStatsJSON writes the machine dump to w — the ONLY stdout path in the
+// scheduling CLI, only when --json is explicitly requested — and returns the
+// encode error (the EmitResolveJSON discipline).
+func EmitStatsJSON(w io.Writer, rows []StatsRow, storePath string, skipped int) error {
+	return nil
+}
