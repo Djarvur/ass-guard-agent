@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
+	"github.com/Djarvur/ass-guard-agent/internal/checkpoint"
 	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/internal/event"
 	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
@@ -1732,4 +1734,416 @@ func TestInitExpansion(t *testing.T) {
 			t.Errorf("builtin init body did not expand: %.80s", text)
 		}
 	})
+}
+
+// --- 23-05: the /undo class-B battery (SEEDG-03 — D-11 walk + D-05 shape) ---
+
+// undoCanary is the battery's workspace canary file (fingerprinted across
+// restores for the byte-identity assertions).
+const undoCanary = "undo-canary.txt"
+
+// seedUndoSnap writes content to the canary and snapshots it under id through
+// the SAME workspace store the Runner opens (the direct-store drive — the
+// walk fixture needs exact control over the checkpoint stack).
+func seedUndoSnap(t *testing.T, workDir, sessionID, id, content string) {
+	t.Helper()
+
+	writeGuardFile(t, filepath.Join(workDir, undoCanary), content)
+
+	st, err := checkpoint.Open(workDir)
+	if err != nil {
+		t.Fatalf("checkpoint.Open: %v", err)
+	}
+
+	if serr := st.Snapshot(context.Background(), sessionID, id); serr != nil {
+		t.Fatalf("Snapshot %s: %v", id, serr)
+	}
+}
+
+// undoRun drives one /undo invocation against a chosen session id (classBRun
+// with the session as a parameter — the walk battery needs distinct ids) and
+// returns the captured frames + transcript lines.
+func undoRun(t *testing.T, r *Runner, sessionID, prompt string) ([]commandFrame, []session.Line) {
+	t.Helper()
+
+	emit := &tracerEmitter{}
+
+	stop, err := r.Run(context.Background(), sessionID, emit, []acp.ContentBlock{{Type: blockText, Text: prompt}})
+	if err != nil {
+		t.Fatalf("Run(%q): %v", prompt, err)
+	}
+
+	if stop != stopEndTurn {
+		t.Fatalf("Run(%q) stop = %q; want end_turn", prompt, stop)
+	}
+
+	lines, rerr := r.sessions[sessionID].Manager.ReadAll()
+	if rerr != nil {
+		t.Fatalf("ReadAll: %v", rerr)
+	}
+
+	return emit.snapshot(), lines
+}
+
+// undoOutputText joins the agent_message_chunk frames (the D-05 output lens).
+func undoOutputText(frames []commandFrame) string {
+	var sb strings.Builder
+
+	for _, f := range frames {
+		if f.kind == frameKindAgentChunk {
+			sb.WriteString(f.text)
+		}
+	}
+
+	return sb.String()
+}
+
+// undoCanaryContent reads the canary's current content (the landed-state lens).
+func undoCanaryContent(t *testing.T, workDir string) string {
+	t.Helper()
+
+	data, err := os.ReadFile(filepath.Join(workDir, undoCanary))
+	if err != nil {
+		t.Fatalf("read canary: %v", err)
+	}
+
+	return string(data)
+}
+
+// TestClassBUndoIdle pins the idle-path contract (Task 1): /undo with an idle
+// session and existing checkpoints restores the NEWEST checkpoint of THIS
+// session with zero provider Stream calls, the D-05 output shape (verbatim
+// echo, output naming the restored id + the pre-restore snapshot id), and a
+// durable local_command record with args verbatim. The second /undo restores
+// the state before the first (undo-of-undo via the D-09 pre-restore family).
+func TestClassBUndoIdle(t *testing.T) { //nolint:funlen // two-invocation walk scenario
+	t.Parallel()
+
+	r, prov, _ := newCommandRunner(t, nil)
+
+	seedUndoSnap(t, r.workDir, "classb", "classb-turn-001", "state-A\n")
+	seedUndoSnap(t, r.workDir, "classb", "classb-turn-002", "state-B\n")
+	writeGuardFile(t, filepath.Join(r.workDir, undoCanary), "state-C\n") // current, unsnapshotted
+
+	frames, lines := undoRun(t, r, "classb", "/undo")
+
+	if got := prov.callCount(); got != 0 {
+		t.Fatalf("provider Stream calls = %d; want 0 (zero model turns, SEEDG-03)", got)
+	}
+
+	var echoes []commandFrame
+
+	for _, f := range frames {
+		if f.kind == frameKindUserEcho {
+			echoes = append(echoes, f)
+		}
+	}
+
+	if len(echoes) != 1 || echoes[0].text != "/undo" {
+		t.Fatalf("echo frames = %+v; want exactly one verbatim /undo echo (D-05)", echoes)
+	}
+
+	out := undoOutputText(frames)
+	if !strings.Contains(out, "classb-turn-002") {
+		t.Errorf("output missing the restored id classb-turn-002:\n%s", out)
+	}
+
+	if !strings.Contains(out, "classb-pre-001") {
+		t.Errorf("output missing the pre-restore snapshot id classb-pre-001:\n%s", out)
+	}
+
+	if got := undoCanaryContent(t, r.workDir); got != "state-B\n" {
+		t.Fatalf("canary after /undo = %q; want the newest checkpoint's state-B", got)
+	}
+
+	rec := localCommandLine(t, lines)
+	if rec.Name != "undo" || rec.Args != "" || rec.Expansion != "ok" {
+		t.Errorf("local_command = {name:%q args:%q outcome:%q}; want {undo \"\" ok}", rec.Name, rec.Args, rec.Expansion)
+	}
+
+	if len(rec.SourceChain) != 1 || rec.SourceChain[0] != sourceChainBuiltin {
+		t.Errorf("local_command SourceChain = %v; want [builtin]", rec.SourceChain)
+	}
+
+	// Undo-of-undo (D-09/D-11): every restore snapshots current state first,
+	// so the second /undo restores the pre-undo state via that snapshot.
+	frames2, _ := undoRun(t, r, "classb", "/undo")
+
+	out2 := undoOutputText(frames2)
+	if !strings.Contains(out2, "classb-pre-001") {
+		t.Errorf("second /undo output missing the walk target classb-pre-001:\n%s", out2)
+	}
+
+	if got := undoCanaryContent(t, r.workDir); got != "state-C\n" {
+		t.Fatalf("canary after undo-of-undo = %q; want the pre-undo state-C", got)
+	}
+}
+
+// TestUndoWalk pins the D-11 stack walk over the recency-ordered checkpoint
+// stack (both id families participate): three checkpoints + two /undo calls
+// take two stack steps (the newest turn checkpoint, then the pre-restore
+// snapshot the first /undo minted — the walk never re-targets an entry), and
+// /undo 2 jumps two entries in one invocation on a fresh fixture. Every
+// landed state is treeMap-byte-identical to the seeded state.
+func TestUndoWalk(t *testing.T) { //nolint:funlen // three-scenario walk battery
+	t.Parallel()
+
+	r, prov, _ := newCommandRunner(t, nil)
+
+	seedUndoSnap(t, r.workDir, "walksess", "walksess-turn-001", "state-A\n")
+	treeA := ckptLiveTree(t, r.workDir)
+	seedUndoSnap(t, r.workDir, "walksess", "walksess-turn-002", "state-B\n")
+	treeB := ckptLiveTree(t, r.workDir)
+	seedUndoSnap(t, r.workDir, "walksess", "walksess-turn-003", "state-C\n")
+	treeC := ckptLiveTree(t, r.workDir)
+	writeGuardFile(t, filepath.Join(r.workDir, undoCanary), "state-D\n")
+	treeD := ckptLiveTree(t, r.workDir)
+
+	// Step 1: the newest checkpoint (turn-003 = state-C), byte-identical.
+	frames1, _ := undoRun(t, r, "walksess", "/undo")
+
+	if got := ckptLiveTree(t, r.workDir); !reflect.DeepEqual(got, treeC) {
+		t.Errorf("tree after /undo #1 is not byte-identical to the turn-003 state")
+	}
+
+	if !strings.Contains(undoOutputText(frames1), "walksess-turn-003") {
+		t.Errorf("/undo #1 did not name walksess-turn-003 as the restored id")
+	}
+
+	// Step 2: the pre-restore snapshot /undo #1 minted — the pre-undo state
+	// (undo-of-undo), byte-identical to the pre-walk tree.
+	frames2, _ := undoRun(t, r, "walksess", "/undo")
+
+	if got := ckptLiveTree(t, r.workDir); !reflect.DeepEqual(got, treeD) {
+		t.Errorf("tree after /undo #2 is not byte-identical to the pre-undo state (undo-of-undo broken)")
+	}
+
+	if !strings.Contains(undoOutputText(frames2), "walksess-pre-001") {
+		t.Errorf("/undo #2 did not target the minted pre-restore snapshot walksess-pre-001")
+	}
+
+	if got := prov.callCount(); got != 0 {
+		t.Fatalf("provider Stream calls across the walk = %d; want 0", got)
+	}
+
+	// The N-jump on a FRESH fixture: /undo 2 lands the second-newest entry.
+	r2, prov2, _ := newCommandRunner(t, nil)
+
+	seedUndoSnap(t, r2.workDir, "jumpsess", "jumpsess-turn-001", "state-A\n")
+	seedUndoSnap(t, r2.workDir, "jumpsess", "jumpsess-turn-002", "state-B\n")
+	seedUndoSnap(t, r2.workDir, "jumpsess", "jumpsess-turn-003", "state-C\n")
+	writeGuardFile(t, filepath.Join(r2.workDir, undoCanary), "state-D\n")
+
+	undoRun(t, r2, "jumpsess", "/undo 2")
+
+	if got := undoCanaryContent(t, r2.workDir); got != "state-B\n" {
+		t.Errorf("/undo 2 landed %q; want the second-newest checkpoint's state-B", got)
+	}
+
+	if got := ckptLiveTree(t, r2.workDir); !reflect.DeepEqual(got, treeB) {
+		t.Errorf("tree after /undo 2 is not byte-identical to the turn-002 state")
+	}
+
+	if got := prov2.callCount(); got != 0 {
+		t.Errorf("provider Stream calls for the N-jump = %d; want 0", got)
+	}
+
+	_ = treeA // captured for the reader: the walk's depth-3 floor
+}
+
+// TestClassBUndoEdges pins the CONTEXT-discretion edge table: /undo 0 and
+// negative depths behave as 1; non-numeric args produce the D-05 error text
+// with a failed local_command record and zero provider calls; beyond-depth
+// clamps to the oldest entry; an empty store is a LOUD nothing-to-restore.
+func TestClassBUndoEdges(t *testing.T) {
+	t.Parallel()
+
+	t.Run("zero depth behaves as one", func(t *testing.T) {
+		t.Parallel()
+
+		r, prov, _ := newCommandRunner(t, nil)
+
+		seedUndoSnap(t, r.workDir, "edgesess", "edgesess-turn-001", "state-A\n")
+		seedUndoSnap(t, r.workDir, "edgesess", "edgesess-turn-002", "state-B\n")
+		writeGuardFile(t, filepath.Join(r.workDir, undoCanary), "state-C\n")
+
+		undoRun(t, r, "edgesess", "/undo 0")
+
+		if got := undoCanaryContent(t, r.workDir); got != "state-B\n" {
+			t.Errorf("/undo 0 landed %q; want the newest checkpoint state-B", got)
+		}
+
+		if got := prov.callCount(); got != 0 {
+			t.Errorf("provider calls = %d; want 0", got)
+		}
+	})
+
+	t.Run("negative depth behaves as one", func(t *testing.T) {
+		t.Parallel()
+
+		r, prov, _ := newCommandRunner(t, nil)
+
+		seedUndoSnap(t, r.workDir, "edgesess", "edgesess-turn-001", "state-A\n")
+		seedUndoSnap(t, r.workDir, "edgesess", "edgesess-turn-002", "state-B\n")
+		writeGuardFile(t, filepath.Join(r.workDir, undoCanary), "state-C\n")
+
+		undoRun(t, r, "edgesess", "/undo -3")
+
+		if got := undoCanaryContent(t, r.workDir); got != "state-B\n" {
+			t.Errorf("/undo -3 landed %q; want the newest checkpoint state-B", got)
+		}
+
+		if got := prov.callCount(); got != 0 {
+			t.Errorf("provider calls = %d; want 0", got)
+		}
+	})
+
+	t.Run("non-numeric args are a D-05 error", func(t *testing.T) {
+		t.Parallel()
+
+		r, prov, _ := newCommandRunner(t, nil)
+
+		seedUndoSnap(t, r.workDir, "edgesess", "edgesess-turn-001", "state-A\n")
+		writeGuardFile(t, filepath.Join(r.workDir, undoCanary), "state-C\n")
+
+		frames, lines := undoRun(t, r, "edgesess", "/undo banana")
+
+		if got := prov.callCount(); got != 0 {
+			t.Fatalf("provider calls = %d; want 0 (never a model turn)", got)
+		}
+
+		if out := undoOutputText(frames); !strings.Contains(out, "invalid depth") {
+			t.Errorf("output missing the invalid-depth error text:\n%s", out)
+		}
+
+		rec := localCommandLine(t, lines)
+		if rec.Args != "banana" {
+			t.Errorf("local_command Args = %q; want the typed args verbatim", rec.Args)
+		}
+
+		if !strings.HasPrefix(rec.Expansion, "failed:") {
+			t.Errorf("local_command outcome = %q; want a failed: outcome", rec.Expansion)
+		}
+
+		if got := undoCanaryContent(t, r.workDir); got != "state-C\n" {
+			t.Errorf("a failed /undo mutated the workspace: %q", got)
+		}
+	})
+
+	t.Run("beyond-depth clamps to the oldest", func(t *testing.T) {
+		t.Parallel()
+
+		r, _, _ := newCommandRunner(t, nil)
+
+		seedUndoSnap(t, r.workDir, "edgesess", "edgesess-turn-001", "state-A\n")
+		seedUndoSnap(t, r.workDir, "edgesess", "edgesess-turn-002", "state-B\n")
+		seedUndoSnap(t, r.workDir, "edgesess", "edgesess-turn-003", "state-C\n")
+		writeGuardFile(t, filepath.Join(r.workDir, undoCanary), "state-D\n")
+
+		undoRun(t, r, "edgesess", "/undo 99")
+
+		if got := undoCanaryContent(t, r.workDir); got != "state-A\n" {
+			t.Errorf("/undo 99 landed %q; want the oldest checkpoint state-A (clamped)", got)
+		}
+	})
+
+	t.Run("empty store is a loud nothing-to-restore", func(t *testing.T) {
+		t.Parallel()
+
+		r, prov, _ := newCommandRunner(t, nil)
+
+		writeGuardFile(t, filepath.Join(r.workDir, undoCanary), "state-D\n")
+
+		frames, lines := undoRun(t, r, "edgesess", "/undo")
+
+		if got := prov.callCount(); got != 0 {
+			t.Fatalf("provider calls = %d; want 0", got)
+		}
+
+		if out := undoOutputText(frames); !strings.Contains(out, "nothing to restore") {
+			t.Errorf("output missing the loud nothing-to-restore text:\n%s", out)
+		}
+
+		rec := localCommandLine(t, lines)
+		if rec.Name != "undo" || rec.Expansion != "ok" {
+			t.Errorf("local_command = {name:%q outcome:%q}; want {undo ok}", rec.Name, rec.Expansion)
+		}
+
+		if got := undoCanaryContent(t, r.workDir); got != "state-D\n" {
+			t.Errorf("an empty-store /undo mutated the workspace: %q", got)
+		}
+	})
+}
+
+// TestClassBUndoCrossSession pins the session-scoping: the walk targets ONLY
+// the current session's entries — another session's checkpoints in the same
+// workspace are invisible to it.
+func TestClassBUndoCrossSession(t *testing.T) {
+	t.Parallel()
+
+	r, prov, _ := newCommandRunner(t, nil)
+
+	seedUndoSnap(t, r.workDir, "sessA", "sessA-turn-001", "state-A\n")
+	seedUndoSnap(t, r.workDir, "sessA", "sessA-turn-002", "state-B\n")
+	writeGuardFile(t, filepath.Join(r.workDir, undoCanary), "state-C\n")
+
+	// Session B has no entries: loud nothing-to-restore, never A's stack.
+	frames, lines := undoRun(t, r, "sessB", "/undo")
+
+	if out := undoOutputText(frames); !strings.Contains(out, "nothing to restore") {
+		t.Errorf("output missing the nothing-to-restore text:\n%s", out)
+	}
+
+	if got := undoCanaryContent(t, r.workDir); got != "state-C\n" {
+		t.Errorf("cross-session /undo restored another session's checkpoint: %q", got)
+	}
+
+	if got := prov.callCount(); got != 0 {
+		t.Errorf("provider calls = %d; want 0", got)
+	}
+
+	rec := localCommandLine(t, lines)
+	if rec.Name != "undo" {
+		t.Errorf("local_command Name = %q; want undo", rec.Name)
+	}
+}
+
+// TestClassBUndoDegradedStore pins Pitfall 9's /undo leg: a session whose
+// workspace store could not open (nil Runner store) reports /undo UNAVAILABLE
+// loudly through the D-05 shape — never a silent no-op, never a wedge.
+func TestClassBUndoDegradedStore(t *testing.T) {
+	t.Parallel()
+
+	r, prov, _ := newCommandRunner(t, nil)
+
+	// Poison the store path BEFORE the first session lands: every open fails.
+	poison := filepath.Join(r.workDir, ".ass-guard", "checkpoints")
+	if err := os.MkdirAll(filepath.Dir(poison), 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	if err := os.WriteFile(poison, []byte("not a dir"), 0o600); err != nil {
+		t.Fatalf("poison: %v", err)
+	}
+
+	writeGuardFile(t, filepath.Join(r.workDir, undoCanary), "state-D\n")
+
+	frames, lines := undoRun(t, r, "degraded", "/undo")
+
+	if got := prov.callCount(); got != 0 {
+		t.Fatalf("provider calls = %d; want 0", got)
+	}
+
+	if out := undoOutputText(frames); !strings.Contains(out, "checkpoint store disabled") {
+		t.Errorf("output missing the unavailable/store-disabled text:\n%s", out)
+	}
+
+	rec := localCommandLine(t, lines)
+	if !strings.HasPrefix(rec.Expansion, "unavailable:") {
+		t.Errorf("local_command outcome = %q; want an unavailable: outcome", rec.Expansion)
+	}
+
+	if got := undoCanaryContent(t, r.workDir); got != "state-D\n" {
+		t.Errorf("a degraded-store /undo mutated the workspace: %q", got)
+	}
 }
