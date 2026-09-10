@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/sched"
 	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
@@ -27,6 +28,23 @@ var (
 	errCronFailed      = errors.New("coreexec: cron operation failed")
 )
 
+// CronStore is the schedule CRUD surface the cron quartet consumes (25-05:
+// the consumer-side interface — the accept-interfaces rule). The behavioral
+// store (*sched.ScheduleStore) satisfies it STRUCTURALLY, as does any value
+// carrying the same method set; the kit core hands the same injected store
+// value through its Scheduler port's optional capability (kit/runtime's
+// cronStoreOrNil — one value, two structural views). A nil CronStore is the
+// documented degraded state: every quartet member returns the structured
+// no-store error, exactly the pre-25-05 nil-store semantics.
+type CronStore interface {
+	Now() time.Time
+	Get(id string) (sched.Automation, error)
+	List() []sched.Automation
+	Create(a *sched.Automation) (sched.Automation, error)
+	Save(a *sched.Automation) error
+	Delete(id string) error
+}
+
 // cronCreateArgs is the CronCreate input subset the executor consumes.
 type cronCreateArgs struct {
 	Cron         string `json:"cron"`
@@ -41,7 +59,7 @@ type cronCreateArgs struct {
 // required; cron XOR delayMinutes — the captured schema's rule that a
 // relative delay NEVER becomes a fixed clock time), persists the automation,
 // and returns the id-bearing ack form.
-func CronCreateExecute(store *sched.ScheduleStore) toolcat.Stub {
+func CronCreateExecute(store CronStore) toolcat.Stub {
 	return func(_ context.Context, args json.RawMessage) (json.RawMessage, error) {
 		if store == nil {
 			return marshalStructured("croncreate: no schedule store configured", errNoScheduleStore)
@@ -103,7 +121,7 @@ type cronListEntry struct {
 
 // CronListExecute returns the listing (the captured zod_error is zcode's own
 // validation defect, deliberately NOT mimicked — the fixture note).
-func CronListExecute(store *sched.ScheduleStore) toolcat.Stub {
+func CronListExecute(store CronStore) toolcat.Stub {
 	return func(_ context.Context, _ json.RawMessage) (json.RawMessage, error) {
 		if store == nil {
 			return marshalStructured("cronlist: no schedule store configured", errNoScheduleStore)
@@ -161,7 +179,7 @@ type cronUpdateArgs struct {
 // when the schedule changes but the supplied title is byte-identical to the
 // old one, the ack carries the structured guidance note — advice, not a hard
 // block (the no-confirmation-tier model).
-func CronUpdateExecute(store *sched.ScheduleStore) toolcat.Stub {
+func CronUpdateExecute(store CronStore) toolcat.Stub {
 	return func(_ context.Context, args json.RawMessage) (json.RawMessage, error) {
 		if store == nil {
 			return marshalStructured("cronupdate: no schedule store configured", errNoScheduleStore)
@@ -253,7 +271,7 @@ func applyCronUpdate(cur *sched.Automation, a *cronUpdateArgs, present map[strin
 }
 
 // CronDeleteExecute removes the automation and acks.
-func CronDeleteExecute(store *sched.ScheduleStore) toolcat.Stub {
+func CronDeleteExecute(store CronStore) toolcat.Stub {
 	return func(_ context.Context, args json.RawMessage) (json.RawMessage, error) {
 		if store == nil {
 			return marshalStructured("crondelete: no schedule store configured", errNoScheduleStore)

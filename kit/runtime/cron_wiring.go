@@ -8,9 +8,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/sched"
 	"github.com/Djarvur/ass-guard-agent/internal/tasks"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
+	"github.com/Djarvur/ass-guard-agent/kit/schedule"
 	"github.com/Djarvur/ass-guard-agent/kit/session"
 )
 
@@ -134,7 +134,7 @@ func (r *Runner) fireDueAutomations(ctx context.Context) {
 // exactly-once bound holds per missed window).
 //
 //nolint:funlen // the firing pipeline reads best as one flow
-func (r *Runner) runAutomationTurn(ctx context.Context, sessionID string, a *sched.Automation, note string) {
+func (r *Runner) runAutomationTurn(ctx context.Context, sessionID string, a *schedule.Automation, note string) {
 	if note == "" {
 		// The exactly-once claim: re-check + advance lastFired UNDER the store
 		// mutex — the due-walk's snapshot may be stale (the catch-up pass or a

@@ -241,8 +241,8 @@ func TestCronWiring_FireOnceCatchUp(t *testing.T) { //nolint:cyclop,funlen // fl
 	}
 
 	// Restart 1: the first active session catches up once, with the note.
-	r1, _, _ := newCronRunner(t, dir, scriptedResp{text: "caught up"})
-	r1.schedule.SetNow(time.Now)
+	r1, _, store1r := newCronRunner(t, dir, scriptedResp{text: "caught up"})
+	store1r.SetNow(time.Now) // the store handle (the runner holds it as the Scheduler port)
 
 	_, rerr := acpRun(context.Background(), r1, "sess-cron-c1", &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "hello"}})
@@ -279,8 +279,8 @@ func TestCronWiring_FireOnceCatchUp(t *testing.T) { //nolint:cyclop,funlen // fl
 	}
 
 	// Restart 2: a fresh runner over the same workDir — NO second fire.
-	r2, _, _ := newCronRunner(t, dir, scriptedResp{text: "plain"})
-	r2.schedule.SetNow(time.Now)
+	r2, _, store2 := newCronRunner(t, dir, scriptedResp{text: "plain"})
+	store2.SetNow(time.Now) // the store handle (the runner holds it as the Scheduler port)
 
 	_, rerr2 := acpRun(context.Background(), r2, "sess-cron-c2", &noopEmitter{},
 		[]acp.ContentBlock{{Type: blockText, Text: "hello again"}})

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"log"
 
-	"github.com/Djarvur/ass-guard-agent/internal/sched"
 	"github.com/Djarvur/ass-guard-agent/kit/session"
 	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
 )
@@ -109,8 +108,9 @@ type InteractiveConfig struct {
 	Tasks    *TaskRegistry
 	// Schedule is the PER-PROJECT cron store (12-07, D-02: shared across the
 	// project's sessions, unlike the per-session stores above; nil = the
-	// quartet returns the structured no-store error).
-	Schedule *sched.ScheduleStore
+	// quartet returns the structured no-store error). 25-05: typed as the
+	// CronStore interface — the injected store satisfies it structurally.
+	Schedule CronStore
 	// TaskStopFallback/TaskOutputFallback are the 22-09 (G-22-5) seams: ids
 	// the TaskRegistry does not know (background-subagent exec_ ids live in
 	// the per-session tasks tracker) fall through to them — primitive args

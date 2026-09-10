@@ -27,7 +27,6 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/openspec"
 	"github.com/Djarvur/ass-guard-agent/internal/perm"
 	"github.com/Djarvur/ass-guard-agent/internal/sandbox"
-	"github.com/Djarvur/ass-guard-agent/internal/sched"
 	"github.com/Djarvur/ass-guard-agent/internal/tasks"
 	"github.com/Djarvur/ass-guard-agent/kit/audit"
 	"github.com/Djarvur/ass-guard-agent/kit/checkpoint"
@@ -290,7 +289,7 @@ type Runner struct {
 	sessMu               sync.Mutex
 	lastSessionID        string
 	automationProvenance string
-	schedule             *sched.ScheduleStore
+	schedule             Scheduler
 	schedTick            time.Duration
 	schedStop            func()
 	catchUpOnce          sync.Once
@@ -2475,7 +2474,7 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 		// for both seams (the CompletionHook precedent — coreexec stays
 		// tasks-free).
 		TaskOutputFallback: subagentOutputFallback(dir, tracker),
-		Schedule:           r.schedule, // 12-07: the PER-PROJECT cron store (nil in test runners → structured no-store errors)
+		Schedule:           cronStoreOrNil(r.schedule), // 12-07: the PER-PROJECT cron store (nil in test runners → structured no-store errors)
 	})
 
 	// 09-01 T2 (AUD-02): the late-bound capturer closure. sess is declared
@@ -3277,8 +3276,13 @@ func (r *Runner) CloseSession(sessionID string) error {
 // unreachable from a foreign package); NOTHING else is exported for it.
 
 // SetSchedule assigns the per-project schedule store (the sched.Open success
-// arm of the serve composition).
-func (r *Runner) SetSchedule(store *sched.ScheduleStore) { r.schedule = store }
+// arm of the serve composition). The store satisfies the four-method
+// Scheduler port STRUCTURALLY (25-05, D-16): the parameter is the port, the
+// argument at the composition root is unchanged, and the interactive cron
+// quartet's CRUD half rides the same value's optional coreexec.CronStore
+// capability (cronStoreOrNil — 25-07's SessionToolkit takes that half
+// app-side wholesale).
+func (r *Runner) SetSchedule(store Scheduler) { r.schedule = store }
 
 // ApplyTurnModel applies an editor-driven model change to LIVE state (16-05/
 // ACP-08, D-05's day-1 handlers): the runner's effective-model state updates
