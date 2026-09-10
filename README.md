@@ -98,6 +98,7 @@ goreleaser build --snapshot --clean     # release-matrix binaries
 ```
 
 Docs: [install](docs/install.md) ·
+[lsp setup](docs/lsp-setup.md) ·
 [recapture runbook](docs/recapture-runbook.md) ·
 [tool contract inventory](docs/tool-contract-inventory.md) ·
 [compaction decision](docs/compaction-decision.md) ·

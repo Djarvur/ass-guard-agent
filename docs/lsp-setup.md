@@ -129,8 +129,9 @@ What ass-guard does with this at session start (`internal/mcp/host.go` and
    plugin-bundled `.mcp.json` files join only on non-colliding names.
 2. Each server is spawned as a subprocess in its own process group, given a
    bounded 30-second start window, and asked for its tool list. A server
-   that fails to start is skipped with a stderr note — one bad server never
-   breaks the session.
+   that fails to spawn is skipped without failing the session (one bad
+   server never breaks it) — and today the skip is silent, no stderr note,
+   which is why the `PATH` note below matters.
 3. The discovered tools land in the session catalog named
    `mcp__<server>__<tool>` — with the config above:
    `mcp__gopls__definition`, `mcp__gopls__references`,
@@ -316,14 +317,18 @@ for n in mcp:
 sys.exit(0 if any("__definition" in n or "__references" in n for n in mcp) else 1)
 ```
 
-Run it:
+Run it (in the same shell as step 1 — the `PATH` export there must be visible
+to this script, because the ass-guard process it spawns resolves
+`mcp-language-server` through that `PATH`):
 
 ```sh
 python3 /tmp/lsp-dryrun-check.py /tmp/ass-guard-lsp-dryrun /tmp/ass-guard-dryrun
 ```
 
 Expected output — the LSP-symbol tools from the `.mcp.json` server, under the
-`mcp__<server>__<tool>` naming:
+`mcp__<server>__<tool>` naming (on a machine with user-level or plugin MCP
+servers configured, their `mcp__…` tools appear in the same list too; the six
+`mcp__gopls__*` lines are what this dry-run proves):
 
 ```text
 provider requests captured: 1
@@ -336,8 +341,15 @@ mcp tools in session catalog:
   mcp__gopls__rename_symbol
 ```
 
-(Exit status 0 means an LSP-symbol tool was present; the scratch project's
-`dryrun-stderr.log` carries ass-guard's diagnostics if anything goes wrong.)
+(Exit status 0 means an LSP-symbol tool was present.) If the six lines are
+missing, the most common cause is the environment note from section 3: a
+server whose `command` cannot be resolved on the spawning process's `PATH` is
+skipped — non-fatally and **without a stderr note** (`mcp.Start` in
+`internal/mcp/host.go` continues past a server that fails to spawn; the
+session works, minus that server's tools). Check `command -v
+mcp-language-server` in the shell running the check, or set an explicit
+`env.PATH` in the `.mcp.json` entry as shown in section 3. The scratch
+project's `dryrun-stderr.log` carries ass-guard's other diagnostics.
 
 ### 7. Try it live in the editor
 
