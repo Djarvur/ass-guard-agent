@@ -418,13 +418,11 @@ func Run( //nolint:funlen // :320-425
 	// chip-shows-X/wire-sends-Y divergence class).
 	surface.SetBlobDefaultHook(runner.SetDefaultTurnModel)
 
-	// 17-02 (ACP-01): the permission-ask surface rides the 16-03 registry —
-	// its fire callback is injected runner-side so internal/session never
-	// imports internal/acp (the onSurface-callback precedent). Injected
-	// BEFORE the scheduler starts so the first automation firing already
-	// asks through the wire.
+	// 17-02 (ACP-01): the permission-ask surface rides the 16-03 registry.
+	// 25-04 (KIT-02/D-15): both ask surfaces inject through the ONE
+	// Requester seam below (after both askers are constructed) — the kit
+	// boundary speaks Ask/Answer; the bridge owns the wire shapes.
 	permAsker := NewPermissionAsk(ctx, srv.Registry(), stderr)
-	runner.SetPermissionAskFire(permAsker.Fire)
 
 	// 17-04 (ACP-02/D-09): the elicitation-ask surface rides the same
 	// registry + capability machinery — the sticky elicitation-form
@@ -444,7 +442,13 @@ func Run( //nolint:funlen // :320-425
 		},
 		Fallback: runner.PublishAskChunk,
 	})
-	runner.SetAskFire(elicitAsker.Fire)
+
+	// 25-04 (Task 3): the KIT-02 Requester wire bridge — both ask families
+	// (permission gate + elicitation/engine) ride the one seam; the runner
+	// derives its fire seams from it. Injected BEFORE the scheduler starts so
+	// the first automation firing already asks through the wire (the two
+	// pre-seam Set*Fire injections' position, preserved).
+	runner.SetRequester(newKitRequester(permAsker, elicitAsker))
 
 	// 17-02 Task 3: the permissions.mode live seams — the advertisement reads
 	// the runner's accessor (chip==wire with the gate), the apply hook flips

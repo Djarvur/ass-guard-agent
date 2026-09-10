@@ -98,6 +98,12 @@ type Ask struct {
 	// Background marks an automation/engine-origin ask (the priority class:
 	// foreground asks fire before background ones).
 	Background bool
+
+	// PlainTextFallback marks an ask whose degraded plain-text surface can
+	// still be ANSWERED (question-family asks — the broker's reply routing +
+	// D-01 timer own them); false suppresses the dead-end publish for asks no
+	// plain-text reply can resolve (engine asks).
+	PlainTextFallback bool
 }
 
 // AskFamily selects the ask's surface family (see Ask.Family).
@@ -150,4 +156,86 @@ type Answer struct {
 	// unsupported-client degrade, transport failure). The kit maps it to its
 	// fail-safe decline — never a silent allow, never a retry storm.
 	Err error
+}
+
+// SetRequester injects the frontend ask surface as the KIT-02 Requester seam
+// (D-15, 25-04 Task 3): the runner derives BOTH fire seams (the permission
+// gate's and the elicitation family's) from the ONE interface — every ask
+// the kit surfaces rides the seam, byte-preserving the suspended-turn
+// semantics underneath (the reply lands as the tool result; turn death
+// mid-ask delivers cancelled as a normal outcome — the 17-03 locked
+// behavior, proven by its relocated batteries).
+//
+// Timer ownership (the no-double-timeout contract): the KIT owns the ask
+// timeout policy — the AskBroker's D-01 timer (configurable wait, then the
+// capture-shaped non-answer; negative normalizes to the default, 0 blocks
+// forever) drives the suspension resume. A Requester implementation owns
+// TRANSPORT only and must not arm a second ask timer (the acpserve bridge
+// arms none — see kitRequester's ownership record).
+func (r *Runner) SetRequester(req Requester) {
+	r.permAskFire = requesterFire(req, AskFamilyPermission)
+	r.askFire = requesterFire(req, AskFamilyQuestion)
+}
+
+// requesterFire adapts one family of the Requester seam onto the fire-seam
+// shape the session gate/ask queue call: the queued entry crosses onto the
+// kit-neutral Ask, the frontend answers, and the Answer projects back onto
+// the session-native outcome. A Request error maps to the fail-safe Err
+// outcome (never a silent allow).
+func requesterFire(
+	req Requester, family AskFamily,
+) func(context.Context, *session.AskEntry) session.AskOutcome {
+	return func(ctx context.Context, e *session.AskEntry) session.AskOutcome {
+		ans, err := req.Request(ctx, AskFromEntry(family, e))
+		if err != nil {
+			return session.AskOutcome{Err: err}
+		}
+
+		return ans.Outcome()
+	}
+}
+
+// AskFromEntry carries one queued ask onto the seam payload. Questions is
+// best-effort parsed from the entry's marshaled payload (a chat frontend
+// wants the parsed shape); the raw Input rides along verbatim so the
+// frontends that rebuild entries lose nothing.
+func AskFromEntry(family AskFamily, e *session.AskEntry) Ask {
+	if e == nil {
+		return Ask{Family: family}
+	}
+
+	ask := Ask{
+		Family:            family,
+		SessionID:         e.SessionID,
+		TurnID:            e.TurnID,
+		CallID:            e.CallID,
+		Tool:              e.Tool,
+		Title:             e.Title,
+		Kind:              e.Kind,
+		Input:             e.Input,
+		Note:              e.Note,
+		Background:        e.Class == session.AskClassBackground,
+		PlainTextFallback: e.PlainTextFallback,
+	}
+
+	_ = json.Unmarshal(e.Input, &ask.Questions)
+
+	return ask
+}
+
+// Outcome projects the Answer onto the session-native resolution (the
+// mirror mapping — field-for-field, no reinterpretation).
+//
+//nolint:gocritic // hugeParam: value projection — the seam speaks values (D-15)
+func (a Answer) Outcome() session.AskOutcome {
+	return session.AskOutcome{
+		Selected:    a.Selected,
+		Cancelled:   a.Cancelled,
+		Unsupported: a.Unsupported,
+		Elicit:      a.Elicit,
+		Content:     a.Content,
+		Violation:   a.Violation,
+		Fallback:    a.Fallback,
+		Err:         a.Err,
+	}
 }

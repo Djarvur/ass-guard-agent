@@ -459,7 +459,8 @@ func TestE2E_Criterion1_ZeroContinueAndSafety(t *testing.T) {
 			scriptedResp{text: "unmatched output", finish: stopEndTurn},
 		)
 
-		_, err := acpRun(context.Background(), r, "c1b", &noopEmitter{}, []acp.ContentBlock{{Type: blockText, Text: "hi"}})
+		_, err := acpRun(context.Background(), r, "c1b", &noopEmitter{},
+			[]acp.ContentBlock{{Type: blockText, Text: "hi"}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -511,7 +512,8 @@ func TestE2E_Criterion4_LearningAskOnce(t *testing.T) {
 		t.Errorf("after 3 confirms Lookup = %+v ok=%v; want active", e, ok)
 	}
 	// Sanity: the scenario still completes structurally safely (no ask loop).
-	stop, err := acpRun(context.Background(), r, "c4", &noopEmitter{}, []acp.ContentBlock{{Type: blockText, Text: "go"}})
+	stop, err := acpRun(context.Background(), r, "c4", &noopEmitter{},
+		[]acp.ContentBlock{{Type: blockText, Text: "go"}})
 	if err != nil || stop != stopEndTurn {
 		t.Fatalf("Run = (%q,%v)", stop, err)
 	}

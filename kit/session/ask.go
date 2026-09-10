@@ -26,6 +26,12 @@ import (
 // form and drives the SAME resume path. This is a model-INITIATED question
 // surface, NOT a tool-execution gate — the no-confirmation-tier safety model is
 // untouched.
+//
+// 25-04 (KIT-02/D-15): the ask ORIGIN is formalized as the runtime package's
+// Requester seam — the kit asks through Request(ctx, Ask) (Answer, error) and
+// the FRONTEND answers (the acpserve bridge rides this file's broker + queue
+// machinery unchanged; a non-ACP frontend implements the same interface). The
+// broker keeps owning the D-01 timeout policy; the seam adds no second timer.
 
 // ErrSuspended is the suspension sentinel the AskUserQuestion executor returns
 // after parsing the question payload. The session tool loop maps it to the ask

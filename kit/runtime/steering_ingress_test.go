@@ -113,7 +113,8 @@ func TestSteerIngressMidTurnPreMutex(t *testing.T) { //nolint:funlen // comprehe
 	res := make(chan steerResult, 1)
 
 	go func() {
-		stop, err := acpRun(context.Background(), r, sid, emit, []acp.ContentBlock{{Type: blockText, Text: "focus on tests"}})
+		stop, err := acpRun(context.Background(), r, sid, emit,
+			[]acp.ContentBlock{{Type: blockText, Text: "focus on tests"}})
 		res <- steerResult{stop, err}
 	}()
 
@@ -222,7 +223,8 @@ func TestSteerIngressEngineChain(t *testing.T) {
 	go func() {
 		defer close(done)
 
-		stop, err := acpRun(context.Background(), r, sid, emit, []acp.ContentBlock{{Type: blockText, Text: "adjust the plan"}})
+		stop, err := acpRun(context.Background(), r, sid, emit,
+			[]acp.ContentBlock{{Type: blockText, Text: "adjust the plan"}})
 		if err != nil || stop != stopEndTurn {
 			t.Errorf("chain-steered Run = (%q,%v); want (end_turn, nil)", stop, err)
 		}

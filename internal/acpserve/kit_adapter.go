@@ -222,3 +222,80 @@ func (a kitTurnAdapter) DrainAsks(sessionID string) { a.runner.DrainAsks(session
 
 // DrainSessionAsks forwards acp.AskDrainer's close twin (logout ordering).
 func (a kitTurnAdapter) DrainSessionAsks(sessionID string) { a.runner.DrainSessionAsks(sessionID) }
+
+// kitRequester implements the kit Requester seam (D-15, 25-04 Task 3) over
+// the LOCKED 17-02/17-04 ask surfaces: the permission family bridges to
+// PermissionAsk.Fire (registry-backed session/request_permission), the
+// question family to ElicitationAsk.Fire (capability-gated
+// elicitation/create with the plain-text fallback inside). Neither surface's
+// wire shape is redesigned — the entry is rebuilt field-for-field from the
+// seam payload and the outcome projected back.
+//
+// Timer ownership (the no-double-timeout record): the LANDED 17-02 code arms
+// exactly two windows — the registry's HUMAN-ASK timeout bounds the WIRE
+// round-trip (transport, adapter-owned) and the kit's AskBroker owns the
+// D-01 suspension timer (the capture-shaped non-answer resume, kit-side
+// config per D-15). This bridge arms NEITHER; it adds no timer of its own,
+// so cancelled/timeout resolution keeps the landed semantics byte-identical.
+type kitRequester struct {
+	perm   *PermissionAsk
+	elicit *ElicitationAsk
+}
+
+// newKitRequester wires the bridge over the two landed ask surfaces.
+//
+//nolint:ireturn // the kit seam's own interface (the SetRequester input type)
+func newKitRequester(perm *PermissionAsk, elicit *ElicitationAsk) runtime.Requester {
+	return kitRequester{perm: perm, elicit: elicit}
+}
+
+// Request performs one ask round-trip (ctx-blocking until the surface
+// resolves — both landed Fire implementations block on their registry call).
+//
+//nolint:gocritic // hugeParam: the D-15 seam signature speaks values
+func (k kitRequester) Request(ctx context.Context, ask runtime.Ask) (runtime.Answer, error) {
+	entry := &session.AskEntry{
+		TurnID:    ask.TurnID,
+		SessionID: ask.SessionID,
+		CallID:    ask.CallID,
+		Tool:      ask.Tool,
+		Title:     ask.Title,
+		Kind:      ask.Kind,
+		Input:     ask.Input,
+		Note:      ask.Note,
+		Class:     entryClassOf(ask.Background),
+		// The question family's degraded surface stays ANSWERABLE (the
+		// broker's reply routing + D-01 timer own it); engine asks carried
+		// false at enqueue and keep it here.
+		PlainTextFallback: ask.PlainTextFallback,
+	}
+
+	var out session.AskOutcome
+
+	if ask.Family == runtime.AskFamilyPermission {
+		out = k.perm.Fire(ctx, entry)
+	} else {
+		out = k.elicit.Fire(ctx, entry)
+	}
+
+	return runtime.Answer{
+		Selected:    out.Selected,
+		Cancelled:   out.Cancelled,
+		Unsupported: out.Unsupported,
+		Elicit:      out.Elicit,
+		Content:     out.Content,
+		Violation:   out.Violation,
+		Fallback:    out.Fallback,
+		Err:         out.Err,
+	}, nil
+}
+
+// entryClassOf mirrors the D-11 priority class onto the entry (queue
+// fidelity — the rebuilt entry carries what the original enqueue set).
+func entryClassOf(background bool) session.AskClass {
+	if background {
+		return session.AskClassBackground
+	}
+
+	return session.AskClassForeground
+}
