@@ -14,13 +14,13 @@ import (
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/coreexec"
-	"github.com/Djarvur/ass-guard-agent/internal/event"
 	"github.com/Djarvur/ass-guard-agent/internal/learning"
 	"github.com/Djarvur/ass-guard-agent/internal/openspec"
-	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
 	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
+	"github.com/Djarvur/ass-guard-agent/kit/event"
+	"github.com/Djarvur/ass-guard-agent/kit/profile"
 )
 
 // Test-local constants (goconst): the interactive tool under test, its wiring

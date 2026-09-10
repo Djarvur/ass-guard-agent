@@ -29,7 +29,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Djarvur/ass-guard-agent/internal/profile"
+	"github.com/Djarvur/ass-guard-agent/kit/profile"
 )
 
 // Probe check names (footer/report-stable identifiers).

@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
+	"github.com/Djarvur/ass-guard-agent/kit/profile"
 )
 
 // Message is one conversational turn. It is an alias of shaper.Message so the

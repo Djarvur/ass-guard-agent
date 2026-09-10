@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/engine"
-	"github.com/Djarvur/ass-guard-agent/internal/event"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
+	"github.com/Djarvur/ass-guard-agent/kit/event"
 )
 
 var errProviderDown = errors.New("provider down")

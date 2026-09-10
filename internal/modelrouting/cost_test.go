@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/Djarvur/ass-guard-agent/internal/event"
+	"github.com/Djarvur/ass-guard-agent/kit/event"
 )
 
 // newCostTracker builds a tracker with a fresh bus + the given pricing.

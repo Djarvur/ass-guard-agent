@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/internal/parity"
-	"github.com/Djarvur/ass-guard-agent/internal/profile"
+	"github.com/Djarvur/ass-guard-agent/kit/profile"
 )
 
 // pinVersion is the coverage manifest's pinned zcode_version in the parity
@@ -153,7 +153,7 @@ func fakeCacheComposition(t *testing.T, comp parity.CacheComposition) {
 // corpusPinFixturePath points at 14-02's committed cache-control fixture (the
 // placement pin source) from the cmd/ass-guard test working directory.
 func corpusPinFixturePath() string {
-	return filepath.Join("..", "..", "internal", "profile", "testdata", "context-behavior", "cache-control.jsonl")
+	return filepath.Join("..", "..", "kit", "profile", "testdata", "context-behavior", "cache-control.jsonl")
 }
 
 // summaryLines extracts the footer's summary lines (the run's verdict shape)

@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/audit"
-	"github.com/Djarvur/ass-guard-agent/internal/event"
+	"github.com/Djarvur/ass-guard-agent/kit/event"
 )
 
 // TestOpenFileSink (09-06 T1 Test 1): ""/"-" → stderr (nil close); a path →

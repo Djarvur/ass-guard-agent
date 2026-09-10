@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Djarvur/ass-guard-agent/internal/profile"
+	"github.com/Djarvur/ass-guard-agent/kit/profile"
 )
 
 // TestCheckCoverage_Tier1Drift confirms a TIER-1 count mismatch surfaces as a

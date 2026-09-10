@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/internal/drift"
-	"github.com/Djarvur/ass-guard-agent/internal/profile"
+	"github.com/Djarvur/ass-guard-agent/kit/profile"
 )
 
 // manifest builds a small CoverageManifest for the test cases.

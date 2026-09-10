@@ -3,7 +3,7 @@ package event_test
 import (
 	"testing"
 
-	"github.com/Djarvur/ass-guard-agent/internal/event"
+	"github.com/Djarvur/ass-guard-agent/kit/event"
 )
 
 // TestEngineDecisionKind verifies the Phase-4 EngineDecision event reports its

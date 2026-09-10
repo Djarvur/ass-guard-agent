@@ -3,7 +3,7 @@ package session //nolint:testpackage // same-package convention for internal tes
 import (
 	"testing"
 
-	"github.com/Djarvur/ass-guard-agent/internal/profile"
+	"github.com/Djarvur/ass-guard-agent/kit/profile"
 )
 
 // TestSetTurnModel (16-05, ACP-08 live apply): SetTurnModel stamps the

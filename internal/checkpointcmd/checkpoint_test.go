@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Djarvur/ass-guard-agent/internal/checkpoint"
+	"github.com/Djarvur/ass-guard-agent/kit/checkpoint"
 )
 
 // seedCheckpointStore opens a store over a seeded temp workspace and takes

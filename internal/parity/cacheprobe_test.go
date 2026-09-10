@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/internal/parity"
-	"github.com/Djarvur/ass-guard-agent/internal/profile"
+	"github.com/Djarvur/ass-guard-agent/kit/profile"
 )
 
 // Test-literal constants (goconst discipline): block type, check names, and
@@ -225,7 +225,8 @@ func TestCacheProbe_EmptyMerges(t *testing.T) {
 func scanCorpusPinFixture(t *testing.T) profile.ContextBehaviorReport {
 	t.Helper()
 
-	f, err := os.Open(filepath.Join("..", "profile", "testdata", "context-behavior", "cache-control.jsonl"))
+	f, err := os.Open(filepath.Join(
+		"..", "..", "kit", "profile", "testdata", "context-behavior", "cache-control.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}

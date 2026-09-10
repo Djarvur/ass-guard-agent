@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/event"
 	"github.com/Djarvur/ass-guard-agent/internal/hookdag"
+	"github.com/Djarvur/ass-guard-agent/kit/event"
 )
 
 var errBoom = errors.New("boom")

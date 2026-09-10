@@ -11,7 +11,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/Djarvur/ass-guard-agent/internal/redact"
+	"github.com/Djarvur/ass-guard-agent/kit/redact"
 )
 
 // DefaultBodyStoreCap is the total-bytes cap (64 MiB — generous for a day of

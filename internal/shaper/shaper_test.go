@@ -18,8 +18,8 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 
-	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
+	"github.com/Djarvur/ass-guard-agent/kit/profile"
 )
 
 // loadFixture loads a profile from the internal/profile testdata (the synthetic
@@ -27,7 +27,7 @@ import (
 func loadFixture(t *testing.T, name string) profile.Profile {
 	t.Helper()
 
-	root, err := filepath.Abs(filepath.Join("..", "profile", "testdata"))
+	root, err := filepath.Abs(filepath.Join("..", "..", "kit", "profile", "testdata"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -60,7 +60,7 @@ func defaultSuitePath() string {
 // cache_control placement pin — under the same repo-relative contract as the
 // default suite path (the parity gate is an operator/dev-run command).
 func defaultCachePinPath() string {
-	rel := filepath.Join("internal", "profile", "testdata", "context-behavior", "cache-control.jsonl")
+	rel := filepath.Join("kit", "profile", "testdata", "context-behavior", "cache-control.jsonl")
 
 	abs, err := filepath.Abs(rel)
 	if err != nil {

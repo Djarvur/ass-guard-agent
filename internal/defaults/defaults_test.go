@@ -11,7 +11,7 @@ import (
 
 	"github.com/Djarvur/ass-guard-agent/internal/defaults"
 	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
-	"github.com/Djarvur/ass-guard-agent/internal/profile"
+	"github.com/Djarvur/ass-guard-agent/kit/profile"
 )
 
 // Seed-profile expectations. tools = 79: the 09-04/AUD-05 re-pin (zcode

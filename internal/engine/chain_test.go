@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/internal/engine"
-	"github.com/Djarvur/ass-guard-agent/internal/event"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
+	"github.com/Djarvur/ass-guard-agent/kit/event"
 )
 
 // chainPatternID is the stage-bearing fixture pattern id (goconst).

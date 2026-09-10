@@ -17,9 +17,9 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go"
 
-	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
+	"github.com/Djarvur/ass-guard-agent/kit/profile"
 )
 
 // fakeProfile builds a minimal profile with one system block for projector tests.

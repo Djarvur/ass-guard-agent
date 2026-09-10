@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Djarvur/ass-guard-agent/internal/event"
-	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
+	"github.com/Djarvur/ass-guard-agent/kit/event"
+	"github.com/Djarvur/ass-guard-agent/kit/profile"
 )
 
 // PAR-04 wiring tests (21-02 Task 2): the FOURTH trailing-TextBlock merge in

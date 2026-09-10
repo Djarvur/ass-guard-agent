@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/event"
+	"github.com/Djarvur/ass-guard-agent/kit/event"
 )
 
 const mnd1e6 = 1e6

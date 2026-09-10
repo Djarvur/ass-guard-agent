@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/Djarvur/ass-guard-agent/internal/drift"
-	"github.com/Djarvur/ass-guard-agent/internal/profile"
+	"github.com/Djarvur/ass-guard-agent/kit/profile"
 )
 
 const readBufSize = 4096

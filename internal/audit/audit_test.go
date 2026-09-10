@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/audit"
-	"github.com/Djarvur/ass-guard-agent/internal/event"
+	"github.com/Djarvur/ass-guard-agent/kit/event"
 )
 
 // safeBuffer is a mutex-guarded bytes.Buffer so the async audit goroutine

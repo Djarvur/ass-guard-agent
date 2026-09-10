@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/audit"
-	"github.com/Djarvur/ass-guard-agent/internal/redact"
+	"github.com/Djarvur/ass-guard-agent/kit/redact"
 )
 
 // newTestManager opens a Manager in a temp dir with the real redactor.

@@ -12,8 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/event"
-	"github.com/Djarvur/ass-guard-agent/internal/redact"
+	"github.com/Djarvur/ass-guard-agent/kit/event"
+	"github.com/Djarvur/ass-guard-agent/kit/redact"
 )
 
 // mirrorLine is the on-disk mirror record: the correlation triple + the event

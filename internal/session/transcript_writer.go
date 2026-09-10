@@ -5,7 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/Djarvur/ass-guard-agent/internal/audit"
-	"github.com/Djarvur/ass-guard-agent/internal/event"
+	"github.com/Djarvur/ass-guard-agent/kit/event"
 )
 
 // TranscriptWriter is the async bus consumer (LOG-02) and the ONE writer for the

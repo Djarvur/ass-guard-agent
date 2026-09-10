@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
+	"github.com/Djarvur/ass-guard-agent/kit/profile"
 )
 
 const mnd8 = 8

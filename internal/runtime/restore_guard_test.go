@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
-	"github.com/Djarvur/ass-guard-agent/internal/checkpoint"
-	"github.com/Djarvur/ass-guard-agent/internal/event"
-	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
+	"github.com/Djarvur/ass-guard-agent/kit/checkpoint"
+	"github.com/Djarvur/ass-guard-agent/kit/event"
+	"github.com/Djarvur/ass-guard-agent/kit/profile"
 )
 
 // --- 23-04 Task 1: Runner-level store + restore guard + session-start sweep ---

@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
-	"github.com/Djarvur/ass-guard-agent/internal/event"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/tasks"
 	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
+	"github.com/Djarvur/ass-guard-agent/kit/event"
 )
 
 // newSubagentSession builds a Session whose provider returns the given response

@@ -18,12 +18,12 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
-	"github.com/Djarvur/ass-guard-agent/internal/checkpoint"
 	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
-	"github.com/Djarvur/ass-guard-agent/internal/event"
 	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
+	"github.com/Djarvur/ass-guard-agent/kit/checkpoint"
+	"github.com/Djarvur/ass-guard-agent/kit/event"
 )
 
 // --- 20-01: command chain + class-B intercept (tracer battery) ---

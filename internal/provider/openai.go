@@ -10,7 +10,7 @@ import (
 
 	"github.com/sashabaranov/go-openai"
 
-	"github.com/Djarvur/ass-guard-agent/internal/profile"
+	"github.com/Djarvur/ass-guard-agent/kit/profile"
 )
 
 var errOpenaiNoAPI = errors.New("openai provider: no API key (set OPENAI_API_KEY or pass WithOpenAIAPIKey)")

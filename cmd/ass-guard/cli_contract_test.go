@@ -703,7 +703,7 @@ const goldenParity = "run the behavioral mimicry A/B parity gate (MIMC-03, the n
 	"\n" +
 	"      --cache-pin string        corpus cache_control placement pin fixture (14-02 JSONL; empty = " +
 	"skip the placement check) (default " +
-	"\"<TMP>/internal/profile/testdata/context-behavior/cache-control.jsonl\")" +
+	"\"<TMP>/kit/profile/testdata/context-behavior/cache-control.jsonl\")" +
 	"\n" +
 	"      --from-rollout string     generate the suite from a zcode rollout JSONL (same-session = " +
 	"matching system prompt + tools)" +

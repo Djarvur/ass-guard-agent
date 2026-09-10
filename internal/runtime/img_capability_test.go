@@ -18,11 +18,11 @@ import (
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
-	"github.com/Djarvur/ass-guard-agent/internal/event"
-	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
+	"github.com/Djarvur/ass-guard-agent/kit/event"
+	"github.com/Djarvur/ass-guard-agent/kit/profile"
 )
 
 // 21-05 Task 2 battery (PAR-06/D-11): provider-capability validation end to
@@ -459,8 +459,8 @@ func TestImageCapability_ImageOnlyDropKeepsNonEmptyBody(t *testing.T) { //nolint
 
 	// Image-ONLY prompt: no text block accompanies the payload.
 	prompt := []acp.ContentBlock{{
-		Type: blockImage,
-		Data: base64.StdEncoding.EncodeToString(encodePNG(t, 8, 8)),
+		Type:     blockImage,
+		Data:     base64.StdEncoding.EncodeToString(encodePNG(t, 8, 8)),
 		MimeType: imgPNGMedia,
 	}}
 

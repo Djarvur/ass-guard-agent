@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/audit"
-	"github.com/Djarvur/ass-guard-agent/internal/event"
-	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
+	"github.com/Djarvur/ass-guard-agent/kit/event"
+	"github.com/Djarvur/ass-guard-agent/kit/profile"
 )
 
 // TestAudit_IntegrationViaProviderCapturer proves the end-to-end LOG-01 flow:
@@ -36,7 +36,7 @@ func TestAudit_IntegrationViaProviderCapturer(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	root, _ := filepath.Abs(filepath.Join("..", "profile", "testdata"))
+	root, _ := filepath.Abs(filepath.Join("..", "..", "kit", "profile", "testdata"))
 
 	prof, err := profile.NewLoader(root).Load("minimal")
 	if err != nil {

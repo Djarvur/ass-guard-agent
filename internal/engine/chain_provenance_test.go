@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/internal/engine"
-	"github.com/Djarvur/ass-guard-agent/internal/event"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
+	"github.com/Djarvur/ass-guard-agent/kit/event"
 )
 
 // Hybrid provenance chaining (the findings-6 disposition, 2026-08-15): the

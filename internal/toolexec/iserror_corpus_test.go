@@ -37,8 +37,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
+	"github.com/Djarvur/ass-guard-agent/kit/profile"
 )
 
 // --- 1. the is_error corpus scan ---

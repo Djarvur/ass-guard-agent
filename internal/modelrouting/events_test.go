@@ -5,8 +5,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/Djarvur/ass-guard-agent/internal/event"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
+	"github.com/Djarvur/ass-guard-agent/kit/event"
 )
 
 // TestProviderFallbackKind asserts the discriminator string.

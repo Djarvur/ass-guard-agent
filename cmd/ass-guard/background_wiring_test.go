@@ -10,9 +10,9 @@ import (
 
 	"github.com/Djarvur/ass-guard-agent/internal/coreexec"
 	"github.com/Djarvur/ass-guard-agent/internal/defaults"
-	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/sched"
 	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
+	"github.com/Djarvur/ass-guard-agent/kit/profile"
 )
 
 // The 12-06 Task 2 wiring-level battery: TaskStop semantics, close-reaps-all,

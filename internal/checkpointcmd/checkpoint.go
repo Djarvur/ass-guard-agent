@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/checkpoint"
+	"github.com/Djarvur/ass-guard-agent/kit/checkpoint"
 )
 
 // checkpointNoEntriesNote is the empty-store list note (exit 0).

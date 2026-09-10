@@ -9,9 +9,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
+	"github.com/Djarvur/ass-guard-agent/kit/profile"
 )
 
 // ResolvedCredential is the outcome of the D-05 precedence resolution.

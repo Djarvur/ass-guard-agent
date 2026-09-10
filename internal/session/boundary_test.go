@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/event"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
+	"github.com/Djarvur/ass-guard-agent/kit/event"
 )
 
 // newTestSessionWithCatalog returns a Session with a real toolcat.Catalog so

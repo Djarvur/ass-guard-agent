@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/Djarvur/ass-guard-agent/internal/event"
+	"github.com/Djarvur/ass-guard-agent/kit/event"
 )
 
 // NewBreakersMap builds one CircuitBreaker per distinct (provider, model)

@@ -16,10 +16,10 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
-	"github.com/Djarvur/ass-guard-agent/internal/checkpoint"
 	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
+	"github.com/Djarvur/ass-guard-agent/kit/checkpoint"
 )
 
 // 20-01 (CMDS-01): the slash-command resolver chain. One immutable view over
