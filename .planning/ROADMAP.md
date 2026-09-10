@@ -412,12 +412,12 @@ Plans:
   3. Nightly CI runs the upstream-parity gate unattended on a schedule and reports drift (zcode version or structure changes) without human triggering.
   4. Plugins/skills installed for Claude Code work unchanged in EVERY interaction mode — not just loaded at discovery but functional end-to-end wherever they apply.
 
-**Plans**: 5 plans
+**Plans**: 1/5 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 24-01-PLAN.md — TAIL-01 core: outcome store + seam-replay aggregation (TDD, D-07 contract)
+- [x] 24-01-PLAN.md — TAIL-01 core: outcome store + seam-replay aggregation (TDD, D-07 contract)
 - [ ] 24-03-PLAN.md — DOC-01: docs/lsp-setup.md three-leg Zed guide + D-03 dry-run (checkpoint: A1 server choice)
 - [ ] 24-04-PLAN.md — TAIL-02: nightly drift core + first GitHub Actions workflow + dispatch smoke
 
@@ -508,7 +508,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 | 21. Context & Policy Parity Closures | v1.2 | 6/6 | Complete    | 2026-09-06 |
 | 22. Background Execution + Sandbox Reality | v1.2 | 9/9 | In Progress|  |
 | 23. SEED Gaps Close-out | v1.2 | 6/6 | In Progress|  |
-| 24. Documentation & Ops Tails | v1.2 | 0/? | Not started | - |
+| 24. Documentation & Ops Tails | v1.2 | 1/5 | In Progress|  |
 | 25. SEED-001 Kit Extraction | v1.2 | 0/? | Not started | - |
 
 ## Backlog

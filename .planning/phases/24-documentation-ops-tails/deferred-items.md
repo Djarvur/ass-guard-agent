@@ -1,0 +1,13 @@
+# Deferred Items — Phase 24
+
+## Deferred Items
+
+- TestEscalation_ReapAllUsesLadder (internal/coreexec/background_test.go:639) flakes under full-suite parallel load
+  status: open
+  **What:** observed failing once in a full `go test -race ./...` run (24-01), passing 5/5 in isolation in both the 24-01 tree and the pre-plan base commit (59952f8), and passing in the base full-suite run — a PTY TERM-delivery timing flake, not a regression (coreexec does not import modelrouting).
+- gocritic hugeParam on internal/modelrouting/factory.go:45 and :72 (pre-existing baseline)
+  status: open
+  **What:** surfaced once the golangci 2.13 baseline repair (24-01, ce424ea) made the package lint runnable; factory.go is untouched by 24-01 and the findings predate it — fix belongs to the next plan touching factory.go.
+- Repo-wide golangci-lint 2.13.2 still reports ~572 findings on pre-Phase-24 files after the 24-01 baseline repair
+  status: open
+  **What:** residual new-linter-version findings (runtime.go, config_surface.go, coreexec tests, ...) — the 24-01 repair only restored the config's INTENDED exclusion/disable set; per-file cleanup is ongoing baseline work owned by whichever plan next touches each file.

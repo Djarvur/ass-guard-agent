@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 14
+open_count: 15
 waived_count: 0
 fixed_count: 10
-total_count: 24
-last_updated: 2026-09-10T13:17:53.931Z
+total_count: 25
+last_updated: 2026-09-10T14:23:58.009Z
 ---
 
 # Broken Windows Ledger
@@ -39,6 +39,7 @@ last_updated: 2026-09-10T13:17:53.931Z
 | 22 | 22 | unrun-verify | internal/acpserve |  | TestPermissionsE2E (acpserve) skipped under -race in 22-06's phase-quick verify — pre-existing cross-workstream regression from Phase 23 commit 40b2bbc (STATE.md blocker, operator-bisected); passes at 721c7bc | open |  | 2026-09-10T01:06:35.602Z |  |
 | 23 | 23 | unmet-truth | .planning/phases/23-seed-gaps-close-out/23-05-SUMMARY.md |  | PENDING-OPERATOR-CONFIRMATION: live-Zed operator UAT of the phase's two interactive surfaces (23-01/23-02 boundary steering mid-turn + 23-05 /undo incl. the auto-cancel-then-restore path against a running turn) not yet executed — plan 23-05 Task 3 checkpoint; offline batteries prove the core (steering boundary delivery, undo walk/cancel ordering), the Zed-client behavior leg (RESEARCH A2 note: Zed may queue mid-turn prompts client-side) awaits the operator and documents client behavior for TG-02 planning | open |  | 2026-09-10T11:43:49.324Z |  |
 | 24 | 23 | unmet-truth | .planning/phases/23-seed-gaps-close-out/23-06-SUMMARY.md |  | PENDING-OPERATOR-CONFIRMATION: two-live-Zed-session UAT of the cross-session restore guard (23-VERIFICATION.md Human Verification #2) — /undo from an idle session while another session's turn runs must refuse naming the busy session; the offline battery (TestUndoCrossSessionRefusal + TestUndoActivePathCrossSessionRefusal) is the gap G-23-1 witness; rides the phase ledger beside #23 per the 23-05 precedent | open |  | 2026-09-10T13:17:53.931Z |  |
+| 25 | 24 | unrun-verify | .planning/phases/24-documentation-ops-tails/24-01-SUMMARY.md |  | mise ci could not run literally (mise binary absent on host); legs run directly — vet/build green, modelrouting tests green, lint clean on 24-01 files, repo-wide lint/test carry documented pre-existing baseline (24-01-SUMMARY Deviations #4) | open |  | 2026-09-10T14:23:58.009Z |  |
 
 ````json
 [
@@ -328,6 +329,18 @@ last_updated: 2026-09-10T13:17:53.931Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-10T13:17:53.931Z",
+    "resolved_at": null
+  },
+  {
+    "id": 25,
+    "kind": "unrun-verify",
+    "phase": "24",
+    "file": ".planning/phases/24-documentation-ops-tails/24-01-SUMMARY.md",
+    "line": null,
+    "description": "mise ci could not run literally (mise binary absent on host); legs run directly — vet/build green, modelrouting tests green, lint clean on 24-01 files, repo-wide lint/test carry documented pre-existing baseline (24-01-SUMMARY Deviations #4)",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T14:23:58.009Z",
     "resolved_at": null
   }
 ]

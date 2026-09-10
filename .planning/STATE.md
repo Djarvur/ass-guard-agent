@@ -1,22 +1,22 @@
 ---
-gsd_state_version: "1.0"
+gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Claude Code Parity
-current_phase: 23
-current_phase_name: SEED Gaps Close-out
-current_plan: 4
+current_phase: 24
+current_phase_name: Documentation & Ops Tails
+current_plan: 2
 status: executing
-stopped_at: Completed 23-06-PLAN.md (G-23-1 gap closure — workspace-scoped restore guard)
-last_updated: "2026-09-10T13:19:43.443Z"
+stopped_at: "Completed 24-01-PLAN.md (TAIL-01 core: outcome store + seam replay)"
+last_updated: "2026-09-10T14:23:31.630Z"
 last_activity: 2026-09-10
-last_activity_desc: Phase 23 execution started
-state_head: 0c17c02c064212528ddf2fd5df1d3cd1cc65241b
+last_activity_desc: Phase 24 execution started
+state_head: ce424eae184783d4e5efaa29d7e8c59ad02d9b3e
 progress:
   total_phases: 11
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 77
-  completed_plans: 63
-  percent: 55
+  completed_plans: 64
+  percent: 64
 ---
 
 # State: ass-guard-agent (working name)
@@ -25,18 +25,18 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-09-10)
 **Core value:** A hands-off coding agent that feels native in the editor: full SDD workflows run end-to-end without manual continues, and the agent surfaces through the client's own UX — clickable permission prompts, native file diffs, session management. (Pivoted 2026-08-25 from the mimicry bar.)
-**Current focus:** Phase 23 — SEED Gaps Close-out
+**Current focus:** Phase 24 — Documentation & Ops Tails
 
 ## Current Position
 
-Phase: 23 (SEED Gaps Close-out) — EXECUTING
-Plan: 4 of 5
-Current Plan: 4
+Phase: 24 (Documentation & Ops Tails) — EXECUTING
+Plan: 2 of 5
+Current Plan: 2
 Total Plans in Phase: 5
 Status: Ready to execute
-Last activity: 2026-09-10 — Phase 23 execution started
+Last activity: 2026-09-10 — Phase 24 execution started
 
-Progress: [███████████████░░░░░░] 55/73 plans ([██████░░░░] 55%)
+Progress: [███████████████░░░░░░] 55/73 plans ([██████░░░░] 64%)
 
 ## Performance Metrics
 
@@ -108,6 +108,7 @@ Phase 19: 7/7 ✓ closed 2026-09-10 (verification completed by the auto-UAT live
 | Phase 22 P09 | 22 min | 2 tasks | 8 files |
 | Phase 23 P05 | 34 min | 3 tasks | 3 files |
 | Phase 23 P06 | 18 min | 2 tasks | 3 files |
+| Phase 24 P01 | 37 min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -215,6 +216,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 23]: 23-06 (G-23-1/CR-01): the idle /undo half consults the SELF-EXCLUDING workspaceBlockers walk, never the full restoreBlockers guard — Run marks the calling session's own turnActive before the class-B intercept, so the full guard would refuse every idle /undo (checker-verified design)
 - [Phase 23]: 23-06: cross-session-before-own ordering + the refusal OUTRANKS the D-12 auto-cancel for both own-state variants (parked chain, own client turn) — nothing cancelled, nothing minted; the discriminator (restoreBlockedError.other) keeps the own-state path byte-stable
 - [Phase 23]: 23-06: the workspace consult precedes SnapshotPreRestore on BOTH /undo halves — a pre-restore snapshot minted under a busy workspace is a torn D-11 walk target (shared tree committed mid-write under the other session's turn)
+- [Phase 24]: Compiling-RED (stubs + failing suite) over fail-to-compile RED for 24-01 — tdd_mode #3770 requires target_test_failed — The gate must authorize GREEN on an intentional assertion failure; the plan pre-authorized the stub route
+- [Phase 24]: golangci 2.13 baseline repaired per STATE prescription (exhaustruct_v5 exclusion + wsl_v5/gomodguard_v2/noinlineerr/modernize disables) — 24-01 files lint-clean under the only Go-1.27-runnable linter — 2.12.x panics under Go 1.27.1; without the repair the lint gate is unrunnable (STATE LINT BASELINE blocker)
 
 ### Pending Todos
 
@@ -240,6 +243,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-10T13:19:42.068Z
-Stopped at: Completed 23-06-PLAN.md (G-23-1 gap closure — workspace-scoped restore guard)
+Last session: 2026-09-10T14:23:15.632Z
+Stopped at: Completed 24-01-PLAN.md (TAIL-01 core: outcome store + seam replay)
 Resume file: None
