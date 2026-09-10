@@ -15,11 +15,11 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Djarvur/ass-guard-agent/internal/engine"
 	"github.com/Djarvur/ass-guard-agent/internal/learning"
-	"github.com/Djarvur/ass-guard-agent/internal/session"
+	"github.com/Djarvur/ass-guard-agent/kit/engine"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
 	"github.com/Djarvur/ass-guard-agent/kit/hookdag"
+	"github.com/Djarvur/ass-guard-agent/kit/session"
 )
 
 // BridgeConfig is the mirror-config seam (D-14): the runner members the

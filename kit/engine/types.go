@@ -1,7 +1,7 @@
 package engine
 
 import (
-	"github.com/Djarvur/ass-guard-agent/internal/session"
+	"github.com/Djarvur/ass-guard-agent/kit/session"
 )
 
 // PatternTable is the dual-signal source the engine consults (D-02). The

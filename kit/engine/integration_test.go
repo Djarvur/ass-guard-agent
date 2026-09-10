@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/Djarvur/ass-guard-agent/internal/engine"
-	"github.com/Djarvur/ass-guard-agent/internal/session"
+	"github.com/Djarvur/ass-guard-agent/kit/engine"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
 	"github.com/Djarvur/ass-guard-agent/kit/redact"
+	"github.com/Djarvur/ass-guard-agent/kit/session"
 )
 
 // testRedactor adapts internal/redact to session.Redactor for the integration

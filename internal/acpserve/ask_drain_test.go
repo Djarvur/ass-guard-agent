@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
-	"github.com/Djarvur/ass-guard-agent/internal/session"
+	"github.com/Djarvur/ass-guard-agent/kit/session"
 )
 
 // The 17-03 D-13 drain battery at the composition level: the session ask

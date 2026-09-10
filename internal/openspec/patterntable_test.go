@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Djarvur/ass-guard-agent/internal/engine"
 	"github.com/Djarvur/ass-guard-agent/internal/openspec"
+	"github.com/Djarvur/ass-guard-agent/kit/engine"
 )
 
 // nextApplyCmd is the chaining fixture's next command (goconst).

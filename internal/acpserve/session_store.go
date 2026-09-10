@@ -14,7 +14,7 @@ import (
 	"fmt"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
-	"github.com/Djarvur/ass-guard-agent/internal/session"
+	"github.com/Djarvur/ass-guard-agent/kit/session"
 )
 
 // sessionStoreAdapter adapts session.ListSessions + session.Tombstone to the

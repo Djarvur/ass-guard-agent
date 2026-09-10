@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Djarvur/ass-guard-agent/internal/engine"
+	"github.com/Djarvur/ass-guard-agent/kit/engine"
 )
 
 // TestDecide_PlanModeProvenanceOnly (12-04 T1 Test 3): a turn that ended with

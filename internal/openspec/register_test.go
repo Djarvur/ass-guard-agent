@@ -3,8 +3,8 @@ package openspec_test
 import (
 	"testing"
 
-	"github.com/Djarvur/ass-guard-agent/internal/engine"
 	"github.com/Djarvur/ass-guard-agent/internal/openspec"
+	"github.com/Djarvur/ass-guard-agent/kit/engine"
 	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
 )
 

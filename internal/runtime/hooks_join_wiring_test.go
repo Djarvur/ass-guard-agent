@@ -11,9 +11,9 @@ import (
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
-	"github.com/Djarvur/ass-guard-agent/internal/session"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
 	"github.com/Djarvur/ass-guard-agent/kit/provider"
+	"github.com/Djarvur/ass-guard-agent/kit/session"
 )
 
 // 21-06 join wiring tests: hooks PreToolUse verdicts join Phase 17's ONE

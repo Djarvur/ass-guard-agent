@@ -18,8 +18,8 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
-	"github.com/Djarvur/ass-guard-agent/internal/session"
 	"github.com/Djarvur/ass-guard-agent/kit/modelrouting"
+	"github.com/Djarvur/ass-guard-agent/kit/session"
 )
 
 // The 16-05 ConfigSurface tests (ACP-08 implementation half): menu from real

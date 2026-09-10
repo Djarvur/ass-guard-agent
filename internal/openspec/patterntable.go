@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"regexp"
 
-	"github.com/Djarvur/ass-guard-agent/internal/engine"
+	"github.com/Djarvur/ass-guard-agent/kit/engine"
 )
 
 var errFromconfigRequiresA = errors.New("openspec: FromConfig requires a non-nil config")

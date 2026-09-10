@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"runtime/debug"
 
-	"github.com/Djarvur/ass-guard-agent/internal/session"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
+	"github.com/Djarvur/ass-guard-agent/kit/session"
 )
 
 // TurnRunner is the seam the engine wraps (the Session Core turn). The engine

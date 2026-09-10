@@ -11,7 +11,7 @@ import (
 
 	"github.com/Djarvur/ass-guard-agent/internal/evalharness"
 	"github.com/Djarvur/ass-guard-agent/internal/evalsuite"
-	"github.com/Djarvur/ass-guard-agent/internal/session"
+	"github.com/Djarvur/ass-guard-agent/kit/session"
 )
 
 // fakeTB records the loud-skip calls (never a silent pass — T-12-08-02).

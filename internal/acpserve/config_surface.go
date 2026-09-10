@@ -39,8 +39,8 @@ import (
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/providerfactory"
-	"github.com/Djarvur/ass-guard-agent/internal/session"
 	"github.com/Djarvur/ass-guard-agent/kit/modelrouting"
+	"github.com/Djarvur/ass-guard-agent/kit/session"
 )
 
 // Menu vocabulary (D-06 enumeration + A7 scope namespace + v1 categories).

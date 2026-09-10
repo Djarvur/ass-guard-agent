@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Djarvur/ass-guard-agent/internal/engine"
-	"github.com/Djarvur/ass-guard-agent/internal/session"
+	"github.com/Djarvur/ass-guard-agent/kit/engine"
+	"github.com/Djarvur/ass-guard-agent/kit/session"
 )
 
 // TestClassifyQuestionEnding_ChoiceClass (13-03 T1 Test 1, RED first): the

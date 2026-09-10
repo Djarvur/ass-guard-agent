@@ -20,7 +20,7 @@ import (
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
-	"github.com/Djarvur/ass-guard-agent/internal/session"
+	"github.com/Djarvur/ass-guard-agent/kit/session"
 )
 
 // 21-05 (PAR-06/D-09) image-ingress battery: ValidateAndScaleImage's six

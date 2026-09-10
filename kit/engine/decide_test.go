@@ -6,7 +6,7 @@ import (
 	"testing"
 	"testing/quick"
 
-	"github.com/Djarvur/ass-guard-agent/internal/engine"
+	"github.com/Djarvur/ass-guard-agent/kit/engine"
 )
 
 // fakeTable is a tiny in-memory PatternTable for the unit tests: it matches

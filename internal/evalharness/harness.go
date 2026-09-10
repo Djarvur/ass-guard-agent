@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/session"
+	"github.com/Djarvur/ass-guard-agent/kit/session"
 )
 
 // Env gates (the standing house pattern — loud skip, never silent):

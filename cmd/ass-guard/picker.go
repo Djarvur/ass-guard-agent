@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/session"
+	"github.com/Djarvur/ass-guard-agent/kit/session"
 )
 
 // Picker bounds (D-11 + T-18-14: the DoS guard — an endless stdin of garbage
