@@ -86,18 +86,18 @@ func newOutcomeSession(
 	prof.Model = "GLM-5.3"
 
 	s := &Session{
-		Manager:     m,
-		Projector:   NewProjector(prof, m),
-		Provider:    prov,
-		Bus:         event.NewBus(),
-		Semaphore:   provider.NewSemaphore(4),
-		Profile:     *prof,
-		WorkDir:     root,
-		SessionID:   "sess-out",
-		Outcomes:    store,
+		Manager:      m,
+		Projector:    NewProjector(prof, m),
+		Provider:     prov,
+		Bus:          event.NewBus(),
+		Semaphore:    provider.NewSemaphore(4),
+		Profile:      *prof,
+		WorkDir:      root,
+		SessionID:    "sess-out",
+		Outcomes:     store,
 		ProviderName: "anthropic",
-		SessionTier: "heavy",
-		outcomeNow:  clock,
+		SessionTier:  "heavy",
+		outcomeNow:   clock,
 	}
 
 	return s, store

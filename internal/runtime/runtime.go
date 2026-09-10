@@ -3148,7 +3148,7 @@ func resolveSubagentModel(
 		return ""
 	}
 
-	primary, _, err := modelrouting.NewResolver(cfg).Resolve(tierLight, "", now, modelrouting.CapabilityReq{})
+	primary, fallbacks, err := modelrouting.NewResolver(cfg).Resolve(tierLight, "", now, modelrouting.CapabilityReq{})
 	if err != nil {
 		return "" // no tiers.light binding — the documented default
 	}
@@ -3160,6 +3160,30 @@ func resolveSubagentModel(
 				"routing is routed post-adoption)\n", primary.Provider, sessionProvider)
 
 		return ""
+	}
+
+	// 24-02 (TAIL-01, D-06): the REPLAYED breakers demote a denied light-tier
+	// primary to the first allowed fallback — riding the EXISTING Breaker seam
+	// over the chain Resolve already returned (no new tier-preference layer).
+	// Empty map: the demotion never fires. Every candidate denied: the primary
+	// stays (a resolution never fails over evidence), with one loud note.
+	if len(breakers) > 0 {
+		chain := append([]modelrouting.Target{primary}, fallbacks...)
+
+		pick, demoted := modelrouting.FirstAllowed(chain, breakers, now)
+		if demoted && pick.Model != "" {
+			_, _ = fmt.Fprintf(stderr,
+				"ass-guard: tiers.light primary %s/%s is breaker-open (replayed outcomes) — subagent falls to %s/%s\n",
+				primary.Provider, primary.Model, pick.Provider, pick.Model)
+
+			return pick.Model
+		}
+
+		if pick.Model == "" {
+			_, _ = fmt.Fprintf(stderr,
+				"ass-guard: tiers.light primary %s/%s is breaker-open with no allowed fallback (replayed outcomes) — keeping the primary\n",
+				primary.Provider, primary.Model)
+		}
 	}
 
 	return primary.Model
@@ -3719,7 +3743,34 @@ func (r *Runner) effectiveCompaction() compactionState {
 // nil map (no demotion — resolution stays byte-identical); a read failure
 // degrades to nil with ONE loud note (evidence-less, never a failure).
 func (r *Runner) outcomeBreakersFor() map[modelrouting.ProviderModelKey]modelrouting.Breaker {
-	return nil
+	r.outcomeBreakersMu.Lock()
+	defer r.outcomeBreakersMu.Unlock()
+
+	if r.outcomeBreakersLoaded {
+		return r.outcomeBreakers
+	}
+
+	r.outcomeBreakersLoaded = true
+
+	if r.schedCfg == nil {
+		return nil // test runners: no scheduling config was ever loaded
+	}
+
+	records, _, err := modelrouting.ReadOutcomes(modelrouting.OutcomeStorePath(r.workDir))
+	if err != nil {
+		_, _ = fmt.Fprintf(r.stderrOrDefault(),
+			"ass-guard: outcome store unreadable (subagent routing runs without replayed evidence): %v\n", err)
+
+		return nil
+	}
+
+	if len(records) == 0 {
+		return nil // no store yet — the documented empty-evidence state
+	}
+
+	r.outcomeBreakers = modelrouting.ReplayBreakers(records, r.schedCfg.CircuitBreaker, nil)
+
+	return r.outcomeBreakers
 }
 
 // compactionContextLimit resolves the D-01 discretion item: the context window

@@ -737,11 +737,13 @@ func (s *ConfigSurface) globalOnlyResolvedLocked() (*resolvedConfig, error) {
 
 // resolveModelLocked resolves one tier's model through the resolver (the
 // time-window substitution lives inside modelrouting), falling back to the
-// tier's static binding when the resolver declines.
+// tier's static binding when the resolver declines. 24-02 (TAIL-01): a
+// successful resolve then walks the demotion check over the replayed outcome
+// breakers — a breaker-denied primary yields the first allowed fallback.
 func (s *ConfigSurface) resolveModelLocked(cfg *modelrouting.Config, tier string) string {
-	tgt, _, rerr := modelrouting.NewResolver(cfg).Resolve(tier, "", time.Now(), modelrouting.CapabilityReq{})
+	tgt, fallbacks, rerr := modelrouting.NewResolver(cfg).Resolve(tier, "", time.Now(), modelrouting.CapabilityReq{})
 	if rerr == nil && tgt.Model != "" {
-		return tgt.Model
+		return s.demoteIfDeniedLocked(tier, tgt, fallbacks)
 	}
 
 	if b, ok := cfg.Tiers[tier]; ok {
@@ -749,6 +751,43 @@ func (s *ConfigSurface) resolveModelLocked(cfg *modelrouting.Config, tier string
 	}
 
 	return ""
+}
+
+// demoteIfDeniedLocked applies the replayed outcome breakers to one resolved
+// chain (24-02, TAIL-01 / D-06 — feedback observable as CHANGED ROUTING
+// DECISIONS): an empty breaker map is zero-change (byte-identical resolution).
+// When the PRIMARY's breaker denies now, the chain (primary + fallbacks, the
+// chain Resolve already returned — no new tier-preference layer) walks through
+// modelrouting.FirstAllowed and the first allowed candidate's model returns,
+// with exactly ONE loud stderr note naming the demoted (provider, model) and
+// the replacement. When EVERY candidate is denied the primary keeps its
+// resolved model (a resolution never fails over evidence) — also with one
+// note, so the open chain head is never silent.
+func (s *ConfigSurface) demoteIfDeniedLocked(
+	tier string, primary modelrouting.Target, fallbacks []modelrouting.Target,
+) string {
+	if len(s.outcomeBreakers) == 0 {
+		return primary.Model // no evidence — byte-identical resolution
+	}
+
+	chain := append([]modelrouting.Target{primary}, fallbacks...)
+
+	pick, demoted := modelrouting.FirstAllowed(chain, s.outcomeBreakers, time.Now())
+	if demoted && pick.Model != "" {
+		_, _ = fmt.Fprintf(s.stderr,
+			"ass-guard: tier %q primary %s/%s is breaker-open (replayed outcomes) — resolving to fallback %s/%s\n",
+			tier, primary.Provider, primary.Model, pick.Provider, pick.Model)
+
+		return pick.Model
+	}
+
+	if pick.Model == "" {
+		_, _ = fmt.Fprintf(s.stderr,
+			"ass-guard: tier %q primary %s/%s is breaker-open with no allowed fallback (replayed outcomes) — keeping the primary\n",
+			tier, primary.Provider, primary.Model)
+	}
+
+	return primary.Model
 }
 
 // blobOrDefaultLocked returns the initialize _meta blob fill for a bare id

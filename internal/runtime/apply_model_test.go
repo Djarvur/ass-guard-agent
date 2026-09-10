@@ -454,9 +454,11 @@ func lightTierTestConfig(t *testing.T) *modelrouting.Config {
 // seedLightTierBreakers seeds an outcome store with enough consecutive
 // transients to OPEN the named models' replayed breakers (the floor's
 // thresholds), then replays it — the same ReadOutcomes+ReplayBreakers the
-// Runner's lazy load performs.
+// Runner's lazy load performs. Records are stamped within the cooldown window
+// of resolveAt (a breaker denies only while its cooldown has NOT elapsed since
+// the last transient — older stamps would admit the half-open probe).
 func seedLightTierBreakers(
-	t *testing.T, cfg *modelrouting.Config, models ...string,
+	t *testing.T, cfg *modelrouting.Config, resolveAt time.Time, models ...string,
 ) map[modelrouting.ProviderModelKey]modelrouting.Breaker {
 	t.Helper()
 
@@ -465,7 +467,7 @@ func seedLightTierBreakers(
 		t.Fatalf("NewOutcomeStore: %v", err)
 	}
 
-	base := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	base := resolveAt.Add(-time.Duration(cfg.CircuitBreaker.ConsecutiveFailures+2) * time.Second)
 	n := cfg.CircuitBreaker.ConsecutiveFailures
 
 	for _, model := range models {
@@ -505,7 +507,7 @@ func TestResolveSubagentModelBreakerDemotion(t *testing.T) {
 	t.Run("open primary demotes to the first allowed fallback", func(t *testing.T) {
 		t.Parallel()
 
-		breakers := seedLightTierBreakers(t, cfg, "light-primary")
+		breakers := seedLightTierBreakers(t, cfg, now, "light-primary")
 		var stderr strings.Builder
 
 		got := resolveSubagentModel(cfg, "anthropic", breakers, now, &stderr)
@@ -536,7 +538,7 @@ func TestResolveSubagentModelBreakerDemotion(t *testing.T) {
 	t.Run("all candidates denied keeps the primary", func(t *testing.T) {
 		t.Parallel()
 
-		breakers := seedLightTierBreakers(t, cfg, "light-primary", "light-fallback")
+		breakers := seedLightTierBreakers(t, cfg, now, "light-primary", "light-fallback")
 		var stderr strings.Builder
 
 		got := resolveSubagentModel(cfg, "anthropic", breakers, now, &stderr)

@@ -34,7 +34,10 @@ func outcomeDemotionBreakers(t *testing.T, model string) map[modelrouting.Provid
 		t.Fatalf("Load floor: %v", err)
 	}
 
-	base := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	// Seed with RECENT timestamps: the surface resolves at time.Now(), and a
+	// breaker only denies while its cooldown has NOT elapsed since the last
+	// transient — records stamped minutes ago would admit the half-open probe.
+	base := time.Now().UTC().Add(-time.Duration(cfg.CircuitBreaker.ConsecutiveFailures+2) * time.Second)
 
 	for i := range cfg.CircuitBreaker.ConsecutiveFailures {
 		aerr := store.Append(modelrouting.DispatchOutcome{

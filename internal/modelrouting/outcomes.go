@@ -66,6 +66,14 @@ const (
 // or internal/ecosys for a two-line constant.
 const outcomeSelfGitignore = "*\n!.gitignore\n"
 
+// OutcomeStorePath returns the store file path under root's
+// .ass-guard/routing (the NewOutcomeStore convention) WITHOUT creating
+// anything — the read-side companion for compositions replaying evidence at
+// startup (24-02).
+func OutcomeStorePath(root string) string {
+	return filepath.Join(root, outcomeStoreDir, outcomeRoutingDir, outcomeStoreFile)
+}
+
 // OutcomeStore is the append-only JSONL outcome store at
 // root/.ass-guard/routing/outcomes.jsonl (D-05: no SQLite, no rewritten
 // aggregate file — aggregation happens in memory at read time). One record per

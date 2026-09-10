@@ -22,6 +22,7 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/checkpoint"
 	"github.com/Djarvur/ass-guard-agent/internal/event"
 	"github.com/Djarvur/ass-guard-agent/internal/firstrun"
+	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
 	"github.com/Djarvur/ass-guard-agent/internal/profile"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 	"github.com/Djarvur/ass-guard-agent/internal/providerfactory"
@@ -31,6 +32,35 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/session"
 	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 )
+
+// replayOutcomeBreakers loads the work dir's outcome store and replays it
+// through modelrouting.ReplayBreakers with the loaded config's breaker
+// thresholds (24-02, TAIL-01) — the durable evidence re-entering routing
+// through the EXISTING Breaker seam (D-06). A missing store file or an empty
+// store yields a nil map (zero behavior change — no note: absence is the
+// normal pre-evidence state). A read failure yields a nil map + ONE loud note
+// (the serve proceeds evidence-less, never a refusal).
+func replayOutcomeBreakers(
+	schedCfg *modelrouting.Config, workDir string, stderr io.Writer,
+) map[modelrouting.ProviderModelKey]modelrouting.Breaker {
+	if schedCfg == nil {
+		return nil
+	}
+
+	records, _, err := modelrouting.ReadOutcomes(modelrouting.OutcomeStorePath(workDir))
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr,
+			"ass-guard: outcome store unreadable (config resolution runs without replayed evidence): %v\n", err)
+
+		return nil
+	}
+
+	if len(records) == 0 {
+		return nil
+	}
+
+	return modelrouting.ReplayBreakers(records, schedCfg.CircuitBreaker, nil)
+}
 
 // startAuditMirror (09-06, AUD-02/D-02): the per-session mirror, DEFAULT ON;
 // the --audit-log override reroutes it ("-" → stderr; a path → single file).
@@ -274,6 +304,14 @@ func Run( //nolint:funlen // :320-425
 	// to the runner and its out-of-band notification to the server.
 	surface := NewConfigSurface(
 		globalPath, providerfactory.ProjectConfigPath(opts.WorkDir), providerName, stderr)
+
+	// 24-02 (TAIL-01, D-06): replay the work dir's durable outcome store
+	// through the EXISTING breaker seam and hand the map to the surface —
+	// seeded evidence bends the advertised/effective model resolution. An
+	// absent store file is the empty map (zero behavior change); a read
+	// failure degrades loudly with no breakers wired (evidence-less, never a
+	// serve refusal).
+	surface.SetOutcomeBreakers(replayOutcomeBreakers(schedCfg, opts.WorkDir, stderr))
 
 	// 23-04 (D-08): the session-start checkpoint GC sweep's bounds — the
 	// surface's effective read-back (persisted checkpoint: layer truth, else
