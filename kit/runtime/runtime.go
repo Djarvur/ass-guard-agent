@@ -452,6 +452,18 @@ func (c checkpointerAdapter) SnapshotTurn(
 	return c.store.Snapshot(ctx, sessionID, turnID) //nolint:wrapcheck // thin delegation
 }
 
+// learnedPortAdapter is the TEMPORARY Task-2 bridge (deleted in Task 3's
+// same-commit switchover): BridgeConfig.Learned is the enginebridge port
+// while the store still opens inside SetupEngine (the legacy path). Task 3
+// moves learning.Open to the app-side loader, which hands a port adapter in
+// directly — this type and the wrap at the BridgeConfig site die with it.
+type learnedPortAdapter struct{ store *learning.Store }
+
+func (a learnedPortAdapter) Lookup(situation string) (string, bool) {
+	e, ok := a.store.Lookup(situation)
+	return e.Answer, ok
+}
+
 // SetupEngine builds the Phase-4 engine wiring (Plan 04-05 D-01/D-13/D-15/D-21):
 // the shared catalog + OpenSpec tool registration + the openspec pattern table +
 // the loaded hook-DAG config + the learning store + the engine + its
@@ -1394,10 +1406,19 @@ func (r *Runner) runOneTurn(
 		Boundaries: enginebridge.NewHookSessionBoundaryOpener(sess.Manager),
 	}
 
+	// 25-05 Task 2 (temporary): the bridge consumes the LearnedStore port;
+	// the store still opens inside SetupEngine, so wrap it here. The wrap is
+	// nil-safe — no store means the port stays nil and Ask degrades to
+	// ErrAskPending exactly as before. Task 3's loader replaces this wrap.
+	learnedPort := enginebridge.LearnedStore(nil)
+	if r.learned != nil {
+		learnedPort = learnedPortAdapter{store: r.learned}
+	}
+
 	turnDispatcher := enginebridge.NewACPDispatcher(&enginebridge.BridgeConfig{
 		Hooks:         turnExec,
 		HookCfg:       r.hookCfg,
-		Learned:       r.learned,
+		Learned:       learnedPort,
 		Bus:           r.bus,
 		NextPromptFor: r.nextPromptFor,
 	})

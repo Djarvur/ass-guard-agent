@@ -15,12 +15,25 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Djarvur/ass-guard-agent/internal/learning"
 	"github.com/Djarvur/ass-guard-agent/kit/engine"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
 	"github.com/Djarvur/ass-guard-agent/kit/hookdag"
 	"github.com/Djarvur/ass-guard-agent/kit/session"
 )
+
+// LearnedStore is the engine's learning port (25-05 Task 2, D-12 minimal):
+// EXACTLY the one method the dispatcher's Ask consumes, in the (string,
+// bool) shape the call site uses — the app value type (learning.Entry)
+// never crosses the boundary. The behavioral store stays app-side
+// (KIT-03); a one-method adapter at the composition root bridges it,
+// forwarding the stored entry's Answer verbatim. A nil LearnedStore is the
+// documented degraded state: Ask returns engine.ErrAskPending (nothing
+// panics, nothing blocks — the engine surfaces the ask to the user).
+type LearnedStore interface {
+	// Lookup returns the stored answer for the situation and whether one
+	// was found (active or candidate — the store's own status rule).
+	Lookup(situation string) (answer string, found bool)
+}
 
 // BridgeConfig is the mirror-config seam (D-14): the runner members the
 // bridge adapters need, delivered as plain values + func values by the
@@ -32,7 +45,7 @@ type BridgeConfig struct {
 	// (setupEngine's products).
 	Hooks   *hookdag.Executor
 	HookCfg []hookdag.Hook
-	Learned *learning.Store
+	Learned LearnedStore
 	Bus     *event.Bus
 
 	// NextPromptFor answers "what does the engine inject when this pattern
@@ -343,7 +356,7 @@ func firstTextBlockIndex(blocks []session.ContentBlock) int {
 type ACPDispatcher struct {
 	hooks   *hookdag.Executor
 	hookCfg []hookdag.Hook
-	learned *learning.Store
+	learned LearnedStore
 	bus     *event.Bus
 
 	// nextPromptFor answers "what does the engine inject when this pattern
@@ -422,8 +435,8 @@ func (d *ACPDispatcher) Ask(_ context.Context, situation string) (string, error)
 		return "", engine.ErrAskPending
 	}
 
-	if e, ok := d.learned.Lookup(situation); ok {
-		return e.Answer, nil
+	if answer, ok := d.learned.Lookup(situation); ok {
+		return answer, nil
 	}
 
 	return "", engine.ErrAskPending
