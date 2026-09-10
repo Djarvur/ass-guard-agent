@@ -1225,7 +1225,7 @@ func TestBackgroundSandbox_DisableAndUnavailableNotes(t *testing.T) { //nolint:f
 //
 // Background-subagent task ids (exec_* minted by the tasks tracker) are
 // structurally unknown to the TaskRegistry; the two constructor seams let the
-// runtime address them WITHOUT a coreexec→internal/tasks import (the
+// runtime address them WITHOUT a dependency on the tasks package (the
 // CompletionHook precedent). The rows pin: the captured ack / not_ready /
 // ready envelope forms on handled ids, the declined and nil shapes (today's
 // structured unknown-task error, unchanged), and that registry-owned ids

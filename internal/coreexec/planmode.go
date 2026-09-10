@@ -111,6 +111,16 @@ type InteractiveConfig struct {
 	// project's sessions, unlike the per-session stores above; nil = the
 	// quartet returns the structured no-store error).
 	Schedule *sched.ScheduleStore
+	// TaskStopFallback/TaskOutputFallback are the 22-09 (G-22-5) seams: ids
+	// the TaskRegistry does not know (background-subagent exec_ ids live in
+	// the per-session tasks tracker) fall through to them — primitive args
+	// only, no dependency on the tasks package from this one (the
+	// CompletionHook precedent; the runtime binds tracker.CancelTask and the
+	// SubagentState + output-file closure). Nil = the fallthrough never
+	// fires: registry-unknown ids keep the structured unknown-task error
+	// (the pre-22-09 behavior).
+	TaskStopFallback   func(id string) bool
+	TaskOutputFallback func(id string) (output, state string, running, handled bool)
 }
 
 // RegisterInteractive sets Execute on the interactive-family catalog entries
@@ -128,12 +138,12 @@ func RegisterInteractive(catalog *toolcat.Catalog, cfg InteractiveConfig) {
 		exitPlanModeToolName:  ExitPlanModeExecute(cfg.PlanMode),
 		"SendMessage":         SendMessageExecute(cfg.Mailbox),
 		"ReadSessionContext":  ReadSessionContextExecute(cfg.Sessions),
-		"TaskOutput":          TaskOutputExecute(cfg.Tasks, nil),
+		"TaskOutput":          TaskOutputExecute(cfg.Tasks, cfg.TaskOutputFallback),
 		"CronCreate":          CronCreateExecute(cfg.Schedule),
 		"CronList":            CronListExecute(cfg.Schedule),
 		"CronUpdate":          CronUpdateExecute(cfg.Schedule),
 		"CronDelete":          CronDeleteExecute(cfg.Schedule),
-		"TaskStop":            TaskStopExecute(cfg.Tasks, nil),
+		"TaskStop":            TaskStopExecute(cfg.Tasks, cfg.TaskStopFallback),
 	}
 
 	for name, exec := range stubs {

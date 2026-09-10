@@ -700,7 +700,11 @@ type taskOutputArgs struct {
 // outputFallback seam claims the id (22-09, G-22-5: background-subagent ids
 // live in the per-session tasks tracker, structurally unknown to this
 // registry; the runtime binds the tracker through the seam — primitive args
-// only, no coreexec→internal/tasks import, the CompletionHook precedent).
+// only, no dependency on the tasks package, the CompletionHook precedent).
+// For fallback ids block/timeout are IGNORED: the CURRENT state renders
+// immediately (the tracker seam carries no bounded-wait machinery, and the
+// schema's promise is that the id is ADDRESSABLE — the pre-22-09 lie was
+// "unknown task").
 func TaskOutputExecute(
 	r *TaskRegistry,
 	outputFallback func(id string) (output, state string, running, handled bool),
@@ -719,33 +723,54 @@ func TaskOutputExecute(
 
 		output, state, running, oerr := r.Output(a.TaskID, a.Block, int(a.Timeout))
 		if oerr != nil {
-			return marshalStructured(oerr.Error(), oerr)
-		}
-
-		if running || state == bgQueued {
-			// D-11: a queued task reports the QUEUED state in the captured
-			// not_ready envelope (not running — nothing launched yet).
-			status := "running"
-			if state == bgQueued {
-				status = "queued"
+			// G-22-5: a registry-unknown id may be a background subagent's
+			// tracker id — the seam decides. Declined (nil or handled=false)
+			// keeps the structured unknown-task error unchanged; a handled id
+			// renders through the SAME envelope pair as the registry's own
+			// tasks (byte-identical by construction — renderTaskOutput).
+			if !errors.Is(oerr, errUnknownTask) || outputFallback == nil {
+				return marshalStructured(oerr.Error(), oerr)
 			}
 
-			notReady := "<retrieval_status>not_ready</retrieval_status>\n\n" +
-				"<task_id>" + a.TaskID + "</task_id>\n\n" +
-				"<task_type>local_bash</task_type>\n\n" +
-				"<status>" + status + "</status>"
+			fbOut, fbState, fbRunning, handled := outputFallback(a.TaskID)
+			if !handled {
+				return marshalStructured(oerr.Error(), oerr)
+			}
 
-			return json.Marshal(notReady)
+			output, state, running = fbOut, bgState(fbState), fbRunning
 		}
 
-		ready := "<retrieval_status>" + readyStatusFor(state) + "</retrieval_status>\n\n" +
-			"<task_id>" + a.TaskID + "</task_id>\n\n" +
-			"<task_type>local_bash</task_type>\n\n" +
-			"<status>" + string(state) + "</status>\n\n" +
-			"<output>\n" + output + "\n</output>"
-
-		return json.Marshal(ready)
+		return renderTaskOutput(a.TaskID, output, state, running)
 	}
+}
+
+// renderTaskOutput renders the ONE envelope pair for both id families — the
+// registry's own tasks and the G-22-5 fallback ids — so the fallback forms
+// are byte-identical to the registry's by construction (one form, never two).
+func renderTaskOutput(id, output string, state bgState, running bool) (json.RawMessage, error) {
+	if running || state == bgQueued {
+		// D-11: a queued task reports the QUEUED state in the captured
+		// not_ready envelope (not running — nothing launched yet).
+		status := "running"
+		if state == bgQueued {
+			status = "queued"
+		}
+
+		notReady := "<retrieval_status>not_ready</retrieval_status>\n\n" +
+			"<task_id>" + id + "</task_id>\n\n" +
+			"<task_type>local_bash</task_type>\n\n" +
+			"<status>" + status + "</status>"
+
+		return json.Marshal(notReady)
+	}
+
+	ready := "<retrieval_status>" + readyStatusFor(state) + "</retrieval_status>\n\n" +
+		"<task_id>" + id + "</task_id>\n\n" +
+		"<task_type>local_bash</task_type>\n\n" +
+		"<status>" + string(state) + "</status>\n\n" +
+		"<output>\n" + output + "\n</output>"
+
+	return json.Marshal(ready)
 }
 
 // readyStatusFor maps the terminal state onto the retrieval-status vocabulary
@@ -770,8 +795,8 @@ type taskStopArgs struct {
 // unknown ids (including the deprecated alias) error structurally — unless
 // the stopFallback seam claims the id (22-09, G-22-5: a registry-unknown id
 // may be a background subagent's tracker id; the runtime binds
-// tracker.CancelTask through the seam — primitive args only, no
-// coreexec→internal/tasks import, the CompletionHook precedent).
+// tracker.CancelTask through the seam — primitive args only, no dependency
+// on the tasks package, the CompletionHook precedent).
 func TaskStopExecute(r *TaskRegistry, stopFallback func(id string) bool) toolcat.Stub {
 	return func(_ context.Context, args json.RawMessage) (json.RawMessage, error) {
 		if r == nil {
@@ -793,7 +818,17 @@ func TaskStopExecute(r *TaskRegistry, stopFallback func(id string) bool) toolcat
 
 		serr := r.Stop(id)
 		if serr != nil {
-			return marshalStructured(serr.Error(), serr)
+			// G-22-5: a registry-unknown id may be a background subagent's
+			// tracker id — the seam decides (the runtime binds
+			// tracker.CancelTask). Declined (nil or false) keeps the
+			// structured unknown-task error unchanged — a finished subagent
+			// declines truthfully (its cancel entry was retired at Complete,
+			// 22-07), so there is no fake ack for a dead id.
+			if !errors.Is(serr, errUnknownTask) || stopFallback == nil || !stopFallback(id) {
+				return marshalStructured(serr.Error(), serr)
+			}
+
+			// the seam stopped it — fall through to the same captured ack
 		}
 
 		ack := "Task " + id + " stopped."
