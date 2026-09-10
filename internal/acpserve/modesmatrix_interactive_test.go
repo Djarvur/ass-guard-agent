@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -186,4 +189,134 @@ func TestModesMatrixInteractive(t *testing.T) { //nolint:paralleltest // HOME-pi
 	)
 
 	defer matrixRegistry.ReportT(t)
+}
+
+// matrixPromptContains reports whether any captured provider request
+// carried needle (the received-prompt lens — the expansion probe's
+// evidence).
+func matrixPromptContains(stub *simStub, needle string) bool {
+	for _, p := range stub.recordedPrompts() {
+		if strings.Contains(p, needle) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// TestModesMatrixInteractiveSurfaces (24-05 Task 2) exercises the
+// interactive commands and skills cells: each typed slash invocation
+// expands into the fixture body BEFORE the provider call — the received
+// prompt carries the body with the args substituted (D-13's functional bar,
+// observed at the provider). The collision probe then pins the resolution
+// ORDER (probe ordering): a project-tree command sharing the fixture's name
+// WINS (the loader's D-06 precedence — project over the installed-plugin
+// tiers — the same winner the ecosys precedence tests lock; cells never
+// silently merge).
+func TestModesMatrixInteractiveSurfaces(t *testing.T) { //nolint:funlen,paralleltest // HOME-pinned legs; one story
+	t.Setenv("HOME", t.TempDir())
+
+	// Serve A — the fixture alone: commands + skills cells.
+	workDir := simulatorWorkDir(t, "PENDING_STUB_URL")
+
+	modesmatrix.MountFixture(t, workDir)
+
+	stub, cli, sessionID, _ := modesMatrixServe(t, workDir, "PENDING_STUB_URL", []simTurnScript{
+		{phases: []simPhase{{text: "command turn done"}}},
+		{phases: []simPhase{{text: "skill turn done"}}},
+	})
+
+	matrixPromptTurn(t, cli, sessionID, "/matrix-echo interactive-args", "mx-cmd-1")
+	matrixPromptTurn(t, cli, sessionID, "/matrix-skill interactive-skill-args", "mx-skl-1")
+
+	const cmdMarker = "MATRIX-ECHO-EXPANSION invoked: interactive-args"
+	if !matrixPromptContains(stub, cmdMarker) {
+		t.Errorf("no provider request carried %q — the fixture command did not expand (received: %v)",
+			cmdMarker, stub.recordedPrompts())
+	}
+
+	matrixRegistry.Record(
+		modesmatrix.ModeInteractive, modesmatrix.SurfaceCommands, modesmatrix.StatusPass,
+		"/matrix-echo expanded to the fixture body before the provider call (received-prompt lens)",
+	)
+
+	const skillMarker = "MATRIX-SKILL-BODY invoked: interactive-skill-args"
+	if !matrixPromptContains(stub, skillMarker) {
+		t.Errorf("no provider request carried %q — the fixture skill did not expand (received: %v)",
+			skillMarker, stub.recordedPrompts())
+	}
+
+	matrixRegistry.Record(
+		modesmatrix.ModeInteractive, modesmatrix.SurfaceSkills, modesmatrix.StatusPass,
+		"/matrix-skill expanded to the SKILL.md body with args substituted (received-prompt lens)",
+	)
+
+	// Serve B — the collision probe: a project .claude/commands file sharing
+	// the fixture command's name. The project tree outranks the
+	// installed-plugin tiers, so the PROJECT body is the one that expands.
+	collideDir := simulatorWorkDir(t, "PENDING_STUB_URL")
+
+	modesmatrix.MountFixture(t, collideDir)
+
+	projCmd := filepath.Join(collideDir, ".claude", "commands", "matrix-echo.md")
+	if err := os.MkdirAll(filepath.Dir(projCmd), 0o750); err != nil {
+		t.Fatalf("mkdir project commands: %v", err)
+	}
+
+	if err := os.WriteFile(projCmd, []byte(
+		"---\ndescription: project-scope collision winner\n---\nMATRIX-ECHO-PROJECT-WINS invoked: $ARGUMENTS\n"),
+		0o600); err != nil {
+		t.Fatalf("write project collision command: %v", err)
+	}
+
+	stubB, cliB, sessB, _ := modesMatrixServe(t, collideDir, "PENDING_STUB_URL", []simTurnScript{
+		{phases: []simPhase{{text: "collision turn done"}}},
+	})
+
+	matrixPromptTurn(t, cliB, sessB, "/matrix-echo collide-args", "mx-col-1")
+
+	if !matrixPromptContains(stubB, "MATRIX-ECHO-PROJECT-WINS invoked: collide-args") {
+		t.Error("the project-tree collision entry did not win — resolution order not the locked project-over-plugin precedence")
+	}
+
+	if matrixPromptContains(stubB, "MATRIX-ECHO-EXPANSION") {
+		t.Error("the plugin-bundled loser still expanded — the collision merged instead of resolving to one winner")
+	}
+
+	// Resolution-order observation recorded (probe ordering): project
+	// file-command > plugin bundle, per the loader's locked precedence.
+	matrixRegistry.Record(
+		modesmatrix.ModeInteractive, modesmatrix.SurfaceCommands, modesmatrix.StatusPass,
+		"expanded via fixture plugin; collision probe: project .claude/commands entry wins over the plugin bundle (locked precedence, one winner — no merge)",
+	)
+
+	matrixRegistry.ReportT(t)
+}
+
+// TestModesMatrixInteractiveEmpty (the empty-input row, interactive leg):
+// with NO fixture mounted, the typed invocation falls through UNEXPANDED —
+// the provider receives the typed text verbatim and the marker file stays
+// ABSENT. Absence is the pass condition, never an error.
+func TestModesMatrixInteractiveEmpty(t *testing.T) { //nolint:paralleltest // HOME-pinned leg
+	t.Setenv("HOME", t.TempDir())
+
+	workDir := simulatorWorkDir(t, "PENDING_STUB_URL") // deliberately NO fixture
+
+	stub, cli, sessionID, _ := modesMatrixServe(t, workDir, "PENDING_STUB_URL", []simTurnScript{
+		{phases: []simPhase{{text: "empty fixture turn done"}}},
+	})
+
+	const typed = "/matrix-echo ghost-args"
+
+	matrixPromptTurn(t, cli, sessionID, typed, "mx-emp-1")
+
+	if !matrixPromptContains(stub, typed) {
+		t.Errorf("no provider request carried the typed invocation verbatim (fallthrough broken): %v", stub.recordedPrompts())
+	}
+
+	if _, err := os.Stat(modesmatrix.MarkerPath(workDir)); !os.IsNotExist(err) {
+		t.Errorf("empty row: marker file exists at %s; want ABSENT", modesmatrix.MarkerPath(workDir))
+	}
+
+	t.Log("MODES-MATRIX empty-row interactive: invocation fell through verbatim; marker file ABSENT")
 }

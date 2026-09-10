@@ -1,0 +1,21 @@
+{
+  "plan": "24-05",
+  "task": 2,
+  "phase_gate": "RED",
+  "command": "go test -count=1 ./internal/acpserve/ ./internal/session/ ./internal/runtime/ -run TestModesMatrix -v",
+  "targetTest": "TestModesMatrixInteractiveSurfaces",
+  "exitCode": 1,
+  "output": "not ok 2 - TestModesMatrixInteractiveSurfaces\nnot ok 4 - TestModesMatrixSubagent\nnot ok 5 - TestModesMatrixCronCommands\nnot ok 6 - TestModesMatrixCronSkills\nnot ok 7 - TestModesMatrixCronHooks\n# tests 8\n# pass 3\n# fail 5\n",
+  "expected": "Per 24-05 Task 2 behavior: with the fixture plugin mounted, the fixture's command /matrix-echo expands to its body with $ARGUMENTS substituted and the skill /matrix-skill expands to its SKILL.md body (interactive received-prompt lens; automation transcript+provider lenses), the fixture SubagentStop hook fires on real dispatch completion (marker file), and the interactive collision probe resolves a project-tree command over the plugin bundle",
+  "actual": "Fixture carries only the manifest + PreToolUse/PostToolUse hooks (Task 1 skeleton): commands/matrix-echo.md and skills/matrix-skill/SKILL.md do not exist and hooks.json has no SubagentStop entry, so every expansion/verbatim-discovery/hook assertion fails on assertions (discovery: 'fixture command matrix-echo not discovered'; interactive: 'no provider request carried MATRIX-ECHO-EXPANSION...' with the typed invocation falling through verbatim; automation: the fired turn's user message never carries the expanded body / no PreToolUse payload in the marker)",
+  "failing_tests": [
+    "TestModesMatrixInteractiveSurfaces (assertion: no provider request carried 'MATRIX-ECHO-EXPANSION invoked: interactive-args' nor 'MATRIX-SKILL-BODY invoked: interactive-skill-args' — fixture command/skill absent, typed invocations fell through)",
+    "TestModesMatrixSubagent (assertion: 'fixture command matrix-echo not discovered' — the mounted registry has no commands/skills contribution without the fixture files)",
+    "TestModesMatrixCronCommands (assertion: the fired automation turn's user message never carried the expanded command body)",
+    "TestModesMatrixCronSkills (assertion: the fired automation turn's user message never carried the expanded skill body)",
+    "TestModesMatrixCronHooks (assertion: no PreToolUse payload in the marker file — the automation turn's Read found no gate-head hook to execute... GREEN will additionally add the SubagentStop entry; this cell's PreToolUse hook exists since Task 1, so its RED failure isolates the missing notes.md/Read flow only insofar as the turn never ran — verified against the debug transcript; the firing-path harness bug (r.schedule never assigned) was fixed BEFORE this evidence run)"
+  ],
+  "unexpected_green": [],
+  "note": "The three PASS entries at RED are by design, not unexpected greens of target behavior: TestModesMatrixInteractive is Task 1's tracer cell (already-green fixture evidence); TestModesMatrixInteractiveEmpty and TestModesMatrixCronEmpty are the plan's empty-input row probes (probe TAIL-03 empty) — they pin ABSENCE behavior which holds trivially before the fixture surfaces exist (the 24-02 Task 3 precedent: the empty-map guard passes by design, pinning pre-change behavior). One harness bug was found and fixed during RED bring-up (fireMatrixAutomation never assigned r.schedule, so no turn fired at all — debug-verified via transcript dump; the fix predates this evidence record).",
+  "timestamp": "2026-09-10T19:58:00Z"
+}
