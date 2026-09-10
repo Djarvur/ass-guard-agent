@@ -23,6 +23,15 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
 )
 
+// Repeated literals (goconst) — the battery's fixture vocabulary.
+const (
+	outcomeTestProviderSlug = "anthropic"
+	outcomeTestModel        = "GLM-5.3"
+	outcomeTestSubModel     = "glm-5.2-light"
+	outcomeTestStreamText   = "assistant response"
+	outcomeTestPrompt       = "hi"
+)
+
 // outcomeTestProvider is the scripted provider for the outcome-recording
 // battery (the fakeProvider fixture pattern, plus the usage chunk the parent
 // stream consumes and a sync Stream error for the failure leg).
@@ -49,7 +58,7 @@ func (p *outcomeTestProvider) Stream(
 	go func() {
 		defer close(ch)
 
-		ch <- provider.StreamChunk{Type: blockText, Text: "assistant response"}
+		ch <- provider.StreamChunk{Type: blockText, Text: outcomeTestStreamText}
 
 		if p.usage != nil {
 			ch <- provider.StreamChunk{Type: "usage", Usage: p.usage}
@@ -83,7 +92,7 @@ func newOutcomeSession(
 
 	m := newTestManager(t, "sess-out")
 	prof := fakeProfile("outcomes agent")
-	prof.Model = "GLM-5.3"
+	prof.Model = outcomeTestModel
 
 	s := &Session{
 		Manager:      m,
@@ -95,7 +104,7 @@ func newOutcomeSession(
 		WorkDir:      root,
 		SessionID:    "sess-out",
 		Outcomes:     store,
-		ProviderName: "anthropic",
+		ProviderName: outcomeTestProviderSlug,
 		SessionTier:  "heavy",
 		outcomeNow:   clock,
 	}
@@ -133,179 +142,216 @@ func TestSessionOutcomeRecording(t *testing.T) {
 
 	t.Run("success turn records one ok record with summed usage", func(t *testing.T) {
 		t.Parallel()
-
-		prov := &outcomeTestProvider{usage: &provider.Usage{InputTokens: 120, OutputTokens: 45}}
-		s, store := newOutcomeSession(t, t.TempDir(), prov, clock)
-
-		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "hi"}})
-		if err != nil {
-			t.Fatalf("Prompt: %v", err)
-		}
-
-		if stop != stopEndTurn {
-			t.Fatalf("stop = %q; want end_turn", stop)
-		}
-
-		records := readOutcomes(t, store)
-		if len(records) != 1 {
-			t.Fatalf("records = %d; want exactly 1 (one per completed provider attempt)", len(records))
-		}
-
-		rec := records[0]
-		if rec.Provider != "anthropic" {
-			t.Errorf("provider = %q; want the real session provider name", rec.Provider)
-		}
-
-		if rec.Model != "GLM-5.3" {
-			t.Errorf("model = %q; want the effective profile model", rec.Model)
-		}
-
-		if rec.Tier != "heavy" {
-			t.Errorf("tier = %q; want the session tier", rec.Tier)
-		}
-
-		if rec.Outcome != modelrouting.OutcomeOK {
-			t.Errorf("outcome = %q; want ok", rec.Outcome)
-		}
-
-		if rec.Origin != modelrouting.OutcomeOriginTurn {
-			t.Errorf("origin = %q; want turn", rec.Origin)
-		}
-
-		if rec.FallbackUsed {
-			t.Error("fallback_used = true; want false (the live path walks no fallback)")
-		}
-
-		if rec.InTokens != 120 || rec.OutTokens != 45 {
-			t.Errorf("tokens = %d/%d; want the summed streamed usage 120/45", rec.InTokens, rec.OutTokens)
-		}
-
-		if !rec.At.Equal(fixedAt) {
-			t.Errorf("at = %v; want the injected clock reading %v (the now seam)", rec.At, fixedAt)
-		}
-
-		if rec.LatencyMS < 0 {
-			t.Errorf("latency_ms = %d; want >= 0", rec.LatencyMS)
-		}
+		outcomeSuccessSubtest(t, clock, fixedAt)
 	})
 
 	t.Run("transient ProviderError records transient", func(t *testing.T) {
 		t.Parallel()
-
-		prov := &outcomeTestProvider{err: &provider.ProviderError{
-			Kind: provider.KindTransient, Provider: "anthropic", Model: "GLM-5.3",
-		}}
-		s, store := newOutcomeSession(t, t.TempDir(), prov, clock)
-
-		_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "hi"}})
-		if err == nil {
-			t.Fatal("Prompt returned nil error; want the surfaced stream error")
-		}
-
-		records := readOutcomes(t, store)
-		if len(records) != 1 {
-			t.Fatalf("records = %d; want exactly 1 (the failed attempt records too)", len(records))
-		}
-
-		rec := records[0]
-		if rec.Outcome != modelrouting.OutcomeTransient {
-			t.Errorf("outcome = %q; want transient (the error kind's class)", rec.Outcome)
-		}
-
-		if rec.InTokens != 0 || rec.OutTokens != 0 {
-			t.Errorf("tokens = %d/%d; want 0/0 (no usage chunk arrived)", rec.InTokens, rec.OutTokens)
-		}
+		outcomeTransientSubtest(t, clock)
 	})
 
+	//nolint:paralleltest // swaps the default slog logger (process-global)
 	t.Run("broken store never fails the turn: one loud note", func(t *testing.T) {
-		t.Parallel()
-
-		//nolint:paralleltest // swaps the default slog logger (process-global)
-		func(t *testing.T) {
-			logBuf := swapDefaultLogger(t)
-
-			root := t.TempDir()
-			prov := &outcomeTestProvider{usage: &provider.Usage{InputTokens: 10, OutputTokens: 5}}
-
-			s, store := newOutcomeSession(t, root, prov, clock)
-
-			// Break the store's append path deterministically: a DIRECTORY
-			// where the JSONL file should be makes every Append OpenFile fail
-			// (EISDIR) regardless of uid.
-			_ = os.Remove(store.Path())
-			if merr := os.Mkdir(store.Path(), 0o750); merr != nil {
-				t.Fatalf("break store: %v", merr)
-			}
-
-			stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "hi"}})
-			if err != nil {
-				t.Fatalf("Prompt failed on a broken store: %v (a store failure must never fail the turn)", err)
-			}
-
-			if stop != stopEndTurn {
-				t.Fatalf("stop = %q; want end_turn (the turn completed)", stop)
-			}
-
-			if n := strings.Count(logBuf.String(), "outcome store append failed"); n != 1 {
-				t.Errorf("stderr notes naming the failed outcome append = %d; want exactly 1 (log = %q)", n, logBuf.String())
-			}
-		}(t)
+		outcomeBrokenStoreSubtest(t, clock)
 	})
 
 	t.Run("subagent dispatch records origin subagent with the override model", func(t *testing.T) {
 		t.Parallel()
-
-		prov := &outcomeTestProvider{}
-		s, store := newOutcomeSession(t, t.TempDir(), prov, clock)
-
-		// The 20-03 planner seam: this dispatch's resolved (overridden) model
-		// is what the record must carry — not the parent profile's.
-		s.SubagentModelPlanner = func(*Session, *ecosys.Agent, string) SubagentDispatchPlan {
-			return SubagentDispatchPlan{Model: "glm-5.2-light"}
-		}
-
-		result, err := s.DispatchSubagent(context.Background(), "turn-par", "call-sub", "do the thing", nil)
-		if err != nil {
-			t.Fatalf("DispatchSubagent: %v", err)
-		}
-
-		if result != "assistant response" {
-			t.Errorf("result = %q; want the scripted stream text", result)
-		}
-
-		records := readOutcomes(t, store)
-		if len(records) != 1 {
-			t.Fatalf("records = %d; want exactly 1 (one per subagent dispatch attempt)", len(records))
-		}
-
-		rec := records[0]
-		if rec.Origin != modelrouting.OutcomeOriginSubagent {
-			t.Errorf("origin = %q; want subagent", rec.Origin)
-		}
-
-		if rec.Model != "glm-5.2-light" {
-			t.Errorf("model = %q; want the effective (overridden) subagent model", rec.Model)
-		}
-
-		if rec.Outcome != modelrouting.OutcomeOK {
-			t.Errorf("outcome = %q; want ok", rec.Outcome)
-		}
+		outcomeSubagentSubtest(t, clock)
 	})
 
 	t.Run("nil store records nothing", func(t *testing.T) {
 		t.Parallel()
-
-		prov := &outcomeTestProvider{}
-		s, _ := newOutcomeSession(t, t.TempDir(), prov, clock)
-		s.Outcomes = nil // every bare Session construction site
-
-		stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: "hi"}})
-		if err != nil {
-			t.Fatalf("Prompt: %v", err)
-		}
-
-		if stop != stopEndTurn {
-			t.Fatalf("stop = %q; want end_turn", stop)
-		}
+		outcomeNilStoreSubtest(t, clock)
 	})
+}
+
+// outcomeSuccessSubtest: the success turn leaves exactly one record with the
+// real provider, effective model, tier, ok class, turn origin, no fallback,
+// and the summed streamed usage.
+func outcomeSuccessSubtest(t *testing.T, clock func() time.Time, fixedAt time.Time) {
+	t.Helper()
+
+	prov := &outcomeTestProvider{usage: &provider.Usage{InputTokens: 120, OutputTokens: 45}}
+	s, store := newOutcomeSession(t, t.TempDir(), prov, clock)
+
+	stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: outcomeTestPrompt}})
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+
+	if stop != stopEndTurn {
+		t.Fatalf("stop = %q; want end_turn", stop)
+	}
+
+	records := readOutcomes(t, store)
+	if len(records) != 1 {
+		t.Fatalf("records = %d; want exactly 1 (one per completed provider attempt)", len(records))
+	}
+
+	rec := records[0]
+	if rec.Provider != outcomeTestProviderSlug {
+		t.Errorf("provider = %q; want the real session provider name", rec.Provider)
+	}
+
+	if rec.Model != outcomeTestModel {
+		t.Errorf("model = %q; want the effective profile model", rec.Model)
+	}
+
+	if rec.Tier != "heavy" {
+		t.Errorf("tier = %q; want the session tier", rec.Tier)
+	}
+
+	if rec.Outcome != modelrouting.OutcomeOK {
+		t.Errorf("outcome = %q; want ok", rec.Outcome)
+	}
+
+	if rec.Origin != modelrouting.OutcomeOriginTurn {
+		t.Errorf("origin = %q; want turn", rec.Origin)
+	}
+
+	if rec.FallbackUsed {
+		t.Error("fallback_used = true; want false (the live path walks no fallback)")
+	}
+
+	if rec.InTokens != 120 || rec.OutTokens != 45 {
+		t.Errorf("tokens = %d/%d; want the summed streamed usage 120/45", rec.InTokens, rec.OutTokens)
+	}
+
+	if !rec.At.Equal(fixedAt) {
+		t.Errorf("at = %v; want the injected clock reading %v (the now seam)", rec.At, fixedAt)
+	}
+
+	if rec.LatencyMS < 0 {
+		t.Errorf("latency_ms = %d; want >= 0", rec.LatencyMS)
+	}
+}
+
+// outcomeTransientSubtest: a scripted *provider.ProviderError KindTransient
+// leaves exactly one transient-class record (the error kind's class) with no
+// usage tokens.
+func outcomeTransientSubtest(t *testing.T, clock func() time.Time) {
+	t.Helper()
+
+	prov := &outcomeTestProvider{err: &provider.ProviderError{
+		Kind: provider.KindTransient, Provider: outcomeTestProviderSlug, Model: outcomeTestModel,
+	}}
+	s, store := newOutcomeSession(t, t.TempDir(), prov, clock)
+
+	_, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: outcomeTestPrompt}})
+	if err == nil {
+		t.Fatal("Prompt returned nil error; want the surfaced stream error")
+	}
+
+	records := readOutcomes(t, store)
+	if len(records) != 1 {
+		t.Fatalf("records = %d; want exactly 1 (the failed attempt records too)", len(records))
+	}
+
+	rec := records[0]
+	if rec.Outcome != modelrouting.OutcomeTransient {
+		t.Errorf("outcome = %q; want transient (the error kind's class)", rec.Outcome)
+	}
+
+	if rec.InTokens != 0 || rec.OutTokens != 0 {
+		t.Errorf("tokens = %d/%d; want 0/0 (no usage chunk arrived)", rec.InTokens, rec.OutTokens)
+	}
+}
+
+// outcomeBrokenStoreSubtest: a store whose append path fails never fails the
+// turn — the turn completes and EXACTLY ONE loud stderr note names the failed
+// append. Swaps the default slog logger, so it must not run in parallel.
+func outcomeBrokenStoreSubtest(t *testing.T, clock func() time.Time) {
+	t.Helper()
+
+	logBuf := swapDefaultLogger(t)
+
+	root := t.TempDir()
+	prov := &outcomeTestProvider{usage: &provider.Usage{InputTokens: 10, OutputTokens: 5}}
+
+	s, store := newOutcomeSession(t, root, prov, clock)
+
+	// Break the store's append path deterministically: a DIRECTORY where the
+	// JSONL file should be makes every Append OpenFile fail (EISDIR)
+	// regardless of uid.
+	_ = os.Remove(store.Path())
+	if merr := os.Mkdir(store.Path(), 0o750); merr != nil {
+		t.Fatalf("break store: %v", merr)
+	}
+
+	stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: outcomeTestPrompt}})
+	if err != nil {
+		t.Fatalf("Prompt failed on a broken store: %v (a store failure must never fail the turn)", err)
+	}
+
+	if stop != stopEndTurn {
+		t.Fatalf("stop = %q; want end_turn (the turn completed)", stop)
+	}
+
+	if n := strings.Count(logBuf.String(), "outcome store append failed"); n != 1 {
+		t.Errorf("stderr notes naming the failed outcome append = %d; want exactly 1 (log = %q)",
+			n, logBuf.String())
+	}
+}
+
+// outcomeSubagentSubtest: a subagent dispatch (the REAL nested runner) leaves
+// exactly one record with origin subagent and the EFFECTIVE (planner
+// overridden) subagent model — not the parent profile's.
+func outcomeSubagentSubtest(t *testing.T, clock func() time.Time) {
+	t.Helper()
+
+	prov := &outcomeTestProvider{}
+	s, store := newOutcomeSession(t, t.TempDir(), prov, clock)
+
+	// The 20-03 planner seam: this dispatch's resolved (overridden) model is
+	// what the record must carry.
+	s.SubagentModelPlanner = func(*Session, *ecosys.Agent, string) SubagentDispatchPlan {
+		return SubagentDispatchPlan{Model: outcomeTestSubModel}
+	}
+
+	result, err := s.DispatchSubagent(context.Background(), "turn-par", "call-sub", "do the thing", nil)
+	if err != nil {
+		t.Fatalf("DispatchSubagent: %v", err)
+	}
+
+	if result != outcomeTestStreamText {
+		t.Errorf("result = %q; want the scripted stream text", result)
+	}
+
+	records := readOutcomes(t, store)
+	if len(records) != 1 {
+		t.Fatalf("records = %d; want exactly 1 (one per subagent dispatch attempt)", len(records))
+	}
+
+	rec := records[0]
+	if rec.Origin != modelrouting.OutcomeOriginSubagent {
+		t.Errorf("origin = %q; want subagent", rec.Origin)
+	}
+
+	if rec.Model != outcomeTestSubModel {
+		t.Errorf("model = %q; want the effective (overridden) subagent model", rec.Model)
+	}
+
+	if rec.Outcome != modelrouting.OutcomeOK {
+		t.Errorf("outcome = %q; want ok", rec.Outcome)
+	}
+}
+
+// outcomeNilStoreSubtest: a nil store (every bare Session construction site)
+// records nothing and keeps the turn byte-identical.
+func outcomeNilStoreSubtest(t *testing.T, clock func() time.Time) {
+	t.Helper()
+
+	prov := &outcomeTestProvider{}
+	s, _ := newOutcomeSession(t, t.TempDir(), prov, clock)
+	s.Outcomes = nil
+
+	stop, err := s.Prompt(context.Background(), []ContentBlock{{Type: blockText, Text: outcomeTestPrompt}})
+	if err != nil {
+		t.Fatalf("Prompt: %v", err)
+	}
+
+	if stop != stopEndTurn {
+		t.Fatalf("stop = %q; want end_turn", stop)
+	}
 }

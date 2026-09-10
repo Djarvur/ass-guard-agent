@@ -3181,7 +3181,8 @@ func resolveSubagentModel(
 
 		if pick.Model == "" {
 			_, _ = fmt.Fprintf(stderr,
-				"ass-guard: tiers.light primary %s/%s is breaker-open with no allowed fallback (replayed outcomes) — keeping the primary\n",
+				"ass-guard: tiers.light primary %s/%s is breaker-open with no allowed fallback "+
+					"(replayed outcomes) — keeping the primary\n",
 				primary.Provider, primary.Model)
 		}
 	}
@@ -4190,7 +4191,8 @@ func (r *Runner) planSubagentDispatch(
 				fmt.Sprintf("subagent dispatches on the session model %s", parent))
 		}
 
-		if tier := resolveSubagentModel(r.schedCfg, r.providerName, r.outcomeBreakersFor(), time.Now(), r.stderrOrDefault()); tier != "" {
+		if tier := resolveSubagentModel(r.schedCfg, r.providerName, r.outcomeBreakersFor(),
+			time.Now(), r.stderrOrDefault()); tier != "" {
 			return r.notePlan(session.SubagentDispatchPlan{Model: tier}, sess,
 				fmt.Sprintf("no session model — subagent falls to tiers.light %s", tier))
 		}

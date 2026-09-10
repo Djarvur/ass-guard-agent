@@ -763,6 +763,7 @@ func (s *ConfigSurface) resolveModelLocked(cfg *modelrouting.Config, tier string
 // the replacement. When EVERY candidate is denied the primary keeps its
 // resolved model (a resolution never fails over evidence) — also with one
 // note, so the open chain head is never silent.
+//nolint:funcorder // beside resolveModelLocked, its only caller (the file's established grouping)
 func (s *ConfigSurface) demoteIfDeniedLocked(
 	tier string, primary modelrouting.Target, fallbacks []modelrouting.Target,
 ) string {

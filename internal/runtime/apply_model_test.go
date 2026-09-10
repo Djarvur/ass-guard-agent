@@ -427,6 +427,9 @@ func TestApplyTurnModel_StampsFutureSessions(t *testing.T) {
 
 // --- 24-02 (TAIL-01, D-06 observable): replayed breakers bend the light tier ---
 
+// lightTierProvider is the battery's session-provider slug (goconst).
+const lightTierProvider = "anthropic"
+
 // lightTierTestConfig loads a temp scheduling config whose LIGHT tier binds
 // light-primary with light-fallback (both declared on the embedded floor's
 // anthropic provider so loader validation passes) — the fixture for the
@@ -474,7 +477,7 @@ func seedLightTierBreakers(
 		for i := range n {
 			aerr := store.Append(modelrouting.DispatchOutcome{
 				At:       base.Add(time.Duration(i) * time.Second),
-				Provider: "anthropic",
+				Provider: lightTierProvider,
 				Model:    model,
 				Outcome:  modelrouting.OutcomeTransient,
 				Origin:   modelrouting.OutcomeOriginSubagent,
@@ -510,7 +513,7 @@ func TestResolveSubagentModelBreakerDemotion(t *testing.T) {
 		breakers := seedLightTierBreakers(t, cfg, now, "light-primary")
 		var stderr strings.Builder
 
-		got := resolveSubagentModel(cfg, "anthropic", breakers, now, &stderr)
+		got := resolveSubagentModel(cfg, lightTierProvider, breakers, now, &stderr)
 		if got != "light-fallback" {
 			t.Fatalf("resolveSubagentModel = %q; want the demoted light-fallback (primary breaker-open)", got)
 		}
@@ -525,7 +528,7 @@ func TestResolveSubagentModelBreakerDemotion(t *testing.T) {
 
 		var stderr strings.Builder
 
-		got := resolveSubagentModel(cfg, "anthropic", nil, now, &stderr)
+		got := resolveSubagentModel(cfg, lightTierProvider, nil, now, &stderr)
 		if got != "light-primary" {
 			t.Fatalf("resolveSubagentModel = %q; want the primary light-primary (empty breakers never demote)", got)
 		}
@@ -541,7 +544,7 @@ func TestResolveSubagentModelBreakerDemotion(t *testing.T) {
 		breakers := seedLightTierBreakers(t, cfg, now, "light-primary", "light-fallback")
 		var stderr strings.Builder
 
-		got := resolveSubagentModel(cfg, "anthropic", breakers, now, &stderr)
+		got := resolveSubagentModel(cfg, lightTierProvider, breakers, now, &stderr)
 		if got != "light-primary" {
 			t.Fatalf("resolveSubagentModel = %q; want the primary kept when every candidate is denied", got)
 		}

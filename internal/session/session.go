@@ -1286,7 +1286,9 @@ func (s *Session) outcomeClock() time.Time {
 // attempt's summed streamed usage (0/0 = unknown-on-path, never free).
 // fallback_used stays false on both live paths — neither walks a fallback
 // today; the field states that fact rather than defaulting silently.
-func (s *Session) recordDispatchOutcome(start time.Time, streamErr error, model, origin string, inTokens, outTokens int64) {
+func (s *Session) recordDispatchOutcome(
+	start time.Time, streamErr error, model, origin string, inTokens, outTokens int64,
+) {
 	if s.Outcomes == nil {
 		return
 	}
@@ -1324,12 +1326,14 @@ func classifyStreamOutcome(streamErr error) string {
 	var perr *provider.ProviderError
 	if errors.As(streamErr, &perr) {
 		switch perr.Kind {
+		case provider.KindTransient:
+			return modelrouting.OutcomeTransient
 		case provider.KindStructural:
 			return modelrouting.OutcomeStructural
 		case provider.KindExhausted:
 			return modelrouting.OutcomeExhausted
 		default:
-			return modelrouting.OutcomeTransient
+			return modelrouting.OutcomeTransient // an unknown kind stays conservative
 		}
 	}
 

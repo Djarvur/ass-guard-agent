@@ -168,6 +168,7 @@ func (s *Session) DispatchSubagent(
 // are published with ParentTurnID set (PARA-02).
 type defaultSubagentRunner struct{}
 
+//nolint:funlen // domain complexity is inherent (the outcome bracket widened the loop past 60)
 func (defaultSubagentRunner) Run(
 	ctx context.Context, s *Session,
 	subagentTurnID, parentTurnID, prompt string, restricted []string, agentDef *ecosys.Agent,
