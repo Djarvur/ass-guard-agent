@@ -1,22 +1,22 @@
 ---
-gsd_state_version: "1.0"
+gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 24
 current_phase_name: Documentation & Ops Tails
 current_plan: 5
 status: verifying
-stopped_at: "Completed 24-05-PLAN.md (TAIL-03: ECOS-04 modes-matrix — 9/12 cells functional, 3 wake cells PRECONDITION-UNMET(22), empty row pinned, superpowers 6.1.1 spot-check)"
-last_updated: "2026-09-10T17:34:31.688Z"
+stopped_at: "Completed 24-06-PLAN.md (gap closure: G-24-1 wake row real + premise corrected; G-24-2 provider-filtered demotion at both resolve sites)"
+last_updated: "2026-09-10T19:07:40.468Z"
 last_activity: 2026-09-10
 last_activity_desc: Phase 24 execution started
-state_head: 5027d8db81761576ee38ad498179d0a9ebc3b3f2
+state_head: f9267474d90b76710e75d03f0e8b2c28205aacb2
 progress:
   total_phases: 11
-  completed_phases: 6
-  total_plans: 77
-  completed_plans: 68
-  percent: 55
+  completed_phases: 7
+  total_plans: 78
+  completed_plans: 69
+  percent: 64
 ---
 
 # State: ass-guard-agent (working name)
@@ -36,7 +36,7 @@ Total Plans in Phase: 5
 Status: Phase complete — ready for verification
 Last activity: 2026-09-10 — Phase 24 execution started
 
-Progress: [███████████████░░░░░░] 55/73 plans ([██████░░░░] 55%)
+Progress: [███████████████░░░░░░] 55/73 plans ([██████░░░░] 64%)
 
 ## Performance Metrics
 
@@ -113,6 +113,7 @@ Phase 19: 7/7 ✓ closed 2026-09-10 (verification completed by the auto-UAT live
 | Phase 24 P04 | 33 min | 3 tasks | 12 files |
 | Phase 24 P02 | 51 min | 3 tasks | 13 files |
 | Phase 24 P05 | 47 min | 3 tasks | 12 files |
+| Phase 24 P06 | 19 min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -230,6 +231,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 24]: 24-05: modes-matrix marker is a RELATIVE matrix-hook.log in the temp host project — the planned ASSGUARD_MATRIX_HOOK_LOG env indirection is impossible under 21-01's sanitized hook env (PATH/HOME/CLAUDE_PLUGIN_ROOT only); strictly more hermetic
 - [Phase 24]: 24-05: subagent commands/skills cells pin the OBSERVED live behavior — the nested turn carries invocations VERBATIM (expansion parent-side by design); SubagentStop is the subagent mode's hook seam (the nested loop bypasses the parent gate)
 - [Phase 24]: 24-05: real-plugin mounts preserve source file modes — the superpowers SessionStart polyglot is directly executed and needs +x (a 0600 copy failed exit 126); the hook-output discriminator is CC's hookSpecificOutput envelope, not the plugin name
+- [Phase 24]: 24-06 (G-24-1): wake-cell assertion shapes follow the live substrate — commands/skills prove the invocation rides the wake-triggering dispatch verbatim (renderWakeBlocks' machine-composed input + start-anchored expansion makes in-wake expansion structurally impossible); hooks proves PreToolUse inside the wake turn + the notification's kind/task-id linkage; SubagentStop-on-background descoped (foreground wrapper only — firing it would be a production change)
+- [Phase 24]: 24-06 (G-24-2): caller-side provider filtering before FirstAllowed at both demotion sites — the provider constraint is a CALLER property (which wire the result rides); demoteIfDeniedLocked gains the cross-provider-PRIMARY guard (never claim a breaker for a primary never consulted — byte-identical corner, pinned by surface row 3)
 
 ### Pending Todos
 
@@ -255,6 +258,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-10T17:34:31.228Z
-Stopped at: Completed 24-05-PLAN.md (TAIL-03: ECOS-04 modes-matrix — 9/12 cells functional, 3 wake cells PRECONDITION-UNMET(22), empty row pinned, superpowers 6.1.1 spot-check)
+Last session: 2026-09-10T19:07:39.862Z
+Stopped at: Completed 24-06-PLAN.md (gap closure: G-24-1 wake row real + premise corrected; G-24-2 provider-filtered demotion at both resolve sites)
 Resume file: None
