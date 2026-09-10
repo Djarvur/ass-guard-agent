@@ -93,6 +93,92 @@ func TestRestoreGuardRefusalMatrix(t *testing.T) { //nolint:funlen // matrix sce
 	}
 }
 
+// TestRestoreGuardCrossSessionMatrix pins the G-23-1 (CR-01) guard-level
+// truth: the restore guard is WORKSPACE-scoped — every session of the Runner
+// shares one workDir, one checkpoint store, and one worktree, so a restore
+// must refuse while ANY OTHER session's client turn or engine chain is live,
+// NAMING the busy session and its state — while the calling session's
+// own-state refusals keep their byte-stable same-session wording and the
+// consult stays prompt under a blocked turn (the walk reads state only, never
+// a turn mutex).
+func TestRestoreGuardCrossSessionMatrix(t *testing.T) { //nolint:funlen // matrix scenario
+	t.Parallel()
+
+	r, prov := newBlockingRunner(t, scriptedResp{text: "done", finish: stopEndTurn})
+
+	const (
+		sidA = "sess-a-live"
+		sidB = "sess-b-idle"
+	)
+
+	// Fully idle runner: the guard for B is nil.
+	if err := r.restoreBlockers(sidB); err != nil {
+		t.Fatalf("idle cross-session guard refused: %v", err)
+	}
+
+	turnDone := make(chan struct{})
+
+	go func() {
+		defer close(turnDone)
+
+		_, _ = r.Run(context.Background(), sidA, &noopEmitter{},
+			[]acp.ContentBlock{{Type: blockText, Text: "session A long turn"}})
+	}()
+
+	<-prov.entered // A's turn holds A's turn mutex + A's turnActive
+
+	// Cross-session turn refusal, PROMPTLY (A holds A's turn mutex — the
+	// workspace walk must read state only, never wait on any turn mutex).
+	guardDone := make(chan error, 1)
+
+	go func() { guardDone <- r.restoreBlockers(sidB) }()
+
+	var err error
+
+	select {
+	case err = <-guardDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("cross-session guard blocked while A's turn held A's mutex (must read state only)")
+	}
+
+	if err == nil || !strings.Contains(err.Error(), sidA) || !strings.Contains(err.Error(), "turn") {
+		t.Fatalf("cross-session turn refusal = %v; want a refusal naming %s and the turn", err, sidA)
+	}
+
+	// Own-state wording stays byte-stable: A's own guard call still renders
+	// the same-session message (no cross-session wording for own state).
+	own := r.restoreBlockers(sidA)
+	if own == nil || !strings.Contains(own.Error(), "turn") ||
+		!strings.Contains(own.Error(), "for the session") ||
+		strings.Contains(own.Error(), "every session of this process") {
+		t.Fatalf("own-turn refusal = %v; want the byte-stable same-session wording", own)
+	}
+
+	// Idle-after-exit: A's turn ends, the cross-session refusal lifts.
+	close(prov.release)
+	<-turnDone
+
+	if err := r.restoreBlockers(sidB); err != nil {
+		t.Fatalf("idle-after-exit guard refused: %v", err)
+	}
+
+	// Cross-session parked-chain refusal (no mutex held anywhere — the trap a
+	// mutex-ownership check would pass).
+	r.chainEnter(sidA)
+	defer r.chainExit(sidA)
+
+	err = r.restoreBlockers(sidB)
+	if err == nil || !strings.Contains(err.Error(), sidA) || !strings.Contains(err.Error(), "chain") {
+		t.Fatalf("cross-session chain refusal = %v; want a refusal naming %s and the chain", err, sidA)
+	}
+
+	r.chainExit(sidA)
+
+	if err := r.restoreBlockers(sidB); err != nil {
+		t.Fatalf("idle-after-chain-exit guard refused: %v", err)
+	}
+}
+
 // TestSessionStartSweep pins the D-08 session-start GC: merely CREATING a
 // session sweeps the workspace store — an over-age fixture ref is evicted
 // with no explicit GC call, and the sweep's bounds come from the runner's
