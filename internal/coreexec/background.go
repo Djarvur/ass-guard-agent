@@ -696,8 +696,15 @@ type taskOutputArgs struct {
 // TaskOutputExecute returns the TaskOutput catalog Stub: block/timeout per
 // the schema; running tasks render the CAPTURED not_ready XML form; finished
 // tasks render the ready form (documented corpus-absent default) with the
-// accumulated output; unknown ids return the structured error.
-func TaskOutputExecute(r *TaskRegistry) toolcat.Stub {
+// accumulated output; unknown ids return the structured error — unless the
+// outputFallback seam claims the id (22-09, G-22-5: background-subagent ids
+// live in the per-session tasks tracker, structurally unknown to this
+// registry; the runtime binds the tracker through the seam — primitive args
+// only, no coreexec→internal/tasks import, the CompletionHook precedent).
+func TaskOutputExecute(
+	r *TaskRegistry,
+	outputFallback func(id string) (output, state string, running, handled bool),
+) toolcat.Stub {
 	return func(_ context.Context, args json.RawMessage) (json.RawMessage, error) {
 		if r == nil {
 			return marshalStructured("taskoutput: no task registry configured", errNoRegistry)
@@ -760,8 +767,12 @@ type taskStopArgs struct {
 
 // TaskStopExecute returns the TaskStop catalog Stub: whole-group kill + reap;
 // the ack names the task (corpus_absent documented default — the 12-05 hunt);
-// unknown ids (including the deprecated alias) error structurally.
-func TaskStopExecute(r *TaskRegistry) toolcat.Stub {
+// unknown ids (including the deprecated alias) error structurally — unless
+// the stopFallback seam claims the id (22-09, G-22-5: a registry-unknown id
+// may be a background subagent's tracker id; the runtime binds
+// tracker.CancelTask through the seam — primitive args only, no
+// coreexec→internal/tasks import, the CompletionHook precedent).
+func TaskStopExecute(r *TaskRegistry, stopFallback func(id string) bool) toolcat.Stub {
 	return func(_ context.Context, args json.RawMessage) (json.RawMessage, error) {
 		if r == nil {
 			return marshalStructured("taskstop: no task registry configured", errNoRegistry)

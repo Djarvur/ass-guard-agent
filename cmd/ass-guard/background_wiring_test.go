@@ -43,7 +43,7 @@ func TestBackgroundWiring_StopKillsGroup(t *testing.T) {
 		id = id[:i]
 	}
 
-	stop := coreexec.TaskStopExecute(reg)
+	stop := coreexec.TaskStopExecute(reg, nil)
 
 	out2, err2 := stop(context.Background(), json.RawMessage(`{"task_id":"`+id+`"}`))
 	if err2 != nil {
@@ -61,7 +61,7 @@ func TestBackgroundWiring_StopKillsGroup(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 
 	for time.Now().Before(deadline) {
-		out3, _ := coreexec.TaskOutputExecute(reg)(context.Background(),
+		out3, _ := coreexec.TaskOutputExecute(reg, nil)(context.Background(),
 			json.RawMessage(`{"task_id":"`+id+`","block":false,"timeout":100}`))
 
 		var state string
@@ -90,7 +90,7 @@ func TestBackgroundWiring_DeprecatedShellID(t *testing.T) {
 		t.Fatalf("Start: %v", err)
 	}
 
-	_, serr := coreexec.TaskStopExecute(reg)(context.Background(), json.RawMessage(`{"shell_id":"`+id+`"}`))
+	_, serr := coreexec.TaskStopExecute(reg, nil)(context.Background(), json.RawMessage(`{"shell_id":"`+id+`"}`))
 	if serr != nil {
 		t.Errorf("shell_id stop: %v; want the deprecated alias accepted", serr)
 	}
@@ -135,7 +135,7 @@ func TestBackgroundWiring_CrossSessionIsolation(t *testing.T) {
 		t.Fatalf("Start: %v", err)
 	}
 
-	_, serr := coreexec.TaskStopExecute(regB)(context.Background(), json.RawMessage(`{"task_id":"`+id+`"}`))
+	_, serr := coreexec.TaskStopExecute(regB, nil)(context.Background(), json.RawMessage(`{"task_id":"`+id+`"}`))
 	if serr == nil {
 		t.Error("cross-session stop succeeded; want the unknown-id error (per-session scoping)")
 	}

@@ -128,12 +128,12 @@ func RegisterInteractive(catalog *toolcat.Catalog, cfg InteractiveConfig) {
 		exitPlanModeToolName:  ExitPlanModeExecute(cfg.PlanMode),
 		"SendMessage":         SendMessageExecute(cfg.Mailbox),
 		"ReadSessionContext":  ReadSessionContextExecute(cfg.Sessions),
-		"TaskOutput":          TaskOutputExecute(cfg.Tasks),
+		"TaskOutput":          TaskOutputExecute(cfg.Tasks, nil),
 		"CronCreate":          CronCreateExecute(cfg.Schedule),
 		"CronList":            CronListExecute(cfg.Schedule),
 		"CronUpdate":          CronUpdateExecute(cfg.Schedule),
 		"CronDelete":          CronDeleteExecute(cfg.Schedule),
-		"TaskStop":            TaskStopExecute(cfg.Tasks),
+		"TaskStop":            TaskStopExecute(cfg.Tasks, nil),
 	}
 
 	for name, exec := range stubs {

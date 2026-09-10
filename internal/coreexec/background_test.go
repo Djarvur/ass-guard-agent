@@ -86,7 +86,7 @@ func TestBackground_StartRetrieveRoundTrip(t *testing.T) { //nolint:funlen // fl
 	}
 
 	// Blocking TaskOutput returns the accumulated output incl. bg-done.
-	to := TaskOutputExecute(reg)
+	to := TaskOutputExecute(reg, nil)
 
 	out2, err2 := to(context.Background(), json.RawMessage(
 		`{"task_id":"`+taskID+`","block":true,"timeout":10000}`))
@@ -110,7 +110,7 @@ func TestBackground_NonBlockingAndUnknown(t *testing.T) {
 	t.Parallel()
 
 	reg := NewTaskRegistry()
-	to := TaskOutputExecute(reg)
+	to := TaskOutputExecute(reg, nil)
 
 	// Unknown id: structured error.
 	out, err := to(context.Background(), json.RawMessage(`{"task_id":"exec_nope","block":false,"timeout":1000}`))
@@ -160,7 +160,7 @@ func TestBackground_BlockTimeout(t *testing.T) {
 	t.Parallel()
 
 	reg := NewTaskRegistry()
-	to := TaskOutputExecute(reg)
+	to := TaskOutputExecute(reg, nil)
 
 	id, _, serr := reg.Start(t.TempDir(), "sleep 2")
 	if serr != nil {
@@ -193,7 +193,7 @@ func TestBackground_OutputFidelity(t *testing.T) {
 	t.Parallel()
 
 	reg := NewTaskRegistry()
-	to := TaskOutputExecute(reg)
+	to := TaskOutputExecute(reg, nil)
 
 	id, _, serr := reg.Start(t.TempDir(), "echo out-line; echo err-line 1>&2")
 	if serr != nil {
@@ -1218,5 +1218,310 @@ func TestBackgroundSandbox_DisableAndUnavailableNotes(t *testing.T) { //nolint:f
 
 	if len(*lines2) > 0 && !strings.Contains((*lines2)[0], "faked-unavailable-bg") {
 		t.Errorf("the note does not name the reason: %q", (*lines2)[0])
+	}
+}
+
+// --- 22-09 (G-22-5, Task 1): the registry-unknown-id fallback seam ---------------
+//
+// Background-subagent task ids (exec_* minted by the tasks tracker) are
+// structurally unknown to the TaskRegistry; the two constructor seams let the
+// runtime address them WITHOUT a coreexec→internal/tasks import (the
+// CompletionHook precedent). The rows pin: the captured ack / not_ready /
+// ready envelope forms on handled ids, the declined and nil shapes (today's
+// structured unknown-task error, unchanged), and that registry-owned ids
+// never consult the seam.
+
+// TestTaskStop_FallbackAck: the registry does NOT know the id; the fallback
+// claims and stops it → the CAPTURED ack names the id, and exactly the
+// requested id rides the seam.
+func TestTaskStop_FallbackAck(t *testing.T) {
+	t.Parallel()
+
+	var seen []string
+
+	reg := NewTaskRegistry()
+	stop := TaskStopExecute(reg, func(id string) bool {
+		seen = append(seen, id)
+		return true
+	})
+
+	out, err := stop(context.Background(), json.RawMessage(`{"task_id":"exec_sub_stop1"}`))
+	if err != nil {
+		t.Fatalf("err = %v; want nil (the fallback stopped the subagent)", err)
+	}
+
+	var ack string
+
+	_ = json.Unmarshal(out, &ack)
+
+	if ack != "Task exec_sub_stop1 stopped." {
+		t.Errorf("ack = %q; want the captured ack naming the id", ack)
+	}
+
+	if len(seen) != 1 || seen[0] != "exec_sub_stop1" {
+		t.Errorf("fallback consulted with %v; want exactly [exec_sub_stop1]", seen)
+	}
+}
+
+// TestTaskStop_FallbackDeclined: the fallback declines the id → the existing
+// structured unknown-task error, unchanged.
+func TestTaskStop_FallbackDeclined(t *testing.T) {
+	t.Parallel()
+
+	reg := NewTaskRegistry()
+	stop := TaskStopExecute(reg, func(string) bool { return false })
+
+	out, err := stop(context.Background(), json.RawMessage(`{"task_id":"exec_sub_no"}`))
+	if err == nil {
+		t.Fatal("err = nil; want the unknown-task error (the fallback declined the id)")
+	}
+
+	var structured struct {
+		Error string `json:"error"`
+	}
+
+	_ = json.Unmarshal(out, &structured)
+
+	if !strings.Contains(structured.Error, "exec_sub_no") || !strings.Contains(structured.Error, "unknown task") {
+		t.Errorf("error = %q; want the structured unknown-task error echoing the id", structured.Error)
+	}
+}
+
+// TestTaskStop_NilFallback: a nil seam (the pre-22-09 callers — the cmd
+// wiring battery's nil-binding contract) keeps exactly today's behavior for
+// registry-unknown ids: the structured unknown-task error.
+func TestTaskStop_NilFallback(t *testing.T) {
+	t.Parallel()
+
+	reg := NewTaskRegistry()
+	stop := TaskStopExecute(reg, nil)
+
+	out, err := stop(context.Background(), json.RawMessage(`{"task_id":"exec_sub_nil"}`))
+	if err == nil {
+		t.Fatal("err = nil; want the unknown-task error (nil seam never fires)")
+	}
+
+	var structured struct {
+		Error string `json:"error"`
+	}
+
+	_ = json.Unmarshal(out, &structured)
+
+	if !strings.Contains(structured.Error, "exec_sub_nil") {
+		t.Errorf("error = %q; want the structured unknown-task error echoing the id", structured.Error)
+	}
+}
+
+// TestTaskStop_RegistryOwnedSkipsFallback: the fallthrough arms ONLY on the
+// registry's unknown-task error — a registry-owned id stops through the
+// registry machinery (the same ack) and the seam is never consulted.
+func TestTaskStop_RegistryOwnedSkipsFallback(t *testing.T) {
+	t.Parallel()
+
+	reg := NewTaskRegistry()
+
+	id, _, err := reg.Start(t.TempDir(), "sleep 5")
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	consulted := false
+
+	stop := TaskStopExecute(reg, func(string) bool {
+		consulted = true
+		return true
+	})
+
+	out, err := stop(context.Background(), json.RawMessage(`{"task_id":"`+id+`"}`))
+	if err != nil {
+		t.Fatalf("err = %v; want nil (the registry owns the id)", err)
+	}
+
+	var ack string
+
+	_ = json.Unmarshal(out, &ack)
+
+	if ack != "Task "+id+" stopped." {
+		t.Errorf("ack = %q; want the captured ack naming the registry id", ack)
+	}
+
+	if consulted {
+		t.Error("the fallback was consulted for a registry-owned id; the fallthrough must arm only on the unknown-task error")
+	}
+}
+
+// TestTaskOutput_FallbackNotReadyStates: a handled fallback id renders the
+// CAPTURED not_ready envelope — status queued for a queued subagent, status
+// running for a running one — identical to the registry's own form. block and
+// timeout are IGNORED for fallback ids (the documented choice: the tracker
+// seam renders the CURRENT state immediately; it carries no bounded-wait
+// machinery, and the schema's promise is that the id is ADDRESSABLE).
+func TestTaskOutput_FallbackNotReadyStates(t *testing.T) {
+	t.Parallel()
+
+	reg := NewTaskRegistry()
+
+	for _, tc := range []struct{ name, id, status string }{
+		{"queued", "exec_sub_q1", "queued"},
+		{"running", "exec_sub_r1", "running"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			status := tc.status
+			to := TaskOutputExecute(reg, func(string) (string, string, bool, bool) {
+				return "", status, true, true // running=true → the not_ready family
+			})
+
+			start := time.Now()
+
+			out, err := to(context.Background(), json.RawMessage(
+				`{"task_id":"`+tc.id+`","block":true,"timeout":5000}`))
+			if err != nil {
+				t.Fatalf("err = %v; want nil (a not_ready snapshot is not an error)", err)
+			}
+
+			if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+				t.Errorf("elapsed = %v; want immediate (block/timeout ignored for fallback ids)", elapsed)
+			}
+
+			var text string
+
+			_ = json.Unmarshal(out, &text)
+
+			want := "<retrieval_status>not_ready</retrieval_status>\n\n" +
+				"<task_id>" + tc.id + "</task_id>\n\n" +
+				"<task_type>local_bash</task_type>\n\n" +
+				"<status>" + tc.status + "</status>"
+
+			if text != want {
+				t.Errorf("not_ready envelope = %q; want %q", text, want)
+			}
+		})
+	}
+}
+
+// TestTaskOutput_FallbackFinishedOutput: a handled FINISHED fallback id
+// renders the ready envelope whose output section carries the fallback's
+// output content (the tracker-side seam reads the subagent's output file).
+func TestTaskOutput_FallbackFinishedOutput(t *testing.T) {
+	t.Parallel()
+
+	reg := NewTaskRegistry()
+	to := TaskOutputExecute(reg, func(string) (string, string, bool, bool) {
+		return "subagent finished: 3 files changed", "finished", false, true
+	})
+
+	out, err := to(context.Background(), json.RawMessage(
+		`{"task_id":"exec_sub_f1","block":true,"timeout":5000}`))
+	if err != nil {
+		t.Fatalf("err = %v; want nil (the finished envelope is not an error)", err)
+	}
+
+	var text string
+
+	_ = json.Unmarshal(out, &text)
+
+	want := "<retrieval_status>ready</retrieval_status>\n\n" +
+		"<task_id>exec_sub_f1</task_id>\n\n" +
+		"<task_type>local_bash</task_type>\n\n" +
+		"<status>finished</status>\n\n" +
+		"<output>\nsubagent finished: 3 files changed\n</output>"
+
+	if text != want {
+		t.Errorf("ready envelope = %q; want %q", text, want)
+	}
+}
+
+// TestTaskOutput_FallbackDeclined: the fallback does not handle the id → the
+// existing structured unknown-task error, unchanged.
+func TestTaskOutput_FallbackDeclined(t *testing.T) {
+	t.Parallel()
+
+	reg := NewTaskRegistry()
+	to := TaskOutputExecute(reg, func(string) (string, string, bool, bool) {
+		return "", "", false, false
+	})
+
+	out, err := to(context.Background(), json.RawMessage(
+		`{"task_id":"exec_sub_outno","block":false,"timeout":100}`))
+	if err == nil {
+		t.Fatal("err = nil; want the unknown-task error (the fallback declined the id)")
+	}
+
+	var structured struct {
+		Error string `json:"error"`
+	}
+
+	_ = json.Unmarshal(out, &structured)
+
+	if !strings.Contains(structured.Error, "exec_sub_outno") || !strings.Contains(structured.Error, "unknown task") {
+		t.Errorf("error = %q; want the structured unknown-task error echoing the id", structured.Error)
+	}
+}
+
+// TestTaskOutput_NilFallback: a nil seam keeps exactly today's behavior for
+// registry-unknown ids: the structured unknown-task error (the fallthrough
+// never fires).
+func TestTaskOutput_NilFallback(t *testing.T) {
+	t.Parallel()
+
+	reg := NewTaskRegistry()
+	to := TaskOutputExecute(reg, nil)
+
+	out, err := to(context.Background(), json.RawMessage(
+		`{"task_id":"exec_sub_outnil","block":false,"timeout":100}`))
+	if err == nil {
+		t.Fatal("err = nil; want the unknown-task error (nil seam never fires)")
+	}
+
+	var structured struct {
+		Error string `json:"error"`
+	}
+
+	_ = json.Unmarshal(out, &structured)
+
+	if !strings.Contains(structured.Error, "exec_sub_outnil") {
+		t.Errorf("error = %q; want the structured unknown-task error echoing the id", structured.Error)
+	}
+}
+
+// TestTaskOutput_RegistryOwnedSkipsFallback: a registry-owned id renders
+// through the registry path (not_ready while running) and the seam is never
+// consulted.
+func TestTaskOutput_RegistryOwnedSkipsFallback(t *testing.T) {
+	t.Parallel()
+
+	reg := NewTaskRegistry()
+
+	id, _, err := reg.Start(t.TempDir(), "sleep 2")
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	consulted := false
+
+	to := TaskOutputExecute(reg, func(string) (string, string, bool, bool) {
+		consulted = true
+		return "", "running", true, true
+	})
+
+	out, err := to(context.Background(), json.RawMessage(
+		`{"task_id":"`+id+`","block":false,"timeout":100}`))
+	if err != nil {
+		t.Fatalf("err = %v; want nil (the registry owns the id)", err)
+	}
+
+	var text string
+
+	_ = json.Unmarshal(out, &text)
+
+	if !strings.HasPrefix(text, "<retrieval_status>not_ready</retrieval_status>") ||
+		!strings.Contains(text, "<status>running</status>") {
+		t.Errorf("registry form = %q; want the captured not_ready/running envelope", text)
+	}
+
+	if consulted {
+		t.Error("the fallback was consulted for a registry-owned id; the fallthrough must arm only on the unknown-task error")
 	}
 }
