@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
+	"github.com/Djarvur/ass-guard-agent/internal/learning"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
 	"github.com/Djarvur/ass-guard-agent/kit/profile"
 
@@ -202,7 +204,7 @@ func newEngineRunner(t *testing.T, script ...scriptedResp) (*Runner, *scriptedAC
 		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return prov },
 	}
 
-	err := r.SetupEngine()
+	err := r.SetupEngine(testEngineSetup(t))
 	if err != nil {
 		t.Fatalf("SetupEngine: %v", err)
 	}
@@ -478,7 +480,7 @@ func TestE2E_Criterion1_ZeroContinueAndSafety(t *testing.T) {
 // active + Lookup returns it.
 func TestE2E_Criterion4_LearningAskOnce(t *testing.T) {
 	t.Parallel()
-	r, prov, _ := newEngineRunner(t,
+	r, prov, dir := newEngineRunner(t,
 		scriptedResp{text: "unmatched launch situation: webfetch needed", finish: stopEndTurn},
 	)
 	// The seeded pattern table does NOT match this text, so Decide returns
@@ -486,8 +488,22 @@ func TestE2E_Criterion4_LearningAskOnce(t *testing.T) {
 	// routes an unmatched situation to the store, which v1 does via the
 	// dispatcher's Ask. Here we verify the store's confirm-threshold directly
 	// (the engine wiring calls Store.Lookup on ActionAsk).
-	store := r.learned
-	if store == nil {
+	// 25-05: the store arrives through the EngineSetup port — open it at the
+	// same path the production loader opens, inject it via the twin adapter;
+	// the assertions below keep hitting the concrete store unchanged.
+	store, serr := learning.Open(filepath.Join(dir, ".ass-guard", "learned.yaml"))
+	if serr != nil {
+		t.Fatalf("learning open: %v", serr)
+	}
+
+	setup := testEngineSetup(t)
+	setup.Learned = testLearned{store}
+
+	if err := r.SetupEngine(setup); err != nil {
+		t.Fatalf("SetupEngine: %v", err)
+	}
+
+	if r.learned == nil {
 		t.Fatal("learning store not wired")
 	}
 

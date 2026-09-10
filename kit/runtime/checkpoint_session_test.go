@@ -233,7 +233,7 @@ func TestCheckpointLiveRollback_Gated(t *testing.T) { //nolint:paralleltest,funl
 		},
 	}
 
-	serr := r.SetupEngine()
+	serr := r.SetupEngine(testEngineSetup(t))
 	if serr != nil {
 		t.Fatalf("SetupEngine: %v", serr)
 	}

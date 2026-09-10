@@ -283,11 +283,23 @@ func Run( //nolint:funlen // :320-425
 	runner.LoadCommandRegistry()
 
 	if opts.EngineEnabled {
-		err := runner.SetupEngine()
-		if err != nil {
+		// 25-05 (OQ4/D-17): the app-hosted loads (openspec config + tool
+		// registration + the derived pattern table + the learning store) run
+		// in the explicit startup helper immediately BEFORE SetupEngine —
+		// today's order, today's degradation (a helper failure degrades to
+		// engine-off exactly as a SetupEngine failure always did).
+		setup, serr := loadEngineSetup(opts.WorkDir)
+		if serr != nil {
 			// A bad config degrades to defaults, never a server crash (the
 			// engine is an observer — D-04 graceful degradation at startup).
-			log.Printf("ass-guard: engine setup failed (continuing without engine): %v", err)
+			log.Printf("ass-guard: engine setup failed (continuing without engine): %v", serr)
+		} else {
+			err := runner.SetupEngine(setup)
+			if err != nil {
+				// A bad config degrades to defaults, never a server crash (the
+				// engine is an observer — D-04 graceful degradation at startup).
+				log.Printf("ass-guard: engine setup failed (continuing without engine): %v", err)
+			}
 		}
 	}
 

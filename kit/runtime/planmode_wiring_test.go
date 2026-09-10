@@ -132,7 +132,7 @@ func newPlanModeWiringRunner(t *testing.T) (*Runner, *planModeScriptProvider) {
 		},
 	}
 
-	err := r.SetupEngine()
+	err := r.SetupEngine(testEngineSetup(t))
 	if err != nil {
 		t.Fatalf("SetupEngine: %v", err)
 	}

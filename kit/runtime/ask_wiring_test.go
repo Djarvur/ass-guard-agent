@@ -881,7 +881,7 @@ func TestAskWiring_ServerLevelSurface(t *testing.T) { //nolint:cyclop,funlen // 
 		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return mp },
 	}
 
-	err := runner.SetupEngine()
+	err := runner.SetupEngine(testEngineSetup(t))
 	if err != nil {
 		t.Fatalf("SetupEngine: %v", err)
 	}
@@ -1038,7 +1038,7 @@ func TestAskPark_PromptResponsePrecedesResolution(t *testing.T) { //nolint:cyclo
 		askTimeout:   time.Hour, // the timer never fires in test time — the response must NOT wait for it
 	}
 
-	err := runner.SetupEngine()
+	err := runner.SetupEngine(testEngineSetup(t))
 	if err != nil {
 		t.Fatalf("SetupEngine: %v", err)
 	}
@@ -1638,7 +1638,8 @@ func TestAskWiring_EngineAskConversion(t *testing.T) { //nolint:funlen // one ba
 			t.Fatalf("learning open: %v", lerr)
 		}
 
-		r := &Runner{bus: event.NewBus(), learned: st}
+		// 25-05: the Learned port (twin adapter over the same store).
+		r := &Runner{bus: event.NewBus(), learned: testLearned{st}}
 
 		sess := &session.Session{SessionID: "sess-engine-w"}
 		sess.SetPermissionGate(session.GateDeps{Queue: session.NewAskQueue()})

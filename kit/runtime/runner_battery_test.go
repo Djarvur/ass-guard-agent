@@ -79,7 +79,7 @@ func newExpansionRunner(
 	}
 
 	if engineOn {
-		err := r.SetupEngine()
+		err := r.SetupEngine(testEngineSetup(t))
 		if err != nil {
 			t.Fatalf("SetupEngine: %v", err)
 		}
@@ -479,7 +479,7 @@ func TestAssistantRoleOnly_InjectionGuard(t *testing.T) {
 		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return prov },
 	}
 
-	err = r.SetupEngine()
+	err = r.SetupEngine(testEngineSetup(t))
 	if err != nil {
 		t.Fatalf("SetupEngine: %v", err)
 	}
@@ -601,7 +601,7 @@ func newSkillRunner(t *testing.T, withSkills bool, script ...scriptedResp) (*Run
 		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return prov },
 	}
 
-	err := r.SetupEngine()
+	err := r.SetupEngine(testEngineSetup(t))
 	if err != nil {
 		t.Fatalf("SetupEngine: %v", err)
 	}
@@ -1170,7 +1170,7 @@ func TestServeCapturer_PublishesWithTurnID(t *testing.T) {
 		},
 	}
 
-	err := r.SetupEngine()
+	err := r.SetupEngine(testEngineSetup(t))
 	if err != nil {
 		t.Fatalf("SetupEngine: %v", err)
 	}
@@ -1227,7 +1227,7 @@ func TestServeTranscriptWriter_OnePerSession(t *testing.T) {
 		},
 	}
 
-	err := r.SetupEngine()
+	err := r.SetupEngine(testEngineSetup(t))
 	if err != nil {
 		t.Fatalf("SetupEngine: %v", err)
 	}

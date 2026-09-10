@@ -23,7 +23,6 @@ import (
 
 	"github.com/Djarvur/ass-guard-agent/internal/coreexec"
 	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
-	"github.com/Djarvur/ass-guard-agent/internal/learning"
 	"github.com/Djarvur/ass-guard-agent/internal/openspec"
 	"github.com/Djarvur/ass-guard-agent/internal/perm"
 	"github.com/Djarvur/ass-guard-agent/internal/sandbox"
@@ -181,7 +180,7 @@ type Runner struct {
 	eng           *engine.Engine
 	hookExec      *hookdag.Executor
 	hookCfg       []hookdag.Hook
-	learned       *learning.Store
+	learned       Learned
 	catalog       *toolcat.Catalog // shared catalog (OpenSpec tools registered once)
 
 	// Phase-8 slash-command expansion (08-04): the discovered command registry
@@ -452,45 +451,47 @@ func (c checkpointerAdapter) SnapshotTurn(
 	return c.store.Snapshot(ctx, sessionID, turnID) //nolint:wrapcheck // thin delegation
 }
 
-// learnedPortAdapter is the TEMPORARY Task-2 bridge (deleted in Task 3's
-// same-commit switchover): BridgeConfig.Learned is the enginebridge port
-// while the store still opens inside SetupEngine (the legacy path). Task 3
-// moves learning.Open to the app-side loader, which hands a port adapter in
-// directly — this type and the wrap at the BridgeConfig site die with it.
-type learnedPortAdapter struct{ store *learning.Store }
-
-func (a learnedPortAdapter) Lookup(situation string) (string, bool) {
-	e, ok := a.store.Lookup(situation)
-	return e.Answer, ok
+// Learned is the runner-side learning port (25-05 Task 3): the enginebridge
+// ask-lookup port plus the accepted-answer candidate write (17-04 A9) plus
+// the entry count the /memory listing reports — the three consumption sites
+// the runner core has, all in kit-neutral shapes (no app type crosses). The
+// behavioral store stays app-side (KIT-03); the composition root injects an
+// adapter satisfying this interface (acpserve's kitLearned). A nil Learned
+// is the documented degraded state: engine asks surface ErrAskPending,
+// accepted answers are not persisted (the enqueueEngineAsk no-op arm), and
+// /memory reports the store as not loaded.
+type Learned interface {
+	enginebridge.LearnedStore
+	RecordCandidate(situation, answer, sourceTurnID string) error
+	EntryCount() int
 }
 
-// SetupEngine builds the Phase-4 engine wiring (Plan 04-05 D-01/D-13/D-15/D-21):
-// the shared catalog + OpenSpec tool registration + the openspec pattern table +
-// the loaded hook-DAG config + the learning store + the engine + its
-// ActionDispatcher. On any error the engine stays disabled (Run falls back to
-// the unwrapped sess.Prompt — backward-compatible + D-04 graceful degradation).
-func (r *Runner) SetupEngine() error {
-	catalog := toolcat.NewCatalog()
-	r.catalog = catalog
+// EngineSetup carries SetupEngine's app-hosted inputs (25-05 Task 3, OQ4:
+// the kit no longer self-loads ecosystem config — D-17; the app-side loader
+// builds this before the explicit SetupEngine step — D-11). Flat, mirrored
+// names (D-10); every field type is kit-defined (no app type crosses).
+type EngineSetup struct {
+	// Catalog is the shared tool catalog with the ecosystem's tools already
+	// registered app-side (the app registers tools; the kit owns the type).
+	Catalog *toolcat.Catalog
+	// PatternTable is the derived pattern table the engine consults.
+	PatternTable engine.PatternTable
+	// Learned is the learning port adapter (nil = learning off).
+	Learned Learned
+}
 
-	// OpenSpec config (D-13/D-15) — embedded default; an operator overlay path
-	// could be loaded here. Register each command's mutability into the catalog.
-	oscfg, err := openspec.DefaultConfig()
-	if err != nil {
-		return fmt.Errorf("call: %w", err)
-	}
-
-	err = openspec.RegisterTools(catalog, oscfg)
-	if err != nil {
-		return fmt.Errorf("call: %w", err)
-	}
-
-	pt, err := openspec.FromConfig(oscfg)
-	if err != nil {
-		return fmt.Errorf("call: %w", err)
-	}
-
-	r.patternTable = pt
+// SetupEngine builds the Phase-4 engine wiring (Plan 04-05 D-01/D-13/D-15/
+// D-21): the shared catalog + pattern table + learning port arrive as
+// inputs (25-05/OQ4 — the app hosts the ecosystem loads), the hook-DAG
+// defaults stay kit self-config (kit/hookdag is kit-owned machinery loading
+// its embedded seeded set, the same legitimacy as kit/modelrouting's
+// embedded defaults), and the engine + its ActionDispatcher template are
+// built here. On any error the engine stays disabled (Run falls back to the
+// unwrapped sess.Prompt — backward-compatible + D-04 graceful degradation).
+func (r *Runner) SetupEngine(setup EngineSetup) error {
+	r.catalog = setup.Catalog
+	r.patternTable = setup.PatternTable
+	r.learned = setup.Learned
 
 	// Hook-DAG config (HOOK-02) — embedded default seeded set.
 	hooks, err := hookdag.DefaultHooks()
@@ -504,16 +505,6 @@ func (r *Runner) SetupEngine() error {
 	// built PER-TURN in runOneTurn — never rebound on these shared instances
 	// (a rebind cross-wires concurrent sessions and parked 13-00 chains).
 	r.hookExec = &hookdag.Executor{Bus: r.bus, Log: slog.Default()}
-
-	// Learning store (LRN-01..04) — versioned .ass-guard/learned.yaml.
-	learnedPath := filepath.Join(r.workDirOrDefault(), ".ass-guard", "learned.yaml")
-
-	learned, lerr := learning.Open(learnedPath)
-	if lerr == nil {
-		r.learned = learned
-	} else {
-		log.Printf("ass-guard: learning store open failed (continuing without learning): %v", lerr)
-	}
 
 	// The engine template (Bus/Log only — see the WR-01 note on r.hookExec;
 	// the ActionDispatcher is per-turn too).
@@ -1406,19 +1397,10 @@ func (r *Runner) runOneTurn(
 		Boundaries: enginebridge.NewHookSessionBoundaryOpener(sess.Manager),
 	}
 
-	// 25-05 Task 2 (temporary): the bridge consumes the LearnedStore port;
-	// the store still opens inside SetupEngine, so wrap it here. The wrap is
-	// nil-safe — no store means the port stays nil and Ask degrades to
-	// ErrAskPending exactly as before. Task 3's loader replaces this wrap.
-	learnedPort := enginebridge.LearnedStore(nil)
-	if r.learned != nil {
-		learnedPort = learnedPortAdapter{store: r.learned}
-	}
-
 	turnDispatcher := enginebridge.NewACPDispatcher(&enginebridge.BridgeConfig{
 		Hooks:         turnExec,
 		HookCfg:       r.hookCfg,
-		Learned:       learnedPort,
+		Learned:       r.learned, // the Learned port subsumes the enginebridge LearnedStore method set
 		Bus:           r.bus,
 		NextPromptFor: r.nextPromptFor,
 	})

@@ -617,14 +617,14 @@ func builtinMemory(_ context.Context, r *Runner, _ *session.Session, _, _ string
 	sb.WriteString("learning store:\n")
 
 	if r.learned != nil {
-		entries := r.learned.List()
+		entries := r.learned.EntryCount()
 
 		suffix := "ies"
-		if len(entries) == 1 {
+		if entries == 1 {
 			suffix = "y"
 		}
 
-		fmt.Fprintf(&sb, "  %d learned entr%s\n", len(entries), suffix)
+		fmt.Fprintf(&sb, "  %d learned entr%s\n", entries, suffix)
 	} else {
 		sb.WriteString("  (learning store not loaded)\n")
 	}

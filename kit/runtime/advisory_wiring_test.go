@@ -81,7 +81,7 @@ func TestAdvisoryWiring_QuestionEndingNote(t *testing.T) { //nolint:cyclop,gocyc
 		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return mp },
 	}
 
-	err := runner.SetupEngine()
+	err := runner.SetupEngine(testEngineSetup(t))
 	if err != nil {
 		t.Fatalf("SetupEngine: %v", err)
 	}

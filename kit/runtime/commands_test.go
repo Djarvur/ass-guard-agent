@@ -1686,7 +1686,7 @@ func TestInitExpansion(t *testing.T) {
 	t.Run("engine-on parity", func(t *testing.T) {
 		r, prov, _ := newCommandRunner(t, nil)
 
-		err := r.SetupEngine()
+		err := r.SetupEngine(testEngineSetup(t))
 		if err != nil {
 			t.Fatalf("SetupEngine: %v", err)
 		}

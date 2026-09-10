@@ -161,7 +161,7 @@ func newOpsxMatrixRunnerAt(t *testing.T, scratch string) *Runner {
 		askTimeout: 45 * time.Second,
 	}
 
-	err = r.SetupEngine()
+	err = r.SetupEngine(testEngineSetup(t))
 	if err != nil {
 		t.Fatalf("SetupEngine: %v", err)
 	}

@@ -92,7 +92,7 @@ func newHookJoinRunner(
 		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return prov },
 	}
 
-	if err := r.SetupEngine(); err != nil {
+	if err := r.SetupEngine(testEngineSetup(t)); err != nil {
 		t.Fatalf("SetupEngine: %v", err)
 	}
 

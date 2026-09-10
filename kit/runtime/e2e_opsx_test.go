@@ -170,7 +170,7 @@ func newOpsxRunnerAt(t *testing.T, scratch string) *Runner {
 		},
 	}
 
-	err = r.SetupEngine()
+	err = r.SetupEngine(testEngineSetup(t))
 	if err != nil {
 		t.Fatalf("SetupEngine: %v", err)
 	}

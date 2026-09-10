@@ -53,7 +53,7 @@ func memRunner(t *testing.T, plant func(dir string)) (r *Runner, dir string) {
 		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return prov },
 	}
 
-	err = r.SetupEngine()
+	err = r.SetupEngine(testEngineSetup(t))
 	if err != nil {
 		t.Fatalf("SetupEngine: %v", err)
 	}

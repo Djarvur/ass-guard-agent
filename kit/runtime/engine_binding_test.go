@@ -28,7 +28,7 @@ func TestEngineWiringStaysSessionFree(t *testing.T) {
 	gated := newGatedStreamProvider()
 	runner := newModelTestRunner(t, gated, testModelBefore)
 
-	serr := runner.SetupEngine()
+	serr := runner.SetupEngine(testEngineSetup(t))
 	if serr != nil {
 		t.Fatalf("SetupEngine: %v", serr)
 	}
