@@ -49,7 +49,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Sandbox Reality
 
-- [ ] **SAND-01**: Sandbox flag made real: landlock-lsm/go-landlock v0.10.0 (Linux, kernel ≥5.13) / sandbox-exec generated `.sb` profiles embedded (macOS, targeted denies never deny-default); probe-and-degrade loudly; default OFF; `--sandbox=off` escape hatch; bubblewrap demoted to opt-in stronger-isolation mode
+- [x] **SAND-01**: Sandbox flag made real: landlock-lsm/go-landlock v0.10.0 (Linux, kernel ≥5.13) / sandbox-exec generated `.sb` profiles embedded (macOS, targeted denies never deny-default); probe-and-degrade loudly; default OFF; `--sandbox=off` escape hatch; bubblewrap demoted to opt-in stronger-isolation mode
 
 ### SEED Gap Close-out
 
@@ -127,7 +127,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PAR-07 | Phase 22 | Pending |
 | PAR-08 | Phase 22 | Pending |
 | PAR-09 | Phase 22 | Complete |
-| SAND-01 | Phase 22 | Pending |
+| SAND-01 | Phase 22 | Complete |
 | SEEDG-01 | Phase 23 | Complete |
 | SEEDG-02 | Phase 23 | Pending |
 | SEEDG-03 | Phase 23 | Pending |

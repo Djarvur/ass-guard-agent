@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 10
+open_count: 12
 waived_count: 0
 fixed_count: 10
-total_count: 20
-last_updated: 2026-09-06T21:32:25.796Z
+total_count: 22
+last_updated: 2026-09-10T01:06:35.602Z
 ---
 
 # Broken Windows Ledger
@@ -35,6 +35,8 @@ last_updated: 2026-09-06T21:32:25.796Z
 | 18 | 21 | deviation | internal/runtime/imgscale_test.go |  | plan-literal 9000x6000 over-dims fixture env-gated (ASSGUARD_IMG_HEAVY=1); cheap default row proves the same path (suite-health tuning) | open |  | 2026-09-03T22:27:52.112Z |  |
 | 19 | 21 | lint-warning | .golangci.yml |  | golangci-lint v2.12.2 (built with go1.26) panics on a go1.27-requiring dependency — mise ci lint leg red before and after 21-06 (environmental; vet+build+test green) | open |  | 2026-09-03T22:57:28.131Z |  |
 | 20 | 19 | deviation | .golangci.yml |  | mise lint gate fails repo-wide: golangci-lint 2.13.2 exhaustruct_v5 rename defeats the 2.12.x-tuned wildcard exclusion (pre-existing env drift, details in 19 deferred-items.md) | open |  | 2026-09-06T21:32:25.796Z |  |
+| 21 | 22 | deviation | internal/runtime/rescan_test.go |  | TestRescanConcurrency data race (spawnMCP vs installRegistry) pre-existing before 22-04 — blocks the ./internal/runtime/ green gate; logged in 22-04 deferred-items.md | open |  | 2026-09-10T00:24:14.411Z |  |
+| 22 | 22 | unrun-verify | internal/acpserve |  | TestPermissionsE2E (acpserve) skipped under -race in 22-06's phase-quick verify — pre-existing cross-workstream regression from Phase 23 commit 40b2bbc (STATE.md blocker, operator-bisected); passes at 721c7bc | open |  | 2026-09-10T01:06:35.602Z |  |
 
 ````json
 [
@@ -276,6 +278,30 @@ last_updated: 2026-09-06T21:32:25.796Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-09-06T21:32:25.796Z",
+    "resolved_at": null
+  },
+  {
+    "id": 21,
+    "kind": "deviation",
+    "phase": "22",
+    "file": "internal/runtime/rescan_test.go",
+    "line": null,
+    "description": "TestRescanConcurrency data race (spawnMCP vs installRegistry) pre-existing before 22-04 — blocks the ./internal/runtime/ green gate; logged in 22-04 deferred-items.md",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T00:24:14.411Z",
+    "resolved_at": null
+  },
+  {
+    "id": 22,
+    "kind": "unrun-verify",
+    "phase": "22",
+    "file": "internal/acpserve",
+    "line": null,
+    "description": "TestPermissionsE2E (acpserve) skipped under -race in 22-06's phase-quick verify — pre-existing cross-workstream regression from Phase 23 commit 40b2bbc (STATE.md blocker, operator-bisected); passes at 721c7bc",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-09-10T01:06:35.602Z",
     "resolved_at": null
   }
 ]

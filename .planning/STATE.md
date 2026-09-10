@@ -1,21 +1,21 @@
 ---
-gsd_state_version: 1.0
+gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 22
 current_phase_name: Background Execution + Sandbox Reality
-current_plan: 2
+current_plan: 3
 status: executing
-stopped_at: Completed 22-04-PLAN.md (persistent shell, PAR-09)
-last_updated: "2026-09-10T00:23:49.626Z"
+stopped_at: Completed 22-06-PLAN.md (sandbox flag real, SAND-01)
+last_updated: "2026-09-10T01:09:15.965Z"
 last_activity: 2026-09-10
 last_activity_desc: Phase 22 execution started
-state_head: 16f854838f4c9647a88e247a96cdbb9e8ad9d8b6
+state_head: 5637a05b19df1f7a482221748378e048eb2285ad
 progress:
   total_phases: 11
   completed_phases: 7
   total_plans: 73
-  completed_plans: 56
+  completed_plans: 57
   percent: 64
 ---
 
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-09-10)
 ## Current Position
 
 Phase: 22 (Background Execution + Sandbox Reality) — EXECUTING
-Plan: 2 of 6
-Current Plan: 2
+Plan: 3 of 6
+Current Plan: 3
 Total Plans in Phase: 6
 Status: Ready to execute
 Last activity: 2026-09-10 — Phase 22 execution started
@@ -102,6 +102,7 @@ Phase 19: 7/7 ✓ closed 2026-09-10 (verification completed by the auto-UAT live
 | Phase 23 P03 | 42 min | 3 tasks | 2 files |
 | Phase 23 P02 | 55 min | 3 tasks | 7 files |
 | Phase 22 P04 | 35 min | 3 tasks | 15 files |
+| Phase 22 P06 | 32 min | 3 tasks | 18 files |
 
 ## Accumulated Context
 
@@ -196,6 +197,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 22]: 22-04: stdin-pipe + pty-slave persistent shell (interactive sh ignores SIGTERM and tty-echo pollutes captures; the output-side PTY keeps colors + EIO)
 - [Phase 22]: 22-04: per-generation reader goroutine + reaper dead-channel — pty-master read deadlines silently no-op (probe-verified); orphaned children mask EIO past shell death
 - [Phase 22]: 22-04: additive Bash persistent catalog property per D-09/OQ1 — the documented waiver of the 08-05 byte-identical discipline (required stays [command], additionalProperties false)
+- [Phase 22]: 22-06: one WrapCmd entry at all three Bash-class exec sites (foreground, registry launch funnel covering both start routes, PTY shell) — a fourth exec site without the wrap is a named review-gate violation (SAND-01)
+- [Phase 22]: 22-06: the persistent OQ2 arm falls through to the foreground machinery — a per-call dangerouslyDisableSandbox can never unconfine the SHARED shell; off-arm stays the documented no-op; unconfined runs are individually noted with a process-wide counter at every site
+- [Phase 22]: 22-06: zero-value Availability Mode reads as OFF at every exec-site gate — confined only when the operator asked (asking resolves landlock|seatbelt); default OFF leaves argv byte-identical with zero notes
+- [Phase 22]: 22-06 (deviation): 22-05's linux leg was silently broken — ruleset rows for missing paths (/System on linux) failed the WHOLE ruleset and the re-exec child exec'd a bare argv[0] (no PATH lookup); fixed + live-proven on this host (landlock ABI 10), darwin arms compile-gated
 
 ### Pending Todos
 
@@ -221,6 +226,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-10T00:23:48.682Z
-Stopped at: Completed 22-04-PLAN.md (persistent shell, PAR-09)
+Last session: 2026-09-10T01:09:14.860Z
+Stopped at: Completed 22-06-PLAN.md (sandbox flag real, SAND-01)
 Resume file: None
