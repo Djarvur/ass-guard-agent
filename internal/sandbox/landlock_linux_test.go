@@ -78,16 +78,26 @@ func TestLandlock_ProbeTaxonomy(t *testing.T) {
 
 // TestLandlock_RulesetFromPolicyRows: ApplyChildRuleset's rules derive from
 // the SAME LandlockRules() rows the darwin golden pinned — symmetry by
-// shared code (D-06): every rw row becomes a RWDirs entry, every ro row a
-// RODirs entry.
+// shared code (D-06): every EXISTING rw row becomes a RWDirs entry, every
+// EXISTING ro row a RODirs entry, and rows whose path is absent on THIS host
+// are skipped (the 22-06 missing-path filter — a landlock ruleset row opens
+// its path at restrict time, so one missing entry would fail the whole
+// ruleset and kill every confined run; DefaultPolicy's darwin-only
+// "/System"/"/Library" rows are the canonical absent-on-linux case).
 func TestLandlock_RulesetFromPolicyRows(t *testing.T) {
 	t.Parallel()
 
-	p := DefaultPolicy("/w", "/t", "/g")
+	// All-rw paths exist → every row survives the filter 1:1.
+	w, g := t.TempDir(), t.TempDir()
+	p := DefaultPolicy(w, t.TempDir(), g)
 
 	rw, ro := rulesetPaths(p)
 
 	for _, row := range p.LandlockRules() {
+		if !pathExists(row.Path) {
+			continue // absent on this host — asserted skipped below via counts
+		}
+
 		switch row.Access {
 		case "rw":
 			found := false
@@ -116,17 +126,39 @@ func TestLandlock_RulesetFromPolicyRows(t *testing.T) {
 		}
 	}
 
-	if len(rw) != len(p.RWPaths) || len(ro) != len(p.ROSysPaths) {
-		t.Errorf("ruleset counts (%d rw, %d ro) != policy (%d rw, %d ro)", len(rw), len(ro), len(p.RWPaths), len(p.ROSysPaths))
+	if len(rw) != len(p.RWPaths) {
+		t.Errorf("rw count %d != policy %d (existing paths must map 1:1)", len(rw), len(p.RWPaths))
 	}
+
+	// The ro set: DefaultPolicy mixes majors — every row that exists on this
+	// host maps, every row that doesn't is skipped (never a ruleset failure).
+	liveRO := 0
+	for _, path := range p.ROSysPaths {
+		if pathExists(path) {
+			liveRO++
+		}
+	}
+
+	if len(ro) != liveRO {
+		t.Errorf("ro count %d != existing-host ro rows %d (missing paths must be skipped, not fatal)", len(ro), liveRO)
+	}
+}
+
+// pathExists reports whether the path resolves on THIS host (the filter's
+// probe — mirrors rulesetPaths' os.Stat).
+func pathExists(path string) bool {
+	_, err := os.Stat(path)
+
+	return err == nil
 }
 
 // TestLandlock_ChildEntryContract: RunSandboxChild applies the ruleset then
 // execs the target — the exec seam is injectable; with the seam recording,
 // the applied policy matches the env's JSON and the target argv survives.
 func TestLandlock_ChildEntryContract(t *testing.T) {
-	t.Parallel()
-
+	// NOT t.Parallel: the battery t.Setenv's the sentinel pair, and Setenv
+	// panics inside parallel tests (surfaced when the linux leg first ran
+	// live — it had been compile-gated since 22-05).
 	policyJSON, merr := marshalPolicy(DefaultPolicy("/w", "/t", "/g"))
 	if merr != nil {
 		t.Fatal(merr)

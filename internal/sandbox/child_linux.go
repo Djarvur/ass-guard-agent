@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 )
@@ -26,12 +28,30 @@ var errNotChild = errors.New("sandbox: argv is not a sandbox child")
 // sandboxChildExec is the apply-then-exec unit (a seam so tests on Linux
 // hosts can verify the contract WITHOUT confining the test process — the
 // default applies a real ruleset and never returns on success).
+//
+// TARGET RESOLUTION (22-06 live-linux discovery): syscall.Exec does NO PATH
+// lookup — the wrapped child's tail argv carries the ORIGINAL cmd.Args, whose
+// [0] is the bare invocation name ("sh"), so exec'ing it verbatim dies ENOENT
+// on every confined run (invisible while the linux leg was compile-gated).
+// A non-absolute target resolves through exec.LookPath BEFORE the exec; the
+// ro ruleset (already applied at this point) still grants the read+execute
+// the lookup and exec need.
 var sandboxChildExec = func(policy Policy, argv []string) error {
 	if aerr := ApplyChildRuleset(policy); aerr != nil {
 		return fmt.Errorf("sandbox: child ruleset: %w", aerr)
 	}
 
-	return syscall.Exec(argv[0], argv, targetEnv(os.Environ())) //nolint:wrapcheck // exec never returns on success
+	target := argv[0]
+	if !filepath.IsAbs(target) {
+		resolved, lerr := exec.LookPath(target)
+		if lerr != nil {
+			return fmt.Errorf("sandbox: resolve target %q: %w", target, lerr)
+		}
+
+		target = resolved
+	}
+
+	return syscall.Exec(target, argv, targetEnv(os.Environ())) //nolint:wrapcheck // exec never returns on success
 }
 
 // RunSandboxChild is the loader entrypoint: argv is this process's own

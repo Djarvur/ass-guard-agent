@@ -81,8 +81,24 @@ func probePlatform() Availability {
 // rulesetPaths derives the ruleset's RWDirs/RODirs path lists from the
 // policy's LandlockRules rows — the SAME rows the darwin golden pins
 // (D-06: symmetry by shared code).
+//
+// MISSING-PATH FILTER (22-06 live-linux discovery): landlock populates a
+// ruleset row by opening the path at restrict time, so ONE missing entry —
+// e.g. the portable DefaultPolicy's darwin-only "/System"/"/Library" rows on
+// a linux host — fails the WHOLE ruleset and the child exits 1 (fail-closed
+// on every run, found running the 22-06 batteries on the linux host; the
+// 22-05 linux leg was compile-gated, so the miss was invisible). Rows whose
+// path does not exist on THIS host are SKIPPED — the A8 "common-denominator
+// set both majors accept" realized per-boot. Skipping is the conservative
+// direction on both sides: a missing RO row means one less read grant (the
+// child may fail to exec something needing it — loud, not silent exfil), and
+// a missing RW row means one less write grant (never a broader ancestor).
 func rulesetPaths(p Policy) (rw, ro []string) {
 	for _, row := range p.LandlockRules() {
+		if _, err := os.Stat(row.Path); err != nil {
+			continue // not on this host — skipped (see the comment above)
+		}
+
 		switch row.Access {
 		case "rw":
 			rw = append(rw, row.Path)
