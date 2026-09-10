@@ -41,6 +41,17 @@ run = "ASSGUARD_EVAL_GATE=1 ASSGUARD_OPENSPEC_BIN=1 ASSGUARD_E2E_LLM=1 go test .
 description = "Detector: do the changes touch the locked eval-gate change classes? (exit 3 => run mise eval-gate)"
 run = "./scripts/eval-change-class.sh"
 
+# 24-04 (TAIL-02, D-08/D-09) — the nightly upstream-parity drift gate's
+# runner entry: the workflow's self-hosted drift job invokes exactly this
+# task (the zcode corpus lives on that runner). Drift-only light path
+# (OQ3): probe + structure hash vs the pinned capture + this build —
+# ZERO API spend; the behavioral-eval suites stay on their own locked
+# change-class gate (D-09, never merged in here). Exit contract the
+# workflow maps: 0 parity / 7 drift (auto-issue) / 1 operational.
+[tasks.parity-nightly]
+description = "Nightly upstream-parity drift gate: build + parity nightly-check vs the committed structure pin (exit 7 on drift)"
+run = "CGO_ENABLED=0 go build -o /tmp/ass-guard-parity-nightly ./cmd/ass-guard && /tmp/ass-guard-parity-nightly parity nightly-check --profiles-dir profiles/zcode --pin profiles/zcode/structure-pin.json --report nightly-report.json"
+
 # 16-06 (D-04): the adversarial TurnEmitter soak — MINUTES of chaotic
 # producers and a stuttering writer standing behind the seconds-scale ci
 # stress. Env-gated exactly like the eval lane: the test SKIPS (never fails)

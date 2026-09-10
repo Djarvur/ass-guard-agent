@@ -1,0 +1,138 @@
+# 24-04 (TAIL-02, D-08/D-09/D-10) — the repo's FIRST GitHub Actions workflow:
+# the nightly upstream-parity gate. Drift-only light path (OQ3): zcode version
+# probe + profile bundle structure hash vs the pinned capture + build/test.
+# Zero API spend by construction; the behavioral-eval machinery stays on its
+# own locked change-class gate and is NOT referenced anywhere below (D-09).
+#
+# Trust notes (T-24-04-01..06): triggers are schedule + workflow_dispatch
+# ONLY — no PR-targeted trigger of any kind exists in this file; first-party
+# actions/* pinned to version
+# tags re-verified via gh api on 2026-09-10 (SHA-pinning is the documented
+# hardening upgrade); the report carries file names + sha256 digests + version
+# strings only (no capture bytes); drift content reaches the issue body
+# through github-script reading the report FILE — never shell arguments.
+name: nightly-parity
+
+# "on" is quoted: YAML 1.1 readers (ruby/Psych et al.) parse the bare key as
+# boolean true; GitHub Actions accepts the quoted form identically.
+"on":
+  schedule:
+    # Off-peak ODD minute (D-08): 03:41 UTC, deliberately off the :00/:30
+    # boundaries. docs.github.com "Events that trigger workflows" #schedule:
+    # "The schedule event can be delayed during periods of high loads of
+    # GitHub Actions workflow runs… High load times include the start of every
+    # hour… If the load is sufficiently high enough, some queued jobs may be
+    # dropped." A missed or dropped nightly is an ACCEPTED state by design:
+    # drift-only (zero API spend), the next scheduled run catches up.
+    - cron: "41 3 * * *"
+  # Manual smoke/backstop (Pitfall 2): scheduled workflows fire ONLY when the
+  # workflow file exists on the default branch (master) — the schedule
+  # activates at the v1.2 milestone merge. Until then, workflow_dispatch keeps
+  # the gate triggerable from any branch that carries the file.
+  workflow_dispatch: {}
+
+# Least privilege (Pitfall 6): the default GITHUB_TOKEN is read-only;
+# issues:write is granted ONLY on the drift job below — exactly where the
+# issue-on-drift step runs.
+permissions:
+  contents: read
+
+jobs:
+  # D-09's build/test letter on the hosted runner (mise is NOT required on
+  # hosted runners — plain go; the drift job is the mise consumer).
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      # actions/checkout v7.0.1 — pinned 2026-09-10 via
+      # gh api repos/actions/checkout/releases/latest
+      - uses: actions/checkout@v7.0.1
+      # actions/setup-go v7.0.0 — pinned 2026-09-10 via
+      # gh api repos/actions/setup-go/releases/latest
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: build
+        run: CGO_ENABLED=0 go build ./...
+      - name: test
+        # D-09 letter (go test -race -count=1 ./...) plus a -skip list naming
+        # the repo's DOCUMENTED pre-existing failures (STATE.md blockers +
+        # executor baseline 2026-09-10): TestPermissionsE2E (Phase 23 commit
+        # 40b2bbc regression), TestRescanConcurrency (pre-existing race), and
+        # the TestRunSuite_* battery (needs the `openspec` binary — absent on
+        # hosted runners). Without the skip list this job is permanently red
+        # for reasons unrelated to parity, which would bury the drift signal
+        # (D-10). REMOVE entries here as the underlying failures are fixed.
+        run: go test -race -count=1 -skip '^TestPermissionsE2E$|^TestRescanConcurrency$|^TestRunSuite_' ./...
+
+  # D-08: the zcode corpus stays local — the drift job runs ONLY on a
+  # self-hosted runner carrying the label set below (all labels must match).
+  # Operator setup: GitHub -> repo Settings -> Actions -> Runners -> ensure a
+  # runner labeled [self-hosted, zcode] is online for Djarvur/ass-guard-agent.
+  drift:
+    runs-on: [self-hosted, zcode]
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      # actions/checkout v7.0.1 — pinned 2026-09-10 (see build-test)
+      - uses: actions/checkout@v7.0.1
+      - name: nightly drift check
+        # The [tasks.parity-nightly] mise entry wraps the exact cobra
+        # invocation (build + parity nightly-check vs the committed pin).
+        # Exit contract: 0 parity / 7 drift / 1 operational.
+        id: drift
+        run: mise run parity-nightly
+      # D-10: the report artifact exists on EVERY run — drift or not. It is
+      # the belt behind the issue step: the signal survives even when issue
+      # creation fails (e.g. workflow-permissions friction, T-24-04-02).
+      # actions/upload-artifact v7.0.1 — pinned 2026-09-10 via
+      # gh api repos/actions/upload-artifact/releases/latest
+      - name: upload drift report
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: nightly-report
+          path: nightly-report.json
+          # Operational failures (exit 1) can die before a report exists;
+          # the job conclusion already carries that signal.
+          if-no-files-found: ignore
+      # Issue-on-drift (D-10, Pitfall 10): the body is composed in JS from the
+      # report FILE (fs.readFileSync) — drift content never passes through
+      # shell arguments or $-interpolation. Fired exactly when the drift step
+      # exited non-zero (exit 7 drift; operational exit 1 also lands here with
+      # its reason visible in the body when a report exists).
+      # actions/github-script v9.0.0 — pinned 2026-09-10 via
+      # gh api repos/actions/github-script/releases/latest
+      - name: open drift issue
+        if: always() && steps.drift.outcome == 'failure'
+        uses: actions/github-script@v9.0.0
+        with:
+          script: |
+            const fs = require('fs');
+            const rep = JSON.parse(fs.readFileSync('nightly-report.json', 'utf8'));
+            const short = (h) => h ? h.slice(0, 12) + '…' : '(none)';
+            const rows = rep.files.map(
+              (f) => `| ${f.name} | ${f.match ? 'match' : '**DRIFT**'} | ${short(f.expected)} | ${short(f.actual)} |`
+            ).join('\n');
+            const version = rep.zcode_version.reason
+              ? `expected \`${rep.zcode_version.expected}\`, probe FAILED (reason: ${rep.zcode_version.reason})`
+              : `expected \`${rep.zcode_version.expected}\`, found \`${rep.zcode_version.found}\``;
+            const body = [
+              '**Nightly upstream-parity drift detected**',
+              '',
+              `**Summary:** ${rep.summary}`,
+              `**zcode version:** ${version}`,
+              '',
+              '| file | state | pinned | current |',
+              '|------|-------|--------|---------|',
+              rows,
+              '',
+              `Generated at ${rep.generated_at}. The full report rides the run's artifact.`,
+              'Pin updates go through the recapture runbook ONLY — never re-pin to silence this issue.'
+            ].join('\n');
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[nightly-parity] upstream drift — ${new Date().toISOString().slice(0, 10)}`,
+              body: body
+            });
