@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	goruntime "runtime"
 	"strings"
 	"sync/atomic"
@@ -863,5 +865,189 @@ func TestCloseSession_PrunesWakeState(t *testing.T) { //nolint:funlen // prune +
 
 	if !strings.Contains(stderr.String(), sid2+" close cancelled 1 running background subagent task(s)") {
 		t.Errorf("no counted running-cancel note for %s; stderr: %q", sid2, stderr.String())
+	}
+}
+
+// --- 22-09 (G-22-5, Task 2): the session-wiring rows --------------------------------
+//
+// The end-to-end G-22-5 proof: the model stops and reads a background subagent
+// through the session catalog using the exact exec_ id the async_launched
+// payload handed it. Same serialization rule as the 22-08 rows above: NO
+// t.Parallel() (keeps the mixed serial+parallel set stable at -count=3).
+
+// TestTaskStopFallbackWiring: row 1 (live): a subagent registered on the
+// session's tracker (a blocking Run) — the session catalog's TaskStop fires
+// the registered cancel func and renders the captured ack. Row 2 (finished):
+// after Complete retired the cancel entry, TaskStop renders the structured
+// unknown-task error — truthful, not a fake ack (nothing is left to stop).
+// The fake provider stays at ZERO calls: a stop must not wake turns.
+func TestTaskStopFallbackWiring(t *testing.T) { //nolint:funlen // two-row wiring battery
+	r, prov := newExpansionRunner(t, true)
+
+	const sid = "sess-fallback-stop"
+
+	_ = r.sessionFor(context.Background(), sid)
+
+	sess := r.sessions[sid]
+
+	tr := r.trackerFor(sid)
+	if tr == nil {
+		t.Fatal("no tracker wired for the session")
+	}
+
+	stopTool, ok := sess.Catalog.Get("TaskStop")
+	if !ok || stopTool.Execute == nil {
+		t.Fatal("test setup: the session catalog has no executable TaskStop")
+	}
+
+	// Row 1 (live stop): the registered cancel func must fire through the seam.
+	cancelled := make(chan struct{})
+
+	const liveID = "exec_wiring_stop_live"
+
+	queued, err := tr.RegisterSubagent(liveID, func() func() {
+		return func() { close(cancelled) }
+	})
+	if err != nil {
+		t.Fatalf("RegisterSubagent: %v", err)
+	}
+
+	if queued {
+		t.Fatal("test setup: the registration queued — the cap has room")
+	}
+
+	out, err := stopTool.Execute(context.Background(), json.RawMessage(`{"task_id":"`+liveID+`"}`))
+	if err != nil {
+		t.Fatalf("TaskStop(live) err = %v; want nil (the seam cancels the subagent)", err)
+	}
+
+	var ack string
+
+	_ = json.Unmarshal(out, &ack)
+
+	if ack != "Task "+liveID+" stopped." {
+		t.Errorf("ack = %q; want the captured ack naming the subagent id", ack)
+	}
+
+	select {
+	case <-cancelled:
+	default:
+		t.Error("the registered cancel func never fired — TaskStop did not reach the tracker through the seam")
+	}
+
+	// Row 2 (finished id): the cancel entry retired at Complete → the
+	// structured unknown-task error, never a fake ack.
+	const doneID = "exec_wiring_stop_done"
+
+	if _, err := tr.RegisterSubagent(doneID, func() func() { return func() {} }); err != nil {
+		t.Fatalf("RegisterSubagent(done): %v", err)
+	}
+
+	// Neutralize the drain so the completion cannot schedule a wake turn (the
+	// zero-call contract below pins the STOP path, not the wake path).
+	tr.SetDrain(func([]tasks.Notification) {})
+
+	tr.Complete(tasks.Notification{TaskID: doneID, Kind: tasks.KindSubagent, ExitStatus: "0"})
+
+	out2, err2 := stopTool.Execute(context.Background(), json.RawMessage(`{"task_id":"`+doneID+`"}`))
+	if err2 == nil {
+		t.Fatal("TaskStop(finished) err = nil; want the structured unknown-task error (nothing left to stop)")
+	}
+
+	var structured struct {
+		Error string `json:"error"`
+	}
+
+	_ = json.Unmarshal(out2, &structured)
+
+	if !strings.Contains(structured.Error, doneID) || !strings.Contains(structured.Error, "unknown task") {
+		t.Errorf("error = %q; want the structured unknown-task error naming the finished id", structured.Error)
+	}
+
+	if calls := prov.callCount(); calls != 0 {
+		t.Errorf("provider calls = %d; want 0 (a stop must not wake turns)", calls)
+	}
+}
+
+// TestTaskOutputFallbackWiring: the classifier-fix regression row — the model
+// reads a FINISHED background subagent end to end. Register a subagent on the
+// session's tracker, write its output file at the production path convention,
+// let it Complete (the cancel entry retires — finished means finished; the
+// pre-fix closure rendered the unknown-task error, and the original sketch
+// would have rendered not_ready forever because finished classified as
+// running), then the session catalog's TaskOutput with its id renders the
+// READY envelope whose output section carries the output-file content. The
+// fake provider stays at ZERO calls (the drain is neutralized — a read must
+// not wake turns).
+func TestTaskOutputFallbackWiring(t *testing.T) {
+	r, prov := newExpansionRunner(t, true)
+
+	const sid = "sess-fallback-output"
+
+	_ = r.sessionFor(context.Background(), sid)
+
+	sess := r.sessions[sid]
+
+	tr := r.trackerFor(sid)
+	if tr == nil {
+		t.Fatal("no tracker wired for the session")
+	}
+
+	outTool, ok := sess.Catalog.Get("TaskOutput")
+	if !ok || outTool.Execute == nil {
+		t.Fatal("test setup: the session catalog has no executable TaskOutput")
+	}
+
+	const subID = "exec_wiring_out_done"
+
+	cancelled := make(chan struct{}, 1)
+
+	if _, err := tr.RegisterSubagent(subID, func() func() {
+		return func() { close(cancelled) }
+	}); err != nil {
+		t.Fatalf("RegisterSubagent: %v", err)
+	}
+
+	// The output file at the production path convention
+	// (.ass-guard/outputs/<id>.log under the session workdir).
+	outPath := filepath.Join(sess.WorkDir, ".ass-guard", "outputs", subID+".log")
+
+	if merr := os.MkdirAll(filepath.Dir(outPath), 0o750); merr != nil {
+		t.Fatalf("mkdir outputs: %v", merr)
+	}
+
+	const content = "task_id: " + subID + "\n---\nsubagent result: wiring-marker-90d1\n---\n[completed]\nfinal answer\n"
+
+	if werr := os.WriteFile(outPath, []byte(content), 0o600); werr != nil {
+		t.Fatalf("write output file: %v", werr)
+	}
+
+	// Neutralize the drain (the zero-call contract pins the READ path) and
+	// complete: the cancel entry retires — finished means finished.
+	tr.SetDrain(func([]tasks.Notification) {})
+
+	tr.Complete(tasks.Notification{TaskID: subID, Kind: tasks.KindSubagent, ExitStatus: "0"})
+
+	out, err := outTool.Execute(context.Background(), json.RawMessage(
+		`{"task_id":"`+subID+`","block":true,"timeout":5000}`))
+	if err != nil {
+		t.Fatalf("TaskOutput(finished) err = %v; want nil (the ready envelope)", err)
+	}
+
+	var text string
+
+	_ = json.Unmarshal(out, &text)
+
+	if !strings.Contains(text, "<retrieval_status>ready</retrieval_status>") ||
+		!strings.Contains(text, "<status>finished</status>") {
+		t.Errorf("no ready/finished envelope head; got %.120s", text)
+	}
+
+	if !strings.Contains(text, "wiring-marker-90d1") || !strings.Contains(text, "[completed]") {
+		t.Errorf("the envelope's output section does not carry the output-file content; got %.160s", text)
+	}
+
+	if calls := prov.callCount(); calls != 0 {
+		t.Errorf("provider calls = %d; want 0 (a read must not wake turns)", calls)
 	}
 }

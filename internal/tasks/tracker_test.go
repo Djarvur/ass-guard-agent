@@ -506,3 +506,52 @@ func TestTrackerComplete_RetiresCancelEntry(t *testing.T) {
 		t.Errorf("runningSubagents = %d after a ghost completion; want 0 (floored)", got)
 	}
 }
+
+// TestTrackerSubagentState (22-09 Task 2, G-22-5): the truthful classifier the
+// TaskStop/TaskOutput seam consumes — four rows: a queued waiter reports
+// queued, an admitted-and-cancel-registered id reports running, a COMPLETED id
+// reports NEITHER (the disambiguation row: 22-07's Complete-side
+// releaseSubagentSlot deleted its cancel entry — without that delete a
+// finished subagent would classify as running forever), and a never-registered
+// id reports neither.
+func TestTrackerSubagentState(t *testing.T) {
+	t.Parallel()
+
+	tr := NewTracker(TrackerOpts{SubagentCap: 1})
+	rs := &recordingStart{}
+
+	// Running: admitted under the cap, cancel registered.
+	if _, err := tr.RegisterSubagent("exec_s_run", rs.start("exec_s_run")); err != nil {
+		t.Fatalf("RegisterSubagent(running): %v", err)
+	}
+
+	// Queued: over the cap, still a waiter.
+	queued, err := tr.RegisterSubagent("exec_s_q", rs.start("exec_s_q"))
+	if err != nil {
+		t.Fatalf("RegisterSubagent(queued): %v", err)
+	}
+
+	if !queued {
+		t.Fatal("test setup: the second registration admitted — the cap is 1")
+	}
+
+	if q, r := tr.SubagentState("exec_s_q"); !q || r {
+		t.Errorf("SubagentState(queued waiter) = (%v, %v); want (true, false)", q, r)
+	}
+
+	if q, r := tr.SubagentState("exec_s_run"); q || !r {
+		t.Errorf("SubagentState(admitted) = (%v, %v); want (false, true)", q, r)
+	}
+
+	// Finished: Complete retires the cancel entry (22-07) — neither class.
+	tr.Complete(Notification{TaskID: "exec_s_run", Kind: KindSubagent, ExitStatus: "0"})
+
+	if q, r := tr.SubagentState("exec_s_run"); q || r {
+		t.Errorf("SubagentState(completed) = (%v, %v); want (false, false) — finished must not look running (the 22-07 cancel-entry retirement is the disambiguator)", q, r)
+	}
+
+	// Unknown: never registered — neither class.
+	if q, r := tr.SubagentState("exec_s_nope"); q || r {
+		t.Errorf("SubagentState(unknown) = (%v, %v); want (false, false)", q, r)
+	}
+}

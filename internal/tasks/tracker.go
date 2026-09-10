@@ -318,3 +318,14 @@ func (t *Tracker) CancelRunning() int {
 func itoa(n int) string {
 	return fmt.Sprintf("%d", n)
 }
+
+// SubagentState classifies a subagent id for the 22-09 TaskStop/TaskOutput
+// seam (G-22-5): queued reports an over-cap waiter, running an admitted id
+// with a live cancel registration, and a COMPLETED id reports neither —
+// truthful BECAUSE Complete's releaseSubagentSlot deleted its cancel entry
+// (22-07, pinned by TestTrackerComplete_RetiresCancelEntry; before that
+// delete no finished id could ever leave the running class, so finished would
+// have rendered not_ready forever). A never-registered id reports neither.
+func (t *Tracker) SubagentState(id string) (queued, running bool) {
+	return false, false
+}
