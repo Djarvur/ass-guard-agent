@@ -1,21 +1,21 @@
 ---
-gsd_state_version: "1.0"
+gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 22
 current_phase_name: Background Execution + Sandbox Reality
-current_plan: 5 of 6
+current_plan: 2
 status: executing
-stopped_at: Phase 19 verified complete (auto-UAT); frontier 22/23 executing
-last_updated: "2026-09-09T23:27:35.590Z"
+stopped_at: Completed 22-04-PLAN.md (persistent shell, PAR-09)
+last_updated: "2026-09-10T00:23:49.626Z"
 last_activity: 2026-09-10
-last_activity_desc: Phase 19 verified complete via auto-UAT harness (CR-01 + G-19-2 closed); 22/23 executing
-state_head: 77a60324871725fb1dfff82ef34774e2a125e012
+last_activity_desc: Phase 22 execution started
+state_head: 16f854838f4c9647a88e247a96cdbb9e8ad9d8b6
 progress:
   total_phases: 11
   completed_phases: 7
   total_plans: 73
-  completed_plans: 55
+  completed_plans: 56
   percent: 64
 ---
 
@@ -25,18 +25,18 @@ progress:
 
 See: .planning/PROJECT.md (updated 2026-09-10)
 **Core value:** A hands-off coding agent that feels native in the editor: full SDD workflows run end-to-end without manual continues, and the agent surfaces through the client's own UX — clickable permission prompts, native file diffs, session management. (Pivoted 2026-08-25 from the mimicry bar.)
-**Current focus:** Phase 22 — background-execution-sandbox-reality
+**Current focus:** Phase 22 — Background Execution + Sandbox Reality
 
 ## Current Position
 
-Phase: 22 — Background Execution + Sandbox Reality
-Plan: 5 of 6
-Current Plan: 22-03 executing (partial)
+Phase: 22 (Background Execution + Sandbox Reality) — EXECUTING
+Plan: 2 of 6
+Current Plan: 2
 Total Plans in Phase: 6
-Status: Executing
-Last activity: 2026-09-10 — Phase 19 verified complete (auto-UAT retest, SECURITY threats_open: 0); frontier: 22/23 executing, 24 planned
+Status: Ready to execute
+Last activity: 2026-09-10 — Phase 22 execution started
 
-Progress: [███████████████░░░░░░] 55/73 plans (75%)
+Progress: [███████████████░░░░░░] 55/73 plans ([██████░░░░] 64%)
 
 ## Performance Metrics
 
@@ -101,6 +101,7 @@ Phase 19: 7/7 ✓ closed 2026-09-10 (verification completed by the auto-UAT live
 | Phase 23 P01 | 38 min | 3 tasks | 7 files |
 | Phase 23 P03 | 42 min | 3 tasks | 2 files |
 | Phase 23 P02 | 55 min | 3 tasks | 7 files |
+| Phase 22 P04 | 35 min | 3 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -192,6 +193,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 19]: 19-06 (WR-03b): at most ONE threshold-class compaction attempt per turn (compactionAttemptTurn keyed by turnID, stamped by maybeCompact AND the overflow-forced path); D-09's degraded-summarizer cadence amended — retry at the NEXT TURN's check, never one per loop head (operator-sanctioned via G-19-1's missing list)
 - [Phase 19]: 19-06: the G-19-1 regression fixture drives runTurn over a pre-built mid-turn transcript (the ask-resume re-entry seam) behind a content-sensitive size-rejecting provider — a fresh Prompt's first projection is lean by construction (D-01), and a byte-identical resend now fails again (the content-blind fixture's blind spot closed)
 - [Phase Phase 19]: 19-07 (CR-01): the armed same-turn carve-out takes PRECEDENCE over the pre-user marker scan in Project() — the overflow retry always projects post-marker (retry-once recovery on EVERY overflow, not just a session's first); armed with no same-turn marker the pre-user scan stays the fallback (degraded fail-through preserved)
+- [Phase 22]: 22-04: stdin-pipe + pty-slave persistent shell (interactive sh ignores SIGTERM and tty-echo pollutes captures; the output-side PTY keeps colors + EIO)
+- [Phase 22]: 22-04: per-generation reader goroutine + reaper dead-channel — pty-master read deadlines silently no-op (probe-verified); orphaned children mask EIO past shell death
+- [Phase 22]: 22-04: additive Bash persistent catalog property per D-09/OQ1 — the documented waiver of the 08-05 byte-identical discipline (required stays [command], additionalProperties false)
 
 ### Pending Todos
 
@@ -217,6 +221,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-10
-Stopped at: Phase 19 verified complete (auto-UAT harness; no manual operator leg); resume at Phase 22 execution (22-03 in flight)
+Last session: 2026-09-10T00:23:48.682Z
+Stopped at: Completed 22-04-PLAN.md (persistent shell, PAR-09)
 Resume file: None

@@ -335,7 +335,7 @@ Plans:
   3. The persistent-shell Bash option holds state across calls in one PTY session (cd/export persist, ANSI stripped, EIO-as-EOF handled) without leaking the master fd.
   4. With sandbox enabled, tools run confined (landlock on Linux kernel ≥5.13, sandbox-exec generated profiles on macOS with targeted denies); unsupported kernels/environments degrade LOUDLY at startup, default stays OFF, and `--sandbox=off` always escapes.
 
-**Plans:** 4/6 plans executed
+**Plans:** 5/6 plans executed
 
 Plans:
 **Wave 1**
@@ -353,7 +353,7 @@ Plans:
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 22-04-PLAN.md — Persistent-shell PTY (PAR-09): one lazy session PTY, nonce-sentinel cycle, ANSI strip, EIO-as-EOF, D-08 lazy restart + close drain, OQ1 additive `persistent` schema property per D-09
+- [x] 22-04-PLAN.md — Persistent-shell PTY (PAR-09): one lazy session PTY, nonce-sentinel cycle, ANSI strip, EIO-as-EOF, D-08 lazy restart + close drain, OQ1 additive `persistent` schema property per D-09
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
@@ -498,7 +498,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 | 19. Compaction + cache_control | v1.2 | 7/7 | Complete    | 2026-09-07 |
 | 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 6/6 | Complete    | 2026-09-07 |
 | 21. Context & Policy Parity Closures | v1.2 | 6/6 | Complete    | 2026-09-06 |
-| 22. Background Execution + Sandbox Reality | v1.2 | 4/6 | In Progress|  |
+| 22. Background Execution + Sandbox Reality | v1.2 | 5/6 | In Progress|  |
 | 23. SEED Gaps Close-out | v1.2 | 3/5 | In Progress|  |
 | 24. Documentation & Ops Tails | v1.2 | 0/? | Not started | - |
 | 25. SEED-001 Kit Extraction | v1.2 | 0/? | Not started | - |
@@ -512,4 +512,5 @@ Phases execute in numeric order: 15 → 16 → … → 25
 **Plans:** 0 plans
 
 Plans:
+
 - [ ] TBD (promote with /gsd:review-backlog when ready)
