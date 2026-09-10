@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
-	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
+	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
 )
 
 // probeHooks is a fake ToolHooks recording its calls; refusal is configurable

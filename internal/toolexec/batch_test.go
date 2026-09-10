@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
-	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 	"github.com/Djarvur/ass-guard-agent/internal/toolexec"
+	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
 )
 
 // recordingExec records each call's start/end monotonic time (nanos since the

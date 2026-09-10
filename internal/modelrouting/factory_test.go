@@ -14,8 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
-	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 	"github.com/Djarvur/ass-guard-agent/kit/profile"
+	"github.com/Djarvur/ass-guard-agent/kit/shaper"
 )
 
 // Test-only fixture constants (repeated literals stay in one place).

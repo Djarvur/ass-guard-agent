@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 	"github.com/Djarvur/ass-guard-agent/kit/profile"
+	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
 )
 
 // TestCheckConsistency_OnlyBuiltinsSatisfied confirms a profile declaring only

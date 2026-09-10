@@ -8,7 +8,7 @@ import (
 
 	"github.com/Djarvur/ass-guard-agent/internal/coreexec"
 	"github.com/Djarvur/ass-guard-agent/internal/sched"
-	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
+	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
 )
 
 // cronFixture builds a catalog with the cron quartet registered over a real

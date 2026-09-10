@@ -18,14 +18,14 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/Djarvur/ass-guard-agent/internal/audit"
 	"github.com/Djarvur/ass-guard-agent/internal/loop"
 	"github.com/Djarvur/ass-guard-agent/internal/providerfactory"
 	"github.com/Djarvur/ass-guard-agent/internal/sandbox"
-	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 	"github.com/Djarvur/ass-guard-agent/internal/version"
+	"github.com/Djarvur/ass-guard-agent/kit/audit"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
 	"github.com/Djarvur/ass-guard-agent/kit/profile"
+	"github.com/Djarvur/ass-guard-agent/kit/shaper"
 )
 
 var errIsRequired = errors.New("--prompt is required")

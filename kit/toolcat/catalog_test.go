@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
+	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
 )
 
 // coreToolCount is the stable built-in core (D-16): 19 through Phase-11;

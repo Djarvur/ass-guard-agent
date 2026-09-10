@@ -5,7 +5,7 @@ import (
 
 	"github.com/Djarvur/ass-guard-agent/internal/engine"
 	"github.com/Djarvur/ass-guard-agent/internal/openspec"
-	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
+	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
 )
 
 // TestRegisterTools_Mutability verifies RegisterTools registers each command

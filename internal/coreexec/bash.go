@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/sandbox"
-	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
+	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
 )
 
 // Captured Bash result forms (fixture-pinned; provenance: 105 text + 2

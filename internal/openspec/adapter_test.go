@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/openspec"
-	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
+	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
 )
 
 // stubPath returns the absolute path to the testdata stub script. `go test` runs

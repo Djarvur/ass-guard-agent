@@ -11,9 +11,9 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
-	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
 	"github.com/Djarvur/ass-guard-agent/kit/profile"
+	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
 )
 
 // subagentRestrictedDefault is the default tool subset a Task/Agent subagent may

@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/internal/openspec"
-	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
+	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
 )
 
 // execResult is the structured model-facing result shape (D-10).

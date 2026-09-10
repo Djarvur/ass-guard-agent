@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/audit"
+	"github.com/Djarvur/ass-guard-agent/kit/audit"
 )
 
 // timeNowMinusHours returns a time offset into the past (eviction-ordering

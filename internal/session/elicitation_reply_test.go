@@ -10,8 +10,8 @@ import (
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
-	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 	"github.com/Djarvur/ass-guard-agent/internal/toolexec"
+	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
 )
 
 // The 17-04 structured-reply + D-10 battery (ACP-02): the widened reply seam

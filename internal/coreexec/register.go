@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 
 	"github.com/Djarvur/ass-guard-agent/internal/sandbox"
-	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
+	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
 )
 
 // ToolHooks is the PostToolUse observation seam at the tool-exec chokepoint

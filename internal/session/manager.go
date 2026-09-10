@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/audit"
+	"github.com/Djarvur/ass-guard-agent/kit/audit"
 )
 
 var errNewmanagerRequiresA = errors.New("session: NewManager requires a non-nil Redactor")

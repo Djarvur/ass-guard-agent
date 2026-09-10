@@ -8,8 +8,8 @@ import (
 
 	"github.com/anthropics/anthropic-sdk-go/option"
 
-	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 	"github.com/Djarvur/ass-guard-agent/kit/profile"
+	"github.com/Djarvur/ass-guard-agent/kit/shaper"
 )
 
 // AnthropicDefaultBaseURL is the Z.ai GLM Anthropic-protocol endpoint

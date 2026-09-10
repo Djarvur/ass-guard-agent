@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
+	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
 
 	mcpgo "github.com/modelcontextprotocol/go-sdk/mcp"
 )

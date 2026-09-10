@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/session"
-	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
+	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
 )
 
 // interactiveFixturePath is the committed capture-grounded fixture for the

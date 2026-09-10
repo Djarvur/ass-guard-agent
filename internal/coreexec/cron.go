@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/Djarvur/ass-guard-agent/internal/sched"
-	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
+	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
 )
 
 // The cron quartet (12-07, ACP-04 / D-02) over the real persisted

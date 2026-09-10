@@ -13,8 +13,8 @@ import (
 	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/internal/parity"
 	"github.com/Djarvur/ass-guard-agent/internal/providerfactory"
-	"github.com/Djarvur/ass-guard-agent/internal/shaper"
 	"github.com/Djarvur/ass-guard-agent/kit/profile"
+	"github.com/Djarvur/ass-guard-agent/kit/shaper"
 )
 
 // zcodeVersionTimeout bounds the `zcode --version` exec (T-14-12 DoS: a hung

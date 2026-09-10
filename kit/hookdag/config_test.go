@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Djarvur/ass-guard-agent/internal/hookdag"
+	"github.com/Djarvur/ass-guard-agent/kit/hookdag"
 )
 
 // TestLoadSeeded verifies the embedded zero-config floor returns the two seeded

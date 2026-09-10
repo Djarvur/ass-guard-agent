@@ -1,7 +1,7 @@
 package session
 
 import (
-	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
+	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
 )
 
 // MaybeAppendBoundary checks whether the named tool is a session boundary

@@ -10,7 +10,7 @@ import (
 
 	"github.com/Djarvur/ass-guard-agent/internal/modelrouting"
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
-	"github.com/Djarvur/ass-guard-agent/internal/shaper"
+	"github.com/Djarvur/ass-guard-agent/kit/shaper"
 )
 
 // testModelRoutingWarnsConfig declares two providers — zai with a literal api_key

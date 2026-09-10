@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/sandbox"
-	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
+	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
 )
 
 // Background work (12-06, ACP-05 + ACP-06): the per-session TaskRegistry owns

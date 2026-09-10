@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/internal/coreexec"
-	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
+	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
 )
 
 // TestInteractiveWiring_FamilyExecutes (12-04 Task 2, Test 5): through the

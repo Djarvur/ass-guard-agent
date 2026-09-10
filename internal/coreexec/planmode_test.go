@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/internal/session"
-	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
+	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
 )
 
 // recapturedFamily loads one family from the 12-05 re-record fixture.

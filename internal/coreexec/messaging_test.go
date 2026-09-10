@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/internal/session"
-	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
+	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
 )
 
 // The 12-04 Task 2 battery: SendMessage over the agent mailbox +

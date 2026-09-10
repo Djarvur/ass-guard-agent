@@ -16,9 +16,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/audit"
 	"github.com/Djarvur/ass-guard-agent/internal/sandbox"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
+	"github.com/Djarvur/ass-guard-agent/kit/audit"
 )
 
 // repoProfilesDir returns the repo-root profiles/ directory (the test runs from

@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
+	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
 )
 
 // The skills-listing shape is CAPTURED GROUND TRUTH (D-06), pinned from a real

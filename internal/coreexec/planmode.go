@@ -7,7 +7,7 @@ import (
 
 	"github.com/Djarvur/ass-guard-agent/internal/sched"
 	"github.com/Djarvur/ass-guard-agent/internal/session"
-	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
+	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
 )
 
 // Plan-mode execution (12-04, ACP-02): the plan pair rides the interactive-tool

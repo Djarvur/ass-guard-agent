@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
-	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
+	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
 )
 
 // DefaultMaxConcurrent is the default read-only parallelism bound (TOOL-04),

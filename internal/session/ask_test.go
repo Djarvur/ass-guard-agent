@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
-	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 	"github.com/Djarvur/ass-guard-agent/internal/toolexec"
+	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
 )
 
 // askInput is the captured AskUserQuestion input shape used across the ask

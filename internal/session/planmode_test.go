@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/provider"
-	"github.com/Djarvur/ass-guard-agent/internal/toolcat"
 	"github.com/Djarvur/ass-guard-agent/internal/toolexec"
+	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
 )
 
 // pmCallID2 is the ExitPlanMode call id (goconst).
