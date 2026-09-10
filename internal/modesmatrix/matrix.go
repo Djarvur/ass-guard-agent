@@ -17,6 +17,7 @@
 package modesmatrix
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"maps"
@@ -228,14 +229,33 @@ func (r *Registry) ReportT(t *testing.T) {
 	t.Log("\n" + strings.TrimRight(sb.String(), "\n"))
 }
 
+// AssertComplete fails t when any of the twelve cells is unresolved — the
+// TOTALITY gate (24-05 Task 3): a registry that claims to present the
+// ECOS-04 state cannot silently omit a cell; the grid is total and every
+// cell carries an explicit status. Per-test-binary reports stay partial by
+// design (ReportT); a caller presenting a COMPLETE phase claim binds this.
+func (r *Registry) AssertComplete(t *testing.T) {
+	t.Helper()
+
+	if err := r.Validate(); err != nil {
+		t.Errorf("%v", err)
+	}
+}
+
+// PreconditionMessage builds the loud-skip message: it BEGINS with
+// "PRECONDITION-UNMET(<phase>, <contract-ref>)" so the skip is grep-able
+// and can never masquerade as a pass (T-24-05-03; the wake cells' count
+// assertion depends on the exact prefix).
+func PreconditionMessage(phase, contractRef string, mode Mode, surface Surface, detail string) string {
+	return fmt.Sprintf("PRECONDITION-UNMET(%s, %s) %s x %s: %s", phase, contractRef, mode, surface, detail)
+}
+
 // SkipPrecondition registers one cell as precondition-unmet — the substrate
 // phase named by contractRef has not executed, so the cell carries NO
-// functional evidence — and skips the test LOUDLY with a message that
-// begins with "PRECONDITION-UNMET(<phase>, <contract-ref>)" so the skip is
-// grep-able and can never masquerade as a pass (T-24-05-03; the count
-// assertion in the wake cells proves loudness). detail states exactly what
-// functional assertion will replace the skip once the phase executes — no
-// fabricated exercise bodies against unbuilt APIs (Pitfall 9).
+// functional evidence — and skips the test LOUDLY with PreconditionMessage.
+// detail states exactly what functional assertion will replace the skip
+// once the phase executes — no fabricated exercise bodies against unbuilt
+// APIs (Pitfall 9).
 func SkipPrecondition(
 	t testing.TB, r *Registry, mode Mode, surface Surface, phase, contractRef, detail string,
 ) {
@@ -243,7 +263,7 @@ func SkipPrecondition(
 
 	r.Record(mode, surface, StatusPreconditionUnmet, phase+" "+contractRef+": "+detail)
 
-	t.Skipf("PRECONDITION-UNMET(%s, %s) %s x %s: %s", phase, contractRef, mode, surface, detail)
+	t.Skipf("%s", PreconditionMessage(phase, contractRef, mode, surface, detail))
 }
 
 // --- fixture mount (D-14 synthetic half) --------------------------------------
@@ -409,6 +429,49 @@ func copyTree(t testing.TB, src, dst string) {
 	}
 }
 
+// copyTreePreservingMode copies src to dst keeping every file's permission
+// bits (the real-plugin mount's +x-fidelity route).
+func copyTreePreservingMode(t testing.TB, src, dst string) {
+	t.Helper()
+
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		t.Fatalf("modesmatrix: read real plugin dir %s: %v", src, err)
+	}
+
+	if err := os.MkdirAll(dst, 0o750); err != nil {
+		t.Fatalf("modesmatrix: mkdir %s: %v", dst, err)
+	}
+
+	for _, e := range entries {
+		s, d := filepath.Join(src, e.Name()), filepath.Join(dst, e.Name())
+
+		switch {
+		case e.IsDir():
+			copyTreePreservingMode(t, s, d)
+		default:
+			info, serr := e.Info()
+			if serr != nil {
+				t.Fatalf("modesmatrix: stat %s: %v", s, serr)
+			}
+
+			data, rerr := os.ReadFile(s)
+			if rerr != nil {
+				t.Fatalf("modesmatrix: read %s: %v", s, rerr)
+			}
+
+			if werr := os.MkdirAll(filepath.Dir(d), 0o750); werr != nil {
+				t.Fatalf("modesmatrix: mkdir %s: %v", filepath.Dir(d), werr)
+			}
+
+			//nolint:gosec // mode comes from the operator's own installed plugin tree
+			if werr := os.WriteFile(d, data, info.Mode().Perm()); werr != nil {
+				t.Fatalf("modesmatrix: write %s: %v", d, werr)
+			}
+		}
+	}
+}
+
 // writeFile writes path's parent dirs into existence then the content at
 // 0600 (owner-only — the .ass-guard/.claude house convention).
 func writeFile(t testing.TB, path, content string) {
@@ -421,4 +484,71 @@ func writeFile(t testing.TB, path, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("modesmatrix: write %s: %v", path, err)
 	}
+}
+
+// MountRealPlugin mounts ONE REAL installed Claude Code plugin (the D-14
+// spot-check's operator-environment half) into projectDir's project-scoped
+// installed-plugins cache, READ-ONLY in effect: the source tree is COPIED,
+// never written, never executed in place (T-24-05-02 — no test writes under
+// any real .claude/ path). The plugin's name comes from its own
+// .claude-plugin/plugin.json manifest; the copy layout mirrors MountFixture.
+// It returns the plugin's declared name (the evidence record's identity).
+func MountRealPlugin(t *testing.T, projectDir, pluginSrcDir string) string {
+	t.Helper()
+
+	manifestSrc := filepath.Join(pluginSrcDir, ".claude-plugin", "plugin.json")
+
+	data, err := os.ReadFile(manifestSrc)
+	if err != nil {
+		t.Fatalf("modesmatrix: real plugin manifest %s: %v", manifestSrc, err)
+	}
+
+	var manifest struct {
+		Name    string `json:"name"`
+		Version string `json:"version"`
+	}
+
+	if err := json.Unmarshal(data, &manifest); err != nil || manifest.Name == "" {
+		t.Fatalf("modesmatrix: real plugin manifest unreadable at %s: %v", manifestSrc, err)
+	}
+
+	version := manifest.Version
+	if version == "" {
+		version = "0.0.0"
+	}
+
+	installRel := filepath.ToSlash(filepath.Join("cache", fixtureMarketplace, manifest.Name, version))
+	install := filepath.Join(projectDir, fixtureInstallRoot, installRel)
+
+	// Copy the WHOLE plugin tree (read-only discipline: source untouched),
+	// PRESERVING each file's mode — real plugins ship directly-executed
+	// hook scripts whose +x bit is load-bearing (the spot-check's polyglot
+	// wrapper is invoked as a command, not via an interpreter).
+	copyTreePreservingMode(t, pluginSrcDir, install)
+
+	// The installed-plugins registry gains the entry beside any previously
+	// mounted fixture (append-preserving: read-modify-write the v1 array).
+	regPath := filepath.Join(projectDir, fixtureInstallRoot, "installed_plugins.json")
+
+	entries := []map[string]string{}
+
+	if raw, rerr := os.ReadFile(regPath); rerr == nil {
+		_ = json.Unmarshal(raw, &entries) // tolerate and replace on failure
+	}
+
+	entries = append(entries, map[string]string{
+		"name": manifest.Name + "@" + fixtureMarketplace,
+		"installPath": installRel,
+		"scope":       fixtureScopeProject,
+		"version":     version,
+	})
+
+	encoded, merr := json.Marshal(entries)
+	if merr != nil {
+		t.Fatalf("modesmatrix: encode installed_plugins.json: %v", merr)
+	}
+
+	writeFile(t, regPath, string(encoded))
+
+	return manifest.Name
 }

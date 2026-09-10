@@ -320,3 +320,88 @@ func TestModesMatrixInteractiveEmpty(t *testing.T) { //nolint:paralleltest // HO
 
 	t.Log("MODES-MATRIX empty-row interactive: invocation fell through verbatim; marker file ABSENT")
 }
+
+// spotCheckPluginEnv names the env var that arms the D-14 real-plugin
+// spot-check leg: ASSGUARD_MATRIX_REAL_PLUGIN=<installed plugin root> (the
+// directory carrying .claude-plugin/plugin.json). The leg is OPERATOR-
+// ENVIRONMENT evidence — CI never runs it (unset → skipped loudly with the
+// SPOT-CHECK vocabulary, deliberately distinct from the wake row's
+// PRECONDITION-UNMET(22 prefix so the count assertion stays exact).
+const spotCheckPluginEnv = "ASSGUARD_MATRIX_REAL_PLUGIN"
+
+// TestModesMatrixRealPluginSpotCheck (D-14): ONE real installed Claude Code
+// plugin, mounted READ-ONLY (copied — the source tree is never written)
+// into a temp project, driven through the same interactive leg as the
+// synthetic fixture. The functional probes: the plugin's OWN skill expands
+// through the live chain (received-prompt lens), and its SessionStart hook
+// — if it produces stdout — lands in the first request's system blocks (the
+// 21 seam: injectHookContext appends hook output to Profile.System).
+// Surfaces the plugin does not carry are recorded ABSENT (honest absence,
+// never invented); evidence lands in 24-05-SUMMARY.md (plugin NAME and
+// functional observations only — never its file contents, T-24-05-04).
+func TestModesMatrixRealPluginSpotCheck(t *testing.T) { //nolint:funlen,paralleltest // HOME-pinned operator-env leg
+	pluginRoot := os.Getenv(spotCheckPluginEnv)
+	if pluginRoot == "" {
+		t.Skipf("SPOT-CHECK-SKIPPED (operator env): set %s=<real installed plugin root> to run the D-14 real-plugin leg",
+			spotCheckPluginEnv)
+	}
+
+	t.Setenv("HOME", t.TempDir())
+
+	workDir := simulatorWorkDir(t, "PENDING_STUB_URL")
+
+	name := modesmatrix.MountRealPlugin(t, workDir, pluginRoot)
+
+	stub, cli, sessionID, _ := modesMatrixServe(t, workDir, "PENDING_STUB_URL", []simTurnScript{
+		{phases: []simPhase{{text: "spot-check turn one done"}}},
+		{phases: []simPhase{{text: "spot-check turn two done"}}},
+	})
+
+	// The plugin's skills surface, functionally: /brainstorming (the
+	// superpowers library's flagship skill) must expand through the SAME
+	// chain leg the synthetic probe rode.
+	matrixPromptTurn(t, cli, sessionID, "/brainstorming spot-check probe", "mx-real-1")
+
+	skillExpanded := matrixPromptContains(stub, "Brainstorming")
+	if !skillExpanded {
+		t.Errorf("no provider request carried the real plugin's brainstorming skill body (received: %v)", stub.recordedPrompts())
+	}
+
+	// The hooks surface, functionally observed: SessionStart fired through
+	// the real seam at the first turn — its stdout rides the FIRST request's
+	// system blocks. The discriminator is CC's documented SessionStart shape
+	// (a hookSpecificOutput JSON envelope), NOT the plugin's name: the
+	// skills-catalog system block also mentions the plugin's skills and
+	// would otherwise false-positive as hook output.
+	var hookContext string
+
+	for _, sys := range stub.recordedSystems() {
+		if strings.Contains(sys, "hookSpecificOutput") {
+			hookContext = sys
+
+			break
+		}
+	}
+
+	// Commands surface: recorded as the plugin's own layout dictates.
+	_, cmdErr := os.Stat(filepath.Join(pluginRoot, "commands"))
+
+	for i, sys := range stub.recordedSystems() {
+		head := sys
+		if len(head) > 60 {
+			head = head[:60]
+		}
+
+		t.Logf("SPOT-CHECK system[%d] len=%d head=%q", i, len(sys), head)
+	}
+	t.Logf("SPOT-CHECK %s: skills=expanded-via-/brainstorming(%v) sessionstart-hook-context=%v commands-surface=%s",
+		name, skillExpanded, hookContext != "",
+		map[bool]string{true: "present", false: "absent (this plugin ships none)"}[cmdErr == nil])
+
+	if hookContext != "" {
+		t.Logf("SPOT-CHECK hook observation: first request system carries the SessionStart hook's output (%d chars)",
+			len(hookContext))
+	} else {
+		t.Log("SPOT-CHECK hook observation: no SessionStart stdout reached the system blocks — recorded as observed (the hook's firing itself is turn-safe: the turn completed)")
+	}
+}

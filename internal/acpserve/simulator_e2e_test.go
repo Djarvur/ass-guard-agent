@@ -83,6 +83,7 @@ type simStub struct {
 	script      []simTurnScript
 	models      []string
 	prompts     []string
+	systems     []string
 	modelsMu    sync.Mutex
 	calls       atomic.Int64
 	holdOnce    sync.Once
@@ -105,6 +106,7 @@ func (s *simStub) serveSSE(w http.ResponseWriter, r *http.Request) {
 			Messages []struct {
 				Content json.RawMessage `json:"content"`
 			} `json:"messages"`
+			System json.RawMessage `json:"system"`
 		}
 
 		jerr := json.Unmarshal(body, &req)
@@ -120,6 +122,10 @@ func (s *simStub) serveSSE(w http.ResponseWriter, r *http.Request) {
 			for i := range req.Messages {
 				s.prompts = append(s.prompts, simMessageTexts(req.Messages[i].Content)...)
 			}
+
+			// The 24-05 system lens (the D-14 spot-check's SessionStart-hook
+			// observation: injected hook context lands in Profile.System).
+			s.systems = append(s.systems, simMessageTexts(req.System)...)
 
 			s.modelsMu.Unlock()
 		}
@@ -166,6 +172,15 @@ func (s *simStub) recordedPrompts() []string {
 	defer s.modelsMu.Unlock()
 
 	return append([]string(nil), s.prompts...)
+}
+
+// recordedSystems returns every captured system-block text (24-05's D-14
+// hook-context lens), in request order.
+func (s *simStub) recordedSystems() []string {
+	s.modelsMu.Lock()
+	defer s.modelsMu.Unlock()
+
+	return append([]string(nil), s.systems...)
 }
 
 // simMessageTexts extracts one message content's text parts: a bare JSON
