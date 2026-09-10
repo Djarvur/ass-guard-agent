@@ -3,8 +3,14 @@ package coreexec
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
+	"syscall"
 	"testing"
+	"time"
 )
 
 // The persistent-shell battery (22-04 Task 1, PAR-09; D-07/D-09): ONE lazy
@@ -304,4 +310,299 @@ func bashInput(t *testing.T, command string, persistent bool) json.RawMessage {
 	}
 
 	return b
+}
+
+// --- 22-04 Task 2 (D-08, PAR-09 ordering/empty probes): dead-shell lazy
+// restart with the visible state-loss note, interrupted-read promptness,
+// arrival-order serialization with per-caller attribution, and the
+// empty-command edge.
+
+// waitForFalse polls cond until true or the deadline fatals.
+func waitForFalse(t *testing.T, what string, cond func() bool, deadline time.Duration) {
+	t.Helper()
+
+	end := time.Now().Add(deadline)
+
+	for cond() {
+		if time.Now().After(end) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestPTYDeadRestart (D-08): an externally-killed shell never wedges the
+// session — the NEXT persistent call restarts it lazily, succeeds, and the
+// note fires exactly once naming the state loss; a call already blocked in
+// the read loop when the shell dies returns promptly with the interrupted
+// outcome (never a hang).
+func TestPTYDeadRestart(t *testing.T) { //nolint:paralleltest // real pty shells, kill timing
+	t.Run("RestartSucceedsWithNoteOnce", func(t *testing.T) { //nolint:paralleltest // real shell
+		workDir := t.TempDir()
+		target := t.TempDir()
+
+		var notes []string
+		m := NewPTYManager(PTYOpts{WorkDir: workDir, NoteFn: func(format string, args ...any) {
+			notes = append(notes, fmt.Sprintf(format, args...))
+		}})
+		defer m.Drain()
+
+		ptyRunOK(t, m, "cd \""+target+"\"")
+
+		pid := m.ShellPID()
+		if pid == 0 {
+			t.Fatal("no shell pid after the first call")
+		}
+
+		if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
+			t.Fatalf("external kill: %v", err)
+		}
+
+		waitForFalse(t, "the killed shell to be observed dead", m.Alive, 5*time.Second)
+
+		// THE next call: restarts lazily, SUCCEEDS, and the fresh shell has
+		// LOST the cd (pwd answers the manager's workdir again).
+		out := ptyRunOK(t, m, "pwd")
+
+		if got := ptyLastLine(out); got != workDir {
+			t.Errorf("pwd after restart = %q; want %q — the restarted shell must start fresh (state lost)", got, workDir)
+		}
+
+		if len(notes) != 1 {
+			t.Fatalf("restart notes = %d (%v); want exactly 1", len(notes), notes)
+		}
+
+		if msg := notes[0]; !strings.Contains(msg, "state") || !strings.Contains(msg, "lost") {
+			t.Errorf("note = %q; want the state-loss acknowledgment wording", msg)
+		}
+
+		// A healthy follow-up call fires NO further note.
+		ptyRunOK(t, m, "echo steady")
+
+		if len(notes) != 1 {
+			t.Errorf("notes after a healthy follow-up = %d (%v); still want 1", len(notes), notes)
+		}
+	})
+
+	t.Run("BlockedReadReturnsPromptly", func(t *testing.T) { //nolint:paralleltest // real shell + kill timing
+		m := NewPTYManager(PTYOpts{WorkDir: t.TempDir()})
+		defer m.Drain()
+
+		ptyRunOK(t, m, "echo warmup")
+
+		pid := m.ShellPID()
+
+		type callRes struct {
+			out string
+			err error
+		}
+
+		done := make(chan callRes, 1)
+
+		go func() {
+			out, _, err := m.Run(context.Background(), "sleep 30")
+			done <- callRes{out: out, err: err}
+		}()
+
+		// Let the command provably start, then kill the shell mid-read.
+		time.Sleep(500 * time.Millisecond)
+
+		start := time.Now()
+
+		if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
+			t.Fatalf("external kill mid-read: %v", err)
+		}
+
+		select {
+		case res := <-done:
+			elapsed := time.Since(start)
+
+			if elapsed > 3*time.Second {
+				t.Errorf("interrupted call took %v to return; want prompt (EIO-as-EOF must unblock the read)", elapsed)
+			}
+
+			if res.err == nil {
+				t.Fatal("interrupted call must surface the dead-shell outcome as an error")
+			}
+
+			if res.err.Error() == "" || !strings.Contains(res.err.Error(), "shell exited") {
+				t.Errorf("interrupted outcome = %v; want it to name the shell exit", res.err)
+			}
+		case <-time.After(15 * time.Second):
+			t.Fatal("call blocked in the read loop never returned after shell death — wedged")
+		}
+
+		// The NEXT call restarts lazily (D-08) and succeeds.
+		if got := ptyLastLine(ptyRunOK(t, m, "echo recovered")); got != "recovered" {
+			t.Errorf("post-death recovery call = %q; want recovered", got)
+		}
+	})
+}
+
+// TestPTYSerialize (D-07, the PAR-09 ordering probe): concurrent persistent
+// calls serialize in arrival order — outputs never interleave (B never lands
+// between A's two appends) and each caller's capture is attributable to
+// exactly its own command; the shell is lazy (nothing runs before the first
+// persistent call — D-07).
+func TestPTYSerialize(t *testing.T) { //nolint:paralleltest // real pty shells, ordering
+	t.Run("ArrivalOrderAndAttribution", func(t *testing.T) { //nolint:paralleltest // real shell
+		dir := t.TempDir()
+		orderFile := filepath.Join(dir, "order.txt")
+
+		m := NewPTYManager(PTYOpts{WorkDir: dir})
+		defer m.Drain()
+
+		var wg sync.WaitGroup
+
+		type callRes struct {
+			out string
+			err error
+		}
+
+		resCh := make(chan callRes, 2)
+
+		wg.Add(1)
+
+		go func() { // caller A arrives first
+			defer wg.Done()
+
+			out, _, err := m.Run(context.Background(),
+				"echo A1 >> "+orderFile+"; sleep 1; echo A2 >> "+orderFile+"; echo A-out")
+			resCh <- callRes{out: out, err: err}
+		}()
+
+		// A's command is provably executing once its first append lands.
+		end := time.Now().Add(10 * time.Second)
+
+		for {
+			data, rerr := os.ReadFile(orderFile)
+
+			if rerr == nil && strings.Contains(string(data), "A1") {
+				break
+			}
+
+			if time.Now().After(end) {
+				t.Fatal("caller A never started (no A1 append)")
+			}
+
+			time.Sleep(10 * time.Millisecond)
+		}
+
+		wg.Add(1)
+
+		go func() { // caller B arrives while A holds the manager
+			defer wg.Done()
+
+			out, _, err := m.Run(context.Background(), "echo B >> "+orderFile+"; echo B-out")
+			resCh <- callRes{out: out, err: err}
+		}()
+
+		wg.Wait()
+		close(resCh)
+
+		for res := range resCh {
+			if res.err != nil {
+				t.Fatalf("concurrent call error: %v", res.err)
+			}
+		}
+
+		data, rerr := os.ReadFile(orderFile)
+		if rerr != nil {
+			t.Fatalf("read order file: %v", rerr)
+		}
+
+		lines := strings.Fields(string(data))
+		want := []string{"A1", "A2", "B"}
+
+		if len(lines) != len(want) {
+			t.Fatalf("order file lines = %v; want %v (interleaving or duplication)", lines, want)
+		}
+
+		for i := range want {
+			if lines[i] != want[i] {
+				t.Fatalf("order file lines = %v; want %v — B interleaved into A's window (D-07 broken)", lines, want)
+			}
+		}
+	})
+
+	t.Run("LazyUntilFirstPersistentCall", func(t *testing.T) { //nolint:paralleltest // real shell
+		workDir := t.TempDir()
+		m := NewPTYManager(PTYOpts{WorkDir: workDir})
+		defer m.Drain()
+
+		if m.Alive() {
+			t.Error("shell alive at construction — the manager must be lazy (D-07)")
+		}
+
+		if m.ShellPID() != 0 {
+			t.Errorf("shell pid = %d before any call; want 0", m.ShellPID())
+		}
+
+		// Only NON-persistent Bash calls: still zero shells.
+		stub := BashExecute(Config{WorkDir: workDir, PTY: m})
+
+		if _, err := stub(context.Background(), bashInput(t, "echo stateless", false)); err != nil {
+			t.Fatalf("non-persistent call error: %v", err)
+		}
+
+		if m.Alive() {
+			t.Error("non-persistent Bash started the persistent shell — D-09 isolation broken")
+		}
+
+		if got := ptyLastLine(ptyRunOK(t, m, "echo first")); got != "first" {
+			t.Errorf("first persistent call output = %q; want first", got)
+		}
+
+		if !m.Alive() {
+			t.Error("shell not alive after the first persistent call")
+		}
+	})
+}
+
+// TestPTYEmpty (the PAR-09 empty probe): empty and whitespace-only commands
+// are structured errors that touch nothing — the PTY never starts for them
+// and an established shell's cwd/env are unchanged afterward.
+func TestPTYEmpty(t *testing.T) { //nolint:paralleltest // real pty shells
+	t.Run("EmptyCommandsAreStructuredErrors", func(t *testing.T) {
+		t.Parallel()
+
+		m := NewPTYManager(PTYOpts{WorkDir: t.TempDir()})
+		defer m.Drain()
+
+		for _, cmd := range []string{"", "   ", "\t"} {
+			if _, _, err := m.Run(context.Background(), cmd); err == nil {
+				t.Errorf("Run(%q) error = nil; want the structured input error", cmd)
+			}
+		}
+
+		if m.Alive() {
+			t.Error("an empty command started the shell — it must be rejected before any shell interaction")
+		}
+	})
+
+	t.Run("StateUnchangedAfterEmpty", func(t *testing.T) { //nolint:paralleltest // real shell
+		workDir := t.TempDir()
+		target := t.TempDir()
+
+		m := NewPTYManager(PTYOpts{WorkDir: workDir})
+		defer m.Drain()
+
+		ptyRunOK(t, m, "cd \""+target+"\"")
+
+		if _, _, err := m.Run(context.Background(), "   "); err == nil {
+			t.Fatal("whitespace Run error = nil; want the structured input error")
+		}
+
+		out := ptyRunOK(t, m, "pwd")
+		if got := ptyLastLine(out); got != target {
+			t.Errorf("pwd after rejected empty = %q; want %q — the empty call moved the shell state", got, target)
+		}
+
+		// No sentinel leaked into the next window either: the output is
+		// exactly the pwd, nothing else.
+		if out != target {
+			t.Errorf("pwd window carries extra output %q; want exactly the path (a stale sentinel leaked)", out)
+		}
+	})
 }

@@ -1,0 +1,28 @@
+{
+  "plan": "22-04",
+  "task": 2,
+  "phase_gate": "RED",
+  "command": "go test -race -count=1 ./internal/coreexec/ -run 'TestPTYDeadRestart|TestPTYSerialize|TestPTYEmpty'",
+  "exit_code": 1,
+  "target_tests": [
+    "TestPTYDeadRestart/RestartSucceedsWithNoteOnce",
+    "TestPTYDeadRestart/BlockedReadReturnsPromptly",
+    "TestPTYSerialize/ArrivalOrderAndAttribution",
+    "TestPTYSerialize/LazyUntilFirstPersistentCall",
+    "TestPTYEmpty/EmptyCommandsAreStructuredErrors",
+    "TestPTYEmpty/StateUnchangedAfterEmpty"
+  ],
+  "failing_tests": [
+    "TestPTYDeadRestart/BlockedReadReturnsPromptly (assertion: the call never returned within 15s of shell death — WEDGED; the SIGKILLed sh leaves the orphaned `sleep 30` child holding the pty slave open, so the master read never returns EIO and the read loop spins on deadline ticks)"
+  ],
+  "expected_result": "Per 22-04 Task 2 <behavior>: a call already blocked in the read loop when the shell dies returns promptly with the dead-shell outcome (not a hang).",
+  "actual_result": "The interrupted call never returned; the test timed out after 15s waiting on the done channel (30.01s test wall time).",
+  "unexpected_green": [
+    "TestPTYDeadRestart/RestartSucceedsWithNoteOnce (restart machinery landed in Task 1's feat commit — front-loaded by the interrupted prior run's WIP manager)",
+    "TestPTYSerialize both rows (mutex serialization + lazy start landed in Task 1's feat)",
+    "TestPTYEmpty both rows (TrimSpace guard landed in Task 1's feat)"
+  ],
+  "verdict": "RED_EVIDENCE_OK_target_test_failed_on_assertions",
+  "note": "gsd-tools runtime predates the `check tdd-red-evidence` verb — record kept at /tmp/gsd-22-04-wip/evidence/task2-red.json and copied to the phase directory.",
+  "timestamp": "2026-09-10T02:46:58Z"
+}
