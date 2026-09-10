@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // The tracker cap/queue battery (22-01 Task 3, D-10 + OQ5): the subagent
@@ -298,5 +299,210 @@ func TestTrackerCancelTask(t *testing.T) {
 
 	if ok := tr.CancelTask("exec_unknown"); ok {
 		t.Error("CancelTask(unknown) = true; want false")
+	}
+}
+
+// countRunning snapshots the tracker's live-subagent count (the same-package
+// D-10 accounting seam — the G-22-1 battery pins the counter directly).
+func countRunning(tr *Tracker) int {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+
+	return tr.runningSubagents
+}
+
+// cancelKnown reports whether the tracker still holds a cancel registration
+// for id (the finished-vs-running seam 22-09's classifier consumes).
+func cancelKnown(tr *Tracker, id string) bool {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+
+	_, ok := tr.subagentCancels[id]
+
+	return ok
+}
+
+// TestTrackerCap_SlotsFreeAfterCompletion (G-22-1, CR-01): completions
+// actually FREE D-10 slots — after SubagentCap TOTAL starts in a session the
+// admission check must still pass, the exact row that is the blind spot of
+// TestTrackerQueue_FIFODrainOrder (that battery never re-registers after its
+// completions fire). The handoff row also pins that release-then-admit keeps
+// the count AT the cap, never above it.
+func TestTrackerCap_SlotsFreeAfterCompletion(t *testing.T) {
+	t.Parallel()
+
+	tr := NewTracker(TrackerOpts{SubagentCap: 2})
+	rs := &recordingStart{}
+
+	// Fill the cap.
+	for _, id := range []string{"exec_f1", "exec_f2"} {
+		queued, err := tr.RegisterSubagent(id, rs.start(id))
+		if err != nil {
+			t.Fatalf("RegisterSubagent(%s): %v", id, err)
+		}
+
+		if queued {
+			t.Fatalf("RegisterSubagent(%s) queued=true; want false (under cap)", id)
+		}
+	}
+
+	// The third registration queues with the visible position note.
+	started3 := make(chan string, 1)
+
+	queued, err := tr.RegisterSubagent("exec_f3", func() func() {
+		started3 <- "exec_f3"
+		return func() {}
+	})
+	if err != nil {
+		t.Fatalf("RegisterSubagent(exec_f3): %v", err)
+	}
+
+	if !queued {
+		t.Fatal("3rd registration queued=false; want true (cap 2 reached)")
+	}
+
+	if note := tr.QueuedNote("exec_f3"); !strings.Contains(note, "exec_f3") || !strings.Contains(note, "position 1") {
+		t.Errorf("QueuedNote = %q; want the id and position 1", note)
+	}
+
+	// Completing f1 frees its slot: the waiter starts (channel-observable,
+	// bounded so a pre-fix failure is an assertion, not a hang) and the
+	// release-then-admit handoff keeps the count at the cap — never above.
+	tr.Complete(Notification{TaskID: "exec_f1", Kind: KindSubagent, ExitStatus: "0"})
+
+	select {
+	case id := <-started3:
+		if id != "exec_f3" {
+			t.Errorf("waiter started = %s; want exec_f3", id)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("queued task never started — the completion did not free its slot")
+	}
+
+	if got := countRunning(tr); got != 2 {
+		t.Errorf("runningSubagents = %d after the handoff; want 2 (never above the cap)", got)
+	}
+
+	// Drain everything: with empty waiters the count returns to zero.
+	tr.Complete(Notification{TaskID: "exec_f2", Kind: KindSubagent, ExitStatus: "0"})
+	tr.Complete(Notification{TaskID: "exec_f3", Kind: KindSubagent, ExitStatus: "0"})
+
+	if got := countRunning(tr); got != 0 {
+		t.Errorf("runningSubagents = %d; want 0 after all completions with empty waiters", got)
+	}
+
+	// THE blind-spot row: after cap TOTAL starts (3 so far), a further
+	// registration still admits directly and really starts.
+	started4 := make(chan string, 1)
+
+	queued, err = tr.RegisterSubagent("exec_f4", func() func() {
+		started4 <- "exec_f4"
+		return func() {}
+	})
+	if err != nil {
+		t.Fatalf("re-register: %v", err)
+	}
+
+	if queued {
+		t.Fatal("re-register after completions queued=true; want false (slots must free)")
+	}
+
+	select {
+	case id := <-started4:
+		if id != "exec_f4" {
+			t.Errorf("re-registered start = %s; want exec_f4", id)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("re-registered task never started — the freed slot was not admitted")
+	}
+
+	tr.Complete(Notification{TaskID: "exec_f4", Kind: KindSubagent, ExitStatus: "0"})
+
+	if got := countRunning(tr); got != 0 {
+		t.Errorf("runningSubagents = %d; want 0 at rest", got)
+	}
+}
+
+// TestTrackerCap_SequentialReuseNeverQueues (G-22-1, CR-01): sequential use
+// never starves — 3×cap register→complete cycles all admit directly (the cap
+// bounds CONCURRENT subagents, not lifetime starts; a monotonic counter
+// bricks every session past its first cap-full of dispatches).
+func TestTrackerCap_SequentialReuseNeverQueues(t *testing.T) {
+	t.Parallel()
+
+	tr := NewTracker(TrackerOpts{SubagentCap: 2})
+	rs := &recordingStart{}
+
+	for i := 0; i < 6; i++ {
+		id := "exec_u" + string(rune('0'+i))
+
+		queued, err := tr.RegisterSubagent(id, rs.start(id))
+		if err != nil {
+			t.Fatalf("cycle %d: %v", i, err)
+		}
+
+		if queued {
+			t.Fatalf("cycle %d queued=true; want direct admission (sequential reuse)", i)
+		}
+
+		tr.Complete(Notification{TaskID: id, Kind: KindSubagent, ExitStatus: "0"})
+	}
+
+	if got := rs.startedList(); len(got) != 6 {
+		t.Errorf("started = %v; want all 6", got)
+	}
+
+	if got := countRunning(tr); got != 0 {
+		t.Errorf("runningSubagents = %d; want 0 after 6 sequential cycles", got)
+	}
+}
+
+// TestTrackerComplete_RetiresCancelEntry (G-22-1): Complete retires the
+// completing subagent's cancel registration — finished subagents stop looking
+// running (pre-fix the map is populated at RegisterSubagent and
+// startNextWaiter only, with no delete path, so a finished id classifies as
+// running forever), CancelTask on a completed id is an idempotent no-op
+// (false), the decrement is floored at zero, and KindBash completions never
+// touch the subagent count.
+func TestTrackerComplete_RetiresCancelEntry(t *testing.T) {
+	t.Parallel()
+
+	tr := NewTracker(TrackerOpts{SubagentCap: 2})
+	rs := &recordingStart{}
+
+	for _, id := range []string{"exec_x1", "exec_x2"} {
+		if _, err := tr.RegisterSubagent(id, rs.start(id)); err != nil {
+			t.Fatalf("RegisterSubagent(%s): %v", id, err)
+		}
+	}
+
+	// KindBash completions never touch the subagent count.
+	before := countRunning(tr)
+	tr.Complete(Notification{TaskID: "bash_b1", Kind: KindBash, ExitStatus: "0"})
+
+	if after := countRunning(tr); after != before {
+		t.Errorf("runningSubagents %d -> %d on a KindBash completion; want untouched", before, after)
+	}
+
+	// Complete both subagents: the cancel entries retire with the slots.
+	tr.Complete(Notification{TaskID: "exec_x1", Kind: KindSubagent, ExitStatus: "0"})
+	tr.Complete(Notification{TaskID: "exec_x2", Kind: KindSubagent, ExitStatus: "0"})
+
+	for _, id := range []string{"exec_x1", "exec_x2"} {
+		if cancelKnown(tr, id) {
+			t.Errorf("subagentCancels still holds %s after Complete — finished looks running", id)
+		}
+	}
+
+	if tr.CancelTask("exec_x1") {
+		t.Error("CancelTask(completed) = true; want false (the cancel retired)")
+	}
+
+	// Floor safety: a KindSubagent Complete with no matching admission
+	// leaves the count at zero, never negative.
+	tr.Complete(Notification{TaskID: "exec_ghost", Kind: KindSubagent, ExitStatus: "error"})
+
+	if got := countRunning(tr); got != 0 {
+		t.Errorf("runningSubagents = %d after a ghost completion; want 0 (floored)", got)
 	}
 }
