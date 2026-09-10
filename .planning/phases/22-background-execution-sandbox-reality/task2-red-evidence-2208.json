@@ -1,0 +1,19 @@
+{
+  "plan": "22-08",
+  "task": 2,
+  "phase_gate": "RED",
+  "command": "go test -race -count=1 ./internal/runtime/ -run 'TestWakeChain_ClosedSessionDropsBatch|TestCloseSession_PrunesWakeState' -v",
+  "targetTest": "TestWakeChain_ClosedSessionDropsBatch",
+  "exitCode": 1,
+  "output": "not ok 1 - TestWakeChain_ClosedSessionDropsBatch\nnot ok 1 - TestWakeChain_ClosedSessionDropsBatch/missing_session_is_terminal\nnot ok 1 - TestWakeChain_ClosedSessionDropsBatch/late_completion_never_resurrects\nnot ok 2 - TestCloseSession_PrunesWakeState\n# tests 2\n# pass 0\n# fail 2\n",
+  "expected": "Per 22-08 Task 2 <behavior>: drainWakeNotifications on a MISSING session is terminal — one call returns true, consumes the batch, writes exactly ONE stderr line naming the session id and dropped count, zero provider calls; end-to-end, a late completion after CloseSession never re-inserts the id into r.sessions, never bills a provider turn, and the chain flag settles false; CloseSession prunes r.trackers/r.wakeInFlight/r.ptyManagers entries; RUNNING background subagents are cancelled at close via a CancelRunning link beside CancelQueued with a counted stderr note.",
+  "actual": "drainWakeNotifications resolves the session through the CONSTRUCTING r.sessionFor: the missing-session row resurrected a full session (provider call 1, batch delivered into the ghost, r.sessions re-contains the id, no drop line); the close-then-complete row reproduced the same resurrection after a real CloseSession (ghost provider turn billed to nobody); CloseSession leaves trackers/wakeInFlight/ptyManagers populated (no Delete anywhere) and no CancelRunning exists — the registered running subagent's channel stayed open with no stderr note.",
+  "failing_tests": [
+    "TestWakeChain_ClosedSessionDropsBatch/missing_session_is_terminal (assertions: drop lines = 0 not 1; provider calls = 1 not 0; r.sessions re-contains the id)",
+    "TestWakeChain_ClosedSessionDropsBatch/late_completion_never_resurrects (assertions: r.sessions re-contains the closed id; provider calls = 1 — the CR-04 ghost turn)",
+    "TestCloseSession_PrunesWakeState (assertions: trackers/wakeInFlight/ptyManagers all still carry the closed session; running subagent never cancelled; no counted running-cancel note)"
+  ],
+  "unexpected_green": [],
+  "note": "Go --- FAIL / subtest FAIL lines translated faithfully into Node-TAP by hand (both top-level tests failed on assertions; no compile/fixture errors). The done=true and batch-consumed assertions in the terminal row pass in RED because the resurrected drain delivers — the drop-line/provider/no-recontainment assertions are the RED witnesses.",
+  "timestamp": "2026-09-10T03:32:00Z"
+}

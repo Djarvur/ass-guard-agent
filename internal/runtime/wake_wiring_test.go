@@ -1,6 +1,7 @@
 package runtime //nolint:testpackage // internal package test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	goruntime "runtime"
@@ -650,5 +651,217 @@ func TestWakeChain_RacingCompletionStillWakes(t *testing.T) { //nolint:parallelt
 	idle, _ := sampleFlagFalse(flag, 500*time.Millisecond)
 	if !idle {
 		t.Error("flag read true after both batches settled — successor spin")
+	}
+}
+
+// TestWakeChain_ClosedSessionDropsBatch (22-08 Task 2, G-22-4/CR-04): close is
+// TERMINAL for the background machinery — a late completion must drop its
+// batch loudly instead of resurrecting the closed session through the
+// constructing sessionFor lookup and billing a ghost provider turn.
+func TestWakeChain_ClosedSessionDropsBatch(t *testing.T) { //nolint:funlen // two-row close battery
+	// Row 1 (terminal unit row): a tracker with pending planted whose session
+	// is ABSENT from r.sessions — one drainWakeNotifications call is terminal:
+	// true, batch consumed, exactly ONE stderr line naming the session id and
+	// the dropped count, zero provider calls, nothing re-enters r.sessions.
+	t.Run("missing session is terminal", func(t *testing.T) {
+		stderr := &bytes.Buffer{}
+
+		r, prov := newExpansionRunner(t, true)
+		r.stderr = stderr
+
+		const sid = "sess-wake-drop"
+
+		_ = r.sessionFor(context.Background(), sid)
+
+		tr := r.trackerFor(sid)
+		if tr == nil {
+			t.Fatal("no tracker wired for the session")
+		}
+
+		// Evict WITHOUT the close chain (direct map surgery): the tracker
+		// stays registered while the session is gone — exactly the state a
+		// late completion sees when the session is closed or failed.
+		r.sessMu.Lock()
+		delete(r.sessions, sid)
+		r.sessMu.Unlock()
+
+		// Plant pending without a chain: the drain callback is neutralized so
+		// the direct call below is the ONLY consumer under test.
+		tr.SetDrain(func([]tasks.Notification) {})
+
+		tr.Complete(tasks.Notification{
+			TaskID: "exec_drop", Kind: tasks.KindBash, ExitStatus: "0", Tail: "drop marker",
+		})
+
+		if len(tr.PendingPeek()) != 1 {
+			t.Fatalf("pending peek = %d; want 1 planted", len(tr.PendingPeek()))
+		}
+
+		done := r.drainWakeNotifications(context.Background(), sid, tr)
+		if !done {
+			t.Error("drainWakeNotifications returned false for a missing session — must be terminal (true), never a retry loop")
+		}
+
+		if peek := tr.PendingPeek(); len(peek) != 0 {
+			t.Errorf("pending after drop = %d; want 0 (the batch is consumed)", len(peek))
+		}
+
+		drops := strings.Count(stderr.String(), "session closed — dropping")
+		if drops != 1 {
+			t.Errorf("drop lines = %d; want exactly 1; stderr: %q", drops, stderr.String())
+		}
+
+		if !strings.Contains(stderr.String(), sid) || !strings.Contains(stderr.String(), "dropping 1 pending") {
+			t.Errorf("drop line must name the session id and the count; stderr: %q", stderr.String())
+		}
+
+		if calls := prov.callCount(); calls != 0 {
+			t.Errorf("provider calls = %d; want 0 (a closed session never runs a wake turn)", calls)
+		}
+
+		r.sessMu.Lock()
+		_, present := r.sessions[sid]
+		r.sessMu.Unlock()
+
+		if present {
+			t.Error("r.sessions re-contains the dropped session id — the drain reconstructed it (CR-04 resurrection)")
+		}
+	})
+
+	// Row 2 (end-to-end no-resurrection row): a real session, CloseSession,
+	// then a late completion fired on the STILL-HELD tracker reference — the
+	// closed id must never re-enter r.sessions, the provider must stay at
+	// zero calls, and the chain flag must settle false. In the pre-fix code
+	// the drain's constructing sessionFor rebuilds a full session and runs a
+	// real ghost wake turn into it.
+	t.Run("late completion never resurrects", func(t *testing.T) {
+		r, prov := newExpansionRunner(t, true,
+			scriptedResp{text: "ghost turn bait — must never stream"},
+		)
+
+		const sid = "sess-wake-closed"
+
+		_ = r.sessionFor(context.Background(), sid)
+
+		tr := r.trackerFor(sid)
+		if tr == nil {
+			t.Fatal("no tracker wired for the session")
+		}
+
+		if cerr := r.CloseSession(sid); cerr != nil {
+			t.Fatalf("CloseSession: %v", cerr)
+		}
+
+		// The late completion: the tracker reference outlived the close (the
+		// registry's Wait goroutine fires this minutes later in production).
+		tr.Complete(tasks.Notification{
+			TaskID: "exec_late", Kind: tasks.KindBash, ExitStatus: "0", Tail: "late marker",
+		})
+
+		time.Sleep(300 * time.Millisecond) // settle — a ghost chain would have run by now
+
+		r.sessMu.Lock()
+		_, present := r.sessions[sid]
+		r.sessMu.Unlock()
+
+		if present {
+			t.Error("r.sessions re-contains the closed session id after a late completion (CR-04 resurrection)")
+		}
+
+		if calls := prov.callCount(); calls != 0 {
+			t.Errorf("provider calls = %d; want 0 (no ghost turn for a closed session)", calls)
+		}
+
+		if flag := wakeFlag(r, sid); flag.Load() {
+			t.Error("chain flag true after the late completion settled — machinery still running for a closed session")
+		}
+	})
+}
+
+// TestCloseSession_PrunesWakeState (22-08 Task 2, G-22-4/CR-04 + IN-03's
+// in-scope half): CloseSession prunes the runner's per-session wake state
+// (trackers, wakeInFlight, ptyManagers — after OnClose's Drain ran) and
+// cancels RUNNING background subagents beside the queued ones.
+func TestCloseSession_PrunesWakeState(t *testing.T) { //nolint:funlen // prune + running-cancel battery
+	stderr := &bytes.Buffer{}
+
+	r, _ := newExpansionRunner(t, false)
+	r.stderr = stderr
+
+	// Row 1: the per-session state entries exist while the session lives and
+	// are gone after CloseSession.
+	const sid = "sess-close-prune"
+
+	_ = r.sessionFor(context.Background(), sid)
+
+	if _, ok := r.trackers.Load(sid); !ok {
+		t.Fatal("test setup: no tracker entry after sessionFor")
+	}
+
+	if _, ok := r.ptyManagers.Load(sid); !ok {
+		t.Fatal("test setup: no ptyManagers entry after sessionFor")
+	}
+
+	r.scheduleWakeDrain(sid) // creates the wakeInFlight entry (empty queue → clean exit)
+
+	time.Sleep(100 * time.Millisecond)
+
+	if _, ok := r.wakeInFlight.Load(sid); !ok {
+		t.Fatal("test setup: no wakeInFlight entry after a drain attempt")
+	}
+
+	if cerr := r.CloseSession(sid); cerr != nil {
+		t.Fatalf("CloseSession: %v", cerr)
+	}
+
+	if _, ok := r.trackers.Load(sid); ok {
+		t.Error("r.trackers still carries the closed session (CR-04/IN-03 — late completions can find it)")
+	}
+
+	if _, ok := r.wakeInFlight.Load(sid); ok {
+		t.Error("r.wakeInFlight still carries the closed session (CR-04/IN-03)")
+	}
+
+	if _, ok := r.ptyManagers.Load(sid); ok {
+		t.Error("r.ptyManagers still carries the closed session — the entry must go AFTER OnClose's Drain ran")
+	}
+
+	// Row 2: RUNNING background subagents are cancelled at close (the NEW
+	// CancelRunning link beside CancelQueued in OnClose) with a counted
+	// stderr note.
+	const sid2 = "sess-close-running"
+
+	_ = r.sessionFor(context.Background(), sid2)
+
+	tr := r.trackerFor(sid2)
+	if tr == nil {
+		t.Fatal("no tracker wired for the second session")
+	}
+
+	cancelled := make(chan struct{})
+
+	queued, err := tr.RegisterSubagent("sub_close_1", func() func() {
+		return func() { close(cancelled) }
+	})
+	if err != nil {
+		t.Fatalf("RegisterSubagent: %v", err)
+	}
+
+	if queued {
+		t.Fatal("test setup: the registration queued — the cap has room")
+	}
+
+	if cerr := r.CloseSession(sid2); cerr != nil {
+		t.Fatalf("CloseSession (running): %v", cerr)
+	}
+
+	select {
+	case <-cancelled:
+	default:
+		t.Error("CloseSession left the RUNNING background subagent alive — CancelRunning missing from the OnClose chain (CR-04)")
+	}
+
+	if !strings.Contains(stderr.String(), sid2+" close cancelled 1 running background subagent task(s)") {
+		t.Errorf("no counted running-cancel note for %s; stderr: %q", sid2, stderr.String())
 	}
 }
