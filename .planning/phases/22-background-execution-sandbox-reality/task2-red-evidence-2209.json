@@ -1,0 +1,19 @@
+{
+  "plan": "22-09",
+  "task": 2,
+  "phase_gate": "RED",
+  "command": "go test -race -count=1 ./internal/tasks/ -run 'TestTrackerSubagentState' -v && go test -race -count=1 ./internal/runtime/ -run 'TestTaskStopFallbackWiring|TestTaskOutputFallbackWiring' -v",
+  "targetTest": "TestTrackerSubagentState",
+  "exitCode": 1,
+  "output": "not ok 1 - TestTrackerSubagentState\nnot ok 2 - TestTaskStopFallbackWiring\nnot ok 3 - TestTaskOutputFallbackWiring\n# tests 3\n# pass 0\n# fail 3\n",
+  "expected": "Per 22-09 Task 2 <behavior>: SubagentState(id) reports (queued=true) for a waiter, (running=true) for an admitted-and-cancel-registered id, NEITHER for a completed id (the disambiguation row — 22-07's cancel-entry retirement), neither for a never-registered id; the session catalog's TaskStop fires the registered cancel func for a live subagent's exec_ id and renders the captured ack; the session catalog's TaskOutput with a finished id's exec_ renders the ready envelope carrying the output-file content.",
+  "actual": "Neither the classifier's scan nor the sessionFor binding exists: SubagentState is the signature-first stub returning (false,false) — the queued waiter and admitted-id rows fail on assertions; the runtime wiring rows fail because the session catalog's TaskStop/TaskOutput still render the structured unknown-task error for tracker-owned ids (err = taskstop: unknown task \"exec_wiring_stop_live\"; err = taskoutput: unknown task \"exec_wiring_out_done\") — the fallback seams are not bound to the session's tracker.",
+  "failing_tests": [
+    "TestTrackerSubagentState (assertions: SubagentState(queued waiter) = (false,false); want (true,false) — and SubagentState(admitted) = (false,false); want (false,true); the finished/unknown rows pass, pinning preserved behavior)",
+    "TestTaskStopFallbackWiring (assertion: TaskStop(live) err = taskstop: unknown task \"exec_wiring_stop_live\"; want nil with the cancel func fired + the captured ack — sessionFor does not bind TaskStopFallback)",
+    "TestTaskOutputFallbackWiring (assertion: TaskOutput(finished) err = taskoutput: unknown task \"exec_wiring_out_done\"; want the ready envelope carrying the output-file content — sessionFor does not bind TaskOutputFallback)"
+  ],
+  "unexpected_green": [],
+  "note": "Go --- FAIL lines translated faithfully into Node-TAP by hand (all 3 target tests fail on assertions; no compile/fixture errors — SubagentState is introduced signature-first (the plan's authorized RED order) with the zero-value body, so the package compiles and the queued/running rows fail cleanly). Precondition verified before the task: grep -c 'delete(t.subagentCancels' internal/tasks/tracker.go = 1 (22-07's Complete-side retirement — the finished row's disambiguation substrate).",
+  "timestamp": "2026-09-10T03:59:00Z"
+}

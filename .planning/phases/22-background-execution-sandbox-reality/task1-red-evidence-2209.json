@@ -1,0 +1,20 @@
+{
+  "plan": "22-09",
+  "task": 1,
+  "phase_gate": "RED",
+  "command": "go test -race -count=1 ./internal/coreexec/ -run 'TestTaskStop|TestTaskOutput' -v",
+  "targetTest": "TestTaskStop_FallbackAck",
+  "exitCode": 1,
+  "output": "not ok 1 - TestTaskStop_FallbackAck\nnot ok 2 - TestTaskOutput_FallbackNotReadyStates\nnot ok 2 - TestTaskOutput_FallbackNotReadyStates/queued\nnot ok 2 - TestTaskOutput_FallbackNotReadyStates/running\nnot ok 3 - TestTaskOutput_FallbackFinishedOutput\n# tests 9 (incl. 6 passing preserved-behavior witnesses)\n# pass 6\n# fail 3 (4 FAIL rows counting subtests)\n",
+  "expected": "Per 22-09 Task 1 <behavior>: with the registry NOT knowing the id and the fallback returning true, TaskStop renders the captured ack (\"Task <id> stopped.\"); TaskOutput with a handled fallback renders the captured not_ready envelope (status queued/running) or the ready envelope whose output section carries the fallback's output content; block/timeout ignored for fallback ids.",
+  "actual": "The constructors accept the fallback params (signature-first RED, the plan's authorized order) but never consult them: every handled-fallback call still renders the structured unknown-task error — taskstop: unknown task \"exec_sub_stop1\" (ack row), taskoutput: unknown task \"exec_sub_q1\"/\"exec_sub_r1\" (not_ready rows), taskoutput: unknown task \"exec_sub_f1\" (finished row). The unknown-id fallthrough logic is the missing GREEN work.",
+  "failing_tests": [
+    "TestTaskStop_FallbackAck (assertion: err = taskstop: unknown task \"exec_sub_stop1\"; want nil with the captured ack — the seam is never consulted)",
+    "TestTaskOutput_FallbackNotReadyStates/queued (assertion: err = taskoutput: unknown task \"exec_sub_q1\"; want the not_ready envelope with <status>queued</status>)",
+    "TestTaskOutput_FallbackNotReadyStates/running (assertion: err = taskoutput: unknown task \"exec_sub_r1\"; want the not_ready envelope with <status>running</status>)",
+    "TestTaskOutput_FallbackFinishedOutput (assertion: err = taskoutput: unknown task \"exec_sub_f1\"; want the ready envelope carrying the fallback output)"
+  ],
+  "unexpected_green": [],
+  "note": "Go --- FAIL lines translated faithfully into Node-TAP by hand (all target rows fail on assertions; no compile/fixture errors — the params-first order keeps the package compiling, per the plan's authorized RED option). Passing witnesses of preserved behavior in the same battery: FallbackDeclined/NilFallback/RegistryOwnedSkipsFallback for both tools (6 rows) — the structured unknown-task error and the registry-owned paths are byte-stable. go vet ./internal/coreexec/ ./cmd/ass-guard/ clean; the cmd battery passes at RED with its four sites on the two-arg nil form.",
+  "timestamp": "2026-09-10T03:50:00Z"
+}

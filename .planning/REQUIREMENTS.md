@@ -43,7 +43,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 - [x] **PAR-04**: AGENTS.md/CLAUDE.md auto-injected into system context every session via dynamic merge into the per-session profile copy (trailing System TextBlocks), mtime-cached
 - [x] **PAR-05**: Thinking blocks streamed to client: provider `"thinking"` chunks → raw `json.RawMessage` passthrough end-to-end (transcript, redactor excluded by construction, projector) — Anthropic signatures round-trip byte-identical
 - [x] **PAR-06**: Rich prompt content: image blocks (base64) and @-file mentions expand with Read-tool rule gating and provenance; ingress capability validation per provider shape
-- [ ] **PAR-07**: Full subagents: background dispatch via discriminated results (completed/async_launched), structured task-notifications detected by kind (not text-match), output-file retrieval for running tasks, cancellation
+- [x] **PAR-07**: Full subagents: background dispatch via discriminated results (completed/async_launched), structured task-notifications detected by kind (not text-match), output-file retrieval for running tasks, cancellation
 - [x] **PAR-08**: Background Bash: completion notifications ride the same task-notification subsystem as PAR-07; process-group lifecycle (TERM-before-KILL escalation, Pdeathsig on Linux, startup stale-log sweep)
 - [x] **PAR-09**: Persistent-shell Bash option via creack/pty v1.1.24 (Setsid + group-kill escalation, EIO-as-EOF, ANSI stripping, best-effort cd/export tracking)
 
@@ -124,7 +124,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PAR-04 | Phase 21 | Complete |
 | PAR-05 | Phase 21 | Complete |
 | PAR-06 | Phase 21 | Complete |
-| PAR-07 | Phase 22 | Pending |
+| PAR-07 | Phase 22 | Complete |
 | PAR-08 | Phase 22 | Complete |
 | PAR-09 | Phase 22 | Complete |
 | SAND-01 | Phase 22 | Complete |

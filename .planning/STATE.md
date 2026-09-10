@@ -4,18 +4,18 @@ milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 22
 current_phase_name: Background Execution + Sandbox Reality
-current_plan: 5
+current_plan: 6
 status: executing
-stopped_at: "Completed 22-08-PLAN.md (gap closure: runtime lifecycle G-22-2 + G-22-4)"
-last_updated: "2026-09-10T03:33:44.260Z"
+stopped_at: "Completed 22-09-PLAN.md (gap closure: coreexec seam G-22-5 — final gap-closure plan)"
+last_updated: "2026-09-10T03:59:52.935Z"
 last_activity: 2026-09-10
 last_activity_desc: Phase 22 execution started
-state_head: d44d4218f1505b75cfbbd8a0ee2e43040354bab1
+state_head: 05a18ec76618ca768ca6be97fdd66ebb3a654de5
 progress:
   total_phases: 11
   completed_phases: 6
   total_plans: 76
-  completed_plans: 59
+  completed_plans: 60
   percent: 55
 ---
 
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-09-10)
 ## Current Position
 
 Phase: 22 (Background Execution + Sandbox Reality) — EXECUTING
-Plan: 5 of 6
-Current Plan: 5
+Plan: 6 of 6
+Current Plan: 6
 Total Plans in Phase: 6
 Status: Ready to execute
 Last activity: 2026-09-10 — Phase 22 execution started
@@ -105,6 +105,7 @@ Phase 19: 7/7 ✓ closed 2026-09-10 (verification completed by the auto-UAT live
 | Phase 22 P06 | 32 min | 3 tasks | 18 files |
 | Phase 22 P07 | 17 min | 2 tasks | 4 files |
 | Phase 22 P08 | 25 min | 2 tasks | 4 files |
+| Phase 22 P09 | 22 min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -207,6 +208,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 22]: 22-07 (G-22-3): the panic-recovery RED used the plan-authorized subprocess guard — a background-goroutine panic produces no FAIL line (process dies), so the outer leg re-execs the test binary and converts the crash into a clean assertion (also the only valid TDD RED evidence shape) — Validated empirically: raw background-goroutine panic yields nonzero exit with no test-failure line (INVALID_RED); the guard yields target_test_failed
 - [Phase 22]: [Phase 22]: 22-08 (G-22-2): scheduleWakeDrain refuses to spawn past serve shutdown (serveCtxOrBackground().Err() guard — Background-fallback test runners structurally unaffected); wakeDrainChain's exit defer stores the flag BEFORE the gated restart (ctx live AND tracker AND pending non-empty — the ordering is the race contract; completion after the peek carries itself via its own CAS on the cleared flag)
 - [Phase 22]: [Phase 22]: 22-08 (G-22-4): drainWakeNotifications resolves sessions NON-constructingly (sessMu-held lookup; miss = loud terminal drop) even though CloseSession now prunes the tracker — tracker-registered-but-session-absent stays reachable (sessionFor stores tracker before session; completions racing close); CloseSession deletes trackers/wakeInFlight/ptyManagers AFTER s.Close() and cancels RUNNING subagents (tracker.CancelRunning beside CancelQueued); IN-05's unbounded retry retired incidentally
+- [Phase 22]: 22-09 (G-22-5): TaskStop/TaskOutput reach background-subagent ids through two primitive-arg fallback seams (InteractiveConfig.TaskStopFallback/TaskOutputFallback — the CompletionHook precedent, coreexec stays tasks-free); the fallthrough arms ONLY on the registry's own unknown-task error, declined/nil keep the structured error byte-stable, and renderTaskOutput is the ONE envelope renderer for both id families (byte-identity by construction)
+- [Phase 22]: 22-09: Tracker.SubagentState's finished row is truthful BECAUSE 22-07's releaseSubagentSlot deleted completed cancel entries — classifier-over-map-absence; the runtime binding (TaskStopFallback=tracker.CancelTask, TaskOutputFallback=SubagentState classify + bounded 64 KiB output-file tail; stat-miss=not-handled) gives CancelTask its first production callers, and block/timeout are documented as ignored for fallback ids
 
 ### Pending Todos
 
@@ -232,6 +235,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-10T03:33:18.523Z
-Stopped at: Completed 22-08-PLAN.md (gap closure: runtime lifecycle G-22-2 + G-22-4)
+Last session: 2026-09-10T03:59:40.412Z
+Stopped at: Completed 22-09-PLAN.md (gap closure: coreexec seam G-22-5 — final gap-closure plan)
 Resume file: None
