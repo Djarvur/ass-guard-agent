@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -60,14 +61,76 @@ const (
 //nolint:gochecknoglobals // the testable-seam var pattern (pickResumeSession precedent)
 var wrapSandboxCmd = sandbox.WrapCmd
 
+// unconfinedRuns counts every run that executed UNCONFINED while the sandbox
+// was ON (22-06, SAND-01's audit counter; process-wide — every per-run note
+// carries its number, so no unconfined run is silently absorbed into the log
+// stream).
+//
+//nolint:gochecknoglobals // the process-wide audit counter
+var unconfinedRuns atomic.Int64
+
+// sandboxEnabled reports whether the operator asked for confinement: a nil
+// Handle (bare configs), Availability.Mode "off" (the default and the
+// explicit refusal), and the zero-value Mode "" (never resolved through the
+// flag path) are the untouched paths — argv byte-identical, zero notes
+// (SAND-01's default-OFF contract: confined only when the operator asked,
+// and asking always resolves a backend mode: landlock | seatbelt).
+func (cfg Config) sandboxEnabled() bool {
+	return cfg.Sandbox != nil &&
+		cfg.Sandbox.Availability.Mode != "off" && cfg.Sandbox.Availability.Mode != ""
+}
+
+// noteUnconfined emits ONE loud per-run note with the running counter — the
+// never-silent-fail-open contract (a green tool result must never imply
+// confinement that did not happen). A nil SandboxNote falls back to stderr:
+// the note is never droppable.
+func (cfg Config) noteUnconfined(site, reason string) {
+	line := fmt.Sprintf("ass-guard: %s: sandbox ON but run UNCONFINED #%d (%s)",
+		site, unconfinedRuns.Add(1), reason)
+
+	if cfg.SandboxNote != nil {
+		cfg.SandboxNote("%s", line)
+
+		return
+	}
+
+	fmt.Fprintln(os.Stderr, line) // never silent (SAND-01)
+}
+
+// confineForeground applies the 22-06 foreground-site sandbox policy to cmd:
+// enabled+available+not-disabled → the ONE WrapCmd entry (substitution-only —
+// Dir/SysProcAttr stay the caller's, so the group discipline below operates
+// on the wrapped child exactly as on the bare sh, D-05); the disable escape
+// and the unavailable degrade run UNCONFINED with the loud note + counter
+// (OQ2 and the plan prohibition — an unconfined arm is a successful degrade,
+// never an error). Default OFF: untouched.
+func (cfg Config) confineForeground(cmd *exec.Cmd, disable bool) error {
+	if !cfg.sandboxEnabled() {
+		return nil
+	}
+
+	switch {
+	case disable:
+		cfg.noteUnconfined("bash", "dangerouslyDisableSandbox requested by the model")
+	case !cfg.Sandbox.Availability.Available:
+		cfg.noteUnconfined("bash", "sandbox unavailable: "+cfg.Sandbox.Availability.Reason)
+	default:
+		return wrapSandboxCmd(cmd, cfg.Sandbox.Policy)
+	}
+
+	return nil
+}
+
 // bashArgs is the observed input shape: {command, description} always;
 // timeout (ms) sometimes (subagent corpus). run_in_background EXECUTES via
 // the TaskRegistry (12-06; first live corpus usage recorded by the 12-05
-// re-record). dangerouslyDisableSandbox is parsed DELIBERATELY and is a no-op
-// BY DESIGN (12-06's upgrade of the 08-08 'accepted-and-ignored' note) —
-// ass-guard has no sandbox tier (the locked no-confirmation-tier safety
-// model), so the flag's captured meaning (skip sandboxing) is vacuously
-// satisfied; never silently ignored: this parsing IS the documented contract.
+// re-record). dangerouslyDisableSandbox is the CAPTURED per-call escape,
+// honored since 22-06 (OQ2 — the 12-06 no-op doc retired): with the sandbox
+// ON it runs the command UNCONFINED with exactly ONE loud stderr note +
+// counter (the operator enabled confinement; the model's explicit escape is
+// visible, never silent — the captured contract, CC parity). With the
+// sandbox OFF (the default) it stays the documented no-op: there is nothing
+// to escape.
 type bashArgs struct {
 	Command                   string  `json:"command"`
 	Description               string  `json:"description"`
@@ -300,6 +363,19 @@ func BashExecute(cfg Config) toolcat.Stub {
 		// locked no-confirmation-tier safety model — no allowlist by design).
 		//nolint:gosec // T-8-33: model-authored command is the product
 		cmd := exec.CommandContext(tctx, "sh", "-c", a.Command)
+
+		// 22-06 (SAND-01): the FOREGROUND sandbox site — one of exactly THREE
+		// Bash-class exec sites that confine through sandbox's ONE WrapCmd
+		// entry (this site, TaskRegistry.launch, PTYManager.ensureShell; a
+		// fourth exec site added without the wrap is a review-gate violation —
+		// the checker-identified silent-gap class this plan closes). The wrap
+		// substitutes argv BEFORE the group discipline so killGroupOnCtx/
+		// reapGroup own the WRAPPED child exactly as the bare sh (D-05:
+		// signals are neither FS nor network operations; landlock rulesets do
+		// not intercept them).
+		if werr := cfg.confineForeground(cmd, a.DangerouslyDisableSandbox); werr != nil {
+			return marshalStructured("bash: "+werr.Error(), fmt.Errorf("coreexec: bash: %w", werr))
+		}
 
 		killGroupOnCtx(cmd)
 

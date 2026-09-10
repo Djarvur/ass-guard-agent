@@ -526,6 +526,23 @@ func liveSandboxHandle(t *testing.T, workDir string) sandbox.Handle {
 	return h
 }
 
+// dirOutsidePolicy returns a writable dir OUTSIDE every rw path of the
+// flag-path policy (the workdir triple grants the WHOLE os.TempDir(), so a
+// t.TempDir() sibling is INSIDE the rw set — the differential needs /var/tmp,
+// which FHS keeps separate from /tmp). Skips where /var/tmp is unwritable.
+func dirOutsidePolicy(t *testing.T) string {
+	t.Helper()
+
+	outside, err := os.MkdirTemp("/var/tmp", "sbx-outside-")
+	if err != nil {
+		t.Skipf("/var/tmp unavailable for the outside-policy dir: %v", err)
+	}
+
+	t.Cleanup(func() { _ = os.RemoveAll(outside) })
+
+	return outside
+}
+
 // captureNotes returns a Config note sink capturing every line (the OQ2 loud
 // note's observation seam).
 func captureNotes() (func(string, ...any), *[]string) {
@@ -648,7 +665,7 @@ func TestBashSandbox_LiveConfinementDeniesNetworkWriteOutside(t *testing.T) { //
 	}
 
 	// 2. Outside write fails EPERM (a dir outside the rw triple).
-	outside := t.TempDir()
+	outside := dirOutsidePolicy(t)
 	out, err = bashExec(context.Background(),
 		json.RawMessage(`{"command":"touch `+outside+`/nope"}`))
 	if err == nil {
@@ -696,7 +713,7 @@ func TestBashSandbox_DisableFlagOnRunsUnconfinedWithNote(t *testing.T) {
 	notes, lines := captureNotes()
 	bashExec := BashExecute(Config{WorkDir: workDir, Sandbox: &handle, SandboxNote: notes})
 
-	outside := t.TempDir()
+	outside := dirOutsidePolicy(t)
 	out, err := bashExec(context.Background(),
 		json.RawMessage(`{"command":"touch `+outside+`/escaped","dangerouslyDisableSandbox":true}`))
 	if err != nil {
@@ -785,8 +802,21 @@ func TestBashSandbox_UnavailableNotedPerRun(t *testing.T) {
 		t.Errorf("note 0 does not name the reason: %q", (*lines)[0])
 	}
 
-	if !strings.Contains((*lines)[1], "#2") {
-		t.Errorf("note 1 carries no incrementing counter: %q", (*lines)[1])
+	// The counter is PROCESS-WIDE (other batteries increment it too), so the
+	// pin is the INCREMENT between this run's two notes, not an absolute.
+	numOf := func(line string) int {
+		m := regexp.MustCompile(`#(\d+)`).FindStringSubmatch(line)
+		if m == nil {
+			t.Fatalf("note carries no counter: %q", line)
+		}
+
+		n, _ := strconv.Atoi(m[1])
+
+		return n
+	}
+
+	if !(numOf((*lines)[1]) > numOf((*lines)[0])) {
+		t.Errorf("the counter does not increment across runs: %q then %q", (*lines)[0], (*lines)[1])
 	}
 }
 
