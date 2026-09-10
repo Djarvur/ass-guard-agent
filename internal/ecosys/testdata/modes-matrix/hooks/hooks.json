@@ -1,0 +1,21 @@
+{
+  "description": "ECOS-04 modes-matrix fixture hooks (24-05 Task 1): each command appends its stdin JSON (one line) to matrix-hook.log in the hook process's working directory — the session's host project dir, a t.TempDir in every harness. /bin-family binaries only (cat), no network, no absolute paths. The original plan sketched an env-var-indirected log target (ASSGUARD_MATRIX_HOOK_LOG); ecosys's sanitized hook env (21-01) allowlists only PATH/HOME/CLAUDE_PLUGIN_ROOT, so the relative-path marker inside the temp project is the hermetic equivalent — see 24-05-SUMMARY deviations.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Read",
+        "hooks": [
+          {"type": "command", "command": "cat >> matrix-hook.log", "timeout": 5}
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {"type": "command", "command": "cat >> matrix-hook.log"}
+        ]
+      }
+    ]
+  }
+}

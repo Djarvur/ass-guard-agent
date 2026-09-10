@@ -1,0 +1,5 @@
+{
+  "name": "modes-matrix",
+  "description": "ECOS-04 (TAIL-03) synthetic fixture plugin: a command, a skill, and hooks whose commands are deterministic /bin-family appends with zero network and zero writes outside the host session's (temp) project dir. Never executed in place: harnesses copy this tree into t.TempDir projects.",
+  "version": "1.0.0"
+}

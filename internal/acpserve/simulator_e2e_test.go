@@ -76,10 +76,13 @@ type simTurnScript struct {
 // simStub is the scripted SSE provider the temp config points the anthropic
 // provider at. Each HTTP request consumes the next script entry; every request
 // body's model is recorded (the "captured provider request" lens for the
-// model-switch story).
+// model-switch story). 24-05 additionally records every message's text
+// content (the "received prompt" lens the modes-matrix functional probes
+// read — the expansion story's evidence).
 type simStub struct {
 	script      []simTurnScript
 	models      []string
+	prompts     []string
 	modelsMu    sync.Mutex
 	calls       atomic.Int64
 	holdOnce    sync.Once
@@ -98,13 +101,26 @@ func (s *simStub) serveSSE(w http.ResponseWriter, r *http.Request) {
 	body, rerr := io.ReadAll(r.Body)
 	if rerr == nil {
 		var req struct {
-			Model string `json:"model"`
+			Model    string `json:"model"`
+			Messages []struct {
+				Content json.RawMessage `json:"content"`
+			} `json:"messages"`
 		}
 
 		jerr := json.Unmarshal(body, &req)
-		if jerr == nil && req.Model != "" {
+		if jerr == nil {
 			s.modelsMu.Lock()
-			s.models = append(s.models, req.Model)
+
+			if req.Model != "" {
+				s.models = append(s.models, req.Model)
+			}
+
+			// The 24-05 received-prompt lens: each message's text content,
+			// string- and block-array-shaped alike, in request order.
+			for i := range req.Messages {
+				s.prompts = append(s.prompts, simMessageTexts(req.Messages[i].Content)...)
+			}
+
 			s.modelsMu.Unlock()
 		}
 	}
@@ -141,6 +157,51 @@ func (s *simStub) recordedModels() []string {
 	defer s.modelsMu.Unlock()
 
 	return append([]string(nil), s.models...)
+}
+
+// recordedPrompts returns every captured message text across all requests
+// (24-05's received-prompt lens), in request order.
+func (s *simStub) recordedPrompts() []string {
+	s.modelsMu.Lock()
+	defer s.modelsMu.Unlock()
+
+	return append([]string(nil), s.prompts...)
+}
+
+// simMessageTexts extracts one message content's text parts: a bare JSON
+// string content yields itself; a block array yields each text block's text
+// (tool_use blocks contribute nothing — the lens is the prompt story).
+func simMessageTexts(content json.RawMessage) []string {
+	if len(content) == 0 {
+		return nil
+	}
+
+	var asString string
+	if json.Unmarshal(content, &asString) == nil {
+		if asString == "" {
+			return nil
+		}
+
+		return []string{asString}
+	}
+
+	var blocks []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	}
+
+	if json.Unmarshal(content, &blocks) != nil {
+		return nil
+	}
+
+	out := make([]string, 0, len(blocks))
+	for _, b := range blocks {
+		if b.Type == "text" && b.Text != "" {
+			out = append(out, b.Text)
+		}
+	}
+
+	return out
 }
 
 // waitHold blocks until the stub is HOLDING a provider request open — the
