@@ -188,8 +188,13 @@ func assertWakeTurnFiredOnce(t *testing.T, sess *session.Session, taskID, typedP
 			taskID, lastWake)
 	}
 
-	if got := wakeEngineDecisions(t, sess, wakeProvenance); got != 1 {
-		t.Errorf("EngineDecision lines with wake provenance = %d; want 1", got)
+	// The EngineDecision line lands AFTER the turn's user message (the drain
+	// appends it post-runOneTurn) — bounded poll, never a single read (the
+	// write-order race a one-shot count would flap on).
+	if !waitFor(5*time.Second, func() bool {
+		return wakeEngineDecisions(t, sess, wakeProvenance) == 1
+	}) {
+		t.Errorf("EngineDecision lines with wake provenance = %d; want 1", wakeEngineDecisions(t, sess, wakeProvenance))
 	}
 
 	if first := wakeUserTexts(t, sess)[0]; !strings.Contains(first, typedPrompt) {
