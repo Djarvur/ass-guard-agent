@@ -327,5 +327,16 @@ func itoa(n int) string {
 // delete no finished id could ever leave the running class, so finished would
 // have rendered not_ready forever). A never-registered id reports neither.
 func (t *Tracker) SubagentState(id string) (queued, running bool) {
-	return false, false
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	for _, w := range t.waiters {
+		if w.id == id {
+			return true, false
+		}
+	}
+
+	_, running = t.subagentCancels[id]
+
+	return false, running
 }

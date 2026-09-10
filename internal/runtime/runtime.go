@@ -1766,6 +1766,75 @@ func (r *Runner) restoreBlockers(sessionID string) error {
 }
 
 // sessionFor returns the Session for sessionID, creating it on first use.
+// subagentOutputTailBytes bounds the finished-subagent output read (the last
+// 64 KiB of the progressive output file — the D-02 tail discipline's
+// TaskOutput analogue; the full file stays a Read away, exactly as the
+// notification's OutputFile pointer promises).
+const subagentOutputTailBytes = 64 * 1024
+
+// subagentOutputFallback is the 22-09 (G-22-5) TaskOutputFallback binding:
+// classify the id against the session's tracker — queued/running render the
+// not_ready family with no output — and anything the tracker no longer knows
+// as live is treated as FINISHED: the subagent's output file (the production
+// path convention .ass-guard/outputs/<id>.log under the session workdir) is
+// read as a bounded TAIL and surfaces through the ready envelope. A stat miss
+// reports not-handled: the id is nobody's (never registered, or the file is
+// gone) and TaskOutput renders the structured unknown-task error.
+// block/timeout are ignored for these ids — the CURRENT state renders
+// immediately (the coreexec stub comment's documented choice; the tracker
+// seam carries no bounded-wait machinery).
+func subagentOutputFallback(dir string, tracker *tasks.Tracker) func(id string) (string, string, bool, bool) {
+	return func(id string) (string, string, bool, bool) {
+		if queued, running := tracker.SubagentState(id); queued || running {
+			if queued {
+				return "", "queued", true, true
+			}
+
+			return "", "running", true, true
+		}
+
+		content, ok := readTail(filepath.Join(dir, ".ass-guard", "outputs", id+".log"), subagentOutputTailBytes)
+		if !ok {
+			return "", "", false, false
+		}
+
+		return content, "finished", false, true
+	}
+}
+
+// readTail returns the last budget bytes of path (a bounded read — the file
+// is never loaded whole). ok=false on any miss (absent or unreadable: the
+// caller reports not-handled either way).
+func readTail(path string, budget int64) (string, bool) {
+	st, err := os.Stat(path)
+	if err != nil || st.IsDir() {
+		return "", false
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		return "", false
+	}
+
+	defer func() { _ = f.Close() }()
+
+	offset := int64(0)
+	if st.Size() > budget {
+		offset = st.Size() - budget
+	}
+
+	if _, err := f.Seek(offset, io.SeekStart); err != nil {
+		return "", false
+	}
+
+	data, err := io.ReadAll(io.LimitReader(f, budget))
+	if err != nil {
+		return "", false
+	}
+
+	return string(data), true
+}
+
 func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,gocognit // turn pipeline grouping
 	ctx context.Context, sessionID string,
 ) *session.Session {
@@ -2116,7 +2185,17 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	coreexec.RegisterInteractive(sCatalog, coreexec.InteractiveConfig{
 		Ask: askBroker, PlanMode: planMode,
 		Mailbox: mailbox, Sessions: sessionReader, Tasks: taskRegistry,
-		Schedule: r.schedule, // 12-07: the PER-PROJECT cron store (nil in test runners → structured no-store errors)
+		// 22-09 (G-22-5): ids the registry does not know (background-
+		// subagent exec_ ids) reach THIS session's tracker. TaskStop cancels
+		// through CancelTask — a finished id declines (its cancel entry
+		// retired at Complete, 22-07), so no fake ack for a dead id.
+		TaskStopFallback: tracker.CancelTask,
+		// TaskOutput classifies through SubagentState and reads the output
+		// file (bounded tail; stat-miss = not-handled). Primitive args only
+		// for both seams (the CompletionHook precedent — coreexec stays
+		// tasks-free).
+		TaskOutputFallback: subagentOutputFallback(dir, tracker),
+		Schedule:           r.schedule, // 12-07: the PER-PROJECT cron store (nil in test runners → structured no-store errors)
 	})
 
 	// 09-01 T2 (AUD-02): the late-bound capturer closure. sess is declared
