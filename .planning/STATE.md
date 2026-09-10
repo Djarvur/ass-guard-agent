@@ -4,18 +4,18 @@ milestone: v1.2
 milestone_name: Claude Code Parity
 current_phase: 24
 current_phase_name: Documentation & Ops Tails
-current_plan: 4
+current_plan: 5
 status: executing
-stopped_at: "Completed 24-04-PLAN.md (TAIL-02: nightly parity gate — drift core + first GH Actions workflow)"
-last_updated: "2026-09-10T15:34:32.459Z"
+stopped_at: "Completed 24-02-PLAN.md (TAIL-01 live wiring: outcome store on the live turn path + stats CLI + replayed-breaker demotion)"
+last_updated: "2026-09-10T16:31:38.029Z"
 last_activity: 2026-09-10
 last_activity_desc: Phase 24 execution started
-state_head: 11e9cfe1e0beae170eb9efea156d9d095c9b9f15
+state_head: 005ef9b9d1917be0b0b38320592a2eb2e51f6941
 progress:
   total_phases: 11
   completed_phases: 6
   total_plans: 77
-  completed_plans: 66
+  completed_plans: 67
   percent: 55
 ---
 
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-09-10)
 ## Current Position
 
 Phase: 24 (Documentation & Ops Tails) — EXECUTING
-Plan: 4 of 5
-Current Plan: 4
+Plan: 5 of 5
+Current Plan: 5
 Total Plans in Phase: 5
 Status: Ready to execute
 Last activity: 2026-09-10 — Phase 24 execution started
@@ -111,6 +111,7 @@ Phase 19: 7/7 ✓ closed 2026-09-10 (verification completed by the auto-UAT live
 | Phase 24 P01 | 37 min | 3 tasks | 10 files |
 | Phase 24 P03 | 26 min | 2 tasks | 2 files |
 | Phase 24 P04 | 33 min | 3 tasks | 12 files |
+| Phase 24 P02 | 51 min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -223,6 +224,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 - [Phase 24]: 24-03: worked-example LSP server auto-selected (auto_advance, gate=blocking) — isaacphi/mcp-language-server + gopls; legitimacy verified (1,590 stars, BSD-3, active); go install path, outside the npm/pip/cargo gate
 - [Phase 24]: 24-03: doc cites the ACP mcpServers parse-but-ignore site by function name (handleSessionNew) — research line numbers had drifted; function-name citations survive drift
 - [Phase 24]: 24-03: mcp.Start's failed-server skip is SILENT (comment claims slog logging that does not exist) — doc corrected to reality, observability gap logged to phase deferred-items.md (agent-side fix out of scope)
+- [Phase 24]: 24-02: outcome recording sits at the REAL dispatch sites (turn loop + subagent runner brackets) — OQ2 resolution; Scheduler.Dispatch stays unwired (Pitfall 1) — D-06's letter dies if evidence lands in a Scheduler nothing constructs; the brackets are where provider calls actually happen
+- [Phase 24]: 24-02: demotion observability window — a replayed breaker denies only while its cooldown runs; test seeds stamp inside the cooldown of the resolution clock (older stamps admit the half-open probe) — First demotion run was red for fixture reasons, not production reasons; pinned so future breaker tests do not repeat it
 
 ### Pending Todos
 
@@ -248,6 +251,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-10T15:34:30.676Z
-Stopped at: Completed 24-04-PLAN.md (TAIL-02: nightly parity gate — drift core + first GH Actions workflow)
+Last session: 2026-09-10T16:31:36.608Z
+Stopped at: Completed 24-02-PLAN.md (TAIL-01 live wiring: outcome store on the live turn path + stats CLI + replayed-breaker demotion)
 Resume file: None
