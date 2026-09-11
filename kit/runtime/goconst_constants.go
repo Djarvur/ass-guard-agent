@@ -1,18 +1,13 @@
 package runtime
 
-// Repeated string literals extracted to constants (goconst).
-const blockText = "text"
-const stopEndTurn = "end_turn"
-const protocolVersion20 = "2.0"
-const keySessionID = "sessionId"
-const keyType = "type"
-const tierLight = "light"
-const tierHeavy = "heavy"
-const profileZcode = "zcode"
-const implementationCompleteMsg = "## Implementation Complete — ready for review"
-const actionContinue = "continue"
-const textListKey = "text"
-const chunkDone = "done"
-const blockImage = "image"
-const chunkToolUse = "tool_use"
-const chunkThinking = "thinking"
+// Repeated string literals extracted to constants (goconst) — the set the
+// PRODUCTION files of this package use (25-09 trim: the 25-08 first cut
+// duplicated other packages' test tables here; test-only vocabulary moved
+// to goconst_constants_test.go, dead entries deleted).
+const (
+	blockText   = "text"
+	stopEndTurn = "end_turn"
+	tierLight   = "light"
+	tierHeavy   = "heavy"
+	blockImage  = "image"
+)

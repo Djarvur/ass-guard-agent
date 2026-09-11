@@ -109,11 +109,10 @@ type fakeCommandRow struct {
 // listing metadata; UserInvocable=false hides it from Entries — the 20-04
 // slash-surface rule).
 type fakeSkillRow struct {
-	description  string
-	body         string
-	path         string
-	hidden       bool
-	allowedTools []string
+	description string
+	body        string
+	path        string
+	hidden      bool
 }
 
 // newTestCatalog reads the fixture trees under workDir into the canned
@@ -123,7 +122,7 @@ type fakeSkillRow struct {
 // floor (internal/openspec/seeded.toml [commands] + [command_mutability] —
 // kit-side test constants, the same verbatim-mirror discipline the pattern
 // rows follow; read-only rows are simply absent from the map).
-var seededMutatingCommands = []string{
+var seededMutatingCommands = []string{ //nolint:gochecknoglobals,goconst // per-test-binary seeded table (data, not code)
 	// [command_mutability] — the opsx slash surface (D-11)
 	"opsx:propose", "opsx:apply", "opsx:sync", "opsx:update", "opsx:archive",
 	"opsx:new", "opsx:continue", "opsx:ff", "opsx:bulk-archive", "opsx:onboard",
@@ -188,7 +187,7 @@ func (t *fakeCatalog) reload() error {
 // pluginInstall mirrors one installed_plugins.json row.
 type pluginInstall struct {
 	Name        string `json:"name"`
-	InstallPath string `json:"installPath"`
+	InstallPath string `json:"installPath"` //nolint:tagliatelle // the registry wire format is camelCase
 }
 
 // loadPluginInstalls walks the plugin registry the MountFixture layout
@@ -902,7 +901,7 @@ func (h *markerFileHooks) PreToolUseVerdict(
 ) (session.HookVerdict, string) {
 	// the fixture's PreToolUse matcher is "Read" only (hooks.json) — the
 	// Task dispatch of the wake cells never fired it under real discovery.
-	if toolName != "Read" {
+	if toolName != toolNameRead {
 		return session.HookVerdictNone, ""
 	}
 
