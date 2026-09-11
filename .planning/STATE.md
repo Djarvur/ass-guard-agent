@@ -281,6 +281,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-09-11T17:42:37Z
-Stopped at: Phase 24 complete, ready to plan Phase 23
+Last session: 2026-09-11T20:20:00Z
+Stopped at: Phases 22+24 complete (operator-approval verifications; darwin seatbelt + post-merge CI legs deferred with records); Phase 23 awaits gap-closure plan 23-07 execution (G-23-1 advertisement-ordering fix, blocking live-Zed checkpoint)
 Resume file: None
