@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
 	"github.com/Djarvur/ass-guard-agent/kit/modelrouting"
 	"github.com/Djarvur/ass-guard-agent/kit/profile"
 	"github.com/Djarvur/ass-guard-agent/kit/provider"
+	"github.com/Djarvur/ass-guard-agent/kit/session"
 )
 
 // The 16-05 live-apply seam tests (ACP-08): ApplyTurnModel changes the model
@@ -29,10 +29,10 @@ const (
 	testModelAfter  = "model-b"
 )
 
-// nopEmitter satisfies acp.ChunkEmitter for turns that stream no chunks.
+// nopEmitter satisfies the kit Emitter seam for turns that stream no events.
 type nopEmitter struct{}
 
-func (nopEmitter) AgentMessageChunk(string, string) error { return nil }
+func (nopEmitter) Emit(context.Context, event.Event) error { return nil }
 
 // gatedStreamProvider records the profile model of every Stream (what the
 // Shaper would stamp onto the real request) and holds the FIRST request open
@@ -146,7 +146,7 @@ func TestApplyTurnModel(t *testing.T) { //nolint:paralleltest // drives a backgr
 	}
 
 	// The very next request on the SAME session carries the new model.
-	_, _ = acpRun(ctx, runner, "s1", nopEmitter{}, []acp.ContentBlock{{Type: blockText, Text: "again"}})
+	_, _ = runner.Run(ctx, "s1", nopEmitter{}, []session.ContentBlock{{Type: blockText, Text: "again"}})
 
 	awaitSeenModel(t, gated, testModelAfter)
 }
@@ -177,8 +177,8 @@ func startTestTurn(t *testing.T, runner *Runner, sessionID string, ctx context.C
 	go func() {
 		defer close(turnDone)
 
-		_, _ = acpRun(ctx, runner, sessionID, nopEmitter{},
-			[]acp.ContentBlock{{Type: blockText, Text: "hi"}})
+		_, _ = runner.Run(ctx, sessionID, nopEmitter{},
+			[]session.ContentBlock{{Type: blockText, Text: "hi"}})
 	}()
 
 	return turnDone

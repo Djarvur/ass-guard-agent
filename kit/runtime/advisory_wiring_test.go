@@ -5,20 +5,23 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/kit/session"
+	"github.com/Djarvur/ass-guard-agent/kit/event"
 )
 
-// countingEmitter counts AgentMessageChunk emissions.
+// countingEmitter counts AgentMessageChunk emissions (the kit Emitter twin
+// of the former acp.ChunkEmitter fake — same recording, kit vocabulary).
 type countingEmitter struct {
 	n      int
 	chunks []string
 }
 
-func (c *countingEmitter) AgentMessageChunk(_, text string) error {
-	c.n++
+func (c *countingEmitter) Emit(_ context.Context, ev event.Event) error {
+	if chunk, ok := ev.(event.AgentMessageChunk); ok {
+		c.n++
 
-	c.chunks = append(c.chunks, text)
+		c.chunks = append(c.chunks, chunk.Content)
+	}
 
 	return nil
 }
@@ -49,12 +52,12 @@ func TestAdvisoryWiring_DedupeSemantics(t *testing.T) { //nolint:gocognit,cyclop
 
 		const sid = "sess-adv-dedupe"
 
-		_, err := acpRun(context.Background(), r, sid, em, []acp.ContentBlock{{Type: blockText, Text: "go"}})
+		_, err := r.Run(context.Background(), sid, em, []session.ContentBlock{{Type: blockText, Text: "go"}})
 		if err != nil {
 			t.Fatalf("Run 1: %v", err)
 		}
 
-		_, err = acpRun(context.Background(), r, sid, em, []acp.ContentBlock{{Type: blockText, Text: "again"}})
+		_, err = r.Run(context.Background(), sid, em, []session.ContentBlock{{Type: blockText, Text: "again"}})
 		if err != nil {
 			t.Fatalf("Run 2: %v", err)
 		}
@@ -89,13 +92,13 @@ func TestAdvisoryWiring_DedupeSemantics(t *testing.T) { //nolint:gocognit,cyclop
 
 		const sid = "sess-adv-classes"
 
-		_, err := acpRun(context.Background(), r, sid, em, []acp.ContentBlock{{Type: blockText, Text: "go"}})
+		_, err := r.Run(context.Background(), sid, em, []session.ContentBlock{{Type: blockText, Text: "go"}})
 		if err != nil {
 			t.Fatalf("Run 1: %v", err)
 		}
 
 		// Turn 2 closes with the OPEN-QUESTION class phrase.
-		_, err = acpRun(context.Background(), r, sid, em, []acp.ContentBlock{{Type: blockText, Text: "next"}})
+		_, err = r.Run(context.Background(), sid, em, []session.ContentBlock{{Type: blockText, Text: "next"}})
 		if err != nil {
 			t.Fatalf("Run 2: %v", err)
 		}
@@ -119,7 +122,7 @@ func TestAdvisoryWiring_DedupeSemantics(t *testing.T) { //nolint:gocognit,cyclop
 		r, em := newRunner()
 
 		for _, sid := range []string{"sess-adv-a", "sess-adv-b"} {
-			_, err := acpRun(context.Background(), r, sid, em, []acp.ContentBlock{{Type: blockText, Text: "go"}})
+			_, err := r.Run(context.Background(), sid, em, []session.ContentBlock{{Type: blockText, Text: "go"}})
 			if err != nil {
 				t.Fatalf("Run (%s): %v", sid, err)
 			}

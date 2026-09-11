@@ -3,15 +3,12 @@ package runtime //nolint:testpackage // internal package test
 import (
 	"context"
 	"encoding/json"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/coreexec"
-	"github.com/Djarvur/ass-guard-agent/internal/learning"
 	"github.com/Djarvur/ass-guard-agent/internal/openspec"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
 	"github.com/Djarvur/ass-guard-agent/kit/provider"
@@ -88,15 +85,17 @@ func TestAskWiring_ReplyRouting(t *testing.T) { //nolint:gocyclo,cyclop,funlen /
 
 	em := &noopEmitter{}
 
-	stop1, err := acpRun(context.Background(), r, "sess-ask-w1", em,
-		[]acp.ContentBlock{{Type: blockText, Text: "I need to add a cache — ask me which library first"}})
+	stop1, err := r.Run(context.Background(), "sess-ask-w1", em,
+		[]session.ContentBlock{{Type: blockText, Text: "I need to add a cache — ask me which library first"}})
 	if err != nil {
 		t.Fatalf("Run 1: %v", err)
 	}
 
-	if stop1 != stopEndTurn {
-		t.Fatalf("Run 1 stop = %q; want end_turn (the ask marker is internal; "+
-			"the suspended turn maps to a completed turn)", stop1)
+	// 25-08 kit-native retarget: r.Run returns the RAW kit stop marker —
+	// the ask-suspended turn reports stopAskACP; the end_turn mapping is
+	// ADAPTER behavior (pinned by the moved acpserve wire batteries).
+	if stop1 != stopAskACP {
+		t.Fatalf("Run 1 stop = %q; want the raw ask marker (the suspended turn)", stop1)
 	}
 
 	sess := r.sessions["sess-ask-w1"]
@@ -133,8 +132,8 @@ func TestAskWiring_ReplyRouting(t *testing.T) { //nolint:gocyclo,cyclop,funlen /
 	}
 
 	// The operator's reply: an ordinary session/prompt carrying the answer text.
-	stop2, err := acpRun(context.Background(), r, "sess-ask-w1", &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: "ristretto, please"}})
+	stop2, err := r.Run(context.Background(), "sess-ask-w1", &noopEmitter{},
+		[]session.ContentBlock{{Type: blockText, Text: "ristretto, please"}})
 	if err != nil {
 		t.Fatalf("Run 2 (reply): %v", err)
 	}
@@ -194,8 +193,8 @@ func TestAskWiring_ClientSurface(t *testing.T) {
 
 	em := &noopEmitter{}
 
-	_, err := acpRun(context.Background(), r, "sess-ask-w2", em,
-		[]acp.ContentBlock{{Type: blockText, Text: wiringAskCache}})
+	_, err := r.Run(context.Background(), "sess-ask-w2", em,
+		[]session.ContentBlock{{Type: blockText, Text: wiringAskCache}})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -229,8 +228,8 @@ func TestAskWiring_SurfaceMatchesRenderer(t *testing.T) {
 
 	em := &noopEmitter{}
 
-	_, err := acpRun(context.Background(), r, "sess-ask-w3", em,
-		[]acp.ContentBlock{{Type: blockText, Text: wiringAskMe}})
+	_, err := r.Run(context.Background(), "sess-ask-w3", em,
+		[]session.ContentBlock{{Type: blockText, Text: wiringAskMe}})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -280,8 +279,8 @@ func TestAskWiring_ConfigKnob(t *testing.T) {
 
 			r, _ := newAskWiringRunner(t, tc.val)
 
-			_, err := acpRun(context.Background(), r, "sess-ask-knob-"+tc.name, &noopEmitter{},
-				[]acp.ContentBlock{{Type: blockText, Text: wiringAskMe}})
+			_, err := r.Run(context.Background(), "sess-ask-knob-"+tc.name, &noopEmitter{},
+				[]session.ContentBlock{{Type: blockText, Text: wiringAskMe}})
 			if err != nil {
 				t.Fatalf("Run: %v", err)
 			}
@@ -310,8 +309,8 @@ func TestAskWiring_SchemaDisciplineAtWiring(t *testing.T) {
 
 	r, _ := newAskWiringRunner(t, time.Hour)
 
-	_, err := acpRun(context.Background(), r, "sess-ask-w4", &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: wiringAskMe}})
+	_, err := r.Run(context.Background(), "sess-ask-w4", &noopEmitter{},
+		[]session.ContentBlock{{Type: blockText, Text: wiringAskMe}})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -403,14 +402,16 @@ func TestAskWiring_ChainSurvivesAskTimerResume(t *testing.T) { //nolint:cyclop,f
 
 	const sid = "sess-ask-chain"
 
-	stop, err := acpRun(context.Background(), r, sid, &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: "/opsx:explore ask-chain"}})
+	stop, err := r.Run(context.Background(), sid, &noopEmitter{},
+		[]session.ContentBlock{{Type: blockText, Text: "/opsx:explore ask-chain"}})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
-	if stop != stopEndTurn {
-		t.Fatalf("Run stop = %q; want end_turn (the ask marker is internal; mapAskStop)", stop)
+	// 25-08 kit-native retarget: the RAW ask marker (the end_turn mapping is
+	// adapter behavior, pinned by the moved acpserve wire batteries).
+	if stop != stopAskACP {
+		t.Fatalf("Run stop = %q; want the raw ask marker", stop)
 	}
 
 	sess := r.sessions[sid]
@@ -545,19 +546,19 @@ func TestAskWiring_ResumeHoldsTurnMutex(t *testing.T) { //nolint:funlen // the f
 
 		<-release
 
-		return session.AskOutcome{Selected: acp.PermOptionAllowOnce}
+		return session.AskOutcome{Selected: permOptionAllowOnceKit}
 	})
 
 	const sid = "sess-cr02-mu"
 
-	stop, err := acpRun(context.Background(), r, sid, &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: "gated work"}})
+	stop, err := r.Run(context.Background(), sid, &noopEmitter{},
+		[]session.ContentBlock{{Type: blockText, Text: "gated work"}})
 	if err != nil {
 		t.Fatalf("Run 1: %v", err)
 	}
 
-	if stop != stopEndTurn {
-		t.Fatalf("stop = %q; want end_turn (the suspended turn maps to a completed turn)", stop)
+	if stop != stopAskACP {
+		t.Fatalf("stop = %q; want the raw ask marker (the suspended turn; 25-08 kit-native retarget)", stop)
 	}
 
 	<-dialogOpen // the dialog is open; the answer has not arrived
@@ -612,8 +613,8 @@ func TestAskWiring_TimerResumeHoldsTurnMutex(t *testing.T) {
 
 	const sid = "sess-cr02-timer"
 
-	_, err := acpRun(context.Background(), r, sid, &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: "I need to add a cache — ask me which library first"}})
+	_, err := r.Run(context.Background(), sid, &noopEmitter{},
+		[]session.ContentBlock{{Type: blockText, Text: "I need to add a cache — ask me which library first"}})
 	if err != nil {
 		t.Fatalf("Run 1: %v", err)
 	}
@@ -687,7 +688,7 @@ func TestAskWiring_ChainSurvivesPermissionDialogResume(t *testing.T) { //nolint:
 
 		<-release
 
-		return session.AskOutcome{Selected: acp.PermOptionAllowOnce}
+		return session.AskOutcome{Selected: permOptionAllowOnceKit}
 	})
 
 	// The seeded explore→propose→apply chain (the flagship shape).
@@ -708,14 +709,14 @@ func TestAskWiring_ChainSurvivesPermissionDialogResume(t *testing.T) { //nolint:
 
 	const sid = "sess-cr05-chain"
 
-	stop, err := acpRun(context.Background(), r, sid, &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: "/opsx:explore ask-chain"}})
+	stop, err := r.Run(context.Background(), sid, &noopEmitter{},
+		[]session.ContentBlock{{Type: blockText, Text: "/opsx:explore ask-chain"}})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
-	if stop != stopEndTurn {
-		t.Fatalf("Run stop = %q; want end_turn (the suspension maps to a completed turn)", stop)
+	if stop != stopAskACP {
+		t.Fatalf("Run stop = %q; want the raw ask marker (the suspension; 25-08 kit-native retarget)", stop)
 	}
 
 	<-dialogOpen // the gated dialog is open; the chain must be parked behind it
@@ -809,8 +810,8 @@ func TestAskPark_CancelAndCloseDrainParkedChains(t *testing.T) { //nolint:funlen
 
 		const sid = "sess-park-cancel"
 
-		_, err := acpRun(context.Background(), r, sid, &noopEmitter{},
-			[]acp.ContentBlock{{Type: blockText, Text: wiringAskMe}})
+		_, err := r.Run(context.Background(), sid, &noopEmitter{},
+			[]session.ContentBlock{{Type: blockText, Text: wiringAskMe}})
 		if err != nil {
 			t.Fatalf("Run: %v", err)
 		}
@@ -858,8 +859,8 @@ func TestAskPark_CancelAndCloseDrainParkedChains(t *testing.T) { //nolint:funlen
 
 		const sid = "sess-park-closeall"
 
-		_, err := acpRun(context.Background(), r, sid, &noopEmitter{},
-			[]acp.ContentBlock{{Type: blockText, Text: wiringAskMe}})
+		_, err := r.Run(context.Background(), sid, &noopEmitter{},
+			[]session.ContentBlock{{Type: blockText, Text: wiringAskMe}})
 		if err != nil {
 			t.Fatalf("Run: %v", err)
 		}
@@ -947,14 +948,14 @@ func TestAskPark_ReplyDuringParkResumesAndQueuesInjection(t *testing.T) { //noli
 
 	const sid = "sess-park-reply"
 
-	stop1, err := acpRun(context.Background(), r, sid, &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: "/opsx:explore park-subj"}})
+	stop1, err := r.Run(context.Background(), sid, &noopEmitter{},
+		[]session.ContentBlock{{Type: blockText, Text: "/opsx:explore park-subj"}})
 	if err != nil {
 		t.Fatalf("Run 1: %v", err)
 	}
 
-	if stop1 != stopEndTurn {
-		t.Fatalf("Run 1 stop = %q; want end_turn (the suspension maps to a completed turn)", stop1)
+	if stop1 != stopAskACP {
+		t.Fatalf("Run 1 stop = %q; want the raw ask marker (the suspension; 25-08 kit-native retarget)", stop1)
 	}
 
 	// The chain is parked; the ask is pending.
@@ -969,8 +970,8 @@ func TestAskPark_ReplyDuringParkResumesAndQueuesInjection(t *testing.T) { //noli
 	}
 
 	// The operator's reply — an ordinary session/prompt.
-	stop2, err := acpRun(context.Background(), r, sid, &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: "ristretto, please"}})
+	stop2, err := r.Run(context.Background(), sid, &noopEmitter{},
+		[]session.ContentBlock{{Type: blockText, Text: "ristretto, please"}})
 	if err != nil {
 		t.Fatalf("Run 2 (reply): %v", err)
 	}
@@ -1087,21 +1088,21 @@ func TestAskWiring_ElicitationQueueRoundTrip(t *testing.T) { //nolint:funlen,cyc
 		<-release
 
 		return session.AskOutcome{
-			Elicit:  acp.ElicitationActionAccept,
+			Elicit:  session.ElicitAccept,
 			Content: map[string]json.RawMessage{"q1": json.RawMessage(`"ristretto"`)},
 		}
 	})
 
 	em := &noopEmitter{}
 
-	stop1, err := acpRun(context.Background(), r, "sess-ask-elicit", em,
-		[]acp.ContentBlock{{Type: blockText, Text: wiringAskMe}})
+	stop1, err := r.Run(context.Background(), "sess-ask-elicit", em,
+		[]session.ContentBlock{{Type: blockText, Text: wiringAskMe}})
 	if err != nil {
 		t.Fatalf("Run 1: %v", err)
 	}
 
-	if stop1 != stopEndTurn {
-		t.Fatalf("Run 1 stop = %q; want end_turn (the suspension maps to a completed turn)", stop1)
+	if stop1 != stopAskACP {
+		t.Fatalf("Run 1 stop = %q; want the raw ask marker (the suspension; 25-08 kit-native retarget)", stop1)
 	}
 
 	sess := r.sessions["sess-ask-elicit"]
@@ -1228,16 +1229,15 @@ func TestAskWiring_EngineAskConversion(t *testing.T) { //nolint:funlen // one ba
 
 	situation := "text:wiring-engine-situation"
 
-	newRig := func(t *testing.T) (*Runner, *session.Session, *learning.Store) {
+	// 25-08 kit-native rework: the Learned PORT fake (the real store's own
+	// semantics live in internal/learning's suite; this battery pins the
+	// accept-writes / decline-doesn't port contract).
+	newRig := func(t *testing.T) (*Runner, *session.Session, *fakeLearned) {
 		t.Helper()
 
-		st, lerr := learning.Open(filepath.Join(t.TempDir(), "learned.yaml"))
-		if lerr != nil {
-			t.Fatalf("learning open: %v", lerr)
-		}
+		st := newFakeLearned()
 
-		// 25-05: the Learned port (twin adapter over the same store).
-		r := &Runner{bus: event.NewBus(), learned: testLearned{st}}
+		r := &Runner{bus: event.NewBus(), learned: st}
 
 		sess := &session.Session{SessionID: "sess-engine-w"}
 		sess.SetPermissionGate(session.GateDeps{Queue: session.NewAskQueue()})
@@ -1251,7 +1251,7 @@ func TestAskWiring_EngineAskConversion(t *testing.T) { //nolint:funlen // one ba
 		r, sess, st := newRig(t)
 		r.SetAskFire(func(_ context.Context, _ *session.AskEntry) session.AskOutcome {
 			return session.AskOutcome{
-				Elicit:  acp.ElicitationActionAccept,
+				Elicit:  session.ElicitAccept,
 				Content: map[string]json.RawMessage{"q1": json.RawMessage(`"proceed to propose"`)},
 			}
 		})
@@ -1265,9 +1265,8 @@ func TestAskWiring_EngineAskConversion(t *testing.T) { //nolint:funlen // one ba
 			return ok
 		})
 
-		e, _ := st.Lookup(situation)
-		if e.Answer != "proceed to propose" {
-			t.Errorf("stored answer = %q; want the structured seam's single-field value", e.Answer)
+		if ans, _ := st.Lookup(situation); ans != "proceed to propose" {
+			t.Errorf("stored answer = %q; want the structured seam's single-field value", ans)
 		}
 	})
 
@@ -1276,7 +1275,7 @@ func TestAskWiring_EngineAskConversion(t *testing.T) { //nolint:funlen // one ba
 
 		r, sess, st := newRig(t)
 		r.SetAskFire(func(_ context.Context, _ *session.AskEntry) session.AskOutcome {
-			return session.AskOutcome{Elicit: acp.ElicitationActionDecline}
+			return session.AskOutcome{Elicit: session.ElicitDecline}
 		})
 
 		chunks := r.bus.Subscribe("AgentMessageChunk", event.BufAgentMessageChunk)

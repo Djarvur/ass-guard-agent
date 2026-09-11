@@ -9,7 +9,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/Djarvur/ass-guard-agent/internal/ecosys"
 	"github.com/Djarvur/ass-guard-agent/internal/providerfactory"
 	"github.com/Djarvur/ass-guard-agent/kit/session"
 )
@@ -372,7 +371,7 @@ func TestDispatchModel_LiveAgentLookup(t *testing.T) {
 
 	// 25-06: the late arrival plants through the twin catalog (the old r.reg
 	// poke) and the chain rebuild makes it live.
-	testCatalogOf(t, r).plantAgent(&ecosys.Agent{
+	testCatalogOf(t, r).plantAgent(session.AgentDef{
 		Name: "late-agent", Description: "arrived late", Prompt: "do the late thing",
 	})
 	r.rebuildCommandChain()

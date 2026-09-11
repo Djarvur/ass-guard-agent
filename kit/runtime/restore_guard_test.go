@@ -11,11 +11,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/kit/checkpoint"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
 	"github.com/Djarvur/ass-guard-agent/kit/profile"
 	"github.com/Djarvur/ass-guard-agent/kit/provider"
+	"github.com/Djarvur/ass-guard-agent/kit/session"
 )
 
 // --- 23-04 Task 1: Runner-level store + restore guard + session-start sweep ---
@@ -52,8 +52,8 @@ func TestRestoreGuardRefusalMatrix(t *testing.T) { //nolint:funlen // matrix sce
 	go func() {
 		defer close(turnDone)
 
-		_, _ = acpRun(context.Background(), r, sid, &noopEmitter{},
-			[]acp.ContentBlock{{Type: blockText, Text: "long turn"}})
+		_, _ = r.Run(context.Background(), sid, &noopEmitter{},
+			[]session.ContentBlock{{Type: blockText, Text: "long turn"}})
 	}()
 
 	<-prov.entered // the turn holds the mutex + turnActive
@@ -123,8 +123,8 @@ func TestRestoreGuardCrossSessionMatrix(t *testing.T) { //nolint:funlen // matri
 	go func() {
 		defer close(turnDone)
 
-		_, _ = acpRun(context.Background(), r, sidA, &noopEmitter{},
-			[]acp.ContentBlock{{Type: blockText, Text: "session A long turn"}})
+		_, _ = r.Run(context.Background(), sidA, &noopEmitter{},
+			[]session.ContentBlock{{Type: blockText, Text: "session A long turn"}})
 	}()
 
 	<-prov.entered // A's turn holds A's turn mutex + A's turnActive
@@ -262,8 +262,8 @@ func TestRunnerStorePromotionDegradation(t *testing.T) {
 	const sid = "sess-degraded"
 
 	// The session runs a FULL ordinary turn.
-	stop, err := acpRun(context.Background(), r, sid, &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: "still works"}})
+	stop, err := r.Run(context.Background(), sid, &noopEmitter{},
+		[]session.ContentBlock{{Type: blockText, Text: "still works"}})
 	if err != nil || stop != stopEndTurn {
 		t.Fatalf("degraded Run = (%q,%v); want (end_turn, nil)", stop, err)
 	}
@@ -534,8 +534,8 @@ func runUndoPrompt(t *testing.T, r *Runner, sessionID string) []commandFrame {
 	undoDone := make(chan undoResult, 1)
 
 	go func() {
-		stop, err := acpRun(context.Background(), r, sessionID, emit,
-			[]acp.ContentBlock{{Type: blockText, Text: "/undo"}})
+		stop, err := r.Run(context.Background(), sessionID, emit,
+			[]session.ContentBlock{{Type: blockText, Text: "/undo"}})
 		undoDone <- undoResult{stop, err}
 	}()
 
@@ -570,8 +570,8 @@ func startBlockedTurn(t *testing.T, r *Runner, sessionID, text string, entered <
 	turnDone := make(chan blockedTurnResult, 1)
 
 	go func() {
-		stop, err := acpRun(context.Background(), r, sessionID, &noopEmitter{},
-			[]acp.ContentBlock{{Type: blockText, Text: text}})
+		stop, err := r.Run(context.Background(), sessionID, &noopEmitter{},
+			[]session.ContentBlock{{Type: blockText, Text: text}})
 		if err != nil {
 			t.Errorf("%s turn Run err: %v", sessionID, err)
 		}

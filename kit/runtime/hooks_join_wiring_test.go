@@ -10,7 +10,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
 	"github.com/Djarvur/ass-guard-agent/kit/provider"
 	"github.com/Djarvur/ass-guard-agent/kit/session"
@@ -116,7 +115,15 @@ func TestHookJoin_ProjectDenyThroughComposition(t *testing.T) { //nolint:paralle
 		cmdText = "echo " + marker
 	)
 
-	r, _ := newHookJoinRunner(t, func(dir string) { plantProjectDenySettings(t, dir) },
+	// 25-08 kit-native rework: the deny verdict rides the fake catalog's
+	// canned Hooks (same verdict + reason the planted settings tree produced
+	// through the real runner — the JOIN is the kit subject; the settings
+	// discovery + script execution are internal/ecosys's, the real adapter
+	// composition acpserve's).
+	denyHooks := &fakeHooks{}
+	denyHooks.setVerdict("Bash", session.HookVerdictDeny, hookJoinDenyReason)
+
+	r, _ := newHookJoinRunner(t, nil,
 		scriptedResp{toolCalls: []provider.ToolCall{{
 			ID: callID, Name: "Bash",
 			Input: json.RawMessage(`{"command":"` + cmdText + `","description":"deny me"}`),
@@ -124,10 +131,14 @@ func TestHookJoin_ProjectDenyThroughComposition(t *testing.T) { //nolint:paralle
 		scriptedResp{text: "finished"},
 	)
 
-	prompt := []acp.ContentBlock{{Type: blockText, Text: "run the command"}}
+	// hooks armed on the catalog after the runner exists (the fake's canned
+	// verdicts — the kit subject is the JOIN, not the settings discovery)
+	testCatalogOf(t, r).setHooks(denyHooks)
+
+	prompt := []session.ContentBlock{{Type: blockText, Text: "run the command"}}
 
 	//nolint:contextcheck // test-scoped background ctx
-	if _, err := acpRun(context.Background(), r, sessID, &noopEmitter{}, prompt); err != nil {
+	if _, err := r.Run(context.Background(), sessID, &noopEmitter{}, prompt); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 

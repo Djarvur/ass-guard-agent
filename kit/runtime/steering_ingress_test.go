@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
 	"github.com/Djarvur/ass-guard-agent/kit/profile"
 	"github.com/Djarvur/ass-guard-agent/kit/provider"
@@ -92,8 +91,8 @@ func TestSteerIngressMidTurnPreMutex(t *testing.T) { //nolint:funlen // comprehe
 	go func() {
 		defer close(turnDone)
 
-		stop, err := acpRun(context.Background(), r, sid, &noopEmitter{},
-			[]acp.ContentBlock{{Type: blockText, Text: "long task"}})
+		stop, err := r.Run(context.Background(), sid, &noopEmitter{},
+			[]session.ContentBlock{{Type: blockText, Text: "long task"}})
 		if err != nil || stop != stopEndTurn {
 			t.Errorf("turn Run = (%q,%v); want end_turn", stop, err)
 		}
@@ -113,8 +112,8 @@ func TestSteerIngressMidTurnPreMutex(t *testing.T) { //nolint:funlen // comprehe
 	res := make(chan steerResult, 1)
 
 	go func() {
-		stop, err := acpRun(context.Background(), r, sid, emit,
-			[]acp.ContentBlock{{Type: blockText, Text: "focus on tests"}})
+		stop, err := r.Run(context.Background(), sid, emit,
+			[]session.ContentBlock{{Type: blockText, Text: "focus on tests"}})
 		res <- steerResult{stop, err}
 	}()
 
@@ -182,8 +181,8 @@ func TestSteerIngressNoActiveTurnOrdinary(t *testing.T) {
 	const sid = "sess-steer-ord"
 	close(prov.release) // no blocking needed
 
-	stop, err := acpRun(context.Background(), r, sid, &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: "plain question"}})
+	stop, err := r.Run(context.Background(), sid, &noopEmitter{},
+		[]session.ContentBlock{{Type: blockText, Text: "plain question"}})
 	if err != nil || stop != stopEndTurn {
 		t.Fatalf("Run = (%q,%v); want (end_turn, nil)", stop, err)
 	}
@@ -223,8 +222,8 @@ func TestSteerIngressEngineChain(t *testing.T) {
 	go func() {
 		defer close(done)
 
-		stop, err := acpRun(context.Background(), r, sid, emit,
-			[]acp.ContentBlock{{Type: blockText, Text: "adjust the plan"}})
+		stop, err := r.Run(context.Background(), sid, emit,
+			[]session.ContentBlock{{Type: blockText, Text: "adjust the plan"}})
 		if err != nil || stop != stopEndTurn {
 			t.Errorf("chain-steered Run = (%q,%v); want (end_turn, nil)", stop, err)
 		}
@@ -271,8 +270,8 @@ func TestSteerIngressPendingAskOutranks(t *testing.T) {
 		Questions: []session.AskQuestion{{Header: "h", Question: "which?", Options: []session.AskOption{{Label: "a"}}}},
 	})
 
-	stop, err := acpRun(context.Background(), r, sid, &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: "option a please"}})
+	stop, err := r.Run(context.Background(), sid, &noopEmitter{},
+		[]session.ContentBlock{{Type: blockText, Text: "option a please"}})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -315,8 +314,8 @@ func TestSteerIngressClassBNotSteered(t *testing.T) {
 	go func() {
 		defer close(turnDone)
 
-		_, _ = acpRun(context.Background(), r, sid, &noopEmitter{},
-			[]acp.ContentBlock{{Type: blockText, Text: "long task"}})
+		_, _ = r.Run(context.Background(), sid, &noopEmitter{},
+			[]session.ContentBlock{{Type: blockText, Text: "long task"}})
 	}()
 
 	<-prov.entered
@@ -326,8 +325,8 @@ func TestSteerIngressClassBNotSteered(t *testing.T) {
 	go func() {
 		defer close(cmdDone)
 
-		_, _ = acpRun(context.Background(), r, sid, &noopEmitter{},
-			[]acp.ContentBlock{{Type: blockText, Text: "/opsx:explore fix-it"}})
+		_, _ = r.Run(context.Background(), sid, &noopEmitter{},
+			[]session.ContentBlock{{Type: blockText, Text: "/opsx:explore fix-it"}})
 	}()
 
 	// The class-B input did NOT return via the steering path (it queues
@@ -388,8 +387,8 @@ func TestParkedAskCancelGrammar(t *testing.T) {
 
 		r, sess, sid := park(t)
 
-		stop, err := acpRun(context.Background(), r, sid, &noopEmitter{},
-			[]acp.ContentBlock{{Type: blockText, Text: "Cancel Ask"}})
+		stop, err := r.Run(context.Background(), sid, &noopEmitter{},
+			[]session.ContentBlock{{Type: blockText, Text: "Cancel Ask"}})
 		if err != nil {
 			t.Fatalf("Run: %v", err)
 		}
@@ -433,8 +432,8 @@ func TestParkedAskCancelGrammar(t *testing.T) {
 
 		r, sess, sid := park(t)
 
-		_, err := acpRun(context.Background(), r, sid, &noopEmitter{},
-			[]acp.ContentBlock{{Type: blockText, Text: "yes please go"}})
+		_, err := r.Run(context.Background(), sid, &noopEmitter{},
+			[]session.ContentBlock{{Type: blockText, Text: "yes please go"}})
 		if err != nil {
 			t.Fatalf("Run: %v", err)
 		}
@@ -449,8 +448,8 @@ func TestParkedAskCancelGrammar(t *testing.T) {
 
 		r, sess, sid := park(t)
 
-		_, err := acpRun(context.Background(), r, sid, &noopEmitter{},
-			[]acp.ContentBlock{{Type: blockText, Text: "cancel the deployment, answer yes"}})
+		_, err := r.Run(context.Background(), sid, &noopEmitter{},
+			[]session.ContentBlock{{Type: blockText, Text: "cancel the deployment, answer yes"}})
 		if err != nil {
 			t.Fatalf("Run: %v", err)
 		}
@@ -520,8 +519,8 @@ func TestCombinedSteerScenario(t *testing.T) { //nolint:funlen,maintidx // compr
 	turnDone := make(chan string, 1)
 
 	go func() {
-		stop, err := acpRun(context.Background(), r, sid, &noopEmitter{},
-			[]acp.ContentBlock{{Type: blockText, Text: "main task"}})
+		stop, err := r.Run(context.Background(), sid, &noopEmitter{},
+			[]session.ContentBlock{{Type: blockText, Text: "main task"}})
 		if err != nil {
 			t.Errorf("turn Run err: %v", err)
 		}
@@ -534,8 +533,8 @@ func TestCombinedSteerScenario(t *testing.T) { //nolint:funlen,maintidx // compr
 	// Leg 1 + leg 4 (two steering texts, mid-turn): both classify as
 	// steering and return promptly.
 	for _, text := range []string{"steer alpha", "steer beta"} {
-		st, err := acpRun(context.Background(), r, sid, &noopEmitter{},
-			[]acp.ContentBlock{{Type: blockText, Text: text}})
+		st, err := r.Run(context.Background(), sid, &noopEmitter{},
+			[]session.ContentBlock{{Type: blockText, Text: text}})
 		if err != nil || st != stopEndTurn {
 			t.Fatalf("steering Run %q = (%q,%v); want (end_turn, nil)", text, st, err)
 		}
@@ -585,7 +584,7 @@ func TestCombinedSteerScenario(t *testing.T) { //nolint:funlen,maintidx // compr
 	// turn completes. Nothing else is killed (nothing else runs).
 	emit := &noopEmitter{}
 
-	stop, err := acpRun(context.Background(), r, sid, emit, []acp.ContentBlock{{Type: blockText, Text: "cancel ask"}})
+	stop, err := r.Run(context.Background(), sid, emit, []session.ContentBlock{{Type: blockText, Text: "cancel ask"}})
 	if err != nil || stop != stopEndTurn {
 		t.Fatalf("cancel Run = (%q,%v); want (end_turn, nil)", stop, err)
 	}
@@ -633,8 +632,8 @@ func TestEngineChainSteered(t *testing.T) {
 	turnDone := make(chan string, 1)
 
 	go func() {
-		stop, err := acpRun(context.Background(), r, sid, &noopEmitter{},
-			[]acp.ContentBlock{{Type: blockText, Text: "chain task"}})
+		stop, err := r.Run(context.Background(), sid, &noopEmitter{},
+			[]session.ContentBlock{{Type: blockText, Text: "chain task"}})
 		if err != nil {
 			t.Errorf("chain Run err: %v", err)
 		}
@@ -649,8 +648,8 @@ func TestEngineChainSteered(t *testing.T) {
 		t.Fatal("chainCount == 0 while the chain turn is in flight (fixture broken)")
 	}
 
-	st, err := acpRun(context.Background(), r, sid, &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: "adjust mid-chain"}})
+	st, err := r.Run(context.Background(), sid, &noopEmitter{},
+		[]session.ContentBlock{{Type: blockText, Text: "adjust mid-chain"}})
 	if err != nil || st != stopEndTurn {
 		t.Fatalf("chain-steered Run = (%q,%v); want (end_turn, nil)", st, err)
 	}

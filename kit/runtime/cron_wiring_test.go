@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/sched"
 	"github.com/Djarvur/ass-guard-agent/kit/provider"
 	"github.com/Djarvur/ass-guard-agent/kit/session"
 	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
+	"github.com/Djarvur/ass-guard-agent/kit/event"
 )
 
 // The cron wiring battery (12-07 Task 2): queue-behind-active-turn, engine
@@ -244,8 +244,8 @@ func TestCronWiring_FireOnceCatchUp(t *testing.T) { //nolint:cyclop,funlen // fl
 	r1, _, store1r := newCronRunner(t, dir, scriptedResp{text: "caught up"})
 	store1r.SetNow(time.Now) // the store handle (the runner holds it as the Scheduler port)
 
-	_, rerr := acpRun(context.Background(), r1, "sess-cron-c1", &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: "hello"}})
+	_, rerr := r1.Run(context.Background(), "sess-cron-c1", &noopEmitter{},
+		[]session.ContentBlock{{Type: blockText, Text: "hello"}})
 	if rerr != nil {
 		t.Fatal(rerr)
 	}
@@ -282,8 +282,8 @@ func TestCronWiring_FireOnceCatchUp(t *testing.T) { //nolint:cyclop,funlen // fl
 	r2, _, store2 := newCronRunner(t, dir, scriptedResp{text: "plain"})
 	store2.SetNow(time.Now) // the store handle (the runner holds it as the Scheduler port)
 
-	_, rerr2 := acpRun(context.Background(), r2, "sess-cron-c2", &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: "hello again"}})
+	_, rerr2 := r2.Run(context.Background(), "sess-cron-c2", &noopEmitter{},
+		[]session.ContentBlock{{Type: blockText, Text: "hello again"}})
 	if rerr2 != nil {
 		t.Fatal(rerr2)
 	}
@@ -443,11 +443,13 @@ type recordingEmitter struct {
 	chunks []string
 }
 
-func (e *recordingEmitter) AgentMessageChunk(_, text string) error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+func (e *recordingEmitter) Emit(_ context.Context, ev event.Event) error {
+	if chunk, ok := ev.(event.AgentMessageChunk); ok {
+		e.mu.Lock()
+		defer e.mu.Unlock()
 
-	e.chunks = append(e.chunks, text)
+		e.chunks = append(e.chunks, chunk.Content)
+	}
 
 	return nil
 }
@@ -470,7 +472,7 @@ func TestCronWiring_ServerDrivenMirror(t *testing.T) {
 	r, _, store := newCronRunner(t, dir, scriptedResp{text: "scheduled work done"})
 
 	em := &recordingEmitter{}
-	r.emitFor = acpKitEmitterFactory(func(string) acp.ChunkEmitter { return em })
+	r.SetEmitter(func(string) Emitter { return em })
 
 	store.SetNow(func() time.Time { return time.Now().Add(-2 * time.Hour) })
 

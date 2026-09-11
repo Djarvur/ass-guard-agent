@@ -12,10 +12,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
 	"github.com/Djarvur/ass-guard-agent/kit/profile"
 	"github.com/Djarvur/ass-guard-agent/kit/provider"
+	"github.com/Djarvur/ass-guard-agent/kit/session"
 )
 
 // TestSessionUnavailableWhenTranscriptLocationsFail poisons both transcript
@@ -55,8 +55,8 @@ func TestSessionUnavailableWhenTranscriptLocationsFail(t *testing.T) {
 	}
 
 	// Run surfaces a typed error instead of the nil-deref panic.
-	_, rerr := acpRun(context.Background(), runner, "s-broken", nopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: "hi"}})
+	_, rerr := runner.Run(context.Background(), "s-broken", nopEmitter{},
+		[]session.ContentBlock{{Type: blockText, Text: "hi"}})
 	if rerr == nil {
 		t.Fatal("Run returned no error for an unconstructable session — the turn cannot run without a transcript")
 	}

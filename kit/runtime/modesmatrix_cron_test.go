@@ -240,6 +240,11 @@ func TestModesMatrixCronHooks(t *testing.T) { // HOME-pinned leg
 		scriptedResp{text: "automation hooks turn done"},
 	)
 
+	// 25-08 kit-native rework: the fixture script hook's marker line rides
+	// the fake catalog's hooks (same payload shape; script execution is
+	// internal/ecosys's subject — the JOIN is the kit subject).
+	testCatalogOf(t, r).setHooks(&markerFileHooks{dir: project})
+
 	fireMatrixAutomation(t, r, project, "sess-matrix-cron-h", "run the matrix automation hook turn")
 
 	deadline := time.Now().Add(5 * time.Second)

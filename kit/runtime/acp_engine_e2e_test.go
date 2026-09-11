@@ -5,14 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/acp"
-	"github.com/Djarvur/ass-guard-agent/internal/learning"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
 	"github.com/Djarvur/ass-guard-agent/kit/profile"
 
@@ -170,10 +167,16 @@ func (p *scriptedACPProvider) streamSawText(n int, needle string) bool {
 // noopEmitter collects chunks for assertion; never errors.
 type noopEmitter struct{ chunks []string }
 
-func (n *noopEmitter) AgentMessageChunk(_, text string) error {
-	n.chunks = append(n.chunks, text)
+func (n *noopEmitter) Emit(_ context.Context, ev event.Event) error {
+	if c, ok := ev.(event.AgentMessageChunk); ok {
+		n.record(c.Content)
+	}
 
 	return nil
+}
+
+func (n *noopEmitter) record(text string) {
+	n.chunks = append(n.chunks, text)
 }
 
 // fakeProfileACP returns a minimal profile the Projector accepts.
@@ -224,8 +227,8 @@ func TestEndToEnd_ZeroContinue(t *testing.T) {
 		scriptedResp{text: "the work is finished, no further handoff signal", finish: stopEndTurn},
 	)
 
-	stop, err := acpRun(context.Background(), r, "sess-e2e-1", &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: "implement the spec"}})
+	stop, err := r.Run(context.Background(), "sess-e2e-1", &noopEmitter{},
+		[]session.ContentBlock{{Type: blockText, Text: "implement the spec"}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
 	}
@@ -266,8 +269,8 @@ func TestEndToEnd_StructuralSafety(t *testing.T) {
 		scriptedResp{text: "the agent did something with no handoff signal at all", finish: stopEndTurn},
 	)
 
-	stop, err := acpRun(context.Background(), r, "sess-e2e-2", &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: "hi"}})
+	stop, err := r.Run(context.Background(), "sess-e2e-2", &noopEmitter{},
+		[]session.ContentBlock{{Type: blockText, Text: "hi"}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
 	}
@@ -300,7 +303,7 @@ func TestEndToEnd_ToolSignalContinue(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	stop, err := acpRun(ctx, r, "sess-e2e-3", &noopEmitter{}, []acp.ContentBlock{{Type: blockText, Text: "go"}})
+	stop, err := r.Run(ctx, "sess-e2e-3", &noopEmitter{}, []session.ContentBlock{{Type: blockText, Text: "go"}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
 	}
@@ -333,8 +336,8 @@ func TestEndToEnd_EngineDisabledBackwardCompat(t *testing.T) {
 		// engineEnabled stays false — no SetupEngine call.
 	}
 
-	stop, err := acpRun(context.Background(), r, "sess-noeng", &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: "hi"}})
+	stop, err := r.Run(context.Background(), "sess-noeng", &noopEmitter{},
+		[]session.ContentBlock{{Type: blockText, Text: "hi"}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
 	}
@@ -400,7 +403,7 @@ func TestCancelDrainsInjections(t *testing.T) { //nolint:paralleltest // timing-
 	ctx, cancel := context.WithCancel(context.Background())
 	emitter := &cancelAfterChunkEmitter{cancelAfter: 1, cancel: cancel}
 
-	stop, err := acpRun(ctx, r, "sess-cancel", emitter, []acp.ContentBlock{{Type: blockText, Text: "go"}})
+	stop, err := r.Run(ctx, "sess-cancel", emitter, []session.ContentBlock{{Type: blockText, Text: "go"}})
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
 	}
@@ -423,10 +426,12 @@ type cancelAfterChunkEmitter struct {
 	once        sync.Once
 }
 
-func (c *cancelAfterChunkEmitter) AgentMessageChunk(_, text string) error {
-	c.n++
-	if c.n >= c.cancelAfter {
-		c.once.Do(func() { c.cancel() })
+func (c *cancelAfterChunkEmitter) Emit(_ context.Context, ev event.Event) error {
+	if _, ok := ev.(event.AgentMessageChunk); ok {
+		c.n++
+		if c.n >= c.cancelAfter {
+			c.once.Do(func() { c.cancel() })
+		}
 	}
 
 	return nil
@@ -445,8 +450,8 @@ func TestE2E_Criterion1_ZeroContinueAndSafety(t *testing.T) {
 			scriptedResp{text: "final, no signal", finish: stopEndTurn},
 		)
 
-		stop, err := acpRun(context.Background(), r, "c1a", &noopEmitter{},
-			[]acp.ContentBlock{{Type: blockText, Text: "go"}})
+		stop, err := r.Run(context.Background(), "c1a", &noopEmitter{},
+			[]session.ContentBlock{{Type: blockText, Text: "go"}})
 		if err != nil || stop != stopEndTurn {
 			t.Fatalf("Run = (%q,%v)", stop, err)
 		}
@@ -461,8 +466,8 @@ func TestE2E_Criterion1_ZeroContinueAndSafety(t *testing.T) {
 			scriptedResp{text: "unmatched output", finish: stopEndTurn},
 		)
 
-		_, err := acpRun(context.Background(), r, "c1b", &noopEmitter{},
-			[]acp.ContentBlock{{Type: blockText, Text: "hi"}})
+		_, err := r.Run(context.Background(), "c1b", &noopEmitter{},
+			[]session.ContentBlock{{Type: blockText, Text: "hi"}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -476,28 +481,23 @@ func TestE2E_Criterion1_ZeroContinueAndSafety(t *testing.T) {
 // TestE2E_Criterion4_LearningAskOnce exercises the learning ask-once path
 // through the full wiring: an unmatched-launch situation routes to the learning
 // store; with no stored answer the engine emits an ask EngineDecision + the loop
-// breaks (the user must reply). After RecordCandidate + 3 Confirms the entry is
-// active + Lookup returns it.
+// breaks (the user must reply). 25-08 kit-native rework: the Learned PORT is
+// the kit subject — the fake store wires through the same EngineSetup field
+// and the port contract is asserted on it (wired + consulted + counts); the
+// REAL store's candidate/active confirm-threshold semantics keep their own
+// dedicated batteries in internal/learning/store_test.go
+// (TestStore_ConfirmBelowThresholdCandidate / TestStore_ConfirmThresholdActive
+// — the ledger's internal/learning rows), so no assertion is lost, only
+// re-homed to the subject that owns it.
 func TestE2E_Criterion4_LearningAskOnce(t *testing.T) {
 	t.Parallel()
-	r, prov, dir := newEngineRunner(t,
+	r, prov, _ := newEngineRunner(t,
 		scriptedResp{text: "unmatched launch situation: webfetch needed", finish: stopEndTurn},
 	)
-	// The seeded pattern table does NOT match this text, so Decide returns
-	// ActionNothing (not ask) — the learning ask path fires only when the engine
-	// routes an unmatched situation to the store, which v1 does via the
-	// dispatcher's Ask. Here we verify the store's confirm-threshold directly
-	// (the engine wiring calls Store.Lookup on ActionAsk).
-	// 25-05: the store arrives through the EngineSetup port — open it at the
-	// same path the production loader opens, inject it via the twin adapter;
-	// the assertions below keep hitting the concrete store unchanged.
-	store, serr := learning.Open(filepath.Join(dir, ".ass-guard", "learned.yaml"))
-	if serr != nil {
-		t.Fatalf("learning open: %v", serr)
-	}
+	learned := newFakeLearned()
 
 	setup := testEngineSetup(t)
-	setup.Learned = testLearned{store}
+	setup.Learned = learned
 
 	if err := r.SetupEngine(setup); err != nil {
 		t.Fatalf("SetupEngine: %v", err)
@@ -507,29 +507,23 @@ func TestE2E_Criterion4_LearningAskOnce(t *testing.T) {
 		t.Fatal("learning store not wired")
 	}
 
-	_ = store.RecordCandidate("sit-x", "fresh-context", "turn-1")
-	for i := range 2 { // 2 confirms ⇒ still candidate
-		_, err := store.Confirm("sit-x", "fresh-context", "turn-x")
-		if err != nil {
-			t.Fatalf("Confirm %d: %v", i, err)
-		}
+	// The port contract: recording a candidate surfaces through Lookup and
+	// EntryCount (what the engine ask path consults).
+	if err := learned.RecordCandidate("sit-x", "fresh-context", "turn-1"); err != nil {
+		t.Fatalf("RecordCandidate: %v", err)
 	}
 
-	if e, _ := store.Lookup("sit-x"); e.Status != "candidate" {
-		t.Errorf("after 2 confirms Status = %s; want candidate", e.Status)
-	}
-	// 3rd confirm flips to active.
-	_, err := store.Confirm("sit-x", "fresh-context", "turn-y")
-	if err != nil {
-		t.Fatal(err)
+	if ans, ok := learned.Lookup("sit-x"); !ok || ans != "fresh-context" {
+		t.Errorf("Lookup(sit-x) = (%q,%v); want the recorded answer", ans, ok)
 	}
 
-	if e, ok := store.Lookup("sit-x"); !ok || e.Status != "active" {
-		t.Errorf("after 3 confirms Lookup = %+v ok=%v; want active", e, ok)
+	if got := learned.EntryCount(); got != 1 {
+		t.Errorf("EntryCount = %d; want 1", got)
 	}
+
 	// Sanity: the scenario still completes structurally safely (no ask loop).
-	stop, err := acpRun(context.Background(), r, "c4", &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: "go"}})
+	stop, err := r.Run(context.Background(), "c4", &noopEmitter{},
+		[]session.ContentBlock{{Type: blockText, Text: "go"}})
 	if err != nil || stop != stopEndTurn {
 		t.Fatalf("Run = (%q,%v)", stop, err)
 	}

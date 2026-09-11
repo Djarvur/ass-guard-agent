@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/modesmatrix"
 	"github.com/Djarvur/ass-guard-agent/kit/provider"
 	"github.com/Djarvur/ass-guard-agent/kit/session"
@@ -120,8 +119,14 @@ func wakeMatrixDrive(
 
 	r, prov := newMatrixRunner(t, project, script...)
 
-	blocks := []acp.ContentBlock{{Type: blockText, Text: typedPrompt}}
-	if _, err := acpRun(context.Background(), r, sessID, &noopEmitter{}, blocks); err != nil {
+	// 25-08 kit-native rework: the fixture script hook's marker line rides
+	// the fake catalog's hooks (same payload shape, armed for every cell —
+	// the fixture's hooks.json applied to every mounted cell under the real
+	// discovery too; script execution stays internal/ecosys's subject).
+	testCatalogOf(t, r).setHooks(&markerFileHooks{dir: project})
+
+	blocks := []session.ContentBlock{{Type: blockText, Text: typedPrompt}}
+	if _, err := r.Run(context.Background(), sessID, &noopEmitter{}, blocks); err != nil {
 		t.Fatalf("Run err: %v", err)
 	}
 

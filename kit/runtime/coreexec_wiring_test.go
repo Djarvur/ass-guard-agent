@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
 	"github.com/Djarvur/ass-guard-agent/kit/profile"
 	"github.com/Djarvur/ass-guard-agent/kit/provider"
@@ -43,9 +42,9 @@ func TestCoreExec_BashThroughSession(t *testing.T) { //nolint:gocognit,gocyclo,c
 		scriptedResp{text: wiringFinalText},
 	)
 
-	blocksRun := []acp.ContentBlock{{Type: blockText, Text: "run echo"}}
+	blocksRun := []session.ContentBlock{{Type: blockText, Text: "run echo"}}
 
-	_, err := acpRun(context.Background(), r, "sess-coreexec-1", &noopEmitter{}, blocksRun)
+	_, err := r.Run(context.Background(), "sess-coreexec-1", &noopEmitter{}, blocksRun)
 	if err != nil {
 		t.Fatalf("Run err: %v", err)
 	}
@@ -209,9 +208,9 @@ func TestCoreExec_BashBatchSerializes(t *testing.T) {
 		scriptedResp{text: wiringFinalText},
 	)
 
-	blocksBoth := []acp.ContentBlock{{Type: blockText, Text: "run both"}}
+	blocksBoth := []session.ContentBlock{{Type: blockText, Text: "run both"}}
 
-	_, err := acpRun(context.Background(), r, "sess-coreexec-2", &noopEmitter{}, blocksBoth)
+	_, err := r.Run(context.Background(), "sess-coreexec-2", &noopEmitter{}, blocksBoth)
 	if err != nil {
 		t.Fatalf("Run err: %v", err)
 	}
@@ -273,9 +272,9 @@ func TestCoreExec_FileTodoMixedBatch(t *testing.T) { //nolint:gocognit,gocyclo,c
 		scriptedResp{text: wiringFinalText},
 	)
 
-	blocksMix := []acp.ContentBlock{{Type: blockText, Text: "mix them"}}
+	blocksMix := []session.ContentBlock{{Type: blockText, Text: "mix them"}}
 
-	_, err = acpRun(context.Background(), r, "sess-coreexec-3", &noopEmitter{}, blocksMix)
+	_, err = r.Run(context.Background(), "sess-coreexec-3", &noopEmitter{}, blocksMix)
 	if err != nil {
 		t.Fatalf("Run err: %v", err)
 	}
@@ -396,9 +395,9 @@ func TestCoreExec_ReadOnlyProjection(t *testing.T) { //nolint:cyclop,funlen // f
 		scriptedResp{text: wiringFinalText},
 	)
 
-	blocksProj := []acp.ContentBlock{{Type: blockText, Text: "read then list"}}
+	blocksProj := []session.ContentBlock{{Type: blockText, Text: "read then list"}}
 
-	_, err = acpRun(context.Background(), r, "sess-coreexec-4", &noopEmitter{}, blocksProj)
+	_, err = r.Run(context.Background(), "sess-coreexec-4", &noopEmitter{}, blocksProj)
 	if err != nil {
 		t.Fatalf("Run err: %v", err)
 	}
@@ -483,8 +482,8 @@ func TestSessionFor_ComposesRuntimeWorkDir(t *testing.T) {
 		Text: "Environment\n- Primary working directory: " + capturedCwd + "\n",
 	}}
 
-	_, err := acpRun(context.Background(), r, "sess-cwd-1", &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: "hi"}})
+	_, err := r.Run(context.Background(), "sess-cwd-1", &noopEmitter{},
+		[]session.ContentBlock{{Type: blockText, Text: "hi"}})
 	if err != nil {
 		t.Fatalf("Run err: %v", err)
 	}
@@ -526,8 +525,8 @@ func TestSessionFor_ComposesRuntimeWorkDir(t *testing.T) {
 func TestRun_DoesNotLeakChunkForwarder(t *testing.T) { //nolint:paralleltest // bus is runner-global
 	r, _ := newExpansionRunner(t, true, scriptedResp{text: "ok"})
 
-	_, err := acpRun(context.Background(), r, "sess-leak", &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: "hi"}})
+	_, err := r.Run(context.Background(), "sess-leak", &noopEmitter{},
+		[]session.ContentBlock{{Type: blockText, Text: "hi"}})
 	if err != nil {
 		t.Fatalf("Run err: %v", err)
 	}

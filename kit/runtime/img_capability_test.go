@@ -17,7 +17,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
 	"github.com/Djarvur/ass-guard-agent/kit/profile"
 	"github.com/Djarvur/ass-guard-agent/kit/provider"
@@ -108,7 +107,7 @@ func (p *noImageProvider) messagesWithImages() int {
 }
 
 // pngPromptBlocks builds the acp prompt: text + a small base64 PNG image.
-func pngPromptBlocks(t *testing.T) []acp.ContentBlock {
+func pngPromptBlocks(t *testing.T) []session.ContentBlock {
 	t.Helper()
 
 	var buf bytes.Buffer
@@ -121,11 +120,11 @@ func pngPromptBlocks(t *testing.T) []acp.ContentBlock {
 		t.Fatalf("encode png: %v", werr)
 	}
 
-	return []acp.ContentBlock{
+	return []session.ContentBlock{
 		{Type: blockText, Text: "describe the screenshot"},
 		{
 			Type: blockImage, Data: base64.StdEncoding.EncodeToString(buf.Bytes()),
-			MimeType: imgPNGMedia,
+			MediaType: imgPNGMedia,
 		},
 	}
 }
@@ -166,7 +165,7 @@ func TestImageCapability_D11DropAndNote(t *testing.T) { //nolint:paralleltest //
 
 	r := newCapabilityRunner(t, func(_ provider.RequestCapturer) provider.Provider { return prov })
 
-	stop, err := acpRun(context.Background(), r, imgSessionID, &noopEmitter{}, pngPromptBlocks(t))
+	stop, err := r.Run(context.Background(), imgSessionID, &noopEmitter{}, pngPromptBlocks(t))
 	if err != nil {
 		t.Fatalf("Run err = %v (the turn must complete normally after the drop)", err)
 	}
@@ -275,7 +274,7 @@ func TestImageCapability_ImageReachesOutgoingRequest(t *testing.T) { //nolint:pa
 		)
 	})
 
-	stop, err := acpRun(context.Background(), r, imgSessionID, &noopEmitter{}, pngPromptBlocks(t))
+	stop, err := r.Run(context.Background(), imgSessionID, &noopEmitter{}, pngPromptBlocks(t))
 	if err != nil {
 		t.Fatalf("Run err = %v", err)
 	}
@@ -458,13 +457,13 @@ func TestImageCapability_ImageOnlyDropKeepsNonEmptyBody(t *testing.T) { //nolint
 	r := newCapabilityRunner(t, func(_ provider.RequestCapturer) provider.Provider { return prov })
 
 	// Image-ONLY prompt: no text block accompanies the payload.
-	prompt := []acp.ContentBlock{{
+	prompt := []session.ContentBlock{{
 		Type:     blockImage,
 		Data:     base64.StdEncoding.EncodeToString(encodePNG(t, 8, 8)),
-		MimeType: imgPNGMedia,
+		MediaType: imgPNGMedia,
 	}}
 
-	stop, err := acpRun(context.Background(), r, imgSessionID, &noopEmitter{}, prompt)
+	stop, err := r.Run(context.Background(), imgSessionID, &noopEmitter{}, prompt)
 	if err != nil {
 		t.Fatalf("Run err = %v (an image-only drop must complete normally)", err)
 	}
@@ -497,9 +496,9 @@ func TestImageIngress_ImageOnlyDropKeepsTextBearingBlock(t *testing.T) {
 
 	r, sess, _ := newImageRunner(t)
 
-	out := r.ingressImages(sess, acpToSessionBlocks([]acp.ContentBlock{
-		{Type: imgTypeImage, Data: "!!!not-base64!!!", MimeType: imgPNGMedia},
-	}))
+	out := r.ingressImages(sess, []session.ContentBlock{
+		{Type: imgTypeImage, Data: "!!!not-base64!!!", MediaType: imgPNGMedia},
+	})
 
 	if len(out) != 1 || out[0].Type != blockText || out[0].Text == "" {
 		t.Fatalf("ingress output = %+v; want exactly one NON-EMPTY text block (the in-band placeholder)", out)

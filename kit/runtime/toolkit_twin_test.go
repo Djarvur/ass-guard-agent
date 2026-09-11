@@ -24,7 +24,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/coreexec"
 	"github.com/Djarvur/ass-guard-agent/internal/perm"
 	"github.com/Djarvur/ass-guard-agent/internal/sandbox"
@@ -419,8 +418,8 @@ func nilToolkitStubsExecution(t *testing.T) {
 
 	r.SetCatalog(newTestCatalog(r.workDirOrDefault()))
 
-	if _, err := acpRun(context.Background(), r, "sess-niltoolkit", &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: "run echo"}}); err != nil {
+	if _, err := r.Run(context.Background(), "sess-niltoolkit", &noopEmitter{},
+		[]session.ContentBlock{{Type: blockText, Text: "run echo"}}); err != nil {
 		t.Fatalf("Run err: %v", err)
 	}
 
