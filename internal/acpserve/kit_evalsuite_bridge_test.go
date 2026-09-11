@@ -1,4 +1,11 @@
-package runtime //nolint:testpackage // internal package test
+package acpserve //nolint:testpackage // internal package test
+
+// 25-08 subject-split move (kit/runtime -> internal/acpserve): the evalsuite
+// bridge drives the REAL app composition (providerfactory's live model, the
+// real openspec binary) through evalsuite.RunSuite — the composition root is
+// the subject, so per the Phase-15 D-02 rule the bridge lives at its
+// subject's home. The seam construction retargets to the moved
+// newOpsxRunnerAt; every assertion is byte-identical.
 
 import (
 	"context"
@@ -48,7 +55,9 @@ func TestEvalSuite_Flagship_Gated(t *testing.T) { //nolint:paralleltest // gated
 		func(_ evalsuite.GateTB, scratchDir string) (evalharness.RunnerSeam, func() error) {
 			// The driver runs synchronously inside RunSuite — the captured t
 			// is the live test context (construction failures FAIL the run).
-			return opsxRunnerSeam{r: newOpsxRunnerAt(t, scratchDir)}, func() error { return nil }
+			runner, _ := newOpsxRunnerAt(t, scratchDir)
+
+			return opsxRunnerSeam{r: runner, scratch: scratchDir}, func() error { return nil }
 		},
 		evalArtifactDir())
 	if err != nil {
@@ -82,7 +91,9 @@ func TestEvalSuite_Flagship_Deep(t *testing.T) { //nolint:paralleltest // gated 
 
 	res, err := evalsuite.RunSuite(context.Background(), t, scenarios, 3,
 		func(_ evalsuite.GateTB, scratchDir string) (evalharness.RunnerSeam, func() error) {
-			return opsxRunnerSeam{r: newOpsxRunnerAt(t, scratchDir)}, func() error { return nil }
+			runner, _ := newOpsxRunnerAt(t, scratchDir)
+
+			return opsxRunnerSeam{r: runner, scratch: scratchDir}, func() error { return nil }
 		},
 		evalArtifactDir())
 	if err != nil {
@@ -151,7 +162,9 @@ func TestEvalSuite_Matrix_Gated(t *testing.T) { //nolint:paralleltest // gated: 
 
 	res, err := evalsuite.RunSuite(context.Background(), t, scenarios, 1,
 		func(_ evalsuite.GateTB, scratchDir string) (evalharness.RunnerSeam, func() error) {
-			return opsxRunnerSeam{r: newOpsxRunnerAt(t, scratchDir)}, func() error { return nil }
+			runner, _ := newOpsxRunnerAt(t, scratchDir)
+
+			return opsxRunnerSeam{r: runner, scratch: scratchDir}, func() error { return nil }
 		},
 		evalArtifactDir())
 	if err != nil {

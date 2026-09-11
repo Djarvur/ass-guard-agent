@@ -1,4 +1,15 @@
-package runtime //nolint:testpackage // internal package test
+package acpserve //nolint:testpackage // internal package test
+
+// 25-08 subject-split move (kit/runtime -> internal/acpserve): the expanded
+// opsx matrix legs drive the REAL app composition (providerfactory's live
+// model, the real openspec binary + expanded profile, the production
+// engine/catalog loads) — the composition root is the subject, so per the
+// Phase-15 D-02 rule the batteries live at their subject's home.
+// Construction retargets: the unexported Runner literal + the engine/catalog
+// twins -> NewRunner + loadEngineSetup/loadCommandCatalog (the PRODUCTION
+// loads); acpRun -> r.Run with session blocks; transcript reads ride the
+// on-disk truth (helpers take the scratch dir). Every assertion is
+// byte-identical.
 
 import (
 	"bytes"
@@ -12,12 +23,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/evalharness"
 	"github.com/Djarvur/ass-guard-agent/kit/engine"
 
 	"github.com/Djarvur/ass-guard-agent/internal/providerfactory"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
+	"github.com/Djarvur/ass-guard-agent/kit/runtime"
 	"github.com/Djarvur/ass-guard-agent/kit/profile"
 	"github.com/Djarvur/ass-guard-agent/kit/provider"
 	"github.com/Djarvur/ass-guard-agent/kit/session"
@@ -52,7 +63,7 @@ var matrixExpandedCommands = []string{
 // installs all 11 commands + skills (D-01's precondition).
 //
 //nolint:gocritic // unnamed result matches the newOpsxRunner house shape
-func newOpsxMatrixRunner(t *testing.T) (*Runner, string) {
+func newOpsxMatrixRunner(t *testing.T) (*runtime.Runner, string) {
 	t.Helper()
 
 	scratch := t.TempDir()
@@ -63,7 +74,7 @@ func newOpsxMatrixRunner(t *testing.T) (*Runner, string) {
 // newOpsxMatrixRunnerAt is newOpsxMatrixRunner over an existing scratch dir.
 //
 //nolint:funlen,cyclop // bootstrap reads as one flow
-func newOpsxMatrixRunnerAt(t *testing.T, scratch string) *Runner {
+func newOpsxMatrixRunnerAt(t *testing.T, scratch string) *runtime.Runner {
 	t.Helper()
 
 	home, err := os.UserHomeDir()
@@ -98,7 +109,7 @@ func newOpsxMatrixRunnerAt(t *testing.T, scratch string) *Runner {
 
 	evalharness.GuardOpenSpecGlobalConfig(t, evalharness.ExpandedMatrixProfileJSON)
 
-	repo := findRepoRoot(t)
+	repo := wireFindRepoRoot(t)
 
 	factory, providerName, ferr := providerfactory.SetupProviderFactory(repo, os.Stderr)
 	if ferr != nil {
@@ -122,7 +133,7 @@ func newOpsxMatrixRunnerAt(t *testing.T, scratch string) *Runner {
 	// would dead-end every leg at a missing command).
 	for _, cmd := range matrixExpandedCommands {
 		p := filepath.Join(scratch, ".claude", "commands", "opsx", cmd+".md")
-		if !fileExists(p) {
+		if !wireFileExists(p) {
 			t.Fatalf("expanded-profile init did NOT install /opsx:%s (missing %s) — "+
 				"the profile switch/bootstrap failed", cmd, p)
 		}
@@ -145,42 +156,47 @@ func newOpsxMatrixRunnerAt(t *testing.T, scratch string) *Runner {
 		t.Fatalf("load real zcode profile: %v", perr)
 	}
 
-	r := &Runner{
-		bus:     event.NewBus(),
-		profile: prof,
-		workDir: scratch,
-		maxConc: 6,
+	r := runtime.NewRunner(&runtime.RunnerConfig{
+		Bus:     event.NewBus(),
+		Profile: prof,
+		WorkDir: scratch,
+		MaxConc: 6,
 		// D-01's documented hands-off mode (the 12-08 finding): asks are real
 		// since 12-01; a bounded ask timeout keeps the matrix legs hands-off
 		// (and 13-00's engine-visible resume carries the chain through them).
-		makeProvider: func(rc provider.RequestCapturer) provider.Provider {
+		MakeProvider: func(rc provider.RequestCapturer) provider.Provider {
 			p, _ := factory.Build(providerName, shaper.New())
 
 			return p
 		},
-		askTimeout: 45 * time.Second,
+		AskTimeout: 45 * time.Second,
+	})
+
+	setup, serr := loadEngineSetup(scratch)
+	if serr != nil {
+		t.Fatalf("engine setup: %v", serr)
 	}
 
-	err = r.SetupEngine(testEngineSetup(t))
+	err = r.SetupEngine(setup)
 	if err != nil {
 		t.Fatalf("SetupEngine: %v", err)
 	}
 
-	r.SetCatalog(newTestCatalog(r.workDirOrDefault()))
+	r.SetCatalog(loadCommandCatalog(scratch))
 
 	return r
 }
 
 // runMatrixStage sends one typed matrix prompt and waits for the turn (+
 // any parked chain) to finish — the shared leg driver.
-func runMatrixStage(t *testing.T, r *Runner, sessionID, text string) {
+func runMatrixStage(t *testing.T, r *runtime.Runner, sessionID, text string) {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), e2eOverallWait)
 	defer cancel()
 
-	_, err := acpRun(ctx, r, sessionID, &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: text}})
+	_, err := r.Run(ctx, sessionID, opsxNoEmitter{},
+		[]session.ContentBlock{{Type: opsxBlockText, Text: text}})
 	if err != nil {
 		t.Fatalf("matrix prompt %q: %v", text, err)
 	}
@@ -221,13 +237,10 @@ func captureMatrixClosing(t *testing.T, name, text string) {
 
 // assertNoNotImplementedResults scans the session transcript for the
 // no-implementation dead-end string (zero tolerance — the Phase-8 convention).
-func assertNoNotImplementedResults(t *testing.T, r *Runner, sessionID string) {
+func assertNoNotImplementedResults(t *testing.T, scratch string, sessionID string) {
 	t.Helper()
 
-	lines, err := r.sessions[sessionID].Manager.ReadAll()
-	if err != nil {
-		t.Fatalf("ReadAll: %v", err)
-	}
+	lines := wireTranscriptLines(t, scratch, sessionID)
 
 	for i := range lines {
 		isResult := lines[i].Type == session.TypeToolResult
@@ -239,10 +252,10 @@ func assertNoNotImplementedResults(t *testing.T, r *Runner, sessionID string) {
 }
 
 // lastAssistantText returns the session's final assistant message text.
-func lastAssistantText(t *testing.T, r *Runner, sessionID string) string {
+func lastAssistantText(t *testing.T, scratch string, sessionID string) string {
 	t.Helper()
 
-	texts := stageAssistantTexts(t, r, sessionID)
+	texts := stageAssistantTexts(t, scratch, sessionID)
 	if len(texts) == 0 {
 		t.Fatal("no assistant message in the transcript")
 	}
@@ -282,9 +295,9 @@ func TestOpsxMatrixNew_Gated(t *testing.T) { //nolint:paralleltest // gated, HOM
 			changeDir, names)
 	}
 
-	assertNoNotImplementedResults(t, r, sid)
+	assertNoNotImplementedResults(t, scratch, sid)
 
-	captureMatrixClosing(t, "new-happy-capture", lastAssistantText(t, r, sid))
+	captureMatrixClosing(t, "new-happy-capture", lastAssistantText(t, scratch, sid))
 }
 
 // seedMatrixChange runs a real `openspec new change <name>` in the scratch
@@ -366,9 +379,9 @@ func TestOpsxMatrixContinue_Gated(t *testing.T) { //nolint:paralleltest // HOME-
 		t.Errorf("no proposal.md in %s after /opsx:continue (the next artifact)", changeDir)
 	}
 
-	assertNoNotImplementedResults(t, r, sid)
+	assertNoNotImplementedResults(t, scratch, sid)
 
-	captureMatrixClosing(t, "continue-happy-capture", lastAssistantText(t, r, sid))
+	captureMatrixClosing(t, "continue-happy-capture", lastAssistantText(t, scratch, sid))
 }
 
 // TestOpsxMatrixFF_Gated (13-01 Task 3): /opsx:ff on a change carrying a
@@ -409,9 +422,9 @@ func TestOpsxMatrixFF_Gated(t *testing.T) { //nolint:paralleltest // HOME-pinned
 		}
 	}
 
-	assertNoNotImplementedResults(t, r, sid)
+	assertNoNotImplementedResults(t, scratch, sid)
 
-	captureMatrixClosing(t, "ff-happy-capture", lastAssistantText(t, r, sid))
+	captureMatrixClosing(t, "ff-happy-capture", lastAssistantText(t, scratch, sid))
 }
 
 // TestOpsxMatrixVerify_Gated (13-01 Task 3): /opsx:verify on a change with
@@ -435,9 +448,9 @@ func TestOpsxMatrixVerify_Gated(t *testing.T) { //nolint:paralleltest // HOME le
 
 	// Read-only row discipline: verify writes no archive artifacts; the
 	// assertion is the captured verdict itself (the closing output).
-	assertNoNotImplementedResults(t, r, sid)
+	assertNoNotImplementedResults(t, scratch, sid)
 
-	captureMatrixClosing(t, "verify-happy-capture", lastAssistantText(t, r, sid))
+	captureMatrixClosing(t, "verify-happy-capture", lastAssistantText(t, scratch, sid))
 }
 
 // TestOpsxMatrixBulkArchive_Gated (13-01 Task 3): /opsx:bulk-archive over
@@ -475,9 +488,9 @@ func TestOpsxMatrixBulkArchive_Gated(t *testing.T) { //nolint:paralleltest // tw
 		t.Errorf("archived matrix-bulk changes = %d; want both (archive/: %+v)", archived, entries)
 	}
 
-	assertNoNotImplementedResults(t, r, sid)
+	assertNoNotImplementedResults(t, scratch, sid)
 
-	captureMatrixClosing(t, "bulk-archive-happy-capture", lastAssistantText(t, r, sid))
+	captureMatrixClosing(t, "bulk-archive-happy-capture", lastAssistantText(t, scratch, sid))
 }
 
 // TestOpsxMatrixOnboard_Gated (13-01 Task 3, D-08 full-tilt): /opsx:onboard
@@ -504,9 +517,9 @@ func TestOpsxMatrixOnboard_Gated(t *testing.T) { //nolint:paralleltest // tutori
 		t.Errorf("no openspec/config.yaml in the onboard scratch — the project wiring is missing")
 	}
 
-	assertNoNotImplementedResults(t, r, sid)
+	assertNoNotImplementedResults(t, scratch, sid)
 
-	closing := lastAssistantText(t, r, sid)
+	closing := lastAssistantText(t, scratch, sid)
 
 	// 13-03 D-02 evidence check (the dead-end advisory scan, folded in): the
 	// onboard closing is the question-shaped exemplar (the 2026-08-20
@@ -514,7 +527,7 @@ func TestOpsxMatrixOnboard_Gated(t *testing.T) { //nolint:paralleltest // tutori
 	// the advisory engine_decision line MUST exist — the dead-end surfaces,
 	// never silently stalls.
 	if class, ok := engine.ClassifyQuestionEnding(closing); ok {
-		if got := countAdvisoryDecisions(t, r, sid); got < 1 {
+		if got := countAdvisoryDecisions(t, scratch, sid); got < 1 {
 			t.Errorf("question-shaped closing (class %q) produced NO advisory decision — "+
 				"the dead-end stalled silently", class)
 		}
@@ -523,19 +536,36 @@ func TestOpsxMatrixOnboard_Gated(t *testing.T) { //nolint:paralleltest // tutori
 	captureMatrixClosing(t, "onboard-happy-capture", closing)
 }
 
+// countAdvisoryDecisions counts the transcript's advisory engine_decision
+// lines (the moved matrix twin of the kit-side helper; scratch-taking for
+// the on-disk transcript truth).
+func countAdvisoryDecisions(t *testing.T, scratch, sessionID string) int {
+	t.Helper()
+
+	lines := wireTranscriptLines(t, scratch, sessionID)
+
+	n := 0
+
+	for i := range lines {
+		if lines[i].Type == session.TypeEngineDecision &&
+			strings.Contains(string(lines[i].Input), "advisory:") {
+			n++
+		}
+	}
+
+	return n
+}
+
 // scanMatrixFixable generalizes the fixable scan to the matrix (13-01 Task 4,
 // D-01's 2-path matrix): the FIRST tool result matching any failure signature
 // (the model-visible failure) and the first recovery-signature match AFTER it
 // — the fail-idx-before-recover-idx contract.
 //
 //nolint:gocritic // unnamed results match the ScanFixableRecovery shape
-func scanMatrixFixable(t *testing.T, r *Runner, sessionID string, failSigs, recoverSigs []string) (int, int) {
+func scanMatrixFixable(t *testing.T, scratch string, sessionID string, failSigs, recoverSigs []string) (int, int) {
 	t.Helper()
 
-	lines, err := r.sessions[sessionID].Manager.ReadAll()
-	if err != nil {
-		t.Fatalf("ReadAll: %v", err)
-	}
+	lines := wireTranscriptLines(t, scratch, sessionID)
 
 	failIdx, recoverIdx := -1, -1
 
@@ -575,13 +605,10 @@ func scanMatrixFixable(t *testing.T, r *Runner, sessionID string, failSigs, reco
 // a CLI error — the verify leg's capture-faithful route).
 //
 //nolint:gocritic // unnamed results match the ScanFixableRecovery shape
-func scanMatrixReport(t *testing.T, r *Runner, sessionID string, failSigs, recoverSigs []string) (int, int) {
+func scanMatrixReport(t *testing.T, scratch string, sessionID string, failSigs, recoverSigs []string) (int, int) {
 	t.Helper()
 
-	lines, err := r.sessions[sessionID].Manager.ReadAll()
-	if err != nil {
-		t.Fatalf("ReadAll: %v", err)
-	}
+	lines := wireTranscriptLines(t, scratch, sessionID)
 
 	failIdx, recoverIdx := -1, -1
 
@@ -653,7 +680,7 @@ func TestOpsxMatrixNewFixable_Gated(t *testing.T) { //nolint:paralleltest // HOM
 
 	runMatrixStage(t, r, sid, "/opsx:new "+subject)
 
-	failIdx, recoverIdx := scanMatrixFixable(t, r, sid,
+	failIdx, recoverIdx := scanMatrixFixable(t, scratch, sid,
 		[]string{"already exists"},
 		[]string{"exists", "created", "scaffolded", "proposal"})
 
@@ -663,9 +690,9 @@ func TestOpsxMatrixNewFixable_Gated(t *testing.T) { //nolint:paralleltest // HOM
 		t.Errorf("the change %s does not exist after the fixable leg (goal unmet)", subject)
 	}
 
-	assertNoNotImplementedResults(t, r, sid)
+	assertNoNotImplementedResults(t, scratch, sid)
 
-	captureMatrixClosing(t, "new-fixable-capture", lastAssistantText(t, r, sid))
+	captureMatrixClosing(t, "new-fixable-capture", lastAssistantText(t, scratch, sid))
 }
 
 // TestOpsxMatrixContinueFixable_Gated (D-01 fixable): /opsx:continue naming a
@@ -687,7 +714,7 @@ func TestOpsxMatrixContinueFixable_Gated(t *testing.T) { //nolint:paralleltest /
 
 	runMatrixStage(t, r, sid, "/opsx:continue "+subject)
 
-	failIdx, recoverIdx := scanMatrixFixable(t, r, sid,
+	failIdx, recoverIdx := scanMatrixFixable(t, scratch, sid,
 		[]string{"Unknown schema", "bogus-schema"},
 		[]string{"spec-driven", "proposal", "artifact", "created", "wrote"})
 
@@ -697,9 +724,9 @@ func TestOpsxMatrixContinueFixable_Gated(t *testing.T) { //nolint:paralleltest /
 		t.Errorf("the REAL change %s never got its artifact (goal unmet)", subject)
 	}
 
-	assertNoNotImplementedResults(t, r, sid)
+	assertNoNotImplementedResults(t, scratch, sid)
 
-	captureMatrixClosing(t, "continue-fixable-capture", lastAssistantText(t, r, sid))
+	captureMatrixClosing(t, "continue-fixable-capture", lastAssistantText(t, scratch, sid))
 }
 
 // TestOpsxMatrixFFFixable_Gated (D-01 fixable): /opsx:ff on a proposal-
@@ -722,7 +749,7 @@ func TestOpsxMatrixFFFixable_Gated(t *testing.T) { //nolint:paralleltest // HOME
 
 	runMatrixStage(t, r, sid, "/opsx:ff "+subject)
 
-	failIdx, recoverIdx := scanMatrixFixable(t, r, sid,
+	failIdx, recoverIdx := scanMatrixFixable(t, scratch, sid,
 		[]string{"Unknown schema", "bogus-schema"},
 		[]string{"spec-driven", "tasks", "artifact", "complete", "archived"})
 
@@ -745,9 +772,9 @@ func TestOpsxMatrixFFFixable_Gated(t *testing.T) { //nolint:paralleltest // HOME
 		}
 	}
 
-	assertNoNotImplementedResults(t, r, sid)
+	assertNoNotImplementedResults(t, scratch, sid)
 
-	captureMatrixClosing(t, "ff-fixable-capture", lastAssistantText(t, r, sid))
+	captureMatrixClosing(t, "ff-fixable-capture", lastAssistantText(t, scratch, sid))
 }
 
 // TestOpsxMatrixVerifyFixable_Gated (D-01 fixable, CAPTURE-RESCOPED
@@ -780,7 +807,7 @@ func TestOpsxMatrixVerifyFixable_Gated(t *testing.T) { //nolint:paralleltest // 
 
 	// The report-driven route: scan the assistant text + tool results for
 	// the gap surfacing (the "failure") and the verdict (the "recovery").
-	failIdx, recoverIdx := scanMatrixReport(t, r, sid,
+	failIdx, recoverIdx := scanMatrixReport(t, scratch, sid,
 		[]string{"no scenarios", "scenario", "Scenario", "gap"},
 		[]string{"verdict", "report", "Verif", "CRITICAL", "WARNING", "SUGGESTION"})
 
@@ -789,7 +816,7 @@ func TestOpsxMatrixVerifyFixable_Gated(t *testing.T) { //nolint:paralleltest // 
 	// The goal (read-only command): the closing IS the verification report
 	// AND it names the scenario gap — the deterministic fixture cannot be
 	// papered over.
-	closing := lastAssistantText(t, r, sid)
+	closing := lastAssistantText(t, scratch, sid)
 	if !strings.Contains(closing, "erif") && !strings.Contains(closing, "report") {
 		t.Error("the closing is not a verification report (goal unmet)")
 	}
@@ -799,9 +826,9 @@ func TestOpsxMatrixVerifyFixable_Gated(t *testing.T) { //nolint:paralleltest // 
 		t.Error("the report never names the scenario gap (the fixture was papered over)")
 	}
 
-	assertNoNotImplementedResults(t, r, sid)
+	assertNoNotImplementedResults(t, scratch, sid)
 
-	captureMatrixClosing(t, "verify-fixable-capture", lastAssistantText(t, r, sid))
+	captureMatrixClosing(t, "verify-fixable-capture", lastAssistantText(t, scratch, sid))
 }
 
 // TestOpsxMatrixBulkArchiveFixable_Gated (D-01 fixable): the PROVEN
@@ -831,7 +858,7 @@ func TestOpsxMatrixBulkArchiveFixable_Gated(t *testing.T) { //nolint:paralleltes
 
 	runMatrixStage(t, r, sid, "/opsx:bulk-archive")
 
-	failIdx, recoverIdx := scanMatrixFixable(t, r, sid,
+	failIdx, recoverIdx := scanMatrixFixable(t, scratch, sid,
 		[]string{"archive_tasks_incomplete", "force closed the prompt", "incomplete"},
 		[]string{"archived", "complete"})
 
@@ -852,9 +879,9 @@ func TestOpsxMatrixBulkArchiveFixable_Gated(t *testing.T) { //nolint:paralleltes
 		t.Errorf("archived matrix-bulkfix changes = %d; want both (goal unmet)", archived)
 	}
 
-	assertNoNotImplementedResults(t, r, sid)
+	assertNoNotImplementedResults(t, scratch, sid)
 
-	captureMatrixClosing(t, "bulk-archive-fixable-capture", lastAssistantText(t, r, sid))
+	captureMatrixClosing(t, "bulk-archive-fixable-capture", lastAssistantText(t, scratch, sid))
 }
 
 // TestOpsxMatrixOnboardFixable_Gated (D-01 fixable, D-08 LOCKED class): the
@@ -867,7 +894,7 @@ func TestOpsxMatrixOnboardFixable_Gated(t *testing.T) { //nolint:paralleltest //
 
 	const sid = "sess-matrix-onbfix"
 
-	r, _ := newOpsxMatrixRunner(t)
+	r, scratch := newOpsxMatrixRunner(t)
 
 	// Pass 1: the onboarding cycle.
 	runMatrixStage(t, r, sid, "/opsx:onboard")
@@ -875,20 +902,17 @@ func TestOpsxMatrixOnboardFixable_Gated(t *testing.T) { //nolint:paralleltest //
 	// Pass 2 (the fixable class): the idempotent re-run on the SAME scratch.
 	runMatrixStage(t, r, sid, "/opsx:onboard")
 
-	assertNoNotImplementedResults(t, r, sid)
+	assertNoNotImplementedResults(t, scratch, sid)
 
-	captureMatrixClosing(t, "onboard-fixable-capture", lastAssistantText(t, r, sid))
+	captureMatrixClosing(t, "onboard-fixable-capture", lastAssistantText(t, scratch, sid))
 }
 
 // countMatrixDecisionsByAction counts the session's engine_decision lines
 // with the given action name.
-func countMatrixDecisionsByAction(t *testing.T, r *Runner, sessionID, action string) int {
+func countMatrixDecisionsByAction(t *testing.T, scratch string, sessionID, action string) int {
 	t.Helper()
 
-	lines, err := r.sessions[sessionID].Manager.ReadAll()
-	if err != nil {
-		t.Fatalf("ReadAll: %v", err)
-	}
+	lines := wireTranscriptLines(t, scratch, sessionID)
 
 	n := 0
 
@@ -903,13 +927,10 @@ func countMatrixDecisionsByAction(t *testing.T, r *Runner, sessionID, action str
 
 // hasMatrixCommandProvenance reports whether the session's transcript carries
 // a command_provenance line for the key.
-func hasMatrixCommandProvenance(t *testing.T, r *Runner, sessionID, key string) bool {
+func hasMatrixCommandProvenance(t *testing.T, scratch string, sessionID, key string) bool {
 	t.Helper()
 
-	lines, err := r.sessions[sessionID].Manager.ReadAll()
-	if err != nil {
-		t.Fatalf("ReadAll: %v", err)
-	}
+	lines := wireTranscriptLines(t, scratch, sessionID)
 
 	for i := range lines {
 		if lines[i].Type == session.TypeCommandProvenance && lines[i].Name == key {
@@ -922,13 +943,10 @@ func hasMatrixCommandProvenance(t *testing.T, r *Runner, sessionID, key string) 
 
 // lastMatrixDecisionAction returns the session's final engine_decision action
 // ("" when none).
-func lastMatrixDecisionAction(t *testing.T, r *Runner, sessionID string) string {
+func lastMatrixDecisionAction(t *testing.T, scratch string, sessionID string) string {
 	t.Helper()
 
-	lines, err := r.sessions[sessionID].Manager.ReadAll()
-	if err != nil {
-		t.Fatalf("ReadAll: %v", err)
-	}
+	lines := wireTranscriptLines(t, scratch, sessionID)
 
 	for _, l := range slices.Backward(lines) { //nolint:gocritic // modernize-required backward scan
 		if l.Type == session.TypeEngineDecision {
@@ -964,11 +982,11 @@ func TestOpsxMatrixVerifyChain_Gated(t *testing.T) { //nolint:paralleltest // ch
 	runMatrixStage(t, r, sid, "/opsx:verify "+subject)
 
 	// The chained fix stage ran: the continue decision + provenance key.
-	if got := countMatrixDecisionsByAction(t, r, sid, actionContinue); got < 1 {
+	if got := countMatrixDecisionsByAction(t, scratch, sid, actionContinue); got < 1 {
 		t.Errorf("continue engine_decisions = %d; want >= 1 (the D-07 handoff fired)", got)
 	}
 
-	if !hasMatrixCommandProvenance(t, r, sid, "opsx:continue") {
+	if !hasMatrixCommandProvenance(t, scratch, sid, "opsx:continue") {
 		t.Error("no opsx:continue command_provenance line — the chained stage never expanded")
 	}
 
@@ -980,11 +998,11 @@ func TestOpsxMatrixVerifyChain_Gated(t *testing.T) { //nolint:paralleltest // ch
 
 	// The terminal closing triggers nothing: the final decision is not a
 	// continue (nothing/wait/ask are all legitimate chain ends).
-	if got := lastMatrixDecisionAction(t, r, sid); got == actionContinue {
+	if got := lastMatrixDecisionAction(t, scratch, sid); got == actionContinue {
 		t.Errorf("the LAST decision is a continue — the chain never terminated naturally (%q)", got)
 	}
 
-	assertNoNotImplementedResults(t, r, sid)
+	assertNoNotImplementedResults(t, scratch, sid)
 }
 
 // TestOpsxMatrixNewChain_Gated (13-02 Task 2, pass 2): ONE typed /opsx:new
@@ -1008,11 +1026,11 @@ func TestOpsxMatrixNewChain_Gated(t *testing.T) { //nolint:paralleltest // chain
 
 	// Zero manual continues: >= 2 chained continue decisions (the artifact
 	// walk) + the opsx:continue provenance key on the chained stages.
-	if got := countMatrixDecisionsByAction(t, r, sid, actionContinue); got < 2 {
+	if got := countMatrixDecisionsByAction(t, scratch, sid, actionContinue); got < 2 {
 		t.Errorf("continue engine_decisions = %d; want >= 2 (the artifact walk chained)", got)
 	}
 
-	if !hasMatrixCommandProvenance(t, r, sid, "opsx:continue") {
+	if !hasMatrixCommandProvenance(t, scratch, sid, "opsx:continue") {
 		t.Error("no opsx:continue command_provenance line — the chained stages never expanded")
 	}
 
@@ -1032,9 +1050,13 @@ func TestOpsxMatrixNewChain_Gated(t *testing.T) { //nolint:paralleltest // chain
 		}
 	}
 
-	if got := lastMatrixDecisionAction(t, r, sid); got == actionContinue {
+	if got := lastMatrixDecisionAction(t, scratch, sid); got == actionContinue {
 		t.Errorf("the LAST decision is a continue — the chain never terminated naturally (%q)", got)
 	}
 
-	assertNoNotImplementedResults(t, r, sid)
+	assertNoNotImplementedResults(t, scratch, sid)
 }
+
+// actionContinue mirrors the engine's continue action string (the moved
+// matrix legs' assertion vocabulary; kit-side it rode the goconst constant).
+const actionContinue = "continue"

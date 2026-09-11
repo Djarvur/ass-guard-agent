@@ -1,4 +1,14 @@
-package runtime //nolint:testpackage // internal package test
+package acpserve //nolint:testpackage // internal package test
+
+// 25-08 subject-split move (kit/runtime -> internal/acpserve): the plan-mode
+// server-level wiring battery asserts on WIRE FRAMES through a REAL
+// acp.Server (the approval question reaching the client wire, the resumed
+// turn streaming) plus the transcript markers — the serve path is the
+// subject, so per the Phase-15 D-02 rule the tests live at their subject's
+// home. Construction retargets: the unexported Runner literal + the toolkit
+///catalog/engine twins -> the PRODUCTION composition (wireComposeRunner
+// mirrors acpserve.Run's statements); transcript reads ride the on-disk
+// truth (wireTranscriptLines). Every assertion is byte-identical.
 
 import (
 	"bufio"
@@ -11,10 +21,9 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
-	"github.com/Djarvur/ass-guard-agent/internal/coreexec"
-	"github.com/Djarvur/ass-guard-agent/kit/event"
 	"github.com/Djarvur/ass-guard-agent/kit/profile"
 	"github.com/Djarvur/ass-guard-agent/kit/provider"
+	"github.com/Djarvur/ass-guard-agent/kit/runtime"
 )
 
 // Plan-mode server-level wiring battery (12-09, gap G-12-3): the per-session
@@ -24,9 +33,8 @@ import (
 // and ExitPlanMode answers "exit plan mode: not in plan mode" (the live
 // go-err113 session finding, transcript d99c7845).
 //
-// The tests drive the REAL acp.Server over stdio pipes (the
-// TestAskWiring_ServerLevelSurface harness) because the runner-level emitter
-// cannot see the sessionFor wiring gap.
+// The tests drive the REAL acp.Server over stdio pipes because the
+// runner-level emitter cannot see the sessionFor wiring gap.
 
 // Test-local constants (goconst discipline: shared literals named once).
 const (
@@ -38,6 +46,8 @@ const (
 	pmCallExit    = "call_pm_exit_1"
 	pmPlanText    = "## The plan\n\n1. do the thing"
 	pmApproveText = "approve"
+
+	pmToolUseChunk = "tool_use"
 )
 
 // pmPlanInput is the ExitPlanMode input carrying the plan text.
@@ -57,7 +67,7 @@ type planModeScriptProvider struct {
 func (p *planModeScriptProvider) Send(
 	_ context.Context, _ *profile.Profile, _ []provider.Message,
 ) (provider.Response, error) {
-	return provider.Response{}, errNotUsed
+	return provider.Response{}, wireErrNotUsed
 }
 
 func (p *planModeScriptProvider) Stream(
@@ -72,7 +82,7 @@ func (p *planModeScriptProvider) Stream(
 
 		emit := func(tc provider.ToolCall) {
 			select {
-			case ch <- provider.StreamChunk{Type: tracerToolUse, ToolCall: &tc, ToolCallID: tc.ID}:
+			case ch <- provider.StreamChunk{Type: pmToolUseChunk, ToolCall: &tc, ToolCallID: tc.ID}:
 			case <-ctx.Done():
 			}
 		}
@@ -88,13 +98,13 @@ func (p *planModeScriptProvider) Stream(
 			emit(provider.ToolCall{ID: pmCallExit, Name: pmExitTool, Input: json.RawMessage(pmPlanInput)})
 		default:
 			select {
-			case ch <- provider.StreamChunk{Type: blockText, Text: "plan approved; coding now"}:
+			case ch <- provider.StreamChunk{Type: wireBlockText, Text: "plan approved; coding now"}:
 			case <-ctx.Done():
 			}
 		}
 
 		select {
-		case ch <- provider.StreamChunk{Type: chunkDone, FinishReason: stopEndTurn}:
+		case ch <- provider.StreamChunk{Type: wireChunkDone, FinishReason: wireStopEndTurn}:
 		case <-ctx.Done():
 		}
 	}()
@@ -109,59 +119,23 @@ func (p *planModeScriptProvider) ToolResultMessage(string, json.RawMessage) (jso
 // SupportsImages: the fake is text-only (21-05 D-11 seam stub).
 func (p *planModeScriptProvider) SupportsImages() bool { return false }
 
-// newPlanModeWiringRunner builds an ENGINE-ON runner scripted with the
-// plan-mode scenario and a long D-01 timeout (the approval reply must win).
-func newPlanModeWiringRunner(t *testing.T) (*Runner, *planModeScriptProvider) {
+// startPlanModeServer boots the REAL acp.Server over pipes around the
+// production composition and performs the handshake, returning the
+// reader/writer pair and the session id.
+func startPlanModeServer(
+	t *testing.T,
+) (*runtime.Runner, string, io.WriteCloser, io.ReadCloser, string) {
 	t.Helper()
-
-	bus := event.NewBus()
 
 	prov := &planModeScriptProvider{}
 
-	dir := t.TempDir()
-
-	writeOpsxCommandFixtures(t, dir)
-
-	r := &Runner{
-		bus:        bus,
-		profile:    fakeProfileACP(),
-		workDir:    dir,
-		maxConc:    2,
-		askTimeout: time.Hour,
-		// 25-07: the ask-surface renderer is the RunnerConfig func-field —
-		// the batteries assert the rendered chunk, so wire the real one.
-		askSurfaceRenderer: coreexec.RenderAskSurface,
-		makeProvider: func(_ provider.RequestCapturer) provider.Provider {
-			return prov
-		},
-	}
-
-	// 25-07: the toolkit twin (the plan pair registers through it).
-	armToolkitTwin(r)
-
-	err := r.SetupEngine(testEngineSetup(t))
-	if err != nil {
-		t.Fatalf("SetupEngine: %v", err)
-	}
-
-	r.SetCatalog(newTestCatalog(r.workDirOrDefault()))
-
-	return r, prov
-}
-
-// startPlanModeServer boots the REAL acp.Server over pipes and performs the
-// handshake, returning the reader/writer pair and the session id.
-func startPlanModeServer(
-	t *testing.T,
-) (*Runner, *planModeScriptProvider, io.WriteCloser, io.ReadCloser, string) {
-	t.Helper()
-
-	r, prov := newPlanModeWiringRunner(t)
+	// A long D-01 timeout: the approval reply must win.
+	r, workDir := wireComposeRunner(t, prov, time.Hour)
 
 	srvInR, cliW := io.Pipe()
 	cliR, srvOutW := io.Pipe()
 
-	srv := acp.NewServer(srvInR, srvOutW, &bytes.Buffer{}, acp.WithTurnRunner(acpTurnRunner{r: r}))
+	srv := acp.NewServer(srvInR, srvOutW, &bytes.Buffer{}, acp.WithTurnRunner(kitTurnAdapter{runner: r}))
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -186,17 +160,17 @@ func startPlanModeServer(
 		}
 	})
 
-	sendFrame(t, cliW, &acp.Message{
-		JSONRPC: protocolVersion20, ID: json.RawMessage("0"), Method: methodInitialize,
-		Params: rawJSON(map[string]any{keyProtoVersion: 1}),
+	wireSendFrame(t, cliW, &acp.Message{
+		JSONRPC: wireProtocolVersion20, ID: json.RawMessage("0"), Method: wireMethodInitialize,
+		Params: wireRawJSON(map[string]any{wireKeyProtoVersion: 1}),
 	})
 
-	sendFrame(t, cliW, &acp.Message{
-		JSONRPC: protocolVersion20, ID: json.RawMessage("1"), Method: methodSessNew,
-		Params: rawJSON(map[string]any{cwdKey: cwdForFrames, keyMCPServers: []any{}}),
+	wireSendFrame(t, cliW, &acp.Message{
+		JSONRPC: wireProtocolVersion20, ID: json.RawMessage("1"), Method: wireMethodSessNew,
+		Params: wireRawJSON(map[string]any{wireCwdKey: wireTestCwdTmp, wireKeyMcpServers: []any{}}),
 	})
 
-	frames := readResultFrames(t, cliR, 2)
+	frames := wireReadResultFrames(t, cliR, 2)
 
 	var snew struct {
 		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
@@ -212,7 +186,7 @@ func startPlanModeServer(
 		t.Fatalf("no sessionId from session/new: %+v", frames)
 	}
 
-	return r, prov, cliW, cliR, snew.SessionID
+	return r, workDir, cliW, cliR, snew.SessionID
 }
 
 // promptAndWait sends one session/prompt and reads frames until its response
@@ -222,11 +196,11 @@ func promptAndWait(
 ) []*acp.Message {
 	t.Helper()
 
-	sendFrame(t, cliW, &acp.Message{
-		JSONRPC: protocolVersion20, ID: json.RawMessage(id), Method: methodSessPrmt,
-		Params: rawJSON(map[string]any{
-			keySessionID:  sessionID,
-			promptListKey: []any{map[string]any{keyType: blockText, textListKey: text}},
+	wireSendFrame(t, cliW, &acp.Message{
+		JSONRPC: wireProtocolVersion20, ID: json.RawMessage(id), Method: wireMethodSessPrmt,
+		Params: wireRawJSON(map[string]any{
+			wireKeySessionID: sessionID,
+			wireKeyPrompt:    []any{map[string]any{wireKeyType: wireBlockText, wireBlockText: text}},
 		}),
 	})
 
@@ -286,7 +260,7 @@ func replyToAsk(t *testing.T, cliW io.Writer, cliR io.Reader, sessionID, reply, 
 func TestPlanModeWiring_EnterFlipsStateAndGateRefuses(t *testing.T) {
 	t.Parallel()
 
-	r, _, cliW, cliR, sid := startPlanModeServer(t)
+	_, workDir, cliW, cliR, sid := startPlanModeServer(t)
 
 	// Turn 1: the model calls EnterPlanMode.
 	promptAndWait(t, cliW, cliR, sid, "plan the refactor first", "10")
@@ -295,10 +269,7 @@ func TestPlanModeWiring_EnterFlipsStateAndGateRefuses(t *testing.T) {
 	// tool-result site when the state flips — impossible while planMode is nil).
 	markerOn := false
 
-	lines, err := r.sessions[sid].Manager.ReadAll()
-	if err != nil {
-		t.Fatalf("read transcript: %v", err)
-	}
+	lines := wireTranscriptLines(t, workDir, sid)
 
 	for _, l := range lines {
 		if l.Type == "plan_mode" && l.Cause == "plan_mode_enter" {
@@ -314,10 +285,7 @@ func TestPlanModeWiring_EnterFlipsStateAndGateRefuses(t *testing.T) {
 	// Turn 2: the model attempts an Edit WHILE still ON (no approval happened).
 	promptAndWait(t, cliW, cliR, sid, "go ahead and edit", "11")
 
-	lines, err = r.sessions[sid].Manager.ReadAll()
-	if err != nil {
-		t.Fatalf("read transcript: %v", err)
-	}
+	lines = wireTranscriptLines(t, workDir, sid)
 
 	editRefused := false
 
@@ -350,7 +318,7 @@ func TestPlanModeWiring_ExitApprovalResumesSameTurn(t *testing.T) {
 	approvalOnWire := false
 
 	for _, m := range frames {
-		if m.Method == sessionUpdate && strings.Contains(string(m.Params), "Approve this implementation plan?") {
+		if m.Method == wireSessionUpdate && strings.Contains(string(m.Params), "Approve this implementation plan?") {
 			approvalOnWire = true
 		}
 	}
@@ -365,7 +333,7 @@ func TestPlanModeWiring_ExitApprovalResumesSameTurn(t *testing.T) {
 	approvedOnWire := false
 
 	for _, m := range replyFrames {
-		if m.Method == sessionUpdate && strings.Contains(string(m.Params), "coding now") {
+		if m.Method == wireSessionUpdate && strings.Contains(string(m.Params), "coding now") {
 			approvedOnWire = true
 		}
 	}

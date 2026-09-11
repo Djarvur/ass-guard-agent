@@ -1,4 +1,14 @@
-package runtime //nolint:testpackage // internal package test
+package acpserve //nolint:testpackage // internal package test
+
+// 25-08 subject-split move (kit/runtime -> internal/acpserve): the opsx E2E
+// product-proof drives the REAL app composition (providerfactory's live
+// model, the real openspec binary, the production engine/catalog setup) —
+// the composition root is the subject, so per the Phase-15 D-02 rule the
+// batteries live at their subject's home. Construction retargets: the
+// unexported Runner literal + the engine/catalog twins -> NewRunner +
+// loadEngineSetup/loadCommandCatalog (the PRODUCTION loads); acpRun ->
+// r.Run with session blocks; transcript reads ride the on-disk truth. Every
+// assertion is byte-identical.
 
 import (
 	"context"
@@ -11,13 +21,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/internal/evalharness"
-	"github.com/Djarvur/ass-guard-agent/kit/event"
-
 	"github.com/Djarvur/ass-guard-agent/internal/providerfactory"
+	"github.com/Djarvur/ass-guard-agent/kit/event"
 	"github.com/Djarvur/ass-guard-agent/kit/profile"
 	"github.com/Djarvur/ass-guard-agent/kit/provider"
+	"github.com/Djarvur/ass-guard-agent/kit/runtime"
 	"github.com/Djarvur/ass-guard-agent/kit/session"
 	"github.com/Djarvur/ass-guard-agent/kit/shaper"
 )
@@ -46,6 +55,8 @@ import (
 // Both modes write stage outputs to testdata/opsx-e2e/stage-<n>-output.txt.
 
 const (
+	opsxBlockText = "text"
+
 	e2eChangeName   = "add-a-tiny-feature"
 	e2eStageCount   = 4 // explore, propose, apply, archive
 	e2eOverallWait  = 20 * time.Minute
@@ -112,20 +123,22 @@ func fileExists(path string) bool {
 // expansion) over it.
 //
 //nolint:gocritic // unnamed result vs nonamedreturns (house) conflict
-func newOpsxRunner(t *testing.T) (*Runner, string) {
+func newOpsxRunner(t *testing.T) (*runtime.Runner, *runtime.EngineSetup, string) {
 	t.Helper()
 
 	scratch := t.TempDir()
 
-	return newOpsxRunnerAt(t, scratch), scratch
+	r, setup := newOpsxRunnerAt(t, scratch)
+
+	return r, setup, scratch
 }
 
 // newOpsxRunnerAt bootstraps the runner over an EXISTING scratch dir (the
 // evalsuite bridge drives passes over the harness's fresh scratches).
-func newOpsxRunnerAt(t *testing.T, scratch string) *Runner {
+func newOpsxRunnerAt(t *testing.T, scratch string) (*runtime.Runner, *runtime.EngineSetup) {
 	t.Helper()
 
-	repo := findRepoRoot(t)
+	repo := wireFindRepoRoot(t)
 
 	factory, providerName, err := providerfactory.SetupProviderFactory(repo, os.Stderr)
 	if err != nil {
@@ -152,32 +165,37 @@ func newOpsxRunnerAt(t *testing.T, scratch string) *Runner {
 		t.Fatalf("load real zcode profile: %v", err)
 	}
 
-	r := &Runner{
-		bus:     event.NewBus(),
-		profile: prof,
-		workDir: scratch,
-		maxConc: 6,
+	r := runtime.NewRunner(&runtime.RunnerConfig{
+		Bus:     event.NewBus(),
+		Profile: prof,
+		WorkDir: scratch,
+		MaxConc: 6,
 		// 12-08 finding: with asks REAL (12-01) the model occasionally asks
 		// mid-chain (observed: the archive stage) — the suspension would kill
 		// the hands-off chain at the no-chain-suspension pin. D-01's documented
 		// hands-off mode: a bounded ask timeout returns the capture-shaped
 		// non-answer and the model proceeds. 45s bounds the gate's budget.
-		askTimeout: 45 * time.Second,
-		makeProvider: func(_ provider.RequestCapturer) provider.Provider {
+		AskTimeout: 45 * time.Second,
+		MakeProvider: func(_ provider.RequestCapturer) provider.Provider {
 			p, _ := factory.Build(providerName, shaper.New())
 
 			return p
 		},
+	})
+
+	setup, serr := loadEngineSetup(scratch)
+	if serr != nil {
+		t.Fatalf("engine setup: %v", serr)
 	}
 
-	err = r.SetupEngine(testEngineSetup(t))
+	err = r.SetupEngine(setup)
 	if err != nil {
 		t.Fatalf("SetupEngine: %v", err)
 	}
 
-	r.SetCatalog(newTestCatalog(r.workDirOrDefault()))
+	r.SetCatalog(loadCommandCatalog(scratch))
 
-	return r
+	return r, &setup
 }
 
 // seedScratchCodebase plants a tiny codebase so /opsx:explore has something
@@ -204,13 +222,10 @@ func seedScratchCodebase(t *testing.T, scratch string) {
 
 // stageAssistantTexts returns each Prompt turn's final assistant text, in
 // order (one per stage in the scenario).
-func stageAssistantTexts(t *testing.T, r *Runner, sessionID string) []string {
+func stageAssistantTexts(t *testing.T, scratch, sessionID string) []string {
 	t.Helper()
 
-	lines, err := r.sessions[sessionID].Manager.ReadAll()
-	if err != nil {
-		t.Fatalf("ReadAll: %v", err)
-	}
+	lines := wireTranscriptLines(t, scratch, sessionID)
 
 	var out []string
 
@@ -253,14 +268,14 @@ func captureStageOutputs(t *testing.T, texts []string, suffix string) {
 
 // runStageTyped sends one opsx command as a typed prompt and waits for the
 // turn to finish.
-func runStageTyped(t *testing.T, r *Runner, sessionID, text string) {
+func runStageTyped(t *testing.T, r *runtime.Runner, sessionID, text string) {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), e2eOverallWait)
 	defer cancel()
 
-	_, err := acpRun(ctx, r, sessionID, &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: text}})
+	_, err := r.Run(ctx, sessionID, opsxNoEmitter{},
+		[]session.ContentBlock{{Type: opsxBlockText, Text: text}})
 	if err != nil {
 		t.Fatalf("stage prompt %q: %v", text, err)
 	}
@@ -277,12 +292,13 @@ func runStageTyped(t *testing.T, r *Runner, sessionID, text string) {
 // opsxRunnerSeam adapts Runner to evalharness.RunnerSeam (the
 // extraction's seam — the suite's passes drive the SAME machinery).
 type opsxRunnerSeam struct {
-	r *Runner
+	r      *runtime.Runner
+	scratch string
 }
 
 func (o opsxRunnerSeam) RunPrompt(ctx context.Context, sessionID, text string) error {
-	_, err := acpRun(ctx, o.r, sessionID, &noopEmitter{},
-		[]acp.ContentBlock{{Type: blockText, Text: text}})
+	_, err := o.r.Run(ctx, sessionID, opsxNoEmitter{},
+		[]session.ContentBlock{{Type: opsxBlockText, Text: text}})
 	if err != nil {
 		return err
 	}
@@ -300,12 +316,7 @@ func (o opsxRunnerSeam) RunPrompt(ctx context.Context, sessionID, text string) e
 }
 
 func (o opsxRunnerSeam) TranscriptLines(sessionID string) ([]session.Line, error) {
-	lines, err := o.r.sessions[sessionID].Manager.ReadAll()
-	if err != nil {
-		return nil, fmt.Errorf("e2e transcript: %w", err)
-	}
-
-	return lines, nil
+	return wireTranscriptLinesT(o.scratch, sessionID)
 }
 
 // TestOpsxEndToEnd_Gated is the milestone's product proof: the real
@@ -314,7 +325,7 @@ func (o opsxRunnerSeam) TranscriptLines(sessionID string) ([]session.Line, error
 func TestOpsxEndToEnd_Gated(t *testing.T) { //nolint:paralleltest // real scratch + live model
 	e2eGates(t)
 
-	r, scratch := newOpsxRunner(t)
+	r, _, scratch := newOpsxRunner(t)
 
 	const sessionID = "sess-opsx-e2e"
 
@@ -332,7 +343,7 @@ func TestOpsxEndToEnd_Gated(t *testing.T) { //nolint:paralleltest // real scratc
 			runStageTyped(t, r, sessionID, cmd)
 		}
 
-		texts := stageAssistantTexts(t, r, sessionID)
+		texts := stageAssistantTexts(t, scratch, sessionID)
 		if len(texts) < e2eStageCount {
 			t.Fatalf("capture run produced %d assistant turns; want >= %d", len(texts), e2eStageCount)
 		}
@@ -345,27 +356,23 @@ func TestOpsxEndToEnd_Gated(t *testing.T) { //nolint:paralleltest // real scratc
 	// PRODUCT-PROOF MODE: ONE typed prompt; the engine chains the rest.
 	runStageTyped(t, r, sessionID, "/opsx:explore "+e2eChangeName)
 
-	texts := evalharness.AssistantTexts(mustLines(t, r, sessionID))
+	texts := evalharness.AssistantTexts(mustLines(t, scratch, sessionID))
 	evalharness.CaptureStageOutputs(t, texts, e2eTestDataDir, "")
 
 	// 12-08: the zero-continue assertion set lives in the extracted harness —
 	// the runtime test and the evalsuite assert identically.
-	outcome := evalharness.AssertZeroContinue(t, mustLines(t, r, sessionID), scratch, e2eChangeName, e2eStageCount-1)
+	outcome := evalharness.AssertZeroContinue(t, mustLines(t, scratch, sessionID), scratch, e2eChangeName, e2eStageCount-1)
 	for _, f := range outcome.Failures {
 		t.Error(f)
 	}
 }
 
-// mustLines reads the session's transcript (the assertion lens).
-func mustLines(t *testing.T, r *Runner, sessionID string) []session.Line {
+// mustLines reads the session's transcript (the assertion lens) from the
+// on-disk truth (the 25-08 moved-battery retarget).
+func mustLines(t *testing.T, scratch, sessionID string) []session.Line {
 	t.Helper()
 
-	lines, err := r.sessions[sessionID].Manager.ReadAll()
-	if err != nil {
-		t.Fatalf("ReadAll: %v", err)
-	}
-
-	return lines
+	return wireTranscriptLines(t, scratch, sessionID)
 }
 
 // seedIncompleteChange creates a real change whose tasks.md is deliberately
@@ -421,7 +428,7 @@ func seedIncompleteChange(t *testing.T, scratch, name string) {
 func TestOpsxFixableRecovery_Gated(t *testing.T) { //nolint:paralleltest,funlen // real scratch + live model
 	e2eGates(t)
 
-	r, scratch := newOpsxRunner(t)
+	r, setup, scratch := newOpsxRunner(t)
 
 	// A deliberately incomplete change: the deterministic fixable trigger.
 	seedIncompleteChange(t, scratch, "fixable-probe")
@@ -441,10 +448,7 @@ func TestOpsxFixableRecovery_Gated(t *testing.T) { //nolint:paralleltest,funlen 
 
 	runStageTyped(t, r, sessionID, prompt)
 
-	lines, err := r.sessions[sessionID].Manager.ReadAll()
-	if err != nil {
-		t.Fatalf("ReadAll: %v", err)
-	}
+	lines := wireTranscriptLines(t, scratch, sessionID)
 
 	// The model-visible behavior, asserted where it happens: a FAILED first
 	// attempt, then a recovery attempt that archives.
@@ -489,9 +493,10 @@ func TestOpsxFixableRecovery_Gated(t *testing.T) { //nolint:paralleltest,funlen 
 
 	t.Chdir(scratch)
 
-	sess := r.sessions[sessionID]
-
-	tool, ok := sess.Catalog.Get("openspec:archive")
+	// 25-08 moved-battery retarget: the direct execution-layer probe reads
+	// the tool from the SETUP catalog (the shared registration the per-session
+	// clone is copied from at sessionFor — the same registered executor).
+	tool, ok := setup.Catalog.Get("openspec:archive")
 	if !ok {
 		t.Fatal("openspec:archive tool not registered in the session catalog")
 	}

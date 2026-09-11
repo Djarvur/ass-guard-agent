@@ -1,4 +1,13 @@
-package runtime //nolint:testpackage // internal package test
+package acpserve //nolint:testpackage // internal package test
+
+// 25-08 subject-split move (kit/runtime -> internal/acpserve): the TurnEmitter
+// end-to-end batteries drive a REAL acp.Server over pipes and assert on the
+// WIRE's emission order (stdout frames + the emitter's sole-producer count) —
+// the serve path is the subject, so per the Phase-15 D-02 rule the tests live
+// at their subject's home and exercise the PRODUCTION kitTurnAdapter +
+// kitEmitterFactory (kit-side they rode the acpTurnRunner/acpKitEmitterFactory
+// twins). Construction retargets: the unexported Runner literal -> NewRunner;
+// every assertion is byte-identical.
 
 import (
 	"bufio"
@@ -15,15 +24,7 @@ import (
 	"github.com/Djarvur/ass-guard-agent/kit/event"
 	"github.com/Djarvur/ass-guard-agent/kit/profile"
 	"github.com/Djarvur/ass-guard-agent/kit/provider"
-)
-
-// Repeated frame-literal keys for this file (goconst).
-const (
-	chunkToolUse   = "tool_use"
-	testCwdTmpPath = "/tmp"
-	keyPrompt      = "prompt"
-	keyMcpServers  = "mcpServers"
-	chunkThinking  = "thinking"
+	"github.com/Djarvur/ass-guard-agent/kit/runtime"
 )
 
 // The Task-1 tracer (16-01): ONE frame path end-to-end. A bus ToolCall event
@@ -82,7 +83,7 @@ func (p *pacedStreamProvider) Stream(
 		if !first {
 			// The post-tool model round: nothing selected, turn ends.
 			select {
-			case ch <- provider.StreamChunk{Type: chunkDone, FinishReason: p.finish}:
+			case ch <- provider.StreamChunk{Type: wireChunkDone, FinishReason: p.finish}:
 			case <-ctx.Done():
 			}
 
@@ -94,15 +95,15 @@ func (p *pacedStreamProvider) Stream(
 
 			switch {
 			case ph.text != "":
-				chunk = provider.StreamChunk{Type: blockText, Text: ph.text}
+				chunk = provider.StreamChunk{Type: wireBlockText, Text: ph.text}
 			case ph.toolID != "":
 				chunk = provider.StreamChunk{
-					Type:       chunkToolUse,
+					Type:       wireChunkToolUse,
 					ToolCall:   &provider.ToolCall{ID: ph.toolID, Name: ph.toolName, Input: json.RawMessage(ph.input)},
 					ToolCallID: ph.toolID,
 				}
 			case ph.thoughtRaw != "":
-				chunk = provider.StreamChunk{Type: chunkThinking, Raw: json.RawMessage(ph.thoughtRaw)}
+				chunk = provider.StreamChunk{Type: wireChunkThinking, Raw: json.RawMessage(ph.thoughtRaw)}
 			}
 
 			select {
@@ -117,7 +118,7 @@ func (p *pacedStreamProvider) Stream(
 		}
 
 		select {
-		case ch <- provider.StreamChunk{Type: chunkDone, FinishReason: p.finish}:
+		case ch <- provider.StreamChunk{Type: wireChunkDone, FinishReason: p.finish}:
 		case <-ctx.Done():
 		}
 	}()
@@ -146,7 +147,7 @@ func TestTurnEmitterEndToEnd(t *testing.T) { //nolint:funlen // full end-to-end 
 	t.Parallel()
 
 	mp := &pacedStreamProvider{
-		finish: stopEndTurn,
+		finish: wireStopEndTurn,
 		phases: []emitPhase{
 			{text: "A", pause: 15 * time.Millisecond},
 			{toolID: "tc-tracer-1", toolName: "Bash", input: `{"command":"ls"}`, pause: 15 * time.Millisecond},
@@ -154,15 +155,13 @@ func TestTurnEmitterEndToEnd(t *testing.T) { //nolint:funlen // full end-to-end 
 		},
 	}
 
-	bus := event.NewBus()
-	prof := profile.Profile{Name: profileZcode, System: []profile.TextBlock{{Type: blockText, Text: "emitter e2e"}}}
-	runner := &Runner{
-		bus:          bus,
-		profile:      prof,
-		workDir:      t.TempDir(),
-		maxConc:      2,
-		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return mp },
-	}
+	runner := runtime.NewRunner(&runtime.RunnerConfig{
+		Bus:     event.NewBus(),
+		Profile: profile.Profile{Name: profileZcode, System: []profile.TextBlock{{Type: wireBlockText, Text: "emitter e2e"}}},
+		WorkDir: t.TempDir(),
+		MaxConc: 2,
+		MakeProvider: func(_ provider.RequestCapturer) provider.Provider { return mp },
+	})
 
 	srvInR, cliW := io.Pipe()
 	cliR, srvOutW := io.Pipe()
@@ -172,9 +171,9 @@ func TestTurnEmitterEndToEnd(t *testing.T) { //nolint:funlen // full end-to-end 
 	// WithTurnEmitter arms the composition-root TurnEmitter; srv.Emitter hands
 	// out foreground-class handles so every notification routes through the
 	// single ordered drain.
-	srv := acp.NewServer(srvInR, srvOutW, stderr, acp.WithTurnRunner(acpTurnRunner{r: runner}),
+	srv := acp.NewServer(srvInR, srvOutW, stderr, acp.WithTurnRunner(kitTurnAdapter{runner: runner}),
 		acp.WithTurnEmitter(acp.TurnEmitterConfig{}))
-	runner.SetEmitter(acpKitEmitterFactory(srv.Emitter)) // WINDOWS #3 wiring — same junction as acpserve.Run
+	runner.SetEmitter(kitEmitterFactory(srv.Emitter)) // WINDOWS #3 wiring — same junction as acpserve.Run
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -196,28 +195,28 @@ func TestTurnEmitterEndToEnd(t *testing.T) { //nolint:funlen // full end-to-end 
 		}
 	})
 
-	sendFrame(t, cliW, &acp.Message{
-		JSONRPC: protocolVersion20, ID: json.RawMessage("0"), Method: methodInitialize,
-		Params: rawJSON(map[string]any{keyProtoVersion: 1,
+	wireSendFrame(t, cliW, &acp.Message{
+		JSONRPC: wireProtocolVersion20, ID: json.RawMessage("0"), Method: wireMethodInitialize,
+		Params: wireRawJSON(map[string]any{wireKeyProtoVersion: 1,
 			// Zed-like elicitation advertisement (acp.rs:767-795) — the D-13
 			// advertisement-first rule means NO capability probe fires.
-			keyClientCapabilities: map[string]any{
-				keyElicitation: map[string]any{keyForm: map[string]any{}},
+			wireKeyClientCapabilities: map[string]any{
+				wireKeyElicitation: map[string]any{wireKeyForm: map[string]any{}},
 			}}),
 	})
 
-	frames := readFrames(t, cliR, 1)
+	frames := wireReadFrames(t, cliR, 1)
 	if len(frames) == 0 || !strings.Contains(string(frames[0].Result), "agentCapabilities") {
 		t.Fatalf("no initialize response: %+v", frames)
 	}
 
-	sendFrame(t, cliW, &acp.Message{
-		JSONRPC: protocolVersion20, ID: json.RawMessage("1"), Method: methodSessNew,
-		Params: rawJSON(map[string]any{cwdKey: testCwdTmpPath, keyMcpServers: []any{}}),
+	wireSendFrame(t, cliW, &acp.Message{
+		JSONRPC: wireProtocolVersion20, ID: json.RawMessage("1"), Method: wireMethodSessNew,
+		Params: wireRawJSON(map[string]any{wireCwdKey: wireTestCwdTmp, wireKeyMcpServers: []any{}}),
 	})
 	var advertised int
 
-	frames, advertised = readResultFramesCounting(t, cliR, 1)
+	frames, advertised = wireReadResultFramesCounting(t, cliR, 1)
 
 	var snew struct {
 		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
@@ -228,11 +227,11 @@ func TestTurnEmitterEndToEnd(t *testing.T) { //nolint:funlen // full end-to-end 
 		t.Fatalf("no sessionId from session/new: %v %+v", snewErr, frames)
 	}
 
-	sendFrame(t, cliW, &acp.Message{
-		JSONRPC: protocolVersion20, ID: json.RawMessage("2"), Method: methodSessPrmt,
-		Params: rawJSON(map[string]any{
-			keySessionID: snew.SessionID,
-			keyPrompt:    []map[string]any{{keyType: blockText, blockText: "hi"}},
+	wireSendFrame(t, cliW, &acp.Message{
+		JSONRPC: wireProtocolVersion20, ID: json.RawMessage("2"), Method: wireMethodSessPrmt,
+		Params: wireRawJSON(map[string]any{
+			wireKeySessionID: snew.SessionID,
+			wireKeyPrompt:    []map[string]any{{wireKeyType: wireBlockText, wireBlockText: "hi"}},
 		}),
 	})
 
@@ -286,31 +285,29 @@ func TestThoughtForward(t *testing.T) { //nolint:funlen // full end-to-end scena
 	t.Parallel()
 
 	mp := &pacedStreamProvider{
-		finish: stopEndTurn,
+		finish: wireStopEndTurn,
 		phases: []emitPhase{
 			{thoughtRaw: `{"type":"thinking","thinking":"weighing options","signature":"sig-tf"}`, pause: 15 * time.Millisecond},
 			{text: "A", pause: 15 * time.Millisecond},
 		},
 	}
 
-	bus := event.NewBus()
-	prof := profile.Profile{Name: profileZcode, System: []profile.TextBlock{{Type: blockText, Text: "thought e2e"}}}
-	runner := &Runner{
-		bus:          bus,
-		profile:      prof,
-		workDir:      t.TempDir(),
-		maxConc:      2,
-		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return mp },
-	}
+	runner := runtime.NewRunner(&runtime.RunnerConfig{
+		Bus:     event.NewBus(),
+		Profile: profile.Profile{Name: profileZcode, System: []profile.TextBlock{{Type: wireBlockText, Text: "thought e2e"}}},
+		WorkDir: t.TempDir(),
+		MaxConc: 2,
+		MakeProvider: func(_ provider.RequestCapturer) provider.Provider { return mp },
+	})
 
 	srvInR, cliW := io.Pipe()
 	cliR, srvOutW := io.Pipe()
 
 	stderr := &bytes.Buffer{}
 
-	srv := acp.NewServer(srvInR, srvOutW, stderr, acp.WithTurnRunner(acpTurnRunner{r: runner}),
+	srv := acp.NewServer(srvInR, srvOutW, stderr, acp.WithTurnRunner(kitTurnAdapter{runner: runner}),
 		acp.WithTurnEmitter(acp.TurnEmitterConfig{}))
-	runner.SetEmitter(acpKitEmitterFactory(srv.Emitter))
+	runner.SetEmitter(kitEmitterFactory(srv.Emitter))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -332,24 +329,24 @@ func TestThoughtForward(t *testing.T) { //nolint:funlen // full end-to-end scena
 		}
 	})
 
-	sendFrame(t, cliW, &acp.Message{
-		JSONRPC: protocolVersion20, ID: json.RawMessage("0"), Method: methodInitialize,
-		Params: rawJSON(map[string]any{keyProtoVersion: 1,
-			keyClientCapabilities: map[string]any{
-				keyElicitation: map[string]any{keyForm: map[string]any{}},
+	wireSendFrame(t, cliW, &acp.Message{
+		JSONRPC: wireProtocolVersion20, ID: json.RawMessage("0"), Method: wireMethodInitialize,
+		Params: wireRawJSON(map[string]any{wireKeyProtoVersion: 1,
+			wireKeyClientCapabilities: map[string]any{
+				wireKeyElicitation: map[string]any{wireKeyForm: map[string]any{}},
 			}}),
 	})
 
-	frames := readFrames(t, cliR, 1)
+	frames := wireReadFrames(t, cliR, 1)
 	if len(frames) == 0 || !strings.Contains(string(frames[0].Result), "agentCapabilities") {
 		t.Fatalf("no initialize response: %+v", frames)
 	}
 
-	sendFrame(t, cliW, &acp.Message{
-		JSONRPC: protocolVersion20, ID: json.RawMessage("1"), Method: methodSessNew,
-		Params: rawJSON(map[string]any{cwdKey: testCwdTmpPath, keyMcpServers: []any{}}),
+	wireSendFrame(t, cliW, &acp.Message{
+		JSONRPC: wireProtocolVersion20, ID: json.RawMessage("1"), Method: wireMethodSessNew,
+		Params: wireRawJSON(map[string]any{wireCwdKey: wireTestCwdTmp, wireKeyMcpServers: []any{}}),
 	})
-	frames = readResultFrames(t, cliR, 1)
+	frames = wireReadResultFrames(t, cliR, 1)
 
 	var snew struct {
 		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
@@ -360,11 +357,11 @@ func TestThoughtForward(t *testing.T) { //nolint:funlen // full end-to-end scena
 		t.Fatalf("no sessionId from session/new: %v %+v", snewErr, frames)
 	}
 
-	sendFrame(t, cliW, &acp.Message{
-		JSONRPC: protocolVersion20, ID: json.RawMessage("2"), Method: methodSessPrmt,
-		Params: rawJSON(map[string]any{
-			keySessionID: snew.SessionID,
-			keyPrompt:    []map[string]any{{keyType: blockText, blockText: "hi"}},
+	wireSendFrame(t, cliW, &acp.Message{
+		JSONRPC: wireProtocolVersion20, ID: json.RawMessage("2"), Method: wireMethodSessPrmt,
+		Params: wireRawJSON(map[string]any{
+			wireKeySessionID: snew.SessionID,
+			wireKeyPrompt:    []map[string]any{{wireKeyType: wireBlockText, wireBlockText: "hi"}},
 		}),
 	})
 
@@ -424,7 +421,7 @@ func readSessionUpdatesUntilResponse( //nolint:nonamedreturns // name documents 
 		switch {
 		case m.ID != nil && string(m.ID) == responseID:
 			gotResp = true
-		case m.Method == sessionUpdate:
+		case m.Method == wireSessionUpdate:
 			var upd struct {
 				Update struct {
 					SessionUpdate string `json:"sessionUpdate"` //nolint:tagliatelle // ACP wire field
