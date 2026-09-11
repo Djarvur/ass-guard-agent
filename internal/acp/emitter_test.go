@@ -654,13 +654,17 @@ func TestTurnEmitterEmptyTurn(t *testing.T) {
 
 	sessID := readSessionIDBlind(t, srv)
 
-	// 20-01: session start now precedes its response with the
-	// available_commands_update advertisement (the empty set here — no
-	// CommandSource wired). The EMPTY-TURN contract under test is about the
-	// prompt that follows: baseline the stdout AFTER the session/new
-	// response settles, then assert the turn adds no notification.
-	waitFor(t, "session/new response", 5*time.Second, func() bool {
-		return strings.Contains(stdout.String(), `"id":1`)
+	// 20-01: session start advertises available_commands_update (the empty
+	// set here — no CommandSource wired). 23-07/G-23-1: that advertisement
+	// now rides AFTER the session/new response, so the frame can straddle
+	// the baseline point — wait for BOTH the id:1 response AND the
+	// sessionUpdate advertisement to settle before snapshotting. The
+	// EMPTY-TURN contract under test is about the prompt that follows: the
+	// turn itself must add no notification.
+	waitFor(t, "session/new response + advertisement", 5*time.Second, func() bool {
+		s := stdout.String()
+
+		return strings.Contains(s, `"id":1`) && strings.Contains(s, methodSessionUpdate)
 	})
 
 	baseline := stdout.String()

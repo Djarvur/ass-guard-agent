@@ -13,8 +13,10 @@ import (
 
 // TestCommandsNotifySeam (20-01/Task 3, ACP-04): the commands advertisement
 // re-fire wiring at the COMPOSITION level. Two sessions started on one serve
-// each receive a complete available_commands_update before their session/new
-// response — v1 full-replacement semantics means EVERY fire (the session
+// each receive a complete available_commands_update for their session
+// (23-07/G-23-1: riding AFTER the session/new response — pre-response ones
+// are dropped client-side by Zed, which registers the session only from the
+// response) — v1 full-replacement semantics means EVERY fire (the session
 // start today; the 20-05 rescan swap through the same NotifyAllAvailableCommands
 // seam) carries the COMPLETE winner set, and consecutive fires never assume
 // client-side merge.

@@ -227,6 +227,12 @@ func TestTurnEmitterEndToEnd(t *testing.T) { //nolint:funlen // full end-to-end 
 		t.Fatalf("no sessionId from session/new: %v %+v", snewErr, frames)
 	}
 
+	// 23-07/G-23-1: the advertisement now rides AFTER the session/new
+	// response — drain the one post-response available_commands_update (the
+	// empty set: no CommandSource on this harness) so it neither pollutes
+	// the turn's update sequence below nor escapes the sole-producer count.
+	advertised += wireDrainPostResponseAdvertisement(t, cliR)
+
 	wireSendFrame(t, cliW, &acp.Message{
 		JSONRPC: wireProtocolVersion20, ID: json.RawMessage("2"), Method: wireMethodSessPrmt,
 		Params: wireRawJSON(map[string]any{
@@ -357,6 +363,11 @@ func TestThoughtForward(t *testing.T) { //nolint:funlen // full end-to-end scena
 		t.Fatalf("no sessionId from session/new: %v %+v", snewErr, frames)
 	}
 
+	// 23-07/G-23-1: the advertisement now rides AFTER the session/new
+	// response — drain it so the thought-before-message sequence below reads
+	// only the turn's own frames.
+	_ = wireDrainPostResponseAdvertisement(t, cliR)
+
 	wireSendFrame(t, cliW, &acp.Message{
 		JSONRPC: wireProtocolVersion20, ID: json.RawMessage("2"), Method: wireMethodSessPrmt,
 		Params: wireRawJSON(map[string]any{
@@ -383,6 +394,33 @@ func TestThoughtForward(t *testing.T) { //nolint:funlen // full end-to-end scena
 				i, updates, want)
 		}
 	}
+}
+
+// wireDrainPostResponseAdvertisement reads exactly ONE frame and asserts it is
+// the available_commands_update that follows a session/new response
+// (23-07/G-23-1: the advertisement rides AFTER the response — Zed registers
+// the session from the response and drops pre-response session/updates,
+// zed-industries/zed#60199). Returns 1 so callers folding it into a counted
+// notification total keep their sole-producer equations intact.
+func wireDrainPostResponseAdvertisement(t *testing.T, cliR io.Reader) int {
+	t.Helper()
+
+	line, rerr := bufio.NewReader(cliR).ReadBytes('\n')
+	if len(line) == 0 && rerr != nil {
+		t.Fatalf("no post-response advertisement frame: %v", rerr)
+	}
+
+	var m acp.Message
+
+	if jerr := json.Unmarshal(bytes.TrimRight(line, "\n"), &m); jerr != nil {
+		t.Fatalf("decode post-response advertisement %q: %v", line, jerr)
+	}
+
+	if m.Method != wireSessionUpdate || !strings.Contains(string(m.Params), "available_commands_update") {
+		t.Fatalf("expected the post-response available_commands_update; got %q", line)
+	}
+
+	return 1
 }
 
 // readSessionUpdatesUntilResponse reads frames sequentially until the response

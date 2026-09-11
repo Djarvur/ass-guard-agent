@@ -351,19 +351,38 @@ func (s *Server) handleSessionNew(ctx context.Context, params json.RawMessage) (
 	s.mu.Unlock()
 
 	// 20-01/ACP-04 "sent on session start": the available_commands_update
-	// advertisement fires right after the session exists — the client's
-	// autocomplete reflects the resolver chain's winners from the first
-	// keystroke. Reads the SAME CommandSource the resolver resolves through
-	// (D-04 one truth), FOREGROUND lane, best-effort (log-and-continue — a
-	// failed enqueue never fails session/new). The barrier keeps the
-	// updates-before-response order the load path established (16-01
-	// contract mirrored).
-	if cerr := s.NotifyAvailableCommands(id); cerr != nil {
-		s.log.Printf("session/new: available_commands_update enqueue failed for %s (continuing): %v",
-			id, cerr)
+	// advertisement fires when the session exists — the client's autocomplete
+	// reflects the resolver chain's winners from the first keystroke. Reads
+	// the SAME CommandSource the resolver resolves through (D-04 one truth),
+	// FOREGROUND lane, best-effort (log-and-continue — a failed enqueue never
+	// fails session/new).
+	//
+	// 23-07/G-23-1: the emission rides AFTER the session/new response frame,
+	// registered on the request's post-response slot. The client registers a
+	// NEW session only from the response (it learns the sessionId there —
+	// zed-industries/zed#60199) and drops every session/update for an
+	// unregistered session, so a pre-response advertisement is structurally
+	// undeliverable on this path. The session/load path deliberately KEEPS
+	// its pre-response order: the client pre-registers the session there
+	// (acp.rs:1258-1267), so updates may legitimately lead the load
+	// response — do not unify the two paths. The slot's deferred drain runs
+	// once the response has been enqueued, and the Writer is a FIFO channel
+	// (framer.go D-05), so enqueue order is wire order — no Barrier, no
+	// timing.
+	if !afterResponse(ctx, func() {
+		if cerr := s.NotifyAvailableCommands(id); cerr != nil {
+			s.log.Printf("session/new: available_commands_update enqueue failed for %s (continuing): %v",
+				id, cerr)
+		}
+	}) {
+		// No slot: the handler ran outside handleRequest (a direct call).
+		// Fire now rather than drop the advertisement — standalone callers
+		// still see it.
+		if cerr := s.NotifyAvailableCommands(id); cerr != nil {
+			s.log.Printf("session/new: available_commands_update enqueue failed for %s (continuing): %v",
+				id, cerr)
+		}
 	}
-
-	s.emitter.Barrier(ctx)
 
 	return sessionNewResult{SessionID: id, ConfigOptions: s.configOptionsFor()}, nil
 }

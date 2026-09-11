@@ -200,7 +200,7 @@ func TestAvailableCommandsFullReplacement(t *testing.T) {
 // frame sequence read from the pipe is deterministic, no polling, no timing.
 // The frame-1-is-the-response assertion doubles as the exactly-one guard — a
 // leftover pre-response emission would occupy frame 1 and go red here.
-func TestSessionNewAdvertisesAfterResponse(t *testing.T) {
+func TestSessionNewAdvertisesAfterResponse(t *testing.T) { //nolint:cyclop // one ordering scenario
 	t.Parallel()
 
 	cmds := []AvailableCommandFrame{

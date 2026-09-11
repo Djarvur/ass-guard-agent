@@ -489,7 +489,9 @@ func assertCanaryPositiveControls(t *testing.T, workDir, sessionID string) {
 // projection, so undo present here means undo reaches the client autocomplete).
 // Polling only bounds the wait; the ORDER assertion decodes the settled frame
 // sequence — never a poll race.
-func TestServeSessionNewCommandOrderAfterResponse(t *testing.T) { //nolint:gocognit // decode-settle-then-assert
+func TestServeSessionNewCommandOrderAfterResponse(t *testing.T) { //nolint:funlen // one composition scenario, one serve
+	t.Parallel()
+
 	workDir := t.TempDir()
 
 	// syncBuffer: the serve goroutine writes frames while this test polls.
@@ -553,11 +555,48 @@ func TestServeSessionNewCommandOrderAfterResponse(t *testing.T) { //nolint:gocog
 	}
 
 	// Decode the settled frame sequence and locate the two frames.
-	respIdx, advertIdx, advertCount := -1, -1, 0
+	ord := serveDecodeCommandOrder(t, stdout, sessionID)
 
-	undoPresent := false
+	if ord.respIdx < 0 {
+		t.Fatalf("no session/new response frame (id 1) on stdout: %s", stdout.String())
+	}
 
-	var advertNames []string
+	if ord.advertCount != 1 {
+		t.Fatalf("available_commands_update fires for the session = %d; want exactly 1 (no double fire)",
+			ord.advertCount)
+	}
+
+	if ord.advertIdx < ord.respIdx {
+		t.Fatalf("G-23-1 order violated: available_commands_update (index %d) precedes the "+
+			"session/new response (index %d) — Zed drops pre-response session/updates for "+
+			"unregistered sessions (zed-industries/zed#60199)", ord.advertIdx, ord.respIdx)
+	}
+
+	if !ord.undoPresent {
+		t.Fatalf("advertised winner set lacks the reserved builtin undo: %v", ord.advertNames)
+	}
+}
+
+// serveCommandOrder is serveDecodeCommandOrder's decoded sweep result: where
+// each frame landed, how many times the advertisement fired, and the
+// advertised winner names.
+type serveCommandOrder struct {
+	respIdx     int
+	advertIdx   int
+	advertCount int
+	undoPresent bool
+	advertNames []string
+}
+
+// serveDecodeCommandOrder decodes the settled stdout frame sequence and
+// locates the session/new response (id 1) and the session's
+// available_commands_update. It asserts nothing — the caller owns the
+// ordering semantics (G-23-1).
+func serveDecodeCommandOrder(t *testing.T, stdout *syncBuffer, sessionID string) serveCommandOrder {
+	t.Helper()
+
+	var ord serveCommandOrder
+	ord.respIdx, ord.advertIdx, ord.advertCount = -1, -1, 0
 
 	for i, line := range strings.Split(strings.TrimRight(stdout.String(), "\n"), "\n") {
 		if line == "" {
@@ -575,7 +614,7 @@ func TestServeSessionNewCommandOrderAfterResponse(t *testing.T) { //nolint:gocog
 		}
 
 		if m.ID != nil && *m.ID == 1 && m.Method == "" {
-			respIdx = i
+			ord.respIdx = i
 
 			continue
 		}
@@ -602,35 +641,19 @@ func TestServeSessionNewCommandOrderAfterResponse(t *testing.T) { //nolint:gocog
 			continue
 		}
 
-		advertIdx = i
-		advertCount++
+		ord.advertIdx = i
+		ord.advertCount++
 
 		for _, c := range p.Update.Cmds {
-			advertNames = append(advertNames, c.Name)
+			ord.advertNames = append(ord.advertNames, c.Name)
 
 			if c.Name == "undo" {
-				undoPresent = true
+				ord.undoPresent = true
 			}
 		}
 	}
 
-	if respIdx < 0 {
-		t.Fatalf("no session/new response frame (id 1) on stdout: %s", stdout.String())
-	}
-
-	if advertCount != 1 {
-		t.Fatalf("available_commands_update fires for the session = %d; want exactly 1 (no double fire)", advertCount)
-	}
-
-	if advertIdx < respIdx {
-		t.Fatalf("G-23-1 order violated: available_commands_update (index %d) precedes the "+
-			"session/new response (index %d) — Zed drops pre-response session/updates for "+
-			"unregistered sessions (zed-industries/zed#60199)", advertIdx, respIdx)
-	}
-
-	if !undoPresent {
-		t.Fatalf("advertised winner set lacks the reserved builtin undo: %v", advertNames)
-	}
+	return ord
 }
 
 // driveServeFrames writes the initialize/session-new/session-prompt frame

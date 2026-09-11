@@ -707,10 +707,70 @@ func (s *Server) isLoading(sessionID string) bool {
 	return ok
 }
 
+// postResponseSlot is ONE request's queue of callbacks that must run AFTER
+// the request's response frame has been enqueued to the Writer (23-07/G-23-1).
+type postResponseSlot struct {
+	mu  sync.Mutex
+	fns []func()
+}
+
+func (p *postResponseSlot) register(fn func()) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.fns = append(p.fns, fn)
+}
+
+// run drains the registered callbacks exactly once — deferred on every
+// handleRequest exit path (writeResult and each writeError return), so the
+// slot can never leak and a callback can never double-fire.
+func (p *postResponseSlot) run() {
+	p.mu.Lock()
+	fns := p.fns
+	p.fns = nil
+	p.mu.Unlock()
+
+	for _, fn := range fns {
+		fn()
+	}
+}
+
+// postResponseCtxKey scopes the slot to ONE request's context. Per-request
+// isolation is by construction: a server-wide shared queue would let one
+// request's response gate another session's advertisement (and could invert
+// the property for a second concurrent session/new).
+type postResponseCtxKey struct{}
+
+// afterResponse registers fn to fire after THIS request's response frame is
+// enqueued (23-07/G-23-1). It reports false when ctx carries no slot (the
+// handler ran outside handleRequest — notification dispatch or a direct
+// call), letting the caller fall back to immediate emission.
+func afterResponse(ctx context.Context, fn func()) bool {
+	slot, ok := ctx.Value(postResponseCtxKey{}).(*postResponseSlot)
+	if !ok || fn == nil {
+		return false
+	}
+
+	slot.register(fn)
+
+	return true
+}
+
 // handleRequest looks up the handler, calls it, and writes the response (result
 // or error). Errors are scrubbed via redact.ScrubError before reaching the wire
-// (T-02-03 — error responses never leak a credential).
+// (T-02-03 — error responses never leak a credential). Every request carries a
+// post-response slot (23-07/G-23-1): the deferred drain runs AFTER the
+// response frame's enqueue, and because the Writer is a FIFO channel
+// (framer.go D-05) a notification enqueued by a slot callback lands on the
+// wire strictly after the response — deterministic by enqueue order alone,
+// no timing. That is the property Zed needs at session/new: it registers the
+// session from the response and drops pre-response session/updates
+// (zed-industries/zed#60199).
 func (s *Server) handleRequest(ctx context.Context, msg *Message) {
+	slot := &postResponseSlot{}
+	reqCtx := context.WithValue(ctx, postResponseCtxKey{}, slot)
+	defer slot.run()
+
 	handler, ok := s.handlers[msg.Method]
 	if !ok {
 		s.writeError(msg.ID, &RPCError{
@@ -721,7 +781,7 @@ func (s *Server) handleRequest(ctx context.Context, msg *Message) {
 		return
 	}
 
-	result, err := handler(ctx, msg.Params)
+	result, err := handler(reqCtx, msg.Params)
 	if err != nil {
 		// A handler may return a *RPCError to surface a specific JSON-RPC code
 		// (e.g. session/load's typed rejections, 18-01). Any other error is

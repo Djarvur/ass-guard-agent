@@ -359,6 +359,13 @@ func sendSetConfigOption(t *testing.T, h *pipeHarness, id int, sessionID, option
 			return msg
 		}
 
+		if msg.Method == methodSessionUpdate {
+			// 23-07/G-23-1: session/new's advertisement rides AFTER its
+			// response, so it straddles into this read window — skip
+			// notifications while waiting for the response.
+			continue
+		}
+
 		t.Fatalf("expected the set_config_option response (id=%d); got method=%q id=%v", id, msg.Method, msg.ID)
 	}
 }

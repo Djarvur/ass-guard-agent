@@ -100,9 +100,14 @@ func (h *pipeHarness) readFrame(t *testing.T) *Message {
 
 // readResultFrame reads frames until the next REQUEST RESPONSE (a frame
 // carrying an id or an error) arrives — session/update notifications emitted
-// ahead of a response are skipped (20-01: session/new now precedes its
-// response with the available_commands_update advertisement — the load
-// path's updates-before-response contract generalized).
+// ahead of a response are skipped. The skip-ahead tolerance is for the LOAD
+// path, which still emits its replay updates and command re-advertisement
+// BEFORE its response (the client pre-registers on session/load, so that
+// 16-01/18-05 order is deliberate and correct). session/new's advertisement
+// rides AFTER its response (23-07/G-23-1: the client learns the sessionId
+// only from the response and drops pre-response session/updates,
+// zed-industries/zed#60199), so on that path the response is simply the
+// first frame and nothing is skipped.
 func (h *pipeHarness) readResultFrame(t *testing.T) *Message {
 	t.Helper()
 
@@ -346,6 +351,13 @@ func TestSessionPromptStreamsUpdate(t *testing.T) { //nolint:funlen // comprehen
 			}
 
 			_ = json.Unmarshal(msg.Params, &params)
+
+			if params.Update.SessionUpdate == KindAvailableCommandsUpdate {
+				// 23-07/G-23-1: session/new's advertisement rides AFTER its
+				// response, so it straddles into this read window — not a
+				// turn chunk.
+				continue
+			}
 
 			if params.Update.SessionUpdate != "agent_message_chunk" {
 				t.Errorf("first sessionUpdate = %q; want agent_message_chunk", params.Update.SessionUpdate)
