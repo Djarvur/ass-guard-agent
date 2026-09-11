@@ -52,7 +52,7 @@ Operator decisions at close (2026-08-23…25): D-09 REVERSED (session resume = m
 - [x] **Phase 19: Compaction + cache_control** - Threshold-triggered compaction marker plus parity-faithful cache_control emission (completed 2026-09-07)
 - [x] **Phase 20: Built-in Commands + Skills + Per-Agent Model** - Resolver chain, class-B/class-A command families, slash-invocable skills, per-agent model dispatch (completed 2026-09-07)
 - [x] **Phase 21: Context & Policy Parity Closures** - Hooks PreToolUse deny joining the gate pipeline, AGENTS.md injection, thinking streaming, rich prompt content (completed 2026-09-06)
-- [ ] **Phase 22: Background Execution + Sandbox Reality** - Full subagents, background Bash, persistent shell on shared process lifecycle; real sandbox
+- [x] **Phase 22: Background Execution + Sandbox Reality** - Full subagents, background Bash, persistent shell on shared process lifecycle; real sandbox (completed 2026-09-11)
 - [ ] **Phase 23: SEED Gaps Close-out** - Steering queue, checkpoint restore guard, /undo
 - [ ] **Phase 24: Documentation & Ops Tails** - LSP doc requirement, outcome store, nightly CI, ecosystem end-to-end
 - [x] **Phase 25: SEED-001 Kit Extraction (strictly last)** - Agent machinery extracted behind a composition-root API; ass-guard becomes the reference app (completed 2026-09-11)
@@ -335,7 +335,7 @@ Plans:
   3. The persistent-shell Bash option holds state across calls in one PTY session (cd/export persist, ANSI stripped, EIO-as-EOF handled) without leaking the master fd.
   4. With sandbox enabled, tools run confined (landlock on Linux kernel ≥5.13, sandbox-exec generated profiles on macOS with targeted denies); unsupported kernels/environments degrade LOUDLY at startup, default stays OFF, and `--sandbox=off` always escapes.
 
-**Plans:** 9/9 plans executed
+**Plans:** 9/9 plans complete
 
 Plans:
 
@@ -509,7 +509,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 | 19. Compaction + cache_control | v1.2 | 7/7 | Complete    | 2026-09-07 |
 | 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 6/6 | Complete    | 2026-09-07 |
 | 21. Context & Policy Parity Closures | v1.2 | 6/6 | Complete    | 2026-09-06 |
-| 22. Background Execution + Sandbox Reality | v1.2 | 9/9 | In Progress|  |
+| 22. Background Execution + Sandbox Reality | v1.2 | 9/9 | Complete    | 2026-09-11 |
 | 23. SEED Gaps Close-out | v1.2 | 6/6 | In Progress|  |
 | 24. Documentation & Ops Tails | v1.2 | 6/6 | In Progress|  |
 | 25. SEED-001 Kit Extraction | v1.2 | 9/9 | Complete    | 2026-09-11 |

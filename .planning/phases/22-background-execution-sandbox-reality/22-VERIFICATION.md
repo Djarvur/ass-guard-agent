@@ -1,9 +1,10 @@
 ---
 phase: 22-background-execution-sandbox-reality
 verified: 2026-09-10T13:41:06Z
-status: human_needed
+status: passed
 score: 38/39 must-haves verified
 covered_files:
+
   - .planning/phases/22-background-execution-sandbox-reality/22-01-PLAN.md
   - .planning/phases/22-background-execution-sandbox-reality/22-01-SUMMARY.md
   - .planning/phases/22-background-execution-sandbox-reality/22-02-PLAN.md
@@ -57,7 +58,9 @@ covered_files:
   - internal/tasks/tracker.go
   - internal/tasks/tracker_test.go
   - internal/toolcat/coretools.json
+
 covered_digest: "v1:sha256:0890d9df4a24b278303d49cd0e3a6c376b32ae95b72625655e29a54b73cb53b4"
+operator_resolution: "2026-09-11 — ADR-550 prohibitions PASS (operator-confirmed); darwin live seatbelt DEFERRED (operator on Linux, no macOS host)"
 behavior_unverified: 1 # 22-05 T5 darwin live seatbelt battery — not reproducible on this Linux host
 overrides_applied: 0
 re_verification:
@@ -67,14 +70,17 @@ re_verification:
   gaps_remaining: []
   regressions: [] # phase-23 (3c64e82..0c17c02) touched only runtime.go + commands.go in this phase's surface; all seams intact, all batteries re-run green
 behavior_unverified_items:
+
   - truth: "macOS confinement rides an embedded .sb template rendered IN MEMORY with targeted denies, never deny-default — the live darwin battery proves curl-connect deny and outside-write deny (22-05 T5)"
     test: "Run the darwin seatbelt battery on a macOS host (go test ./internal/sandbox/ with GOOS=darwin on darwin hardware)"
     expected: "sandbox-exec -p confinement denies curl connect and outside writes; profile is allow-default with targeted denies"
     why_human: "This verifier runs on Linux; seatbelt_darwin_test.go is build-gated darwin-only and cannot execute here. The linux-runnable evidence (TestPolicySymmetry_SeatbeltShapeNeverDenyDefault, TestPolicySymmetry_GoldenDenySet — both re-run green by this verifier in THIS pass) pins the RENDERED shape, not live enforcement; the Linux landlock leg IS live-proven here (included green in the full ./internal/coreexec/ package gate)."
 human_verification:
+
   - test: "On a macOS host (amd64 or arm64), run GOOS=darwin go test ./internal/sandbox/ -run 'TestSeatbelt|TestPolicySymmetry_SeatbeltShape' -v"
     expected: "Live seatbelt battery passes: sandbox-exec -p confinement denies curl connect and outside writes; the rendered profile is allow-default with targeted denies (never deny-default)"
     why_human: "seatbelt_darwin_test.go is build-gated darwin-only; this verification host is Linux and cannot execute the live enforcement leg. Only the rendered-shape symmetry (golden deny set) is machine-verified here."
+
   - test: "Human resolution of the 8 judgment-tier prohibitions recorded in the Prohibition Disposition section below (P1-P9)"
     expected: "A human confirms the non-authoritative HELD verdicts for the must-NOT invariants (ids never model-controlled, client turn never preempted, sweep never silently deletes, ask-class decline never bypassed, PTY output never to stdout, never fail open silently, never confine ass-guard itself, green result never implies confinement, no exec site skips wrap while on)"
     why_human: "ADR-550 D4 autonomous verify: judgment-tier prohibitions carry a NON-AUTHORITATIVE LLM-judge verdict plus the unverified-prohibition flag; they are never a silent pass and require explicit human resolution at the end-of-phase checkpoint."
@@ -257,6 +263,23 @@ The status is human_needed (not passed) solely because of the two carried human-
 
 ---
 
-_Verified: 2026-09-10T13:41:06Z_
+## Operator Resolution (2026-09-11)
+
+Both carried human-review items were resolved by the operator in the 2026-09-11 UAT session (22-UAT.md):
+
+| Item | Resolution |
+|------|-----------|
+| Judgment-tier prohibitions (ADR-550 P1–P9) | **PASS** — operator reviewed the Prohibition Disposition table (8 HELD verdicts with bases) and confirmed all of them |
+| Darwin live seatbelt battery (22-05 T5) | **BLOCKED / DEFERRED** — `blocked_by: physical-device`: operator has moved from macOS to Linux; no macOS host available. The live darwin enforcement leg is deferred to a future macOS host (run `GOOS=darwin go test ./internal/sandbox/ -run 'TestSeatbelt|TestPolicySymmetry_SeatbeltShape' -v` there; WR-06 quote-escaping caveat applies). |
+
+Status canonicalized `human_needed` → `passed` with zero UAT issues recorded (the blocked test is an environmental prerequisite gate, not a code gap — completion-precedent: Phase 20, operator legs carried in the UAT record). The darwin deferral is the sole acknowledged gap.
+
+### Acknowledged Gaps
+
+- **Darwin live seatbelt enforcement unexercised** (environmental). Rendered-profile shape IS pinned by the linux-runnable symmetry goldens (never-deny-default, golden deny set — re-run green this pass) and the Linux landlock leg is live-proven on this host; only live `sandbox-exec` enforcement on macOS hardware remains unobserved. Operator decision 2026-09-11: defer to the next macOS host availability.
+
+---
+
+_Verified: 2026-09-10T13:41:06Z — operator resolution recorded 2026-09-11T17:36Z_
 _Verifier: Claude (gsd-verifier)_
 _Stale re-verification of: 2026-09-10T04:06:06Z report (human_needed, 38/39) — triggered by phase-23 commits 3c64e82..0c17c02 touching internal/runtime_
