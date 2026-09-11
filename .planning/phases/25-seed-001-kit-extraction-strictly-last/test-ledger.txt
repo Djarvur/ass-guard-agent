@@ -11,6 +11,9 @@
 # Files counted: 217 | Scope totals computed per file below.
 #
 # >>> WHOLE-REPO TEST-FUNCTION TOTAL: 1397 <<<
+# AMENDED 2026-09-11 (25-09): +1 sanctioned instrument addition — TestKitHostsNonACPFrontend
+# (the plan-mandated hostproof test; the D-20 conservation rule binds moves, and this is the
+# documented single addition). Expected sum from 25-09 on: 1398.
 #
 ## cmd/ass-guard/acp_serve_test.go (2)
 func TestACPServeCommandRegistered(t *testing.T) {
