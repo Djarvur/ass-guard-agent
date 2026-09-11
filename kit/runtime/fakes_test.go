@@ -16,9 +16,9 @@ package runtime //nolint:testpackage // internal package test
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"encoding/hex"
 	"fmt"
 	"io/fs"
 	"os"

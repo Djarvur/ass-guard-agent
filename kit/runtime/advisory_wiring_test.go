@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Djarvur/ass-guard-agent/kit/session"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
+	"github.com/Djarvur/ass-guard-agent/kit/session"
 )
 
 // countingEmitter counts AgentMessageChunk emissions (the kit Emitter twin

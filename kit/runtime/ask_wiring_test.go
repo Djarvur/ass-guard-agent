@@ -502,7 +502,6 @@ func TestAskWiring_ChainSurvivesAskTimerResume(t *testing.T) { //nolint:cyclop,f
 	_ = prov.callCount() // script-shape debug aid when re-tuned
 }
 
-
 // cr02GateTool is the mutating tool the CR-02 mutex pins gate on; cr02PermFire
 // is the blocking permission surface (the dialog stays open until release).
 const cr02GateTool = toolNameWrite

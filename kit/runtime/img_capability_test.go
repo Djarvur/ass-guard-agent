@@ -458,8 +458,8 @@ func TestImageCapability_ImageOnlyDropKeepsNonEmptyBody(t *testing.T) { //nolint
 
 	// Image-ONLY prompt: no text block accompanies the payload.
 	prompt := []session.ContentBlock{{
-		Type:     blockImage,
-		Data:     base64.StdEncoding.EncodeToString(encodePNG(t, 8, 8)),
+		Type:      blockImage,
+		Data:      base64.StdEncoding.EncodeToString(encodePNG(t, 8, 8)),
 		MediaType: imgPNGMedia,
 	}}
 

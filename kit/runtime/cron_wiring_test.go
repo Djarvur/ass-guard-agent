@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/sched"
+	"github.com/Djarvur/ass-guard-agent/kit/event"
 	"github.com/Djarvur/ass-guard-agent/kit/provider"
 	"github.com/Djarvur/ass-guard-agent/kit/session"
 	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
-	"github.com/Djarvur/ass-guard-agent/kit/event"
 )
 
 // The cron wiring battery (12-07 Task 2): queue-behind-active-turn, engine
