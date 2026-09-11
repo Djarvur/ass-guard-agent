@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/acp"
 	"github.com/Djarvur/ass-guard-agent/kit/provider"
 	"github.com/Djarvur/ass-guard-agent/kit/toolcat"
 	"github.com/Djarvur/ass-guard-agent/kit/toolexec"
@@ -221,13 +220,21 @@ func TestStructuredReplyRender(t *testing.T) { //nolint:funlen // pinned-seriali
 
 // TestElicitationParity pins the session-native elicitation action vocabulary
 // byte-equal to the wire constants (the TestGateAskKindsParity pattern —
-// internal/session never imports internal/acp in production code).
+// internal/session never imports internal/acp in production code). 25-08: the
+// wire values are pinned as literals (the captured ACP elicitation shape) —
+// the kit test tree imports no app package; the cross-check against
+// internal/acp's own constants keeps its subject in internal/acp's suites.
 func TestElicitationParity(t *testing.T) {
 	t.Parallel()
 
-	if ElicitAccept != acp.ElicitationActionAccept || ElicitDecline != acp.ElicitationActionDecline {
+	const (
+		wireAccept  = "accept"
+		wireDecline = "decline"
+	)
+
+	if ElicitAccept != wireAccept || ElicitDecline != wireDecline {
 		t.Errorf("elicitation action parity broken: (%q, %q) vs wire (%q, %q)",
-			ElicitAccept, ElicitDecline, acp.ElicitationActionAccept, acp.ElicitationActionDecline)
+			ElicitAccept, ElicitDecline, wireAccept, wireDecline)
 	}
 }
 
