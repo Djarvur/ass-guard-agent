@@ -1,9 +1,9 @@
 ---
-status: complete
+status: diagnosed
 phase: 23-seed-gaps-close-out
 source: [23-VERIFICATION.md]
 started: 2026-09-10T05:30:00Z
-updated: 2026-09-11T19:25:00Z
+updated: 2026-09-11T19:45:00Z
 ---
 
 ## Current Test
@@ -51,5 +51,14 @@ blocked: 0
   severity: major
   test: 1
   related_tests: [2]
-  artifacts: []
-  missing: []
+  root_cause: "AND-gated interop mismatch. Agent-side: internal/acp/handlers.go handleSessionNew (:353-366, introduced 89bcc6f Phase 20-01) emits available_commands_update BEFORE writing the session/new response — deliberately mirroring the 16-01/18-05 session/load ordering. Client-side: Zed drops every session/update for an unregistered session (acp.rs handle_session_notification → 'unknown session' warn → return); on session/new Zed cannot pre-register (learns the sessionId only from the response), while on session/load it pre-registers before awaiting — which is why mirroring the load order onto session/new was invalid. Wire-reproduced against the shipped fresh binary: the full 14-command advertisement (incl. /undo) IS emitted, correct shape, but arrives before the response by construction and is discarded client-side. No later re-fire rescues the session (startup SetCatalog notify fires with zero live sessions; 20-05 rescan needs .claude/ fs changes). Matches open upstream zed-industries/zed#60199 (identical symptom with CodeBuddy)."
+  artifacts:
+    - path: internal/acp/handlers.go
+      issue: "handleSessionNew emits the advertisement pre-response (:353-366) — the agent-side half of the mismatch"
+    - path: internal/acp/server.go
+      issue: "NotifyAvailableCommands (:538-560) — correct in isolation (foreground lane), only its call timing is wrong"
+  missing:
+    - "Emit the session/new advertisement AFTER the session/new response frame is written (post-response emission / deferred enqueue ordered behind the response write)"
+    - "Leave the session/load pre-response order unchanged (Zed pre-registers there — that order is correct)"
+    - "20-05 rescan re-fire already covers later discovery changes"
+  debug_session: .planning/debug/zed-empty-commands-advertisement.md
