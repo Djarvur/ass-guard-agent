@@ -377,11 +377,12 @@ Plans:
   4. `/undo` restores the last checkpoint instantly with no model turn (class-B), and the restored workspace is byte-identical to the pre-turn snapshot.
   5. The steering queue API is transport-neutral (consumable by a non-ACP frontend) — Telegram could adopt it without rework.
 
-**Plans**: 6/6 plans executed
+**Plans**: 7 plans (6 executed + 1 gap closure)
 
 Plans:
 
 - [x] 23-06-PLAN.md
+- [ ] 23-07-PLAN.md — G-23-1 gap closure: session/new available_commands_update advertisement moved behind the response frame (Zed registration window, zed#60199); two-level ordering battery + live-Zed /undo UAT checkpoint
 
 **Wave 1**
 
