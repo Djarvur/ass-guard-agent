@@ -1,9 +1,10 @@
 ---
 phase: 24-documentation-ops-tails
 verified: 2026-09-10T19:12:04Z
-status: human_needed
+status: passed
 score: 13/14 must-haves verified
 covered_files:
+
   - .planning/phases/24-documentation-ops-tails/24-01-PLAN.md
   - .planning/phases/24-documentation-ops-tails/24-02-PLAN.md
   - .planning/phases/24-documentation-ops-tails/24-03-PLAN.md
@@ -55,6 +56,7 @@ covered_files:
   - internal/ecosys/testdata/modes-matrix/commands/matrix-echo.md
   - internal/ecosys/testdata/modes-matrix/skills/matrix-skill/SKILL.md
   - .golangci.yml
+
 covered_digest: "v1:sha256:095c32af008e71874f4b5a8d9b35c1d40a2b1effaf358e6f26d5be18e8c1fa47"
 behavior_unverified: 1 # truths present + wired but the runtime behavior is not exercisable pre-merge
 overrides_applied: 0
@@ -62,22 +64,27 @@ re_verification:
   previous_status: gaps_found
   previous_score: 11/14
   gaps_closed:
+
     - "G-24-1: SC-4 wake mode row — three real drivers through the live phase-22 wake chain, zero PRECONDITION-UNMET; false premise corrected in test file, 24-05-SUMMARY, WINDOWS #29 (commits cba127a, cde0b80, d3623dc)"
     - "G-24-2: CR-01/WR-01 cross-provider wrong-wire demotion — provider-filtered walks at BOTH resolve sites with the cross-provider-PRIMARY guard, pinned red-then-green at both sites (commits 3d95dc5, f926747)"
   gaps_remaining: []
   regressions: []
 behavior_unverified_items:
+
   - truth: "Nightly CI runs the upstream-parity gate unattended on a schedule and reports drift without human triggering (SC-3 live half)"
     test: "After the v1.2 milestone merges to master: confirm the Actions tab shows nightly-parity scheduled runs firing at cron 41 3 * * *; run the workflow_dispatch smoke and confirm build-test green + drift-job report artifact; register the [self-hosted, zcode] runner; confirm Workflow permissions allow GITHUB_TOKEN issue creation"
     expected: "Scheduled runs appear unattended; dispatch run shows build-test green and a report artifact on every run; drift job starts once a matching runner is online; a drift opens an issue"
     why_human: "The schedule fires only when the workflow file exists on the DEFAULT branch (GitHub behavior — the plan's documented activation point); dispatch was 404-rejected pre-merge (both gh workflow run --ref and the REST dispatches API, recorded in 24-04-SUMMARY) per the plan's own Task 3 contingency (DEFERRED-TO-MERGE with local stand-in evidence); zero self-hosted runners are registered"
 human_verification:
+
   - test: "Open Zed against the scratch project from docs/lsp-setup.md, prompt the agent to call an mcp__gopls__* tool (24-03 step 7 live editor leg)"
     expected: "The gopls MCP tool executes inside the editor-hosted session (context server configured IDE-side per the guide)"
     why_human: "GUI editor behavior; the scripted catalog dry-run (six mcp__gopls__* tools observed against the real binary, 24-03-SUMMARY) covered everything programmatically checkable"
+
   - test: "After merge to master: confirm nightly-parity scheduled runs fire unattended; run the dispatch smoke; register the [self-hosted, zcode] runner; confirm issue-on-drift permissions (the behavior_unverified_items entry; 24-USER-SETUP.md tracks all four)"
     expected: "Scheduled runs appear without human triggering; dispatch run green with report artifact; drift job runs once a runner is online; a drift opens an issue"
     why_human: "Schedule activation is structurally a default-branch property; pre-merge dispatch is 404-rejected by GitHub (recorded twice in 24-04-SUMMARY) — not locally exercisable"
+
   - test: "D-14 real-plugin spot-check fidelity: compare the superpowers 6.1.1 observations recorded in 24-05-SUMMARY against your own Claude Code setup"
     expected: "Plugins/skills behave unchanged vs the operator's own Claude Code environment (the plan's own human-checkpoint item)"
     why_human: "The 'unchanged' judgment is the operator's call against their live environment; grep cannot see behavioral fidelity"
@@ -245,5 +252,23 @@ Warnings worth scheduling (not gating, unchanged from the initial verification):
 
 ---
 
-_Verified: 2026-09-10T19:12:04Z_
+## Operator Resolution (2026-09-11)
+
+All three carried human-review items were resolved in the 2026-09-11 UAT session (24-UAT.md):
+
+| Item | Resolution |
+|------|-----------|
+| LSP guide live editor leg | **PASS** — orchestrator configured the project `.mcp.json` (mcp-language-server + gopls, explicit `env.PATH` after catching the documented silent `gopls`-not-found hazard) + Zed `context_servers`; operator prompted an `mcp__gopls__*` call in a fresh ass-guard thread — executed as expected |
+| D-14 real-plugin fidelity | **PASS** — first attempt in the main repo failed on environment asymmetry (GSD skills only in `.zcode/skills/`; no `.claude/skills/` for ass-guard to read); wire check on a scratch project WITH `.claude/skills/` proved the dynamic user-invocable skills section IS injected into the model's system prompt and the Skill tool is live; operator confirmed live in the editor. Environment notes recorded (cwd-relative profile loading; optional `.claude/skills/` install) — neither a phase-24 contract item |
+| Nightly parity CI post-merge activation | **BLOCKED / DEFERRED** — merge-gated by design (branch not on master; workflow_dispatch GitHub-404 pre-merge is the plan's documented DEFERRED-TO-MERGE contingency). Post-merge checklist remains tracked in 24-USER-SETUP.md |
+
+Status canonicalized `human_needed` → `passed` with zero UAT issues (the blocked test is a merge-gated prerequisite, not a code gap — completion precedent: Phases 20/22, deferrals recorded in the UAT and here). The post-merge CI activation is the sole acknowledged deferral.
+
+### Acknowledged Gaps
+
+- **Nightly parity CI live activation unexercised** (merge-gated). Local stand-in evidence complete (drift-core end-to-end, exit-7 report, 24-04). After merge: run the four-item checklist in 24-USER-SETUP.md (cron fire, dispatch smoke, `[self-hosted, zcode]` runner online, issue-on-drift permissions).
+
+---
+
+_Verified: 2026-09-10T19:12:04Z — operator resolution recorded 2026-09-11T20:15Z_
 _Verifier: Claude (gsd-verifier) — re-verification after 24-06 gap closure (cba127a..d3623dc)_

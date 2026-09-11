@@ -54,7 +54,7 @@ Operator decisions at close (2026-08-23…25): D-09 REVERSED (session resume = m
 - [x] **Phase 21: Context & Policy Parity Closures** - Hooks PreToolUse deny joining the gate pipeline, AGENTS.md injection, thinking streaming, rich prompt content (completed 2026-09-06)
 - [x] **Phase 22: Background Execution + Sandbox Reality** - Full subagents, background Bash, persistent shell on shared process lifecycle; real sandbox (completed 2026-09-11)
 - [ ] **Phase 23: SEED Gaps Close-out** - Steering queue, checkpoint restore guard, /undo
-- [ ] **Phase 24: Documentation & Ops Tails** - LSP doc requirement, outcome store, nightly CI, ecosystem end-to-end
+- [x] **Phase 24: Documentation & Ops Tails** - LSP doc requirement, outcome store, nightly CI, ecosystem end-to-end (completed 2026-09-11)
 - [x] **Phase 25: SEED-001 Kit Extraction (strictly last)** - Agent machinery extracted behind a composition-root API; ass-guard becomes the reference app (completed 2026-09-11)
 
 ## Phase Details
@@ -512,7 +512,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 | 21. Context & Policy Parity Closures | v1.2 | 6/6 | Complete    | 2026-09-06 |
 | 22. Background Execution + Sandbox Reality | v1.2 | 9/9 | Complete    | 2026-09-11 |
 | 23. SEED Gaps Close-out | v1.2 | 6/6 | In Progress|  |
-| 24. Documentation & Ops Tails | v1.2 | 6/6 | In Progress|  |
+| 24. Documentation & Ops Tails | v1.2 | 6/6 | Complete    | 2026-09-11 |
 | 25. SEED-001 Kit Extraction | v1.2 | 9/9 | Complete    | 2026-09-11 |
 
 ## Backlog
