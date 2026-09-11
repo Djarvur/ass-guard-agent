@@ -480,6 +480,159 @@ func assertCanaryPositiveControls(t *testing.T, workDir, sessionID string) {
 	}
 }
 
+// TestServeSessionNewCommandOrderAfterResponse pins G-23-1 at the COMPOSITION
+// level: through the real Run chain (Profile + the composed CommandSource),
+// the session/new RESPONSE frame precedes the session's
+// available_commands_update advertisement, and the advertised winner set
+// carries the reserved builtins — undo among them (the class-B /undo surface
+// SEEDG-03's live leg depends on; the set is the resolver chain's winner
+// projection, so undo present here means undo reaches the client autocomplete).
+// Polling only bounds the wait; the ORDER assertion decodes the settled frame
+// sequence — never a poll race.
+func TestServeSessionNewCommandOrderAfterResponse(t *testing.T) { //nolint:gocognit // decode-settle-then-assert
+	workDir := t.TempDir()
+
+	// syncBuffer: the serve goroutine writes frames while this test polls.
+	stdout := &syncBuffer{}
+	stderr := &syncBuffer{}
+
+	//nolint:modernize,testingcontext // explicit cancel before the pipe close
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	inPipeR, inPipeW := io.Pipe()
+	defer func() { _ = inPipeW.Close() }()
+
+	go func() {
+		_ = Run(ctx, inPipeR, stdout, stderr, &Options{
+			Profile: profileZcode, MaxConcurrent: 2,
+			ProfilesDir: repoProfilesDir(t), WorkDir: workDir,
+		})
+	}()
+
+	writeFrame := func(line string) {
+		_, werr := inPipeW.Write([]byte(line + "\n"))
+		if werr != nil {
+			t.Fatalf("write frame: %v", werr)
+		}
+	}
+
+	// Zed-like initialize: the elicitation.form advertisement means no
+	// capability probe fires (D-13 advertisement-first).
+	writeFrame(`{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":1,` +
+		`"clientCapabilities":{"elicitation":{"form":{}}}}}`)
+	writeFrame(`{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"` + workDir + `"}}`)
+
+	// Poll ONLY to bound the wait for the response (never for order).
+	sessionID := pollStdoutForSessionID(t, stdout)
+
+	// Settle: the advertisement must be present AND the byte count stable
+	// across an interval before the sequence is decoded.
+	deadline := time.Now().Add(10 * time.Second)
+
+	settled := false
+
+	for time.Now().Before(deadline) {
+		if snap := stdout.String(); strings.Contains(snap, "available_commands_update") {
+			size := len(snap)
+
+			time.Sleep(50 * time.Millisecond)
+
+			if len(stdout.String()) == size {
+				settled = true
+
+				break
+			}
+		}
+
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	if !settled {
+		t.Fatalf("available_commands_update never settled within 10s (stdout: %s)", stdout.String())
+	}
+
+	// Decode the settled frame sequence and locate the two frames.
+	respIdx, advertIdx, advertCount := -1, -1, 0
+
+	undoPresent := false
+
+	var advertNames []string
+
+	for i, line := range strings.Split(strings.TrimRight(stdout.String(), "\n"), "\n") {
+		if line == "" {
+			continue
+		}
+
+		var m struct {
+			ID     *int            `json:"id"`
+			Method string          `json:"method"`
+			Params json.RawMessage `json:"params"`
+		}
+
+		if jerr := json.Unmarshal([]byte(line), &m); jerr != nil {
+			t.Fatalf("decode frame %d (%s): %v", i, line, jerr)
+		}
+
+		if m.ID != nil && *m.ID == 1 && m.Method == "" {
+			respIdx = i
+
+			continue
+		}
+
+		if m.Method != "session/update" {
+			continue
+		}
+
+		var p struct {
+			SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+			Update    struct {
+				Kind string `json:"sessionUpdate"` //nolint:tagliatelle // ACP wire field
+				Cmds []struct {
+					Name string `json:"name"`
+				} `json:"availableCommands"` //nolint:tagliatelle // ACP wire field
+			} `json:"update"`
+		}
+
+		if perr := json.Unmarshal(m.Params, &p); perr != nil {
+			t.Fatalf("decode session/update params (%s): %v", line, perr)
+		}
+
+		if p.Update.Kind != "available_commands_update" || p.SessionID != sessionID {
+			continue
+		}
+
+		advertIdx = i
+		advertCount++
+
+		for _, c := range p.Update.Cmds {
+			advertNames = append(advertNames, c.Name)
+
+			if c.Name == "undo" {
+				undoPresent = true
+			}
+		}
+	}
+
+	if respIdx < 0 {
+		t.Fatalf("no session/new response frame (id 1) on stdout: %s", stdout.String())
+	}
+
+	if advertCount != 1 {
+		t.Fatalf("available_commands_update fires for the session = %d; want exactly 1 (no double fire)", advertCount)
+	}
+
+	if advertIdx < respIdx {
+		t.Fatalf("G-23-1 order violated: available_commands_update (index %d) precedes the "+
+			"session/new response (index %d) — Zed drops pre-response session/updates for "+
+			"unregistered sessions (zed-industries/zed#60199)", advertIdx, respIdx)
+	}
+
+	if !undoPresent {
+		t.Fatalf("advertised winner set lacks the reserved builtin undo: %v", advertNames)
+	}
+}
+
 // driveServeFrames writes the initialize/session-new/session-prompt frame
 // sequence over the serve pipe and returns the session id.
 func driveServeFrames(t *testing.T, inPipeW *io.PipeWriter, stdout *syncBuffer, workDir string) string {

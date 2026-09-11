@@ -190,6 +190,81 @@ func TestAvailableCommandsFullReplacement(t *testing.T) {
 	}
 }
 
+// TestSessionNewAdvertisesAfterResponse pins the G-23-1 wire order at the
+// dispatch level: for session/new the RESPONSE frame is written FIRST and the
+// available_commands_update advertisement lands strictly AFTER it. Zed
+// registers a new session only from the response (zed-industries/zed#60199)
+// and drops every session/update for an unregistered session — a pre-response
+// advertisement is structurally undeliverable client-side. The Writer is an
+// async FIFO channel (framer.go D-05), so enqueue order IS wire order: the
+// frame sequence read from the pipe is deterministic, no polling, no timing.
+// The frame-1-is-the-response assertion doubles as the exactly-one guard — a
+// leftover pre-response emission would occupy frame 1 and go red here.
+func TestSessionNewAdvertisesAfterResponse(t *testing.T) {
+	t.Parallel()
+
+	cmds := []AvailableCommandFrame{
+		{Name: "alpha", Description: "A"},
+		{Name: "beta", Description: "B"},
+		{Name: "gamma", Description: "C"},
+	}
+
+	h := newPipeHarness(t, WithCommandSource(staticCommandSource{cmds: cmds}))
+	handshake(t, h)
+
+	h.send(t, newRequest(1, "session/new", map[string]any{keyCwd: testCwdTmp, keyMcpServers: []any{}}))
+
+	// Frame 1 MUST be the id-matched session/new response.
+	first := h.readFrame(t)
+	if first.ID == nil || string(first.ID) != "1" || first.Result == nil {
+		t.Fatalf("first frame after session/new must be the id:1 response (G-23-1); got "+
+			"method=%q id=%v result=%v — the advertisement was emitted before the response "+
+			"and is dropped client-side by Zed (unregistered session, zed#60199)",
+			first.Method, first.ID, first.Result != nil)
+	}
+
+	var sres struct {
+		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+	}
+
+	if uerr := json.Unmarshal(first.Result, &sres); uerr != nil || sres.SessionID == "" {
+		t.Fatalf("session/new result carries no sessionId: %v (%s)", uerr, string(first.Result))
+	}
+
+	// Frame 2 MUST be the session's advertisement.
+	second := h.readFrame(t)
+	if second.Method != methodSessionUpdate || second.ID != nil {
+		t.Fatalf("second frame after session/new must be the available_commands_update "+
+			"notification; got method=%q id=%v", second.Method, second.ID)
+	}
+
+	upd := updateOf(t, second)
+	if upd[keySessionUpdate] != KindAvailableCommandsUpdate {
+		t.Fatalf("second frame kind = %v; want %s", upd[keySessionUpdate], KindAvailableCommandsUpdate)
+	}
+
+	var p struct {
+		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+	}
+
+	if uerr := json.Unmarshal(second.Params, &p); uerr != nil || p.SessionID != sres.SessionID {
+		t.Fatalf("advertisement sessionId = %q (err %v); want the response's %q",
+			p.SessionID, uerr, sres.SessionID)
+	}
+
+	got, ok := upd[keyAvailableCommands].([]any)
+	if !ok || len(got) != len(cmds) {
+		t.Fatalf("advertisement carries %v; want the wired static set of %d", upd[keyAvailableCommands], len(cmds))
+	}
+
+	for i, want := range cmds {
+		entry, eok := got[i].(map[string]any)
+		if !eok || entry["name"] != want.Name {
+			t.Fatalf("advertisement entry %d = %v; want %q", i, got[i], want.Name)
+		}
+	}
+}
+
 // TestUserMessageChunkEcho pins the D-05 echo frame: a user_message_chunk
 // ContentChunk (content + messageId — Pitfall 5: the bare "user_message"
 // kind does NOT exist in the v1 union and this golden goes red if the

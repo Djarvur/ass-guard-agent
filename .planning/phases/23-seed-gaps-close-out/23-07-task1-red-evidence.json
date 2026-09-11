@@ -1,0 +1,19 @@
+{
+  "plan": "23-07",
+  "task": 1,
+  "phase_gate": "RED",
+  "command": "go test ./internal/acp/ -run TestSessionNewAdvertisesAfterResponse -v -count=1 && go test ./internal/acpserve/ -run TestServeSessionNewCommandOrderAfterResponse -v -count=1",
+  "targetTest": "TestSessionNewAdvertisesAfterResponse, TestServeSessionNewCommandOrderAfterResponse",
+  "exitCode": 1,
+  "output": "--- FAIL: TestSessionNewAdvertisesAfterResponse (0.00s)\n    available_commands_test.go:220: first frame after session/new must be the id:1 response (G-23-1); got method=\"session/update\" id=null result=false — the advertisement was emitted before the response and is dropped client-side by Zed (unregistered session, zed#60199)\n--- FAIL: TestServeSessionNewCommandOrderAfterResponse (0.14s)\n    serve_test.go:626: G-23-1 order violated: available_commands_update (index 0) precedes the session/new response (index 1) — Zed drops pre-response session/updates for unregistered sessions (zed-industries/zed#60199)\n",
+  "expected": "Per 23-07 Task 1 behavior: at session/new the id-matched response frame is frame 1 on the wire and the available_commands_update advertisement (sessionId == response sessionId, complete winner set) follows it — at both the internal/acp dispatch level and the real acpserve composition level.",
+  "actual": "Shipped handleSessionNew emits NotifyAvailableCommands BEFORE the response write (plus Barrier), so on the pre-fix wire the advertisement is frame 1 and the response frame 2 — exactly the inversion Zed discards client-side (G-23-1 root cause, 89bcc6f Phase 20-01).",
+  "failing_tests": [
+    "TestSessionNewAdvertisesAfterResponse (assertion: first frame after session/new must be the id:1 response — got the session/update advertisement)",
+    "TestServeSessionNewCommandOrderAfterResponse (assertion: index(available_commands_update) < index(session/new response) — advert index 0, response index 1)"
+  ],
+  "unexpected_green": [],
+  "witnesses": "go test ./internal/acp/ -run 'TestReplay|TestSessionLoad' -count=1 — ok (6 tests: the load-path updates-before-response order pins stay green, isolating the RED to session/new only).",
+  "note": "target_test_failed on the planned ordering assertion at both levels (no compile/harness errors). gsd-tools build at .claude/gsd-core lacks the check tdd-red-evidence verb; record persisted in the repo's established 24-04-format convention instead.",
+  "timestamp": "2026-09-11T21:10:00Z"
+}
