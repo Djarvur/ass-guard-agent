@@ -45,11 +45,11 @@ run = """
 # eval-check-changed, not every commit; ci keeps its fast deterministic set).
 [tasks.eval-gate]
 description = "Run the behavioral-eval scenario suites at k=1 behind the gate flags (real binary + real model, ~8-10 min)"
-run = "ASSGUARD_EVAL_GATE=1 ASSGUARD_OPENSPEC_BIN=1 ASSGUARD_E2E_LLM=1 go test ./cmd/ass-guard/ -count=1 -run TestEvalSuite_Flagship_Gated -timeout 15m -v"
+run = "ASSGUARD_EVAL_GATE=1 ASSGUARD_OPENSPEC_BIN=1 ASSGUARD_E2E_LLM=1 go test ./internal/acpserve/ -count=1 -run TestEvalSuite_Flagship_Gated -timeout 15m -v"
 
 [tasks.eval-deep]
 description = "Manual/local deep pass: k=3 over the suite (NOT in the gate — D-03)"
-run = "ASSGUARD_EVAL_GATE=1 ASSGUARD_OPENSPEC_BIN=1 ASSGUARD_E2E_LLM=1 go test ./cmd/ass-guard/ -count=1 -run TestEvalSuite_Flagship_Deep -timeout 45m -v"
+run = "ASSGUARD_EVAL_GATE=1 ASSGUARD_OPENSPEC_BIN=1 ASSGUARD_E2E_LLM=1 go test ./internal/acpserve/ -count=1 -run TestEvalSuite_Flagship_Deep -timeout 45m -v"
 
 [tasks.eval-check-changed]
 description = "Detector: do the changes touch the locked eval-gate change classes? (exit 3 => run mise eval-gate)"
