@@ -30,6 +30,21 @@ linters:
           deny:
             - pkg: "unsafe"
               desc: "unsafe breaks the static-binary + memory-safety guarantees"
+        # 25-09 (D-19) — the kit import-boundary lint layer (belt: the mise
+        # kit-boundary grep task). Non-test kit files may not import app
+        # packages; direction is app→kit only. Test files are exempt per
+        # 25-08's recorded disposition (twins/matrix cells whose real app
+        # components are the subject).
+        KitBoundary:
+          files:
+            - "**/kit/**/*.go"
+            - "!**/kit/**/*_test.go"
+          list-mode: lax
+          deny:
+            - pkg: "github.com/Djarvur/ass-guard-agent/internal"
+              desc: "D-19: kit imports nothing app-side (direction is app→kit only)"
+            - pkg: "github.com/Djarvur/ass-guard-agent/cmd"
+              desc: "D-19: kit imports nothing from cmd"
     gocyclo:
       min-complexity: 20
     cyclop:

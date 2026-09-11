@@ -23,8 +23,22 @@ description = "Run go vet"
 run = "go vet ./..."
 
 [tasks.ci]
-description = "Run the full CI gate: vet + lint + build + test"
-depends = ["vet", "lint", "build", "test"]
+description = "Run the full CI gate: vet + lint + build + test + kit-boundary"
+depends = ["vet", "lint", "build", "test", "kit-boundary"]
+
+# 25-09 (D-19) — the kit import-boundary gate: kit/ is a library tree; its
+# NON-TEST files must never import app packages. Enabled only now that
+# 25-07 severed the last kit→app edge — enabling it any earlier would have
+# failed pass 1 by construction (the gate-after-seams ordering, D-03).
+# Test files are exempt per 25-08's recorded disposition (the twins/matrix
+# cells whose real app components ARE the subject — 25-08-SUMMARY's table).
+# Belt: this grep layer; suspenders: the depguard KitBoundary lint rule.
+[tasks.kit-boundary]
+description = "D-19: kit imports nothing from internal/ or cmd/ (non-test files)"
+run = """
+! grep -rn "ass-guard-agent/internal/\\|ass-guard-agent/cmd" kit \\
+    --include='*.go' --exclude='*_test.go'
+"""
 
 # 12-08 (D-03) — the behavioral-eval gate surface. NONE of these joined
 # `ci` (D-03: the suites gate on the locked change classes via
