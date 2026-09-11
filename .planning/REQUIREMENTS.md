@@ -59,8 +59,8 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Kit Extraction (strictly last)
 
-- [ ] **KIT-01**: Core agent machinery extracted behind a composition-root API in `pkg/`: profile/shaper/provider/modelrouting/toolcat/toolexec/engine/hookdag/event/session/redact/checkpoint/audit/mcp
-- [ ] **KIT-02**: Frontend seam expressed as kit interfaces — emitter + requester defined session-side, implemented acp-side (the one genuinely new design act)
+- [x] **KIT-01**: Core agent machinery extracted behind a composition-root API in `pkg/`: profile/shaper/provider/modelrouting/toolcat/toolexec/engine/hookdag/event/session/redact/checkpoint/audit/mcp
+- [x] **KIT-02**: Frontend seam expressed as kit interfaces — emitter + requester defined session-side, implemented acp-side (the one genuinely new design act)
 - [x] **KIT-03**: ass-guard becomes the kit's reference app — retains ecosys/openspec/coreexec/learning/firstrun/evalsuite/parity + ACP frontend; SEED-002 fantasy + SEED-003 landscape as design prior art (reading material, zero runtime deps)
 
 ### Documentation & Tails
@@ -135,8 +135,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TAIL-01 | Phase 24 | Complete |
 | TAIL-02 | Phase 24 | Complete |
 | TAIL-03 | Phase 24 | Complete |
-| KIT-01 | Phase 25 | Pending |
-| KIT-02 | Phase 25 | Pending |
+| KIT-01 | Phase 25 | Complete |
+| KIT-02 | Phase 25 | Complete |
 | KIT-03 | Phase 25 | Complete |
 
 **Coverage:**

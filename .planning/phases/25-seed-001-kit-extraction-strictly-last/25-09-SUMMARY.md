@@ -106,6 +106,17 @@ One-liner: the kit boundary is mechanically enforced both ways, the non-ACP host
 
 ---
 
+## Task 3 — RESOLVED: operator approval (2026-09-11)
+
+The blocking checkpoint was presented to the operator and **approved**
+("approved", 2026-09-11). The two manual legs (live-Zed session, eval-gate
+with credentials) were accepted to run when convenient against the recorded
+battery state; the approval closes the plan's blocking gate.
+
+---
+
+(Original checkpoint text retained below for the record.)
+
 ## CHECKPOINT: Verification Required — Task 3, the operator's leg
 
 **Plan:** 25-09 (final plan of Phase 25 — the milestone's last)

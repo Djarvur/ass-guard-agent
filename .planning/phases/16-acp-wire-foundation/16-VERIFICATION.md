@@ -1,21 +1,25 @@
 ---
 phase: 16-acp-wire-foundation
 verified: 2026-08-28T14:52:04Z
-status: human_needed
+status: passed
 score: 31/31 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
 overrides: []
 unverified_prohibitions: # ADR-550 D4 — judgment-tier items, NON-AUTHORITATIVE LLM-judge verdicts re-checked in the current tree; human review recommended
+
   - statement: "Emitter must never synthesize/fabricate client frames (16-01, ACP-03 transparency)"
     verdict: pass_non_authoritative
     evidence: "Re-checked: emitter.go last touched by 16-07 GREEN (4fddf9f, wake mechanism only); all frame origins still bus events / registry cascade / surface notifications; no synthesis path"
+
   - statement: "Unredacted append path never extended beyond raw_thinking (16-02, ACP-03 privacy)"
     verdict: pass_non_authoritative
     evidence: "Re-grepped: appendLineUnredacted sole caller is AppendRawThinking (manager.go:350); D-23 comment intact at :106"
+
   - statement: "API keys/credentials never appear as editor config options (16-05, ACP-08 privacy)"
     verdict: pass_non_authoritative
     evidence: "Re-grepped: no credential key path in config_surface.go; menu comment pins 'no credential options'; 16-08/CR-02 changes added no new option vocabulary"
+
   - statement: "_meta blob never overrides explicit operator file config (16-05, ACP-08 ownership)"
     verdict: pass_non_authoritative
     evidence: "Re-checked in current tree: fills-unset still deletes the fill after explicit persist (Set path); the CR-02 blob hook writes only the in-memory effectiveModel slot (no layer write); TestBlobFillYieldsToExplicitLayer pins explicit-layer-wins"
@@ -23,6 +27,7 @@ re_verification:
   previous_status: gaps_found
   previous_score: 26/31
   gaps_closed:
+
     - "Gap 1 (16-01 truth 5, FAILED): Barrier lost-wakeup CR-01 — closed by 16-07 per-generation broadcast wake; TestTurnEmitterBarrierConcurrentWaiters (no ctx escape) passes 5x under -race in this verifier's run"
     - "Gap 2 (16-01 truth 6, FAILED): updates-before-response under concurrency — same root cause, same fix; each waiter returns only when written >= target and writeOut bumps written only after sink.Write returns, proven by the same regression"
     - "Gap 3 (16-04 truth 3, PARTIAL): global layer independently addressable — closed by 16-08 scope-aware idempotenceBasisLocked; TestScopeRouting_GlobalWritePersistsWhenCombinedMatches (both subtests) passes; D-10 project-scope pins unmodified and green"
@@ -32,25 +37,34 @@ re_verification:
   gaps_remaining: []
   regressions: []
 deferred: # Items addressed in later phases — not actionable gaps (carried from prior round; still valid)
+
   - truth: "load/resume responses carry the richer capability set incl. configOptions advertisement (ROADMAP criterion 4 legs beyond initialize/new)"
     addressed_in: "Phase 18"
     evidence: "Phase 18 goal: 'list / load-resume / close-delete with full replay and live-state reconciliation'; configOptionsFor shipped as the shared builder explicitly reusable by load/resume"
+
   - truth: "agent_thought_chunk streams from a live provider source during real turns (ROADMAP criterion 1 leg)"
     addressed_in: "Phase 21"
     evidence: "PAR-05 owns the provider thinking source; wire shape shipped + unit-proven here; operator checkpoint explicitly excluded live thought-chunk rendering"
 human_verification:
+
   - test: "Live-Zed chip==wire confirmation: connect a real Zed client with the project tier model differing from the profile slug; read the Model chip BEFORE any editor stamp; then send an initialize _meta blob with a model fill and read the chip again and the next provider request's model"
     expected: "Pre-stamp chip shows the tier-resolved config model (no longer the profile slug — the operator-observed turn-001 GLM-5.3-vs-glm-5.2 divergence class); after a blob fill, chip and wire model move TOGETHER"
     why_human: "Live editor rendering + real provider traffic; the divergence was only ever observed live (16-06 WINDOWS #11)"
+
   - test: "CR-02 blob-tier edge (flagged by the review-fix pass): with an editor stamp set under tier A, deliver an initialize _meta blob whose tier fill resolves to tier B with a different model; observe the effective model of the next turn"
     expected: "The hook overwrites the prior stamp so chip==wire holds under the NEW tier — confirm this product intent (a layer-backed stamp would make the fill inert instead; only in-memory stamps are overwritten)"
     why_human: "ACP precedence-semantics decision the fixer explicitly marked 'requires human verification'; machine checks pin the mechanism, not the intent"
+
   - test: "CR-01(new) turn-scoped cancel semantics (flagged by the review-fix pass): start a turn, cancel it mid-stream, then re-prompt the SAME session id; then logout and re-check"
     expected: "Cancel keeps the session registered and promptable (re-prompt succeeds; MCP host/transcript/forwarder stay live); reaping happens only on logout or serve teardown — confirm this product intent"
     why_human: "Product-intent confirmation on ACP session lifecycle semantics, marked 'requires human verification' by the fixer; TestSessionCancelDoesNotReapTheSession pins the mechanism"
+
   - test: "WR-01 per-turn hook executor (flagged by the review-fix pass): run the same hook chain concurrently from two DIFFERENT sessions"
     expected: "Both run (HOOK-04 in-flight reentrancy guard is now per-turn-instance; loop prevention within one chain unchanged) — confirm cross-session concurrency is the intended behavior change"
     why_human: "Behavior change to loop-prevention scope marked 'requires human verification' by the fixer"
+verdict: pass_non_authoritative
+evidence: PAR-05 owns the provider thinking source; wire shape shipped + unit-proven here; operator checkpoint explicitly excluded live thought-chunk rendering
+addressed_in: Phase 21
 ---
 
 # Phase 16: ACP Wire Foundation — Verification Report

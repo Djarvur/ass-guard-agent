@@ -6,6 +6,8 @@
 > packages, roadmap phases, and rejected-items list. Star counts/activity are point-in-time.
 > **Last extended 2026-08-19** — added OpenClaude + Open Claude Code (both source-read via
 > shallow clones; deep dives in ECOSYSTEM-AUDIT.md §1.1; borrows #13–15 below).
+> **Last extended 2026-08-28** — added razzant/ouroboros (source-read via shallow clone; row 24
+> + Category 3 row; borrow #16).
 
 ## The source list (expanded from the operator's 12)
 
@@ -43,8 +45,10 @@ charmbracelet/crush (FSL-1.1-MIT — read-only!), plandex-ai/plandex. Plus charm
 | 21 | crewAIInc/crewAI | Py | 57k | MIT | Role-based crews; Flows (deterministic pipeline vs crew execution) |
 | 22 | Gitlawb/openclaude | TS | 30.8k | MIT-on-mods (contains unlicensed Anthropic source) | Claude-Code-derived multi-provider CLI (684k-line TS); provider/UX surface; **redline-grade provenance caution** |
 | 23 | ruvnet/open-claude-code | JS | 0.5k | MIT | Clean-room Claude Code rebuild: 25 tools / 6 mode names / 4 MCP transports / ~100 `CLAUDE_CODE_*` env vars; nightly upstream-parity gate; deterministic cost-cascade router |
+| 24 | razzant/ouroboros | Py | 1.2k | MIT | Self-creating agent: durable identity/memory, reviewed git-tracked self-evolution (`/evolve`), Claudexor substrate drives external harnesses (Codex/Claude Code/Cursor); pinned-immutable runtime delivery |
 
 *Rows 22–23 verified & source-read 2026-08-19 (shallow clones) — see ECOSYSTEM-AUDIT.md §1.1 for file-anchored deep dives.*
+*Row 24 verified & source-read 2026-08-28 (shallow clone + GitHub API: 1,231★ / 608 forks / MIT / created 2026-02-11 / pushed 2026-08-27, v6.110.1; mechanisms confirmed in `ouroboros/claudexor_runtime.py`, `evolution_*.py`, `request_wire_contract.py`, `review_cycles.py`, `subagent_worktrees.py`).*
 
 **Checked and excluded:** autogen + swarm (stagnant, superseded), Semantic Kernel (merged into
 ms/agent-framework), Roo/Kilo Code (Cline duplicates), mentat (dead), vibe-kanban (orchestrator
@@ -95,6 +99,7 @@ Legend: ✅ = we already implemented an equivalent · 📋 = in our plan (phase 
 | **github/gh-aw** | — | — | **Buffer-then-apply** safe outputs (🧲-6); compiled-workflow lockfile idea (`.lock.yml` determinism for hookdag DAGs?) | CI-as-the-runtime model (our hookdag runs in-process by design) |
 | **Aider-AI/aider** | Auto lint/test hooks ≈ hookdag post-stage; auto-commit ≈ run-command step | — | **Architect mode** as scheduler recipe: plan-on-heavy / apply-on-good (🧲-9); flexible patch matching ethos (jsonrepair, SEED-002) | Repo-map injection into prompts (**would break request parity** — context assembly belongs to the profile); edit-format negotiation (zcode's Edit semantics are the target); watch/voice modes |
 | **SWE-agent** | **Our entire thesis, productized**: "agent-computer interface design drives capability" == profile/schema authority. Cite in docs | Bundles ≈ profiles as config artifacts | Trajectory-logging rigor for parity corpora (we have it — keep) | Their research harness; guarded editors (zcode tool semantics rule) |
+| **razzant/ouroboros** (added 2026-08-28, source-read) | Provider seam (`llm.py`/`provider_models` ≈ internal/provider); skills loader ≈ internal/ecosys; MCP client ≈ internal/mcp; subagents incl. worktree isolation (`subagent_worktrees.py`, converges 🧲-5); post-stage review cycles (`review_cycles`/`triad_review` ≈ hookdag review steps) | Compaction (`context_compaction`/`context_health` — a 🧲-2 data point); MEM cluster (`memory`/`consolidator`/`consciousness`); behavioral evals (Phase 12 — their Terminal-Bench/SWE-bench/OSWorld suite is a self-reported-format reference); scheduled initiative ≈ Phase 12 cron | **Evolution-campaign pattern (🧲-16)**: improvement proposals as reviewed, git-tracked, mutation-attributed self-change with protected surfaces + size ratchet; **pinned-immutable substrate delivery** (`claudexor_runtime_pin.json`: sha256-verified trees, no mutable `current`, next-spawn selection — profile-bundle delivery shape for 🧲-13); outcome receipts (converges 🧲-14); request-wire compatibility receipts (route-scoped, repair-receipt-before-durable — provider-side cousin of our parity cassettes) | Self-rewriting own implementation as product thesis (engine/profile separation is deliberate — our improvement proposals are outputs, not self-application; Ship-of-Theseus machinery is a huge safety surface); Claudexor wrapping external harness CLIs (mimicry conflict — we ARE the harness on the wire); desktop app + localhost server :8765 (no-port invariant); bundled Playwright/Chromium + Node substrate (static-binary constraint); always-on "background consciousness" (our unified engine fires on turn boundaries by design) |
 
 ### Category 4 — Vendor SDKs
 
@@ -186,6 +191,18 @@ Legend: ✅ = we already implemented an equivalent · 📋 = in our plan (phase 
     *(**Dispositioned 2026-08-19:** ADOPTED as a verification input — Phase 14's EARLY-06 contract
     inventory cross-checks it, and 12-06/12-07's catalog-completeness tests use it as a coverage
     manifest; zero new requirement, zero scope growth.)*
+16. **Evolution campaigns for improvement proposals (ouroboros).** Their `/evolve` flow makes
+    self-change *inspectable*: proposals as git-tracked changes, mutation attribution,
+    protected surfaces (`BIBLE.md` Ship-of-Theseus guard), review evidence before merge, and a
+    size ratchet against bloat. PROJECT.md names "improvement proposals" as a post-stage routine
+    but we have no review/attribution design for it — this is the maturity pattern, and it is
+    invariant-clean (external git, no daemon, no port; review-by-hook, not human confirmation).
+    Pairs with 🧲-13: their pinned-immutable substrate (sha256 trees, no mutable `current`,
+    next-spawn selection) is the delivery shape for profile-bundle updates against a tracked
+    target. *(Added 2026-08-28; source-verified in `ouroboros/evolution_checkpoints.py`,
+    `mutation_attribution.py`, `protected_artifacts.py`, `size_ratchet_manifest.py`,
+    `claudexor_runtime_pin.json`. Disposition pending — candidate for the v1.2 pool alongside
+    the MEM/PLUG clusters.)*
 
 ## 🚫 Confirmations (the field validates our rejections)
 
@@ -221,8 +238,11 @@ Legend: ✅ = we already implemented an equivalent · 📋 = in our plan (phase 
 borrowable without violating a single invariant.**
 
 - **Ahead (unique in the field):** structural mimicry + parity harness + drift detection has no
-  peer in any of the 34 sources — the closest things (OpenHands mock-LLM e2e, qwen Arena,
-  fantasy's providertests) test behavior, not wire fidelity. Log-extracted profiles,
+  peer in any of the 35 sources — the closest things (OpenHands mock-LLM e2e, qwen Arena,
+  fantasy's providertests) test behavior, not wire fidelity; ouroboros's request-wire receipts
+  (`request_wire_contract.py`, added 2026-08-28) are the nearest in spirit — route-scoped
+  provider-API compatibility evidence — but still evidence about *providers*, not about
+  mimicking another agent's request shape. Log-extracted profiles,
   capture-pinned context tails, and the no-target-specific-code-paths discipline are likewise
   singular. SWE-agent's research thesis (the interface IS the capability) is the academic
   validation of our entire approach.
@@ -248,6 +268,9 @@ borrowable without violating a single invariant.**
   **ECOSYSTEM-AUDIT.md §1.1** (file-anchored evidence, redline 8 as amended — study-anything
   ruling + no-mechanical-porting guard); borrows #13–15 here
   mirror ECOSYSTEM-AUDIT §3.3 items 12–14.
+- 2026-08-28 extension: razzant/ouroboros source-read (shallow clone) — row 24 in the new-finds
+  table, Category 3 verdict row, borrow #16 (evolution campaigns). MIT-licensed (vendorable);
+  clone discarded after reading — no code carried over, ideas only (study-anything ruling).
 
 ## Extension protocol (for future updates to this doc)
 
