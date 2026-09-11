@@ -180,6 +180,11 @@ func TestCoreExec_BashThroughSession(t *testing.T) { //nolint:gocognit,gocyclo,c
 				i, msgSummaryACP(&nextMsgs[i]))
 		}
 	}
+
+	// 25-07 Task 2's pin: the NIL-toolkit arm degrades to the stub executor
+	// (the pre-seam engine-off behavior, now keyed on the seam) — the
+	// complementary half of this battery's real-execution path.
+	t.Run("NilToolkitStubsExecution", nilToolkitStubsExecution)
 }
 
 // TestCoreExec_BashBatchSerializes (08-08 T2 Test 10, second half): a batch of

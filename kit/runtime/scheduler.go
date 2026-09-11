@@ -3,7 +3,6 @@ package runtime
 import (
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/coreexec"
 	"github.com/Djarvur/ass-guard-agent/kit/schedule"
 )
 
@@ -36,19 +35,4 @@ type Scheduler interface {
 	// CatchUp computes the fire-once catch-up events for missed automations
 	// (each event carries the missed-window note).
 	CatchUp(now time.Time) []schedule.FireEvent
-}
-
-// cronStoreOrNil extracts the interactive cron quartet's CRUD capability
-// from the schedule port value (25-05 Task 1): the concrete store satisfies
-// BOTH the four-method port and coreexec.CronStore structurally, so the
-// per-session toolkit registration keeps receiving the full CRUD surface
-// through one injected value. A nil port (test runners) yields a nil
-// CronStore — the quartet's structured no-store errors, exactly today's
-// semantics. 25-07's SessionToolkit takes this half app-side wholesale.
-func cronStoreOrNil( //nolint:ireturn // optional-capability extraction (the acp.SessionCloser pattern)
-	s Scheduler,
-) coreexec.CronStore {
-	crud, _ := s.(coreexec.CronStore) // the comma-ok zero value IS the nil degrade
-
-	return crud
 }

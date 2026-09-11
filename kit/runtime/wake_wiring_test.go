@@ -221,10 +221,7 @@ func TestWakeTurn_BusyClientTurnAccumulates(t *testing.T) { //nolint:funlen,cycl
 
 	sess := r.sessions["sess-wake-busy"]
 
-	tr := r.trackerFor("sess-wake-busy")
-	if tr == nil {
-		t.Fatal("no tracker wired for the session")
-	}
+	tr := concreteTracker(t, r, "sess-wake-busy")
 
 	// Hold the session's turn slot (a client turn is active).
 	mu := r.sessionTurnMu("sess-wake-busy")
@@ -396,10 +393,7 @@ func TestWakeChain_IdlesWhenEmpty(t *testing.T) { //nolint:paralleltest // gorou
 
 	sess := r.sessions[sid]
 
-	tr := r.trackerFor(sid)
-	if tr == nil {
-		t.Fatal("no tracker wired for the session")
-	}
+	tr := concreteTracker(t, r, sid)
 
 	flag := wakeFlag(r, sid)
 
@@ -506,10 +500,7 @@ func TestWakeChain_CtxCancelStopsChain(t *testing.T) { //nolint:paralleltest // 
 
 	_ = r.sessionFor(context.Background(), sid)
 
-	tr := r.trackerFor(sid)
-	if tr == nil {
-		t.Fatal("no tracker wired for the session")
-	}
+	tr := concreteTracker(t, r, sid)
 
 	serveCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -580,10 +571,7 @@ func TestWakeChain_RacingCompletionStillWakes(t *testing.T) { //nolint:parallelt
 
 	sess := r.sessions[sid]
 
-	tr := r.trackerFor(sid)
-	if tr == nil {
-		t.Fatal("no tracker wired for the session")
-	}
+	tr := concreteTracker(t, r, sid)
 
 	flag := wakeFlag(r, sid)
 
@@ -675,10 +663,7 @@ func TestWakeChain_ClosedSessionDropsBatch(t *testing.T) { //nolint:funlen // tw
 
 		_ = r.sessionFor(context.Background(), sid)
 
-		tr := r.trackerFor(sid)
-		if tr == nil {
-			t.Fatal("no tracker wired for the session")
-		}
+		tr := concreteTracker(t, r, sid)
 
 		// Evict WITHOUT the close chain (direct map surgery): the tracker
 		// stays registered while the session is gone — exactly the state a
@@ -699,7 +684,9 @@ func TestWakeChain_ClosedSessionDropsBatch(t *testing.T) { //nolint:funlen // tw
 			t.Fatalf("pending peek = %d; want 1 planted", len(tr.PendingPeek()))
 		}
 
-		done := r.drainWakeNotifications(context.Background(), sid, tr)
+		// The drain consumes the KIT view (the wake machinery's interface —
+		// the concrete tracker stays synthesis-only).
+		done := r.drainWakeNotifications(context.Background(), sid, r.trackerFor(sid))
 		if !done {
 			t.Error("drainWakeNotifications returned false for a missing session — must be terminal (true), never a retry loop")
 		}
@@ -745,10 +732,7 @@ func TestWakeChain_ClosedSessionDropsBatch(t *testing.T) { //nolint:funlen // tw
 
 		_ = r.sessionFor(context.Background(), sid)
 
-		tr := r.trackerFor(sid)
-		if tr == nil {
-			t.Fatal("no tracker wired for the session")
-		}
+		tr := concreteTracker(t, r, sid)
 
 		if cerr := r.CloseSession(sid); cerr != nil {
 			t.Fatalf("CloseSession: %v", cerr)
@@ -800,8 +784,8 @@ func TestCloseSession_PrunesWakeState(t *testing.T) { //nolint:funlen // prune +
 		t.Fatal("test setup: no tracker entry after sessionFor")
 	}
 
-	if _, ok := r.ptyManagers.Load(sid); !ok {
-		t.Fatal("test setup: no ptyManagers entry after sessionFor")
+	if twinOf(t, r).ptyManager(sid) == nil {
+		t.Fatal("test setup: no twin PTY entry after sessionFor")
 	}
 
 	r.scheduleWakeDrain(sid) // creates the wakeInFlight entry (empty queue → clean exit)
@@ -824,8 +808,8 @@ func TestCloseSession_PrunesWakeState(t *testing.T) { //nolint:funlen // prune +
 		t.Error("r.wakeInFlight still carries the closed session (CR-04/IN-03)")
 	}
 
-	if _, ok := r.ptyManagers.Load(sid); ok {
-		t.Error("r.ptyManagers still carries the closed session — the entry must go AFTER OnClose's Drain ran")
+	if twinOf(t, r).ptyManager(sid) != nil {
+		t.Error("the twin still carries the closed session's PTY — the entry must go AFTER OnClose's Drain ran")
 	}
 
 	// Row 2: RUNNING background subagents are cancelled at close (the NEW
@@ -835,10 +819,7 @@ func TestCloseSession_PrunesWakeState(t *testing.T) { //nolint:funlen // prune +
 
 	_ = r.sessionFor(context.Background(), sid2)
 
-	tr := r.trackerFor(sid2)
-	if tr == nil {
-		t.Fatal("no tracker wired for the second session")
-	}
+	tr := concreteTracker(t, r, sid2)
 
 	cancelled := make(chan struct{})
 
@@ -890,10 +871,7 @@ func TestTaskStopFallbackWiring(t *testing.T) { //nolint:funlen // two-row wirin
 
 	sess := r.sessions[sid]
 
-	tr := r.trackerFor(sid)
-	if tr == nil {
-		t.Fatal("no tracker wired for the session")
-	}
+	tr := concreteTracker(t, r, sid)
 
 	stopTool, ok := sess.Catalog.Get("TaskStop")
 	if !ok || stopTool.Execute == nil {
@@ -988,10 +966,7 @@ func TestTaskOutputFallbackWiring(t *testing.T) {
 
 	sess := r.sessions[sid]
 
-	tr := r.trackerFor(sid)
-	if tr == nil {
-		t.Fatal("no tracker wired for the session")
-	}
+	tr := concreteTracker(t, r, sid)
 
 	outTool, ok := sess.Catalog.Get("TaskOutput")
 	if !ok || outTool.Execute == nil {

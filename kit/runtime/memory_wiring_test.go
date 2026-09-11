@@ -53,6 +53,10 @@ func memRunner(t *testing.T, plant func(dir string)) (r *Runner, dir string) {
 		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return prov },
 	}
 
+	// 25-07: the toolkit twin (the perm authority rides it — the hooks-join
+	// batteries' planted permissions.yaml must govern through the seam).
+	armToolkitTwin(r)
+
 	err = r.SetupEngine(testEngineSetup(t))
 	if err != nil {
 		t.Fatalf("SetupEngine: %v", err)

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Djarvur/ass-guard-agent/internal/acp"
+	"github.com/Djarvur/ass-guard-agent/internal/coreexec"
 	"github.com/Djarvur/ass-guard-agent/internal/firstrun"
 	"github.com/Djarvur/ass-guard-agent/internal/providerfactory"
 	"github.com/Djarvur/ass-guard-agent/internal/sandbox"
@@ -255,6 +256,13 @@ func Run( //nolint:funlen // :320-425
 
 	startAuditMirror(ctx, bus, opts, stderr)
 
+	// 25-07 (SessionToolkit): the app-side core-executor toolkit —
+	// constructed before the runner, injected through the flat config's
+	// mirrored field (D-10). The launch/perm-store/renderer seams ride the
+	// same one composition statement; the sandbox Handle lands on the
+	// toolkit at the probe step's exact former position below.
+	toolkit := &sessionToolkit{}
+
 	runner := runtime.NewRunner(&runtime.RunnerConfig{
 		Bus:          bus,
 		BodyStore:    bodyStore,
@@ -267,6 +275,13 @@ func Run( //nolint:funlen // :320-425
 		SchedCfg:     schedCfg,
 		ProviderName: providerName,
 		Stderr:       stderr,
+		Toolkit:      toolkit,
+		// 25-07 (OQ1): the ask-surface renderer func-field — the same
+		// coreexec.RenderAskSurface the broker's onSurface consumed before
+		// the seam.
+		AskSurfaceRenderer: coreexec.RenderAskSurface,
+		LaunchBackground:   toolkit.LaunchBackground,
+		OpenPermStore:      openPermAuthority,
 		MakeProvider: func(capturer provider.RequestCapturer) provider.Provider {
 			// 09-01: the SINGLE factory seam — the same construction the
 			// tracer uses (the divergent copy is gone; Pitfall 8).
@@ -522,7 +537,10 @@ func Run( //nolint:funlen // :320-425
 		Policy:       sandboxPolicyFor(opts.WorkDir),
 		Availability: resolveSandboxAvailability(opts, stderr),
 	}
-	runner.SetSandboxHandle(&sandboxHandle)
+	// 25-07: the Handle lands on the TOOLKIT now (the runner no longer
+	// holds app executor state) — the same statement position, the probe
+	// still strictly before the scheduler start.
+	toolkit.SetSandboxHandle(&sandboxHandle)
 
 	// 25-04: srv.Emitter (the wire handle factory) wraps as the kit Emitter
 	// factory — the injection statement stays at its exact WINDOWS #3

@@ -364,7 +364,7 @@ func (s *Session) gateAskClass(tool string) bool {
 
 // ruleSubject resolves the rule-matching subject for one call through the
 // injected namespace resolver; the default canonicalizes MCP names through
-// the kit-side canonicalToolName mirror (identity for non-MCP tools — the
+// the kit-side canonicalization mirror (identity for non-MCP tools — the
 // catalog already registers MCP tools under their full mcp__<server>__<tool>
 // namespace, Pitfall 7).
 func (s *Session) ruleSubject(tool string) string {
@@ -372,7 +372,7 @@ func (s *Session) ruleSubject(tool string) string {
 		return s.gate.Subject(tool)
 	}
 
-	return canonicalToolName(tool)
+	return CanonicalToolName(tool)
 }
 
 // markPermDegraded records the sticky -32601 degradation for the session

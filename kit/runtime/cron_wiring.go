@@ -8,7 +8,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/tasks"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
 	"github.com/Djarvur/ass-guard-agent/kit/schedule"
 	"github.com/Djarvur/ass-guard-agent/kit/session"
@@ -356,15 +355,21 @@ func fanInEvents(chans ...<-chan event.Event) <-chan event.Event {
 // wakeProvenance is the wake turn's provenance/audit vocabulary.
 const wakeProvenance = "wake:tasks"
 
-// trackerFor returns the session's task-notification tracker (nil when the
-// session was never constructed through sessionFor).
-func (r *Runner) trackerFor(sessionID string) *tasks.Tracker {
+// trackerFor returns the session's task-notification tracker VIEW (nil when
+// the session was never constructed through sessionFor — or its toolkit
+// never bound one; 25-07: the wake machinery consumes the kit TaskTracker
+// interface the app toolkit publishes through ToolkitEnv.BindTracker).
+func (r *Runner) trackerFor( //nolint:ireturn // the wake view IS the interface (nil = the documented degrade)
+	sessionID string,
+) TaskTracker {
 	v, ok := r.trackers.Load(sessionID)
 	if !ok {
 		return nil
 	}
 
-	return v.(*tasks.Tracker) //nolint:forcetypeassert // LoadOrStore stores exactly *tasks.Tracker
+	tt, _ := v.(TaskTracker) // the comma-ok zero value IS the nil degrade
+
+	return tt
 }
 
 // scheduleWakeDrain starts the session's wake-drain chain unless one is
@@ -468,7 +473,7 @@ func (r *Runner) wakeDrainChain(ctx context.Context, sessionID string, flag *ato
 // render the notification blocks, and run ONE wake turn through runOneTurn
 // with the wake provenance bracket (mirroring runAutomationTurn's skeleton —
 // the same rails, a new trigger).
-func (r *Runner) drainWakeNotifications(ctx context.Context, sessionID string, tr *tasks.Tracker) bool {
+func (r *Runner) drainWakeNotifications(ctx context.Context, sessionID string, tr TaskTracker) bool {
 	r.sessMu.Lock()
 	sess, ok := r.sessions[sessionID]
 	r.sessMu.Unlock()
@@ -534,7 +539,7 @@ func (r *Runner) drainWakeNotifications(ctx context.Context, sessionID string, t
 // renderWakeBlocks renders the coalesced batch as the wake turn's input: one
 // block per notification (the D-03 "all pending blocks inject together"
 // letter), ordered by completion time (the tracker's batch order).
-func renderWakeBlocks(batch []tasks.Notification) []session.ContentBlock {
+func renderWakeBlocks(batch []TaskNotification) []session.ContentBlock {
 	blocks := make([]session.ContentBlock, 0, len(batch))
 
 	for i := range batch {
@@ -542,7 +547,7 @@ func renderWakeBlocks(batch []tasks.Notification) []session.ContentBlock {
 
 		text := "<task-notification>\n" +
 			"task_id: " + n.TaskID + "\n" +
-			"kind: " + string(n.Kind) + "\n" +
+			"kind: " + n.Kind + "\n" +
 			"exit_status: " + n.ExitStatus + "\n" +
 			"duration: " + n.Duration.String() + "\n" +
 			"output_file: " + n.OutputFile + "\n" +
@@ -556,7 +561,7 @@ func renderWakeBlocks(batch []tasks.Notification) []session.ContentBlock {
 }
 
 // wakeTaskIDs joins the batch's task ids for the audit reason line.
-func wakeTaskIDs(batch []tasks.Notification) string {
+func wakeTaskIDs(batch []TaskNotification) string {
 	parts := make([]string, 0, len(batch))
 
 	for i := range batch {

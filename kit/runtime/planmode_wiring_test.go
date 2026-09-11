@@ -136,6 +136,9 @@ func newPlanModeWiringRunner(t *testing.T) (*Runner, *planModeScriptProvider) {
 		},
 	}
 
+	// 25-07: the toolkit twin (the plan pair registers through it).
+	armToolkitTwin(r)
+
 	err := r.SetupEngine(testEngineSetup(t))
 	if err != nil {
 		t.Fatalf("SetupEngine: %v", err)

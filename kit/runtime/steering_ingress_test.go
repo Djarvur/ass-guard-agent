@@ -477,6 +477,9 @@ func newBlockingEngineRunner(t *testing.T, script ...scriptedResp) (*Runner, *bl
 		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return prov },
 	}
 
+	// 25-07: the toolkit twin (the blocking ask path suspends for real).
+	armToolkitTwin(r)
+
 	if err := r.SetupEngine(testEngineSetup(t)); err != nil {
 		t.Fatalf("SetupEngine: %v", err)
 	}

@@ -82,6 +82,11 @@ func newExpansionRunner(
 		askSurfaceRenderer: coreexec.RenderAskSurface,
 	}
 
+	// 25-07: the toolkit twin arms the core-executor seam (the batteries'
+	// real Bash/Todo/Ask execution rides the twin — the serve root's
+	// toolkit.LaunchBackground equivalent for white-box tests).
+	armToolkitTwin(r)
+
 	if engineOn {
 		err := r.SetupEngine(testEngineSetup(t))
 		if err != nil {
@@ -604,6 +609,9 @@ func newSkillRunner(t *testing.T, withSkills bool, script ...scriptedResp) (*Run
 		maxConc:      4,
 		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return prov },
 	}
+
+	// 25-07: the toolkit twin (the Skill battery's real execution path).
+	armToolkitTwin(r)
 
 	err := r.SetupEngine(testEngineSetup(t))
 	if err != nil {

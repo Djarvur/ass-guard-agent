@@ -279,9 +279,9 @@ func TestHookJoin_OneLiveRuleAuthority(t *testing.T) { //nolint:paralleltest // 
 		t.Fatal("sessionFor B returned nil")
 	}
 
-	st := r.permStore.Load()
-	if st == nil {
-		t.Fatal("the Runner-scoped perm store was never opened by sessionFor")
+	st, ok := r.permStore.Load().(PermAuthority)
+	if !ok || st == nil {
+		t.Fatal("the Runner-scoped perm authority was never opened by sessionFor")
 	}
 
 	// The reject_always click: the dialog write the gate's Forbid seam makes.

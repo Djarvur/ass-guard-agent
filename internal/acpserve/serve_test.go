@@ -894,7 +894,7 @@ func TestSandboxFlag_ProbeBeforeScheduler(t *testing.T) {
 	body := s[runIdx:]
 
 	probeIdx := strings.Index(body, "resolveSandboxAvailability(opts, stderr)")
-	setterIdx := strings.Index(body, "runner.SetSandboxHandle(")
+	setterIdx := strings.Index(body, "toolkit.SetSandboxHandle(")
 	schedIdx := strings.Index(body, "runner.StartScheduler(")
 
 	if probeIdx < 0 {
@@ -902,7 +902,7 @@ func TestSandboxFlag_ProbeBeforeScheduler(t *testing.T) {
 	}
 
 	if setterIdx < 0 {
-		t.Fatal("Run never stores the resolved Handle on the runner (runner.SetSandboxHandle) — the composition would drop it")
+		t.Fatal("Run never stores the Handle on the toolkit (toolkit.SetSandboxHandle) — dropped")
 	}
 
 	if schedIdx < 0 {

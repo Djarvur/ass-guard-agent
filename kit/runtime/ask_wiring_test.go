@@ -884,6 +884,9 @@ func TestAskWiring_ServerLevelSurface(t *testing.T) { //nolint:cyclop,funlen // 
 		askSurfaceRenderer: coreexec.RenderAskSurface,
 	}
 
+	// 25-07: the toolkit twin (AskUserQuestion registers through it).
+	armToolkitTwin(runner)
+
 	err := runner.SetupEngine(testEngineSetup(t))
 	if err != nil {
 		t.Fatalf("SetupEngine: %v", err)
@@ -1043,6 +1046,9 @@ func TestAskPark_PromptResponsePrecedesResolution(t *testing.T) { //nolint:cyclo
 		// the batteries assert the rendered chunk, so wire the real one.
 		askSurfaceRenderer: coreexec.RenderAskSurface,
 	}
+
+	// 25-07: the toolkit twin (AskUserQuestion registers through it).
+	armToolkitTwin(runner)
 
 	err := runner.SetupEngine(testEngineSetup(t))
 	if err != nil {

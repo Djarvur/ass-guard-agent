@@ -4,8 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-
-	"github.com/Djarvur/ass-guard-agent/internal/coreexec"
 )
 
 // TestSessionClosePTY (22-04 Task 3, D-08/Pitfall 5): a session that used
@@ -22,14 +20,11 @@ func TestSessionClosePTY(t *testing.T) { //nolint:paralleltest // real pty shell
 		t.Fatal("sessionFor returned nil")
 	}
 
-	mgrAny, ok := r.ptyManagers.Load(sid)
-	if !ok {
+	// 25-07: the PTY manager lives twin-side (the observation handle — the
+	// pre-seam r.ptyManagers map's successor).
+	mgr := twinOf(t, r).ptyManager(sid)
+	if mgr == nil {
 		t.Fatal("sessionFor did not store the session's PTY manager (22-04 wiring)")
-	}
-
-	mgr, ok := mgrAny.(*coreexec.PTYManager)
-	if !ok {
-		t.Fatalf("ptyManagers carries %T; want *coreexec.PTYManager", mgrAny)
 	}
 
 	// A persistent call starts the shell.

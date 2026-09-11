@@ -22,10 +22,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Djarvur/ass-guard-agent/internal/coreexec"
-	"github.com/Djarvur/ass-guard-agent/internal/perm"
-	"github.com/Djarvur/ass-guard-agent/internal/sandbox"
-	"github.com/Djarvur/ass-guard-agent/internal/tasks"
 	"github.com/Djarvur/ass-guard-agent/kit/audit"
 	"github.com/Djarvur/ass-guard-agent/kit/checkpoint"
 	"github.com/Djarvur/ass-guard-agent/kit/engine"
@@ -245,20 +241,22 @@ type Runner struct {
 	// lock-free turn-time reads are race-free by construction.
 	readRuleEvaluator func(tool, path string) bool
 
-	// permStore is the Runner-scoped perm store (21-REVIEW WR-02/WR-03): ONE
-	// live rule authority per project/serve. All sessions share the workDir
-	// (hence one permissions.yaml) — per-session stores were one FILE but N
-	// divergent in-memory instances: an allow_always/reject_always click in
-	// session B updated B's memory while other seams kept consulting a stale
-	// instance. Opened lazily by the first sessionFor that succeeds (under
-	// sessMu) and published ATOMICALLY, so the lock-free turn-time mention
-	// reads (readRuleEval) race cleanly. A failed open leaves it nil (the
-	// session degrades rule-less with the loud log) and the NEXT sessionFor
-	// retries — residual errors are environmental and can be transient.
-	// 25-07 Task 2 retypes this to the kit PermAuthority view (the app-side
-	// move); Task 1 keeps the concrete store while the interim fallback arm
-	// still constructs coreexec directly.
-	permStore atomic.Pointer[perm.Store]
+	// permStore is the Runner-scoped perm authority (21-REVIEW WR-02/WR-03;
+	// 25-07: the kit-side PermAuthority view — the concrete *perm.Store and
+	// its open-repair live app-side behind the OpenPermStore runner seam):
+	// ONE live rule authority per project/serve. All sessions share the
+	// workDir (hence one permissions.yaml) — per-session stores were one
+	// FILE but N divergent in-memory instances: an allow_always/
+	// reject_always click in session B updated B's memory while other seams
+	// kept consulting a stale instance. Opened lazily by the first
+	// sessionFor that succeeds (under sessMu) and published ATOMICALLY, so
+	// the lock-free turn-time mention reads (readRuleEval) race cleanly. A
+	// failed open leaves it unset (the session degrades rule-less with the
+	// loud log) and the NEXT sessionFor retries — residual errors are
+	// environmental and can be transient. atomic.Value (not
+	// atomic.Pointer) because the stored value is an interface (the
+	// permMode precedent).
+	permStore atomic.Value // PermAuthority
 
 	// 21-05 (PAR-06/D-09): the image-ingress limit set. Zero →
 	// DefaultImageLimits (Anthropic's documented classes, pinned by the
@@ -307,29 +305,19 @@ type Runner struct {
 	emitFor              func(sessionID string) Emitter
 
 	// 22-01 (D-01..D-03) wake-turn state — see cron_wiring.go: trackers maps
-	// each session to its tasks.Tracker (the ONE task-notification
-	// subsystem); wakeInFlight deduplicates concurrent drain attempts per
-	// session (one active drain chain); wakeRetryInterval is the busy-turn
-	// retry cadence (D-01 fallback — the pending batch coalesces while a
-	// client turn holds the slot and the chain retries after it frees).
-	trackers          sync.Map // sessionID -> *tasks.Tracker
+	// each session to its TaskTracker VIEW (25-07: the kit-side wake
+	// interface the app toolkit binds through ToolkitEnv.BindTracker — the
+	// concrete tasks.Tracker is app domain); wakeInFlight deduplicates
+	// concurrent drain attempts per session (one active drain chain);
+	// wakeRetryInterval is the busy-turn retry cadence (D-01 fallback — the
+	// pending batch coalesces while a client turn holds the slot and the
+	// chain retries after it frees).
+	trackers          sync.Map // sessionID -> TaskTracker (the wake view)
 	wakeInFlight      sync.Map // sessionID -> *atomic.Bool
 	wakeRetryInterval time.Duration
-	// 22-04 (PAR-09/D-07): each session's persistent-shell PTY manager (ONE
-	// lazily-started shell per session; the close battery's observation
-	// handle — OnClose captures the same manager for the Drain link).
-	ptyManagers sync.Map // sessionID -> *coreexec.PTYManager
 	// backgroundCaps resolves the D-12 caps at sessionFor time (nil = the
 	// 8/16 defaults; the serve composition binds the config surface).
 	backgroundCaps func() (subagents, bash int)
-	// sandboxHandle (22-06, SAND-01): the startup probe's resolved Handle —
-	// the D-04 policy triple + the host availability — stored ONCE per
-	// process before the scheduler starts. nil (test runners) or
-	// Availability.Mode "off" (the DEFAULT — the operator never asked) means
-	// every exec path stays untouched; Mode "on" + Available routes the three
-	// Bash-class exec sites through sandbox.WrapCmd (Tasks 2-3 read it at
-	// sessionFor into coreexec.Config and PTYOpts).
-	sandboxHandle *sandbox.Handle
 
 	// 17-02 (ACP-01): the permission-gate composition. permAskFire is the
 	// permission-ask surface callback injected from the serve composition
@@ -768,8 +756,8 @@ func (r *Runner) readRuleEval(tool, path string) (allow, wired bool) {
 		return f(tool, path), true
 	}
 
-	if st := r.permStore.Load(); st != nil {
-		return st.Rules().Evaluate(tool, path) != perm.VerdictDeny, true
+	if st, _ := r.permStore.Load().(PermAuthority); st != nil {
+		return st.Rules().Evaluate(tool, path) != session.RuleDeny, true
 	}
 
 	return false, false
@@ -2056,75 +2044,9 @@ func crossSessionBlocked(err error) bool {
 }
 
 // sessionFor returns the Session for sessionID, creating it on first use.
-// subagentOutputTailBytes bounds the finished-subagent output read (the last
-// 64 KiB of the progressive output file — the D-02 tail discipline's
-// TaskOutput analogue; the full file stays a Read away, exactly as the
-// notification's OutputFile pointer promises).
-const subagentOutputTailBytes = 64 * 1024
-
-// subagentOutputFallback is the 22-09 (G-22-5) TaskOutputFallback binding:
-// classify the id against the session's tracker — queued/running render the
-// not_ready family with no output — and anything the tracker no longer knows
-// as live is treated as FINISHED: the subagent's output file (the production
-// path convention .ass-guard/outputs/<id>.log under the session workdir) is
-// read as a bounded TAIL and surfaces through the ready envelope. A stat miss
-// reports not-handled: the id is nobody's (never registered, or the file is
-// gone) and TaskOutput renders the structured unknown-task error.
-// block/timeout are ignored for these ids — the CURRENT state renders
-// immediately (the coreexec stub comment's documented choice; the tracker
-// seam carries no bounded-wait machinery).
-func subagentOutputFallback(dir string, tracker *tasks.Tracker) func(id string) (string, string, bool, bool) {
-	return func(id string) (string, string, bool, bool) {
-		if queued, running := tracker.SubagentState(id); queued || running {
-			if queued {
-				return "", "queued", true, true
-			}
-
-			return "", "running", true, true
-		}
-
-		content, ok := readTail(filepath.Join(dir, ".ass-guard", "outputs", id+".log"), subagentOutputTailBytes)
-		if !ok {
-			return "", "", false, false
-		}
-
-		return content, "finished", false, true
-	}
-}
-
-// readTail returns the last budget bytes of path (a bounded read — the file
-// is never loaded whole). ok=false on any miss (absent or unreadable: the
-// caller reports not-handled either way).
-func readTail(path string, budget int64) (string, bool) {
-	st, err := os.Stat(path)
-	if err != nil || st.IsDir() {
-		return "", false
-	}
-
-	f, err := os.Open(path)
-	if err != nil {
-		return "", false
-	}
-
-	defer func() { _ = f.Close() }()
-
-	offset := int64(0)
-	if st.Size() > budget {
-		offset = st.Size() - budget
-	}
-
-	if _, err := f.Seek(offset, io.SeekStart); err != nil {
-		return "", false
-	}
-
-	data, err := io.ReadAll(io.LimitReader(f, budget))
-	if err != nil {
-		return "", false
-	}
-
-	return string(data), true
-}
-
+// (25-07: subagentOutputFallback + readTail moved app-side —
+// internal/acpserve/toolkit.go — with the TaskOutputFallback binding they
+// serve.)
 func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,gocognit // turn pipeline grouping
 	ctx context.Context, sessionID string,
 ) *session.Session {
@@ -2414,10 +2336,16 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	// per-session core executors — task registry, RegisterCore, RegisterAsk
 	// (binding the broker above), mailbox, session reader,
 	// RegisterInteractive — and returns the Reaper OnClose composes. The
-	// env carries exactly the inputs the direct construction below passes
-	// today, kit-typed (no app type crosses; Pitfall 3). An attach error
-	// degrades loudly to the no-core-tools state (the stub-executor arm) —
-	// never a refused session.
+	// env carries exactly the inputs the direct construction this seam
+	// replaced once passed, kit-typed (no app type crosses; Pitfall 3).
+	// A nil toolkit (or an attach failure — the loud degrade) leaves the
+	// session WITHOUT core tools: the stub-executor arm below, the
+	// documented degraded path (never a panic; the 25-09 hostproof rides
+	// it). attached keys the executor arm: real dispatch only when the
+	// registration ran AND the engine is on (the --no-engine stub shape
+	// preserved exactly).
+	attached := false
+
 	if r.toolkit != nil {
 		env := ToolkitEnv{
 			Dir:               dir,
@@ -2435,168 +2363,7 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 		}
 
 		reapSession, backgroundLaunch = r.attachToolkit(sCatalog, &env)
-	} else {
-		// 25-07 Task 1 INTERIM: the nil-toolkit fallback keeps today's
-		// DIRECT coreexec construction verbatim-in-role — Task 2 deletes it
-		// in the same commit that injects the app toolkit and switches the
-		// nil arm to the documented stub-executor degrade. At this commit no
-		// toolkit is injected anywhere, so every session runs this arm and
-		// the relocated coreexec wiring batteries pass unchanged.
-		taskRegistry := coreexec.NewTaskRegistry()
-		taskRegistry.Cap = bashCap
-
-		// 22-06 (SAND-01): the startup probe's resolved Handle + the note sink
-		// reach the registry (the background site) — one composition, all three
-		// exec sites. nil / Mode off (the default) leaves every launch untouched.
-		sandboxNote := func(format string, args ...any) {
-			_, _ = fmt.Fprintf(r.stderrOrDefault(), format+"\n", args...)
-		}
-
-		taskRegistry.Sandbox = r.sandboxHandle
-		taskRegistry.SandboxNote = sandboxNote
-
-		// 22-04 (PAR-09/D-07/D-08): the session's ONE persistent-shell PTY
-		// manager — lazily started (no shell exists until the first persistent
-		// Bash call), shared by every persistent call of the session, and
-		// drained on close (the OnClose link, Task 3). The dead-shell restart
-		// note rides the loud stderr family (one line per restart — D-08's
-		// visible state-loss acknowledgment, never silent). 22-06 (SAND-01):
-		// the SAME Handle confines the persistent shell at spawn (the third
-		// exec site; D-09 orthogonality — persistence and confinement compose).
-		ptyMgr := coreexec.NewPTYManager(coreexec.PTYOpts{
-			WorkDir: dir,
-			NoteFn: func(format string, args ...any) {
-				_, _ = fmt.Fprintf(r.stderrOrDefault(), "ass-guard: session %s "+format+"\n",
-					append([]any{sessionID}, args...)...)
-			},
-			Sandbox: r.sandboxHandle,
-		})
-		r.ptyManagers.Store(sessionID, ptyMgr)
-
-		// 22-01 (D-01..D-03, PAR-07/PAR-08): the ONE task-notification tracker
-		// beside the registry. Registry completions land as kind-tagged
-		// Notifications (primitive-arg CompletionHook — no coreexec→tasks
-		// import; this adapter owns the mapping); every completion schedules the
-		// session's wake-drain chain; OnClose drops queued-but-unstarted
-		// subagent registrations with a counted note (OQ5).
-		tracker := tasks.NewTracker(tasks.TrackerOpts{SubagentCap: subsCap})
-		r.trackers.Store(sessionID, tracker)
-
-		taskRegistry.CompletionHook =
-			func(taskID, kind, exitStatus string, duration time.Duration, tail, outputFile string) {
-				tracker.Complete(tasks.Notification{
-					TaskID: taskID, Kind: tasks.Kind(kind), ExitStatus: exitStatus,
-					Duration: duration, Tail: tail, OutputFile: outputFile,
-				})
-			}
-
-		tracker.SetDrain(func(pending []tasks.Notification) {
-			_ = pending // peek only — the chain re-reads authoritatively via Drain
-
-			wake()
-		})
-
-		// 22-03 (PAR-07): the background-subagent launcher seam — the session's
-		// run_in_background dispatchs hand the launch to tasks.RunBackgroundSubagent
-		// over this session's tracker. The loop runs under the SERVE-lifetime ctx
-		// (the dispatching turn's ctx dies at return); progress streams from the
-		// bus (chunks + tool calls tagged with the subagent's turn id) into the
-		// task's output file. The 20-03 routing plan rides the request VERBATIM
-		// (Pattern 7: DispatchSubagentBackground resolved it through the SAME
-		// planSubagent call site the foreground path uses — never a second
-		// resolver).
-		backgroundLaunch = func(req session.BackgroundDispatchRequest) session.BackgroundDispatchResult {
-			r.sessMu.Lock()
-			sessLocal := r.sessions[sessionID]
-			r.sessMu.Unlock()
-
-			launch := tasks.RunBackgroundSubagent(tasks.SubagentDeps{
-				Run: func(bgCtx context.Context, progress func(string)) (string, error) {
-					// 22-03 (OQ3): arm the ask-decline for the loop's ctx — a
-					// background subagent has no human; ask-class tools decline
-					// with the 17-D-07 note (scoped to this ctx, never the
-					// session — a concurrent client turn is unaffected).
-					return runSubagentWithProgress(
-						session.ContextWithBackgroundSubagent(bgCtx), sessLocal, req, r.bus, progress)
-				},
-				WorkDir:  dir,
-				Tracker:  tracker,
-				ServeCtx: r.serveCtxOrBackground,
-			})
-
-			return session.BackgroundDispatchResult{
-				TaskID: launch.TaskID, OutputFile: launch.OutputFile,
-				Queued: launch.Queued, Note: launch.Note, Err: launch.Err,
-			}
-		}
-
-		// Phase 8 (08-08): REAL execution for the core /opsx working set —
-		// Bash, Read, Write, Edit, TodoWrite, TodoRead (capture-grounded result
-		// forms, internal/coreexec). The SAME per-session registration site as
-		// the Skill override above: the per-session clone carries the WorkDir +
-		// a fresh per-session TodoStore (D-16 isolation); the shared engine
-		// catalog is never mutated.
-		//
-		// 12-02 Task 4: the SAME site is the PreToolUse/PostToolUse chokepoint —
-		// one HookRunner per session (discovered plugin hooks; the runner is
-		// nil-safe when none are installed) wraps every core executor.
-		coreexec.RegisterCore(sCatalog, coreexec.Config{
-			WorkDir: dir, Todos: coreexec.NewTodoStore(), Hooks: hooks, Tasks: taskRegistry,
-			PTY: ptyMgr, // 22-04 (PAR-09): the session's persistent shell
-			// 22-06 (SAND-01): the foreground site's Handle + note sink — the
-			// same resolved pair the registry and the PTY manager carry (one
-			// composition, all three exec sites; nil/off = untouched default).
-			Sandbox: r.sandboxHandle, SandboxNote: sandboxNote,
-		})
-
-		coreexec.RegisterAsk(sCatalog, askBroker)
-
-		mailbox := coreexec.NewAgentMailbox()
-		sessionReader := coreexec.NewSessionReader(dir)
-		coreexec.RegisterInteractive(sCatalog, coreexec.InteractiveConfig{
-			Ask: askBroker, PlanMode: planMode,
-			Mailbox: mailbox, Sessions: sessionReader, Tasks: taskRegistry,
-			// 22-09 (G-22-5): ids the registry does not know (background-
-			// subagent exec_ ids) reach THIS session's tracker. TaskStop cancels
-			// through CancelTask — a finished id declines (its cancel entry
-			// retired at Complete, 22-07), so no fake ack for a dead id.
-			TaskStopFallback: tracker.CancelTask,
-			// TaskOutput classifies through SubagentState and reads the output
-			// file (bounded tail; stat-miss = not-handled). Primitive args only
-			// for both seams (the CompletionHook precedent — coreexec stays
-			// tasks-free).
-			TaskOutputFallback: subagentOutputFallback(dir, tracker),
-			// 12-07: the PER-PROJECT cron store (nil in test runners →
-			// structured no-store errors)
-			Schedule: cronStoreOrNil(r.schedule),
-		})
-
-		// OnClose's app-side leg, in today's exact order (12-06 → 22-04 →
-		// 22-01 OQ5 → 22-08): the interim arm composes it inline; the
-		// toolkit arm's Reaper performs the same sequence app-side.
-		reapSession = func() {
-			taskRegistry.ReapAll() // 12-06: no background group outlives the session
-			ptyMgr.Drain()         // 22-04 (D-08/Pitfall 5): the persistent shell's group dies here too
-
-			// 22-01 (OQ5): queued-but-unstarted subagent registrations die here
-			// — silently dropped (nothing started, nothing to kill), the count
-			// noted on stderr only when non-zero.
-			if dropped := tracker.CancelQueued(); dropped > 0 {
-				_, _ = fmt.Fprintf(r.stderrOrDefault(),
-					"ass-guard: session %s close dropped %d queued background subagent task(s)\n", sessionID, dropped)
-			}
-
-			// 22-08 (G-22-4, CR-04): RUNNING background subagents die with the
-			// session too — their cancel funcs fire here (queued ones above; the
-			// two legs are idempotent together), the count noted on stderr only
-			// when non-zero. Without this a running subagent outlived its session
-			// and its late completion fired into closed machinery.
-			if cancelled := tracker.CancelRunning(); cancelled > 0 {
-				_, _ = fmt.Fprintf(r.stderrOrDefault(),
-					"ass-guard: session %s close cancelled %d running background subagent task(s)\n",
-					sessionID, cancelled)
-			}
-		}
+		attached = reapSession != nil
 	}
 
 	// 09-01 T2 (AUD-02): the late-bound capturer closure. sess is declared
@@ -2774,16 +2541,12 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 		// Deny blocks before rules; ask suspends even ungated; a USER-scope
 		// allow executes; no-decision falls through to the rule evaluation.
 		PreToolUseVerdict: preToolUseVerdict,
-		// The MCP namespace resolver (Pitfall 7): canonicalize through
-		// 17-01's helpers — the catalog registers MCP tools under their full
-		// mcp__<server>__<tool> names, so the mapping is a rebuild + identity.
-		Subject: func(tool string) string {
-			if srv, tl, ok := perm.SplitMCPName(tool); ok {
-				return perm.MCPName(srv, tl)
-			}
-
-			return tool
-		},
+		// The MCP namespace resolver (Pitfall 7): canonicalize through the
+		// kit's mirror of the 17-01 helpers — the catalog registers MCP
+		// tools under their full mcp__<server>__<tool> names, so the
+		// mapping is a split-and-rebuild + identity (25-07: the perm
+		// helpers' mirror promoted to session.CanonicalToolName).
+		Subject: session.CanonicalToolName,
 		Fire: func(ctx context.Context, e *session.AskEntry) session.AskOutcome {
 			if r.permAskFire == nil {
 				return session.AskOutcome{Err: errPermissionAskSurfaceUnwired}
@@ -2793,25 +2556,28 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 		},
 	}
 
-	// 17-REVIEW WR-01: OpenRepaired fails SAFE on a corrupt document — the
-	// unreadable file is quarantined (.corrupt), the floor file recreated, and
-	// the degradation logged LOUDLY, so a hand-edit accident can never silently
-	// zero the trust store (a deny rule that simply stopped denying). A
-	// residual error here is environmental (mkdir/stat/create) — the session
-	// degrades rule-less with the loud log, exactly as before.
+	// 17-REVIEW WR-01 (25-07: the semantics ride the app-side open —
+	// OpenRepaired's quarantine-on-corrupt fail-safe): OpenRepaired fails
+	// SAFE on a corrupt document — the unreadable file is quarantined
+	// (.corrupt), the floor file recreated, and the degradation logged
+	// LOUDLY, so a hand-edit accident can never silently zero the trust
+	// store (a deny rule that simply stopped denying). A residual error
+	// here is environmental (mkdir/stat/create) — the session degrades
+	// rule-less with the loud log, exactly as before.
 	//
-	// 21-REVIEW WR-02/WR-03: the store is RUNNER-scoped (21-06's PAR-06 ↔
-	// PAR-03 join, hoisted): ONE live instance every session's gate AND the
-	// @-mention Read-rule consult (readRuleEval) answer to — the sessions
-	// already share the workDir/file, so per-session instances were one file
-	// but N divergent in-memory authorities. sessMu is held here; the atomic
-	// publish keeps the lock-free turn-time mention reads race-free. Only
-	// VerdictDeny denies a mention (ask/allow/unmatched all expand); a nil
-	// store (failed open) keeps the nil implicit-allow default and the next
+	// 21-REVIEW WR-02/WR-03: the authority is RUNNER-scoped (21-06's
+	// PAR-06 ↔ PAR-03 join, hoisted): ONE live instance every session's
+	// gate AND the @-mention Read-rule consult (readRuleEval) answer to —
+	// the sessions already share the workDir/file, so per-session instances
+	// were one file but N divergent in-memory authorities. sessMu is held
+	// here; the atomic publish keeps the lock-free turn-time mention reads
+	// race-free. Only VerdictDeny denies a mention (ask/allow/unmatched all
+	// expand); a nil authority (failed open, or no opener — the 25-07
+	// runner seam) keeps the nil implicit-allow default and the next
 	// sessionFor retries.
-	permStore := r.permStore.Load()
-	if permStore == nil {
-		st, permErr := perm.OpenRepaired(filepath.Join(dir, ".ass-guard", "permissions.yaml"))
+	permStore, _ := r.permStore.Load().(PermAuthority)
+	if permStore == nil && r.openPermStore != nil {
+		st, permErr := r.openPermStore(filepath.Join(dir, ".ass-guard", "permissions.yaml"))
 		if permErr != nil {
 			log.Printf("ass-guard: permissions store disabled for %s (%v) — deny/allow rules UNENFORCED for this session",
 				dir, permErr)
@@ -2822,9 +2588,10 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	}
 
 	if permStore != nil {
-		permDeps.Rules = func() session.RuleSet { // 25-06: the kit RuleSet view (temp adapter — dies with the catalog)
-			return kitRuleSet{rs: permStore.Rules()}
-		}
+		// 25-07: the PermAuthority view — the app adapter maps verdicts to
+		// the kit enum (the kitRuleSet staging moved app-side with the
+		// seam).
+		permDeps.Rules = permStore.Rules
 		permDeps.Allow = permStore.AllowTool
 		permDeps.Forbid = permStore.ForbidTool
 	}
@@ -2834,7 +2601,11 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	// WebFetch delegate to the configured backend; others call catalog
 	// Tool.Execute). Phase 5 wraps it in toolcat.MCPExecutor so mcp__* calls
 	// route to the MCP host and everything else reaches the inner executor.
-	if r.engineEnabled {
+	// 25-07: real dispatch requires the toolkit's registration to have RUN
+	// (attached) AND the engine — nil toolkit or --no-engine keeps the
+	// stub-executor degraded path (enginebridge.NewStubCatalogExec — the
+	// exact pre-seam engine-off behavior, never a panic).
+	if r.engineEnabled && attached {
 		s.SetToolExecutor(toolcat.NewMCPExecutor(
 			&toolexec.RealExecutor{Catalog: sCatalog, Log: slog.Default()}, mcpHost))
 	} else {
@@ -3425,17 +3196,16 @@ func (r *Runner) CloseSession(sessionID string) error {
 	}
 
 	// 22-08 (G-22-4, CR-04): close is FINAL for the session's background
-	// machinery — AFTER s.Close() (so OnClose's CancelQueued/CancelRunning
-	// cancels and the PTY Drain ran while the tracker and manager were still
-	// discoverable), prune the per-session wake state. A late completion then
-	// finds no tracker (the chain exits) and even a tracker-holding path
-	// meets the drain's NON-constructing session lookup, which drops the
-	// batch terminally instead of resurrecting the closed id. Unconditional:
-	// also on the session-missing path (close twice, or close a never-built
-	// id) the maps must not keep stale state.
+	// machinery — AFTER s.Close() (so OnClose's Reaper — the tracker cancels
+	// and the PTY Drain — ran while the kit-side views were still
+	// discoverable), prune the per-session wake state. A late completion
+	// then finds no tracker (the chain exits) and even a tracker-holding
+	// path meets the drain's NON-constructing session lookup, which drops
+	// the batch terminally instead of resurrecting the closed id.
+	// Unconditional: also on the session-missing path (close twice, or
+	// close a never-built id) the maps must not keep stale state.
 	r.trackers.Delete(sessionID)
 	r.wakeInFlight.Delete(sessionID)
-	r.ptyManagers.Delete(sessionID)
 
 	return err
 }
@@ -3455,8 +3225,7 @@ func (r *Runner) CloseSession(sessionID string) error {
 // Scheduler port STRUCTURALLY (25-05, D-16): the parameter is the port, the
 // argument at the composition root is unchanged, and the interactive cron
 // quartet's CRUD half rides the same value's optional coreexec.CronStore
-// capability (cronStoreOrNil — 25-07's SessionToolkit takes that half
-// app-side wholesale).
+// capability (extracted app-side by the SessionToolkit's Attach — 25-07).
 func (r *Runner) SetSchedule(store Scheduler) { r.schedule = store }
 
 // ApplyTurnModel applies an editor-driven model change to LIVE state (16-05/
@@ -3600,16 +3369,6 @@ func (r *Runner) SetAskFire(f func(ctx context.Context, e *session.AskEntry) ses
 // (apply-as-landed: no mid-session cap mutation).
 func (r *Runner) SetBackgroundCaps(f func() (subagents, bash int)) {
 	r.backgroundCaps = f
-}
-
-// SetSandboxHandle stores the 22-06 startup probe's resolved Handle (SAND-01):
-// the serve composition resolves the availability ONCE (off short-circuits
-// with zero probing; enabled-but-unavailable warns exactly once) before the
-// scheduler starts; every sessionFor construction reads the Handle into
-// coreexec.Config and PTYOpts (the askFire late-injection precedent — nil or
-// Mode "off" leaves every exec path untouched, the locked default).
-func (r *Runner) SetSandboxHandle(h *sandbox.Handle) {
-	r.sandboxHandle = h
 }
 
 // PublishAskChunk publishes one client-visible ask-surface chunk (17-04):
@@ -4432,32 +4191,6 @@ func (r *Runner) notePlan(
 	}
 
 	return plan
-}
-
-// --- 25-06 Task 1 residue: the perm rule-set adapter (stays — the runtime
-// keeps its perm edge until a later plan severs it; the catalog owns only
-// the ecosystem seam) ---
-
-// kitRuleSet adapts the app permission rule set to the kit session.RuleSet
-// view (the 25-03-assigned session→perm severance's composition-side half;
-// the permanent adapter moves app-side with the catalog).
-type kitRuleSet struct{ rs perm.RuleSet }
-
-// Evaluate maps the app verdict onto the kit enum (explicit switch — the
-// enum orders are deliberately not assumed to coincide).
-func (k kitRuleSet) Evaluate(toolName, primaryArg string) session.RuleVerdict {
-	switch k.rs.Evaluate(toolName, primaryArg) {
-	case perm.Unmatched:
-		return session.RuleUnmatched
-	case perm.VerdictAllow:
-		return session.RuleAllow
-	case perm.VerdictAsk:
-		return session.RuleAsk
-	case perm.VerdictDeny:
-		return session.RuleDeny
-	default:
-		return session.RuleUnmatched // an unknown app verdict stays unmatched
-	}
 }
 
 // liveAgentLookup resolves a subagent_type through the runner's LIVE chain

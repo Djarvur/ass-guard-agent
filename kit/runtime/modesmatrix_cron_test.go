@@ -57,6 +57,9 @@ func newMatrixRunner(t *testing.T, project string, script ...scriptedResp) (*Run
 		makeProvider: func(_ provider.RequestCapturer) provider.Provider { return prov },
 	}
 
+	// 25-07: the toolkit twin (the matrix's background dispatch + wake cells).
+	armToolkitTwin(r)
+
 	if err := r.SetupEngine(testEngineSetup(t)); err != nil {
 		t.Fatalf("SetupEngine: %v", err)
 	}

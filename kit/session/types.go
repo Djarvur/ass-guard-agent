@@ -139,10 +139,12 @@ const (
 	mcpNameSep    = "__"
 )
 
-// canonicalToolName normalizes one tool name for rule matching: MCP names
+// CanonicalToolName normalizes one tool name for rule matching: MCP names
 // split and rebuild through the canonical joiner (identity for already-
 // canonical and non-MCP names alike — the rebuild IS the canonical form).
-func canonicalToolName(tool string) string {
+// Exported at the 25-07 perm severance: kit/runtime's gate Subject consumes
+// the mirror (the D-12 demand-grown export — a real kit consumer arrived).
+func CanonicalToolName(tool string) string {
 	rest, found := strings.CutPrefix(tool, mcpNamePrefix)
 	if !found {
 		return tool
