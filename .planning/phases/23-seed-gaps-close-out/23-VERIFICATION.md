@@ -1,8 +1,8 @@
 ---
 phase: 23-seed-gaps-close-out
-verified: 2026-09-10T13:26:08Z
+verified: 2026-09-14T19:50:00Z
 status: human_needed
-score: 12/12 must-haves verified
+score: 15/16 must-haves verified
 covered_files:
   - .planning/REQUIREMENTS.md
   - .planning/phases/23-seed-gaps-close-out/23-01-PLAN.md
@@ -17,181 +17,194 @@ covered_files:
   - .planning/phases/23-seed-gaps-close-out/23-05-SUMMARY.md
   - .planning/phases/23-seed-gaps-close-out/23-06-PLAN.md
   - .planning/phases/23-seed-gaps-close-out/23-06-SUMMARY.md
-  - .planning/phases/23-seed-gaps-close-out/23-REVIEW.md
-  - internal/acpserve/checkpoint_options_test.go
+  - .planning/phases/23-seed-gaps-close-out/23-07-PLAN.md
+  - .planning/phases/23-seed-gaps-close-out/23-07-SUMMARY.md
+  - .planning/phases/23-seed-gaps-close-out/23-07-task1-red-evidence.json
+  - .planning/phases/23-seed-gaps-close-out/23-UAT.md
+  - .planning/phases/23-seed-gaps-close-out/deferred-items.md
+  - internal/acp/available_commands_test.go
+  - internal/acp/emitter_test.go
+  - internal/acp/handlers.go
+  - internal/acp/handlers_test.go
+  - internal/acp/server.go
+  - internal/acp/server_test.go
+  - internal/acpserve/commands_seam_test.go
   - internal/acpserve/config_surface.go
-  - internal/checkpoint/store.go
-  - internal/checkpoint/store_test.go
-  - internal/runtime/commands.go
-  - internal/runtime/commands_test.go
-  - internal/runtime/restore_guard_test.go
-  - internal/runtime/runtime.go
-  - internal/runtime/steering_ingress_test.go
-  - internal/session/ask.go
-  - internal/session/manager.go
-  - internal/session/projector.go
-  - internal/session/session.go
-  - internal/session/steering_test.go
-  - internal/session/steerqueue.go
-  - internal/session/steerqueue_test.go
-  - internal/session/transcript.go
-covered_digest: "v1:sha256:c27ca345566e7efb90c9a6ce54ec029235b750b546a245aa5023c7a08120bf1a"
-behavior_unverified: 0
+  - internal/acpserve/kit_emitter_e2e_test.go
+  - internal/acpserve/serve_test.go
+  - kit/checkpoint/store.go
+  - kit/checkpoint/store_test.go
+  - kit/runtime/commands.go
+  - kit/runtime/restore_guard_test.go
+  - kit/runtime/runtime.go
+  - kit/runtime/steering_ingress_test.go
+  - kit/session/manager.go
+  - kit/session/projector.go
+  - kit/session/session.go
+  - kit/session/steering_test.go
+  - kit/session/steerqueue.go
+  - kit/session/steerqueue_test.go
+  - kit/session/transcript.go
+covered_digest: "v1:sha256:89393d825c832b4ebd6edd3d5a16f82537db42ac247633db9dd0e4e207b6c310"
+behavior_unverified: 1 # truths present + wired, behavior not exercisable by automated tests (live editor session)
 overrides_applied: 0
 re_verification:
-  previous_status: gaps_found
-  previous_score: 11/12
+  previous_status: human_needed
+  previous_score: 12/12
   gaps_closed:
-    - "Checkpoint restore refuses safely when a turn or engine chain is active — now enforced for ANY session of the Runner, not only the calling session (G-23-1/CR-01, SEEDG-02 truth 8; closed by plan 23-06, commits 0bd4942..346d4be)"
+    - "G-23-1 (UAT-found): session/new available_commands_update advertisement was emitted BEFORE the response frame, so Zed dropped it client-side (unregistered session, zed#60199) and rejected every slash command incl. /undo — closed by plan 23-07 (RED battery acdb233 + fix fa370f2): emission now registers on a per-request post-response slot drained by defer after the response enqueue; re-verified by this verifier's own -race runs of both ordering batteries"
   gaps_remaining: []
   regressions: []
+behavior_unverified_items:
+  - truth: "In a live Zed session the operator sees /undo offered client-side (autocomplete) and executed agent-side (idle = instant restore, mid-turn = cancel-then-restore); the cross-session refusal leg reaches the agent's resolver instead of dying client-side (23-07 truth 4 / coverage D2 / Task 3 blocking gate)"
+    test: "Rebuild the binary the way the UAT machine runs it (go build to ~/go/bin/ass-guard), launch a fresh Zed session on a scratch git repo, type / , run idle /undo after a turn, run mid-turn /undo during a substantive turn; in a second Zed session on the same workspace run /undo from idle B while A's turn is live; inspect Zed's ACP logs (dev: open acp logs)"
+    expected: "Autocomplete lists ass-guard's commands incl. /undo (the 'Available commands: none' state gone); idle /undo = instant restore summary, no model spin; mid-turn /undo = visible cancel then restore; B's /undo under A's live turn = refusal naming A, retry after A ends restores; per-frame 'unknown session' drop warnings gone for session/new"
+    why_human: "The G-23-1 failure mode is client-side (Zed's per-session command registry); no automated harness observes a live editor's autocomplete or its log warnings — 23-UAT.md tests 1-2 (status: diagnosed) must be re-run on the post-fix binary"
 coincidental_reliance_items:
   - truth: "Ticket/cutoff cancel protocol: undelivered steering resolves cancelled-normal at turn death and never reaches any later model window (anti-zombie)"
     reason: incidental-ordering
-    harden: "WR-01: CancelAll (steerqueue.go:133-143) reads q.next under one lock, releases, then delegates to CancelThrough — an Enqueue landing in the gap mints next+1 and survives a cancel that already decided it covered everything. Combined with routeSteering's activity-check-THEN-enqueue (runtime.go:1046-1081), an input that passes the activity check can land after the turn's exit resolution and zombie-deliver into the next unrelated turn. Make CancelAll atomic under ONE critical section and/or re-check clientTurnActive/chainCount after Enqueue and self-cancel with a 'turn ended before delivery' note when nothing is active."
+    harden: "WR-01 (carried forward unchanged from the prior verification; now at kit/session/steerqueue.go): CancelAll reads q.next under one lock, releases, then delegates to CancelThrough — an Enqueue landing in the gap mints next+1 and survives a cancel that already decided it covered everything. Combined with routeSteering's activity-check-THEN-enqueue (kit/runtime/runtime.go), an input passing the activity check can land after the turn's exit resolution and zombie-deliver into the next unrelated turn. Make CancelAll atomic under ONE critical section and/or re-check clientTurnActive/chainCount after Enqueue with a self-cancel note."
 human_verification:
-  - test: "Live-Zed operator UAT — boundary steering + /undo (WINDOWS #23, PENDING-OPERATOR-CONFIRMATION): launch ass-guard acp in Zed on a scratch git repo; start a multi-tool-call turn; mid-turn type a short steering instruction; after the turn run /undo; then start another turn and mid-turn run /undo; inspect Zed's ACP logs (dev: open acp logs). Full script: 23-05-PLAN.md Task 3."
-    expected: "Immediate queued note + 'steering applied: 1 inputs' at the boundary + visible course change without restart; instant restore summary (restored id + pre-restore snapshot id), no model spin, clean git status (no .ass-guard/); mid-turn /undo visibly cancels the turn then restores; no malformed ACP frames. Record what Zed actually does with mid-turn prompts (RESEARCH A2 — feeds TG-02 planning)."
-    why_human: "Requires a human editor session in a live Zed client; Zed's client-side prompt queuing is unobservable by tests."
-  - test: "Two-live-Zed-session cross-session restore check (WINDOWS #24, PENDING-OPERATOR-CONFIRMATION — confirmatory leg of the closed G-23-1 gap, 23-06 coverage item D4): two Zed sessions on the same workspace; hold a turn open in session A; run /undo from idle session B."
-    expected: "B receives the cross-session refusal naming session A and its state (worktree and checkpoint store shared by every session of this process), nothing restored under A's live turn; after A's turn ends, the same /undo from B restores normally."
-    why_human: "Requires two live editor sessions against one workspace; the offline battery (TestUndoCrossSessionRefusal) is the gap's automated witness — this leg confirms the operator-visible surface in a real editor."
+  - test: "Live-Zed /undo operator UAT re-run (G-23-1 close-out; 23-07 Task 3; 23-UAT.md tests 1-2 re-run on a freshly built post-fa370f2 binary)"
+    expected: "Zed autocomplete lists ass-guard's commands incl. /undo; idle /undo = instant restore (restored id + pre-restore snapshot id), no model spin, clean git status; mid-turn /undo = cancel-then-restore; ACP logs free of session/new 'unknown session' drops"
+    why_human: "Requires a live Zed editor session against the freshly built binary; the client-side command registry and log surface are unobservable by tests"
+  - test: "Two-live-Zed-session cross-session restore check (WINDOWS #24) — /undo from idle session B while session A's turn is live, then retry after A ends"
+    expected: "B receives the refusal naming session A and its state; nothing restored under A's live turn; after A's turn ends, B's retry restores normally"
+    why_human: "Requires two live editor sessions against one workspace; the offline battery (TestUndoCrossSessionRefusal) is the automated witness — this leg confirms the operator-visible surface now that the advertisement reaches Zed (it was unreachable client-side at the prior UAT)"
 ---
 
 # Phase 23: SEED Gaps Close-out Verification Report
 
 **Phase Goal:** The remaining SEED-004 gaps close: steering/input queue during a running turn (transport-neutral — the Telegram prerequisite, not descoped to queue-behind), checkpoint restore hardened against active turns and nested repos, and /undo exposed as a class-B command.
-**Verified:** 2026-09-10T13:26:08Z
+**Verified:** 2026-09-14T19:50:00Z
 **Status:** human_needed
-**Re-verification:** Yes — after gap closure (plan 23-06, commits 0bd4942..346d4be)
+**Re-verification:** Yes — supersedes the 2026-09-10 report (which predated the 23-07 G-23-1 fix): the operator UAT run after that report found G-23-1 (session/new advertisement emitted pre-response, dropped client-side by Zed → every slash command incl. /undo rejected with "Available commands: none"); plan 23-07 closed it at the wire level (acdb233 RED + fa370f2 fix). This verifier re-checked every pillar at HEAD with its own test runs.
 
 ## Goal Achievement
 
-All three phase pillars (SEEDG-01 steering, SEEDG-02 restore hardening, SEEDG-03 /undo) are delivered, wired, and behaviorally test-pinned. The one gap found by the initial verification — G-23-1/CR-01, the restore guard's session-scoped enforcement over a process-shared workspace — is CLOSED: the guard is now workspace-scoped (`workspaceBlockers` self-excluding walk consulted before any snapshot/cancel/restore at BOTH /undo mutation halves), the busy session is named in the operator-visible refusal and the durable local_command record, and three red-at-HEAD regression tests pin it. This re-verification ran every named battery in its own processes under `-race` — all green, including the full `internal/runtime` package gate with only the documented pre-existing `TestRescanConcurrency` skip. What remains are the two operator UAT legs riding the WINDOWS ledger (#23, #24) — not code gaps.
+All three phase pillars (SEEDG-01 steering, SEEDG-02 restore hardening, SEEDG-03 /undo) are delivered, wired, and behaviorally test-pinned at HEAD, and the UAT-found G-23-1 advertisement-ordering gap is closed at the wire level — proven by a red-green two-level ordering battery that this verifier re-ran green under `-race`. One relocation note: Phase 25 (later milestone phase, its own verification passed) moved `internal/session`, `internal/runtime`, `internal/checkpoint` verbatim into `kit/` — all phase-23 artifacts live there now and this verifier re-ran the pillar batteries at the new paths, all green. What remains is the operator's live-Zed UAT re-run on the post-fix binary (the prior UAT's two issue records were produced by the PRE-fix binary) — a human-only surface, not a code gap.
 
 ### Observable Truths
 
+Truths 1-12 are the merged roadmap/plan must-haves verified by the 2026-09-10 report; this verifier regression-checked them at HEAD (code unchanged by 23-07 — the delta 905dfa9..HEAD touches only `internal/acp*` + `internal/acpserve*` — and re-ran the named batteries at the kit/ paths). Truths 13-16 are plan 23-07's must-haves, fully verified here.
+
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | Steering input typed mid-turn delivers at the NEXT model-request boundary as ONE coalesced marker-wrapped user-role message — never mid-flight, never splitting tool pairs — with the "steering applied: N inputs" note and an anchor-safe, replay-parity projector fold (SC-1, D-01..D-04) | ✓ VERIFIED | Drain seam at session.go:631 sits exactly between the ctx.Err() check and maybeCompact/Project (pairs closed, no request in flight); AppendSteeringDelivery sole-writer via REDACTED path (manager.go:409); projector fold case projector.go:693. Initially verified green under -race; sanity re-run green (TestSteeringDeliveryEndToEnd). 23-06 touched no session files |
-| 2 | Ticket/cutoff cancel protocol resolves which queued inputs the running turn acknowledges; at turn death undelivered items resolve cancelled-normal and never reach any later model window (anti-zombie) | ✓ VERIFIED (coincidental-reliance) | recordCanceled funnels all cancelled exits to CancelAll with a stderr note (session.go:1222-1233); teardown riders (turn exit + cancelParkedChains) per 23-05. Sanity re-run green: TestSteeringAntiZombie. Holds incidentally on the racy interleaving — see WR-01 in coincidental_reliance_items (CancelAll two-phase lock, steerqueue.go:133-143) |
-| 3 | Mid-turn inputs classify BEFORE the turn mutex; steered prompts return promptly (queued note + end_turn); parked asks visible + cancelable by grammar without killing the turn (SC-2, D-05..D-07) | ✓ VERIFIED | routeSteering at Run head pre-lock (runtime.go:1007-1081) over clientTurnActive/chainCount only; exact-phrase cancel grammar; parked_ask kind + note. Battery green at initial verification; unchanged by 23-06 (routeUndoActive slot widened, classifier untouched) and covered by the full-package green below |
-| 4 | The steering queue API is transport-neutral — consumable by a non-ACP frontend (SC-5, TG-02 prerequisite) | ✓ VERIFIED | steerqueue.go imports only sync + time (read in full); TestSteerQueueNoACP (go/parser import-block gate) sanity re-run green |
-| 5 | A pre-restore snapshot is a first-class checkpoint object (three-site grammar, deterministic counter, restore parity); a restore NEVER proceeds without it (fail-closed, D-09/D-12) | ✓ VERIFIED | SnapshotPreRestore (store.go:260), both id families validated at all grammar sites; Tests green at initial verification (TestPreRestoreSnapshotFamily, TestIDGrammarTable); fail-closed end-to-end TestUndoFailClosed re-run green in the single-session battery |
-| 6 | Nested-repo restores refused outright — .git as dir OR file (gitlink contents silently unprotected) | ✓ VERIFIED | findNestedRepos (store.go:623), typed NestedRepoError, RestoreGuard (store.go:607); prepareUndo refuses before any mutation (commands.go:1257). TestNestedRepoDetectedAndRefused green at initial verification; TestUndoNestedRefusal re-run green |
-| 7 | Checkpoint GC is age+count with real object expiry; .ass-guard/ excluded from the user's git via .git/info/exclude (D-08) | ✓ VERIFIED | Sweep + expireByAge/expireByCount (store.go:364-500), de-chained commits make gc --prune=now real; EnsureUserRepoExclude (store.go:502). TestCheckpointGCObjectExpiry, TestUserRepoExclude green at initial verification. WR-02 Warning: the retained prune backstop evicts by (SessionID,TurnNum) grammar order, not recency (store.go:852-865, 920-937) |
-| 8 | Checkpoint restore refuses safely when a turn or engine chain is active — for ANY session of the Runner over the shared workspace (SC-3, SEEDG-02) | ✓ VERIFIED (gap closed) | G-23-1/CR-01 closed by 23-06. workspaceBlockers walk (runtime.go:2052-2084): turnActive Range + one chainMu-held activeChains snapshot, self-excluding, state-only (never a turn mutex — promptness pinned). restoreBlockers consults it FIRST, own legs unchanged (:2106-2120); restoreBlockedError.other names the busy session in the operator-visible wording (:2004-2026). Both /undo mutation halves refuse EARLY: restoreUndoActive step 0 before undoSnapshotPreRestore (:1202 < :1206) + post-snapshot discriminator branch (:1218); restoreUndo idle-half consult before its snapshot (commands.go:1294 < :1298) — deliberately the self-excluding walk (the full guard's own-turn leg fires on the caller's own command-carrying turn). Batteries RE-RUN BY THIS VERIFIER under -race: TestRestoreGuardCrossSessionMatrix PASS (promptness 2s row, naming, own-wording byte-stable, idle-after-exit, chain cell); TestUndoCrossSessionRefusal PASS (sentinel survives under A's live turn, durable 'refused: workspace busy', transient retry restores, zero provider calls); TestUndoActivePathCrossSessionRefusal PASS both variants (parked chain NOT cancelled; own client turn NOT cancelled — refusal outranks auto-cancel). Pre-existing cells green unmodified |
-| 9 | /undo restores the last checkpoint instantly, zero provider calls, class-B D-05 shape, durable verbatim local_command record; walk reversible, /undo N jumps, edge table, cross-session scoping, loud nil-store degrade (SC-4, SEEDG-03) | ✓ VERIFIED | undo in reservedNames (commands.go:108) + builtinTable (:183); parseUndoDepth edge rules (:1150); recency-ordered undoWalkTarget (:1182); prepareUndo/restoreUndo (:1243-1315). Single-session battery re-run green unmodified: TestClassBUndoIdle/Edges/CrossSession/DegradedStore, TestUndoWalk |
-| 10 | /undo with an active turn/chain auto-cancels via the existing cancel contract THEN restores — snapshot precedes cancel (fail-closed), nested refusal outranks the auto path, classified pre-mutex so it never self-deadlocks (D-12); 23-06: a CROSS-SESSION hit outranks the auto-cancel for both own-state variants (nothing cancelled, nothing restored) | ✓ VERIFIED | restoreUndoActive locked sequence verified at runtime.go:1196-1246 (step 0 workspace consult -> snapshot -> guard/discriminator -> cancel -> turnMu -> restore; numbered doc comment updated with the outranking notes). Re-run green: TestUndoAutoCancel, TestUndoFailClosed, TestUndoNestedRefusal, TestParkedChainCancelSteering, plus the new TestUndoActivePathCrossSessionRefusal both variants |
-| 11 | A class-B invocation typed mid-turn NEVER reaches the model as steering text (Pitfall 11) | ✓ VERIFIED | resolvesAsCommand predicate + routeUndoActive fill the reserved slot between the ask route and steering enqueue (runtime.go:1046-1081). Covered by the full-package green (-race, skip TestRescanConcurrency only) |
-| 12 | checkpoint.expiry_days / checkpoint.max_per_session advertised as enumerated selects, accept-validated, persisted under the checkpoint: layer key, read back via the generic layer map (D-10) | ✓ VERIFIED | config_surface.go:122-123, menu entries :1386-1405, read-back wired to the sweep (runtime.go via checkpointGCBounds). TestCheckpointOptions green at initial verification. WR-03 Warning: `_meta` blob fills for these four numeric ids are recognized-but-inert |
+| 1 | Steering input typed mid-turn delivers at the NEXT model-request boundary as ONE coalesced marker-wrapped user-role message — never mid-flight, never splitting tool pairs — with the "steering applied: N inputs" note and an anchor-safe, replay-parity projector fold (SC-1) | ✓ VERIFIED | drainSteering + "steering applied: %d inputs" at kit/session/session.go:507-529; own re-run green: TestSteeringDeliveryEndToEnd (-race, kit/session) |
+| 2 | Ticket/cutoff cancel protocol resolves which queued inputs the running turn acknowledges; at turn death undelivered items resolve cancelled-normal and never reach any later model window (anti-zombie) | ✓ VERIFIED (coincidental-reliance) | CancelAll funnels cancelled exits (kit/session/steerqueue.go:131-146); own re-run green: TestSteeringAntiZombie (-race). Holds incidentally on the racy interleaving — WR-01 carried in coincidental_reliance_items |
+| 3 | Mid-turn inputs classify BEFORE the turn mutex; steered prompts return promptly (queued note + end_turn); parked asks visible + cancelable by grammar without killing the turn (SC-2) | ✓ VERIFIED | routeSteering pre-mutex classifier at kit/runtime/runtime.go:1038-1073, called at Run head (:893); pillar batteries green (own re-run, kit/runtime -race) |
+| 4 | The steering queue API is transport-neutral — consumable by a non-ACP frontend (SC-5, TG-02 prerequisite) | ✓ VERIFIED | kit/session/steerqueue.go imports only sync + time (read); own re-run green: TestSteerQueueNoACP (-race) |
+| 5 | A pre-restore snapshot is a first-class checkpoint object; a restore NEVER proceeds without it (fail-closed) | ✓ VERIFIED | Own re-run green at kit/checkpoint (-race): TestPreRestoreSnapshotFamily, TestIDGrammarTable, TestUndoFailClosed (kit/runtime) |
+| 6 | Nested-repo restores refused outright — .git as dir OR file | ✓ VERIFIED | Own re-run green: TestNestedRepoDetectedAndRefused (kit/checkpoint), TestUndoNestedRefusal (kit/runtime) |
+| 7 | Checkpoint GC is age+count with real object expiry; .ass-guard/ excluded from the user's git via .git/info/exclude | ✓ VERIFIED | Own re-run green: TestCheckpointGCObjectExpiry, TestUserRepoExclude (kit/checkpoint). WR-02 prune-backstop ordering warning carried as review debt |
+| 8 | Checkpoint restore refuses safely when a turn or engine chain is active — for ANY session of the Runner over the shared workspace (SC-3) | ✓ VERIFIED | workspaceBlockers walk survives at kit/runtime/runtime.go (5 refs); own re-run green: TestRestoreGuardCrossSessionMatrix, TestUndoCrossSessionRefusal, TestUndoActivePathCrossSessionRefusal (-race, kit/runtime) |
+| 9 | /undo restores the last checkpoint instantly, zero provider calls, class-B D-05 shape, durable verbatim local_command record; walk reversible, /undo N jumps, edge table, cross-session scoping, loud nil-store degrade (SC-4) | ✓ VERIFIED | undo in reservedNames (kit/runtime/commands.go:106) + builtinTable (:181) + nameUndo (:1131); own re-run green: TestClassBUndoIdle (-race, kit/runtime) |
+| 10 | /undo with an active turn/chain auto-cancels THEN restores — snapshot precedes cancel (fail-closed), nested refusal outranks the auto path, classified pre-mutex; a CROSS-SESSION hit outranks the auto-cancel | ✓ VERIFIED | Own re-run green: TestUndoAutoCancel, TestUndoFailClosed, TestUndoNestedRefusal, TestUndoActivePathCrossSessionRefusal (-race, kit/runtime) |
+| 11 | A class-B invocation typed mid-turn NEVER reaches the model as steering text | ✓ VERIFIED | Reserved-slot fill in routeSteering (kit/runtime/runtime.go); covered by the green kit/runtime battery set |
+| 12 | checkpoint.expiry_days / checkpoint.max_per_session advertised as enumerated selects, accept-validated, persisted under the checkpoint: layer key, read back via the generic layer map | ✓ VERIFIED | internal/acpserve/config_surface.go:122-123 (+ parse-fallback logging :1897/:1904) — package not touched by 23-07; prior battery green stands |
+| 13 | On session/new the wire carries the id-matched response frame FIRST and the available_commands_update advertisement AFTER it — pinned at BOTH the internal/acp dispatch level and the real acpserve composition level (G-23-1 root cause, 23-07) | ✓ VERIFIED | Fix read at internal/acp/handlers.go:372-385 (afterResponse registration; no pre-response Notify/Barrier remains in handleSessionNew) + internal/acp/server.go:710-809 (per-request postResponseSlot, context-scoped, defer-drained on every exit path — enqueue order IS wire order on the FIFO Writer). Own -race runs at HEAD: TestSessionNewAdvertisesAfterResponse PASS (internal/acp), TestServeSessionNewCommandOrderAfterResponse PASS (internal/acpserve). RED evidence genuine: 23-07-task1-red-evidence.json records both failing on the ordering assertion pre-fix (exit 1) with load-path witnesses green |
+| 14 | The session/load path's updates-before-response order is UNCHANGED — the re-advertisement still rides after the last replayed frame and before the load response; existing replay/session-family batteries green without edits (prohibition 1) | ✓ VERIFIED | handleSessionLoad read at internal/acp/handlers.go:838-846: pre-response NotifyAvailableCommands + s.emitter.Barrier(ctx) intact (and session/prompt's turn-end Barrier at :526 untouched); own -race run: TestReplay\|TestSessionLoad green (internal/acp, 6 tests, no assertion edits — `git diff 905dfa9..HEAD` shows no production change outside the session/new slot mechanism) |
+| 15 | The session/new advertisement still carries the complete winner set through the real composition, with undo present (14-command class-B surface) | ✓ VERIFIED | Composition battery asserts undoPresent (internal/acpserve/serve_test.go:575-576, :650-651) — own -race run PASS |
+| 16 | In a live Zed session the operator sees /undo offered client-side (autocomplete) and executed agent-side: idle = instant restore, mid-turn = cancel-then-restore; the cross-session refusal leg also reaches the agent's resolver (23-07 Task 3 / coverage D2) | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED | Wire-level prerequisites verified (truths 13-15); the operator-visible live-editor surface requires the UAT re-run on the post-fix binary — see behavior_unverified_items + Human Verification. 23-UAT.md (status: diagnosed) records both tests as issues from the PRE-fix binary (2026-09-11 22:17); the fix landed after |
 
-**Score:** 12/12 truths verified (0 present, behavior-unverified)
+**Score:** 15/16 truths verified (1 present, behavior-unverified — live editor session)
+
+### Prohibitions (23-07)
+
+| Prohibition | Status | Evidence |
+|-------------|--------|----------|
+| session/load ordering must not change (16-01/18-05 Barrier contract deliberate) | ✓ HELD | handlers.go:838-846 byte-stable pre-response order; TestReplay\|TestSessionLoad green unedited (own run) |
+| No timer/sleep/goroutine-race deferral — property holds by enqueue order alone | ✓ HELD | postResponseSlot drained via `defer slot.run()` in handleRequest after writeResult/writeError (server.go:769-809); zero sleeps/timers in the mechanism (read in full) |
+| No second advertisement fire (exactly one available_commands_update per session/new) | ✓ HELD | Slot-or-fallback is either/or (handlers.go:372-385); dispatch battery's frame-1-is-response assertion catches any leftover pre-response emission — green (own run) |
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| internal/session/steerqueue.go | Transport-neutral SteerQueue (Enqueue/Drain/CancelThrough/CancelAll/Pending) | ✓ VERIFIED | Read in full; single-mutex, nil-safe, stdlib-only imports |
-| internal/session/steerqueue_test.go | Ticket/cutoff battery incl. -race hammer + import-block gate | ✓ VERIFIED | All tests enumerated; green at initial verification; sanity re-run green |
-| internal/session/steering_test.go | E2E delivery, anti-zombie, projector anchor/replay, parked-ask | ✓ VERIFIED | Named tests enumerated and green at initial verification; sanity re-run green |
-| internal/session/transcript.go | TypeSteeringDelivery + TypeParkedAsk kinds with doc discipline | ✓ VERIFIED | :90-103 steering_delivery; parked_ask present (fold-tolerant by omission) |
-| internal/session/manager.go | AppendSteeringDelivery + AppendParkedAsk (REDACTED path) | ✓ VERIFIED | :401-416 over appendLine; sole-writer discipline |
-| internal/session/session.go | SetSteerQueue + boundary drain + cancelled-exit resolution | ✓ VERIFIED | :452-456, drain at :631 (correct seam), recordCanceled :1222-1233 |
-| internal/session/projector.go | Steering fold after flushBatch, anchor untouched | ✓ VERIFIED | Fold case :693 in shared foldExchanges; anchor loop TypeUserMessage-only |
-| internal/runtime/runtime.go | Pre-mutex classifier, SteerQueue wiring, Runner store, guard, sweep, cancel registry — guard now WORKSPACE-scoped | ✓ VERIFIED | All present and wired; 23-06 additions verified in code: workspaceBlockers walk (:2052), restoreBlockedError.other + cross-session Error() (:1998-2036), widened restoreBlockers (:2106), crossSessionBlocked (:2126), restoreUndoActive step 0 + discriminator branch (:1200-1230), doc truth incl. residual check-then-act window and cross-PROCESS caveat |
-| internal/runtime/steering_ingress_test.go | Ingress battery (pre-mutex, order, combined, engine-chain) | ✓ VERIFIED | Enumerated; green at initial verification; covered by full-package green |
-| internal/runtime/restore_guard_test.go | Refusal matrix + session-start sweep + nil-store axis + CROSS-SESSION battery | ✓ VERIFIED | 23-06 adds TestRestoreGuardCrossSessionMatrix (:106), TestUndoCrossSessionRefusal (:650), TestUndoActivePathCrossSessionRefusal (:734, both own-state variants) + fixtures (undoSentinel, runUndoPrompt 2s-timeout, startBlockedTurn, twoBlockProvider) — read in full, substantive; all re-run green under -race by this verifier |
-| internal/checkpoint/store.go | SnapshotPreRestore, three-site grammar, RestoreGuard/findNestedRepos, Sweep, EnsureUserRepoExclude | ✓ VERIFIED | All functions present and substantive (read at cited lines) |
-| internal/checkpoint/store_test.go | Pre-restore family, grammar table, nested-repo, GC, exclude | ✓ VERIFIED | Enumerated; green at initial verification |
-| internal/acpserve/config_surface.go | Two checkpoint selects + persistence + read-back | ✓ VERIFIED | Entries, accept, layer persistence, read-back all present (WR-03 inert-fill warning) |
-| internal/runtime/commands.go | undo 14th RESERVED name, parseUndoDepth, walk, prepare/restore — restoreUndo now consults the self-excluding workspace walk pre-snapshot | ✓ VERIFIED | Read :1139-1333; 23-06 consult at :1294 above undoSnapshotPreRestore :1298 with the why-not-full-guard doc comment; zero-provider path structural |
+| internal/acp/handlers.go | handleSessionNew emission moved behind the response write; pre-response Notify + Barrier removed; truthful comment | ✓ VERIFIED | Read :332-388 — afterResponse registration, zed#60199 comment, best-effort fallback preserved |
+| internal/acp/server.go | Per-request post-response slot (context key, defer-drained, every exit path) | ✓ VERIFIED | Read :710-809 — postResponseSlot/afterResponse/handleRequest; per-request isolation by context scoping |
+| internal/acp/available_commands_test.go | Dispatch-level ordering battery | ✓ VERIFIED | TestSessionNewAdvertisesAfterResponse — own -race run PASS; RED proven pre-fix (evidence file) |
+| internal/acpserve/serve_test.go | Composition-level ordering battery (real Run over pipes, undo advertised) | ✓ VERIFIED | TestServeSessionNewCommandOrderAfterResponse — own -race run PASS; undoPresent asserted |
+| internal/acp/server_test.go, emitter_test.go, handlers_test.go | Test-side truthfulness (readResultFrame doc, TestTurnEmitterEmptyTurn baseline, handler-shape witnesses) | ✓ VERIFIED | Present (23-07 diff); full internal/acp -race green (own run, 1.27s) — covers them |
+| kit/session/steerqueue.go (+test), kit/session/session.go, steering_test.go, transcript.go, manager.go, projector.go | SEEDG-01 pillar (relocated by phase 25) | ✓ VERIFIED | All exist at kit/session; own -race runs green (steering E2E, anti-zombie, transport-neutral gate) |
+| kit/runtime/runtime.go, commands.go (+tests) | SEEDG-02/03 composition: classifier, workspace guard, /undo | ✓ VERIFIED | Exist at kit/runtime; workspaceBlockers (5 refs), undo reservedName; own -race runs green (guard matrix, cross-session refusals, undo battery) |
+| kit/checkpoint/store.go (+test) | Snapshot/guard/GC/exclude | ✓ VERIFIED | Exists at kit/checkpoint; own -race runs green (snapshot family, grammar, nested, GC, exclude) |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 |------|----|----|--------|---------|
-| runTurn iteration top | SteerQueue drain -> AppendSteeringDelivery -> Projector fold | session.go:631 (between ctx.Err() and Project) | ✓ WIRED | Correct seam; pair-safety structural |
-| cancelled exits (3x) + teardown riders | SteerQueue CancelAll | recordCanceled (session.go:1229) + unregisterActiveTurn/cancelParkedChains (runtime.go) | ✓ WIRED | Racy residual WR-01 flagged (advisory) |
-| Runner.Run head | classifier BEFORE turnMu -> Enqueue -> queued note + end_turn | runtime.go:1007-1081 routeSteering | ✓ WIRED | Pre-mutex pinned behaviorally (TestSteerIngressMidTurnPreMutex) |
-| routeAskReply | parked-cancel grammar BEFORE ordinary reply | runtime.go (routeAskReply entry) | ✓ WIRED | Exact-phrase table; TestParkedAskCancelGrammar green |
-| sessionFor store construction | Runner-level field -> guard + /undo + sweep reach it | runtime.go:362, 1927-1963, 2110+ | ✓ WIRED | Runner-owned; sessions attach adapter from shared instance |
-| readLayerMap -> Sweep arguments | generic layer map read-back | checkpointGCBounds -> sessionFor sweep call | ✓ WIRED | TestCheckpointOptions + TestSessionStartSweep green |
-| workspaceBlockers walk -> BOTH /undo mutation halves | idle half: pre-snapshot consult (commands.go:1294); active half: step 0 + post-snapshot discriminator (runtime.go:1202, 1218) | self-excluding walk — break either leg and one interleaving re-opens the race | ✓ WIRED | The two full-path cells are the witnesses (TestUndoCrossSessionRefusal idle leg; TestUndoActivePathCrossSessionRefusal both variants); comment-filtered `restoreBlockers(` in commands.go = 0 (idle half consults ONLY the walk); `workspaceBlockers(sess.SessionID)` count in commands.go = 1 |
-| restoreBlockedError.other -> D-05 refusal output + local_command outcome | operator-visible naming ('refused: workspace busy') | Error() cross-session branch (runtime.go:2004-2026) -> undo output + transcript | ✓ WIRED | Asserted behaviorally in all three new tests (strings.Contains(session-id) on emitted output + record.Expansion) |
-| Store.List ordering -> D-11 walk target | recency re-sort over both families | undoWalkTarget (commands.go:1182) | ✓ WIRED | Recency + tie-breaks; TestUndoWalk green |
-
-### Data-Flow Trace (Level 4)
-
-Not a data-rendering phase; the equivalent checks are (a) the transcript-as-truth chain for steering — enqueue (SteerQueue) -> drain -> steering_delivery line (sole writer) -> Projector fold live AND on replay (TestSteeringReplayParity re-reads from disk); no static/mock sources — and (b) the refusal-surface chain for 23-06: workspaceBlockers state read -> typed restoreBlockedError.other -> D-05 output + durable local_command record, asserted end-to-end through r.Run (real classifier + intercept) in TestUndoCrossSessionRefusal/TestUndoActivePathCrossSessionRefusal.
+| handleRequest response write (writeResult/writeError) | postResponseSlot drain -> NotifyAvailableCommands enqueue | defer slot.run() after the response enqueue; FIFO Writer makes enqueue order wire order | ✓ WIRED | Read at server.go:769-809 — every exit path returns through the deferred drain; both ordering batteries are the behavioral witnesses (own runs green) |
+| handleSessionNew | afterResponse(ctx, ...) registration | context-scoped slot; immediate-fire fallback when no slot | ✓ WIRED | handlers.go:372-385; fallback is either/or (no double fire) |
+| handleSessionLoad | pre-response Notify + Barrier (UNTOUCHED) | deliberate 16-01/18-05 contract | ✓ WIRED | handlers.go:838-846 read; load-path batteries green unedited |
+| runTurn iteration top | SteerQueue drain -> AppendSteeringDelivery -> Projector fold | kit/session/session.go drain seam | ✓ WIRED | Carried from prior verification (code unchanged); battery green at HEAD |
+| workspaceBlockers walk -> BOTH /undo mutation halves | pre-snapshot consults (idle + active) | kit/runtime (runtime.go, commands.go) | ✓ WIRED | Carried; TestUndoCrossSessionRefusal + TestUndoActivePathCrossSessionRefusal green at HEAD (own runs) |
+| composed acpserve chain | advertised winner set incl. undo | configOptions/CommandSource -> NotifyAvailableCommands | ✓ WIRED | Composition battery asserts undo among advertised reserved builtins (own run PASS) |
 
 ### Behavioral Spot-Checks
 
+All commands run by THIS verifier at HEAD (0303da9), 2026-09-14.
+
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| Cross-session guard matrix (naming, promptness under held turn mutex, own-wording byte-stable, chain cell, idle-after-exit) | `go test -race -count=1 -run 'TestRestoreGuardCrossSessionMatrix' ./internal/runtime/` | PASS 0.32s | ✓ PASS |
-| Cross-session idle full path (refusal naming A, sentinel survives, A alive, durable record, transient retry restores, zero provider calls) | `go test -race -count=1 -run 'TestUndoCrossSessionRefusal' ./internal/runtime/` | PASS 0.49s | ✓ PASS |
-| Cross-session active-path outranking, BOTH own-state variants (parked chain not cancelled; own client turn not cancelled) | `go test -race -count=1 -run 'TestUndoActivePathCrossSessionRefusal' ./internal/runtime/` | PASS (2/2 subtests) | ✓ PASS |
-| Pre-existing guard cells unmodified | `go test -race -count=1 -run 'TestRestoreGuardRefusalMatrix\|TestRestoreGuardNilStoreAxis' ./internal/runtime/` | PASS | ✓ PASS |
-| Single-session /undo battery unmodified | `go test -race -count=1 -run 'TestClassBUndoIdle\|TestClassBUndoEdges\|TestClassBUndoCrossSession\|TestClassBUndoDegradedStore\|TestUndoWalk\|TestUndoAutoCancel\|TestUndoFailClosed\|TestUndoNestedRefusal\|TestParkedChainCancelSteering' ./internal/runtime/` | ok 4.02s | ✓ PASS |
-| Full runtime package gate | `go test -race -count=1 -skip 'TestRescanConcurrency' ./internal/runtime/` | ok 42.80s | ✓ PASS |
-| Steering sanity (boundary E2E, anti-zombie, transport-neutral import gate) | `go test -race -count=1 -run 'TestSteeringDeliveryEndToEnd\|TestSteeringAntiZombie\|TestSteerQueueNoACP' ./internal/session/` | ok 1.12s | ✓ PASS |
-| go vet | `go vet ./internal/runtime/` | clean | ✓ PASS |
-| Gap-closure commits exist | `git log` 0bd4942, 2ebf0b7, 09415d3, 0c17c02, 346d4be | all present; diff 5e29d08..HEAD touches exactly runtime.go + commands.go + restore_guard_test.go (+ docs) | ✓ PASS |
+| Dispatch-level session/new ordering (G-23-1) | `go test -race -count=1 -run 'TestSessionNewAdvertisesAfterResponse' ./internal/acp/ -v` | PASS (0.00s) | ✓ PASS |
+| Composition-level session/new ordering + undo advertised | `go test -race -count=1 -run 'TestServeSessionNewCommandOrderAfterResponse' ./internal/acpserve/ -v` | PASS (0.16s) | ✓ PASS |
+| Load-path order pins unchanged (prohibition 1) | `go test -race -count=1 -run 'TestReplay\|TestSessionLoad' ./internal/acp/` | ok (6 tests) | ✓ PASS |
+| Full internal/acp package gate (23-07 touched it) | `go test -race -count=1 ./internal/acp/` | ok 1.27s | ✓ PASS |
+| Steering pillar at relocated path | `go test -race -count=1 -run 'TestSteeringDeliveryEndToEnd\|TestSteeringAntiZombie\|TestSteerQueueNoACP' ./kit/session/` | ok | ✓ PASS |
+| Restore-guard + /undo pillar at relocated path | `go test -race -count=1 -run 'TestRestoreGuardCrossSessionMatrix\|TestUndoCrossSessionRefusal\|TestUndoActivePathCrossSessionRefusal\|TestClassBUndoIdle\|TestUndoAutoCancel\|TestUndoFailClosed\|TestUndoNestedRefusal' ./kit/runtime/` | ok 3.55s | ✓ PASS |
+| Checkpoint store guards at relocated path | `go test -race -count=1 -run 'TestPreRestoreSnapshotFamily\|TestIDGrammarTable\|TestNestedRepoDetectedAndRefused\|TestCheckpointGCObjectExpiry\|TestUserRepoExclude' ./kit/checkpoint/` | ok | ✓ PASS |
+| RED evidence genuine (battery red pre-fix) | 23-07-task1-red-evidence.json | both tests failed on the ordering assertion (exit 1), load-path witnesses green | ✓ PASS |
+| Gap-closure commits exist | `git log` acdb233, fa370f2 | present; 23-07 delta (905dfa9..HEAD) touches only internal/acp* + internal/acpserve* in internal/ | ✓ PASS |
 
-(Initial-verification spot-checks for the untouched session/checkpoint/acpserve batteries — TestSteeringProjectAnchorSafety, TestSteeringReplayParity, TestSteerQueueHammerConservation, TestPreRestoreSnapshotFamily, TestIDGrammarTable, TestNestedRepoDetectedAndRefused, TestRestoreCleanNeverDescendsIntoNestedRepos, TestCheckpointGCObjectExpiry, TestUserRepoExclude, TestCheckpointOptions — stand as recorded; those packages' files are byte-identical since, per the bounded 23-06 diff, and were re-run green then.)
+Not run here (documented pre-existing, environment-dependent — deferred-items.md D-23-07-1/D-23-07-3, proven pre-delta at 905dfa9 in detached worktrees, excluded per the phase context): internal/acpserve TestZedSimulatorE2E, TestSimulatorCommandSurface, TestPermissionsE2E (-race), internal/ecosys TestLiveInstalledPluginsProbe. The plugin-skip WARNs visible in this verifier's own acpserve run output are the same D-23-07-3 environment condition (operator's ~/.claude plugin cache) and did not affect the ordering battery.
 
 ### Probe Execution
 
-None declared by the plans (test-gated phase; `scripts/*/tests/probe-*.sh` scan found no phase-declared probes).
+None declared by the plans (test-gated phase; no `scripts/*/tests/probe-*.sh` found).
 
 ### Requirements Coverage
 
 | Requirement | Source Plan | Description | Status | Evidence |
-|-------------|------------|---------------------|----------|----------|
-| SEEDG-01 | 23-01, 23-02 | Steering queue during a running turn: boundary drain, ticket/cutoff protocol, parked-ask disambiguation, transport-neutral — not descoped to queue-behind | ✓ SATISFIED | Truths 1-4, 11; queue-behind dead for steerable input (pre-mutex classifier, behaviorally pinned); WR-01 race residual flagged (advisory) |
-| SEEDG-02 | 23-03, 23-04, 23-06 | Checkpoint restore guard: refuse with active turn/chains (ANY session of the Runner); pre-restore snapshot; nested-repo refusal; object-expiry GC; .ass-guard/ exclude | ✓ SATISFIED | Truths 5-8, 12 — the initial verification's SEEDG-02 PARTIAL is resolved: the cross-session restore hole closed by 23-06 (truth 8), verified by this re-verification's own battery runs |
-| SEEDG-03 | 23-05, 23-06 | /undo command (class-B) restoring last checkpoint | ✓ SATISFIED | Truths 9-10; live-Zed operator confirmation pending (WINDOWS #23) — human item |
+|-------------|------------|-------------|--------|----------|
+| SEEDG-01 | 23-01, 23-02 | Steering queue during a running turn: boundary drain, ticket/cutoff, parked-ask, transport-neutral — not descoped to queue-behind | ✓ SATISFIED | Truths 1-4, 11; batteries re-run green at kit/session + kit/runtime (own runs); WR-01 advisory carried |
+| SEEDG-02 | 23-03, 23-04, 23-06 | Checkpoint restore guard: active-turn refusal (any session), pre-restore snapshot, nested-repo refusal, object-expiry GC, .git/info/exclude | ✓ SATISFIED | Truths 5-8, 12; batteries re-run green at kit/checkpoint + kit/runtime (own runs) |
+| SEEDG-03 | 23-05, 23-06, 23-07 | /undo command (class-B) restoring last checkpoint | ✓ SATISFIED | Truths 9-10 (class-B restore surface) + 13-15 (advertisement now reaches Zed's registry — wire-proven); the live-editor execution leg is the outstanding human item (truth 16) |
 
-Orphaned requirements: none — REQUIREMENTS.md maps exactly SEEDG-01/02/03 to Phase 23 (all marked Complete), all claimed by plans.
+Orphaned requirements: none — REQUIREMENTS.md maps exactly SEEDG-01/02/03 to Phase 23 (all marked Complete), each claimed by plans (SEEDG-01: 23-01/23-02; SEEDG-02: 23-03/23-04/23-06; SEEDG-03: 23-05/23-07).
 
 ### Anti-Patterns Found
 
+Debt-marker scan (TBD/FIXME/XXX/TODO/HACK/PLACEHOLDER) over all nine 23-07-modified files: clean. No new anti-patterns introduced by 23-07 (stub/empty-return/console-only greps over the delta: negative; the mechanism is a 64-line production change read in full).
+
+Carried review debt from the 2026-09-10 verification (code unchanged in these regions; none flips a truth):
+
 | File | Line | Pattern | Severity | Impact |
 |------|------|---------|----------|--------|
-| internal/session/steerqueue.go | 133-143 | WR-01: CancelAll two-phase locking (read next, unlock, CancelThrough) + pre-mutex enqueue leaves a race window where a stale steering item survives and zombie-delivers into a later turn | ⚠️ Warning | Narrow timing window; deterministic paths test-pinned; fix is a single-critical-section CancelAll and/or post-enqueue activity re-check; carried as coincidental-reliance on truth 2 |
-| internal/checkpoint/store.go | 852-865, 920-937 | WR-02: prune backstop evicts by (SessionID, TurnNum) grammar order, not recency — >50 refs between sweeps can delete a session's newest while keeping another's oldest; doc comment claims tie-breaks "track snapshot sequence" | ⚠️ Warning | /undo walk targets can be lost to session naming; Sweep (the retention authority) is correct; fix = recency-ordered victims (expireByCount discipline) |
-| internal/acpserve/config_surface.go | 469, 1728-1758 | WR-03: `_meta` blob fills for checkpoint.*/background.* numeric options recognized but never consulted; explicit Set handlers skip the fill-supersede delete | ⚠️ Warning | Initialize-time defaults silently inert for these four ids; inconsistent with the six resolved menu ids |
-| internal/acpserve/config_surface.go | 1806-1824 | IN-03: hand-edited non-positive persisted bounds silently convert to defaults (only parse failures log) | ℹ️ Info | Menu path can't reach 0; hand-edits diverge silently |
-| internal/session/steerqueue.go | 41-45, 97-126 | IN-04: cutoff write-only; CancelThrough has no production caller (resolution is exclusively CancelAll) | ℹ️ Info | Dead state invites protocol divergence; expose Cutoff() for TG-02 or delete |
-| internal/checkpoint/store.go | 623-662 | IN-05: symlinked directory contents share the gitlink property (unprotected by restore) but are not flagged by findNestedRepos | ℹ️ Info | Same silent-loss shape as gitlinks; flag or document beside the gitlink exclusion |
-| multiple | — | IN-01/IN-02: `"call: %w"` error prefixes; stale menu/table count comments (pre-existing, pervades reviewed files) | ℹ️ Info | Debuggability/comment drift only |
-
-The initial verification's CR-01 Blocker row is RESOLVED (23-06) and removed from this table. WR-01..WR-03 and IN-01..IN-05 remain documented review debt, explicitly out of the 23-06 scope guard — none flips a truth. Debt-marker scan (TBD/FIXME/XXX/TODO/HACK/PLACEHOLDER) over the three 23-06-modified files: clean.
+| kit/session/steerqueue.go | 131-146 | WR-01: CancelAll two-phase locking leaves a narrow race where a stale steering item survives cancel and can zombie-deliver into a later turn | ⚠️ Warning | Carried as coincidental-reliance on truth 2; fix = single-critical-section CancelAll and/or post-enqueue activity re-check |
+| kit/checkpoint/store.go | (carried) | WR-02: prune backstop evicts by (SessionID, TurnNum) grammar order, not recency | ⚠️ Warning | /undo walk targets can be lost to session naming; Sweep (retention authority) is correct |
+| internal/acpserve/config_surface.go | (carried) | WR-03: `_meta` blob fills for checkpoint.*/background.* numeric ids recognized-but-inert | ⚠️ Warning | Initialize-time defaults silently inert for four ids |
+| (carried) | — | IN-01..IN-05: error prefixes, inert cutoff write, symlinked-dir gap, silent non-positive bound conversion, comment drift | ℹ️ Info | Debuggability/edge documentation only |
 
 ### Human Verification Required
 
-### 1. Live-Zed operator UAT — boundary steering + /undo (WINDOWS #23 PENDING-OPERATOR-CONFIRMATION)
+### 1. Live-Zed /undo operator UAT re-run (G-23-1 close-out — 23-07 Task 3 blocking gate, 23-UAT.md tests 1-2 re-run)
 
-**Test:** Launch ass-guard acp in Zed on a scratch git repo; start a multi-tool-call turn; mid-turn type a short steering instruction; after the turn, run /undo; then start another turn and mid-turn run /undo; inspect Zed's ACP logs (`dev: open acp logs`). Full script: 23-05-PLAN.md Task 3.
-**Expected:** Immediate queued note + "steering applied: 1 inputs" at the boundary + visible course change without a restart; instant restore summary (restored id + pre-restore snapshot id), no model spin, clean git status (no .ass-guard/); mid-turn /undo visibly cancels the turn then restores; no malformed ACP frames. Record what Zed actually does with mid-turn prompts (RESEARCH A2 — feeds TG-02 planning).
-**Why human:** Requires a human editor session in a live Zed client; Zed's client-side prompt queuing is unobservable by tests.
+**Test:** Rebuild the binary the way the UAT machine runs it (`go build` to `~/go/bin/ass-guard`); launch a fresh Zed session on a scratch git repo; type `/`; run idle `/undo` after a completed turn; run mid-turn `/undo` during a substantive turn; inspect Zed's ACP logs (`dev: open acp logs`).
+**Expected:** Autocomplete lists ass-guard's commands with `/undo` among them (the "Available commands: none" state from the 2026-09-11 pre-fix UAT is gone); idle `/undo` = instant restore summary (restored id + pre-restore snapshot id), no model spin, clean git status; mid-turn `/undo` = visible cancel then restore; the per-frame "unknown session" drop warnings that accompanied the pre-response advertisement are gone for session/new.
+**Why human:** The G-23-1 failure mode is client-side (Zed's per-session command registry, zed#60199); no automated harness observes a live editor's autocomplete or its log warnings.
 
-### 2. Two-live-Zed-session cross-session restore check (WINDOWS #24 PENDING-OPERATOR-CONFIRMATION — confirmatory leg of the closed G-23-1 gap)
+### 2. Two-live-Zed-session cross-session restore check (WINDOWS #24)
 
-**Test:** Two Zed sessions on the same workspace; hold a turn open in session A; run /undo from idle session B.
-**Expected:** B receives the cross-session refusal naming session A and its state (worktree and checkpoint store shared by every session of this process), nothing restored under A's live turn; after A's turn ends, the same /undo from B restores normally.
-**Why human:** Requires two live editor sessions against one workspace; the offline battery (TestUndoCrossSessionRefusal, re-run green by this verifier) is the gap's automated witness — this leg confirms the operator-visible surface in a real editor.
+**Test:** Two Zed sessions on the same workspace; hold a turn open in session A; run `/undo` from idle session B; after A's turn ends, retry from B.
+**Expected:** B receives the cross-session refusal naming session A and its state; nothing restored under A's live turn; after A's turn ends, B's retry restores normally.
+**Why human:** Requires two live editor sessions against one workspace; the offline battery (TestUndoCrossSessionRefusal, re-run green by this verifier at kit/runtime) is the automated witness — this leg was unreachable client-side at the prior UAT ("то же" — the same empty-advertisement rejection) and is now testable for the first time.
 
 ### Gaps Summary
 
-No gaps remain. The single gap from the initial verification — **G-23-1/CR-01: the restore guard was session-scoped while the workspace it mutates is process-shared** — is closed and re-verified independently by this verifier (code read + own battery runs, not SUMMARY claims): the `workspaceBlockers` self-excluding walk (state-only reads, one chainMu snapshot, never a turn mutex) is consulted before any snapshot/cancel/restore at BOTH /undo mutation halves; cross-session refusals name the busy session in the D-05 output and the durable local_command record (`refused: workspace busy`); the refusal outranks the D-12 auto-cancel for both own-state variants; the pre-existing same-session wording and auto-cancel paths are byte-stable (all pre-existing batteries green unmodified); the refusal is transient (retry after the busy session ends restores normally). The residual check-then-act window (activity starting after the consult) is documented at the guard — the same class as the same-session guard, not a gap.
-
-The 23-06 diff is bounded to exactly its three declared files (runtime.go, commands.go, restore_guard_test.go — verified via `git diff --stat 5e29d08..HEAD`), so no other-pillar artifact could regress; the full `internal/runtime` package is green under `-race` with only the documented pre-existing `TestRescanConcurrency` skip, and `go vet` is clean. The two known failing tests elsewhere (TestPermissionsE2E — the STATE cross-workstream note from phase 23's own 40b2bbc per operator bisection; TestRescanConcurrency — phase-22 deferred items) and the evalsuite env-gating keep their documented pre-existing classifications; neither was re-litigated.
-
-Status is `human_needed` solely for the two operator UAT legs riding the WINDOWS ledger (#23 steering + /undo live-Zed UAT; #24 the two-live-Zed-session cross-session refusal check) — both PENDING-OPERATOR-CONFIRMATION, neither a code gap.
+No code gaps remain. The UAT-found G-23-1 (session/new advertisement emitted before the response frame; Zed drops session/updates for unregistered sessions, so every advertised command was rejected client-side) is closed at the wire level and independently re-verified by this verifier: the fix (per-request post-response slot, defer-drained after the response enqueue on every exit path) was read in the code, the RED evidence is genuine (both ordering batteries failed on the ordering assertion pre-fix with load-path witnesses green), and both batteries plus the full internal/acp package pass under `-race` at HEAD in this verifier's own runs. All three prohibitions hold (load path untouched, no timing deferral, exactly one advertisement). The 12 pillar truths from the prior verification are regression-intact: the 23-07 delta touches only `internal/acp*`/`internal/acpserve*`, and every named battery was re-run green at the phase-25-relocated `kit/` paths. Status is `human_needed` solely for the live-Zed UAT re-run on the post-fix binary (the prior UAT's two issue records predate the fix) — the plan's own Task 3 blocking gate and coverage item D2 (`human_judgment: true`).
 
 ---
 
-_Verified: 2026-09-10T13:26:08Z (re-verification after 23-06 gap closure; initial: 2026-09-10T12:12:03Z)_
+_Verified: 2026-09-14T19:50:00Z (re-verification after 23-07 gap closure; supersedes the 2026-09-10 report; initial: 2026-09-10T12:12:03Z)_
 _Verifier: Claude (gsd-verifier)_
