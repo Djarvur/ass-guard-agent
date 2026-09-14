@@ -42,3 +42,10 @@ not caused by 23-07; do not fix inside this phase).
 - **Likely cause:** the harness's 10s `simGuardTimeout` frame wait under -race
   with the full suite's parallel load (the same deferred family as
   D-23-07-1).
+
+### D-23-07-3: TestLiveInstalledPluginsProbe fails on this machine — live-environment probe, pre-existing
+
+- **Test:** `internal/ecosys` `TestLiveInstalledPluginsProbe` (precedence_test.go:435).
+- **Verified pre-existing:** reproduced byte-identically at `905dfa9` (parent of the 23-07 RED commit) in a detached worktree; the 23-07 delta touches zero `internal/ecosys` files.
+- **Cause:** the test probes the operator's real `~/.claude/plugins` registry; every currently-"installed" plugin resolves to a cache path that no longer exists (the `plugin skip: ... install path ... not found` WARNs), so the user-scope install map parses empty and the "at least the user-scope installs must parse" assertion fails. The operator's local plugin cache changed state outside the repo (first observed 2026-09-14, during the 23-07 close-out regression gate).
+- **Action for a later phase:** same family as D-23-07-1 — give live-probe tests a pristine-environment skip condition or point them at a fixture home instead of the operator's real `~/.claude`.
