@@ -1,8 +1,8 @@
 ---
 phase: 23-seed-gaps-close-out
-reviewed: 2026-09-10T12:00:55Z
+reviewed: 2026-09-14T00:00:00Z
 depth: standard
-files_reviewed: 16
+files_reviewed: 21
 files_reviewed_list:
   - internal/session/steerqueue.go
   - internal/session/steerqueue_test.go
@@ -20,6 +20,12 @@ files_reviewed_list:
   - internal/acpserve/config_surface.go
   - internal/runtime/commands.go
   - internal/runtime/commands_test.go
+addendum_23_07:
+  reviewed: 2026-09-14
+  scope: "git diff acdb233~1..fa370f2 (11 files)"
+  critical: 0
+  warning: 2
+  info: 3
 findings:
   critical: 1
   warning: 3
@@ -202,3 +208,43 @@ func (s *Store) prune(ctx context.Context) error {
 _Reviewed: 2026-09-10T12:00:55Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
+
+## Addendum: 23-07 Delta Review (2026-09-14)
+
+Scope: `git diff acdb233~1..fa370f2` — the G-23-1 gap-closure delta (session/new advertisement moved behind the response frame via a per-request post-response slot). The base review above predates this delta. All 8 binding constraints from the 23-07 plan verified PASS (drain-on-every-exit-path via single `defer slot.run()` at handleRequest entry; per-request isolation; handleSessionLoad byte-unchanged; order by enqueue alone — no timers/deferral; exactly one advertisement with best-effort error handling; no unsafe teardown race — drain runs inside the handlerWG goroutine; stdout discipline intact; comments truthful, no RED assertions weakened). `go vet` clean; scoped batteries pass under `-race`.
+
+### A-WR-01: `wireDrainPostResponseAdvertisement` hangs (10m package timeout) instead of failing if the advertisement regresses away (WARNING)
+
+**File:** `internal/acpserve/kit_emitter_e2e_test.go:405-423`
+**What's wrong:** The helper does a bare blocking `bufio.NewReader(cliR).ReadBytes('\n')` with no deadline. It exists precisely to assert that the post-response advertisement exists — so the regression it guards against (emission disappears) is exactly the mode that makes it block forever on the `io.Pipe` (the next write to the pipe only happens after this helper returns, and `t.Cleanup` can't run while the test body is blocked). A regression turns a crisp ordering failure into a silent 10-minute package hang. Sibling helpers carry a deadline field; this helper has none.
+**Fix:** Read in a goroutine and `select` with a deadline (e.g. 5s `t.Fatalf("post-response available_commands_update never arrived (G-23-1 regression)")`); a leaked blocked goroutine on a closed pipe is harmless in tests.
+
+### A-WR-02: pre-existing environment failures in `internal/acpserve` — NOT delta-caused (WARNING)
+
+**File:** `internal/acpserve/simulator_e2e_test.go:484, :994`
+**What's wrong:** Full-package runs fail with `simulator: timed out waiting for a frame (seen=1)` in `TestZedSimulatorE2E` and `TestSimulatorCommandSurface` (`TestPermissionsE2E` flaked once), at the initialize stage — upstream of anything 23-07 touched. Identical failures reproduced at the parent commit `905dfa9` in a clean worktree. The tests scan the operator's real `~/.claude` and repo profiles, making them environment-dependent (matches deferred-items D-23-07-1).
+**Fix:** Out of delta scope — hermeticize the simulator harness (fake home/profiles dir) or skip when the operator's `~/.claude` is non-pristine.
+
+### A-IN-01: Duplicated emission body in `handleSessionNew` (INFO)
+
+**File:** `internal/acp/handlers.go:372-385`
+**Issue:** The `NotifyAvailableCommands` + log block is duplicated verbatim in the slot callback and the no-slot fallback; the copies can drift. Behavior is correct (branches mutually exclusive).
+**Fix:** Hoist one closure (`advertise := func() {...}; if !afterResponse(ctx, advertise) { advertise() }`).
+
+### A-IN-02: Stale doc comment on `wireReadResultFramesCounting` still describes the pre-23-07 order (INFO)
+
+**File:** `internal/acpserve/kit_wire_helpers_test.go:276-280`
+**Issue:** The comment motivates the skip-count with the session-start advertisement arriving ahead of the response; since 23-07 that advertisement arrives after the response. The counting mechanism remains valid for the load path.
+**Fix:** Reword to cite the load path as the motivating example.
+
+### A-IN-03: The no-slot fallback branch of `handleSessionNew` has no test coverage (INFO)
+
+**File:** `internal/acp/handlers.go:377-385`
+**Issue:** No test invokes `handleSessionNew` outside `Serve`/`handleRequest`, so the immediate-emission fallback is exercised by nothing. No production caller hits it today (session/new always dispatches through `handleRequest`) — robustness-only, not a behavior gap.
+**Fix:** A small unit test calling `s.handleSessionNew(context.Background(), params)` directly, asserting one advertisement + nil error.
+
+---
+
+_Addendum reviewed: 2026-09-14_
+_Reviewer: Claude (gsd-code-reviewer), scoped to the 23-07 delta_
+_Addendum verdict: issues_found (0 critical, 2 warnings — one test-robustness, one pre-existing environment; no blocking findings)_
