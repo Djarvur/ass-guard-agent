@@ -377,12 +377,12 @@ Plans:
   4. `/undo` restores the last checkpoint instantly with no model turn (class-B), and the restored workspace is byte-identical to the pre-turn snapshot.
   5. The steering queue API is transport-neutral (consumable by a non-ACP frontend) — Telegram could adopt it without rework.
 
-**Plans**: 7 plans (6 executed + 1 gap closure)
+**Plans**: 7/7 plans executed (6 executed + 1 gap closure)
 
 Plans:
 
 - [x] 23-06-PLAN.md
-- [ ] 23-07-PLAN.md — G-23-1 gap closure: session/new available_commands_update advertisement moved behind the response frame (Zed registration window, zed#60199); two-level ordering battery + live-Zed /undo UAT checkpoint
+- [x] 23-07-PLAN.md — G-23-1 gap closure: session/new available_commands_update advertisement moved behind the response frame (Zed registration window, zed#60199); two-level ordering battery + live-Zed /undo UAT checkpoint
 
 **Wave 1**
 
@@ -511,7 +511,7 @@ Phases execute in numeric order: 15 → 16 → … → 25
 | 20. Built-in Commands + Skills + Per-Agent Model | v1.2 | 6/6 | Complete    | 2026-09-07 |
 | 21. Context & Policy Parity Closures | v1.2 | 6/6 | Complete    | 2026-09-06 |
 | 22. Background Execution + Sandbox Reality | v1.2 | 9/9 | Complete    | 2026-09-11 |
-| 23. SEED Gaps Close-out | v1.2 | 6/6 | In Progress|  |
+| 23. SEED Gaps Close-out | v1.2 | 7/7 | In Progress|  |
 | 24. Documentation & Ops Tails | v1.2 | 6/6 | Complete    | 2026-09-11 |
 | 25. SEED-001 Kit Extraction | v1.2 | 9/9 | Complete    | 2026-09-11 |
 
