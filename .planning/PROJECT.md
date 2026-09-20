@@ -8,9 +8,16 @@ A Go-based AI coding agent that makes SDD (Spec-Driven Development) workflows ru
 
 **(PIVOTED 2026-08-25)** A hands-off coding agent that feels native in the editor: full SDD workflows run end-to-end without manual continues, and the agent surfaces through the client's own UX — clickable permission prompts, native file diffs, session management. *(Former bar — request-shape indistinguishability from zcode ("mimicry") — validated v1.0 by the Phase-1 A/B parity test and maintained through v1.1; abandoned by operator decision 2026-08-25 in favor of client-native ACP surfaces. Mimicry assets retained as reference; the tool catalog, engine, and all execution machinery carry forward unchanged.)*
 
-## Current Milestone: v1.2 Claude Code Parity
+## Current Milestone: Planning next (v1.3)
 
-**Goal:** Make ass-guard feel native in the editor and behave like Claude Code end-to-end — full ACP surfaces, built-in + skill slash-commands, deliberate parity-closure of known divergences — then extract the agent-creation kit as a library.
+**Goal:** TBD — start with `/gsd-new-milestone`. The standing v1.3 pool item is the Telegram peer (see Active); the v1.2-close Deferred Items table (STATE.md) carries the tech-debt backlog (test-flake family, golangci 2.13 baseline migration, mcp.Start observability).
+
+<details>
+<summary>✅ v1.2 Claude Code Parity — SHIPPED 2026-09-20</summary>
+
+Made ass-guard behave like Claude Code end-to-end and feel native in the editor: ACP wire foundation (id'd outbound requests, one ordered TurnEmitter, extended transcript line types), clickable permission/elicitation asks on one gate pipeline, the full session family (list/load/replay with dangling-expectation reconciliation, tombstoned close/delete), threshold compaction + cache_control parity, the complete slash-command surface (12 class-B commands at zero model turns, skills/agents/file discovery with live rescan and autocomplete, per-agent `model:` routing), context/policy closures (hooks deny, AGENTS.md inject, thinking passthrough, images/@-mentions), background execution (full subagents with task-notifications, background Bash, PTY, landlock/sandbox-exec), SEED gaps (steering queue, hardened checkpoint restore, /undo), ops tails (scheduler outcome store, nightly parity CI automation, ECOS-04 modes matrix) — then the agent-building machinery extracted under `kit/` behind a composition-root API with ass-guard as its reference app. 11 phases, 79 plans, all verified; human-UAT legs closed by live-Zed and wire-level operator-ruled runs.
+
+</details>
 
 <details>
 <summary>✅ v1.1 ACP Early Adoption — SHIPPED 2026-08-25</summary>
@@ -18,17 +25,6 @@ A Go-based AI coding agent that makes SDD (Spec-Driven Development) workflows ru
 Delivered the hands-off OpenSpec promise end-to-end (zero-continue product proof), every catalog tool executing for real with a behavioral-eval regression net, redacted decision-explaining audit + parity re-capture, adoption-readiness backstops (checkpoints/rollback, model-routing rename, uniform tool contract), and a live UAT round that found and fixed three real product gaps. Operator decisions at close: D-09 reversed (session resume must-have); mimicry abandoned for client-native surfaces; LSP = IDE-side MCP documentation requirement.
 
 </details>
-
-**Target features (priority order — ACP/commands/skills first, parity audit, SEED gaps, kit extraction last; dsh dropped entirely 2026-08-26; Telegram lowest priority — slips to v1.3 if milestone overflows):**
-- ACP completeness: session/request_permission (clickable asks), elicitation/create, tool_call+plan streaming, available_commands_update, session list/resume/close/delete (operator must-have), editor-driven configuration (configOptions / session/set_config_option)
-- Built-in chat commands: /model /config /compact /clear /cost /resume /memory /mcp /permissions /doctor /status /help /init — surfaced via available_commands_update (compaction is a prerequisite)
-- Slash-invocable skills: invocationFor resolves skill keys (+ discovered AGENTS as commands), SKILL.md body expanded as the prompt with args appended, per-agent `model:` frontmatter wired into subagent dispatch
-- CC parity audit: close the 10 known divergences deliberately — compaction on context overflow, session resume, permissions UX, full subagents, slash-command autocomplete in editor, hooks PreToolUse deny path, AGENTS.md/CLAUDE.md auto-injection, streamed thinking blocks, rich prompt content (@-file mentions, images), background Bash + persistent shell
-- SEED-004 gap fixes: checkpoints/undo (shadow-git), compaction verify-first, sandbox flag made real, steering/input queue during a running turn
-- SEED-001: agent-creation kit extracted as a library in this repo; ass-guard becomes its reference app (rides internal/runtime extraction)
-- LSP support: documented IDE-side MCP configuration requirement only (no agent-side implementation)
-- Scheduler outcome store + feedback loop; nightly-parity CI automation tail
-- Telegram peer (lowest priority — text + voice STT, shared turn core, context-first shutdown)
 
 ## Business Context
 
@@ -55,45 +51,14 @@ Delivered the hands-off OpenSpec promise end-to-end (zero-continue product proof
 - Session family (Phase 18 — ACP-05/06/07): sessions are first-class editor objects — `session/list` (header-scan + composite-cursor pagination + tombstone filter), `session/load` full replay through the ordered TurnEmitter plus live-state reconciliation (kill -9 leaves no ghost state: dangling tool_calls closed failed, parked asks synthetically resolved, ids continued from transcript maxima), `session/close`/`session/delete` with tombstoning that never rms (D-20 grep-proven), and `--resume`/`--continue` as CLI flags with a pipe-safe numbered picker. Operator-verified live in Zed + real TTY 2026-09-06 after G-18-1 gap closure (real sessions now write the session_start opener; legacy transcripts enumerate via tolerant opener). *Deviation accepted: `--resume <id|name>` resolution is cwd-scoped (per-directory store), not a cross-project registry.*
 - Context & policy parity closures (Phase 21 — PAR-01..05): hooks' PreToolUse verdict joins the ONE gate pipeline (deny/ask/allow totally mapped at gateCall's head; project scope deny-only, allow never widens trust), AGENTS.md/CLAUDE.md auto-inject via the profile-copy merge (mtime-cached, whole-file fits-or-skips budgets), thinking streams end-to-end field-value-identical (raw payloads verbatim on disk, values extracted only at the projector), and rich prompt content enters with ingress validation (@-mentions Read-rule-gated with per-attempt provenance; images two-tier — provider limits downscale D-09, 100 Mpx decode ceiling refuses). Operator-verified live 2026-09-06 (UAT 4/4, incl. the corrected-dialect hook-deny retest).
 
+- Compaction + cache_control (Phase 19 — PAR-01): threshold-triggered blocking compaction with real-usage measurement, extractive summarizer on the same provider pipeline (private to the bus, loud D-09 degrade, char-bounded input), durable reset-point markers the Projector honors, overflow retry-once, manual `CompactNow()`; `cache_control {"type":"ephemeral"}` on every system block through loader→Shaper→wire. Verified live via the operator-ruled auto-UAT harness (20/20) + overflow re-proven (515KB→95KB).
+- Command surface + skills + per-agent model (Phase 20 — CMDS/ACP-04/SKLS): one winners-only resolver chain (builtins→skills→agents→file, reserved names shadow-checked with one stderr warning), twelve class-B commands executing control-plane-fast with durable local_command records (/clear /cost /model /compact… incl. Phase 23's /undo), /init + skill/file expansion through the seam, /<agent> subagent dispatch streaming with the resolved-model note, per-agent `model:` frontmatter routing, live fsnotify rescan (300ms debounce + invoke-time backstop) re-firing available_commands_update. Wire-level E2E green + operator-ruled wire-level HUMAN-UAT 7/7 (2026-09-20).
+- Background execution + sandbox (Phase 22 — PAR-07/08/09/10): full subagents (discriminated async dispatch, kind-tagged task-notifications, output retrieval, cancellation), background Bash completion wakes on the same notification subsystem (TERM→grace→KILL, Pdeathsig, caps + FIFO queueing), per-call persistent Bash over one PTY per session, one Policy driving symmetric landlock (live-proven) / sandbox-exec backends — probe-and-degrade loudly, default OFF.
+- SEED gaps (Phase 23 — SEEDG): steering/input queue drained at model-request boundaries (transport-neutral; never mid-request, never splitting tool pairs), checkpoint restore guards (active-turn refusal, pre-restore snapshot, nested-repo handling) + workspace-scoped /undo mutation halves, /undo as class-B with session-busy cross-session refusal. Operator UAT 2/2 passed live (2026-09-20); G-23-1 advertisement ordering wire-proven with the real Zed client.
+- Ops tails (Phase 24 — DOC-01/TAIL): LSP documented as IDE-side MCP config, deterministic scheduler outcome store + breaker/cost-degrade seam replay, nightly upstream-parity CI automation (local drift-core evidence recorded; cron activation merge-gated to master by design — checklist in 24-USER-SETUP.md), ECOS-04 modes matrix (9 cells green, superpowers 6.1.1 spot-check).
+- Kit extraction (Phase 25 — KIT-01..04 + the Phase 15 carve): agent-building machinery re-homed verbatim under `kit/` (15 packages) behind a composition-root API with one-way import-path commitment; frontend seam (emitter + requester) as the kit interfaces; ass-guard as the reference app. Proven delta-free against pre-move baselines; `mise ci` green throughout.
+
 ### Active
-
-**v1.2 — ACP completeness (priority 1)**
-
-- [ ] available_commands_update: editor-side slash-command autocomplete for discovered commands and skills (line types locked in Phase 16; the method itself lands in Phase 20)
-
-**v1.2 — Built-in chat commands (priority 2)**
-
-- [ ] Built-in slash-commands riding the command-expansion seam: /model (session-scope routing override), /config (rides editor-config), /compact (requires compaction), /clear (new session same thread), /cost (usage aggregation from transcript records), /resume, /memory, /mcp status, /permissions, /doctor, /status, /help, /init — advertised via available_commands_update
-
-**v1.2 — Slash-invocable skills (priority 3)**
-
-- [ ] invocationFor resolves skill keys (not just reg.Commands): SKILL.md body expands as the prompt with args appended
-- [ ] Discovered AGENTS addressable as slash commands (BMad-style installer layout)
-- [ ] Per-agent `model:` frontmatter wired into subagent dispatch (parsed today but ignored; routing comes from light tier only)
-
-**v1.2 — CC parity audit (priority 4)**
-
-- [ ] Close the remaining known divergences deliberately: compaction on context overflow (Phase 19); full subagents (Task tool w/ background agents + completion notifications, Phase 22); slash-command autocomplete in editor (rides ACP-completeness, Phase 20); persistent-shell Bash option + background-completion notifications (Phase 22). *(Closed: session resume — Phase 18; permissions UX — Phase 17; hooks full lifecycle incl. PreToolUse deny — Phase 21; AGENTS.md/CLAUDE.md auto-injection — Phase 21; structured thinking blocks — Phase 21; rich prompt content — Phase 21.)*
-
-**v1.2 — SEED-004 gap fixes (priority 5)**
-
-- [ ] Checkpoints/undo via shadow-git: workspace snapshot at turn boundaries; rollback surface (`ass-guard checkpoint` CLI + optional ACP command)
-- [ ] Compaction verify-first: check whether the zcode profile already captures zcode auto-compact + cache_control placement before designing our own
-- [ ] Sandbox flag made real: parity-driven sandboxing implementing what zcode's tool semantics imply (macOS Seatbelt / Linux bwrap+seccomp reference)
-- [ ] Steering/input queue during a running turn (Telegram prerequisite; pi/strands reference semantics)
-
-**v1.2 — SEED-001 kit extraction (priority 6, last)**
-
-- [ ] Extract agent-building machinery as a library in this repo: profile mechanism, provider clients, session/turn loop, projector, unified engine + hook-DAG, tool catalog/execution, scheduling, redaction
-- [ ] ass-guard-agent becomes the kit's reference app (zcode profile, .claude/ compat, OpenSpec hosting, ACP frontend = one composition)
-- [ ] Rides internal/runtime extraction; SEED-002 fantasy + SEED-003 landscape as design prior art
-
-**v1.2 — Small tails (priority 7)**
-
-- [ ] LSP support: documented IDE-side MCP configuration requirement only
-- [ ] Scheduler outcome store + feedback loop (deterministic, zero LLM calls)
-- [ ] Nightly upstream-parity gate CI automation (12-08 tail)
-- [ ] ECOS-04 end-to-end beyond commands: plugins/skills working unchanged in every interaction mode
 
 **v1.3 pool (post-v1.2)**
 
@@ -115,6 +80,8 @@ Delivered the hands-off OpenSpec promise end-to-end (zero-continue product proof
 **Shipped v1.0 (2026-08-14).** 8 phases, 36 plans, 210 commits over 6 days (2026-08-09 → 2026-08-14); ~33.5k LOC Go across 24 packages; 65.8k insertions over 410 files. Every phase closed through the `mise ci` gate (vet + golangci-lint v2 all-linters + CGO_ENABLED=0 build + `go test -race`), zero issues.
 
 **Known gaps at ship (see MILESTONES.md v1.0 entry):** (1) Phase-4 UAT kickoff gap — `/opsx:*` command invocation unsupported (ecosys unwired; adapter model mismatched the real openspec surface); 11 UAT checks deferred. (2) Phase-1 parity stability test blocked on absent pinned capture session (operator re-capture needed). (3) LOG-01 audit-log not written on the `acp serve` path. (4) tools.json catalog carries 103 tools vs the plans' stale 77 (documented drift, seed mirrors source).
+
+**Shipped v1.2 (2026-09-20).** 11 phases, 79 plans, 635 commits over 42 days (2026-08-09 → 2026-09-20); ~155k LOC Go. Every phase closed through the `mise ci` gate. Claude Code parity surfaces complete end-to-end (commands/skills/agents, permissions/elicitation, session family, compaction + cache_control, hooks/memory/thinking/images, background execution + sandbox), SEED gaps closed, and the machinery extracted as `kit/` with ass-guard as reference app. Known deferred debt at ship: the STATE.md Deferred Items table (25 acknowledged items — load-sensitive test-flake family, golangci 2.13 baseline migration ~572 findings, mcp.Start skip-branch observability, Darwin seatbelt live leg awaiting a mac host, nightly-CI cron activation awaiting master merge).
 
 **Predecessor — `sdd-acp-agent`.** A Go-based SDD-toolkit host with ACP UI, Claude-Code-compatible tooling, and pattern-matching autocontinue. Closed in favor of ass-guard. Its planning artifacts (technical research, architecture spine with 11 architectural decisions, epic breakdown with 5 epics/27 stories, log analysis of tool catalog and system prompts) are first-class reference material and live at `/Users/nil/DiskD/W/Djarvur/sdd-acp-agent`. The predecessor validated several load-bearing facts that carry forward as given:
 
@@ -189,4 +156,4 @@ This document evolves at phase transitions and milestone boundaries.
 | session/new advertisement ordering: emit available_commands_update AFTER the response frame (G-23-1, Phase 23-07, operator-confirmed 2026-09-20) | Zed drops session/updates for unregistered sessions and learns the sessionId only from the response — a pre-response advertisement is discarded client-side (upstream zed#60199); session/load pre-registers and keeps the opposite order. | ✓ Good — wire-proven with the real client + operator UAT 2/2 passed |
 
 ---
-*Last updated: 2026-09-20 after Phase 23 (SEED Gaps Close-out) verified complete — operator UAT 2/2 passed (steering boundary delivery; idle + mid-turn /undo; cross-session refusal naming the busy session then restore), G-23-1 advertisement ordering wire-proven with the real Zed client; all implementation phases 15-25 now verified complete. Prior: 2026-09-10 after Phase 19 (Compaction + cache_control) verified complete — the G-19-2 live-threshold retest executed by the auto-UAT harness (operator ruling: no manual leg; PASS 20/20), G-19-1 CR-01 closed by 19-06/19-07 and re-proven live (overflow retry projects post-marker, 515KB→95KB); SECURITY threats_open: 0. Prior: Phase 20 (Built-in Commands + Skills + Per-Agent Model) closed 6/6 — one resolver chain (builtins → skills → agents → file, D-01 reserved names + D-04 winners-only advertisement), twelve class-B commands at zero model turns, /init + /<skill> expansion through the untouched seam, /<agent> subagent dispatch, per-agent model: routing (D-13..D-16, 14-05's light-tier default reversed, cross-provider ROUTE), live fsnotify rescan with the invoke-time backstop, available_commands_update on start + discovery change. Wire-level E2E green; operator live-Zed UAT (7 items) pending in 20-HUMAN-UAT.md. Prior: Phase 21 closed 2026-09-06 (hooks deny, memory inject, thinking, @-mentions); Phase 18 closed with G-18-1 gap closure**
+*Last updated: 2026-09-20 after v1.2 (Claude Code Parity) milestone — shipped 11 phases/79 plans; all verified; see MILESTONES.md**
