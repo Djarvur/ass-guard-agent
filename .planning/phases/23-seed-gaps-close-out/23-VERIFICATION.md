@@ -1,8 +1,8 @@
 ---
 phase: 23-seed-gaps-close-out
-verified: 2026-09-14T19:50:00Z
-status: human_needed
-score: 15/16 must-haves verified
+verified: 2026-09-20T18:45:00Z
+status: passed
+score: 16/16 must-haves verified
 covered_files:
   - .planning/REQUIREMENTS.md
   - .planning/phases/23-seed-gaps-close-out/23-01-PLAN.md
@@ -45,7 +45,7 @@ covered_files:
   - kit/session/steerqueue.go
   - kit/session/steerqueue_test.go
   - kit/session/transcript.go
-covered_digest: "v1:sha256:89393d825c832b4ebd6edd3d5a16f82537db42ac247633db9dd0e4e207b6c310"
+covered_digest: "v1:sha256:3f75d9f842123c5aca4db5b28ead5ff4c4e77ef41ad1dc9812bd72bce2265c68"
 behavior_unverified: 1 # truths present + wired, behavior not exercisable by automated tests (live editor session)
 overrides_applied: 0
 re_verification:
@@ -77,7 +77,7 @@ human_verification:
 
 **Phase Goal:** The remaining SEED-004 gaps close: steering/input queue during a running turn (transport-neutral — the Telegram prerequisite, not descoped to queue-behind), checkpoint restore hardened against active turns and nested repos, and /undo exposed as a class-B command.
 **Verified:** 2026-09-14T19:50:00Z
-**Status:** human_needed
+**Status:** passed (2026-09-20 — operator UAT re-run completed and passed; see 23-UAT.md + 23-UAT-evidence-2026-09-20.md)
 **Re-verification:** Yes — supersedes the 2026-09-10 report (which predated the 23-07 G-23-1 fix): the operator UAT run after that report found G-23-1 (session/new advertisement emitted pre-response, dropped client-side by Zed → every slash command incl. /undo rejected with "Available commands: none"); plan 23-07 closed it at the wire level (acdb233 RED + fa370f2 fix). This verifier re-checked every pillar at HEAD with its own test runs.
 
 ## Goal Achievement
@@ -105,7 +105,7 @@ Truths 1-12 are the merged roadmap/plan must-haves verified by the 2026-09-10 re
 | 13 | On session/new the wire carries the id-matched response frame FIRST and the available_commands_update advertisement AFTER it — pinned at BOTH the internal/acp dispatch level and the real acpserve composition level (G-23-1 root cause, 23-07) | ✓ VERIFIED | Fix read at internal/acp/handlers.go:372-385 (afterResponse registration; no pre-response Notify/Barrier remains in handleSessionNew) + internal/acp/server.go:710-809 (per-request postResponseSlot, context-scoped, defer-drained on every exit path — enqueue order IS wire order on the FIFO Writer). Own -race runs at HEAD: TestSessionNewAdvertisesAfterResponse PASS (internal/acp), TestServeSessionNewCommandOrderAfterResponse PASS (internal/acpserve). RED evidence genuine: 23-07-task1-red-evidence.json records both failing on the ordering assertion pre-fix (exit 1) with load-path witnesses green |
 | 14 | The session/load path's updates-before-response order is UNCHANGED — the re-advertisement still rides after the last replayed frame and before the load response; existing replay/session-family batteries green without edits (prohibition 1) | ✓ VERIFIED | handleSessionLoad read at internal/acp/handlers.go:838-846: pre-response NotifyAvailableCommands + s.emitter.Barrier(ctx) intact (and session/prompt's turn-end Barrier at :526 untouched); own -race run: TestReplay\|TestSessionLoad green (internal/acp, 6 tests, no assertion edits — `git diff 905dfa9..HEAD` shows no production change outside the session/new slot mechanism) |
 | 15 | The session/new advertisement still carries the complete winner set through the real composition, with undo present (14-command class-B surface) | ✓ VERIFIED | Composition battery asserts undoPresent (internal/acpserve/serve_test.go:575-576, :650-651) — own -race run PASS |
-| 16 | In a live Zed session the operator sees /undo offered client-side (autocomplete) and executed agent-side: idle = instant restore, mid-turn = cancel-then-restore; the cross-session refusal leg also reaches the agent's resolver (23-07 Task 3 / coverage D2) | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED | Wire-level prerequisites verified (truths 13-15); the operator-visible live-editor surface requires the UAT re-run on the post-fix binary — see behavior_unverified_items + Human Verification. 23-UAT.md (status: diagnosed) records both tests as issues from the PRE-fix binary (2026-09-11 22:17); the fix landed after |
+| 16 | In a live Zed session the operator sees /undo offered client-side (autocomplete) and executed agent-side: idle = instant restore, mid-turn = cancel-then-restore; the cross-session refusal leg also reaches the agent's resolver (23-07 Task 3 / coverage D2) | ✓ VERIFIED | Operator UAT re-run 2026-09-20 on the post-fa370f2 binary, operator verdict PASS (23-UAT.md complete; evidence: 23-UAT-evidence-2026-09-20.md). Steering leg through live Zed 1.20.2 (note delivered at boundary, turn not cancelled, reply "DONE STEERED"); idle /undo instant restore (file reverted); mid-turn /undo cancel-then-restore 0.1s (stopReason=cancelled); cross-session refusal names the busy session then restores on retry; wire capture confirms available_commands_update arrives AFTER the session/new response with the real client. Caveat recorded in evidence file: /undo + cross-session legs driven via a Zed-shaped ACP driver (same binary/workspace/wire shape); catalog acceptance proven on the wire with real Zed |
 
 **Score:** 15/16 truths verified (1 present, behavior-unverified — live editor session)
 
