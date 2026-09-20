@@ -3,6 +3,10 @@ status: diagnosed
 trigger: "UAT G-23-1: Zed rejects /undo client-side — '/undo is not a recognized command in ass-guard … Available commands for ass-guard: none'. available_commands_update advertisement empty/absent in fresh binary (built 22:11, tested 22:17). Steering works, tools work — only command surface dead."
 created: 2026-09-11T22:30:00+03:00
 updated: 2026-09-11T23:05:00+03:00
+audit_acknowledged:
+  milestone: v1.2
+  at: 2026-09-20
+  status: diagnosed
 ---
 
 ## Current Focus
@@ -25,12 +29,15 @@ started: Shipped broken at commit 89bcc6f (Phase 20-01, 2026-09-07); first LIVE 
 - hypothesis: Stale binary (G-19-2 class repeat)
   evidence: Binary fresh: ~/go/bin/ass-guard built 2026-09-11 22:11:36 +0300, test ran 22:17 (operator evidence, pre-gathered; plus my own wire reproduction against that same binary).
   timestamp: 2026-09-11T22:30:00+03:00
+
 - hypothesis: Advertisement emitted EMPTY (nil commandSrc / broken chain) or silenced by the Phase 25 kit extraction
   evidence: Realistic fake-editor drive of the SHIPPED binary (Zed's exact args, elicitation probe answered like Zed, initialize completed, then session/new): available_commands_update arrives with the FULL set — 14 commands including undo, correct frame shape (update.availableCommands + update.sessionUpdate="available_commands_update") — BEFORE the session/new response. Not empty, not absent, not malformed. Static path at HEAD also intact (WithCommandSource at acp_serve.go:404; buildChain pre-seeds builtins; commandChainRef degrades to builtin-only chain).
   timestamp: 2026-09-11T22:35:00+03:00
+
 - hypothesis: Zed requires specific clientCapabilities to honor the advertisement
   evidence: Irrelevant to the drop — Zed's dispatch never reaches capability-specific handling; the drop is at session registration lookup (handle_session_notification).
   timestamp: 2026-09-11T22:50:00+03:00
+
 - hypothesis: Phase 25 (kit extraction) regression window broke the emitter arming
   evidence: Emitter armed and firing in the shipped binary (wire reproduction); introducing commit for the pre-response order is 89bcc6f (2026-09-07, Phase 20-01) — long before Phase 25.
   timestamp: 2026-09-11T22:55:00+03:00
@@ -41,26 +48,32 @@ started: Shipped broken at commit 89bcc6f (Phase 20-01, 2026-09-07); first LIVE 
   checked: Error phrase in binary
   found: "not a recognized command" = 0 hits in binary strings — phrase is Zed's, not ass-guard's. Binary DOES contain "available_commands_update", reserved builtin strings, and the "available_commands_update enqueue failed (continuing)" degrade paths.
   implication: Zed blocks /commands absent from the agent's advertisement; the advertisement surface was not being registered client-side.
+
 - timestamp: 2026-09-11T22:31:00+03:00
   checked: Static wiring path at HEAD (internal/acp/handlers.go:335-369, internal/acp/server.go:538-560, internal/acpserve/acp_serve.go:404, internal/acpserve/command_source.go, kit/runtime/commands.go:253-334,481-487)
   found: Wiring INTACT. handleSessionNew fires NotifyAvailableCommands BEFORE returning the response (deliberate "updates-before-response" Barrier order, handlers.go:353-366). /undo IS a live builtin (kit/runtime/commands.go:181).
   implication: Source at HEAD cannot advertise an empty set through this path; suspicion shifts to delivery/registration.
+
 - timestamp: 2026-09-11T22:31:30+03:00
   checked: Artificial-run wire capture (session/new sent while initialize probe unanswered)
   found: Frames: [elicitation/create probe, available_commands_update (full set), session/new response, $/cancel_request, initialize response]. The notification precedes the response on the wire by construction (Barrier).
   implication: Ordering is deliberate and observable; set is non-empty.
+
 - timestamp: 2026-09-11T22:35:00+03:00
   checked: Realistic wire capture (probe answered, initialize completed, THEN session/new — Zed's real sequencing) + Zed upstream issue research
   found: Same pre-response ordering with the full 14-command set. Upstream match: zed-industries/zed#60199 (OPEN since 2026-07-01, needs triage): "ACP available_commands_update never shown because notification arrives before session/new response" — identical mechanism, identical symptom phrasing ("The /init command is not supported by CodeBuddy Code. Available commands: none"); Zed logs "Received session notification for unknown session" for each pre-response session/update.
   implication: Known Zed client behavior; the agent's pre-response emission is the triggering condition.
+
 - timestamp: 2026-09-11T22:45:00+03:00
   checked: Zed source, current main — crates/agent_servers/src/acp.rs, crates/acp_thread/src/acp_thread.rs
   found: handle_session_notification (acp.rs ~4772-4784): sessions.get(session_id) -> None => warn "Received session notification for unknown session" + return (DROP). new_session (acp.rs:1606+): AWAITS the session/new response, only THEN constructs AcpThread/registers — pre-registration impossible on session/new (id unknown). Contrast session/load (acp.rs:1258-1267): pre-registers BEFORE awaiting, with an explicit comment saying so ("so that any session/update notifications that arrive during the call ... can find the thread"). acp_thread.rs:2669-2674 applies AvailableCommandsUpdate once delivered.
   implication: ass-guard's pre-response emission is structurally undeliverable on session/new in Zed; the same order on session/load works because Zed pre-registers there. The 20-01 comment "the barrier keeps the updates-before-response order the load path established" is exactly the invalid generalization.
+
 - timestamp: 2026-09-11T22:55:00+03:00
   checked: git archaeology — internal/acp/handlers.go session/new advertisement; 20-HUMAN-UAT.md
   found: Introduced in 89bcc6f "feat(20-01): ..." (2026-09-07 21:18 +0300). Phase 20 operator UAT tests 1-3 (autocomplete, /status live, mid-session pickup) ALL still [pending] since 2026-09-08 — the advertisement surface was NEVER live-verified before today.
   implication: Broken-on-arrival against Zed since 20-01; not a Phase 25 regression.
+
 - timestamp: 2026-09-11T23:00:00+03:00
   checked: Post-registration re-fire possibility in a quiescent session
   found: The ONLY per-session advertisement is the session/new one. Startup SetCatalog fires commandsNotify before any session exists (NotifyAllAvailableCommands over 0 sessions = no-op); later re-fires only on .claude/ discovery changes (fsnotify, 20-05) which did not occur during UAT. Confirmed in the stdio drive: no further available_commands_update after the response.
