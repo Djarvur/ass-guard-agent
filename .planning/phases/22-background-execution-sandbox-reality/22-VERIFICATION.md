@@ -4,7 +4,7 @@ verified: 2026-09-10T13:41:06Z
 status: passed
 score: 38/39 must-haves verified
 covered_files:
-
+  - .planning/REQUIREMENTS.md
   - .planning/phases/22-background-execution-sandbox-reality/22-01-PLAN.md
   - .planning/phases/22-background-execution-sandbox-reality/22-01-SUMMARY.md
   - .planning/phases/22-background-execution-sandbox-reality/22-02-PLAN.md
@@ -24,10 +24,9 @@ covered_files:
   - .planning/phases/22-background-execution-sandbox-reality/22-09-PLAN.md
   - .planning/phases/22-background-execution-sandbox-reality/22-09-SUMMARY.md
   - .planning/phases/22-background-execution-sandbox-reality/22-REVIEW.md
-  - .planning/REQUIREMENTS.md
   - cmd/ass-guard/acp_serve.go
-  - cmd/ass-guard/main.go
   - cmd/ass-guard/background_wiring_test.go
+  - cmd/ass-guard/main.go
   - go.mod
   - internal/acpserve/acp_serve.go
   - internal/acpserve/config_surface.go
@@ -41,25 +40,24 @@ covered_files:
   - internal/coreexec/procopts_other.go
   - internal/coreexec/ptty.go
   - internal/coreexec/register.go
-  - internal/runtime/cron_wiring.go
-  - internal/runtime/runtime.go
-  - internal/runtime/commands.go
-  - internal/runtime/wake_wiring_test.go
   - internal/sandbox/child_linux.go
   - internal/sandbox/doc.go
   - internal/sandbox/landlock_linux.go
   - internal/sandbox/policy.go
   - internal/sandbox/seatbelt_darwin.go
-  - internal/session/session.go
-  - internal/session/subagent.go
   - internal/tasks/notify.go
   - internal/tasks/subagent.go
   - internal/tasks/subagent_test.go
   - internal/tasks/tracker.go
   - internal/tasks/tracker_test.go
-  - internal/toolcat/coretools.json
-
-covered_digest: "v1:sha256:0890d9df4a24b278303d49cd0e3a6c376b32ae95b72625655e29a54b73cb53b4"
+  - kit/runtime/commands.go
+  - kit/runtime/cron_wiring.go
+  - kit/runtime/runtime.go
+  - kit/runtime/wake_wiring_test.go
+  - kit/session/session.go
+  - kit/session/subagent.go
+  - kit/toolcat/coretools.json
+covered_digest: "v1:sha256:c52639bd0448833e2518c17274c7081a3d54f63b43dcfaac22fdaf256c95c316"
 operator_resolution: "2026-09-11 — ADR-550 prohibitions PASS (operator-confirmed); darwin live seatbelt DEFERRED (operator on Linux, no macOS host)"
 behavior_unverified: 1 # 22-05 T5 darwin live seatbelt battery — not reproducible on this Linux host
 overrides_applied: 0

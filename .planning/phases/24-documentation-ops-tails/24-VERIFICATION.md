@@ -22,18 +22,18 @@ covered_files:
   - .planning/phases/24-documentation-ops-tails/24-REVIEW.md
   - .planning/phases/24-documentation-ops-tails/24-USER-SETUP.md
   - .planning/phases/24-documentation-ops-tails/deferred-items.md
-  - internal/modelrouting/outcomes.go
-  - internal/modelrouting/outcomes_agg.go
-  - internal/modelrouting/outcomes_test.go
-  - internal/modelrouting/dispatch.go
-  - internal/session/session.go
-  - internal/session/subagent.go
-  - internal/session/session_outcomes_test.go
+  - kit/modelrouting/outcomes.go
+  - kit/modelrouting/outcomes_agg.go
+  - kit/modelrouting/outcomes_test.go
+  - kit/modelrouting/dispatch.go
+  - kit/session/session.go
+  - kit/session/subagent.go
+  - kit/session/session_outcomes_test.go
   - internal/acpserve/config_surface.go
   - internal/acpserve/acp_serve.go
   - internal/acpserve/config_surface_outcomes_test.go
-  - internal/runtime/runtime.go
-  - internal/runtime/apply_model_test.go
+  - kit/runtime/runtime.go
+  - kit/runtime/apply_model_test.go
   - internal/modelroutingcmd/modelrouting.go
   - cmd/ass-guard/modelrouting.go
   - cmd/ass-guard/modelrouting_test.go
@@ -48,16 +48,16 @@ covered_files:
   - internal/modesmatrix/matrix.go
   - internal/modesmatrix/matrix_test.go
   - internal/acpserve/modesmatrix_interactive_test.go
-  - internal/session/modesmatrix_subagent_test.go
-  - internal/runtime/modesmatrix_cron_test.go
-  - internal/runtime/modesmatrix_wake_test.go
+  - kit/session/modesmatrix_subagent_test.go
+  - kit/runtime/modesmatrix_cron_test.go
+  - kit/runtime/modesmatrix_wake_test.go
   - internal/ecosys/testdata/modes-matrix/plugin.json
   - internal/ecosys/testdata/modes-matrix/hooks/hooks.json
   - internal/ecosys/testdata/modes-matrix/commands/matrix-echo.md
   - internal/ecosys/testdata/modes-matrix/skills/matrix-skill/SKILL.md
   - .golangci.yml
 
-covered_digest: "v1:sha256:095c32af008e71874f4b5a8d9b35c1d40a2b1effaf358e6f26d5be18e8c1fa47"
+covered_digest: "v1:sha256:b9bcea4923b2733c9f0af7db68f91a0762644af86ab7fa7326b0e72b066782bd"
 behavior_unverified: 1 # truths present + wired but the runtime behavior is not exercisable pre-merge
 overrides_applied: 0
 re_verification:

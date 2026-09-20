@@ -5,18 +5,32 @@ status: passed
 score: 14/14 must-haves verified
 covered_files:
   - .planning/REQUIREMENTS.md
-  - internal/modelrouting/defaults/config.yaml
-  - internal/session/compaction.go
-  - internal/session/compaction_test.go
-  - internal/session/projector.go
-  - internal/session/projector_test.go
-  - internal/session/session.go
-  - internal/session/steering_test.go
-  - internal/session/steerqueue.go
-  - internal/session/transcript.go
-  - internal/shaper/shaper.go
+  - .planning/phases/19-compaction-cache-control/19-01-PLAN.md
+  - .planning/phases/19-compaction-cache-control/19-01-SUMMARY.md
+  - .planning/phases/19-compaction-cache-control/19-02-PLAN.md
+  - .planning/phases/19-compaction-cache-control/19-02-SUMMARY.md
+  - .planning/phases/19-compaction-cache-control/19-03-PLAN.md
+  - .planning/phases/19-compaction-cache-control/19-03-SUMMARY.md
+  - .planning/phases/19-compaction-cache-control/19-04-PLAN.md
+  - .planning/phases/19-compaction-cache-control/19-04-SUMMARY.md
+  - .planning/phases/19-compaction-cache-control/19-05-PLAN.md
+  - .planning/phases/19-compaction-cache-control/19-05-SUMMARY.md
+  - .planning/phases/19-compaction-cache-control/19-06-PLAN.md
+  - .planning/phases/19-compaction-cache-control/19-06-SUMMARY.md
+  - .planning/phases/19-compaction-cache-control/19-07-PLAN.md
+  - .planning/phases/19-compaction-cache-control/19-07-SUMMARY.md
+  - kit/modelrouting/defaults/config.yaml
+  - kit/session/compaction.go
+  - kit/session/compaction_test.go
+  - kit/session/projector.go
+  - kit/session/projector_test.go
+  - kit/session/session.go
+  - kit/session/steering_test.go
+  - kit/session/steerqueue.go
+  - kit/session/transcript.go
+  - kit/shaper/shaper.go
   - profiles/zcode/profile.yaml
-covered_digest: "v1:sha256:50bf6c55bf5db9793efad2948cc2551ca1aff34fa9948a178fc4525a31ddb336"
+covered_digest: "v1:sha256:05d4f9b9e2a00f7fdcb308f9ef19effe6f24fa4987709e09974943fa91b99e4d"
 behavior_unverified: 0
 overrides_applied: 0
 re_verification:
