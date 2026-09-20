@@ -24,7 +24,7 @@ current_phase_name: Documentation & Ops Tails
 
 See: .planning/PROJECT.md (updated 2026-09-20)
 **Core value:** A hands-off coding agent that feels native in the editor: full SDD workflows run end-to-end without manual continues, and the agent surfaces through the client's own UX — clickable permission prompts, native file diffs, session management. (Pivoted 2026-08-25 from the mimicry bar.)
-**Current focus:** Milestone v1.2 close-out — Phase 23 verified complete 2026-09-20; all implementation phases 15-25 done (backlog phase 999.1 remains)
+**Current focus:** Planning next milestone (v1.3) — v1.2 shipped and archived 2026-09-20; start with /gsd-new-milestone (Telegram peer is the standing pool item; tech-debt backlog in Deferred Items below)
 
 ## Current Position
 
