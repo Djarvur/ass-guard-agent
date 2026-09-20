@@ -2,6 +2,9 @@
 
 ## [2026-09-06, 19-03] mise lint gate broken repo-wide by golangci-lint version drift
 
+- **Status:** acknowledged
+- **Acknowledged:** v1.2 milestone close (2026-09-20) — deferred as tech debt; see STATE.md Deferred Items
+
 The `mise run lint` gate fails on every package (including ones untouched since
 Phase 15) in the current environment:
 
@@ -25,6 +28,9 @@ in `.mise.toml` (e.g. `golangci-lint = "2.12"` or the latest 2.13.x) and update
 forward to 2.13.x deliberately.
 
 ## [2026-09-06, 19-03] internal/runtime full-package flakes under machine load
+
+- **Status:** acknowledged
+- **Acknowledged:** v1.2 milestone close (2026-09-20) — deferred as tech debt; see STATE.md Deferred Items
 
 `go test -race ./internal/runtime/ -count=1` intermittently fails (reproduced
 at the pre-19-03 commit 00c9da6, so NOT caused by 19-03):

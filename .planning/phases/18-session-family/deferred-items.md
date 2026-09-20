@@ -1,6 +1,9 @@
 
 ## 18-06 (2026-09-03): golangci-lint 2.12.2 panics on go1.27-requiring deps (pre-existing, out of scope)
 
+- **Status:** acknowledged
+- **Acknowledged:** v1.2 milestone close (2026-09-20) — deferred as tech debt; see STATE.md Deferred Items
+
 - **Found during:** 18-06 Task 1 lint gate. `golangci-lint run` (2.12.2, the `.mise.toml` pin resolving "2")
   panics with `file requires newer Go version go1.27 (application built with go1.26)` on UNTOUCHED packages
   (reproduced on ./internal/session/...). Cause: a dependency in the module cache now declares go 1.27 while

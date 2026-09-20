@@ -280,6 +280,31 @@ None yet.
 | provider | Per-provider HTTP(S) proxy support — proxy field in the provider config (http/https schemes, basic auth first; see todos/pending/provider-proxy-support.md) | Future work (operator request 2026-09-06) | 2026-09-06 | unscheduled |
 | provider | Per-provider capability substitution — auto-substitute equivalent skills/MCP/built-in tools when a provider lacks a capability (first rows: web_search, web_fetch; e.g. z.ai/Claude-Code have them, opencode-go does not; see todos/pending/provider-capability-substitution.md) | Future work (operator request 2026-09-06) | 2026-09-06 | unscheduled |
 | profile | dsh profile #2 (DSH-01..05) | Dropped entirely (operator — mimicry bar abandoned) | 2026-08-26 | none |
+| debug_sessions | zed-empty-commands-advertisement | diagnosed | 2026-09-20 | v1.2 |
+| todos | provider-capability-substitution.md | (presence-only) | 2026-09-20 | v1.2 |
+| todos | provider-proxy-support.md | (presence-only) | 2026-09-20 | v1.2 |
+| uat_gaps | 22/22-UAT.md | partial | 2026-09-20 | v1.2 |
+| uat_gaps | 23/23-UAT-evidence-2026-09-20.md | unknown | 2026-09-20 | v1.2 |
+| uat_gaps | 24/24-UAT.md | partial | 2026-09-20 | v1.2 |
+| deferred_items | 16/deferred-items.md: `TestAskPark_PromptResponsePrecedesResolution` (internal/runtime, Phase 12) tripped its 10… | acknowledged | 2026-09-20 | v1.2 |
+| deferred_items | 16/deferred-items.md: `TestServeMirror_Override` (internal/acpserve, Phase 09) failed TempDir RemoveAll cleanup … | acknowledged | 2026-09-20 | v1.2 |
+| deferred_items | 16/deferred-items.md: Pre-stamp Model chip untruthful (16-06 operator checkpoint FINDING, recorded not fixed): t… | acknowledged | 2026-09-20 | v1.2 |
+| deferred_items | 17/deferred-items.md: Watchlist - **[2026-09-01, from 17-01] Transient `-race` gate flake (unreproduced, package… | acknowledged | 2026-09-20 | v1.2 |
+| deferred_items | 18/deferred-items.md: 18-06 (2026-09-03): golangci-lint 2.12.2 panics on go1.27-requiring deps (pre-existing, ou… | acknowledged | 2026-09-20 | v1.2 |
+| deferred_items | 19/deferred-items.md: [2026-09-06, 19-03] mise lint gate broken repo-wide by golangci-lint version drift The `mi… | acknowledged | 2026-09-20 | v1.2 |
+| deferred_items | 19/deferred-items.md: [2026-09-06, 19-03] internal/runtime full-package flakes under machine load `go test -race… | acknowledged | 2026-09-20 | v1.2 |
+| deferred_items | 21/deferred-items.md: 21-02 (2026-09-03) - **Timing-sensitive flakes in untouched packages (load-only, 1-in-3 ru… | acknowledged | 2026-09-20 | v1.2 |
+| deferred_items | 21/deferred-items.md: 21-03 (2026-09-03) - **The 21-02 runtime timing flake recurred under `mise ci` load (pre-e… | acknowledged | 2026-09-20 | v1.2 |
+| deferred_items | 21/deferred-items.md: 21-04 execution discovery (out of scope — not fixed) - `internal/runtime/advisory_wiring_t… | acknowledged | 2026-09-20 | v1.2 |
+| deferred_items | 22/deferred-items.md: TestRescanConcurrency data race (internal/runtime/rescan_test.go) — spawnMCP reading vs in… | acknowledged | 2026-09-20 | v1.2 |
+| deferred_items | 23/deferred-items.md: D-23-07-1: Three internal/acpserve simulator batteries fail on this machine — pre-existing… | acknowledged | 2026-09-20 | v1.2 |
+| deferred_items | 23/deferred-items.md: D-23-07-2: TestModesMatrixInteractiveSurfaces flaked once under full-suite -race - **Obser… | acknowledged | 2026-09-20 | v1.2 |
+| deferred_items | 23/deferred-items.md: D-23-07-3: TestLiveInstalledPluginsProbe fails on this machine — live-environment probe, p… | acknowledged | 2026-09-20 | v1.2 |
+| deferred_items | 24/deferred-items.md: TestEscalation_ReapAllUsesLadder (internal/coreexec/background_test.go:639) flakes under f… | acknowledged | 2026-09-20 | v1.2 |
+| deferred_items | 24/deferred-items.md: gocritic hugeParam on internal/modelrouting/factory.go:45 and :72 (pre-existing baseline) … | acknowledged | 2026-09-20 | v1.2 |
+| deferred_items | 24/deferred-items.md: Repo-wide golangci-lint 2.13.2 still reports ~572 findings on pre-Phase-24 files after the… | acknowledged | 2026-09-20 | v1.2 |
+| deferred_items | 24/deferred-items.md: `mcp.Start` silently skips a server that fails to spawn — the doc comment says "logged via… | acknowledged | 2026-09-20 | v1.2 |
+| deferred_items | 24/deferred-items.md: golangci-lint 2.13.2 findings in packages 24-04 touched but files it did not modify: inter… | acknowledged | 2026-09-20 | v1.2 |
 
 ## Session Continuity
 

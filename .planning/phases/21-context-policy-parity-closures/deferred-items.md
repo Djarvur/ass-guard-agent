@@ -5,6 +5,9 @@ not fixed — pre-existing, unrelated to the plan's changed files).
 
 ## 21-02 (2026-09-03)
 
+- **Status:** acknowledged
+- **Acknowledged:** v1.2 milestone close (2026-09-20) — deferred as tech debt; see STATE.md Deferred Items
+
 - **Timing-sensitive flakes in untouched packages (load-only, 1-in-3 runs):**
   - `internal/runtime/ask_wiring_test.go TestAskPark_PromptResponsePrecedesResolution`
     failed once under the full-suite load bar ("response took 10.21s; want
@@ -23,6 +26,9 @@ not fixed — pre-existing, unrelated to the plan's changed files).
   files are clean apart from that linter (verified by filtered run).
 
 ## 21-03 (2026-09-03)
+
+- **Status:** acknowledged
+- **Acknowledged:** v1.2 milestone close (2026-09-20) — deferred as tech debt; see STATE.md Deferred Items
 
 - **The 21-02 runtime timing flake recurred under `mise ci` load (pre-existing,
   worktree-proven):** `TestAskPark_PromptResponsePrecedesResolution` failed in
@@ -46,6 +52,9 @@ not fixed — pre-existing, unrelated to the plan's changed files).
   ledgered exhaustruct_v5 drift elsewhere.
 
 ## 21-04 execution discovery (out of scope — not fixed)
+
+- **Status:** acknowledged
+- **Acknowledged:** v1.2 milestone close (2026-09-20) — deferred as tech debt; see STATE.md Deferred Items
 
 - `internal/runtime/advisory_wiring_test.go` `TestAdvisoryWiring_QuestionEndingNote`
   — flaky under full-package `go test -race -count=2` load (failed once at 34.69s

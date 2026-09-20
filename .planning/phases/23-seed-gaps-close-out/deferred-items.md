@@ -7,6 +7,9 @@ not caused by 23-07; do not fix inside this phase).
 
 ### D-23-07-1: Three internal/acpserve simulator batteries fail on this machine — pre-existing, environment-dependent
 
+- **Status:** acknowledged
+- **Acknowledged:** v1.2 milestone close (2026-09-20) — deferred as tech debt; see STATE.md Deferred Items
+
 - **Tests:** `TestZedSimulatorE2E`, `TestSimulatorCommandSurface` (fail with and
   without `-race`), `TestPermissionsE2E` (fails only under `-race`).
 - **Verified pre-existing:** all three reproduce byte-identically on clean HEAD
@@ -31,6 +34,9 @@ not caused by 23-07; do not fix inside this phase).
 
 ### D-23-07-2: TestModesMatrixInteractiveSurfaces flaked once under full-suite -race
 
+- **Status:** acknowledged
+- **Acknowledged:** v1.2 milestone close (2026-09-20) — deferred as tech debt; see STATE.md Deferred Items
+
 - **Observed:** failed in 1 of 3 full `go test ./internal/acpserve/ -race`
   runs during 23-07 Task 2 verification; passed in the other 2 full runs and
   5/5 under `-run 'TestModesMatrix' -race -count=5` (isolated).
@@ -44,6 +50,9 @@ not caused by 23-07; do not fix inside this phase).
   D-23-07-1).
 
 ### D-23-07-3: TestLiveInstalledPluginsProbe fails on this machine — live-environment probe, pre-existing
+
+- **Status:** acknowledged
+- **Acknowledged:** v1.2 milestone close (2026-09-20) — deferred as tech debt; see STATE.md Deferred Items
 
 - **Test:** `internal/ecosys` `TestLiveInstalledPluginsProbe` (precedence_test.go:435).
 - **Verified pre-existing:** reproduced byte-identically at `905dfa9` (parent of the 23-07 RED commit) in a detached worktree; the 23-07 delta touches zero `internal/ecosys` files.
