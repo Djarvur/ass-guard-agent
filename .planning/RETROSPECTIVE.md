@@ -107,6 +107,51 @@ The unmodified OpenSpec toolkit runs hands-off end-to-end: the flagship chain gr
 
 The milestone closed formally 4 days after the 2026-08-21 completion: the operator requested a live UAT round, which REOPENED Phase 12 and found three real product gaps (dead plan-mode serve wiring; silent tool-result loss causing 33-retry storms; ReadSessionContext id mismatch + TaskOutput catalog omission). All fixed via gap-closure plans 12-09/12-10/12-11 under full TDD + CI discipline; UAT re-run 11/11 pass over live stdio driving. Three operator decisions landed at close: D-09 reversed (session resume = must-have, v1.2 top), "scheduling" renamed to model-routing (full package+CLI rename), and the strategic pivot — mimicry abandoned as the product bar in favor of client-native ACP surfaces (Zed-provided fs/permission/session UX); LSP routed to documented IDE-side MCP configuration rather than agent-side implementation. Lesson: the UAT round was the cheapest bug-finding mechanism of the whole project — offline batteries missed four wiring/catalog defects that an hour of real driving caught.
 
+## Milestone: v1.2 — Claude Code Parity
+
+**Shipped:** 2026-09-20
+**Phases:** 11 | **Plans:** 79 | **Tasks:** 171
+
+### What Was Built
+
+The full Claude Code parity surface end-to-end: ACP wire foundation (id'd outbound requests, one ordered TurnEmitter proven under a 4M-frame adversarial soak), clickable permission/elicitation asks on ONE gate pipeline, the session family with kill-9-safe replay (ten-row dangling-expectation classifier), threshold compaction + cache_control, the complete slash-command surface (12 class-B commands at zero model turns, live-rescan discovery, per-agent model routing), hooks/memory/thinking/images parity closures, background execution (subagents + task-notifications, background Bash, PTY, landlock/sandbox-exec), SEED gaps (steering queue, checkpoint restore guards, /undo), ops tails (scheduler outcome store, nightly parity CI, ECOS-04 modes matrix) — then the whole machinery extracted under `kit/` (15 packages, one-way import commitment, delta-free proofs) with ass-guard as its reference app.
+
+### What Worked
+
+- The Phase-15 carve-first ordering paid for itself: seven later feature clusters landed once instead of migrating twice.
+- Wire-level simulators as the primary proving instrument (Zed-shaped scripted client over the real composition + scripted SSE provider stub) — caught the G-17-1/G-18-1 fixture-fiction class and kept every phase self-verifiable without a live editor.
+- Operator-ruled UAT substitutions: manual live-editor legs replaced by reproducible harnesses (Phase 19's 20/20 auto-UAT; Phase 20's 7/7 wire-level close on 2026-09-20) with the ruling recorded in the UAT file.
+- The "recorded, never silently passed" discipline for human-observable claims (WINDOWS ledger) kept pending judgments visible across sessions.
+- Deferred-items.md as the scope-boundary ledger — every out-of-scope discovery written down and triaged at close (25 acknowledged, none lost).
+
+### What Was Inefficient
+
+- The golangci-lint 2.12→2.13 version drift broke the lint gate repo-wide mid-milestone and was worked around per-phase (ledgered) instead of reconciled once — ~572 findings remain as baseline debt.
+- A recurring machine-load test-flake family (ask-park bounds, simulator frame waits, PTY escalation) consumed repeated verification re-runs; the widen-bounds-or-skip-under-load fix was repeatedly deferred to "the next plan touching that file".
+- Environment-dependent tests (live plugin probe vs the operator's real ~/.claude; simulator vs the local ANTHROPIC_BASE_URL gateway) failed on this machine and cost diagnosis time each full-suite run.
+- The heading-shape vs table-shape deferred-items split made 13 of 25 close-time acknowledgments fall back to manual file edits (CLI writer gap, #3457 follow-up).
+
+### Patterns Established
+
+- UAT stand-in harness pattern: real binary + ACP stdio driver + scripted SSE stub on a scratch project; usage only from message_start; stderr is where warnings land (recorded in memory for reuse).
+- One gate pipeline + seam-registered machinery ("a seam is never left unregistered while its machinery is present") — the /compact nil-seam discipline.
+- Kit extraction as strictly-last phase with pre-move red baselines and ledger-identity proofs (829→1397 counted tests).
+- G-23-1 lesson: learn the sessionId lifecycle of the real client before choosing notification ordering (Zed drops updates for unregistered sessions).
+
+### Key Lessons
+
+- Live-client truth beats green suites: two of the milestone's real bugs (flat permission outcome decode; missing session_start opener) passed full E2E batteries because the simulator mirrored our own codec, not the client's bytes.
+- Fake usage numbers in stub providers have semantics: 1M input tokens crossed the 80% window and fired real auto-compaction mid-UAT (bonus proof, but counts must be derived from actual requests).
+- Notification ordering contracts belong in the spec-facing docs, not in per-phase decisions.
+
+### Cost Observations
+
+- Model mix: GLM-5.3 (heavy) as the workhorse across planning/execution/verification tiers; light tier for summarization only.
+- Sessions: multi-day continuous arcs with background dispatches.
+- Notable: verification repins (19/22/24) after the kit relocation show artifact digests are cheap to re-verify vs re-deriving.
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -115,6 +160,7 @@ The milestone closed formally 4 days after the 2026-08-21 completion: the operat
 |-----------|----------|--------|------------|
 | v1.0 | continuous arc | 8 | Baseline established: Phase-0 verification spike + serialized deltas + mise ci gate |
 | v1.1 | continuous arc w/ adoption line | 5 | Mid-milestone re-scoping as routine (2 re-orders, 4 renames); explicit adoption-line partitioning (P1/P2/P3); standing autonomy + retroactive flags; background-executor dispatch batches |
+| v1.2 | continuous arc, multi-day | 11 | Carve-first ordering; wire-level simulators as primary instrument; operator-ruled UAT substitutions; deferred-items ledger triaged at close; kit extraction strictly last with delta-free proofs |
 
 ### Cumulative Quality
 
