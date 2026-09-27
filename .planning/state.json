@@ -41,17 +41,17 @@
     {
       "number": "22",
       "name": "Background Execution + Sandbox Reality",
-      "status": "in_progress"
+      "status": "complete"
     },
     {
       "number": "23",
       "name": "SEED Gaps Close-out",
-      "status": "in_progress"
+      "status": "complete"
     },
     {
       "number": "24",
       "name": "Documentation & Ops Tails",
-      "status": "in_progress"
+      "status": "complete"
     },
     {
       "number": "25",
@@ -61,8 +61,8 @@
   ],
   "next": {
     "command": "/gsd:progress --next",
-    "label": "Advance to the next step (plan phase 22)",
-    "reason": "Phase 22 of 11 — needs a plan"
+    "label": "Advance to the next step (plan phase 24)",
+    "reason": "Phase 24 of 11 — needs a plan"
   },
-  "updated_at": "2026-09-11T09:14:43.085Z"
+  "updated_at": "2026-09-20T16:35:31.725Z"
 }

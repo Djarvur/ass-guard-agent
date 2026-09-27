@@ -69,3 +69,17 @@ tools/pi-audit/
 # committed; re-clone per the census fixture's provenance header (INPUT ONLY — the
 # committed artifact is internal/toolexec/testdata/occ-census.json, names only).
 tools/occ-census-clone/
+
+# Local tooling + runtime state (never shipped): the GSD/ZCode dev-tooling
+# install, background-shell state, machine-specific project MCP paths, and the
+# GSD runtime DBs. Tracked .gsd content stays limited to the sentinel (see
+# `git ls-files .gsd`).
+.claude/
+.bg-shell/
+.mcp.json
+.gsd/gsd.db
+.gsd/gsd.db-shm
+.gsd/gsd.db-wal
+.gsd/migration/
+.gsd/runtime/
+.gsd/notifications.jsonl
