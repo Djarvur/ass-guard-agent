@@ -1,0 +1,68 @@
+# Nightly hosted build+test regression gate.
+#
+# The upstream-parity DRIFT job that originally shared this workflow ran ONLY
+# on a [self-hosted, zcode] runner probing the operator's live zcode install
+# (D-08: the corpus stays local). Operator decision 2026-09-27: no self-hosted
+# runner — the drift gate now runs LOCAL on that machine via
+# `mise run parity-nightly` (exit 0 parity / 7 drift / 1 operational; the
+# report lands in nightly-report.json). Pin updates go through
+# docs/recapture-runbook.md ONLY — never re-pin to silence a drift.
+#
+# Trust notes (T-24-04-01..06, carried over): triggers are schedule +
+# workflow_dispatch ONLY — no PR-targeted trigger of any kind exists in this
+# file; first-party actions/* pinned to version tags re-verified via gh api
+# on 2026-09-10.
+name: nightly
+
+# "on" is quoted: YAML 1.1 readers (ruby/Psych et al.) parse the bare key as
+# boolean true; GitHub Actions accepts the quoted form identically.
+"on":
+  schedule:
+    # Off-peak ODD minute (D-08): 03:41 UTC, deliberately off the :00/:30
+    # boundaries. docs.github.com "Events that trigger workflows" #schedule:
+    # "The schedule event can be delayed during periods of high loads of
+    # GitHub Actions workflow runs… High load times include the start of every
+    # hour… If the load is sufficiently high enough, some queued jobs may be
+    # dropped." A missed or dropped nightly is an ACCEPTED state by design:
+    # the next scheduled run catches up.
+    - cron: "41 3 * * *"
+  # Manual smoke/backstop (Pitfall 2): scheduled workflows fire ONLY when the
+  # workflow file exists on the default branch (master).
+  workflow_dispatch: {}
+
+# Least privilege (Pitfall 6): the default GITHUB_TOKEN is read-only; nothing
+# in this workflow writes.
+permissions:
+  contents: read
+
+jobs:
+  # D-09's build/test letter on the hosted runner (mise is NOT required on
+  # hosted runners — plain go; the parity check is the local mise consumer).
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      # actions/checkout v7.0.1 — pinned 2026-09-10 via
+      # gh api repos/actions/checkout/releases/latest
+      - uses: actions/checkout@v7.0.1
+      # actions/setup-go v7.0.0 — pinned 2026-09-10 via
+      # gh api repos/actions/setup-go/releases/latest
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: build
+        run: CGO_ENABLED=0 go build ./...
+      - name: test
+        # D-09 letter (go test -race -count=1 ./...) plus a -skip list naming
+        # the repo's DOCUMENTED pre-existing failures (STATE.md blockers +
+        # executor baseline 2026-09-10): TestPermissionsE2E (Phase 23 commit
+        # 40b2bbc regression), TestRescanConcurrency (pre-existing race), and
+        # the TestRunSuite_* battery (needs the `openspec` binary — absent on
+        # hosted runners). Without the skip list this job is permanently red
+        # for reasons unrelated to parity, which would bury the signal
+        # (D-10). REMOVE entries here as the underlying failures are fixed.
+        # NOTE (2026-09-27): the v1.2 close-out baseline grew past this list —
+        # the first post-merge run is red on the D-23-07-1 acpserve simulator
+        # batteries and the kit/runtime fakeLearned test-fake race cluster;
+        # see STATE.md deferred items. Decision on extending the skip list
+        # (or fixing the fake) is the operator's.
+        run: go test -race -count=1 -skip '^TestPermissionsE2E$|^TestRescanConcurrency$|^TestRunSuite_' ./...

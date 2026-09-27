@@ -55,13 +55,15 @@ run = "ASSGUARD_EVAL_GATE=1 ASSGUARD_OPENSPEC_BIN=1 ASSGUARD_E2E_LLM=1 go test .
 description = "Detector: do the changes touch the locked eval-gate change classes? (exit 3 => run mise eval-gate)"
 run = "./scripts/eval-change-class.sh"
 
-# 24-04 (TAIL-02, D-08/D-09) — the nightly upstream-parity drift gate's
-# runner entry: the workflow's self-hosted drift job invokes exactly this
-# task (the zcode corpus lives on that runner). Drift-only light path
-# (OQ3): probe + structure hash vs the pinned capture + this build —
-# ZERO API spend; the behavioral-eval suites stay on their own locked
-# change-class gate (D-09, never merged in here). Exit contract the
-# workflow maps: 0 parity / 7 drift (auto-issue) / 1 operational.
+# 24-04 (TAIL-02, D-08/D-09) — the upstream-parity drift gate, LOCAL since
+# 2026-09-27 (operator declined a self-hosted runner; the workflow's drift
+# job is gone — .github/workflows/nightly.yml keeps only the hosted
+# build+test leg). Run this on the machine where the live zcode install
+# lives. Drift-only light path (OQ3): probe + structure hash vs the pinned
+# capture + this build — ZERO API spend; the behavioral-eval suites stay on
+# their own locked change-class gate (D-09, never merged in here). Exit
+# contract: 0 parity / 7 drift (details in nightly-report.json) / 1
+# operational. Pin updates go through docs/recapture-runbook.md ONLY.
 [tasks.parity-nightly]
 description = "Nightly upstream-parity drift gate: build + parity nightly-check vs the committed structure pin (exit 7 on drift)"
 run = "CGO_ENABLED=0 go build -o /tmp/ass-guard-parity-nightly ./cmd/ass-guard && /tmp/ass-guard-parity-nightly parity nightly-check --profiles-dir profiles/zcode --pin profiles/zcode/structure-pin.json --report nightly-report.json"
