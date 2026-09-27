@@ -1464,3 +1464,26 @@ func TestUserRepoExclude(t *testing.T) {
 		t.Error("worktree workdir created an exclude file")
 	}
 }
+
+// TestGitRun_PipesBothChildStdioFds pins the transport-discipline property of
+// the production runner (the 23-UAT stdout observation, closed 2026-09-27 by
+// a fresh-store serve probe + this pin): BOTH child stdio fds are piped into
+// the returned bytes, so git chatter (e.g. `git commit`'s summary line) can
+// never reach the process's ACP-reserved stdout — nor its stderr. If either
+// fd stops being captured, that child's output is lost from the return value
+// and this test fails.
+func TestGitRun_PipesBothChildStdioFds(t *testing.T) { //nolint:paralleltest // stdio inheritance pin
+	out, err := pipeGitRun(context.Background(), t.TempDir(), os.Environ(), "sh", "-c",
+		"echo probe-out; echo probe-err >&2")
+	if err != nil {
+		t.Fatalf("pipeGitRun: %v", err)
+	}
+
+	if !strings.Contains(string(out), "probe-out") {
+		t.Errorf("fd1 not captured: child stdout missing from returned bytes: %q", out)
+	}
+
+	if !strings.Contains(string(out), "probe-err") {
+		t.Errorf("fd2 not captured: child stderr missing from returned bytes: %q", out)
+	}
+}

@@ -140,7 +140,14 @@ var (
 // gitRun is the subprocess seam: every git invocation funnels through this
 // package var so tests can count/inject invocations (the ref-validation gate
 // asserts zero spawns for malformed ids).
-var gitRun = func( //nolint:gochecknoglobals // injectable test seam
+var gitRun = pipeGitRun //nolint:gochecknoglobals // injectable test seam
+
+// pipeGitRun is the production runner: BOTH child stdio fds are piped into
+// the returned buffer — the ACP transport owns this process's real stdout
+// (LSP-style discipline), so a git child must never inherit it and its
+// chatter (e.g. `git commit`'s summary line) must never reach the wire.
+// TestGitRun_PipesBothChildStdioFds pins the property.
+func pipeGitRun(
 	ctx context.Context, dir string, env []string, name string, args ...string,
 ) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
