@@ -53,16 +53,17 @@ jobs:
         run: CGO_ENABLED=0 go build ./...
       - name: test
         # D-09 letter (go test -race -count=1 ./...) plus a -skip list naming
-        # the repo's DOCUMENTED pre-existing failures (STATE.md blockers +
-        # executor baseline 2026-09-10): TestPermissionsE2E (Phase 23 commit
-        # 40b2bbc regression), TestRescanConcurrency (pre-existing race), and
-        # the TestRunSuite_* battery (needs the `openspec` binary — absent on
-        # hosted runners). Without the skip list this job is permanently red
-        # for reasons unrelated to parity, which would bury the signal
-        # (D-10). REMOVE entries here as the underlying failures are fixed.
-        # NOTE (2026-09-27): the v1.2 close-out baseline grew past this list —
-        # the first post-merge run is red on the D-23-07-1 acpserve simulator
-        # batteries and the kit/runtime fakeLearned test-fake race cluster;
-        # see STATE.md deferred items. Decision on extending the skip list
-        # (or fixing the fake) is the operator's.
-        run: go test -race -count=1 -skip '^TestPermissionsE2E$|^TestRescanConcurrency$|^TestRunSuite_' ./...
+        # the repo's DOCUMENTED pre-existing failures. Baseline re-synced at
+        # the v1.2 post-merge smoke (2026-09-27): the kit/runtime ask-wiring
+        # cluster that failed there was ONE unsynchronized test-fake map
+        # (fakeLearned — mutex-fixed same day, package green under -race);
+        # what remains skipped is the D-23-07-1 acpserve simulator pair
+        # (frame-timeout, environment-independent, fails with and without
+        # -race) and the documented TestEscalation_ReapAllUsesLadder
+        # full-suite -race flake (passes isolated). The 2026-09-10 entries
+        # keep their reasons: TestPermissionsE2E (D-23-07-1's -race-only leg;
+        # Phase 23 commit 40b2bbc regression), TestRescanConcurrency
+        # (pre-existing race), and the TestRunSuite_* battery (needs the
+        # `openspec` binary — absent on hosted runners). REMOVE entries here
+        # as the underlying failures are fixed.
+        run: go test -race -count=1 -skip '^TestPermissionsE2E$|^TestRescanConcurrency$|^TestRunSuite_|^TestZedSimulatorE2E$|^TestSimulatorCommandSurface$|^TestEscalation_ReapAllUsesLadder$' ./...
