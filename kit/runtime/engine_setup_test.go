@@ -13,6 +13,7 @@ package runtime //nolint:testpackage // internal package test
 
 import (
 	"regexp"
+	"sync"
 	"testing"
 
 	"github.com/Djarvur/ass-guard-agent/kit/engine"
@@ -157,8 +158,12 @@ func testEngineSetup(t *testing.T) EngineSetup {
 // Lookup plus the record/count bookkeeping. The REAL store's threshold and
 // persistence semantics keep their own subject in internal/learning's suite;
 // the kit batteries pin the PORT contract (wired through EngineSetup,
-// consulted by the engine ask path).
+// consulted by the engine ask path). Mutex-guarded: RecordCandidate fires on
+// the ask-pump goroutine while the test goroutine polls Lookup/EntryCount —
+// the unsynchronized map was one DATA RACE failing the whole ask-wiring
+// cluster under -race (2026-09-27 nightly baseline).
 type fakeLearned struct {
+	mu       sync.Mutex
 	entries  map[string]string
 	recorded int
 }
@@ -166,16 +171,27 @@ type fakeLearned struct {
 func newFakeLearned() *fakeLearned { return &fakeLearned{entries: map[string]string{}} }
 
 func (f *fakeLearned) Lookup(situation string) (string, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	ans, ok := f.entries[situation]
 
 	return ans, ok
 }
 
 func (f *fakeLearned) RecordCandidate(situation, answer, _ string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	f.entries[situation] = answer
 	f.recorded++
 
 	return nil
 }
 
-func (f *fakeLearned) EntryCount() int { return len(f.entries) }
+func (f *fakeLearned) EntryCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return len(f.entries)
+}
