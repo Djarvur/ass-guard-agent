@@ -86,6 +86,10 @@ func ckptLiveTree(t *testing.T, dir string) map[string]string {
 // reads the same simple frontmatter format the fixtures write), canned
 // mutability + hooks + memory. Rediscover re-reads the trees — the rescan
 // batteries' plant-then-rescan flow rides it unchanged.
+//
+// Concurrency contract: every accessor touching the canned tables holds mu;
+// the memory lenses (MemoryInjection, MemoryFiles) are FS-only by design and
+// stay lock-free.
 type fakeCatalog struct {
 	mu         sync.Mutex
 	workDir    string
@@ -556,6 +560,9 @@ func (t *fakeCatalog) Agents() map[string]session.AgentDef {
 // Hooks serves the canned hooks (nil-safe: a nil hooks degrades exactly as
 // the emptyCatalog contract documents).
 func (t *fakeCatalog) Hooks(_, _, _ string) session.Hooks { //nolint:ireturn // seam shape
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
 	return t.hooks
 }
 
