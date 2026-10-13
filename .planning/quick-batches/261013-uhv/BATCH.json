@@ -9,7 +9,7 @@
       "quick_id": "261013-uhw",
       "client_id": null,
       "description": "Fix hasSubstitution double-quote tracking in internal/perm/rules.go: the a710b75 rewrite dropped double-quote tracking, so `git \"log 'x $(cmd) y'\"` under-detects live command substitution and an allow rule can match a substitution-bearing command (WR-02 violation, live-verified 2026-09-03, recorded in STATE.md Blockers/Concerns). Restore double-quote tracking in the scanner and pin the live case plus sibling quote-nesting cases with table-driven tests in internal/perm; acceptance: an allow rule must never match a substitution-bearing command, mise ci green.",
-      "status": "pending",
+      "status": "complete",
       "depends_on": [],
       "planned_files": [
         "internal/perm/rules.go",
@@ -21,14 +21,14 @@
       "dispatched_branch": null,
       "dispatched_base": null,
       "wave": 0,
-      "commit": null,
+      "commit": "ee4de04",
       "failure_reason": null
     },
     {
       "quick_id": "261013-uhx",
       "client_id": null,
       "description": "Diagnose and fix the TestPermissionsE2E regression in internal/acpserve introduced by Phase 23 commit 40b2bbc (steering ingress; passes at 721c7bc, fails at dbbb5d0 — operator-bisected in an isolated worktree, WINDOWS #22). Reproduce at master (documented as failing under -race), root-cause the offending hunk, fix production or the test per the root cause, then remove the TestPermissionsE2E entry from the nightly test skip list in .github/workflows/nightly-parity.yml (WINDOWS #27).",
-      "status": "pending",
+      "status": "complete",
       "depends_on": [],
       "planned_files": [
         "internal/acpserve/permissions_e2e_test.go",
@@ -46,14 +46,14 @@
       "dispatched_branch": null,
       "dispatched_base": null,
       "wave": 0,
-      "commit": null,
+      "commit": "79e3eb2",
       "failure_reason": null
     },
     {
       "quick_id": "261013-uhy",
       "client_id": null,
       "description": "Fix the TestRescanConcurrency data race in internal/runtime/rescan_test.go (spawnMCP reading vs installRegistry writing, pre-existing before 22-04, WINDOWS #21) following the ab7956b fakeLearned mutex-guard precedent, then remove the TestRescanConcurrency entry from the nightly test skip list in .github/workflows/nightly-parity.yml (WINDOWS #27).",
-      "status": "pending",
+      "status": "complete",
       "depends_on": [
         "261013-uhx"
       ],
@@ -67,14 +67,14 @@
       "dispatched_branch": null,
       "dispatched_base": null,
       "wave": 1,
-      "commit": null,
+      "commit": "40bd483",
       "failure_reason": null
     },
     {
       "quick_id": "261013-uhz",
       "client_id": null,
       "description": "Broken Windows ledger bookkeeping in .planning/WINDOWS.md: mark rows #23 and #24 fixed (discharged by the operator Phase-23 UAT 2/2 on 2026-09-20, per STATE.md Phase 23 entry and 23-UAT evidence), record the stdout-discipline observation from 23-UAT as fixed by commit ed83044 (non-reproducing on release code, pipeGitRun regression test added), and refresh open_count accordingly.",
-      "status": "pending",
+      "status": "complete",
       "depends_on": [],
       "planned_files": [
         ".planning/WINDOWS.md"
@@ -85,7 +85,7 @@
       "dispatched_branch": null,
       "dispatched_base": null,
       "wave": 0,
-      "commit": null,
+      "commit": "2b39454",
       "failure_reason": null
     }
   ]

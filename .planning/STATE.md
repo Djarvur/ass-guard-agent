@@ -257,6 +257,15 @@ Decisions are logged in PROJECT.md Key Decisions table. Decisions shaping the v1
 
 None yet.
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Status | Directory |
+|---|-------------|------|--------|--------|-----------|
+| 261013-uhw | Fix hasSubstitution double-quote tracking in internal/perm/rules.go (WR-02): restore the pre-a710b75 quote state machine and pin nested-quote substitution cases with table-driven tests; an allow rule must never match a substitution-bearing command. | 2026-10-13 | ee4de04 | — | .planning/quick/261013-uhw-fix-hassubstitution-double-quote-tracking-in-internal-perm-r |
+| 261013-uhx | Diagnose and fix the TestPermissionsE2E regression from Phase 23 commit 40b2bbc: completion-window steering orphaned by routeSteering; fix spillOrphanedSteering at chain exit; unskip from the nightly -race gate. | 2026-10-13 | 79e3eb2 | — | .planning/quick/261013-uhx-diagnose-and-fix-the-testpermissionse2e-regression-in-intern |
+| 261013-uhy | Fix the TestRescanConcurrency data race (WINDOWS #21): mutex-guard fakeCatalog.Hooks per the ab7956b shape; unskip from the nightly -race gate (WINDOWS #27 leg). | 2026-10-13 | 40bd483 | — | .planning/quick/261013-uhy-fix-the-testrescanconcurrency-data-race-in-internal-runtime |
+| 261013-uhz | Broken Windows ledger bookkeeping: rows #23/#24 discharged (operator UAT 2/2 2026-09-20), stdout observation recorded as row #30 born-fixed (ed83044), open_count 18 to 16. | 2026-10-13 | 2b39454 | — | .planning/quick/261013-uhz-broken-windows-ledger-bookkeeping-in-planning-windows-md-mar |
+
 ### Blockers/Concerns
 
 - [RESEARCH FLAGS / planning-time]: Phases 16/18/19/22/23 flagged for `--research-phase` (ACP schema LOW-confidence details; resume reconciliation inventory; compaction × projector pins; platform drift; pi/strands steering references unverified). Full list in ROADMAP.md Research Flags section.
