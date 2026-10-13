@@ -148,7 +148,7 @@ func TestSessionFor_NoLightTierStamp(t *testing.T) { //nolint:paralleltest // HO
 // model-less session skips with the one loud warning (the 14-05 Test-4
 // coverage, moved to its new dispatch-time home).
 //
-//nolint:paralleltest,funlen // HOME pinned via pinEmptyHome — serial subtests
+//nolint:paralleltest // HOME pinned via pinEmptyHome — serial subtests
 func TestDispatchModel_TierArms(t *testing.T) {
 	pinEmptyHome(t)
 

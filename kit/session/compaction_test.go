@@ -306,7 +306,7 @@ var (
 // stream error force-compacts (threshold bypass) and re-sends EXACTLY ONCE —
 // the recovery resend completes the turn; a second overflow in the SAME turn
 // reaches the existing appendError return with no further retry (Pitfall 8).
-func TestCompaction_OverflowRetryOnce(t *testing.T) { //nolint:funlen // battery
+func TestCompaction_OverflowRetryOnce(t *testing.T) {
 	t.Parallel()
 
 	t.Run("recovery: fail overflow, compact, resend, turn completes", func(t *testing.T) {
@@ -759,7 +759,7 @@ func TestCompaction_EndToEnd(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,fu
 // added-since estimate is transcript content appended after the last
 // request_shaped line divided by 4 truncating — never the request's own total
 // body size (Pitfall 7's double-count).
-func TestCompaction_Threshold(t *testing.T) { //nolint:gocognit,cyclop,funlen // battery
+func TestCompaction_Threshold(t *testing.T) { //nolint:gocognit,funlen // battery
 	t.Parallel()
 
 	t.Run("boundary fires; one below does not", func(t *testing.T) {

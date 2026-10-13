@@ -19,7 +19,7 @@ func TestSteerQueueTicketsMonotonic(t *testing.T) {
 
 	prev := uint64(0)
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		tk := q.Enqueue("input")
 		if tk <= prev {
 			t.Fatalf("ticket %d not increasing (prev %d) at enqueue %d", tk, prev, i+1)
@@ -212,7 +212,7 @@ func TestSteerQueueHammerConservation(t *testing.T) {
 		go func() {
 			defer wg.Done()
 
-			for i := 0; i < perProducer; i++ {
+			for range perProducer {
 				tk := q.Enqueue("hammer")
 				assigned[g] = append(assigned[g], tk)
 			}
@@ -224,7 +224,7 @@ func TestSteerQueueHammerConservation(t *testing.T) {
 	// set exactly — whatever interleaving the scheduler picks).
 	cancelled := 0
 
-	for round := 0; round < 10; round++ {
+	for round := range 10 {
 		// Cutoffs advance monotonically so the cancelled sets never overlap.
 		cancelled += q.CancelThrough(uint64(round * producers * 20))
 	}

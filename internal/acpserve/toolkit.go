@@ -80,7 +80,7 @@ func (tk *sessionToolkit) SetSandboxHandle(h *sandbox.Handle) {
 // returns the Reaper OnClose composes. It cannot fail today (the sequence
 // is construction-only); the error leg keeps the kit's degrade contract
 // honest for future toolkits.
-func (tk *sessionToolkit) Attach( //nolint:funlen,ireturn // relocated registration sequence; the seam IS the interface
+func (tk *sessionToolkit) Attach( //nolint:ireturn // relocated registration sequence; the seam IS the interface
 	catalog *toolcat.Catalog,
 	//nolint:gocritic // hugeParam: the env-by-value signature is pinned by the kit seam
 	env runtime.ToolkitEnv,

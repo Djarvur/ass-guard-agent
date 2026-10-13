@@ -66,7 +66,7 @@ func cannedAnthropicToolUseResponse(id, name string, input map[string]any) strin
 
 // TestAnthropicProvider_SendParsesToolUse drives the adapter through a mock
 // Anthropic endpoint and asserts the tool_use block parses to a ToolCall.
-func TestAnthropicProvider_SendParsesToolUse(t *testing.T) { //nolint:funlen // comprehensive test scenario
+func TestAnthropicProvider_SendParsesToolUse(t *testing.T) {
 	t.Parallel()
 
 	var capturedBody []byte

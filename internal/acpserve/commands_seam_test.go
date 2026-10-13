@@ -66,10 +66,10 @@ func TestCommandsNotifySeam(t *testing.T) {
 
 		var m struct {
 			Params struct {
-				SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+				SessionID string `json:"sessionId"`
 				Update    struct {
-					Kind string                      `json:"sessionUpdate"`     //nolint:tagliatelle // ACP wire field
-					Cmds []acp.AvailableCommandFrame `json:"availableCommands"` //nolint:tagliatelle // ACP wire field
+					Kind string                      `json:"sessionUpdate"`
+					Cmds []acp.AvailableCommandFrame `json:"availableCommands"`
 				} `json:"update"`
 			} `json:"params"`
 		}

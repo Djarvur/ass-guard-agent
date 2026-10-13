@@ -372,7 +372,7 @@ func TestCoreExec_FileTodoMixedBatch(t *testing.T) { //nolint:gocognit,gocyclo,c
 // TodoWrite echo as its verbatim JSON (wire-equivalent to the captured plain
 // text). The mutating-tool projection is boundary-reset by D-11 and is
 // asserted in TestCoreExec_BashThroughSession.
-func TestCoreExec_ReadOnlyProjection(t *testing.T) { //nolint:cyclop,funlen // flat battery
+func TestCoreExec_ReadOnlyProjection(t *testing.T) { //nolint:funlen // flat battery
 	t.Parallel()
 
 	r, prov := newExpansionRunner(t, true)

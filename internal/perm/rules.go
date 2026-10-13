@@ -293,7 +293,7 @@ func SplitCompound(cmd string) []string {
 // without appearing as a separate subcommand, so allowing it would defeat
 // the compound discipline ("an allow must cover EVERY subcommand") with no
 // separator anywhere in the visible text.
-func hasSubstitution(cmd string) bool { //nolint:cyclop // restored a710b75 quote state machine
+func hasSubstitution(cmd string) bool {
 	var quote byte // 0 = unquoted; '\'' = literal span; '"' = double-quote span
 
 	for i := 0; i < len(cmd); i++ {

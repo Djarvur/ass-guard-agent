@@ -255,7 +255,7 @@ func TestSteeringDeliveryEndToEnd(t *testing.T) { //nolint:funlen // comprehensi
 				noteSeen = true
 			}
 		default:
-			goto drained //nolint:gocritic // label is the drain exit
+			goto drained
 		}
 	}
 
@@ -536,7 +536,7 @@ func TestSteeringProjectLegacyTolerance(t *testing.T) {
 		t.Errorf("legacy window carries %d user messages; want exactly the seed (1)", userCount)
 	}
 
-	if len(msgs) != 4 { //nolint:mnd // seed + batch + result + assistant
+	if len(msgs) != 4 {
 		t.Errorf("legacy window has %d messages; want the pre-23 shape of 4: %+v", len(msgs), msgs)
 	}
 }
@@ -709,7 +709,7 @@ func TestParkedAskReplayTolerance(t *testing.T) {
 		}
 	}
 
-	if len(msgs) != 2 { //nolint:mnd // seed + assistant
+	if len(msgs) != 2 {
 		t.Errorf("window has %d messages; want 2 (the parked marker folds to nothing): %+v", len(msgs), msgs)
 	}
 }

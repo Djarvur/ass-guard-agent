@@ -156,10 +156,10 @@ func TestTurnEmitterEndToEnd(t *testing.T) { //nolint:funlen // full end-to-end 
 	}
 
 	runner := runtime.NewRunner(&runtime.RunnerConfig{
-		Bus:     event.NewBus(),
-		Profile: profile.Profile{Name: profileZcode, System: []profile.TextBlock{{Type: wireBlockText, Text: "emitter e2e"}}},
-		WorkDir: t.TempDir(),
-		MaxConc: 2,
+		Bus:          event.NewBus(),
+		Profile:      profile.Profile{Name: profileZcode, System: []profile.TextBlock{{Type: wireBlockText, Text: "emitter e2e"}}},
+		WorkDir:      t.TempDir(),
+		MaxConc:      2,
 		MakeProvider: func(_ provider.RequestCapturer) provider.Provider { return mp },
 	})
 
@@ -219,7 +219,7 @@ func TestTurnEmitterEndToEnd(t *testing.T) { //nolint:funlen // full end-to-end 
 	frames, advertised = wireReadResultFramesCounting(t, cliR, 1)
 
 	var snew struct {
-		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+		SessionID string `json:"sessionId"`
 	}
 
 	snewErr := json.Unmarshal(frames[0].Result, &snew)
@@ -299,10 +299,10 @@ func TestThoughtForward(t *testing.T) { //nolint:funlen // full end-to-end scena
 	}
 
 	runner := runtime.NewRunner(&runtime.RunnerConfig{
-		Bus:     event.NewBus(),
-		Profile: profile.Profile{Name: profileZcode, System: []profile.TextBlock{{Type: wireBlockText, Text: "thought e2e"}}},
-		WorkDir: t.TempDir(),
-		MaxConc: 2,
+		Bus:          event.NewBus(),
+		Profile:      profile.Profile{Name: profileZcode, System: []profile.TextBlock{{Type: wireBlockText, Text: "thought e2e"}}},
+		WorkDir:      t.TempDir(),
+		MaxConc:      2,
 		MakeProvider: func(_ provider.RequestCapturer) provider.Provider { return mp },
 	})
 
@@ -355,7 +355,7 @@ func TestThoughtForward(t *testing.T) { //nolint:funlen // full end-to-end scena
 	frames = wireReadResultFrames(t, cliR, 1)
 
 	var snew struct {
-		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+		SessionID string `json:"sessionId"`
 	}
 
 	snewErr := json.Unmarshal(frames[0].Result, &snew)
@@ -462,8 +462,8 @@ func readSessionUpdatesUntilResponse( //nolint:nonamedreturns // name documents 
 		case m.Method == wireSessionUpdate:
 			var upd struct {
 				Update struct {
-					SessionUpdate string `json:"sessionUpdate"` //nolint:tagliatelle // ACP wire field
-					ToolCallID    string `json:"toolCallId"`    //nolint:tagliatelle // ACP wire field
+					SessionUpdate string `json:"sessionUpdate"`
+					ToolCallID    string `json:"toolCallId"`
 					Title         string `json:"title"`
 				} `json:"update"`
 			}

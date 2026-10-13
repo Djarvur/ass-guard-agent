@@ -163,6 +163,7 @@ type subagentWriter struct {
 }
 
 func newSubagentWriter(logPath, id string) (*subagentWriter, error) {
+	//nolint:mnd // 0o750 is the house dir mode (parity with session-layer writes)
 	if merr := os.MkdirAll(filepath.Dir(logPath), 0o750); merr != nil {
 		return nil, fmt.Errorf("mkdir: %w", merr)
 	}

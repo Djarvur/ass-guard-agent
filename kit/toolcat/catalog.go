@@ -54,8 +54,6 @@ func (c *Catalog) Get(name string) (Tool, bool) {
 // D-15), swappable backends, and learning-mode proposed tools — without
 // rebuilding the embedded core. A registered mutating tool is reflected by
 // IsBoundary via the existing mutability floor (no boundary-engine change).
-//
-//nolint:gocritic // hugeParam: Tool is a value-semantic catalog entry (pre-existing signature)
 func (c *Catalog) Register(t Tool) {
 	if c.tools == nil {
 		c.tools = map[string]Tool{}

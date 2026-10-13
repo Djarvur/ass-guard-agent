@@ -37,7 +37,8 @@ const (
 	// bgQueueBound bounds the over-cap FIFO queue's pathological growth
 	// (D-10/D-11 bounded-resources intent): past it, starts fail with the
 	// structured error naming the bound.
-	bgQueueBound = 64
+	signalExitBase = 128 // the POSIX shell convention: a signal death exits 128+SIGn
+	bgQueueBound   = 64
 	// bgOutputCapBytes bounds each task's ACCUMULATED in-memory copy (the
 	// on-disk log is the full record; this is the retrieval buffer).
 	bgOutputCapBytes = 1024 * 1024
@@ -210,19 +211,19 @@ func openTaskLog(workDir, id string) (*os.File, error) {
 // waiters and queued=true returns; it launches when a slot frees, in
 // submission order. Past the bounded queue (bgQueueBound) the structured
 // errBgCap error survives — the queue can grow only bounded.
-func (r *TaskRegistry) Start(workDir, command string) (string, bool, error) {
+func (r *TaskRegistry) Start(workDir, command string) (taskID string, queued bool, err error) {
 	return r.StartWithOpts(workDir, command, StartOpts{})
 }
 
 // StartWithOpts is Start carrying the 22-06 per-call sandbox escape: the
 // opts ride the task so BOTH launch paths (immediate and FIFO-queued) honor
 // the escape and the wrap identically through the one launch funnel.
-func (r *TaskRegistry) StartWithOpts(workDir, command string, opts StartOpts) (string, bool, error) {
+func (r *TaskRegistry) StartWithOpts(workDir, command string, opts StartOpts) (taskID string, queued bool, err error) {
 	r.mu.Lock()
 
-	cap := r.Cap
-	if cap <= 0 {
-		cap = bgConcurrentDefault
+	capacity := r.Cap
+	if capacity <= 0 {
+		capacity = bgConcurrentDefault
 	}
 
 	live := 0
@@ -235,7 +236,7 @@ func (r *TaskRegistry) StartWithOpts(workDir, command string, opts StartOpts) (s
 		t.mu.Unlock()
 	}
 
-	if live >= cap {
+	if live >= capacity {
 		if len(r.waiters) >= bgQueueBound {
 			r.mu.Unlock()
 
@@ -394,9 +395,9 @@ func (r *TaskRegistry) startNextWaiter() {
 	for {
 		r.mu.Lock()
 
-		cap := r.Cap
-		if cap <= 0 {
-			cap = bgConcurrentDefault
+		capacity := r.Cap
+		if capacity <= 0 {
+			capacity = bgConcurrentDefault
 		}
 
 		live := 0
@@ -409,7 +410,7 @@ func (r *TaskRegistry) startNextWaiter() {
 			t.mu.Unlock()
 		}
 
-		if live >= cap || len(r.waiters) == 0 {
+		if live >= capacity || len(r.waiters) == 0 {
 			r.mu.Unlock()
 
 			return
@@ -670,7 +671,7 @@ func exitStatusFor(waitErr error, state bgState) string {
 
 	if errors.As(waitErr, &ee) {
 		if status, ok := ee.Sys().(syscall.WaitStatus); ok && status.Signaled() {
-			return strconv.Itoa(128 + int(status.Signal()))
+			return strconv.Itoa(signalExitBase + int(status.Signal()))
 		}
 
 		return strconv.Itoa(ee.ExitCode())
@@ -852,9 +853,9 @@ func renderBackgroundStart(id, logPath string) string {
 // the renderBackgroundStart prose family): the id exists, the position and
 // cap are named, and the output pointer is real (the log exists from queue
 // time only after launch; interim Read resolves once it starts).
-func renderBackgroundQueued(id, logPath string, position, cap int) string {
+func renderBackgroundQueued(id, logPath string, position, capacity int) string {
 	return "Command queued with ID: " + id +
-		" (position " + strconv.Itoa(position) + " behind " + strconv.Itoa(cap) +
+		" (position " + strconv.Itoa(position) + " behind " + strconv.Itoa(capacity) +
 		" concurrent background commands; it starts when a slot frees)." +
 		" Output will be written to: " + logPath +
 		". You will be notified when it completes."

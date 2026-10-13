@@ -144,8 +144,6 @@ func placementCheck(comp *parity.CacheComposition, cachePin string) (parity.Prob
 // RunParity loads the suite + profile, constructs the live Anthropic arm, runs
 // the harness, and emits the structured footer + results JSON. Exit code reflects
 // the gate (0 iff OverallPass). Needs ZAI_API_KEY (operator-gated).
-//
-//nolint:funlen // domain complexity is inherent
 func RunParity(suitePath, rollout, name, dir, results, surprise, cachePin string) error {
 	var (
 		suite []parity.CapturedTurn

@@ -58,6 +58,27 @@ import (
 // ptyTermGrace is Drain's TERM→KILL grace (the 22-02 ladder values).
 const ptyTermGrace = 5 * time.Second
 
+// defaultPtyRows/defaultPtyCols is the classic 24x80 window the persistent
+// shell's master pair carries (22-04; capture layout assumes it).
+const (
+	defaultPtyRows = 24
+	defaultPtyCols = 80
+)
+
+// readChunkBuf bounds the reader->consumer chunk queue; ptyReadBufSize is
+// the master-side read buffer (the 22-04 generation reader's shape).
+const (
+	readChunkBuf   = 16
+	ptyReadBufSize = 4096
+)
+
+// decimalBase is the digit-accumulation base of the sentinel exit-status
+// parse; reapPollInterval is the group-kill reaper's poll cadence.
+const (
+	decimalBase      = 10
+	reapPollInterval = 25 * time.Millisecond
+)
+
 // PTYOpts configures the manager.
 type PTYOpts struct {
 	WorkDir string
@@ -172,7 +193,7 @@ func (m *PTYManager) ensureShell() error {
 		return fmt.Errorf("ptty: open pty: %w", err)
 	}
 
-	if err = pty.Setsize(ptmx, &pty.Winsize{Rows: 24, Cols: 80}); err != nil {
+	if err = pty.Setsize(ptmx, &pty.Winsize{Rows: defaultPtyRows, Cols: defaultPtyCols}); err != nil {
 		_ = ptmx.Close()
 		_ = tty.Close()
 
@@ -226,7 +247,7 @@ func (m *PTYManager) ensureShell() error {
 	_ = tty.Close()
 
 	dead := make(chan struct{})
-	readCh := make(chan readChunk, 16)
+	readCh := make(chan readChunk, readChunkBuf)
 
 	m.ptmx = ptmx
 	m.stdinW = stdinW
@@ -248,7 +269,7 @@ func (m *PTYManager) ensureShell() error {
 	// package notes); it exits when the master errors out (closed master,
 	// shell exit) or once the generation is dead with a full hand.
 	go func(ptmx io.Reader, ch chan readChunk, dead chan struct{}) {
-		buf := make([]byte, 4096)
+		buf := make([]byte, ptyReadBufSize)
 
 		for {
 			n, rerr := ptmx.Read(buf)
@@ -369,7 +390,9 @@ func sentinelEchoLine(nonce string) string {
 // A dead shell (detected on entry via the reaper channel, or mid-window via
 // the channel or EIO/EOF without the nonce) restarts LAZILY with the
 // NoteFn — the restart call itself then proceeds on the fresh shell.
-func (m *PTYManager) Run(ctx context.Context, command string) (string, int, error) { //nolint:funlen,cyclop,gocognit,maintidx // one flow
+func (m *PTYManager) Run(
+	ctx context.Context, command string,
+) (out string, code int, err error) {
 	if strings.TrimSpace(command) == "" {
 		return "", 0, errBadTaskInput // the empty probe: structured error, no shell interaction
 	}
@@ -539,7 +562,7 @@ func parseSentinel(window, marker []byte) (int, bool) {
 			return 0, false // not the exit-status form — a lookalike
 		}
 
-		code = code*10 + int(c-'0')
+		code = code*decimalBase + int(c-'0')
 	}
 
 	return code, true
@@ -579,7 +602,7 @@ func (m *PTYManager) Drain() {
 				break // group gone — TERM sufficed
 			}
 
-			time.Sleep(25 * time.Millisecond)
+			time.Sleep(reapPollInterval)
 		}
 	}
 

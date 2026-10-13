@@ -147,7 +147,7 @@ func interceptPicker(t *testing.T, answer string) *[]session.SessionHeader {
 // directly, the space form leaves the target in args (the NoOptDefVal
 // contract), --continue/-c both set the bool, and combining any resume flag
 // with --prompt is the typed combination error.
-func TestResumeFlagParsing(t *testing.T) { //nolint:funlen // table battery + the conflict case, one subtest each
+func TestResumeFlagParsing(t *testing.T) {
 	t.Parallel()
 
 	const id = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"

@@ -223,9 +223,9 @@ func TestConfigAdvertise(t *testing.T) {
 	}
 
 	var ires struct {
-		ProtocolVersion   int                 `json:"protocolVersion"`   //nolint:tagliatelle // ACP wire field
-		AgentCapabilities map[string]any      `json:"agentCapabilities"` //nolint:tagliatelle // ACP wire field
-		ConfigOptions     []ConfigOptionFrame `json:"configOptions"`     //nolint:tagliatelle // ACP wire field
+		ProtocolVersion   int                 `json:"protocolVersion"`
+		AgentCapabilities map[string]any      `json:"agentCapabilities"`
+		ConfigOptions     []ConfigOptionFrame `json:"configOptions"`
 	}
 
 	uerr := jsonUnmarshalStrict(initResp.Result, &ires)
@@ -250,8 +250,8 @@ func TestConfigAdvertise(t *testing.T) {
 	}
 
 	var sres struct {
-		SessionID     string              `json:"sessionId"`     //nolint:tagliatelle // ACP wire field
-		ConfigOptions []ConfigOptionFrame `json:"configOptions"` //nolint:tagliatelle // ACP wire field
+		SessionID     string              `json:"sessionId"`
+		ConfigOptions []ConfigOptionFrame `json:"configOptions"`
 	}
 
 	uerr = jsonUnmarshalStrict(snew.Result, &sres)
@@ -329,7 +329,7 @@ func driveConfigSession(t *testing.T, h *pipeHarness) string {
 	snew := h.readResultFrame(t)
 
 	var sres struct {
-		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+		SessionID string `json:"sessionId"`
 	}
 
 	_ = jsonUnmarshalStrict(snew.Result, &sres)
@@ -375,7 +375,7 @@ func decodeSetResult(t *testing.T, msg *Message) []ConfigOptionFrame {
 	t.Helper()
 
 	var res struct {
-		ConfigOptions []ConfigOptionFrame `json:"configOptions"` //nolint:tagliatelle // ACP wire field
+		ConfigOptions []ConfigOptionFrame `json:"configOptions"`
 	}
 
 	uerr := jsonUnmarshalStrict(msg.Result, &res)
@@ -585,7 +585,7 @@ func TestSetConfigOptionNoSurface(t *testing.T) {
 	}
 
 	var sres struct {
-		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+		SessionID string `json:"sessionId"`
 	}
 
 	_ = jsonUnmarshalStrict(snew.Result, &sres)

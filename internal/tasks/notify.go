@@ -24,7 +24,7 @@ type pendingItem struct {
 // caller holds the owning Tracker's mutex.
 type pendingQueue struct {
 	items map[string]pendingItem // dedupe by task id — first terminal wins
-	order []string              // arrival order of live ids
+	order []string               // arrival order of live ids
 	seq   int
 }
 
@@ -58,7 +58,7 @@ func (q *pendingQueue) snapshotOrdered() []Notification {
 		}
 	}
 
-	sort.SliceStable(live, func(i, j int) bool { //nolint:gocritic // the closure reads clearly
+	sort.SliceStable(live, func(i, j int) bool {
 		if live[i].completedAt.Equal(live[j].completedAt) {
 			return live[i].seq < live[j].seq // submission order breaks ties
 		}

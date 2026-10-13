@@ -179,6 +179,7 @@ func TestNotify_TruncateTailRuneBoundary(t *testing.T) {
 			tail:  strings.Repeat("a", 20*1024),
 			limit: 8192,
 			check: func(t *testing.T, got string) {
+				t.Helper()
 				if len(got) != 8192 {
 					t.Errorf("len = %d; want exactly the 8192 budget", len(got))
 				}
@@ -189,6 +190,7 @@ func TestNotify_TruncateTailRuneBoundary(t *testing.T) {
 			tail:  strings.Repeat("é", 5000), // 2-byte runes
 			limit: 8191,                      // 8191 = 4095 runes + 1 byte → straddles
 			check: func(t *testing.T, got string) {
+				t.Helper()
 				// The boundary straddles rune 4096; it must be dropped whole:
 				// 4095 complete runes = 8190 bytes.
 				if len(got) != 8190 {
@@ -203,8 +205,9 @@ func TestNotify_TruncateTailRuneBoundary(t *testing.T) {
 		{
 			name:  "4-byte emoji straddle",
 			tail:  strings.Repeat("😀", 3000), // 4-byte runes
-			limit: 8190,                       // 8190 = 2047 runes (8188) + 2 bytes → straddles
+			limit: 8190,                      // 8190 = 2047 runes (8188) + 2 bytes → straddles
 			check: func(t *testing.T, got string) {
+				t.Helper()
 				if len(got) != 8188 {
 					t.Errorf("len = %d; want 8188 (straddling emoji dropped whole)", len(got))
 				}
@@ -215,6 +218,7 @@ func TestNotify_TruncateTailRuneBoundary(t *testing.T) {
 			tail:  "short tail",
 			limit: 8192,
 			check: func(t *testing.T, got string) {
+				t.Helper()
 				if got != "short tail" {
 					t.Errorf("got %q; want verbatim (under budget)", got)
 				}
@@ -222,7 +226,7 @@ func TestNotify_TruncateTailRuneBoundary(t *testing.T) {
 		},
 	}
 
-	for _, tc := range cases { //nolint:varnamelen // tc is the table-case convention
+	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 

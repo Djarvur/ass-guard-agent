@@ -121,7 +121,7 @@ type StatsRow struct {
 // lines, surfaced in the dump so a torn tail is visible to the operator.
 func LoadAndAggregate(
 	storePath string,
-) (map[modelrouting.ProviderModelKey]modelrouting.AggregateStats, int, error) {
+) (stats map[modelrouting.ProviderModelKey]modelrouting.AggregateStats, skipped int, err error) {
 	records, skipped, err := modelrouting.ReadOutcomes(storePath)
 	if err != nil {
 		return nil, 0, fmt.Errorf("read outcome store: %w", err)

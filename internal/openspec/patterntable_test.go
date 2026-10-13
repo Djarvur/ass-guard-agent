@@ -97,7 +97,7 @@ func TestNextPrompt_TableAnswersNextPromptFor(t *testing.T) {
 // that boundary chains on command provenance (the hybrid mechanism, findings-6
 // disposition — see TestSeeded_ExploreChainsOnProvenance). Excerpts are
 // verbatim from the capture files.
-func TestSeeded_ChainingRowsFromRealCapture(t *testing.T) { //nolint:funlen // four-stage excerpt battery
+func TestSeeded_ChainingRowsFromRealCapture(t *testing.T) {
 	t.Parallel()
 
 	cfg, err := openspec.DefaultConfig()

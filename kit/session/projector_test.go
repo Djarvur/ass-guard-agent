@@ -439,7 +439,7 @@ const (
 // turn's reset boundary (asserted in TestProjector_BetweenTurnResetAfterMidTurn
 // Boundary). An orphaned tool_result (its call never entered the window) is
 // still dropped — pair-safety is boundary-independent.
-func TestProjector_MidTurnBoundaryCarry(t *testing.T) { //nolint:gocyclo,cyclop,funlen // flat battery
+func TestProjector_MidTurnBoundaryCarry(t *testing.T) { //nolint:gocyclo,cyclop // flat battery
 	t.Parallel()
 
 	m := newTestManager(t, "s1")

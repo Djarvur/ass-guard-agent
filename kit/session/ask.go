@@ -765,7 +765,7 @@ const elicitEngineToolName = "engine-ask"
 // A9); decline/cancel/degrade hand onDecline (today's advisory non-answer
 // note, 12-D-05 shape). An invalid accept rides the SAME D-10 bounded loop
 // (one re-ask, then onDecline).
-func (s *Session) EnqueueEngineAsk( //nolint:funlen // the engine family's one enqueue + D-10 landing
+func (s *Session) EnqueueEngineAsk(
 	turnID, situation string,
 	fire func(ctx context.Context, e *AskEntry) AskOutcome,
 	onAccept func(answer string), onDecline func(),

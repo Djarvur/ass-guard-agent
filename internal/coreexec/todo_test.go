@@ -39,7 +39,7 @@ func todoInput(items ...[3]string) json.RawMessage {
 
 // todoEcho is the decoded TodoWrite echo / TodoRead result shape.
 type todoEcho struct {
-	OldTodos []TodoItem  `json:"oldTodos"` //nolint:tagliatelle // captured echo key
+	OldTodos []TodoItem  `json:"oldTodos"`
 	Todos    []TodoItem  `json:"todos"`
 	Summary  TodoSummary `json:"summary"`
 }
@@ -47,7 +47,7 @@ type todoEcho struct {
 // TestTodoWrite_Echo (T3 Test 6): an empty store + a 4-item list returns the
 // camelCase echo; a SECOND call's oldTodos equals the first call's todos
 // (the store advances). Key order pinned by struct decode, not string-compare.
-func TestTodoWrite_Echo(t *testing.T) { //nolint:cyclop,funlen // flat battery
+func TestTodoWrite_Echo(t *testing.T) {
 	t.Parallel()
 
 	store := NewTodoStore()

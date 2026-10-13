@@ -225,8 +225,6 @@ func AskFromEntry(family AskFamily, e *session.AskEntry) Ask {
 
 // Outcome projects the Answer onto the session-native resolution (the
 // mirror mapping — field-for-field, no reinterpretation).
-//
-//nolint:gocritic // hugeParam: value projection — the seam speaks values (D-15)
 func (a Answer) Outcome() session.AskOutcome {
 	return session.AskOutcome{
 		Selected:    a.Selected,

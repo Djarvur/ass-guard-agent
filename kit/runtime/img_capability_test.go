@@ -160,7 +160,6 @@ func newCapabilityRunner(t *testing.T, factory func(provider.RequestCapturer) pr
 // Deliberately sequential: a full Run turn must not add contention to the
 // timing-sensitive tests sharing the parallel batch.
 func TestImageCapability_D11DropAndNote(t *testing.T) { //nolint:paralleltest // full-turn e2e
-
 	prov := &noImageProvider{supports: false}
 
 	r := newCapabilityRunner(t, func(_ provider.RequestCapturer) provider.Provider { return prov })
@@ -235,13 +234,12 @@ func TestImageCapability_D11DropAndNote(t *testing.T) { //nolint:paralleltest //
 //
 //nolint:funlen // one e2e flow
 func TestImageCapability_ImageReachesOutgoingRequest(t *testing.T) { //nolint:paralleltest // full-turn e2e
-
 	var bodyMu sync.Mutex
 
 	var bodies []string
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("content-type", "text/event-stream")
+		w.Header().Set("Content-Type", "text/event-stream")
 
 		frames := []string{
 			`{"type":"message_start","message":{"usage":{"input_tokens":5}}}`,
@@ -339,7 +337,7 @@ func TestImageCapability_OpenAIShapeBodyHasNoImage(t *testing.T) {
 	ref, b64 := plantPngRef(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("content-type", "application/json")
+		w.Header().Set("Content-Type", "application/json")
 
 		_, _ = w.Write([]byte(`{"id":"x","object":"chat.completion","created":1,` +
 			`"model":"m","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},` +

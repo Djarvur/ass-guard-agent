@@ -447,12 +447,16 @@ func expireByAge(entries []Entry, now time.Time, maxAge time.Duration) []Entry {
 // TurnNum then Ref for determinism); the overflow is evicted. Accounting is
 // strictly per-session — a chatty session's overflow never evicts another
 // session's refs.
+// expireKeptHint is the pre-size hint for the per-session kept-refs count
+// (the D-08 axis-2 selection's working map; a hint, never a bound).
+const expireKeptHint = 4
+
 func expireByCount(entries []Entry, perSession int) []Entry {
 	if perSession <= 0 {
 		return nil
 	}
 
-	kept := make(map[string]int, 4)
+	kept := make(map[string]int, expireKeptHint)
 
 	sorted := append([]Entry(nil), entries...)
 	slices.SortFunc(sorted, func(a, b Entry) int {

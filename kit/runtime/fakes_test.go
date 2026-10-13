@@ -126,7 +126,7 @@ type fakeSkillRow struct {
 // floor (internal/openspec/seeded.toml [commands] + [command_mutability] —
 // kit-side test constants, the same verbatim-mirror discipline the pattern
 // rows follow; read-only rows are simply absent from the map).
-var seededMutatingCommands = []string{ //nolint:gochecknoglobals,goconst // per-test-binary seeded table (data, not code)
+var seededMutatingCommands = []string{ //nolint:gochecknoglobals // per-test-binary seeded table (data, not code)
 	// [command_mutability] — the opsx slash surface (D-11)
 	"opsx:propose", "opsx:apply", "opsx:sync", "opsx:update", "opsx:archive",
 	"opsx:new", "opsx:continue", "opsx:ff", "opsx:bulk-archive", "opsx:onboard",
@@ -191,7 +191,7 @@ func (t *fakeCatalog) reload() error {
 // pluginInstall mirrors one installed_plugins.json row.
 type pluginInstall struct {
 	Name        string `json:"name"`
-	InstallPath string `json:"installPath"` //nolint:tagliatelle // the registry wire format is camelCase
+	InstallPath string `json:"installPath"`
 }
 
 // loadPluginInstalls walks the plugin registry the MountFixture layout
@@ -863,7 +863,7 @@ func (h *fakeHooks) Fire(_ context.Context, _ string, _ map[string]any) session.
 
 func (h *fakeHooks) PreToolUseVerdict(
 	_ context.Context, toolName string, _ json.RawMessage,
-) (session.HookVerdict, string) {
+) (verdict session.HookVerdict, reason string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -905,7 +905,7 @@ func (h *markerFileHooks) Fire(context.Context, string, map[string]any) session.
 
 func (h *markerFileHooks) PreToolUseVerdict(
 	_ context.Context, toolName string, _ json.RawMessage,
-) (session.HookVerdict, string) {
+) (verdict session.HookVerdict, reason string) {
 	// the fixture's PreToolUse matcher is "Read" only (hooks.json) — the
 	// Task dispatch of the wake cells never fired it under real discovery.
 	if toolName != toolNameRead {

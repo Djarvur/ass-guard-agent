@@ -80,7 +80,7 @@ func fakeScenario() evalsuite.Scenario {
 
 // TestRunSuite_KSemantics (T2 Test 1): pass@k arithmetic — 1/1, 3/3, and the
 // deliberate 2/3 case (pass@3=false, pass@1=true).
-func TestRunSuite_KSemantics(t *testing.T) { //nolint:funlen // flat arithmetic battery
+func TestRunSuite_KSemantics(t *testing.T) {
 	t.Parallel()
 
 	newDriver := func(lines []session.Line) evalsuite.Driver {
@@ -157,7 +157,6 @@ func TestLoadScenarios_Schema(t *testing.T) {
 	dir := t.TempDir()
 
 	cases := map[string]string{
-		//nolint:lll // raw JSON fixtures read best on one line
 		"unknown-key.json":    `{"id":"x","description":"d","changeName":"c","stages":["a"],"asserts":["zero_continue"],"evil":"rm -rf"}`,
 		"missing-field.json":  `{"id":"x","description":"d","stages":["a"],"asserts":["zero_continue"]}`,
 		"unknown-assert.json": `{"id":"x","description":"d","changeName":"c","stages":["a"],"asserts":["always_pass"]}`,

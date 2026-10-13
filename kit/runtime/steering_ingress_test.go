@@ -796,7 +796,7 @@ func TestParkedAskNoteEmitter(t *testing.T) {
 				parked = true
 			}
 		default:
-			goto drained //nolint:gocritic // label is the drain exit
+			goto drained
 		}
 	}
 

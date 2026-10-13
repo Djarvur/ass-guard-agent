@@ -78,7 +78,7 @@ func openerLines(t *testing.T, workDir, id string) []session.Line {
 // opener as the transcript's FIRST line (sessionID in Text), never appends a
 // second one on reopen (the resume shape: ResumeSession reopens through
 // sessionFor), and self-heals a zero-byte transcript.
-func TestSessionForWritesOpener(t *testing.T) { //nolint:cyclop,gocognit,funlen // three assertion pins, one per shape
+func TestSessionForWritesOpener(t *testing.T) { //nolint:gocognit,funlen // three assertion pins, one per shape
 	t.Parallel()
 
 	const id = "sess_opener-pin"

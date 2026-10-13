@@ -14,7 +14,7 @@ import (
 // recapturedFamily loads one family from the 12-05 re-record fixture.
 func recapturedFamily(t *testing.T, tool, family string) struct {
 	Template string `json:"template"`
-	IsError  bool   `json:"isError"` //nolint:tagliatelle // fixture mirrors the capture
+	IsError  bool   `json:"isError"`
 } {
 	t.Helper()
 
@@ -36,7 +36,7 @@ func recapturedFamily(t *testing.T, tool, family string) struct {
 
 	var fam struct {
 		Template string `json:"template"`
-		IsError  bool   `json:"isError"` //nolint:tagliatelle // fixture mirrors the capture
+		IsError  bool   `json:"isError"`
 	}
 
 	entry, ok := f.Tools[tool]

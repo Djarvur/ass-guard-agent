@@ -498,7 +498,7 @@ func newBackgroundSession(t *testing.T) (*Session, *gatedSubagentRunner, *bgTest
 // TestDispatchBackground_AsyncLaunchedImmediately (PAR-07): the tool result
 // is the discriminated JSON {status: async_launched, task_id, output_file}
 // — returned BEFORE the subagent completes (the gate holds it).
-func TestDispatchBackground_AsyncLaunchedImmediately(t *testing.T) { //nolint:funlen // flat battery
+func TestDispatchBackground_AsyncLaunchedImmediately(t *testing.T) {
 	t.Parallel()
 
 	s, runner, env := newBackgroundSession(t)

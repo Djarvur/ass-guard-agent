@@ -17,7 +17,7 @@ import (
 // through the real Session Core (project → stream → boundary → subagent →
 // cancel → logout), and the transcript captures the full sequence with stdout
 // clean and no events dropped. Run with -race.
-func TestEndToEndSession(t *testing.T) { //nolint:funlen // comprehensive test scenario
+func TestEndToEndSession(t *testing.T) {
 	t.Parallel()
 
 	bus := event.NewBus()

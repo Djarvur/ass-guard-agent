@@ -30,7 +30,7 @@ func (c *countingEmitter) Emit(_ context.Context, ev event.Event) error {
 // same-class advisory turns in one session → ONE client note (the first) +
 // TWO audit lines; a DIFFERENT class in the same session → its own first
 // note; a NEW session → the note fires again for the same class.
-func TestAdvisoryWiring_DedupeSemantics(t *testing.T) { //nolint:gocognit,cyclop,funlen // D-05 battery
+func TestAdvisoryWiring_DedupeSemantics(t *testing.T) { //nolint:gocognit,funlen // D-05 battery
 	t.Parallel()
 
 	newRunner := func() (*Runner, *countingEmitter) {

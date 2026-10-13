@@ -224,7 +224,7 @@ func (s *soakSink) snapshot() []soakMarker {
 func soakDecode(m *Message) (soakMarker, bool) {
 	var params struct {
 		Update struct {
-			MessageID string `json:"messageId"` //nolint:tagliatelle // ACP wire field
+			MessageID string `json:"messageId"`
 		} `json:"update"`
 	}
 

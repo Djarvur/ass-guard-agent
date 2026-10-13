@@ -23,11 +23,11 @@ type interactiveFixture struct {
 	Provenance struct {
 		Policy       string   `json:"policy"`
 		CorpusAbsent []string `json:"corpus_absent"`
-	} `json:"_provenance"` //nolint:tagliatelle // fixture header key
+	} `json:"_provenance"`
 	Tools map[string]struct {
 		InputKeysObserved []string `json:"input_keys_observed"`
 		Results           map[string]struct {
-			IsError       bool   `json:"isError"` //nolint:tagliatelle // fixture mirrors the capture
+			IsError       bool   `json:"isError"`
 			Template      string `json:"template"`
 			LiteralPrefix string `json:"literal_prefix,omitempty"`
 			CorpusAbsent  bool   `json:"corpus_absent,omitempty"`
@@ -39,7 +39,7 @@ type interactiveFixture struct {
 // forms string-compare against the committed fixture templates; the non-answer
 // family carries corpus_absent + the D-01 provenance note + the 12-05 upgrade
 // pointer (the 08-08 fixtures_test.go pattern).
-func TestAskForms_ConformToFixture(t *testing.T) { //nolint:cyclop,funlen // flat battery
+func TestAskForms_ConformToFixture(t *testing.T) { //nolint:funlen // flat battery
 	t.Parallel()
 
 	raw, err := os.ReadFile(interactiveFixturePath)

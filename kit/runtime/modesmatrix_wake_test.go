@@ -319,7 +319,7 @@ func TestModesMatrixWakeSkills(t *testing.T) { // HOME-pinned leg
 // the hook's stdin JSON (tool_name Read). The completing dispatch is proven
 // by the wake notification's kind/task-id linkage (see the file comment for
 // the SubagentStop descope).
-func TestModesMatrixWakeHooks(t *testing.T) { //nolint:funlen // driver + both observable sets // HOME-pinned leg
+func TestModesMatrixWakeHooks(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	project := t.TempDir()

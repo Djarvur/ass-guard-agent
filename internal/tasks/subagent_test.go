@@ -241,7 +241,7 @@ func TestBackgroundOutput_SplitRuneBuffered(t *testing.T) {
 		Run: func(_ context.Context, progress func(string)) (string, error) {
 			// Split at every byte boundary — the writer must buffer the
 			// partial runes and emit only whole ones.
-			for i := 0; i < len(sentence); i++ {
+			for i := 0; i < len(sentence); i++ { //nolint:intrange // byte-boundary split is deliberate (range-over-string yields rune offsets, not byte indexes)
 				progress(sentence[i : i+1])
 			}
 

@@ -214,7 +214,7 @@ func matrixPromptContains(stub *simStub, needle string) bool {
 // WINS (the loader's D-06 precedence — project over the installed-plugin
 // tiers — the same winner the ecosys precedence tests lock; cells never
 // silently merge).
-func TestModesMatrixInteractiveSurfaces(t *testing.T) { //nolint:funlen // HOME-pinned legs; one story
+func TestModesMatrixInteractiveSurfaces(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	// Serve A — the fixture alone: commands + skills cells.

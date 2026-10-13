@@ -407,7 +407,7 @@ func elicProp(t *testing.T, f *acp.ElicitationFormFrame, key string) map[string]
 // N properties all required; the banned MCP-legacy enumNames key never
 // appears; the question text lands in the message; the D-10 re-ask note rides
 // the message.
-func TestElicitationMapping(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen,lll,maintidx // one golden table over the D-08 rows
+func TestElicitationMapping(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen,maintidx // one golden table over the D-08 rows
 	t.Parallel()
 
 	t.Run("single_choice_oneOf_titled_consts", func(t *testing.T) {
@@ -645,7 +645,7 @@ func TestElicitationMapping(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,fun
 // mapped to the session-native outcomes); degraded → the plain-text fallback
 // publishing byte-parity RenderAskSurface content with NO registry write;
 // -32601 → fallback + STICKY degradation (the second ask never re-round-trips).
-func TestAskSurfaceDispatchElicitation(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen,lll // one battery over the dispatch vocabulary
+func TestAskSurfaceDispatchElicitation(t *testing.T) { //nolint:gocognit,gocyclo,cyclop,funlen // one battery over the dispatch vocabulary
 	t.Parallel()
 
 	newSurface := func(t *testing.T, capOK bool) (*ElicitationAsk, *permAskSink, *[]string) {
@@ -834,7 +834,7 @@ func TestAskSurfaceDispatchElicitation(t *testing.T) { //nolint:gocognit,gocyclo
 // subset — required presence, per-property type, enum/oneOf const membership
 // by EXACT string equality, array item-wise checks, minLength/maxLength by
 // RUNE count. No regexp, no Unicode normalization (the encoding edge).
-func TestValidateElicitationContent(t *testing.T) { //nolint:gocognit,cyclop,funlen,lll // one table over the validation vocabulary
+func TestValidateElicitationContent(t *testing.T) { //nolint:gocognit,funlen // one table over the validation vocabulary
 	t.Parallel()
 
 	strSchema := func(extra string) acp.ElicitationSchema {
@@ -997,7 +997,7 @@ func TestValidateElicitationContent(t *testing.T) { //nolint:gocognit,cyclop,fun
 // a background-class entry, an accept writing the learning entry through the
 // existing store API (A9), and decline/cancel producing the advisory
 // non-answer landing. An invalid accept rides the D-10 loop (one re-ask).
-func TestFamilyConversionEngineAsk(t *testing.T) { //nolint:cyclop,funlen,gocognit // one flat round-trip battery
+func TestFamilyConversionEngineAsk(t *testing.T) { //nolint:funlen,gocognit // one flat round-trip battery
 	t.Parallel()
 
 	newEngineSession := func(t *testing.T) *session.Session {

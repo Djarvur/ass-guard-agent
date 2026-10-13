@@ -328,7 +328,7 @@ func TestRegistrySyntheticCancel(t *testing.T) {
 	}
 
 	var params struct {
-		RequestID string `json:"requestId"` //nolint:tagliatelle // ACP wire field
+		RequestID string `json:"requestId"`
 	}
 
 	unmarshalErr := json.Unmarshal(cascades[0].Params, &params)

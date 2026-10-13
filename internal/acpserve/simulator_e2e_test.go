@@ -369,11 +369,11 @@ func (c *simClient) nextResponse(id string) *acp.Message {
 
 // simUpdate is one decoded session/update payload.
 type simUpdate struct {
-	Kind       string                  `json:"sessionUpdate"` //nolint:tagliatelle // ACP wire field
-	ToolCallID string                  `json:"toolCallId"`    //nolint:tagliatelle // ACP wire field
+	Kind       string                  `json:"sessionUpdate"`
+	ToolCallID string                  `json:"toolCallId"`
 	Title      string                  `json:"title"`
 	Entries    []acp.PlanEntry         `json:"entries"`
-	Options    []acp.ConfigOptionFrame `json:"configOptions"` //nolint:tagliatelle // ACP wire field
+	Options    []acp.ConfigOptionFrame `json:"configOptions"`
 }
 
 func decodeSimUpdate(t *testing.T, m *acp.Message) simUpdate {
@@ -600,11 +600,11 @@ func simAssertInitializeResult(t *testing.T, raw json.RawMessage) {
 	t.Helper()
 
 	var resp struct {
-		ProtocolVersion   int `json:"protocolVersion"` //nolint:tagliatelle // ACP wire field
+		ProtocolVersion   int `json:"protocolVersion"`
 		AgentCapabilities struct {
-			LoadSession bool `json:"loadSession"` //nolint:tagliatelle // ACP wire field
-		} `json:"agentCapabilities"` //nolint:tagliatelle // ACP wire field
-		ConfigOptions []acp.ConfigOptionFrame `json:"configOptions"` //nolint:tagliatelle // ACP wire field
+			LoadSession bool `json:"loadSession"`
+		} `json:"agentCapabilities"`
+		ConfigOptions []acp.ConfigOptionFrame `json:"configOptions"`
 	}
 
 	err := json.Unmarshal(raw, &resp)
@@ -634,8 +634,8 @@ func simStageSessionNew(t *testing.T, cli *simClient, workDir string) string {
 	m := cli.nextResponse(`"zed-2"`)
 
 	var resp struct {
-		SessionID     string                  `json:"sessionId"`     //nolint:tagliatelle // ACP wire field
-		ConfigOptions []acp.ConfigOptionFrame `json:"configOptions"` //nolint:tagliatelle // ACP wire field
+		SessionID     string                  `json:"sessionId"`
+		ConfigOptions []acp.ConfigOptionFrame `json:"configOptions"`
 	}
 
 	err := json.Unmarshal(m.Result, &resp)
@@ -756,7 +756,7 @@ func simAssertStopReason(t *testing.T, raw json.RawMessage, id, want string) {
 	t.Helper()
 
 	var resp struct {
-		StopReason string `json:"stopReason"` //nolint:tagliatelle // ACP wire field
+		StopReason string `json:"stopReason"`
 	}
 
 	err := json.Unmarshal(raw, &resp)
@@ -827,7 +827,7 @@ func simAwaitSetConfirmation(t *testing.T, cli *simClient) {
 		switch {
 		case isResponseID(m, `"zed-4"`):
 			var resp struct {
-				ConfigOptions []acp.ConfigOptionFrame `json:"configOptions"` //nolint:tagliatelle // ACP wire field
+				ConfigOptions []acp.ConfigOptionFrame `json:"configOptions"`
 			}
 
 			err := json.Unmarshal(m.Result, &resp)
@@ -919,9 +919,9 @@ func simAssertQuietAfterResponse(t *testing.T, cli *simClient) {
 
 // simCommandUpdate decodes one available_commands_update payload's command set.
 type simCommandUpdate struct {
-	Kind string                      `json:"sessionUpdate"`     //nolint:tagliatelle // ACP wire field
-	Cmds []acp.AvailableCommandFrame `json:"availableCommands"` //nolint:tagliatelle // ACP wire field
-	Sid  string                      `json:"sessionId"`         //nolint:tagliatelle // ACP wire field
+	Kind string                      `json:"sessionUpdate"`
+	Cmds []acp.AvailableCommandFrame `json:"availableCommands"`
+	Sid  string                      `json:"sessionId"`
 }
 
 // TestSimulatorCommandSurface (20-06) proves the whole Phase 20 command
@@ -1007,7 +1007,7 @@ func TestSimulatorCommandSurface(t *testing.T) {
 		}
 
 		var params struct {
-			Sid    string           `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+			Sid    string           `json:"sessionId"`
 			Update simCommandUpdate `json:"update"`
 		}
 
@@ -1216,7 +1216,7 @@ func sessionIDOf(t *testing.T, cli *simClient, workDir string) string {
 	m := cli.nextResponse(`"cs-sid"`)
 
 	var resp struct {
-		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+		SessionID string `json:"sessionId"`
 	}
 
 	err := json.Unmarshal(m.Result, &resp)

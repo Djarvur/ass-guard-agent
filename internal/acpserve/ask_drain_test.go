@@ -71,7 +71,7 @@ func waitForCascade(t *testing.T, sink *drainSink, reqID string) *acp.Message {
 		case m := <-sink.got:
 			if m.Method == "$/cancel_request" {
 				var p struct {
-					RequestID string `json:"requestId"` //nolint:tagliatelle // ACP wire field
+					RequestID string `json:"requestId"`
 				}
 
 				uerr := json.Unmarshal(m.Params, &p)
@@ -152,7 +152,7 @@ func TestPermissionAskDrainCascade(t *testing.T) {
 // the full drain resolves everything cancelled, drained queued asks never
 // fire, the pump goroutine exits (baseline+settle idiom), and no write is
 // attempted after the registry closed (Pitfall 8).
-func TestAskQueueShutdownDrain(t *testing.T) { //nolint:funlen,paralleltest // full chain; not parallel (goroutines)
+func TestAskQueueShutdownDrain(t *testing.T) { //nolint:paralleltest // full chain; not parallel (goroutines)
 	baseline := runtime.NumGoroutine()
 
 	sink := &drainSink{permAskSink: permAskSink{got: make(chan *acp.Message, 8)}}

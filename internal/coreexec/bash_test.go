@@ -251,8 +251,8 @@ func TestBash_RecapturedFixtureConformance(t *testing.T) {
 		Provenance struct {
 			ZcodeVersion string `json:"zcode_version"`
 			SessionID    string `json:"session_id"`
-			HarvestDate  string `json:"harvestDate"` //nolint:tagliatelle // fixture header key
-		} `json:"_provenance"` //nolint:tagliatelle // fixture header key
+			HarvestDate  string `json:"harvestDate"`
+		} `json:"_provenance"`
 		Tools map[string]struct {
 			Results map[string]struct {
 				Template string `json:"template"`
@@ -545,8 +545,8 @@ func dirOutsidePolicy(t *testing.T) string {
 
 // captureNotes returns a Config note sink capturing every line (the OQ2 loud
 // note's observation seam).
-func captureNotes() (func(string, ...any), *[]string) {
-	lines := &[]string{}
+func captureNotes() (note func(string, ...any), lines *[]string) {
+	lines = &[]string{}
 
 	return func(format string, args ...any) {
 		*lines = append(*lines, fmt.Sprintf(format, args...))
@@ -619,7 +619,6 @@ func TestBashSandbox_OffAlwaysEscapes(t *testing.T) {
 
 	notes, lines := captureNotes()
 
-	//nolint:exhaustruct // adversarial: off marker + available (never produced by resolve; pins the gate)
 	handle := &sandbox.Handle{Availability: sandbox.Availability{Mode: "off", Available: true}}
 
 	bashExec := BashExecute(Config{WorkDir: t.TempDir(), Sandbox: handle, SandboxNote: notes})
@@ -648,7 +647,7 @@ func TestBashSandbox_OffAlwaysEscapes(t *testing.T) {
 // curl-style connect FAILS, a write outside the rw triple fails EPERM, and a
 // write INSIDE the session tmp succeeds (22-05's live shape, driven through
 // the executor — not raw package calls).
-func TestBashSandbox_LiveConfinementDeniesNetworkWriteOutside(t *testing.T) { //nolint:funlen // the live triple battery
+func TestBashSandbox_LiveConfinementDeniesNetworkWriteOutside(t *testing.T) {
 	t.Parallel()
 
 	workDir := t.TempDir()
@@ -775,7 +774,6 @@ func TestBashSandbox_UnavailableNotedPerRun(t *testing.T) {
 
 	workDir := t.TempDir()
 
-	//nolint:exhaustruct // faked availability: the on marker with the probe failed
 	handle := &sandbox.Handle{
 		Policy:       sandbox.DefaultPolicy(workDir, os.TempDir(), filepath.Join(workDir, ".ass-guard")),
 		Availability: sandbox.Availability{Mode: "landlock", Reason: "faked-unavailable"},
@@ -785,7 +783,7 @@ func TestBashSandbox_UnavailableNotedPerRun(t *testing.T) {
 	bashExec := BashExecute(Config{WorkDir: workDir, Sandbox: handle, SandboxNote: notes})
 
 	outside := t.TempDir()
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		out, err := bashExec(context.Background(),
 			json.RawMessage(`{"command":"touch `+outside+`/u`+strconv.Itoa(i)+`"}`))
 		if err != nil {

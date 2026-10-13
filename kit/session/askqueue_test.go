@@ -183,7 +183,7 @@ func TestAskQueueSerialization(t *testing.T) { //nolint:funlen // flat serializa
 // preempts the WAITING queue head (a background entry waiting fires after the
 // later foreground entry), two same-class entries fire in enqueue order, and
 // an OPEN entry is never preempted regardless of class.
-func TestAskQueuePriority(t *testing.T) { //nolint:cyclop,funlen // three ordering subtests in one family
+func TestAskQueuePriority(t *testing.T) { //nolint:funlen // three ordering subtests in one family
 	t.Parallel()
 
 	t.Run("foreground preempts the waiting background head", func(t *testing.T) {
@@ -571,7 +571,7 @@ func (a *qAtomic) get() int {
 // dead turn resolves cancelled through its fire-ctx cancellation, the dead
 // turn's queued entry drains cancelled-normal with ZERO fires (the zombie-ask
 // ban), and another turn's waiting entry is untouched.
-func TestAskQueueDrainTurn(t *testing.T) { //nolint:funlen,cyclop // the full scoped-drain chain
+func TestAskQueueDrainTurn(t *testing.T) { //nolint:funlen // the full scoped-drain chain
 	t.Parallel()
 
 	q := NewAskQueue()
@@ -676,7 +676,7 @@ func TestAskQueueDrainTurn(t *testing.T) { //nolint:funlen,cyclop // the full sc
 // drain-one-turn core applied to every turn present): everything resolves
 // cancelled, drained queued entries never fire, and the pump goroutine exits
 // (the goroutine-leak check follows the repo's baseline+settle idiom).
-func TestAskQueueDrainAll(t *testing.T) { //nolint:funlen,paralleltest // full drain chain; not parallel (goroutines)
+func TestAskQueueDrainAll(t *testing.T) { //nolint:paralleltest // full drain chain; not parallel (goroutines)
 	baseline := runtime.NumGoroutine()
 
 	q := NewAskQueue()
@@ -748,7 +748,7 @@ func TestAskQueueDrainAll(t *testing.T) { //nolint:funlen,paralleltest // full d
 // reader stalling on it freezes the whole connection. The QUEUED entry's drain
 // resolve runs on its own goroutine: the drain returns while the resolve is
 // still running, and the resolve completes afterwards.
-func TestAskQueueDrainResolvesAsync(t *testing.T) { //nolint:funlen,paralleltest // drain chain; baseline idiom
+func TestAskQueueDrainResolvesAsync(t *testing.T) { //nolint:paralleltest // drain chain; baseline idiom
 	baseline := runtime.NumGoroutine()
 
 	q := NewAskQueue()
@@ -851,7 +851,7 @@ func TestAskQueueDrainResolvesAsync(t *testing.T) { //nolint:funlen,paralleltest
 // result, no hang),
 // — drains the queued-but-unfired ask of the other turn as cancelled-normal
 // with ZERO additional surface fires (the firing monopoly + zombie-ask ban).
-func TestGateTurnDeath(t *testing.T) { //nolint:funlen // the full death chain
+func TestGateTurnDeath(t *testing.T) {
 	t.Parallel()
 
 	store := &fakePermStore{}

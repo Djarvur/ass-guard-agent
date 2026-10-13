@@ -111,8 +111,6 @@ var reservedNames = map[string]struct{}{ //nolint:gochecknoglobals // the D-01 p
 // they are reserved against discovery from this commit onward regardless).
 // 20-01 ships exactly two live builtins: /status (the tracer) and /init
 // (class-A reservation).
-//
-//nolint:funlen // the thirteen-command table is the deliverable
 func builtinTable() []builtinClassB {
 	return []builtinClassB{
 		{
@@ -1215,6 +1213,11 @@ type undoPlan struct {
 	depth    int
 }
 
+// undoRefusedBusy is the audit outcome label both /undo halves return when
+// the workspace-blockers consult refuses (commands.go + runtime.go share it;
+// goconst: the literal must not drift between the two handlers).
+const undoRefusedBusy = "refused: workspace busy"
+
 // undoSnapshotPreRestore is the SnapshotPreRestore seam (the gitRun
 // same-package-injection precedent): Task 2's fail-closed test injects a
 // failure here to pin that a pre-restore snapshot failure aborts the undo
@@ -1279,12 +1282,12 @@ func (r *Runner) prepareUndo(sess *session.Session, args string) (plan undoPlan,
 // of the shared tree. Store ops ride the serve ctx (the parked-chain
 // precedent): a restore must not die with the requesting request halfway
 // through its git plumbing.
-func (r *Runner) restoreUndo(sess *session.Session, plan undoPlan) (string, string) {
+func (r *Runner) restoreUndo(sess *session.Session, plan undoPlan) (notice, outcome string) {
 	st := r.checkpointStore()
 	ctx := r.serveCtxOrBackground()
 
 	if other := r.workspaceBlockers(sess.SessionID); other != nil {
-		return fmt.Sprintf("undo refused: %v\n", other), "refused: workspace busy"
+		return fmt.Sprintf("undo refused: %v\n", other), undoRefusedBusy
 	}
 
 	preID, serr := undoSnapshotPreRestore(ctx, st, sess.SessionID)

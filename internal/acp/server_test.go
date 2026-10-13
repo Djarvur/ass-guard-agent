@@ -208,13 +208,13 @@ func TestInitializeReturnsAgentCapabilities(t *testing.T) {
 	}
 
 	var res struct {
-		ProtocolVersion   int            `json:"protocolVersion"`   //nolint:tagliatelle // ACP wire field
-		AgentCapabilities map[string]any `json:"agentCapabilities"` //nolint:tagliatelle // ACP wire field
-		AgentInfo         map[string]any `json:"agentInfo"`         //nolint:tagliatelle // ACP wire field
-		AuthMethods       []any          `json:"authMethods"`       //nolint:tagliatelle // ACP wire field
+		ProtocolVersion   int            `json:"protocolVersion"`
+		AgentCapabilities map[string]any `json:"agentCapabilities"`
+		AgentInfo         map[string]any `json:"agentInfo"`
+		AuthMethods       []any          `json:"authMethods"`
 		// Negative asserts: these fields must NOT appear.
 		Capabilities map[string]any `json:"capabilities,omitempty"`
-		ServerInfo   map[string]any `json:"serverInfo,omitempty"` //nolint:tagliatelle // ACP wire field
+		ServerInfo   map[string]any `json:"serverInfo,omitempty"`
 	}
 
 	err := json.Unmarshal(msg.Result, &res)
@@ -288,7 +288,7 @@ func TestSessionNewReturnsSessionID(t *testing.T) {
 	msg := h.readResultFrame(t)
 
 	var res struct {
-		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+		SessionID string `json:"sessionId"`
 	}
 
 	err := json.Unmarshal(msg.Result, &res)
@@ -305,7 +305,7 @@ func TestSessionNewReturnsSessionID(t *testing.T) {
 // session/update notification (agent_message_chunk, no id) arriving BEFORE the
 // session/prompt response carrying stopReason (ACP-04 streaming — NO full-turn
 // buffering).
-func TestSessionPromptStreamsUpdate(t *testing.T) { //nolint:funlen // comprehensive test scenario
+func TestSessionPromptStreamsUpdate(t *testing.T) {
 	t.Parallel()
 
 	stub := &stubTurn{chunks: []string{"Hello", " world"}}
@@ -316,7 +316,7 @@ func TestSessionPromptStreamsUpdate(t *testing.T) { //nolint:funlen // comprehen
 	snew := h.readResultFrame(t)
 
 	var sres struct {
-		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+		SessionID string `json:"sessionId"`
 	}
 
 	_ = json.Unmarshal(snew.Result, &sres)
@@ -345,7 +345,7 @@ func TestSessionPromptStreamsUpdate(t *testing.T) { //nolint:funlen // comprehen
 
 			var params struct {
 				Update struct {
-					SessionUpdate string         `json:"sessionUpdate"` //nolint:tagliatelle // ACP wire field
+					SessionUpdate string         `json:"sessionUpdate"`
 					Content       map[string]any `json:"content,omitempty"`
 				} `json:"update"`
 			}
@@ -382,7 +382,7 @@ func TestSessionPromptStreamsUpdate(t *testing.T) { //nolint:funlen // comprehen
 	}
 
 	var pres struct {
-		StopReason string `json:"stopReason"` //nolint:tagliatelle // ACP wire field
+		StopReason string `json:"stopReason"`
 	}
 
 	_ = json.Unmarshal(promptResp.Result, &pres)
@@ -406,7 +406,7 @@ func TestSessionCancelProducesNoResponse(t *testing.T) {
 	snew := h.readResultFrame(t)
 
 	var sres struct {
-		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+		SessionID string `json:"sessionId"`
 	}
 
 	_ = json.Unmarshal(snew.Result, &sres)
@@ -438,7 +438,7 @@ func TestSessionCancelProducesNoResponse(t *testing.T) {
 
 		if msg.ID != nil && string(msg.ID) == "2" {
 			var pres struct {
-				StopReason string `json:"stopReason"` //nolint:tagliatelle // ACP wire field
+				StopReason string `json:"stopReason"`
 			}
 
 			_ = json.Unmarshal(msg.Result, &pres)
@@ -768,7 +768,7 @@ func readProbeFrame(t *testing.T, h *pipeHarness) string {
 		RequestedSchema struct {
 			Type       string         `json:"type"`
 			Properties map[string]any `json:"properties"`
-		} `json:"requestedSchema"` //nolint:tagliatelle // ACP wire field
+		} `json:"requestedSchema"`
 	}
 
 	unmarshalErr := json.Unmarshal(req.Params, &pp)

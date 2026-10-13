@@ -85,7 +85,7 @@ func (f *fakeProvider) Send(
 // and delivers the queued response as chunks (tool_use chunks for ToolCalls, a
 // text chunk otherwise) + a terminal "done" chunk carrying FinishReason.
 //
-//nolint:cyclop,funlen // comprehensive test scenario
+//nolint:funlen // comprehensive test scenario
 func (f *fakeProvider) Stream(
 	ctx context.Context, prof *profile.Profile, msgs []provider.Message,
 ) (<-chan provider.StreamChunk, error) {

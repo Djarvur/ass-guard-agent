@@ -927,7 +927,7 @@ func (s *ConfigSurface) effectiveCompactionPairLocked() *compactionPair {
 // other id resolved from the layers). The offered select values are a UI
 // affordance: any whole 1..100 percentage is a valid threshold write
 // (the tombstoneGrace precedent).
-func (s *ConfigSurface) setCompactionLocked( //nolint:cyclop // validate → guard → persist → target reads as one flow
+func (s *ConfigSurface) setCompactionLocked(
 	optionID, scope, bare, val string,
 ) ([]acp.ConfigOptionFrame, *compactionPair, bool, error) {
 	var (
@@ -948,8 +948,9 @@ func (s *ConfigSurface) setCompactionLocked( //nolint:cyclop // validate → gua
 
 		if p < compactionPctMin || p > compactionPctMax {
 			return nil, nil, false, &acp.ConfigViolationError{
-				OptionID:  optionID,
-				Violation: fmt.Sprintf("threshold must be within %d..%d (got %d)", compactionPctMin, compactionPctMax, p),
+				OptionID: optionID,
+				Violation: fmt.Sprintf("threshold must be within %d..%d (got %d)",
+					compactionPctMin, compactionPctMax, p),
 			}
 		}
 
@@ -1470,10 +1471,12 @@ func (s *ConfigSurface) menuEntriesLocked(
 			categoryCustom, s.effectiveBackgroundCapLocked(optBackgroundBash), selectValues(optBackgroundBash)),
 		build(optCheckpointExpiryDays, "Checkpoint expiry",
 			"Days a checkpoint survives before the session-start GC sweep evicts it (age axis)",
-			categoryCustom, s.effectiveCheckpointBoundLocked(optCheckpointExpiryDays), selectValues(optCheckpointExpiryDays)),
+			categoryCustom, s.effectiveCheckpointBoundLocked(optCheckpointExpiryDays),
+			selectValues(optCheckpointExpiryDays)),
 		build(optCheckpointMaxPerSession, "Checkpoint retention",
 			"Maximum checkpoints kept per session (newest first); older ones sweep at session start",
-			categoryCustom, s.effectiveCheckpointBoundLocked(optCheckpointMaxPerSession), selectValues(optCheckpointMaxPerSession)),
+			categoryCustom, s.effectiveCheckpointBoundLocked(optCheckpointMaxPerSession),
+			selectValues(optCheckpointMaxPerSession)),
 		build(optGlobalPrefix+optTombstoneGrace, "Tombstone grace (global default)",
 			"Global tombstone-grace default", categoryCustom, s.globalTombstoneGraceLocked(), graceDayChoices()),
 		build(optGlobalPrefix+optBackgroundSubs, "Background subagents (global default)",
@@ -1879,7 +1882,7 @@ func (s *ConfigSurface) layerCheckpointBound(path, bare string) string {
 // persisted value (T-23-13: junk never reaches a destructive eviction as a
 // zero/huge bound). The serve composition binds this into the Runner via
 // SetCheckpointGCBounds.
-func (s *ConfigSurface) EffectiveCheckpointGCBounds() (days int, perSession int) {
+func (s *ConfigSurface) EffectiveCheckpointGCBounds() (days, perSession int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -1888,7 +1891,7 @@ func (s *ConfigSurface) EffectiveCheckpointGCBounds() (days int, perSession int)
 
 // checkpointGCBoundsLocked is EffectiveCheckpointGCBounds's body (callers
 // hold s.mu): parse each knob with a loud default fallback.
-func (s *ConfigSurface) checkpointGCBoundsLocked() (days int, perSession int) {
+func (s *ConfigSurface) checkpointGCBoundsLocked() (days, perSession int) {
 	days, perSession = ckExpiryDefaultDays, ckMaxDefaultPerSess
 
 	if v, perr := strconv.Atoi(s.effectiveCheckpointBoundLocked(optCheckpointExpiryDays)); perr == nil && v > 0 {
@@ -1974,7 +1977,7 @@ func (s *ConfigSurface) layerBackgroundCap(path, bare string) string {
 // (subagents, bash) whole numbers with the 8/16 defaults. A stored value
 // that fails validation degrades loudly to the default — session
 // construction must always receive sane caps, never refuse.
-func (s *ConfigSurface) EffectiveBackgroundCaps() (int, int) {
+func (s *ConfigSurface) EffectiveBackgroundCaps() (subs, bash int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

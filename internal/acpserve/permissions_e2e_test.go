@@ -215,7 +215,7 @@ func permSessionNew(t *testing.T, cli *simClient, workDir string) string {
 	m := cli.nextResponse(`"e2e-new"`)
 
 	var resp struct {
-		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+		SessionID string `json:"sessionId"`
 	}
 
 	err := json.Unmarshal(m.Result, &resp)
@@ -270,9 +270,9 @@ type permElicFrame struct {
 
 	Message    string                `json:"message"`
 	Mode       string                `json:"mode"`
-	SessionID  string                `json:"sessionId"`       //nolint:tagliatelle // ACP wire field
-	ToolCallID string                `json:"toolCallId"`      //nolint:tagliatelle // ACP wire field
-	Schema     acp.ElicitationSchema `json:"requestedSchema"` //nolint:tagliatelle // ACP wire field
+	SessionID  string                `json:"sessionId"`
+	ToolCallID string                `json:"toolCallId"`
+	Schema     acp.ElicitationSchema `json:"requestedSchema"`
 }
 
 // permStory is the classified frame story of one scenario leg.
@@ -340,7 +340,7 @@ func permChunkText(t *testing.T, m *acp.Message) (string, bool) {
 
 	var params struct {
 		Update struct {
-			Kind    string            `json:"sessionUpdate"` //nolint:tagliatelle // ACP wire field
+			Kind    string            `json:"sessionUpdate"`
 			Content *acp.ContentBlock `json:"content"`
 		} `json:"update"`
 	}
@@ -503,9 +503,9 @@ func permWaitResults(t *testing.T, workDir, sessionID, callID string, n int) []p
 
 				var ln struct {
 					Type       string          `json:"type"`
-					ToolCallID string          `json:"toolCallID"` //nolint:tagliatelle // on-disk form
+					ToolCallID string          `json:"toolCallID"`
 					Output     json.RawMessage `json:"output"`
-					IsError    bool            `json:"isError"` //nolint:tagliatelle // on-disk form
+					IsError    bool            `json:"isError"`
 				}
 
 				if json.Unmarshal([]byte(line), &ln) != nil {
@@ -609,7 +609,7 @@ func TestPermissionsE2E(t *testing.T) {
 // canonical options → allow_always → the rule lands on disk BEFORE the gated
 // call executes → the resumed turn completes → the identical call runs with
 // zero further permission frames.
-func permScenarioHappyPath(t *testing.T) { //nolint:funlen // one scenario, one readable story
+func permScenarioHappyPath(t *testing.T) {
 	t.Helper()
 
 	cli, _, workDir := permStartServe(t, func(dir string) []simTurnScript {
@@ -767,7 +767,7 @@ func permAssertAskForm(t *testing.T, ef *permElicFrame, sid string) {
 		Type  string `json:"type"`
 		OneOf []struct {
 			Const string `json:"const"`
-		} `json:"oneOf"` //nolint:tagliatelle // ACP wire field
+		} `json:"oneOf"`
 	}
 
 	err := json.Unmarshal(ef.Schema.Properties["q1"], &prop)

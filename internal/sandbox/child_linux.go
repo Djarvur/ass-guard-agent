@@ -61,7 +61,7 @@ var sandboxChildExec = func(policy Policy, argv []string) error {
 // policy env is operator/session-controlled — the model never supplies it
 // (T-22-23: the env is set by ass-guard at spawn, and landlock is
 // irreversible once applied).
-func RunSandboxChild(argv []string, environ []string) error {
+func RunSandboxChild(argv, environ []string) error {
 	if len(argv) < 3 || argv[1] != ChildTargetArgv {
 		return errNotChild
 	}

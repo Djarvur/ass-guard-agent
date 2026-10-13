@@ -3,7 +3,7 @@ package engine
 // askSuspendedDecision returns the ask-suspension verdict (ActionAsk with NO
 // table lookup — a suspended turn matches nothing; ErrAskPending semantics:
 // surface the ask + stop the loop) and suspended=true when out is suspended.
-func askSuspendedDecision(out TurnOutput) (Decision, bool) { //nolint:gocritic // hugeParam: value semantics
+func askSuspendedDecision(out TurnOutput) (Decision, bool) {
 	if !out.AskSuspended {
 		return Decision{}, false
 	}
@@ -21,7 +21,7 @@ func askSuspendedDecision(out TurnOutput) (Decision, bool) { //nolint:gocritic /
 // was STARTED by an expansion (out.StartedBy), AND the table implements the
 // optional CommandMatcher with a non-Nothing row for that key — the
 // deterministic fallback for the architecturally free-form explore closing.
-func provenanceContinue(out TurnOutput, table PatternTable) (Decision, bool) { //nolint:gocritic // hugeParam
+func provenanceContinue(out TurnOutput, table PatternTable) (Decision, bool) {
 	if out.StartedBy == "" {
 		return Decision{}, false
 	}
@@ -76,7 +76,7 @@ func provenanceContinue(out TurnOutput, table PatternTable) (Decision, bool) { /
 // sourced from the expansion seam (never assistant/tool content), so the
 // assistant-role-only safety property holds unchanged — a non-command turn's
 // end_turn triggers NOTHING even against a table carrying command rows.
-func Decide(out TurnOutput, table PatternTable) Decision { //nolint:gocritic // hugeParam: pure-function value contract
+func Decide(out TurnOutput, table PatternTable) Decision {
 	// Ask suspension first, before any table consultation (askSuspendedDecision
 	// — ErrAskPending semantics: surface the ask + stop the loop).
 	if dec, suspended := askSuspendedDecision(out); suspended {
@@ -140,7 +140,7 @@ func Decide(out TurnOutput, table PatternTable) Decision { //nolint:gocritic // 
 
 // toolSignalDecision is Decide's SECOND signal (the handoff tool-call
 // match); extracted from Decide for length (behavior identical).
-func toolSignalDecision(out TurnOutput, table PatternTable) (Decision, bool) { //nolint:gocritic // value semantics
+func toolSignalDecision(out TurnOutput, table PatternTable) (Decision, bool) {
 	for _, name := range out.ToolCalls {
 		if d := table.MatchTool(name); d.Action != ActionNothing {
 			return Decision{

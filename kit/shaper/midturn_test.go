@@ -245,8 +245,6 @@ func assertToolResultBlock(
 // midturnFixtureMessage is one fixture entry (the captured zcode-normalized
 // request.messages form). The json tags stay camelCase VERBATIM per D-03 —
 // the capture's keys are the ground truth this fixture pins.
-//
-//nolint:tagliatelle // captured keys preserved verbatim (D-03 fixture discipline)
 type midturnFixtureMessage struct {
 	Role       string            `json:"role"`
 	Content    string            `json:"content"`

@@ -683,7 +683,7 @@ func TestPTYDrain(t *testing.T) { //nolint:paralleltest // real pty shells, fd b
 			t.Skip("no /proc/self/fd on this platform — fd leak pinned on linux")
 		}
 
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			m := NewPTYManager(PTYOpts{WorkDir: t.TempDir()})
 			ptyRunOK(t, m, "echo cycle")
 			m.Drain()
@@ -717,8 +717,8 @@ func TestPTYDrain(t *testing.T) { //nolint:paralleltest // real pty shells, fd b
 
 // ptySandboxNote returns the PTY opts with a capturing NoteFn (the restart
 // note and the unconfined-run note share the loud stderr family).
-func ptySandboxNote() (PTYOpts, *[]string) {
-	lines := &[]string{}
+func ptySandboxNote() (opts PTYOpts, lines *[]string) {
+	lines = &[]string{}
 
 	return PTYOpts{NoteFn: func(format string, args ...any) {
 		*lines = append(*lines, fmt.Sprintf(format, args...))
@@ -756,7 +756,7 @@ func TestPTYSandbox_LiveShellConfined(t *testing.T) { //nolint:paralleltest // l
 		SandboxNote: func(string, ...any) {}}
 
 	// Inside-tmp write succeeds through the persistent shell.
-	out, err := runPersistent(t, cfg, "touch "+os.TempDir()+"/pty-inside-"+fmt.Sprint(os.Getpid()))
+	out, err := runPersistent(t, cfg, "touch "+os.TempDir()+"/pty-inside-"+strconv.Itoa(os.Getpid()))
 	if err != nil {
 		t.Fatalf("inside-tmp persistent write errored: %v", err)
 	}
@@ -842,7 +842,6 @@ func TestPTYSandbox_RestartRewrapsWithNoteOnce(t *testing.T) { //nolint:parallel
 func TestPTYSandbox_UnavailableNotedPerRun(t *testing.T) { //nolint:paralleltest // shared process counter
 	workDir := t.TempDir()
 
-	//nolint:exhaustruct // faked availability (the on marker, probe failed)
 	fake := &sandbox.Handle{
 		Policy:       sandbox.DefaultPolicy(workDir, os.TempDir(), filepath.Join(workDir, ".ass-guard")),
 		Availability: sandbox.Availability{Mode: "landlock", Reason: "faked-unavailable-pty"},
@@ -858,8 +857,8 @@ func TestPTYSandbox_UnavailableNotedPerRun(t *testing.T) { //nolint:paralleltest
 
 	outside := dirOutsidePolicy(t)
 
-	for i := 0; i < 2; i++ {
-		out, err := runPersistent(t, cfg, "touch "+outside+"/u"+fmt.Sprint(i))
+	for i := range 2 {
+		out, err := runPersistent(t, cfg, "touch "+outside+"/u"+strconv.Itoa(i))
 		if err != nil {
 			t.Fatalf("run %d errored (unavailable degrades to unconfined, not fail): %v", i, err)
 		}
@@ -920,7 +919,7 @@ func TestPTYSandbox_DefaultOffByteIdentical(t *testing.T) {
 // --sandbox=on runs UNCONFINED with the loud note, while the SHARED shell
 // stays confined (the next persistent call without the escape still cannot
 // write outside — one call's escape never weakens another's confinement).
-func TestPTYSandbox_DisableEscapeRunsUnconfinedShellStaysConfined(t *testing.T) { //nolint:funlen,paralleltest // live probe + shared shell
+func TestPTYSandbox_DisableEscapeRunsUnconfinedShellStaysConfined(t *testing.T) { //nolint:paralleltest // live probe + shared shell
 	workDir := t.TempDir()
 	handle := liveSandboxHandle(t, workDir)
 

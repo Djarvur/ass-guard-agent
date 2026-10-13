@@ -92,7 +92,7 @@ func concreteTracker(t *testing.T, r *Runner, sid string) *tasks.Tracker {
 func (tw *toolkitTwin) SetSandboxHandle(h *sandbox.Handle) { tw.sandbox = h }
 
 // Attach mirrors the app toolkit's registration sequence (verbatim-in-role).
-func (tw *toolkitTwin) Attach( //nolint:funlen,ireturn // mirrored registration sequence; the seam IS the interface
+func (tw *toolkitTwin) Attach( //nolint:ireturn // mirrored registration sequence; the seam IS the interface
 	catalog *toolcat.Catalog,
 	//nolint:gocritic // hugeParam: the env-by-value signature is pinned by the kit seam
 	env ToolkitEnv,

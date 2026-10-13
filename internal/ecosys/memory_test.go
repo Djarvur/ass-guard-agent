@@ -217,7 +217,7 @@ func TestMemoryDiscovery_NoGitFallback(t *testing.T) { //nolint:paralleltest // 
 // combinations: ~/.ass-guard/{CLAUDE,AGENTS}.md resolves its own D-05
 // collision and BLOCKS ~/.claude/CLAUDE.md; only when ~/.ass-guard has
 // neither file does ~/.claude/CLAUDE.md join.
-func TestMemoryDiscovery_UserGlobalPrecedence(t *testing.T) { //nolint:paralleltest,funlen // HOME pin
+func TestMemoryDiscovery_UserGlobalPrecedence(t *testing.T) { //nolint:paralleltest // HOME pin
 	// memUserClaude is the ~/.claude/CLAUDE.md fixture body (goconst: reused
 	// across the four-combination table).
 	const memUserClaude = "user-claude-memory"

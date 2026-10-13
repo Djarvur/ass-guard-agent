@@ -124,7 +124,7 @@ func (s sinkView) Write(m *Message) error {
 func markerOf(m *Message) string {
 	var params struct {
 		Update struct {
-			MessageID string `json:"messageId"` //nolint:tagliatelle // ACP wire field
+			MessageID string `json:"messageId"`
 		} `json:"update"`
 	}
 
@@ -173,7 +173,7 @@ func fillBackgroundLane(em *TurnEmitter) int {
 // BEFORE every queued background frame (preemption at the head); background
 // frames stay FIFO among themselves; and total frames written equal total
 // frames enqueued (nothing dropped).
-func TestTurnEmitterPriority(t *testing.T) { //nolint:funlen // full stress scenario
+func TestTurnEmitterPriority(t *testing.T) {
 	t.Parallel()
 
 	const bgCount = 100 // well under the lane capacity: every enqueue is accepted
@@ -251,7 +251,7 @@ func TestTurnEmitterPriority(t *testing.T) { //nolint:funlen // full stress scen
 // (shrunken) threshold produces EXACTLY ONE structured stderr line naming the
 // lane and increments the stall counter once per episode; the writer is never
 // closed, blocked producers unblock on resume, and frames are never dropped.
-func TestTurnEmitterStall(t *testing.T) { //nolint:funlen // full D-03 episode scenario
+func TestTurnEmitterStall(t *testing.T) {
 	t.Parallel()
 
 	gw := newGatedWriter()
@@ -412,7 +412,7 @@ func TestTurnEmitterProducerCtxAbort(t *testing.T) {
 // the queued turn notifications — after release, every notification frame
 // precedes the response on the wire (the handler is parked INSIDE Barrier while
 // the writer stays wedged, so the ordering is by construction, not luck).
-func TestTurnEmitterBarrier(t *testing.T) { //nolint:funlen // full server-level scenario
+func TestTurnEmitterBarrier(t *testing.T) {
 	t.Parallel()
 
 	gw := newGatedWriter()
@@ -784,7 +784,7 @@ func updateOf(t *testing.T, m *Message) map[string]any {
 // NOT also emit a tool_call card for that call. Any other tool still gets its
 // ordinary card, and a malformed TodoWrite input falls back to the card (the
 // real activity must stay visible — ACP-03 transparency).
-func TestPlanFrameFromTodoWrite(t *testing.T) { //nolint:funlen,cyclop // three scenarios, one rule
+func TestPlanFrameFromTodoWrite(t *testing.T) {
 	t.Parallel()
 
 	rec := &recordingSink{}

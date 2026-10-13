@@ -216,7 +216,7 @@ func TestTrackerQueue_BoundRejects(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for i := 0; i < 64; i++ {
+	for i := range 64 {
 		queued, err := tr.RegisterSubagent("exec_b"+string(rune('a'+i%26))+string(rune('a'+i/26)), rs.start("x"))
 		if err != nil {
 			t.Fatalf("waiter %d: %v", i, err)
@@ -250,7 +250,7 @@ func TestTrackerDefaultCap(t *testing.T) {
 	tr := NewTracker(TrackerOpts{})
 	rs := &recordingStart{}
 
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		id := "exec_d" + string(rune('0'+i))
 
 		queued, err := tr.RegisterSubagent(id, rs.start(id))
@@ -433,7 +433,7 @@ func TestTrackerCap_SequentialReuseNeverQueues(t *testing.T) {
 	tr := NewTracker(TrackerOpts{SubagentCap: 2})
 	rs := &recordingStart{}
 
-	for i := 0; i < 6; i++ {
+	for i := range 6 {
 		id := "exec_u" + string(rune('0'+i))
 
 		queued, err := tr.RegisterSubagent(id, rs.start(id))

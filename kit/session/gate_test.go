@@ -235,7 +235,7 @@ func toolResultsFor(t *testing.T, s *Session, callID string) []Line {
 // answer persists the rule BEFORE the gated call executes, the result is
 // appended loud, the SAME turn resumes, and the follow-up identical call hits
 // the allow rule with ZERO further surface firings.
-func TestGatePermissionSuspend(t *testing.T) { //nolint:cyclop,funlen // flat end-to-end battery
+func TestGatePermissionSuspend(t *testing.T) { //nolint:funlen // flat end-to-end battery
 	t.Parallel()
 
 	block := make(chan struct{})
@@ -500,7 +500,7 @@ func projectedToolUseIDs(t *testing.T, s *Session, turnID string) []string {
 // runtime composition injects the per-session turn mutex; this test injects a
 // tracking wrapper and asserts the resume ENTERED it exactly once with zero
 // overlap.
-func TestGateResumeRunsUnderResumeSerial(t *testing.T) { //nolint:funlen // the serializer tracking battery
+func TestGateResumeRunsUnderResumeSerial(t *testing.T) {
 	t.Parallel()
 
 	block := make(chan struct{})
@@ -1351,7 +1351,7 @@ func TestGateAutomationDecline(t *testing.T) { //nolint:funlen,gocognit,cyclop,g
 // and the degradation is STICKY for the session — the next gated call
 // declines without a new surface round-trip. A generic (transient) failure
 // is NOT sticky: the next call asks again.
-func TestGateDegradedClient(t *testing.T) { //nolint:funlen // two full-loop subtests
+func TestGateDegradedClient(t *testing.T) {
 	t.Parallel()
 
 	t.Run("unsupported client is sticky", func(t *testing.T) {
@@ -1443,7 +1443,7 @@ var (
 // mcp__server__tool name (via 17-01's MCPName/SplitMCPName) — a rule written
 // in that namespace matches, and a bare-server rule selects the whole
 // namespace. Both directions of the mapping are pinned.
-func TestGateMCPNamespace(t *testing.T) { //nolint:funlen,cyclop // the mapping table reads as one flow
+func TestGateMCPNamespace(t *testing.T) { //nolint:funlen // the mapping table reads as one flow
 	t.Parallel()
 
 	const (
@@ -1565,7 +1565,7 @@ func TestGateMCPNamespace(t *testing.T) { //nolint:funlen,cyclop // the mapping 
 // SHARED mode accessor, and the very next mutating call in the SAME session
 // changes gate behavior — no session recreation, no restart. Flipping back
 // restores the dialog-free default with deny rules still enforced.
-func TestGatePermissionModeFlip(t *testing.T) { //nolint:funlen // one flow across three prompts
+func TestGatePermissionModeFlip(t *testing.T) {
 	t.Parallel()
 
 	mode := PermModeUngated

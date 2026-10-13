@@ -1,5 +1,3 @@
-// Package sandbox is the OS-sandbox machinery for spawned tool processes
-// (22-05, SAND-01). See doc.go for the confinement-boundary honesty note.
 package sandbox
 
 import (

@@ -117,7 +117,7 @@ func TestACPServeNoStdoutPollutionFromLogs(t *testing.T) {
 // profile name, through the REAL seam; (2) the canary key value appears NOWHERE
 // in the transcript (redaction chokepoint); (3) stdout carries only JSON-RPC
 // frames.
-func TestServeAudit_RequestShapedThroughRealSeam(t *testing.T) { //nolint:funlen // end-to-end audit proof
+func TestServeAudit_RequestShapedThroughRealSeam(t *testing.T) {
 	t.Setenv("ZAI_API_KEY", "") // force the config literal (canary) to win
 
 	const canaryKey = "sk-test-canary-0123456789abcdef"
@@ -332,7 +332,7 @@ func pollStdoutForSessionID(t *testing.T, stdout *syncBuffer) string {
 
 			var resp struct {
 				Result struct {
-					SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+					SessionID string `json:"sessionId"`
 				} `json:"result"`
 			}
 
@@ -489,7 +489,7 @@ func assertCanaryPositiveControls(t *testing.T, workDir, sessionID string) {
 // projection, so undo present here means undo reaches the client autocomplete).
 // Polling only bounds the wait; the ORDER assertion decodes the settled frame
 // sequence — never a poll race.
-func TestServeSessionNewCommandOrderAfterResponse(t *testing.T) { //nolint:funlen // one composition scenario, one serve
+func TestServeSessionNewCommandOrderAfterResponse(t *testing.T) {
 	t.Parallel()
 
 	workDir := t.TempDir()
@@ -624,12 +624,12 @@ func serveDecodeCommandOrder(t *testing.T, stdout *syncBuffer, sessionID string)
 		}
 
 		var p struct {
-			SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+			SessionID string `json:"sessionId"`
 			Update    struct {
-				Kind string `json:"sessionUpdate"` //nolint:tagliatelle // ACP wire field
+				Kind string `json:"sessionUpdate"`
 				Cmds []struct {
 					Name string `json:"name"`
-				} `json:"availableCommands"` //nolint:tagliatelle // ACP wire field
+				} `json:"availableCommands"`
 			} `json:"update"`
 		}
 

@@ -56,9 +56,9 @@ func writeResumeFixtureTranscript(t *testing.T, workDir string) {
 
 // resumeChunk is one decoded agent_message_chunk session/update.
 type resumeChunk struct {
-	SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+	SessionID string `json:"sessionId"`
 	Update    struct {
-		Kind    string `json:"sessionUpdate"` //nolint:tagliatelle // ACP wire field
+		Kind    string `json:"sessionUpdate"`
 		Content struct {
 			Text string `json:"text"`
 		} `json:"content"`
@@ -171,7 +171,7 @@ func TestResumeTargetLoadsBeforeServe(t *testing.T) {
 	m := cli.nextResponse(`"r1"`)
 
 	var initResp struct {
-		ProtocolVersion int `json:"protocolVersion"` //nolint:tagliatelle // ACP wire field
+		ProtocolVersion int `json:"protocolVersion"`
 	}
 
 	if json.Unmarshal(m.Result, &initResp) != nil || initResp.ProtocolVersion != 1 {

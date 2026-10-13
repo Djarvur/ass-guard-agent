@@ -55,7 +55,7 @@ func TestIntegration_RealStreamingThroughACP(t *testing.T) { //nolint:funlen // 
 	frames = wireReadResultFrames(t, cliR, 1)
 
 	var snew struct {
-		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+		SessionID string `json:"sessionId"`
 	}
 
 	_ = json.Unmarshal(frames[0].Result, &snew)
@@ -97,7 +97,7 @@ func TestIntegration_RealStreamingThroughACP(t *testing.T) { //nolint:funlen // 
 
 		if m.ID != nil && string(m.ID) == "2" {
 			var pres struct {
-				StopReason string `json:"stopReason"` //nolint:tagliatelle // ACP wire field
+				StopReason string `json:"stopReason"`
 			}
 
 			_ = json.Unmarshal(m.Result, &pres)

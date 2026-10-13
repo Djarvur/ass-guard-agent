@@ -121,8 +121,6 @@ func fileExists(path string) bool {
 // newOpsxRunner bootstraps a scratch project with the REAL binary and returns
 // a fully wired Runner (real profile + real provider + engine +
 // expansion) over it.
-//
-//nolint:gocritic // unnamed result vs nonamedreturns (house) conflict
 func newOpsxRunner(t *testing.T) (*runtime.Runner, *runtime.EngineSetup, string) {
 	t.Helper()
 
@@ -292,7 +290,7 @@ func runStageTyped(t *testing.T, r *runtime.Runner, sessionID, text string) {
 // opsxRunnerSeam adapts Runner to evalharness.RunnerSeam (the
 // extraction's seam — the suite's passes drive the SAME machinery).
 type opsxRunnerSeam struct {
-	r      *runtime.Runner
+	r       *runtime.Runner
 	scratch string
 }
 

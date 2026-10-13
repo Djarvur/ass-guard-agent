@@ -343,7 +343,7 @@ const imgHeavyEnv = "ASSGUARD_IMG_HEAVY"
 // the plan's literal 9000×6000 against DefaultImageLimits.
 // The env-branched fixture keeps this test deliberately sequential.
 //
-//nolint:paralleltest,funlen // env-branched fixture row
+//nolint:paralleltest // env-branched fixture row
 func TestValidateAndScale_OverDimsDownscalesToTargetLongEdge(t *testing.T) {
 	const (
 		planW       = 9000
@@ -588,7 +588,7 @@ func imagePromptBlocks(b64 string) []session.ContentBlock {
 // blocks map through toContentBlocks into session blocks, ingress validates +
 // persists, and the rewritten block carries Ref + metadata + provenance —
 // NEVER the base64 payload.
-func TestImageIngress_MapsAndRewritesToRefForm(t *testing.T) { //nolint:cyclop,funlen // assertion-dense ingress proof
+func TestImageIngress_MapsAndRewritesToRefForm(t *testing.T) {
 	t.Parallel()
 
 	r, sess, dir := newImageRunner(t)
@@ -657,7 +657,7 @@ func TestImageIngress_MapsAndRewritesToRefForm(t *testing.T) { //nolint:cyclop,f
 // TestImageIngress_PersistsOriginalAndScaled proves D-09's originals-preserved
 // contract on the downscale path: BOTH the sha-keyed original and the
 // dims-suffixed scaled file land on disk, original bytes byte-equal the input.
-func TestImageIngress_PersistsOriginalAndScaled(t *testing.T) { //nolint:cyclop,funlen // assertion-dense ingress proof
+func TestImageIngress_PersistsOriginalAndScaled(t *testing.T) { //nolint:funlen // assertion-dense ingress proof
 	t.Parallel()
 
 	const (

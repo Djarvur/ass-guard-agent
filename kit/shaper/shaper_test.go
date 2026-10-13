@@ -274,12 +274,12 @@ const (
 
 // plantImageFile writes a tiny PNG into a temp dir and returns its path +
 // its base64 (the Ref'd-bytes shape ingress persists).
-func plantImageFile(t *testing.T) (ref string, b64 string) {
+func plantImageFile(t *testing.T) (ref, b64 string) {
 	t.Helper()
 
 	var buf bytes.Buffer
 
-	img := image.NewRGBA(image.Rect(0, 0, 4, 4)) //nolint:mnd // fixture dims
+	img := image.NewRGBA(image.Rect(0, 0, 4, 4))
 	img.Set(0, 0, color.RGBA{R: 255, A: 255})
 
 	if err := png.Encode(&buf, img); err != nil {

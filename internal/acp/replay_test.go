@@ -394,8 +394,8 @@ type modeStateView struct {
 	AvailableModes []struct {
 		ID   string `json:"id"`
 		Name string `json:"name"`
-	} `json:"availableModes"` //nolint:tagliatelle // ACP wire field
-	CurrentModeID string `json:"currentModeId"` //nolint:tagliatelle // ACP wire field
+	} `json:"availableModes"`
+	CurrentModeID string `json:"currentModeId"`
 }
 
 // danglingPlanModeLines is the class-01 + row-6 fixture: a user-message turn

@@ -200,7 +200,7 @@ func TestAvailableCommandsFullReplacement(t *testing.T) {
 // frame sequence read from the pipe is deterministic, no polling, no timing.
 // The frame-1-is-the-response assertion doubles as the exactly-one guard — a
 // leftover pre-response emission would occupy frame 1 and go red here.
-func TestSessionNewAdvertisesAfterResponse(t *testing.T) { //nolint:cyclop // one ordering scenario
+func TestSessionNewAdvertisesAfterResponse(t *testing.T) {
 	t.Parallel()
 
 	cmds := []AvailableCommandFrame{
@@ -224,7 +224,7 @@ func TestSessionNewAdvertisesAfterResponse(t *testing.T) { //nolint:cyclop // on
 	}
 
 	var sres struct {
-		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+		SessionID string `json:"sessionId"`
 	}
 
 	if uerr := json.Unmarshal(first.Result, &sres); uerr != nil || sres.SessionID == "" {
@@ -244,7 +244,7 @@ func TestSessionNewAdvertisesAfterResponse(t *testing.T) { //nolint:cyclop // on
 	}
 
 	var p struct {
-		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+		SessionID string `json:"sessionId"`
 	}
 
 	if uerr := json.Unmarshal(second.Params, &p); uerr != nil || p.SessionID != sres.SessionID {

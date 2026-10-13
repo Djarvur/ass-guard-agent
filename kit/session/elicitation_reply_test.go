@@ -242,7 +242,7 @@ func TestElicitationParity(t *testing.T) {
 // the real suspension + queue: an invalid accept re-asks EXACTLY once (a NEW
 // queue entry with the violation noted) and a second failure routes to the
 // 12-D-01 non-answer; decline and cancel route directly with zero re-asks.
-func TestElicitationRevalidation(t *testing.T) { //nolint:funlen,cyclop,gocognit // D-10 battery
+func TestElicitationRevalidation(t *testing.T) { //nolint:funlen,gocognit // D-10 battery
 	t.Parallel()
 
 	// fireOutcomes builds the injected fire: programmable outcomes + the

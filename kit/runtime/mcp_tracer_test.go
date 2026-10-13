@@ -45,7 +45,7 @@ func TestMain(m *testing.M) {
 // speaks the real go-sdk stdio transport so the CommandTransport path is real.
 func runTracerEchoServer() {
 	ctx := context.Background()
-	srv := mcpgo.NewServer(&mcpgo.Implementation{Name: "echo", Version: "v0"}, nil) //nolint:goconst // fixture
+	srv := mcpgo.NewServer(&mcpgo.Implementation{Name: "echo", Version: "v0"}, nil)
 
 	srv.AddTool(&mcpgo.Tool{
 		Name: "hello", Description: "Echo a greeting",
@@ -251,7 +251,7 @@ func TestSessionForMCPCatalogRegistration(t *testing.T) { //nolint:paralleltest 
 // the session's Prompt loop routes the mcp__* call through MCPExecutor → Host →
 // echo server ("hello, tracer") and the built-in through the inner executor
 // (stub). The transcript contains both tool_call + tool_result lines.
-func TestTracerMCPEndToEnd(t *testing.T) { //nolint:cyclop,funlen,paralleltest // subprocess e2e tracer
+func TestTracerMCPEndToEnd(t *testing.T) { //nolint:paralleltest // subprocess e2e tracer
 	if testing.Short() {
 		t.Skip("spawns a subprocess")
 	}

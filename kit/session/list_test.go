@@ -535,7 +535,7 @@ func TestSessionListCorruptFirstLine(t *testing.T) {
 // timestamp is the legacy createdAt fallback; unknown types and zero
 // timestamps stay skipped — the tolerance is a bounded known-type whitelist,
 // never accept-anything.
-func TestSessionListLegacyShapeOpener(t *testing.T) { //nolint:funlen // four shape pins in the battery's subtest idiom
+func TestSessionListLegacyShapeOpener(t *testing.T) {
 	t.Parallel()
 
 	base := listTestBase()

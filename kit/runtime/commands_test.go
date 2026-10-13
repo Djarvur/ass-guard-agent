@@ -957,7 +957,7 @@ func TestClassBClear(t *testing.T) {
 // machinery degrades LOUDLY with the named outcome recorded durably; a
 // registered seam is invoked exactly once with the typed args.
 //
-//nolint:gocognit,funlen,paralleltest // two scenarios, one seam contract (sequenced state)
+//nolint:gocognit,paralleltest // two scenarios, one seam contract (sequenced state)
 func TestClassBDelegate(t *testing.T) {
 	t.Run("unregistered seams degrade loudly", func(t *testing.T) {
 		r, prov, _ := newCommandRunner(t, nil)
@@ -1065,7 +1065,7 @@ func (c *countingRoundTripper) count() int {
 // transcript×Pricing math is hand-computed; no output ever carries the
 // credential value.
 //
-//nolint:gocognit,cyclop,funlen,paralleltest // three-case matrix, sequenced runner state
+//nolint:gocognit,funlen,paralleltest // three-case matrix, sequenced runner state
 func TestClassBCost(t *testing.T) {
 	t.Setenv("ZAI_API_KEY", "sk-cost-secret-fixture")
 
@@ -1573,7 +1573,7 @@ func TestAgentSlash(t *testing.T) {
 // (one resolution path), is advertised, and shadows a discovered
 // commands/init.md with the D-01 warning.
 //
-//nolint:funlen,cyclop,paralleltest // one battery, sequenced fixtures
+//nolint:funlen,paralleltest // one battery, sequenced fixtures
 func TestInitExpansion(t *testing.T) {
 	assertExpansion := func(t *testing.T, r *Runner, prov *scriptedACPProvider, sessionID string) {
 		t.Helper()
@@ -1751,7 +1751,7 @@ func undoCanaryContent(t *testing.T, workDir string) string {
 // echo, output naming the restored id + the pre-restore snapshot id), and a
 // durable local_command record with args verbatim. The second /undo restores
 // the state before the first (undo-of-undo via the D-09 pre-restore family).
-func TestClassBUndoIdle(t *testing.T) { //nolint:funlen // two-invocation walk scenario
+func TestClassBUndoIdle(t *testing.T) {
 	t.Parallel()
 
 	r, prov, _ := newCommandRunner(t, nil)
@@ -1820,7 +1820,7 @@ func TestClassBUndoIdle(t *testing.T) { //nolint:funlen // two-invocation walk s
 // snapshot the first /undo minted — the walk never re-targets an entry), and
 // /undo 2 jumps two entries in one invocation on a fresh fixture. Every
 // landed state is treeMap-byte-identical to the seeded state.
-func TestUndoWalk(t *testing.T) { //nolint:funlen // three-scenario walk battery
+func TestUndoWalk(t *testing.T) {
 	t.Parallel()
 
 	r, prov, _ := newCommandRunner(t, nil)

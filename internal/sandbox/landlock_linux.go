@@ -41,6 +41,14 @@ func ProbeABI() (int, error) {
 	return int(r0), nil
 }
 
+// modeLandlock is the Availability.Mode name the landlock backend reports
+// (verbatim in every Availability row this file constructs).
+const modeLandlock = "landlock"
+
+// landlockABINetwork is the kernel ABI version that introduced network
+// restrictions — RestrictNet needs at least this support (V4).
+const landlockABINetwork = 4
+
 // availabilityFromProbe classifies the probe outcome into the SAND-01
 // taxonomy — each failure class a DISTINCT reason, never a silent
 // fail-open.
@@ -48,23 +56,26 @@ func availabilityFromProbe(abi int, err error) Availability {
 	if err != nil {
 		switch {
 		case errors.Is(err, unix.ENOSYS):
-			return Availability{Mode: "landlock",
+			return Availability{Mode: modeLandlock,
 				Reason: "kernel lacks Landlock (ENOSYS) — sandbox unavailable, tool processes run UNCONFINED"}
 		case errors.Is(err, unix.EOPNOTSUPP):
-			return Availability{Mode: "landlock",
+			return Availability{Mode: modeLandlock,
 				Reason: "Landlock disabled (EOPNOTSUPP) — sandbox unavailable, tool processes run UNCONFINED"}
 		default:
-			return Availability{Mode: "landlock",
-				Reason: fmt.Sprintf("landlock probe failed (%v) — sandbox unavailable, tool processes run UNCONFINED", err)}
+			return Availability{Mode: modeLandlock,
+				Reason: fmt.Sprintf("landlock probe failed (%v) "+
+					"— sandbox unavailable, tool processes run UNCONFINED", err)}
 		}
 	}
 
-	if abi < 4 {
-		return Availability{Mode: "landlock",
-			Reason: fmt.Sprintf("Landlock ABI %d: network restrictions need ABI >= 4 — sandbox unavailable, tool processes run UNCONFINED", abi)}
+	if abi < landlockABINetwork {
+		return Availability{Mode: modeLandlock,
+			Reason: fmt.Sprintf(
+				"Landlock ABI %d: network restrictions need ABI >= "+
+					"4 — sandbox unavailable, tool processes run UNCONFINED", abi)}
 	}
 
-	return Availability{Mode: "landlock", Available: true}
+	return Availability{Mode: modeLandlock, Available: true}
 }
 
 // probePlatform is the linux leg of Probe (cached — a raw syscall, but the

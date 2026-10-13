@@ -247,8 +247,6 @@ func RenderHeaderValue(template string) string {
 // tool-role messages GROUP into one user-role param carrying one tool_result
 // block per message (the canonical Anthropic batch form — the capture's
 // per-result message granularity is preserved by block order).
-//
-//nolint:funlen // one per-protocol rendering ladder; flagged pre-21-05 too
 func toMessageParams(messages []Message) ([]anthropic.MessageParam, error) {
 	out := make([]anthropic.MessageParam, 0, len(messages))
 

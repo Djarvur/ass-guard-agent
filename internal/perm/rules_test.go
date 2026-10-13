@@ -437,7 +437,7 @@ func TestRulesParse(t *testing.T) {
 
 // TestRulesWarnings pins the structured warning sink: one warning per
 // malformed line and one per unanchored allow glob, with valid lines kept.
-func TestRulesWarnings(t *testing.T) { //nolint:cyclop,funlen // flat warning battery, one block per family
+func TestRulesWarnings(t *testing.T) {
 	t.Parallel()
 
 	// Unanchored allow globs: exactly one warning each, all skipped as inert.

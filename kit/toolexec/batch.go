@@ -86,8 +86,6 @@ func MaxConcurrent(n int) BatchOpt {
 // IsError result with the timeout-classified form and NEVER cancels its
 // siblings. Inner tool-specific deadlines (Bash model-ms, openspec
 // per-command) fire first — this is the outer backstop.
-//
-//nolint:funlen // domain complexity is inherent
 func DispatchBatch(
 	ctx context.Context, exec toolcat.ToolExecutor, catalog *toolcat.Catalog,
 	calls []provider.ToolCall, opts ...BatchOpt,

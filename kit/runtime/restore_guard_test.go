@@ -27,7 +27,7 @@ import (
 // caller composes). The guard check itself never blocks on the turn mutex —
 // it reads turnActive/chainCount only, asserted by calling it while a fake
 // provider holds the turn.
-func TestRestoreGuardRefusalMatrix(t *testing.T) { //nolint:funlen // matrix scenario
+func TestRestoreGuardRefusalMatrix(t *testing.T) {
 	t.Parallel()
 
 	r, prov := newBlockingRunner(t,
@@ -103,7 +103,7 @@ func TestRestoreGuardRefusalMatrix(t *testing.T) { //nolint:funlen // matrix sce
 // own-state refusals keep their byte-stable same-session wording and the
 // consult stays prompt under a blocked turn (the walk reads state only, never
 // a turn mutex).
-func TestRestoreGuardCrossSessionMatrix(t *testing.T) { //nolint:funlen // matrix scenario
+func TestRestoreGuardCrossSessionMatrix(t *testing.T) {
 	t.Parallel()
 
 	r, prov := newBlockingRunner(t, scriptedResp{text: "done", finish: stopEndTurn})
@@ -647,7 +647,7 @@ func newTwoBlockRunner(t *testing.T, script ...scriptedResp) (*Runner, *twoBlock
 // outcome "refused: workspace busy", zero provider calls, nothing snapshotted
 // or restored (the sentinel survives, A's turn stays alive) — and the refusal
 // is TRANSIENT: once A's turn ends, the same /undo restores normally.
-func TestUndoCrossSessionRefusal(t *testing.T) { //nolint:funlen // end-to-end refusal + transience scenario
+func TestUndoCrossSessionRefusal(t *testing.T) {
 	r, prov := newBlockingRunner(t, scriptedResp{text: "done", finish: stopEndTurn})
 
 	const (

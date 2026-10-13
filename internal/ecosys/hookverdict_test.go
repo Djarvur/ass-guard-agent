@@ -18,7 +18,7 @@ import (
 func exitCodeErr(t *testing.T, code int) error {
 	t.Helper()
 
-	err := exec.Command("sh", "-c", "exit "+strconv.Itoa(code)).Run() //nolint:gosec // test helper, fixed code
+	err := exec.Command("sh", "-c", "exit "+strconv.Itoa(code)).Run()
 	require.Error(t, err)
 
 	var exitErr *exec.ExitError

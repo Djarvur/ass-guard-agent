@@ -253,7 +253,7 @@ func (s *Session) CompactNow(ctx context.Context) error {
 // marker, nil return. The turn proceeds un-compacted; the overflow retry
 // (criterion 3, session.go) remains the last line.
 //
-//nolint:cyclop,funlen // one blocking seam over the full summarize→append flow
+//nolint:funlen // one blocking seam over the full summarize→append flow
 func (s *Session) compact(ctx context.Context, turnID string) error {
 	// The user-visible compaction note. The landed ACP session/update
 	// vocabulary has no status frame (only agent_message_chunk et al., which

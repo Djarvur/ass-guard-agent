@@ -369,7 +369,7 @@ func TestAskWiring_SchemaDisciplineAtWiring(t *testing.T) {
 //
 // OFFLINE (no env gates). Under today's code the poll first waits out the
 // detached timer resume, then BOTH pinned assertions fail.
-func TestAskWiring_ChainSurvivesAskTimerResume(t *testing.T) { //nolint:cyclop,funlen // settle poll
+func TestAskWiring_ChainSurvivesAskTimerResume(t *testing.T) { //nolint:funlen // settle poll
 	t.Parallel()
 
 	r, prov := newExpansionRunner(t, true,
@@ -513,7 +513,7 @@ const cr02GateTool = toolNameWrite
 // the Run path holds. Pre-fix, the pump's resolve appended the tool result and
 // ran the full resumed turn WHILE the mutex was held (two concurrent turn
 // drivers on one transcript).
-func TestAskWiring_ResumeHoldsTurnMutex(t *testing.T) { //nolint:funlen // the full suspend/race/resume chain
+func TestAskWiring_ResumeHoldsTurnMutex(t *testing.T) {
 	t.Parallel()
 
 	r, _ := newExpansionRunner(t, true,
@@ -654,7 +654,7 @@ func TestAskWiring_TimerResumeHoldsTurnMutex(t *testing.T) {
 // chain continues to the apply stage. Pre-fix, the permission family never
 // armed AskSettleChan, so waitAskSettled saw nil and the chain died at the
 // dialog (decisions + remaining injections lost).
-func TestAskWiring_ChainSurvivesPermissionDialogResume(t *testing.T) { //nolint:funlen,cyclop // park/resume chain
+func TestAskWiring_ChainSurvivesPermissionDialogResume(t *testing.T) { //nolint:funlen // park/resume chain
 	t.Parallel()
 
 	r, _ := newExpansionRunner(t, true,
@@ -1062,7 +1062,7 @@ func wiringWaitFor(t *testing.T, cond func() bool) {
 // the resumed turn's tool result. The executor suspension contract (ErrSuspended
 // + questions in Output, coreexec untouched) is observed intact: the first
 // turn stops with the ask marker and appends NO tool result of its own.
-func TestAskWiring_ElicitationQueueRoundTrip(t *testing.T) { //nolint:funlen,cyclop,gocyclo,gocognit,lll // flat end-to-end battery
+func TestAskWiring_ElicitationQueueRoundTrip(t *testing.T) { //nolint:funlen,cyclop,gocyclo,gocognit // flat end-to-end battery
 	t.Parallel()
 
 	r, prov := newAskWiringRunner(t, time.Hour)
@@ -1223,7 +1223,7 @@ func TestAskWiring_ElicitationQueueRoundTrip(t *testing.T) { //nolint:funlen,cyc
 // pending decision converts into a background elicitation entry whose accept
 // writes the learning store through the EXISTING store API, and whose decline
 // lands the advisory non-answer note through the subscriber-backed chunk path.
-func TestAskWiring_EngineAskConversion(t *testing.T) { //nolint:funlen // one battery over the conversion glue
+func TestAskWiring_EngineAskConversion(t *testing.T) {
 	t.Parallel()
 
 	situation := "text:wiring-engine-situation"

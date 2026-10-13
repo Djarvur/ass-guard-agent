@@ -208,7 +208,7 @@ func TestAsk_SuspendsAndTimesOutEndToEnd(t *testing.T) { //nolint:gocognit,gocyc
 // after a suspension, ResolveAsk embeds the operator's reply verbatim in the
 // captured answered form as the pending call's tool result and re-enters the
 // SAME turn's model loop — the reply IS the tool result; no new user message.
-func TestAsk_ReplyResumesSameTurn(t *testing.T) { //nolint:cyclop,funlen // flat battery
+func TestAsk_ReplyResumesSameTurn(t *testing.T) {
 	t.Parallel()
 
 	s, broker, _ := newAskSession(t, []provider.Response{
@@ -498,7 +498,7 @@ func TestAsk_Settle_ReplyResumeSettles(t *testing.T) {
 // still running (the fake provider's delay holds the model call open, the
 // claim already happened) the channel is NOT yet closed: decisions can never
 // fire on a half-resumed turn.
-func TestAsk_Settle_ReflectsTurnCompletionNotClaim(t *testing.T) { //nolint:funlen // delayed-provider battery
+func TestAsk_Settle_ReflectsTurnCompletionNotClaim(t *testing.T) {
 	t.Parallel()
 
 	s := newTestSessionWithCatalog(t, nil)
@@ -586,7 +586,7 @@ func TestAsk_Settle_ReflectsTurnCompletionNotClaim(t *testing.T) { //nolint:funl
 // sequential suspension (the resumed turn asks again) arms a FRESH signal — no
 // stale-settle ABA; the first signal closes with ITS resume, the second stays
 // open until its own driver completes it.
-func TestAsk_Settle_SequentialSuspensionsFreshSignal(t *testing.T) { //nolint:cyclop,funlen // flat settle battery
+func TestAsk_Settle_SequentialSuspensionsFreshSignal(t *testing.T) {
 	t.Parallel()
 
 	s, _, _ := newAskSession(t, []provider.Response{

@@ -10,7 +10,7 @@ import "testing"
 // The a710b75 rewrite dropped the double-quote state, so the first four live
 // rows went dark — `git "log 'x $(cmd) y'"` under-detected and an allow rule
 // could match a substitution-bearing command.
-func TestHasSubstitutionQuotes(t *testing.T) { //nolint:funlen // one row per shell-quoting fact — the table IS the spec
+func TestHasSubstitutionQuotes(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {

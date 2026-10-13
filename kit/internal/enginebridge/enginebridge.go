@@ -233,8 +233,6 @@ func (a *EngineTurnAdapter) AskSettle() <-chan struct{} {
 // tool loop), so scanning only assistant lines would attribute the suspension
 // to the PREVIOUS turn. An ask_suspended terminal line yields
 // TurnOutput with AskSuspended set (Decide → ActionAsk, never Continue).
-//
-//nolint:cyclop,funlen // the backward scan is one cohesive walk
 func (a *EngineTurnAdapter) LastTurnOutput() engine.TurnOutput {
 	if a.mgr == nil {
 		return engine.TurnOutput{}

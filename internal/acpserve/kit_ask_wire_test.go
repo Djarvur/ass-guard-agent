@@ -161,7 +161,7 @@ func wireAskHandshake(
 	frames := wireReadResultFrames(t, cliR, 2)
 
 	var snew struct {
-		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+		SessionID string `json:"sessionId"`
 	}
 
 	for _, f := range frames {
@@ -238,7 +238,7 @@ func wireAskPromptSends(t *testing.T, cliW io.Writer, cliR io.Reader, sessionID,
 // wiring (SetupEngine — the RealExecutor executes AskUserQuestion; the
 // engine-off wireDriveACP stub never suspends) — the rendered question
 // surface must reach the client wire.
-func TestAskWiring_ServerLevelSurface(t *testing.T) { //nolint:cyclop,funlen // comprehensive server scenario
+func TestAskWiring_ServerLevelSurface(t *testing.T) {
 	t.Parallel()
 
 	mp := &askToolCallProvider{}
@@ -273,7 +273,7 @@ func TestAskWiring_ServerLevelSurface(t *testing.T) { //nolint:cyclop,funlen // 
 // README option 2) would hold the response for the 1h timer and fail the
 // deadline — the stuck-spinner + reply-deadlock shape the 12-01 witness
 // verified against.
-func TestAskPark_PromptResponsePrecedesResolution(t *testing.T) { //nolint:cyclop,gocyclo,funlen // server scenario
+func TestAskPark_PromptResponsePrecedesResolution(t *testing.T) { //nolint:funlen // server scenario
 	t.Parallel()
 
 	mp := &askToolCallProvider{}

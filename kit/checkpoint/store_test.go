@@ -1274,7 +1274,7 @@ func TestCheckpointGCCountAxis(t *testing.T) {
 		snapDated(t, s, fmt.Sprintf("chatty-turn-%03d", i+1), now.Add(-time.Duration(10-i)*time.Hour))
 	}
 
-	if _, err := s.SnapshotPreRestore(context.Background(), "chatty"); err != nil { //nolint:dupl // fixture setup
+	if _, err := s.SnapshotPreRestore(context.Background(), "chatty"); err != nil {
 		t.Fatalf("SnapshotPreRestore: %v", err)
 	}
 

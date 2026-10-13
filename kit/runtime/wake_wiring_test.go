@@ -110,7 +110,7 @@ func waitFor(deadline time.Duration, cond func() bool) bool {
 // id, kind bash, exit status 0, .ass-guard/outputs/ pointer, tail with the
 // marker), an EngineDecision line carries the wake provenance, and the
 // foreground scripted exchanges around it are unchanged.
-func TestWakeTurn_BackgroundBashCompletion(t *testing.T) { //nolint:funlen,cyclop // flat tracer battery
+func TestWakeTurn_BackgroundBashCompletion(t *testing.T) { //nolint:funlen // flat tracer battery
 	t.Parallel()
 
 	r, prov := newExpansionRunner(t, true,
@@ -209,7 +209,7 @@ func TestWakeTurn_BackgroundBashCompletion(t *testing.T) { //nolint:funlen,cyclo
 // turns while busy); after the mutex frees, ONE later batch carries every
 // accumulated notification in completion-time order. The client turn is
 // never interrupted.
-func TestWakeTurn_BusyClientTurnAccumulates(t *testing.T) { //nolint:funlen,cyclop // flat fallback battery
+func TestWakeTurn_BusyClientTurnAccumulates(t *testing.T) {
 	t.Parallel()
 
 	r, prov := newExpansionRunner(t, true,
@@ -334,8 +334,8 @@ func wakeFlag(r *Runner, sessionID string) *atomic.Bool {
 // sampleFlagFalse samples the flag every 20ms across the window and reports
 // whether EVERY sample read false (plus the sample count, for the >=25-samples
 // contract over a 500ms window).
-func sampleFlagFalse(flag *atomic.Bool, window time.Duration) (bool, int) {
-	samples := 0
+func sampleFlagFalse(flag *atomic.Bool, window time.Duration) (fired bool, samples int) {
+	samples = 0
 
 	deadline := time.Now().Add(window)
 
@@ -767,7 +767,7 @@ func TestWakeChain_ClosedSessionDropsBatch(t *testing.T) { //nolint:funlen // tw
 // in-scope half): CloseSession prunes the runner's per-session wake state
 // (trackers, wakeInFlight, ptyManagers — after OnClose's Drain ran) and
 // cancels RUNNING background subagents beside the queued ones.
-func TestCloseSession_PrunesWakeState(t *testing.T) { //nolint:funlen // prune + running-cancel battery
+func TestCloseSession_PrunesWakeState(t *testing.T) {
 	stderr := &bytes.Buffer{}
 
 	r, _ := newExpansionRunner(t, false)
@@ -861,7 +861,7 @@ func TestCloseSession_PrunesWakeState(t *testing.T) { //nolint:funlen // prune +
 // after Complete retired the cancel entry, TaskStop renders the structured
 // unknown-task error — truthful, not a fake ack (nothing is left to stop).
 // The fake provider stays at ZERO calls: a stop must not wake turns.
-func TestTaskStopFallbackWiring(t *testing.T) { //nolint:funlen // two-row wiring battery
+func TestTaskStopFallbackWiring(t *testing.T) {
 	r, prov := newExpansionRunner(t, true)
 
 	const sid = "sess-fallback-stop"

@@ -122,7 +122,7 @@ func chooseSession(stats []profile.SessionStat, sessions string) (profile.Sessio
 	return profile.SessionStat{}, fmt.Errorf("requested session(s) %q not found in rollout dir", sessions)
 }
 
-//nolint:cyclop,funlen // domain complexity is inherent
+//nolint:funlen // domain complexity is inherent
 func writeArtifact(out, name string, res *profile.ExtractResult, paritySession, zcodeVersion string) error {
 	err := os.MkdirAll(filepath.Join(out, "system"), dirPerm)
 	if err != nil {

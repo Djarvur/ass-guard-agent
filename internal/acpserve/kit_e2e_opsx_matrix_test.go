@@ -28,9 +28,9 @@ import (
 
 	"github.com/Djarvur/ass-guard-agent/internal/providerfactory"
 	"github.com/Djarvur/ass-guard-agent/kit/event"
-	"github.com/Djarvur/ass-guard-agent/kit/runtime"
 	"github.com/Djarvur/ass-guard-agent/kit/profile"
 	"github.com/Djarvur/ass-guard-agent/kit/provider"
+	"github.com/Djarvur/ass-guard-agent/kit/runtime"
 	"github.com/Djarvur/ass-guard-agent/kit/session"
 	"github.com/Djarvur/ass-guard-agent/kit/shaper"
 )
@@ -73,7 +73,7 @@ func newOpsxMatrixRunner(t *testing.T) (*runtime.Runner, string) {
 
 // newOpsxMatrixRunnerAt is newOpsxMatrixRunner over an existing scratch dir.
 //
-//nolint:funlen,cyclop // bootstrap reads as one flow
+//nolint:funlen // bootstrap reads as one flow
 func newOpsxMatrixRunnerAt(t *testing.T, scratch string) *runtime.Runner {
 	t.Helper()
 
@@ -237,7 +237,7 @@ func captureMatrixClosing(t *testing.T, name, text string) {
 
 // assertNoNotImplementedResults scans the session transcript for the
 // no-implementation dead-end string (zero tolerance — the Phase-8 convention).
-func assertNoNotImplementedResults(t *testing.T, scratch string, sessionID string) {
+func assertNoNotImplementedResults(t *testing.T, scratch, sessionID string) {
 	t.Helper()
 
 	lines := wireTranscriptLines(t, scratch, sessionID)
@@ -252,7 +252,7 @@ func assertNoNotImplementedResults(t *testing.T, scratch string, sessionID strin
 }
 
 // lastAssistantText returns the session's final assistant message text.
-func lastAssistantText(t *testing.T, scratch string, sessionID string) string {
+func lastAssistantText(t *testing.T, scratch, sessionID string) string {
 	t.Helper()
 
 	texts := stageAssistantTexts(t, scratch, sessionID)
@@ -909,7 +909,7 @@ func TestOpsxMatrixOnboardFixable_Gated(t *testing.T) { //nolint:paralleltest //
 
 // countMatrixDecisionsByAction counts the session's engine_decision lines
 // with the given action name.
-func countMatrixDecisionsByAction(t *testing.T, scratch string, sessionID, action string) int {
+func countMatrixDecisionsByAction(t *testing.T, scratch, sessionID, action string) int {
 	t.Helper()
 
 	lines := wireTranscriptLines(t, scratch, sessionID)
@@ -927,7 +927,7 @@ func countMatrixDecisionsByAction(t *testing.T, scratch string, sessionID, actio
 
 // hasMatrixCommandProvenance reports whether the session's transcript carries
 // a command_provenance line for the key.
-func hasMatrixCommandProvenance(t *testing.T, scratch string, sessionID, key string) bool {
+func hasMatrixCommandProvenance(t *testing.T, scratch, sessionID, key string) bool {
 	t.Helper()
 
 	lines := wireTranscriptLines(t, scratch, sessionID)
@@ -943,7 +943,7 @@ func hasMatrixCommandProvenance(t *testing.T, scratch string, sessionID, key str
 
 // lastMatrixDecisionAction returns the session's final engine_decision action
 // ("" when none).
-func lastMatrixDecisionAction(t *testing.T, scratch string, sessionID string) string {
+func lastMatrixDecisionAction(t *testing.T, scratch, sessionID string) string {
 	t.Helper()
 
 	lines := wireTranscriptLines(t, scratch, sessionID)

@@ -95,7 +95,7 @@ func TestCheckpointOptions(t *testing.T) { //nolint:funlen // comprehensive opti
 		f := newSurfaceFixture(t)
 
 		days, per := f.surface.EffectiveCheckpointGCBounds()
-		if days != 7 || per != 50 { //nolint:mnd // the pinned D-08 defaults
+		if days != 7 || per != 50 {
 			t.Fatalf("default bounds = %d/%d; want 7/50", days, per)
 		}
 
@@ -106,7 +106,7 @@ func TestCheckpointOptions(t *testing.T) { //nolint:funlen // comprehensive opti
 		writeLayer(t, f3.projectPath, "checkpoint:\n  expiry_days: 3\n  max_per_session: 10\n")
 
 		days, per = f3.surface.EffectiveCheckpointGCBounds()
-		if days != 3 || per != 10 { //nolint:mnd // the planted values
+		if days != 3 || per != 10 {
 			t.Fatalf("planted bounds = %d/%d; want 3/10", days, per)
 		}
 
@@ -115,7 +115,7 @@ func TestCheckpointOptions(t *testing.T) { //nolint:funlen // comprehensive opti
 		writeLayer(t, f4.projectPath, "checkpoint:\n  expiry_days: banana\n")
 
 		days, per = f4.surface.EffectiveCheckpointGCBounds()
-		if days != 7 || per != 50 { //nolint:mnd // the fallback
+		if days != 7 || per != 50 {
 			t.Fatalf("junk bounds = %d/%d; want 7/50 (loud fallback)", days, per)
 		}
 

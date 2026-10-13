@@ -17,14 +17,14 @@ const fixturePath = "testdata/zcode-core-results.json"
 type fixtureFixture struct {
 	Provenance struct {
 		Sessions     map[string]string `json:"sessions"`
-		HarvestDate  string            `json:"harvestDate"` //nolint:tagliatelle // fixture header key
-		Redaction    string            `json:"redaction"`   //nolint:tagliatelle // fixture header key
+		HarvestDate  string            `json:"harvestDate"`
+		Redaction    string            `json:"redaction"`
 		CorpusAbsent []string          `json:"corpus_absent"`
-	} `json:"_provenance"` //nolint:tagliatelle // fixture header key
+	} `json:"_provenance"`
 	Tools map[string]struct {
 		InputKeysObserved []string `json:"input_keys_observed"`
 		Results           map[string]struct {
-			IsError        bool   `json:"isError"` //nolint:tagliatelle // fixture mirrors the capture
+			IsError        bool   `json:"isError"`
 			Template       string `json:"template"`
 			LiteralPrefix  string `json:"literal_prefix,omitempty"`
 			SampleRedacted string `json:"sample_redacted,omitempty"`

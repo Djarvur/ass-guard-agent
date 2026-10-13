@@ -175,7 +175,7 @@ func TestHooksOnceOnly(t *testing.T) {
 
 		const calls = 2
 
-		for i := 0; i < calls; i++ {
+		for i := range calls {
 			out, err := tool.Execute(context.Background(), json.RawMessage(`{"command":"echo once"}`))
 			if err != nil || !contains(string(out), "once") {
 				t.Fatalf("call %d did not run for real (err=%v out=%s)", i, err, string(out))

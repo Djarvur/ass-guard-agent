@@ -101,7 +101,7 @@ func fixtureTurnIDs(t *testing.T, storeDir, sessionID string) []string {
 
 	for sc.Scan() {
 		var l struct {
-			TurnID string `json:"turnID"` //nolint:tagliatelle // on-disk format
+			TurnID string `json:"turnID"`
 		}
 
 		if json.Unmarshal(sc.Bytes(), &l) == nil && l.TurnID != "" {
@@ -264,11 +264,11 @@ func (f *fakeResumeRunner) Run(
 // updateFrame is the test-side view of one session/update notification.
 type updateFrame struct {
 	Update struct {
-		SessionUpdate string          `json:"sessionUpdate"` //nolint:tagliatelle // ACP wire field
-		ToolCallID    string          `json:"toolCallId"`    //nolint:tagliatelle // ACP wire field
+		SessionUpdate string          `json:"sessionUpdate"`
+		ToolCallID    string          `json:"toolCallId"`
 		Title         string          `json:"title,omitempty"`
 		Status        string          `json:"status,omitempty"`
-		MessageID     string          `json:"messageId,omitempty"` //nolint:tagliatelle // ACP wire field
+		MessageID     string          `json:"messageId,omitempty"`
 		Content       json.RawMessage `json:"content,omitempty"`
 
 		// AvailableCommands carries the available_commands_update payload
@@ -276,7 +276,7 @@ type updateFrame struct {
 		AvailableCommands []struct {
 			Name        string  `json:"name"`
 			Description *string `json:"description"`
-		} `json:"availableCommands,omitempty"` //nolint:tagliatelle // ACP wire field
+		} `json:"availableCommands,omitempty"`
 	} `json:"update"`
 }
 
@@ -479,15 +479,15 @@ func writeListSession(t *testing.T, storeDir, sessionID, prompt string, mtime ti
 
 // listRow is the test-side view of one v1 SessionInfo row.
 type listRow struct {
-	SessionID string  `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+	SessionID string  `json:"sessionId"`
 	Cwd       string  `json:"cwd"`
 	Title     *string `json:"title"`
-	UpdatedAt *string `json:"updatedAt"` //nolint:tagliatelle // ACP wire field
+	UpdatedAt *string `json:"updatedAt"`
 }
 
 // listResult is the test-side view of ListSessionsResponse.
 type listResult struct {
-	NextCursor *string   `json:"nextCursor"` //nolint:tagliatelle // ACP wire field
+	NextCursor *string   `json:"nextCursor"`
 	Sessions   []listRow `json:"sessions"`
 }
 
@@ -710,9 +710,9 @@ func TestInitializeAdvertisesSessionCapabilities(t *testing.T) {
 
 	var res struct {
 		AgentCapabilities struct {
-			LoadSession         bool           `json:"loadSession"`         //nolint:tagliatelle // ACP wire field
-			SessionCapabilities map[string]any `json:"sessionCapabilities"` //nolint:tagliatelle // ACP wire field
-		} `json:"agentCapabilities"` //nolint:tagliatelle // ACP wire field
+			LoadSession         bool           `json:"loadSession"`
+			SessionCapabilities map[string]any `json:"sessionCapabilities"`
+		} `json:"agentCapabilities"`
 	}
 
 	uerr := json.Unmarshal(msg.Result, &res)
@@ -940,7 +940,7 @@ func TestSessionCloseCancelsAndDrains(t *testing.T) {
 	}
 
 	var pr struct {
-		StopReason string `json:"stopReason"` //nolint:tagliatelle // ACP wire field
+		StopReason string `json:"stopReason"`
 	}
 
 	uerr := json.Unmarshal(promptResp.Result, &pr)
@@ -1151,8 +1151,8 @@ func TestSessionLoadReplaysCleanSession(t *testing.T) {
 
 	var ires struct {
 		AgentCapabilities struct {
-			LoadSession bool `json:"loadSession"` //nolint:tagliatelle // ACP wire field
-		} `json:"agentCapabilities"` //nolint:tagliatelle // ACP wire field
+			LoadSession bool `json:"loadSession"`
+		} `json:"agentCapabilities"`
 	}
 
 	uerr := json.Unmarshal(initResp.Result, &ires)
@@ -1374,8 +1374,6 @@ func TestSessionLoadTraversalIDRejected(t *testing.T) {
 // session/prompt for that id returns the TYPED replay-in-progress error; after
 // the load completes, the SAME prompt is accepted. Run under -race: the ready
 // flag and the sessions map are accessed from concurrent handler goroutines.
-//
-//nolint:funlen // one deterministic concurrency scenario end-to-end (the gate pin)
 func TestLoadGateRejectsPromptDuringReplay(t *testing.T) {
 	t.Parallel()
 
@@ -1469,8 +1467,6 @@ func TestLoadGateRejectsPromptDuringReplay(t *testing.T) {
 // response answered success BEFORE the load's map insert, so the load's own
 // response is the TYPED deleted error and no sessionState exists for the id
 // (deleted stays deleted; prompts never append to a tombstoned transcript).
-//
-//nolint:funlen // one deterministic concurrency scenario end-to-end (the D-07 pin)
 func TestSessionDeleteDuringLoadNeverResurrects(t *testing.T) {
 	t.Parallel()
 

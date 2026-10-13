@@ -124,7 +124,7 @@ func (p *planModeScriptProvider) SupportsImages() bool { return false }
 // reader/writer pair and the session id.
 func startPlanModeServer(
 	t *testing.T,
-) (*runtime.Runner, string, io.WriteCloser, io.ReadCloser, string) {
+) (runner *runtime.Runner, workDir string, cliW io.WriteCloser, cliR io.ReadCloser, sid string) {
 	t.Helper()
 
 	prov := &planModeScriptProvider{}
@@ -173,7 +173,7 @@ func startPlanModeServer(
 	frames := wireReadResultFrames(t, cliR, 2)
 
 	var snew struct {
-		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+		SessionID string `json:"sessionId"`
 	}
 
 	for _, f := range frames {

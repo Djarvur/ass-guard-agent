@@ -10,7 +10,7 @@ import (
 // Recorded in Phase 1 even though execution is stubbed.
 // String stays value-receiver (fmt.Stringer via %s on struct fields);
 // UnmarshalJSON must be pointer-receiver to mutate.
-type Mutability int //nolint:recvcheck // mixed receivers are intentional
+type Mutability int
 
 const (
 	// MutabilityReadOnly is the default for tools with no side effects.
@@ -103,16 +103,12 @@ type Tool struct {
 }
 
 // IsMutating reports whether the tool has side effects.
-//
-//nolint:gocritic // hugeParam: Tool is a value-semantic catalog entry (the mutability precedent)
 func (t Tool) IsMutating() bool { return t.Mutability == MutabilityMutating }
 
 // EffectiveTimeoutMS returns the resolved per-call timeout backstop: the
 // declared timeout_ms when set (> 0), else DefaultToolTimeoutMS. (Named
 // "Effective" after the EffectiveMutability precedent — a Tool cannot carry
 // both a TimeoutMS field and a TimeoutMS method.)
-//
-//nolint:gocritic // hugeParam: Tool is a value-semantic catalog entry (the mutability precedent)
 func (t Tool) EffectiveTimeoutMS() int64 {
 	if t.TimeoutMS > 0 {
 		return t.TimeoutMS
@@ -125,8 +121,6 @@ func (t Tool) EffectiveTimeoutMS() int64 {
 // pool: the declared concurrency_safe value when set, else the mutability
 // default (read-only ⇒ safe). Mutating tools stay alone-in-slot regardless of
 // any declaration (D-21 floor — T-14-19).
-//
-//nolint:gocritic // hugeParam: Tool is a value-semantic catalog entry (the mutability precedent)
 func (t Tool) IsConcurrencySafe() bool {
 	if t.ConcurrencySafeOpt != nil {
 		return *t.ConcurrencySafeOpt
@@ -137,6 +131,4 @@ func (t Tool) IsConcurrencySafe() bool {
 
 // IsDestructive reports the irreversible-by-nature mutation flag (see the
 // Destructive field comment — observation only, no engine gating).
-//
-//nolint:gocritic // hugeParam: Tool is a value-semantic catalog entry (the mutability precedent)
 func (t Tool) IsDestructive() bool { return t.Destructive }

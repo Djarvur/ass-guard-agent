@@ -683,7 +683,7 @@ func (r *Runner) expandMentions( //nolint:funcorder // one pipeline; grouped wit
 // ONLY by an explicit evaluator ruling — the nil default resolves nothing
 // outside the workspace, so ingress never becomes a whole-FS existence
 // oracle. Notes are fixed-form: token + outcome class, nothing else.
-func (r *Runner) resolveMention( //nolint:funcorder,cyclop // one resolution ladder; grouped with the turn seam
+func (r *Runner) resolveMention( //nolint:funcorder // one resolution ladder; grouped with the turn seam
 	m Mention,
 ) (section, resolved, form string) {
 	root := r.workDirOrDefault()
@@ -1227,14 +1227,16 @@ func (r *Runner) routeUndoActive(
 //     deadlock this ordering prevents — the behavioral test does).
 //  4. Restore, then the D-05 output naming the restored id + the pre-restore
 //     snapshot id.
-func (r *Runner) restoreUndoActive(sess *session.Session, sessionID string, plan undoPlan) (string, string) {
+func (r *Runner) restoreUndoActive(
+	sess *session.Session, sessionID string, plan undoPlan,
+) (notice, outcome string) {
 	st := r.checkpointStore()
 	ctx := r.serveCtxOrBackground()
 
 	// Step 0 (G-23-1/CR-01): refuse BEFORE minting anything — the
 	// cross-session refusal outranks the auto-cancel and cancels nothing.
 	if other := r.workspaceBlockers(sessionID); other != nil {
-		return fmt.Sprintf("undo refused: %v\n", other), "refused: workspace busy"
+		return fmt.Sprintf("undo refused: %v\n", other), undoRefusedBusy
 	}
 
 	preID, serr := undoSnapshotPreRestore(ctx, st, sess.SessionID)
@@ -1253,7 +1255,7 @@ func (r *Runner) restoreUndoActive(sess *session.Session, sessionID string, plan
 			// Another session went live between step 0 and here (the
 			// guard's documented check-then-act window): the step-0
 			// refusal shape — never cancel, never restore.
-			return fmt.Sprintf("undo refused: %v\n", blocked), "refused: workspace busy"
+			return fmt.Sprintf("undo refused: %v\n", blocked), undoRefusedBusy
 		}
 
 		r.cancelActiveTurn(sessionID)
@@ -1602,7 +1604,9 @@ func (r *Runner) cancelParkedChains(sessionID string) { //nolint:funcorder // pa
 // mutex BEFORE markClientTurn, so clientTurnActive=true always implies a
 // registered cancel. One live client turn per session (turnMu serializes);
 // the registration is replaced only after the previous turn's unregister.
-func (r *Runner) registerActiveTurn(sessionID string, cancel context.CancelFunc) { //nolint:funcorder // turn-cancel group
+//
+//nolint:funcorder // turn-cancel group
+func (r *Runner) registerActiveTurn(sessionID string, cancel context.CancelFunc) {
 	r.activeTurnMu.Lock()
 	defer r.activeTurnMu.Unlock()
 
@@ -1634,7 +1638,9 @@ func (r *Runner) registerActiveTurn(sessionID string, cancel context.CancelFunc)
 // fires after this), so the entry being deleted is always this turn's own —
 // func values are not comparable in Go, and no newer turn can have
 // registered in between.
-func (r *Runner) unregisterActiveTurn(sessionID string, cancel context.CancelFunc) { //nolint:funcorder // turn-cancel group
+//
+//nolint:funcorder // turn-cancel group
+func (r *Runner) unregisterActiveTurn(sessionID string, cancel context.CancelFunc) {
 	r.activeTurnMu.Lock()
 	delete(r.activeTurnCancels, sessionID)
 	r.activeTurnMu.Unlock()
@@ -1740,7 +1746,8 @@ func (r *Runner) spillOrphanedSteering(sessionID string) { //nolint:funcorder //
 		blocks = append(blocks, session.ContentBlock{Type: blockText, Text: it.Text})
 	}
 
-	log.Printf("ass-guard: steering spillover: delivering %d orphaned input(s) as an ordinary turn (chain exited before a boundary drain)", len(batch))
+	log.Printf("ass-guard: steering spillover: delivering %d orphaned input(s)"+
+		" as an ordinary turn (chain exited before a boundary drain)", len(batch))
 
 	go func() {
 		// The 12-07 session turn mutex — the same serialization every turn
@@ -1809,6 +1816,11 @@ func (r *Runner) WaitChainIdle(ctx context.Context, sessionID string) bool {
 // chainIdlePollInterval is WaitChainIdle's poll granularity (13-00): idle
 // waits are seconds-scale; 10ms keeps the poll cheap.
 const chainIdlePollInterval = 10 * time.Millisecond
+
+// teeDrainGrace bounds the background-dispatch tee's final drain wait: the
+// pump gets a beat to flush before the unsubscribes close the channels —
+// bounded so a wedged pump never pins the dispatch return.
+const teeDrainGrace = 500 * time.Millisecond
 
 // errPermissionAskSurfaceUnwired is the runtime-side sentinel for the gate's
 // fire wrapper when the serve composition has not injected the acpserve
@@ -1927,7 +1939,7 @@ func (r *Runner) SetCheckpointGCBounds(fn func() (days int, perSession int)) {
 // injected, else the embedded 7d/50 defaults. A seam result of
 // non-positive values falls back per-axis (never a zero-day expiry, never an
 // unbounded count).
-func (r *Runner) checkpointGCBounds() (days int, perSession int) {
+func (r *Runner) checkpointGCBounds() (days, perSession int) {
 	r.ckptMu.Lock()
 	fn := r.checkpointGC
 	r.ckptMu.Unlock()
@@ -1966,9 +1978,10 @@ func (r *Runner) checkpointStore() *checkpoint.Store {
 		dir, _ = os.Getwd()
 	}
 
-	st, err := checkpoint.Open(dir) //nolint:contextcheck // Store.Open carries no ctx
+	st, err := checkpoint.Open(dir)
 	if err != nil {
-		log.Printf("ass-guard: checkpoint store disabled for %s (%v) — turns run WITHOUT undo snapshots (/undo will report unavailable)", dir, err)
+		log.Printf("ass-guard: checkpoint store disabled for %s (%v)"+
+			" — turns run WITHOUT undo snapshots (/undo will report unavailable)", dir, err)
 
 		return nil
 	}
@@ -2029,7 +2042,8 @@ func (e *restoreBlockedError) Error() string {
 	case e.turn:
 		return "checkpoint: restore refused: a client turn is active for the session — cancel it or wait for it to end"
 	case e.chain:
-		return "checkpoint: restore refused: an engine chain is active (possibly parked) for the session — cancel it or wait for the chain to finish"
+		return "checkpoint: restore refused: an engine chain is active (possibly parked) " +
+			"for the session — cancel it or wait for the chain to finish"
 	default:
 		return "checkpoint: restore refused: session busy"
 	}
@@ -2180,7 +2194,8 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 		days, perSession := r.checkpointGCBounds()
 
 		if serr := ckptStore.Sweep(ctx, time.Duration(days)*24*time.Hour, perSession); serr != nil {
-			log.Printf("ass-guard: checkpoint GC sweep failed for %s (%v) — continuing without sweeping", sessionID, serr)
+			log.Printf("ass-guard: checkpoint GC sweep failed for %s (%v)"+
+				" — continuing without sweeping", sessionID, serr)
 		}
 	}
 
@@ -2665,8 +2680,8 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	if permStore == nil && r.openPermStore != nil {
 		st, permErr := r.openPermStore(filepath.Join(dir, ".ass-guard", "permissions.yaml"))
 		if permErr != nil {
-			log.Printf("ass-guard: permissions store disabled for %s (%v) — deny/allow rules UNENFORCED for this session",
-				dir, permErr)
+			log.Printf("ass-guard: permissions store disabled for %s (%v)"+
+				" — deny/allow rules UNENFORCED for this session", dir, permErr)
 		} else {
 			permStore = st
 			r.permStore.Store(st)
@@ -2955,7 +2970,7 @@ func ensureTextBearingBlock(blocks []session.ContentBlock, class string) []sessi
 // D-11 leg). Blocks without image payloads pass through untouched
 // (byte-identical).
 //
-//nolint:funlen,cyclop // one ingress pipeline; grouped with the turn seam
+//nolint:funlen // one ingress pipeline; grouped with the turn seam
 func (r *Runner) ingressImages(
 	sess *session.Session, blocks []session.ContentBlock,
 ) []session.ContentBlock {
@@ -3771,7 +3786,7 @@ type advisoryNote struct {
 // suspended marker — that one is the broker's) becomes an engine-ask note;
 // an advisory-class signal becomes the advisory note; everything else nil.
 func advisoryFromDecision(
-	d event.EngineDecision, //nolint:gocritic // hugeParam: value projection
+	d event.EngineDecision,
 ) *advisoryNote {
 	if d.Action == engine.ActionAsk.String() && d.Signal != engine.SignalAskSuspended {
 		// 17-04 (D-09): the engine ask-pending surface.
@@ -4131,13 +4146,13 @@ func (r *Runner) planSubagentDispatch(
 	if slug == "" {
 		if parent != "" {
 			return r.notePlan(session.SubagentDispatchPlan{}, sess,
-				fmt.Sprintf("subagent dispatches on the session model %s", parent))
+				"subagent dispatches on the session model "+parent)
 		}
 
 		if tier := resolveSubagentModel(r.schedCfg, r.providerName, r.outcomeBreakersFor(),
 			time.Now(), r.stderrOrDefault()); tier != "" {
 			return r.notePlan(session.SubagentDispatchPlan{Model: tier}, sess,
-				fmt.Sprintf("no session model — subagent falls to tiers.light %s", tier))
+				"no session model — subagent falls to tiers.light "+tier)
 		}
 
 		return session.SubagentDispatchPlan{}
@@ -4362,14 +4377,12 @@ func (r *Runner) emitClassBEcho(ctx context.Context, emit Emitter, turnID, text 
 // ToolCall events tagged with the subagent's turn id) into the task's
 // output file as produced (Pitfall 9: mid-run Read is truthful). The
 // subscription's lifetime is the run's.
-//
-//nolint:funlen // subscription setup + run + drain reads as one flow
 func runSubagentWithProgress(
 	bgCtx context.Context, sess *session.Session,
 	req session.BackgroundDispatchRequest, bus *event.Bus, progress func(string),
 ) (string, error) {
 	if sess == nil {
-		return "", fmt.Errorf("background subagent: session unavailable")
+		return "", errors.New("background subagent: session unavailable")
 	}
 
 	if bus == nil || progress == nil {
@@ -4400,7 +4413,8 @@ func runSubagentWithProgress(
 					return
 				}
 
-				if c, isChunk := e.(event.AgentMessageChunk); isChunk && c.TurnID == req.SubagentTurnID && c.Content != "" {
+				if c, isChunk := e.(event.AgentMessageChunk); isChunk &&
+					c.TurnID == req.SubagentTurnID && c.Content != "" {
 					progress(c.Content)
 				}
 			case e, ok := <-tools:
@@ -4425,7 +4439,7 @@ func runSubagentWithProgress(
 
 	select {
 	case <-teeDone:
-	case <-time.After(500 * time.Millisecond): // bounded — never pin the loop
+	case <-time.After(teeDrainGrace): // bounded — never pin the loop
 	}
 
 	return result, err

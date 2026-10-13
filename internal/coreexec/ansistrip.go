@@ -2,6 +2,10 @@ package coreexec
 
 import "strings"
 
+// escIntroLen is the two-byte escape prefix (ESC + the introducer byte
+// '[' or ']') the parser skips to reach a sequence's parameter bytes.
+const escIntroLen = 2
+
 // StripANSI removes terminal escape sequences from PTY-captured output
 // (22-04, PAR-09). Scope (the pinned discretion, RESEARCH A3): the CSI/SGR
 // class — ESC [ <params> <final in @-~> — which covers colors (m), cursor
@@ -35,7 +39,7 @@ func StripANSI(s string) string {
 		}
 
 		if s[i+1] == '[' {
-			j := i + 2
+			j := i + escIntroLen
 
 			for j < len(s) && (s[j] < 0x40 || s[j] > 0x7e) {
 				j++ // parameter/intermediate bytes
@@ -51,7 +55,7 @@ func StripANSI(s string) string {
 		}
 
 		if s[i+1] == ']' {
-			j := i + 2
+			j := i + escIntroLen
 
 			for j < len(s) {
 				if s[j] == '\a' { // BEL terminator

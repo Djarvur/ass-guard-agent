@@ -27,8 +27,6 @@ const cronExprHourly = "0 * * * *"
 
 // newCronRunner builds an engine-on runner over dir with a scripted provider
 // (the expansion harness) plus a REAL schedule store.
-//
-//nolint:lll // signature carries the harness triple
 func newCronRunner(t *testing.T, dir string, script ...scriptedResp) (*Runner, *scriptedACPProvider, *sched.ScheduleStore) {
 	t.Helper()
 
@@ -51,7 +49,7 @@ func newCronRunner(t *testing.T, dir string, script ...scriptedResp) (*Runner, *
 // turn is active does NOT interrupt — the firing lands after the active turn
 // completes, serialized through the same per-session mutex; the fired turn's
 // user prompt is the automation's prompt.
-func TestCronWiring_QueueBehindActiveTurn(t *testing.T) { //nolint:funlen,cyclop // flat queue-semantics battery
+func TestCronWiring_QueueBehindActiveTurn(t *testing.T) { //nolint:funlen // flat queue-semantics battery
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -219,7 +217,7 @@ func TestCronWiring_AuditProvenance(t *testing.T) {
 // window, the FIRST active session fires the missed automation EXACTLY once
 // with the missed-window note in its prompt context; a second session does
 // not fire it again (lastFired persisted).
-func TestCronWiring_FireOnceCatchUp(t *testing.T) { //nolint:cyclop,funlen // flat restart-scenario battery
+func TestCronWiring_FireOnceCatchUp(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()

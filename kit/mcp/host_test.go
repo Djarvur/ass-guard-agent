@@ -101,7 +101,7 @@ func TestHostNoCacheD03(t *testing.T) {
 		t.Skip("spawns subprocesses")
 	}
 
-	if runtime.GOOS == "windows" { //nolint:goconst // platform check
+	if runtime.GOOS == "windows" {
 		t.Skip("process-group test is darwin/linux only")
 	}
 

@@ -91,7 +91,7 @@ func TestProcessGroupIsolation(t *testing.T) { //nolint:paralleltest // spawns a
 		t.Skip("spawns subprocesses")
 	}
 
-	if runtime.GOOS == "windows" { //nolint:goconst // platform check
+	if runtime.GOOS == "windows" {
 		t.Skip("process-group test is darwin/linux only")
 	}
 
@@ -279,7 +279,7 @@ func TestPrepareCommandSetsEnv(t *testing.T) { //nolint:paralleltest // uses pro
 		t.Skip("unix-only lifecycle")
 	}
 
-	cmd := exec.Command("echo") //nolint:noctx // never started; tests SysProcAttr only
+	cmd := exec.Command("echo")
 	cfg := ServerConfig{Env: map[string]string{"FOO_TEST": "bar"}}
 	require.NoError(t, prepareCommand(cmd, &cfg))
 

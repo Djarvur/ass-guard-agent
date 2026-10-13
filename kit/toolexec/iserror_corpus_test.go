@@ -53,8 +53,8 @@ import (
 type rolloutToolMsg struct {
 	Role     string          `json:"role"`
 	Content  json.RawMessage `json:"content"`
-	ToolName string          `json:"toolName"` //nolint:tagliatelle // the rollout's on-disk camelCase format
-	IsError  bool            `json:"isError"`  //nolint:tagliatelle // the rollout's on-disk camelCase format
+	ToolName string          `json:"toolName"`
+	IsError  bool            `json:"isError"`
 }
 
 // textContent best-effort decodes a message content as the tool-result plain
@@ -327,7 +327,7 @@ type occCensus struct {
 		Commit      string   `json:"commit"`
 		ExtractedAt string   `json:"extracted_at"`
 		InputFiles  []string `json:"input_files"`
-	} `json:"_provenance"` //nolint:tagliatelle // the fixture's committed key
+	} `json:"_provenance"`
 	Tools []string `json:"tools"`
 	Env   struct {
 		Names        []string `json:"names"`

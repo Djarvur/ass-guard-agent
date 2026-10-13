@@ -46,8 +46,6 @@ func ParseInvocation(text string) (key, args string, ok bool) { //nolint:nonamed
 //   - args supplied but NO placeholder exists in the body (no $ARGUMENTS and
 //     no $0..$9 token) → args appended under a "User arguments:" heading;
 //   - substitution applies inside code fences (no fence skipping).
-//
-//nolint:gocritic // value receiver: Expand reads naturally on registry values
 func (c Command) Expand(args string) string {
 	fields := strings.Fields(args)
 

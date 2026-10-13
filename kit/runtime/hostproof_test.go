@@ -41,7 +41,7 @@ type hpProvider struct {
 func (p *hpProvider) Send(
 	_ context.Context, _ *profile.Profile, _ []provider.Message,
 ) (provider.Response, error) {
-	return provider.Response{}, nil //nolint:nilnil // unused arm
+	return provider.Response{}, nil
 }
 
 func (p *hpProvider) Stream(

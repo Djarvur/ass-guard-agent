@@ -495,7 +495,7 @@ func k9SessionNew(t *testing.T, cli *k9Client, workDir string) string {
 	m := cli.nextResponse(`"k9-new"`)
 
 	var resp struct {
-		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+		SessionID string `json:"sessionId"`
 	}
 
 	err := json.Unmarshal(m.Result, &resp)
@@ -540,8 +540,8 @@ func k9Load(t *testing.T, cli *k9Client, sessionID, workDir string) {
 
 // k9Update is one decoded session/update payload (the harness's view).
 type k9Update struct {
-	Kind       string `json:"sessionUpdate"` //nolint:tagliatelle // ACP wire field
-	ToolCallID string `json:"toolCallId"`    //nolint:tagliatelle // ACP wire field
+	Kind       string `json:"sessionUpdate"`
+	ToolCallID string `json:"toolCallId"`
 	Status     string `json:"status"`
 }
 
@@ -573,7 +573,6 @@ type k9LoadStory struct {
 	LoadResponse  *acp.Message
 }
 
-//nolint:cyclop // one ordered wire-collect loop with inline ordering asserts
 func k9CollectLoad(t *testing.T, cli *k9Client) *k9LoadStory {
 	t.Helper()
 
@@ -642,12 +641,12 @@ func k9CollectLoad(t *testing.T, cli *k9Client) *k9LoadStory {
 // view (tolerant: non-conforming lines skip).
 type k9Line struct {
 	Type           string `json:"type"`
-	TurnID         string `json:"turnID"`     //nolint:tagliatelle // on-disk format
-	ToolCallID     string `json:"toolCallID"` //nolint:tagliatelle // on-disk format
+	TurnID         string `json:"turnID"`
+	ToolCallID     string `json:"toolCallID"`
 	Cause          string `json:"cause"`
-	IsError        bool   `json:"isError"`        //nolint:tagliatelle // on-disk format
-	ParentTurnID   string `json:"parentTurnID"`   //nolint:tagliatelle // on-disk format
-	SubagentTurnID string `json:"subagentTurnID"` //nolint:tagliatelle // on-disk format
+	IsError        bool   `json:"isError"`
+	ParentTurnID   string `json:"parentTurnID"`
+	SubagentTurnID string `json:"subagentTurnID"`
 }
 
 func k9TranscriptPath(workDir, sid string) string {
@@ -771,13 +770,13 @@ func k9AssertPairs(t *testing.T, lines []k9Line) {
 
 // k9AssertModes decodes the load response's modes (nil when absent).
 func k9AssertModes(t *testing.T, resp *acp.Message) *struct {
-	CurrentModeID string `json:"currentModeId"` //nolint:tagliatelle // ACP wire field
+	CurrentModeID string `json:"currentModeId"`
 } {
 	t.Helper()
 
 	var res struct {
 		Modes *struct {
-			CurrentModeID string `json:"currentModeId"` //nolint:tagliatelle // ACP wire field
+			CurrentModeID string `json:"currentModeId"`
 		} `json:"modes"`
 	}
 

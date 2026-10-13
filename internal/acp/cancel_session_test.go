@@ -109,7 +109,7 @@ func handshakeRecordingSession(t *testing.T, h *pipeHarness) string {
 	snew := h.readResultFrame(t)
 
 	var sres struct {
-		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+		SessionID string `json:"sessionId"`
 	}
 
 	uerr := json.Unmarshal(snew.Result, &sres)
@@ -193,8 +193,6 @@ func TestSessionCancelDoesNotReapTheSession(t *testing.T) {
 // reaped resources (MCP host closed, writer cancelled, forwarder stopped).
 // Sequenced deterministically at the method level: the wire window is
 // microseconds wide, but the interleaving is exactly gate → close → Add.
-//
-//nolint:funlen // one ordered interleaving, asserted end-to-end
 func TestPromptRegistrationAbortsAfterCloseReaped(t *testing.T) {
 	t.Parallel()
 

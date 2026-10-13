@@ -136,7 +136,7 @@ func ckptLiveCaptureGit(t *testing.T, work string) ckptLiveGitState {
 // path; the turn's checkpoint restores the workspace byte-identically while
 // the user repo's HEAD/index/status stay untouched. Evidence (transcript +
 // ref list) is logged for the SUMMARY.
-func TestCheckpointLiveRollback_Gated(t *testing.T) { //nolint:paralleltest,funlen,cyclop // live model leg
+func TestCheckpointLiveRollback_Gated(t *testing.T) { //nolint:paralleltest,funlen // live model leg
 	checkpointLiveGates(t)
 
 	repo := wireFindRepoRoot(t)

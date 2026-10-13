@@ -212,8 +212,6 @@ type RunOutcome struct {
 // transcript: the engine chained >= minContinues stages, every chained stage
 // arrived as an EXPANDED injected turn (command_provenance), and the archive
 // directory carries the change.
-//
-//nolint:cyclop,funlen // the assertion battery is flat by design
 func AssertZeroContinue(t TB, lines []session.Line, scratchDir, changeName string, minContinues int) RunOutcome {
 	t.Helper()
 
@@ -591,7 +589,7 @@ func AssertChangeDir(t TB, scratchDir, changeName string) []string {
 // (a tool result carrying a probed failure signature), a recovery followed
 // it, and the goal artifact (the change directory) landed.
 //
-//nolint:cyclop,funlen // the two-phase scan reads flat
+//nolint:funlen // the two-phase scan reads flat
 func AssertFixableRecovery(t TB, lines []session.Line, scratchDir, changeName string) []string {
 	t.Helper()
 

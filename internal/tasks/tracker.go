@@ -11,6 +11,7 @@ package tasks
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -42,8 +43,8 @@ type Notification struct {
 // defaults to 8 (D-10), TailBytes to 8192 (D-02 discretion — 8 KB), Now to
 // time.Now.
 type TrackerOpts struct {
-	SubagentCap int          // D-10: concurrent background subagents (default 8)
-	TailBytes   int          // D-02: notification tail budget in bytes (default 8192)
+	SubagentCap int              // D-10: concurrent background subagents (default 8)
+	TailBytes   int              // D-02: notification tail budget in bytes (default 8192)
 	Now         func() time.Time // the completion-time clock (tests pin ordering)
 }
 
@@ -132,7 +133,7 @@ func (t *Tracker) Complete(n Notification) {
 	t.mu.Unlock()
 
 	if drain != nil {
-		go drain(peek) //nolint:contextcheck // the callback owns its ctx (runner-side serve ctx)
+		go drain(peek)
 	}
 
 	// D-10: the released slot is reoccupied by exactly one queued task
@@ -316,7 +317,7 @@ func (t *Tracker) CancelRunning() int {
 
 // itoa keeps the note renderer free of a strconv import at the call site.
 func itoa(n int) string {
-	return fmt.Sprintf("%d", n)
+	return strconv.Itoa(n)
 }
 
 // SubagentState classifies a subagent id for the 22-09 TaskStop/TaskOutput

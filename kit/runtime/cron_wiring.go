@@ -25,6 +25,10 @@ import (
 // defaultSchedTick is the due-check cadence (D-02; coarse by design).
 const defaultSchedTick = 30 * time.Second
 
+// defaultWakeRetryInterval is the wake-drain chain's retry cadence when the
+// Runner's wakeRetryInterval knob is unset (the busy-turn-slot wait).
+const defaultWakeRetryInterval = 500 * time.Millisecond
+
 // sessionTurnMu returns the per-session turn mutex — THE serialization
 // point: client-driven turns (Run), ask-reply resumes, and automation
 // firings all hold it for their whole turn, so a due firing QUEUES behind an
@@ -131,8 +135,6 @@ func (r *Runner) fireDueAutomations(ctx context.Context) {
 // prefixes the prompt context when non-empty. Every firing marks lastFired
 // AFTER the turn completes (a crash mid-fire re-fires at most once — the
 // exactly-once bound holds per missed window).
-//
-//nolint:funlen // the firing pipeline reads best as one flow
 func (r *Runner) runAutomationTurn(ctx context.Context, sessionID string, a *schedule.Automation, note string) {
 	if note == "" {
 		// The exactly-once claim: re-check + advance lastFired UNDER the store
@@ -396,7 +398,6 @@ func (r *Runner) scheduleWakeDrain(sessionID string) {
 		return // a chain is already draining this session's notifications
 	}
 
-	//nolint:contextcheck // serve-lifetime ctx (nil only in tests → Background)
 	go r.wakeDrainChain(r.serveCtxOrBackground(), sessionID, flag)
 }
 
@@ -450,7 +451,7 @@ func (r *Runner) wakeDrainChain(ctx context.Context, sessionID string, flag *ato
 		// Busy turn slot: sleep one retry interval and retry (never queue).
 		interval := r.wakeRetryInterval
 		if interval <= 0 {
-			interval = 500 * time.Millisecond
+			interval = defaultWakeRetryInterval
 		}
 
 		select {

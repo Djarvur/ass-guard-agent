@@ -27,7 +27,7 @@ import (
 // IMMEDIATELY (well under the command's runtime) with the CAPTURED start form
 // carrying a task id; a blocking TaskOutput then returns the accumulated
 // output including the command's final marker.
-func TestBackground_StartRetrieveRoundTrip(t *testing.T) { //nolint:funlen // flat battery
+func TestBackground_StartRetrieveRoundTrip(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -435,7 +435,7 @@ const (
 // receives SIGTERM first (a TERM-sensitive observer in the group records
 // it), the immune child survives past the shortened grace, and the
 // post-grace SIGKILL + reap makes the task terminal.
-func TestEscalation_TermImmuneChildKilledAfterGrace(t *testing.T) { //nolint:funlen // flat ladder battery
+func TestEscalation_TermImmuneChildKilledAfterGrace(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -503,7 +503,7 @@ func TestEscalation_TermImmuneChildKilledAfterGrace(t *testing.T) { //nolint:fun
 // trap exits 7 ends at the SIGTERM rung — the recorded exit status is the
 // trapped 7 (a SIGKILL would read 137), and the task is terminal BEFORE the
 // grace window could have fired (2s grace; a TERM death lands in ms).
-func TestEscalation_TermRespectingChildDiesByTerm(t *testing.T) { //nolint:funlen // flat ladder battery
+func TestEscalation_TermRespectingChildDiesByTerm(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
@@ -721,7 +721,10 @@ func TestBackgroundCap_OverCapQueues(t *testing.T) {
 		t.Errorf("queued task state = %v; want done (FIFO drain on completion)", state)
 	}
 
-	got, _, _, _ := reg.Output(id2, false, 0)
+	got, _, _, derr := reg.Output(id2, false, 0)
+	if derr != nil {
+		t.Fatalf("drained Output errored: %v", derr)
+	}
 	if !strings.Contains(got, "second") {
 		t.Errorf("drained task output = %q; want the queued command's output", got)
 	}
@@ -852,7 +855,7 @@ func TestBackgroundCap_QueueBound(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for i := 0; i < bgQueueBound; i++ {
+	for i := range bgQueueBound {
 		_, _, err := reg.Start(dir, "echo bound-waiter")
 		if err != nil {
 			t.Fatalf("waiter %d: %v", i, err)
@@ -966,7 +969,7 @@ func waitForTerminal(t *testing.T, reg *TaskRegistry, id string) bgState {
 
 // bgStartCurl starts a backgrounded curl-style connect against the local
 // listener through StartWithOpts and returns the task id + port.
-func bgStartCurl(t *testing.T, reg *TaskRegistry, workDir string, opts StartOpts) (string, int) {
+func bgStartCurl(t *testing.T, reg *TaskRegistry, workDir string, opts StartOpts) (id string, port int) {
 	t.Helper()
 
 	ln, lerr := net.Listen("tcp", "127.0.0.1:0")
@@ -978,7 +981,7 @@ func bgStartCurl(t *testing.T, reg *TaskRegistry, workDir string, opts StartOpts
 	go func() { _ = srv.Serve(ln) }()
 	t.Cleanup(func() { _ = srv.Close(); _ = ln.Close() })
 
-	port := ln.Addr().(*net.TCPAddr).Port
+	port = ln.Addr().(*net.TCPAddr).Port
 
 	id, _, serr := reg.StartWithOpts(workDir,
 		fmt.Sprintf("curl -s --max-time 3 -o /dev/null http://127.0.0.1:%d/ ; echo CURL_EXIT_$?", port), opts)
@@ -1159,7 +1162,7 @@ func TestBackgroundSandbox_StopOnConfinedTaskCompletes(t *testing.T) { //nolint:
 // background site — the disable escape runs UNCONFINED (the confined-deny
 // curl now CONNECTS) with exactly ONE note; a faked-unavailable Handle runs
 // unconfined with a per-run note + counter (never a silent fail-open).
-func TestBackgroundSandbox_DisableAndUnavailableNotes(t *testing.T) { //nolint:funlen,paralleltest // live probe + shared counter
+func TestBackgroundSandbox_DisableAndUnavailableNotes(t *testing.T) { //nolint:paralleltest // live probe + shared counter
 	workDir := t.TempDir()
 	handle := bgSandboxHandle(t, workDir)
 
@@ -1189,7 +1192,6 @@ func TestBackgroundSandbox_DisableAndUnavailableNotes(t *testing.T) { //nolint:f
 	}
 
 	// Unavailable arm: faked availability → unconfined + one note PER RUN.
-	//nolint:exhaustruct // faked availability (the on marker, probe failed)
 	fake := &sandbox.Handle{
 		Policy:       sandbox.DefaultPolicy(workDir, os.TempDir(), filepath.Join(workDir, ".ass-guard")),
 		Availability: sandbox.Availability{Mode: "landlock", Reason: "faked-unavailable-bg"},
@@ -1202,7 +1204,7 @@ func TestBackgroundSandbox_DisableAndUnavailableNotes(t *testing.T) { //nolint:f
 	reg2.SandboxNote = notes2
 	reg2.Cap = 4
 
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		bid, _ := bgStartCurl(t, reg2, workDir, StartOpts{})
 		waitForTerminal(t, reg2, bid)
 

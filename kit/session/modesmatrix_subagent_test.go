@@ -95,7 +95,7 @@ func matrixSubagentMarkerHooks(t *testing.T, project, event string) []map[string
 // TestModesMatrixSubagent (24-05 Task 2) drives TWO real subagent dispatches
 // (one per invocation surface) plus the SubagentStop hook observation, all
 // through the live nested-turn rails with the fixture mounted.
-func TestModesMatrixSubagent(t *testing.T) { //nolint:funlen,cyclop // HOME-pinned leg; three cells, one story
+func TestModesMatrixSubagent(t *testing.T) { //nolint:funlen // HOME-pinned leg; three cells, one story
 	t.Setenv("HOME", t.TempDir()) // hermetic user-scope discovery
 
 	project := t.TempDir()

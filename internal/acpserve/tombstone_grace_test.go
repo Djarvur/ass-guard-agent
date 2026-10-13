@@ -49,7 +49,7 @@ func graceFixture(t *testing.T, work, sid string) string {
 // acpserve's startup sweep reads the grace) follows it, and invalid input
 // is the typed ConfigViolationError with violation detail (16-D-09).
 //
-//nolint:funlen,cyclop // one ordered config round-trip end-to-end
+//nolint:funlen // one ordered config round-trip end-to-end
 func TestTombstoneGraceConfig(t *testing.T) {
 	t.Parallel()
 

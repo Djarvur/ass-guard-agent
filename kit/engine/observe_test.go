@@ -772,7 +772,7 @@ func TestObserve_AskWait_CancelDuringWaitDrains(t *testing.T) {
 // settler that never settles with a LIVE ctx keeps today's semantics exactly —
 // the FIRST turn decides ActionAsk on the suspended output (no table lookup);
 // the INJECTED turn exits WITHOUT deciding.
-func TestObserve_AskWait_UnresolvedKeepsTodaySemantics(t *testing.T) { //nolint:funlen // two-path semantics battery
+func TestObserve_AskWait_UnresolvedKeepsTodaySemantics(t *testing.T) {
 	t.Parallel()
 
 	t.Run("first turn unresolved", func(t *testing.T) {
@@ -860,7 +860,7 @@ func TestObserve_AskWait_UnresolvedKeepsTodaySemantics(t *testing.T) { //nolint:
 // WITHOUT the AskSettler capability keeps today's behavior byte-identical on
 // both paths (first turn → ActionAsk decision; injection → exit without
 // deciding).
-func TestObserve_AskWait_NoCapabilityByteIdentical(t *testing.T) { //nolint:funlen // two-path byte-identity battery
+func TestObserve_AskWait_NoCapabilityByteIdentical(t *testing.T) {
 	t.Parallel()
 
 	t.Run("first turn", func(t *testing.T) {

@@ -118,10 +118,10 @@ func wireDriveACP(t *testing.T, mp provider.Provider) ( //nolint:nonamedreturns 
 	t.Helper()
 
 	runner := runtime.NewRunner(&runtime.RunnerConfig{
-		Bus:     event.NewBus(),
-		Profile: profile.Profile{Name: "test", System: []profile.TextBlock{{Type: wireBlockText, Text: "test agent"}}},
-		WorkDir: t.TempDir(),
-		MaxConc: 2,
+		Bus:          event.NewBus(),
+		Profile:      profile.Profile{Name: "test", System: []profile.TextBlock{{Type: wireBlockText, Text: "test agent"}}},
+		WorkDir:      t.TempDir(),
+		MaxConc:      2,
 		MakeProvider: func(_ provider.RequestCapturer) provider.Provider { return mp },
 	})
 
@@ -278,14 +278,14 @@ func wireReadResultFrames(t *testing.T, cliR io.Reader, n int) []*acp.Message {
 // (20-01: session start's available_commands_update advertisement is a REAL
 // emitter-written notification — WrittenNotifications accounting must
 // include it even when a test's own update collection starts later).
-func wireReadResultFramesCounting(t *testing.T, cliR io.Reader, n int) ([]*acp.Message, int) {
+func wireReadResultFramesCounting(t *testing.T, cliR io.Reader, n int) (msgs []*acp.Message, skipped int) {
 	t.Helper()
 
 	br := bufio.NewReader(cliR)
 
 	var out []*acp.Message
 
-	skipped := 0
+	skipped = 0
 
 	deadline := time.After(3 * time.Second)
 
@@ -337,10 +337,10 @@ var wireErrNotUsed = errors.New("not used")
 // test composition; the batteries that pin the engine assert on its output).
 func wireComposeRunner(
 	t *testing.T, mp provider.Provider, askTimeout time.Duration,
-) (*runtime.Runner, string) {
+) (runner *runtime.Runner, dir string) {
 	t.Helper()
 
-	dir := t.TempDir()
+	dir = t.TempDir()
 
 	wireWriteOpsxCommandFixtures(t, dir)
 
@@ -358,7 +358,7 @@ func wireComposeRunner(
 		AskSurfaceRenderer: coreexec.RenderAskSurface,
 		LaunchBackground:   toolkit.LaunchBackground,
 		OpenPermStore:      openPermAuthority,
-		MakeProvider: func(_ provider.RequestCapturer) provider.Provider { return mp },
+		MakeProvider:       func(_ provider.RequestCapturer) provider.Provider { return mp },
 	})
 	r.SetCatalog(loadCommandCatalog(dir))
 

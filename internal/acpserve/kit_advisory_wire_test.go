@@ -69,7 +69,7 @@ func (p *questionClosingProvider) SupportsImages() bool { return false }
 // exactly ONE agent_message_chunk session/update carrying the advisory note
 // AFTER the turn's response; the transcript carries the engine_decision line
 // with the advisory signal and NO new user-message line for the note.
-func TestAdvisoryWiring_QuestionEndingNote(t *testing.T) { //nolint:cyclop,gocyclo,gocognit,funlen,lll,maintidx // server battery
+func TestAdvisoryWiring_QuestionEndingNote(t *testing.T) { //nolint:cyclop,gocyclo,gocognit,funlen // server battery
 	t.Parallel()
 
 	runner, workDir := wireComposeRunner(t, &questionClosingProvider{}, 0)
@@ -117,7 +117,7 @@ func TestAdvisoryWiring_QuestionEndingNote(t *testing.T) { //nolint:cyclop,gocyc
 	frames := wireReadResultFrames(t, cliR, 2)
 
 	var snew struct {
-		SessionID string `json:"sessionId"` //nolint:tagliatelle // ACP wire field
+		SessionID string `json:"sessionId"`
 	}
 
 	for _, f := range frames {
