@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 18
+open_count: 16
 waived_count: 0
-fixed_count: 11
-total_count: 29
-last_updated: 2026-09-10T18:56:18.462Z
+fixed_count: 14
+total_count: 30
+last_updated: 2026-10-13T21:11:42.071Z
 ---
 
 # Broken Windows Ledger
@@ -37,13 +37,14 @@ last_updated: 2026-09-10T18:56:18.462Z
 | 20 | 19 | deviation | .golangci.yml |  | mise lint gate fails repo-wide: golangci-lint 2.13.2 exhaustruct_v5 rename defeats the 2.12.x-tuned wildcard exclusion (pre-existing env drift, details in 19 deferred-items.md) | open |  | 2026-09-06T21:32:25.796Z |  |
 | 21 | 22 | deviation | internal/runtime/rescan_test.go |  | TestRescanConcurrency data race (spawnMCP vs installRegistry) pre-existing before 22-04 — blocks the ./internal/runtime/ green gate; logged in 22-04 deferred-items.md | open |  | 2026-09-10T00:24:14.411Z |  |
 | 22 | 22 | unrun-verify | internal/acpserve |  | TestPermissionsE2E (acpserve) skipped under -race in 22-06's phase-quick verify — pre-existing cross-workstream regression from Phase 23 commit 40b2bbc (STATE.md blocker, operator-bisected); passes at 721c7bc | open |  | 2026-09-10T01:06:35.602Z |  |
-| 23 | 23 | unmet-truth | .planning/phases/23-seed-gaps-close-out/23-05-SUMMARY.md |  | PENDING-OPERATOR-CONFIRMATION: live-Zed operator UAT of the phase's two interactive surfaces (23-01/23-02 boundary steering mid-turn + 23-05 /undo incl. the auto-cancel-then-restore path against a running turn) not yet executed — plan 23-05 Task 3 checkpoint; offline batteries prove the core (steering boundary delivery, undo walk/cancel ordering), the Zed-client behavior leg (RESEARCH A2 note: Zed may queue mid-turn prompts client-side) awaits the operator and documents client behavior for TG-02 planning | open |  | 2026-09-10T11:43:49.324Z |  |
-| 24 | 23 | unmet-truth | .planning/phases/23-seed-gaps-close-out/23-06-SUMMARY.md |  | PENDING-OPERATOR-CONFIRMATION: two-live-Zed-session UAT of the cross-session restore guard (23-VERIFICATION.md Human Verification #2) — /undo from an idle session while another session's turn runs must refuse naming the busy session; the offline battery (TestUndoCrossSessionRefusal + TestUndoActivePathCrossSessionRefusal) is the gap G-23-1 witness; rides the phase ledger beside #23 per the 23-05 precedent | open |  | 2026-09-10T13:17:53.931Z |  |
+| 23 | 23 | unmet-truth | .planning/phases/23-seed-gaps-close-out/23-05-SUMMARY.md |  | PENDING-OPERATOR-CONFIRMATION: live-Zed operator UAT of the phase's two interactive surfaces (23-01/23-02 boundary steering mid-turn + 23-05 /undo incl. the auto-cancel-then-restore path against a running turn) not yet executed — plan 23-05 Task 3 checkpoint; offline batteries prove the core (steering boundary delivery, undo walk/cancel ordering), the Zed-client behavior leg (RESEARCH A2 note: Zed may queue mid-turn prompts client-side) awaits the operator and documents client behavior for TG-02 planning | fixed | 260920-uat: discharged by the operator Phase-23 UAT 2/2 PASS (2026-09-20) — Test 1: live-Zed boundary steering mid-turn plus idle and mid-turn /undo including the auto-cancel-then-restore path, run with real Zed 1.20.2 and a Zed-shaped ACP driver against the shipped binary; evidence .planning/milestones/v1.2-phases/23-seed-gaps-close-out/23-UAT-evidence-2026-09-20.md (Test 1 PASS) + STATE.md Phase 23 entry | 2026-09-10T11:43:49.324Z | 2026-10-13T21:09:45.478Z |
+| 24 | 23 | unmet-truth | .planning/phases/23-seed-gaps-close-out/23-06-SUMMARY.md |  | PENDING-OPERATOR-CONFIRMATION: two-live-Zed-session UAT of the cross-session restore guard (23-VERIFICATION.md Human Verification #2) — /undo from an idle session while another session's turn runs must refuse naming the busy session; the offline battery (TestUndoCrossSessionRefusal + TestUndoActivePathCrossSessionRefusal) is the gap G-23-1 witness; rides the phase ledger beside #23 per the 23-05 precedent | fixed | 260920-uat: discharged by the same operator Phase-23 UAT 2/2 PASS (2026-09-20) — Test 2: two-live-session cross-session restore check PASS (/undo from an idle session refuses naming the busy session); evidence .planning/milestones/v1.2-phases/23-seed-gaps-close-out/23-UAT-evidence-2026-09-20.md (Test 2 PASS) + STATE.md Phase 23 entry | 2026-09-10T13:17:53.931Z | 2026-10-13T21:09:45.699Z |
 | 25 | 24 | unrun-verify | .planning/phases/24-documentation-ops-tails/24-01-SUMMARY.md |  | mise ci could not run literally (mise binary absent on host); legs run directly — vet/build green, modelrouting tests green, lint clean on 24-01 files, repo-wide lint/test carry documented pre-existing baseline (24-01-SUMMARY Deviations #4) | open |  | 2026-09-10T14:23:58.009Z |  |
 | 26 | 24 | unrun-verify | .github/workflows/nightly-parity.yml |  | Live workflow_dispatch smoke deferred to milestone merge — GitHub rejected both dispatch routes pre-merge (HTTP 404, file not on default branch); local stand-in evidence in 24-04-SUMMARY.md | open |  | 2026-09-10T15:33:45.625Z |  |
 | 27 | 24 | deviation | .github/workflows/nightly-parity.yml |  | Nightly test leg skips documented pre-existing failures (TestPermissionsE2E, TestRescanConcurrency, TestRunSuite_*) so the drift signal is not permanently red — remove entries as the failures are fixed | open |  | 2026-09-10T15:33:45.968Z |  |
 | 28 | 24 | unrun-verify | .github/workflows/nightly-parity.yml |  | Live workflow_dispatch smoke deferred to milestone merge — GitHub rejected both dispatch routes pre-merge (HTTP 404, file not on default branch); local stand-in evidence in 24-04-SUMMARY.md | open |  | 2026-09-10T15:33:58.332Z |  |
 | 29 | 24 | deviation | internal/runtime/modesmatrix_wake_test.go | 42 | ECOS-04 wake row: three cells PRECONDITION-UNMET(22, background wake-turn D-01) by design — Phase 22 planned-but-unexecuted; replacement assertions stated in-file | fixed | 260910-24-06: the premise was FALSE — phase 22 executed 2026-09-08..09-10 (43a8378, 5ad02a0, a59baf9 all ancestors of phase-24 base 5552942; 24-VERIFICATION gap 1); three real drivers now run the live wake chain (completing background subagent → scheduleWakeDrain → wakeDrainChain → drainWakeNotifications → runOneTurn) with zero PRECONDITION-UNMET lines; see 24-06-SUMMARY | 2026-09-10T17:32:06.580Z | 2026-09-10T18:56:18.462Z |
+| 30 | 23 | deviation | kit/checkpoint/store.go |  | 23-UAT stdout-discipline observation (2026-09-20, non-blocking): agent emitted a git-checkpoint store-init log line on stdout at startup — stdout is reserved for ACP frames; evidence 23-UAT-evidence-2026-09-20.md; also logged in STATE.md Blockers/Concerns | fixed | 260927-close: non-reproducing on v1.2 release code (fresh-store acp serve probe keeps stdout byte-clean) and the gitRun seam has piped both child fds since the store's first commit; closed by ed83044 (fix(checkpoint): pin child-stdio piping behind a regression test, 2026-09-27) which adds TestGitRun_PipesBothChildStdioFds at kit/checkpoint/store_test.go:1475 pinning the property | 2026-10-13T21:09:45.941Z | 2026-09-27T18:15:27Z |
 
 ````json
 [
@@ -318,10 +319,10 @@ last_updated: 2026-09-10T18:56:18.462Z
     "file": ".planning/phases/23-seed-gaps-close-out/23-05-SUMMARY.md",
     "line": null,
     "description": "PENDING-OPERATOR-CONFIRMATION: live-Zed operator UAT of the phase's two interactive surfaces (23-01/23-02 boundary steering mid-turn + 23-05 /undo incl. the auto-cancel-then-restore path against a running turn) not yet executed — plan 23-05 Task 3 checkpoint; offline batteries prove the core (steering boundary delivery, undo walk/cancel ordering), the Zed-client behavior leg (RESEARCH A2 note: Zed may queue mid-turn prompts client-side) awaits the operator and documents client behavior for TG-02 planning",
-    "status": "open",
-    "reason": "",
+    "status": "fixed",
+    "reason": "260920-uat: discharged by the operator Phase-23 UAT 2/2 PASS (2026-09-20) — Test 1: live-Zed boundary steering mid-turn plus idle and mid-turn /undo including the auto-cancel-then-restore path, run with real Zed 1.20.2 and a Zed-shaped ACP driver against the shipped binary; evidence .planning/milestones/v1.2-phases/23-seed-gaps-close-out/23-UAT-evidence-2026-09-20.md (Test 1 PASS) + STATE.md Phase 23 entry",
     "recorded_at": "2026-09-10T11:43:49.324Z",
-    "resolved_at": null
+    "resolved_at": "2026-10-13T21:09:45.478Z"
   },
   {
     "id": 24,
@@ -330,10 +331,10 @@ last_updated: 2026-09-10T18:56:18.462Z
     "file": ".planning/phases/23-seed-gaps-close-out/23-06-SUMMARY.md",
     "line": null,
     "description": "PENDING-OPERATOR-CONFIRMATION: two-live-Zed-session UAT of the cross-session restore guard (23-VERIFICATION.md Human Verification #2) — /undo from an idle session while another session's turn runs must refuse naming the busy session; the offline battery (TestUndoCrossSessionRefusal + TestUndoActivePathCrossSessionRefusal) is the gap G-23-1 witness; rides the phase ledger beside #23 per the 23-05 precedent",
-    "status": "open",
-    "reason": "",
+    "status": "fixed",
+    "reason": "260920-uat: discharged by the same operator Phase-23 UAT 2/2 PASS (2026-09-20) — Test 2: two-live-session cross-session restore check PASS (/undo from an idle session refuses naming the busy session); evidence .planning/milestones/v1.2-phases/23-seed-gaps-close-out/23-UAT-evidence-2026-09-20.md (Test 2 PASS) + STATE.md Phase 23 entry",
     "recorded_at": "2026-09-10T13:17:53.931Z",
-    "resolved_at": null
+    "resolved_at": "2026-10-13T21:09:45.699Z"
   },
   {
     "id": 25,
@@ -391,9 +392,21 @@ last_updated: 2026-09-10T18:56:18.462Z
     "line": 42,
     "description": "ECOS-04 wake row: three cells PRECONDITION-UNMET(22, background wake-turn D-01) by design — Phase 22 planned-but-unexecuted; replacement assertions stated in-file",
     "status": "fixed",
-    "reason": "",
+    "reason": "260910-24-06: the premise was FALSE — phase 22 executed 2026-09-08..09-10 (43a8378, 5ad02a0, a59baf9 all ancestors of phase-24 base 5552942; 24-VERIFICATION gap 1); three real drivers now run the live wake chain (completing background subagent → scheduleWakeDrain → wakeDrainChain → drainWakeNotifications → runOneTurn) with zero PRECONDITION-UNMET lines; see 24-06-SUMMARY",
     "recorded_at": "2026-09-10T17:32:06.580Z",
     "resolved_at": "2026-09-10T18:56:18.462Z"
+  },
+  {
+    "id": 30,
+    "kind": "deviation",
+    "phase": "23",
+    "file": "kit/checkpoint/store.go",
+    "line": null,
+    "description": "23-UAT stdout-discipline observation (2026-09-20, non-blocking): agent emitted a git-checkpoint store-init log line on stdout at startup — stdout is reserved for ACP frames; evidence 23-UAT-evidence-2026-09-20.md; also logged in STATE.md Blockers/Concerns",
+    "status": "fixed",
+    "reason": "260927-close: non-reproducing on v1.2 release code (fresh-store acp serve probe keeps stdout byte-clean) and the gitRun seam has piped both child fds since the store's first commit; closed by ed83044 (fix(checkpoint): pin child-stdio piping behind a regression test, 2026-09-27) which adds TestGitRun_PipesBothChildStdioFds at kit/checkpoint/store_test.go:1475 pinning the property",
+    "recorded_at": "2026-10-13T21:09:45.941Z",
+    "resolved_at": "2026-09-27T18:15:27Z"
   }
 ]
 ````
