@@ -60,9 +60,8 @@ jobs:
         # what remains skipped is the D-23-07-1 acpserve simulator pair
         # (frame-timeout, environment-independent, fails with and without
         # -race) and the documented TestEscalation_ReapAllUsesLadder
-        # full-suite -race flake (passes isolated). The 2026-09-10 entries
-        # keep their reasons: TestRescanConcurrency (pre-existing race), and
-        # the TestRunSuite_* battery (needs the `openspec` binary — absent
-        # on hosted runners). REMOVE entries here as the underlying failures
-        # are fixed.
-        run: go test -race -count=1 -skip '^TestRescanConcurrency$|^TestRunSuite_|^TestZedSimulatorE2E$|^TestSimulatorCommandSurface$|^TestEscalation_ReapAllUsesLadder$' ./...
+        # full-suite -race flake (passes isolated). The remaining
+        # 2026-09-10 entry keeps its reason: the TestRunSuite_* battery
+        # (needs the `openspec` binary — absent on hosted runners). REMOVE
+        # entries here as the underlying failures are fixed.
+        run: go test -race -count=1 -skip '^TestRunSuite_|^TestZedSimulatorE2E$|^TestSimulatorCommandSurface$|^TestEscalation_ReapAllUsesLadder$' ./...
