@@ -326,6 +326,30 @@ func TestRules(t *testing.T) { //nolint:funlen,maintidx // one row per CC-parity
 			arg:   "echo ok && echo $(secret payload)",
 			want:  perm.Unmatched,
 		},
+		{
+			// THE live-verified WR-02 violation: the inner single quotes sit
+			// inside double quotes, so the substitution stays live and the
+			// allow must never match.
+			name:  "wr02/nested-quote-substitution-never-allows",
+			allow: []string{ruleGit},
+			tool:  toolBash,
+			arg:   `git "log 'x $(cmd) y'"`,
+			want:  perm.Unmatched,
+		},
+		{
+			name:  "wr02/apostrophe-inside-double-quotes-never-allows",
+			allow: []string{ruleEcho},
+			tool:  toolBash,
+			arg:   `echo "it's fine $(reboot)"`,
+			want:  perm.Unmatched,
+		},
+		{
+			name:  "wr02/single-quotes-inside-double-quotes-never-allows",
+			allow: []string{ruleEcho},
+			tool:  toolBash,
+			arg:   `echo "'$(reboot)'"`,
+			want:  perm.Unmatched,
+		},
 	}
 
 	for _, tt := range tests {
