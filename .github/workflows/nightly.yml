@@ -61,9 +61,8 @@ jobs:
         # (frame-timeout, environment-independent, fails with and without
         # -race) and the documented TestEscalation_ReapAllUsesLadder
         # full-suite -race flake (passes isolated). The 2026-09-10 entries
-        # keep their reasons: TestPermissionsE2E (D-23-07-1's -race-only leg;
-        # Phase 23 commit 40b2bbc regression), TestRescanConcurrency
-        # (pre-existing race), and the TestRunSuite_* battery (needs the
-        # `openspec` binary — absent on hosted runners). REMOVE entries here
-        # as the underlying failures are fixed.
-        run: go test -race -count=1 -skip '^TestPermissionsE2E$|^TestRescanConcurrency$|^TestRunSuite_|^TestZedSimulatorE2E$|^TestSimulatorCommandSurface$|^TestEscalation_ReapAllUsesLadder$' ./...
+        # keep their reasons: TestRescanConcurrency (pre-existing race), and
+        # the TestRunSuite_* battery (needs the `openspec` binary — absent
+        # on hosted runners). REMOVE entries here as the underlying failures
+        # are fixed.
+        run: go test -race -count=1 -skip '^TestRescanConcurrency$|^TestRunSuite_|^TestZedSimulatorE2E$|^TestSimulatorCommandSurface$|^TestEscalation_ReapAllUsesLadder$' ./...
