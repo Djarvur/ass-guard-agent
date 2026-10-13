@@ -670,7 +670,7 @@ func (c *convergingProvider) Stream(
 
 	hasResult := false
 
-	for _, m := range msgs {
+	for _, m := range msgs { //nolint:gocritic // read-only assertion sweep (144B Message copies fine in-test)
 		if m.Role == roleToolMsg && m.ToolCallID == convCallID {
 			hasResult = true
 
@@ -1025,7 +1025,7 @@ type fixtureWebBackend struct{ body []byte }
 func (f *fixtureWebBackend) Name() string { return "fixture" }
 
 func (*fixtureWebBackend) Search(_ context.Context, _ string) (json.RawMessage, error) {
-	//nolint:err113,err113-best-effort // test-only guard
+	//nolint:err113 // test-only guard
 	return nil, errors.New("fixtureWebBackend: search not expected")
 }
 

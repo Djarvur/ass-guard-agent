@@ -1602,6 +1602,7 @@ func firstContentOf(msgs []provider.Message) string {
 // first-message content.
 type sizeRejectProvider struct {
 	*compactionProvider
+
 	maxBytes int
 
 	sizes  []int

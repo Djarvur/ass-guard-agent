@@ -30,7 +30,7 @@ type seededPatternRow struct {
 	next   string
 }
 
-var seededPatternRows = []seededPatternRow{
+var seededPatternRows = []seededPatternRow{ //nolint:gochecknoglobals // shared fixture table: multiple batteries seed the same floor rows
 	// The terminal shield: the archive closing ends the chain.
 	{id: "post-archive-terminal", regex: `(?i)archive complete`, action: engine.ActionWait},
 	{id: "post-propose-handoff", regex: "(?i)run `?/opsx:apply`?[^.]*to (start|begin|implement)",
@@ -47,13 +47,13 @@ var seededPatternRows = []seededPatternRow{
 }
 
 // seededHandoffTools are the tool-signal rows of the same floor.
-var seededHandoffTools = map[string]engine.Action{
+var seededHandoffTools = map[string]engine.Action{ //nolint:gochecknoglobals // shared fixture table (the tool-signal floor rows)
 	"openspec_handoff":    engine.ActionContinue,
 	"openspec_stage_done": engine.ActionContinue,
 }
 
 // seededCommandRows are the command-provenance rows (hybrid chaining).
-var seededCommandRows = map[string]struct {
+var seededCommandRows = map[string]struct { //nolint:gochecknoglobals // shared fixture table (command-provenance rows)
 	action engine.Action
 	next   string
 }{

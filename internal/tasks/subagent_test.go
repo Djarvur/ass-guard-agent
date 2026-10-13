@@ -62,7 +62,7 @@ func TestBackgroundOutput_MidRunRetrieval(t *testing.T) {
 		},
 		WorkDir:  dir,
 		Tracker:  tr,
-		ServeCtx: func() context.Context { return context.Background() },
+		ServeCtx: context.Background,
 	}
 
 	launch := RunBackgroundSubagent(dep)
@@ -128,7 +128,7 @@ func TestBackgroundCancel_KilledMarkerAndNotification(t *testing.T) {
 		},
 		WorkDir:  dir,
 		Tracker:  tr,
-		ServeCtx: func() context.Context { return context.Background() },
+		ServeCtx: context.Background,
 	}
 
 	launch := RunBackgroundSubagent(dep)
@@ -195,7 +195,7 @@ func TestBackgroundOutput_ZeroOutput(t *testing.T) {
 		Run:      func(context.Context, func(string)) (string, error) { return "", nil },
 		WorkDir:  dir,
 		Tracker:  tr,
-		ServeCtx: func() context.Context { return context.Background() },
+		ServeCtx: context.Background,
 	})
 
 	deadline := time.Now().Add(5 * time.Second)
@@ -214,12 +214,9 @@ func TestBackgroundOutput_ZeroOutput(t *testing.T) {
 		t.Errorf("notification = %+v; want all D-02 fields present", n)
 	}
 
-	if strings.TrimSpace(n.Tail) == "" == false {
-		// tail may legitimately be header+marker text; the assertion is that
-		// the RUN OUTPUT portion is empty — pinned via the field presence
-		// above and the file content below.
-	}
-
+	// Tail may legitimately be header+marker text; the assertion is that the
+	// RUN OUTPUT portion is empty — pinned via the field presence above and
+	// the file content below (no direct Tail assertion by design).
 	b, _ := os.ReadFile(launch.OutputFile)
 	if !strings.Contains(string(b), "task_id: "+launch.TaskID) {
 		t.Errorf("file = %q; want the header (the pointer never dangles)", string(b))
@@ -249,7 +246,7 @@ func TestBackgroundOutput_SplitRuneBuffered(t *testing.T) {
 		},
 		WorkDir:  dir,
 		Tracker:  tr,
-		ServeCtx: func() context.Context { return context.Background() },
+		ServeCtx: context.Background,
 	})
 
 	if launch.Err != nil {
@@ -327,7 +324,7 @@ func TestBackgroundSubagent_PanicRecovered(t *testing.T) {
 		},
 		WorkDir:  dir,
 		Tracker:  tr,
-		ServeCtx: func() context.Context { return context.Background() },
+		ServeCtx: context.Background,
 	})
 	if launch.Err != nil {
 		t.Fatalf("launch: %v", launch.Err)

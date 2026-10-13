@@ -96,7 +96,7 @@ func mentionProvenance(t *testing.T, sess *session.Session) []session.Line {
 	}
 
 	var out []session.Line
-	for _, l := range lines {
+	for _, l := range lines { //nolint:gocritic // read-only fixture filter — 624B Line copies are irrelevant here
 		if l.Type == session.TypeMentionProvenance {
 			out = append(out, l)
 		}

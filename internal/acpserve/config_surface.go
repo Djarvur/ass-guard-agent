@@ -357,7 +357,7 @@ func (s *ConfigSurface) Set(sessionID, optionID string, value any) ([]acp.Config
 		return nil, serr
 	}
 
-	if outcome.doApply {
+	if outcome.doApply { //nolint:nestif // the D-10 apply ladder: nil-guard + error-log per arm, flat by design
 		switch {
 		case outcome.applyPermMode != "":
 			if modeHook != nil {

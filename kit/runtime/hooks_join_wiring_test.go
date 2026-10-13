@@ -24,45 +24,6 @@ import (
 // hookJoinDenyReason is the project-scope deny hook's pinned reason.
 const hookJoinDenyReason = "denied by project policy"
 
-// plantProjectDenySettings plants <dir>/.claude/settings.json carrying one
-// project-scope PreToolUse deny hook for Bash (the real settings tree the
-// loader discovers — the same file CC reads).
-func plantProjectDenySettings(t *testing.T, dir string) {
-	t.Helper()
-
-	body := map[string]any{
-		"hooks": map[string][]map[string]any{
-			"PreToolUse": {
-				{
-					"matcher": "Bash",
-					"hooks": []map[string]any{
-						{
-							"type": "command",
-							"command": "printf '%s' '" + `{"hookSpecificOutput":{"permissionDecision":"deny",` +
-								`"permissionDecisionReason":"` + hookJoinDenyReason + `"}}'`,
-						},
-					},
-				},
-			},
-		},
-	}
-
-	raw, err := json.Marshal(body)
-	if err != nil {
-		t.Fatalf("marshal settings: %v", err)
-	}
-
-	p := filepath.Join(dir, ".claude", "settings.json")
-
-	if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
-		t.Fatalf("mkdir .claude: %v", err)
-	}
-
-	if err := os.WriteFile(p, raw, 0o600); err != nil {
-		t.Fatalf("write settings.json: %v", err)
-	}
-}
-
 // newHookJoinRunner builds a Runner over a temp workDir with the planted
 // tree, the command registry loaded (the real ecosys.Discover picks up the
 // planted settings.json hooks), HOME pinned hermetic.

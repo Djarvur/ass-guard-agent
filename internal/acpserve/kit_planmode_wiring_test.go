@@ -67,7 +67,7 @@ type planModeScriptProvider struct {
 func (p *planModeScriptProvider) Send(
 	_ context.Context, _ *profile.Profile, _ []provider.Message,
 ) (provider.Response, error) {
-	return provider.Response{}, wireErrNotUsed
+	return provider.Response{}, errWireNotUsed
 }
 
 func (p *planModeScriptProvider) Stream(

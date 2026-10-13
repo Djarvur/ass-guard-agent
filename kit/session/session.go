@@ -1146,8 +1146,8 @@ func (s *Session) withSemaphore(
 // Response (tool_calls + FinishReason) + the concatenated assistant text. ctx
 // cancellation closes the stream (the provider aborts the in-flight request).
 //
-//nolint:cyclop,funlen // one switch over the full chunk-type vocabulary; the WR-04 ctx gate adds two checks
-func (s *Session) streamAndEmit(
+//nolint:funlen // one switch over the full chunk-type vocabulary; the WR-04 ctx gate adds two checks
+func (s *Session) streamAndEmit( //nolint:cyclop,gocyclo,gocognit // streaming projection loop: flat event walk
 	ctx context.Context, turnID string, messages []provider.Message,
 ) (provider.Response, string, error) {
 	ch, err := s.Provider.Stream(ctx, &s.Profile, messages)

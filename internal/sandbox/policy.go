@@ -233,7 +233,8 @@ func unmarshalPolicy(s string) (Policy, error) {
 
 // probeOnce guards the per-process availability cache (the probe runs real
 // children — never per-exec).
-var probeOnce struct {
+var probeOnce struct { //nolint:gochecknoglobals // per-process probe cache: sync.Once over real child probes
 	sync.Once
+
 	av Availability
 }

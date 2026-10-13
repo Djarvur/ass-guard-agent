@@ -102,7 +102,7 @@ func (r *Runner) startScheduler(ctx context.Context) {
 				// 22-01: the tick doubles as the wake drain's later retry
 				// cadence (D-01 fallback) — pending notifications whose
 				// drain found the turn slot held deliver on a later tick.
-				r.scheduleWakeDrain(r.currentSessionID())
+				r.scheduleWakeDrain(r.currentSessionID()) //nolint:contextcheck // 22-08: gated on serve shutdown
 			}
 		}
 	}()
@@ -426,7 +426,7 @@ func (r *Runner) wakeDrainChain(ctx context.Context, sessionID string, flag *ato
 		tr := r.trackerFor(sessionID)
 
 		if ctx.Err() == nil && tr != nil && len(tr.PendingPeek()) > 0 {
-			r.scheduleWakeDrain(sessionID)
+			r.scheduleWakeDrain(sessionID) //nolint:contextcheck // 22-08: gated on serve shutdown
 		}
 	}()
 

@@ -981,7 +981,12 @@ func bgStartCurl(t *testing.T, reg *TaskRegistry, workDir string, opts StartOpts
 	go func() { _ = srv.Serve(ln) }()
 	t.Cleanup(func() { _ = srv.Close(); _ = ln.Close() })
 
-	port = ln.Addr().(*net.TCPAddr).Port
+	addr, aok := ln.Addr().(*net.TCPAddr)
+	if !aok {
+		t.Fatalf("listener addr = %T; want *net.TCPAddr", ln.Addr())
+	}
+
+	port = addr.Port
 
 	id, _, serr := reg.StartWithOpts(workDir,
 		fmt.Sprintf("curl -s --max-time 3 -o /dev/null http://127.0.0.1:%d/ ; echo CURL_EXIT_$?", port), opts)

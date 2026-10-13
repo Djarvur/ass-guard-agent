@@ -343,16 +343,16 @@ func TestMidTurnCapture_GoldenShape(t *testing.T) {
 
 	// 19-01 (PAR-02): the regenerated golden carries cache_control on every
 	// system block — the emission is part of the pinned shape now.
-	goldenSystemCarriesEphemeral(t, params)
+	goldenSystemCarriesEphemeral(t, &params)
 }
 
 // goldenSystemCarriesEphemeral asserts every system block of the marshaled
 // golden request carries cache_control exactly {"type":"ephemeral"} — the
 // corpus form pinned into the golden so the emission cannot silently regress.
-func goldenSystemCarriesEphemeral(t *testing.T, params anthropic.MessageNewParams) {
+func goldenSystemCarriesEphemeral(t *testing.T, params *anthropic.MessageNewParams) {
 	t.Helper()
 
-	raw, err := json.Marshal(params)
+	raw, err := json.Marshal(*params)
 	if err != nil {
 		t.Fatalf("marshal golden request: %v", err)
 	}

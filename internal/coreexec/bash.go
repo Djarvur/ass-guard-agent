@@ -371,7 +371,7 @@ func BashExecute(cfg Config) toolcat.Stub {
 		// foreground machinery below: the command runs one-shot UNCONFINED
 		// with the loud note (confineForeground), and the persistent shell
 		// keeps its own confinement untouched.
-		if a.Persistent && !(cfg.sandboxEnabled() && a.DangerouslyDisableSandbox) {
+		if a.Persistent && (!cfg.sandboxEnabled() || !a.DangerouslyDisableSandbox) {
 			return bashPersistentRun(ctx, cfg, a.Command, timeoutMS)
 		}
 

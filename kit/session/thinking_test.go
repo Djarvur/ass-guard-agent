@@ -80,7 +80,7 @@ func newThinkingSession(
 // AppendRawThinking (the redactor-exempt path) with model attribution, AND the
 // bus carries AgentThoughtChunk whose Content is the thinking FIELD VALUE
 // extracted for display (D-12/D-13).
-func TestStreamAndEmit_ThinkingAppendsRawAndPublishesThought(t *testing.T) {
+func TestStreamAndEmit_ThinkingAppendsRawAndPublishesThought(t *testing.T) { //nolint:funlen // flat thinking battery: append/publish legs in sequence (PAR-05)
 	t.Parallel()
 
 	raw := json.RawMessage(`{"type":"thinking","thinking":"pondering the request","signature":"sig-abc"}`)

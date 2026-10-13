@@ -1,6 +1,8 @@
 package session //nolint:testpackage // internal package test
 
 import (
+	"bytes"
+
 	"context"
 	"encoding/json"
 	"strings"
@@ -143,7 +145,7 @@ const steeringMarkerTag = "<system-reminder>"
 // request (never split), exactly one steering_delivery transcript line, the
 // live note "steering applied: 1 inputs", and no re-delivery on a later turn
 // (the watermark advanced).
-func TestSteeringDeliveryEndToEnd(t *testing.T) { //nolint:funlen // comprehensive end-to-end scenario
+func TestSteeringDeliveryEndToEnd(t *testing.T) { //nolint:funlen,cyclop,gocyclo,gocognit // flat e2e battery: one leg per steering-delivery stage //nolint:funlen // comprehensive end-to-end scenario
 	t.Parallel()
 
 	bus := event.NewBus()
@@ -307,7 +309,7 @@ func TestSteeringProjectAnchorSafety(t *testing.T) {
 
 	// Window order: seed (turn-start user content) + first assistant +
 	// steering marker (user-role) + second assistant.
-	var first, steer, second int = -1, -1, -1
+	var first, steer, second = -1, -1, -1
 
 	for i := range msgs {
 		switch {
@@ -324,7 +326,7 @@ func TestSteeringProjectAnchorSafety(t *testing.T) {
 		t.Fatalf("window incomplete: first=%d steer=%d second=%d; window=%+v", first, steer, second, msgs)
 	}
 
-	if !(first < steer && steer < second) {
+	if first >= steer || steer >= second {
 		t.Errorf("arrival order broken: first=%d steer=%d second=%d", first, steer, second)
 	}
 
@@ -484,10 +486,17 @@ func TestSteeringReplayParity(t *testing.T) {
 		t.Fatalf("replay Project: %v", err)
 	}
 
-	liveJSON, _ := json.Marshal(live)
-	replayJSON, _ := json.Marshal(replayed)
+	liveJSON, lerr := json.Marshal(live)
+	if lerr != nil {
+		t.Fatalf("marshal live transcript: %v", lerr)
+	}
 
-	if string(liveJSON) != string(replayJSON) {
+	replayJSON, rerr := json.Marshal(replayed)
+	if rerr != nil {
+		t.Fatalf("marshal replayed transcript: %v", rerr)
+	}
+
+	if !bytes.Equal(liveJSON, replayJSON) {
 		t.Errorf("replay divergence:\nlive:    %s\nreplay:  %s", liveJSON, replayJSON)
 	}
 
@@ -639,10 +648,13 @@ func TestParkedAskRecord(t *testing.T) {
 	}
 	s.SetAskBroker(context.Background(), NewAskBroker(0, nil))
 
-	qJSON, _ := json.Marshal([]AskQuestion{{
+	qJSON, qerr := json.Marshal([]AskQuestion{{
 		Question: "which database?", Header: "db",
 		Options: []AskOption{{Label: "postgres"}},
 	}})
+	if qerr != nil {
+		t.Fatalf("marshal ask questions: %v", qerr)
+	}
 
 	s.suspendForAsk("s-parked-turn-001", "call-1", qJSON, "AskUserQuestion")
 

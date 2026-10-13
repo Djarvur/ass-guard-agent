@@ -80,37 +80,6 @@ func e2eGates(t *testing.T) {
 	}
 }
 
-// findRepoRoot walks up from the test cwd until a directory carrying both
-// .ass-guard/config.yaml (provider creds) and profiles/ (the zcode
-// bundle) is found.
-func findRepoRoot(t *testing.T) string {
-	t.Helper()
-
-	dir, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("getwd: %v", err)
-	}
-
-	for range 16 {
-		if fileExists(filepath.Join(dir, ".ass-guard", "config.yaml")) &&
-			fileExists(filepath.Join(dir, "profiles")) {
-			return dir
-		}
-
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
-		}
-
-		dir = parent
-	}
-
-	t.Fatal("BLOCKER: cannot locate the repo root (provider creds .ass-guard/config.yaml + profiles/) — " +
-		"the E2E needs the real model; run from a checkout that has them")
-
-	return ""
-}
-
 // fileExists reports whether path exists.
 func fileExists(path string) bool {
 	_, err := os.Stat(path)

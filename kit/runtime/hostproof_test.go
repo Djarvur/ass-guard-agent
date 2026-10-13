@@ -104,7 +104,7 @@ func (e *hpEmitter) Emit(_ context.Context, ev event.Event) error {
 // one without an app adapter).
 type hpRequester struct{}
 
-func (hpRequester) Request(_ context.Context, _ Ask) (Answer, error) {
+func (hpRequester) Request(_ context.Context, _ Ask) (Answer, error) { //nolint:gocritic // interface-mandated signature; the Request param is deliberately unused in this stub
 	return Answer{Cancelled: true}, nil
 }
 

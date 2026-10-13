@@ -14,7 +14,7 @@ const escIntroLen = 2
 // followed by [ or ] is dropped as a byte. Hand-rolled by the
 // deliberately-NOT-a-dependency decision; never applied to foreground Bash
 // output (persistent-shell capture only).
-func StripANSI(s string) string {
+func StripANSI(s string) string { //nolint:gocognit // byte-exact escape parser (22-04): flat walk by design
 	if !strings.ContainsRune(s, '\x1b') {
 		return s // fast path — plain text is byte-identical
 	}

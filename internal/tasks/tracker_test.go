@@ -328,7 +328,7 @@ func cancelKnown(tr *Tracker, id string) bool {
 // TestTrackerQueue_FIFODrainOrder (that battery never re-registers after its
 // completions fire). The handoff row also pins that release-then-admit keeps
 // the count AT the cap, never above it.
-func TestTrackerCap_SlotsFreeAfterCompletion(t *testing.T) {
+func TestTrackerCap_SlotsFreeAfterCompletion(t *testing.T) { //nolint:funlen // flat cap battery: completion/reallocation legs in sequence
 	t.Parallel()
 
 	tr := NewTracker(TrackerOpts{SubagentCap: 2})

@@ -183,7 +183,7 @@ func (m *PTYManager) ShellPID() int {
 // reaches its whole group). The environment pins the non-interactive
 // contract (empty PS1/PS2; ENV/BASH_ENV pointed at /dev/null — no rc
 // sourcing, no prompt, TERM default).
-func (m *PTYManager) ensureShell() error {
+func (m *PTYManager) ensureShell() error { //nolint:funlen // 22-04 shell bootstrap: one ordered sequence
 	if m.ptmx != nil && !m.deadClosedLocked() {
 		return nil
 	}
@@ -200,7 +200,8 @@ func (m *PTYManager) ensureShell() error {
 		return fmt.Errorf("ptty: set window size: %w", err)
 	}
 
-	sh := exec.Command("sh")
+	// The persistent shell deliberately outlives requests (see the doctrine below).
+	sh := exec.Command("sh") //nolint:noctx // 22-04: shell outlives requests; CommandContext would kill it on cancel
 	sh.Dir = m.opts.WorkDir
 	sh.Env = append(environSans("PS1", "PS2", "ENV", "BASH_ENV"),
 		"PS1=", "PS2=", "ENV=/dev/null", "BASH_ENV=/dev/null")

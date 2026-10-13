@@ -296,13 +296,6 @@ func TestPersistentShell_NonPersistentCallsStayStateless(t *testing.T) {
 	}
 }
 
-// jsonString renders a JSON string literal (test-command embedding).
-func jsonString(s string) string {
-	b, _ := json.Marshal(s)
-
-	return string(b)
-}
-
 // bashInput marshals a Bash tool input for the battery.
 func bashInput(t *testing.T, command string, persistent bool) json.RawMessage {
 	t.Helper()
@@ -340,7 +333,7 @@ func waitForFalse(t *testing.T, what string, cond func() bool, deadline time.Dur
 // note fires exactly once naming the state loss; a call already blocked in
 // the read loop when the shell dies returns promptly with the interrupted
 // outcome (never a hang).
-func TestPTYDeadRestart(t *testing.T) { //nolint:paralleltest // real pty shells, kill timing
+func TestPTYDeadRestart(t *testing.T) { //nolint:funlen // flat dead-restart battery: one leg per lifecycle stage //nolint:paralleltest // real pty shells, kill timing
 	t.Run("RestartSucceedsWithNoteOnce", func(t *testing.T) { //nolint:paralleltest // real shell
 		workDir := t.TempDir()
 		target := t.TempDir()
@@ -448,7 +441,7 @@ func TestPTYDeadRestart(t *testing.T) { //nolint:paralleltest // real pty shells
 // between A's two appends) and each caller's capture is attributable to
 // exactly its own command; the shell is lazy (nothing runs before the first
 // persistent call — D-07).
-func TestPTYSerialize(t *testing.T) { //nolint:paralleltest // real pty shells, ordering
+func TestPTYSerialize(t *testing.T) { //nolint:funlen,gocognit // flat serialization battery: assertion-dense by design //nolint:paralleltest // real pty shells, ordering
 	t.Run("ArrivalOrderAndAttribution", func(t *testing.T) { //nolint:paralleltest // real shell
 		dir := t.TempDir()
 		orderFile := filepath.Join(dir, "order.txt")
@@ -566,7 +559,7 @@ func TestPTYSerialize(t *testing.T) { //nolint:paralleltest // real pty shells, 
 // TestPTYEmpty (the PAR-09 empty probe): empty and whitespace-only commands
 // are structured errors that touch nothing — the PTY never starts for them
 // and an established shell's cwd/env are unchanged afterward.
-func TestPTYEmpty(t *testing.T) { //nolint:paralleltest // real pty shells
+func TestPTYEmpty(t *testing.T) { //nolint:tparallel // deliberately sequential (22-04): the subtests parallelize, the top level must not //nolint:paralleltest // real pty shells
 	t.Run("EmptyCommandsAreStructuredErrors", func(t *testing.T) {
 		t.Parallel()
 
@@ -629,7 +622,7 @@ func fdCount() (int, bool) {
 // within the grace window; N start/drain cycles leave the fd count at
 // baseline (no master-fd leak, Pitfall 5); Drain on a never-started manager
 // is an idempotent no-op.
-func TestPTYDrain(t *testing.T) { //nolint:paralleltest // real pty shells, fd baseline
+func TestPTYDrain(t *testing.T) { //nolint:tparallel // deliberately sequential (22-04): the subtests parallelize, the top level must not //nolint:paralleltest // real pty shells, fd baseline
 	t.Run("TermSensitiveShellDiesOnTerm", func(t *testing.T) { //nolint:paralleltest // real shell
 		m := NewPTYManager(PTYOpts{WorkDir: t.TempDir()})
 		ptyRunOK(t, m, "echo warm")

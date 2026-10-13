@@ -12,7 +12,7 @@ import (
 // membership-validated + persisted under the checkpoint: layer key, and the
 // EffectiveCheckpointGCBounds read-back (persisted > embedded defaults, loud
 // fallback on junk).
-func TestCheckpointOptions(t *testing.T) { //nolint:funlen // comprehensive option family battery
+func TestCheckpointOptions(t *testing.T) { //nolint:funlen,cyclop,gocyclo,gocognit // flat option-surface battery //nolint:funlen // comprehensive option family battery
 	t.Parallel()
 
 	t.Run("advertisement", func(t *testing.T) {
@@ -30,12 +30,12 @@ func TestCheckpointOptions(t *testing.T) { //nolint:funlen // comprehensive opti
 			t.Errorf("expiry_days offered = %v; want [1 3 7 14 30]", got)
 		}
 
-		max := optionByID(t, opts, optCheckpointMaxPerSession)
-		if max.Type != acp.ConfigOptionTypeSelect || max.CurrentValue != ckMaxDefault {
-			t.Errorf("max_per_session type/current = %q/%q; want select/%q", max.Type, max.CurrentValue, ckMaxDefault)
+		maxOpt := optionByID(t, opts, optCheckpointMaxPerSession)
+		if maxOpt.Type != acp.ConfigOptionTypeSelect || maxOpt.CurrentValue != ckMaxDefault {
+			t.Errorf("max_per_session type/current = %q/%q; want select/%q", maxOpt.Type, maxOpt.CurrentValue, ckMaxDefault)
 		}
 
-		if got := valuesOf(max); strings.Join(got, ",") != "10,25,50,100" {
+		if got := valuesOf(maxOpt); strings.Join(got, ",") != "10,25,50,100" {
 			t.Errorf("max_per_session offered = %v; want [10 25 50 100]", got)
 		}
 

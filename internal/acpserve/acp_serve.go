@@ -213,7 +213,7 @@ func sandboxPolicyFor(workDir string) sandbox.Policy {
 // 02-05): each session/prompt drives a session.Session whose Provider.Stream
 // streams chunks to the event bus; the runtime Runner forwards bus chunks to
 // the ACP adapter as session/update notifications.
-func Run( //nolint:funlen // :320-425
+func Run( //nolint:funlen,maintidx // the composition root: one linear wiring flow //nolint:funlen // :320-425
 	ctx context.Context, in io.Reader, out, stderr io.Writer, opts *Options,
 ) error {
 	bus := event.NewBus()

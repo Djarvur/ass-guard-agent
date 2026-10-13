@@ -1319,12 +1319,12 @@ func (r *Runner) restoreUndo(sess *session.Session, plan undoPlan) (notice, outc
 //
 //nolint:gocritic // (output, outcome) pair — the handler-table shape
 func builtinUndo(_ context.Context, r *Runner, sess *session.Session, _, args string) (string, string) {
-	plan, out, outcome := r.prepareUndo(sess, args)
+	plan, out, outcome := r.prepareUndo(sess, args) //nolint:contextcheck // 23-04: sync store open, never ctx-bound
 	if plan.targetID == "" {
 		return out, outcome
 	}
 
-	return r.restoreUndo(sess, plan)
+	return r.restoreUndo(sess, plan) //nolint:contextcheck // 23-04: sync store open, never ctx-bound
 }
 
 // resolveSlashCommand returns the Command value the EXPANSION seam expands

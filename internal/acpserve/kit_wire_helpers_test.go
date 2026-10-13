@@ -325,8 +325,8 @@ func wireReadResultFramesCounting(t *testing.T, cliR io.Reader, n int) (msgs []*
 	return out, skipped
 }
 
-// wireErrNotUsed is the Send-not-armed sentinel the scripted providers use.
-var wireErrNotUsed = errors.New("not used")
+// errWireNotUsed is the Send-not-armed sentinel the scripted providers use.
+var errWireNotUsed = errors.New("not used")
 
 // wireComposeRunner builds a Runner through the SAME composition statements
 // acpserve.Run uses (toolkit + catalog + engine setup + renderer + launcher +

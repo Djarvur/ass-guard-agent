@@ -588,7 +588,7 @@ func (r *Runner) expandUserBlocks( //nolint:funcorder // one pipeline; grouped w
 	out := blocks // borrowed until a change forces the copy (copy-on-write)
 
 	key, args, ok := ParseInvocation(blocks[idx].Text)
-	if ok {
+	if ok { //nolint:nestif // the expansion ladder (copy-on-write + side effects); restructuring risks ordering drift
 		if cmd, found := r.resolveSlashCommand(key); found {
 			out = append([]session.ContentBlock(nil), blocks...)
 			out[idx] = session.ContentBlock{Type: blockText, Text: cmd.Expand(args)}
@@ -1165,9 +1165,9 @@ func (r *Runner) routeUndoActive(
 	// D-05 echo through the in-hand emitter, then the D-12 sequence.
 	r.emitClassBEcho(ctx, emit, turnID, text)
 
-	plan, out, outcome := r.prepareUndo(sess, args)
+	plan, out, outcome := r.prepareUndo(sess, args) //nolint:contextcheck // 23-04: sync store open, never ctx-bound
 	if plan.targetID != "" {
-		out, outcome = r.restoreUndoActive(sess, sessionID, plan)
+		out, outcome = r.restoreUndoActive(sess, sessionID, plan) //nolint:contextcheck // sync store open
 	}
 
 	if outcome == "" {
@@ -2183,7 +2183,7 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	// 23-04 (Pitfall 9): the store is RUNNER-owned (checkpointStore — built
 	// once per workspace, loudly degraded on open failure); the session
 	// attaches its snapshot adapter from the shared instance.
-	ckptStore := r.checkpointStore()
+	ckptStore := r.checkpointStore() //nolint:contextcheck // 23-04: sync store open, never ctx-bound
 
 	// 23-04 (SEEDG-02, D-08): the session-start GC sweep — the retention
 	// authority (age+count dual axis with object expiry). Bounds come from
@@ -2431,7 +2431,7 @@ func (r *Runner) sessionFor( //nolint:funcorder,funlen,maintidx,cyclop,gocyclo,g
 	// bind (the toolkit env's ScheduleWakeDrain; the interim fallback's
 	// tracker drain callback) — one shared closure, the baseline's single
 	// contextcheck instance.
-	wake := func() { r.scheduleWakeDrain(sessionID) }
+	wake := func() { r.scheduleWakeDrain(sessionID) } //nolint:contextcheck // 22-08: gated on serve shutdown
 
 	// 25-07 (SessionToolkit, OQ1 coarse): the app toolkit registers the
 	// per-session core executors — task registry, RegisterCore, RegisterAsk
@@ -4379,7 +4379,7 @@ func (r *Runner) emitClassBEcho(ctx context.Context, emit Emitter, turnID, text 
 // subscription's lifetime is the run's.
 func runSubagentWithProgress(
 	bgCtx context.Context, sess *session.Session,
-	req session.BackgroundDispatchRequest, bus *event.Bus, progress func(string),
+	req session.BackgroundDispatchRequest, bus *event.Bus, progress func(string), //nolint:gocritic // snapshot
 ) (string, error) {
 	if sess == nil {
 		return "", errors.New("background subagent: session unavailable")

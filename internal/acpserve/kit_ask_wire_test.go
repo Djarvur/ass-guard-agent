@@ -54,7 +54,7 @@ type askToolCallProvider struct {
 func (p *askToolCallProvider) Send(
 	_ context.Context, _ *profile.Profile, _ []provider.Message,
 ) (provider.Response, error) {
-	return provider.Response{}, wireErrNotUsed
+	return provider.Response{}, errWireNotUsed
 }
 
 func (p *askToolCallProvider) Stream(

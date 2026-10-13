@@ -317,7 +317,7 @@ func errorEnvelopeCause(raw []byte) error {
 
 	var env anthropicErrorEnvelope
 	if err := json.Unmarshal(raw, &env); err != nil || env.Error.Message == "" {
-		return nil
+		return nil //nolint:nilerr // DEGRADE malformed/empty envelopes to the generic structural classification (19-02)
 	}
 
 	if env.Error.Type != "" {

@@ -486,7 +486,7 @@ func commandsOf(hooks []HookConfig) []string {
 // every failure mode fails open with NO-DECISION (PAR-03 letter — including
 // the ctx-cancel row that pins the flagged PAR-03 concurrency assumption:
 // sequential execution, cancel → no-decision).
-func TestPreToolUseVerdict(t *testing.T) { //nolint:paralleltest // mutates the package logger seam
+func TestPreToolUseVerdict(t *testing.T) { //nolint:funlen // flat hook battery: one leg per verdict row //nolint:paralleltest // mutates the package logger seam
 	buf := captureShadowLogger(t)
 
 	work := t.TempDir()

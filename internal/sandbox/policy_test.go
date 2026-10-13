@@ -157,8 +157,7 @@ func TestPolicy_WrapCmdSubstitutionContract(t *testing.T) {
 	// The ORIGINAL argv survives as the tail.
 	tail := cmd.Args[len(cmd.Args)-2:]
 
-	if tail[0] != "sh" || tail[1] != "-c" || tail[2-2] != "sh" {
-		// tail[0]=="sh", tail[1]=="-c" checked above; command string last:
+	if tail[0] != "sh" || tail[1] != "-c" { // the command string itself is checked below via `last`
 		t.Logf("tail = %v", tail)
 	}
 

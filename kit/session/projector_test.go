@@ -819,7 +819,7 @@ func TestPairingInvariant_ProjectorWindow(t *testing.T) {
 // projectedHasCall reports whether any assistant batch in the projected
 // window carries the given tool-call id.
 func projectedHasCall(msgs []provider.Message, id string) bool {
-	for _, mm := range msgs {
+	for _, mm := range msgs { //nolint:gocritic // read-only assertion sweep (144B Message copies fine in-test)
 		for _, tc := range mm.ToolCalls {
 			if tc.ID == id {
 				return true
@@ -1939,7 +1939,7 @@ func TestThinkingGolden(t *testing.T) {
 // runGoldenThinkingCase drives one wire-pair record through the five hops.
 //
 //nolint:funlen,gocognit // one labeled block per hop is the point
-func runGoldenThinkingCase(t *testing.T, c goldenThinkingCase) {
+func runGoldenThinkingCase(t *testing.T, c goldenThinkingCase) { //nolint:cyclop,gocyclo,maintidx // golden-case runner
 	t.Helper()
 
 	// Hop 1: scripted SSE → drainSSE → thinking StreamChunks.
@@ -2120,7 +2120,7 @@ func runGoldenThinkingCase(t *testing.T, c goldenThinkingCase) {
 			continue
 		}
 
-		for _, b := range mp.Content {
+		for _, b := range mp.Content { //nolint:gocritic // read-only signature sweep (152B Block copies fine in-test)
 			switch {
 			case b.OfThinking != nil:
 				gotSig = append(gotSig, b.OfThinking.Signature)

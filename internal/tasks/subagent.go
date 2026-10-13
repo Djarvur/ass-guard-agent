@@ -194,7 +194,8 @@ func (w *subagentWriter) append(text string) {
 // hold w.mu). A trailing byte sequence is incomplete iff a lead byte sits
 // within UTFMax-1 bytes of the end without its full continuation.
 func (w *subagentWriter) writeRuneBuffered(p []byte) {
-	buf := append(w.pending, p...)
+	buf := append([]byte(nil), w.pending...) // fresh buffer: the pending array is never shared into buf
+	buf = append(buf, p...)
 	w.pending = nil
 
 	cut := len(buf)

@@ -36,7 +36,7 @@ var errNotChild = errors.New("sandbox: argv is not a sandbox child")
 // A non-absolute target resolves through exec.LookPath BEFORE the exec; the
 // ro ruleset (already applied at this point) still grants the read+execute
 // the lookup and exec need.
-var sandboxChildExec = func(policy Policy, argv []string) error {
+var sandboxChildExec = func(policy Policy, argv []string) error { //nolint:gochecknoglobals // test-injection seam
 	if aerr := ApplyChildRuleset(policy); aerr != nil {
 		return fmt.Errorf("sandbox: child ruleset: %w", aerr)
 	}

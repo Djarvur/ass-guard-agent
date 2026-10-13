@@ -23,16 +23,6 @@ import (
 	"github.com/Djarvur/ass-guard-agent/kit/session"
 )
 
-// acpRun drives one turn through the kit Runner under the acp.TurnRunner
-// shape the batteries were written against (blocks converted, emitter
-// wrapped, stop marker mapped — the production adapter's twin).
-func acpRun(
-	ctx context.Context, r *Runner, sessionID string,
-	emit acp.ChunkEmitter, prompt []acp.ContentBlock,
-) (string, error) {
-	return acpTurnRunner{r: r}.Run(ctx, sessionID, emit, prompt)
-}
-
 // acpTurnRunner is the test-local acp.TurnRunner twin of the production
 // kitTurnAdapter (internal/acpserve/kit_adapter.go).
 type acpTurnRunner struct{ r *Runner }
@@ -108,17 +98,6 @@ func (e acpKitEmitter) Emit(_ context.Context, ev event.Event) error {
 		return toolEmit.ToolCallUpdate(&uf)
 	default:
 		return nil
-	}
-}
-
-// acpKitEmitterFactory adapts the server's wire emitter factory to the kit
-// seam (the production kitEmitterFactory's twin) — the SetEmitter test
-// wiring sites keep their WINDOWS #3 junction shape.
-func acpKitEmitterFactory(
-	emitFor func(sessionID string) acp.ChunkEmitter,
-) func(sessionID string) Emitter {
-	return func(sessionID string) Emitter {
-		return acpKitEmitter{emit: emitFor(sessionID)}
 	}
 }
 

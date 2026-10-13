@@ -396,7 +396,8 @@ func (s *Store) Sweep(ctx context.Context, maxAge time.Duration, perSession int)
 			}
 		}
 
-		victims := append(ageVictims, expireByCount(ageSurvivors, perSession)...)
+		victims := append([]Entry(nil), ageVictims...)
+		victims = append(victims, expireByCount(ageSurvivors, perSession)...)
 
 		for _, v := range victims {
 			_, derr := s.git(ctx, "update-ref", "-d", v.Ref)
@@ -638,7 +639,7 @@ func findNestedRepos(workDir string) []string {
 
 	_ = filepath.WalkDir(workDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
-			return nil // skip unreadable entries; the walk continues
+			return nil //nolint:nilerr // skip UNREADABLE entries — best-effort detection; walk continues
 		}
 
 		if d.IsDir() {

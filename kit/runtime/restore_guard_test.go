@@ -589,6 +589,7 @@ func startBlockedTurn(t *testing.T, r *Runner, sessionID, text string, entered <
 // own-turn outranking row needs (blockingProvider's once covers only one).
 type twoBlockProvider struct {
 	scriptedACPProvider
+
 	entered []chan struct{}
 	release []chan struct{}
 	mu      sync.Mutex
@@ -731,7 +732,7 @@ func TestUndoCrossSessionRefusal(t *testing.T) {
 // (truth 2's outranking claim): B's parked engine chain, and B's OWN live
 // client turn. Nothing of B's is cancelled, nothing is restored, A stays
 // blocked, and the refusal is the named, durable, D-05 shape.
-func TestUndoActivePathCrossSessionRefusal(t *testing.T) { //nolint:funlen // two-variant scenario
+func TestUndoActivePathCrossSessionRefusal(t *testing.T) { //nolint:funlen,cyclop,gocyclo,gocognit // flat refusal battery: one row per G-23-1 refusal class //nolint:funlen // two-variant scenario
 	const (
 		sidA = "sess-a-live"
 		sidB = "sess-b-idle"

@@ -20,6 +20,7 @@ import (
 // anti-queue-behind lens.
 type blockingProvider struct {
 	scriptedACPProvider
+
 	entered chan struct{}
 	release chan struct{}
 	once    sync.Once
@@ -361,7 +362,7 @@ func TestSteerIngressClassBNotSteered(t *testing.T) {
 // non-answer form) without killing anything; an answer-shaped input still
 // routes through ResolveAsk (17-D-11 preserved); non-grammar text containing
 // "cancel" still routes as an ANSWER (exact-phrase matching only).
-func TestParkedAskCancelGrammar(t *testing.T) {
+func TestParkedAskCancelGrammar(t *testing.T) { //nolint:funlen // flat grammar battery: one case per wire form
 	t.Parallel()
 
 	park := func(t *testing.T) (*Runner, *session.Session, string) {
@@ -495,7 +496,7 @@ func newBlockingEngineRunner(t *testing.T, script ...scriptedResp) (*Runner, *bl
 // parked-cancel grammar input resolves it cancelled-normal without killing
 // anything — every input classifies per the matrix, nothing is swallowed or
 // misrouted, and no cancelled content reaches any request.
-func TestCombinedSteerScenario(t *testing.T) { //nolint:funlen,maintidx // comprehensive combined scenario
+func TestCombinedSteerScenario(t *testing.T) { //nolint:funlen,cyclop,gocyclo // flat combined-scenario battery: one leg per ingress row //nolint:funlen,maintidx // comprehensive combined scenario
 	t.Parallel()
 
 	r, prov := newBlockingEngineRunner(t,

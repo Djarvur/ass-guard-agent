@@ -721,7 +721,7 @@ func wireTestBackgroundLaunch(s *Session, env *bgTestEnv) {
 			},
 			WorkDir:  s.WorkDir,
 			Tracker:  env.tracker,
-			ServeCtx: func() context.Context { return context.Background() },
+			ServeCtx: context.Background,
 		})
 		res := BackgroundDispatchResult{TaskID: launch.TaskID, OutputFile: launch.OutputFile,
 			Queued: launch.Queued, Note: launch.Note, Err: launch.Err}

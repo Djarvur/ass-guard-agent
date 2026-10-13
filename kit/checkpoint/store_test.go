@@ -1,6 +1,8 @@
 package checkpoint //nolint:testpackage // internal package test (Task 2 drives the unexported commit step)
 
 import (
+	"bytes"
+
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -810,7 +812,7 @@ var errFakeGit = errors.New("fake git: always fails")
 // counter across process restarts (max+1 from existing refs), restorable via
 // the SAME machinery (byte-identical tree round trip), and listed naturally
 // among turn entries.
-func TestPreRestoreSnapshotFamily(t *testing.T) {
+func TestPreRestoreSnapshotFamily(t *testing.T) { //nolint:funlen // flat snapshot battery: one leg per seam-failure family
 	t.Parallel()
 
 	work := t.TempDir()
@@ -1114,17 +1116,16 @@ func TestRestoreCleanNeverDescendsIntoNestedRepos(t *testing.T) { //nolint:paral
 
 	type invocation struct {
 		args []string
-		out  string
 	}
 
 	var invocations []invocation
 
 	orig := gitRun
 
-	gitRun = func(_ context.Context, _ string, _ []string, _ string, args ...string) ([]byte, error) {
+	gitRun = func(ctx context.Context, _ string, _ []string, _ string, args ...string) ([]byte, error) {
 		invocations = append(invocations, invocation{args: args})
 
-		return orig(context.Background(), work, nil, "git", args...)
+		return orig(ctx, work, nil, "git", args...)
 	}
 
 	defer func() { gitRun = orig }()
@@ -1424,7 +1425,7 @@ func TestUserRepoExclude(t *testing.T) {
 	}
 
 	afterSecond, _ := os.ReadFile(filepath.Join(infoDir, "exclude"))
-	if string(afterFirst) != string(afterSecond) {
+	if !bytes.Equal(afterFirst, afterSecond) {
 		t.Errorf("second append changed the file:\nfirst:  %q\nsecond: %q", afterFirst, afterSecond)
 	}
 

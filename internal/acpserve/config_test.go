@@ -434,7 +434,7 @@ func (w *compactionWiredFixture) applies() []compactionApply {
 // comparison half is TestCompaction_SettingsFromConfig (internal/session).
 //
 //nolint:funlen,gocognit,gocyclo,cyclop // one battery over the six behaviors
-func TestCompactionOptions(t *testing.T) {
+func TestCompactionOptions(t *testing.T) { //nolint:maintidx // flat compaction-option battery: one assertion block per wire row
 	t.Parallel()
 
 	t.Run("advertisement: effective values through the layer chain", func(t *testing.T) {
@@ -1438,7 +1438,6 @@ func runLiveApplyServe( //nolint:nonamedreturns // names document the triple for
 	stdout = &syncBuffer{}
 	stderr = &syncBuffer{}
 
-	//nolint:testingcontext // explicit cancel before the pipe close
 	ctx, cancel := context.WithCancel(context.Background())
 
 	inPipeR, inPipeW := io.Pipe()

@@ -117,12 +117,14 @@ linters:
         - style
       settings:
         # 2026-10-14 gate restoration: the house passes ~80-128-byte wire
-        # structs by value deliberately (parity shapes); 128 keeps the check
-        # on genuinely oversized copies without flagging them.
+        # structs by value deliberately (parity shapes). gocritic compares
+        # >= the threshold, so 129 (not 128) is the smallest value that
+        # exempts exactly-128-byte parity structs while flagging genuinely
+        # oversized copies.
         hugeParam:
-          sizeThreshold: 128
+          sizeThreshold: 129
         rangeValCopy:
-          sizeThreshold: 128
+          sizeThreshold: 129
     revive:
       rules:
         - name: blank-imports

@@ -273,7 +273,7 @@ func (r *TaskRegistry) StartWithOpts(workDir, command string, opts StartOpts) (t
 // share it): log open, `sh -c` child in its own group, Pdeathsig (linux),
 // the Wait goroutine with the terminal transition + completion hook, then
 // the FIFO drain of the next waiter.
-func (r *TaskRegistry) launch(task *bgTask, workDir, command string) error {
+func (r *TaskRegistry) launch(task *bgTask, workDir, command string) error { //nolint:funlen // ordered launch funnel
 	f, err := openTaskLog(workDir, task.id)
 	if err != nil {
 		task.setState(bgFailed)

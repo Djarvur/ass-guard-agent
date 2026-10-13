@@ -533,7 +533,7 @@ func liveSandboxHandle(t *testing.T, workDir string) sandbox.Handle {
 func dirOutsidePolicy(t *testing.T) string {
 	t.Helper()
 
-	outside, err := os.MkdirTemp("/var/tmp", "sbx-outside-")
+	outside, err := os.MkdirTemp("/var/tmp", "sbx-outside-") //nolint:usetesting // /var/tmp deliberate: must sit OUTSIDE the policy dirs; t.TempDir lands inside
 	if err != nil {
 		t.Skipf("/var/tmp unavailable for the outside-policy dir: %v", err)
 	}
@@ -686,7 +686,12 @@ func TestBashSandbox_LiveConfinementDeniesNetworkWriteOutside(t *testing.T) {
 	go func() { _ = srv.Serve(ln) }()
 	defer func() { _ = srv.Close() }()
 
-	port := ln.Addr().(*net.TCPAddr).Port
+	addr, aok := ln.Addr().(*net.TCPAddr)
+	if !aok {
+		t.Fatalf("listener addr = %T; want *net.TCPAddr", ln.Addr())
+	}
+
+	port := addr.Port
 	out, err = bashExec(context.Background(),
 		json.RawMessage(`{"command":"curl -s --max-time 3 -o /dev/null http://127.0.0.1:`+
 			strconv.Itoa(port)+`/ ; echo CURL_EXIT_$?"}`))
@@ -813,7 +818,7 @@ func TestBashSandbox_UnavailableNotedPerRun(t *testing.T) {
 		return n
 	}
 
-	if !(numOf((*lines)[1]) > numOf((*lines)[0])) {
+	if numOf((*lines)[1]) <= numOf((*lines)[0]) {
 		t.Errorf("the counter does not increment across runs: %q then %q", (*lines)[0], (*lines)[1])
 	}
 }

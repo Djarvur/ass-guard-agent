@@ -2,7 +2,6 @@ package ecosys //nolint:testpackage // internal package test (accesses unexporte
 
 import (
 	"context"
-	"errors"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -22,7 +21,7 @@ func exitCodeErr(t *testing.T, code int) error {
 	require.Error(t, err)
 
 	var exitErr *exec.ExitError
-	require.True(t, errors.As(err, &exitErr), "sh exit must yield *exec.ExitError")
+	require.ErrorAs(t, err, &exitErr, "sh exit must yield *exec.ExitError")
 	require.Equal(t, code, exitErr.ExitCode())
 
 	return err
@@ -44,7 +43,7 @@ func verdictJSON(decision, reason string) string {
 // which BLOCKS even over a valid JSON allow on stdout (the CC spoofing rule,
 // T-21-02) — and the NO-DECISION fail-open for silence, schema-invalid
 // bodies, and execution failures (PAR-03 letter).
-func TestHookVerdictParse(t *testing.T) {
+func TestHookVerdictParse(t *testing.T) { //nolint:funlen // flat parse battery: one case per dialect form
 	t.Parallel()
 
 	cases := []struct {
@@ -178,7 +177,7 @@ func TestHookVerdictParse(t *testing.T) {
 // USER-scope allow applies only when no deny exists; a project-scope allow
 // is demoted to a loud ignored-allow warning contributing no decision
 // (repo-shipped files never widen trust); ask survives unless a deny exists.
-func TestHookVerdictResolve(t *testing.T) { //nolint:paralleltest // mutates the package logger seam
+func TestHookVerdictResolve(t *testing.T) { //nolint:funlen // flat resolve battery: one case per precedence row //nolint:paralleltest // mutates the package logger seam
 	cases := []struct {
 		name       string
 		results    []ScopedResult

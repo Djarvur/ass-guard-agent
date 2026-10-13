@@ -1890,7 +1890,7 @@ func TestUndoWalk(t *testing.T) {
 // negative depths behave as 1; non-numeric args produce the D-05 error text
 // with a failed local_command record and zero provider calls; beyond-depth
 // clamps to the oldest entry; an empty store is a LOUD nothing-to-restore.
-func TestClassBUndoEdges(t *testing.T) {
+func TestClassBUndoEdges(t *testing.T) { //nolint:funlen // flat class-B battery: one leg per edge row
 	t.Parallel()
 
 	t.Run("zero depth behaves as one", func(t *testing.T) {
@@ -2097,7 +2097,7 @@ const stopCancelledLit = "cancelled"
 // the mid-turn steering that sat queued resolves cancelled-normal (no
 // steering_delivery line, no later-window delivery), and the /undo text
 // itself never reaches any captured request (T-23-15).
-func TestUndoAutoCancel(t *testing.T) { //nolint:funlen,maintidx,cyclop // timed end-to-end scenario
+func TestUndoAutoCancel(t *testing.T) { //nolint:funlen,cyclop,gocyclo,gocognit // flat undo battery: one leg per D-12 cancel row //nolint:funlen,maintidx,cyclop // timed end-to-end scenario
 	r, prov := newBlockingRunner(t, scriptedResp{text: "done", finish: stopEndTurn})
 
 	const sid = "sess-undo-active"
@@ -2302,7 +2302,7 @@ func TestUndoAutoCancelParkedChain(t *testing.T) { //nolint:paralleltest // park
 // SnapshotPreRestore failure aborts the undo AND leaves the running turn
 // untouched — nothing is cancelled (the snapshot precedes the cancel), the
 // turn completes normally once released, and the workspace is unmutated.
-func TestUndoFailClosed(t *testing.T) { //nolint:paralleltest // seam swap must not race parallel tests
+func TestUndoFailClosed(t *testing.T) { //nolint:funlen // flat fail-closed battery: one leg per seam failure //nolint:paralleltest // seam swap must not race parallel tests
 	r, prov := newBlockingRunner(t, scriptedResp{text: "done", finish: stopEndTurn})
 
 	const sid = "sess-undo-failclosed"
@@ -2396,7 +2396,7 @@ func TestUndoFailClosed(t *testing.T) { //nolint:paralleltest // seam swap must 
 // repository in the workspace refuses /undo outright even with an ACTIVE
 // turn — nothing is cancelled, nothing is restored, the refusal names the
 // nested paths, and the turn completes normally once released.
-func TestUndoNestedRefusal(t *testing.T) { //nolint:paralleltest // timed mid-turn scenario
+func TestUndoNestedRefusal(t *testing.T) { //nolint:funlen // flat refusal battery: one leg per nested row //nolint:paralleltest // timed mid-turn scenario
 	r, prov := newBlockingRunner(t, scriptedResp{text: "done", finish: stopEndTurn})
 
 	const sid = "sess-undo-nested"

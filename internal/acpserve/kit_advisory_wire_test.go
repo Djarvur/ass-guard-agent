@@ -31,7 +31,7 @@ type questionClosingProvider struct{}
 func (p *questionClosingProvider) Send(
 	_ context.Context, _ *profile.Profile, _ []provider.Message,
 ) (provider.Response, error) {
-	return provider.Response{}, wireErrNotUsed
+	return provider.Response{}, errWireNotUsed
 }
 
 func (p *questionClosingProvider) Stream(

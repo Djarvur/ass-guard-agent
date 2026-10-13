@@ -75,7 +75,7 @@ func executeClosure(adapter *Adapter, shape CommandShape) toolcat.Stub {
 		}
 
 		if len(input) > 0 {
-			_ = json.Unmarshal(input, &in) //nolint:err113-best-effort // best-effort parse; empty args on garbage
+			_ = json.Unmarshal(input, &in) //nolint:err113 // best-effort parse; empty args on garbage
 		}
 
 		res := adapter.RunGuarded(ctx, shape.TimeoutSecs, shape.ExitClass, shape.Argv, in.Args...)

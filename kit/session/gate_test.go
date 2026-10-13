@@ -485,7 +485,7 @@ func projectedToolUseIDs(t *testing.T, s *Session, turnID string) []string {
 
 	var ids []string
 
-	for _, m := range messages {
+	for _, m := range messages { //nolint:gocritic // read-only fixture sweep (144B Message copies fine in-test)
 		for _, tc := range m.ToolCalls {
 			ids = append(ids, tc.ID)
 		}
@@ -2137,7 +2137,7 @@ func TestGateHookVerdict(t *testing.T) { //nolint:funlen,cyclop,gocyclo,gocognit
 // re-fires a surface round-trip a sticky-degraded client cannot answer. The
 // human + capable-client control still suspends (the escalation lever's
 // ungated suspend is pinned by the TestGateHookVerdict battery above).
-func TestGateHookAskFailSafes(t *testing.T) {
+func TestGateHookAskFailSafes(t *testing.T) { //nolint:funlen,gocognit // flat fail-safe battery: one row per degraded ask class
 	t.Parallel()
 
 	askVerdict := func(context.Context, string, json.RawMessage) (HookVerdict, string) {

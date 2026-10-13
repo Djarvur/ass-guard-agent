@@ -72,7 +72,7 @@ func (p *scriptedACPProvider) Stream(
 	p.streamedMsgCounts = append(p.streamedMsgCounts, len(msgs))
 
 	texts := make([]string, 0, len(msgs))
-	for _, m := range msgs {
+	for _, m := range msgs { //nolint:gocritic // read-only fixture sweep (144B Message copies fine in-test)
 		texts = append(texts, m.Content)
 	}
 

@@ -132,7 +132,7 @@ func TestServeAudit_RequestShapedThroughRealSeam(t *testing.T) {
 	stdout := &syncBuffer{}
 	stderr := &syncBuffer{}
 
-	//nolint:modernize,testingcontext // explicit cancel before the pipe close
+	//nolint:modernize // explicit cancel before the pipe close
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -498,7 +498,7 @@ func TestServeSessionNewCommandOrderAfterResponse(t *testing.T) {
 	stdout := &syncBuffer{}
 	stderr := &syncBuffer{}
 
-	//nolint:modernize,testingcontext // explicit cancel before the pipe close
+	//nolint:modernize // explicit cancel before the pipe close
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -695,7 +695,7 @@ func TestServeMirror_Override(t *testing.T) {
 	stdout := &syncBuffer{}
 	stderr := &syncBuffer{}
 
-	//nolint:modernize,testingcontext // explicit cancel before pipe close
+	//nolint:modernize // explicit cancel before pipe close
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1103,7 +1103,7 @@ func TestSandboxFlag_MainHookFirstCall(t *testing.T) {
 		t.Fatalf("read cmd/ass-guard/main.go: %v", err)
 	}
 
-	mainIdx := strings.Index(string(src), "func main() {")
+	mainIdx := bytes.Index(src, []byte("func main() {"))
 	if mainIdx < 0 {
 		t.Fatal("func main not found in cmd/ass-guard/main.go")
 	}
