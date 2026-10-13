@@ -1496,6 +1496,17 @@ func (r *Runner) runOneTurn(
 		// the response never waits on a finished chain.
 		r.chainExit(sessionID)
 		r.unregisterParkedChain(sessionID, pc)
+
+		// 261013-uhx (the 23-02 completion-window gap): a prompt enqueued as
+		// steering while this chain was finishing — after the turn's last
+		// boundary drain, before the chainExit above — has no future drain:
+		// the dying chain never reaches another tool-loop iteration head.
+		// Deliver the leftovers here, now that chainCount is truthfully 0,
+		// as an ordinary turn. The drain runs BEFORE the report below so a
+		// non-parked caller's deferred turn-exit rider (which resolves
+		// leftover steering cancelled-normal) cannot cancel the batch first.
+		r.spillOrphanedSteering(sessionID)
+
 		parkedCancel()
 
 		done <- observeResult{stop, err}
@@ -1669,6 +1680,81 @@ func (r *Runner) resolveSessionSteering(sessionID string) int { //nolint:funcord
 	}
 
 	return sess.SteerQueue().CancelAll()
+}
+
+// spillOrphanedSteering delivers steering inputs that were enqueued during a
+// chain's completion window (261013-uhx, the 23-02 ingress gap behind the
+// TestPermissionsE2E -race regression): the pre-mutex classifier enqueues
+// plain text whenever chainCount > 0 (the pinned 23-02 contract — a parked
+// or mid-request chain steers), but a chain one microsession from Observe's
+// return never reaches another boundary drain (drainSteering runs only at
+// the tool-loop iteration head), and the normal chain exit has no steering
+// rider — only the client-turn exit and the parked-chain CANCEL paths
+// resolve the queue. The orphaned input sat queued — already acknowledged
+// on the wire with an end_turn — until a teardown rider cancelled it while
+// the caller awaited its output.
+//
+// Placement is the race-free half of the fix: the drain runs AFTER
+// chainExit, so the spillover turn cannot be re-classified as steering by
+// the ingress (nothing is active anymore), and the drain runs BEFORE the
+// Observe-completion report, so a non-parked caller's deferred turn-exit
+// rider (which resolves leftover steering cancelled-normal) cannot cancel
+// the batch out from under it.
+//
+// The turn itself is deliberately NOT an r.Run re-entry: Run's classifier
+// could see the just-returning client turn's turnActive flag (or a fresh
+// chain) and re-enqueue the very input being delivered. It rides plain
+// sess.Prompt under the session turn mutex instead — the exact delivery
+// precedent the 23-02 ingress battery pins ("the chain's next turn — the
+// bridge drives sess.Prompt — delivers it"): the boundary machinery inside
+// the turn loop is the one deliverer of queued steering, the permission
+// gate stays in path, and queued steering text is never a resolvable
+// command (the classifier routes resolved commands to the ordinary path,
+// never to the queue), so no ingress-side expansion is missed. Server-driven
+// streaming rides the session-lifetime forwarder (no Run forwarder exists;
+// clientTurnActive is false — no muting, no duplicates). Serve teardown
+// skips the spill: the close chain's cancelled-normal riders own the queue
+// then. One spill consumes the whole drained batch in ONE turn; a further
+// orphaning requires a NEW enqueued input, so the spill chain terminates.
+func (r *Runner) spillOrphanedSteering(sessionID string) { //nolint:funcorder // steering group
+	serveCtx := r.serveCtxOrBackground()
+	if serveCtx.Err() != nil {
+		return
+	}
+
+	r.sessMu.Lock()
+	sess := r.sessions[sessionID]
+	r.sessMu.Unlock()
+
+	if sess == nil || sess.SteerQueue() == nil {
+		return
+	}
+
+	batch := sess.SteerQueue().Drain()
+	if len(batch) == 0 {
+		return
+	}
+
+	blocks := make([]session.ContentBlock, 0, len(batch))
+	for _, it := range batch {
+		blocks = append(blocks, session.ContentBlock{Type: blockText, Text: it.Text})
+	}
+
+	log.Printf("ass-guard: steering spillover: delivering %d orphaned input(s) as an ordinary turn (chain exited before a boundary drain)", len(batch))
+
+	go func() {
+		// The 12-07 session turn mutex — the same serialization every turn
+		// on this session holds, so the spill queues behind (never overlaps)
+		// a client turn or a chain injection.
+		turnMu := r.sessionTurnMu(sessionID)
+
+		turnMu.Lock()
+		defer turnMu.Unlock()
+
+		if _, err := sess.Prompt(serveCtx, blocks); err != nil {
+			log.Printf("ass-guard: steering spillover turn failed for session %s (input dropped): %v", sessionID, err)
+		}
+	}()
 }
 
 // chainEnter/chainExit/chainCount track the active engine chains per session
