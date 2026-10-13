@@ -680,6 +680,91 @@ func TestEngineChainSteered(t *testing.T) {
 	}
 }
 
+// TestSteerSpilloverOnChainExit pins the 261013-uhx completion-window fix
+// (the root cause behind the TestPermissionsE2E -race regression): a prompt
+// enqueued as steering during the chain's COMPLETION window — after the
+// turn's final boundary drain, while the last request is in flight — is
+// delivered as an ordinary spillover turn when the chain exits, instead of
+// sitting orphaned in the queue (no future boundary exists: the scripted
+// final response ends the tool loop) until a teardown rider cancels it while
+// the caller awaits its output.
+//
+// Determinism: the steered input lands while request 1 is BLOCKED in flight
+// — strictly after the iteration-head drain that preceded it — so the
+// orphaning ordering is constructed, not raced. RED shape (without the
+// chain-exit spill): the queue holds the input forever and request 2 never
+// happens.
+func TestSteerSpilloverOnChainExit(t *testing.T) {
+	t.Parallel()
+
+	r, prov := newBlockingEngineRunner(t,
+		scriptedResp{text: "chain turn done", finish: stopEndTurn},
+		scriptedResp{text: "spillover turn done", finish: stopEndTurn},
+	)
+
+	const sid = "sess-steer-spill"
+
+	turnDone := make(chan string, 1)
+
+	go func() {
+		stop, err := r.Run(context.Background(), sid, &noopEmitter{},
+			[]session.ContentBlock{{Type: blockText, Text: "main task"}})
+		if err != nil {
+			t.Errorf("chain Run err: %v", err)
+		}
+
+		turnDone <- stop
+	}()
+
+	<-prov.entered // request 1 in flight; the engine chain holds chainCount > 0
+
+	// The completion-window steer: classified per the pinned 23-02 contract
+	// (chain active → enqueue + immediate end_turn return) — yet the turn's
+	// scripted response carries no tool calls, so no boundary drain follows.
+	st, err := r.Run(context.Background(), sid, &noopEmitter{},
+		[]session.ContentBlock{{Type: blockText, Text: "late steer"}})
+	if err != nil || st != stopEndTurn {
+		t.Fatalf("steered Run = (%q,%v); want (end_turn, nil)", st, err)
+	}
+
+	if q := r.sessions[sid].SteerQueue(); q == nil || q.Pending() != 1 {
+		t.Fatalf("SteerQueue Pending; want the completion-window input enqueued")
+	}
+
+	close(prov.release)
+
+	select {
+	case stop := <-turnDone:
+		if stop != stopEndTurn {
+			t.Errorf("chain stop = %q; want end_turn (chain completed normally)", stop)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the chain did not complete")
+	}
+
+	// The chain exit must spill the orphaned input as an ordinary turn: the
+	// provider sees the SECOND request carrying it (results-based bounded
+	// wait — the spill turn runs on its own goroutine).
+	deadline := time.Now().Add(5 * time.Second)
+
+	for prov.callCount() < 2 && time.Now().Before(deadline) {
+		time.Sleep(2 * time.Millisecond)
+	}
+
+	if prov.callCount() < 2 {
+		t.Fatal("the completion-window steering was never delivered (no spillover turn): the input is orphaned in the queue")
+	}
+
+	if !prov.streamSawText(1, "late steer") {
+		t.Error("the spillover turn's request did not carry the orphaned steering input")
+	}
+
+	// The queue DRAINED as delivered — not resolved cancelled-normal.
+	if n := r.sessions[sid].SteerQueue().Pending(); n != 0 {
+		t.Errorf("SteerQueue Pending = %d after the spillover; want 0 (delivered)", n)
+	}
+}
+
 // TestParkedAskNoteEmitter pins the D-05 live half's placement (23-02): the
 // ask queue's note emitter publishes the pinned D-12 count note verbatim and
 // the D-05 parked wording one frame later — and ONLY on the parked branch
