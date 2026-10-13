@@ -1,13 +1,13 @@
 ---
-gsd_state_version: 1.0
+gsd_state_version: "1.0"
 milestone: v1.2
 milestone_name: Claude Code Parity
 status: Awaiting next milestone
 stopped_at: Phase 23 complete, ready to plan Phase 24
-last_updated: "2026-09-20T22:51:43.665Z"
+last_updated: "2026-10-13T23:52:20.114Z"
 last_activity: 2026-09-21
 last_activity_desc: Milestone v1.2 completed and archived
-state_head: daf58fb5d5b80152fb52a7d70df9694092dbb44c
+state_head: 72932fbe0d6c4b212604aadffc82f42d4954dd97
 progress:
   total_phases: 11
   completed_phases: 11
@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-09-20)
 Phase: Milestone v1.2 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-09-21 — Milestone v1.2 completed and archived
+Last activity: 2026-10-14 - Completed quick task 261014-1ne: golangci-lint gate restored (655 findings → 0, verified)
 
 ## Performance Metrics
 
@@ -265,6 +265,7 @@ None yet.
 | 261013-uhx | Diagnose and fix the TestPermissionsE2E regression from Phase 23 commit 40b2bbc: completion-window steering orphaned by routeSteering; fix spillOrphanedSteering at chain exit; unskip from the nightly -race gate. | 2026-10-13 | 79e3eb2 | — | .planning/quick/261013-uhx-diagnose-and-fix-the-testpermissionse2e-regression-in-intern |
 | 261013-uhy | Fix the TestRescanConcurrency data race (WINDOWS #21): mutex-guard fakeCatalog.Hooks per the ab7956b shape; unskip from the nightly -race gate (WINDOWS #27 leg). | 2026-10-13 | 40bd483 | — | .planning/quick/261013-uhy-fix-the-testrescanconcurrency-data-race-in-internal-runtime |
 | 261013-uhz | Broken Windows ledger bookkeeping: rows #23/#24 discharged (operator UAT 2/2 2026-09-20), stdout observation recorded as row #30 born-fixed (ed83044), open_count 18 to 16. | 2026-10-13 | 2b39454 | — | .planning/quick/261013-uhz-broken-windows-ledger-bookkeeping-in-planning-windows-md-mar |
+| 261014-1ne | Restore the golangci-lint gate (windows #16/#19/#20): 655 findings to 0 via config+code hybrid — 7 dated linter disables with rationale, cyclop 20/funlen 80 tuning, test-file exclusions, gocritic 129; ~100 mechanical code fixes + inspect-and-dispose of real-signal classes; verified by an independent cache-clean gate re-run. | 2026-10-14 | 72932fb | passed | .planning/quick/261014-1ne-restore-the-golangci-lint-gate-make-mise |
 
 ### Blockers/Concerns
 

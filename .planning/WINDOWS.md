@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 14
+open_count: 11
 waived_count: 0
-fixed_count: 16
+fixed_count: 19
 total_count: 30
-last_updated: 2026-10-13T21:49:27.068Z
+last_updated: 2026-10-13T23:53:17.708Z
 ---
 
 # Broken Windows Ledger
@@ -30,11 +30,11 @@ last_updated: 2026-10-13T21:49:27.068Z
 | 13 | 17 | deviation | internal/runtime/ask_wiring_test.go |  | 17-04 Rule-3 wiring deviation: the Run-level AskUserQuestion round-trip test lives in ask_wiring_test.go (beyond the plan's file list; the real harness exists only there) | open |  | 2026-09-01T02:47:33.475Z |  |
 | 14 | 17 | deviation | internal/session/askqueue.go |  | 17-04 Rule-3 contract deviation: AskOutcome elicitation fields (Elicit/Content/Violation/Fallback) + AskEntry.Note/PlainTextFallback live beside the queue types (beyond the plan's file list; the dispatcher's input/outcome contract) | open |  | 2026-09-01T02:47:33.676Z |  |
 | 15 | 17 | unmet-truth | .planning/phases/17-permissions-elicitation/17-05-SUMMARY.md |  | PENDING-OPERATOR-CONFIRMATION: live-Zed operator confirmation of ROADMAP criteria 1 and 3 (native four-option permission dialog with persistence + native elicitation form rendering, seven-step checklist) not yet executed; the 17-05 simulator battery + docs prove the wire and the pipeline, the live legs await the operator | fixed |  | 2026-09-01T03:34:40.899Z | 2026-09-03T10:24:28.543Z |
-| 16 | 18 | deviation | .mise.toml |  | golangci-lint 2.12.2 panics on go1.27-requiring deps (pre-existing module-cache drift); 2.13.2 runs but exhaustruct_v5 flags 2222 pre-existing issues — mise ci's lint step red until a standalone pin-bump + exhaustruct-config migration lands (18-06 files verified clean; logged in 18-session-family/deferred-items.md) | open |  | 2026-09-03T16:26:32.677Z |  |
+| 16 | 18 | deviation | .mise.toml |  | golangci-lint 2.12.2 panics on go1.27-requiring deps (pre-existing module-cache drift); 2.13.2 runs but exhaustruct_v5 flags 2222 pre-existing issues — mise ci's lint step red until a standalone pin-bump + exhaustruct-config migration lands (18-06 files verified clean; logged in 18-session-family/deferred-items.md) | fixed | 261014-close: gate restored by quick 261014-1ne — mise run lint exits 0 at 72932fb (cache-clean verified); config repaired for 2.13.2 (7 dated disables with rationale, cyclop 20/funlen 80 aligned, test-file exclusions, gocritic sizeThreshold 129) plus ~100 mechanical code fixes; 2.12.x panic path is moot now that the 2.13.2 config is green (verified passed 5/5) | 2026-09-03T16:26:32.677Z | 2026-10-13T23:53:17.202Z |
 | 17 | 21 | deviation | internal/session/testdata/thinking-golden/sse-thinking.jsonl |  | D-14 golden fixture is corpus_absent synthetic (A4 fallback): no thinking-bearing SSE captures exist in the corpus; provenance header records the hunt; replace with captured wire pairs when a thinking-enabled capture run lands | open |  | 2026-09-03T19:54:40.279Z |  |
 | 18 | 21 | deviation | internal/runtime/imgscale_test.go |  | plan-literal 9000x6000 over-dims fixture env-gated (ASSGUARD_IMG_HEAVY=1); cheap default row proves the same path (suite-health tuning) | open |  | 2026-09-03T22:27:52.112Z |  |
-| 19 | 21 | lint-warning | .golangci.yml |  | golangci-lint v2.12.2 (built with go1.26) panics on a go1.27-requiring dependency — mise ci lint leg red before and after 21-06 (environmental; vet+build+test green) | open |  | 2026-09-03T22:57:28.131Z |  |
-| 20 | 19 | deviation | .golangci.yml |  | mise lint gate fails repo-wide: golangci-lint 2.13.2 exhaustruct_v5 rename defeats the 2.12.x-tuned wildcard exclusion (pre-existing env drift, details in 19 deferred-items.md) | open |  | 2026-09-06T21:32:25.796Z |  |
+| 19 | 21 | lint-warning | .golangci.yml |  | golangci-lint v2.12.2 (built with go1.26) panics on a go1.27-requiring dependency — mise ci lint leg red before and after 21-06 (environmental; vet+build+test green) | fixed | 261014-close: same root as #16 — gate restored by quick 261014-1ne; the panic was 2.12.x-on-go1.27, the green gate now runs on 2.13.2 with the repaired config (72932fb, cache-clean exit 0) | 2026-09-03T22:57:28.131Z | 2026-10-13T23:53:17.453Z |
+| 20 | 19 | deviation | .golangci.yml |  | mise lint gate fails repo-wide: golangci-lint 2.13.2 exhaustruct_v5 rename defeats the 2.12.x-tuned wildcard exclusion (pre-existing env drift, details in 19 deferred-items.md) | fixed | 261014-close: exhaustruct(_v5) dual-name exclusion superseded by the quick 261014-1ne full-gate repair — 655 findings to 0 with real-signal linters kept on (72932fb, independent cache-clean re-run exit 0) | 2026-09-06T21:32:25.796Z | 2026-10-13T23:53:17.708Z |
 | 21 | 22 | deviation | internal/runtime/rescan_test.go |  | TestRescanConcurrency data race (spawnMCP vs installRegistry) pre-existing before 22-04 — blocks the ./internal/runtime/ green gate; logged in 22-04 deferred-items.md | fixed | 261013-fix: the pre-25 race pair is structurally gone since the Phase-25 catalog injection (spawnMCP reads via liveCatalog().MCPLayers(), write half under Rediscover lock); the last unguarded test-fake accessor fakeCatalog.Hooks mutex-guarded per the ab7956b shape (01ba3a4); -race -count=3 sustained green; unskipped from the nightly -race gate (40bd483) | 2026-09-10T00:24:14.411Z | 2026-10-13T21:49:26.913Z |
 | 22 | 22 | unrun-verify | internal/acpserve |  | TestPermissionsE2E (acpserve) skipped under -race in 22-06's phase-quick verify — pre-existing cross-workstream regression from Phase 23 commit 40b2bbc (STATE.md blocker, operator-bisected); passes at 721c7bc | fixed | 261013-fix: root-caused to 40b2bbc hunk (a) routeSteering — completion-window steering enqueued then orphaned at chain exit; fixed by spillOrphanedSteering on the normal chain-exit path (efbf759) with deterministic pin TestSteerSpilloverOnChainExit (deb0876); TestPermissionsE2E green under -race 5/5 and unskipped from the nightly gate (79e3eb2) | 2026-09-10T01:06:35.602Z | 2026-10-13T21:49:27.068Z |
 | 23 | 23 | unmet-truth | .planning/phases/23-seed-gaps-close-out/23-05-SUMMARY.md |  | PENDING-OPERATOR-CONFIRMATION: live-Zed operator UAT of the phase's two interactive surfaces (23-01/23-02 boundary steering mid-turn + 23-05 /undo incl. the auto-cancel-then-restore path against a running turn) not yet executed — plan 23-05 Task 3 checkpoint; offline batteries prove the core (steering boundary delivery, undo walk/cancel ordering), the Zed-client behavior leg (RESEARCH A2 note: Zed may queue mid-turn prompts client-side) awaits the operator and documents client behavior for TG-02 planning | fixed | 260920-uat: discharged by the operator Phase-23 UAT 2/2 PASS (2026-09-20) — Test 1: live-Zed boundary steering mid-turn plus idle and mid-turn /undo including the auto-cancel-then-restore path, run with real Zed 1.20.2 and a Zed-shaped ACP driver against the shipped binary; evidence .planning/milestones/v1.2-phases/23-seed-gaps-close-out/23-UAT-evidence-2026-09-20.md (Test 1 PASS) + STATE.md Phase 23 entry | 2026-09-10T11:43:49.324Z | 2026-10-13T21:09:45.478Z |
@@ -235,10 +235,10 @@ last_updated: 2026-10-13T21:49:27.068Z
     "file": ".mise.toml",
     "line": null,
     "description": "golangci-lint 2.12.2 panics on go1.27-requiring deps (pre-existing module-cache drift); 2.13.2 runs but exhaustruct_v5 flags 2222 pre-existing issues — mise ci's lint step red until a standalone pin-bump + exhaustruct-config migration lands (18-06 files verified clean; logged in 18-session-family/deferred-items.md)",
-    "status": "open",
-    "reason": "",
+    "status": "fixed",
+    "reason": "261014-close: gate restored by quick 261014-1ne — mise run lint exits 0 at 72932fb (cache-clean verified); config repaired for 2.13.2 (7 dated disables with rationale, cyclop 20/funlen 80 aligned, test-file exclusions, gocritic sizeThreshold 129) plus ~100 mechanical code fixes; 2.12.x panic path is moot now that the 2.13.2 config is green (verified passed 5/5)",
     "recorded_at": "2026-09-03T16:26:32.677Z",
-    "resolved_at": null
+    "resolved_at": "2026-10-13T23:53:17.202Z"
   },
   {
     "id": 17,
@@ -271,10 +271,10 @@ last_updated: 2026-10-13T21:49:27.068Z
     "file": ".golangci.yml",
     "line": null,
     "description": "golangci-lint v2.12.2 (built with go1.26) panics on a go1.27-requiring dependency — mise ci lint leg red before and after 21-06 (environmental; vet+build+test green)",
-    "status": "open",
-    "reason": "",
+    "status": "fixed",
+    "reason": "261014-close: same root as #16 — gate restored by quick 261014-1ne; the panic was 2.12.x-on-go1.27, the green gate now runs on 2.13.2 with the repaired config (72932fb, cache-clean exit 0)",
     "recorded_at": "2026-09-03T22:57:28.131Z",
-    "resolved_at": null
+    "resolved_at": "2026-10-13T23:53:17.453Z"
   },
   {
     "id": 20,
@@ -283,10 +283,10 @@ last_updated: 2026-10-13T21:49:27.068Z
     "file": ".golangci.yml",
     "line": null,
     "description": "mise lint gate fails repo-wide: golangci-lint 2.13.2 exhaustruct_v5 rename defeats the 2.12.x-tuned wildcard exclusion (pre-existing env drift, details in 19 deferred-items.md)",
-    "status": "open",
-    "reason": "",
+    "status": "fixed",
+    "reason": "261014-close: exhaustruct(_v5) dual-name exclusion superseded by the quick 261014-1ne full-gate repair — 655 findings to 0 with real-signal linters kept on (72932fb, independent cache-clean re-run exit 0)",
     "recorded_at": "2026-09-06T21:32:25.796Z",
-    "resolved_at": null
+    "resolved_at": "2026-10-13T23:53:17.708Z"
   },
   {
     "id": 21,
