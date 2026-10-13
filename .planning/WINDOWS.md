@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 16
+open_count: 14
 waived_count: 0
-fixed_count: 14
+fixed_count: 16
 total_count: 30
-last_updated: 2026-10-13T21:11:42.071Z
+last_updated: 2026-10-13T21:49:27.068Z
 ---
 
 # Broken Windows Ledger
@@ -35,8 +35,8 @@ last_updated: 2026-10-13T21:11:42.071Z
 | 18 | 21 | deviation | internal/runtime/imgscale_test.go |  | plan-literal 9000x6000 over-dims fixture env-gated (ASSGUARD_IMG_HEAVY=1); cheap default row proves the same path (suite-health tuning) | open |  | 2026-09-03T22:27:52.112Z |  |
 | 19 | 21 | lint-warning | .golangci.yml |  | golangci-lint v2.12.2 (built with go1.26) panics on a go1.27-requiring dependency — mise ci lint leg red before and after 21-06 (environmental; vet+build+test green) | open |  | 2026-09-03T22:57:28.131Z |  |
 | 20 | 19 | deviation | .golangci.yml |  | mise lint gate fails repo-wide: golangci-lint 2.13.2 exhaustruct_v5 rename defeats the 2.12.x-tuned wildcard exclusion (pre-existing env drift, details in 19 deferred-items.md) | open |  | 2026-09-06T21:32:25.796Z |  |
-| 21 | 22 | deviation | internal/runtime/rescan_test.go |  | TestRescanConcurrency data race (spawnMCP vs installRegistry) pre-existing before 22-04 — blocks the ./internal/runtime/ green gate; logged in 22-04 deferred-items.md | open |  | 2026-09-10T00:24:14.411Z |  |
-| 22 | 22 | unrun-verify | internal/acpserve |  | TestPermissionsE2E (acpserve) skipped under -race in 22-06's phase-quick verify — pre-existing cross-workstream regression from Phase 23 commit 40b2bbc (STATE.md blocker, operator-bisected); passes at 721c7bc | open |  | 2026-09-10T01:06:35.602Z |  |
+| 21 | 22 | deviation | internal/runtime/rescan_test.go |  | TestRescanConcurrency data race (spawnMCP vs installRegistry) pre-existing before 22-04 — blocks the ./internal/runtime/ green gate; logged in 22-04 deferred-items.md | fixed | 261013-fix: the pre-25 race pair is structurally gone since the Phase-25 catalog injection (spawnMCP reads via liveCatalog().MCPLayers(), write half under Rediscover lock); the last unguarded test-fake accessor fakeCatalog.Hooks mutex-guarded per the ab7956b shape (01ba3a4); -race -count=3 sustained green; unskipped from the nightly -race gate (40bd483) | 2026-09-10T00:24:14.411Z | 2026-10-13T21:49:26.913Z |
+| 22 | 22 | unrun-verify | internal/acpserve |  | TestPermissionsE2E (acpserve) skipped under -race in 22-06's phase-quick verify — pre-existing cross-workstream regression from Phase 23 commit 40b2bbc (STATE.md blocker, operator-bisected); passes at 721c7bc | fixed | 261013-fix: root-caused to 40b2bbc hunk (a) routeSteering — completion-window steering enqueued then orphaned at chain exit; fixed by spillOrphanedSteering on the normal chain-exit path (efbf759) with deterministic pin TestSteerSpilloverOnChainExit (deb0876); TestPermissionsE2E green under -race 5/5 and unskipped from the nightly gate (79e3eb2) | 2026-09-10T01:06:35.602Z | 2026-10-13T21:49:27.068Z |
 | 23 | 23 | unmet-truth | .planning/phases/23-seed-gaps-close-out/23-05-SUMMARY.md |  | PENDING-OPERATOR-CONFIRMATION: live-Zed operator UAT of the phase's two interactive surfaces (23-01/23-02 boundary steering mid-turn + 23-05 /undo incl. the auto-cancel-then-restore path against a running turn) not yet executed — plan 23-05 Task 3 checkpoint; offline batteries prove the core (steering boundary delivery, undo walk/cancel ordering), the Zed-client behavior leg (RESEARCH A2 note: Zed may queue mid-turn prompts client-side) awaits the operator and documents client behavior for TG-02 planning | fixed | 260920-uat: discharged by the operator Phase-23 UAT 2/2 PASS (2026-09-20) — Test 1: live-Zed boundary steering mid-turn plus idle and mid-turn /undo including the auto-cancel-then-restore path, run with real Zed 1.20.2 and a Zed-shaped ACP driver against the shipped binary; evidence .planning/milestones/v1.2-phases/23-seed-gaps-close-out/23-UAT-evidence-2026-09-20.md (Test 1 PASS) + STATE.md Phase 23 entry | 2026-09-10T11:43:49.324Z | 2026-10-13T21:09:45.478Z |
 | 24 | 23 | unmet-truth | .planning/phases/23-seed-gaps-close-out/23-06-SUMMARY.md |  | PENDING-OPERATOR-CONFIRMATION: two-live-Zed-session UAT of the cross-session restore guard (23-VERIFICATION.md Human Verification #2) — /undo from an idle session while another session's turn runs must refuse naming the busy session; the offline battery (TestUndoCrossSessionRefusal + TestUndoActivePathCrossSessionRefusal) is the gap G-23-1 witness; rides the phase ledger beside #23 per the 23-05 precedent | fixed | 260920-uat: discharged by the same operator Phase-23 UAT 2/2 PASS (2026-09-20) — Test 2: two-live-session cross-session restore check PASS (/undo from an idle session refuses naming the busy session); evidence .planning/milestones/v1.2-phases/23-seed-gaps-close-out/23-UAT-evidence-2026-09-20.md (Test 2 PASS) + STATE.md Phase 23 entry | 2026-09-10T13:17:53.931Z | 2026-10-13T21:09:45.699Z |
 | 25 | 24 | unrun-verify | .planning/phases/24-documentation-ops-tails/24-01-SUMMARY.md |  | mise ci could not run literally (mise binary absent on host); legs run directly — vet/build green, modelrouting tests green, lint clean on 24-01 files, repo-wide lint/test carry documented pre-existing baseline (24-01-SUMMARY Deviations #4) | open |  | 2026-09-10T14:23:58.009Z |  |
@@ -295,10 +295,10 @@ last_updated: 2026-10-13T21:11:42.071Z
     "file": "internal/runtime/rescan_test.go",
     "line": null,
     "description": "TestRescanConcurrency data race (spawnMCP vs installRegistry) pre-existing before 22-04 — blocks the ./internal/runtime/ green gate; logged in 22-04 deferred-items.md",
-    "status": "open",
-    "reason": "",
+    "status": "fixed",
+    "reason": "261013-fix: the pre-25 race pair is structurally gone since the Phase-25 catalog injection (spawnMCP reads via liveCatalog().MCPLayers(), write half under Rediscover lock); the last unguarded test-fake accessor fakeCatalog.Hooks mutex-guarded per the ab7956b shape (01ba3a4); -race -count=3 sustained green; unskipped from the nightly -race gate (40bd483)",
     "recorded_at": "2026-09-10T00:24:14.411Z",
-    "resolved_at": null
+    "resolved_at": "2026-10-13T21:49:26.913Z"
   },
   {
     "id": 22,
@@ -307,10 +307,10 @@ last_updated: 2026-10-13T21:11:42.071Z
     "file": "internal/acpserve",
     "line": null,
     "description": "TestPermissionsE2E (acpserve) skipped under -race in 22-06's phase-quick verify — pre-existing cross-workstream regression from Phase 23 commit 40b2bbc (STATE.md blocker, operator-bisected); passes at 721c7bc",
-    "status": "open",
-    "reason": "",
+    "status": "fixed",
+    "reason": "261013-fix: root-caused to 40b2bbc hunk (a) routeSteering — completion-window steering enqueued then orphaned at chain exit; fixed by spillOrphanedSteering on the normal chain-exit path (efbf759) with deterministic pin TestSteerSpilloverOnChainExit (deb0876); TestPermissionsE2E green under -race 5/5 and unskipped from the nightly gate (79e3eb2)",
     "recorded_at": "2026-09-10T01:06:35.602Z",
-    "resolved_at": null
+    "resolved_at": "2026-10-13T21:49:27.068Z"
   },
   {
     "id": 23,
