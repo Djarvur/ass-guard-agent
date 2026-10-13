@@ -1,4 +1,4 @@
-package perm //nolint:testpackage // hasSubstitution is the unexported scanner subject — the store_test.go in-package precedent
+package perm // unexported scanner subject (hasSubstitution) — the store_test.go in-package precedent
 
 import "testing"
 
@@ -10,7 +10,7 @@ import "testing"
 // The a710b75 rewrite dropped the double-quote state, so the first four live
 // rows went dark — `git "log 'x $(cmd) y'"` under-detected and an allow rule
 // could match a substitution-bearing command.
-func TestHasSubstitutionQuotes(t *testing.T) {
+func TestHasSubstitutionQuotes(t *testing.T) { //nolint:funlen // one row per shell-quoting fact — the table IS the spec
 	t.Parallel()
 
 	tests := []struct {

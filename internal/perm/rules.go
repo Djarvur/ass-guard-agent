@@ -277,36 +277,67 @@ func SplitCompound(cmd string) []string {
 
 // hasSubstitution reports whether the command carries shell command
 // substitution — `$(...)` or backticks. Shell semantics honored to the extent
-// the guard needs (WR-02): substitution is LIVE inside double quotes (only
-// single quotes make the span literal) and an unquoted backslash escapes the
-// next byte. The guard is intentionally one-sided: a deny or ask rule still
-// matches a substitution-bearing command (deny stays strong), but an ALLOW
-// never can — the substitution's payload executes without appearing as a
-// separate subcommand, so allowing it would defeat the compound discipline
-// ("an allow must cover EVERY subcommand") with no separator anywhere in the
-// visible text.
-func hasSubstitution(cmd string) bool {
-	for i := 0; i < len(cmd); i++ {
-		switch c := cmd[i]; c {
-		case '\'':
-			// The single-quoted span is fully literal: skip it whole.
-			end := strings.IndexByte(cmd[i+1:], '\'')
-			if end < 0 {
-				return false // unterminated: nothing after it can substitute
-			}
+// the guard needs (WR-02): substitution is LIVE unquoted and inside double
+// quotes — a quote state distinguishes the two from single-quoted spans, so
+// single quotes inside double quotes are ordinary bytes and never open a
+// literal span (restores the a710b75-dropped double-quote tracking; without
+// it `git "log 'x $(cmd) y'"` under-detects). Only a single-quoted context
+// makes the span literal: only a closing single quote exits it, and an
+// unterminated one reports no substitution. A backslash escapes the next
+// byte in both the unquoted and double-quoted contexts. The scan is a
+// bounded heuristic: process substitution, ANSI-C $'...' quoting, and
+// heredoc bodies are outside WR-02's recorded scope — deny/ask lists remain
+// the strong unbounded control. The guard is intentionally one-sided: a deny
+// or ask rule still matches a substitution-bearing command (deny stays
+// strong), but an ALLOW never can — the substitution's payload executes
+// without appearing as a separate subcommand, so allowing it would defeat
+// the compound discipline ("an allow must cover EVERY subcommand") with no
+// separator anywhere in the visible text.
+func hasSubstitution(cmd string) bool { //nolint:cyclop // restored a710b75 quote state machine
+	var quote byte // 0 = unquoted; '\'' = literal span; '"' = double-quote span
 
-			i += end + 1
-		case '\\':
+	for i := 0; i < len(cmd); i++ {
+		c := cmd[i]
+
+		switch {
+		case quote == '\'':
+			// The single-quoted span is fully literal: only a closing single
+			// quote exits; every other byte (including '"') is ordinary.
+			if c == '\'' {
+				quote = 0
+			}
+		case quote == '"':
+			// Substitution stays live inside double quotes; single quotes are
+			// ordinary bytes there (they do NOT open a literal span).
+			switch c {
+			case '"':
+				quote = 0
+			case '\\':
+				i++ // skip the escaped byte ("\" / "\$" are literal)
+			case '`':
+				return true
+			case '$':
+				if i+1 < len(cmd) && cmd[i+1] == '(' {
+					return true
+				}
+			}
+		case c == '\'':
+			quote = '\''
+		case c == '"':
+			quote = '"'
+		case c == '\\':
 			i++ // the escaped byte is literal (\" "\$" \$( are not substitutions)
-		case '`':
+		case c == '`':
 			return true
-		case '$':
+		case c == '$':
 			if i+1 < len(cmd) && cmd[i+1] == '(' {
 				return true
 			}
 		}
 	}
 
+	// An unterminated single quote leaves the whole tail inside the literal
+	// span — nothing after it can substitute.
 	return false
 }
 
