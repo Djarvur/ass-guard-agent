@@ -77,9 +77,17 @@ tools/occ-census-clone/
 .claude/
 .bg-shell/
 .mcp.json
+# gsd-core per-machine intel regenerations (tracked .gsd content stays
+# sentinel-only); they also made goreleaser treat the tree as dirty at the
+# v1.2 release until stashed.
+.gsd/CODEBASE.md
+.gsd/KNOWLEDGE.md
 .gsd/gsd.db
 .gsd/gsd.db-shm
 .gsd/gsd.db-wal
 .gsd/migration/
 .gsd/runtime/
 .gsd/notifications.jsonl
+# `mise run parity-nightly` report output (.mise.toml writes it at the repo
+# root); a runtime artifact, never committed.
+nightly-report.json
