@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-09-20)
 Phase: Milestone v1.2 complete
 Plan: —
 Status: Awaiting next milestone
-Last activity: 2026-10-14 - Completed quick task 261014-1ne: golangci-lint gate restored (655 findings → 0, verified)
+Last activity: 2026-10-27 - Completed quick task 261027-syj: pre-v1.3 release hygiene (gitignore tidy, zcode 3.x probe fix, dependabot merge, master push, nightly live-smoke — windows #26/#28 discharged, row #31 born)
 
 ## Performance Metrics
 
@@ -266,6 +266,7 @@ None yet.
 | 261013-uhy | Fix the TestRescanConcurrency data race (WINDOWS #21): mutex-guard fakeCatalog.Hooks per the ab7956b shape; unskip from the nightly -race gate (WINDOWS #27 leg). | 2026-10-13 | 40bd483 | — | .planning/quick/261013-uhy-fix-the-testrescanconcurrency-data-race-in-internal-runtime |
 | 261013-uhz | Broken Windows ledger bookkeeping: rows #23/#24 discharged (operator UAT 2/2 2026-09-20), stdout observation recorded as row #30 born-fixed (ed83044), open_count 18 to 16. | 2026-10-13 | 2b39454 | — | .planning/quick/261013-uhz-broken-windows-ledger-bookkeeping-in-planning-windows-md-mar |
 | 261014-1ne | Restore the golangci-lint gate (windows #16/#19/#20): 655 findings to 0 via config+code hybrid — 7 dated linter disables with rationale, cyclop 20/funlen 80 tuning, test-file exclusions, gocritic 129; ~100 mechanical code fixes + inspect-and-dispose of real-signal classes; verified by an independent cache-clean gate re-run. | 2026-10-14 | 72932fb | passed | .planning/quick/261014-1ne-restore-the-golangci-lint-gate-make-mise |
+| 261027-syj | Pre-v1.3 release hygiene: gitignore runtime artifacts (.gsd intel + nightly-report.json); fix the zcode version probe for 3.x log-shaped --version (installed 3.16.3 now resolves — honest DRIFT vs pinned 0.16.3, exit 7, 7/7 files match); merge dependabot x/net 0.55.0 (PR #1 MERGED); push 26 commits to master; live-dispatch the nightly workflow twice — dispatch capability proven (windows #26/#28 discharged), both runs red on DIFFERENT timing-marginal suites (PTY echo leak / simulator frame-timeout) → new open row #31; NOT skip-listed (operator call). | 2026-10-27 | 6d4a765 | — | .planning/quick/261027-syj-release-hygiene-tidy-untracked-runtime-a |
 
 ### Blockers/Concerns
 
