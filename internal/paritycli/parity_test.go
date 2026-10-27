@@ -3,6 +3,7 @@ package paritycli //nolint:testpackage // internal package test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -106,6 +107,66 @@ func captureParityStderr(t *testing.T, fn func() error) (string, error) {
 	<-done
 
 	return buf.String(), fnErr
+}
+
+// probeVersion3x is the version token inside the captured zcode 3.x startup
+// log (installed 3.16.3 on this host, 2026-10-27) — the log-shape fixture's
+// expected parse result.
+const probeVersion3x = "3.16.3"
+
+// The two REAL version-bearing lines from zcode 3.x's log-shaped `--version`
+// stdout (captured verbatim 2026-10-27) — the only semver mentions in the
+// whole output — plus a version-less startup line from the same capture.
+const (
+	zcode3xLogArmsLine      = "[arms] electron initialized env=prod version=3.16.3"
+	zcode3xLogAutoUpdLine   = "[auto-update] initializing, current version: 3.16.3"
+	zcode3xLogVersionlessLn = "[desktop-network] renderer proxy mode=fixed_servers bypass=disabled customCa=disabled insecureCerts=rejected"
+)
+
+// TestParseZcodeVersionOutput pins the probe's output-shape contract: the
+// pre-3.x bare token returns verbatim (byte-comparable to the pin), the 3.x
+// startup log resolves to its single distinct version mention, and ambiguity
+// (conflicting mentions, no mentions, empty) is a typed error.
+func TestParseZcodeVersionOutput(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{name: "bare legacy token", in: pinVersion + "\n", want: pinVersion},
+		{name: "bare legacy token with v prefix", in: "v1.2.3", want: "v1.2.3"},
+		{name: "zcode 3x startup log both mentions agree", in: zcode3xLogArmsLine + "\n" + zcode3xLogAutoUpdLine + "\n", want: probeVersion3x},
+		{name: "zcode 3x auto-update mention alone", in: zcode3xLogAutoUpdLine, want: probeVersion3x},
+		{name: "zcode 3x log without version mentions", in: zcode3xLogVersionlessLn + "\n", wantErr: true},
+		{name: "conflicting mentions", in: zcode3xLogArmsLine + "\n[auto-update] initializing, current version: 0.9.9\n", wantErr: true},
+		{name: "empty output", in: "   \n", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := parseZcodeVersionOutput(tt.in)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("parseZcodeVersionOutput(%q) = %q, nil; want error", tt.in, got)
+				}
+				if !errors.Is(err, errZcodeVersionUnparsable) {
+					t.Fatalf("parseZcodeVersionOutput(%q) err = %v; want errZcodeVersionUnparsable", tt.in, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseZcodeVersionOutput(%q) err = %v; want nil", tt.in, err)
+			}
+			if got != tt.want {
+				t.Fatalf("parseZcodeVersionOutput(%q) = %q; want %q", tt.in, got, tt.want)
+			}
+		})
+	}
 }
 
 // fakeZcodeVersion swaps the zcodeInstalledVersion seam: version+resolveErr

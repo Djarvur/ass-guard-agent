@@ -2,11 +2,14 @@ package paritycli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -18,14 +21,72 @@ import (
 )
 
 // zcodeVersionTimeout bounds the `zcode --version` exec (T-14-12 DoS: a hung
-// binary must never hang the parity run; unresolvable -> skip note).
-const zcodeVersionTimeout = 3 * time.Second
+// binary must never hang the parity run; unresolvable -> skip note). zcode
+// 3.x boots a full Electron app for `--version` — a cold start can exceed
+// the original 3s, which is the root cause of the 2026-09-27 probe-failed;
+// 10s stays bounded while surviving cold starts.
+const zcodeVersionTimeout = 10 * time.Second
+
+// errZcodeVersionUnparsable marks --version output carrying no unambiguous
+// version: empty, version-less logs, or conflicting version mentions. The
+// nightly check renders it as the probe-failed drift reason — an unprovable
+// environment must never read as parity.
+var errZcodeVersionUnparsable = errors.New("zcode --version output carries no unambiguous version")
+
+// zcodeBareVersion matches the WHOLE pre-3.x `--version` output: a single
+// version token (optionally v-prefixed or build-suffixed).
+var zcodeBareVersion = regexp.MustCompile(`^v?\d+(?:\.\d+)+[0-9A-Za-z.+-]*$`)
+
+// zcodeVersionMention matches a version mention inside zcode 3.x's
+// log-shaped `--version` stdout — `version=3.16.3` (electron-init line) or
+// `current version: 3.16.3` (auto-update line). The literal `version` key
+// before the separator keeps coincidental semvers (UA strings, file paths)
+// out of the match set.
+var zcodeVersionMention = regexp.MustCompile(`(?:^|[^A-Za-z])version[=:]\s*"?v?(\d+(?:\.\d+)+)`)
+
+// parseZcodeVersionOutput extracts the version token from `zcode --version`
+// output across both output generations. Pre-3.x zcode printed a bare token
+// ("0.16.3"); zcode 3.x prints Electron startup logs where the version lives
+// only inside log lines (`version=3.16.3` on the electron-init line,
+// `current version: 3.16.3` on the auto-update line). The returned token must
+// stay comparable to the pin's meta.yaml record (the bare shape), so the
+// bare generation returns verbatim after trim, the log generation returns the
+// single distinct mentioned version, and ambiguity (conflicting mentions, no
+// mentions, empty output) is a typed error.
+func parseZcodeVersionOutput(out string) (string, error) {
+	trimmed := strings.TrimSpace(out)
+	if trimmed == "" {
+		return "", fmt.Errorf("%w: empty output", errZcodeVersionUnparsable)
+	}
+
+	if zcodeBareVersion.MatchString(trimmed) {
+		return trimmed, nil
+	}
+
+	var seen []string
+	for _, m := range zcodeVersionMention.FindAllStringSubmatch(trimmed, -1) {
+		if !slices.Contains(seen, m[1]) {
+			seen = append(seen, m[1])
+		}
+	}
+
+	switch len(seen) {
+	case 1:
+		return seen[0], nil
+	case 0:
+		return "", fmt.Errorf("%w: no version mention in output", errZcodeVersionUnparsable)
+	default:
+		return "", fmt.Errorf("%w: conflicting mentions %v", errZcodeVersionUnparsable, seen)
+	}
+}
 
 // zcodeInstalledVersion resolves the INSTALLED zcode's version: a fixed-argv
 // exec of `zcode --version` (T-14-11 Tampering: argv is the literal slice —
-// no shell, no user input, no interpolation) under a bounded timeout, output
-// trimmed. It is a package-level seam var so tests inject a fake installed
-// version without a live binary (offline CI); the default is the real exec.
+// no shell, no user input, no interpolation) under a bounded timeout, the
+// output parsed to the bare version token (both the pre-3.x bare print and
+// the 3.x log-shaped startup output — parseZcodeVersionOutput). It is a
+// package-level seam var so tests inject a fake installed version without a
+// live binary (offline CI); the default is the real exec.
 var zcodeInstalledVersion = func() (string, error) { //nolint:gochecknoglobals // test-injectable seam
 	ctx, cancel := context.WithTimeout(context.Background(), zcodeVersionTimeout)
 	defer cancel()
@@ -35,7 +96,12 @@ var zcodeInstalledVersion = func() (string, error) { //nolint:gochecknoglobals /
 		return "", fmt.Errorf("exec zcode --version: %w", err)
 	}
 
-	return strings.TrimSpace(string(out)), nil
+	version, perr := parseZcodeVersionOutput(string(out))
+	if perr != nil {
+		return "", fmt.Errorf("zcode --version: %w", perr)
+	}
+
+	return version, nil
 }
 
 // ZcodeInstalledVersion invokes the installed-zcode version seam — the ONE
